@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/kujinlee/.claude/hooks/**)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('hooks', {}\\), indent=2\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k\\) for k in d.keys\\(\\)]\")",
+      "Bash(python3 -m json.tool)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); omc=[k for k in d.get\\('plugins',{}\\).keys\\(\\) if 'omc' in k.lower\\(\\) or 'oh-my' in k.lower\\(\\)]; print\\('OMC entries:', omc\\)\")",
+      "Bash(xargs cat)",
+      "Bash(CLAUDE_PROJECT_DIR=\"/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-official-plugins\" CLAUDE_PLUGIN_ROOT=\"/Users/kujinlee/.claude/plugins/cache/claude-plugins-official/remember/0.5.0\" bash \"/Users/kujinlee/.claude/plugins/cache/claude-plugins-official/remember/0.5.0/scripts/session-start-hook.sh\")",
+      "Bash(git config *)",
+      "Skill(superpowers:brainstorming)",
+      "WebSearch",
+      "Bash(chmod +x *)",
+      "Skill(superpowers:test-driven-development)",
+      "Bash(npx create-next-app@latest *)",
+      "Bash(rsync *)",
+      "Bash(npm install *)",
+      "Bash(npm list *)",
+      "Bash(npm test *)",
+      "Bash(timeout 15 npm run dev)",
+      "Skill(superpowers:requesting-code-review)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
