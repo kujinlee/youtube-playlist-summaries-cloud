@@ -1,0 +1,75 @@
+import { google } from 'googleapis';
+import { YoutubeTranscript } from 'youtube-transcript';
+import type { VideoMeta } from '../types';
+
+function parseDuration(iso: string): number {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  return (parseInt(match[1] ?? '0') * 3600) +
+         (parseInt(match[2] ?? '0') * 60) +
+          parseInt(match[3] ?? '0');
+}
+
+export async function fetchPlaylistVideos(playlistUrl: string, apiKey: string): Promise<VideoMeta[]> {
+  let playlistId: string | null;
+  try {
+    playlistId = new URL(playlistUrl).searchParams.get('list');
+  } catch {
+    throw new Error(`Invalid playlist URL: ${playlistUrl}`);
+  }
+  if (!playlistId) throw new Error(`No playlist ID found in URL: ${playlistUrl}`);
+
+  const yt = google.youtube({ version: 'v3', auth: apiKey });
+
+  const videoIds: string[] = [];
+  let pageToken: string | undefined;
+  let pageCount = 0;
+  const MAX_PAGES = 100;
+  do {
+    if (pageCount++ >= MAX_PAGES) throw new Error(`Playlist exceeded ${MAX_PAGES} pages: ${playlistUrl}`);
+    const res = await yt.playlistItems.list({
+      part: ['contentDetails'],
+      playlistId,
+      maxResults: 50,
+      pageToken,
+    });
+    for (const item of res.data.items ?? []) {
+      if (item.contentDetails?.videoId) videoIds.push(item.contentDetails.videoId);
+    }
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  const videos: VideoMeta[] = [];
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const res = await yt.videos.list({
+      part: ['snippet', 'contentDetails'],
+      id: videoIds.slice(i, i + 50),
+    });
+    for (const item of res.data.items ?? []) {
+      if (!item.id) continue;
+      videos.push({
+        videoId: item.id,
+        title: item.snippet?.title ?? '',
+        youtubeUrl: `https://www.youtube.com/watch?v=${item.id}`,
+        durationSeconds: parseDuration(item.contentDetails?.duration ?? ''),
+      });
+    }
+  }
+  return videos;
+}
+
+export async function fetchTranscript(videoId: string): Promise<string> {
+  try {
+    const segments = await YoutubeTranscript.fetchTranscript(videoId);
+    return segments.map((s) => s.text).join(' ');
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to fetch transcript for video ${videoId}: ${cause}`, { cause: err });
+  }
+}
+
+export function detectLanguage(transcript: string): 'en' | 'ko' {
+  // Korean Syllables (U+AC00–U+D7A3), Hangul Jamo (U+1100–U+11FF), Compatibility Jamo (U+3130–U+318F)
+  const korean = (transcript.match(/[가-힣ᄀ-ᇿ㄰-㆏]/g) ?? []).length;
+  return korean / Math.max(transcript.length, 1) > 0.1 ? 'ko' : 'en';
+}
