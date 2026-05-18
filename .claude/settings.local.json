@@ -27,7 +27,16 @@
       "Bash(echo \"EMPTY=$\\(git hash-object -t tree /dev/null\\)\")",
       "Skill(codex:setup)",
       "Bash(node \"/Users/kujinlee/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs\" setup --json)",
-      "Skill(codex:rescue)"
+      "Skill(codex:rescue)",
+      "Bash(npx tsc *)",
+      "Bash(node *)",
+      "Bash(gh api *)",
+      "Bash(curl -s https://api.github.com/repos/mattpocock/skills/contents/skills/__TRACKED_VAR__)",
+      "Bash(curl *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npx skills@latest *)",
+      "Bash(npx jest *)"
     ]
   }
 }
