@@ -76,13 +76,7 @@ If No: implement first → spot-test any non-trivial logic after → review.
 
 ### Which TDD skill?
 
-- `superpowers:test-driven-development` — behaviors fully specified upfront
-  (lib functions, components with defined acceptance criteria).
-  Write all failing tests first.
-
-- `mattpocock:tdd` — behavior discovered during implementation
-  (orchestration, pipelines, API routes, page wiring).
-  One tracer bullet at a time.
+See `docs/plugins.md` — TDD conflict resolution.
 
 ### Test layers
 
