@@ -79,6 +79,7 @@ At the start of every implementation task, create the following items with `Task
 
 ```
 [ ] Enumerate all behaviors + edge cases in plan file (table: behavior, trigger, expected)
+[ ] (If complex — see "Behaviors adversarial review" below) Codex adversarial review of behaviors table — wrong, missing, or underspecified?
 [ ] Write failing tests (RED)
 [ ] Run tests — confirm failure for the right reason
 [ ] Implement (GREEN)
@@ -98,6 +99,8 @@ At the start of every implementation task, create the following items with `Task
 **Enumerate step:** Write the behaviors table in the task's plan file **before writing any test code**. For each behavior also ask: what if the input is missing or invalid? what if each external call fails? what if it fails mid-chain? Every answer that isn't "impossible" becomes a row in the table and a test case.
 
 **Plan file format — required section:** Each task plan must include an **Enumerated Behaviors** table before any implementation design. Columns: `# | Behavior | Trigger | Expected`. Must include edge cases. This table is the contract tests are written against and that code reviewers check for coverage gaps. Surviving context compression is a key reason to write it in the plan file rather than in conversation.
+
+**Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
 
 ---
 
