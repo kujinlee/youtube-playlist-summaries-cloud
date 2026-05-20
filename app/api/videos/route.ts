@@ -39,7 +39,16 @@ export async function GET(request: Request) {
   const sortColumn = (searchParams.get('sortColumn') ?? 'name') as SortColumn;
   const sortOrder = (searchParams.get('sortOrder') ?? 'asc') as SortOrder;
 
-  const index = readIndex(outputFolder);
+  let index;
+  try {
+    index = readIndex(outputFolder);
+  } catch (err) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 400) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw err;
+  }
   const videos = sortVideos(index.videos, sortColumn, sortOrder);
   return NextResponse.json({ videos });
 }
