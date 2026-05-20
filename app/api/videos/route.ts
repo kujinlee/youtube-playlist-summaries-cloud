@@ -1,0 +1,45 @@
+import { NextResponse } from 'next/server';
+import { assertOutputFolder, readIndex } from '../../../lib/index-store';
+import type { SortColumn, SortOrder, Video } from '../../../types';
+
+function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Video[] {
+  const sorted = [...videos].sort((a, b) => {
+    let aVal: string | number;
+    let bVal: string | number;
+    if (column === 'name') {
+      aVal = a.title.toLowerCase();
+      bVal = b.title.toLowerCase();
+    } else if (column === 'overall') {
+      aVal = a.overallScore;
+      bVal = b.overallScore;
+    } else {
+      aVal = a.ratings[column];
+      bVal = b.ratings[column];
+    }
+    if (aVal < bVal) return order === 'asc' ? -1 : 1;
+    if (aVal > bVal) return order === 'asc' ? 1 : -1;
+    return 0;
+  });
+  return sorted;
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const outputFolder = searchParams.get('outputFolder');
+  if (!outputFolder) {
+    return NextResponse.json({ error: 'outputFolder is required' }, { status: 400 });
+  }
+
+  try {
+    assertOutputFolder(outputFolder);
+  } catch {
+    return NextResponse.json({ error: 'invalid outputFolder' }, { status: 400 });
+  }
+
+  const sortColumn = (searchParams.get('sortColumn') ?? 'name') as SortColumn;
+  const sortOrder = (searchParams.get('sortOrder') ?? 'asc') as SortOrder;
+
+  const index = readIndex(outputFolder);
+  const videos = sortVideos(index.videos, sortColumn, sortOrder);
+  return NextResponse.json({ videos });
+}
