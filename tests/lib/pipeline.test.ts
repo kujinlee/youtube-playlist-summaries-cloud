@@ -9,7 +9,7 @@ jest.mock('../../lib/gemini');
 jest.mock('../../lib/pdf');
 jest.mock('../../lib/index-store');
 
-import { runIngestion, slugify, formatDuration } from '../../lib/pipeline';
+import { runIngestion, slugify, formatDuration, parseFrontmatterField, reconstructVideo, recoverOrphanedVideos } from '../../lib/pipeline';
 import * as youtube from '../../lib/youtube';
 import * as gemini from '../../lib/gemini';
 import * as pdf from '../../lib/pdf';
@@ -282,5 +282,180 @@ describe('formatDuration', () => {
 
   it('formats hours as H:MM:SS', () => {
     expect(formatDuration(3661)).toBe('1:01:01');
+  });
+});
+
+// ── Shared sample .md content for parseFrontmatterField / reconstructVideo ──
+const SAMPLE_MD = `---
+tags:
+  - video-summary
+  - en
+video_id: "testVidAbc1"
+channel: "Test Channel"
+lang: EN
+type: Analysis
+audience: Intermediate
+score: 4.6
+---
+
+# Test Video Title
+
+**Channel:** Test Channel | **Duration:** 14:05 | **URL:** https://www.youtube.com/watch?v=testVidAbc1
+
+---
+
+## 1. Section One
+
+Content here.
+`;
+
+describe('parseFrontmatterField', () => {
+  it('extracts a quoted field', () => {
+    expect(parseFrontmatterField(SAMPLE_MD, 'video_id')).toBe('testVidAbc1');
+  });
+
+  it('extracts an unquoted field', () => {
+    expect(parseFrontmatterField(SAMPLE_MD, 'lang')).toBe('EN');
+  });
+
+  it('extracts a numeric field', () => {
+    expect(parseFrontmatterField(SAMPLE_MD, 'score')).toBe('4.6');
+  });
+
+  it('extracts a quoted field with spaces', () => {
+    expect(parseFrontmatterField(SAMPLE_MD, 'channel')).toBe('Test Channel');
+  });
+
+  it('returns null for a missing field', () => {
+    expect(parseFrontmatterField(SAMPLE_MD, 'nonexistent')).toBeNull();
+  });
+});
+
+describe('reconstructVideo', () => {
+  let tempDir: string;
+  let mdPath: string;
+
+  beforeEach(() => {
+    tempDir = path.join(os.tmpdir(), `reconstruct-${crypto.randomUUID()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+    mdPath = path.join(tempDir, '001_test-video-title.md');
+    fs.writeFileSync(mdPath, SAMPLE_MD, 'utf-8');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('returns a Video with correct id, title, language, overallScore', () => {
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    expect(video).not.toBeNull();
+    expect(video!.id).toBe('testVidAbc1');
+    expect(video!.title).toBe('Test Video Title');
+    expect(video!.language).toBe('en');
+    expect(video!.overallScore).toBe(4.6);
+  });
+
+  it('sets videoType and audience from frontmatter', () => {
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    expect(video!.videoType).toBe('Analysis');
+    expect(video!.audience).toBe('Intermediate');
+  });
+
+  it('parses youtubeUrl from metadata line', () => {
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    expect(video!.youtubeUrl).toBe('https://www.youtube.com/watch?v=testVidAbc1');
+  });
+
+  it('parses durationSeconds from metadata line', () => {
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    expect(video!.durationSeconds).toBe(14 * 60 + 5); // 14:05 = 845
+  });
+
+  it('sets summaryMd to the filename', () => {
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    expect(video!.summaryMd).toBe('001_test-video-title.md');
+  });
+
+  it('sets summaryPdf to the .pdf filename when the file exists', () => {
+    const pdfPath = path.join(tempDir, '001_test-video-title.pdf');
+    fs.writeFileSync(pdfPath, '%PDF');
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    expect(video!.summaryPdf).toBe('001_test-video-title.pdf');
+  });
+
+  it('sets summaryPdf to null when the .pdf file is absent', () => {
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    expect(video!.summaryPdf).toBeNull();
+  });
+
+  it('returns null when video_id is missing from frontmatter', () => {
+    const noId = SAMPLE_MD.replace(/video_id:.*\n/, '');
+    const video = reconstructVideo(noId, '001_test-video-title.md', mdPath);
+    expect(video).toBeNull();
+  });
+
+  it('all ratings equal Math.round(overallScore) clamped to 1–5', () => {
+    const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
+    const r = Math.max(1, Math.min(5, Math.round(4.6))); // 5
+    expect(video!.ratings).toEqual({ usefulness: r, depth: r, originality: r, recency: r, completeness: r });
+  });
+});
+
+describe('recoverOrphanedVideos', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = path.join(os.tmpdir(), `recover-${crypto.randomUUID()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+    mockAssertOutputFolder.mockImplementation(() => {});
+    mockUpsertVideo.mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    jest.clearAllMocks();
+  });
+
+  it('upserts an orphaned video whose video_id matches the playlist', () => {
+    fs.writeFileSync(path.join(tempDir, '001_test-video.md'), SAMPLE_MD, 'utf-8');
+    mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
+
+    recoverOrphanedVideos(tempDir, [{ videoId: 'testVidAbc1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+
+    expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
+    expect(mockUpsertVideo).toHaveBeenCalledWith(tempDir, expect.objectContaining({ id: 'testVidAbc1' }));
+  });
+
+  it('does not upsert a video already in the index', () => {
+    fs.writeFileSync(path.join(tempDir, '001_test-video.md'), SAMPLE_MD, 'utf-8');
+    mockReadIndex.mockReturnValue({
+      playlistUrl: '',
+      outputFolder: tempDir,
+      videos: [{ id: 'testVidAbc1' } as never],
+    });
+
+    recoverOrphanedVideos(tempDir, [{ videoId: 'testVidAbc1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+
+    expect(mockUpsertVideo).not.toHaveBeenCalled();
+  });
+
+  it('ignores .md files whose video_id is not in the playlist', () => {
+    fs.writeFileSync(path.join(tempDir, '001_test-video.md'), SAMPLE_MD, 'utf-8');
+    mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
+
+    // Different playlist — no matching video ID
+    recoverOrphanedVideos(tempDir, [{ videoId: 'differentId1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+
+    expect(mockUpsertVideo).not.toHaveBeenCalled();
+  });
+
+  it('ignores deep-dive .md files', () => {
+    const deepDiveContent = SAMPLE_MD.replace('video_id: "testVidAbc1"', 'video_id: "testVidAbc1"');
+    fs.writeFileSync(path.join(tempDir, 'testVidAbc1-deep-dive.md'), deepDiveContent, 'utf-8');
+    mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
+
+    recoverOrphanedVideos(tempDir, [{ videoId: 'testVidAbc1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+
+    expect(mockUpsertVideo).not.toHaveBeenCalled();
   });
 });

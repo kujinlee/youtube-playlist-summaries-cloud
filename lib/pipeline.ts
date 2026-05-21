@@ -4,7 +4,112 @@ import { fetchPlaylistVideos, fetchTranscript, detectLanguage } from './youtube'
 import { generateSummary } from './gemini';
 import { generatePdf } from './pdf';
 import { assertOutputFolder, assertVideoId, upsertVideo, readIndex, writeIndex } from './index-store';
-import type { ProgressEvent, Video } from '../types';
+import type { ProgressEvent, Video, VideoMeta, RatingValue, VideoType, Audience } from '../types';
+
+const VALID_VIDEO_TYPES: VideoType[] = ['Tutorial', 'Analysis', 'Case Study', 'Framework', 'Demo', 'Interview'];
+const VALID_AUDIENCES: Audience[] = ['Beginner', 'Intermediate', 'Advanced'];
+
+export function parseFrontmatterField(content: string, key: string): string | null {
+  const match = content.match(new RegExp(`^${key}:\\s*"?([^"\\n]*)"?\\s*$`, 'm'));
+  return match?.[1]?.trim() ?? null;
+}
+
+function parseDurationString(dur: string): number {
+  const parts = dur.split(':').map(Number);
+  if (parts.length === 2) return (parts[0] ?? 0) * 60 + (parts[1] ?? 0);
+  if (parts.length === 3) return (parts[0] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[2] ?? 0);
+  return 0;
+}
+
+export function reconstructVideo(content: string, file: string, mdPath: string): Video | null {
+  const videoId = parseFrontmatterField(content, 'video_id');
+  if (!videoId) return null;
+
+  const langRaw = parseFrontmatterField(content, 'lang');
+  const language = langRaw?.toLowerCase() === 'ko' ? 'ko' : 'en';
+
+  const scoreRaw = parseFrontmatterField(content, 'score');
+  const overallScore = parseFloat(scoreRaw ?? '3') || 3;
+  const rRaw = Math.max(1, Math.min(5, Math.round(overallScore)));
+  const r = rRaw as RatingValue;
+  const ratings = { usefulness: r, depth: r, originality: r, recency: r, completeness: r };
+
+  const urlMatch = content.match(/\*\*URL:\*\*\s*(https?:\/\/\S+)/);
+  const youtubeUrl = urlMatch?.[1] ?? `https://www.youtube.com/watch?v=${videoId}`;
+
+  const durMatch = content.match(/\*\*Duration:\*\*\s*([\d:]+)/);
+  const durationSeconds = durMatch ? parseDurationString(durMatch[1]) : 0;
+
+  const titleMatch = content.match(/^#\s+(.+)$/m);
+  const title = titleMatch?.[1]?.trim() ?? file.replace(/\.md$/, '');
+
+  const videoTypeRaw = parseFrontmatterField(content, 'type');
+  const audienceRaw = parseFrontmatterField(content, 'audience');
+  const channelRaw = parseFrontmatterField(content, 'channel');
+
+  const videoType = VALID_VIDEO_TYPES.includes(videoTypeRaw as VideoType)
+    ? (videoTypeRaw as VideoType) : undefined;
+  const audience = VALID_AUDIENCES.includes(audienceRaw as Audience)
+    ? (audienceRaw as Audience) : undefined;
+
+  const summaryMd = file;
+  const pdfFilename = file.replace(/\.md$/, '.pdf');
+  const pdfPath = path.join(path.dirname(mdPath), pdfFilename);
+  const summaryPdf = fs.existsSync(pdfPath) ? pdfFilename : null;
+
+  const processedAt = fs.statSync(mdPath).mtime.toISOString();
+
+  return {
+    id: videoId,
+    title,
+    youtubeUrl,
+    language,
+    durationSeconds,
+    archived: false,
+    ratings,
+    overallScore,
+    summaryMd,
+    summaryPdf,
+    deepDiveMd: null,
+    deepDivePdf: null,
+    processedAt,
+    ...(videoType !== undefined && { videoType }),
+    ...(audience !== undefined && { audience }),
+    ...(channelRaw ? { channel: channelRaw } : {}),
+  };
+}
+
+export function recoverOrphanedVideos(outputFolder: string, metas: VideoMeta[]): void {
+  const index = readIndex(outputFolder);
+  const indexedIds = new Set(index.videos.map((v) => v.id));
+  const playlistIds = new Set(metas.map((m) => m.videoId));
+
+  let files: string[];
+  try {
+    files = fs.readdirSync(outputFolder).filter(
+      (f) => f.endsWith('.md') && !f.includes('-deep-dive'),
+    );
+  } catch {
+    return;
+  }
+
+  for (const file of files) {
+    const mdPath = path.join(outputFolder, file);
+    try {
+      const content = fs.readFileSync(mdPath, 'utf-8');
+      const videoId = parseFrontmatterField(content, 'video_id');
+      if (!videoId || indexedIds.has(videoId) || !playlistIds.has(videoId)) continue;
+
+      const video = reconstructVideo(content, file, mdPath);
+      if (video) {
+        upsertVideo(outputFolder, video);
+        indexedIds.add(videoId);
+      }
+    } catch {
+      // Skip files that can't be parsed or indexed
+    }
+  }
+}
 
 export function slugify(title: string): string {
   return title
@@ -41,6 +146,9 @@ export async function runIngestion(
   // and would silently carry forward the empty string it gets from a new index.
   const existing = readIndex(outputFolder);
   writeIndex(outputFolder, { ...existing, playlistUrl, outputFolder });
+
+  // Recover any .md files written in a prior interrupted run before processing new videos.
+  recoverOrphanedVideos(outputFolder, metas);
 
   onProgress({ type: 'start', total });
 
@@ -100,9 +208,6 @@ export async function runIngestion(
 
       await fs.promises.writeFile(mdPath, mdContent, 'utf-8');
 
-      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating PDF…', current, total });
-      await generatePdf(mdContent, pdfPath);
-
       const video: Video = {
         id: meta.videoId,
         title: meta.title,
@@ -122,7 +227,11 @@ export async function runIngestion(
         ...(meta.channelTitle !== undefined && { channel: meta.channelTitle }),
         ...(tags !== undefined && { tags }),
       };
+      // Index updated immediately after md write — reduces orphan window to PDF generation only.
       upsertVideo(outputFolder, video);
+
+      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating PDF…', current, total });
+      await generatePdf(mdContent, pdfPath);
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Saved', current, total });
     } catch (err) {
