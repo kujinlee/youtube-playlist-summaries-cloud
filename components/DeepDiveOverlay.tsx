@@ -84,13 +84,17 @@ export default function DeepDiveOverlay({ videoId, jobId, onClose }: DeepDiveOve
   const progress = state.status === 'running' ? state.progress : state.status === 'done' ? 100 : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Deep Dive Progress"
         className="w-full max-w-lg rounded-xl bg-zinc-900 border border-zinc-800 p-6 shadow-2xl mx-4"
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-zinc-100">Deep Dive</h2>

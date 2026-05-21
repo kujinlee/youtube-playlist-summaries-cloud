@@ -166,7 +166,8 @@ describe('VideoRow', () => {
         openMenu();
         const link = screen.getByRole('link', { name: /open in obsidian/i });
         const expectedVault = encodeURIComponent(OUTPUT_FOLDER);
-        const expectedFile = encodeURIComponent('abc123');
+        // summaryMd is 'summary.md' → strip .md → 'summary'
+        const expectedFile = encodeURIComponent('summary');
         expect(link).toHaveAttribute(
           'href',
           `obsidian://open?vault=${expectedVault}&file=${expectedFile}`,
@@ -195,10 +196,11 @@ describe('VideoRow', () => {
     });
 
     describe('View Summary PDF', () => {
-      it('is a link pointing to /api/pdf/[id]?type=summary when summaryPdf is set', () => {
+      it('is a link pointing to /api/pdf/[id]?outputFolder=...&type=summary when summaryPdf is set', () => {
         openMenu({ summaryPdf: 'summary.pdf' });
         const link = screen.getByRole('link', { name: /view summary pdf/i });
-        expect(link).toHaveAttribute('href', '/api/pdf/abc123?type=summary');
+        const expected = `/api/pdf/abc123?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
+        expect(link).toHaveAttribute('href', expected);
       });
 
       it('is disabled when summaryPdf is null', () => {
@@ -275,10 +277,11 @@ describe('VideoRow', () => {
         expect(item).not.toHaveAttribute('aria-disabled', 'true');
       });
 
-      it('points to /api/pdf/[id]?type=deep-dive when enabled', () => {
+      it('points to /api/pdf/[id]?outputFolder=...&type=deep-dive when enabled', () => {
         openMenu({ deepDiveMd: 'abc123-deep-dive.md', deepDivePdf: 'abc123-deep-dive.pdf' });
         const link = screen.getByRole('link', { name: /view deep dive pdf/i });
-        expect(link).toHaveAttribute('href', '/api/pdf/abc123?type=deep-dive');
+        const expected = `/api/pdf/abc123?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=deep-dive`;
+        expect(link).toHaveAttribute('href', expected);
       });
     });
 

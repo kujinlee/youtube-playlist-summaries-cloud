@@ -20,7 +20,9 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive }
   const hasDeepDive = !!video.deepDiveMd;
   const hasSummaryPdf = !!video.summaryPdf;
   const hasDeepDivePdf = !!video.deepDivePdf;
-  const deepDiveFile = `${video.id}-deep-dive`;
+  const summaryFile = video.summaryMd?.replace(/\.md$/, '') ?? video.id;
+  const deepDiveFile = video.deepDiveMd?.replace(/\.md$/, '') ?? `${video.id}-deep-dive`;
+  const pdfBase = `/api/pdf/${encodeURIComponent(video.id)}?outputFolder=${encodeURIComponent(outputFolder)}`;
 
   return (
     <ul
@@ -28,13 +30,13 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive }
       className="absolute left-0 top-full z-20 mt-1 w-52 rounded-md bg-zinc-800 border border-zinc-700 shadow-xl py-1"
     >
       <li role="none">
-        <a href={obsidianHref(outputFolder, video.id)} className={itemClass}>
+        <a href={obsidianHref(outputFolder, summaryFile)} className={itemClass}>
           Open in Obsidian
         </a>
       </li>
       <li role="none">
         {hasSummaryPdf ? (
-          <a href={`/api/pdf/${video.id}?type=summary`} className={itemClass}>
+          <a href={`${pdfBase}&type=summary`} className={itemClass}>
             View Summary PDF
           </a>
         ) : (
@@ -73,7 +75,7 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive }
       </li>
       <li role="none">
         {hasDeepDivePdf ? (
-          <a href={`/api/pdf/${video.id}?type=deep-dive`} className={itemClass}>
+          <a href={`${pdfBase}&type=deep-dive`} className={itemClass}>
             View Deep Dive PDF
           </a>
         ) : (
