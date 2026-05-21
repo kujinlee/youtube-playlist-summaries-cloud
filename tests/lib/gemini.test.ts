@@ -110,6 +110,71 @@ describe('generateSummary', () => {
     await expect(generateSummary('transcript', 'en')).rejects.toThrow('Gemini summary failed');
   });
 
+  it('returns videoType and audience when Gemini includes them', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: {
+        text: () => JSON.stringify({
+          summary: 'test',
+          ratings: { usefulness: 4, depth: 3, originality: 5, recency: 4, completeness: 3 },
+          videoType: 'Tutorial',
+          audience: 'Advanced',
+        }),
+      },
+    });
+
+    const result = await generateSummary('transcript', 'en');
+
+    expect(result.videoType).toBe('Tutorial');
+    expect(result.audience).toBe('Advanced');
+  });
+
+  it('returns undefined videoType and audience when Gemini omits them', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: {
+        text: () => JSON.stringify({
+          summary: 'test',
+          ratings: { usefulness: 4, depth: 3, originality: 5, recency: 4, completeness: 3 },
+        }),
+      },
+    });
+
+    const result = await generateSummary('transcript', 'en');
+
+    expect(result.videoType).toBeUndefined();
+    expect(result.audience).toBeUndefined();
+  });
+
+  it('rejects invalid videoType value', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: {
+        text: () => JSON.stringify({
+          summary: 'test',
+          ratings: { usefulness: 1, depth: 1, originality: 1, recency: 1, completeness: 1 },
+          videoType: 'NotAValidType',
+        }),
+      },
+    });
+
+    await expect(generateSummary('transcript', 'en')).rejects.toThrow('Gemini summary failed');
+  });
+
+  it('includes videoType and audience in prompt instructions', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: {
+        text: () => JSON.stringify({
+          summary: 'test',
+          ratings: { usefulness: 1, depth: 1, originality: 1, recency: 1, completeness: 1 },
+        }),
+      },
+    });
+
+    await generateSummary('transcript', 'en');
+
+    const prompt = mockGenerateContent.mock.calls[0][0] as string;
+    expect(prompt).toMatch(/videoType/);
+    expect(prompt).toMatch(/audience/);
+  });
+
   it('rejects unexpected top-level fields in model response', async () => {
     mockGenerateContent.mockResolvedValueOnce({
       response: {

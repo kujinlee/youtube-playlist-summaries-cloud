@@ -134,6 +134,33 @@ describe('runIngestion', () => {
     );
   });
 
+  it('stores videoType and audience from generateSummary in the index entry', async () => {
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(
+      makeSummaryResponse({ videoType: 'Tutorial', audience: 'Advanced' }),
+    );
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ videoType: 'Tutorial', audience: 'Advanced' }),
+    );
+  });
+
+  it('omits videoType and audience from index entry when generateSummary does not return them', async () => {
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    const call = mockUpsertVideo.mock.calls[0][1];
+    expect(call.videoType).toBeUndefined();
+    expect(call.audience).toBeUndefined();
+  });
+
   it('stamps playlistUrl into the index before processing videos', async () => {
     mockFetchPlaylistVideos.mockResolvedValue([]);
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder, videos: [] });

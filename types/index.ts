@@ -16,6 +16,15 @@ export const RatingsSchema = z.object({
 });
 export type Ratings = z.infer<typeof RatingsSchema>;
 
+// --- VideoType and Audience: Gemini-classified fields ---
+export const VideoTypeSchema = z.enum([
+  'Tutorial', 'Analysis', 'Case Study', 'Framework', 'Demo', 'Interview',
+]);
+export type VideoType = z.infer<typeof VideoTypeSchema>;
+
+export const AudienceSchema = z.enum(['Beginner', 'Intermediate', 'Advanced']);
+export type Audience = z.infer<typeof AudienceSchema>;
+
 // --- VideoMeta: intermediate shape from YouTube API, before ratings/summary exist ---
 export const VideoMetaSchema = z.object({
   videoId: z.string(), // YouTube video ID (not the playlist item ID)
@@ -40,6 +49,8 @@ export const VideoSchema = z.object({
   deepDiveMd: z.string().nullable(),
   deepDivePdf: z.string().nullable(),
   processedAt: z.string().datetime(),
+  videoType: VideoTypeSchema.optional(),
+  audience: AudienceSchema.optional(),
 });
 export type Video = z.infer<typeof VideoSchema>;
 
@@ -86,6 +97,8 @@ export interface GeminiSummaryResponse {
   summary: string;
   ratings: Ratings;
   overallScore: number;
+  videoType?: VideoType;
+  audience?: Audience;
 }
 
 // --- Sort types for GET /api/videos ---

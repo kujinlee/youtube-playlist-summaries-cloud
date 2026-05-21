@@ -84,44 +84,70 @@ export default function DeepDiveOverlay({ videoId, jobId, onClose }: DeepDiveOve
   const progress = state.status === 'running' ? state.progress : state.status === 'done' ? 100 : 0;
 
   return (
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Deep Dive Progress">
-      <progress
-        role="progressbar"
-        aria-valuenow={progress}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        value={progress}
-        max={100}
-      />
-
-      {state.status === 'running' && state.step && <p>{state.step}</p>}
-
-      {state.status === 'done' && (
-        <p role="status">✓ Done</p>
-      )}
-
-      {state.status === 'error' && (
-        <>
-          <p role="alert">{state.message}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Deep Dive Progress"
+        className="w-full max-w-lg rounded-xl bg-zinc-900 border border-zinc-800 p-6 shadow-2xl mx-4"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-zinc-100">Deep Dive</h2>
           <button
             type="button"
-            aria-expanded={logsOpen}
-            aria-controls={LOG_PANEL_ID}
-            onClick={() => setLogsOpen((prev) => !prev)}
+            onClick={onClose}
+            className="text-zinc-400 hover:text-zinc-100 text-lg leading-none px-1"
+            aria-label="Close"
           >
-            {logsOpen ? 'Hide Logs' : 'Show Logs'}
+            ✕
           </button>
-          {logsOpen && (
-            <section id={LOG_PANEL_ID} aria-label="Logs">
-              <pre>{state.log}</pre>
-            </section>
-          )}
-        </>
-      )}
+        </div>
 
-      <button type="button" onClick={onClose}>
-        Close
-      </button>
+        {/* Progress bar */}
+        <div className="h-2 bg-zinc-700 rounded-full overflow-hidden mb-3">
+          <div
+            className="h-full bg-blue-600 rounded-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+            role="progressbar"
+            aria-valuenow={progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          />
+        </div>
+
+        {state.status === 'running' && state.step && (
+          <p className="text-xs text-zinc-400">{state.step}</p>
+        )}
+
+        {state.status === 'done' && (
+          <p role="status" className="text-xs text-green-400">✓ Done</p>
+        )}
+
+        {state.status === 'error' && (
+          <div className="space-y-2">
+            <p role="alert" className="text-xs text-red-400 flex items-start gap-1">
+              <span aria-hidden="true">⚠</span> {state.message}
+            </p>
+            <button
+              type="button"
+              aria-expanded={logsOpen}
+              aria-controls={LOG_PANEL_ID}
+              onClick={() => setLogsOpen((prev) => !prev)}
+              className="text-xs text-zinc-400 hover:text-zinc-100 underline"
+            >
+              {logsOpen ? 'Hide Logs' : 'Show Logs'}
+            </button>
+            {logsOpen && (
+              <section id={LOG_PANEL_ID} aria-label="Logs">
+                <pre className="text-xs text-zinc-400 bg-zinc-800 rounded p-3 overflow-auto max-h-40">
+                  {state.log}
+                </pre>
+              </section>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

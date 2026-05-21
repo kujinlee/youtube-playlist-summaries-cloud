@@ -28,15 +28,21 @@ const baseVideo: Video = {
 
 const OUTPUT_FOLDER = '/Users/test/vault';
 
+// VideoRow renders <tr> — jsdom requires a table/tbody wrapper for correct DOM structure
 function renderRow(overrides: Partial<Video> = {}, onDeepDive = jest.fn(), onArchive = jest.fn()) {
   const video = { ...baseVideo, ...overrides };
   render(
-    <VideoRow
-      video={video}
-      outputFolder={OUTPUT_FOLDER}
-      onDeepDive={onDeepDive}
-      onArchive={onArchive}
-    />,
+    <table>
+      <tbody>
+        <VideoRow
+          video={video}
+          rank={1}
+          outputFolder={OUTPUT_FOLDER}
+          onDeepDive={onDeepDive}
+          onArchive={onArchive}
+        />
+      </tbody>
+    </table>,
   );
   return { onDeepDive, onArchive, video };
 }
@@ -64,19 +70,49 @@ describe('VideoRow', () => {
       expect(screen.getByText('KO')).toBeInTheDocument();
     });
 
-    it('renders all 6 rating labels with values', () => {
+    it('renders all 6 rating values in their respective cells', () => {
       renderRow();
-      expect(screen.getByText(/USE.*4/)).toBeInTheDocument();
-      expect(screen.getByText(/DPT.*3/)).toBeInTheDocument();
-      expect(screen.getByText(/ORI.*5/)).toBeInTheDocument();
-      expect(screen.getByText(/RCN.*2/)).toBeInTheDocument();
-      expect(screen.getByText(/CMP.*3/)).toBeInTheDocument();
-      expect(screen.getByText(/OVR.*3\.4/)).toBeInTheDocument();
+      expect(screen.getByRole('cell', { name: 'Usefulness' })).toHaveTextContent('4');
+      expect(screen.getByRole('cell', { name: 'Depth' })).toHaveTextContent('3');
+      expect(screen.getByRole('cell', { name: 'Originality' })).toHaveTextContent('5');
+      expect(screen.getByRole('cell', { name: 'Recency' })).toHaveTextContent('2');
+      expect(screen.getByRole('cell', { name: 'Completeness' })).toHaveTextContent('3');
+      expect(screen.getByRole('cell', { name: 'Overall' })).toHaveTextContent('3.4');
     });
 
     it('renders a menu toggle button', () => {
       renderRow();
       expect(screen.getByRole('button', { name: /menu/i })).toBeInTheDocument();
+    });
+
+    it('applies opacity-40 to the row when video is archived', () => {
+      renderRow({ archived: true });
+      expect(screen.getByRole('row')).toHaveClass('opacity-40');
+    });
+
+    it('does not apply opacity-40 when video is not archived', () => {
+      renderRow({ archived: false });
+      expect(screen.getByRole('row')).not.toHaveClass('opacity-40');
+    });
+
+    it('renders videoType badge when videoType is set', () => {
+      renderRow({ videoType: 'Tutorial' });
+      expect(screen.getByText('Tutorial')).toBeInTheDocument();
+    });
+
+    it('renders no videoType badge when videoType is undefined', () => {
+      renderRow({ videoType: undefined });
+      expect(screen.queryByText('Tutorial')).not.toBeInTheDocument();
+    });
+
+    it('renders audience badge when audience is set', () => {
+      renderRow({ audience: 'Advanced' });
+      expect(screen.getByText('Advanced')).toBeInTheDocument();
+    });
+
+    it('renders no audience badge when audience is undefined', () => {
+      renderRow({ audience: undefined });
+      expect(screen.queryByText('Advanced')).not.toBeInTheDocument();
     });
   });
 
@@ -140,12 +176,17 @@ describe('VideoRow', () => {
       it('encodes special characters in outputFolder', () => {
         const specialFolder = '/Users/test/my vault & notes';
         render(
-          <VideoRow
-            video={baseVideo}
-            outputFolder={specialFolder}
-            onDeepDive={jest.fn()}
-            onArchive={jest.fn()}
-          />,
+          <table>
+            <tbody>
+              <VideoRow
+                video={baseVideo}
+                rank={1}
+                outputFolder={specialFolder}
+                onDeepDive={jest.fn()}
+                onArchive={jest.fn()}
+              />
+            </tbody>
+          </table>,
         );
         fireEvent.click(screen.getByRole('button', { name: /menu/i }));
         const link = screen.getByRole('link', { name: /open in obsidian/i });

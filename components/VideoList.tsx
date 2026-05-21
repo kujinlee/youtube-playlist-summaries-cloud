@@ -11,6 +11,8 @@ interface VideoListProps {
   onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
 }
 
+const TH = 'px-3 py-2 text-xs font-medium text-zinc-400 uppercase';
+
 export default function VideoList({
   videos,
   outputFolder,
@@ -23,18 +25,34 @@ export default function VideoList({
   if (visible.length === 0) return null;
 
   return (
-    <ul aria-label="Video list">
-      {visible.map((video) => (
-        <li key={video.id} className={video.archived ? 'opacity-50' : undefined}>
-          {video.archived && <span className="sr-only">Archived</span>}
+    <table className="w-full border-collapse">
+      <thead>
+        <tr className="border-b border-zinc-800">
+          <th className={`${TH} text-left`}>#</th>
+          <th className={`${TH} text-left`}>Title</th>
+          <th className={`${TH} text-left`}>Lang</th>
+          <th className={`${TH} text-left`}>Type</th>
+          <th className={`${TH} text-left`}>Audience</th>
+          <th className={`${TH} text-right`}>USE</th>
+          <th className={`${TH} text-right`}>DPT</th>
+          <th className={`${TH} text-right`}>ORI</th>
+          <th className={`${TH} text-right`}>RCN</th>
+          <th className={`${TH} text-right`}>CMP</th>
+          <th className={`${TH} text-right`}>OVR</th>
+        </tr>
+      </thead>
+      <tbody>
+        {visible.map((video, i) => (
           <VideoRow
+            key={video.id}
             video={video}
+            rank={i + 1}
             outputFolder={outputFolder}
             onDeepDive={onDeepDive}
             onArchive={onArchive}
           />
-        </li>
-      ))}
-    </ul>
+        ))}
+      </tbody>
+    </table>
   );
 }

@@ -28,7 +28,7 @@ export default function SortBar({ activeColumn, order, onSort }: SortBarProps) {
   }
 
   return (
-    <nav aria-label="Sort columns">
+    <nav aria-label="Sort columns" className="flex flex-wrap gap-1">
       {COLUMNS.map(({ label, column, fullName }) => {
         const isActive = column === activeColumn;
         const arrow = isActive ? (order === 'asc' ? '↑' : '↓') : '';
@@ -43,9 +43,14 @@ export default function SortBar({ activeColumn, order, onSort }: SortBarProps) {
             aria-label={`${fullName}${directionLabel}`}
             aria-pressed={isActive}
             onClick={() => handleClick(column)}
+            className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+              isActive
+                ? 'bg-blue-600 text-white'
+                : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
+            }`}
           >
             {label}
-            {arrow && <span aria-hidden="true">{arrow}</span>}
+            {arrow && <span aria-hidden="true"> {arrow}</span>}
           </button>
         );
       })}

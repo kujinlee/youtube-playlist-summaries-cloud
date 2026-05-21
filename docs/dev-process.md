@@ -36,6 +36,7 @@ These files are not @-included — read them when the trigger condition is met.
 1. **Brainstorming** → `docs/design-spec.md`
    - Dialogue → spec → `grill-with-docs` (terminology + CONTEXT.md) → Codex adversarial review
    - Gate: grill-with-docs + adversarial review + user approval
+   - **For projects with a frontend:** brainstorming includes wireframe + design tokens. `docs/design-spec.md` must contain a `## UI Design` section (ASCII wireframe, token table, badge/component specs) before any Tailwind or styling code is written. The gate is unchanged — user approves the full spec, which now includes the UI section.
 
 2. **Writing Plans** → `docs/implementation-plan.md`
    - Codex adversarial review (plan)

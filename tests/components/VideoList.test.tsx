@@ -7,18 +7,21 @@ import type { Video } from '@/types';
 jest.mock('@/components/VideoRow', () => {
   const MockVideoRow = ({
     video,
+    rank,
     outputFolder,
     onDeepDive,
     onArchive,
   }: {
     video: Video;
+    rank: number;
     outputFolder: string;
     onDeepDive: (videoId: string) => void;
     onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
   }) => (
-    <div
+    <tr
       data-testid="video-row"
       data-video-id={video.id}
+      data-rank={rank}
       data-output-folder={outputFolder}
       onClick={() => {
         onDeepDive(video.id);
@@ -74,7 +77,7 @@ describe('VideoList — core rendering', () => {
   it('renders nothing when videos array is empty', () => {
     const { container } = renderList({ videos: [] });
     expect(screen.queryByTestId('video-row')).toBeNull();
-    expect(container.querySelector('ul')).toBeNull();
+    expect(container.querySelector('table')).toBeNull();
   });
 
   it('passes video and outputFolder props through to VideoRow (prop-forwarding)', () => {
@@ -82,6 +85,14 @@ describe('VideoList — core rendering', () => {
     const row = screen.getByTestId('video-row');
     expect(row).toHaveAttribute('data-video-id', 'v1');
     expect(row).toHaveAttribute('data-output-folder', OUTPUT_FOLDER);
+  });
+
+  it('passes 1-indexed rank to each VideoRow', () => {
+    renderList({ videos: [makeVideo('v1'), makeVideo('v2'), makeVideo('v3')] });
+    const rows = screen.getAllByTestId('video-row');
+    expect(rows[0]).toHaveAttribute('data-rank', '1');
+    expect(rows[1]).toHaveAttribute('data-rank', '2');
+    expect(rows[2]).toHaveAttribute('data-rank', '3');
   });
 
   it('threads onDeepDive callback to VideoRow (prop-forwarding)', () => {
@@ -103,7 +114,7 @@ describe('VideoList — archive filtering (showArchive=false)', () => {
   it('hides archived rows by default', () => {
     const { container } = renderList({ videos: [makeVideo('a1', true)] });
     expect(screen.queryByTestId('video-row')).toBeNull();
-    expect(container.querySelector('ul')).toBeNull();
+    expect(container.querySelector('table')).toBeNull();
   });
 
   it('shows non-archived rows when an archived row is also present', () => {
@@ -116,7 +127,7 @@ describe('VideoList — archive filtering (showArchive=false)', () => {
   it('renders nothing when all videos are archived', () => {
     const { container } = renderList({ videos: [makeVideo('a1', true), makeVideo('a2', true)] });
     expect(screen.queryByTestId('video-row')).toBeNull();
-    expect(container.querySelector('ul')).toBeNull();
+    expect(container.querySelector('table')).toBeNull();
   });
 });
 
@@ -124,23 +135,6 @@ describe('VideoList — archive visibility (showArchive=true)', () => {
   it('shows archived rows in the DOM when showArchive=true', () => {
     renderList({ videos: [makeVideo('a1', true)], showArchive: true });
     expect(screen.getByTestId('video-row')).toBeInTheDocument();
-  });
-
-  it('archived li carries opacity-50 class when showArchive=true', () => {
-    renderList({ videos: [makeVideo('a1', true)], showArchive: true });
-    const row = screen.getByTestId('video-row');
-    expect(row.closest('li')).toHaveClass('opacity-50');
-  });
-
-  it('non-archived li does not carry opacity-50 class when showArchive=true', () => {
-    renderList({ videos: [makeVideo('v1', false)], showArchive: true });
-    const row = screen.getByTestId('video-row');
-    expect(row.closest('li')).not.toHaveClass('opacity-50');
-  });
-
-  it('archived li includes visually hidden "Archived" text for screen readers', () => {
-    renderList({ videos: [makeVideo('a1', true)], showArchive: true });
-    expect(screen.getByText('Archived')).toBeInTheDocument();
   });
 
   it('toggles archived row visibility when showArchive changes', () => {

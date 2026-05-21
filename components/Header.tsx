@@ -23,21 +23,27 @@ export default function Header({ defaultOutputFolder, onIngest, disabled = false
   }
 
   return (
-    <header>
-      <form onSubmit={handleSubmit}>
+    <header className="bg-zinc-900 border-b border-zinc-800 px-6 py-4">
+      <form onSubmit={handleSubmit} className="flex gap-3 items-center">
         <input
           type="text"
           placeholder="Playlist URL"
           value={playlistUrl}
           onChange={(e) => setPlaylistUrl(e.target.value)}
+          className="flex-1 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <input
           type="text"
           placeholder="Output folder"
           value={outputFolder}
           onChange={(e) => setOutputFolder(e.target.value)}
+          className="w-52 rounded bg-zinc-800 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <button type="submit" disabled={disabled || playlistUrl.trim() === ''}>
+        <button
+          type="submit"
+          disabled={disabled || playlistUrl.trim() === ''}
+          className="rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-2 text-sm font-medium text-white transition-colors"
+        >
           Fetch &amp; Summarize
         </button>
       </form>

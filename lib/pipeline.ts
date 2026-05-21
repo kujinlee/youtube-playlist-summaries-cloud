@@ -39,7 +39,7 @@ export async function runIngestion(
       const language = detectLanguage(transcript);
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current, total });
-      const { summary, ratings, overallScore } = await generateSummary(transcript, language);
+      const { summary, ratings, overallScore, videoType, audience } = await generateSummary(transcript, language);
 
       const mdContent = `# ${meta.title}\n\n${summary}`;
       const mdPath = path.join(outputFolder, `${meta.videoId}.md`);
@@ -63,6 +63,8 @@ export async function runIngestion(
         deepDiveMd: null,
         deepDivePdf: null,
         processedAt: new Date().toISOString(),
+        ...(videoType !== undefined && { videoType }),
+        ...(audience !== undefined && { audience }),
       };
       upsertVideo(outputFolder, video);
 

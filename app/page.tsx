@@ -211,8 +211,15 @@ export default function Page() {
   // Cleanup ingest SSE on unmount
   useEffect(() => () => { ingestESRef.current?.close(); }, []);
 
+  // Stats computed client-side from current video list
+  const totalVideos = videos.length;
+  const avgScore = totalVideos > 0
+    ? (videos.reduce((sum, v) => sum + v.overallScore, 0) / totalVideos).toFixed(2)
+    : '—';
+  const koreanCount = videos.filter((v) => v.language === 'ko').length;
+
   return (
-    <main>
+    <main className="min-h-screen bg-zinc-950">
       <Header
         defaultOutputFolder={outputFolder}
         onIngest={handleIngest}
@@ -220,45 +227,71 @@ export default function Page() {
       />
 
       {ingest.status !== 'idle' && (
-        <section aria-label="Ingestion progress">
+        <section aria-label="Ingestion progress" className="bg-zinc-900 px-6 py-3 border-b border-zinc-800">
           {ingest.status === 'running' && (
-            <div role="status" aria-live="polite">
-              <progress
-                role="progressbar"
-                aria-valuenow={ingest.progress}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                value={ingest.progress}
-                max={100}
-              />
-              {ingest.step && <p>{ingest.step}</p>}
+            <div role="status" aria-live="polite" className="space-y-1">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-2 bg-zinc-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                    style={{ width: `${ingest.progress}%` }}
+                    role="progressbar"
+                    aria-valuenow={ingest.progress}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  />
+                </div>
+                <span className="text-xs tabular-nums text-zinc-400 w-8 text-right">{ingest.progress}%</span>
+              </div>
+              {ingest.step && <p className="text-xs text-zinc-400">{ingest.step}</p>}
             </div>
           )}
-          {ingest.error && <p role="alert">{ingest.error}</p>}
+          {ingest.error && <p role="alert" className="text-xs text-red-400 mt-1">{ingest.error}</p>}
           {ingest.status === 'error' && !ingest.error && (
-            <p role="alert">Ingestion failed.</p>
+            <p role="alert" className="text-xs text-red-400">Ingestion failed.</p>
           )}
         </section>
       )}
 
-      <SortBar activeColumn={sortColumn} order={sortOrder} onSort={handleSort} />
+      {/* Stats bar */}
+      <section aria-label="Statistics" className="px-6 py-4 flex gap-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
+          <p className="text-xl font-semibold tabular-nums text-zinc-50">{totalVideos}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Total videos</p>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
+          <p className="text-xl font-semibold tabular-nums text-zinc-50">{avgScore}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Avg score</p>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
+          <p className="text-xl font-semibold tabular-nums text-zinc-50">{koreanCount}</p>
+          <p className="text-xs text-zinc-400 mt-0.5">Korean</p>
+        </div>
+      </section>
 
-      <label>
-        <input
-          type="checkbox"
-          checked={showArchive}
-          onChange={(e) => setShowArchive(e.target.checked)}
+      {/* Controls row */}
+      <div className="flex items-center justify-between px-6 py-2 border-b border-zinc-800">
+        <SortBar activeColumn={sortColumn} order={sortOrder} onSort={handleSort} />
+        <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showArchive}
+            onChange={(e) => setShowArchive(e.target.checked)}
+            className="rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
+          />
+          Show Archive
+        </label>
+      </div>
+
+      <div className="px-6 py-4">
+        <VideoList
+          videos={videos}
+          outputFolder={outputFolder}
+          showArchive={showArchive}
+          onDeepDive={handleDeepDive}
+          onArchive={handleArchive}
         />
-        {' '}Show Archive
-      </label>
-
-      <VideoList
-        videos={videos}
-        outputFolder={outputFolder}
-        showArchive={showArchive}
-        onDeepDive={handleDeepDive}
-        onArchive={handleArchive}
-      />
+      </div>
 
       {deepDive && (
         <DeepDiveOverlay
