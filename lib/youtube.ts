@@ -50,12 +50,15 @@ export async function fetchPlaylistVideos(playlistUrl: string, apiKey: string): 
       videos.push({
         videoId: item.id,
         title: item.snippet?.title ?? '',
+        channelTitle: item.snippet?.channelTitle ?? undefined,
         youtubeUrl: `https://www.youtube.com/watch?v=${item.id}`,
         durationSeconds: parseDuration(item.contentDetails?.duration ?? ''),
       });
     }
   }
-  return videos;
+  // videos.list doesn't guarantee response order matches input — restore playlist order
+  const videoMap = new Map(videos.map((v) => [v.videoId, v]));
+  return videoIds.map((id) => videoMap.get(id)).filter(Boolean) as VideoMeta[];
 }
 
 export async function fetchTranscript(videoId: string): Promise<string> {

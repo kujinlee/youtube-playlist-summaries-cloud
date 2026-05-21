@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { assertOutputFolder, readIndex } from '../../../lib/index-store';
 import type { SortColumn, SortOrder, Video } from '../../../types';
 
+const AUDIENCE_ORDER: Record<string, number> = { Beginner: 1, Intermediate: 2, Advanced: 3 };
+
 function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Video[] {
   const sorted = [...videos].sort((a, b) => {
     let aVal: string | number;
@@ -12,6 +14,15 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
     } else if (column === 'overall') {
       aVal = a.overallScore;
       bVal = b.overallScore;
+    } else if (column === 'language') {
+      aVal = a.language ?? '';
+      bVal = b.language ?? '';
+    } else if (column === 'videoType') {
+      aVal = a.videoType ?? '';
+      bVal = b.videoType ?? '';
+    } else if (column === 'audience') {
+      aVal = AUDIENCE_ORDER[a.audience ?? ''] ?? 0;
+      bVal = AUDIENCE_ORDER[b.audience ?? ''] ?? 0;
     } else {
       aVal = a.ratings[column];
       bVal = b.ratings[column];

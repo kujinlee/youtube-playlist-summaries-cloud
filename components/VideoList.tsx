@@ -25,7 +25,7 @@ export default function VideoList({
   if (visible.length === 0) return null;
 
   return (
-    <table className="w-full border-collapse">
+    <table className="w-full border-collapse" aria-label="Video list">
       <thead>
         <tr className="border-b border-zinc-800">
           <th className={`${TH} text-left`}>#</th>

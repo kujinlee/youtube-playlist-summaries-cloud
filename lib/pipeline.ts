@@ -6,6 +6,23 @@ import { generatePdf } from './pdf';
 import { assertOutputFolder, assertVideoId, upsertVideo, readIndex, writeIndex } from './index-store';
 import type { ProgressEvent, Video } from '../types';
 
+export function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+export function formatDuration(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export async function runIngestion(
   playlistUrl: string,
   outputFolder: string,
@@ -39,13 +56,50 @@ export async function runIngestion(
       const language = detectLanguage(transcript);
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current, total });
-      const { summary, ratings, overallScore, videoType, audience } = await generateSummary(transcript, language);
+      const { summary, ratings, overallScore, videoType, audience, tags } = await generateSummary(transcript, language);
 
-      const mdContent = `# ${meta.title}\n\n${summary}`;
-      const mdPath = path.join(outputFolder, `${meta.videoId}.md`);
+      const rank = String(i + 1).padStart(3, '0');
+      const slug = slugify(meta.title);
+      const baseName = `${rank}_${slug}`;
+      const mdPath = path.join(outputFolder, `${baseName}.md`);
+      const pdfPath = path.join(outputFolder, `${baseName}.pdf`);
+
+      const structuralTags = ['video-summary', language];
+      const allTags = [...structuralTags, ...(tags ?? [])];
+
+      const frontmatterLines = [
+        '---',
+        'tags:',
+        ...allTags.map((t) => `  - ${t}`),
+        `video_id: "${meta.videoId}"`,
+        ...(meta.channelTitle ? [`channel: "${meta.channelTitle}"`] : []),
+        `lang: ${language.toUpperCase()}`,
+        ...(videoType ? [`type: ${videoType}`] : []),
+        ...(audience ? [`audience: ${audience}`] : []),
+        `score: ${overallScore}`,
+        '---',
+      ];
+
+      const metaParts = [
+        meta.channelTitle && `**Channel:** ${meta.channelTitle}`,
+        `**Duration:** ${formatDuration(meta.durationSeconds)}`,
+        `**URL:** ${meta.youtubeUrl}`,
+      ].filter(Boolean).join(' | ');
+
+      const mdContent = [
+        frontmatterLines.join('\n'),
+        '',
+        `# ${meta.title}`,
+        '',
+        metaParts,
+        '',
+        '---',
+        '',
+        summary,
+      ].join('\n');
+
       await fs.promises.writeFile(mdPath, mdContent, 'utf-8');
 
-      const pdfPath = path.join(outputFolder, `${meta.videoId}.pdf`);
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating PDF…', current, total });
       await generatePdf(mdContent, pdfPath);
 
@@ -58,13 +112,15 @@ export async function runIngestion(
         archived: false,
         ratings,
         overallScore,
-        summaryMd: `${meta.videoId}.md`,
-        summaryPdf: `${meta.videoId}.pdf`,
+        summaryMd: `${baseName}.md`,
+        summaryPdf: `${baseName}.pdf`,
         deepDiveMd: null,
         deepDivePdf: null,
         processedAt: new Date().toISOString(),
         ...(videoType !== undefined && { videoType }),
         ...(audience !== undefined && { audience }),
+        ...(meta.channelTitle !== undefined && { channel: meta.channelTitle }),
+        ...(tags !== undefined && { tags }),
       };
       upsertVideo(outputFolder, video);
 

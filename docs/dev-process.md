@@ -37,6 +37,8 @@ These files are not @-included — read them when the trigger condition is met.
    - Dialogue → spec → `grill-with-docs` (terminology + CONTEXT.md) → Codex adversarial review
    - Gate: grill-with-docs + adversarial review + user approval
    - **For projects with a frontend:** brainstorming includes wireframe + design tokens. `docs/design-spec.md` must contain a `## UI Design` section (ASCII wireframe, token table, badge/component specs) before any Tailwind or styling code is written. The gate is unchanged — user approves the full spec, which now includes the UI section.
+   - **For projects that write files:** `docs/design-spec.md` must contain a `## Output File Format` section with: filename convention (with example), required frontmatter/header fields, and an annotated sample file body. No pipeline or file-writing task begins until this section is approved.
+   - **For projects with a list/table UI:** `docs/design-spec.md` must enumerate every sort, filter, and grouping operation the user needs — column, direction semantics, and what undefined/missing values do. Discovering missing operations after implementation counts as a spec gap.
 
 2. **Writing Plans** → `docs/implementation-plan.md`
    - Codex adversarial review (plan)

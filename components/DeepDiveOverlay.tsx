@@ -105,14 +105,16 @@ export default function DeepDiveOverlay({ videoId, jobId, onClose }: DeepDiveOve
         </div>
 
         {/* Progress bar */}
-        <div className="h-2 bg-zinc-700 rounded-full overflow-hidden mb-3">
+        <div
+          className="h-2 bg-zinc-700 rounded-full overflow-hidden mb-3"
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
           <div
             className="h-full bg-blue-600 rounded-full transition-all duration-300"
             style={{ width: `${progress}%` }}
-            role="progressbar"
-            aria-valuenow={progress}
-            aria-valuemin={0}
-            aria-valuemax={100}
           />
         </div>
 

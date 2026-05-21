@@ -9,7 +9,7 @@ jest.mock('../../lib/gemini');
 jest.mock('../../lib/pdf');
 jest.mock('../../lib/index-store');
 
-import { runIngestion } from '../../lib/pipeline';
+import { runIngestion, slugify, formatDuration } from '../../lib/pipeline';
 import * as youtube from '../../lib/youtube';
 import * as gemini from '../../lib/gemini';
 import * as pdf from '../../lib/pdf';
@@ -171,5 +171,116 @@ describe('runIngestion', () => {
       outputFolder,
       expect.objectContaining({ playlistUrl: PLAYLIST_URL }),
     );
+  });
+
+  it('uses rank-prefixed slug filename for first video (i=0 → 001)', async () => {
+    const meta = { ...makeVideoMeta('vid1'), title: 'Hello World' };
+    mockFetchPlaylistVideos.mockResolvedValue([meta]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({
+        summaryMd: expect.stringMatching(/^001_hello-world\.md$/),
+        summaryPdf: expect.stringMatching(/^001_hello-world\.pdf$/),
+      }),
+    );
+  });
+
+  it('writes markdown file starting with YAML frontmatter (--- tags:)', async () => {
+    const meta = { ...makeVideoMeta('vid1'), title: 'Test Video', channelTitle: 'Test Channel' };
+    mockFetchPlaylistVideos.mockResolvedValue([meta]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(
+      makeSummaryResponse({ videoType: 'Tutorial', audience: 'Beginner', tags: ['ml', 'python'] }),
+    );
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    const files = fs.readdirSync(outputFolder).filter((f) => f.endsWith('.md'));
+    expect(files).toHaveLength(1);
+    const content = fs.readFileSync(path.join(outputFolder, files[0]), 'utf-8');
+    expect(content).toMatch(/^---\ntags:/);
+    expect(content).toMatch(/video_id: "vid1"/);
+    expect(content).toMatch(/channel: "Test Channel"/);
+    expect(content).toMatch(/lang: EN/);
+    expect(content).toMatch(/type: Tutorial/);
+    expect(content).toMatch(/audience: Beginner/);
+    expect(content).toMatch(/score:/);
+  });
+
+  it('omits channel line from frontmatter when channelTitle is absent', async () => {
+    const meta = makeVideoMeta('vid1');
+    mockFetchPlaylistVideos.mockResolvedValue([meta]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    const files = fs.readdirSync(outputFolder).filter((f) => f.endsWith('.md'));
+    const content = fs.readFileSync(path.join(outputFolder, files[0]), 'utf-8');
+    expect(content).not.toMatch(/^channel:/m);
+  });
+
+  it('always includes video-summary structural tag in frontmatter', async () => {
+    const meta = makeVideoMeta('vid1');
+    mockFetchPlaylistVideos.mockResolvedValue([meta]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    const files = fs.readdirSync(outputFolder).filter((f) => f.endsWith('.md'));
+    const content = fs.readFileSync(path.join(outputFolder, files[0]), 'utf-8');
+    expect(content).toMatch(/- video-summary/);
+  });
+
+  it('stores channel and tags from generateSummary in the index entry', async () => {
+    const meta = { ...makeVideoMeta('vid1'), channelTitle: 'MyChannel' };
+    mockFetchPlaylistVideos.mockResolvedValue([meta]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse({ tags: ['react', 'hooks'] }));
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ channel: 'MyChannel', tags: ['react', 'hooks'] }),
+    );
+  });
+});
+
+describe('slugify', () => {
+  it('lowercases and replaces spaces/punctuation with hyphens', () => {
+    expect(slugify('Hello World!')).toBe('hello-world');
+  });
+
+  it('handles Unicode letters (Korean)', () => {
+    expect(slugify('안녕 World')).toBe('안녕-world');
+  });
+
+  it('truncates to 60 characters', () => {
+    expect(slugify('A'.repeat(80))).toHaveLength(60);
+  });
+
+  it('strips leading/trailing hyphens', () => {
+    expect(slugify('  hello  ')).toBe('hello');
+  });
+});
+
+describe('formatDuration', () => {
+  it('formats seconds-only as M:SS', () => {
+    expect(formatDuration(45)).toBe('0:45');
+  });
+
+  it('formats minutes and seconds as M:SS', () => {
+    expect(formatDuration(300)).toBe('5:00');
+  });
+
+  it('formats hours as H:MM:SS', () => {
+    expect(formatDuration(3661)).toBe('1:01:01');
   });
 });

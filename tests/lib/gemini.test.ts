@@ -188,6 +188,55 @@ describe('generateSummary', () => {
 
     await expect(generateSummary('transcript', 'en')).rejects.toThrow('Gemini summary failed');
   });
+
+  it('returns tags array when Gemini includes them', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: {
+        text: () => JSON.stringify({
+          summary: 'test',
+          ratings: { usefulness: 4, depth: 3, originality: 5, recency: 4, completeness: 3 },
+          tags: ['machine-learning', 'neural-networks', 'backpropagation'],
+        }),
+      },
+    });
+
+    const result = await generateSummary('transcript', 'en');
+
+    expect(result.tags).toEqual(['machine-learning', 'neural-networks', 'backpropagation']);
+  });
+
+  it('returns undefined tags when Gemini omits them', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: {
+        text: () => JSON.stringify({
+          summary: 'test',
+          ratings: { usefulness: 4, depth: 3, originality: 5, recency: 4, completeness: 3 },
+        }),
+      },
+    });
+
+    const result = await generateSummary('transcript', 'en');
+
+    expect(result.tags).toBeUndefined();
+  });
+
+  it('includes tags and structured ## section instructions in prompt', async () => {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: {
+        text: () => JSON.stringify({
+          summary: 'test',
+          ratings: { usefulness: 1, depth: 1, originality: 1, recency: 1, completeness: 1 },
+        }),
+      },
+    });
+
+    await generateSummary('transcript', 'en');
+
+    const prompt = mockGenerateContent.mock.calls[0][0] as string;
+    expect(prompt).toMatch(/tags/);
+    expect(prompt).toMatch(/## 1\./);
+    expect(prompt).toMatch(/Conclusion/);
+  });
 });
 
 describe('generateDeepDive', () => {

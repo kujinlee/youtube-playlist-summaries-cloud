@@ -165,7 +165,7 @@ test.describe('playlist viewer', () => {
     await expect(page.getByRole('progressbar')).toBeVisible();
 
     // After done: video list populated, progress hidden
-    await expect(page.getByRole('list', { name: /video list/i })).toBeVisible();
+    await expect(page.getByRole('table', { name: /video list/i })).toBeVisible();
     await expect(page.getByText('Test Video')).toBeVisible();
     await expect(page.getByRole('progressbar')).not.toBeVisible();
   });
@@ -188,9 +188,10 @@ test.describe('playlist viewer', () => {
     await page.goto('/');
     await expect(page.getByText('Test Video')).toBeVisible();
 
-    await page.getByRole('button', { name: /overall/i }).click();
-
-    await page.waitForResponse((resp) => resp.url().includes('sortColumn=overall') && resp.status() === 200);
+    await Promise.all([
+      page.waitForResponse((resp) => resp.url().includes('sortColumn=overall') && resp.status() === 200),
+      page.getByRole('button', { name: /overall/i }).click(),
+    ]);
 
     expect(sortedUrls.some((u) => u.includes('sortColumn=overall'))).toBe(true);
   });
@@ -255,9 +256,9 @@ test.describe('playlist viewer', () => {
     await page.getByRole('button', { name: 'Menu' }).click();
     await page.getByRole('button', { name: 'Archive' }).click();
 
-    // Row should have opacity-50 class (greyed)
-    const listItem = page.getByRole('listitem').first();
-    await expect(listItem).toHaveClass(/opacity-50/);
+    // Row should have opacity-40 class (greyed) — table row, not list item
+    const row = page.locator('tbody tr').first();
+    await expect(row).toHaveClass(/opacity-40/);
 
     // Verify archive POST body contained correct action and outputFolder
     expect(archiveRequestBody).toMatchObject({ action: 'archive', outputFolder: OUTPUT_FOLDER });
@@ -342,7 +343,7 @@ test.describe('playlist viewer', () => {
     await page.getByPlaceholder('Playlist URL').fill('https://youtube.com/playlist?list=PL123');
     await page.getByRole('button', { name: /fetch/i }).click();
 
-    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.locator('[role="alert"]').filter({ hasText: /error/i })).toBeVisible();
     await expect(page.getByRole('progressbar')).not.toBeVisible();
     expect(streamOpened).toBe(false);
   });

@@ -30,7 +30,7 @@ describe('fetchPlaylistVideos', () => {
       data: {
         items: [{
           id: 'abc12345678',
-          snippet: { title: 'Test Video' },
+          snippet: { title: 'Test Video', channelTitle: 'Test Channel' },
           contentDetails: { duration: 'PT5M' },
         }],
       },
@@ -45,9 +45,63 @@ describe('fetchPlaylistVideos', () => {
     expect(result[0]).toEqual({
       videoId: 'abc12345678',
       title: 'Test Video',
+      channelTitle: 'Test Channel',
       youtubeUrl: 'https://www.youtube.com/watch?v=abc12345678',
       durationSeconds: 300,
     });
+  });
+
+  it('omits channelTitle when snippet has none', async () => {
+    mockPlaylistItemsList.mockResolvedValue({
+      data: { items: [{ contentDetails: { videoId: 'abc12345678' } }], nextPageToken: null },
+    });
+    mockVideosList.mockResolvedValue({
+      data: {
+        items: [{
+          id: 'abc12345678',
+          snippet: { title: 'Test Video' },
+          contentDetails: { duration: 'PT5M' },
+        }],
+      },
+    });
+
+    const result = await fetchPlaylistVideos(
+      'https://www.youtube.com/playlist?list=PLtest123',
+      'fake-api-key',
+    );
+
+    expect(result[0].channelTitle).toBeUndefined();
+  });
+
+  it('preserves playlist order even when videos.list returns items out of order', async () => {
+    mockPlaylistItemsList.mockResolvedValue({
+      data: {
+        items: [
+          { contentDetails: { videoId: 'first111111' } },
+          { contentDetails: { videoId: 'second11111' } },
+          { contentDetails: { videoId: 'third111111' } },
+        ],
+        nextPageToken: null,
+      },
+    });
+    // API returns them reversed
+    mockVideosList.mockResolvedValue({
+      data: {
+        items: [
+          { id: 'third111111', snippet: { title: 'Third' }, contentDetails: { duration: 'PT1M' } },
+          { id: 'first111111', snippet: { title: 'First' }, contentDetails: { duration: 'PT1M' } },
+          { id: 'second11111', snippet: { title: 'Second' }, contentDetails: { duration: 'PT1M' } },
+        ],
+      },
+    });
+
+    const result = await fetchPlaylistVideos(
+      'https://www.youtube.com/playlist?list=PLtest123',
+      'fake-api-key',
+    );
+
+    expect(result.map((v) => v.videoId)).toEqual(['first111111', 'second11111', 'third111111']);
+    expect(result.map((v) => v.title)).toEqual(['First', 'Second', 'Third']);
   });
 
   it('parses ISO 8601 duration PT1H23M45S to 5025 seconds', async () => {

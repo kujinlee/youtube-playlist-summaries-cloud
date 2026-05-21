@@ -16,6 +16,9 @@ export const COLUMNS: { label: string; column: SortColumn; fullName: string }[] 
   { label: 'RCN', column: 'recency', fullName: 'Recency' },
   { label: 'CMP', column: 'completeness', fullName: 'Completeness' },
   { label: 'OVR', column: 'overall', fullName: 'Overall' },
+  { label: 'Lang', column: 'language', fullName: 'Language' },
+  { label: 'Type', column: 'videoType', fullName: 'Type' },
+  { label: 'Aud', column: 'audience', fullName: 'Audience' },
 ];
 
 export default function SortBar({ activeColumn, order, onSort }: SortBarProps) {

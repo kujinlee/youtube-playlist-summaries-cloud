@@ -25,15 +25,22 @@ describe('SortBar', () => {
     it('renders each column as a button', () => {
       renderSortBar();
       const buttons = screen.getAllByRole('button');
-      expect(buttons).toHaveLength(7);
+      expect(buttons).toHaveLength(10);
     });
 
-    it('renders columns in the correct order: Name USE DPT ORI RCN CMP OVR', () => {
+    it('renders columns in the correct order: Name USE DPT ORI RCN CMP OVR Lang Type Aud', () => {
       renderSortBar();
       const labels = screen
         .getAllByRole('button')
         .map((b) => b.textContent?.replace(/[↑↓]/g, '').trim());
-      expect(labels).toEqual(['Name', 'USE', 'DPT', 'ORI', 'RCN', 'CMP', 'OVR']);
+      expect(labels).toEqual(['Name', 'USE', 'DPT', 'ORI', 'RCN', 'CMP', 'OVR', 'Lang', 'Type', 'Aud']);
+    });
+
+    it('renders Language, Type, Audience sort buttons', () => {
+      renderSortBar();
+      expect(screen.getByRole('button', { name: /language/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^type$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /audience/i })).toBeInTheDocument();
     });
   });
 

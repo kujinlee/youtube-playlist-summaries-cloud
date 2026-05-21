@@ -231,14 +231,16 @@ export default function Page() {
           {ingest.status === 'running' && (
             <div role="status" aria-live="polite" className="space-y-1">
               <div className="flex items-center gap-3">
-                <div className="flex-1 h-2 bg-zinc-700 rounded-full overflow-hidden">
+                <div
+                  className="flex-1 h-2 bg-zinc-700 rounded-full overflow-hidden"
+                  role="progressbar"
+                  aria-valuenow={ingest.progress}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
                   <div
                     className="h-full bg-blue-600 rounded-full transition-all duration-300"
                     style={{ width: `${ingest.progress}%` }}
-                    role="progressbar"
-                    aria-valuenow={ingest.progress}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
                   />
                 </div>
                 <span className="text-xs tabular-nums text-zinc-400 w-8 text-right">{ingest.progress}%</span>

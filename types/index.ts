@@ -31,6 +31,7 @@ export const VideoMetaSchema = z.object({
   title: z.string(),
   youtubeUrl: z.string().url(),
   durationSeconds: z.number().int().nonnegative(),
+  channelTitle: z.string().optional(),
 });
 export type VideoMeta = z.infer<typeof VideoMetaSchema>;
 
@@ -51,6 +52,8 @@ export const VideoSchema = z.object({
   processedAt: z.string().datetime(),
   videoType: VideoTypeSchema.optional(),
   audience: AudienceSchema.optional(),
+  channel: z.string().optional(),
+  tags: z.array(z.string()).optional(),
 });
 export type Video = z.infer<typeof VideoSchema>;
 
@@ -99,10 +102,11 @@ export interface GeminiSummaryResponse {
   overallScore: number;
   videoType?: VideoType;
   audience?: Audience;
+  tags?: string[];
 }
 
 // --- Sort types for GET /api/videos ---
 type RatingSortColumn = keyof Ratings;
 // 'overall' maps to Video.overallScore; all others map directly to Ratings fields.
-export type SortColumn = 'name' | 'overall' | RatingSortColumn;
+export type SortColumn = 'name' | 'overall' | RatingSortColumn | 'language' | 'videoType' | 'audience';
 export type SortOrder = 'asc' | 'desc';
