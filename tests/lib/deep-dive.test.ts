@@ -33,6 +33,8 @@ function makeTempDir(): string {
   return dir;
 }
 
+const SUMMARY_BASE = '001_test-video';
+
 function makeVideo(overrides: Partial<Video> = {}): Video {
   return {
     id: VIDEO_ID,
@@ -43,8 +45,8 @@ function makeVideo(overrides: Partial<Video> = {}): Video {
     archived: false,
     ratings: { usefulness: 3, depth: 3, originality: 3, recency: 3, completeness: 3 },
     overallScore: 3,
-    summaryMd: `${VIDEO_ID}.md`,
-    summaryPdf: `${VIDEO_ID}.pdf`,
+    summaryMd: `${SUMMARY_BASE}.md`,
+    summaryPdf: `${SUMMARY_BASE}.pdf`,
     deepDiveMd: null,
     deepDivePdf: null,
     processedAt: new Date().toISOString(),
@@ -140,8 +142,8 @@ describe('runDeepDive', () => {
       outputFolder,
       VIDEO_ID,
       expect.objectContaining({
-        deepDiveMd: `${VIDEO_ID}-deep-dive.md`,
-        deepDivePdf: `${VIDEO_ID}-deep-dive.pdf`,
+        deepDiveMd: `${SUMMARY_BASE}-deep-dive.md`,
+        deepDivePdf: `${SUMMARY_BASE}-deep-dive.pdf`,
       }),
     );
   });
@@ -174,6 +176,58 @@ describe('runDeepDive', () => {
 
   it('updates index with deepDiveMd and deepDivePdf after fallback success', async () => {
     mockGenerateDeepDive.mockRejectedValueOnce(new Error('Gemini deep-dive failed: URL not supported'));
+
+    await runDeepDive(VIDEO_ID, outputFolder, () => {});
+
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder,
+      VIDEO_ID,
+      expect.objectContaining({
+        deepDiveMd: `${SUMMARY_BASE}-deep-dive.md`,
+        deepDivePdf: `${SUMMARY_BASE}-deep-dive.pdf`,
+      }),
+    );
+  });
+
+  it('written MD file has YAML frontmatter with video_id and lang', async () => {
+    await runDeepDive(VIDEO_ID, outputFolder, () => {});
+
+    const content = fs.readFileSync(path.join(outputFolder, `${SUMMARY_BASE}-deep-dive.md`), 'utf-8');
+    expect(content).toMatch(/^---\ntags:/);
+    expect(content).toMatch(new RegExp(`video_id: "${VIDEO_ID}"`));
+    expect(content).toMatch(/lang: EN/);
+  });
+
+  it('written MD file H1 is the video title with (Deep Dive) suffix', async () => {
+    await runDeepDive(VIDEO_ID, outputFolder, () => {});
+
+    const content = fs.readFileSync(path.join(outputFolder, `${SUMMARY_BASE}-deep-dive.md`), 'utf-8');
+    expect(content).toMatch(/^# Test Video \(Deep Dive\)$/m);
+  });
+
+  it('written MD file has metadata line with Duration and URL', async () => {
+    await runDeepDive(VIDEO_ID, outputFolder, () => {});
+
+    const content = fs.readFileSync(path.join(outputFolder, `${SUMMARY_BASE}-deep-dive.md`), 'utf-8');
+    expect(content).toMatch(/\*\*Duration:\*\*/);
+    expect(content).toMatch(/\*\*URL:\*\*/);
+  });
+
+  it('strips Gemini-generated leading H1 from the body', async () => {
+    mockGenerateDeepDive.mockResolvedValueOnce('# Gemini Generated Title\n\nActual body content.');
+
+    await runDeepDive(VIDEO_ID, outputFolder, () => {});
+
+    const content = fs.readFileSync(path.join(outputFolder, `${SUMMARY_BASE}-deep-dive.md`), 'utf-8');
+    expect(content).not.toMatch(/# Gemini Generated Title/);
+    expect(content).toContain('Actual body content.');
+  });
+
+  it('falls back to videoId base when summaryMd is null', async () => {
+    mockReadIndex.mockReturnValue({
+      ...makeIndex(outputFolder),
+      videos: [makeVideo({ summaryMd: null })],
+    });
 
     await runDeepDive(VIDEO_ID, outputFolder, () => {});
 

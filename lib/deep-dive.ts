@@ -6,6 +6,15 @@ import { generatePdf } from './pdf';
 import { assertOutputFolder, assertVideoId, readIndex, updateVideoFields } from './index-store';
 import type { ProgressEvent } from '../types';
 
+function formatDuration(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
+
 export async function runDeepDive(
   videoId: string,
   outputFolder: string,
@@ -23,11 +32,11 @@ export async function runDeepDive(
   onProgress({ type: 'start' });
   onProgress({ type: 'step', videoId, step: 'Generating deep-dive analysis…' });
 
-  let deepDiveContent: string;
+  let deepDiveRaw: string;
   let mode: 'url' | 'transcript-fallback';
 
   try {
-    deepDiveContent = await generateDeepDive(video.youtubeUrl, video.language);
+    deepDiveRaw = await generateDeepDive(video.youtubeUrl, video.language);
     mode = 'url';
   } catch (urlErr) {
     const urlMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
@@ -40,7 +49,7 @@ export async function runDeepDive(
       throw new Error(`Deep-dive failed. URL error: ${urlMsg}; transcript fetch error: ${fetchMsg}`, { cause: fetchErr });
     }
     try {
-      deepDiveContent = await generateDeepDiveFromTranscript(transcript, video.language);
+      deepDiveRaw = await generateDeepDiveFromTranscript(transcript, video.language);
       mode = 'transcript-fallback';
     } catch (transcriptErr) {
       const transcriptMsg = transcriptErr instanceof Error ? transcriptErr.message : String(transcriptErr);
@@ -48,14 +57,54 @@ export async function runDeepDive(
     }
   }
 
-  const mdFilename = `${videoId}-deep-dive.md`;
-  const mdPath = path.join(outputFolder, mdFilename);
-  await fs.promises.writeFile(mdPath, deepDiveContent, 'utf-8');
+  // Derive filename from summary filename — keeps human-readable rank-slug naming consistent
+  const base = (video.summaryMd ?? videoId).replace(/\.md$/, '');
+  const mdFilename = `${base}-deep-dive.md`;
+  const pdfFilename = `${base}-deep-dive.pdf`;
 
-  const pdfFilename = `${videoId}-deep-dive.pdf`;
+  // Strip any leading H1 Gemini may have generated — we add our own standardized header
+  const body = deepDiveRaw.replace(/^#\s+[^\n]*\n+/, '');
+
+  const structuralTags = ['video-summary', 'deep-dive', video.language];
+  const allTags = [...structuralTags, ...(video.tags ?? [])];
+
+  const frontmatterLines = [
+    '---',
+    'tags:',
+    ...allTags.map((t) => `  - ${t}`),
+    `video_id: "${video.id}"`,
+    ...(video.channel ? [`channel: "${video.channel}"`] : []),
+    `lang: ${video.language.toUpperCase()}`,
+    ...(video.videoType ? [`type: ${video.videoType}`] : []),
+    ...(video.audience ? [`audience: ${video.audience}`] : []),
+    `score: ${video.overallScore}`,
+    '---',
+  ];
+
+  const metaParts = [
+    video.channel && `**Channel:** ${video.channel}`,
+    `**Duration:** ${formatDuration(video.durationSeconds)}`,
+    `**URL:** ${video.youtubeUrl}`,
+  ].filter(Boolean).join(' | ');
+
+  const mdContent = [
+    frontmatterLines.join('\n'),
+    '',
+    `# ${video.title} (Deep Dive)`,
+    '',
+    metaParts,
+    '',
+    '---',
+    '',
+    body,
+  ].join('\n');
+
+  const mdPath = path.join(outputFolder, mdFilename);
+  await fs.promises.writeFile(mdPath, mdContent, 'utf-8');
+
   const pdfPath = path.join(outputFolder, pdfFilename);
   onProgress({ type: 'step', videoId, step: 'Generating PDF…' });
-  await generatePdf(deepDiveContent, pdfPath);
+  await generatePdf(mdContent, pdfPath);
 
   updateVideoFields(outputFolder, videoId, {
     deepDiveMd: mdFilename,
