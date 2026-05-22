@@ -54,6 +54,7 @@ export const VideoSchema = z.object({
   audience: AudienceSchema.optional(),
   channel: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  removedFromPlaylist: z.boolean().optional(),
 });
 export type Video = z.infer<typeof VideoSchema>;
 

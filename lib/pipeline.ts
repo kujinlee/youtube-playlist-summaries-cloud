@@ -79,10 +79,9 @@ export function reconstructVideo(content: string, file: string, mdPath: string):
   };
 }
 
-export function recoverOrphanedVideos(outputFolder: string, metas: VideoMeta[]): void {
+export function recoverOrphanedVideos(outputFolder: string): void {
   const index = readIndex(outputFolder);
   const indexedIds = new Set(index.videos.map((v) => v.id));
-  const playlistIds = new Set(metas.map((m) => m.videoId));
 
   let files: string[];
   try {
@@ -98,7 +97,7 @@ export function recoverOrphanedVideos(outputFolder: string, metas: VideoMeta[]):
     try {
       const content = fs.readFileSync(mdPath, 'utf-8');
       const videoId = parseFrontmatterField(content, 'video_id');
-      if (!videoId || indexedIds.has(videoId) || !playlistIds.has(videoId)) continue;
+      if (!videoId || indexedIds.has(videoId)) continue;
 
       const video = reconstructVideo(content, file, mdPath);
       if (video) {
@@ -148,7 +147,10 @@ export async function runIngestion(
   writeIndex(outputFolder, { ...existing, playlistUrl, outputFolder });
 
   // Recover any .md files written in a prior interrupted run before processing new videos.
-  recoverOrphanedVideos(outputFolder, metas);
+  recoverOrphanedVideos(outputFolder);
+
+  // Build the set of already-indexed IDs so we can skip re-processing them.
+  const alreadyIndexed = new Set(readIndex(outputFolder).videos.map((v) => v.id));
 
   onProgress({ type: 'start', total });
 
@@ -157,6 +159,11 @@ export async function runIngestion(
     const current = i + 1;
     try {
       assertVideoId(meta.videoId); // defense-in-depth before any path construction
+
+      if (alreadyIndexed.has(meta.videoId)) {
+        onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Already processed — skipped', current, total });
+        continue;
+      }
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Fetching transcript…', current, total });
       const transcript = await fetchTranscript(meta.videoId);
@@ -237,6 +244,17 @@ export async function runIngestion(
     } catch (err) {
       const log = err instanceof Error ? err.message : String(err);
       onProgress({ type: 'error', videoId: meta.videoId, title: meta.title, log });
+    }
+  }
+
+  // Reconcile removedFromPlaylist: auto-archive on removal, clear flag if video returns.
+  const currentIds = new Set(metas.map((m) => m.videoId));
+  for (const video of readIndex(outputFolder).videos) {
+    const stillInPlaylist = currentIds.has(video.id);
+    if (!stillInPlaylist && !video.removedFromPlaylist) {
+      upsertVideo(outputFolder, { ...video, archived: true, removedFromPlaylist: true });
+    } else if (stillInPlaylist && video.removedFromPlaylist) {
+      upsertVideo(outputFolder, { ...video, removedFromPlaylist: false });
     }
   }
 

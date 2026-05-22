@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { ProgressEvent, VideoMeta, GeminiSummaryResponse } from '../../types';
+import type { ProgressEvent, Video, VideoMeta, GeminiSummaryResponse } from '../../types';
 
 jest.mock('../../lib/youtube');
 jest.mock('../../lib/gemini');
@@ -48,6 +48,25 @@ function makeSummaryResponse(overrides: Partial<GeminiSummaryResponse> = {}): Ge
     summary: 'A great summary',
     ratings: { usefulness: 3, depth: 3, originality: 3, recency: 3, completeness: 3 },
     overallScore: 3,
+    ...overrides,
+  };
+}
+
+function makeIndexedVideo(id: string, overrides: Partial<Video> = {}): Video {
+  return {
+    id,
+    title: `Video ${id}`,
+    youtubeUrl: `https://youtube.com/watch?v=${id}`,
+    language: 'en',
+    durationSeconds: 300,
+    archived: false,
+    ratings: { usefulness: 3, depth: 3, originality: 3, recency: 3, completeness: 3 },
+    overallScore: 3,
+    summaryMd: `001_video-${id}.md`,
+    summaryPdf: `001_video-${id}.pdf`,
+    deepDiveMd: null,
+    deepDivePdf: null,
+    processedAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -251,6 +270,53 @@ describe('runIngestion', () => {
       expect.objectContaining({ channel: 'MyChannel', tags: ['react', 'hooks'] }),
     );
   });
+
+  it('auto-archives and flags a video removed from the current playlist', async () => {
+    const vid1 = makeIndexedVideo('vid1');
+    const vid2 = makeIndexedVideo('vid2'); // not removedFromPlaylist, not archived
+    mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [vid1, vid2] });
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]); // vid2 gone from playlist
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ id: 'vid2', archived: true, removedFromPlaylist: true }),
+    );
+    expect(mockUpsertVideo).not.toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ id: 'vid1', removedFromPlaylist: true }),
+    );
+  });
+
+  it('does not re-archive a removed video the user has manually un-archived', async () => {
+    const vid1 = makeIndexedVideo('vid1');
+    // User un-archived vid2 (archived:false) but it's still gone from the playlist (removedFromPlaylist:true)
+    const vid2 = makeIndexedVideo('vid2', { archived: false, removedFromPlaylist: true });
+    mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [vid1, vid2] });
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]); // vid2 still not in playlist
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).not.toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ id: 'vid2', archived: true }),
+    );
+  });
+
+  it('clears removedFromPlaylist flag when a video returns to the playlist', async () => {
+    const vid1 = makeIndexedVideo('vid1');
+    const vid2 = makeIndexedVideo('vid2', { archived: true, removedFromPlaylist: true });
+    mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [vid1, vid2] });
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1'), makeVideoMeta('vid2')]); // vid2 is back
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ id: 'vid2', removedFromPlaylist: false }),
+    );
+  });
 });
 
 describe('slugify', () => {
@@ -416,11 +482,11 @@ describe('recoverOrphanedVideos', () => {
     jest.clearAllMocks();
   });
 
-  it('upserts an orphaned video whose video_id matches the playlist', () => {
+  it('upserts any orphaned video with a valid video_id in frontmatter', () => {
     fs.writeFileSync(path.join(tempDir, '001_test-video.md'), SAMPLE_MD, 'utf-8');
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
 
-    recoverOrphanedVideos(tempDir, [{ videoId: 'testVidAbc1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+    recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
     expect(mockUpsertVideo).toHaveBeenCalledWith(tempDir, expect.objectContaining({ id: 'testVidAbc1' }));
@@ -434,27 +500,26 @@ describe('recoverOrphanedVideos', () => {
       videos: [{ id: 'testVidAbc1' } as never],
     });
 
-    recoverOrphanedVideos(tempDir, [{ videoId: 'testVidAbc1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+    recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).not.toHaveBeenCalled();
   });
 
-  it('ignores .md files whose video_id is not in the playlist', () => {
-    fs.writeFileSync(path.join(tempDir, '001_test-video.md'), SAMPLE_MD, 'utf-8');
+  it('ignores .md files with no video_id in frontmatter', () => {
+    const noId = SAMPLE_MD.replace('video_id: "testVidAbc1"', '');
+    fs.writeFileSync(path.join(tempDir, '001_test-video.md'), noId, 'utf-8');
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
 
-    // Different playlist — no matching video ID
-    recoverOrphanedVideos(tempDir, [{ videoId: 'differentId1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+    recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).not.toHaveBeenCalled();
   });
 
   it('ignores deep-dive .md files', () => {
-    const deepDiveContent = SAMPLE_MD.replace('video_id: "testVidAbc1"', 'video_id: "testVidAbc1"');
-    fs.writeFileSync(path.join(tempDir, 'testVidAbc1-deep-dive.md'), deepDiveContent, 'utf-8');
+    fs.writeFileSync(path.join(tempDir, 'testVidAbc1-deep-dive.md'), SAMPLE_MD, 'utf-8');
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
 
-    recoverOrphanedVideos(tempDir, [{ videoId: 'testVidAbc1', title: 'x', youtubeUrl: 'https://youtube.com/watch?v=x', durationSeconds: 0 }]);
+    recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).not.toHaveBeenCalled();
   });
