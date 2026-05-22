@@ -36,13 +36,15 @@ export async function runDeepDive(
     try {
       transcript = await fetchTranscript(videoId);
     } catch (fetchErr) {
-      throw new Error(`Deep-dive failed: URL error: ${urlMsg}`, { cause: fetchErr });
+      const fetchMsg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      throw new Error(`Deep-dive failed. URL error: ${urlMsg}; transcript fetch error: ${fetchMsg}`, { cause: fetchErr });
     }
     try {
       deepDiveContent = await generateDeepDiveFromTranscript(transcript, video.language);
       mode = 'transcript-fallback';
     } catch (transcriptErr) {
-      throw new Error(`Deep-dive failed on both paths. URL error: ${urlMsg}`, { cause: transcriptErr });
+      const transcriptMsg = transcriptErr instanceof Error ? transcriptErr.message : String(transcriptErr);
+      throw new Error(`Deep-dive failed on both paths. URL error: ${urlMsg}; Gemini transcript error: ${transcriptMsg}`, { cause: transcriptErr });
     }
   }
 

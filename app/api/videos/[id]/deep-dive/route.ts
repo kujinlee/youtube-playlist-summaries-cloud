@@ -34,6 +34,7 @@ export async function POST(request: Request, { params }: Params) {
   }).catch((err) => {
     if (finished) return;
     finished = true;
+    console.error('[deep-dive] failed for video', videoId, err);
     emitter.emit('progress', { type: 'error', log: err instanceof Error ? err.message : String(err) });
     deleteJob(jobId);
   });

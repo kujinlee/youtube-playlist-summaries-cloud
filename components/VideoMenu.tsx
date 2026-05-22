@@ -32,13 +32,13 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive, 
       className="absolute left-0 top-full z-20 mt-1 w-52 rounded-md bg-zinc-800 border border-zinc-700 shadow-xl py-1"
     >
       <li role="none">
-        <a href={obsidianHref(outputFolder, summaryFile)} onClick={onClose} className={itemClass}>
+        <a href={obsidianHref(outputFolder, summaryFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
           Open in Obsidian
         </a>
       </li>
       <li role="none">
         {hasSummaryPdf ? (
-          <a href={`${pdfBase}&type=summary`} onClick={onClose} className={itemClass}>
+          <a href={`${pdfBase}&type=summary`} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
             View Summary PDF
           </a>
         ) : (
@@ -60,7 +60,7 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive, 
       </li>
       <li role="none">
         {hasDeepDive ? (
-          <a href={obsidianHref(outputFolder, deepDiveFile)} onClick={onClose} className={itemClass}>
+          <a href={obsidianHref(outputFolder, deepDiveFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
             Open Deep Dive in Obsidian
           </a>
         ) : (
@@ -77,7 +77,7 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive, 
       </li>
       <li role="none">
         {hasDeepDivePdf ? (
-          <a href={`${pdfBase}&type=deep-dive`} onClick={onClose} className={itemClass}>
+          <a href={`${pdfBase}&type=deep-dive`} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
             View Deep Dive PDF
           </a>
         ) : (
