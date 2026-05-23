@@ -4,6 +4,7 @@ import { fetchPlaylistVideos, fetchTranscript, detectLanguage } from './youtube'
 import { generateSummary } from './gemini';
 import { generatePdf } from './pdf';
 import { assertOutputFolder, assertVideoId, upsertVideo, readIndex, writeIndex } from './index-store';
+import { slugify } from './slugify';
 import type { ProgressEvent, Video, VideoMeta, RatingValue, VideoType, Audience } from '../types';
 
 const VALID_VIDEO_TYPES: VideoType[] = ['Tutorial', 'Analysis', 'Case Study', 'Framework', 'Demo', 'Interview'];
@@ -110,13 +111,7 @@ export function recoverOrphanedVideos(outputFolder: string): void {
   }
 }
 
-export function slugify(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-}
+export { slugify };
 
 export function formatDuration(secs: number): string {
   const h = Math.floor(secs / 3600);
@@ -166,6 +161,7 @@ export async function runIngestion(
   if (!apiKey) throw new Error('YOUTUBE_API_KEY is not set');
 
   assertOutputFolder(outputFolder);
+  fs.mkdirSync(outputFolder, { recursive: true });
 
   const metas = await fetchPlaylistVideos(playlistUrl, apiKey);
   const total = metas.length;

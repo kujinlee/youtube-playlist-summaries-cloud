@@ -1,6 +1,6 @@
 'use client';
 
-import type { Video } from '@/types';
+import type { SortColumn, SortOrder, Video } from '@/types';
 import VideoRow from './VideoRow';
 
 interface VideoListProps {
@@ -9,9 +9,26 @@ interface VideoListProps {
   showArchive: boolean;
   onDeepDive: (videoId: string) => void;
   onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
+  sortColumn?: SortColumn | null;
+  sortOrder?: SortOrder;
+  onSort?: (col: SortColumn, order: SortOrder) => void;
 }
 
-const TH = 'px-3 py-2 text-xs font-medium text-zinc-400 uppercase';
+const COLUMNS: { key: SortColumn; label: string; fullName: string; align: 'left' | 'right' }[] = [
+  { key: 'playlistIndex', label: '#', fullName: 'Playlist position', align: 'left' },
+  { key: 'name', label: 'Title', fullName: 'Title', align: 'left' },
+  { key: 'language', label: 'Lang', fullName: 'Language', align: 'left' },
+  { key: 'videoType', label: 'Type', fullName: 'Type', align: 'left' },
+  { key: 'audience', label: 'Audience', fullName: 'Audience', align: 'left' },
+  { key: 'usefulness', label: 'USE', fullName: 'Usefulness', align: 'right' },
+  { key: 'depth', label: 'DPT', fullName: 'Depth', align: 'right' },
+  { key: 'originality', label: 'ORI', fullName: 'Originality', align: 'right' },
+  { key: 'recency', label: 'RCN', fullName: 'Recency', align: 'right' },
+  { key: 'completeness', label: 'CMP', fullName: 'Completeness', align: 'right' },
+  { key: 'overall', label: 'OVR', fullName: 'Overall', align: 'right' },
+];
+
+const TH = 'px-3 py-2 text-xs font-medium uppercase';
 
 export default function VideoList({
   videos,
@@ -19,26 +36,58 @@ export default function VideoList({
   showArchive,
   onDeepDive,
   onArchive,
+  sortColumn,
+  sortOrder = 'asc',
+  onSort,
 }: VideoListProps) {
   const visible = showArchive ? videos : videos.filter((v) => !v.archived);
 
   if (visible.length === 0) return null;
 
+  function handleHeaderClick(col: SortColumn) {
+    if (!onSort) return;
+    const nextOrder: SortOrder = col === sortColumn && sortOrder === 'asc' ? 'desc' : 'asc';
+    onSort(col, nextOrder);
+  }
+
   return (
     <table className="w-full border-collapse" aria-label="Video list">
       <thead>
         <tr className="border-b border-zinc-800">
-          <th className={`${TH} text-left`}>#</th>
-          <th className={`${TH} text-left`}>Title</th>
-          <th className={`${TH} text-left`}>Lang</th>
-          <th className={`${TH} text-left`}>Type</th>
-          <th className={`${TH} text-left`}>Audience</th>
-          <th className={`${TH} text-right`}>USE</th>
-          <th className={`${TH} text-right`}>DPT</th>
-          <th className={`${TH} text-right`}>ORI</th>
-          <th className={`${TH} text-right`}>RCN</th>
-          <th className={`${TH} text-right`}>CMP</th>
-          <th className={`${TH} text-right`}>OVR</th>
+          {COLUMNS.map(({ key, label, fullName, align }) => {
+            const isActive = key === sortColumn;
+            const arrow = isActive ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '';
+            const alignClass = align === 'right' ? 'text-right' : 'text-left';
+            if (onSort) {
+              const dirLabel = isActive
+                ? `, sorted ${sortOrder === 'asc' ? 'ascending' : 'descending'}`
+                : '';
+              return (
+                <th
+                  key={key}
+                  scope="col"
+                  className={`${TH} ${alignClass}`}
+                  aria-sort={isActive ? (sortOrder === 'asc' ? 'ascending' : 'descending') : undefined}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleHeaderClick(key)}
+                    title={fullName}
+                    aria-label={`${fullName}${dirLabel}`}
+                    aria-pressed={isActive}
+                    className={`${isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-100'} transition-colors`}
+                  >
+                    {label}{arrow}
+                  </button>
+                </th>
+              );
+            }
+            return (
+              <th key={key} className={`${TH} text-zinc-400 ${alignClass}`}>
+                {label}
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody>

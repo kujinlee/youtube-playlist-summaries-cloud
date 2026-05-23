@@ -8,6 +8,10 @@ const CSS = `
   pre, code { font-family: 'Courier New', Courier, monospace; white-space: pre; }
 `;
 
+// md-to-pdf opens a Chromium debug port; concurrent calls collide on the same port.
+// Serialize all PDF generation through a promise chain to prevent EADDRINUSE.
+let pdfQueue: Promise<void> = Promise.resolve();
+
 /**
  * Generate a PDF from Markdown content and write it to outputPath.
  * The parent directory of outputPath must already exist.
@@ -16,7 +20,13 @@ const CSS = `
  * Buffer mode is used (no `dest`) so the Puppeteer browser is closed before
  * the file write — preventing a Chromium process leak if the write fails.
  */
-export async function generatePdf(mdContent: string, outputPath: string): Promise<void> {
+export function generatePdf(mdContent: string, outputPath: string): Promise<void> {
+  const result = pdfQueue.then(() => _generatePdfUnlocked(mdContent, outputPath));
+  pdfQueue = result.catch(() => {});
+  return result;
+}
+
+async function _generatePdfUnlocked(mdContent: string, outputPath: string): Promise<void> {
   let buffer: Buffer;
   try {
     const result = await mdToPdf({ content: mdContent }, { css: CSS });

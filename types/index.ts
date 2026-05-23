@@ -126,5 +126,5 @@ export const FILTER_DEFAULTS: FilterState = {
 // --- Sort types for GET /api/videos ---
 type RatingSortColumn = keyof Ratings;
 // 'overall' maps to Video.overallScore; all others map directly to Ratings fields.
-export type SortColumn = 'name' | 'overall' | RatingSortColumn | 'language' | 'videoType' | 'audience';
+export type SortColumn = 'name' | 'overall' | RatingSortColumn | 'language' | 'videoType' | 'audience' | 'playlistIndex';
 export type SortOrder = 'asc' | 'desc';

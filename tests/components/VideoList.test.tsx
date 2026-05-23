@@ -1,8 +1,8 @@
 /** @jest-environment jsdom */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import VideoList from '@/components/VideoList';
-import type { Video } from '@/types';
+import type { SortColumn, SortOrder, Video } from '@/types';
 
 jest.mock('@/components/VideoRow', () => {
   const MockVideoRow = ({
@@ -152,6 +152,118 @@ describe('VideoList — playlistIndex rank', () => {
     const rows = screen.getAllByTestId('video-row');
     expect(rows[0]).toHaveAttribute('data-rank', '5');
     expect(rows[1]).toHaveAttribute('data-rank', '2');
+  });
+});
+
+describe('VideoList — sort column headers', () => {
+  function renderWithSort({
+    videos = [makeVideo('v1')] as Video[],
+    sortColumn = null as SortColumn | null,
+    sortOrder = 'asc' as SortOrder,
+    onSort = jest.fn(),
+  } = {}) {
+    return render(
+      <VideoList
+        videos={videos}
+        outputFolder={OUTPUT_FOLDER}
+        showArchive={true}
+        onDeepDive={jest.fn()}
+        onArchive={jest.fn()}
+        sortColumn={sortColumn}
+        sortOrder={sortOrder}
+        onSort={onSort}
+      />,
+    );
+  }
+
+  it('renders 11 sort buttons in the column header row when onSort is provided', () => {
+    renderWithSort();
+    const headers = screen.getAllByRole('columnheader');
+    const sortableHeaders = headers.filter((th) => th.querySelector('button') !== null);
+    expect(sortableHeaders).toHaveLength(11);
+  });
+
+  it('clicking # column calls onSort("playlistIndex", "asc") when unsorted', () => {
+    const onSort = jest.fn();
+    renderWithSort({ onSort });
+    fireEvent.click(screen.getByRole('button', { name: 'Playlist position' }));
+    expect(onSort).toHaveBeenCalledWith('playlistIndex', 'asc');
+  });
+
+  it('clicking Title column calls onSort("name", "asc")', () => {
+    const onSort = jest.fn();
+    renderWithSort({ onSort });
+    fireEvent.click(screen.getByRole('button', { name: 'Title' }));
+    expect(onSort).toHaveBeenCalledWith('name', 'asc');
+  });
+
+  it('clicking OVR column calls onSort("overall", "asc")', () => {
+    const onSort = jest.fn();
+    renderWithSort({ onSort });
+    fireEvent.click(screen.getByRole('button', { name: 'Overall' }));
+    expect(onSort).toHaveBeenCalledWith('overall', 'asc');
+  });
+
+  it('clicking USE, DPT, ORI, RCN, CMP each call onSort with correct rating key', () => {
+    const cases: [string, SortColumn][] = [
+      ['Usefulness', 'usefulness'],
+      ['Depth', 'depth'],
+      ['Originality', 'originality'],
+      ['Recency', 'recency'],
+      ['Completeness', 'completeness'],
+    ];
+    for (const [label, key] of cases) {
+      const onSort = jest.fn();
+      const { unmount } = renderWithSort({ onSort });
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      expect(onSort).toHaveBeenCalledWith(key, 'asc');
+      unmount();
+    }
+  });
+
+  it('clicking active column (asc) calls onSort with desc', () => {
+    const onSort = jest.fn();
+    renderWithSort({ sortColumn: 'overall', sortOrder: 'asc', onSort });
+    fireEvent.click(screen.getByRole('button', { name: 'Overall, sorted ascending' }));
+    expect(onSort).toHaveBeenCalledWith('overall', 'desc');
+  });
+
+  it('clicking active column (desc) calls onSort with asc', () => {
+    const onSort = jest.fn();
+    renderWithSort({ sortColumn: 'overall', sortOrder: 'desc', onSort });
+    fireEvent.click(screen.getByRole('button', { name: 'Overall, sorted descending' }));
+    expect(onSort).toHaveBeenCalledWith('overall', 'asc');
+  });
+
+  it('active column (asc) shows ↑ in button text', () => {
+    renderWithSort({ sortColumn: 'overall', sortOrder: 'asc' });
+    expect(screen.getByRole('button', { name: 'Overall, sorted ascending' })).toHaveTextContent('↑');
+  });
+
+  it('active column (desc) shows ↓ in button text', () => {
+    renderWithSort({ sortColumn: 'overall', sortOrder: 'desc' });
+    expect(screen.getByRole('button', { name: 'Overall, sorted descending' })).toHaveTextContent('↓');
+  });
+
+  it('non-active column shows no arrow', () => {
+    renderWithSort({ sortColumn: 'overall', sortOrder: 'asc' });
+    const titleBtn = screen.getByRole('button', { name: 'Title' });
+    expect(titleBtn.textContent).not.toMatch(/[↑↓]/);
+  });
+
+  it('column headers are plain text (no buttons) when onSort is not provided', () => {
+    render(
+      <VideoList
+        videos={[makeVideo('v1')]}
+        outputFolder={OUTPUT_FOLDER}
+        showArchive={true}
+        onDeepDive={jest.fn()}
+        onArchive={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Playlist position' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Title' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Overall' })).toBeNull();
   });
 });
 

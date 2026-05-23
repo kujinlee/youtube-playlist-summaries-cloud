@@ -24,6 +24,9 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
     } else if (column === 'audience') {
       aVal = AUDIENCE_ORDER[a.audience ?? ''] ?? 0;
       bVal = AUDIENCE_ORDER[b.audience ?? ''] ?? 0;
+    } else if (column === 'playlistIndex') {
+      aVal = a.playlistIndex ?? 0;
+      bVal = b.playlistIndex ?? 0;
     } else {
       aVal = a.ratings[column];
       bVal = b.ratings[column];

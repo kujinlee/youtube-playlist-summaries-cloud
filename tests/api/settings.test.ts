@@ -25,6 +25,20 @@ describe('GET /api/settings', () => {
     const body = await res.json();
     expect(body.outputFolder).toBe('/home/user/data');
   });
+
+  it('returns baseOutputFolder when stored', async () => {
+    mockReadSettings.mockReturnValue({ outputFolder: '/home/user/data', baseOutputFolder: '/home/user/data' });
+    const res = await GET(new Request('http://localhost/api/settings'));
+    const body = await res.json();
+    expect(body.baseOutputFolder).toBe('/home/user/data');
+  });
+
+  it('returns outputFolder as baseOutputFolder when baseOutputFolder not stored', async () => {
+    mockReadSettings.mockReturnValue({ outputFolder: '/home/user/data' });
+    const res = await GET(new Request('http://localhost/api/settings'));
+    const body = await res.json();
+    expect(body.baseOutputFolder).toBe('/home/user/data');
+  });
 });
 
 describe('POST /api/settings', () => {
@@ -46,6 +60,20 @@ describe('POST /api/settings', () => {
     const body = await res.json();
     expect(body).toEqual({ ok: true });
     expect(mockWriteSettings).toHaveBeenCalledWith({ outputFolder: '/home/user/newdata' });
+  });
+
+  it('saves baseOutputFolder when provided alongside outputFolder', async () => {
+    mockWriteSettings.mockImplementation(() => {});
+    const res = await POST(new Request('http://localhost/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outputFolder: '/home/user/data', baseOutputFolder: '/home/user/data' }),
+    }));
+    expect(res.status).toBe(200);
+    expect(mockWriteSettings).toHaveBeenCalledWith({
+      outputFolder: '/home/user/data',
+      baseOutputFolder: '/home/user/data',
+    });
   });
 
   it('returns 400 when outputFolder is missing from body', async () => {

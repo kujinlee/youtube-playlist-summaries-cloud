@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { slugify } from '../lib/slugify';
 
 interface HeaderProps {
   defaultOutputFolder: string;
+  baseOutputFolder?: string;
   onIngest: (playlistUrl: string, outputFolder: string) => void;
   onSync?: (folder: string) => void;
   syncEnabled?: boolean;
@@ -12,6 +14,7 @@ interface HeaderProps {
 
 export default function Header({
   defaultOutputFolder,
+  baseOutputFolder,
   onIngest,
   onSync,
   syncEnabled = false,
@@ -19,11 +22,43 @@ export default function Header({
 }: HeaderProps) {
   const [playlistUrl, setPlaylistUrl] = useState('');
   const [outputFolder, setOutputFolder] = useState(defaultOutputFolder);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync when settings load after mount
   useEffect(() => {
     setOutputFolder(defaultOutputFolder);
   }, [defaultOutputFolder]);
+
+  // Auto-suggest output folder when playlist URL changes
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    let playlistId: string | null = null;
+    try {
+      playlistId = new URL(playlistUrl).searchParams.get('list');
+    } catch {
+      return;
+    }
+    if (!playlistId) return;
+
+    const base = baseOutputFolder || defaultOutputFolder;
+    const url = playlistUrl;
+
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/playlist-info?url=${encodeURIComponent(url)}`);
+        if (!res.ok) return;
+        const data = await res.json() as { title: string };
+        setOutputFolder(`${base}/${slugify(data.title)}`);
+      } catch {
+        // leave folder unchanged on network error
+      }
+    }, 350);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [playlistUrl, baseOutputFolder, defaultOutputFolder]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

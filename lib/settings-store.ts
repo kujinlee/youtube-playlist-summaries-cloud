@@ -5,6 +5,7 @@ const SETTINGS_FILE = path.join(process.cwd(), 'settings.json');
 
 interface Settings {
   outputFolder: string;
+  baseOutputFolder?: string;
 }
 
 export function readSettings(): Settings {
@@ -12,7 +13,11 @@ export function readSettings(): Settings {
     const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
     const settings = JSON.parse(raw) as Settings;
     const folder = settings.outputFolder ?? '';
-    return { outputFolder: folder ? path.resolve(folder) : folder };
+    const base = settings.baseOutputFolder ?? folder;
+    return {
+      outputFolder: folder ? path.resolve(folder) : folder,
+      baseOutputFolder: base ? path.resolve(base) : base || undefined,
+    };
   } catch {
     const folder = process.env.OUTPUT_FOLDER ?? '';
     return { outputFolder: folder ? path.resolve(folder) : folder };

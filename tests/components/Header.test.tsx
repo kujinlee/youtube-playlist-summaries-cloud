@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import Header from '@/components/Header';
 
 describe('Header', () => {
@@ -191,5 +191,73 @@ describe('Header — Sync button', () => {
     fireEvent.click(screen.getByRole('button', { name: /sync/i }));
     expect(onIngest).not.toHaveBeenCalled();
     expect(onSync).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Header — playlist folder auto-suggestion', () => {
+  const BASE = '/home/user/data';
+  const PLAYLIST_URL = 'https://www.youtube.com/playlist?list=PLtest123';
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ playlistId: 'PLtest123', title: 'My Playlist' }),
+    }) as jest.Mock;
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('auto-fills output folder with slugified title after URL change and debounce', async () => {
+    render(<Header defaultOutputFolder={BASE} baseOutputFolder={BASE} onIngest={jest.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/playlist url/i), {
+      target: { value: PLAYLIST_URL },
+    });
+
+    await act(async () => { jest.runAllTimers(); });
+    await screen.findByDisplayValue(`${BASE}/my-playlist`);
+  });
+
+  it('does not change the output folder for a URL without ?list=', async () => {
+    render(<Header defaultOutputFolder={BASE} baseOutputFolder={BASE} onIngest={jest.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/playlist url/i), {
+      target: { value: 'https://example.com/not-a-playlist' },
+    });
+
+    await act(async () => { jest.runAllTimers(); });
+    expect(screen.getByDisplayValue(BASE)).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('uses playlistId slug when title equals playlistId (no API key fallback)', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ playlistId: 'PLtest123', title: 'PLtest123' }),
+    });
+    render(<Header defaultOutputFolder={BASE} baseOutputFolder={BASE} onIngest={jest.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/playlist url/i), {
+      target: { value: PLAYLIST_URL },
+    });
+
+    await act(async () => { jest.runAllTimers(); });
+    await screen.findByDisplayValue(`${BASE}/pltest123`);
+  });
+
+  it('leaves folder unchanged when /api/playlist-info returns an error', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: false });
+    render(<Header defaultOutputFolder={BASE} baseOutputFolder={BASE} onIngest={jest.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/playlist url/i), {
+      target: { value: PLAYLIST_URL },
+    });
+
+    await act(async () => { jest.runAllTimers(); });
+    expect(screen.getByDisplayValue(BASE)).toBeInTheDocument();
   });
 });

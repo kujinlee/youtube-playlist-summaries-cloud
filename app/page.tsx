@@ -6,7 +6,6 @@ import { FILTER_DEFAULTS } from '@/types';
 import DeepDiveStatusBar from '@/components/DeepDiveStatusBar';
 import FilterBar from '@/components/FilterBar';
 import Header from '@/components/Header';
-import SortBar from '@/components/SortBar';
 import VideoList from '@/components/VideoList';
 
 type IngestStatus = 'idle' | 'running' | 'error';
@@ -22,6 +21,7 @@ const IDLE_INGEST: IngestState = { status: 'idle', step: '', progress: 0, error:
 
 export default function Page() {
   const [outputFolder, setOutputFolder] = useState('');
+  const [baseOutputFolder, setBaseOutputFolder] = useState('');
   const [videos, setVideos] = useState<Video[]>([]);
   const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
@@ -84,6 +84,7 @@ export default function Page() {
           const data = await res.json();
           folder = data.outputFolder ?? '';
           setOutputFolder(folder);
+          setBaseOutputFolder(data.baseOutputFolder ?? folder);
         }
       } catch {
         // proceed with empty folder
@@ -249,6 +250,7 @@ export default function Page() {
     <main className="min-h-screen bg-zinc-950">
       <Header
         defaultOutputFolder={outputFolder}
+        baseOutputFolder={baseOutputFolder}
         onIngest={handleIngest}
         onSync={handleSync}
         syncEnabled={!!currentPlaylistUrl}
@@ -314,11 +316,6 @@ export default function Page() {
         </label>
       </div>
 
-      {/* Sort row */}
-      <div className="px-6 py-2 border-b border-zinc-800">
-        <SortBar activeColumn={sortColumn} order={sortOrder} onSort={handleSort} />
-      </div>
-
       <div className="px-6 py-4">
         <VideoList
           videos={filteredVideos}
@@ -326,6 +323,9 @@ export default function Page() {
           showArchive={true}
           onDeepDive={handleDeepDive}
           onArchive={handleArchive}
+          sortColumn={sortColumn}
+          sortOrder={sortOrder}
+          onSort={handleSort}
         />
       </div>
 

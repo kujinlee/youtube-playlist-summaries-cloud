@@ -306,8 +306,8 @@ describe('Page — ingest (behaviors 3–6)', () => {
   });
 });
 
-describe('Page — sort bar (behavior 7)', () => {
-  it('re-fetches videos with sort params when SortBar is clicked', async () => {
+describe('Page — sort column headers (behavior 7)', () => {
+  it('re-fetches videos with sort params when a column header is clicked', async () => {
     const { fetchMock } = await renderPage([makeVideo('v1')]);
     await waitFor(() => screen.getByText('Video v1'));
 

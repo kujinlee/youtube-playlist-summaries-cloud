@@ -85,6 +85,28 @@ describe('GET /api/videos', () => {
     expect(res.status).toBe(400);
   });
 
+  it('sorts by playlistIndex ascending', async () => {
+    mockReadIndex.mockReturnValue(makeIndex([
+      { ...makeVideo('vid1', 4, 'Beta'), playlistIndex: 3 },
+      { ...makeVideo('vid2', 2, 'Alpha'), playlistIndex: 1 },
+      { ...makeVideo('vid3', 5, 'Gamma'), playlistIndex: 2 },
+    ]));
+    const res = await get({ sortColumn: 'playlistIndex', sortOrder: 'asc' });
+    const { videos } = await res.json();
+    expect(videos.map((v: Video) => v.id)).toEqual(['vid2', 'vid3', 'vid1']);
+  });
+
+  it('sorts by playlistIndex descending', async () => {
+    mockReadIndex.mockReturnValue(makeIndex([
+      { ...makeVideo('vid1', 4, 'Beta'), playlistIndex: 3 },
+      { ...makeVideo('vid2', 2, 'Alpha'), playlistIndex: 1 },
+      { ...makeVideo('vid3', 5, 'Gamma'), playlistIndex: 2 },
+    ]));
+    const res = await get({ sortColumn: 'playlistIndex', sortOrder: 'desc' });
+    const { videos } = await res.json();
+    expect(videos.map((v: Video) => v.id)).toEqual(['vid1', 'vid3', 'vid2']);
+  });
+
   it('includes playlistUrl from index in the response', async () => {
     const res = await get();
     expect(res.status).toBe(200);
