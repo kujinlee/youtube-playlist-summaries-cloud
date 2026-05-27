@@ -25,6 +25,11 @@
 .DS_Store
 *.pem
 
+# test/verification artifacts (Playwright test runner + MCP browser tool)
+/test-results/
+/.screenshots/
+/.playwright-mcp/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

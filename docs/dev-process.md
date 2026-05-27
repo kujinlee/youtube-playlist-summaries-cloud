@@ -58,6 +58,7 @@ These files are not @-included — read them when the trigger condition is met.
    - Work through the list in order; mark each `completed` with `TaskUpdate` immediately after verifying it. Do not batch.
    - Run actual app; step through `docs/design-spec.md` checklist with evidence
    - Tool: `verification-before-completion`
+   - **Screenshots:** always save to `.screenshots/<name>.png` — never to the project root. The `.screenshots/` folder is gitignored; delete its contents after verification is complete.
 
 5. **Final Review + Finish**
    - Full code review → commit → push → PR
