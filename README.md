@@ -138,7 +138,7 @@ This project is built with Claude Code using a gate-based workflow (brainstorm â
 | [`docs/dev-process.md`](docs/dev-process.md) | Phase-by-phase development workflow and per-task checklist |
 | [`docs/plugins.md`](docs/plugins.md) | Required plugins, skill conflict resolution, and cleanup guidance |
 
-To regenerate the skills reference after installing or updating plugins:
+To regenerate the skills reference after installing or updating plugins, say **"sync docs"** or run `/sync-docs` â€” the `sync-docs` skill handles it. Or run directly:
 
 ```bash
 python3 scripts/regen-skills-doc.py
