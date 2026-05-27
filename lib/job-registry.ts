@@ -8,9 +8,20 @@ interface Job {
 }
 
 const registry = new Map<string, Job>();
+// Tracks which outputFolder has an active ingestion job, preventing concurrent runs.
+const activeByFolder = new Map<string, string>(); // folder → jobId
+const jobFolders = new Map<string, string>();     // jobId → folder (for cleanup in deleteJob)
 
-export function createJob(jobId: string): void {
+export function createJob(jobId: string, outputFolder?: string): void {
   registry.set(jobId, { emitter: new EventEmitter(), buffer: [] });
+  if (outputFolder) {
+    activeByFolder.set(outputFolder, jobId);
+    jobFolders.set(jobId, outputFolder);
+  }
+}
+
+export function isIngestionRunning(outputFolder: string): boolean {
+  return activeByFolder.has(outputFolder);
 }
 
 export function emitJobEvent(jobId: string, event: ProgressEvent): void {
@@ -34,9 +45,16 @@ export function subscribeJob(
 }
 
 export function deleteJob(jobId: string): void {
+  const folder = jobFolders.get(jobId);
+  if (folder) {
+    activeByFolder.delete(folder);
+    jobFolders.delete(jobId);
+  }
   registry.delete(jobId);
 }
 
 export function _resetJobRegistry(): void {
   registry.clear();
+  activeByFolder.clear();
+  jobFolders.clear();
 }

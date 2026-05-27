@@ -398,6 +398,23 @@ describe('runIngestion', () => {
     const vid2Written = writtenVideos.find((v) => v.id === 'vid2');
     expect(vid2Written?.playlistIndex).toBe(2);
   });
+
+  it('does not create a -2.md file when the same videoId appears twice in the playlist', async () => {
+    // YouTube API can return duplicates (same video added to a playlist twice).
+    // The second occurrence must be detected as already-processed within the same run.
+    const meta = makeVideoMeta('vid1');
+    mockFetchPlaylistVideos.mockResolvedValue([meta, meta]); // same video twice
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    const mdFiles = fs.readdirSync(outputFolder).filter((f) => f.endsWith('.md'));
+    expect(mdFiles).toHaveLength(1);
+    expect(mdFiles[0]).not.toMatch(/-2\.md$/);
+    // upsertVideo called exactly once — second occurrence skipped
+    expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('slugify', () => {

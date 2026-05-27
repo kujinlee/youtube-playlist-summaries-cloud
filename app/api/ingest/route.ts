@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { assertOutputFolder } from '../../../lib/index-store';
 import { runIngestion } from '../../../lib/pipeline';
-import { createJob, deleteJob, emitJobEvent } from '../../../lib/job-registry';
+import { createJob, deleteJob, emitJobEvent, isIngestionRunning } from '../../../lib/job-registry';
 import type { ProgressEvent } from '../../../types';
 
 export async function POST(request: Request) {
@@ -19,8 +19,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'invalid outputFolder' }, { status: 400 });
   }
 
+  if (isIngestionRunning(outputFolder)) {
+    return NextResponse.json({ error: 'Ingestion already running for this folder' }, { status: 409 });
+  }
+
   const jobId = crypto.randomUUID();
-  createJob(jobId);
+  createJob(jobId, outputFolder);
   let finished = false;
 
   // Start pipeline in background; do not await

@@ -266,6 +266,8 @@ export async function runIngestion(
       };
       // Index updated immediately after md write — reduces orphan window to PDF generation only.
       upsertVideo(outputFolder, video);
+      // Mark as processed so within-run duplicates (same video appearing twice in the playlist) are skipped.
+      alreadyIndexed.add(meta.videoId);
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating PDF…', current, total });
       await generatePdf(mdContent, pdfPath);

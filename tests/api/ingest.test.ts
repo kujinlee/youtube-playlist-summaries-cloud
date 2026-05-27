@@ -12,6 +12,7 @@ const mockCreateJob = jest.mocked(jobRegistry.createJob);
 const mockEmitJobEvent = jest.mocked(jobRegistry.emitJobEvent);
 const mockSubscribeJob = jest.mocked(jobRegistry.subscribeJob);
 const mockResetJobRegistry = jest.mocked(jobRegistry._resetJobRegistry);
+const mockIsIngestionRunning = jest.mocked(jobRegistry.isIngestionRunning);
 const mockAssertOutputFolder = jest.mocked(indexStore.assertOutputFolder);
 const mockRunIngestion = jest.mocked(pipeline.runIngestion);
 
@@ -32,6 +33,7 @@ describe('POST /api/ingest', () => {
     mockCreateJob.mockImplementation(() => {});
     mockEmitJobEvent.mockImplementation(() => {});
     mockResetJobRegistry.mockImplementation(() => {});
+    mockIsIngestionRunning.mockReturnValue(false); // default: no active job
     mockRunIngestion.mockResolvedValue(undefined);
   });
 
@@ -53,6 +55,12 @@ describe('POST /api/ingest', () => {
   it('returns 400 when outputFolder is missing', async () => {
     const res = await postIngest({ playlistUrl: PLAYLIST_URL });
     expect(res.status).toBe(400);
+  });
+
+  it('returns 409 when ingestion is already running for the same outputFolder', async () => {
+    mockIsIngestionRunning.mockReturnValue(true);
+    const res = await postIngest({ playlistUrl: PLAYLIST_URL, outputFolder: OUTPUT_FOLDER });
+    expect(res.status).toBe(409);
   });
 });
 
