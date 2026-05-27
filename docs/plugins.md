@@ -6,6 +6,7 @@ Lives in the project repo so the full workflow is reproducible by anyone who clo
 > **Quick reference:** [`docs/available-skills.md`](available-skills.md) lists every skill, agent,
 > and command currently installed — with invoke strings, trigger type, and descriptions.
 > Regenerate it after any plugin change: `python3 scripts/regen-skills-doc.py`
+> — or just say **"sync docs"** / run `/sync-docs` to let the `sync-docs` skill handle it.
 
 ---
 
