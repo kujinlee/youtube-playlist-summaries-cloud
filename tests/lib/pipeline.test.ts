@@ -204,7 +204,7 @@ describe('runIngestion', () => {
       outputFolder,
       expect.objectContaining({
         summaryMd: 'hello-world.md',
-        summaryPdf: 'hello-world.pdf',
+        summaryPdf: 'pdfs/hello-world.pdf',
       }),
     );
   });
@@ -224,7 +224,7 @@ describe('runIngestion', () => {
       outputFolder,
       expect.objectContaining({
         summaryMd: 'hello-world-2.md',
-        summaryPdf: 'hello-world-2.pdf',
+        summaryPdf: 'pdfs/hello-world-2.pdf',
       }),
     );
   });
@@ -636,14 +636,16 @@ describe('reconstructVideo', () => {
     expect(video!.summaryMd).toBe('001_test-video-title.md');
   });
 
-  it('sets summaryPdf to the .pdf filename when the file exists', () => {
-    const pdfPath = path.join(tempDir, '001_test-video-title.pdf');
-    fs.writeFileSync(pdfPath, '%PDF');
+  it('sets summaryPdf to pdfs/-prefixed path when PDF exists in pdfs/ subfolder', () => {
+    const pdfsDir = path.join(tempDir, 'pdfs');
+    fs.mkdirSync(pdfsDir, { recursive: true });
+    fs.writeFileSync(path.join(pdfsDir, '001_test-video-title.pdf'), '%PDF');
     const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
-    expect(video!.summaryPdf).toBe('001_test-video-title.pdf');
+    expect(video!.summaryPdf).toBe('pdfs/001_test-video-title.pdf');
   });
 
-  it('sets summaryPdf to null when the .pdf file is absent', () => {
+  it('sets summaryPdf to null when PDF is absent from pdfs/ subfolder', () => {
+    // No PDF file created — neither at root nor in pdfs/
     const video = reconstructVideo(SAMPLE_MD, '001_test-video-title.md', mdPath);
     expect(video!.summaryPdf).toBeNull();
   });

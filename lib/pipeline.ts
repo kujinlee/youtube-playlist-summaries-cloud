@@ -55,8 +55,8 @@ export function reconstructVideo(content: string, file: string, mdPath: string):
 
   const summaryMd = file;
   const pdfFilename = file.replace(/\.md$/, '.pdf');
-  const pdfPath = path.join(path.dirname(mdPath), pdfFilename);
-  const summaryPdf = fs.existsSync(pdfPath) ? pdfFilename : null;
+  const pdfPath = path.join(path.dirname(mdPath), 'pdfs', pdfFilename);
+  const summaryPdf = fs.existsSync(pdfPath) ? `pdfs/${pdfFilename}` : null;
 
   const processedAt = fs.statSync(mdPath).mtime.toISOString();
 
@@ -212,7 +212,8 @@ export async function runIngestion(
         counter++;
       }
       const mdPath = path.join(outputFolder, `${baseName}.md`);
-      const pdfPath = path.join(outputFolder, `${baseName}.pdf`);
+      fs.mkdirSync(path.join(outputFolder, 'pdfs'), { recursive: true });
+      const pdfPath = path.join(outputFolder, 'pdfs', `${baseName}.pdf`);
 
       const structuralTags = ['video-summary', language];
       const allTags = [...structuralTags, ...(tags ?? [])];
@@ -260,7 +261,7 @@ export async function runIngestion(
         ratings,
         overallScore,
         summaryMd: `${baseName}.md`,
-        summaryPdf: `${baseName}.pdf`,
+        summaryPdf: `pdfs/${baseName}.pdf`,
         deepDiveMd: null,
         deepDivePdf: null,
         processedAt: new Date().toISOString(),
