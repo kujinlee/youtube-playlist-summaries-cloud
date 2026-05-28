@@ -183,6 +183,85 @@ describe('fetchPlaylistVideos', () => {
       fetchPlaylistVideos('not-a-url', 'fake-api-key'),
     ).rejects.toThrow('Invalid playlist URL');
   });
+
+  it('captures addedToPlaylistAt from playlistItems snippet.publishedAt', async () => {
+    mockPlaylistItemsList.mockResolvedValue({
+      data: {
+        items: [{
+          contentDetails: { videoId: 'abc12345678' },
+          snippet: { publishedAt: '2025-01-03T09:00:00Z' },
+        }],
+        nextPageToken: null,
+      },
+    });
+    mockVideosList.mockResolvedValue({
+      data: {
+        items: [{
+          id: 'abc12345678',
+          snippet: { title: 'Test Video' },
+          contentDetails: { duration: 'PT5M' },
+        }],
+      },
+    });
+
+    const result = await fetchPlaylistVideos(
+      'https://www.youtube.com/playlist?list=PLtest123',
+      'fake-api-key',
+    );
+
+    expect(result[0].addedToPlaylistAt).toBe('2025-01-03T09:00:00Z');
+  });
+
+  it('captures videoPublishedAt from videos snippet.publishedAt', async () => {
+    mockPlaylistItemsList.mockResolvedValue({
+      data: {
+        items: [{ contentDetails: { videoId: 'abc12345678' } }],
+        nextPageToken: null,
+      },
+    });
+    mockVideosList.mockResolvedValue({
+      data: {
+        items: [{
+          id: 'abc12345678',
+          snippet: { title: 'Test Video', publishedAt: '2024-11-12T14:30:00Z' },
+          contentDetails: { duration: 'PT5M' },
+        }],
+      },
+    });
+
+    const result = await fetchPlaylistVideos(
+      'https://www.youtube.com/playlist?list=PLtest123',
+      'fake-api-key',
+    );
+
+    expect(result[0].videoPublishedAt).toBe('2024-11-12T14:30:00Z');
+  });
+
+  it('returns undefined for both dates when snippet fields are absent', async () => {
+    mockPlaylistItemsList.mockResolvedValue({
+      data: {
+        items: [{ contentDetails: { videoId: 'abc12345678' } }],
+        nextPageToken: null,
+      },
+    });
+    mockVideosList.mockResolvedValue({
+      data: {
+        items: [{
+          id: 'abc12345678',
+          snippet: { title: 'Test Video' },
+          contentDetails: { duration: 'PT5M' },
+        }],
+      },
+    });
+
+    const result = await fetchPlaylistVideos(
+      'https://www.youtube.com/playlist?list=PLtest123',
+      'fake-api-key',
+    );
+
+    expect(result[0].videoPublishedAt).toBeUndefined();
+    expect(result[0].addedToPlaylistAt).toBeUndefined();
+  });
 });
 
 describe('fetchTranscript', () => {

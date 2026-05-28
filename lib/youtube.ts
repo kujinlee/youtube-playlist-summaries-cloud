@@ -22,19 +22,23 @@ export async function fetchPlaylistVideos(playlistUrl: string, apiKey: string): 
   const yt = google.youtube({ version: 'v3', auth: apiKey });
 
   const videoIds: string[] = [];
+  const addedDates: Record<string, string | undefined> = {};
   let pageToken: string | undefined;
   let pageCount = 0;
   const MAX_PAGES = 100;
   do {
     if (pageCount++ >= MAX_PAGES) throw new Error(`Playlist exceeded ${MAX_PAGES} pages: ${playlistUrl}`);
     const res = await yt.playlistItems.list({
-      part: ['contentDetails'],
+      part: ['contentDetails', 'snippet'],
       playlistId,
       maxResults: 50,
       pageToken,
     });
     for (const item of res.data.items ?? []) {
-      if (item.contentDetails?.videoId) videoIds.push(item.contentDetails.videoId);
+      if (item.contentDetails?.videoId) {
+        videoIds.push(item.contentDetails.videoId);
+        addedDates[item.contentDetails.videoId] = item.snippet?.publishedAt ?? undefined;
+      }
     }
     pageToken = res.data.nextPageToken ?? undefined;
   } while (pageToken);
@@ -53,6 +57,8 @@ export async function fetchPlaylistVideos(playlistUrl: string, apiKey: string): 
         channelTitle: item.snippet?.channelTitle ?? undefined,
         youtubeUrl: `https://www.youtube.com/watch?v=${item.id}`,
         durationSeconds: parseDuration(item.contentDetails?.duration ?? ''),
+        videoPublishedAt: item.snippet?.publishedAt ?? undefined,
+        addedToPlaylistAt: addedDates[item.id],
       });
     }
   }
