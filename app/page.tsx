@@ -138,6 +138,11 @@ export default function Page() {
               ? Math.min(100, Math.round((data.current / data.total) * 100))
               : 0;
           setIngest({ status: 'running', step: data.step, progress, error: '' });
+          // Refresh list each time a video is fully saved so it appears incrementally.
+          if (data.step === 'Saved') {
+            const { col, order } = sortRef.current;
+            fetchVideos(folder, col, order);
+          }
         } else if (data.type === 'error') {
           // Per-video error: show inline but keep stream open
           setIngest((prev) => ({ ...prev, error: data.log }));
@@ -157,6 +162,9 @@ export default function Page() {
         es.close();
         ingestESRef.current = null;
         setIngest({ status: 'error', step: '', progress: 0, error: 'Connection lost.' });
+        // Fetch whatever was indexed before the connection dropped so the list stays current.
+        const { col, order } = sortRef.current;
+        fetchVideos(folder, col, order);
       };
     },
     [fetchVideos],

@@ -231,6 +231,70 @@ describe('Page — ingest (behaviors 3–6)', () => {
     });
   });
 
+  it('fetches videos after connection loss so already-indexed videos are displayed (behavior 6b)', async () => {
+    const { fetchMock } = await setupIngest([makeVideo('v1')]);
+    const ingestES = getIngestES();
+
+    const videoCallsBefore = (fetchMock.mock.calls as [string][]).filter(
+      (c) => c[0].startsWith('/api/videos'),
+    ).length;
+
+    act(() => { ingestES.emitError(); });
+
+    await waitFor(() => {
+      const videoCalls = (fetchMock.mock.calls as [string][]).filter(
+        (c) => c[0].startsWith('/api/videos'),
+      ).length;
+      expect(videoCalls).toBeGreaterThan(videoCallsBefore);
+    });
+    // Error message still shown so user knows the stream dropped
+    expect(screen.getByText('Connection lost.')).toBeInTheDocument();
+  });
+
+  it('fetches videos on each "Saved" step event for incremental display (behavior 6c)', async () => {
+    const { fetchMock } = await setupIngest();
+    const ingestES = getIngestES();
+
+    const videoCallsBefore = (fetchMock.mock.calls as [string][]).filter(
+      (c) => c[0].startsWith('/api/videos'),
+    ).length;
+
+    act(() => {
+      ingestES.emit({ type: 'step', step: 'Saved', current: 1, total: 5 });
+    });
+
+    await waitFor(() => {
+      const videoCalls = (fetchMock.mock.calls as [string][]).filter(
+        (c) => c[0].startsWith('/api/videos'),
+      ).length;
+      expect(videoCalls).toBeGreaterThan(videoCallsBefore);
+    });
+  });
+
+  it('does not fetch videos on non-Saved step events (behavior 6c negative)', async () => {
+    const { fetchMock } = await setupIngest();
+    const ingestES = getIngestES();
+
+    const videoCallsBefore = (fetchMock.mock.calls as [string][]).filter(
+      (c) => c[0].startsWith('/api/videos'),
+    ).length;
+
+    act(() => {
+      ingestES.emit({ type: 'step', step: 'Fetching transcript…', current: 1, total: 5 });
+    });
+    act(() => {
+      ingestES.emit({ type: 'step', step: 'Generating summary…', current: 2, total: 5 });
+    });
+
+    // Allow any microtasks to flush
+    await act(async () => {});
+
+    const videoCallsAfter = (fetchMock.mock.calls as [string][]).filter(
+      (c) => c[0].startsWith('/api/videos'),
+    ).length;
+    expect(videoCallsAfter).toBe(videoCallsBefore);
+  });
+
   it('shows per-video error inline but keeps stream open (behavior 6, C3)', async () => {
     await setupIngest();
     const ingestES = getIngestES();
