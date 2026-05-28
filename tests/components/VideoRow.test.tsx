@@ -121,6 +121,28 @@ describe('VideoRow', () => {
       renderRow({ audience: undefined });
       expect(screen.queryByText('Advanced')).not.toBeInTheDocument();
     });
+
+    describe('date cells', () => {
+      it('renders videoPublishedAt as YYYY-MM-DD', () => {
+        renderRow({ videoPublishedAt: '2024-11-12T14:30:00.000Z' });
+        expect(screen.getByRole('cell', { name: 'Published on YouTube' })).toHaveTextContent('2024-11-12');
+      });
+
+      it('renders — when videoPublishedAt is absent', () => {
+        renderRow(); // baseVideo has no videoPublishedAt
+        expect(screen.getByRole('cell', { name: 'Published on YouTube' })).toHaveTextContent('—');
+      });
+
+      it('renders addedToPlaylistAt as YYYY-MM-DD', () => {
+        renderRow({ addedToPlaylistAt: '2025-01-03T09:00:00.000Z' });
+        expect(screen.getByRole('cell', { name: 'Added to playlist' })).toHaveTextContent('2025-01-03');
+      });
+
+      it('renders — when addedToPlaylistAt is absent', () => {
+        renderRow(); // baseVideo has no addedToPlaylistAt
+        expect(screen.getByRole('cell', { name: 'Added to playlist' })).toHaveTextContent('—');
+      });
+    });
   });
 
   describe('menu visibility', () => {

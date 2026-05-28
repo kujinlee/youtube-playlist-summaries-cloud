@@ -96,6 +96,12 @@ export default function VideoRow({ video, rank, outputFolder, onDeepDive, onArch
           <Badge label={video.audience} colorClass={AUDIENCE_COLOR[video.audience] ?? ''} />
         )}
       </td>
+      <td className={`px-3 py-2 text-sm tabular-nums text-zinc-400 ${dim}`} aria-label="Published on YouTube">
+        {video.videoPublishedAt ? video.videoPublishedAt.slice(0, 10) : '—'}
+      </td>
+      <td className={`px-3 py-2 text-sm tabular-nums text-zinc-400 ${dim}`} aria-label="Added to playlist">
+        {video.addedToPlaylistAt ? video.addedToPlaylistAt.slice(0, 10) : '—'}
+      </td>
       <td className={`px-3 py-2 text-sm tabular-nums font-mono text-right text-zinc-200 ${dim}`} aria-label="Usefulness">{ratings.usefulness}</td>
       <td className={`px-3 py-2 text-sm tabular-nums font-mono text-right text-zinc-200 ${dim}`} aria-label="Depth">{ratings.depth}</td>
       <td className={`px-3 py-2 text-sm tabular-nums font-mono text-right text-zinc-200 ${dim}`} aria-label="Originality">{ratings.originality}</td>
