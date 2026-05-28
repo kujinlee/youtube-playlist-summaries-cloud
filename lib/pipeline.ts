@@ -155,6 +155,7 @@ export async function runIngestion(
   playlistUrl: string,
   outputFolder: string,
   onProgress: (event: ProgressEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   // Check cheap env guard before I/O-bound assertOutputFolder
   const apiKey = process.env.YOUTUBE_API_KEY;
@@ -180,6 +181,11 @@ export async function runIngestion(
   onProgress({ type: 'start', total });
 
   for (let i = 0; i < metas.length; i++) {
+    // Check cancellation between videos — after any current video finishes cleanly.
+    if (signal?.aborted) {
+      onProgress({ type: 'cancelled' });
+      return;
+    }
     const meta = metas[i];
     const current = i + 1;
     try {

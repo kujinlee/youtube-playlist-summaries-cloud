@@ -495,6 +495,75 @@ describe('Page — archive (behavior 11)', () => {
   });
 });
 
+describe('Page — cancel (behavior 6d)', () => {
+  async function setupIngestRunning() {
+    const { fetchMock } = await renderPage([], {
+      'POST /api/ingest': { jobId: 'ingest-job-1' },
+      'POST /api/ingest/cancel': { ok: true },
+    });
+    await waitFor(() => {
+      const folderInput = screen.getByPlaceholderText(/output folder/i) as HTMLInputElement;
+      expect(folderInput.value).toBe(OUTPUT_FOLDER);
+    });
+    const urlInput = screen.getByPlaceholderText(/playlist url/i);
+    fireEvent.change(urlInput, { target: { value: PLAYLIST_URL } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /fetch|summarize/i }));
+    });
+    return { fetchMock };
+  }
+
+  it('shows cancel button while ingestion is running', async () => {
+    await setupIngestRunning();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    });
+  });
+
+  it('does not show cancel button when idle', async () => {
+    await renderPage();
+    expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull();
+  });
+
+  it('posts to /api/ingest/cancel with correct jobId when cancel button is clicked', async () => {
+    const { fetchMock } = await setupIngestRunning();
+    await waitFor(() => screen.getByRole('button', { name: /cancel/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    });
+    await waitFor(() => {
+      const cancelCall = (fetchMock.mock.calls as [string, RequestInit][]).find(
+        ([url]) => url === '/api/ingest/cancel',
+      )!;
+      expect(cancelCall).toBeDefined();
+      const body = JSON.parse(cancelCall[1].body as string);
+      expect(body.jobId).toBe('ingest-job-1');
+    });
+  });
+
+  it('resets ingest to idle, closes stream, and fetches videos on cancelled SSE event', async () => {
+    const { fetchMock } = await setupIngestRunning();
+    const ingestES = getIngestES();
+
+    const videoCallsBefore = (fetchMock.mock.calls as [string][]).filter(
+      (c) => c[0].startsWith('/api/videos'),
+    ).length;
+
+    act(() => {
+      ingestES.emit({ type: 'cancelled' });
+    });
+
+    await waitFor(() => {
+      expect(ingestES.close).toHaveBeenCalled();
+      expect(screen.queryByLabelText('Ingestion progress')).not.toBeInTheDocument();
+      const videoCalls = (fetchMock.mock.calls as [string][]).filter(
+        (c) => c[0].startsWith('/api/videos'),
+      ).length;
+      expect(videoCalls).toBeGreaterThan(videoCallsBefore);
+    });
+  });
+});
+
 describe('Page — sort persistence (behavior 12)', () => {
   it('uses current sortColumn/sortOrder when refetching after archive', async () => {
     const { fetchMock } = await renderPage([makeVideo('v1')], {

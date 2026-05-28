@@ -93,6 +93,9 @@ export const ProgressEventSchema = z.discriminatedUnion('type', [
     title: z.string().optional(),
     log: z.string(),
   }),
+  z.object({
+    type: z.literal('cancelled'),
+  }),
 ]);
 export type ProgressEvent = z.infer<typeof ProgressEventSchema>;
 export type ProgressEventType = ProgressEvent['type'];

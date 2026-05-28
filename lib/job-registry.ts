@@ -5,6 +5,7 @@ interface Job {
   emitter: EventEmitter;
   // Events are buffered so a late-subscribing SSE client can replay missed events
   buffer: ProgressEvent[];
+  controller: AbortController;
 }
 
 const registry = new Map<string, Job>();
@@ -13,7 +14,7 @@ const activeByFolder = new Map<string, string>(); // folder → jobId
 const jobFolders = new Map<string, string>();     // jobId → folder (for cleanup in deleteJob)
 
 export function createJob(jobId: string, outputFolder?: string): void {
-  registry.set(jobId, { emitter: new EventEmitter(), buffer: [] });
+  registry.set(jobId, { emitter: new EventEmitter(), buffer: [], controller: new AbortController() });
   if (outputFolder) {
     activeByFolder.set(outputFolder, jobId);
     jobFolders.set(jobId, outputFolder);
@@ -42,6 +43,19 @@ export function subscribeJob(
   for (const event of job.buffer) listener(event);
   job.emitter.on('progress', listener);
   return () => job.emitter.removeListener('progress', listener);
+}
+
+// Abort the job's signal. Returns true if found and aborted, false if not found.
+export function cancelJob(jobId: string): boolean {
+  const job = registry.get(jobId);
+  if (!job) return false;
+  job.controller.abort();
+  return true;
+}
+
+// Returns the AbortSignal for the job, or undefined if not found.
+export function getJobSignal(jobId: string): AbortSignal | undefined {
+  return registry.get(jobId)?.controller.signal;
 }
 
 export function deleteJob(jobId: string): void {

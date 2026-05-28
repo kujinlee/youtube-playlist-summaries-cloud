@@ -14,6 +14,7 @@ const mockEmitJobEvent = jest.mocked(jobRegistry.emitJobEvent);
 const mockSubscribeJob = jest.mocked(jobRegistry.subscribeJob);
 const mockResetJobRegistry = jest.mocked(jobRegistry._resetJobRegistry);
 const mockIsIngestionRunning = jest.mocked(jobRegistry.isIngestionRunning);
+const mockGetJobSignal = jest.mocked(jobRegistry.getJobSignal);
 const mockAssertOutputFolder = jest.mocked(indexStore.assertOutputFolder);
 const mockRunIngestion = jest.mocked(pipeline.runIngestion);
 
@@ -37,7 +38,8 @@ describe('POST /api/ingest', () => {
     mockDeleteJob.mockImplementation(() => {});
     mockEmitJobEvent.mockImplementation(() => {});
     mockResetJobRegistry.mockImplementation(() => {});
-    mockIsIngestionRunning.mockReturnValue(false); // default: no active job
+    mockIsIngestionRunning.mockReturnValue(false);
+    mockGetJobSignal.mockReturnValue(new AbortController().signal);
     mockRunIngestion.mockResolvedValue(undefined);
   });
 
@@ -77,6 +79,25 @@ describe('POST /api/ingest', () => {
     capturedCallback?.({ type: 'error', videoId: 'vid1', title: 'Video 1', log: 'transcript unavailable' });
 
     expect(mockDeleteJob).not.toHaveBeenCalled();
+  });
+
+  it('passes an AbortSignal to runIngestion', async () => {
+    let capturedSignal: unknown;
+    mockRunIngestion.mockImplementation(async (_url, _folder, _cb, signal) => {
+      capturedSignal = signal;
+    });
+    await postIngest({ playlistUrl: PLAYLIST_URL, outputFolder: OUTPUT_FOLDER });
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('deletes the job on a cancelled event (terminal)', async () => {
+    let capturedCallback: ((event: ProgressEvent) => void) | undefined;
+    mockRunIngestion.mockImplementation(async (_url, _folder, onProgress) => {
+      capturedCallback = onProgress;
+    });
+    await postIngest({ playlistUrl: PLAYLIST_URL, outputFolder: OUTPUT_FOLDER });
+    capturedCallback?.({ type: 'cancelled' });
+    expect(mockDeleteJob).toHaveBeenCalled();
   });
 
   it('deletes the job when a fatal pipeline error is emitted (no videoId)', async () => {
@@ -141,6 +162,20 @@ describe('GET /api/ingest/stream', () => {
     await GET_STREAM(new Request('http://localhost/api/ingest/stream?jobId=job2'));
 
     emit({ type: 'done' });
+    expect(unsubscribeFn).toHaveBeenCalled();
+  });
+
+  it('unsubscribes (closes stream) on a cancelled event', async () => {
+    const unsubscribeFn = jest.fn();
+    let emit: (event: ProgressEvent) => void = () => {};
+    mockSubscribeJob.mockImplementation((_jobId, listener) => {
+      emit = listener;
+      return unsubscribeFn;
+    });
+
+    await GET_STREAM(new Request('http://localhost/api/ingest/stream?jobId=job4'));
+
+    emit({ type: 'cancelled' });
     expect(unsubscribeFn).toHaveBeenCalled();
   });
 

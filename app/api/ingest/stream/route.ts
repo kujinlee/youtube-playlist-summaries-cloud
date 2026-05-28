@@ -17,8 +17,11 @@ export async function GET(request: Request) {
       unsubscribe = subscribeJob(jobId, (event: ProgressEvent) => {
         controller.enqueue(`data: ${JSON.stringify(event)}\n\n`);
         // Per-video errors (videoId present) are non-fatal — keep the stream open.
-        // Only close on terminal events: done, or a fatal error (no videoId).
-        const isFatal = event.type === 'done' || (event.type === 'error' && !('videoId' in event && event.videoId));
+        // Terminal events: done, cancelled, or a fatal error (no videoId).
+        const isFatal =
+          event.type === 'done' ||
+          event.type === 'cancelled' ||
+          (event.type === 'error' && !('videoId' in event && event.videoId));
         if (isFatal) {
           unsubscribe?.();
           unsubscribe = null;

@@ -32,6 +32,7 @@ export default function Page() {
   const [deepDive, setDeepDive] = useState<{ videoId: string; jobId: string; title: string } | null>(null);
 
   const ingestESRef = useRef<EventSource | null>(null);
+  const ingestJobIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   // Always-current sort values for use inside async callbacks
   const sortRef = useRef<{ col: SortColumn | null; order: SortOrder }>({ col: null, order: 'asc' });
@@ -97,6 +98,7 @@ export default function Page() {
     async (playlistUrl: string, folder: string) => {
       ingestESRef.current?.close();
       ingestESRef.current = null;
+      ingestJobIdRef.current = null;
       setOutputFolder(folder);
       setIngest({ status: 'running', step: '', progress: 0, error: '' });
 
@@ -111,6 +113,7 @@ export default function Page() {
         if (!res.ok) throw new Error('Ingest POST failed');
         const data = await res.json();
         jobId = data.jobId;
+        ingestJobIdRef.current = jobId;
       } catch (e) {
         if (mountedRef.current) {
           setIngest({ status: 'error', step: '', progress: 0, error: String(e) });
@@ -146,10 +149,11 @@ export default function Page() {
         } else if (data.type === 'error') {
           // Per-video error: show inline but keep stream open
           setIngest((prev) => ({ ...prev, error: data.log }));
-        } else if (data.type === 'done') {
+        } else if (data.type === 'done' || data.type === 'cancelled') {
           terminal = true;
           es.close();
           ingestESRef.current = null;
+          ingestJobIdRef.current = null;
           setIngest(IDLE_INGEST);
           const { col, order } = sortRef.current;
           fetchVideos(folder, col, order);
@@ -161,6 +165,7 @@ export default function Page() {
         terminal = true;
         es.close();
         ingestESRef.current = null;
+        ingestJobIdRef.current = null;
         setIngest({ status: 'error', step: '', progress: 0, error: 'Connection lost.' });
         // Fetch whatever was indexed before the connection dropped so the list stays current.
         const { col, order } = sortRef.current;
@@ -182,6 +187,20 @@ export default function Page() {
   const handleSync = useCallback((folder: string) => {
     if (currentPlaylistUrl) handleIngest(currentPlaylistUrl, folder);
   }, [handleIngest, currentPlaylistUrl]);
+
+  const handleCancel = useCallback(async () => {
+    const jobId = ingestJobIdRef.current;
+    if (!jobId) return;
+    try {
+      await fetch('/api/ingest/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId }),
+      });
+    } catch {
+      // ignore — the pipeline will emit cancelled via SSE when it checks the signal
+    }
+  }, []);
 
   const handleFilterChange = useCallback((patch: Partial<FilterState>) => {
     setFilters((prev) => ({ ...prev, ...patch }));
@@ -283,6 +302,14 @@ export default function Page() {
                   />
                 </div>
                 <span className="text-xs tabular-nums text-zinc-400 w-8 text-right">{ingest.progress}%</span>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  aria-label="Cancel ingestion"
+                  className="text-zinc-400 hover:text-zinc-100 text-xs px-2 py-1 rounded border border-zinc-700 hover:border-zinc-500 transition-colors"
+                >
+                  Cancel
+                </button>
               </div>
               {ingest.step && <p className="text-xs text-zinc-400">{ingest.step}</p>}
             </div>

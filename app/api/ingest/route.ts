@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { assertOutputFolder } from '../../../lib/index-store';
 import { runIngestion } from '../../../lib/pipeline';
-import { createJob, deleteJob, emitJobEvent, isIngestionRunning } from '../../../lib/job-registry';
+import { createJob, deleteJob, emitJobEvent, isIngestionRunning, getJobSignal } from '../../../lib/job-registry';
 import type { ProgressEvent } from '../../../types';
 
 export async function POST(request: Request) {
@@ -27,17 +27,22 @@ export async function POST(request: Request) {
   createJob(jobId, outputFolder);
   let finished = false;
 
+  const signal = getJobSignal(jobId);
+
   // Start pipeline in background; do not await
   runIngestion(playlistUrl, outputFolder, (event: ProgressEvent) => {
     emitJobEvent(jobId, event);
     // Per-video errors (videoId present) are non-fatal — the pipeline continues.
-    // Only delete the job for terminal events: done, or a fatal error (no videoId).
-    const isFatal = event.type === 'done' || (event.type === 'error' && !('videoId' in event && event.videoId));
+    // Terminal events: done, cancelled, or a fatal error (no videoId).
+    const isFatal =
+      event.type === 'done' ||
+      event.type === 'cancelled' ||
+      (event.type === 'error' && !('videoId' in event && event.videoId));
     if (isFatal) {
       finished = true;
       deleteJob(jobId);
     }
-  }).catch((err) => {
+  }, signal).catch((err) => {
     if (finished) return;
     finished = true;
     emitJobEvent(jobId, { type: 'error', log: err instanceof Error ? err.message : String(err) });

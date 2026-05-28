@@ -415,6 +415,31 @@ describe('runIngestion', () => {
     // upsertVideo called exactly once — second occurrence skipped
     expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
   });
+
+  it('emits cancelled (not done) and stops processing when AbortSignal fires between videos', async () => {
+    const controller = new AbortController();
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1'), makeVideoMeta('vid2')]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    const events: ProgressEvent[] = [];
+    await runIngestion(
+      PLAYLIST_URL,
+      outputFolder,
+      (e) => {
+        events.push(e);
+        // Abort as soon as vid1 is fully saved — loop should detect it before starting vid2
+        if (e.type === 'step' && 'step' in e && e.step === 'Saved') controller.abort();
+      },
+      controller.signal,
+    );
+
+    expect(events.some((e) => e.type === 'cancelled')).toBe(true);
+    expect(events.some((e) => e.type === 'done')).toBe(false);
+    // vid2 must not have been processed
+    expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
+    expect(mockUpsertVideo).toHaveBeenCalledWith(outputFolder, expect.objectContaining({ id: 'vid1' }));
+  });
 });
 
 describe('slugify', () => {
