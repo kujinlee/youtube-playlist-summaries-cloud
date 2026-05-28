@@ -5,20 +5,30 @@ import type { Video } from '@/types';
 interface VideoMenuProps {
   video: Video;
   outputFolder: string;
+  baseOutputFolder: string;
   onDeepDive: (videoId: string) => void;
   onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
   onClose: () => void;
 }
 
-function obsidianHref(outputFolder: string, file: string): string {
-  const vault = outputFolder.split('/').filter(Boolean).at(-1) ?? outputFolder;
-  return `obsidian://open?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(file)}`;
+function obsidianHref(baseOutputFolder: string, outputFolder: string, file: string): string {
+  // Vault = the registered Obsidian vault root (baseOutputFolder's last segment).
+  // File  = subfolder-relative path so Obsidian can locate the note inside the vault.
+  const base = baseOutputFolder || outputFolder;
+  const vault = base.split('/').filter(Boolean).at(-1) ?? base;
+  const normalizedBase = base.replace(/\/$/, '');
+  const normalizedOutput = outputFolder.replace(/\/$/, '');
+  const subFolder = normalizedOutput.startsWith(`${normalizedBase}/`)
+    ? normalizedOutput.slice(normalizedBase.length + 1)
+    : '';
+  const fullFile = subFolder ? `${subFolder}/${file}` : file;
+  return `obsidian://open?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(fullFile)}`;
 }
 
 const itemClass = 'block w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700';
 const disabledClass = 'block w-full px-4 py-2 text-left text-sm text-zinc-500 cursor-not-allowed';
 
-export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive, onClose }: VideoMenuProps) {
+export default function VideoMenu({ video, outputFolder, baseOutputFolder, onDeepDive, onArchive, onClose }: VideoMenuProps) {
   const hasDeepDive = !!video.deepDiveMd;
   const hasSummaryPdf = !!video.summaryPdf;
   const hasDeepDivePdf = !!video.deepDivePdf;
@@ -32,7 +42,7 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive, 
       className="absolute left-0 top-full z-20 mt-1 w-52 rounded-md bg-zinc-800 border border-zinc-700 shadow-xl py-1"
     >
       <li role="none">
-        <a href={obsidianHref(outputFolder, summaryFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
+        <a href={obsidianHref(baseOutputFolder, outputFolder, summaryFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
           Open in Obsidian
         </a>
       </li>
@@ -60,7 +70,7 @@ export default function VideoMenu({ video, outputFolder, onDeepDive, onArchive, 
       </li>
       <li role="none">
         {hasDeepDive ? (
-          <a href={obsidianHref(outputFolder, deepDiveFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
+          <a href={obsidianHref(baseOutputFolder, outputFolder, deepDiveFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
             Open Deep Dive in Obsidian
           </a>
         ) : (

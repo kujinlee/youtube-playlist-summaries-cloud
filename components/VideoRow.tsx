@@ -9,6 +9,7 @@ interface VideoRowProps {
   video: Video;
   rank: number;
   outputFolder: string;
+  baseOutputFolder: string;
   onDeepDive: (videoId: string) => void;
   onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
 }
@@ -33,7 +34,7 @@ const AUDIENCE_COLOR: Record<Audience, string> = {
   Advanced: 'bg-red-700 text-white',
 };
 
-export default function VideoRow({ video, rank, outputFolder, onDeepDive, onArchive }: VideoRowProps) {
+export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, onDeepDive, onArchive }: VideoRowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { ratings, overallScore } = video;
   // opacity-40 must NOT be on the <tr> — it creates a CSS stacking context that
@@ -72,6 +73,7 @@ export default function VideoRow({ video, rank, outputFolder, onDeepDive, onArch
               <VideoMenu
                 video={video}
                 outputFolder={outputFolder}
+                baseOutputFolder={baseOutputFolder}
                 onDeepDive={onDeepDive}
                 onArchive={onArchive}
                 onClose={() => setMenuOpen(false)}

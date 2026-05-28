@@ -364,6 +364,7 @@ export default function Page() {
         <VideoList
           videos={filteredVideos}
           outputFolder={outputFolder}
+          baseOutputFolder={baseOutputFolder}
           showArchive={true}
           onDeepDive={handleDeepDive}
           onArchive={handleArchive}

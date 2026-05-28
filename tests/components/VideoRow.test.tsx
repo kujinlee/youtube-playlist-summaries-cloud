@@ -26,7 +26,8 @@ const baseVideo: Video = {
   processedAt: '2024-01-01T00:00:00.000Z',
 };
 
-const OUTPUT_FOLDER = '/Users/test/vault';
+const BASE_OUTPUT_FOLDER = '/Users/test/vault';
+const OUTPUT_FOLDER = BASE_OUTPUT_FOLDER; // flat: playlist lives at vault root
 
 // VideoRow renders <tr> — jsdom requires a table/tbody wrapper for correct DOM structure
 function renderRow(overrides: Partial<Video> = {}, onDeepDive = jest.fn(), onArchive = jest.fn()) {
@@ -38,6 +39,7 @@ function renderRow(overrides: Partial<Video> = {}, onDeepDive = jest.fn(), onArc
           video={video}
           rank={1}
           outputFolder={OUTPUT_FOLDER}
+          baseOutputFolder={BASE_OUTPUT_FOLDER}
           onDeepDive={onDeepDive}
           onArchive={onArchive}
         />
@@ -213,6 +215,7 @@ describe('VideoRow', () => {
                 video={baseVideo}
                 rank={1}
                 outputFolder={specialFolder}
+                baseOutputFolder={specialFolder}
                 onDeepDive={jest.fn()}
                 onArchive={jest.fn()}
               />
@@ -223,6 +226,33 @@ describe('VideoRow', () => {
         const link = screen.getByRole('link', { name: /open in obsidian/i });
         // vault= is the basename ('my vault & notes'), special chars must be encoded
         expect(link.getAttribute('href')).toContain(encodeURIComponent('my vault & notes'));
+      });
+
+      it('uses baseOutputFolder for vault and prefixes file with subfolder when outputFolder is a subdirectory', () => {
+        const baseFolder = '/Users/test/vault';
+        const subFolder = '/Users/test/vault/my-playlist';
+        render(
+          <table>
+            <tbody>
+              <VideoRow
+                video={baseVideo}
+                rank={1}
+                outputFolder={subFolder}
+                baseOutputFolder={baseFolder}
+                onDeepDive={jest.fn()}
+                onArchive={jest.fn()}
+              />
+            </tbody>
+          </table>,
+        );
+        fireEvent.click(screen.getByRole('button', { name: /menu/i }));
+        const link = screen.getByRole('link', { name: /open in obsidian/i });
+        // vault= basename of baseOutputFolder ('vault'), not the subfolder
+        // file= subfolder/slug ('my-playlist/summary')
+        expect(link).toHaveAttribute(
+          'href',
+          `obsidian://open?vault=${encodeURIComponent('vault')}&file=${encodeURIComponent('my-playlist/summary')}`,
+        );
       });
     });
 
@@ -279,7 +309,8 @@ describe('VideoRow', () => {
       it('has correct obsidian:// href with deep-dive file when enabled', () => {
         openMenu({ deepDiveMd: 'abc123-deep-dive.md' });
         const link = screen.getByRole('link', { name: /open deep dive in obsidian/i });
-        // vault= is the basename of outputFolder ('/Users/test/vault' → 'vault')
+        // vault= is the basename of baseOutputFolder ('/Users/test/vault' → 'vault')
+        // flat layout: no subfolder prefix on file
         const expectedVault = encodeURIComponent('vault');
         const expectedFile = encodeURIComponent('abc123-deep-dive');
         expect(link).toHaveAttribute(

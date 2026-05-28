@@ -15,6 +15,7 @@ jest.mock('@/components/VideoRow', () => {
     video: Video;
     rank: number;
     outputFolder: string;
+    baseOutputFolder: string;
     onDeepDive: (videoId: string) => void;
     onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
   }) => (
@@ -61,6 +62,7 @@ function renderList({
     <VideoList
       videos={videos}
       outputFolder={OUTPUT_FOLDER}
+      baseOutputFolder={OUTPUT_FOLDER}
       showArchive={showArchive}
       onDeepDive={onDeepDive}
       onArchive={onArchive}
@@ -166,6 +168,7 @@ describe('VideoList — sort column headers', () => {
       <VideoList
         videos={videos}
         outputFolder={OUTPUT_FOLDER}
+        baseOutputFolder={OUTPUT_FOLDER}
         showArchive={true}
         onDeepDive={jest.fn()}
         onArchive={jest.fn()}
@@ -284,6 +287,7 @@ describe('VideoList — sort column headers', () => {
       <VideoList
         videos={[makeVideo('v1')]}
         outputFolder={OUTPUT_FOLDER}
+        baseOutputFolder={OUTPUT_FOLDER}
         showArchive={true}
         onDeepDive={jest.fn()}
         onArchive={jest.fn()}
@@ -307,6 +311,7 @@ describe('VideoList — archive visibility (showArchive=true)', () => {
       <VideoList
         videos={[archivedVideo]}
         outputFolder={OUTPUT_FOLDER}
+        baseOutputFolder={OUTPUT_FOLDER}
         showArchive={false}
         onDeepDive={jest.fn()}
         onArchive={jest.fn()}
@@ -318,6 +323,7 @@ describe('VideoList — archive visibility (showArchive=true)', () => {
       <VideoList
         videos={[archivedVideo]}
         outputFolder={OUTPUT_FOLDER}
+        baseOutputFolder={OUTPUT_FOLDER}
         showArchive={true}
         onDeepDive={jest.fn()}
         onArchive={jest.fn()}
@@ -329,6 +335,7 @@ describe('VideoList — archive visibility (showArchive=true)', () => {
       <VideoList
         videos={[archivedVideo]}
         outputFolder={OUTPUT_FOLDER}
+        baseOutputFolder={OUTPUT_FOLDER}
         showArchive={false}
         onDeepDive={jest.fn()}
         onArchive={jest.fn()}

@@ -6,6 +6,7 @@ import VideoRow from './VideoRow';
 interface VideoListProps {
   videos: Video[];
   outputFolder: string;
+  baseOutputFolder: string;
   showArchive: boolean;
   onDeepDive: (videoId: string) => void;
   onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
@@ -37,6 +38,7 @@ const TH = 'px-3 py-2 text-xs font-medium uppercase';
 export default function VideoList({
   videos,
   outputFolder,
+  baseOutputFolder,
   showArchive,
   onDeepDive,
   onArchive,
@@ -111,6 +113,7 @@ export default function VideoList({
             video={video}
             rank={video.playlistIndex ?? i + 1}
             outputFolder={outputFolder}
+            baseOutputFolder={baseOutputFolder}
             onDeepDive={onDeepDive}
             onArchive={onArchive}
           />
