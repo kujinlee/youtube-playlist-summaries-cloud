@@ -88,7 +88,7 @@ The callback chain: `Page` → `VideoList` → `VideoRow` → `StarRating` / `No
 Renders 5 star icons (★ filled / ☆ empty) up to `personalScore`.
 
 **Interactions:**
-- Click a star → sets `personalScore` to that number; fires `POST /api/videos/[id]/annotation`
+- Click a star → sets `personalScore` to that number; fires `POST /api/videos/[id]/review`
 - Click the currently-selected star → clears score; fires API with `personalScore: null`
 - Hover preview: stars up to hovered index light up before click
 - **Optimistic update:** `onChange(newScore)` called immediately; if API fails, `onChange(previousScore)` called to revert

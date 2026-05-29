@@ -6,7 +6,7 @@
 
 **Architecture:** Types-first to unblock all downstream work. API route (`POST /api/videos/[id]/review`) uses the existing `updateVideoFields` lib function. UI uses optimistic updates: `onChange` fires immediately, reverts on API failure. `Page` owns the `videos` array; annotation changes propagate via `onAnnotationChange(videoId, patch)` threaded down through `VideoList` → `VideoRow` → `StarRating`/`NoteCell`.
 
-**Tech Stack:** Next.js 15 (App Router), React 19, TypeScript, Zod, Tailwind CSS, Jest + @testing-library/react
+**Tech Stack:** Next.js 16 (App Router — see `node_modules/next/dist/docs/` for current API), React 19, TypeScript, Zod, Tailwind CSS, Jest + @testing-library/react
 
 **Spec:** `docs/superpowers/specs/2026-05-28-personal-annotations-design.md`
 
@@ -41,7 +41,7 @@
 
 - [ ] **Step 1.1 — Write the failing type test**
 
-Create `tests/types/index.test.ts` (new file):
+Create `tests/lib/video-schema.test.ts` (new file — `tests/types/` is not in jest.config.ts `testMatch`; use `tests/lib/` instead):
 
 ```ts
 import { VideoSchema, FILTER_DEFAULTS } from '../../types';
@@ -101,7 +101,7 @@ describe('FILTER_DEFAULTS', () => {
 
 ```bash
 cd /Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-official-plugins
-npx jest tests/types/index.test.ts --no-coverage
+npx jest tests/lib/video-schema.test.ts --no-coverage
 ```
 
 Expected: FAIL (properties don't exist yet)
@@ -183,7 +183,7 @@ export type SortColumn = 'name' | 'overall' | RatingSortColumn | 'language' | 'v
 - [ ] **Step 1.4 — Run tests to confirm pass**
 
 ```bash
-npx jest tests/types/index.test.ts --no-coverage
+npx jest tests/lib/video-schema.test.ts --no-coverage
 ```
 
 Expected: PASS (7 passing)
@@ -199,7 +199,7 @@ Expected: all existing tests still pass (TypeScript errors in downstream files a
 - [ ] **Step 1.6 — Commit**
 
 ```bash
-git add types/index.ts tests/types/index.test.ts
+git add types/index.ts tests/lib/video-schema.test.ts
 git commit -m "feat(types): add personalScore, personalNote, minPersonalScore, personalScore sort"
 ```
 
@@ -336,6 +336,15 @@ describe('POST /api/videos/[id]/review', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('invalid request');
   });
+
+  it('returns 500 when updateVideoFields throws a non-not-found error', async () => {
+    mockUpdateVideoFields.mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const res = await postReview(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, personalScore: 3 });
+    expect(res.status).toBe(500);
+    expect((await res.json()).error).toBe('internal error');
+  });
 });
 ```
 
@@ -432,7 +441,7 @@ export async function POST(request: Request, { params }: Params) {
 npx jest tests/api/review.test.ts --no-coverage
 ```
 
-Expected: PASS (13 passing)
+Expected: PASS (14 passing)
 
 - [ ] **Step 2.5 — Run full suite**
 
@@ -518,7 +527,7 @@ describe('sort by personalScore', () => {
 npx jest tests/api/videos.test.ts --no-coverage
 ```
 
-Expected: FAIL (personalScore sort case not handled — falls through to ratings sort which errors)
+Expected: FAIL (personalScore sort case not handled — falls through to ratings lookup, `a.ratings.personalScore` is `undefined`, so sorted order will be wrong/unstable rather than throwing)
 
 - [ ] **Step 3.3 — Add personalScore sort case**
 
@@ -671,7 +680,7 @@ describe('StarRating', () => {
       expect(onChange).toHaveBeenNthCalledWith(2, 2);  // rollback
     });
 
-    it('fires the correct API request body', async () => {
+    it('fires the correct API request body when setting a score', async () => {
       renderStars(undefined);
       fireEvent.click(getStarInputs()[2]); // star 3
       await waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -681,6 +690,15 @@ describe('StarRating', () => {
         outputFolder: OUTPUT_FOLDER,
         personalScore: 3,
       });
+    });
+
+    it('sends personalScore: null when clearing the active star', async () => {
+      renderStars(3);
+      fireEvent.click(getStarInputs()[2]); // click active star 3 → clear
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const [, opts] = fetchMock.mock.calls[0];
+      const body = JSON.parse((opts as RequestInit).body as string);
+      expect(body.personalScore).toBeNull(); // null serializes as null in JSON
     });
   });
 });
@@ -781,7 +799,7 @@ export default function StarRating({ videoId, outputFolder, value, onChange }: S
 npx jest tests/components/StarRating.test.tsx --no-coverage
 ```
 
-Expected: PASS (7 passing)
+Expected: PASS (9 passing)
 
 - [ ] **Step 4.5 — Run full suite**
 
@@ -854,7 +872,7 @@ describe('NoteCell', () => {
     it('shows first 25 chars followed by … when note exceeds 25 chars', () => {
       renderNote('this is a very long note that goes beyond twenty-five characters');
       const btn = screen.getByRole('button');
-      expect(btn.textContent).toHaveLength(27); // 25 chars + '…' (1 codepoint)
+      expect(btn.textContent).toHaveLength(26); // 25 chars + '…' (1 UTF-16 code unit)
       expect(btn.textContent).toMatch(/…$/);
     });
   });
@@ -953,6 +971,38 @@ describe('NoteCell', () => {
       act(() => { fireEvent.click(screen.getByRole('button', { name: /save/i })); });
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+  });
+
+  describe('request body', () => {
+    it('sends personalNote with the typed text', async () => {
+      openPopover('old');
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'updated note' } });
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const [url, opts] = fetchMock.mock.calls[0];
+      expect(url).toBe(`/api/videos/${VIDEO_ID}/review`);
+      const body = JSON.parse((opts as RequestInit).body as string);
+      expect(body).toMatchObject({ outputFolder: OUTPUT_FOLDER, personalNote: 'updated note' });
+    });
+
+    it('sends personalNote: "" when textarea is cleared (triggers deletion)', async () => {
+      openPopover('old note');
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.personalNote).toBe('');
+    });
+
+    it('does not reject a 500-char note (maxLength enforced by textarea)', async () => {
+      const maxNote = 'a'.repeat(500);
+      openPopover(undefined);
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: maxNote } });
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.personalNote).toHaveLength(500);
     });
   });
 });
@@ -1113,7 +1163,7 @@ export default function NoteCell({ videoId, outputFolder, value, onChange }: Not
 npx jest tests/components/NoteCell.test.tsx --no-coverage
 ```
 
-Expected: PASS (11 passing)
+Expected: PASS (14 passing)
 
 - [ ] **Step 5.5 — Run full suite**
 
@@ -1236,13 +1286,10 @@ Open `components/VideoRow.tsx` and make these changes:
 **a) Update imports** (add new components):
 
 ```ts
-// Add after existing imports:
+// Add after the existing imports (Video is already imported — do NOT re-import it):
 import StarRating from './StarRating';
 import NoteCell from './NoteCell';
-import type { Video } from '@/types';
 ```
-
-(Note: `Video` type is needed for the `onAnnotationChange` signature)
 
 **b) Update the props interface**:
 
@@ -1407,7 +1454,7 @@ function handleHeaderClick(col: SortColumn | null) {
 })}
 ```
 
-**f) Update VideoListProps** to add new required props:
+**f) Update VideoListProps** — add new props as **optional with safe defaults** so existing callers (tests, page.tsx before Task 8) don't break:
 
 ```ts
 interface VideoListProps {
@@ -1415,17 +1462,17 @@ interface VideoListProps {
   outputFolder: string;
   baseOutputFolder: string;
   showArchive: boolean;
-  minPersonalScore: number;
+  minPersonalScore?: number;   // optional — defaults to 0 (no dimming)
   onDeepDive: (videoId: string) => void;
   onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
-  onAnnotationChange: (videoId: string, patch: Partial<Pick<Video, 'personalScore' | 'personalNote'>>) => void;
+  onAnnotationChange?: (videoId: string, patch: Partial<Pick<Video, 'personalScore' | 'personalNote'>>) => void;  // optional — defaults to no-op
   sortColumn?: SortColumn | null;
   sortOrder?: SortOrder;
   onSort?: (col: SortColumn, order: SortOrder) => void;
 }
 ```
 
-**g) Update function destructuring** to include new props:
+**g) Update function destructuring** to include new props with defaults:
 
 ```ts
 export default function VideoList({
@@ -1433,10 +1480,10 @@ export default function VideoList({
   outputFolder,
   baseOutputFolder,
   showArchive,
-  minPersonalScore,
+  minPersonalScore = 0,
   onDeepDive,
   onArchive,
-  onAnnotationChange,
+  onAnnotationChange = () => {},
   sortColumn,
   sortOrder = 'asc',
   onSort,
@@ -1461,7 +1508,106 @@ export default function VideoList({
 ))}
 ```
 
-- [ ] **Step 6.5 — Run VideoRow tests to confirm pass**
+- [ ] **Step 6.5 — Update VideoList.test.tsx**
+
+Open `tests/components/VideoList.test.tsx`. The file mocks `@/components/VideoRow` — update the mock to include the new required props, then add coverage for the new columns and sort behavior.
+
+**a) Update the MockVideoRow mock** to accept the new props (prevents prop-type warnings):
+
+```ts
+// In the jest.mock('@/components/VideoRow', ...) factory, update MockVideoRow's type signature:
+const MockVideoRow = ({
+  video,
+  rank,
+  outputFolder,
+  onDeepDive,
+  onArchive,
+  dimUnscored,
+  onAnnotationChange,
+}: {
+  video: Video;
+  rank: number;
+  outputFolder: string;
+  baseOutputFolder: string;
+  dimUnscored: boolean;
+  onDeepDive: (videoId: string) => void;
+  onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
+  onAnnotationChange: (videoId: string, patch: unknown) => void;
+}) => (
+  <tr data-testid={`row-${video.id}`} data-dim={String(dimUnscored)}>
+    <td>{rank}</td>
+    <td>{outputFolder}</td>
+    <td><button onClick={() => onDeepDive(video.id)}>deep-dive</button></td>
+    <td><button onClick={() => onArchive(video.id, 'archive')}>archive</button></td>
+    <td><button onClick={() => onAnnotationChange(video.id, { personalScore: 4 })}>annotate</button></td>
+  </tr>
+);
+```
+
+**b) Add these tests** (inside the existing outer `describe`):
+
+```ts
+describe('My Score and Note column headers', () => {
+  it('renders a My Score column header', () => {
+    render(<VideoList videos={[]} outputFolder="/tmp" baseOutputFolder="/tmp"
+      showArchive={true} onDeepDive={jest.fn()} onArchive={jest.fn()} />);
+    expect(screen.getByText('My Score')).toBeInTheDocument();
+  });
+
+  it('renders a Note column header', () => {
+    render(<VideoList videos={[]} outputFolder="/tmp" baseOutputFolder="/tmp"
+      showArchive={true} onDeepDive={jest.fn()} onArchive={jest.fn()} />);
+    expect(screen.getByText('Note')).toBeInTheDocument();
+  });
+
+  it('Note column has no sort button', () => {
+    render(<VideoList videos={[]} outputFolder="/tmp" baseOutputFolder="/tmp"
+      showArchive={true} onDeepDive={jest.fn()} onArchive={jest.fn()}
+      onSort={jest.fn()} />);
+    // My Score has a sort button; Note does not
+    expect(screen.queryByRole('button', { name: /Note/i })).not.toBeInTheDocument();
+  });
+
+  it('first click on My Score header calls onSort with desc order', () => {
+    const onSort = jest.fn();
+    render(<VideoList videos={[]} outputFolder="/tmp" baseOutputFolder="/tmp"
+      showArchive={true} onDeepDive={jest.fn()} onArchive={jest.fn()} onSort={onSort} />);
+    fireEvent.click(screen.getByRole('button', { name: /my score/i }));
+    expect(onSort).toHaveBeenCalledWith('personalScore', 'desc');
+  });
+});
+
+describe('dimUnscored prop forwarding', () => {
+  it('passes dimUnscored=true to VideoRow when minPersonalScore>0 and video has no score', () => {
+    const video = { ...baseVideo, personalScore: undefined };
+    render(<VideoList videos={[video]} outputFolder="/tmp" baseOutputFolder="/tmp"
+      showArchive={true} minPersonalScore={3}
+      onDeepDive={jest.fn()} onArchive={jest.fn()} />);
+    expect(screen.getByTestId(`row-${video.id}`)).toHaveAttribute('data-dim', 'true');
+  });
+
+  it('passes dimUnscored=false when minPersonalScore=0', () => {
+    const video = { ...baseVideo, personalScore: undefined };
+    render(<VideoList videos={[video]} outputFolder="/tmp" baseOutputFolder="/tmp"
+      showArchive={true} minPersonalScore={0}
+      onDeepDive={jest.fn()} onArchive={jest.fn()} />);
+    expect(screen.getByTestId(`row-${video.id}`)).toHaveAttribute('data-dim', 'false');
+  });
+});
+
+describe('onAnnotationChange forwarding', () => {
+  it('threads onAnnotationChange to VideoRow', () => {
+    const onAnnotationChange = jest.fn();
+    render(<VideoList videos={[baseVideo]} outputFolder="/tmp" baseOutputFolder="/tmp"
+      showArchive={true} onDeepDive={jest.fn()} onArchive={jest.fn()}
+      onAnnotationChange={onAnnotationChange} />);
+    fireEvent.click(screen.getByRole('button', { name: /annotate/i }));
+    expect(onAnnotationChange).toHaveBeenCalledWith(baseVideo.id, { personalScore: 4 });
+  });
+});
+```
+
+- [ ] **Step 6.6 — Run VideoRow tests to confirm pass**
 
 ```bash
 npx jest tests/components/VideoRow.test.tsx --no-coverage
@@ -1469,18 +1615,26 @@ npx jest tests/components/VideoRow.test.tsx --no-coverage
 
 Expected: PASS
 
-- [ ] **Step 6.6 — Run full suite**
+- [ ] **Step 6.7 — Run VideoList tests to confirm pass**
+
+```bash
+npx jest tests/components/VideoList.test.tsx --no-coverage
+```
+
+Expected: PASS
+
+- [ ] **Step 6.9 — Run full suite**
 
 ```bash
 npm test -- --no-coverage
 ```
 
-(Some VideoList-consuming tests may fail because VideoList now requires `minPersonalScore` and `onAnnotationChange`. If so, fix call sites in test files to pass these props — use defaults `0` and `jest.fn()`.)
+Expected: all passing. Because VideoList props are optional with defaults, no existing test call-sites need updating.
 
-- [ ] **Step 6.7 — Commit**
+- [ ] **Step 6.10 — Commit**
 
 ```bash
-git add components/VideoRow.tsx components/VideoList.tsx tests/components/VideoRow.test.tsx
+git add components/VideoRow.tsx components/VideoList.tsx tests/components/VideoRow.test.tsx tests/components/VideoList.test.tsx
 git commit -m "feat(component): VideoRow/VideoList — My Score + Note columns; unified dimming; annotation callbacks"
 ```
 
@@ -1612,61 +1766,62 @@ git commit -m "feat(component): FilterBar — rename Score→AI score ≥; add M
 - Modify: `app/page.tsx`
 - Modify: `tests/components/PageIntegration.test.tsx` (or `tests/components/VideoList.test.tsx`)
 
-- [ ] **Step 8.1 — Write failing test(s)**
+- [ ] **Step 8.1 — Write failing tests**
 
-Open `tests/components/PageIntegration.test.tsx`. Check what it currently tests and add:
+**a) Add filter + annotation tests to `tests/components/PageIntegration.test.tsx`.**
+
+Open `tests/components/PageIntegration.test.tsx` and check its existing mock setup. It mocks `fetch` to return a fixed video list. Add the following tests using the same pattern (adapt to the file's existing `renderPage` / `mockFetch` helpers):
 
 ```ts
-// These describe blocks should be added (adapt to the existing file's pattern):
+// Helper — build a Video with optional personalScore:
+function makeVideo(overrides: Partial<Video> = {}): Video {
+  return {
+    id: 'v1',
+    title: 'Test Video',
+    youtubeUrl: 'https://youtube.com/watch?v=v1',
+    language: 'en',
+    durationSeconds: 120,
+    archived: false,
+    ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+    overallScore: 4,
+    summaryMd: null,
+    summaryPdf: null,
+    deepDiveMd: null,
+    deepDivePdf: null,
+    processedAt: '2024-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
-describe('handleAnnotationChange', () => {
-  it('updates the video in the list optimistically when annotation changes', () => {
-    // This is best tested via the VideoList integration, not page.tsx directly.
-    // VideoList.test.tsx should pass onAnnotationChange and verify the prop is threaded.
-    // If PageIntegration.test.tsx has a full mock setup, add:
-    //   render page with mocked fetch returning a video list
-    //   trigger onAnnotationChange(videoId, { personalScore: 4 })
-    //   expect the video row to reflect the updated score
-    // But since page.tsx is hard to unit-test (full SSE, fetch), 
-    // add a VideoList-level test instead.
+describe('minPersonalScore filtering', () => {
+  it('hides a video whose personalScore is below minPersonalScore', async () => {
+    // Setup: one video with score=2; set filter to min=3 → row should disappear
+    // Use the page's existing mock-fetch pattern to return this video, then
+    // interact with the My score ≥ dropdown to select 3+.
+    // Assert the video title is no longer in the document.
+  });
+
+  it('shows an unscored video when minPersonalScore>0 (dimmed, not hidden)', async () => {
+    // Setup: one unscored video (personalScore: undefined); set filter to min=3
+    // Assert the video title is still in the document.
+  });
+
+  it('shows a video whose personalScore meets the threshold', async () => {
+    // Setup: one video with score=4; set filter to min=3 → row stays.
+    // Assert the video title is in the document.
   });
 });
 ```
 
-Add to `tests/components/VideoList.test.tsx` (check the file first — adapt to existing patterns):
-
-```ts
-// Inside the existing VideoList test file, add:
-describe('annotation callbacks', () => {
-  it('passes onAnnotationChange to each VideoRow', () => {
-    const onAnnotationChange = jest.fn();
-    render(
-      <table>
-        <VideoList
-          videos={[baseVideo]}
-          outputFolder="/tmp/out"
-          baseOutputFolder="/tmp/out"
-          showArchive={true}
-          minPersonalScore={0}
-          onDeepDive={jest.fn()}
-          onArchive={jest.fn()}
-          onAnnotationChange={onAnnotationChange}
-        />
-      </table>,
-    );
-    // StarRating is rendered inside VideoRow; its presence confirms threading
-    expect(screen.getByRole('radiogroup', { name: /my score/i })).toBeInTheDocument();
-  });
-});
-```
+> **Note:** These are specification stubs — fill in the mock-fetch setup using the exact pattern from the existing PageIntegration tests. The key assertions are: hidden rows not in document, visible rows in document.
 
 - [ ] **Step 8.2 — Run to confirm failure**
 
 ```bash
-npx jest tests/components/VideoList.test.tsx --no-coverage
+npx jest tests/components/PageIntegration.test.tsx --no-coverage
 ```
 
-Expected: FAIL (VideoList missing required props in test call sites)
+Expected: FAIL (new filter tests not yet implemented in page.tsx)
 
 - [ ] **Step 8.3 — Update app/page.tsx**
 
@@ -1729,19 +1884,21 @@ import type { FilterState, ProgressEvent, SortColumn, SortOrder, Video } from '@
 
 If `Video` is not in the existing import, add it.
 
-- [ ] **Step 8.4 — Fix any remaining test call-sites**
+- [ ] **Step 8.4 — Verify no broken call-sites**
 
-Find all test files that render `<VideoList>` and update them to pass the new required props:
+Because `minPersonalScore` and `onAnnotationChange` are optional with defaults in VideoList (Task 6), no existing test call-sites need updating. Confirm:
 
 ```bash
-grep -rn "VideoList" tests/
+rg "VideoList" tests/ --no-heading -l
 ```
 
-For each test that renders VideoList directly, add:
-```tsx
-minPersonalScore={0}
-onAnnotationChange={jest.fn()}
+Then run just the VideoList and PageIntegration tests to check:
+
+```bash
+npx jest tests/components/VideoList.test.tsx tests/components/PageIntegration.test.tsx --no-coverage
 ```
+
+> **Known limitation — sort staleness:** `handleAnnotationChange` patches local state optimistically; sorting is server-side. After changing a score while sorted by My Score, rows stay in their pre-change order until the user re-clicks the column header or triggers a refetch. This is acceptable for a single-user local app — no extra task needed.
 
 - [ ] **Step 8.5 — Run full suite**
 
