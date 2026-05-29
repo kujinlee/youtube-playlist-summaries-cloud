@@ -151,6 +151,35 @@ export function migrateToSlugFilenames(outputFolder: string): void {
   if (anyChanged) writeIndex(outputFolder, { ...index, videos });
 }
 
+export function insertQuickViewCallout(
+  mdContent: string,
+  tldr: string,
+  takeaways: string[],
+  tags: string[],
+): string {
+  // Idempotency guard: don't insert if callout already present
+  if (mdContent.includes('> [!summary] Quick Reference')) return mdContent;
+
+  // Find first "\n\n---\n" — the divider between metadata line and summary body
+  const dividerIdx = mdContent.indexOf('\n\n---\n');
+  if (dividerIdx === -1) return mdContent; // unexpected format, leave unchanged
+
+  const lines = [
+    '',
+    '> [!summary] Quick Reference',
+    `> **TL;DR:** ${tldr}`,
+    '>',
+    '> **Key Takeaways:**',
+    ...takeaways.map((t) => `> - ${t}`),
+  ];
+  if (tags.length > 0) {
+    lines.push('>');
+    lines.push(`> **Concepts:** ${tags.join(' · ')}`);
+  }
+
+  return mdContent.slice(0, dividerIdx) + '\n' + lines.join('\n') + mdContent.slice(dividerIdx);
+}
+
 export async function runIngestion(
   playlistUrl: string,
   outputFolder: string,
@@ -202,7 +231,7 @@ export async function runIngestion(
       const language = detectLanguage(transcript);
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current, total });
-      const { summary, ratings, overallScore, videoType, audience, tags } = await generateSummary(transcript, language);
+      const { summary, ratings, overallScore, videoType, audience, tags, tldr, takeaways } = await generateSummary(transcript, language);
 
       const slug = slugify(meta.title);
       let baseName = slug;
@@ -237,7 +266,7 @@ export async function runIngestion(
         `**URL:** ${meta.youtubeUrl}`,
       ].filter(Boolean).join(' | ');
 
-      const mdContent = [
+      const baseContent = [
         frontmatterLines.join('\n'),
         '',
         `# ${meta.title}`,
@@ -248,6 +277,10 @@ export async function runIngestion(
         '',
         summary,
       ].join('\n');
+
+      const mdContent = (tldr && takeaways)
+        ? insertQuickViewCallout(baseContent, tldr, takeaways, tags ?? [])
+        : baseContent;
 
       await fs.promises.writeFile(mdPath, mdContent, 'utf-8');
 
@@ -270,6 +303,8 @@ export async function runIngestion(
         ...(audience !== undefined && { audience }),
         ...(meta.channelTitle !== undefined && { channel: meta.channelTitle }),
         ...(tags !== undefined && { tags }),
+        ...(tldr !== undefined && { tldr }),
+        ...(takeaways !== undefined && { takeaways }),
         ...(meta.videoPublishedAt !== undefined && { videoPublishedAt: meta.videoPublishedAt }),
         ...(meta.addedToPlaylistAt !== undefined && { addedToPlaylistAt: meta.addedToPlaylistAt }),
       };

@@ -9,7 +9,7 @@ jest.mock('../../lib/gemini');
 jest.mock('../../lib/pdf');
 jest.mock('../../lib/index-store');
 
-import { runIngestion, slugify, formatDuration, parseFrontmatterField, reconstructVideo, recoverOrphanedVideos, migrateToSlugFilenames } from '../../lib/pipeline';
+import { runIngestion, slugify, formatDuration, parseFrontmatterField, reconstructVideo, recoverOrphanedVideos, migrateToSlugFilenames, insertQuickViewCallout } from '../../lib/pipeline';
 import * as youtube from '../../lib/youtube';
 import * as gemini from '../../lib/gemini';
 import * as pdf from '../../lib/pdf';
@@ -511,6 +511,48 @@ describe('runIngestion', () => {
     expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
     expect(mockUpsertVideo).toHaveBeenCalledWith(outputFolder, expect.objectContaining({ id: 'vid1' }));
   });
+
+  it('stores tldr and takeaways from generateSummary in the index entry', async () => {
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue({
+      summary: 'body',
+      ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+      overallScore: 4,
+      tldr: 'This video teaches agents.',
+      takeaways: ['Agents use tools', 'Memory is key'],
+    });
+
+    await runIngestion(PLAYLIST_URL, outputFolder, jest.fn());
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({
+        tldr: 'This video teaches agents.',
+        takeaways: ['Agents use tools', 'Memory is key'],
+      }),
+    );
+  });
+
+  it('writes Quick Reference callout in markdown when tldr is returned', async () => {
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]);
+    mockFetchTranscript.mockResolvedValue('transcript');
+    mockGenerateSummary.mockResolvedValue({
+      summary: 'body',
+      ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+      overallScore: 4,
+      tldr: 'This video explains X.',
+      takeaways: ['Point one'],
+      tags: ['ai'],
+    });
+
+    await runIngestion(PLAYLIST_URL, outputFolder, jest.fn());
+
+    const files = fs.readdirSync(outputFolder).filter((f: string) => f.endsWith('.md'));
+    const content = fs.readFileSync(path.join(outputFolder, files[0]), 'utf-8');
+    expect(content).toContain('> [!summary] Quick Reference');
+    expect(content).toContain('> **TL;DR:** This video explains X.');
+  });
 });
 
 describe('slugify', () => {
@@ -795,5 +837,65 @@ describe('migrateToSlugFilenames', () => {
       }),
     );
     expect(fs.existsSync(path.join(tempDir, 'test-video.md'))).toBe(false);
+  });
+});
+
+describe('insertQuickViewCallout', () => {
+  const baseMd = [
+    '---',
+    'tags:',
+    '  - video-summary',
+    'video_id: "abc123XYZ01"',
+    'lang: EN',
+    'score: 4.2',
+    '---',
+    '',
+    '# Test Video',
+    '',
+    '**Channel:** Test | **Duration:** 5:00 | **URL:** https://www.youtube.com/watch?v=abc123XYZ01',
+    '',
+    '---',
+    '',
+    '## 1. Section',
+    '',
+    'Content here.',
+    '',
+    '## Conclusion',
+    '',
+    'Done.',
+  ].join('\n');
+
+  it('inserts callout between metadata line and first horizontal rule', () => {
+    const result = insertQuickViewCallout(
+      baseMd,
+      'This video teaches testing.',
+      ['Write tests first', 'Red before green'],
+      ['tdd', 'testing'],
+    );
+    expect(result).toContain('> [!summary] Quick Reference');
+    expect(result).toContain('> **TL;DR:** This video teaches testing.');
+    expect(result).toContain('> - Write tests first');
+    expect(result).toContain('> - Red before green');
+    expect(result).toContain('> **Concepts:** tdd · testing');
+    // Main body still present after the callout
+    expect(result).toContain('## 1. Section');
+  });
+
+  it('omits Concepts line when tags array is empty', () => {
+    const result = insertQuickViewCallout(baseMd, 'This video teaches X.', ['Point one'], []);
+    expect(result).not.toContain('**Concepts:**');
+  });
+
+  it('is idempotent — does not double-insert callout', () => {
+    const once = insertQuickViewCallout(baseMd, 'This video teaches X.', ['Point'], ['tag']);
+    const twice = insertQuickViewCallout(once, 'This video teaches X.', ['Point'], ['tag']);
+    const matches = (twice.match(/> \[!summary\] Quick Reference/g) ?? []).length;
+    expect(matches).toBe(1);
+  });
+
+  it('returns content unchanged when first horizontal rule is not found', () => {
+    const noRule = '# Title\n\nsome content';
+    const result = insertQuickViewCallout(noRule, 'tldr', ['pt'], ['t']);
+    expect(result).toBe(noRule);
   });
 });
