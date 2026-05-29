@@ -58,6 +58,7 @@ function makeVideo(id: string, overrides: Partial<Video> = {}): Video {
     summaryPdf: 'summary.pdf',
     deepDiveMd: null,
     deepDivePdf: null,
+    tldr: 'Quick reference content',
     processedAt: '2024-01-01T00:00:00.000Z',
     ...overrides,
   };

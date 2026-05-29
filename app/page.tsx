@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FilterState, ProgressEvent, SortColumn, SortOrder, Video } from '@/types';
 import { FILTER_DEFAULTS } from '@/types';
+import BackfillOverlay from '@/components/BackfillOverlay';
 import DeepDiveStatusBar from '@/components/DeepDiveStatusBar';
 import FilterBar from '@/components/FilterBar';
 import Header from '@/components/Header';
@@ -30,6 +31,7 @@ export default function Page() {
   const [currentPlaylistUrl, setCurrentPlaylistUrl] = useState('');
   const [ingest, setIngest] = useState<IngestState>(IDLE_INGEST);
   const [deepDive, setDeepDive] = useState<{ videoId: string; jobId: string; title: string } | null>(null);
+  const [showBackfill, setShowBackfill] = useState(false);
 
   const ingestESRef = useRef<EventSource | null>(null);
   const ingestJobIdRef = useRef<string | null>(null);
@@ -294,6 +296,7 @@ export default function Page() {
     ? (filteredVideos.reduce((sum, v) => sum + v.overallScore, 0) / totalVideos).toFixed(2)
     : '—';
   const koreanCount = filteredVideos.filter((v) => v.language === 'ko').length;
+  const backfillCount = videos.filter((v) => v.summaryMd && !v.tldr).length;
 
   return (
     <main className="min-h-screen bg-zinc-950">
@@ -362,7 +365,12 @@ export default function Page() {
 
       {/* Filter row */}
       <div className="flex items-center justify-between px-6 py-2 border-b border-zinc-800">
-        <FilterBar filters={filters} onChange={handleFilterChange} />
+        <FilterBar
+          filters={filters}
+          onChange={handleFilterChange}
+          backfillCount={backfillCount}
+          onBackfill={() => setShowBackfill(true)}
+        />
         <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer ml-4">
           <input
             type="checkbox"
@@ -396,6 +404,15 @@ export default function Page() {
           jobId={deepDive.jobId}
           title={deepDive.title}
           onClose={handleDeepDiveClose}
+        />
+      )}
+      {showBackfill && (
+        <BackfillOverlay
+          outputFolder={outputFolder}
+          onClose={() => {
+            setShowBackfill(false);
+            fetchVideos(outputFolder, sortColumn, sortOrder);
+          }}
         />
       )}
     </main>

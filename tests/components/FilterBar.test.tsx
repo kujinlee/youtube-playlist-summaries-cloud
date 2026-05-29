@@ -175,6 +175,42 @@ describe('FilterBar — onChange callbacks', () => {
   });
 });
 
+describe('FilterBar backfill banner', () => {
+  function renderBar(backfillCount = 0, onBackfill = jest.fn()) {
+    return render(
+      <FilterBar
+        filters={FILTER_DEFAULTS}
+        onChange={jest.fn()}
+        backfillCount={backfillCount}
+        onBackfill={onBackfill}
+      />,
+    );
+  }
+
+  it('does not show banner when backfillCount is 0', () => {
+    renderBar(0);
+    expect(screen.queryByText(/missing quick reference/i)).not.toBeInTheDocument();
+  });
+
+  it('shows banner when backfillCount > 0', () => {
+    renderBar(5);
+    expect(screen.getByText(/5 videos missing quick reference/i)).toBeInTheDocument();
+  });
+
+  it('calls onBackfill when "Generate all" is clicked', () => {
+    const onBackfill = jest.fn();
+    renderBar(3, onBackfill);
+    fireEvent.click(screen.getByRole('button', { name: /generate all/i }));
+    expect(onBackfill).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides banner after dismiss (✕) is clicked', () => {
+    renderBar(3);
+    fireEvent.click(screen.getByRole('button', { name: /dismiss backfill/i }));
+    expect(screen.queryByText(/missing quick reference/i)).not.toBeInTheDocument();
+  });
+});
+
 describe('My score ≥ dropdown', () => {
   it('renders a My score ≥ dropdown with All, 1+, 2+, 3+, 4+, 5 options', () => {
     renderBar();
