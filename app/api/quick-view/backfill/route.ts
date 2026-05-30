@@ -6,6 +6,10 @@ import { insertQuickViewCallout } from '../../../../lib/pipeline';
 import { generatePdf } from '../../../../lib/pdf';
 import type { ProgressEvent } from '../../../../types';
 
+// Allow long-running backfills (182 videos × ~10s = ~30 min).
+// Without this Next.js applies a short default timeout in production.
+export const maxDuration = 1800; // 30 minutes
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const outputFolder = searchParams.get('outputFolder');
@@ -32,6 +36,11 @@ export async function GET(request: Request) {
       function emit(event: ProgressEvent) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       }
+      // SSE comment keeps the connection alive through long Gemini calls.
+      // Proxies and browsers drop idle SSE connections after ~30–60s.
+      function heartbeat() {
+        controller.enqueue(encoder.encode(': keep-alive\n\n'));
+      }
 
       emit({ type: 'start', total });
 
@@ -42,6 +51,10 @@ export async function GET(request: Request) {
         const video = eligible[i]!;
         const current = i + 1;
 
+        // Send a heartbeat before each video so the connection stays alive
+        // even if the Gemini call takes close to the 60s timeout.
+        heartbeat();
+
         try {
           const mdPath = path.join(outputFolder, video.summaryMd);
           const mdContent = await fs.promises.readFile(mdPath, 'utf-8');
@@ -51,19 +64,26 @@ export async function GET(request: Request) {
 
           await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
 
-          // Update index before PDF so a PDF failure leaves a consistent state:
-          // the index has tldr/takeaways and the .md has the callout block.
+          // Update index before PDF so a PDF failure leaves a consistent state.
           // A retry will skip this video (tldr now present) and won't re-run Gemini.
           updateVideoFields(outputFolder, video.id, { tldr, takeaways });
 
-          if (video.summaryPdf) {
-            const pdfPath = path.join(outputFolder, video.summaryPdf);
-            await generatePdf(updatedContent, pdfPath);
-          }
-
           succeeded++;
-
+          // Emit step immediately after the core work (Gemini + index) so the
+          // progress bar advances without waiting for PDF generation.
           emit({ type: 'step', videoId: video.id, title: video.title, step: 'done', current, total });
+
+          // PDF regeneration is secondary — report its failure separately so it
+          // doesn't block progress or roll back the succeeded count.
+          if (video.summaryPdf) {
+            try {
+              const pdfPath = path.join(outputFolder, video.summaryPdf);
+              await generatePdf(updatedContent, pdfPath);
+            } catch (pdfErr) {
+              const log = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
+              emit({ type: 'error', videoId: video.id, title: `${video.title} (PDF only)`, log });
+            }
+          }
         } catch (err) {
           failed++;
           const log = err instanceof Error ? err.message : String(err);
@@ -85,7 +105,8 @@ export async function GET(request: Request) {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',   // disable nginx/proxy buffering so events arrive in real-time
     },
   });
 }
