@@ -159,11 +159,20 @@ export default function BackfillOverlay({ outputFolder, onClose }: BackfillOverl
           </p>
         )}
 
-        {state.status === 'done' && (
-          <p role="status" className="text-xs text-green-400 mb-3">
-            ✓ Done — {state.succeeded} succeeded{state.failed > 0 ? `, ${state.failed} failed` : ''}
-          </p>
-        )}
+        {state.status === 'done' && (() => {
+          const { succeeded, failed } = state;
+          if (succeeded === 0 && failed === 0) {
+            return <p role="status" className="text-xs text-green-400 mb-3">✓ All videos already up to date</p>;
+          }
+          if (succeeded === 0 && failed > 0) {
+            return <p role="alert" className="text-xs text-red-400 mb-3">⚠ Done — all {failed} failed</p>;
+          }
+          return (
+            <p role="status" className="text-xs text-green-400 mb-3">
+              ✓ Done — {succeeded} succeeded{failed > 0 ? `, ${failed} failed` : ''}
+            </p>
+          );
+        })()}
 
         {state.status === 'error' && (
           <p role="alert" className="text-xs text-red-400 mb-3">

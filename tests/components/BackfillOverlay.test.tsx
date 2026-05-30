@@ -88,4 +88,25 @@ describe('BackfillOverlay', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('shows "All videos already up to date" when done with 0 succeeded and 0 failed', () => {
+    renderOverlay();
+    act(() => { FakeEventSource.instance!.emit({ type: 'start', total: 0 }); });
+    act(() => { FakeEventSource.instance!.emit({ type: 'done', total: 0, succeeded: 0, failed: 0 }); });
+    expect(screen.getByRole('status')).toHaveTextContent(/all videos already up to date/i);
+  });
+
+  it('shows normal done message when some videos succeeded', () => {
+    renderOverlay();
+    act(() => { FakeEventSource.instance!.emit({ type: 'start', total: 3 }); });
+    act(() => { FakeEventSource.instance!.emit({ type: 'done', total: 3, succeeded: 3, failed: 0 }); });
+    expect(screen.getByRole('status')).toHaveTextContent(/3 succeeded/i);
+  });
+
+  it('shows error alert when all failed (0 succeeded, N failed)', () => {
+    renderOverlay();
+    act(() => { FakeEventSource.instance!.emit({ type: 'start', total: 2 }); });
+    act(() => { FakeEventSource.instance!.emit({ type: 'done', total: 2, succeeded: 0, failed: 2 }); });
+    expect(screen.getByRole('alert')).toHaveTextContent(/all 2 failed/i);
+  });
 });
