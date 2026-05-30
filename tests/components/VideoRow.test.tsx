@@ -484,6 +484,22 @@ describe('VideoRow', () => {
       expect(chevron.textContent).toBe('▼');
     });
 
+    it('clicking the title cell expands the row', () => {
+      renderRow({ tldr: 'This video teaches Y.', takeaways: [], tags: [] });
+      const titleCell = screen.getByText('Test Video Title').closest('td')!;
+      fireEvent.click(titleCell);
+      expect(screen.getByText('This video teaches Y.')).toBeInTheDocument();
+    });
+
+    it('clicking the title cell again collapses the row', () => {
+      renderRow({ tldr: 'This video teaches Y.', takeaways: [], tags: [] });
+      const titleCell = screen.getByText('Test Video Title').closest('td')!;
+      fireEvent.click(titleCell);
+      expect(screen.getByText('This video teaches Y.')).toBeInTheDocument();
+      fireEvent.click(titleCell);
+      expect(screen.queryByText('This video teaches Y.')).not.toBeInTheDocument();
+    });
+
     it('does not fetch quick-view when tldr is already present and row is expanded', () => {
       const fetchMock = jest.fn();
       global.fetch = fetchMock;

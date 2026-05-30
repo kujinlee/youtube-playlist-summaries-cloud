@@ -46,6 +46,7 @@ These files are not @-included — read them when the trigger condition is met.
 2. **Writing Plans** → `docs/implementation-plan.md`
    - Codex adversarial review (plan)
    - Gate: adversarial review + user approval
+   - **Required:** immediately after saving the plan, create a Post-Plan Gate checklist (see below) — do not dispatch any implementation subagent until all items are marked complete
 
 3. **Implementation** (per task)
    - At task start: create a TaskCreate checklist (see Per-Task Checklist below) — do not write any code until the list exists
@@ -79,6 +80,24 @@ These files are not @-included — read them when the trigger condition is met.
 | `TaskCreate` / `TaskUpdate` | 3 — per-task checklist (create at task start, mark each step done) |
 | `superpowers:verification-before-completion` | 4 — evidence collection |
 | `superpowers:finishing-a-development-branch` | 5 — commit + PR |
+
+---
+
+## Post-Plan Gate Checklist
+
+Immediately after saving the plan document, create these items with `TaskCreate`. Do not dispatch any implementation subagent until all items are marked `completed` with `TaskUpdate`.
+
+```
+[ ] Run Codex adversarial review of the plan (codex:rescue --fresh; include plan file as context)
+[ ] Save review to docs/reviews/plan-<feature>-codex.md
+[ ] Address all Blocking and High findings; present Medium findings for user decision
+[ ] Get explicit human approval ("looks good, proceed" or equivalent)
+[ ] Clear sentinel: rm .claude/plan-gate-pending  (if sentinel exists from the write hook)
+```
+
+**Rule:** the "Get human approval" step is not done until the human has responded affirmatively in the conversation. Do not mark it complete speculatively.
+
+**Why both hook and task list?** The hook (PreToolUse on Agent) provides a machine-enforceable backstop — it blocks subagent dispatch if the sentinel file exists. The task list provides the human-readable contract that guides what needs to happen before the sentinel is cleared. Neither is sufficient alone: the hook cannot enforce that reviews happened; the task list cannot prevent premature dispatch if ignored.
 
 ---
 

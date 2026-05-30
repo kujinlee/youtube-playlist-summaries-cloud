@@ -51,12 +51,16 @@ export async function GET(request: Request) {
 
           await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
 
+          // Update index before PDF so a PDF failure leaves a consistent state:
+          // the index has tldr/takeaways and the .md has the callout block.
+          // A retry will skip this video (tldr now present) and won't re-run Gemini.
+          updateVideoFields(outputFolder, video.id, { tldr, takeaways });
+
           if (video.summaryPdf) {
             const pdfPath = path.join(outputFolder, video.summaryPdf);
             await generatePdf(updatedContent, pdfPath);
           }
 
-          updateVideoFields(outputFolder, video.id, { tldr, takeaways });
           succeeded++;
 
           emit({ type: 'step', videoId: video.id, title: video.title, step: 'done', current, total });

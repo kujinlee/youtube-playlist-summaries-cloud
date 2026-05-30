@@ -23,11 +23,19 @@ The card contains: **TL;DR** (1 sentence) · **Key Takeaways** (3–5 bullets) �
 
 ## Approach
 
-**Approach 1 — Gemini at ingest + lazy backfill**
+**Approach selected: Gemini at ingest + explicit bulk backfill (Option B)**
 
 - New videos: `tldr` + `takeaways` generated at ingest time, stored in `playlist-index.json`, embedded in `.md`
-- Existing videos: first row-expand triggers `GET /api/videos/[id]/quick-view` → Gemini extracts from `.md` → cached in index
-- Zero latency for new videos; ~2s on first expand for old videos (instant thereafter)
+- Existing videos: user triggers bulk backfill via the FilterBar banner → `GET /api/quick-view/backfill` processes all eligible videos → index updated for all
+- Zero latency for new videos; existing videos populated by one explicit backfill action (not lazy per-row)
+
+> **Design decision recorded (2026-05-29):** The original spec described a lazy per-video path
+> where expanding a row with no `tldr` would call `GET /api/videos/[id]/quick-view` → Gemini.
+> After implementation this was superseded by the explicit bulk backfill: once backfill runs,
+> all existing videos have `tldr`; new videos get it at ingest. The per-video endpoint
+> (`GET /api/videos/[id]/quick-view`) still exists and returns cached data if `tldr` is present,
+> but returns 404 if `tldr` is absent — it does NOT call Gemini on demand. The lazy path
+> was dropped in favour of a single user-controlled migration action.
 
 ---
 
@@ -207,12 +215,17 @@ SSE stream. Processes all videos with `summaryMd` set but `tldr` absent, in inde
 5. Call `generatePdf(updatedContent, pdfPath)` to overwrite the existing PDF (skip if `summaryPdf` is null)
 6. Update index entry with `{ tldr, takeaways }`
 
-**SSE event shapes:**
+**SSE event shapes** (canonical — matches `ProgressEvent` in `types/index.ts`):
 ```typescript
-{ type: 'start';    total: number }
-{ type: 'progress'; videoId: string; title: string; current: number; total: number; status: 'done' | 'error'; error?: string }
-{ type: 'complete'; succeeded: number; failed: number }
+{ type: 'start';  total: number }
+{ type: 'step';   videoId: string; title: string; step: 'done'; current: number; total: number }
+{ type: 'error';  videoId: string; title?: string; log?: string }
+{ type: 'done';   total: number; succeeded: number; failed: number }
 ```
+
+> **Note:** The original spec used `progress` / `complete` as event type names. The implementation
+> uses `step` / `done` (aligned with how similar SSE streams are named in this codebase).
+> The spec is updated here to match the implementation — the implementation is correct.
 
 **Error handling:** per-video errors are reported in the stream and skipped — the batch continues.
 
@@ -245,7 +258,7 @@ Generating Quick References…  (12 / 47)
 | Component | Mechanism | Expected result |
 |-----------|-----------|-----------------|
 | `BackfillOverlay` | Click **Dismiss** (enabled after `complete`) | Overlay closes; banner hidden |
-| `BackfillOverlay` | SSE connection drops mid-run | Overlay shows error state; Retry button appears |
+| `BackfillOverlay` | SSE connection drops mid-run | Overlay shows error state; Dismiss button enabled (no Retry — user re-opens via banner) |
 
 ---
 

@@ -79,7 +79,11 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
           </button>
         </td>
         <td className={`px-3 py-2 text-sm text-zinc-500 tabular-nums ${cellDim}`}>{rank}</td>
-        <td className="px-3 py-2">
+        <td
+          className="px-3 py-2 cursor-pointer"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          title={isExpanded ? 'Collapse' : 'Expand'}
+        >
           <div className="relative flex items-center gap-2">
             <span className={`text-sm text-zinc-100 ${cellDim}`}>{video.title}</span>
             <button
@@ -87,13 +91,14 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
               aria-label="Menu"
               aria-haspopup="true"
               aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((prev) => !prev)}
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((prev) => !prev); }}
               className={`shrink-0 text-zinc-400 hover:text-zinc-100 px-1 leading-none ${cellDim}`}
             >
               ☰
             </button>
             {menuOpen && (
-              <>
+              // Stop menu clicks (backdrop + items) from bubbling to the title-cell expand handler
+              <div role="presentation" onClick={(e) => e.stopPropagation()}>
                 <div aria-hidden="true" className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
                 <VideoMenu
                   video={video}
@@ -103,7 +108,7 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
                   onArchive={onArchive}
                   onClose={() => setMenuOpen(false)}
                 />
-              </>
+              </div>
             )}
           </div>
         </td>

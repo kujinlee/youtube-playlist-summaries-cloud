@@ -62,7 +62,10 @@ ${transcript}
 
   try {
     const result = await model.generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS });
-    const { summary, ratings, videoType, audience, tags, tldr, takeaways } = GeminiResponseSchema.parse(JSON.parse(result.response.text()));
+    const parsed = GeminiResponseSchema.parse(JSON.parse(result.response.text()));
+    const { summary, ratings, videoType, audience, tags } = parsed;
+    const tldr = parsed.tldr ? trimToWords(parsed.tldr, 25) : undefined;
+    const takeaways = parsed.takeaways?.map((t) => trimToWords(t, 20));
     return { summary, ratings, overallScore: computeOverallScore(ratings), videoType, audience, tags, tldr, takeaways };
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
@@ -70,9 +73,15 @@ ${transcript}
   }
 }
 
+/** Trim a string to at most `maxWords` words (preserves original if within limit). */
+function trimToWords(text: string, maxWords: number): string {
+  const words = text.trim().split(/\s+/);
+  return words.length <= maxWords ? text.trim() : words.slice(0, maxWords).join(' ');
+}
+
 const QuickViewSchema = z.object({
   tldr: z.string().min(1),
-  takeaways: z.array(z.string()).min(1).max(5),
+  takeaways: z.array(z.string().min(1)).min(1).max(5),
 });
 
 export async function extractQuickView(
@@ -96,8 +105,11 @@ ${summaryMarkdown}
 
   try {
     const result = await model.generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS });
-    const { tldr, takeaways } = QuickViewSchema.parse(JSON.parse(result.response.text()));
-    return { tldr, takeaways };
+    const parsed = QuickViewSchema.parse(JSON.parse(result.response.text()));
+    return {
+      tldr: trimToWords(parsed.tldr, 25),
+      takeaways: parsed.takeaways.map((t) => trimToWords(t, 20)),
+    };
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`Gemini quick-view extraction failed: ${cause}`, { cause: err });
