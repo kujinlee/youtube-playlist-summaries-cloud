@@ -8,8 +8,13 @@ const CSS = `
   pre, code { font-family: 'Courier New', Courier, monospace; white-space: pre; }
 `;
 
-// md-to-pdf opens a Chromium debug port; concurrent calls collide on the same port.
-// Serialize all PDF generation through a promise chain to prevent EADDRINUSE.
+// md-to-pdf starts an internal HTTP server (default port 56666) that Puppeteer
+// connects to. Two collisions can break this:
+// 1. Concurrent calls within the same worker (e.g. two backfill requests)
+// 2. Calls across different Next.js workers / hot-reload cycles
+//
+// Defence layer 1: serialise calls within one worker via a promise chain.
+// Defence layer 2: use a fresh random port per call so workers never share a port.
 let pdfQueue: Promise<void> = Promise.resolve();
 
 /**
@@ -27,9 +32,11 @@ export function generatePdf(mdContent: string, outputPath: string): Promise<void
 }
 
 async function _generatePdfUnlocked(mdContent: string, outputPath: string): Promise<void> {
+  // Random port in 57000–59999 so concurrent workers never collide on 56666.
+  const port = 57000 + Math.floor(Math.random() * 3000);
   let buffer: Buffer;
   try {
-    const result = await mdToPdf({ content: mdContent }, { css: CSS });
+    const result = await mdToPdf({ content: mdContent }, { css: CSS, port });
     if (!result.content) throw new Error('md-to-pdf returned empty content');
     buffer = result.content;
   } catch (err) {
