@@ -19,6 +19,29 @@
 
 ---
 
+## Codex Review Resolutions (2026-06-09)
+
+Codex adversarial review (`docs/reviews/plan-html-doc-magazine-skim-codex.md`) findings and how this revised plan resolves them:
+
+| # | Sev | Finding | Resolution |
+|---|---|---|---|
+| 1 | BLOCKING | No same-video double-submit guard | Task 6: POST keys the job by `${outputFolder}::${videoId}`, returns the live `jobId` on duplicate; `getActiveJob` added. |
+| 2 | BLOCKING | Early `deleteJob` breaks late subscribers | Task 6: release the lock immediately but defer `deleteJob` by a 15s grace window (`releaseJobLock` + `setTimeout().unref()`); Task 7 adds a replay test. |
+| 3 | BLOCKING | Serve route path traversal | Task 8: strict `^htmls/<name>.html$` regex + resolved-path containment check + traversal test. |
+| 4 | HIGH | `summaryHtml` required → migration | Task 1: field made `.nullable().optional()` — no migration needed. |
+| 5 | HIGH | Bullet count 1–10 not 3–7 | Task 1: `.min(3).max(7)` + 2/8-bullet tests; Task 4 fixtures use 3 bullets. |
+| 6 | HIGH | Serve ignores `type=summary` | Task 8: 400 on missing/unsupported `type` + tests. |
+| 7 | HIGH | Orphan file if index update fails | Task 5: `unlink` the written file if `updateVideoFields` throws + test. |
+| 8 | HIGH | Non-building commit between Tasks 10/11 | Tasks 10+11 merged into one buildable commit (`tsc`/build before commit). |
+| 9 | HIGH | SSE test gaps | Task 7 late-subscribe replay; Task 9 `onerror`, manual dismiss, done auto-close. |
+| M2 | MED | No KO parser test | Task 2: Korean parse test added. |
+| M3 | MED | Meta escaping untested | Task 3: parsed title/channel/tldr/takeaway escaping test added. |
+| M4 | MED | Missing `source-md` meta | Task 3: `<meta name="source-md">` emitted; `ParsedSummary.sourceMd` set by orchestrator. |
+| M5 | MED | Dismissal paths untested | Task 9: manual dismiss + 4s auto-close tests. |
+| L1 | LOW | `window.open` may be popup-blocked | Documented as best-effort; the status bar's **View HTML doc** anchor is the primary, accessible path (Task 9). |
+
+**Open Mediums deferred to user decision (M1, M6)** — see the message accompanying this plan.
+
 ## File Structure
 
 | File | Responsibility |
@@ -51,8 +74,10 @@
 In `types/index.ts`, inside `VideoSchema`, immediately after the `deepDivePdf: z.string().nullable(),` line, add:
 
 ```ts
-  summaryHtml: z.string().nullable(),
+  summaryHtml: z.string().nullable().optional(),
 ```
+
+> **Codex HIGH (migration):** `.optional()` (nullish) — NOT required-nullable — so existing `playlist-index.json` entries that predate this field still validate without a migration. Code reads `video.summaryHtml` as `string | null | undefined`; every consumer below treats `undefined` the same as `null` (`!!video.summaryHtml`, `if (!htmlFile)`).
 
 - [ ] **Step 2: Create the magazine model types + schema**
 
@@ -79,6 +104,7 @@ export interface ParsedSummary {
   tldr: string | null;
   takeaways: string[];        // [] when no callout
   sections: ParsedSection[];  // never empty (parser throws on zero sections)
+  sourceMd: string | null;    // source filename (e.g. "a-title.md"); set by the orchestrator, null from the bare parser
 }
 
 /** Transformed bullet: a short label + the point text. */
@@ -90,7 +116,7 @@ export const BulletSchema = z.object({
 /** One transformed section: lead sentence + 3–7 bullets. */
 export const MagazineSectionSchema = z.object({
   lead: z.string().min(1),
-  bullets: z.array(BulletSchema).min(1).max(10),
+  bullets: z.array(BulletSchema).min(3).max(7), // Codex HIGH: enforce the spec's 3–7, not 1–10
 });
 
 export const MagazineModelSchema = z.object({
@@ -109,12 +135,24 @@ Create `tests/lib/html-doc/types.test.ts`:
 ```ts
 import { MagazineModelSchema } from '../../../lib/html-doc/types';
 
+const b = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `L${i}`, text: `t${i}` }));
+
 describe('MagazineModelSchema', () => {
-  it('accepts a valid model', () => {
-    const ok = MagazineModelSchema.parse({
-      sections: [{ lead: 'A thesis.', bullets: [{ label: 'Source', text: 'Common Crawl.' }] }],
-    });
+  it('accepts a valid model (3 bullets)', () => {
+    const ok = MagazineModelSchema.parse({ sections: [{ lead: 'A thesis.', bullets: b(3) }] });
     expect(ok.sections).toHaveLength(1);
+  });
+
+  it('accepts 7 bullets (upper bound)', () => {
+    expect(() => MagazineModelSchema.parse({ sections: [{ lead: 'x', bullets: b(7) }] })).not.toThrow();
+  });
+
+  it('rejects fewer than 3 bullets', () => {
+    expect(() => MagazineModelSchema.parse({ sections: [{ lead: 'x', bullets: b(2) }] })).toThrow();
+  });
+
+  it('rejects more than 7 bullets', () => {
+    expect(() => MagazineModelSchema.parse({ sections: [{ lead: 'x', bullets: b(8) }] })).toThrow();
   });
 
   it('rejects empty sections', () => {
@@ -123,13 +161,13 @@ describe('MagazineModelSchema', () => {
 
   it('rejects a bullet missing text', () => {
     expect(() =>
-      MagazineModelSchema.parse({ sections: [{ lead: 'x', bullets: [{ label: 'L' }] }] }),
+      MagazineModelSchema.parse({ sections: [{ lead: 'x', bullets: [{ label: 'L' }, { label: 'M' }, { label: 'N' }] }] }),
     ).toThrow();
   });
 
   it('rejects unknown top-level keys (strict)', () => {
     expect(() =>
-      MagazineModelSchema.parse({ sections: [{ lead: 'x', bullets: [{ label: 'L', text: 't' }] }], extra: 1 }),
+      MagazineModelSchema.parse({ sections: [{ lead: 'x', bullets: b(3) }], extra: 1 }),
     ).toThrow();
   });
 });
@@ -145,12 +183,12 @@ Expected: PASS (4 tests).
 Run: `npx tsc --noEmit`
 Expected: errors only of the form "Property 'summaryHtml' is missing" in code that constructs `Video` objects (pipeline, tests, fixtures). Note them — they are fixed in later tasks/their own steps. If other errors appear, fix before continuing.
 
-> **Note:** Adding a required `summaryHtml` to `VideoSchema` will surface in any object literal building a `Video`. Search now: `grep -rn "summaryPdf:" lib/ tests/` — every literal that sets `summaryPdf` must also set `summaryHtml: null`. Update those literals in this step (most are in `lib/pipeline.ts` and test fixtures). Re-run `npx tsc --noEmit` until only intended errors remain.
+> **Note:** Because `summaryHtml` is now **optional** (Codex HIGH fix), existing `Video` literals do **not** need updating — `tsc` should stay green. New code that *sets* it (orchestrator, Task 5) uses a string; readers treat `undefined`/`null` identically. Run `npx tsc --noEmit` to confirm no new errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add types/index.ts lib/html-doc/types.ts tests/lib/html-doc/types.test.ts lib/pipeline.ts tests/
+git add types/index.ts lib/html-doc/types.ts tests/lib/html-doc/types.test.ts
 git commit -m "feat(html-doc): add summaryHtml field + magazine model schema"
 ```
 
@@ -247,6 +285,38 @@ describe('parseSummaryMarkdown', () => {
   it('throws when there are zero sections', () => {
     expect(() => parseSummaryMarkdown(`# T\n\nno sections here\n`)).toThrow(/no sections/i);
   });
+
+  it('parses Korean content (title, takeaways, section)', () => {
+    const ko = `---
+video_id: "vid123"
+lang: KO
+---
+
+# 한국어 제목
+
+**Channel:** 채널 | **Duration:** 9:58 | **URL:** https://youtu.be/k
+
+> [!summary] Quick Reference
+> **TL;DR:** 핵심 요약입니다.
+>
+> **Key Takeaways:**
+> - 첫 번째 요점.
+>
+> **Concepts:** 가 · 나
+
+---
+
+## 1. 첫 번째 섹션
+첫 번째 섹션 본문.
+`;
+    const p = parseSummaryMarkdown(ko);
+    expect(p.title).toBe('한국어 제목');
+    expect(p.lang).toBe('KO');
+    expect(p.tldr).toBe('핵심 요약입니다.');
+    expect(p.takeaways).toEqual(['첫 번째 요점.']);
+    expect(p.sections[0]).toMatchObject({ numeral: '1', title: '첫 번째 섹션' });
+    expect(p.sections[0].prose).toContain('첫 번째 섹션 본문.');
+  });
 });
 ```
 
@@ -312,7 +382,6 @@ function parseCallout(md: string): { tldr: string | null; takeaways: string[] } 
 
 export function parseSummaryMarkdown(md: string): ParsedSummary {
   const title = (md.match(/^#\s+(.+)$/m)?.[1] ?? '').trim();
-  const metaLine = md.match(/^\*\*Channel:\*\*.*$|^\*\*Duration:\*\*.*$/m)?.[0] ?? '';
   const channel = md.match(/\*\*Channel:\*\*\s*([^|]+?)\s*(?:\||$)/m)?.[1]?.trim() ?? null;
   const duration = md.match(/\*\*Duration:\*\*\s*([^|]+?)\s*(?:\||$)/m)?.[1]?.trim() ?? null;
   const url = md.match(/\*\*URL:\*\*\s*(\S+)/m)?.[1]?.trim() ?? null;
@@ -323,12 +392,12 @@ export function parseSummaryMarkdown(md: string): ParsedSummary {
   if (sections.length === 0) {
     throw new Error('Cannot render HTML doc: summary has no ## sections.');
   }
-  return { title, channel, duration, url, lang, videoId, tldr, takeaways, sections };
-  void metaLine;
+  // sourceMd is null here — the bare parser does not know the filename; the orchestrator sets it.
+  return { title, channel, duration, url, lang, videoId, tldr, takeaways, sections, sourceMd: null };
 }
 ```
 
-> Remove the stray `void metaLine;` / `metaLine` local if your linter objects — it is unused; the inline regexes above pull channel/duration/url directly. (Kept out of the return to avoid a lint error: delete the `const metaLine` line.)
+> The earlier draft had a stray `const metaLine` / `void metaLine` — omitted above. The inline regexes pull channel/duration/url directly, so there is no `metaLine` local. If you see one in an older copy, delete it.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -371,6 +440,7 @@ const parsed: ParsedSummary = {
     { numeral: '1', title: 'The Foundation', prose: 'p' },
     { numeral: null, title: 'Conclusion', prose: 'p' },
   ],
+  sourceMd: 'deep-dive-into-llms.md',
 };
 
 const model: MagazineModel = {
@@ -388,6 +458,7 @@ describe('renderMagazineHtml', () => {
     expect(html).not.toContain('<link');                 // no external CSS
     expect(html).toContain('<meta name="generator" content="magazine-skim v1">');
     expect(html).toContain('<meta name="video-id" content="7xTGNNLPyMI">');
+    expect(html).toContain('<meta name="source-md" content="deep-dive-into-llms.md">');
     expect(html).toContain('<title>Deep Dive into LLMs</title>');
   });
 
@@ -424,6 +495,23 @@ describe('renderMagazineHtml', () => {
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
     expect(html).toContain('x &amp; y');
+  });
+
+  it('HTML-escapes parsed meta — title, channel, tldr, takeaways (no injection)', () => {
+    const evilParsed = {
+      ...parsed,
+      title: 'A & B <x>',
+      channel: 'Chan <i>',
+      tldr: 'TL;DR <b>"q"</b> & more',
+      takeaways: ['take <script>x</script>'],
+    };
+    const html = renderMagazineHtml(evilParsed, model);
+    expect(html).not.toContain('<script>x</script>');
+    expect(html).not.toContain('<title>A & B <x></title>');
+    expect(html).toContain('&lt;script&gt;x&lt;/script&gt;');
+    expect(html).toContain('A &amp; B &lt;x&gt;');     // title escaped
+    expect(html).toContain('Chan &lt;i&gt;');          // channel escaped in meta line
+    expect(html).toContain('&amp; more');              // tldr escaped
   });
 
   it('renders Korean content without mangling', () => {
@@ -486,9 +574,7 @@ function esc(s: string): string {
 }
 
 export function renderMagazineHtml(parsed: ParsedSummary, model: MagazineModel): string {
-  const metaBits = [parsed.channel, parsed.duration && parsed.duration, parsed.url ? null : null]
-    .filter(Boolean) as string[];
-  const metaLine = [parsed.channel, parsed.duration].filter(Boolean).map(esc).join(' · ');
+  const metaLine = [parsed.channel, parsed.duration].filter(Boolean).map((s) => esc(s as string)).join(' · ');
 
   const callout =
     parsed.tldr
@@ -516,7 +602,8 @@ export function renderMagazineHtml(parsed: ParsedSummary, model: MagazineModel):
     })
     .join('\n');
 
-  const sourceNote = parsed.videoId ? `source note` : `source note`;
+  const sourceMd = parsed.sourceMd ?? '';
+  const footerSource = sourceMd ? ` <code>${esc(sourceMd)}</code>` : '';
 
   return `<!DOCTYPE html>
 <html lang="${esc((parsed.lang || 'en').toLowerCase())}">
@@ -524,6 +611,7 @@ export function renderMagazineHtml(parsed: ParsedSummary, model: MagazineModel):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="magazine-skim v1">
+<meta name="source-md" content="${esc(sourceMd)}">
 <meta name="video-id" content="${esc(parsed.videoId ?? '')}">
 <title>${esc(parsed.title)}</title>
 <style>${CSS}</style>
@@ -534,15 +622,14 @@ export function renderMagazineHtml(parsed: ParsedSummary, model: MagazineModel):
   <p class="doc-meta">${metaLine}</p>
   ${callout}
   ${sections}
-  <footer>Skim view — generated from the ${sourceNote}. Full text lives in the source <code>.md</code>.</footer>
+  <footer>Skim view — generated from the source note${footerSource}. Full text lives in the source <code>.md</code>.</footer>
 </article>
 </body>
 </html>`;
-  void metaBits;
 }
 ```
 
-> Delete the unused `metaBits` / `sourceNote` scaffolding if your linter flags them — they are vestigial. The functional output is `metaLine`, `callout`, `sections`, and the static footer.
+> The functional output is `metaLine`, `callout`, `sections`, the `source-md` meta, and the footer. No vestigial locals remain.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -593,12 +680,14 @@ const input = [
 function reply(obj: unknown) {
   mockGenerateContent.mockResolvedValueOnce({ response: { text: () => JSON.stringify(obj) } });
 }
+// 3 bullets = the schema minimum, so these fixtures pass Zod and exercise the count guard / happy path.
+const bul = (n = 3) => Array.from({ length: n }, (_, i) => ({ label: `L${i}`, text: `t${i}` }));
 
 describe('generateMagazineModel', () => {
   it('returns a validated model on a well-formed response', async () => {
     reply({ sections: [
-      { lead: 'A.', bullets: [{ label: 'Source', text: 'Crawl.' }] },
-      { lead: 'B.', bullets: [{ label: 'Stages', text: 'three.' }] },
+      { lead: 'A.', bullets: [{ label: 'Source', text: 'Crawl.' }, { label: 'B', text: 'b' }, { label: 'C', text: 'c' }] },
+      { lead: 'B.', bullets: bul(3) },
     ]});
     const out = await generateMagazineModel(input, 'en');
     expect(out.sections).toHaveLength(2);
@@ -606,7 +695,8 @@ describe('generateMagazineModel', () => {
   });
 
   it('throws when the section count does not match the input', async () => {
-    reply({ sections: [{ lead: 'only one', bullets: [{ label: 'L', text: 't' }] }] });
+    // Schema-valid single section (3 bullets) but input has 2 → the count guard, not Zod, must fire.
+    reply({ sections: [{ lead: 'only one', bullets: bul(3) }] });
     await expect(generateMagazineModel(input, 'en')).rejects.toThrow(/section count/i);
   });
 
@@ -719,10 +809,17 @@ import os from 'os';
 import path from 'path';
 import { runHtmlDoc } from '../../../lib/html-doc/generate';
 import * as gemini from '../../../lib/gemini';
+import { updateVideoFields } from '../../../lib/index-store';
 import type { ProgressEvent } from '../../../types';
 
 jest.mock('../../../lib/gemini');
+// Wrap index-store so updateVideoFields calls through by default but can be forced to throw.
+jest.mock('../../../lib/index-store', () => {
+  const actual = jest.requireActual('../../../lib/index-store');
+  return { __esModule: true, ...actual, updateVideoFields: jest.fn(actual.updateVideoFields) };
+});
 const mockTransform = gemini.generateMagazineModel as jest.Mock;
+const mockUpdate = updateVideoFields as jest.Mock;
 
 let dir: string;
 const VIDEO_ID = 'vid12345';
@@ -811,6 +908,19 @@ it('throws when summaryMd is missing', async () => {
   writeIndex([{ ...baseVideo(), summaryMd: null }]);
   await expect(runHtmlDoc(VIDEO_ID, dir, () => {})).rejects.toThrow(/source note|summaryMd/i);
 });
+
+it('removes the orphan HTML file when the index update fails', async () => {
+  mockTransform.mockResolvedValueOnce({
+    sections: [
+      { lead: 'L1', bullets: [{ label: 'A', text: 'a' }] },
+      { lead: 'L2', bullets: [{ label: 'B', text: 'b' }] },
+    ],
+  });
+  mockUpdate.mockImplementationOnce(() => { throw new Error('index write failed'); });
+
+  await expect(runHtmlDoc(VIDEO_ID, dir, () => {})).rejects.toThrow(/index write failed/);
+  expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false); // cleaned up, no orphan
+});
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -857,6 +967,7 @@ export async function runHtmlDoc(
   }
 
   const parsed = parseSummaryMarkdown(md);
+  parsed.sourceMd = video.summaryMd; // for the <meta name="source-md"> provenance field
 
   onProgress({ type: 'step', videoId, step: 'Transforming to skim view…', current: 2, total: 3 });
   const model = await generateMagazineModel(
@@ -883,7 +994,14 @@ export async function runHtmlDoc(
     throw err;
   }
 
-  updateVideoFields(outputFolder, videoId, { summaryHtml: htmlFilename });
+  // Codex HIGH: if the index update fails, remove the just-written file so we don't leave an
+  // orphan HTML the index doesn't reference (keeps cache ↔ index consistent).
+  try {
+    updateVideoFields(outputFolder, videoId, { summaryHtml: htmlFilename });
+  } catch (err) {
+    try { fs.unlinkSync(finalPath); } catch { /* ignore cleanup error */ }
+    throw err;
+  }
   onProgress({ type: 'done' });
 }
 ```
@@ -907,23 +1025,87 @@ git commit -m "feat(html-doc): orchestrator (parse→transform→render→write�
 
 ---
 
-## Task 6: POST route — start the job
+## Task 6: job-registry concurrency helpers + POST route
+
+> **Codex BLOCKING ×2 addressed here:** (a) same-video double-submit guard — a second POST while a job is live returns the existing `jobId` instead of starting a duplicate Gemini run; (b) late-subscribe race — the job record is kept alive for a grace window after the terminal event so a client that subscribes just after a fast job finishes still replays the buffered `done`/`error`. We release the per-video *lock* immediately (so a deliberate Regenerate isn't blocked) but defer registry deletion.
 
 **Files:**
+- Modify: `lib/job-registry.ts`
 - Create: `app/api/videos/[id]/html-doc/route.ts`
-- Test: `tests/api/html-doc-post.test.ts`
+- Test: `tests/lib/job-registry-html.test.ts`, `tests/api/html-doc-post.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing job-registry tests**
+
+Create `tests/lib/job-registry-html.test.ts`:
+
+```ts
+import { createJob, getActiveJob, releaseJobLock, deleteJob, _resetJobRegistry } from '../../lib/job-registry';
+
+beforeEach(() => _resetJobRegistry());
+
+it('getActiveJob returns the jobId holding a key, undefined otherwise', () => {
+  expect(getActiveJob('k')).toBeUndefined();
+  createJob('job1', 'k');
+  expect(getActiveJob('k')).toBe('job1');
+});
+
+it('releaseJobLock frees the key but keeps the job subscribable', () => {
+  createJob('job1', 'k');
+  releaseJobLock('job1');
+  expect(getActiveJob('k')).toBeUndefined();   // lock freed → a new submit may start
+  // registry entry still present: deleteJob is what removes it
+  deleteJob('job1');
+  expect(getActiveJob('k')).toBeUndefined();
+});
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `npx jest tests/lib/job-registry-html.test.ts`
+Expected: FAIL (`getActiveJob`/`releaseJobLock` not exported).
+
+- [ ] **Step 3: Add the helpers to `lib/job-registry.ts`**
+
+Append to `lib/job-registry.ts` (the maps `activeByFolder` and `jobFolders` already exist):
+
+```ts
+/** Returns the jobId currently holding the lock for `key`, or undefined. */
+export function getActiveJob(key: string): string | undefined {
+  return activeByFolder.get(key);
+}
+
+/**
+ * Release a job's lock key WITHOUT deleting its registry entry, so late SSE
+ * subscribers can still replay buffered terminal events. Pair with a deferred
+ * deleteJob() for eventual cleanup.
+ */
+export function releaseJobLock(jobId: string): void {
+  const folder = jobFolders.get(jobId);
+  if (folder) {
+    activeByFolder.delete(folder);
+    jobFolders.delete(jobId);
+  }
+}
+```
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `npx jest tests/lib/job-registry-html.test.ts`
+Expected: PASS (2 tests). Also run `npx jest tests/lib/job-registry` (if it exists) to confirm no regression in existing registry tests.
+
+- [ ] **Step 5: Write the failing POST-route tests**
 
 Create `tests/api/html-doc-post.test.ts`:
 
 ```ts
 import { POST } from '../../app/api/videos/[id]/html-doc/route';
 import * as generate from '../../lib/html-doc/generate';
+import { _resetJobRegistry } from '../../lib/job-registry';
 
 jest.mock('../../lib/html-doc/generate');
 const mockRun = generate.runHtmlDoc as jest.Mock;
 
+const HOME = (process.env.HOME ?? '/tmp') + '/x';
 function req(body: unknown) {
   return new Request('http://localhost/api/videos/vid12345/html-doc', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -931,45 +1113,54 @@ function req(body: unknown) {
 }
 const ctx = { params: Promise.resolve({ id: 'vid12345' }) };
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => { jest.clearAllMocks(); _resetJobRegistry(); });
 
 it('400s without outputFolder', async () => {
-  const res = await POST(req({}), ctx);
-  expect(res.status).toBe(400);
+  expect((await POST(req({}), ctx)).status).toBe(400);
+});
+
+it('400s on an outputFolder outside home', async () => {
+  expect((await POST(req({ outputFolder: '/etc' }), ctx)).status).toBe(400);
 });
 
 it('returns a jobId and starts the run', async () => {
   mockRun.mockResolvedValueOnce(undefined);
-  const res = await POST(req({ outputFolder: process.env.HOME + '/x' }), ctx);
-  const json = await res.json();
+  const json = await (await POST(req({ outputFolder: HOME }), ctx)).json();
   expect(typeof json.jobId).toBe('string');
-  expect(mockRun).toHaveBeenCalledWith('vid12345', process.env.HOME + '/x', expect.any(Function));
+  expect(mockRun).toHaveBeenCalledWith('vid12345', HOME, expect.any(Function));
 });
 
-it('400s on an outputFolder outside home', async () => {
-  const res = await POST(req({ outputFolder: '/etc' }), ctx);
-  expect(res.status).toBe(400);
+it('returns the SAME jobId for a concurrent duplicate submit (no second run)', async () => {
+  mockRun.mockReturnValue(new Promise(() => {})); // never resolves → job stays active
+  const first = await (await POST(req({ outputFolder: HOME }), ctx)).json();
+  const second = await (await POST(req({ outputFolder: HOME }), ctx)).json();
+  expect(second.jobId).toBe(first.jobId);
+  expect(mockRun).toHaveBeenCalledTimes(1);
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [ ] **Step 6: Run to verify failure**
 
 Run: `npx jest tests/api/html-doc-post.test.ts`
-Expected: FAIL (module not found).
+Expected: FAIL (route module not found).
 
-- [ ] **Step 3: Implement the route**
+- [ ] **Step 7: Implement the route**
 
-Create `app/api/videos/[id]/html-doc/route.ts` (mirrors the deep-dive POST route):
+Create `app/api/videos/[id]/html-doc/route.ts`:
 
 ```ts
 import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { assertOutputFolder, assertVideoId } from '../../../../../lib/index-store';
 import { runHtmlDoc } from '../../../../../lib/html-doc/generate';
-import { createJob, deleteJob, emitJobEvent } from '../../../../../lib/job-registry';
+import { createJob, deleteJob, emitJobEvent, getActiveJob, releaseJobLock } from '../../../../../lib/job-registry';
 import type { ProgressEvent } from '../../../../../types';
 
 type Params = { params: Promise<{ id: string }> };
+
+// Keep a finished job subscribable briefly so a just-issued client subscribe can replay the
+// terminal event; then GC it. .unref() so the timer never keeps the process alive (tests/CI).
+const GRACE_MS = 15_000;
 
 export async function POST(request: Request, { params }: Params) {
   const { id: videoId } = await params;
@@ -985,38 +1176,46 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   }
 
+  // Same-video double-submit guard: one live job per (folder, video).
+  const key = `${outputFolder}::${videoId}`;
+  const existing = getActiveJob(key);
+  if (existing) return NextResponse.json({ jobId: existing });
+
   const jobId = crypto.randomUUID();
-  createJob(jobId);
+  createJob(jobId, key);
   let finished = false;
+
+  const onTerminal = () => {
+    finished = true;
+    releaseJobLock(jobId);                       // free the lock now → a later Regenerate is allowed
+    const t = setTimeout(() => deleteJob(jobId), GRACE_MS); // keep buffer for late subscribers
+    (t as { unref?: () => void }).unref?.();
+  };
 
   runHtmlDoc(videoId, outputFolder, (event: ProgressEvent) => {
     emitJobEvent(jobId, event);
-    if (event.type === 'done' || event.type === 'error') {
-      finished = true;
-      deleteJob(jobId);
-    }
+    if (event.type === 'done' || event.type === 'error') onTerminal();
   }).catch((err) => {
     if (finished) return;
-    finished = true;
     console.error('[html-doc] failed for video', videoId, err);
     emitJobEvent(jobId, { type: 'error', log: err instanceof Error ? err.message : String(err) });
-    deleteJob(jobId);
+    onTerminal();
   });
 
   return NextResponse.json({ jobId });
 }
 ```
 
-- [ ] **Step 4: Run to verify pass**
+- [ ] **Step 8: Run to verify pass**
 
 Run: `npx jest tests/api/html-doc-post.test.ts`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add app/api/videos/[id]/html-doc/route.ts tests/api/html-doc-post.test.ts
-git commit -m "feat(html-doc): POST route starts transform job"
+git add lib/job-registry.ts app/api/videos/[id]/html-doc/route.ts tests/lib/job-registry-html.test.ts tests/api/html-doc-post.test.ts
+git commit -m "feat(html-doc): concurrency-guarded POST route + job-registry lock helpers"
 ```
 
 ---
@@ -1078,20 +1277,34 @@ Create `tests/api/html-doc-stream.test.ts`:
 
 ```ts
 import { GET } from '../../app/api/videos/[id]/html-doc/stream/route';
+import { createJob, emitJobEvent, _resetJobRegistry } from '../../lib/job-registry';
+
+const ctx = { params: Promise.resolve({ id: 'v' }) };
+beforeEach(() => _resetJobRegistry());
 
 it('400s without a jobId', async () => {
-  const res = await GET(new Request('http://localhost/s'), { params: Promise.resolve({ id: 'v' }) });
-  expect(res.status).toBe(400);
+  expect((await GET(new Request('http://localhost/s'), ctx)).status).toBe(400);
 });
 
 it('404s for an unknown jobId', async () => {
-  const res = await GET(new Request('http://localhost/s?jobId=nope'), { params: Promise.resolve({ id: 'v' }) });
-  expect(res.status).toBe(404);
+  expect((await GET(new Request('http://localhost/s?jobId=nope'), ctx)).status).toBe(404);
+});
+
+it('replays buffered terminal events to a late subscriber (Codex BLOCKING)', async () => {
+  createJob('jX');
+  emitJobEvent('jX', { type: 'step', step: 'Rendering HTML…', current: 3, total: 3 });
+  emitJobEvent('jX', { type: 'done' }); // job finished BEFORE the client subscribes
+
+  const res = await GET(new Request('http://localhost/s?jobId=jX'), ctx);
+  expect(res.status).toBe(200);
+  const text = await res.text(); // stream closes after the replayed terminal event
+  expect(text).toContain('"type":"step"');
+  expect(text).toContain('"type":"done"');
 });
 ```
 
 Run: `npx jest tests/api/html-doc-stream.test.ts`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests). The third proves the grace-window design: a client subscribing after the job already finished still receives the buffered `done`.
 
 - [ ] **Step 3: Commit**
 
@@ -1145,6 +1358,20 @@ afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 it('400s without outputFolder', async () => {
   const res = await GET(new Request(`http://localhost/api/html/${VIDEO_ID}`), ctx);
   expect(res.status).toBe(400);
+});
+
+it('400s when type is missing or not summary', async () => {
+  writeIndex(video({ summaryHtml: 'htmls/a.html' }));
+  const base = `http://localhost/api/html/${VIDEO_ID}?outputFolder=${encodeURIComponent(dir)}`;
+  expect((await GET(new Request(base), ctx)).status).toBe(400);                       // missing type
+  expect((await GET(new Request(`${base}&type=deep-dive`), ctx)).status).toBe(400);   // unsupported type
+});
+
+it('404s on a path-traversal summaryHtml value (Codex BLOCKING)', async () => {
+  writeIndex(video({ summaryHtml: '../../../../etc/passwd' }));
+  const res = await GET(url(), ctx);
+  expect([400, 404]).toContain(res.status); // never 200
+  expect(res.status).not.toBe(200);
 });
 
 it('404s when summaryHtml is unset', async () => {
@@ -1202,23 +1429,36 @@ export async function GET(request: Request, { params }: Params) {
     return new Response(JSON.stringify({ error: 'invalid request' }), { status: 400 });
   }
 
+  // Codex HIGH: enforce the type=summary URL contract (pilot supports summary only).
+  if (searchParams.get('type') !== 'summary') {
+    return new Response(JSON.stringify({ error: 'unsupported or missing type' }), { status: 400 });
+  }
+
   let htmlFile: string | null | undefined;
   try {
     const index = readIndex(outputFolder);
     const video = index.videos.find((v) => v.id === videoId);
     if (!video) return new Response(JSON.stringify({ error: 'video not found' }), { status: 404 });
-    htmlFile = video.summaryHtml; // pilot: summary only
+    htmlFile = video.summaryHtml;
   } catch (err) {
     const e = err as { statusCode?: number; message?: string };
     if (e.statusCode === 400) return new Response(JSON.stringify({ error: e.message }), { status: 400 });
     throw err;
   }
 
-  if (!htmlFile) {
+  // Codex BLOCKING (path traversal): only serve a strict htmls/<name>.html relative path, and
+  // verify the resolved path stays inside <outputFolder>/htmls. Defense in depth — the regex
+  // already forbids extra slashes, so "../" cannot appear; the prefix check is a backstop.
+  const HTML_REL_RE = /^htmls\/[A-Za-z0-9._-]+\.html$/;
+  if (!htmlFile || !HTML_REL_RE.test(htmlFile)) {
     return new Response(JSON.stringify({ error: 'html not available' }), { status: 404 });
   }
+  const htmlDir = path.resolve(outputFolder, 'htmls');
+  const htmlPath = path.resolve(outputFolder, htmlFile);
+  if (htmlPath !== htmlDir && !htmlPath.startsWith(htmlDir + path.sep)) {
+    return new Response(JSON.stringify({ error: 'invalid path' }), { status: 400 });
+  }
 
-  const htmlPath = path.join(outputFolder, htmlFile);
   try {
     const buffer = fs.readFileSync(htmlPath);
     return new Response(buffer, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
@@ -1231,7 +1471,7 @@ export async function GET(request: Request, { params }: Params) {
 - [ ] **Step 4: Run to verify pass**
 
 Run: `npx jest tests/api/html-serve.test.ts`
-Expected: PASS (4 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1298,6 +1538,28 @@ it('shows an error message on error', () => {
   render(<HtmlDocStatusBar videoId="v" jobId="j1" title="T" viewUrl={viewUrl} onClose={() => {}} />);
   act(() => { FakeES.last!.emit({ type: 'error', log: 'transform failed' }); });
   expect(screen.getByRole('alert')).toHaveTextContent('transform failed');
+});
+
+it('shows a connection-lost error when EventSource errors', () => {
+  render(<HtmlDocStatusBar videoId="v" jobId="j1" title="T" viewUrl={viewUrl} onClose={() => {}} />);
+  act(() => { FakeES.last!.onerror?.(); });
+  expect(screen.getByRole('alert')).toHaveTextContent(/connection lost/i);
+});
+
+it('calls onClose when the Dismiss button is clicked', () => {
+  const onClose = jest.fn();
+  render(<HtmlDocStatusBar videoId="v" jobId="j1" title="T" viewUrl={viewUrl} onClose={onClose} />);
+  act(() => { screen.getByRole('button', { name: /dismiss/i }).click(); });
+  expect(onClose).toHaveBeenCalled();
+});
+
+it('auto-closes ~4s after done', () => {
+  const onClose = jest.fn();
+  render(<HtmlDocStatusBar videoId="v" jobId="j1" title="T" viewUrl={viewUrl} onClose={onClose} />);
+  act(() => { FakeES.last!.emit({ type: 'done' }); });
+  expect(onClose).not.toHaveBeenCalled();
+  act(() => { jest.advanceTimersByTime(4000); });
+  expect(onClose).toHaveBeenCalled();
 });
 ```
 
@@ -1408,7 +1670,7 @@ export default function HtmlDocStatusBar({ videoId, jobId, title, viewUrl, onClo
 - [ ] **Step 4: Run to verify pass**
 
 Run: `npx jest tests/components/HtmlDocStatusBar.test.tsx`
-Expected: PASS (4 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1529,19 +1791,16 @@ In `components/VideoMenu.tsx`:
 Run: `npx jest tests/components/VideoMenu.test.tsx`
 Expected: PASS (3 tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: DO NOT commit yet**
 
-```bash
-git add components/VideoMenu.tsx tests/components/VideoMenu.test.tsx
-git commit -m "feat(html-doc): VideoMenu generate/view/regenerate items"
-```
+> **Codex HIGH (no broken commit):** Adding the required `onGenerateHtml` prop to `VideoMenu` breaks `VideoRow`/`VideoList`/`page` compilation until they pass it. Committing `VideoMenu` alone yields a non-building commit. Proceed straight to Task 11 and commit `VideoMenu` **together** with its callers in one buildable commit. The `VideoMenu` unit test already passes now (it supplies the prop directly), so you have RED→GREEN locally without committing.
 
 ---
 
-## Task 11: Thread `onGenerateHtml` through VideoList/VideoRow + wire `app/page.tsx`
+## Task 11: Thread `onGenerateHtml` through VideoList/VideoRow + wire `app/page.tsx` (single buildable commit with Task 10)
 
 **Files:**
-- Modify: `components/VideoList.tsx`, `components/VideoRow.tsx`, `app/page.tsx`
+- Modify: `components/VideoMenu.tsx` (from Task 10, committed here), `components/VideoList.tsx`, `components/VideoRow.tsx`, `app/page.tsx`
 
 > UI wiring — no business logic. Covered by E2E (Task 12). Verify with `tsc` + build here.
 
@@ -1622,11 +1881,11 @@ import HtmlDocStatusBar from '@/components/HtmlDocStatusBar';
 Run: `npx tsc --noEmit && npm run lint && npm run build`
 Expected: all pass, no type errors. (If any component test for `VideoList`/`VideoRow` exists and now needs the new required prop, add `onGenerateHtml={() => {}}` to those render calls.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit (VideoMenu from Task 10 ships here, in one buildable commit)**
 
 ```bash
-git add components/VideoList.tsx components/VideoRow.tsx app/page.tsx tests/
-git commit -m "feat(html-doc): wire generate-html flow through list, row, page"
+git add components/VideoMenu.tsx components/VideoList.tsx components/VideoRow.tsx app/page.tsx tests/components/VideoMenu.test.tsx tests/
+git commit -m "feat(html-doc): VideoMenu items + wire generate-html through list, row, page"
 ```
 
 ---
@@ -1706,12 +1965,16 @@ git commit -m "test(html-doc): E2E generate→view, regenerate, error, KO"
 - HTML escaping (security) → Task 3 injection test. ✓
 - Testing layers (unit/api/component/E2E, KO fixture, all-params link assertion) → Tasks 1–12. ✓
 
-**Placeholder scan:** Two intentional "delete the vestigial scaffold" notes in Tasks 2 & 3 (`metaLine`/`metaBits`/`sourceNote`) — these are explicit cleanup instructions, not placeholders; the functional code is complete. No TBD/TODO elsewhere.
+**Placeholder scan:** No TBD/TODO. The earlier vestigial-scaffold locals (`metaLine` in parse, `metaBits`/`sourceNote` in render) were removed in the post-Codex revision; the code blocks are now clean.
 
 **Type consistency:** `runHtmlDoc(videoId, outputFolder, onProgress)`, `generateMagazineModel(sections, language)`, `parseSummaryMarkdown(md)`, `renderMagazineHtml(parsed, model)`, `summaryHtml`, `htmls/<base>.html`, `onGenerateHtml` — names consistent across all tasks and the spec.
 
 **Decision deviations from the spec (intentional, noted):**
-1. Transform lives in `lib/gemini.ts` (`generateMagazineModel`), not a separate `lib/html-doc/transform.ts` — respects the project's Gemini mocking boundary. 
+1. Transform lives in `lib/gemini.ts` (`generateMagazineModel`), not a separate `lib/html-doc/transform.ts` — respects the project's Gemini mocking boundary. (Codex M6 suggests a thin wrapper to preserve the spec's module boundary — **open decision**.)
 2. On `done`, the status bar surfaces a clickable **View link** in addition to `window.open` — avoids browser popup-blocking of a programmatic open after async work.
 
-Both are improvements consistent with the spec's intent; flag for reviewer confirmation.
+**Open Mediums for user decision:**
+- **M1 (inline markdown):** parsed callout text and transformed leads/bullets render as **escaped plain text** — inline `**bold**`/links are not interpreted. Recommended: accept for the pilot (the prompt asks for plain text; source nuance stays in the `.md`).
+- **M6 (transform module boundary):** keep the transform in `lib/gemini.ts` (current plan, simplest, matches mocking boundary) vs. add a thin `lib/html-doc/transform.ts` wrapper. Recommended: keep in `lib/gemini.ts`.
+
+Post-Codex revision: all 3 Blocking + 6 High + M2–M5 resolved inline (see Codex Review Resolutions table).
