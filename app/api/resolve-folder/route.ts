@@ -16,15 +16,19 @@ export async function GET(request: Request) {
   }
 
   const settings = readSettings();
+  // Distinguish an ABSENT root param (fall back to settings) from a BLANK one
+  // (`?root=` / whitespace → a client error, not a silent settings fallback).
   // `??` is correct because readSettings returns baseOutputFolder as undefined
   // (not '') when unset (lib/settings-store.ts).
-  const rawRoot = searchParams.get('root') || (settings.baseOutputFolder ?? settings.outputFolder);
-  if (!rawRoot) {
+  const rootParam = searchParams.get('root');
+  const rawRoot = (rootParam === null ? (settings.baseOutputFolder ?? settings.outputFolder) : rootParam) ?? '';
+  const trimmedRoot = rawRoot.trim();
+  if (!trimmedRoot) {
     return NextResponse.json({ error: 'no base output folder configured' }, { status: 400 });
   }
 
   try {
-    const root = normalizeToRoot(rawRoot);
+    const root = normalizeToRoot(trimmedRoot);
     const outputFolder = await resolveOutputFolder(url, root, process.env.YOUTUBE_API_KEY);
     return NextResponse.json({ root, outputFolder });
   } catch (err) {

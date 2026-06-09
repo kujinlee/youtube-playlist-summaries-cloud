@@ -328,3 +328,120 @@ describe('Header — Sync', () => {
     expect(syncBtn()).toBeDisabled();
   });
 });
+
+// --- Review hardening (Task 18): trimming + stale-response seq guards ----
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+describe('Header — trimming', () => {
+  it('trims the URL before resolving and before onIngest', async () => {
+    const onIngest = jest.fn();
+    const resolveUrls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.startsWith('/api/resolve-folder')) {
+        resolveUrls.push(u);
+        return Promise.resolve(ok({ root: ROOT, outputFolder: TARGET }));
+      }
+      return Promise.reject(new Error(`unrouted ${u}`));
+    }) as jest.Mock;
+    renderHeader({ onIngest });
+    fireEvent.change(urlField(), { target: { value: `   ${URL_VAL}   ` } });
+    await settle();
+    // the resolve call carried the TRIMMED url, not the padded one
+    expect(resolveUrls[0]).toContain(`url=${encodeURIComponent(URL_VAL)}`);
+    expect(resolveUrls[0]).not.toContain('%20');
+    fireEvent.click(fetchBtn());
+    expect(onIngest).toHaveBeenCalledWith(URL_VAL, TARGET);
+  });
+
+  it('resolves with a trimmed root (a trailing-space root is not sent raw)', async () => {
+    const resolveUrls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.startsWith('/api/resolve-folder')) {
+        resolveUrls.push(u);
+        return Promise.resolve(ok({ root: ROOT, outputFolder: TARGET }));
+      }
+      return Promise.reject(new Error(`unrouted ${u}`));
+    }) as jest.Mock;
+    renderHeader({ defaultBaseOutputFolder: '/d ' });
+    fireEvent.change(urlField(), { target: { value: URL_VAL } });
+    await settle();
+    expect(resolveUrls[0]).toContain(`root=${encodeURIComponent('/d')}`);
+    expect(resolveUrls[0]).not.toContain(encodeURIComponent('/d '));
+  });
+
+  it('a whitespace-only root resolves nothing and keeps Fetch disabled', async () => {
+    const resolveCalls: string[] = [];
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.startsWith('/api/resolve-folder')) resolveCalls.push(u);
+      return Promise.reject(new Error(`unrouted ${u}`));
+    }) as jest.Mock;
+    renderHeader({ defaultBaseOutputFolder: '   ' });
+    fireEvent.change(urlField(), { target: { value: URL_VAL } });
+    await settle();
+    expect(resolveCalls).toHaveLength(0);
+    expect(fetchBtn()).toBeDisabled();
+  });
+});
+
+describe('Header — stale-response seq guards', () => {
+  it('drops a stale resolve response that arrives after a newer one', async () => {
+    const dA = deferred<ReturnType<typeof ok>>();
+    const dB = deferred<ReturnType<typeof ok>>();
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.startsWith('/api/resolve-folder')) {
+        return u.includes('PLA') ? dA.promise : dB.promise;
+      }
+      return Promise.reject(new Error(`unrouted ${u}`));
+    }) as jest.Mock;
+    renderHeader();
+
+    fireEvent.change(urlField(), { target: { value: 'https://youtube.com/playlist?list=PLA' } });
+    await act(async () => { await jest.advanceTimersByTimeAsync(400); }); // fetch A in-flight
+    fireEvent.change(urlField(), { target: { value: 'https://youtube.com/playlist?list=PLB' } });
+    await act(async () => { await jest.advanceTimersByTimeAsync(400); }); // fetch B in-flight
+
+    // B (the newer request) resolves first, then A (stale) resolves
+    await act(async () => { dB.resolve(ok({ root: ROOT, outputFolder: '/d/B/raw' })); });
+    await act(async () => { dA.resolve(ok({ root: ROOT, outputFolder: '/d/A/raw' })); });
+
+    // the hint must reflect B, never the stale A
+    expect(hint()).toHaveTextContent('/d/B/raw');
+    expect(hint()).not.toHaveTextContent('/d/A/raw');
+  });
+
+  it('drops a stale normalize (blur) response superseded by a newer root edit', async () => {
+    const dA = deferred<ReturnType<typeof ok>>();
+    const dB = deferred<ReturnType<typeof ok>>();
+    global.fetch = jest.fn((input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.startsWith('/api/normalize-folder')) {
+        return u.includes('aaa') ? dA.promise : dB.promise;
+      }
+      if (u.startsWith('/api/resolve-folder')) return Promise.reject(new Error('no url'));
+      return Promise.reject(new Error(`unrouted ${u}`));
+    }) as jest.Mock;
+    renderHeader();
+    const field = rootField();
+
+    // edit to /aaa, blur (normalize A in-flight), then edit to /bbb, blur (normalize B)
+    fireEvent.change(field, { target: { value: '/aaa/slug/raw' } });
+    fireEvent.blur(field);
+    fireEvent.change(field, { target: { value: '/bbb/slug/raw' } });
+    fireEvent.blur(field);
+
+    // B resolves first to /bbb, then the stale A resolves to /aaa
+    await act(async () => { dB.resolve(ok({ root: '/bbb' })); });
+    await act(async () => { dA.resolve(ok({ root: '/aaa' })); });
+
+    // the stale A normalize must NOT clobber the field back to /aaa
+    expect(rootField().value).toBe('/bbb');
+  });
+});

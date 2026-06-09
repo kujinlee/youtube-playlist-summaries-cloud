@@ -77,6 +77,15 @@ describe('GET /api/resolve-folder', () => {
     expect(await res.json()).toEqual({ root: '/d', outputFolder: '/d/cs146s/raw' });
   });
 
+  it('E4: 400 for an explicit blank root param — not a silent settings fallback', async () => {
+    // A blank ?root= must be a client error, never a quiet fallback to the settings root.
+    mockReadSettings.mockReturnValue({ baseOutputFolder: '/d', outputFolder: '/d' });
+    const res = await getReq(`?url=${encodeURIComponent(PLAYLIST_URL)}&root=${encodeURIComponent('   ')}`);
+    expect(res.status).toBe(400);
+    expect(mockResolve).not.toHaveBeenCalled();
+    expect(mockNormalize).not.toHaveBeenCalled();
+  });
+
   it('E5: 400 for an invalid playlist URL (InvalidPlaylistUrlError)', async () => {
     mockReadSettings.mockReturnValue({ baseOutputFolder: '/d', outputFolder: '/d' });
     mockResolve.mockRejectedValue(new InvalidPlaylistUrlError('playlist URL has no ?list= id'));

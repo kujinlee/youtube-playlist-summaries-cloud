@@ -647,3 +647,40 @@ describe('Page — sort persistence (behavior 12)', () => {
     });
   });
 });
+
+describe('Page — browse persistence (P2)', () => {
+  const originalPlatform = navigator.platform;
+  afterEach(() => {
+    Object.defineProperty(navigator, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('persists the consistent {newRoot, pickedFolder} pair after Browse (not a half-stale pair)', async () => {
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
+    const PICKED = '/vault/output/cs146s/raw';
+    const NEW_ROOT = '/vault/output';
+    const { fetchMock } = await renderPage([], {
+      'GET /api/pick-folder': { folderPath: PICKED },
+      'GET /api/normalize-folder': { root: NEW_ROOT },
+    });
+    await waitFor(() => screen.getByRole('button', { name: /browse/i }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /browse/i }));
+    });
+
+    // The debounced persist effect writes the FINAL consistent pair — proving the root
+    // (NEW_ROOT) and the just-viewed folder (PICKED) are persisted together, not
+    // {NEW_ROOT, oldFolder}.
+    await waitFor(
+      () => {
+        const settingsPost = (fetchMock.mock.calls as [string, RequestInit?][])
+          .filter(([url, opts]) => url === '/api/settings' && (opts?.method ?? 'GET').toUpperCase() === 'POST')
+          .pop();
+        expect(settingsPost).toBeDefined();
+        const body = JSON.parse(settingsPost![1]!.body as string);
+        expect(body).toEqual({ baseOutputFolder: NEW_ROOT, outputFolder: PICKED });
+      },
+      { timeout: 2000 },
+    );
+  });
+});
