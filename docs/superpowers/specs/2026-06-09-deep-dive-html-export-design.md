@@ -1,7 +1,15 @@
 # Design Spec: Deep-Dive HTML Export (faithful render)
 
 **Date:** 2026-06-09
-**Status:** Approved
+**Status:** Approved (revised per adversarial review)
+
+> **Adversarial review (Claude-opus fallback; Codex rate-limited until 2026-07-03) — resolved inline.**
+> See `docs/reviews/deep-dive-html-spec-review.md`. Resolutions: **B-1** Unicode path regex (fixes
+> KO-slug 404 for deep-dive AND the shipped summary path); **H-1** drop the `deepDiveHtml` index field
+> so there is no index write on the GET path (no clobber race); **H-2** serve in-memory rendered bytes;
+> **H-3** archive deletes cached `htmls/*.html` + clears `summaryHtml`; **H-4** keep the preamble
+> (faithful), tested; **M-1/2/3** test `javascript:`-link blocking, pin `source-md`=`deepDiveMd`, CSS
+> targets `h1`–`h4`; **L-1** add `@types/markdown-it`. A real Codex pass is still owed before merge.
 
 ---
 
@@ -25,7 +33,7 @@ content loss. It is "the PDF, but as a screen-readable, colorable HTML page."
 
 ### Scope
 
-- **Deep-dive artifact only** (`video.deepDiveMd` → `htmls/<base>-deep-dive.html`).
+- **Deep-dive artifact only** (`video.deepDiveMd` → `htmls/<base>.html`, where `<base>` already ends in `-deep-dive`).
 - **Faithful markdown→HTML render** — no Gemini, no transform, no content restructuring.
 - **Lazy generate-on-view** — no Generate button, no SSE job, no status bar.
 
@@ -71,28 +79,38 @@ operation).
 
 | File | Responsibility |
 |---|---|
-| `lib/html-doc/render-deep-dive.ts` | **Pure** `renderDeepDiveHtml(md) → string`. Strip YAML frontmatter; extract `lang`/`video_id` for `<head>`; render the body with `markdown-it` (`html:false`); wrap in self-contained HTML + CSS (monospace `<pre>`, colored headings, KO serif, readable column). No I/O. |
-| `lib/html-doc/generate-deep-dive.ts` | `runDeepDiveHtml(videoId, outputFolder) → string`. Read `video.deepDiveMd`; render; atomic-write `htmls/<base>.html` (where `base = deepDiveMd` minus `.md`, already ending in `-deep-dive`); set `deepDiveHtml` in the index; return the relative path. |
+| `lib/html-doc/render-deep-dive.ts` | **Pure** `renderDeepDiveHtml(md) → string`. Strip YAML frontmatter; extract `lang`/`video_id` for `<head>`; render the body with `markdown-it` (`html:false`); wrap in self-contained HTML + CSS (monospace `<pre>`, colored headings `h1`–`h4`, KO serif, readable column). No I/O. |
+| `lib/html-doc/generate-deep-dive.ts` | `runDeepDiveHtml(videoId, outputFolder) → string`. Read `video.deepDiveMd`; render; atomic-write `htmls/<base>.html` (where `base = deepDiveMd` minus `.md`, already ending in `-deep-dive`); **return the rendered HTML string**. Does **not** write the index (see review fix H-1). |
 
 ### Modified files
 
 | File | Change |
 |---|---|
-| `types/index.ts` | Add `deepDiveHtml: z.string().nullable().optional()` to `VideoSchema`. |
-| `app/api/html/[id]/route.ts` | Accept `type=deep-dive` (in addition to `summary`); for deep-dive, serve the cached file, **lazily generating it if the file is missing**. |
+| `app/api/html/[id]/route.ts` | (1) Widen `type` to `summary \| deep-dive`. (2) For deep-dive, serve the cached file, **lazily generating it if the file is missing**, serving the in-memory bytes. (3) **B-1 fix:** widen the path guard regex to Unicode (`/^htmls\/[\p{L}\p{N}._-]+\.html$/u`) so Korean-slug filenames are admitted — this **also fixes the shipped summary path's KO 404**. |
 | `components/VideoMenu.tsx` | Add a **"View Deep Dive HTML"** link next to "View Deep Dive PDF", enabled when `deepDiveMd` is set, `target=_blank`. |
-| `lib/deep-dive.ts` | On (re)generation, set `deepDiveHtml: null` and delete any stale `htmls/<base>.html`, so the next view regenerates from the new markdown. |
+| `lib/deep-dive.ts` | On (re)generation, delete any stale `htmls/<base>.html` so the next view regenerates from the new markdown. (No index field to clear.) |
+| `lib/archive.ts` | **H-3 fix:** on archive/unarchive, delete the video's cached `htmls/*.html` (summary + deep-dive) and clear `summaryHtml`. Fixes the deep-dive orphan AND the pre-existing summary stale-serve-after-archive gap. |
+
+**No `deepDiveHtml` index field** (review fix H-1): the lazy model needs none — the menu link always
+shows when `deepDiveMd` exists, and the serve route keys purely on the cache file's existence. So
+there is **no `types/index.ts` change** and **no index write on the GET path** (eliminating the
+read-modify-write clobber race that generating-inside-a-GET would otherwise create against concurrent
+Archive/Deep-Dive writes).
 
 **Notably absent** (vs the summary feature): no Gemini, no POST route, no SSE stream, no status bar,
-no `app/page.tsx` change.
+no `app/page.tsx` change, no index field.
 
 ### Data flow (lazy generate-on-view)
 
 1. Click **View Deep Dive HTML** → `GET /api/html/<id>?outputFolder=…&type=deep-dive` (new tab).
-2. Serve route: validate → `readIndex` → deep-dive branch.
-3. Cached file exists on disk → serve (`text/html; charset=utf-8`).
-4. Else if `deepDiveMd` exists → `runDeepDiveHtml` (render + atomic write + set `deepDiveHtml`) → serve.
+2. Serve route: validate → `readIndex` → deep-dive branch → `base = deepDiveMd` minus `.md`.
+3. Cached `htmls/<base>.html` exists on disk → read + serve (`text/html; charset=utf-8`).
+4. Else if `deepDiveMd` exists → `runDeepDiveHtml` (render + atomic write) → serve the **returned
+   in-memory bytes** (no write-then-re-read — review fix H-2).
 5. Else → 404.
+
+Concurrent first-views both render identical bytes and atomic-write (temp→rename); last rename wins,
+harmless. No index mutation, so no lock is needed.
 
 ---
 
@@ -106,12 +124,14 @@ no `app/page.tsx` change.
   `pdfs/<slug>-deep-dive.pdf`.
 - **Self-contained:** all CSS inlined in a `<style>` block.
 - **`<head>` provenance:** `<meta name="generator" content="deep-dive-html v1">`,
-  `<meta name="source-md" content="<base>.md">`, `<meta name="video-id" content="…">`,
-  `<html lang="…">` from frontmatter.
-- **CSS:** monospace `<pre>`/`<code>` (so ` ```ascii ` diagrams don't collapse), colored headings,
-  Korean serif fallback (`'Nanum Myeongjo','Apple SD Gothic Neo'`), readable max-width column.
-- The existing serve-route path-traversal regex `/^htmls\/[A-Za-z0-9._-]+\.html$/` already admits the
-  `-deep-dive` suffix (hyphens allowed).
+  `<meta name="source-md" content="…">` = `video.deepDiveMd` **verbatim** (review fix M-2),
+  `<meta name="video-id" content="…">`, `<html lang="…">` from frontmatter.
+- **CSS:** monospace `<pre>`/`<code>` (so ` ```ascii ` diagrams don't collapse); colored headings
+  targeting the levels that actually occur (`h1`–`h4` — the deep-dive body uses `###`/`####`, review
+  fix M-3); Korean serif fallback (`'Nanum Myeongjo','Apple SD Gothic Neo'`); readable max-width column.
+- **Path guard (B-1 fix):** the serve-route path-traversal regex is widened to Unicode
+  `/^htmls\/[\p{L}\p{N}._-]+\.html$/u` so Korean-slug filenames pass; the resolved-path containment
+  check (`path.resolve` + prefix) remains the real traversal backstop.
 
 ### URL contract
 
@@ -122,13 +142,15 @@ no `app/page.tsx` change.
 ### Serve route (`type=deep-dive`)
 
 - `type` validation widens to `summary | deep-dive`; anything else → 400 (the summary path is
-  unchanged).
+  unchanged — keep the "summary still works" assertion).
 - Resolve `base = deepDiveMd.replace(/\.md$/,'')` (already ends in `-deep-dive`), cache path
   `htmls/<base>.html`.
-- **Serve-or-generate keyed on the FILE existing on disk** (not the `deepDiveHtml` flag): if present
-  → serve; else if `deepDiveMd` exists → generate + serve; else → 404. (A flag set but file deleted
-  still regenerates — no 404 on a missing-but-flagged file.)
-- Same path-traversal guard (regex + resolved-path containment) and `text/html; charset=utf-8`.
+- **Serve-or-generate keyed on the FILE existing on disk** (there is no `deepDiveHtml` flag): if the
+  cache file is present → serve it; else if `deepDiveMd` exists → `runDeepDiveHtml` (render + atomic
+  write) → serve the returned bytes; else → 404.
+- Widened-Unicode path regex + resolved-path containment guard; `text/html; charset=utf-8`.
+- **400 vs 404 corners:** missing `outputFolder` → 400; invalid/missing `type` → 400; path-guard
+  failure → 400; video not found → 404; `deepDiveMd` null → 404; render throw → 500 (nothing cached).
 
 ### Menu state
 
@@ -146,32 +168,66 @@ no `app/page.tsx` change.
   failure → 400/404, never 200.
 - Atomic write: temp file (`crypto.randomUUID()` suffix) → `rename`, mirroring the summary orchestrator.
 
-### Security — raw-HTML escaping
+### Security — raw-HTML escaping + link safety
 
-`markdown-it` is configured with `html: false`, so raw HTML embedded in the (Gemini-generated)
-deep-dive markdown is escaped/rendered inert rather than passed through. Explicitly unit-tested:
-a `<script>` and an `<img onerror=…>` in the source markdown render as inert text.
+- `markdown-it` is configured with `html: false`, so raw HTML embedded in the (Gemini-generated)
+  deep-dive markdown is escaped/rendered inert rather than passed through. Explicitly unit-tested:
+  a `<script>` and an `<img onerror=…>` in the source markdown render as inert text.
+- **Link safety (M-1):** the design relies on `markdown-it`'s default `validateLink`, which blocks
+  `javascript:`/`vbscript:`/`data:` (non-image) hrefs. Named here explicitly and unit-tested: a
+  `[x](javascript:alert(1))` link renders without an executable href.
+- Threat model is modest (the user views their own locally-generated content), but escaping + link
+  validation are cheap and tested rather than assumed.
+
+### Preamble (faithful render decision — H-4)
+
+The Gemini deep-dive body often opens with a conversational preamble line (e.g. "Of course. Here is
+a comprehensive deep-dive analysis…"). `lib/deep-dive.ts` strips only a leading H1, not this line.
+**Decision: keep it** — the render is faithful and stays consistent with the PDF and the Obsidian
+`.md`, which show the same body. (Suppressing the preamble belongs in the deep-dive *generation*
+prompt, not this renderer.) Tested: the renderer strips frontmatter and renders the body intact
+without crashing on the preamble.
+
+### Staleness & archive
+
+- **Regeneration:** when `lib/deep-dive.ts` (re)writes `deepDiveMd`, it deletes any stale
+  `htmls/<base>.html`; the next view regenerates from the new markdown. (No index field to clear.)
+- **Archive (H-3):** `lib/archive.ts` deletes the video's cached `htmls/*.html` (summary + deep-dive)
+  on archive/unarchive and clears `summaryHtml`, so an archived video never serves HTML whose source
+  `.md` has moved. (Also closes the pre-existing summary stale-serve-after-archive gap.)
 
 ---
 
 ## Testing (TDD layers)
 
-- **Unit — `render-deep-dive.ts`:** frontmatter stripped; headings/lists rendered; ` ```ascii `
-  block → `<pre><code>` with content byte-preserved; raw-HTML injection escaped (`<script>`,
-  `<img onerror>`); KO content; self-contained + provenance meta; `<head>` `lang` from frontmatter.
+- **Unit — `render-deep-dive.ts`:** frontmatter stripped; headings (`h1`–`h4`) / lists rendered;
+  ` ```ascii ` block → `<pre><code>` with content byte-preserved; raw-HTML injection escaped
+  (`<script>`, `<img onerror>`); **`javascript:` link href dropped** (M-1); preamble line kept +
+  body intact (H-4); KO content; self-contained + provenance meta (`source-md` = `deepDiveMd`);
+  `<head>` `lang` from frontmatter.
 - **Unit — `generate-deep-dive.ts`:** writes `htmls/<base>.html` (e.g. `…-deep-dive.html`, no
-  doubled suffix), sets `deepDiveHtml`, atomic; throws when `deepDiveMd` missing.
-- **Unit — `lib/deep-dive.ts`:** regeneration sets `deepDiveHtml: null` and removes the stale file.
-- **Route — serve (`app/api/html/[id]`):** deep-dive cached → 200; **missing → lazy-generates → 200**
-  (and `deepDiveHtml` now set); no `deepDiveMd` → 404; invalid `type` → 400; traversal value → not
-  200; the existing summary path still works.
+  doubled suffix), **returns the HTML string**, atomic write, **no index write**; throws when
+  `deepDiveMd` missing.
+- **Unit — `lib/deep-dive.ts`:** regeneration removes the stale `htmls/<base>.html`.
+- **Unit — `lib/archive.ts`:** archive removes the video's cached `htmls/*.html` and clears
+  `summaryHtml`.
+- **Route — serve (`app/api/html/[id]`):** deep-dive cached → 200; **missing → lazy-generates → 200**;
+  no `deepDiveMd` → 404; invalid `type` → 400; traversal value → not 200; **Korean-slug filename →
+  200, not 404 (B-1)** — for BOTH the deep-dive AND the summary path; the existing summary path still
+  works.
 - **Component — VideoMenu:** "View Deep Dive HTML" enabled when `deepDiveMd` set / disabled when not;
   href carries `outputFolder` + `type=deep-dive`.
-- **Integration:** a real deep-dive `.md` → serve route lazily renders → asserts an ASCII diagram
-  block is present and monospace-wrapped (`<pre>`), and frontmatter is absent from the body.
+- **Integration:** a real deep-dive `.md` (incl. a Korean-slug one) → serve route lazily renders →
+  asserts an ASCII diagram block is present and monospace-wrapped (`<pre>`), frontmatter absent, and
+  the KO-filename case returns 200.
 - **E2E (Playwright, route boundary per `dev-process`):** click "View Deep Dive HTML" → tab serves
   HTML; assert both link params (`outputFolder` + `type=deep-dive`). Fixture set includes a video
   with `deepDiveMd` set and one without.
+
+### Dependency
+
+Add `markdown-it` (runtime) + `@types/markdown-it` (dev) — both currently absent. Plain Node
+libraries, unaffected by the project's modified-Next.js note (per `AGENTS.md`).
 
 ---
 
