@@ -117,10 +117,17 @@ describe('renderMagazineHtml', () => {
     expect(html).toContain('color:var(--ink)');
   });
 
-  it('ships warm Dark A values and a system-dark media query', () => {
+  it('ships warm Dark A values (all of them) and a system-dark media query', () => {
     const html = renderMagazineHtml(parsed, model);
-    expect(html).toContain('[data-theme="dark"]{--page:#1a1714');
-    expect(html).toContain('--gold:#e6b54d');
+    // Exhaustive + anchored: the full dark declaration list must appear inside the explicit
+    // [data-theme="dark"] block. Key order must match the DARK palette object in render.ts.
+    const DARK_EXPECTED: Record<string, string> = {
+      page: '#1a1714', card: '#221d18', ink: '#e8e2d6', meta: '#9a9082', rule: '#332c24',
+      ghost: '#2e2820', gold: '#e6b54d', goldline: '#e0a800', li: '#cfc8ba', foot: '#8a8174',
+      shadow: '0 1px 3px rgba(0,0,0,.5)',
+    };
+    const darkDecls = Object.entries(DARK_EXPECTED).map(([k, v]) => `--${k}:${v}`).join(';');
+    expect(html).toContain(`[data-theme="dark"]{${darkDecls}}`);
     expect(html).toContain('@media(prefers-color-scheme:dark){:root:not([data-theme])');
   });
 
