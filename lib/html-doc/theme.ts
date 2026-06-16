@@ -33,7 +33,7 @@ export function themeStyleBlock(light: Palette, dark: Palette): string {
 [data-theme="light"]{${l}}
 [data-theme="dark"]{${d}}
 @media(prefers-color-scheme:dark){:root:not([data-theme]){${d}}}
-html.theme-ready,html.theme-ready *{transition:background-color .2s,color .2s}
+html.theme-ready body,html.theme-ready #theme-toggle{transition:background-color .2s,color .2s}
 #theme-toggle{position:fixed;top:1rem;right:1rem;width:2.4rem;height:2.4rem;border-radius:50%;border:1px solid rgba(128,128,128,.35);background:var(--card);color:var(--ink);font-size:1.1rem;line-height:1;cursor:pointer;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;z-index:10}
 @media print{:root,[data-theme="light"],[data-theme="dark"]{${l}}#theme-toggle{display:none}}
 `;
@@ -63,7 +63,7 @@ export const THEME_TOGGLE_SCRIPT =
   `var root=document.documentElement,btn=document.getElementById('theme-toggle');if(!btn)return;` +
   `function systemDark(){return!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)}` +
   `function effective(){var a=root.getAttribute('data-theme');return a==='dark'||a==='light'?a:(systemDark()?'dark':'light')}` +
-  `function syncIcon(){btn.textContent=effective()==='dark'?'☀️':'\u{1F319}'}` +
+  `function syncIcon(){btn.textContent=effective()==='dark'?'\u{2600}\u{FE0F}':'\u{1F319}'}` +
   `btn.addEventListener('click',function(){var next=effective()==='dark'?'light':'dark';` +
   `root.setAttribute('data-theme',next);try{localStorage.setItem('${STORAGE_KEY}',next)}catch(e){}syncIcon()});` +
   `syncIcon();requestAnimationFrame(function(){root.classList.add('theme-ready')})})();</script>`;
