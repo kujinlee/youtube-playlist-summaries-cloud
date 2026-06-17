@@ -42,7 +42,9 @@ describe('themeStyleBlock', () => {
   });
 
   it('forces the LIGHT palette and hides the toggle when printing', () => {
-    expect(css).toContain('@media print{:root,[data-theme="light"],[data-theme="dark"]{--page:#ffffff');
+    // The print selector MUST include :root:not([data-theme]) — otherwise the system-dark rule
+    // (0,2,0) outranks a bare :root (0,1,0) and a never-toggled doc prints dark on a dark OS.
+    expect(css).toContain('@media print{:root,:root:not([data-theme]),[data-theme="light"],[data-theme="dark"]{--page:#ffffff');
     expect(css).toContain('#theme-toggle{display:none}');
   });
 

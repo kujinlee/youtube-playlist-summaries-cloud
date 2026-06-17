@@ -118,6 +118,19 @@ test.describe('exported HTML dark mode', () => {
     await expect(page.locator('#theme-toggle')).toBeHidden();
   });
 
+  test('prints a LIGHT card even on a dark OS when never toggled', async ({ page }) => {
+    // Regression: the print rule must beat the system-dark cascade (:root:not([data-theme])),
+    // or a never-toggled doc on a dark OS would print a dark card with pale text.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await serveDoc(page);
+    await page.goto(DOC_URL);
+    // Sanity: on screen it IS dark (system-following).
+    await expect(page.locator('.v4')).toHaveCSS('background-color', 'rgb(34, 29, 24)'); // dark --card #221d18
+    // Under print media the card must resolve to the LIGHT palette card color.
+    await page.emulateMedia({ colorScheme: 'dark', media: 'print' });
+    await expect(page.locator('.v4')).toHaveCSS('background-color', 'rgb(251, 249, 246)'); // light --card #fbf9f6
+  });
+
   test('deep-dive export follows system dark (M6 — deep-dive runtime coverage)', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' });
     await serveDeepDive(page);

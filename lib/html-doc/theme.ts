@@ -22,8 +22,11 @@ function vars(palette: Palette): string {
  * Two correctness details:
  *  - The color transition is gated behind `html.theme-ready` (added by the toggle script on
  *    the first requestAnimationFrame) so a doc that loads in dark does NOT fade in from light.
- *  - The print block re-applies the LIGHT palette to every theme state so a dark doc prints a
- *    legible light card (the structural print rule additionally whitens the body / drops shadow).
+ *  - The print block re-applies the LIGHT palette to every theme state — including the
+ *    un-toggled system-dark case `:root:not([data-theme])`, which must be listed explicitly
+ *    because it outranks a bare `:root` (0,2,0 vs 0,1,0) and would otherwise keep the dark
+ *    palette when printing on a dark OS — so a dark doc always prints a legible light card
+ *    (the structural print rule additionally whitens the body / drops shadow).
  */
 export function themeStyleBlock(light: Palette, dark: Palette): string {
   const l = vars(light);
@@ -35,7 +38,7 @@ export function themeStyleBlock(light: Palette, dark: Palette): string {
 @media(prefers-color-scheme:dark){:root:not([data-theme]){${d}}}
 html.theme-ready body,html.theme-ready #theme-toggle{transition:background-color .2s,color .2s}
 #theme-toggle{position:fixed;top:1rem;right:1rem;width:2.4rem;height:2.4rem;border-radius:50%;border:1px solid rgba(128,128,128,.35);background:var(--card);color:var(--ink);font-size:1.1rem;line-height:1;cursor:pointer;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;z-index:10}
-@media print{:root,[data-theme="light"],[data-theme="dark"]{${l}}#theme-toggle{display:none}}
+@media print{:root,:root:not([data-theme]),[data-theme="light"],[data-theme="dark"]{${l}}#theme-toggle{display:none}}
 `;
 }
 
