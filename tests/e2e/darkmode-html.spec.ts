@@ -65,6 +65,7 @@ test.describe('exported HTML dark mode', () => {
     await page.goto(DOC_URL);
     const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     expect(bg).toBe(LIGHT_BG);
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBeNull();
   });
 
   test('toggle flips theme against the system preference', async ({ page }) => {
@@ -76,6 +77,8 @@ test.describe('exported HTML dark mode', () => {
     // toHaveCSS auto-retries past the .2s background-color transition (theme-ready) that the
     // toggle script enables; a one-shot getComputedStyle samples the color mid-fade. (harness)
     await expect(page.locator('body')).toHaveCSS('background-color', DARK_BG);
+    // Icon flips to the sun once the doc is dark (default/light icon is the moon 🌙).
+    await expect(page.locator('#theme-toggle')).toHaveText('\u{2600}\u{FE0F}');
   });
 
   test('explicit LIGHT override beats a dark OS preference (regression for the :not guard)', async ({ page }) => {
@@ -121,5 +124,16 @@ test.describe('exported HTML dark mode', () => {
     await page.goto(DD_URL);
     expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe(DD_DARK_BG);
     await expect(page.locator('#theme-toggle')).toBeVisible();
+  });
+
+  test('deep-dive: explicit light beats dark OS and shows its own light palette', async ({ page }) => {
+    // Mirrors the magazine :not-guard regression, but asserts the deep-dive's OWN light page color.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await serveDeepDive(page);
+    await page.goto(DD_URL);
+    await page.locator('#theme-toggle').click(); // system dark → flips to explicit light
+    expect(await page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe('light');
+    // deep-dive light --page is #f3f4f6 = rgb(243, 244, 246). toHaveCSS retries past the fade.
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(243, 244, 246)');
   });
 });
