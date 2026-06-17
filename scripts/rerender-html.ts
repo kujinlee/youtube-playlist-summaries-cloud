@@ -6,7 +6,7 @@
  * whose model has been cached. Summaries with no cached model are reported (regenerate once
  * via the app to enable them); section-drifted summaries are flagged for regeneration.
  *
- * Usage:  npx ts-node scripts/rerender-html.ts <outputFolder> [<outputFolder2> ...]
+ * Usage:  npm run rerender-html -- <outputFolder> [<outputFolder2> ...]
  */
 import { reRenderAll } from '../lib/html-doc/rerender';
 
@@ -34,7 +34,7 @@ function run(outputFolder: string): void {
 
 const folders = process.argv.slice(2);
 if (folders.length === 0) {
-  console.error('Usage: npx ts-node scripts/rerender-html.ts <outputFolder> [<outputFolder2> ...]');
+  console.error('Usage: npm run rerender-html -- <outputFolder> [<outputFolder2> ...]');
   process.exit(1);
 }
 for (const folder of folders) run(folder);
