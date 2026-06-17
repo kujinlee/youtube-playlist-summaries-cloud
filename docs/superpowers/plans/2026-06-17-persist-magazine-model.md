@@ -61,7 +61,7 @@
 18 | Video not in index | unknown id | `{status:'skipped-no-model'}`
 
 **rerender.ts — reRenderAll**
-19 | Tally across videos | mixed folder | counts rerendered / skipped-no-model / skipped-no-md / skipped-unparseable / skipped-drift / errors; per-video details
+19 | Tally across videos | mixed folder | counts rerendered / skipped-not-eligible / skipped-no-model / skipped-no-md / skipped-unparseable / skipped-drift / errors; per-video details
 20 | Per-video isolation | one video's .md has no sections | counted as `skipped-unparseable`, loop continues; `errors` reserved for unexpected (e.g. write I/O) throws
 
 **scripts/rerender-html.ts**
@@ -652,6 +652,7 @@ export interface ReRenderDetail {
 
 export interface ReRenderTally {
   rerendered: number;
+  skippedNotEligible: number;
   skippedNoModel: number;
   skippedNoMd: number;
   skippedUnparseable: number;
@@ -665,13 +666,15 @@ export function reRenderAll(outputFolder: string): ReRenderTally {
   assertOutputFolder(outputFolder);
   const index = readIndex(outputFolder);
   const tally: ReRenderTally = {
-    rerendered: 0, skippedNoModel: 0, skippedNoMd: 0, skippedUnparseable: 0, skippedDrift: 0, errors: 0, details: [],
+    rerendered: 0, skippedNotEligible: 0, skippedNoModel: 0, skippedNoMd: 0,
+    skippedUnparseable: 0, skippedDrift: 0, errors: 0, details: [],
   };
   for (const video of index.videos) {
     try {
       const res = reRenderSummaryHtml(video.id, outputFolder);
       switch (res.status) {
         case 'rerendered': tally.rerendered++; break;
+        case 'skipped-not-eligible': tally.skippedNotEligible++; break;
         case 'skipped-no-model': tally.skippedNoModel++; break;
         case 'skipped-no-md': tally.skippedNoMd++; break;
         case 'skipped-unparseable': tally.skippedUnparseable++; break;
@@ -717,11 +720,12 @@ import { reRenderAll } from '../lib/html-doc/rerender';
 
 function run(outputFolder: string): void {
   const t = reRenderAll(outputFolder);
+  // Headline counts only the actionable outcomes; "not eligible" (videos with no summary to
+  // refresh) is irrelevant to a restyle and stays silent.
   const skipped = t.skippedNoModel + t.skippedNoMd + t.skippedUnparseable + t.skippedDrift;
   console.log(`[${outputFolder}] re-rendered ${t.rerendered}, skipped ${skipped}, errors ${t.errors}`);
   for (const d of t.details) {
-    if (d.status === 'rerendered') continue;
-    if (d.status === 'skipped-no-model' && !d.summaryMd) continue; // no summary at all → silent
+    if (d.status === 'rerendered' || d.status === 'skipped-not-eligible') continue; // nothing to act on
     if (d.status === 'skipped-drift') {
       console.log(`  skipped-drift:    ${d.summaryMd} (sections [${d.mdSections?.join(', ')}] ≠ model [${d.modelSections?.join(', ')}] — regenerate)`);
     } else if (d.status === 'skipped-no-model') {
