@@ -39,14 +39,20 @@ describe('model-store', () => {
     expect(files).toEqual(['a-title.json']); // no .tmp leftovers
   });
 
-  it('returns null when the model file is absent', () => {
+  it('returns null and does NOT warn when the model file is absent', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     expect(readModelEnvelope(dir, 'missing')).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
-  it('returns null on malformed JSON', () => {
+  it('returns null on malformed JSON (and warns)', () => {
     fs.mkdirSync(path.join(dir, 'models'), { recursive: true });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     fs.writeFileSync(path.join(dir, 'models', 'bad.json'), '{ not json', 'utf-8');
     expect(readModelEnvelope(dir, 'bad')).toBeNull();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('returns null (and warns) when the envelope fails schema validation', () => {
@@ -66,5 +72,13 @@ describe('model-store', () => {
     } as unknown as ModelEnvelope;
     expect(() => writeModelEnvelope(dir, BASE, invalid)).toThrow();
     expect(fs.existsSync(path.join(dir, 'models', 'a-title.json'))).toBe(false);
+  });
+
+  it('cleans up the temp file and rethrows when renameSync fails', () => {
+    const rename = jest.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('rename boom'); });
+    expect(() => writeModelEnvelope(dir, BASE, ENVELOPE)).toThrow(/rename boom/);
+    rename.mockRestore();
+    const files = fs.existsSync(path.join(dir, 'models')) ? fs.readdirSync(path.join(dir, 'models')) : [];
+    expect(files).toEqual([]); // no .tmp leftover, no final file
   });
 });
