@@ -77,6 +77,8 @@ describe('reRenderSummaryHtml', () => {
     expect(res).toEqual({ status: 'rerendered', htmlPath: 'htmls/a-title.html' });
     const html = fs.readFileSync(path.join(dir, 'htmls', 'a-title.html'), 'utf-8');
     expect(html).toContain('Lead one.');
+    expect(html).toContain('A Title');   // from parsed .md (title)
+    expect(html).toContain('Core idea.'); // from parsed .md (TL;DR)
     expect(html).toContain('id="theme-toggle"'); // current renderer applied
     expect(gemini.generateMagazineModel as jest.Mock).not.toHaveBeenCalled();
   });
@@ -88,13 +90,13 @@ describe('reRenderSummaryHtml', () => {
 
   it('skips when the video has no summaryMd', () => {
     writeIndex([baseVideo({ summaryMd: null })]);
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-no-model' });
+    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-not-eligible' });
   });
 
   it('skips when the video has no summaryHtml (nothing existing to refresh)', () => {
     writeModelEnvelope(dir, 'a-title', envelope());
     writeIndex([baseVideo({ summaryHtml: null })]);
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-no-model' });
+    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-not-eligible' });
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
@@ -121,7 +123,18 @@ describe('reRenderSummaryHtml', () => {
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
+  it('skips on section-COUNT drift (model has fewer sections than the .md)', () => {
+    const oneTitle = ['First']; // .md parses to 2 sections; model envelope says 1
+    writeModelEnvelope(dir, 'a-title', envelope({ sections: [MODEL.sections[0]] }, oneTitle));
+    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({
+      status: 'skipped-drift',
+      mdSections: ['First', 'Conclusion'],
+      modelSections: ['First'],
+    });
+    expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
+  });
+
   it('skips an unknown video id', () => {
-    expect(reRenderSummaryHtml('nope99', dir)).toEqual({ status: 'skipped-no-model' });
+    expect(reRenderSummaryHtml('nope99', dir)).toEqual({ status: 'skipped-not-eligible' });
   });
 });

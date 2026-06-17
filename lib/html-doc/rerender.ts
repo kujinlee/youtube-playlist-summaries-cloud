@@ -8,7 +8,8 @@ import { readModelEnvelope } from './model-store';
 
 export type ReRenderResult =
   | { status: 'rerendered'; htmlPath: string }
-  | { status: 'skipped-no-model' }
+  | { status: 'skipped-not-eligible' }   // no video / no summaryMd / no summaryHtml — nothing to refresh
+  | { status: 'skipped-no-model' }        // eligible but the model file is absent/invalid — regenerate to enable
   | { status: 'skipped-no-md' }
   | { status: 'skipped-unparseable' }
   | { status: 'skipped-drift'; mdSections: string[]; modelSections: string[] };
@@ -30,7 +31,7 @@ export function reRenderSummaryHtml(videoId: string, outputFolder: string): ReRe
   const index = readIndex(outputFolder);
   const video = index.videos.find((v) => v.id === videoId);
   // Re-render refreshes an EXISTING doc: needs a source note AND a current HTML.
-  if (!video || !video.summaryMd || !video.summaryHtml) return { status: 'skipped-no-model' };
+  if (!video || !video.summaryMd || !video.summaryHtml) return { status: 'skipped-not-eligible' };
 
   const base = video.summaryMd.replace(/\.md$/, '');
   const envelope = readModelEnvelope(outputFolder, base);
