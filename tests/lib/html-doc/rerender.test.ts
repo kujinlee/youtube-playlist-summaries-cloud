@@ -180,4 +180,31 @@ describe('reRenderAll', () => {
     expect(tally.skippedUnparseable).toBe(1);
     expect(tally.errors).toBe(0);
   });
+
+  it('isolates a per-video write failure and keeps rendering the rest', () => {
+    // Two eligible videos with cached models; force the HTML write to throw for the FIRST only.
+    fs.writeFileSync(path.join(dir, 'b-title.md'), SUMMARY_MD);
+    writeModelEnvelope(dir, 'a-title', envelope());
+    writeModelEnvelope(dir, 'b-title', envelope());
+    writeIndex([baseVideo(), baseVideo({ id: 'vidB', summaryMd: 'b-title.md', summaryHtml: 'htmls/b-title.html' })]);
+
+    const realRename = fs.renameSync;
+    const spy = jest.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (String(to).includes('a-title')) throw new Error('disk full');
+      return (realRename as typeof fs.renameSync)(from, to);
+    });
+
+    const tally = reRenderAll(dir);
+    spy.mockRestore();
+
+    expect(tally.errors).toBe(1);
+    expect(tally.rerendered).toBe(1); // vidB still rendered despite vidA throwing
+    expect(tally.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ summaryMd: 'a-title.md', status: 'error', message: expect.stringMatching(/disk full/) }),
+        expect.objectContaining({ summaryMd: 'b-title.md', status: 'rerendered' }),
+      ]),
+    );
+    expect(fs.existsSync(path.join(dir, 'htmls', 'b-title.html'))).toBe(true);
+  });
 });
