@@ -149,8 +149,10 @@ by the same `writeSummaryDoc`, matching the annotated sample in
 - **Completion → clickable:** when `ensureHtmlDoc` finishes, the row refreshes from the updated index
   (now `docVersion = CURRENT`, `summaryHtml` set), the hourglass clears, and **"HTML doc" returns to its
   normal clickable state — now a direct link**. The user clicks it (a fresh gesture) to open the
-  freshly-built HTML with timestamps. On **error**, the indicator shows an error state and the item
-  stays a retry button (with the failure message available).
+  freshly-built HTML with timestamps. On **error**, the status bar shows the failure message and stays
+  open (no auto-close); the row stays busy until the user **dismisses (✕) the error bar**, which clears
+  the busy state and returns "HTML doc" to a clickable button to retry. (The error is surfaced
+  prominently first; recovery is one dismiss + re-click.)
 - **Corrections invalidation (related fix):** the existing corrections-`regenerate` route rewrites the
   `.md` without bumping the version; to keep the unified item honest it must **clear `summaryHtml`**
   after rewriting, so the next "HTML doc" click re-renders the edited content. (Small, in-scope because
