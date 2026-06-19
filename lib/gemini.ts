@@ -246,6 +246,32 @@ export async function generateDeepDive(
   }
 }
 
+export async function generateDeepDiveCombined(
+  youtubeUrl: string,
+  transcript: string,
+  language: 'en' | 'ko',
+): Promise<string> {
+  const client = new GoogleGenerativeAI(getApiKey());
+  const model = client.getGenerativeModel({ model: DEEPDIVE_MODEL });
+  const lang = language === 'ko' ? 'Korean (한국어)' : 'English';
+  const request = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { fileData: { fileUri: youtubeUrl, mimeType: 'video/mp4' } },
+        { text: `${buildDeepDivePrompt(lang, 'combined')}\n\n<transcript>\n${transcript}\n</transcript>` },
+      ],
+    }],
+  };
+  try {
+    const result = await model.generateContent(request, { timeout: REQUEST_TIMEOUT_MS });
+    return result.response.text();
+  } catch (err) {
+    const cause = err instanceof Error ? err.message : String(err);
+    throw new Error(`Gemini deep-dive (combined) failed: ${cause}`, { cause: err });
+  }
+}
+
 export async function generateMagazineModel(
   sections: Array<{ title: string; prose: string }>,
   language: 'en' | 'ko',
