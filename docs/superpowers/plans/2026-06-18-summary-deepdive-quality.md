@@ -76,6 +76,16 @@ describe('padDividers', () => {
     expect(padDividers(body)).toBe(body);
   });
 
+  it('pads but PRESERVES the dash count of a long thematic break outside a fence', () => {
+    expect(padDividers('alpha\n-----\nbeta')).toBe('alpha\n\n-----\n\nbeta');
+  });
+
+  it('does not let a ``` fence be closed by a shorter ` run', () => {
+    // The single backtick line is inline content, not a fence close; --- after it stays fenced.
+    const body = '````\ncode `x`\n---\nmore\n````';
+    expect(padDividers(body)).toBe(body);
+  });
+
   it('treats an unterminated fence as fenced to EOF (no padding inside)', () => {
     const body = 'intro\n\n```\n---\nstill code';
     expect(padDividers(body)).toBe(body);
@@ -115,29 +125,32 @@ export function padDividers(body: string): string {
   const lines = body.split(/\r?\n/);
 
   // Pass 1 — mark divider line indices that are outside any fence.
+  // Fence open/close must match BOTH the marker char AND length >= the opening run
+  // (CommonMark rule, mirrors lib/html-doc/parse.ts) — otherwise ``` is wrongly closed by `.
   const dividers = new Set<number>();
-  let inFence = false;
-  let fenceChar: string | null = null;
+  let fence: { char: string; len: number } | null = null;
   for (let i = 0; i < lines.length; i++) {
-    const fence = lines[i].match(/^\s*(`{3,}|~{3,})/);
-    if (fence) {
-      const ch = fence[1][0];
-      if (!inFence) { inFence = true; fenceChar = ch; }
-      else if (ch === fenceChar) { inFence = false; fenceChar = null; }
+    const m = lines[i].match(/^\s*(`{3,}|~{3,})/);
+    if (m) {
+      const run = m[1];
+      const ch = run[0];
+      if (!fence) fence = { char: ch, len: run.length };
+      else if (ch === fence.char && run.length >= fence.len) fence = null;
       continue;
     }
-    if (!inFence && /^-{3,}\s*$/.test(lines[i])) dividers.add(i);
+    if (!fence && /^-{3,}\s*$/.test(lines[i])) dividers.add(i);
   }
   if (dividers.size === 0) return body;
 
   // Pass 2 — rebuild, ensuring exactly one blank line on each side of each marked divider.
+  // Push the ORIGINAL divider line (preserves dash count, e.g. `-----`), never a literal `---`.
   const isBlank = (s: string | undefined) => s === undefined || s.trim() === '';
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (dividers.has(i)) {
       while (out.length && isBlank(out[out.length - 1])) out.pop();
       if (out.length) out.push('');
-      out.push('---');
+      out.push(lines[i]);
       let j = i + 1;
       while (j < lines.length && isBlank(lines[j])) j++;
       if (j < lines.length) out.push('');
@@ -208,8 +221,14 @@ it('pads in-body --- dividers so section bodies are not setext headings', async 
   // The Gemini body's bare "Alpha body.\n---\n## Conclusion" must become padded.
   expect(res.mdContent).toContain('Alpha body.\n\n---\n\n## Conclusion');
   expect(res.mdContent).not.toContain('Alpha body.\n---\n## Conclusion');
-  // Quick-view callout still inserted before the first section heading.
+  // Quick-view callout still inserted at the metadata divider — i.e. BEFORE the first
+  // section heading. Padding the body's dividers must not move the insertion point
+  // (insertQuickViewCallout uses the FIRST `\n\n---\n`, which is the metadata divider that
+  // is assembled ahead of the body, so it always precedes any padded body divider).
   expect(res.mdContent).toContain('> **Concepts:**');
+  expect(res.mdContent.indexOf('This video explains alpha.')).toBeLessThan(
+    res.mdContent.indexOf('## 1. Alpha'),
+  );
 });
 ```
 
@@ -337,6 +356,8 @@ git commit -m "feat(html-doc): fuller, specific, faithful magazine bullets (rest
 - Modify: `tests/lib/doc-version.test.ts` (the `CURRENT_DOC_VERSION` expectation)
 - Modify: `tests/lib/html-doc/ensure.test.ts` (any `{2,0}`/current-version fixtures) and `tests/api/html-doc-pipeline.test.ts` (fixtures asserting current version)
 
+> **Ordering note (Codex-Low):** the `{3,0}` bump makes existing summaries *eligible* to re-summarize, but a re-summarize only happens when a user clicks "HTML doc". This whole effort ships as a **single PR** with all 9 tasks, so no shared environment ever sees `{3,0}` without the deep-dive/skin fixes also present. Do **not** push this branch to a shared/deployed environment with only a subset of tasks done. (The bump is kept here, before the deep-dive tasks, only because it logically completes the *summary*-side fixes — Tasks 1-3 — which it rolls out.)
+
 - [ ] **Step 1: Update the failing expectations first (RED via constant change)**
 
 Bump the constant:
@@ -403,10 +424,11 @@ import { buildDeepDivePrompt } from '../../lib/gemini';
 
 it('demands comprehensive, structured, grounded exposition and drops critique', () => {
   const p = buildDeepDivePrompt('English', 'transcript');
-  expect(p).toMatch(/## /);                       // headed sections
-  expect(p).toMatch(/every (major )?topic/i);     // comprehensive
-  expect(p).toMatch(/```ascii/);                  // diagram rules retained
-  expect(p).not.toMatch(/critical evaluation/i);  // editorializing removed
+  expect(p).toMatch(/## /);                                  // headed sections
+  expect(p).toMatch(/every (major )?topic/i);                // comprehensive
+  expect(p).toMatch(/```ascii/);                             // diagram rules retained
+  expect(p).not.toMatch(/include[^.\n]*critical evaluation/i); // OLD positive directive removed
+  expect(p).toMatch(/do not add outside opinion/i);          // NEW negative guard present
 });
 
 it('combined mode instructs transcript grounding with video as visual support', () => {
@@ -479,7 +501,9 @@ git commit -m "feat(deep-dive): comprehensive/structured/grounded prompt builder
 
 This is the **SDK validation gate** (spec §4b): prove `@google/generative-ai` accepts `fileData(video) + text(transcript)` in one `contents` part list.
 
-- [ ] **Step 1: Write the failing test (asserts request shape)**
+> **Two distinct checks (Codex-Low):** Step 1 is **request-shape coverage** (proves *our code* builds the right `contents` array — runs in CI, mocked). Step 5 is the **SDK acceptance gate** (proves the *live* `@google/generative-ai` accepts that shape — manual, one real video). Step 5 is the gate that blocks Task 7; a green Step 1 alone is **not** sufficient.
+
+- [ ] **Step 1: Write the failing test — request-shape coverage (mocked)**
 
 ```ts
 // tests/lib/gemini-deepdive-combined.test.ts
@@ -562,7 +586,8 @@ git commit -m "feat(deep-dive): combined transcript+video generator (SDK request
 
 **Files:**
 - Modify: `lib/deep-dive.ts:32-59` (routing + progress + mode)
-- Test: `tests/lib/deep-dive.test.ts` (rewrite stale assertions; add the 6 routing rows)
+- Test: `tests/lib/deep-dive.test.ts` (rewrite ALL stale routing assertions; add the 6 routing rows)
+- Test: `tests/lib/deep-dive-html-stale.test.ts` (mocks `../../lib/gemini` — add `generateDeepDiveCombined` to the mock so the rewritten routing has a complete mock; confirm stale-HTML deletion still fires on the combined happy path)
 
 **Enumerated Behaviors** (spec §4a):
 
@@ -577,7 +602,7 @@ git commit -m "feat(deep-dive): combined transcript+video generator (SDK request
 
 - [ ] **Step 1: Rewrite the stale tests + add routing tests**
 
-In `tests/lib/deep-dive.test.ts`: delete/replace the three assertions that no longer hold — "does not fetch transcript on happy path" (`:102-107`), "first step current=1,total=3" (`:109-115`), "fallback step current=2,total=3" (`:126-134`). Add a `mockGenerateDeepDiveCombined` to the gemini mock and tests for rows 1–6, e.g.:
+In `tests/lib/deep-dive.test.ts`: **audit every routing/progress assertion against the new six rows** — not only the three obviously stale ones. Known stale cases: "does not fetch transcript on happy path" (`:102-107`), "first step current=1,total=3" wording (`:109-115`), "fallback step current=2,total=3" (`:126-134`), the URL-failure error-path cases (`~:157-173`), and any case that sets `mockGenerateDeepDive` directly as the happy path (`~:222`). Rewrite each to target a specific routing branch. Add a `mockGenerateDeepDiveCombined` to the gemini mock and tests for rows 1–6, e.g.:
 
 ```ts
 it('row 1 — transcript+combined succeed → mode combined, no fallback', async () => {
@@ -610,10 +635,10 @@ Expected: FAIL — `runDeepDive` still video-first; `generateDeepDiveCombined` n
 
 - [ ] **Step 3: Implement the cascade**
 
-Replace `lib/deep-dive.ts:33-59` with the transcript-primary cascade. Progress: `total: 4` (transcript fetch → generate → PDF → index), with the generation step labeled by mode.
+Replace `lib/deep-dive.ts:33-59` with the transcript-primary cascade. Progress: exactly **three** emitted steps — transcript fetch (1), generation (2), PDF (3) — so `total: 3` is truthful (the index write + terminal `done` follow the last step, as in the current code). The generation step is labeled generically; `mode` is resolved internally for the log.
 
 ```ts
-  onProgress({ type: 'step', videoId, step: 'Fetching transcript…', current: 1, total: 4 });
+  onProgress({ type: 'step', videoId, step: 'Fetching transcript…', current: 1, total: 3 });
 
   let deepDiveRaw: string;
   let mode: 'combined' | 'transcript' | 'video';
@@ -624,7 +649,7 @@ Replace `lib/deep-dive.ts:33-59` with the transcript-primary cascade. Progress: 
   try { transcript = await fetchTranscript(videoId); }
   catch (e) { errors.push(`transcript fetch: ${msg(e)}`); }
 
-  onProgress({ type: 'step', videoId, step: 'Generating deep-dive analysis…', current: 2, total: 4 });
+  onProgress({ type: 'step', videoId, step: 'Generating deep-dive analysis…', current: 2, total: 3 });
 
   if (transcript !== null) {
     try {
@@ -657,7 +682,7 @@ Replace `lib/deep-dive.ts:33-59` with the transcript-primary cascade. Progress: 
   }
 ```
 
-Add `generateDeepDiveCombined` to the import on `lib/deep-dive.ts:3`. Update the PDF step to `current: 3, total: 4` and keep the index update; `mode` is available for logging (the existing code does not persist it — keep parity, it flows into the progress/log only).
+Add `generateDeepDiveCombined` to the import on `lib/deep-dive.ts:3`. Keep the existing PDF step as `current: 3, total: 3` and the index update; `mode` is available for logging (the existing code does not persist it — keep parity, it flows into the progress/log only).
 
 - [ ] **Step 4: Run tests + full deep-dive suite**
 
@@ -686,7 +711,11 @@ git commit -m "feat(deep-dive): transcript-primary cascade (combined→transcrip
 
 - [ ] **Step 1: Rewrite the palette tests (RED)**
 
-Update `render-deep-dive.test.ts:92-117` to assert the new var set — e.g. the light card is `#fbf9f6`, `--gold` is present, ghost numeral CSS (`counter`) and the `h2 + p` lead rule appear, and **no** `--h1`/`--strong` tokens remain. In `darkmode-html.spec.ts:134-150`, update the expected computed colors for the deep-dive doc to the magazine dark palette (card `#221d18`, ink `#e8e2d6`).
+Update `render-deep-dive.test.ts:92-117` to assert the new var set:
+- **Positive:** light card `#fbf9f6`, `--gold`, `--ghost`, `--rule`, `--meta` present; ghost-numeral CSS (`counter-reset:sec` / `counter(sec)`) and the `h2 + p` gold-lead rule appear; `.dd h1` is styled (serif).
+- **Negative — assert ALL four removed vars are gone:** none of `--h1`, `--h2`, `--hr`, `--strong` appear in the emitted CSS (a half-migration that leaves any one resolves to an invalid color).
+
+In `darkmode-html.spec.ts:134-150`, assert the deep-dive doc's computed colors per element with `toHaveCSS` (so the theme transition settles): `body` background → `--page` (`rgb(26, 23, 20)` = `#1a1714` dark), `.dd` background → `--card` (`rgb(34, 29, 24)` = `#221d18`), and a text-bearing `.dd p` → color `--ink` (`rgb(232, 226, 214)` = `#e8e2d6`). Confirm the exact `rgb()` triples against the prototype's hex values before asserting.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -731,13 +760,17 @@ Start the app, open a pre-{3,0} video, click "HTML doc" (version comparison flag
 - the magazine HTML: bullets are full, specific sentences with the detail restored (Fix 1);
 - personal review preserved, PDF mtime unchanged (Feature-2 parity).
 
-- [ ] **Step 3: Regenerate a deep-dive**
+- [ ] **Step 3: Regenerate a deep-dive (falsifiable checks)**
 
-Trigger a deep-dive regeneration. Verify: it is longer/more sectioned than the summary, covers each topic with grounded specifics (Fix 2); the deep-dive HTML wears the magazine skin in light + dark and keeps full prose/lists/ASCII diagrams (Fix 3).
+Trigger a deep-dive regeneration and record concrete numbers, not impressions:
+- **Routing:** the logged `mode` is `combined` (transcript fetched + accepted). If it fell back, note why.
+- **Depth vs summary:** deep-dive `##` section count ≥ the summary's, and deep-dive body word count materially exceeds the summary's (record both numbers).
+- **Grounding:** find ≥1 transcript-specific detail in the deep-dive (a name/number/quote) that is in the transcript — evidence the transcript anchored it.
+- **Skin (Fix 3):** the deep-dive HTML shows the magazine palette in light + dark (toggle works) and still contains every prose paragraph, list, and ```ascii``` block from the `.md` (diff the rendered text against the markdown body — nothing dropped).
 
 - [ ] **Step 4: Record evidence**
 
-Save screenshots to `.screenshots/` (gitignored), note the `mode` used (combined/transcript/video), then clear `.screenshots/`.
+Save light + dark screenshots of both the magazine HTML and the deep-dive HTML to `.screenshots/` (gitignored). Write the recorded numbers (section counts, word counts, `mode`, the grounded detail) into the final review doc, then clear `.screenshots/`.
 
 ---
 
