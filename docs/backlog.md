@@ -24,9 +24,19 @@ Sequence/bundles below; `#8` is explicitly **someday** (vision, not near-term).
 - **D — Aligned detail view** *(XL, someday)*: #8. Own staged roadmap when revisited.
 - *(Loose: #4 — fold into A or B opportunistically, or skip.)*
 
+## Found during testing (2026-06-19/20)
+
+| # | Item | Status |
+|---|------|--------|
+| 9 | **CorrectionsPanel hydration bug** — `<div>` overlay rendered inside `<tbody>` (pre-existing since the corrections feature, `10a21ee`). Fix: portal the overlay to `document.body`. | **pending** |
+| 10 | **Gemini retry-with-backoff** — was a hardening idea; became the real fix for the intermittent re-summarize failures. | **DONE** (`24a56c7`): `generateJson` helper retries malformed-JSON / transient API errors on `generateSummary`/`generateMagazineModel`/`extractQuickView`. Root cause was Gemini intermittently emitting invalid JSON despite JSON mode; unguarded `JSON.parse` killed the whole op. Verified 3/3 on #80. |
+| 11 | **Dev error logger** — record full error chain to a checkable place. | **DONE** (`32a90b5`): `lib/dev-logger.ts` → `logs/dev-errors.log` (full `caused by:` chain + stack) wired into html-doc/deep-dive/regenerate/ingest routes; `errorSummary` surfaces the full chain to the UI. |
+
+Possible minor follow-up: strip markdown code fences / handle leading `[` before `JSON.parse` (seen once on the magazine call) — retry already covers it, so low priority.
+
 ## Sequence
 
-1. **A** (now) → 2. **B** → 3. **C** (after PDF decision) → 4. **D** (someday).
+1. **A** (now) → 2. **B** → 3. **C** (after PDF decision) → 4. **D** (someday). Interleaved: **#9** (corrections portal) is a small independent bug fix; **#10/#11** already shipped on `chore/dev-error-logger`.
 
 **Decisions recorded:** #8 = someday → #3 does NOT wait for #8; it rides Bundle B. #1 is built standalone (it's orthogonal to #8's alignment, so no rework).
 
