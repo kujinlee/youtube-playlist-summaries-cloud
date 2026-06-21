@@ -125,8 +125,44 @@ test.describe('playlist viewer', () => {
     await expect(page.getByRole('list', { name: /video list/i })).not.toBeVisible();
   });
 
-  // Behaviors 2 & 3: ingest flow — progress bar appears then video list populated on done
-  test('ingest: progress bar shown then video list populated on done', async ({ page }) => {
+  // Fill the header form and submit an ingest. Shared by the two ingest tests below.
+  async function submitIngest(page: import('@playwright/test').Page) {
+    await page.getByPlaceholder('Playlist URL').fill('https://youtube.com/playlist?list=PL123');
+    await page.getByPlaceholder('Output folder').fill(OUTPUT_FOLDER);
+    await page.getByRole('button', { name: /fetch/i }).click();
+  }
+
+  // Behavior 2: progress bar shows while an ingest is running.
+  // The stream is held OPEN (never fulfilled) so the running state persists — asserting the
+  // transient bar against an instantly-completing [step, done] stream is racy (the bar mounts
+  // and is torn down by `done` before Playwright can observe it).
+  test('ingest: progress bar shown while running', async ({ page }) => {
+    await stubSettings(page);
+    await page.route('**/api/videos**', (route) => {
+      if (route.request().method() !== 'GET' || route.request().url().includes('/api/videos/')) {
+        route.continue(); return;
+      }
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ videos: [] }) });
+    });
+    await page.route('**/api/ingest', (route) => {
+      if (route.request().url().includes('/api/ingest/')) { route.continue(); return; }
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: 'job-1' }) });
+    });
+    // Hold the SSE connection open: ingest.status stays 'running' (no done, no close→onerror),
+    // so the progress bar is stably visible for the assertion.
+    await page.route('**/api/ingest/stream**', () => { /* intentionally never fulfilled */ });
+
+    await page.goto('/');
+    await submitIngest(page);
+
+    // Running state: progress bar + Cancel control are visible
+    await expect(page.getByRole('progressbar')).toBeVisible();
+    await expect(page.getByRole('button', { name: /cancel ingestion/i })).toBeVisible();
+  });
+
+  // Behavior 3: on `done`, the video list populates and the progress bar is gone.
+  // Asserts the stable end state (not the transient running bar — see the test above).
+  test('ingest: video list populated and progress hidden after done', async ({ page }) => {
     const video = makeVideo();
 
     await stubSettings(page);
@@ -155,16 +191,9 @@ test.describe('playlist viewer', () => {
     ]);
 
     await page.goto('/');
+    await submitIngest(page);
 
-    // Fill form and submit
-    await page.getByPlaceholder('Playlist URL').fill('https://youtube.com/playlist?list=PL123');
-    await page.getByPlaceholder('Output folder').fill(OUTPUT_FOLDER);
-    await page.getByRole('button', { name: /fetch/i }).click();
-
-    // Progress bar appears immediately on submit (before SSE fires)
-    await expect(page.getByRole('progressbar')).toBeVisible();
-
-    // After done: video list populated, progress hidden
+    // After done: video list populated, progress bar gone
     await expect(page.getByRole('table', { name: /video list/i })).toBeVisible();
     await expect(page.getByText('Test Video')).toBeVisible();
     await expect(page.getByRole('progressbar')).not.toBeVisible();
@@ -380,7 +409,7 @@ test.describe('playlist viewer', () => {
   });
 
   // Behavior 7: archive action greys row
-  test('archive: row gets opacity-50 class when Show Archive is checked', async ({ page }) => {
+  test('archive: archived row cells get opacity-40 when Show Archive is checked', async ({ page }) => {
     const video = makeVideo({ id: 'vid-1' });
     const archivedVideo = makeVideo({ id: 'vid-1', archived: true });
 
@@ -413,9 +442,12 @@ test.describe('playlist viewer', () => {
     await page.getByRole('button', { name: 'Menu' }).click();
     await page.getByRole('button', { name: 'Archive' }).click();
 
-    // Row should have opacity-40 class (greyed) — table row, not list item
-    const row = page.locator('tbody tr').first();
-    await expect(row).toHaveClass(/opacity-40/);
+    // Dimming is applied per-CELL, not on the <tr>: opacity on the row creates a CSS
+    // stacking context that makes the absolutely-positioned VideoMenu unclickable
+    // (see components/VideoRow.tsx `cellDim`). The first <td> is the expand-toggle
+    // (undimmed); assert on a dimmed content cell — the Overall score cell.
+    const scoreCell = page.locator('tbody tr').first().locator('td[aria-label="Overall"]');
+    await expect(scoreCell).toHaveClass(/opacity-40/);
 
     // Verify archive POST body contained correct action and outputFolder
     expect(archiveRequestBody).toMatchObject({ action: 'archive', outputFolder: OUTPUT_FOLDER });
