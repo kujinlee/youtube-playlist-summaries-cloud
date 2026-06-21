@@ -459,7 +459,14 @@ git commit -m "feat(deep-dive): reRenderDeepDiveHtml (cheap, from .md) + runDeep
 | 9 | All paths fail | every generator throws | throw; **no stamp**; error propagates to route |
 | 10 | Render fails after md write | `renderDeepDiveHtml` throws | throw; **no stamp** |
 | 11 | Video not in index | bad id | throw `Video not found` |
-| 12 | Progress events | any success path | `start` … `step`* … `done` (done after stamp) |
+| 12 | Progress events | any success path | `start` (first) … `step`* … `done` (last, after stamp). `writeDeepDiveDoc` emits ONLY `step`. |
+| 13 | Persistence/atomicity (REVIEW B2) | row 1/2 success | `deepDiveMd`+`deepDiveHtml`+`deepDiveVersion` written in ONE `updateVideoFields` AFTER render; rows 3/4 write `deepDiveHtml`+`deepDiveVersion` |
+| 14 | Minor-stale but `.md` deleted (REVIEW H1) | `isOlder` + reRender returns non-`rerendered` | full cascade regenerate (writeDeepDiveDoc→render), NOT a runDeepDiveHtml that would throw |
+| 15 | Precedence (REVIEW H1/mirror) | html-missing AND minor-stale both true | html-missing (full render, row 3) wins — `else-if` order matches ensure.ts |
+| 16 | No-op branch detail | already current | emits `start`+`done`, early-returns, does NOT call `updateVideoFields` |
+| 17 | First-time, `summaryMd` null | deepDiveMd null & summaryMd null | base = `video.id` → writes `<id>-deep-dive.md`, succeeds |
+| 18 | Korean (ko) pass-through | video.language === 'ko' | `video.language` forwarded to generators; doc generated in Korean |
+| 19 | Video-only stamp (REVIEW H3/D5) | video-only path | stamped `{2,0}` with no ▶ (intentional; not re-upgraded later) |
 
 - [ ] **Step 1: Write failing tests for `writeDeepDiveDoc`**
 
@@ -583,8 +590,15 @@ export async function ensureDeepDiveHtml(
   } else if (isOlder(stored, current)) {
     onProgress({ type: 'step', videoId, step: 'Re-rendering HTML…', current: 1, total: 1 });
     const rr = reRenderDeepDiveHtml(videoId, outputFolder);
-    const htmlPath = rr.status === 'rerendered' ? rr.htmlPath : (await runDeepDiveHtml(videoId, outputFolder)).htmlPath;
-    updateVideoFields(outputFolder, videoId, { deepDiveHtml: htmlPath, deepDiveVersion: current });
+    if (rr.status === 'rerendered') {
+      updateVideoFields(outputFolder, videoId, { deepDiveHtml: rr.htmlPath, deepDiveVersion: current });
+    } else {
+      // REVIEW H1: .md missing/unreadable → cheap re-render can't run. Do a FULL regenerate
+      // (cascade), NOT runDeepDiveHtml (which also reads the .md → would throw → stuck loop).
+      const { deepDiveMd } = await writeDeepDiveDoc(video, outputFolder, onProgress);
+      const { htmlPath } = await runDeepDiveHtml(videoId, outputFolder);
+      updateVideoFields(outputFolder, videoId, { deepDiveMd, deepDiveHtml: htmlPath, deepDiveVersion: current });
+    }
   } else {
     onProgress({ type: 'done' });
     return;
