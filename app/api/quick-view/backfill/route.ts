@@ -62,7 +62,7 @@ export async function GET(request: Request) {
 
           await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
 
-          // Index updated before PDF — a PDF failure leaves consistent state.
+          // Index updated immediately after the .md write.
           updateVideoFields(outputFolder, video.id, { tldr, takeaways });
 
           succeeded++;
@@ -74,7 +74,7 @@ export async function GET(request: Request) {
           emit({ type: 'error', videoId: video.id, title: video.title, log });
         }
 
-        // Rate-limit Gemini calls only — PDF tasks are already non-blocking.
+        // Rate-limit Gemini calls between iterations.
         if (i < eligible.length - 1) {
           await new Promise<void>((resolve) => setTimeout(resolve, 200));
         }
