@@ -9,6 +9,88 @@ import {
 // markdown-it's default validateLink already blocks javascript:/vbscript:/data: (non-image) hrefs.
 const md = new MarkdownIt({ html: false });
 
+export interface RawSection {
+  heading: string;
+  lines: string[];
+}
+
+/** Fence-aware split of a deep-dive body into preamble + `## ` sections. */
+export function splitSections(body: string): { preamble: string; sections: RawSection[] } {
+  const lines = body.split('\n');
+  const preambleLines: string[] = [];
+  const sections: RawSection[] = [];
+  let inFence = false;
+  let current: RawSection | null = null;
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      (current ? current.lines : preambleLines).push(line);
+      continue;
+    }
+    const h = !inFence ? line.match(/^##\s+(.*)$/) : null;
+    if (h) {
+      if (current) sections.push(current);
+      current = { heading: h[1].trim(), lines: [] };
+      continue;
+    }
+    (current ? current.lines : preambleLines).push(line);
+  }
+  if (current) sections.push(current);
+  return { preamble: preambleLines.join('\n'), sections };
+}
+
+// A `▶ [label](https url)` line (en dash U+2013 inside the label). Mirrors parse.ts TS_LINE_RE.
+const TS_LINE_RE = /^▶\s+\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)\s*$/;
+
+/**
+ * Remove the leading `▶` line (first non-blank line of the section) and return its label+url.
+ * Returns null when the first non-blank line is not a ▶ line, or when a ▶ line is malformed
+ * (still consumed so it never leaks into prose). Mutates `lines`.
+ */
+export function extractTimestamp(lines: string[]): { label: string; url: string } | null {
+  const firstIdx = lines.findIndex((l) => l.trim() !== '');
+  if (firstIdx === -1) return null;
+  const line = lines[firstIdx];
+  if (!line.trimStart().startsWith('▶')) return null;
+  lines.splice(firstIdx, 1); // consume regardless of well-formedness
+  const m = line.match(TS_LINE_RE);
+  if (!m) return null;
+  return { label: m[1], url: m[2] };
+}
+
+/** Rewrite the first `**URL:** <https url>` header occurrence into a markdown link. */
+export function linkifyHeaderUrl(body: string): string {
+  return body.replace(
+    /(\*\*URL:\*\*\s+)(https?:\/\/\S+)/,
+    (_m, pre: string, url: string) => `${pre}[${url}](${url})`,
+  );
+}
+
+// A line that opens a block-level construct (so it is not a prose lead paragraph).
+const BLOCK_START_RE = /^\s*([-*+]\s|\d+\.\s|#{1,6}\s|>|\||`{3}|~{3})/;
+
+/**
+ * First prose paragraph (lines up to the next blank line) vs the remainder.
+ * Returns para='' (and rest = all remaining content) when the first non-blank line opens a
+ * block construct (list, heading, blockquote, fence, table) — no gold lead in that case.
+ */
+export function takeFirstParagraph(lines: string[]): { para: string; rest: string } {
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  if (i >= lines.length) return { para: '', rest: '' };
+  if (BLOCK_START_RE.test(lines[i])) return { para: '', rest: lines.slice(i).join('\n') };
+  let j = i;
+  while (j < lines.length && lines[j].trim() !== '') j++;
+  return { para: lines.slice(i, j).join('\n'), rest: lines.slice(j).join('\n') };
+}
+
+/** Split off the first sentence (terminator: . ! ? 。 ！ ？ + whitespace/end). */
+export function splitFirstSentence(text: string): { first: string; rest: string } {
+  const m = text.match(/^([\s\S]*?[.!?。！？])\s+([\s\S]*)$/);
+  if (!m) return { first: text, rest: '' };
+  return { first: m[1], rest: m[2] };
+}
+
 function frontmatterField(src: string, key: string): string | null {
   const m = src.match(new RegExp(`^${key}:\\s*"?([^"\\r\\n]*)"?\\s*$`, 'm'));
   return m?.[1]?.trim() ?? null;
