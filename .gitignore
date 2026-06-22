@@ -53,3 +53,6 @@ next-env.d.ts
 
 # dev error log (runtime observability artifact — never commit)
 /logs/
+
+# Per-machine Claude Code settings (permission grants, local paths) — not shared
+.claude/settings.local.json
