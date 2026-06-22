@@ -272,7 +272,6 @@ export async function runIngestion(
   fs.mkdirSync(outputFolder, { recursive: true });
 
   const metas = await fetchPlaylistVideos(playlistUrl, apiKey);
-  const total = metas.length;
 
   // Stamp playlistUrl into the index before processing — upsertVideo reads-then-writes
   // and would silently carry forward the empty string it gets from a new index.
@@ -285,7 +284,12 @@ export async function runIngestion(
   // Build the set of already-indexed IDs so we can skip re-processing them.
   const alreadyIndexed = new Set(readIndex(outputFolder).videos.map((v) => v.id));
 
-  onProgress({ type: 'start', total });
+  // Progress is over NEW (not-yet-indexed) distinct videos only — skips are instant and
+  // must not inflate the bar. playlistPos (below) stays the true playlist position.
+  const newTotal = new Set(metas.filter((m) => !alreadyIndexed.has(m.videoId)).map((m) => m.videoId)).size;
+  let newIndex = 0;
+
+  onProgress({ type: 'start', total: newTotal });
 
   for (let i = 0; i < metas.length; i++) {
     // Check cancellation between videos — after any current video finishes cleanly.
@@ -294,16 +298,17 @@ export async function runIngestion(
       return;
     }
     const meta = metas[i];
-    const current = i + 1;
+    const playlistPos = i + 1;
     try {
       assertVideoId(meta.videoId); // defense-in-depth before any path construction
 
       if (alreadyIndexed.has(meta.videoId)) {
-        onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Already processed — skipped', current, total });
         continue;
       }
 
-      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Fetching transcript…', current, total });
+      newIndex += 1;
+
+      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Fetching transcript…', current: newIndex, total: newTotal });
       const slug = slugify(meta.title);
       let baseName = slug;
       let counter = 2;
@@ -311,7 +316,7 @@ export async function runIngestion(
         baseName = `${slug}-${counter}`;
         counter++;
       }
-      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current, total });
+      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current: newIndex, total: newTotal });
       const { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways } =
         await writeSummaryDoc({
           videoId: meta.videoId, title: meta.title, youtubeUrl: meta.youtubeUrl,
@@ -333,7 +338,7 @@ export async function runIngestion(
         deepDivePdf: null,
         processedAt: new Date().toISOString(),
         docVersion: CURRENT_DOC_VERSION,
-        playlistIndex: current,
+        playlistIndex: playlistPos,
         ...(videoType !== undefined && { videoType }),
         ...(audience !== undefined && { audience }),
         ...(meta.channelTitle !== undefined && { channel: meta.channelTitle }),
@@ -348,7 +353,7 @@ export async function runIngestion(
       // Mark as processed so within-run duplicates (same video appearing twice in the playlist) are skipped.
       alreadyIndexed.add(meta.videoId);
 
-      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Saved', current, total });
+      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Saved', current: newIndex, total: newTotal });
     } catch (err) {
       const log = err instanceof Error ? err.message : String(err);
       onProgress({ type: 'error', videoId: meta.videoId, title: meta.title, log });
@@ -386,5 +391,5 @@ export async function runIngestion(
   }));
   writeIndex(outputFolder, { ...afterReconcile, videos: videosWithIndex });
 
-  onProgress({ type: 'done', total });
+  onProgress({ type: 'done', total: newTotal });
 }

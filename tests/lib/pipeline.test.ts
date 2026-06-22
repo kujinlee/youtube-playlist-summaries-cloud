@@ -575,6 +575,69 @@ describe('runIngestion', () => {
     expect(content).toContain('> [!summary] Quick Reference');
     expect(content).toContain('> **TL;DR:** This video explains X.');
   });
+
+  // --- New-items progress ---
+
+  describe('new-items progress', () => {
+    it('counts only new (not-yet-indexed) videos in progress totals', async () => {
+      // Arrange: index already has video 'a'; playlist returns [a, b, c] (b, c are new).
+      const indexedA = makeIndexedVideo('a');
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [indexedA] });
+      mockFetchPlaylistVideos.mockResolvedValue([
+        makeVideoMeta('a'),
+        makeVideoMeta('b'),
+        makeVideoMeta('c'),
+      ]);
+      mockFetchTranscriptSegments.mockResolvedValue([{ text: 'transcript', offset: 0, duration: 5 }]);
+      mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+      const events: ProgressEvent[] = [];
+      await runIngestion('https://playlist', outputFolder, (e) => events.push(e));
+
+      const start = events.find((e) => e.type === 'start');
+      expect(start).toMatchObject({ type: 'start', total: 2 }); // 2 new, not 3
+
+      const steps = events.filter((e) => e.type === 'step');
+      // No skip step for the already-indexed video:
+      expect(steps.some((s) => s.type === 'step' && 'step' in s && s.step === 'Already processed — skipped')).toBe(false);
+      // New videos carry new-basis current/total + title:
+      const saved = steps.filter((s) => s.type === 'step' && 'step' in s && s.step === 'Saved') as Array<Extract<ProgressEvent, { type: 'step' }>>;
+      expect(saved.map((s) => s.current)).toEqual([1, 2]);
+      expect(saved.every((s) => s.total === 2)).toBe(true);
+      expect(saved.every((s) => typeof s.title === 'string' && s.title.length > 0)).toBe(true);
+    });
+
+    it('stores playlistIndex as the playlist position, not the new-items counter', async () => {
+      // Playlist [a(indexed), b(new)] → b is new #1 but at playlist position 2.
+      const indexedA = makeIndexedVideo('a');
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [indexedA] });
+      mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('a'), makeVideoMeta('b')]);
+      mockFetchTranscriptSegments.mockResolvedValue([{ text: 'transcript', offset: 0, duration: 5 }]);
+      mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+      await runIngestion('https://playlist', outputFolder, () => {});
+
+      // b is the only new video; upsertVideo called once for it with playlistIndex=2 (position), not 1 (new-index)
+      expect(mockUpsertVideo).toHaveBeenCalledWith(
+        outputFolder,
+        expect.objectContaining({ id: 'b', playlistIndex: 2 }),
+      );
+    });
+
+    it('emits done with total 0 when there are no new videos', async () => {
+      // Index already contains every playlist id.
+      const indexedA = makeIndexedVideo('a');
+      const indexedB = makeIndexedVideo('b');
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [indexedA, indexedB] });
+      mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('a'), makeVideoMeta('b')]);
+
+      const events: ProgressEvent[] = [];
+      await runIngestion('https://playlist', outputFolder, (e) => events.push(e));
+
+      expect(events.filter((e) => e.type === 'step')).toHaveLength(0);
+      expect(events.find((e) => e.type === 'done')).toMatchObject({ type: 'done', total: 0 });
+    });
+  });
 });
 
 describe('slugify', () => {
