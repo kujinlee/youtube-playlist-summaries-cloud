@@ -3,6 +3,7 @@ import { generateDeepDiveCombined } from '../../lib/gemini';
 import type { TranscriptSegment } from '../../lib/transcript-timestamps';
 
 jest.mock('@google/generative-ai', () => ({
+  ...jest.requireActual('@google/generative-ai'),
   GoogleGenerativeAI: jest.fn(),
 }));
 

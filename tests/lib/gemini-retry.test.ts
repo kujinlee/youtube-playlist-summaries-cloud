@@ -7,7 +7,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { GenerativeModel } from '@google/generative-ai';
 import { z } from 'zod';
 
-jest.mock('@google/generative-ai', () => ({ GoogleGenerativeAI: jest.fn() }));
+jest.mock('@google/generative-ai', () => ({ ...jest.requireActual('@google/generative-ai'), GoogleGenerativeAI: jest.fn() }));
 
 const mockGenerateContent = jest.fn();
 
