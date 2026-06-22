@@ -2,6 +2,7 @@ import type { TranscriptSegment } from '../../lib/transcript-timestamps';
 
 const generateContent = jest.fn(async () => ({ response: { text: () => '## A\n\n[[TS:0]]\n\nbody\n\n## B\n\n[[TS:1]]\n\nmore' } }));
 jest.mock('@google/generative-ai', () => ({
+  ...jest.requireActual('@google/generative-ai'),
   GoogleGenerativeAI: jest.fn().mockImplementation(() => ({
     getGenerativeModel: () => ({ generateContent }),
   })),

@@ -8,6 +8,7 @@ const SEGS: TranscriptSegment[] = [
 ];
 
 jest.mock('@google/generative-ai', () => ({
+  ...jest.requireActual('@google/generative-ai'),
   GoogleGenerativeAI: jest.fn(),
 }));
 

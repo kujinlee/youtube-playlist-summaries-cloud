@@ -1,5 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import type { GenerativeModel } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import type { GenerativeModel, ResponseSchema } from '@google/generative-ai';
 import { RatingsSchema, VideoTypeSchema, AudienceSchema } from '../types';
 import type { GeminiSummaryResponse } from '../types';
 import { z } from 'zod';
@@ -30,6 +30,85 @@ function getApiKey(): string {
   if (!key) throw new Error('GEMINI_API_KEY is not set');
   return key;
 }
+
+// Controlled-generation (responseSchema) constraints. These mirror the Zod schemas above in
+// Gemini's OpenAPI-subset format so the model is constrained to emit STRUCTURALLY valid JSON
+// (no trailing commas, unquoted keys, etc. — the malformed-JSON class that retries can't fix).
+// We push down EVERY constraint the API subset can express — required keys, array minItems/
+// maxItems, and string enums (sourced from the Zod `.options` so the two stay in sync) — because
+// a value the API accepts but Zod rejects re-enters the identical-prompt retry loop this fix
+// exists to avoid. The Zod parse in generateJson remains the SEMANTIC net for the few constraints
+// the subset CANNOT express: integer ranges (ratings 1–5) and `.strict()` no-extra-keys. So the
+// two layers are complementary, not redundant. Keep these in sync with their Zod counterparts.
+
+const SUMMARY_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    summary: { type: SchemaType.STRING },
+    ratings: {
+      type: SchemaType.OBJECT,
+      properties: {
+        usefulness: { type: SchemaType.INTEGER },
+        depth: { type: SchemaType.INTEGER },
+        originality: { type: SchemaType.INTEGER },
+        recency: { type: SchemaType.INTEGER },
+        completeness: { type: SchemaType.INTEGER },
+      },
+      required: ['usefulness', 'depth', 'originality', 'recency', 'completeness'],
+    },
+    videoType: { type: SchemaType.STRING, format: 'enum', enum: [...VideoTypeSchema.options] },
+    audience: { type: SchemaType.STRING, format: 'enum', enum: [...AudienceSchema.options] },
+    tags: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    tldr: { type: SchemaType.STRING },
+    takeaways: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+  },
+  required: ['summary', 'ratings'],
+};
+
+const QUICK_VIEW_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    tldr: { type: SchemaType.STRING },
+    takeaways: {
+      type: SchemaType.ARRAY,
+      items: { type: SchemaType.STRING },
+      minItems: 1,
+      maxItems: 5,
+    },
+  },
+  required: ['tldr', 'takeaways'],
+};
+
+const MAGAZINE_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    sections: {
+      type: SchemaType.ARRAY,
+      minItems: 1,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          lead: { type: SchemaType.STRING },
+          bullets: {
+            type: SchemaType.ARRAY,
+            items: {
+              type: SchemaType.OBJECT,
+              properties: {
+                label: { type: SchemaType.STRING },
+                text: { type: SchemaType.STRING },
+              },
+              required: ['label', 'text'],
+            },
+            minItems: 3,
+            maxItems: 7,
+          },
+        },
+        required: ['lead', 'bullets'],
+      },
+    },
+  },
+  required: ['sections'],
+};
 
 /**
  * Call Gemini, parse + validate its JSON response, retrying on ANY failure (malformed JSON,
@@ -72,7 +151,7 @@ export async function generateSummary(
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
     model: SUMMARY_MODEL,
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig: { responseMimeType: 'application/json', responseSchema: SUMMARY_RESPONSE_SCHEMA },
   });
   const lang = language === 'ko' ? 'Korean (한국어)' : 'English';
   const indexedTranscript = buildIndexedTranscript(segments);
@@ -131,7 +210,7 @@ export async function extractQuickView(
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
     model: SUMMARY_MODEL,
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig: { responseMimeType: 'application/json', responseSchema: QUICK_VIEW_RESPONSE_SCHEMA },
   });
 
   const prompt = `Extract a quick reference summary from this video summary. Return a JSON object with:
@@ -330,7 +409,7 @@ export async function generateMagazineModel(
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
     model: SUMMARY_MODEL,
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig: { responseMimeType: 'application/json', responseSchema: MAGAZINE_RESPONSE_SCHEMA },
   });
   const lang = language === 'ko' ? 'Korean (한국어)' : 'English';
 

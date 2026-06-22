@@ -1,7 +1,7 @@
 import { generateMagazineModel } from '../../lib/gemini';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-jest.mock('@google/generative-ai', () => ({ GoogleGenerativeAI: jest.fn() }));
+jest.mock('@google/generative-ai', () => ({ ...jest.requireActual('@google/generative-ai'), GoogleGenerativeAI: jest.fn() }));
 
 const mockGenerateContent = jest.fn();
 
