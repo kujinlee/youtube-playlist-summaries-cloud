@@ -72,3 +72,9 @@ it('old "Deep Dive" and "View Deep Dive HTML" items no longer exist', () => {
   expect(screen.queryByRole('button', { name: /^Deep Dive$/i })).toBeNull();
   expect(screen.queryByText(/^View Deep Dive HTML$/i)).toBeNull();
 });
+
+it('does not render PDF menu items (PDF generation removed)', () => {
+  render(<VideoMenu {...props} video={{ ...base, summaryPdf: 'summary.pdf', deepDivePdf: 'deepdive.pdf' } as any} />);
+  expect(screen.queryByText('View Summary PDF')).not.toBeInTheDocument();
+  expect(screen.queryByText('View Deep Dive PDF')).not.toBeInTheDocument();
+});
