@@ -106,6 +106,8 @@ describe('runIngestion', () => {
     expect(events.some((e) => e.type === 'step' && 'videoId' in e && e.videoId === 'vid2')).toBe(true);
     // Per-video completion event
     expect(events.some((e) => e.type === 'step' && 'step' in e && e.step === 'Saved' && 'videoId' in e && e.videoId === 'vid1')).toBe(true);
+    // PDF generation should not be called
+    expect(mockGeneratePdf).not.toHaveBeenCalled();
   });
 
   it('continues to next video when one video fails', async () => {
@@ -205,7 +207,7 @@ describe('runIngestion', () => {
       outputFolder,
       expect.objectContaining({
         summaryMd: 'hello-world.md',
-        summaryPdf: 'pdfs/hello-world.pdf',
+        summaryPdf: null,
       }),
     );
   });
@@ -225,7 +227,7 @@ describe('runIngestion', () => {
       outputFolder,
       expect.objectContaining({
         summaryMd: 'hello-world-2.md',
-        summaryPdf: 'pdfs/hello-world-2.pdf',
+        summaryPdf: null,
       }),
     );
   });

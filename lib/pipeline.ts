@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import { fetchPlaylistVideos, fetchTranscriptSegments, detectLanguage } from './youtube';
 import { generateSummary } from './gemini';
-import { generatePdf } from './pdf';
 import { assertOutputFolder, assertVideoId, upsertVideo, readIndex, writeIndex } from './index-store';
 import { slugify } from './slugify';
 import type { ProgressEvent, Video, VideoMeta, RatingValue, VideoType, Audience, GeminiSummaryResponse } from '../types';
@@ -37,7 +36,7 @@ export interface SummaryDocResult {
 /**
  * Fetch transcript → generateSummary (emits ▶ timestamps) → build the summary .md → write it at
  * <baseName>.md. Shared by ingestion (new slug) and re-summarize (existing baseName). Does NOT write
- * the PDF — the caller owns that (ingestion keeps generating PDFs; re-summarize skips them).
+ * the PDF — PDFs are no longer generated server-side.
  */
 export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDocResult> {
   const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName } = input;
@@ -313,13 +312,11 @@ export async function runIngestion(
         counter++;
       }
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current, total });
-      const { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways, mdContent } =
+      const { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways } =
         await writeSummaryDoc({
           videoId: meta.videoId, title: meta.title, youtubeUrl: meta.youtubeUrl,
           channel: meta.channelTitle, durationSeconds: meta.durationSeconds, outputFolder, baseName,
         });
-      fs.mkdirSync(path.join(outputFolder, 'pdfs'), { recursive: true });
-      const pdfPath = path.join(outputFolder, 'pdfs', `${baseName}.pdf`);
 
       const video: Video = {
         id: meta.videoId,
@@ -331,7 +328,7 @@ export async function runIngestion(
         ratings,
         overallScore,
         summaryMd: `${baseName}.md`,
-        summaryPdf: `pdfs/${baseName}.pdf`,
+        summaryPdf: null,
         deepDiveMd: null,
         deepDivePdf: null,
         processedAt: new Date().toISOString(),
@@ -346,13 +343,10 @@ export async function runIngestion(
         ...(meta.videoPublishedAt !== undefined && { videoPublishedAt: meta.videoPublishedAt }),
         ...(meta.addedToPlaylistAt !== undefined && { addedToPlaylistAt: meta.addedToPlaylistAt }),
       };
-      // Index updated immediately after md write — reduces orphan window to PDF generation only.
+      // Index updated immediately after md write
       upsertVideo(outputFolder, video);
       // Mark as processed so within-run duplicates (same video appearing twice in the playlist) are skipped.
       alreadyIndexed.add(meta.videoId);
-
-      onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating PDF…', current, total });
-      await generatePdf(mdContent, pdfPath);
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Saved', current, total });
     } catch (err) {
