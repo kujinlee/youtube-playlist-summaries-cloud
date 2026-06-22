@@ -202,5 +202,32 @@ A lone lead sentence with no marker.
     it('linkifies the header URL', () => {
       expect(out).toContain('href="https://youtu.be/v1"');
     });
+
+    it('does not emit a bogus lead paragraph when a section opens with a list', () => {
+      const md = `---
+video_id: "v2"
+lang: EN
+---
+
+# T2 (Deep Dive)
+
+**URL:** https://youtu.be/v2
+
+---
+
+## Bullets First
+- alpha
+- beta
+`;
+      const html = renderDeepDiveHtml(md, 'v2-deep-dive.md');
+      expect(html).toContain('<h2>Bullets First</h2>');
+      expect(html).not.toContain('class="lead"'); // no prose lead → no .lead paragraph
+      expect(html).toContain('<li>alpha</li>');
+    });
+  });
+
+  it('emits .dd .ts with muted color binding', () => {
+    expect(html).toContain('.dd .ts{');
+    expect(html).toContain('color:var(--meta)');
   });
 });
