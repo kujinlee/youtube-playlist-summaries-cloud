@@ -179,6 +179,19 @@ describe('renderMagazineHtml — meta URL link', () => {
     expect(html).not.toContain('href="javascript:');
     expect(html).not.toContain('<a href');
   });
+
+  it('does not link a data: url (injection guard)', () => {
+    const evilUrl = { ...parsed, url: 'data:text/html,<h1>x</h1>' };
+    const html = renderMagazineHtml(evilUrl, model);
+    expect(html).not.toContain('href="data:');
+    expect(html).not.toContain('<a href');
+  });
+
+  it('omits the meta URL link when url is an empty string', () => {
+    const emptyUrl = { ...parsed, url: '' };
+    const html = renderMagazineHtml(emptyUrl, model);
+    expect(html).not.toContain('<a href');
+  });
 });
 
 describe('renderMagazineHtml — section timestamps', () => {
