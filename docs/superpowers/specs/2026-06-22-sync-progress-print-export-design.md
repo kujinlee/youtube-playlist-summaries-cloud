@@ -22,7 +22,16 @@ Three related Sync/doc-UX issues:
    deep-dive trailing-muted timestamps + first-sentence gold) but bumped neither doc version. Existing docs
    are therefore treated as "current" and never re-render. The serve route serves cached HTML with no
    version check; the only regeneration gate is the menu's version comparison. Both versions must bump so
-   existing docs re-render (cheaply, no Gemini) and pick up the new styles **and** the new Print button.
+   that each existing doc **shows as needing update in the menu** — clicking the menu entry re-renders that
+   one doc (cheaply, no Gemini) and it picks up the new styles + Print button.
+
+   **Important (verified):** the bump does NOT silently refresh docs. The serve route
+   (`app/api/html/[id]/route.ts`) does no version check — it serves the cached `htmls/<base>.html`
+   verbatim. Re-render is **menu-click-gated, one doc at a time**, via `ensureHtmlDoc` /
+   `ensureDeepDiveHtml`, which overwrite the cached HTML and re-stamp the version. Opening an already-cached
+   doc directly (not through the menu's regenerate button) will not refresh it. Auto-refresh-on-serve is
+   **out of scope** — the menu button appearing is what resolves the "can't regenerate" complaint (today the
+   menu shows the deep-dive as a plain link with no regenerate path because the version isn't stale).
 
 These interlock: issues 1 & 2 both edit the ingest loop in `lib/pipeline.ts`; issues 2 & 3 are both render
 changes that share one minor version bump per doc type. One spec, one plan.
@@ -49,23 +58,32 @@ populating the UI from `title`.
   const newTotal = new Set(metas.filter((m) => !alreadyIndexed.has(m.videoId)).map((m) => m.videoId)).size;
   let newIndex = 0;
   ```
-- `onProgress({ type: 'start', total: newTotal })` (was the full playlist `total`).
-- **Separate the two meanings of `i + 1`:** keep a `playlistPos = i + 1` used only for the stored
-  `playlistIndex` field (line 339). The progress `current`/`total` now come from `newIndex`/`newTotal`.
+- `onProgress({ type: 'start', total: newTotal })` (was the full playlist `total`). `start.total` is
+  `nonnegative`, so `0` is legal here.
+- **Remove the now-unused `const total = metas.length`** (M2): it was used only by the old `start`/`done`
+  emits; inline `metas.length` at the loop bound (`i < metas.length`).
+- **Separate the two meanings of `i + 1`:** keep a `playlistPos = i + 1` used **only** for the stored
+  `playlistIndex` field (line 339) — do NOT use the new counter there (that would corrupt stored playlist
+  position). The progress `current`/`total` come from `newIndex`/`newTotal`.
 - **Skipped (already-indexed) videos:** remove the per-skip `'step'` emit entirely (skips are instant set
   lookups; emitting them is what made the bar crawl). Just `continue`.
 - **New video:** increment `newIndex` once when starting the video; every `'step'` for that video carries
-  `current: newIndex, total: newTotal` and `title: meta.title`. Steps after PDF removal:
+  `current: newIndex, total: newTotal` and `title: meta.title`. Because steps are emitted **only for new
+  videos**, `newIndex ≥ 1` and `newTotal ≥ 1` whenever a `'step'` fires — satisfying the schema's
+  `int().positive()` on `step.current`/`step.total` (B2). Steps after PDF removal:
   `Fetching transcript…` → `Generating summary…` → `Saved`.
-- `onProgress({ type: 'done', total: newTotal, succeeded, failed })` unchanged in shape.
-- **`newTotal === 0`:** the loop emits no per-video steps; `done` fires with `total: 0`. UI renders an
-  "already up to date — no new videos" message (see below).
+- `onProgress({ type: 'done', total: newTotal })` — keep the existing `done` shape (just change the value
+  to `newTotal`). **Do NOT add `succeeded`/`failed`** — `runIngestion` does not track them today and the UI
+  does not consume them (B2).
+- **`newTotal === 0`:** the loop emits no per-video steps; `done` fires with `total: 0` (`done.total` is
+  `nonnegative`). UI renders an "already up to date — no new videos" message (see below).
 
 **`app/page.tsx` — ingest progress UI (~lines 15–22, 198–201, 425–460):**
-- `IngestState` gains a `title: string` field.
+- `IngestState` gains `title: string`, `current: number`, `total: number` fields. **`IDLE_INGEST` must
+  initialize them** (`current: 0, total: 0, title: ''`) so the done/cancelled/error reset paths clear the
+  title line (M3).
 - On a `'step'` event: `progress = total>0 ? round(current/total*100) : 0`; `step = data.step`;
-  `title = data.title ?? ''`; also store `current`/`total` (new fields on `IngestState`, e.g. `current`,
-  `total`) so the UI can render the count.
+  `title = data.title ?? ''`; store `current`/`total` from the event so the UI can render the count.
 - Render two lines under the bar:
   - line 1: `New video {current} of {total} · {step}` (when `total>0`);
   - line 2: the `title` (omitted when empty).
@@ -77,11 +95,16 @@ populating the UI from `title`.
 **Stop generating (3 call sites):**
 - `lib/pipeline.ts`: remove the `pdfs/` mkdir, `pdfPath`, the `'Generating PDF…'` step, and the
   `await generatePdf(...)` call. The new `Video` record sets `summaryPdf: null` (was `pdfs/<base>.pdf`).
-  Remove the now-unused `mdContent` from the `writeSummaryDoc` destructure and the `generatePdf` import.
+  Remove the now-unused `mdContent` from the **ingest-loop destructure** and the `generatePdf` import.
+  **Keep `SummaryDocResult.mdContent`** on the interface/return — `writeSummaryDoc` still builds `mdContent`
+  to write the `.md`; only the unused local destructure is removed (H1). `tsc --noEmit` (project gate) will
+  flag any leftover unused locals — none must remain.
 - `app/api/videos/[id]/regenerate/route.ts`: remove the `generatePdf` import and the background
-  `if (video.summaryPdf) generatePdf(...)` block.
-- `app/api/quick-view/backfill/route.ts`: remove the `generatePdf` import and the `pdfTasks` /
-  `if (video.summaryPdf) generatePdf(...)` block (and the now-unused `pdfTasks` await).
+  `if (video.summaryPdf) generatePdf(...)` block. (It is fire-and-forget — no response/ordering impact.)
+- `app/api/quick-view/backfill/route.ts`: remove **all** PDF surface (H3): the `generatePdf` import, the
+  `if (video.summaryPdf) { … pdfTasks.push … }` block, the `pdfTasks` array, the `await Promise.all(pdfTasks)`,
+  the `pdfFailed` counter and its `(PDF only)` error emit, and simplify the final `done.failed` from
+  `failed + pdfFailed` to just `failed`. No unused locals may remain.
 
 **Remove PDF menu items — `components/VideoMenu.tsx`:** delete `hasSummaryPdf`, `hasDeepDivePdf`, `pdfBase`,
 and the "View Summary PDF" / "View Deep Dive PDF" menu entries. No other menu items change.
@@ -101,7 +124,10 @@ field in the UI anymore, so a stale value is invisible.)
   directly; markdown-it's `html:false` only governs the *content*, not our injected chrome.
 - Extend `themeStyleBlock`'s fixed-button CSS so `#print-btn` sits left of `#theme-toggle`
   (toggle at `right:1rem`; print at `right:3.6rem`), shares the circular icon-button styling, and is hidden
-  in print: add `#print-btn` to the existing `@media print{ … #theme-toggle{display:none} }` rule.
+  in print. Add `#print-btn` to the **`themeStyleBlock` print rule** (`theme.ts`, the
+  `@media print{ … #theme-toggle{display:none} }`) — this covers BOTH renderers since both embed
+  `themeStyleBlock` (M4). The deep-dive's own structural `@media print` rule already hides `#theme-toggle`;
+  it's redundant for `#print-btn` and needs no change.
 - `lib/html-doc/render.ts` and `render-deep-dive.ts`: inject `${PRINT_BUTTON}` immediately next to
   `${THEME_TOGGLE_BUTTON}` (right after `<body>`), in both files.
 
@@ -147,10 +173,16 @@ field in the UI anymore, so a stale value is invisible.)
 **Unit / component (jest):**
 - `pipeline.test.ts`: `newTotal` counts only new distinct IDs; `start.total` = new count; per-new-video
   steps carry `current`/`total`/`title` on the new basis; skipped videos emit **no** step; **no**
-  `'Generating PDF…'` step; `generatePdf` is **never called**; new `Video` has `summaryPdf: null`;
-  `playlistIndex` still equals playlist position (not the new counter).
-- `regenerate.test.ts`: `generatePdf` **not called** (was: called).
-- `backfill.test.ts`: `generatePdf` **not called** (already asserted for the null case — keep/confirm).
+  `'Generating PDF…'` step; `generatePdf` is **never called**; new `Video` has `summaryPdf: null`.
+  **Stored-data guard (M1):** a new video at playlist position 200 that is the 3rd new item → stored
+  `playlistIndex === 200` while progress shows `current: 3, total: N` (proves `playlistIndex` uses
+  `playlistPos`, not the new counter).
+- `regenerate.test.ts`: **keep** `jest.mock('../../lib/pdf')` and assert
+  `expect(mockGeneratePdf).not.toHaveBeenCalled()` (was: `toHaveBeenCalled()`) — the binding stays used so
+  no unused-local lint break.
+- `backfill.test.ts`: assert `generatePdf` is **never called** (repurpose the old conditional-skip test); the
+  `done.failed` no longer includes a PDF component.
+- `tests/lib/pdf.test.ts`: **unchanged** — `lib/pdf.ts` stays dormant (L1).
 - `app/page.tsx` (component test if present, else covered by E2E): renders `New video N of M`, the title,
   and the no-new message.
 - `render.test.ts` / `render-deep-dive.test.ts`: both docs contain `id="print-btn"` with
