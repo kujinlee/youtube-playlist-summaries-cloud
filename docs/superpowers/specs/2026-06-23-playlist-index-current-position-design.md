@@ -22,10 +22,13 @@ playlistIndex: v.playlistIndex ?? positionMap.get(v.id),
 ```ts
 playlistIndex: positionMap.get(v.id) ?? v.playlistIndex,
 ```
-- Videos **in** the current playlist are always in `positionMap` → they get their current absolute position (unique `1..N` by construction; `positionMap` is a `Map`, so a video appearing twice in the playlist resolves to its last occurrence — still a single unique value).
-- Videos **removed** from the playlist are not in `positionMap` → they keep their last-known `playlistIndex` (they are auto-archived / hidden by default; nulling could disturb their existing sort behavior). A removed video's stale index may coincide with an in-playlist video's position, but removed videos are hidden, so visible rows remain uniquely numbered.
+- Videos **in** the current playlist are always in `positionMap` → they get their current absolute position. Distinct in-playlist videos never collide (each `idx` is distinct). Values are **unique, though not necessarily contiguous `1..N`**: if the same video id appears twice in the playlist, the `Map` keeps its last occurrence and the earlier slot is unassigned, leaving a gap — uniqueness for visible rows still holds.
+- Videos **removed** from the playlist are not in `positionMap` → they keep their last-known `playlistIndex` (auto-archived / hidden by default; nulling could disturb sort). A removed video's stale index may coincide with an in-playlist video's position, but removed videos are hidden, so visible rows remain uniquely numbered.
+- A video **manually archived but still in the playlist** (`removedFromPlaylist` false) IS in `positionMap`, so it is re-numbered to its current position each sync — correct, it still has a real playlist position.
 
 `videoPublishedAt` and `addedToPlaylistAt` **remain write-once** (`v.x ?? map.get(id)`) — those are genuinely stable per video. New-video stamping (`pipeline.ts:342`, `playlistIndex: playlistPos`) is already correct and unchanged.
+
+**Also update the stale comment at `pipeline.ts:385-386`** — it currently claims `playlistIndex` is a "stable ID … never updated"; after this change it must read that `playlistIndex` is re-derived from the current playlist order each sync (for in-playlist videos), while `videoPublishedAt`/`addedToPlaylistAt` remain write-once.
 
 ## Migration
 
@@ -41,16 +44,20 @@ No signature change; no other field's semantics change.
 
 ## Testing (TDD)
 
-Unit test the re-stamp pass (the `videosWithIndex` mapping at `pipeline.ts:387-393`) via a focused test that runs `runIngestion` with mocked `fetchPlaylistVideos` (per the project mocking boundary — mock `lib/youtube`) and an index seeded with stale `playlistIndex`:
-1. **Reorder corrects stale index:** seed video A with `playlistIndex: 1`; mock the playlist so A is now at position 5 → after sync, A's `playlistIndex === 5`.
+Unit test the re-stamp pass (the `videosWithIndex` mapping at `pipeline.ts:387-393`). **Mocking boundary:** mock `lib/youtube` (`fetchPlaylistVideos`) AND `lib/index-store` (`readIndex`/`writeIndex`/`upsertVideo`) — the re-stamp pass reads `readIndex(outputFolder)`, so the stale `playlistIndex` must be seeded through `index-store`, and the seeded video must be already-indexed so it is skipped in the main loop and corrected **only** by the re-stamp pass (the proof we're testing the right path). Follow the existing pattern at `tests/lib/pipeline.test.ts:369`.
+
+1. **Reorder corrects stale index:** seed already-indexed video A with `playlistIndex: 1`; mock the playlist so A is now at position 5 → after sync, A's `playlistIndex === 5`.
 2. **Collision resolves:** seed A=1 and B=1 (the bug state); mock playlist with A at pos 2, B at pos 1 → after sync, A=2, B=1 (distinct).
 3. **Removed video keeps its index:** seed C with `playlistIndex: 3` but omit C from the mocked playlist → C's `playlistIndex` stays 3 (and C is archived via the existing reconcile).
-4. **Stable fields untouched:** a video with stored `videoPublishedAt`/`addedToPlaylistAt` retains them (write-once preserved) even as `playlistIndex` updates.
+4. **Returned-from-removal (H2):** seed D with `playlistIndex: 9`, `archived: true`, `removedFromPlaylist: true`; mock the playlist so D reappears at position 4 → after sync, D's `playlistIndex === 4`, `archived === false`, `removedFromPlaylist === false`.
+5. **Archived-but-still-in-playlist (M3):** seed E with `playlistIndex: 1`, `archived: true`, `removedFromPlaylist: false`; mock playlist with E at position 6 → E's `playlistIndex === 6` (re-numbered, still archived).
+6. **Stable fields untouched:** a video with stored `videoPublishedAt`/`addedToPlaylistAt` retains them (write-once preserved) even as `playlistIndex` updates.
+7. **Empty playlist:** `fetchPlaylistVideos` returns `[]` → no crash; existing videos keep `playlistIndex` (fall through `?? v.playlistIndex`) and are archived by reconcile.
 
 Full `npm test` + `npx tsc --noEmit` green before commit. Dual review per task.
 
 ## Out of scope
 
 - Changing `videoPublishedAt` / `addedToPlaylistAt` write-once semantics.
-- Re-numbering removed/archived videos to a separate sequence.
+- Re-numbering **removed-from-playlist** videos (not in `positionMap`) — they keep their last-known index and stay hidden. (Note: this differs from a *manually-archived-but-still-in-playlist* video, which IS re-numbered to its current position — see Decision.)
 - Any UI/sort change (the `#` column and its sort already read `playlistIndex`; correcting the data is sufficient).
