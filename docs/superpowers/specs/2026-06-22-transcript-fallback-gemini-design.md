@@ -43,43 +43,55 @@ mapped into the existing `TranscriptSegment[]`. Everything downstream (`generate
 boundaries clean):
 ```ts
 export async function resolveTranscriptSegments(
-  videoId: string, youtubeUrl: string,
+  videoId: string, youtubeUrl: string, durationSeconds: number,
 ): Promise<{ segments: TranscriptSegment[]; source: 'captions' | 'gemini' }>;
 ```
-1. `try { segments = await fetchTranscriptSegments(videoId); if (segments.length) return {segments, source:'captions'} }`
-2. on throw **or** empty → `segments = await transcribeViaGemini(youtubeUrl, videoId)`; return `{segments, source:'gemini'}`.
-3. if the Gemini path also fails or yields zero segments → rethrow a clear error
-   (`transcript unavailable via captions and video for <videoId>: <cause>`). The summary fails as it does
-   today (rare — the video must be private/age-gated/too-long for Gemini's fetch).
+1. `let captionErr: unknown; try { const segments = await fetchTranscriptSegments(videoId); if (segments.length) return {segments, source:'captions'} } catch (e) { captionErr = e }`
+   (capture the error — needed for the combined message in step 3; an empty array falls through with
+   `captionErr` left undefined — M6).
+2. captions threw **or** returned empty → `segments = await transcribeViaGemini(youtubeUrl, videoId, durationSeconds)`;
+   if non-empty return `{segments, source:'gemini'}`.
+3. Gemini path fails or yields zero segments → throw a clear error including the videoId and the captured
+   `captionErr` cause (`transcript unavailable via captions and video for <videoId>: <captionErr / gemini cause>`).
+   The summary fails as it does today (rare — private/age-gated/too-long for Gemini's fetch).
 
-**New unit — `transcribeViaGemini(youtubeUrl, videoId)` in `lib/gemini.ts`** (it is a Gemini call):
+**New unit — `transcribeViaGemini(youtubeUrl, videoId, durationSeconds)` in `lib/gemini.ts`** (a Gemini call):
 - `model = client.getGenerativeModel({ model: TRANSCRIBE_MODEL, generationConfig })`,
   `TRANSCRIBE_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL ?? 'gemini-2.5-flash'`.
-- `generationConfig` uses **controlled generation** (a `responseSchema`, matching the project's existing
-  JSON-reliability pattern) AND **low media resolution**. The 0.24.1 SDK doesn't type `mediaResolution`,
-  so pass it through with a cast: `{ responseMimeType:'application/json', responseSchema: SEG_SCHEMA,
-  mediaResolution: 'MEDIA_RESOLUTION_LOW' } as GenerationConfig` (spike-confirmed the API honors it — token
-  count dropped from ~700k to ~256k). Document this passthrough with a comment.
-- `responseSchema`: an object `{ segments: Array<{ startSec: integer, text: string(min 1) }> }`
-  (object-wrapped array — Gemini controlled-generation is more reliable with a top-level object).
-- Content parts: `[{ fileData: { fileUri: youtubeUrl, mimeType: 'video/mp4' } }, { text: PROMPT }]`.
-- **PROMPT** (full-coverage is essential — the spike showed "give N moments" front-loads; an explicit
-  whole-duration instruction fixes it): *"Transcribe this entire video from start to finish. Return JSON
-  `{segments:[…]}` where each segment is ~1–3 sentences of spoken words with `startSec` = the integer
-  second it begins. Segments MUST be in increasing time order and MUST cover the whole video, continuing
-  all the way to the end — do not stop early or summarize. Use only words actually spoken."*
-- Reuse the existing `generateJson`/retry wrapper (the project's `lib/gemini.ts` already has a JSON retry
-  helper) for resilience.
-- **Map to `TranscriptSegment[]`**: sort by `startSec`; `offset = startSec` (seconds); `duration =
-  max(0, nextStartSec - startSec)` (last segment: a nominal `5`). Drop rows with empty text or non-finite
-  `startSec`. This matches `fetchTranscriptSegments`' shape exactly, so `buildIndexedTranscript` /
-  `[[TS:i]]` resolution work unchanged.
+- `generationConfig` uses **controlled generation** (`responseMimeType:'application/json'` +
+  `responseSchema`) AND **low media resolution**. The 0.24.1 SDK doesn't type `mediaResolution`, so pass it
+  through inside `generationConfig` with a cast — **it must ride on `generationConfig`** (the SDK spreads it
+  into the request body; a top-level field would be dropped): `{ responseMimeType:'application/json',
+  responseSchema: SEG_SCHEMA, mediaResolution: 'MEDIA_RESOLUTION_LOW' } as GenerationConfig` (spike: token
+  count 700k→256k confirms the API honors it). Document the cast with a comment.
+- `responseSchema`: a `SchemaType.OBJECT` `{ segments: ARRAY<OBJECT{ startSec: INTEGER, text: STRING }> }`
+  with `required`, expressed exactly like `MAGAZINE_RESPONSE_SCHEMA` (`gemini.ts:82-111`). The OpenAPI
+  subset can't enforce text-min-1 / finite startSec — a **Zod schema + post-parse cleanup is the real
+  guarantor** (M5), not `responseSchema`.
+- **Do NOT reuse `generateJson`** — it is string-only (`gemini.ts:118-129`) and cannot carry the `fileData`
+  part (B1). Instead call `model.generateContent([{ fileData:{ fileUri:youtubeUrl, mimeType:'video/mp4' } },
+  { text: PROMPT }])` directly, mirroring `generateDeepDiveCombined` (`gemini.ts:383-397`), wrapped in a
+  **local** `JSON.parse` + Zod-validate + retry loop (1–2 retries, `console.warn` on retry like the
+  `[gemini-retry]` line at `gemini.ts:134`).
+- **PROMPT** (full coverage is essential — the spike showed "give N moments" front-loads): *"Transcribe
+  this entire video from start to finish. Return JSON `{segments:[…]}` where each segment is ~1–3 sentences
+  of spoken words with `startSec` = the integer second it begins. Segments MUST be in increasing time order
+  and MUST cover the whole video, continuing all the way to the end — do not stop early or summarize. Use
+  only words actually spoken."*
+- **Map to `TranscriptSegment[]`**: drop rows with empty text or non-finite `startSec`; **sort by
+  `startSec` and DEDUPE equal `startSec` (keep first)** — `resolveTranscriptTokens` requires strictly
+  increasing resolved offsets (`transcript-timestamps.ts:79-89`); duplicate starts would drop ALL ▶ links
+  in that doc (M7). Then `offset = startSec`; `duration = max(0, nextStartSec - startSec)` (last: nominal
+  `5`). Shape matches `fetchTranscriptSegments` exactly → `buildIndexedTranscript` / `[[TS:i]]` unchanged.
+- **Coverage safeguard** lives HERE (it now has `durationSeconds`): after mapping, if
+  `lastOffset / durationSeconds < 0.6`, `console.warn('[transcribe-coverage] low coverage <pct>% for
+  <videoId>')` and still return (partial > failed). Do not hard-fail (H2/H3).
 
 **Integration — `lib/pipeline.ts` `writeSummaryDoc`:** replace
 `const segments = await fetchTranscriptSegments(videoId);` with
-`const { segments } = await resolveTranscriptSegments(videoId, youtubeUrl);`
-(`youtubeUrl` is already in `SummaryDocInput`). `detectLanguage(segments.map(s=>s.text).join(' '))` is
-unchanged and works on Gemini-derived text.
+`const { segments } = await resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds);`
+(`youtubeUrl` and `durationSeconds` are both in `SummaryDocInput`, `pipeline.ts:16` — confirmed).
+`detectLanguage(segments.map(s=>s.text).join(' '))` is unchanged and works on Gemini-derived text.
 
 ## Components & boundaries
 
@@ -92,11 +104,19 @@ unchanged and works on Gemini-derived text.
 
 ## Coverage safeguard
 
-Gemini can under-cover a long video (stop early). After mapping, compute coverage = last segment
-`offset` ÷ known video `durationSeconds` (already available on the `Video`/meta). If coverage `< 0.6`,
-**log a dev-logger warning** (`transcribeViaGemini: low coverage <pct>% for <videoId>`) but still return
-the segments — a partial transcript is better than a failed summary, and the warning surfaces it. (Do not
-hard-fail on low coverage.)
+Implemented inside `transcribeViaGemini` (which now receives `durationSeconds`): coverage =
+`lastSegment.offset ÷ durationSeconds`. If `< 0.6`, `console.warn('[transcribe-coverage] low coverage
+<pct>% for <videoId>')` and still return the (partial) segments — partial beats a failed summary, and the
+warning surfaces it. Do not hard-fail. (Uses `console.warn`, the gemini.ts convention — `dev-logger.ts`
+has no warn API.)
+
+## Token budget (longest videos)
+
+Coarse segments make `buildIndexedTranscript` *smaller* than caption output, so the downstream
+`generateSummary` call is well within `gemini-2.5-flash`'s context for normal talk lengths. Bound check: a
+2-hour talk ≈ ~18k words ≈ ~24k tokens of indexed transcript — comfortably under Flash's input limit. The
+transcription call itself is the larger one (~256–294k tokens for ~45 min at low-res, billed only on gated
+videos). No chunking needed for the playlist's video lengths (≤ ~1 h observed).
 
 ## Error handling / edge cases
 
@@ -124,10 +144,14 @@ captioned videos are unaffected (no extra call, no extra cost).
   returns its segments, `source:'gemini'`; captions empty `[]` → Gemini path; both fail → throws with the
   combined message. Mock `fetchTranscriptSegments` and `transcribeViaGemini`.
 - **`tests/lib/gemini.test.ts`** (`transcribeViaGemini`): given a mocked model response
-  `{segments:[{startSec,text}…]}` → correct `TranscriptSegment[]` (offset=startSec, duration=gap, sorted);
-  empty/invalid → throws; low-coverage input → returns + logs warning. Mock the `getGenerativeModel`
-  boundary (no real network); assert `mediaResolution:'MEDIA_RESOLUTION_LOW'` and the youtube `fileData`
-  part are passed.
+  `{segments:[{startSec,text}…]}` → correct `TranscriptSegment[]` (offset=startSec, duration=gap, sorted,
+  equal-startSec deduped); empty/invalid → throws after retries; low-coverage input → returns + `console.warn`
+  (spy on `console.warn`). **Test-mock note (H4):** the existing suite mocks `getGenerativeModel` with an
+  inline `jest.fn()` that discards its args; to assert the cost-critical config, **hoist
+  `getGenerativeModel` to a named `jest.fn()`** so the test can read
+  `getGenerativeModelMock.mock.calls[0][0].generationConfig.mediaResolution === 'MEDIA_RESOLUTION_LOW'`.
+  The youtube `fileData` part is assertable via `mockGenerateContent.mock.calls[0][0]` (as the existing
+  deep-dive test does, `tests/lib/gemini.test.ts:407-413`).
 - **`tests/lib/pipeline.test.ts`** (integration): `writeSummaryDoc` with captions mocked to throw → the
   Gemini-resolver segments drive a successful summary (`generateSummary` still called with segments;
   `.md` written). Confirms the gated path produces a doc.
