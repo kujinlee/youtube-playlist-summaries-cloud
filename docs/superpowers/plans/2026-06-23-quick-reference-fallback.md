@@ -20,8 +20,8 @@
 
 **Interfaces:** `writeSummaryDoc` signature/return shape unchanged (already returns `{tldr, takeaways, …}`).
 
-- [ ] **Step 1: Blast-radius guard + new test scaffolding** in `tests/lib/pipeline.test.ts`.
-  - Add the mock handle near the others: `const mockExtractQuickView = jest.mocked(gemini.extractQuickView);`
+- [ ] **Step 1: Blast-radius guard + scaffolding** in `tests/lib/pipeline.test.ts`. (NOTE: the file ALREADY has `describe('writeSummaryDoc', …)` at ~line 1112 and `describe('runIngestion', …)` — do NOT create new describes; add into the existing ones.)
+  - Add the mock handle in MODULE scope, near the other `jest.mocked(...)` handles (~line 22-28): `const mockExtractQuickView = jest.mocked(gemini.extractQuickView);`
   - Add `tldr` + `takeaways` to `makeSummaryResponse()`'s default so existing tests stay on the both-present path:
     ```ts
     function makeSummaryResponse(overrides: Partial<GeminiSummaryResponse> = {}): GeminiSummaryResponse {
@@ -35,80 +35,74 @@
       };
     }
     ```
-  - In the `runIngestion` `beforeEach`, add a defensive default: `mockExtractQuickView.mockResolvedValue({ tldr: 'QV tldr', takeaways: ['qa', 'qb'] });`
+  - Add a defensive default `mockExtractQuickView.mockResolvedValue({ tldr: 'QV tldr', takeaways: ['qa', 'qb'] });` to BOTH the `describe('runIngestion')` `beforeEach` (~line 84) AND the `describe('writeSummaryDoc')` `beforeEach` (~line 1115).
+  - Also add `mockFetchTranscriptSegments.mockResolvedValue([{ text: 't', offset: 0, duration: 5 }]);` to the `describe('writeSummaryDoc')` `beforeEach` (~line 1115) so the new fallback cases below resolve transcripts (existing `:1128`/`:1151` set their own and override).
 
-- [ ] **Step 2: Write the new failing tests** (a `describe('writeSummaryDoc — Quick Reference fallback', …)`; `writeSummaryDoc` is exported and imported in this file). Use a temp `outputFolder` (the file's `makeTempDir()`); stub transcript + detectLanguage as the suite does, or call `writeSummaryDoc` directly with mocked `lib/gemini`/`lib/youtube`.
+- [ ] **Step 2: Add the new failing tests.** Put the 4 fallback cases INSIDE the existing `describe('writeSummaryDoc', …)` block (reuse its `outputFolder` fixture + `afterEach`). `writeSummaryDoc` and `fsReal` are already imported there; use `fsReal.readFileSync`.
 
 ```ts
-describe('writeSummaryDoc — Quick Reference fallback', () => {
-  let outputFolder: string;
-  beforeEach(() => {
-    outputFolder = makeTempDir();
-    mockFetchTranscriptSegments.mockResolvedValue([{ text: 't', offset: 0, duration: 5 }]);
-    mockDetectLanguage.mockReturnValue('en');
-  });
-  afterEach(() => { fs.rmSync(outputFolder, { recursive: true, force: true }); jest.clearAllMocks(); });
+  // — Quick Reference fallback (Issue 2) —
+  const qrInput = () => ({ videoId: 'vidQR', title: 'T', youtubeUrl: 'https://youtu.be/x', channel: 'C', durationSeconds: 300, outputFolder, baseName: 'doc' });
+  const qrRead = () => fsReal.readFileSync(`${outputFolder}/doc.md`, 'utf-8');
 
-  const input = () => ({ videoId: 'vid1', title: 'T', youtubeUrl: 'https://y/watch?v=vid1', channel: 'C', durationSeconds: 300, outputFolder, baseName: 'doc' });
-  const read = () => fs.readFileSync(path.join(outputFolder, 'doc.md'), 'utf-8');
-
-  it('both present → no extractQuickView call, callout from generateSummary values', async () => {
+  it('QR: both present → no extractQuickView call, callout from generateSummary values', async () => {
     mockGenerateSummary.mockResolvedValue(makeSummaryResponse({ tldr: 'This video does X.', takeaways: ['a', 'b'] }));
-    const r = await writeSummaryDoc(input());
+    const r = await writeSummaryDoc(qrInput());
     expect(mockExtractQuickView).not.toHaveBeenCalled();
-    expect(read()).toContain('> **TL;DR:** This video does X.');
+    expect(qrRead()).toContain('> **TL;DR:** This video does X.');
     expect(r.tldr).toBe('This video does X.');
   });
 
-  it('neither present → extractQuickView(baseContent) fallback inserts callout', async () => {
+  it('QR: neither present → extractQuickView(baseContent) fallback inserts callout', async () => {
     mockGenerateSummary.mockResolvedValue(makeSummaryResponse({ tldr: undefined, takeaways: undefined }));
     mockExtractQuickView.mockResolvedValue({ tldr: 'Derived tldr.', takeaways: ['d1', 'd2'] });
-    const r = await writeSummaryDoc(input());
+    const r = await writeSummaryDoc(qrInput());
     expect(mockExtractQuickView).toHaveBeenCalledTimes(1);
-    const arg = mockExtractQuickView.mock.calls[0][0];
-    expect(arg).toContain('video_id: "vid1"'); // baseContent = full md (frontmatter present)
+    const arg = mockExtractQuickView.mock.calls[0][0] as string;
+    expect(arg).toContain('video_id: "vidQR"'); // baseContent = full md (frontmatter present)
     expect(arg).toContain('# T');
-    expect(read()).toContain('> **TL;DR:** Derived tldr.');
+    expect(qrRead()).toContain('> **TL;DR:** Derived tldr.');
     expect(r.tldr).toBe('Derived tldr.');
     expect(r.takeaways).toEqual(['d1', 'd2']);
   });
 
-  it('only tldr present → fallback derives both (partial discarded)', async () => {
+  it('QR: only tldr present → fallback derives both (partial discarded)', async () => {
     mockGenerateSummary.mockResolvedValue(makeSummaryResponse({ tldr: 'partial only', takeaways: undefined }));
     mockExtractQuickView.mockResolvedValue({ tldr: 'Derived.', takeaways: ['d1'] });
-    const r = await writeSummaryDoc(input());
+    const r = await writeSummaryDoc(qrInput());
     expect(mockExtractQuickView).toHaveBeenCalledTimes(1);
-    expect(read()).toContain('> **TL;DR:** Derived.');
+    expect(qrRead()).toContain('> **TL;DR:** Derived.');
     expect(r.tldr).toBe('Derived.'); // partial 'partial only' discarded
   });
 
-  it('extractQuickView throws → graceful: md written without callout, no throw, undefined values', async () => {
+  it('QR: extractQuickView throws → graceful (md written without callout, no throw, undefined values)', async () => {
     mockGenerateSummary.mockResolvedValue(makeSummaryResponse({ tldr: undefined, takeaways: undefined }));
     mockExtractQuickView.mockRejectedValue(new Error('qv failed'));
-    const r = await writeSummaryDoc(input());
-    expect(read()).not.toContain('> [!summary] Quick Reference');
-    expect(read()).toContain('# T'); // file still written
+    const r = await writeSummaryDoc(qrInput());
+    expect(qrRead()).not.toContain('> [!summary] Quick Reference');
+    expect(qrRead()).toContain('# T'); // file still written
     expect(r.tldr).toBeUndefined();
     expect(r.takeaways).toBeUndefined();
   });
-});
-
-it('ingestion persists DERIVED tldr/takeaways to the index when generateSummary omits them', async () => {
-  mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [] });
-  mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]);
-  mockFetchTranscriptSegments.mockResolvedValue([{ text: 't', offset: 0, duration: 5 }]);
-  mockGenerateSummary.mockResolvedValue(makeSummaryResponse({ tldr: undefined, takeaways: undefined }));
-  mockExtractQuickView.mockResolvedValue({ tldr: 'Derived.', takeaways: ['d1', 'd2'] });
-  await runIngestion(PLAYLIST_URL, outputFolder, () => {});
-  expect(mockUpsertVideo).toHaveBeenCalledWith(
-    outputFolder,
-    expect.objectContaining({ id: 'vid1', tldr: 'Derived.', takeaways: ['d1', 'd2'] }),
-  );
-});
 ```
-(Place the ingestion test inside the existing `describe('runIngestion', …)` block so it inherits its `beforeEach`/`outputFolder`.)
 
-- [ ] **Step 3: Run — confirm RED** (`npx jest pipeline -t "Quick Reference fallback"` and the ingestion case). The fallback cases fail (current code writes no callout when tldr/takeaways absent and never calls extractQuickView).
+Then add this ONE case INSIDE the existing `describe('runIngestion', …)` block (e.g. right after the `:561` "writes Quick Reference callout" test), so it inherits the runIngestion `beforeEach` (which sets `YOUTUBE_API_KEY`, `assertOutputFolder`, `upsertVideo`, etc.):
+
+```ts
+  it('persists DERIVED tldr/takeaways to the index when generateSummary omits them', async () => {
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]);
+    mockFetchTranscriptSegments.mockResolvedValue([{ text: 't', offset: 0, duration: 5 }]);
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse({ tldr: undefined, takeaways: undefined }));
+    mockExtractQuickView.mockResolvedValue({ tldr: 'Derived.', takeaways: ['d1', 'd2'] });
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ id: 'vid1', tldr: 'Derived.', takeaways: ['d1', 'd2'] }),
+    );
+  });
+```
+
+- [ ] **Step 3: Run — confirm RED** (`npx jest pipeline -t "QR:"` and `-t "persists DERIVED"`). Cases 2/3/4 (neither/only-tldr/throw) and the ingestion case fail under current code (no callout written, extractQuickView never called). Case 1 ("QR: both present → no extractQuickView call") is already GREEN at this stage (current code never calls extractQuickView) — that's expected for a guard assertion, not a broken RED.
 
 - [ ] **Step 4: Implement.** In `lib/pipeline.ts`:
   - Line 4 import: `import { generateSummary, extractQuickView } from './gemini';`
@@ -143,7 +137,7 @@ it('ingestion persists DERIVED tldr/takeaways to the index when generateSummary 
 
 - [ ] **Step 5: Run — GREEN** (`npx jest pipeline -t "Quick Reference fallback"` + the ingestion case).
 
-- [ ] **Step 6: Full suite + types** — `npm test` then `npx tsc --noEmit`. Update any existing test that broke from the `makeSummaryResponse` default change (most use `toContain`; expected churn is small — fix by either asserting the now-present callout or overriding `tldr/takeaways: undefined` in that specific test if it must test the no-callout shape). All green.
+- [ ] **Step 6: Full suite + types** — `npm test` then `npx tsc --noEmit`. The adversarial review found the `makeSummaryResponse` default change breaks **no** existing assertion (callout-absence is never asserted on a defaulted response; all index-entry checks use `objectContaining`); the two existing `writeSummaryDoc` direct tests `:1130`/`:1153` now carry tldr+takeaways → both-present path → still green. Expected churn ≈ zero — but RUN the full suite to confirm; if any test does break, fix by asserting the now-present callout, or override `tldr/takeaways: undefined` in that one test if it must assert the no-callout shape. All green before commit.
 
 - [ ] **Step 7: Commit** — `fix(pipeline): derive Quick Reference via extractQuickView when generateSummary omits tldr/takeaways`. `git commit -F -` quoted-EOF heredoc; end body with:
   ```
