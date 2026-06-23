@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
-import type { GenerativeModel, ResponseSchema } from '@google/generative-ai';
+import type { GenerativeModel, ResponseSchema, GenerationConfig } from '@google/generative-ai';
 import { RatingsSchema, VideoTypeSchema, AudienceSchema } from '../types';
 import type { GeminiSummaryResponse } from '../types';
 import { z } from 'zod';
@@ -10,6 +10,7 @@ import type { TranscriptSegment } from './transcript-timestamps';
 
 const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL ?? 'gemini-2.5-flash';
 const DEEPDIVE_MODEL = process.env.GEMINI_DEEPDIVE_MODEL ?? 'gemini-2.5-pro';
+const TRANSCRIBE_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL ?? 'gemini-2.5-flash';
 const REQUEST_TIMEOUT_MS = 60_000;
 
 // Client instantiated per-call so GEMINI_API_KEY changes (e.g. in tests) are picked up without
@@ -443,4 +444,116 @@ ${numbered}
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`Gemini magazine transform failed: ${cause}`, { cause: err });
   }
+}
+
+// Controlled-generation schema: structurally constrains Gemini's transcript JSON. The OpenAPI subset
+// can't enforce non-empty text or finite startSec, so the Zod schema + post-parse cleanup below are the
+// real guarantor (see mapGeminiTranscriptSegments).
+const TRANSCRIBE_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    segments: {
+      type: SchemaType.ARRAY,
+      minItems: 1,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          startSec: { type: SchemaType.INTEGER },
+          text: { type: SchemaType.STRING },
+        },
+        required: ['startSec', 'text'],
+      },
+    },
+  },
+  required: ['segments'],
+};
+
+const GeminiTranscriptSchema = z.object({
+  segments: z.array(z.object({ startSec: z.number(), text: z.string() })),
+});
+
+const TRANSCRIBE_PROMPT =
+  'Transcribe this entire video from start to finish. Return JSON {"segments":[…]} where each segment ' +
+  'is ~1–3 sentences of spoken words with "startSec" = the integer second it begins. Segments MUST be ' +
+  'in increasing time order and MUST cover the whole video, continuing all the way to the end — do not ' +
+  'stop early or summarize. Use only words actually spoken.';
+
+/**
+ * Clean + map Gemini's raw {startSec,text} rows into TranscriptSegment[]:
+ * drop empty-text / non-finite-startSec rows, sort by startSec, DEDUPE equal startSec (keep first —
+ * resolveTranscriptTokens requires strictly increasing offsets), then offset=startSec and
+ * duration=gap-to-next (last segment uses a nominal 5s).
+ */
+function mapGeminiTranscriptSegments(raw: Array<{ startSec: number; text: string }>): TranscriptSegment[] {
+  const cleaned = raw
+    .filter((s) => typeof s.text === 'string' && s.text.trim().length > 0 && Number.isFinite(s.startSec))
+    .sort((a, b) => a.startSec - b.startSec);
+  const deduped: Array<{ startSec: number; text: string }> = [];
+  for (const s of cleaned) {
+    if (deduped.length === 0 || s.startSec !== deduped[deduped.length - 1].startSec) deduped.push(s);
+  }
+  return deduped.map((s, i) => ({
+    text: s.text,
+    offset: s.startSec,
+    duration: i < deduped.length - 1 ? Math.max(0, deduped[i + 1].startSec - s.startSec) : 5,
+  }));
+}
+
+/**
+ * Fallback transcript source: ask Gemini to transcribe the video from its URL at LOW media resolution,
+ * returning a timestamped transcript mapped to TranscriptSegment[]. Used only when YouTube serves no
+ * captions. Retries on malformed JSON / schema / transient errors; throws after retries exhaust.
+ */
+export async function transcribeViaGemini(
+  youtubeUrl: string,
+  videoId: string,
+  durationSeconds: number,
+  retries = 2,
+  baseDelayMs = 400,
+): Promise<TranscriptSegment[]> {
+  const client = new GoogleGenerativeAI(getApiKey());
+  const model = client.getGenerativeModel({
+    model: TRANSCRIBE_MODEL,
+    // mediaResolution is honored by the API but absent from the 0.24.1 SDK type. It MUST stay inside
+    // generationConfig (the SDK spreads generationConfig into the request body; a top-level field is
+    // dropped). LOW downsamples video frames only — audio is unaffected — cutting ~700k→~256k tokens.
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: TRANSCRIBE_RESPONSE_SCHEMA,
+      mediaResolution: 'MEDIA_RESOLUTION_LOW',
+    } as GenerationConfig,
+  });
+  const request = {
+    contents: [{
+      role: 'user',
+      parts: [
+        { fileData: { fileUri: youtubeUrl, mimeType: 'video/mp4' } },
+        { text: TRANSCRIBE_PROMPT },
+      ],
+    }],
+  };
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await model.generateContent(request, { timeout: REQUEST_TIMEOUT_MS });
+      const parsed = GeminiTranscriptSchema.parse(JSON.parse(result.response.text()));
+      const segments = mapGeminiTranscriptSegments(parsed.segments);
+      if (segments.length === 0) throw new Error('Gemini returned zero usable transcript segments');
+      const lastOffset = segments[segments.length - 1].offset;
+      if (durationSeconds > 0 && lastOffset / durationSeconds < 0.6) {
+        const pct = Math.round((lastOffset / durationSeconds) * 100);
+        console.warn(`[transcribe-coverage] low coverage ${pct}% for ${videoId}`);
+      }
+      return segments;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        console.warn(`[gemini-retry] transcribe ${videoId}: attempt ${attempt + 1} failed (${err instanceof Error ? err.message : String(err)}); retrying…`);
+        if (baseDelayMs > 0) await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+      }
+    }
+  }
+  const cause = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(`Gemini transcription failed for ${videoId}: ${cause}`, { cause: lastErr });
 }
