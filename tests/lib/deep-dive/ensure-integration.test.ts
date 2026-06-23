@@ -21,6 +21,7 @@ import type { Version } from '../../../lib/version';
 
 const mockGenerateDeepDive = jest.mocked(gemini.generateDeepDive);
 const mockFetchTranscript = jest.mocked(youtube.fetchTranscriptSegments);
+const mockTranscribeViaGemini = jest.mocked(gemini.transcribeViaGemini);
 
 const VIDEO_ID = 'intgVideoId1';
 const SUMMARY_BASE = '001_integration-video';
@@ -65,8 +66,9 @@ describe('ensureDeepDiveHtml — first-gen integration (real write-doc + real ge
 
   beforeEach(() => {
     outputFolder = makeTempDir();
-    // No transcript → write-doc falls to the video-only Gemini path (only this mock needed).
+    // No captions AND no Gemini transcript → write-doc falls to the video-only Gemini path.
     mockFetchTranscript.mockResolvedValue([]);
+    mockTranscribeViaGemini.mockResolvedValue([]);
     mockGenerateDeepDive.mockResolvedValue('### **1. Overview**\n\nDeep dive body content.\n');
   });
 

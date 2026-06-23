@@ -16,11 +16,13 @@ const mockGenerateDeepDive = jest.mocked(gemini.generateDeepDive);
 const mockGenerateDeepDiveFromTranscript = jest.mocked(gemini.generateDeepDiveFromTranscript);
 const mockGenerateDeepDiveCombined = jest.mocked(gemini.generateDeepDiveCombined);
 const mockFetchTranscriptSegments = jest.mocked(youtube.fetchTranscriptSegments);
+const mockTranscribeViaGemini = jest.mocked(gemini.transcribeViaGemini);
 
 const VIDEO_ID = 'testVideoId1';
 const YOUTUBE_URL = `https://youtube.com/watch?v=${VIDEO_ID}`;
 const SUMMARY_BASE = '001_test-video';
 const SEGMENTS: TranscriptSegment[] = [{ text: 'transcript text', offset: 0, duration: 30 }];
+const GEMINI_SEGMENTS: TranscriptSegment[] = [{ text: 'gemini transcript', offset: 0, duration: 30 }];
 
 // The combined/transcript generators return a body that already has resolved ▶ timestamp lines.
 const COMBINED_BODY = '# Deep Dive (combined)\n\n## 1. Topic\n▶ [0:00](https://youtu.be/x?t=0)\n\nCombined analysis.';
@@ -60,6 +62,7 @@ describe('writeDeepDiveDoc', () => {
     mockGenerateDeepDiveFromTranscript.mockResolvedValue('# Deep Dive (transcript)\n\n## 1. T\n▶ [0:00](u)\n\nTranscript fallback.');
     mockGenerateDeepDive.mockResolvedValue(VIDEO_BODY);
     mockFetchTranscriptSegments.mockResolvedValue(SEGMENTS);
+    mockTranscribeViaGemini.mockResolvedValue([]); // default: no Gemini transcript → resolver throws → video-only, unless a test overrides
   });
 
   afterEach(() => {
@@ -74,6 +77,7 @@ describe('writeDeepDiveDoc', () => {
     expect(mockGenerateDeepDiveCombined).toHaveBeenCalledWith(YOUTUBE_URL, SEGMENTS, 'en', VIDEO_ID);
     expect(mockGenerateDeepDiveFromTranscript).not.toHaveBeenCalled();
     expect(mockGenerateDeepDive).not.toHaveBeenCalled();
+    expect(mockTranscribeViaGemini).not.toHaveBeenCalled();
 
     expect(result).toEqual({ deepDiveMd: `${SUMMARY_BASE}-deep-dive.md` });
     expect('deepDivePdf' in result).toBe(false);
@@ -100,24 +104,35 @@ describe('writeDeepDiveDoc', () => {
     expect(content).toContain('Transcript fallback.');
   });
 
-  it('video-only path when transcript fetch fails: no segments passed, no ▶ tokens', async () => {
+  it('captions gated (fetch throws) → Gemini fallback → combined path with ▶', async () => {
     mockFetchTranscriptSegments.mockRejectedValueOnce(new Error('no captions'));
+    mockTranscribeViaGemini.mockResolvedValueOnce(GEMINI_SEGMENTS);
 
     await writeDeepDiveDoc(makeVideo(), outputFolder, () => {});
 
-    expect(mockGenerateDeepDive).toHaveBeenCalledWith(YOUTUBE_URL, 'en');
-    expect(mockGenerateDeepDiveCombined).not.toHaveBeenCalled();
-    expect(mockGenerateDeepDiveFromTranscript).not.toHaveBeenCalled();
+    expect(mockTranscribeViaGemini).toHaveBeenCalledWith(YOUTUBE_URL, VIDEO_ID, 300);
+    expect(mockGenerateDeepDiveCombined).toHaveBeenCalledWith(YOUTUBE_URL, GEMINI_SEGMENTS, 'en', VIDEO_ID);
+    expect(mockGenerateDeepDive).not.toHaveBeenCalled();
     const content = fs.readFileSync(path.join(outputFolder, `${SUMMARY_BASE}-deep-dive.md`), 'utf-8');
-    expect(content).toContain('Video-only analysis');
-    expect(content).not.toContain('▶');
+    expect(content).toContain('▶ [0:00]');
   });
 
-  it('video-only path when transcript is empty ([]): no combined/transcript call, no ▶', async () => {
-    // An empty (but non-null) transcript means there is no content to index — it must take
-    // the video-only path, not waste a combined call on an empty <transcript> and emit a
-    // ▶-less doc via the transcript path.
+  it('captions empty ([]) → Gemini fallback → combined path with ▶', async () => {
     mockFetchTranscriptSegments.mockResolvedValueOnce([]);
+    mockTranscribeViaGemini.mockResolvedValueOnce(GEMINI_SEGMENTS);
+
+    await writeDeepDiveDoc(makeVideo(), outputFolder, () => {});
+
+    expect(mockTranscribeViaGemini).toHaveBeenCalledWith(YOUTUBE_URL, VIDEO_ID, 300);
+    expect(mockGenerateDeepDiveCombined).toHaveBeenCalledWith(YOUTUBE_URL, GEMINI_SEGMENTS, 'en', VIDEO_ID);
+    expect(mockGenerateDeepDive).not.toHaveBeenCalled();
+    const content = fs.readFileSync(path.join(outputFolder, `${SUMMARY_BASE}-deep-dive.md`), 'utf-8');
+    expect(content).toContain('▶ [0:00]');
+  });
+
+  it('captions AND Gemini both fail → video-only path, no ▶ (graceful floor)', async () => {
+    mockFetchTranscriptSegments.mockRejectedValueOnce(new Error('no captions'));
+    mockTranscribeViaGemini.mockRejectedValueOnce(new Error('gemini transcribe failed'));
 
     await writeDeepDiveDoc(makeVideo(), outputFolder, () => {});
 
