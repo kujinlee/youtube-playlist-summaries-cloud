@@ -1,4 +1,4 @@
-import { generateDeepDive, generateSummary, extractQuickView, fixSummary } from '../../lib/gemini';
+import { generateDeepDive, generateSummary, extractQuickView, fixSummary, transcribeViaGemini } from '../../lib/gemini';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { TranscriptSegment } from '../../lib/transcript-timestamps';
 
@@ -13,13 +13,13 @@ jest.mock('@google/generative-ai', () => ({
 }));
 
 const mockGenerateContent = jest.fn();
+const mockGetGenerativeModel = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetGenerativeModel.mockReturnValue({ generateContent: mockGenerateContent });
   (GoogleGenerativeAI as jest.Mock).mockImplementation(() => ({
-    getGenerativeModel: jest.fn().mockReturnValue({
-      generateContent: mockGenerateContent,
-    }),
+    getGenerativeModel: mockGetGenerativeModel,
   }));
   process.env.GEMINI_API_KEY = 'test-api-key';
 });
@@ -431,5 +431,100 @@ describe('generateDeepDive', () => {
     await expect(
       generateDeepDive('https://www.youtube.com/watch?v=test', 'en'),
     ).rejects.toThrow('GEMINI_API_KEY is not set');
+  });
+});
+
+describe('transcribeViaGemini', () => {
+  const URL = 'https://www.youtube.com/watch?v=vidGated';
+
+  function mockTranscriptResponse(segments: Array<{ startSec: number; text: string }>) {
+    mockGenerateContent.mockResolvedValueOnce({
+      response: { text: () => JSON.stringify({ segments }) },
+    });
+  }
+
+  it('sends the YouTube URL as fileData and requests low media resolution', async () => {
+    mockTranscriptResponse([{ startSec: 0, text: 'hello world' }]);
+
+    await transcribeViaGemini(URL, 'vidGated', 600);
+
+    const config = mockGetGenerativeModel.mock.calls[0][0] as {
+      model: string;
+      generationConfig: { responseMimeType: string; mediaResolution: string };
+    };
+    expect(config.generationConfig.responseMimeType).toBe('application/json');
+    expect(config.generationConfig.mediaResolution).toBe('MEDIA_RESOLUTION_LOW');
+
+    const request = mockGenerateContent.mock.calls[0][0] as {
+      contents: Array<{ parts: Array<{ fileData?: { fileUri: string; mimeType: string }; text?: string }> }>;
+    };
+    expect(request.contents[0].parts[0].fileData).toEqual({ fileUri: URL, mimeType: 'video/mp4' });
+    expect(request.contents[0].parts[1].text).toMatch(/entire video/i);
+  });
+
+  it('maps to TranscriptSegment[] — sorted, deduped, gap durations, drops empties', async () => {
+    mockTranscriptResponse([
+      { startSec: 10, text: 'second' },
+      { startSec: 0, text: 'first' },
+      { startSec: 10, text: 'dup-dropped' },   // equal startSec → dropped (keep first after sort)
+      { startSec: 20, text: '   ' },            // empty after trim → dropped
+      { startSec: 30, text: 'last' },
+    ]);
+
+    const segs = await transcribeViaGemini(URL, 'vidGated', 600);
+
+    expect(segs).toEqual([
+      { text: 'first', offset: 0, duration: 10 },
+      { text: 'second', offset: 10, duration: 20 },
+      { text: 'last', offset: 30, duration: 5 },
+    ]);
+  });
+
+  it('warns on low coverage but still returns the partial transcript', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockTranscriptResponse([{ startSec: 0, text: 'a' }, { startSec: 30, text: 'b' }]); // lastOffset 30 / 600 = 5%
+
+    const segs = await transcribeViaGemini(URL, 'vidGated', 600);
+
+    expect(segs).toHaveLength(2);
+    expect(warn).toHaveBeenCalledWith('[transcribe-coverage] low coverage 5% for vidGated');
+    warn.mockRestore();
+  });
+
+  it('throws after retries when Gemini yields zero usable segments', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGenerateContent.mockResolvedValue({ response: { text: () => JSON.stringify({ segments: [] }) } });
+
+    await expect(transcribeViaGemini(URL, 'vidGated', 600, 1, 0)).rejects.toThrow(/Gemini transcription failed for vidGated/);
+  });
+
+  it('throws after retries on invalid JSON', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGenerateContent.mockResolvedValue({ response: { text: () => 'not json' } });
+
+    await expect(transcribeViaGemini(URL, 'vidGated', 600, 1, 0)).rejects.toThrow(/Gemini transcription failed for vidGated/);
+  });
+
+  it('does not warn or divide by zero when durationSeconds is 0', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockTranscriptResponse([{ startSec: 0, text: 'a' }, { startSec: 30, text: 'b' }]);
+
+    const segs = await transcribeViaGemini(URL, 'vidGated', 0);
+
+    expect(segs).toHaveLength(2);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('[transcribe-coverage]'));
+    warn.mockRestore();
+  });
+
+  it('drops an empty-text row even when it shares a startSec with a non-empty row', async () => {
+    mockTranscriptResponse([
+      { startSec: 40, text: '   ' },   // empty; would sort first among the equal-startSec pair
+      { startSec: 40, text: 'kept' },
+    ]);
+
+    const segs = await transcribeViaGemini(URL, 'vidGated', 100);
+
+    // filter (drop-empty) precedes sort+dedupe, so the empty row is gone before dedupe runs.
+    expect(segs).toEqual([{ text: 'kept', offset: 40, duration: 5 }]);
   });
 });
