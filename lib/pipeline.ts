@@ -382,11 +382,13 @@ export async function runIngestion(
   const publishedMap = new Map(metas.map((m) => [m.videoId, m.videoPublishedAt]));
   const addedMap = new Map(metas.map((m) => [m.videoId, m.addedToPlaylistAt]));
   const afterReconcile = readIndex(outputFolder);
-  // Prefer existing values (write-once semantics via ??): playlistIndex, videoPublishedAt,
-  // addedToPlaylistAt are all stable IDs stamped at first ingest and never updated.
+  // playlistIndex tracks the CURRENT playlist position: in-playlist videos (always in
+  // positionMap) are re-derived each sync; videos removed from the playlist (absent from
+  // positionMap) keep their last-known index. videoPublishedAt/addedToPlaylistAt remain
+  // write-once (stable per video).
   const videosWithIndex = afterReconcile.videos.map((v) => ({
     ...v,
-    playlistIndex: v.playlistIndex ?? positionMap.get(v.id),
+    playlistIndex: positionMap.get(v.id) ?? v.playlistIndex,
     videoPublishedAt: v.videoPublishedAt ?? publishedMap.get(v.id),
     addedToPlaylistAt: v.addedToPlaylistAt ?? addedMap.get(v.id),
   }));

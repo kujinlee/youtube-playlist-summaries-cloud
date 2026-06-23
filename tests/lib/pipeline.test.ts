@@ -640,6 +640,89 @@ describe('runIngestion', () => {
       expect(events.find((e) => e.type === 'done')).toMatchObject({ type: 'done', total: 0 });
     });
   });
+
+  // ── playlistIndex tracks current playlist position ──
+
+  function lastWrittenVideos(): Video[] {
+    const calls = mockWriteIndex.mock.calls;
+    return calls[calls.length - 1][1].videos;
+  }
+
+  describe('playlistIndex tracks current playlist position', () => {
+    it('re-derives a stale in-playlist index to its current position', async () => {
+      const stale = makeIndexedVideo('vidA', { playlistIndex: 1 }); // frozen at 1
+      const others = ['vidW', 'vidX', 'vidY', 'vidZ'].map((id) => makeIndexedVideo(id));
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [...others, stale] });
+      // playlist now places vidA at position 5
+      mockFetchPlaylistVideos.mockResolvedValue(
+        ['vidW', 'vidX', 'vidY', 'vidZ', 'vidA'].map((id) => makeVideoMeta(id)),
+      );
+      await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+      expect(lastWrittenVideos().find((v) => v.id === 'vidA')?.playlistIndex).toBe(5);
+    });
+
+    it('resolves a collision (two videos frozen at 1) to distinct current positions', async () => {
+      const a = makeIndexedVideo('vidA', { playlistIndex: 1 });
+      const b = makeIndexedVideo('vidB', { playlistIndex: 1 });
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [a, b] });
+      mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vidB'), makeVideoMeta('vidA')]); // B@1, A@2
+      await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+      const w = lastWrittenVideos();
+      expect(w.find((v) => v.id === 'vidB')?.playlistIndex).toBe(1);
+      expect(w.find((v) => v.id === 'vidA')?.playlistIndex).toBe(2);
+    });
+
+    it('un-archives (via reconcile upsert) AND re-numbers a removed video that returns', async () => {
+      const d = makeIndexedVideo('vidD', { playlistIndex: 9, archived: true, removedFromPlaylist: true });
+      const others = ['vidW', 'vidX', 'vidY'].map((id) => makeIndexedVideo(id));
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [...others, d] });
+      // D reappears at position 4
+      mockFetchPlaylistVideos.mockResolvedValue(
+        ['vidW', 'vidX', 'vidY', 'vidD'].map((id) => makeVideoMeta(id)),
+      );
+      await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+      // index-store is mocked, so the reconcile un-archive is observable only at the upsert call
+      // (the re-stamp pass re-reads the mocked seeded array). Mirror the existing :332 test.
+      expect(mockUpsertVideo).toHaveBeenCalledWith(
+        outputFolder,
+        expect.objectContaining({ id: 'vidD', archived: false, removedFromPlaylist: false }),
+      );
+      // playlistIndex is re-derived by the final writeIndex re-stamp pass (vidD is in positionMap)
+      expect(lastWrittenVideos().find((v) => v.id === 'vidD')?.playlistIndex).toBe(4);
+    });
+
+    it('re-numbers an archived-but-still-in-playlist video (kept archived)', async () => {
+      const e = makeIndexedVideo('vidE', { playlistIndex: 1, archived: true, removedFromPlaylist: false });
+      const others = ['vidU', 'vidV', 'vidW', 'vidX', 'vidY'].map((id) => makeIndexedVideo(id));
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [...others, e] });
+      mockFetchPlaylistVideos.mockResolvedValue(
+        ['vidU', 'vidV', 'vidW', 'vidX', 'vidY', 'vidE'].map((id) => makeVideoMeta(id)), // E@6
+      );
+      await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+      const ew = lastWrittenVideos().find((v) => v.id === 'vidE');
+      expect(ew?.playlistIndex).toBe(6);
+      expect(ew?.archived).toBe(true);
+    });
+
+    it('preserves stable fields while re-deriving playlistIndex', async () => {
+      const a = makeIndexedVideo('vidA', { playlistIndex: 1, videoPublishedAt: '2020-01-01T00:00:00Z', addedToPlaylistAt: '2021-01-01T00:00:00Z' });
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [makeIndexedVideo('vidB'), a] });
+      mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vidB'), makeVideoMeta('vidA')]); // A@2
+      await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+      const aw = lastWrittenVideos().find((v) => v.id === 'vidA');
+      expect(aw?.playlistIndex).toBe(2);
+      expect(aw?.videoPublishedAt).toBe('2020-01-01T00:00:00Z'); // write-once preserved
+      expect(aw?.addedToPlaylistAt).toBe('2021-01-01T00:00:00Z');
+    });
+
+    it('does not crash on an empty playlist and keeps existing indices', async () => {
+      const a = makeIndexedVideo('vidA', { playlistIndex: 7 });
+      mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [a] });
+      mockFetchPlaylistVideos.mockResolvedValue([]);
+      await expect(runIngestion(PLAYLIST_URL, outputFolder, () => {})).resolves.toBeUndefined();
+      expect(lastWrittenVideos().find((v) => v.id === 'vidA')?.playlistIndex).toBe(7);
+    });
+  });
 });
 
 describe('slugify', () => {
