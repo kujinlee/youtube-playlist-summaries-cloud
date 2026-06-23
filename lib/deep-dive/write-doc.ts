@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { generateDeepDive, generateDeepDiveCombined, generateDeepDiveFromTranscript } from '../gemini';
-import { fetchTranscriptSegments } from '../youtube';
+import { resolveTranscriptSegments } from '../transcript-source';
 import type { ProgressEvent, Video } from '../../types';
 import type { TranscriptSegment } from '../transcript-timestamps';
 
@@ -39,8 +39,10 @@ export async function writeDeepDiveDoc(
   const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
   let segments: TranscriptSegment[] | null = null;
-  try { segments = await fetchTranscriptSegments(videoId); }
-  catch (e) { errors.push(`transcript fetch: ${msg(e)}`); }
+  try {
+    const resolved = await resolveTranscriptSegments(videoId, video.youtubeUrl, video.durationSeconds);
+    segments = resolved.segments;
+  } catch (e) { errors.push(`transcript fetch: ${msg(e)}`); }
 
   onProgress({ type: 'step', videoId, step: 'Generating deep-dive analysis…', current: 2, total: 3 });
 
