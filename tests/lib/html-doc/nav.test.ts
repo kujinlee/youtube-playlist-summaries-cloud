@@ -341,6 +341,7 @@ describe('initDigControls — B5: stream error event → ⚠ retry', () => {
 
     expect(ctrl.textContent).toContain('⚠');
     expect(ctrl.dataset.state).toBe('error');
+    expect(lastES!.close).toHaveBeenCalled();
   });
 });
 
@@ -367,6 +368,7 @@ describe('initDigControls — B6: EventSource transport onerror → ⚠ retry', 
 
     expect(ctrl.textContent).toContain('⚠');
     expect(ctrl.dataset.state).toBe('error');
+    expect(lastES!.close).toHaveBeenCalled();
   });
 });
 

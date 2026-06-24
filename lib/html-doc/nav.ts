@@ -238,6 +238,8 @@ export const NAV_CSS =
 // Self-contained inline script (the browser can't import the module) — mirrors
 // wireDigLinks + scrollToHashSection + initDigControls above.
 // Injected at end-of-body (DOM ready).
+// DRIFT WARNING: the inline JS functions (applyDug/applyLoading/applyError/applyIdle/startDig)
+// intentionally duplicate the TS helpers above and must be kept in sync — the inline string is not covered by jsdom tests.
 export const NAV_SCRIPT = `<script>
 (function(){
   // ── cross-doc nav (deep-dive → summary) ──────────────────────────────────
