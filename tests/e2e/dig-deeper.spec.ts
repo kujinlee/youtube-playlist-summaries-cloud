@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { expect, test } from '@playwright/test';
 // Relative imports (NOT '@/…'): the '@/' alias is unproven for RUNTIME (value) imports under
 // Playwright's loader — the only existing E2E '@/' import is `import type` (erased).
@@ -24,9 +27,6 @@ const START_SEC_NO_SLIDES = 60;
 // A minimal base64 JPEG (a 1×1 white pixel) to use in the companion HTML fixture.
 const MINIMAL_B64 =
   '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKwAB/9k=';
-
-// A tiny 1×1 JPEG encoded as data URI to embed in the companion HTML.
-const SLIDE_IMG_TAG = `<img src="data:image/jpeg;base64,${MINIMAL_B64}" alt="slide">`;
 
 // ---------------------------------------------------------------------------
 // Build fixture HTMLs
@@ -63,25 +63,43 @@ function makeSummaryHtml(videoId: string, startSec: number): string {
   return renderMagazineHtml(parsed, model);
 }
 
-/** Companion HTML WITH a base64 slide image. */
+/**
+ * Companion HTML WITH a base64-inlined slide image, produced by the real renderer.
+ *
+ * I1/I2 fix: build the companion HTML by calling renderDigDeeperHtml with a real
+ * temp `.md` file that references `assets/<videoId>/<sectionId>-<sec>.jpg`, and a
+ * real tiny JPEG written to that assets path. The renderer's image rule base64-inlines
+ * the file, so B1's `toContain('data:image/jpeg;base64,')` assertion exercises the
+ * actual renderer pipeline end-to-end (not hand-crafted HTML).
+ */
 function makeCompanionHtmlWithSlides(): string {
-  const md = `---
+  // Create a temp dir that acts as the "wiki" directory containing the .md and assets/
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dig-slides-'));
+  const assetDir = path.join(tmpDir, 'assets', VIDEO_ID_SLIDES);
+  fs.mkdirSync(assetDir, { recursive: true });
+
+  // Write a minimal real JPEG to the assets path the renderer will resolve.
+  const assetFilename = `${START_SEC_SLIDES}-0.jpg`;
+  const assetPath = path.join(assetDir, assetFilename);
+  fs.writeFileSync(assetPath, Buffer.from(MINIMAL_B64, 'base64'));
+
+  // Write the companion .md that references the asset via relative `assets/` path.
+  const mdContent = `---
 video_id: "${VIDEO_ID_SLIDES}"
 lang: EN
 ---
 
 # Dig Deeper — Section One
 
-${SLIDE_IMG_TAG}
+![slide](assets/${VIDEO_ID_SLIDES}/${assetFilename})
 
 Key insight about the slide content.
 `;
-  // renderDigDeeperHtml expects an absolute mdPath; we pass a fake one.
-  // The renderer only resolves relative `assets/` src — our SLIDE_IMG_TAG uses a data URI,
-  // so the renderer's image rule will fall through to the non-assets branch and
-  // output an escaped src. To avoid that and embed the img directly, we build the HTML
-  // manually so it contains a literal data: URI <img>.
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Dig Deeper</title></head><body><h1>Dig Deeper — Section One</h1><img src="data:image/jpeg;base64,${MINIMAL_B64}" alt="slide"><p>Key insight about the slide content.</p></body></html>`;
+  const mdPath = path.join(tmpDir, `${VIDEO_ID_SLIDES}-dig.md`);
+  fs.writeFileSync(mdPath, mdContent, 'utf-8');
+
+  // Call the real renderer — it will base64-inline the JPEG via its image rule.
+  return renderDigDeeperHtml(mdContent, mdPath);
 }
 
 /** Companion HTML with NO images (text-only). */
@@ -351,42 +369,67 @@ test('B4 (error path): stream error event shows ⚠ retry', async ({ page }) => 
 });
 
 // ---------------------------------------------------------------------------
-// Behavior 5 (B2 — money-spending guard): bare GET to the dig trigger URL
-//             must NOT create a doc (POST-only semantics).
-//             A GET to /api/videos/[id]/dig/[sectionId] returns 405 or is not handled
-//             (no GET handler defined for that route → Next.js returns 405 Method Not Allowed).
+// Behavior 5 (money-spending guard): the normal UI dig flow NEVER issues a GET
+//             to the trigger endpoint — only POST is ever used.
+//
+// C1 fix: B5 now uses the same request-spy pattern as B1 (digRequests array).
+// The assertion `digRequests.every(r => r.method !== 'GET')` is a REAL guard:
+// if the client code were ever changed to issue a GET, this test fails. The old
+// implementation was a self-fulfilling stub that tested the stub, not the app.
 // ---------------------------------------------------------------------------
 
-test('B5 (POST-only guard): GET to the dig trigger URL does not invoke the pipeline (405 / not-handled)', async ({ page }) => {
-  // Track whether any pipeline-level step happens. In practice, the route has no GET handler;
-  // Next.js returns 405. We verify this via a direct fetch from the browser context.
-  const url = `http://localhost:3000/api/videos/${VIDEO_ID_SLIDES}/dig/${START_SEC_SLIDES}`;
-
-  // Stub so the dev server doesn't actually run the pipeline.
-  // We assert the response is NOT 200 (anything other than 200 is acceptable — 405, 404, 400).
-  await page.route(`**/api/videos/${VIDEO_ID_SLIDES}/dig/${START_SEC_SLIDES}`, (route) => {
-    if (route.request().method() === 'GET') {
-      // Simulate no GET handler — 405 Method Not Allowed
-      route.fulfill({ status: 405, body: JSON.stringify({ error: 'Method Not Allowed' }) });
-      return;
-    }
-    // Any POST would proceed normally, but this test only issues GET
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: 'not-reached' }) });
-  });
-
-  // Navigate to any page (need a page context for the browser fetch)
+test('B5 (POST-only guard): normal UI dig flow never issues GET to the trigger endpoint', async ({ page }) => {
   const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
   await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, summaryHtml);
   await stubDigState(page, VIDEO_ID_SLIDES, []);
+  await stubDigPost(page, VIDEO_ID_SLIDES, START_SEC_SLIDES);
+  await stubDigStream(page, VIDEO_ID_SLIDES, START_SEC_SLIDES, [{ type: 'done' }]);
+
+  // Spy on ALL requests to the dig trigger URL — mirrors the B1 spy pattern exactly.
+  // route.fallback() passes each request to the previously-registered stubDigPost handler.
+  const digRequests: { method: string }[] = [];
+  await page.route(`**/api/videos/${VIDEO_ID_SLIDES}/dig/${START_SEC_SLIDES}`, (route) => {
+    digRequests.push({ method: route.request().method() });
+    route.fallback();
+  });
+
   const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
   await page.goto(summaryUrl);
 
-  // Issue a bare GET to the dig trigger URL from the browser context
-  const responseStatus = await page.evaluate(async (triggerUrl) => {
-    const res = await fetch(triggerUrl, { method: 'GET' });
-    return res.status;
-  }, url);
+  const digCtrl = page.locator('a.dig[data-section]');
+  await expect(digCtrl).toHaveText('dig deeper ▶');
+  await digCtrl.click();
+  await expect(digCtrl).toHaveText('view detail ↓', { timeout: 5000 });
 
-  // GET must NOT return 200 (200 would mean the pipeline was invoked)
-  expect(responseStatus).not.toBe(200);
+  // The UI must have issued at least one request (confirming the spy fired)
+  expect(digRequests.length).toBeGreaterThan(0);
+  // No request to the trigger endpoint may have been GET — only POST is permitted.
+  expect(digRequests.every((r) => r.method !== 'GET')).toBe(true);
+  // Positive assertion: POST is the method used
+  expect(digRequests.some((r) => r.method === 'POST')).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// Behavior 6 (M1): trigger POST returns 500 → "⚠ retry" visible
+//             Keeps the existing B4 (stream error → ⚠ retry) and adds the
+//             complementary POST-500 path per the review finding.
+// ---------------------------------------------------------------------------
+
+test('B6 (POST-500 error path): POST returning 500 shows ⚠ retry', async ({ page }) => {
+  const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
+  await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, summaryHtml);
+  await stubDigState(page, VIDEO_ID_SLIDES, []);
+  // Stub the trigger POST to return 500 (server error)
+  await stubDigPost(page, VIDEO_ID_SLIDES, START_SEC_SLIDES, 'unused-job-id', 500);
+  // No stream stub needed — 500 aborts before the stream phase
+
+  const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
+  await page.goto(summaryUrl);
+
+  const digCtrl = page.locator('a.dig[data-section]');
+  await expect(digCtrl).toHaveText('dig deeper ▶');
+  await digCtrl.click();
+
+  // After POST 500: ⚠ retry appears (same error state as stream error)
+  await expect(digCtrl).toHaveText('⚠ retry', { timeout: 5000 });
 });
