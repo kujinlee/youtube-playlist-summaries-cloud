@@ -218,6 +218,79 @@ describe('renderDigDeeperHtml', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Behavior 5b: path traversal in image src → img dropped, no file disclosed
+  // -------------------------------------------------------------------------
+  describe('Behavior 5b — path traversal dropped, no arbitrary file disclosure', () => {
+    let tmpDir: string;
+    let secretPath: string;
+    let mdPath: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      // Place a "secret" file two levels above tmpDir (in os.tmpdir()).
+      // assets/../../<basename> passes startsWith('assets/') but resolves
+      // OUTSIDE docDir/assets/ → should be blocked by the containment check.
+      secretPath = path.join(os.tmpdir(), `secret-traversal-${path.basename(tmpDir)}.txt`);
+      fs.writeFileSync(secretPath, 'supersecret');
+      mdPath = path.join(tmpDir, 'test.md');
+      // assets/../../<file> resolves to os.tmpdir()/<file> — outside docDir
+      const traversalSrc = `assets/../../${path.basename(secretPath)}`;
+      const mdContent = `# Traversal test\n\n![x](${traversalSrc})\n\nProse.\n`;
+      html = renderDigDeeperHtml(mdContent, mdPath);
+    });
+
+    afterAll(() => {
+      try { fs.rmSync(secretPath); } catch { /* ignore */ }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('does NOT emit any <img> for a traversal path', () => {
+      expect(html).not.toContain('<img');
+    });
+
+    it('does NOT embed the secret file contents as base64', () => {
+      const secretB64 = Buffer.from('supersecret').toString('base64');
+      expect(html).not.toContain(secretB64);
+    });
+
+    it('does not throw', () => {
+      expect(html).toContain('Prose.');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Behavior 5c: markdown timestamp links render to clickable href anchors
+  // -------------------------------------------------------------------------
+  describe('Behavior 5c — markdown timestamp links render as href anchors', () => {
+    // Dig-deeper bodies use markdown timestamp LINKS like
+    //   ▶ [11:00–21:19](https://www.youtube.com/watch?v=abc&t=660s)
+    // (output of resolveTranscriptTokens), NOT raw inline <a data-t> HTML.
+    // html:false would escape raw HTML anchors, but markdown links are rendered
+    // normally by markdown-it → href anchors with the t= param preserved.
+    let tmpDir: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      const mdContent = `# Timestamps\n\n▶ [11:00–21:19](https://www.youtube.com/watch?v=abc&t=660s)\n`;
+      html = renderDigDeeperHtml(mdContent, path.join(tmpDir, 'test.md'));
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('renders a markdown timestamp link as a clickable <a> with t= in href', () => {
+      expect(html).toContain('href="https://www.youtube.com/watch?v=abc&amp;t=660s"');
+    });
+
+    it('preserves the link text including timestamp range', () => {
+      expect(html).toContain('11:00');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Behavior 6: multiple images — present one inlined, missing one dropped
   // -------------------------------------------------------------------------
   describe('mixed present + missing assets in one doc', () => {

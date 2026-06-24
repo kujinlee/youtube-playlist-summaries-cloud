@@ -9,10 +9,6 @@ import {
 } from './theme';
 import { NAV_SCRIPT, NAV_CSS } from './nav';
 
-// html:false → raw HTML in the markdown is escaped, not passed through.
-// markdown-it's default validateLink already blocks javascript:/vbscript:/data: (non-image) hrefs.
-const md = new MarkdownIt({ html: false });
-
 const LIGHT: Palette = {
   ...BASE_PALETTE_LIGHT_PRE, ...BASE_PALETTE_LIGHT_POST, link: '#b07700', h3: '#5b463a', h4: '#6b5a4a',
   codebg: '#f1ebe0', preborder: '#e6ddcf', quote: '#8a8276', meta: '#8a8276',
@@ -63,10 +59,18 @@ function esc(s: string): string {
  * Decision (M-5): override the `image` renderer rule (not post-hoc HTML regex) so the inlining
  * happens at the token level. If the asset file is missing, drop the `<img>` entirely (return '')
  * so no broken relative src ever ships in the output.
+ *
+ * Note: dig-deeper bodies use markdown timestamp LINKS like
+ *   ▶ [11:00–21:19](https://www.youtube.com/watch?v=abc&t=660s)
+ * (output of resolveTranscriptTokens), NOT raw inline <a data-t> HTML anchors.
+ * markdown-it renders these markdown links to <a href="...t=660s..."> anchors normally,
+ * so html:false (which escapes raw HTML) does not affect timestamp link rendering.
  */
 function buildRenderer(mdPath: string): MarkdownIt {
   const renderer = new MarkdownIt({ html: false });
   const docDir = path.dirname(mdPath);
+  // assetsRoot is the only directory from which images may be inlined.
+  const assetsRoot = path.resolve(docDir, 'assets');
 
   const rules = renderer.renderer.rules as RenderRuleRecord;
   rules.image = (tokens, idx) => {
@@ -79,6 +83,10 @@ function buildRenderer(mdPath: string): MarkdownIt {
     // Only inline relative `assets/` paths; leave absolute URLs untouched.
     if (srcAttr.startsWith('assets/')) {
       const absPath = path.resolve(docDir, srcAttr);
+      // Containment check: resolved path must stay inside assetsRoot.
+      // Blocks traversal like assets/../../etc/passwd (passes startsWith but
+      // resolves outside the doc's assets directory → arbitrary file disclosure).
+      if (!absPath.startsWith(assetsRoot + path.sep)) return '';
       let data: Buffer | null = null;
       try {
         data = fs.readFileSync(absPath);
