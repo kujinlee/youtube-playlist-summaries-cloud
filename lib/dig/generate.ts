@@ -17,6 +17,12 @@ const GEMINI_REST_BASE =
 /** Transient HTTP status codes that warrant one retry. */
 const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
 
+/**
+ * Per-attempt fetch timeout. Mirrors REQUEST_TIMEOUT_MS in lib/gemini.ts (60 s).
+ * An AbortError from this timeout is treated as a transient failure and retried once.
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
+
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY is not set');
@@ -110,12 +116,22 @@ async function callGeminiRest(
   apiKey: string,
   body: object,
 ): Promise<Response> {
-  const url = `${GEMINI_REST_BASE}/${model}:generateContent?key=${apiKey}`;
-  return fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const url = `${GEMINI_REST_BASE}/${model}:generateContent`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function extractText(data: GeminiRestResponse): string {
@@ -147,9 +163,16 @@ export async function generateDig(
   const model = DEEPDIVE_MODEL;
   const body = buildRequestBody(window, videoId, lang);
 
-  let res = await callGeminiRest(model, apiKey, body);
+  let res: Response;
 
-  // One retry on transient failure.
+  try {
+    res = await callGeminiRest(model, apiKey, body);
+  } catch (err) {
+    // Network or timeout error on first attempt — retry once.
+    res = await callGeminiRest(model, apiKey, body);
+  }
+
+  // One retry on transient HTTP failure.
   if (!res.ok && TRANSIENT_STATUSES.has(res.status)) {
     res = await callGeminiRest(model, apiKey, body);
   }

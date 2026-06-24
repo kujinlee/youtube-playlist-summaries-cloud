@@ -142,3 +142,41 @@ test('missing GEMINI_API_KEY throws', async () => {
     /GEMINI_API_KEY/,
   );
 });
+
+// ── generateDig: x-goog-api-key header ───────────────────────────────────────
+
+test('sends API key as x-goog-api-key header, not in URL query string', async () => {
+  const spy = jest
+    .spyOn(global, 'fetch')
+    .mockResolvedValue(makeOkResponse('MD'));
+
+  await generateDig(WIN, VIDEO_ID, 'en');
+
+  const [url, init] = spy.mock.calls[0] as [string, RequestInit];
+  expect(url).not.toContain('key=');
+  expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('test-key');
+});
+
+// ── generateDig: timeout → retry ─────────────────────────────────────────────
+
+test('timeout retried then succeeds (fetch called twice)', async () => {
+  const abortError = Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+  const spy = jest
+    .spyOn(global, 'fetch')
+    .mockRejectedValueOnce(abortError)
+    .mockResolvedValueOnce(makeOkResponse('OK'));
+
+  const md = await generateDig(WIN, VIDEO_ID, 'en');
+
+  expect(md).toBe('OK');
+  expect(spy).toHaveBeenCalledTimes(2);
+});
+
+test('two consecutive timeouts/transient network failures throws', async () => {
+  const abortError = Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+  jest
+    .spyOn(global, 'fetch')
+    .mockRejectedValue(abortError);
+
+  await expect(generateDig(WIN, VIDEO_ID, 'en')).rejects.toThrow();
+});
