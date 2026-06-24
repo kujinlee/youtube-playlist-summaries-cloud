@@ -38,8 +38,8 @@ This feature replaces the deep-dive doc with **on-demand, per-section elaboratio
 | Unit | Responsibility | Depends on |
 |---|---|---|
 | `lib/dig/section-window.ts` | Pure: section → `{ sectionId, startSec, endSec, transcriptWindow, summaryProse }` | `lib/html-doc/types.ts`, transcript segments |
-| `lib/dig/generate.ts` | One Gemini call: clip + transcript window + summary prose → markdown w/ `[[TS:i]]` + `[[FRAME:sec\|caption]]` tokens | `lib/gemini.ts` |
-| `lib/dig/frames.ts` | Resolve `[[FRAME]]` tokens → yt-dlp segment download + ffmpeg extract → save asset → rewrite to `![](…)`. No-op if zero frame tokens. | yt-dlp, ffmpeg (new exec boundary) |
+| `lib/dig/generate.ts` | One Gemini call: clip + transcript window + summary prose → markdown w/ `[[TS:i]]` + `[[SLIDE:sec\|caption]]` tokens | `lib/gemini.ts` |
+| `lib/dig/slides.ts` | Resolve `[[SLIDE]]` tokens → yt-dlp segment download + ffmpeg extract → save asset → rewrite to `![](…)`. No-op if zero slide tokens. | yt-dlp, ffmpeg (new exec boundary) |
 | `lib/dig/companion-doc.ts` | Idempotent upsert of a dug section into `<basename>-dig-deeper.md` (key = sectionId), serialized writes | fs, atomic write |
 | `app/api/videos/[id]/dig/[sectionId]/stream/route.ts` | SSE orchestration of the four units; emits step progress | all above |
 | client wiring in `lib/html-doc/nav.ts` | State-aware `dig` control (not-dug / loading / dug / error) | existing `wireDigLinks`, `scrollToHashSection` |
@@ -50,16 +50,16 @@ This feature replaces the deep-dive doc with **on-demand, per-section elaboratio
 click "dig deeper ▶" on summary section (data-start = S)
   → section-window:  window = [S, nextStart ?? duration], transcriptWindow, summaryProse
   → generate:        Gemini(clip @ [S,E] via fileData+videoMetadata + window + prose)
-                       → markdown with [[TS:i]] and [[FRAME:sec|caption]]
+                       → markdown with [[TS:i]] and [[SLIDE:sec|caption]]
   → resolveTranscriptTokens (existing, lenient LIS)        → ▶ links
-  → frames:          if [[FRAME]] present → yt-dlp --download-sections "*Ss-Es"
+  → frames:          if [[SLIDE]] present → yt-dlp --download-sections "*Ss-Es"
                        + ffmpeg -ss (sec-S) → assets/<videoId>/<sec>.jpg → ![](…)
                      else → skip download entirely
   → companion-doc:   upsert section into <basename>-dig-deeper.md, re-render HTML
   → SSE 'done'       → client flips ⏳ to "view detail ↓"
 ```
 
-**Isolation property:** `frames.ts` is the only unit touching yt-dlp/ffmpeg, and it runs only when frame tokens exist — the fragile/slow path is fault-isolated and lazy.
+**Isolation property:** `slides.ts` is the only unit touching yt-dlp/ffmpeg, and it runs only when slide tokens exist — the fragile/slow path is fault-isolated and lazy.
 
 ---
 
@@ -81,6 +81,7 @@ windowForSection(section, allSections, segments, durationSeconds) → {
 
 - `sectionId = startSec` — one identifier threads the timeline, nav control, resolver, and companion-doc merge.
 - No artificial clip cap (most sections ≈5 min, under the cheap tier; capping risks cutting off a slide).
+- **Orphaning on re-summarize (accepted):** if a summary is ever re-generated, section start times can drift, so a stored `sectionId` may no longer match any current section. The drifted section reads as **undug** (re-diggable) and the old block is orphaned in the dig-deeper doc. Accepted for MVP because the project actively avoids summary re-gen (the 236-Gemini trap). A future reconcile pass (re-key by nearest `startSec` or title match) is out of scope.
 
 ### 3b. `generate.ts` — Gemini request
 
@@ -101,34 +102,34 @@ parts: [
 | Token | Meaning | Resolver |
 |---|---|---|
 | `[[TS:i]]` | `i` = index into **this window's** segments | existing `resolveTranscriptTokens` (lenient LIS), fed the **same** window array |
-| `[[FRAME:sec\|caption]]` | `sec` = **absolute** video-second of a fully-rendered slide; `caption` = alt text | new `frames.ts` |
+| `[[SLIDE:sec\|caption]]` | `sec` = **absolute** video-second of a fully-rendered slide; `caption` = alt text | new `slides.ts` |
 
-- `[[FRAME]]` carries **absolute** seconds (prompt states "this clip covers [S,E] — emit absolute timestamps"). `frames.ts` validates `sec ∈ [S,E]`, drops out-of-range tokens (lenient, mirrors the timestamp resolver).
-- **Cap: ≤3 frames/section**, prompt-enforced.
+- `[[SLIDE]]` carries **absolute** seconds (prompt states "this clip covers [S,E] — emit absolute timestamps"). `slides.ts` validates `sec ∈ [S,E]`, drops out-of-range tokens (lenient, mirrors the timestamp resolver).
+- **Cap: ≤3 slides/section**, prompt-enforced.
 
 **Correctness note:** `[[TS:i]]` is positional — the *same* windowed segment array must feed both `buildIndexedTranscriptBlock` (into the prompt) and `resolveTranscriptTokens` (on the output), or indices point at the wrong moments.
 
 ### 3d. `buildDigPrompt`
 
-Elaborate this **one** section in depth, grounded in transcript + video; **must cover at least what the summary section states**, then add depth (the "coverage ≥ summary" goal SP2 wanted, scoped to a section). Visual rule: when a slide/diagram conveys information the speech doesn't, emit `[[FRAME:sec|caption]]` at the relevant point, choosing the second the slide is fully rendered, ≤3 total. Cite key moments with `[[TS:i]]`. Match summary language (en/ko). Output markdown only, no preamble.
+Elaborate this **one** section in depth, grounded in transcript + video; **must cover at least what the summary section states**, then add depth (the "coverage ≥ summary" goal SP2 wanted, scoped to a section). Visual rule: when a slide/diagram conveys information the speech doesn't, emit `[[SLIDE:sec|caption]]` at the relevant point, choosing the second the slide is fully rendered, ≤3 total. Cite key moments with `[[TS:i]]`. Match summary language (en/ko). Output markdown only, no preamble.
 
 **Known limitation:** Gemini's chosen `sec` can land mid-transition (slide half-drawn). MVP extracts the single frame at `sec` + relies on the "fully rendered" instruction. Multi-candidate extraction (grab `sec`, `sec±1`, pick sharpest) is a noted phase-2 enhancement.
 
 ---
 
-## 4. Screenshot Extraction (`frames.ts`)
+## 4. Screenshot Extraction (`slides.ts`)
 
 ```
-resolveFrameTokens(markdown, { videoId, youtubeUrl, startSec S, endSec E }) → markdown
-  1. parse [[FRAME:sec|caption]] tokens
+resolveSlideTokens(markdown, { videoId, youtubeUrl, startSec S, endSec E }) → markdown
+  1. parse [[SLIDE:sec|caption]] tokens
   2. none?   → return markdown unchanged          (NO download — the ~80% case)
   3. some?   → yt-dlp --download-sections "*Ss-Es" -f 'bv[height<=720]' → tmp clip
   4. per token: validate sec ∈ [S,E] (drop if out of range);
                 ffmpeg -ss (sec - S) -i clip -frames:v 1 -q:v 2
                   → raw/assets/<videoId>/<sec>.jpg
                 rewrite token → ![caption](assets/<videoId>/<sec>.jpg)
-  5. any failure (gated download / ffmpeg error) → strip frame tokens,
-                log [dig-frame-miss], continue text-only
+  5. any failure (gated download / ffmpeg error) → strip slide tokens,
+                log [dig-slide-miss], continue text-only
   6. delete tmp clip
 ```
 
@@ -220,7 +221,7 @@ Non-blocking: multiple sections queue independently; each control tracks its own
 |---|---|
 | Empty transcript window (no segments in `[S,E]`) | Generate from summary prose + clip; no `[[TS:i]]` possible — still valid |
 | Gemini call fails (after existing retry wrapper) | SSE `error`; **no** companion-doc mutation; control → Error |
-| yt-dlp download gated/fails | Strip `[[FRAME]]` tokens, log `[dig-frame-miss]`, write companion doc **text-only** |
+| yt-dlp download gated/fails | Strip `[[SLIDE]]` tokens, log `[dig-slide-miss]`, write companion doc **text-only** |
 | ffmpeg fails for one frame | Drop that frame, keep others |
 | Concurrent digs, same companion doc | **Serialize** read-modify-write per file (in-process queue + atomic write) — prevents the two-writer race |
 | Path safety | Validate `videoId`/`sectionId`; assert asset + doc paths stay within the vault (reuse PR#13 containment guard) |
@@ -235,16 +236,16 @@ The companion doc **is** the cache. A dug section → control links to it (no re
 
 ## 9. Testing Strategy
 
-- **Unit (jest):** `section-window` (last-section→duration, empty window, boundaries); `frames` token parse/validate/rewrite with yt-dlp+ffmpeg mocked at the **exec boundary** (new mock boundary — add to the project mocking table); `companion-doc` upsert (idempotent, ordering, preserve-others, serialized writes); `generate` request shape with gemini mocked; `[[FRAME]]` out-of-range drop.
+- **Unit (jest):** `section-window` (last-section→duration, empty window, boundaries); `slides` token parse/validate/rewrite with yt-dlp+ffmpeg mocked at the **exec boundary** (new mock boundary — add to the project mocking table); `companion-doc` upsert (idempotent, ordering, preserve-others, serialized writes); `generate` request shape with gemini mocked; `[[SLIDE]]` out-of-range drop.
 - **Component (RTL):** the four control states.
-- **E2E (Playwright, mock at API route):** fixtures **must** cover a section *with* slides (frame tokens) and one *without* (text-only) per the null/non-null rule; assert **all** URL params (`outputFolder`, `type`, `sectionId`, `#t`); exercise loading→done→link and the error path.
+- **E2E (Playwright, mock at API route):** fixtures **must** cover a section *with* slides (slide tokens) and one *without* (text-only) per the null/non-null rule; assert **all** URL params (`outputFolder`, `type`, `sectionId`, `#t`); exercise loading→done→link and the error path.
 - **Behaviors adversarial review:** triggered (>8 behaviors + SSE state machine + multiple error paths) — to be run against the plan's Enumerated Behaviors table.
 
 ### New mocking boundary
 
 | Boundary | What is mocked |
 |---|---|
-| `lib/dig/frames.ts` exec (yt-dlp, ffmpeg) | Spawned process calls — no real downloads/extraction in unit tests |
+| `lib/dig/slides.ts` exec (yt-dlp, ffmpeg) | Spawned process calls — no real downloads/extraction in unit tests |
 
 ---
 
