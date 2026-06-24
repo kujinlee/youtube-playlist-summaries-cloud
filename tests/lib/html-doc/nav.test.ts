@@ -51,6 +51,17 @@ describe('wireDigLinks', () => {
     const u = new URL('http://h' + href);
     expect(u.searchParams.get('outputFolder')).toBe('/U/f'); // round-trips, no double-encode
   });
+
+  it('does NOT touch summary-side a.dig that lack data-type (no type=undefined injected)', () => {
+    document.body.innerHTML = '<a class="dig" data-section="135" data-t="135">dig deeper ▶</a>';
+    wireDigLinks(document, { href: 'http://h/api/html/vid9?outputFolder=%2FU%2Ff&type=summary' });
+    const el = document.querySelector('a.dig')!;
+    const href = el.getAttribute('href');
+    // href must remain unset (null) — wireDigLinks must leave summary-side controls alone
+    expect(href).toBeNull();
+    // Guard: the type=undefined corruption must not appear even if href were set
+    expect(href ?? '').not.toContain('type=undefined');
+  });
 });
 
 describe('scrollToHashSection', () => {

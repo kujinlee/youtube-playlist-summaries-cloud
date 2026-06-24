@@ -28,8 +28,11 @@ export function digControl(targetTypeOrStartSec: 'summary' | number, startSec?: 
 export function wireDigLinks(doc: Document, loc: { href: string }): void {
   doc.querySelectorAll('a.dig').forEach((a) => {
     const el = a as HTMLAnchorElement;
+    // Summary-side controls have data-section but NO data-type; their href is owned by
+    // the Task 13 POST state machine — leave them untouched to avoid injecting type=undefined.
+    if (!el.dataset.type) return;
     const u = new URL(loc.href);
-    u.searchParams.set('type', el.dataset.type as string);
+    u.searchParams.set('type', el.dataset.type);
     u.hash = 't=' + el.dataset.t;
     el.setAttribute('href', u.pathname + u.search + u.hash);
   });
@@ -56,6 +59,7 @@ export const NAV_CSS =
 export const NAV_SCRIPT = `<script>
 (function(){
   document.querySelectorAll('a.dig').forEach(function(a){
+    if(!a.dataset.type)return;
     var u=new URL(location.href);
     u.searchParams.set('type',a.dataset.type);
     u.hash='t='+a.dataset.t;
