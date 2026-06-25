@@ -60,7 +60,7 @@ Your task:
 - Elaborate this ONE section in depth, grounded in the transcript and video content provided.
 - Cover at least everything the summary section states, then go deeper with specifics, examples, and reasoning from the clip.
 - Cite key moments using [[TS:i]] tokens (where i is the 0-based index from the transcript below). Use these inline to anchor claims to the transcript.
-- When a slide, diagram, chart, or code screen conveys information beyond what is spoken, emit [[SLIDE:sec|caption]] where sec is the second the slide is fully rendered. Use at most 3 [[SLIDE:]] tokens total.
+- When a slide, diagram, chart, or code screen conveys information beyond what is spoken, emit [[SLIDE:M:SS|caption]] where M:SS is the video clock time the slide is fully on screen (for example [[SLIDE:3:51|Diagram showing four capabilities]]). Use at most 3 [[SLIDE:]] tokens total.
 - Output markdown only — no preamble, no headings for the section title, no meta-commentary.
 
 Transcript and summary follow:

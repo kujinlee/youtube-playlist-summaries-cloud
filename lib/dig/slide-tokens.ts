@@ -22,18 +22,51 @@ export interface SlideToken {
   caption: string;
 }
 
-/** Grammar: captures (sec-digits, optional caption-text). */
-const TOKEN_RE = /\[\[SLIDE:(\d+)(?:\|([^\]]*))?\]\]/g;
+/**
+ * Grammar: captures the time part (clock M:SS / H:MM:SS OR plain integer)
+ * and an optional caption.
+ *
+ * Time part pattern: `\d{1,2}:\d{2}(?::\d{2})?` matches M:SS, MM:SS,
+ * H:MM:SS, HH:MM:SS.  The `|\d+` alternative matches a plain integer.
+ */
+const TOKEN_RE =
+  /\[\[SLIDE:(\d{1,2}:\d{2}(?::\d{2})?|\d+)(?:\|([^\]]*))?\]\]/g;
+
+/**
+ * Convert a time string to integer absolute seconds.
+ *
+ * Accepts:
+ * - Plain integer string: `"231"` → 231
+ * - Clock M:SS or H:MM:SS: `"3:51"` → 231, `"1:02:05"` → 3725
+ *
+ * Returns NaN if the value is not parseable or is negative.
+ */
+function clockToSeconds(timeStr: string): number {
+  if (!timeStr.includes(':')) {
+    return parseInt(timeStr, 10);
+  }
+  const parts = timeStr.split(':').map((p) => parseInt(p, 10));
+  if (parts.some((p) => !Number.isFinite(p) || p < 0)) return NaN;
+  if (parts.length === 2) {
+    // M:SS
+    const [m, s] = parts;
+    return m * 60 + s;
+  }
+  // H:MM:SS
+  const [h, m, s] = parts;
+  return h * 3600 + m * 60 + s;
+}
 
 /**
  * Parse, validate, deduplicate, and cap SLIDE tokens found in `markdown`.
  *
  * Rules applied in order:
  * 1. Extract all tokens matching the grammar.
- * 2. Drop tokens whose `sec` is outside [startSec, endSec] (inclusive).
- * 3. Sanitize each caption via `sanitizeCaption`.
- * 4. Deduplicate by `sec` — first occurrence wins.
- * 5. Return at most 3 tokens (first 3 unique seconds, in document order).
+ * 2. Convert the time part to integer seconds via `clockToSeconds`.
+ * 3. Drop tokens whose resolved `sec` is NaN, negative, or outside [startSec, endSec].
+ * 4. Sanitize each caption via `sanitizeCaption`.
+ * 5. Deduplicate by `sec` — first occurrence wins.
+ * 6. Return at most 3 tokens (first 3 unique seconds, in document order).
  */
 export function parseSlideTokens(
   markdown: string,
@@ -50,8 +83,7 @@ export function parseSlideTokens(
     if (results.length >= 3) break;
 
     const raw = match[0];
-    const sec = parseInt(match[1], 10);
-    // parseInt on a \d+ group is always a non-negative integer, but guard anyway.
+    const sec = clockToSeconds(match[1]);
     if (!Number.isFinite(sec) || sec < 0) continue;
     if (sec < startSec || sec > endSec) continue;
     if (seenSecs.has(sec)) continue;

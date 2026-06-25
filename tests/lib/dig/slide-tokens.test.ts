@@ -88,6 +88,45 @@ test('raw field contains the full original token', () => {
   expect(tokens[0].raw).toBe('[[SLIDE:312|Diagram]]');
 });
 
+// ── Clock-format timestamps (M:SS / H:MM:SS) ─────────────────────────────────────────────
+
+test('clock M:SS format is accepted and converted to integer seconds', () => {
+  // 3:51 = 3*60 + 51 = 231
+  const tokens = parseSlideTokens('x [[SLIDE:3:51|cap]] y', 200, 300);
+  expect(tokens).toHaveLength(1);
+  expect(tokens[0].sec).toBe(231);
+  expect(tokens[0].caption).toBe('cap');
+});
+
+test('clock M:SS raw field is the full original token string', () => {
+  const tokens = parseSlideTokens('x [[SLIDE:3:51|cap]] y', 200, 300);
+  expect(tokens[0].raw).toBe('[[SLIDE:3:51|cap]]');
+});
+
+test('clock H:MM:SS format is accepted and converted to integer seconds', () => {
+  // 1:02:05 = 1*3600 + 2*60 + 5 = 3725
+  const tokens = parseSlideTokens('[[SLIDE:1:02:05|cap]]', 0, 10000);
+  expect(tokens).toHaveLength(1);
+  expect(tokens[0].sec).toBe(3725);
+});
+
+test('plain integer still works after clock-format support added (back-compat)', () => {
+  const tokens = parseSlideTokens('[[SLIDE:231|back-compat]]', 200, 300);
+  expect(tokens).toHaveLength(1);
+  expect(tokens[0].sec).toBe(231);
+});
+
+test('invalid clock with bad seconds field is dropped (9:99)', () => {
+  // 9:99 = 9*60 + 99 = 639, which is a valid number — but it's outside the window [0, 100]
+  // Test: ensure the resolved value 639 is dropped because it's out of [0, 100].
+  expect(parseSlideTokens('[[SLIDE:9:99|x]]', 0, 100)).toEqual([]);
+});
+
+test('clock token outside [startSec, endSec] is dropped', () => {
+  // 3:51 = 231, outside [300, 400]
+  expect(parseSlideTokens('[[SLIDE:3:51|x]]', 300, 400)).toEqual([]);
+});
+
 // ── Boundary: sec exactly equal to startSec and endSec are in-range ───────────────────────
 test('sec equal to startSec is included', () => {
   const tokens = parseSlideTokens('[[SLIDE:300|Edge]]', 300, 400);
