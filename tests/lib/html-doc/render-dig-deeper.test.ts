@@ -344,6 +344,129 @@ describe('renderDigDeeperHtml', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Behavior 8 (Issue #1): style parity — muted ▶ ts links and lead accent
+  // -------------------------------------------------------------------------
+  describe('Behavior 8 — style parity: muted ▶ ts link + lead accent per sentinel section', () => {
+    let tmpDir: string;
+    let assetsDir: string;
+    let mdPath: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      assetsDir = path.join(tmpDir, 'assets', 'v');
+      fs.mkdirSync(assetsDir, { recursive: true });
+      fs.writeFileSync(path.join(assetsDir, 'slide.jpg'), MINIMAL_JPEG);
+      mdPath = path.join(tmpDir, 'test-style.md');
+      const mdContent = [
+        '---',
+        'title: "Style Parity Test"',
+        '---',
+        '# Style Parity Test',
+        '',
+        '<!-- dig-section: 312 -->',
+        '## Introduction',
+        '',
+        '▶ [05:12–10:30](https://www.youtube.com/watch?v=abc&t=312s)',
+        '',
+        'This is the first sentence of the lead. And more prose follows here.',
+        '',
+        '- Bullet one',
+        '- Bullet two',
+        '',
+        '![slide](assets/v/slide.jpg)',
+        '<!-- /dig-section -->',
+        '',
+        '<!-- dig-section: 630 -->',
+        '## Second Section',
+        '',
+        '▶ [10:30–15:00](https://www.youtube.com/watch?v=abc&t=630s)',
+        '',
+        'Second section lead sentence. More text here.',
+        '<!-- /dig-section -->',
+      ].join('\n');
+      html = renderDigDeeperHtml(mdContent, mdPath);
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('section data-start uses sentinel sectionId (312), not ▶ url time', () => {
+      expect(html).toContain('<section data-start="312"');
+      expect(html).toContain('<section data-start="630"');
+    });
+
+    it('renders ▶ link with class="ts" and target="_blank"', () => {
+      expect(html).toContain('class="ts"');
+      expect(html).toContain('target="_blank"');
+    });
+
+    it('renders ▶ link with rel="noopener noreferrer"', () => {
+      expect(html).toContain('rel="noopener noreferrer"');
+    });
+
+    it('renders lead paragraph with class="lead" for first prose paragraph', () => {
+      expect(html).toContain('class="lead"');
+    });
+
+    it('renders lead-accent span around the first sentence', () => {
+      expect(html).toContain('class="lead-accent"');
+    });
+
+    it('inlines slide image as base64 (image inlining preserved under style-parity path)', () => {
+      expect(html).toContain('src="data:image/jpeg;base64,');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Behavior 9 (Issue #2): ↑ summary back-link per sentinel section
+  // -------------------------------------------------------------------------
+  describe('Behavior 9 — ↑ summary back-link per sentinel section', () => {
+    let tmpDir: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      const mdContent = [
+        '# Nav Test',
+        '',
+        '<!-- dig-section: 312 -->',
+        '## Introduction',
+        '',
+        'Body text for section 312.',
+        '<!-- /dig-section -->',
+        '',
+        '<!-- dig-section: 600 -->',
+        '## Advanced Topics',
+        '',
+        'Body text for section 600.',
+        '<!-- /dig-section -->',
+      ].join('\n');
+      html = renderDigDeeperHtml(mdContent, path.join(tmpDir, 'test-nav.md'));
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('contains a ↑ summary control with data-type="summary" for section 312', () => {
+      expect(html).toContain('data-type="summary"');
+      expect(html).toContain('data-t="312"');
+      expect(html).toContain('↑ summary');
+    });
+
+    it('contains a ↑ summary control with data-t="600" for second section', () => {
+      expect(html).toContain('data-t="600"');
+    });
+
+    it('back-link anchors have class="dig"', () => {
+      // digControl('summary', N) returns <a class="dig" data-type="summary" data-t="N">
+      expect(html).toContain('class="dig"');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Behavior 6: multiple images — present one inlined, missing one dropped
   // -------------------------------------------------------------------------
   describe('mixed present + missing assets in one doc', () => {

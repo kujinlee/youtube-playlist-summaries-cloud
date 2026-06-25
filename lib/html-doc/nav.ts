@@ -33,6 +33,8 @@ function viewDetailHref(videoId: string, outputFolder: string, startSec: number)
 function applyDugState(el: HTMLAnchorElement, videoId: string, outputFolder: string, startSec: number): void {
   el.textContent = 'view detail ↓';
   el.setAttribute('href', viewDetailHref(videoId, outputFolder, startSec));
+  el.setAttribute('target', '_blank');
+  el.setAttribute('rel', 'noopener noreferrer');
   el.dataset.state = 'dug';
   // Append a force re-dig button if not already present
   if (!el.nextElementSibling?.matches('[data-force-section]')) {
@@ -274,6 +276,8 @@ export const NAV_SCRIPT = `<script>
   function applyDug(el,sec){
     el.textContent='view detail ↓';
     el.setAttribute('href',viewHref(sec));
+    el.setAttribute('target','_blank');
+    el.setAttribute('rel','noopener noreferrer');
     el.dataset.state='dug';
     if(!el.nextElementSibling||!el.nextElementSibling.matches('[data-force-section]')){
       var btn=document.createElement('button');

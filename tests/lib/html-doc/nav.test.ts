@@ -401,6 +401,47 @@ describe('initDigControls — B7: double-click while loading → no second POST'
   });
 });
 
+// ── Issue #3: applyDugState sets target="_blank" + rel="noopener noreferrer" ─
+describe('initDigControls — Issue #3: view-detail link opens in new tab', () => {
+  beforeEach(() => {
+    lastES = null;
+    Object.defineProperty(window, 'EventSource', { writable: true, value: MockEventSource });
+  });
+
+  it('applyDugState (on load) sets target="_blank" on the view-detail anchor', async () => {
+    const doc = makeDoc('<a class="dig" data-section="100" data-t="100">dig deeper ▶</a>');
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ sectionIds: [100] }),
+    } as any);
+
+    await initDigControls(doc, LOC);
+
+    const ctrl = doc.querySelector('a.dig') as HTMLAnchorElement;
+    expect(ctrl.textContent).toContain('view detail');
+    expect(ctrl.getAttribute('target')).toBe('_blank');
+    expect(ctrl.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('applyDugState (after done event) sets target="_blank" on the view-detail anchor', async () => {
+    const doc = makeDoc('<a class="dig" data-section="100" data-t="100">dig deeper ▶</a>');
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ sectionIds: [] }) } as any)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ jobId: 'job-new-tab' }) } as any);
+
+    await initDigControls(doc, LOC);
+    const ctrl = doc.querySelector('a.dig') as HTMLAnchorElement;
+    ctrl.click();
+    await flushMicrotasks();
+
+    lastES!.emitMessage({ type: 'done' });
+
+    expect(ctrl.textContent).toContain('view detail');
+    expect(ctrl.getAttribute('target')).toBe('_blank');
+    expect(ctrl.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+});
+
 // ── Behavior 8: force re-dig on a dug control ────────────────────────────────
 describe('initDigControls — B8: force re-dig → POST with force:true', () => {
   beforeEach(() => {

@@ -7,7 +7,13 @@ import {
   BASE_PALETTE_LIGHT_PRE, BASE_PALETTE_LIGHT_POST, BASE_PALETTE_DARK_PRE, BASE_PALETTE_DARK_POST,
   type Palette,
 } from './theme';
-import { NAV_SCRIPT, NAV_CSS } from './nav';
+import { digControl, NAV_SCRIPT, NAV_CSS } from './nav';
+import {
+  extractTimestamp,
+  takeFirstParagraph,
+  splitFirstSentence,
+  tsAnchor,
+} from './render-deep-dive';
 
 const LIGHT: Palette = {
   ...BASE_PALETTE_LIGHT_PRE, ...BASE_PALETTE_LIGHT_POST, link: '#b07700', h3: '#5b463a', h4: '#6b5a4a',
@@ -27,6 +33,10 @@ html.theme-ready .dg{transition:background-color .2s,color .2s}
 .dg h1{font-family:Georgia,'Nanum Myeongjo','Apple SD Gothic Neo','Times New Roman',serif;font-size:2rem;line-height:1.2;margin:0 0 .15em;color:var(--ink)}
 .dg h2{font-family:Georgia,'Nanum Myeongjo',serif;font-size:1.5rem;margin:2.2em 0 .35em;padding-top:1.5em;border-top:1px solid var(--rule);color:var(--ink)}
 .dg h2:first-of-type{border-top:0;padding-top:0;margin-top:.4em}
+.dg .lead{font-size:1.02rem;line-height:1.55;color:var(--ink);font-weight:400;margin:.3em 0 .9em;max-width:92%}
+.dg .lead-accent{color:var(--gold);font-weight:400}
+.dg .ts{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.85rem;font-weight:400;text-decoration:none;white-space:nowrap}
+.dg .ts:hover{text-decoration:underline}
 .dg h3{font-size:1.15rem;margin:1.6em 0 .3em;color:var(--h3)}
 .dg h4{font-size:1.02rem;margin:1.2em 0 .3em;color:var(--h4)}
 .dg p{margin:.75em 0;color:var(--ink)}
@@ -135,11 +145,54 @@ export function renderDigDeeperHtml(mdContent: string, mdPath: string): string {
     if (match.index > lastIndex) {
       parts.push(renderer.render(body.slice(lastIndex, match.index)));
     }
-    // Render the sentinel block content wrapped in <section data-start="N">
+    // Render the sentinel block with deep-dive style treatment:
+    // - Extract ## heading line
+    // - Extract optional leading ▶ timestamp line → muted trailing link on <h2>
+    // - Extract first prose paragraph → lead accent (gold first sentence)
+    // - ↑ summary back-link (digControl) on the heading
+    // - data-start uses the sentinel sectionId (H-1: NOT the ▶ url time)
     const sectionId = match[1];
     const blockContent = match[2];
-    const blockHtml = renderer.render(blockContent);
-    parts.push(`<section data-start="${sectionId}">\n${blockHtml}</section>\n`);
+
+    const blockLines = blockContent.split('\n');
+    // Extract the ## heading (first non-blank line starting with ##)
+    const h2Idx = blockLines.findIndex((l) => /^##\s+/.test(l));
+    let heading = '';
+    let bodyLines: string[];
+    if (h2Idx !== -1) {
+      heading = blockLines[h2Idx].replace(/^##\s+/, '').trim();
+      bodyLines = blockLines.slice(h2Idx + 1);
+    } else {
+      bodyLines = blockLines;
+    }
+
+    // Extract optional leading ▶ timestamp line (mutates bodyLines)
+    const ts = extractTimestamp(bodyLines);
+    const tsHtml = tsAnchor(ts);
+
+    // Build ↑ summary back-link (Issue #2)
+    const backLink = digControl('summary', Number(sectionId));
+
+    // Render <h2> with muted ts link + back-link
+    const headingHtml = heading
+      ? `<h2>${renderer.renderInline(heading)}${tsHtml}${backLink}</h2>`
+      : '';
+
+    // Extract lead paragraph and render with gold first-sentence accent (Issue #1)
+    const { para, rest } = takeFirstParagraph(bodyLines);
+    let leadHtml = '';
+    if (para) {
+      const { first, rest: tail } = splitFirstSentence(para);
+      const firstHtml = renderer.renderInline(first);
+      const tailHtml = tail ? ` ${renderer.renderInline(tail)}` : '';
+      leadHtml = `<p class="lead"><span class="lead-accent">${firstHtml}</span>${tailHtml}</p>`;
+    }
+
+    // Render the rest via the image-aware renderer (preserves base64 inlining)
+    const restHtml = rest.trim() ? renderer.render(rest) : '';
+
+    const sectionInner = [headingHtml, leadHtml, restHtml].filter(Boolean).join('\n');
+    parts.push(`<section data-start="${sectionId}">\n${sectionInner}\n</section>\n`);
     lastIndex = match.index + match[0].length;
   }
 
