@@ -131,7 +131,53 @@ describe('Behavior 2: dug section matched by sectionId === startSec', () => {
 
     // sectionId 999 ≠ startSecs [0, 100]; title "Methods" matches section[1] via fallback
     expect(result.sections[1].dug).not.toBeNull();
+    expect(result.sections[1].dug?.bodyMarkdown).toBe('Body for Methods');
     expect(result.orphans).toHaveLength(0);
+  });
+});
+
+// ── Behavior 2b: duplicate sectionId → matched one attaches, duplicate → orphan ─
+
+describe('Behavior 2b: duplicate sectionId → first attaches, duplicate goes to orphans (never dropped)', () => {
+  it('sends the extra DugSection with duplicate sectionId to orphans[]', () => {
+    // One summary section with startSec=120; two DugSections both claim sectionId=120.
+    // The first one should attach to the section; the duplicate must appear in orphans[].
+    const titles = ['Intro', 'Methods', 'Results'];
+    const startSecs = [0, 120, 300];
+    const sections = titles.map((t, i) => makeSection(t, startSecs[i], String(i + 1)));
+    const summary = makeSummary(sections);
+    const envelope = makeEnvelope(titles, titles.map(() => makeModelSection()));
+
+    const dugFirst: DugSection = {
+      sectionId: 120,
+      startSec: 120,
+      title: 'Methods',
+      bodyMarkdown: 'First body for Methods',
+      generatedAt: '2024-01-01T00:00:00Z',
+    };
+    const dugDuplicate: DugSection = {
+      sectionId: 120,
+      startSec: 120,
+      title: 'Methods',
+      bodyMarkdown: 'Duplicate body for Methods',
+      generatedAt: '2024-01-02T00:00:00Z',
+    };
+    const dug = [dugFirst, dugDuplicate];
+
+    const result = mergeDigDoc(summary, envelope, dug);
+
+    // The matched one attaches to the summary section
+    expect(result.sections[1].dug).not.toBeNull();
+    expect(result.sections[1].dug?.bodyMarkdown).toBe('First body for Methods');
+
+    // The duplicate must appear in orphans[], never silently dropped
+    expect(result.orphans).toHaveLength(1);
+    expect(result.orphans[0].sectionId).toBe(120);
+    expect(result.orphans[0].bodyMarkdown).toBe('Duplicate body for Methods');
+
+    // Unrelated sections unaffected
+    expect(result.sections[0].dug).toBeNull();
+    expect(result.sections[2].dug).toBeNull();
   });
 });
 

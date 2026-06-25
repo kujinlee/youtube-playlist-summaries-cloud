@@ -63,11 +63,17 @@ export function mergeDigDoc(
   const consumedIds = new Set<number>();
 
   // ── Step 1: sectionId match ───────────────────────────────────────────────
-  // Build a lookup from sectionId → DugSection for O(1) step-1 lookups.
+  // Build a lookup from sectionId → first DugSection for O(1) step-1 lookups.
+  // If a sectionId appears more than once, only the first entry is eligible for
+  // step-1 matching; all extras go directly to preOrphans so they are never dropped.
   const dugBySectionId = new Map<number, DugSection>();
+  const preOrphans: DugSection[] = [];
   for (const d of dug) {
-    // If there are duplicate sectionIds, last write wins (shouldn't happen in practice).
-    dugBySectionId.set(d.sectionId, d);
+    if (dugBySectionId.has(d.sectionId)) {
+      preOrphans.push(d);
+    } else {
+      dugBySectionId.set(d.sectionId, d);
+    }
   }
 
   // For step 2: build a lookup from title → first unconsumed DugSection.
@@ -145,13 +151,25 @@ export function mergeDigDoc(
 
   // ── Orphans ───────────────────────────────────────────────────────────────
   // Any dug section not consumed by either step becomes an orphan.
-  const orphans = dug
+  // preOrphans are duplicate-sectionId extras that were never put in the map;
+  // they are unconsumed by definition and must also appear here.
+  const postOrphans = dug
     .filter((d) => !consumedIds.has(d.sectionId))
     .map((d) => ({
       sectionId: d.sectionId,
       title: d.title,
       bodyMarkdown: d.bodyMarkdown,
     }));
+
+  const preOrphansMapped = preOrphans.map((d) => ({
+    sectionId: d.sectionId,
+    title: d.title,
+    bodyMarkdown: d.bodyMarkdown,
+  }));
+
+  // Preserve deterministic order: pre-orphans (extras from step-1 build) come last,
+  // after the unmatched entries that went through the normal matching pipeline.
+  const orphans = [...postOrphans, ...preOrphansMapped];
 
   return { sections, orphans };
 }
