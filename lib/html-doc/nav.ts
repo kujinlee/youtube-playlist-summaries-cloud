@@ -302,6 +302,103 @@ export const NAV_SCRIPT = `<script>
           })
           .catch(function(){_applyDigErr(trigger);});
       }
+      // ── Promise-based dig for expand-all serialized loop ─────────────────
+      function _startDocDigAsync(trigger){
+        return new Promise(function(resolve,reject){
+          var startSec=+trigger.dataset.section;
+          trigger.textContent='\\u23f3';trigger.dataset.state='loading';trigger.removeAttribute('href');
+          fetch('/api/videos/'+videoId+'/dig/'+startSec,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({outputFolder:outputFolder})})
+            .then(function(r){if(!r.ok)throw new Error('POST '+r.status);return r.json();})
+            .then(function(d){
+              var es=new EventSource('/api/videos/'+videoId+'/dig/'+startSec+'/stream?jobId='+encodeURIComponent(d.jobId));
+              es.onmessage=function(ev){
+                try{var msg=JSON.parse(ev.data);
+                  if(msg.type==='done'){
+                    es.close();
+                    fetch(location.href)
+                      .then(function(res){return res.text();})
+                      .then(function(html){
+                        var dp=new DOMParser();
+                        var fd=dp.parseFromString(html,'text/html');
+                        var fresh=fd.querySelector('[data-start="'+startSec+'"]');
+                        var cur=document.querySelector('[data-start="'+startSec+'"]');
+                        if(fresh&&cur&&cur.parentNode){cur.parentNode.replaceChild(document.adoptNode(fresh),cur);}
+                        resolve();
+                      })
+                      .catch(function(err){_applyDigErr(trigger);reject(err);});
+                  }else if(msg.type==='error'){es.close();_applyDigErr(trigger);reject(new Error('stream error'));}
+                }catch(e){}
+              };
+              es.onerror=function(){es.close();_applyDigErr(trigger);reject(new Error('SSE error'));};
+            })
+            .catch(function(err){_applyDigErr(trigger);reject(err);});
+        });
+      }
+      // ── ⤢ expand all — confirm → serialized loop ──────────────────────────
+      var _eaBtn=_dg.querySelector('.dg-expand-all');
+      if(_eaBtn){
+        var _eaDlg=document.getElementById('_dg-ea-dlg');
+        var _eaProg=document.getElementById('_dg-ea-prog');
+        var _eaMsg=document.getElementById('_dg-ea-msg');
+        var _eaProgMsg=document.getElementById('_dg-ea-prog-msg');
+        var _eaFailMsg=document.getElementById('_dg-ea-fail-msg');
+        var _eaCancelProg=document.getElementById('_dg-ea-cancel-prog');
+        function _eaClose(el){el.removeAttribute('data-open');}
+        function _eaOpen(el){el.setAttribute('data-open','');}
+        function _eaRunBatch(triggers,N){
+          _eaOpen(_eaProg);
+          var cancelled=false;
+          var failures=[];
+          var k=0;
+          _eaCancelProg.onclick=function(){cancelled=true;};
+          function _next(){
+            // Collect still-un-dug triggers (may have changed if DOM was swapped).
+            // Exclude error-state triggers — they already failed in this batch run.
+            var remaining=[].slice.call(document.querySelectorAll('.dig-trigger[data-section]'))
+              .filter(function(t){return t.dataset.state!=='error'&&t.dataset.state!=='loading';});
+            if(cancelled||remaining.length===0){
+              if(failures.length>0){
+                // Show failure summary in the progress overlay then auto-close.
+                _eaProgMsg.textContent='Done with '+failures.length+' failure(s).';
+                _eaFailMsg.textContent='Failed sections: '+failures.join(', ');
+                _eaFailMsg.style.display='';
+                setTimeout(function(){_eaClose(_eaProg);_eaFailMsg.style.display='none';},6000);
+              }else{
+                _eaClose(_eaProg);
+              }
+              return;
+            }
+            k++;
+            _eaProgMsg.textContent='section '+k+' of '+N+'\\u2026';
+            var trig=remaining[0];
+            _startDocDigAsync(trig)
+              .then(function(){_next();})
+              .catch(function(){failures.push(trig.dataset.section);_next();});
+          }
+          _next();
+        }
+        _eaBtn.addEventListener('click',function(){
+          var triggers=[].slice.call(document.querySelectorAll('.dig-trigger[data-section]'));
+          var N=triggers.length;
+          if(N===0)return;
+          var X=(N*0.05).toFixed(2);
+          var Y=Math.ceil(N*30/60);
+          _eaMsg.textContent='Expand '+N+' remaining sections? ~$'+X+', ~'+Y+' min (rough estimate)';
+          _eaOpen(_eaDlg);
+          var _escHandler=function(e){if(e.key==='Escape'){_eaClose(_eaDlg);document.removeEventListener('keydown',_escHandler);}};
+          document.addEventListener('keydown',_escHandler);
+          _eaDlg.onclick=function(e){if(e.target===_eaDlg){_eaClose(_eaDlg);document.removeEventListener('keydown',_escHandler);}};
+          document.getElementById('_dg-ea-confirm').onclick=function(){
+            document.removeEventListener('keydown',_escHandler);
+            _eaClose(_eaDlg);
+            _eaRunBatch(triggers,N);
+          };
+          document.getElementById('_dg-ea-cancel-dlg').onclick=function(){
+            _eaClose(_eaDlg);
+            document.removeEventListener('keydown',_escHandler);
+          };
+        });
+      }
       _dg.addEventListener('click',function(e){
         // Toggle (dug → show gist or dug) — zero fetch
         var tog=(e.target.closest?e.target.closest('.dig-toggle'):null);

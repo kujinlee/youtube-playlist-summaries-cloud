@@ -130,6 +130,13 @@ section[data-dug="true"].show-gist .dug{display:none}
 .dg-expand-all{background:none;border:1px solid var(--rule);border-radius:4px;padding:.2em .6em;cursor:pointer;font-size:.85rem;color:var(--meta)}
 .dg-orphans{margin-top:3em;padding-top:1.5em;border-top:2px dashed var(--rule)}
 .dg-orphan-note{font-size:.82rem;color:var(--meta);font-style:italic}
+#_dg-ea-dlg,#_dg-ea-prog{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center}
+#_dg-ea-dlg[data-open],#_dg-ea-prog[data-open]{display:flex}
+._dg-box{background:var(--card,#fff);border-radius:8px;padding:1.6em 2em;max-width:28rem;width:90%;box-shadow:0 4px 24px rgba(0,0,0,.18);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+._dg-box p{margin:.4em 0 1.2em;font-size:.95rem;color:var(--ink)}
+._dg-box button{padding:.3em .9em;border-radius:4px;font-size:.88rem;cursor:pointer;border:1px solid var(--rule)}
+#_dg-ea-confirm{background:var(--link,#b07700);color:#fff;border-color:transparent;margin-right:.6em}
+#_dg-ea-cancel-dlg,#_dg-ea-cancel-prog{background:none;color:var(--meta)}
 `;
 
 /**
@@ -223,6 +230,23 @@ export function renderDigDeeperDoc(args: {
 
   const bodyHtml = `${topBar}\n${sectionsHtml}${orphansHtml}`;
 
+  // ── Expand-all dialog + progress overlay (Task 12) ───────────────────────
+  const expandAllDialogs = `
+<div id="_dg-ea-dlg" role="dialog" aria-modal="true" aria-labelledby="_dg-ea-msg">
+  <div class="_dg-box">
+    <p id="_dg-ea-msg"></p>
+    <button id="_dg-ea-confirm">Confirm</button>
+    <button id="_dg-ea-cancel-dlg">Cancel</button>
+  </div>
+</div>
+<div id="_dg-ea-prog" role="status">
+  <div class="_dg-box">
+    <p id="_dg-ea-prog-msg">Starting…</p>
+    <p id="_dg-ea-fail-msg" style="color:#c00;display:none"></p>
+    <button id="_dg-ea-cancel-prog">Cancel</button>
+  </div>
+</div>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -239,6 +263,7 @@ ${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
 <article class="dg">
 ${bodyHtml}
 </article>
+${expandAllDialogs}
 ${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}
 </body>
 </html>`;

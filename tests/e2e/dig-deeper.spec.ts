@@ -1048,3 +1048,442 @@ test('D4 (bfcache pageshow): navigate away and back → pageshow re-fetches dig-
   // pageshow listener should re-fetch dig-state
   expect(digStateFetchCount).toBeGreaterThan(fetchesAfterFirstLoad);
 });
+
+// ===========================================================================
+// EXPAND-ALL (Task 12)
+// Tests for the ⤢ expand all button: confirm dialog, serialized batch,
+// cancel mid-batch, failure handling.
+// ===========================================================================
+
+const VIDEO_ID_EA = 'vid-expand-all';
+// Three sections, all with distinct startSecs so routes don't clash.
+const SEC_EA_1 = 100;
+const SEC_EA_2 = 200;
+const SEC_EA_3 = 300;
+
+/**
+ * Render a dig-doc page with N un-dug sections (all have startSec → dig-trigger rendered).
+ * Optionally the first `dugCount` sections are pre-dug.
+ */
+function makeExpandAllHtml(dugCount = 0): string {
+  const allSecs = [SEC_EA_1, SEC_EA_2, SEC_EA_3];
+  const summary: ParsedSummary = {
+    title: 'Expand All Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_EA,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_EA}.md`,
+    sections: allSecs.map((sec, i) => ({
+      numeral: String(i + 1),
+      title: `Section ${i + 1}`,
+      prose: `Prose ${i + 1}`,
+      timeRange: { startSec: sec, endSec: sec + 60, label: `${i + 1}:00–${i + 2}:00`, url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA}&t=${sec}s` },
+    })),
+  };
+  const dug: DugSection[] = allSecs.slice(0, dugCount).map((sec, i) => ({
+    sectionId: sec,
+    startSec: sec,
+    title: `Section ${i + 1}`,
+    bodyMarkdown: `## Section ${i + 1}\n\nDug content.\n`,
+    generatedAt: '2026-01-01T00:00:00.000Z',
+  }));
+  return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/expand-all-dig.md', videoId: VIDEO_ID_EA });
+}
+
+/** Render the dug version of the page (all 3 sections dug). */
+function makeExpandAllHtmlAllDug(): string {
+  return makeExpandAllHtml(3);
+}
+
+/** Render a version with only sec1 dug. */
+function makeExpandAllHtmlSec1Dug(): string {
+  return makeExpandAllHtml(1);
+}
+
+/** Render a version with sec1+sec2 dug. */
+function makeExpandAllHtmlSec1Sec2Dug(): string {
+  return makeExpandAllHtml(2);
+}
+
+/**
+ * Wire routes for expand-all tests.
+ * - GET /api/html/<id>?type=dig-deeper returns the current HTML (stateful via htmlFn).
+ * - Per-section POST + SSE + reGET controlled by `sectionOpts`.
+ */
+async function stubExpandAllRoutes(
+  page: import('@playwright/test').Page,
+  opts: {
+    /** Stateful fn — called each time the HTML route is hit. */
+    htmlFn?: () => string;
+    /** Per-section POST status (default 200). Map of startSec → status. */
+    postStatus?: Record<number, number>;
+    /** Per-section POST spy. */
+    postSpy?: (sec: number) => void;
+    /** Optional delay (ms) on the HTML re-GET after SSE done, to allow cancel timing. */
+    reGetDelayMs?: number;
+  } = {},
+) {
+  const { htmlFn = makeExpandAllHtml, postStatus = {}, postSpy, reGetDelayMs = 0 } = opts;
+
+  // Dig-doc HTML route — serves current HTML (stateful)
+  await page.route(`**/api/html/${VIDEO_ID_EA}**`, (route) => {
+    const body = htmlFn();
+    if (reGetDelayMs > 0) {
+      setTimeout(() => {
+        route.fulfill({
+          status: 200,
+          headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          body,
+        });
+      }, reGetDelayMs);
+    } else {
+      route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+        body,
+      });
+    }
+  });
+
+  // Per-section POST + SSE for each of the 3 sections
+  for (const sec of [SEC_EA_1, SEC_EA_2, SEC_EA_3]) {
+    const status = postStatus[sec] ?? 200;
+    // POST route
+    await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${sec}`, (route) => {
+      if (route.request().method() !== 'POST') { route.continue(); return; }
+      postSpy?.(sec);
+      route.fulfill({
+        status,
+        contentType: 'application/json',
+        body: status === 200
+          ? JSON.stringify({ jobId: `ea-job-${sec}` })
+          : JSON.stringify({ error: 'server error' }),
+      });
+    });
+    // SSE stream
+    await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${sec}/stream**`, (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        body: sseBody({ type: 'done' }),
+      }),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// E1: clicking ⤢ expand all shows a confirm dialog with count, ~$ and ~min text
+// ---------------------------------------------------------------------------
+
+test('E1 (expand-all dialog): shows count, ~$ cost, ~min estimate', async ({ page }) => {
+  // Page with 3 un-dug sections → N=3, X="0.15", Y=2
+  const undugHtml = makeExpandAllHtml(0);
+  await page.route(`**/api/html/${VIDEO_ID_EA}**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: undugHtml }),
+  );
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_EA}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+
+  // Click the expand-all button
+  const expandBtn = page.locator('.dg-expand-all');
+  await expect(expandBtn).toBeVisible();
+  await expandBtn.click();
+
+  // Dialog should appear
+  const dialog = page.locator('#_dg-ea-dlg[data-open]');
+  await expect(dialog).toBeVisible({ timeout: 3000 });
+
+  // Message must contain: count, ~$, ~min
+  const msg = page.locator('#_dg-ea-msg');
+  const msgText = await msg.textContent();
+  expect(msgText).toContain('Expand 3 remaining sections?');
+  expect(msgText).toContain('~$0.15');
+  expect(msgText).toContain('~2 min');
+  expect(msgText).toContain('rough estimate');
+});
+
+// ---------------------------------------------------------------------------
+// E2: confirm → all un-dug sections become dug (progress shown, auto-close)
+// ---------------------------------------------------------------------------
+
+test('E2 (expand-all confirm): all un-dug sections become dug; progress shown; auto-close', async ({ page }) => {
+  // Stateful HTML: tracks how many sections have been dug
+  let dugCount = 0;
+  const htmlFn = () => makeExpandAllHtml(dugCount);
+
+  // After each section's re-GET we advance dugCount so the HTML reflects the new state.
+  // We use a separate POST spy to increment dugCount when each section POST fires.
+  const postsSeen: number[] = [];
+
+  // Wire HTML route (stateful)
+  await page.route(`**/api/html/${VIDEO_ID_EA}**`, (route) => {
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: htmlFn(),
+    });
+  });
+
+  for (const sec of [SEC_EA_1, SEC_EA_2, SEC_EA_3]) {
+    await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${sec}`, (route) => {
+      if (route.request().method() !== 'POST') { route.continue(); return; }
+      postsSeen.push(sec);
+      dugCount++;  // advance so re-GET returns updated HTML
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: `ea-job-${sec}` }) });
+    });
+    await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${sec}/stream**`, (route) =>
+      route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }, body: sseBody({ type: 'done' }) }),
+    );
+  }
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_EA}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+
+  // 3 dig-triggers should be visible initially
+  await expect(page.locator('.dig-trigger[data-section]')).toHaveCount(3);
+
+  // Click expand-all
+  await page.locator('.dg-expand-all').click();
+  const dialog = page.locator('#_dg-ea-dlg[data-open]');
+  await expect(dialog).toBeVisible({ timeout: 3000 });
+
+  // Confirm
+  await page.locator('#_dg-ea-confirm').click();
+
+  // Progress overlay should be visible
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toBeVisible({ timeout: 3000 });
+
+  // Progress text should contain "section N of 3…"
+  await expect(page.locator('#_dg-ea-prog-msg')).toContainText('of 3', { timeout: 5000 });
+
+  // Wait for all sections to be processed (progress overlay auto-closes)
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toHaveCount(0, { timeout: 15000 });
+
+  // All 3 sections should now be dug (no dig-triggers remain)
+  await expect(page.locator('.dig-trigger[data-section]')).toHaveCount(0, { timeout: 5000 });
+
+  // All 3 POSTs were fired
+  expect(postsSeen).toHaveLength(3);
+});
+
+// ---------------------------------------------------------------------------
+// E3: cancel dialog → no generation (0 POSTs)
+// ---------------------------------------------------------------------------
+
+test('E3 (expand-all cancel dialog): cancel → no POST fired', async ({ page }) => {
+  const undugHtml = makeExpandAllHtml(0);
+  await page.route(`**/api/html/${VIDEO_ID_EA}**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: undugHtml }),
+  );
+
+  const postsSeen: number[] = [];
+  for (const sec of [SEC_EA_1, SEC_EA_2, SEC_EA_3]) {
+    await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${sec}`, (route) => {
+      if (route.request().method() !== 'POST') { route.continue(); return; }
+      postsSeen.push(sec);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: `ea-job-${sec}` }) });
+    });
+  }
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_EA}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+
+  // Click expand-all
+  await page.locator('.dg-expand-all').click();
+  await expect(page.locator('#_dg-ea-dlg[data-open]')).toBeVisible({ timeout: 3000 });
+
+  // Cancel the dialog
+  await page.locator('#_dg-ea-cancel-dlg').click();
+
+  // Dialog should close
+  await expect(page.locator('#_dg-ea-dlg[data-open]')).toHaveCount(0, { timeout: 3000 });
+
+  // No progress overlay
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toHaveCount(0);
+
+  // Wait to confirm no POST fires
+  await page.waitForTimeout(500);
+  expect(postsSeen).toHaveLength(0);
+
+  // All sections still un-dug
+  await expect(page.locator('.dig-trigger[data-section]')).toHaveCount(3);
+});
+
+// ---------------------------------------------------------------------------
+// E4: cancel mid-batch → stops after current section; prior sections stay dug
+// ---------------------------------------------------------------------------
+
+test('E4 (expand-all cancel mid-batch): cancel stops after current; prior sections dug', async ({ page }) => {
+  // Strategy: make sec1's re-GET delayed so we can click cancel during that window.
+  // sec1 POST → SSE done → re-GET (delayed 200ms) → sec1 dug → cancel clicked → sec2/sec3 not started.
+  let dugCount = 0;
+
+  // HTML route with delay on re-GET (to give cancel a chance after sec1 SSE completes)
+  await page.route(`**/api/html/${VIDEO_ID_EA}**`, (route) => {
+    const body = makeExpandAllHtml(dugCount);
+    // Use a timeout so the cancel click can arrive between sec1 completing and sec2 starting.
+    setTimeout(() => {
+      route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body });
+    }, 80);
+  });
+
+  const postsSeen: number[] = [];
+
+  // sec1: POST succeeds (increments dugCount so re-GET returns sec1-dug HTML)
+  await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${SEC_EA_1}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    postsSeen.push(SEC_EA_1);
+    dugCount = 1;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: 'ea-job-sec1' }) });
+  });
+  await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${SEC_EA_1}/stream**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }, body: sseBody({ type: 'done' }) }),
+  );
+
+  // sec2/sec3: track POSTs (should NOT fire after cancel)
+  for (const sec of [SEC_EA_2, SEC_EA_3]) {
+    await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${sec}`, (route) => {
+      if (route.request().method() !== 'POST') { route.continue(); return; }
+      postsSeen.push(sec);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: `ea-job-${sec}` }) });
+    });
+    await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${sec}/stream**`, (route) =>
+      route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }, body: sseBody({ type: 'done' }) }),
+    );
+  }
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_EA}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+  await expect(page.locator('.dig-trigger[data-section]')).toHaveCount(3);
+
+  // Click expand-all → confirm
+  await page.locator('.dg-expand-all').click();
+  await expect(page.locator('#_dg-ea-dlg[data-open]')).toBeVisible({ timeout: 3000 });
+  await page.locator('#_dg-ea-confirm').click();
+
+  // Progress overlay visible
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toBeVisible({ timeout: 3000 });
+
+  // Wait for sec1 POST to fire (sec1 is in progress)
+  await page.waitForFunction(() => {
+    const msg = document.getElementById('_dg-ea-prog-msg');
+    return msg && msg.textContent && msg.textContent.includes('section 1');
+  }, { timeout: 5000 });
+
+  // Click cancel during sec1's re-GET delay window
+  await page.locator('#_dg-ea-cancel-prog').click();
+
+  // Wait for progress overlay to close (cancel takes effect after current section)
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toHaveCount(0, { timeout: 10000 });
+
+  // sec1 POST fired
+  expect(postsSeen).toContain(SEC_EA_1);
+
+  // sec2 and sec3 POSTs should NOT have fired
+  expect(postsSeen).not.toContain(SEC_EA_2);
+  expect(postsSeen).not.toContain(SEC_EA_3);
+
+  // sec1 is now dug (DOM reflects the re-GET result)
+  await expect(page.locator(`section[data-start="${SEC_EA_1}"][data-dug="true"]`)).toBeVisible({ timeout: 5000 });
+});
+
+// ---------------------------------------------------------------------------
+// E5: one section POST returns 500 → batch continues, failure reported at end
+// ---------------------------------------------------------------------------
+
+test('E5 (expand-all failure): POST 500 for one section → batch continues; failure reported', async ({ page }) => {
+  // sec1 succeeds; sec2 returns 500 (failure); sec3 succeeds.
+  // Expected: sec1 dug, sec3 dug, failure message shown mentioning sec2's startSec (200).
+  const dugSecs = new Set<number>();
+  const postsSeen: number[] = [];
+
+  function buildHtml(): string {
+    const dugArray: DugSection[] = Array.from(dugSecs).map((sec) => ({
+      sectionId: sec,
+      startSec: sec,
+      title: `Section ${[SEC_EA_1, SEC_EA_2, SEC_EA_3].indexOf(sec) + 1}`,
+      bodyMarkdown: `## Section\n\nDug content.\n`,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+    }));
+    const summary: ParsedSummary = {
+      title: 'Expand All Test',
+      channel: null, duration: null,
+      url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA}`,
+      lang: 'EN', videoId: VIDEO_ID_EA, tldr: null, takeaways: [],
+      sourceMd: `${VIDEO_ID_EA}.md`,
+      sections: [SEC_EA_1, SEC_EA_2, SEC_EA_3].map((sec, i) => ({
+        numeral: String(i + 1), title: `Section ${i + 1}`, prose: `Prose`,
+        timeRange: { startSec: sec, endSec: sec + 60, label: `${i + 1}:00`, url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA}&t=${sec}s` },
+      })),
+    };
+    return renderDigDeeperDoc({ summary, envelope: null, dug: dugArray, mdPath: '/tmp/ea-e5.md', videoId: VIDEO_ID_EA });
+  }
+
+  // Stateful HTML route — single handler using `dugSecs` set
+  await page.route(`**/api/html/${VIDEO_ID_EA}**`, (route) => {
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: buildHtml() });
+  });
+
+  // sec1: POST succeeds
+  await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${SEC_EA_1}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    postsSeen.push(SEC_EA_1);
+    dugSecs.add(SEC_EA_1);
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: 'ea-job-sec1' }) });
+  });
+  await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${SEC_EA_1}/stream**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }, body: sseBody({ type: 'done' }) }),
+  );
+
+  // sec2: POST returns 500 (failure — no stream needed)
+  await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${SEC_EA_2}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    postsSeen.push(SEC_EA_2);
+    route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'server error' }) });
+  });
+
+  // sec3: POST succeeds
+  await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${SEC_EA_3}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    postsSeen.push(SEC_EA_3);
+    dugSecs.add(SEC_EA_3);
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ jobId: 'ea-job-sec3' }) });
+  });
+  await page.route(`**/api/videos/${VIDEO_ID_EA}/dig/${SEC_EA_3}/stream**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }, body: sseBody({ type: 'done' }) }),
+  );
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_EA}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+  await expect(page.locator('.dig-trigger[data-section]')).toHaveCount(3);
+
+  // Click expand-all → confirm
+  await page.locator('.dg-expand-all').click();
+  await expect(page.locator('#_dg-ea-dlg[data-open]')).toBeVisible({ timeout: 3000 });
+  await page.locator('#_dg-ea-confirm').click();
+
+  // Wait for progress overlay to show failure message (overlay stays open during failure display)
+  // The failure message becomes visible before the overlay auto-closes.
+  const failMsg = page.locator('#_dg-ea-fail-msg');
+  await expect(failMsg).toBeVisible({ timeout: 15000 });
+  const failText = await failMsg.textContent();
+  expect(failText).toContain(String(SEC_EA_2));  // sec2's startSec (200) in the failed-sections list
+
+  // Wait for progress overlay to eventually auto-close (6s timeout)
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toHaveCount(0, { timeout: 12000 });
+
+  // All 3 POSTs were attempted (sec1 + sec2 (failed) + sec3)
+  expect(postsSeen).toContain(SEC_EA_1);
+  expect(postsSeen).toContain(SEC_EA_2);
+  expect(postsSeen).toContain(SEC_EA_3);
+
+  // sec1 is dug (DOM swap happened)
+  await expect(page.locator(`section[data-start="${SEC_EA_1}"][data-dug="true"]`)).toBeVisible();
+  // sec3 is dug
+  await expect(page.locator(`section[data-start="${SEC_EA_3}"][data-dug="true"]`)).toBeVisible();
+});
