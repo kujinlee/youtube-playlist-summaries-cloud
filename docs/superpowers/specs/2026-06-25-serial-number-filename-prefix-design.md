@@ -1,7 +1,7 @@
 # Design — Serial-Number Filename Prefix
 
 **Date:** 2026-06-25
-**Status:** Adversarial-reviewed (Claude fallback; F1/F2 HIGH + F3/F4/F6/F7/F8 addressed — see `docs/reviews/spec-serial-number-filename-prefix-review.md`) — pending user spec-review → implementation plan
+**Status:** APPROVED (user sign-off 2026-06-25; 3 open decisions confirmed: meta-rewrite provenance, document max+1 race, fixed 3-digit pad; +`^\d+_` strip-safety clarified). Adversarial-reviewed (Claude fallback; F1/F2 HIGH + F3/F4/F6/F7/F8 addressed — see `docs/reviews/spec-serial-number-filename-prefix-review.md`). → proceeding to implementation plan.
 **Related:** [`2026-06-23-playlist-index-current-position-design.md`](2026-06-23-playlist-index-current-position-design.md) (the `playlistIndex` change this spec deliberately does NOT reuse)
 
 ---
@@ -119,7 +119,10 @@ Order target videos (those with output files, lacking a `serialNumber`) per §5.
 Why first: once `serialNumber` is committed, every target filename in Phase B is a **pure, deterministic function** of the committed serial + current slug-base. A crash + resume recomputes the **identical** names — assignment can never diverge (which was the F1 data-loss path). Phase A is idempotent: videos that already have a `serialNumber` are skipped.
 
 ### Phase B — rename files + fix references (per-video, idempotent)
-For each video with a `serialNumber`, derive the base from its **current index path-field** (stripping any existing leading `NNN_` to avoid double-prefix), then for every artifact that exists:
+For each video with a `serialNumber`, derive the base from its **current index path-field** (stripping any existing leading serial prefix matching `^\d+_` to avoid double-prefix), then for every artifact that exists:
+
+> **Strip-pattern safety:** the prefix delimiter is an **underscore** (`^\d+_`), and `slugify` (`lib/slugify.ts`) emits only lowercase alphanumerics and **hyphens** — never underscores. So a legitimate slug that begins with digits (e.g. `2024-ai-predictions`) can never be mistaken for a serial prefix; the `^\d+_` strip is unambiguous and cannot eat slug content.
+
 
 1. **Compute** target = `<dir>/<NNN>_<base><suffix><ext>`.
 2. **Rename guard (F2):** rename **only if** `exists(src) && !exists(dst)`. If `dst` already exists and is the intended file (basename matches the committed serial), treat as already-done and skip. If `dst` exists with a *different* origin, **abort this video** with a logged conflict — never clobber (mirrors `migrateToSlugFilenames:222`).
