@@ -86,7 +86,7 @@ describe('renderDigDeeperHtml', () => {
       expect(html).not.toMatch(/src="assets\//);
     });
 
-    it('does NOT emit any <img> for the missing asset (drop, not alt placeholder)', () => {
+    it('does NOT emit any <img> for the missing asset (span placeholder, not img)', () => {
       expect(html).not.toContain('<img');
     });
 
@@ -466,6 +466,181 @@ describe('renderDigDeeperHtml', () => {
     it('back-link anchors have class="dig"', () => {
       // digControl('summary', N) returns <a class="dig" data-type="summary" data-t="N">
       expect(html).toContain('class="dig"');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 7 — Behavior T7-1: present asset → base64 img (explicit)
+  // -------------------------------------------------------------------------
+  describe('T7-1 — present asset → base64 <img>', () => {
+    let tmpDir: string;
+    let assetsDir: string;
+    let mdPath: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      assetsDir = path.join(tmpDir, 'assets', 'v');
+      fs.mkdirSync(assetsDir, { recursive: true });
+      fs.writeFileSync(path.join(assetsDir, 'frame.jpg'), MINIMAL_JPEG);
+      mdPath = path.join(tmpDir, 't7-present.md');
+      html = renderDigDeeperHtml('# T7\n\n![A slide caption](assets/v/frame.jpg)\n', mdPath);
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('emits <img src="data:image/jpeg;base64, for a present asset', () => {
+      expect(html).toContain('<img src="data:image/jpeg;base64,');
+    });
+
+    it('preserves the alt attribute text', () => {
+      expect(html).toContain('alt="A slide caption"');
+    });
+
+    it('does NOT emit a <span class="missing-slide"> element for a present asset', () => {
+      expect(html).not.toContain('<span class="missing-slide">');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 7 — Behavior T7-2: benign missing file → visible placeholder span
+  // -------------------------------------------------------------------------
+  describe('T7-2 — benign missing file → <span class="missing-slide"> placeholder', () => {
+    let tmpDir: string;
+    let mdPath: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      mdPath = path.join(tmpDir, 't7-missing.md');
+      html = renderDigDeeperHtml('# T7\n\n![Slide caption](assets/v/gone.jpg)\n\nProse after.\n', mdPath);
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('emits a <span class="missing-slide"> for a benign missing file', () => {
+      expect(html).toContain('<span class="missing-slide">');
+    });
+
+    it('placeholder span contains the alt text', () => {
+      expect(html).toContain('>Slide caption<');
+    });
+
+    it('does NOT emit any <img> for the missing asset', () => {
+      expect(html).not.toContain('<img');
+    });
+
+    it('does NOT emit any relative assets/ src', () => {
+      expect(html).not.toMatch(/src="assets\//);
+    });
+
+    it('still renders surrounding prose', () => {
+      expect(html).toContain('Prose after.');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 7 — Behavior T7-3: containment violation → silent drop (no placeholder)
+  // -------------------------------------------------------------------------
+  describe('T7-3 — containment violation → silent drop, no placeholder, no alt', () => {
+    let tmpDir: string;
+    let secretPath: string;
+    let mdPath: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      secretPath = path.join(os.tmpdir(), `secret-t7-${path.basename(tmpDir)}.txt`);
+      fs.writeFileSync(secretPath, 'supersecret-t7');
+      mdPath = path.join(tmpDir, 't7-traversal.md');
+      const traversalSrc = `assets/../../${path.basename(secretPath)}`;
+      html = renderDigDeeperHtml(`# T7\n\n![attacker alt](${traversalSrc})\n\nProse.\n`, mdPath);
+    });
+
+    afterAll(() => {
+      try { fs.rmSync(secretPath); } catch { /* ignore */ }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('does NOT emit any <img> for a traversal path', () => {
+      expect(html).not.toContain('<img');
+    });
+
+    it('does NOT emit a <span class="missing-slide"> element for a containment violation (silent drop)', () => {
+      expect(html).not.toContain('<span class="missing-slide">');
+    });
+
+    it('does NOT embed attacker-controlled alt text', () => {
+      expect(html).not.toContain('attacker alt');
+    });
+
+    it('does NOT embed the secret file contents', () => {
+      const secretB64 = Buffer.from('supersecret-t7').toString('base64');
+      expect(html).not.toContain(secretB64);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 7 — Behavior T7-4: alt text with special chars → HTML-escaped in placeholder
+  // -------------------------------------------------------------------------
+  describe('T7-4 — alt text with special chars escaped in missing-slide placeholder', () => {
+    let tmpDir: string;
+    let mdPath: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      mdPath = path.join(tmpDir, 't7-escape.md');
+      // Alt text contains " and < — must be HTML-escaped in the placeholder
+      html = renderDigDeeperHtml('# T7\n\n![Say "hello" <world>](assets/v/no-exist.jpg)\n', mdPath);
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('emits a .missing-slide span for the missing asset', () => {
+      expect(html).toContain('<span class="missing-slide">');
+    });
+
+    it('HTML-escapes double-quote in the placeholder text', () => {
+      expect(html).toContain('&quot;hello&quot;');
+    });
+
+    it('HTML-escapes < in the placeholder text', () => {
+      expect(html).toContain('&lt;world&gt;');
+    });
+
+    it('does NOT contain raw < or unescaped " in the placeholder', () => {
+      // The span should have no raw < after the opening tag (only escaped)
+      const spanMatch = html.match(/<span class="missing-slide">([^<]*)<\/span>/);
+      expect(spanMatch).not.toBeNull();
+      expect(spanMatch![1]).not.toMatch(/[<>"]/);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 7 — Behavior T7-5: .missing-slide CSS rule present in output
+  // -------------------------------------------------------------------------
+  describe('T7-5 — .missing-slide CSS rule present in rendered HTML', () => {
+    let tmpDir: string;
+    let html: string;
+
+    beforeAll(() => {
+      tmpDir = makeTempDir();
+      html = renderDigDeeperHtml('# T7\n\nBody.\n', path.join(tmpDir, 't7-css.md'));
+    });
+
+    afterAll(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('includes a .missing-slide CSS rule in the <style> block', () => {
+      expect(html).toContain('.missing-slide');
     });
   });
 

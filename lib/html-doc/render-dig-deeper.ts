@@ -55,6 +55,7 @@ html.theme-ready .dg{transition:background-color .2s,color .2s}
 .dg img{max-width:100%;height:auto;border-radius:6px;margin:.75em 0;display:block}
 .dg footer{margin-top:2.6em;padding-top:1.2em;border-top:1px solid var(--rule);color:var(--foot);font-size:.8rem}
 @media print{body{background:#fff}.dg{box-shadow:none}#theme-toggle{display:none}}
+.missing-slide{display:inline-block;color:var(--meta);font-style:italic;font-size:.85rem;padding:.15em .4em;border:1px dashed var(--rule);border-radius:4px}
 `;
 
 function esc(s: string): string {
@@ -100,13 +101,16 @@ function buildRenderer(mdPath: string): MarkdownIt {
       // Containment check: resolved path must stay inside assetsRoot.
       // Blocks traversal like assets/../../etc/passwd (passes startsWith but
       // resolves outside the doc's assets directory → arbitrary file disclosure).
+      // SECURITY-CRITICAL: containment violation → silent drop.
+      // No placeholder, no attacker-controlled alt text in the output.
       if (!absPath.startsWith(assetsRoot + path.sep)) return '';
       let data: Buffer | null = null;
       try {
         data = fs.readFileSync(absPath);
       } catch {
-        // File missing — drop the <img> entirely (no broken relative src)
-        return '';
+        // Benign missing file (e.g. slide not captured) — show a visible placeholder
+        // so readers know a frame was expected here.
+        return `<span class="missing-slide">${esc(altAttr)}</span>`;
       }
       const b64 = data.toString('base64');
       return `<img src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}">`;
