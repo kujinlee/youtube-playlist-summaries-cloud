@@ -249,229 +249,474 @@ async function stubDigStream(
 // stubCompanionHtml removed — both summary and companion HTML are served
 // by stubHtmlRoutes in a single handler to avoid route-fallback ordering issues.
 
+// ===========================================================================
+// F-SERIES: Summary→Dig same-tab nav, v1 regression, fixtures
+// (Task 14 spec §10)
+// ===========================================================================
+
 // ---------------------------------------------------------------------------
-// Behavior 1: POST is issued (not GET); spinner ⏳ appears; then "view detail ↓"
-//             opening the companion HTML shows <img src="data:image/jpeg;base64,...">
+// F1: Click "dig deeper ▶" on summary → same-tab navigation (no new tab);
+//     URL has all three required params: outputFolder, type=dig-deeper, dig=N
 // ---------------------------------------------------------------------------
 
-test('B1 (with slides): dig triggers POST, shows spinner, then view-detail link; companion HTML has base64 img', async ({ page }) => {
+test('F1 (same-tab nav un-dug): click dig-deeper ▶ → same tab; URL has outputFolder, type=dig-deeper, dig=N', async ({ page, context }) => {
   const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
   const companionHtml = makeCompanionHtmlWithSlides();
 
   await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, companionHtml);
-  await stubDigState(page, VIDEO_ID_SLIDES, []);
-  await stubDigPost(page, VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  await stubDigStream(page, VIDEO_ID_SLIDES, START_SEC_SLIDES, [
-    { type: 'step', step: 'Generating dig deeper…', current: 1, total: 2 },
-    { type: 'done' },
-  ]);
-
-  // Capture requests to assert POST method (behavior B1).
-  // Use route.fallback() (not route.continue()) so the request passes to the
-  // previously-registered stubDigPost handler instead of the real network.
-  const digRequests: { method: string }[] = [];
-  await page.route(`**/api/videos/${VIDEO_ID_SLIDES}/dig/${START_SEC_SLIDES}`, (route) => {
-    digRequests.push({ method: route.request().method() });
-    route.fallback();
-  });
+  await stubDigState(page, VIDEO_ID_SLIDES, []);  // section NOT yet dug → "dig deeper ▶"
 
   const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
   await page.goto(summaryUrl);
 
-  // Wait for the dig control to initialise in idle state
+  // Wait for dig-state fetch to complete and control to settle
   const digCtrl = page.locator('a.dig[data-section]');
-  await expect(digCtrl).toBeVisible();
-  await expect(digCtrl).toHaveText('dig deeper ▶');
+  await expect(digCtrl).toHaveText('dig deeper ▶', { timeout: 5000 });
 
-  // Click the control — triggers POST
-  await digCtrl.click();
+  // Record how many pages/tabs are open before click
+  const pageCountBefore = context.pages().length;
 
-  // Wait for the stable done state — "view detail ↓" (the transient ⏳ is not asserted here
-  // because Playwright SSE stubs deliver the body atomically, so the stream completes too fast
-  // for ⏳ to be stably visible — same pattern used in playlist-viewer.spec.ts for ingest).
-  await expect(digCtrl).toHaveText('view detail ↓', { timeout: 5000 });
-
-  // Assert POST method was issued (not GET) — collected via the spy above
-  expect(digRequests.some((r) => r.method === 'POST')).toBe(true);
-  expect(digRequests.every((r) => r.method !== 'GET')).toBe(true);
-
-  // Follow the "view detail ↓" link (href set by applyDugState) — companion HTML shown
+  // The control is an <a> with href already set (by initDigControls); clicking navigates same-tab.
+  // Grab href before clicking so we can assert the params.
   const href = await digCtrl.getAttribute('href');
   expect(href).toBeTruthy();
+  const resolvedUrl = new URL(href!, 'http://localhost:3000');
+  // Assert ALL required params
+  expect(resolvedUrl.searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
+  expect(resolvedUrl.searchParams.get('type')).toBe('dig-deeper');
+  expect(resolvedUrl.searchParams.get('dig')).toBe(String(START_SEC_SLIDES));
 
-  // Fetch the companion HTML via page.evaluate so route stubs fire
-  const { status: companionStatus, body: companionBody } = await page.evaluate(async (url) => {
-    const res = await fetch(url);
-    return { status: res.status, body: await res.text() };
-  }, href!);
+  // Navigate (same tab)
+  await digCtrl.click();
 
-  expect(companionStatus).toBe(200);
-  // Companion HTML must contain a base64 <img>
-  expect(companionBody).toContain('data:image/jpeg;base64,');
+  // Same-tab: no new tab opened
+  expect(context.pages().length).toBe(pageCountBefore);
+
+  // URL changed to the dig-deeper page (same tab navigated)
+  await page.waitForURL('**/api/html/**type=dig-deeper**', { timeout: 5000 });
+  const afterUrl = new URL(page.url());
+  expect(afterUrl.searchParams.get('type')).toBe('dig-deeper');
+  expect(afterUrl.searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
+  expect(afterUrl.searchParams.get('dig')).toBe(String(START_SEC_SLIDES));
 });
 
 // ---------------------------------------------------------------------------
-// Behavior 2: Dig a section with NO slides — text-only block, no <img>
+// F2: Click "view detail ↓" on summary (already-dug) → same-tab navigation;
+//     URL has outputFolder + type=dig-deeper but NO ?dig param; hash has #t=N
 // ---------------------------------------------------------------------------
 
-test('B2 (no slides): dig completes to view-detail; companion HTML has no <img>', async ({ page }) => {
-  const summaryHtml = makeSummaryHtml(VIDEO_ID_NO_SLIDES, START_SEC_NO_SLIDES);
-  const companionHtml = makeCompanionHtmlNoSlides();
+test('F2 (same-tab nav dug): click view detail ↓ → same tab; URL has outputFolder + type=dig-deeper, no dig param; hash #t=N', async ({ page, context }) => {
+  const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
+  const companionHtml = makeCompanionHtmlWithSlides();
 
-  await stubHtmlRoutes(page, VIDEO_ID_NO_SLIDES, summaryHtml, companionHtml);
-  await stubDigState(page, VIDEO_ID_NO_SLIDES, []);
-  await stubDigPost(page, VIDEO_ID_NO_SLIDES, START_SEC_NO_SLIDES);
-  await stubDigStream(page, VIDEO_ID_NO_SLIDES, START_SEC_NO_SLIDES, [
-    { type: 'step', step: 'Generating dig deeper…', current: 1, total: 1 },
-    { type: 'done' },
-  ]);
+  await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, companionHtml);
+  // Section IS already dug → control shows "view detail ↓"
+  await stubDigState(page, VIDEO_ID_SLIDES, [START_SEC_SLIDES]);
 
-  const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_NO_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
+  const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
   await page.goto(summaryUrl);
 
   const digCtrl = page.locator('a.dig[data-section]');
-  await expect(digCtrl).toHaveText('dig deeper ▶');
-  await digCtrl.click();
-
-  // Reaches "view detail ↓"
   await expect(digCtrl).toHaveText('view detail ↓', { timeout: 5000 });
 
-  // Fetch companion page and assert no <img>
+  const pageCountBefore = context.pages().length;
+
+  // Href must have outputFolder, type=dig-deeper, NO dig param, hash #t=N
   const href = await digCtrl.getAttribute('href');
   expect(href).toBeTruthy();
+  const resolvedUrl = new URL(href!, 'http://localhost:3000');
+  expect(resolvedUrl.searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
+  expect(resolvedUrl.searchParams.get('type')).toBe('dig-deeper');
+  expect(resolvedUrl.searchParams.has('dig')).toBe(false);
+  expect(resolvedUrl.hash).toBe(`#t=${START_SEC_SLIDES}`);
 
-  const { body: companionBody } = await page.evaluate(async (url) => {
-    const res = await fetch(url);
-    return { body: await res.text() };
-  }, href!);
+  // Click → same tab
+  await digCtrl.click();
+  expect(context.pages().length).toBe(pageCountBefore);
 
-  // Text-only: no <img> tag in the companion HTML
-  expect(companionBody).not.toContain('<img');
+  // URL navigated (same tab) to dig-deeper
+  await page.waitForURL('**/api/html/**type=dig-deeper**', { timeout: 5000 });
+  const afterUrl = new URL(page.url());
+  expect(afterUrl.searchParams.get('type')).toBe('dig-deeper');
+  expect(afterUrl.searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
+  expect(afterUrl.searchParams.has('dig')).toBe(false);
 });
 
 // ---------------------------------------------------------------------------
-// Behavior 3: "view detail ↓" link params — ALL of outputFolder, type=dig-deeper,
-//             AND #t=<startSec> must be present (per dev-process URL-params rule).
+// F3: From the dig-doc, click "↑ summary" → same-tab nav to type=summary;
+//     the link has no target="_blank" and navigates in the current tab.
 // ---------------------------------------------------------------------------
 
-test('B3: "view detail ↓" href contains outputFolder, type=dig-deeper, and #t=<startSec>', async ({ page }) => {
+test('F3 (↑ summary same-tab): click ↑ summary → same tab; URL type=summary; no target=_blank', async ({ page, context }) => {
+  // Use the dug companion HTML (it has the ↑ summary link in the top bar)
+  const companionHtml = makeCompanionHtmlWithSlides();
   const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  // Companion HTML not needed for URL-params assertion — reuse summaryHtml as placeholder
-  await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, summaryHtml);
-  await stubDigState(page, VIDEO_ID_SLIDES, []);
-  await stubDigPost(page, VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  await stubDigStream(page, VIDEO_ID_SLIDES, START_SEC_SLIDES, [{ type: 'done' }]);
 
-  const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
-  await page.goto(summaryUrl);
+  await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, companionHtml);
 
-  const digCtrl = page.locator('a.dig[data-section]');
-  await expect(digCtrl).toHaveText('dig deeper ▶');
-  await digCtrl.click();
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
 
-  await expect(digCtrl).toHaveText('view detail ↓', { timeout: 5000 });
+  // The top bar has an ↑ summary link (a.dig with data-type="summary")
+  const summaryLink = page.locator('a.dig[data-type="summary"]');
+  await expect(summaryLink).toBeVisible({ timeout: 3000 });
+  await expect(summaryLink).toHaveText('↑ summary');
 
-  const href = await digCtrl.getAttribute('href');
+  const pageCountBefore = context.pages().length;
+
+  // Get the href after wireDigLinks sets it
+  const href = await summaryLink.getAttribute('href');
   expect(href).toBeTruthy();
+  const resolvedUrl = new URL(href!, 'http://localhost:3000');
+  expect(resolvedUrl.searchParams.get('type')).toBe('summary');
+  expect(resolvedUrl.searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
+  // Same-tab nav link: no target="_blank"
+  const target = await summaryLink.getAttribute('target');
+  expect(target).not.toBe('_blank');
 
-  // Parse the href — it is a relative URL; resolve against the base
-  const u = new URL(href!, 'http://localhost:3000');
+  // Click → same tab (no new page)
+  await summaryLink.click();
+  expect(context.pages().length).toBe(pageCountBefore);
 
-  // Assert ALL three required params (one expect per param per dev-process rule)
-  expect(u.searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
-  expect(u.searchParams.get('type')).toBe('dig-deeper');
-  expect(u.hash).toBe(`#t=${START_SEC_SLIDES}`);
+  // Navigated to summary type
+  await page.waitForURL('**/api/html/**type=summary**', { timeout: 5000 });
+  expect(new URL(page.url()).searchParams.get('type')).toBe('summary');
 });
 
 // ---------------------------------------------------------------------------
-// Behavior 4: Error path — POST 500 or stream error → "⚠ retry" visible
+// F4 (v1 regression): Summary HTML cached at magazine-skim v1 (stale) →
+//     GET /api/html/[id]?type=summary triggers version-gated re-render →
+//     served HTML contains dig controls (class="dig").
+//     This test sets up REAL disk files so the API route exercises the actual
+//     re-render path (no mocking of the route).
 // ---------------------------------------------------------------------------
 
-test('B4 (error path): stream error event shows ⚠ retry', async ({ page }) => {
-  const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, summaryHtml);
-  await stubDigState(page, VIDEO_ID_SLIDES, []);
-  await stubDigPost(page, VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  // Stream returns an error event instead of done
-  await stubDigStream(page, VIDEO_ID_SLIDES, START_SEC_SLIDES, [
-    { type: 'error', log: 'Gemini quota exceeded' },
-  ]);
+test('F4 (v1 regression): stale summary (magazine-skim v1) → re-render served → has dig controls', async ({ page }) => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const os = require('os') as typeof import('os');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('path') as typeof import('path');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs') as typeof import('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { renderMagazineHtml: renderMag } = require('../../lib/html-doc/render') as typeof import('../../lib/html-doc/render');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { parseSummaryMarkdown: parseMd } = require('../../lib/html-doc/parse') as typeof import('../../lib/html-doc/parse');
 
-  const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
-  await page.goto(summaryUrl);
+  // Create a temp output folder inside $HOME so assertOutputFolder accepts it
+  const tmpDir = fs.mkdtempSync(path.join(os.homedir(), '.tmp-e2e-v1regen-')) as string;
+  try {
+    // Video and file naming
+    const videoId = 'vid-v1-regen';
+    const baseName = 'vid-v1-regen-summary';
+    const summaryMdRel = `${baseName}.md`;
+    const summaryHtmlRel = `htmls/${baseName}.html`;
 
-  const digCtrl = page.locator('a.dig[data-section]');
-  await expect(digCtrl).toHaveText('dig deeper ▶');
-  await digCtrl.click();
+    // ── Write index.json ──────────────────────────────────────────────────
+    const index = {
+      playlistUrl: 'https://www.youtube.com/playlist?list=PL_test',
+      outputFolder: tmpDir,
+      videos: [{
+        id: videoId,
+        title: 'V1 Regression Test Video',
+        youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        language: 'en',
+        durationSeconds: 300,
+        archived: false,
+        ratings: { usefulness: 3, depth: 3, originality: 3, recency: 3, completeness: 3 },
+        overallScore: 3,
+        summaryMd: summaryMdRel,
+        summaryPdf: null,
+        deepDiveMd: null,
+        deepDivePdf: null,
+        summaryHtml: summaryHtmlRel,
+        processedAt: '2026-01-01T00:00:00.000Z',
+      }],
+    };
+    fs.writeFileSync(path.join(tmpDir, 'playlist-index.json'), JSON.stringify(index, null, 2));
 
-  // After stream error event: ⚠ retry appears
-  await expect(digCtrl).toHaveText('⚠ retry', { timeout: 5000 });
+    // ── Write summary .md ─────────────────────────────────────────────────
+    const sectionTitle = 'Introduction';
+    const summaryMd = [
+      `# V1 Regression Test Video`,
+      ``,
+      `channel: TestChan`,
+      `duration: 5:00`,
+      `url: https://www.youtube.com/watch?v=${videoId}`,
+      `lang: EN`,
+      ``,
+      `## 1. ${sectionTitle}`,
+      `▶ [0:00–1:00](https://www.youtube.com/watch?v=${videoId}&t=0s)`,
+      ``,
+      `A brief intro section.`,
+    ].join('\n');
+    fs.writeFileSync(path.join(tmpDir, summaryMdRel), summaryMd, 'utf-8');
+
+    // ── Write model envelope ──────────────────────────────────────────────
+    const modelDir = path.join(tmpDir, 'models');
+    fs.mkdirSync(modelDir, { recursive: true });
+    const envelope = {
+      sourceMd: summaryMdRel,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      sourceSections: [sectionTitle],
+      model: {
+        sections: [{
+          lead: 'Key point.',
+          bullets: [
+            { label: 'A', text: 'Bullet one.' },
+            { label: 'B', text: 'Bullet two.' },
+            { label: 'C', text: 'Bullet three.' },
+          ],
+        }],
+      },
+    };
+    fs.writeFileSync(path.join(modelDir, `${baseName}.json`), JSON.stringify(envelope, null, 2));
+
+    // ── Write stale HTML (magazine-skim v1) ───────────────────────────────
+    // Parse the .md, render fresh HTML, then patch the generator tag to v1.
+    const parsed = parseMd(summaryMd);
+    parsed.sourceMd = summaryMdRel;
+    const freshHtml = renderMag(parsed, envelope.model);
+    // Patch: replace 'magazine-skim v2' with 'magazine-skim v1' to simulate stale cache
+    const staleHtml = freshHtml.replace('magazine-skim v2', 'magazine-skim v1');
+    expect(staleHtml).toContain('magazine-skim v1'); // confirm patch worked
+
+    const htmlDir = path.join(tmpDir, 'htmls');
+    fs.mkdirSync(htmlDir, { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, summaryHtmlRel), staleHtml, 'utf-8');
+
+    // ── Hit the REAL API route (no page.route mock) ───────────────────────
+    const apiUrl = `http://localhost:3000/api/html/${videoId}?outputFolder=${encodeURIComponent(tmpDir)}&type=summary`;
+    await page.goto(apiUrl);
+
+    // The route detects v1 ≠ v2 → calls reRenderSummaryHtml → returns fresh HTML.
+    // Fresh HTML must contain the dig controls rendered by renderMagazineHtml (nav.ts digControl).
+    const html = await page.content();
+    expect(html).toContain('class="dig"');
+    expect(html).toContain('magazine-skim v2');
+    expect(html).not.toContain('magazine-skim v1');
+    // Specifically the dig control for the section (startSec=0 from the ▶ link t=0s)
+    expect(html).toContain('data-section="0"');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
-// Behavior 5 (money-spending guard): the normal UI dig flow NEVER issues a GET
-//             to the trigger endpoint — only POST is ever used.
-//
-// C1 fix: B5 now uses the same request-spy pattern as B1 (digRequests array).
-// The assertion `digRequests.every(r => r.method !== 'GET')` is a REAL guard:
-// if the client code were ever changed to issue a GET, this test fails. The old
-// implementation was a self-fulfilling stub that tested the stub, not the app.
+// F5a: renderDigDeeperDoc fixture — mixed dug/un-dug (some sections dug,
+//      some not). Both .dig-trigger and .dug blocks present.
 // ---------------------------------------------------------------------------
 
-test('B5 (POST-only guard): normal UI dig flow never issues GET to the trigger endpoint', async ({ page }) => {
-  const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, summaryHtml);
-  await stubDigState(page, VIDEO_ID_SLIDES, []);
-  await stubDigPost(page, VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  await stubDigStream(page, VIDEO_ID_SLIDES, START_SEC_SLIDES, [{ type: 'done' }]);
+const VIDEO_ID_FIXTURE = 'vid-fixture';
+const SEC_A = 60;
+const SEC_B = 120;
+const SEC_C = 180;
 
-  // Spy on ALL requests to the dig trigger URL — mirrors the B1 spy pattern exactly.
-  // route.fallback() passes each request to the previously-registered stubDigPost handler.
-  const digRequests: { method: string }[] = [];
-  await page.route(`**/api/videos/${VIDEO_ID_SLIDES}/dig/${START_SEC_SLIDES}`, (route) => {
-    digRequests.push({ method: route.request().method() });
-    route.fallback();
-  });
+function makeFixtureMixedHtml(): string {
+  const summary: ParsedSummary = {
+    title: 'Fixture Mixed',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_FIXTURE}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_FIXTURE,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_FIXTURE}.md`,
+    sections: [
+      { numeral: '1', title: 'Alpha', prose: 'p', timeRange: { startSec: SEC_A, endSec: SEC_A + 60, label: '1:00–2:00', url: `https://www.youtube.com/watch?v=${VIDEO_ID_FIXTURE}&t=${SEC_A}s` } },
+      { numeral: '2', title: 'Beta',  prose: 'p', timeRange: { startSec: SEC_B, endSec: SEC_B + 60, label: '2:00–3:00', url: `https://www.youtube.com/watch?v=${VIDEO_ID_FIXTURE}&t=${SEC_B}s` } },
+      { numeral: '3', title: 'Gamma', prose: 'p', timeRange: { startSec: SEC_C, endSec: SEC_C + 60, label: '3:00–4:00', url: `https://www.youtube.com/watch?v=${VIDEO_ID_FIXTURE}&t=${SEC_C}s` } },
+    ],
+  };
+  const dug: DugSection[] = [
+    { sectionId: SEC_A, startSec: SEC_A, title: 'Alpha', bodyMarkdown: '## Alpha\n\nDug body.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    // SEC_B and SEC_C are not dug
+  ];
+  return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/fixture-mixed-dig.md', videoId: VIDEO_ID_FIXTURE });
+}
 
-  const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
-  await page.goto(summaryUrl);
+test('F5a (fixture mixed dug/un-dug): dug section has .dug; un-dug sections have .dig-trigger', async ({ page }) => {
+  const html = makeFixtureMixedHtml();
+  await page.route(`**/api/html/${VIDEO_ID_FIXTURE}**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: html }),
+  );
 
-  const digCtrl = page.locator('a.dig[data-section]');
-  await expect(digCtrl).toHaveText('dig deeper ▶');
-  await digCtrl.click();
-  await expect(digCtrl).toHaveText('view detail ↓', { timeout: 5000 });
+  await page.goto(`http://localhost:3000/api/html/${VIDEO_ID_FIXTURE}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`);
 
-  // The UI must have issued at least one request (confirming the spy fired)
-  expect(digRequests.length).toBeGreaterThan(0);
-  // No request to the trigger endpoint may have been GET — only POST is permitted.
-  expect(digRequests.every((r) => r.method !== 'GET')).toBe(true);
-  // Positive assertion: POST is the method used
-  expect(digRequests.some((r) => r.method === 'POST')).toBe(true);
+  // SEC_A is dug → data-dug="true", .dug block present
+  const secA = page.locator(`section[data-start="${SEC_A}"]`);
+  await expect(secA).toHaveAttribute('data-dug', 'true');
+  await expect(secA.locator('.dug')).toBeVisible();
+  await expect(secA.locator('.dig-trigger')).toHaveCount(0);
+
+  // SEC_B is un-dug → data-dug="false", dig-trigger present
+  const secB = page.locator(`section[data-start="${SEC_B}"]`);
+  await expect(secB).toHaveAttribute('data-dug', 'false');
+  await expect(secB.locator('.dig-trigger')).toBeVisible();
+
+  // SEC_C is also un-dug
+  const secC = page.locator(`section[data-start="${SEC_C}"]`);
+  await expect(secC).toHaveAttribute('data-dug', 'false');
+  await expect(secC.locator('.dig-trigger')).toBeVisible();
+
+  // Total counts
+  await expect(page.locator('section[data-dug="true"]')).toHaveCount(1);
+  await expect(page.locator('section[data-dug="false"]')).toHaveCount(2);
+  await expect(page.locator('.dig-trigger')).toHaveCount(2);
 });
 
 // ---------------------------------------------------------------------------
-// Behavior 6 (M1): trigger POST returns 500 → "⚠ retry" visible
-//             Keeps the existing B4 (stream error → ⚠ retry) and adds the
-//             complementary POST-500 path per the review finding.
+// F5b: renderDigDeeperDoc — zero dug sections (skeleton) → all sections have
+//      .dig-trigger; none have .dug; no orphan region.
 // ---------------------------------------------------------------------------
 
-test('B6 (POST-500 error path): POST returning 500 shows ⚠ retry', async ({ page }) => {
-  const summaryHtml = makeSummaryHtml(VIDEO_ID_SLIDES, START_SEC_SLIDES);
-  await stubHtmlRoutes(page, VIDEO_ID_SLIDES, summaryHtml, summaryHtml);
-  await stubDigState(page, VIDEO_ID_SLIDES, []);
-  // Stub the trigger POST to return 500 (server error)
-  await stubDigPost(page, VIDEO_ID_SLIDES, START_SEC_SLIDES, 'unused-job-id', 500);
-  // No stream stub needed — 500 aborts before the stream phase
+const VIDEO_ID_SKELETON = 'vid-skeleton';
+const SKELETON_SECS = [30, 90, 150];
 
-  const summaryUrl = `http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=summary`;
-  await page.goto(summaryUrl);
+function makeFixtureSkeletonHtml(): string {
+  const summary: ParsedSummary = {
+    title: 'Skeleton Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_SKELETON}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_SKELETON,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_SKELETON}.md`,
+    sections: SKELETON_SECS.map((sec, i) => ({
+      numeral: String(i + 1),
+      title: `Section ${i + 1}`,
+      prose: 'p',
+      timeRange: { startSec: sec, endSec: sec + 60, label: `${i}:30–${i + 1}:30`, url: `https://www.youtube.com/watch?v=${VIDEO_ID_SKELETON}&t=${sec}s` },
+    })),
+  };
+  // No dug sections → skeleton
+  return renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath: '/tmp/skeleton-dig.md', videoId: VIDEO_ID_SKELETON });
+}
 
-  const digCtrl = page.locator('a.dig[data-section]');
-  await expect(digCtrl).toHaveText('dig deeper ▶');
-  await digCtrl.click();
+test('F5b (zero-dug skeleton): all sections un-dug; no .dug blocks; no orphan region', async ({ page }) => {
+  const html = makeFixtureSkeletonHtml();
+  await page.route(`**/api/html/${VIDEO_ID_SKELETON}**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: html }),
+  );
 
-  // After POST 500: ⚠ retry appears (same error state as stream error)
-  await expect(digCtrl).toHaveText('⚠ retry', { timeout: 5000 });
+  await page.goto(`http://localhost:3000/api/html/${VIDEO_ID_SKELETON}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`);
+
+  // All sections are un-dug
+  await expect(page.locator('section[data-dug="true"]')).toHaveCount(0);
+  await expect(page.locator('section[data-dug="false"]')).toHaveCount(SKELETON_SECS.length);
+  // Each has a dig-trigger
+  await expect(page.locator('.dig-trigger')).toHaveCount(SKELETON_SECS.length);
+  // No .dug blocks
+  await expect(page.locator('.dug')).toHaveCount(0);
+  // No orphan region
+  await expect(page.locator('.dg-orphans')).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// F5c: renderDigDeeperDoc — missing-asset: companion references an asset file
+//      that does NOT exist on disk → .missing-slide placeholder visible.
+// ---------------------------------------------------------------------------
+
+const VIDEO_ID_MISSING = 'vid-missing-asset';
+const SEC_MISSING = 45;
+
+function makeFixtureMissingAssetHtml(): string {
+  const summary: ParsedSummary = {
+    title: 'Missing Asset Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_MISSING}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_MISSING,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_MISSING}.md`,
+    sections: [
+      { numeral: '1', title: 'Only Section', prose: 'p', timeRange: { startSec: SEC_MISSING, endSec: SEC_MISSING + 60, label: '0:45–1:45', url: `https://www.youtube.com/watch?v=${VIDEO_ID_MISSING}&t=${SEC_MISSING}s` } },
+    ],
+  };
+  // Dug body references an asset that does NOT exist on disk
+  const dug: DugSection[] = [
+    {
+      sectionId: SEC_MISSING,
+      startSec: SEC_MISSING,
+      title: 'Only Section',
+      // references an asset path that doesn't exist — renderer returns .missing-slide
+      bodyMarkdown: `## Only Section\n\n![slide](assets/${VIDEO_ID_MISSING}/nonexistent-frame.jpg)\n\nSome insight.\n`,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+    },
+  ];
+  // mdPath uses /tmp so the asset resolves to /tmp/assets/... which won't exist.
+  return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/missing-asset-dig.md', videoId: VIDEO_ID_MISSING });
+}
+
+test('F5c (missing-asset): unreachable slide image → .missing-slide placeholder visible', async ({ page }) => {
+  const html = makeFixtureMissingAssetHtml();
+  await page.route(`**/api/html/${VIDEO_ID_MISSING}**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: html }),
+  );
+
+  await page.goto(`http://localhost:3000/api/html/${VIDEO_ID_MISSING}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`);
+
+  // The .missing-slide placeholder should be visible (rendered instead of <img>)
+  const placeholder = page.locator('.missing-slide');
+  await expect(placeholder).toBeVisible();
+  // Should NOT have an <img> since the asset is missing
+  await expect(page.locator('img')).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------
+// F5d: renderDigDeeperDoc — orphan companion section: companion has a section
+//      whose sectionId does not match any summary section → "Unmapped dug sections"
+//      region rendered.
+// ---------------------------------------------------------------------------
+
+const VIDEO_ID_ORPHAN = 'vid-orphan';
+const SEC_ORPHAN_SUMMARY = 60;
+const SEC_ORPHAN_COMPANION = 9999;  // not in summary → orphan
+
+function makeFixtureOrphanHtml(): string {
+  const summary: ParsedSummary = {
+    title: 'Orphan Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_ORPHAN}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_ORPHAN,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_ORPHAN}.md`,
+    sections: [
+      { numeral: '1', title: 'Real Section', prose: 'p', timeRange: { startSec: SEC_ORPHAN_SUMMARY, endSec: SEC_ORPHAN_SUMMARY + 60, label: '1:00–2:00', url: `https://www.youtube.com/watch?v=${VIDEO_ID_ORPHAN}&t=${SEC_ORPHAN_SUMMARY}s` } },
+    ],
+  };
+  const dug: DugSection[] = [
+    // This one matches SEC_ORPHAN_SUMMARY
+    { sectionId: SEC_ORPHAN_SUMMARY, startSec: SEC_ORPHAN_SUMMARY, title: 'Real Section', bodyMarkdown: '## Real Section\n\nMatched.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    // This one does NOT match any summary section → orphan
+    { sectionId: SEC_ORPHAN_COMPANION, startSec: SEC_ORPHAN_COMPANION, title: 'Ghost Section', bodyMarkdown: '## Ghost Section\n\nOrphaned.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/orphan-dig.md', videoId: VIDEO_ID_ORPHAN });
+}
+
+test('F5d (orphan companion section): unmatched companion section → "Unmapped dug sections" region visible', async ({ page }) => {
+  const html = makeFixtureOrphanHtml();
+  await page.route(`**/api/html/${VIDEO_ID_ORPHAN}**`, (route) =>
+    route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: html }),
+  );
+
+  await page.goto(`http://localhost:3000/api/html/${VIDEO_ID_ORPHAN}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`);
+
+  // The orphan region must be visible
+  const orphanRegion = page.locator('.dg-orphans');
+  await expect(orphanRegion).toBeVisible();
+  // It should contain the "Unmapped dug sections" heading (first h2 in the region)
+  await expect(orphanRegion.locator('h2').first()).toHaveText('Unmapped dug sections');
+  // The orphan section title appears inside
+  await expect(orphanRegion).toContainText('Ghost Section');
 });
 
 // ===========================================================================
