@@ -5,6 +5,8 @@ import { generateSummary, extractQuickView } from './gemini';
 import { resolveTranscriptSegments } from './transcript-source';
 import { assertOutputFolder, assertVideoId, upsertVideo, readIndex, writeIndex } from './index-store';
 import { slugify } from './slugify';
+import { nextSerial } from './serial-assign';
+import { applySerial, padSerial } from './serial-filename';
 import type { ProgressEvent, Video, VideoMeta, RatingValue, VideoType, Audience, GeminiSummaryResponse } from '../types';
 import { CURRENT_DOC_VERSION } from './doc-version';
 import { padDividers } from './markdown-dividers';
@@ -328,13 +330,16 @@ export async function runIngestion(
       newIndex += 1;
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Fetching transcript…', current: newIndex, total: newTotal });
+      const serial = nextSerial(readIndex(outputFolder).videos);
       const slug = slugify(meta.title);
-      let baseName = slug;
+      let baseSlug = slug;
       let counter = 2;
-      while (fs.existsSync(path.join(outputFolder, `${baseName}.md`))) {
-        baseName = `${slug}-${counter}`;
+      // serial makes filenames unique; collision suffix kept for slug readability only.
+      while (fs.existsSync(path.join(outputFolder, applySerial(`${baseSlug}.md`, serial)))) {
+        baseSlug = `${slug}-${counter}`;
         counter++;
       }
+      const baseName = `${padSerial(serial)}_${baseSlug}`;
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current: newIndex, total: newTotal });
       const { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways } =
         await writeSummaryDoc({
@@ -351,6 +356,7 @@ export async function runIngestion(
         archived: false,
         ratings,
         overallScore,
+        serialNumber: serial,
         summaryMd: `${baseName}.md`,
         summaryPdf: null,
         deepDiveMd: null,

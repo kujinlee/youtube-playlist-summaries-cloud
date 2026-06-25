@@ -201,7 +201,40 @@ describe('runIngestion', () => {
     );
   });
 
-  it('uses slug-only filename (no rank prefix) for the video', async () => {
+  it('assigns serialNumber=1 and prefixes filenames for the first ingested video', async () => {
+    // Arrange: empty index (default mockReadIndex already returns { videos: [] })
+    const meta = { ...makeVideoMeta('vid1'), title: 'Hello World' };
+    mockFetchPlaylistVideos.mockResolvedValue([meta]);
+    mockFetchTranscriptSegments.mockResolvedValue([{ text: 'transcript', offset: 0, duration: 5 }]);
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ serialNumber: 1, summaryMd: '001_hello-world.md' }),
+    );
+  });
+
+  it('continues from max+1 when the index already has serials', async () => {
+    // Arrange: seed index with a video that has serialNumber 41
+    const existingVid = makeIndexedVideo('vid0', { serialNumber: 41 });
+    mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [existingVid] });
+
+    const meta = { ...makeVideoMeta('vid1'), title: 'Hello World' };
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid0'), meta]);
+    mockFetchTranscriptSegments.mockResolvedValue([{ text: 'transcript', offset: 0, duration: 5 }]);
+    mockGenerateSummary.mockResolvedValue(makeSummaryResponse());
+
+    await runIngestion(PLAYLIST_URL, outputFolder, () => {});
+
+    expect(mockUpsertVideo).toHaveBeenCalledWith(
+      outputFolder,
+      expect.objectContaining({ serialNumber: 42, summaryMd: '042_hello-world.md' }),
+    );
+  });
+
+  it('uses serial-prefixed filename for the video', async () => {
     const meta = { ...makeVideoMeta('vid1'), title: 'Hello World' };
     mockFetchPlaylistVideos.mockResolvedValue([meta]);
     mockFetchTranscriptSegments.mockResolvedValue([{ text: 'transcript', offset: 0, duration: 5 }]);
@@ -212,15 +245,15 @@ describe('runIngestion', () => {
     expect(mockUpsertVideo).toHaveBeenCalledWith(
       outputFolder,
       expect.objectContaining({
-        summaryMd: 'hello-world.md',
+        summaryMd: '001_hello-world.md',
         summaryPdf: null,
       }),
     );
   });
 
-  it('appends -2 suffix when slug filename already exists on disk', async () => {
-    // Simulate a pre-existing file with the same slug (e.g. from a prior video with the same title)
-    fs.writeFileSync(path.join(outputFolder, 'hello-world.md'), 'existing content');
+  it('appends -2 suffix when serial-prefixed slug filename already exists on disk', async () => {
+    // Simulate a pre-existing file with the same serial-prefixed slug
+    fs.writeFileSync(path.join(outputFolder, '001_hello-world.md'), 'existing content');
 
     const meta = { ...makeVideoMeta('vid1'), title: 'Hello World' };
     mockFetchPlaylistVideos.mockResolvedValue([meta]);
@@ -232,7 +265,7 @@ describe('runIngestion', () => {
     expect(mockUpsertVideo).toHaveBeenCalledWith(
       outputFolder,
       expect.objectContaining({
-        summaryMd: 'hello-world-2.md',
+        summaryMd: '001_hello-world-2.md',
         summaryPdf: null,
       }),
     );
