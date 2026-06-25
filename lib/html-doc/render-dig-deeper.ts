@@ -14,6 +14,10 @@ import {
   splitFirstSentence,
   tsAnchor,
 } from './render-deep-dive';
+import type { ParsedSummary } from './types';
+import type { ModelEnvelope } from './model-store';
+import type { DugSection } from '../dig/companion-doc';
+import { mergeDigDoc } from './dig-merge';
 
 const LIGHT: Palette = {
   ...BASE_PALETTE_LIGHT_PRE, ...BASE_PALETTE_LIGHT_POST, link: '#b07700', h3: '#5b463a', h4: '#6b5a4a',
@@ -218,6 +222,132 @@ ${THEME_HEAD_SCRIPT}
 ${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
 <article class="dg">
 ${bodyHtml}</article>
+${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}
+</body>
+</html>`;
+}
+
+// ── Dig-deeper merge renderer CSS additions (Task 6) ─────────────────────────
+const DIG_DOC_CSS = `
+section{padding:2.4em 0;border-top:2px solid var(--rule)}
+section:first-of-type{border-top:0}
+.dug img{margin:1.2em 0}
+section[data-dug="true"] .gist{display:none}
+.show-gist .gist{display:block}
+.show-gist .dug{display:none}
+.dg-topbar{display:flex;align-items:center;gap:1em;margin-bottom:1.6em;font-size:.85rem}
+.dg-expand-all{background:none;border:1px solid var(--rule);border-radius:4px;padding:.2em .6em;cursor:pointer;font-size:.85rem;color:var(--meta)}
+.dg-orphans{margin-top:3em;padding-top:1.5em;border-top:2px dashed var(--rule)}
+.dg-orphan-note{font-size:.82rem;color:var(--meta);font-style:italic}
+`;
+
+/**
+ * Render a dig-deeper doc using the structured merge result (Task 6).
+ *
+ * Takes structured summary + model data (rather than a raw .md string) and
+ * emits a full HTML page where each MergedSection is rendered with its gist
+ * and/or dug-content in the correct state.
+ *
+ * This function is ADDITIVE — the old renderDigDeeperHtml is left intact.
+ */
+export function renderDigDeeperDoc(args: {
+  summary: ParsedSummary;
+  envelope: ModelEnvelope | null;
+  dug: DugSection[];
+  mdPath: string;
+  videoId: string;
+}): string {
+  const { summary, envelope, dug, mdPath } = args;
+  const renderer = buildRenderer(mdPath);
+
+  const { sections, orphans } = mergeDigDoc(summary, envelope, dug);
+
+  const title = summary.title;
+
+  // Determine the first section that has a startSec for the top-bar back-link.
+  const firstStartSec = sections.find((s) => s.startSec !== null)?.startSec ?? null;
+
+  // ── Top bar ──────────────────────────────────────────────────────────────
+  const summaryLink = firstStartSec !== null
+    ? digControl('summary', firstStartSec)
+    : `<a class="dig" data-type="summary">↑ summary</a>`;
+  const topBar = `<div class="dg-topbar">${summaryLink} <button class="dg-expand-all">⤢ expand all</button></div>`;
+
+  // ── Sections ──────────────────────────────────────────────────────────────
+  const sectionsHtml = sections.map((ms) => {
+    const { startSec, title: sectionTitle, gist, dug: dugData } = ms;
+    const isDug = dugData !== null;
+
+    // section open tag — omit data-start when startSec is null
+    const startAttr = startSec !== null ? ` data-start="${startSec}"` : '';
+    const dugAttr = ` data-dug="${isDug}"`;
+    const sectionOpen = `<section${startAttr}${dugAttr}>`;
+
+    // heading with muted ts link (when startSec known) + control
+    const tsLink = startSec !== null
+      ? ` <a class="ts" href="https://www.youtube.com/watch?v=${esc(summary.videoId ?? '')}&amp;t=${startSec}s" target="_blank" rel="noopener noreferrer">${esc(ms.numeral ? `${ms.numeral}. ${sectionTitle}` : sectionTitle)} ▶</a>`
+      : '';
+    // control: un-dug (with startSec) → dig-trigger; dug → dig-toggle; no startSec → neither
+    let control = '';
+    if (isDug) {
+      control = ` <a class="dig-toggle">show summary ⌃</a>`;
+    } else if (startSec !== null) {
+      control = ` <a class="dig-trigger" data-section="${startSec}">dig deeper ▶</a>`;
+    }
+
+    const heading = `<h2>${esc(sectionTitle)}${tsLink}${control}</h2>`;
+
+    // .gist block — only when gist != null (skeleton → omit)
+    let gistHtml = '';
+    if (gist !== null) {
+      const leadHtml = `<p class="lead">${esc(gist.lead)}</p>`;
+      const bulletsHtml = gist.bullets.map((b) => `<li>${esc(b.text)}</li>`).join('');
+      gistHtml = `<div class="gist">${leadHtml}<ul>${bulletsHtml}</ul></div>`;
+    }
+
+    // .dug block — only when dug matched
+    let dugHtml = '';
+    if (dugData !== null) {
+      const rendered = renderer.render(dugData.bodyMarkdown);
+      dugHtml = `<div class="dug">${rendered}</div>`;
+    }
+
+    return `${sectionOpen}\n${heading}${gistHtml}${dugHtml}\n</section>`;
+  }).join('\n');
+
+  // ── Orphan region ─────────────────────────────────────────────────────────
+  let orphansHtml = '';
+  if (orphans.length > 0) {
+    const orphanItems = orphans.map((o) => {
+      const rendered = renderer.render(o.bodyMarkdown);
+      return [
+        `<h3>${esc(o.title)}</h3>`,
+        rendered,
+        `<p class="dg-orphan-note">This section was dug but could not be matched to a current summary section. Re-dig to regenerate.</p>`,
+        `<!-- orphan: ${o.sectionId} -->`,
+      ].join('\n');
+    }).join('\n');
+    orphansHtml = `\n<section class="dg-orphans"><h2>Unmapped dug sections</h2>\n${orphanItems}\n</section>`;
+  }
+
+  const bodyHtml = `${topBar}\n${sectionsHtml}${orphansHtml}`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="dig-deeper-doc v1">
+<meta name="source-md" content="${esc(path.basename(mdPath))}">
+<title>${esc(title)}</title>
+${THEME_HEAD_SCRIPT}
+<style>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}${DIG_DOC_CSS}</style>
+</head>
+<body>
+${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
+<article class="dg">
+${bodyHtml}
+</article>
 ${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}
 </body>
 </html>`;

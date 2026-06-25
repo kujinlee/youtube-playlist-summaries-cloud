@@ -1,7 +1,10 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { renderDigDeeperHtml } from '@/lib/html-doc/render-dig-deeper';
+import { renderDigDeeperHtml, renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
+import type { ParsedSummary } from '@/lib/html-doc/types';
+import type { ModelEnvelope } from '@/lib/html-doc/model-store';
+import type { DugSection } from '@/lib/dig/companion-doc';
 
 // Minimal valid JPEG bytes (SOI + EOI markers only — enough for Buffer.isBuffer / readFileSync)
 const MINIMAL_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9]);
@@ -513,6 +516,418 @@ describe('renderDigDeeperHtml', () => {
 
     it('still renders surrounding prose', () => {
       expect(html).toContain('End.');
+    });
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// renderDigDeeperDoc — merge renderer (Task 6)
+// ──────────────────────────────────────────────────────────────────────────────
+
+function makeSummary(overrides: Partial<ParsedSummary> = {}): ParsedSummary {
+  return {
+    title: 'Test Video',
+    channel: null,
+    duration: null,
+    url: 'https://www.youtube.com/watch?v=vid123',
+    lang: 'EN',
+    videoId: 'vid123',
+    tldr: null,
+    takeaways: [],
+    sourceMd: 'test.md',
+    sections: [
+      {
+        numeral: '1',
+        title: 'Introduction',
+        prose: 'Intro prose',
+        timeRange: { startSec: 60, endSec: 300, label: '1:00–5:00', url: 'https://www.youtube.com/watch?v=vid123&t=60s' },
+      },
+      {
+        numeral: '2',
+        title: 'Main Content',
+        prose: 'Main prose',
+        timeRange: { startSec: 300, endSec: 600, label: '5:00–10:00', url: 'https://www.youtube.com/watch?v=vid123&t=300s' },
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function makeEnvelope(overrides: Partial<ModelEnvelope> = {}): ModelEnvelope {
+  return {
+    sourceMd: 'test.md',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceSections: ['Introduction', 'Main Content'],
+    model: {
+      sections: [
+        {
+          lead: 'This is the intro lead sentence.',
+          bullets: [
+            { label: 'Point A', text: 'First bullet text' },
+            { label: 'Point B', text: 'Second bullet text' },
+            { label: 'Point C', text: 'Third bullet text' },
+          ],
+        },
+        {
+          lead: 'This is the main lead sentence.',
+          bullets: [
+            { label: 'Point X', text: 'Main bullet one' },
+            { label: 'Point Y', text: 'Main bullet two' },
+            { label: 'Point Z', text: 'Main bullet three' },
+          ],
+        },
+      ],
+    },
+    ...overrides,
+  };
+}
+
+function makeDugSection(overrides: Partial<DugSection> = {}): DugSection {
+  return {
+    sectionId: 60,
+    startSec: 60,
+    title: 'Introduction',
+    bodyMarkdown: '## Introduction\n\nDug content for intro section.',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('renderDigDeeperDoc', () => {
+  let tmpDir: string;
+  let mdPath: string;
+
+  beforeAll(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'render-dig-deeper-doc-'));
+    mdPath = path.join(tmpDir, 'test-dig-deeper.md');
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 1: All sections rendered in order
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 1 — all sections rendered in order', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary();
+      const envelope = makeEnvelope();
+      html = renderDigDeeperDoc({ summary, envelope, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('renders a section element for each summary section', () => {
+      const matches = html.match(/<section/g);
+      expect(matches?.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('renders Introduction before Main Content', () => {
+      const introIdx = html.indexOf('Introduction');
+      const mainIdx = html.indexOf('Main Content');
+      expect(introIdx).toBeGreaterThanOrEqual(0);
+      expect(mainIdx).toBeGreaterThan(introIdx);
+    });
+
+    it('each section has data-dug attribute', () => {
+      expect(html).toContain('data-dug="false"');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 2: Un-dug section has .gist + dig-trigger
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 2 — un-dug section: .gist block + dig-trigger', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary();
+      const envelope = makeEnvelope();
+      html = renderDigDeeperDoc({ summary, envelope, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('renders .gist div for sections with gist data', () => {
+      expect(html).toContain('class="gist"');
+    });
+
+    it('renders the lead sentence in .gist', () => {
+      expect(html).toContain('This is the intro lead sentence.');
+    });
+
+    it('renders bullets inside .gist', () => {
+      expect(html).toContain('First bullet text');
+    });
+
+    it('renders a dig-trigger anchor for un-dug sections', () => {
+      expect(html).toContain('class="dig-trigger"');
+    });
+
+    it('dig-trigger has data-section attribute with the startSec', () => {
+      expect(html).toContain('data-section="60"');
+    });
+
+    it('dig-trigger text contains "dig deeper ▶"', () => {
+      expect(html).toContain('dig deeper ▶');
+    });
+
+    it('un-dug section has data-dug="false"', () => {
+      expect(html).toContain('data-dug="false"');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 3: Dug section has .gist (hidden) + .dug (shown) + dig-toggle
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 3 — dug section: .gist + .dug + dig-toggle', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary();
+      const envelope = makeEnvelope();
+      const dug = [makeDugSection({ sectionId: 60, startSec: 60 })];
+      html = renderDigDeeperDoc({ summary, envelope, dug, mdPath, videoId: 'vid123' });
+    });
+
+    it('dug section has data-dug="true"', () => {
+      expect(html).toContain('data-dug="true"');
+    });
+
+    it('dug section still has .gist block (hidden by CSS)', () => {
+      expect(html).toContain('class="gist"');
+    });
+
+    it('dug section has .dug block with rendered bodyMarkdown', () => {
+      expect(html).toContain('class="dug"');
+    });
+
+    it('.dug block contains the dug body content', () => {
+      expect(html).toContain('Dug content for intro section.');
+    });
+
+    it('renders dig-toggle anchor for dug sections', () => {
+      expect(html).toContain('class="dig-toggle"');
+    });
+
+    it('dig-toggle text contains "show summary ⌃"', () => {
+      expect(html).toContain('show summary ⌃');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 4: timeRange null → no data-start, no dig-trigger, .gist shown
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 4 — timeRange null: no data-start, no dig-trigger, .gist shown', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary({
+        sections: [
+          {
+            numeral: null,
+            title: 'Conclusion',
+            prose: 'Conclusion prose',
+            timeRange: null,
+          },
+        ],
+      });
+      const envelope: ModelEnvelope = {
+        sourceMd: 'test.md',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceSections: ['Conclusion'],
+        model: {
+          sections: [
+            {
+              lead: 'Conclusion lead.',
+              bullets: [
+                { label: 'A', text: 'Bullet A' },
+                { label: 'B', text: 'Bullet B' },
+                { label: 'C', text: 'Bullet C' },
+              ],
+            },
+          ],
+        },
+      };
+      html = renderDigDeeperDoc({ summary, envelope, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('does NOT emit data-start attribute on the section element', () => {
+      // The section element must not have data-start; NAV_SCRIPT may contain the string
+      // in its querySelector calls, so we check the section tag itself.
+      expect(html).not.toMatch(/<section[^>]*data-start/);
+    });
+
+    it('does NOT emit a dig-trigger for a no-timestamp section', () => {
+      expect(html).not.toContain('class="dig-trigger"');
+    });
+
+    it('renders .gist block even without a timestamp', () => {
+      expect(html).toContain('class="gist"');
+      expect(html).toContain('Conclusion lead.');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 5: Skeleton section (gist null) — no .gist, but dig-trigger if startSec
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 5 — skeleton: no .gist, dig-trigger present when startSec exists', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary({
+        sections: [
+          {
+            numeral: '1',
+            title: 'Section One',
+            prose: 'Some prose',
+            timeRange: { startSec: 120, endSec: 240, label: '2:00–4:00', url: 'https://www.youtube.com/watch?v=vid123&t=120s' },
+          },
+        ],
+      });
+      // envelope null → skeleton (gist null for all sections)
+      html = renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('does NOT render a .gist block for a skeleton section', () => {
+      expect(html).not.toContain('class="gist"');
+    });
+
+    it('still renders dig-trigger when startSec is present', () => {
+      expect(html).toContain('class="dig-trigger"');
+      expect(html).toContain('data-section="120"');
+    });
+
+    it('section has data-dug="false" (un-dug)', () => {
+      expect(html).toContain('data-dug="false"');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 6: Orphan region rendered when orphans exist
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 6 — orphan region rendered', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary({
+        sections: [
+          {
+            numeral: '1',
+            title: 'Only Section',
+            prose: 'Prose',
+            timeRange: { startSec: 60, endSec: 120, label: '1:00–2:00', url: 'https://www.youtube.com/watch?v=vid123&t=60s' },
+          },
+        ],
+      });
+      // orphan: sectionId 999 does not match any summary section
+      const orphanDug: DugSection = {
+        sectionId: 999,
+        startSec: 999,
+        title: 'Orphaned Section',
+        bodyMarkdown: 'Orphan body content here.',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+      };
+      html = renderDigDeeperDoc({ summary, envelope: null, dug: [orphanDug], mdPath, videoId: 'vid123' });
+    });
+
+    it('renders a .dg-orphans section', () => {
+      expect(html).toContain('class="dg-orphans"');
+    });
+
+    it('renders orphan title in the orphan region', () => {
+      expect(html).toContain('Orphaned Section');
+    });
+
+    it('renders orphan body content', () => {
+      expect(html).toContain('Orphan body content here.');
+    });
+
+    it('renders orphan comment sentinel', () => {
+      expect(html).toContain('<!-- orphan: 999 -->');
+    });
+
+    it('renders re-dig notice paragraph', () => {
+      expect(html).toContain('class="dg-orphan-note"');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 6b: No orphan region when orphans is empty
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 6b — no orphan region when no orphans', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary();
+      html = renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('does NOT render .dg-orphans when there are no orphans', () => {
+      expect(html).not.toContain('class="dg-orphans"');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 7: Top bar rendered once
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 7 — top bar rendered once', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary();
+      html = renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('renders exactly one .dg-topbar div', () => {
+      const matches = html.match(/class="dg-topbar"/g);
+      expect(matches?.length).toBe(1);
+    });
+
+    it('topbar contains ↑ summary anchor', () => {
+      expect(html).toContain('↑ summary');
+    });
+
+    it('topbar ↑ summary anchor has class="dig" and data-type="summary"', () => {
+      expect(html).toContain('data-type="summary"');
+    });
+
+    it('topbar contains expand-all button', () => {
+      expect(html).toContain('class="dg-expand-all"');
+      expect(html).toContain('⤢ expand all');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 8: Spacing CSS present
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 8 — spacing and toggle CSS present', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary();
+      html = renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('includes section padding CSS', () => {
+      expect(html).toContain('padding:2.4em 0');
+    });
+
+    it('includes 2px top border rule between sections', () => {
+      expect(html).toMatch(/border-top:2px/);
+    });
+
+    it('includes 1.2em margin around .dug img', () => {
+      expect(html).toContain('.dug img');
+      expect(html).toMatch(/1\.2em/);
+    });
+
+    it('includes default hide-gist CSS for dug sections', () => {
+      expect(html).toContain('section[data-dug="true"] .gist{display:none}');
+    });
+
+    it('includes .show-gist toggle CSS', () => {
+      expect(html).toContain('.show-gist .gist{display:block}');
+      expect(html).toContain('.show-gist .dug{display:none}');
     });
   });
 });
