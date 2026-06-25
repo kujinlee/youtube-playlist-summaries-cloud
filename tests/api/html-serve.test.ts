@@ -2,6 +2,16 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { GET } from '../../app/api/html/[id]/route';
+import { GENERATOR_VERSION } from '../../lib/html-doc/render';
+
+// Mock reRenderSummaryHtml so tests control return values without hitting disk/Gemini.
+jest.mock('../../lib/html-doc/rerender', () => ({
+  ...jest.requireActual('../../lib/html-doc/rerender'),
+  reRenderSummaryHtml: jest.fn(),
+}));
+
+import { reRenderSummaryHtml } from '../../lib/html-doc/rerender';
+const mockReRender = reRenderSummaryHtml as jest.MockedFunction<typeof reRenderSummaryHtml>;
 
 let dir: string;
 const VIDEO_ID = 'vid12345';
@@ -61,7 +71,9 @@ it('404s when the file is missing on disk', async () => {
 
 it('serves the cached HTML with text/html', async () => {
   fs.mkdirSync(path.join(dir, 'htmls'));
-  fs.writeFileSync(path.join(dir, 'htmls', 'a.html'), '<!DOCTYPE html><title>ok</title>');
+  // Include current generator version so the version check serves cached without calling rerender.
+  fs.writeFileSync(path.join(dir, 'htmls', 'a.html'),
+    `<!DOCTYPE html><head><meta name="generator" content="${GENERATOR_VERSION}"></head><title>ok</title>`);
   writeIndex(video({ summaryHtml: 'htmls/a.html' }));
   const res = await GET(url(), ctx);
   expect(res.status).toBe(200);
@@ -72,7 +84,9 @@ it('serves the cached HTML with text/html', async () => {
 it('serves a summary HTML whose filename has a Korean slug (B-1)', async () => {
   const koFile = 'htmls/모든-곳에-구글이-있었다.html';
   fs.mkdirSync(path.join(dir, 'htmls'), { recursive: true });
-  fs.writeFileSync(path.join(dir, koFile), '<!DOCTYPE html><title>ko</title>');
+  // Include current generator version so the version check serves cached without calling rerender.
+  fs.writeFileSync(path.join(dir, koFile),
+    `<!DOCTYPE html><head><meta name="generator" content="${GENERATOR_VERSION}"></head><title>ko</title>`);
   writeIndex(video({ summaryHtml: koFile }));
   const res = await GET(new Request(
     `http://localhost/api/html/${VIDEO_ID}?outputFolder=${encodeURIComponent(dir)}&type=summary`), ctx);
@@ -119,4 +133,85 @@ it('unknown type still 400 (B-2)', async () => {
   const base = `http://localhost/api/html/${VIDEO_ID}?outputFolder=${encodeURIComponent(dir)}`;
   const res = await GET(new Request(`${base}&type=banana`), ctx);
   expect(res.status).toBe(400);
+});
+
+// --- version-gated summary re-render (Task 5 behaviors) ---
+
+function makeHtmlWithGenerator(generatorContent: string) {
+  return `<!DOCTYPE html><html><head><meta name="generator" content="${generatorContent}"></head><body></body></html>`;
+}
+
+describe('version-gated summary re-render', () => {
+  beforeEach(() => {
+    mockReRender.mockReset();
+    fs.mkdirSync(path.join(dir, 'htmls'), { recursive: true });
+  });
+
+  it('B1: current generator version → serves cached, does NOT call reRenderSummaryHtml', async () => {
+    const cached = makeHtmlWithGenerator(GENERATOR_VERSION);
+    fs.writeFileSync(path.join(dir, 'htmls', 'a.html'), cached);
+    writeIndex(video({ summaryHtml: 'htmls/a.html', summaryMd: 'wiki/a.md' }));
+
+    const res = await GET(url(), ctx);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('meta name="generator"');
+    expect(mockReRender).not.toHaveBeenCalled();
+  });
+
+  it('B2: stale + rerendered → serves result.html from reRenderSummaryHtml', async () => {
+    const staleCached = makeHtmlWithGenerator('magazine-skim v1');
+    fs.writeFileSync(path.join(dir, 'htmls', 'a.html'), staleCached);
+    writeIndex(video({ summaryHtml: 'htmls/a.html', summaryMd: 'wiki/a.md' }));
+
+    const freshHtml = `<!DOCTYPE html><html><head><meta name="generator" content="${GENERATOR_VERSION}"></head><body>fresh</body></html>`;
+    mockReRender.mockReturnValue({ status: 'rerendered', htmlPath: 'htmls/a.html', html: freshHtml });
+
+    const res = await GET(url(), ctx);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('fresh');
+    expect(mockReRender).toHaveBeenCalledWith(VIDEO_ID, dir);
+  });
+
+  it('B3: stale + skipped-drift → serves stale cached, 200, console.warn called', async () => {
+    const staleCached = makeHtmlWithGenerator('magazine-skim v1');
+    fs.writeFileSync(path.join(dir, 'htmls', 'a.html'), staleCached);
+    writeIndex(video({ summaryHtml: 'htmls/a.html', summaryMd: 'wiki/a.md' }));
+
+    mockReRender.mockReturnValue({ status: 'skipped-drift', mdSections: ['A'], modelSections: ['B'] });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const res = await GET(url(), ctx);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('magazine-skim v1');
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('B4: stale + skipped-no-model → serves stale cached, 200', async () => {
+    const staleCached = makeHtmlWithGenerator('magazine-skim v1');
+    fs.writeFileSync(path.join(dir, 'htmls', 'a.html'), staleCached);
+    writeIndex(video({ summaryHtml: 'htmls/a.html', summaryMd: 'wiki/a.md' }));
+
+    mockReRender.mockReturnValue({ status: 'skipped-no-model' });
+
+    const res = await GET(url(), ctx);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('magazine-skim v1');
+  });
+
+  it('B5: missing file → 404 regardless of version logic', async () => {
+    writeIndex(video({ summaryHtml: 'htmls/missing.html', summaryMd: 'wiki/a.md' }));
+    // no file on disk
+    const res = await GET(url(), ctx);
+    expect(res.status).toBe(404);
+    // rerender should not be called since file read throws
+    expect(mockReRender).not.toHaveBeenCalled();
+  });
+
+  it('B6: null summaryHtml → 404', async () => {
+    writeIndex(video({ summaryHtml: null }));
+    const res = await GET(url(), ctx);
+    expect(res.status).toBe(404);
+    expect(mockReRender).not.toHaveBeenCalled();
+  });
 });

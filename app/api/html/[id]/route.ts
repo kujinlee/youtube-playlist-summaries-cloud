@@ -3,6 +3,8 @@ import path from 'path';
 import { assertOutputFolder, assertVideoId, readIndex } from '../../../../lib/index-store';
 import { runDeepDiveHtml } from '../../../../lib/html-doc/generate-deep-dive';
 import { renderDigDeeperHtml } from '../../../../lib/html-doc/render-dig-deeper';
+import { GENERATOR_VERSION } from '../../../../lib/html-doc/render';
+import { reRenderSummaryHtml } from '../../../../lib/html-doc/rerender';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -61,10 +63,30 @@ export async function GET(request: Request, { params }: Params) {
     if (!htmlFile) return new Response(JSON.stringify({ error: 'html not available' }), { status: 404 });
     const bad = guard(htmlFile);
     if (bad) return bad;
+    let cachedHtml: string;
     try {
-      return serveHtml(fs.readFileSync(path.resolve(outputFolder, htmlFile), 'utf-8'));
+      cachedHtml = fs.readFileSync(path.resolve(outputFolder, htmlFile), 'utf-8');
     } catch {
       return new Response(JSON.stringify({ error: 'file not found' }), { status: 404 });
+    }
+    // Extract generator version from cached HTML.
+    const generatorMatch = cachedHtml.match(/<meta name="generator" content="([^"]*)">/);
+    const cachedVersion = generatorMatch ? generatorMatch[1] : null;
+    if (cachedVersion === GENERATOR_VERSION) {
+      return serveHtml(cachedHtml);
+    }
+    // Cached HTML is stale — attempt re-render.
+    const result = reRenderSummaryHtml(videoId, outputFolder);
+    switch (result.status) {
+      case 'rerendered':
+        return serveHtml(result.html);
+      case 'skipped-not-eligible':
+        return serveHtml(cachedHtml);
+      default:
+        // skipped-no-model, skipped-no-md, skipped-unparseable, skipped-drift:
+        // serve stale cached artifact; never 500 when a cached file exists.
+        console.warn(`[html/summary] rerender skipped (${result.status}) for video ${videoId}`);
+        return serveHtml(cachedHtml);
     }
   }
 
