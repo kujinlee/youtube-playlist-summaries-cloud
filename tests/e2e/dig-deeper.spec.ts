@@ -766,3 +766,285 @@ test('C4 (dig-doc POST-500): POST 500 → ⚠ retry on trigger; section stays un
   await expect(page.locator('section[data-dug="true"]')).toHaveCount(0);
   await expect(page.locator('section[data-dug="false"]')).toBeVisible();
 });
+
+// ===========================================================================
+// DIG-DOC ?dig=N AUTO-TRIGGER (Task 11)
+// Tests for guarded ?dig= URL param: already-dug → no POST, un-dug → fires once,
+// URL stripped via replaceState, bfcache pageshow re-fetches dig-state.
+// ===========================================================================
+
+const VIDEO_ID_DIG_PARAM = 'vid-dig-param';
+const START_SEC_DIG_PARAM = 90; // matches the dig-trigger data-section in makeDigDocHtmlUndug variant
+
+/**
+ * Un-dug dig-doc fixture for D-series tests.
+ * Uses VIDEO_ID_DIG_PARAM so routes don't clash with C-series.
+ */
+function makeDigParamHtmlUndug(): string {
+  const summary: ParsedSummary = {
+    title: 'Dig Param Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_DIG_PARAM}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_DIG_PARAM,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_DIG_PARAM}.md`,
+    sections: [
+      {
+        numeral: '1',
+        title: 'Section Beta',
+        prose: 'Intro prose',
+        timeRange: { startSec: START_SEC_DIG_PARAM, endSec: START_SEC_DIG_PARAM + 60, label: '1:30–2:30', url: `https://www.youtube.com/watch?v=${VIDEO_ID_DIG_PARAM}&t=${START_SEC_DIG_PARAM}s` },
+      },
+    ],
+  };
+  return renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath: '/tmp/dig-param-test-dig.md', videoId: VIDEO_ID_DIG_PARAM });
+}
+
+/**
+ * Dug dig-doc fixture for D-series tests.
+ */
+function makeDigParamHtmlDug(): string {
+  const summary: ParsedSummary = {
+    title: 'Dig Param Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_DIG_PARAM}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_DIG_PARAM,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_DIG_PARAM}.md`,
+    sections: [
+      {
+        numeral: '1',
+        title: 'Section Beta',
+        prose: 'Intro prose',
+        timeRange: { startSec: START_SEC_DIG_PARAM, endSec: START_SEC_DIG_PARAM + 60, label: '1:30–2:30', url: `https://www.youtube.com/watch?v=${VIDEO_ID_DIG_PARAM}&t=${START_SEC_DIG_PARAM}s` },
+      },
+    ],
+  };
+  const dug: DugSection[] = [
+    {
+      sectionId: START_SEC_DIG_PARAM,
+      startSec: START_SEC_DIG_PARAM,
+      title: 'Section Beta',
+      bodyMarkdown: '## Section Beta\n\nDeep insight after auto-dig.\n',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+    },
+  ];
+  return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/dig-param-test-dig.md', videoId: VIDEO_ID_DIG_PARAM });
+}
+
+/**
+ * Wire routes for D-series: dig-doc HTML (stateful: undug → dug after POST),
+ * dig-state, POST, SSE stream.
+ */
+async function stubDigParamRoutes(
+  page: import('@playwright/test').Page,
+  opts: {
+    initialDigState?: number[];   // sectionIds already dug on load
+    postStatus?: number;          // default 200
+    postSpy?: (method: string) => void;
+  } = {},
+) {
+  const { initialDigState = [], postStatus = 200 } = opts;
+  const state = { dug: false };
+
+  const undugHtml = makeDigParamHtmlUndug();
+  const dugHtml = makeDigParamHtmlDug();
+
+  // dig-state: returns initialDigState on first fetch; after POST, returns section as dug
+  await page.route(`**/api/videos/${VIDEO_ID_DIG_PARAM}/dig-state**`, (route) => {
+    const ids = state.dug ? [START_SEC_DIG_PARAM] : initialDigState;
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ sectionIds: ids }),
+    });
+  });
+
+  // POST trigger
+  await page.route(`**/api/videos/${VIDEO_ID_DIG_PARAM}/dig/${START_SEC_DIG_PARAM}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    opts.postSpy?.(route.request().method());
+    if (postStatus === 200) {
+      state.dug = true;
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ jobId: 'dig-param-job-1' }),
+      });
+    } else {
+      route.fulfill({
+        status: postStatus,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'server error' }),
+      });
+    }
+  });
+
+  // SSE stream
+  await page.route(`**/api/videos/${VIDEO_ID_DIG_PARAM}/dig/${START_SEC_DIG_PARAM}/stream**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      body: sseBody({ type: 'done' }),
+    }),
+  );
+
+  // HTML route: returns undug initially, dug after POST
+  await page.route(`**/api/html/${VIDEO_ID_DIG_PARAM}**`, (route) => {
+    const html = state.dug ? dugHtml : undugHtml;
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: html,
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// D1: ?dig=N on an un-dug section → generation fires once, section expands,
+//     URL no longer contains dig=
+// ---------------------------------------------------------------------------
+
+test('D1 (?dig= un-dug): generation fires once, section expands, URL stripped', async ({ page }) => {
+  const postCalls: string[] = [];
+  await stubDigParamRoutes(page, {
+    initialDigState: [],
+    postSpy: (method) => postCalls.push(method),
+  });
+
+  // Navigate to dig-doc with ?dig=<sec>
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_DIG_PARAM}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper&dig=${START_SEC_DIG_PARAM}`;
+  await page.goto(digDocUrl);
+
+  // Auto-trigger fires: section should expand to dug state (dig-toggle visible)
+  const toggle = page.locator('a.dig-toggle');
+  await expect(toggle).toBeVisible({ timeout: 8000 });
+
+  // Exactly one POST was fired
+  expect(postCalls).toHaveLength(1);
+
+  // URL no longer contains dig= param
+  const finalUrl = page.url();
+  expect(new URL(finalUrl).searchParams.has('dig')).toBe(false);
+  // type and outputFolder are preserved
+  expect(new URL(finalUrl).searchParams.get('type')).toBe('dig-deeper');
+  expect(new URL(finalUrl).searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
+});
+
+// ---------------------------------------------------------------------------
+// D2: ?dig=N on an ALREADY-dug section → NO POST fired, scrolls, URL stripped
+// ---------------------------------------------------------------------------
+
+test('D2 (?dig= already-dug): no POST fired, URL stripped', async ({ page }) => {
+  // Section is already dug on load
+  let postFired = false;
+  await stubDigParamRoutes(page, {
+    initialDigState: [START_SEC_DIG_PARAM],
+    postSpy: () => { postFired = true; },
+  });
+
+  // Use the DUG html from the start (section already dug, dig-toggle present)
+  // The stubDigParamRoutes HTML route starts with undugHtml, but dig-state already includes the section.
+  // We need the HTML to also reflect dug state — override the HTML route.
+  // Re-stub HTML with dug version (later route registration wins in Playwright).
+  const dugHtml = makeDigParamHtmlDug();
+  await page.route(`**/api/html/${VIDEO_ID_DIG_PARAM}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: dugHtml,
+    }),
+  );
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_DIG_PARAM}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper&dig=${START_SEC_DIG_PARAM}`;
+  await page.goto(digDocUrl);
+
+  // The section is already dug — wait for the page to stabilise (dig-state fetch completes)
+  await page.waitForLoadState('networkidle', { timeout: 5000 });
+
+  // No POST must have been fired
+  expect(postFired).toBe(false);
+
+  // URL no longer contains dig= param
+  const finalUrl = page.url();
+  expect(new URL(finalUrl).searchParams.has('dig')).toBe(false);
+  // type and outputFolder preserved
+  expect(new URL(finalUrl).searchParams.get('type')).toBe('dig-deeper');
+  expect(new URL(finalUrl).searchParams.get('outputFolder')).toBe(OUTPUT_FOLDER);
+});
+
+// ---------------------------------------------------------------------------
+// D3: reload after auto-trigger → no second POST
+// ---------------------------------------------------------------------------
+
+test('D3 (reload after ?dig=): no second POST on reload', async ({ page }) => {
+  const postCalls: string[] = [];
+  await stubDigParamRoutes(page, {
+    initialDigState: [],
+    postSpy: (method) => postCalls.push(method),
+  });
+
+  // First load: auto-trigger fires
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_DIG_PARAM}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper&dig=${START_SEC_DIG_PARAM}`;
+  await page.goto(digDocUrl);
+
+  // Wait for section to expand (first trigger done)
+  await expect(page.locator('a.dig-toggle')).toBeVisible({ timeout: 8000 });
+  const afterFirstLoad = postCalls.length;
+  expect(afterFirstLoad).toBe(1);
+
+  // The URL should now have dig stripped; reload (no ?dig= in URL → no second trigger)
+  await page.reload();
+  await page.waitForLoadState('networkidle', { timeout: 5000 });
+
+  // Still exactly 1 POST total
+  expect(postCalls).toHaveLength(1);
+});
+
+// ---------------------------------------------------------------------------
+// D4: bfcache back navigation → pageshow re-fetches dig-state
+// ---------------------------------------------------------------------------
+
+test('D4 (bfcache pageshow): navigate away and back → pageshow re-fetches dig-state', async ({ page }) => {
+  let digStateFetchCount = 0;
+  await stubDigParamRoutes(page, { initialDigState: [] });
+
+  // Count dig-state fetches via a separate spy route (falls through to the stub)
+  await page.route(`**/api/videos/${VIDEO_ID_DIG_PARAM}/dig-state**`, (route) => {
+    digStateFetchCount++;
+    route.fallback();
+  });
+
+  // Stub a second page for navigation target
+  await page.route('**/about-blank-nav**', (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+      body: '<html><body>Away</body></html>',
+    }),
+  );
+
+  // Load dig-doc page (no ?dig= param — just test the pageshow re-fetch)
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_DIG_PARAM}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+  await page.waitForLoadState('networkidle', { timeout: 5000 });
+
+  const fetchesAfterFirstLoad = digStateFetchCount;
+  expect(fetchesAfterFirstLoad).toBeGreaterThanOrEqual(1);
+
+  // Navigate away
+  await page.goto('http://localhost:3000/about-blank-nav');
+
+  // Go back — this simulates bfcache restoration (page restored from cache)
+  await page.goBack();
+  await page.waitForLoadState('networkidle', { timeout: 5000 });
+
+  // pageshow listener should re-fetch dig-state
+  expect(digStateFetchCount).toBeGreaterThan(fetchesAfterFirstLoad);
+});

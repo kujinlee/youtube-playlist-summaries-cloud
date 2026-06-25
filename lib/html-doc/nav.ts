@@ -314,6 +314,56 @@ export const NAV_SCRIPT = `<script>
         if(st==='loading')return;
         _startDocDig(trig);
       });
+      // ── ?dig=N auto-trigger ───────────────────────────────────────────────
+      // Strip ?dig from URL immediately (keep type, outputFolder, hash) so
+      // reload / back-forward never re-fires generation.
+      function _stripDigParam(){
+        var u2=new URL(location.href);
+        u2.searchParams.delete('dig');
+        history.replaceState(null,'',u2.pathname+u2.search+(u2.hash||''));
+      }
+      function _applyDigDocState(dugIds){
+        // Re-apply control visibility to reflect current dug state.
+        // (Used by pageshow to refresh a bfcache-restored page.)
+        dugIds.forEach(function(id){
+          var el=document.querySelector('[data-start="'+id+'"]');
+          if(el)el.setAttribute('data-dug','true');
+        });
+      }
+      function _handleDigParam(isPageshow){
+        var digN=isPageshow?null:_sp.get('dig');
+        var digSec=digN!==null&&digN!==''?+digN:null;
+        fetch('/api/videos/'+videoId+'/dig-state?outputFolder='+encodeURIComponent(outputFolder))
+          .then(function(r){return r.ok?r.json():Promise.resolve({sectionIds:[]});})
+          .then(function(data){
+            var dugIds=data.sectionIds||[];
+            if(isPageshow){
+              // bfcache restore: re-apply states only, no auto-trigger
+              _applyDigDocState(dugIds);
+              return;
+            }
+            if(digSec===null)return;
+            // Strip ?dig immediately regardless of dug state
+            _stripDigParam();
+            var trigger=document.querySelector('.dig-trigger[data-section="'+digSec+'"]');
+            if(!trigger)return; // invalid/unknown N — no-op
+            if(dugIds.indexOf(digSec)>=0){
+              // Already dug: scroll only, no POST
+              var sect=document.querySelector('[data-start="'+digSec+'"]');
+              if(sect)sect.scrollIntoView();
+            }else{
+              // Un-dug: trigger once then scroll after re-GET replaces section
+              _startDocDig(trigger);
+            }
+          })
+          .catch(function(){
+            if(!isPageshow)_stripDigParam();
+          });
+      }
+      _handleDigParam(false);
+      window.addEventListener('pageshow',function(ev){
+        if(ev.persisted)_handleDigParam(true);
+      });
     }
     return;
   }
