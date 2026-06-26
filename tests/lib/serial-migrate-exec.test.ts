@@ -188,6 +188,34 @@ describe('runPhaseB', () => {
     const r2 = runPhaseB(outputFolder);
 
     expect(r2.renamed).toBe(0);
+    // M2: index must not be corrupted on re-run
+    expect(readIndex(outputFolder).videos[0].summaryMd).toBe('001_alpha.md');
+  });
+
+  // M1: envelope provenance rewrite — models/<new-name>.json gets sourceMd updated.
+  it('rewrites envelope sourceMd in renamed model JSON', () => {
+    seedIndex([
+      makeVideoB({
+        id: 'a',
+        serialNumber: 1,
+        summaryMd: 'alpha.md',
+        summaryPdf: null,
+      }),
+    ]);
+    fs.writeFileSync(path.join(outputFolder, 'alpha.md'), 'md content');
+    fs.writeFileSync(
+      path.join(outputFolder, 'models/alpha.json'),
+      JSON.stringify({ sourceMd: 'alpha.md', generatedAt: 't' }),
+    );
+
+    runPhaseB(outputFolder);
+
+    expect(fs.existsSync(path.join(outputFolder, 'models/001_alpha.json'))).toBe(true);
+    const envelope = JSON.parse(
+      fs.readFileSync(path.join(outputFolder, 'models/001_alpha.json'), 'utf8'),
+    );
+    expect(envelope.sourceMd).toBe('001_alpha.md');  // rewritten to new md basename
+    expect(envelope.generatedAt).toBe('t');           // other fields preserved
   });
 
   // B1: archived file renamed UNDER archived/, but the index field stays ROOT-relative.

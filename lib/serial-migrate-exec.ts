@@ -46,8 +46,16 @@ export function runPhaseB(outputFolder: string): { renamed: number; conflicts: s
       const src = resolveOnDisk(outputFolder, op.from);
       if (!src) continue;                                  // src gone → not a conflict (see B2)
       const dstAbs = physicalDst(src, op);
-      if (fs.existsSync(dstAbs) && fs.realpathSync(dstAbs) !== fs.realpathSync(src.abs)) {
-        conflicts.push(plan.id); aborted = true; break;    // different file at target → never clobber
+      if (fs.existsSync(dstAbs)) {
+        // I2: realpathSync can throw ENOENT on TOCTOU race (file vanishes after existsSync).
+        // Treat any error conservatively as a conflict to avoid clobbering unknown state.
+        let isConflict = false;
+        try {
+          isConflict = fs.realpathSync(dstAbs) !== fs.realpathSync(src.abs);
+        } catch {
+          isConflict = true;
+        }
+        if (isConflict) { conflicts.push(plan.id); aborted = true; break; } // different file at target → never clobber
       }
     }
     if (aborted) continue;
@@ -63,7 +71,12 @@ export function runPhaseB(outputFolder: string): { renamed: number; conflicts: s
       const src = resolveOnDisk(outputFolder, op.from);
       if (src) {
         const dstAbs = physicalDst(src, op);
-        if (!fs.existsSync(dstAbs)) { fs.renameSync(src.abs, dstAbs); renamed++; }
+        if (!fs.existsSync(dstAbs)) {
+          // I1: a throwing renameSync (EACCES, EXDEV, etc.) must not abort later videos.
+          // On error, skip this video entirely (no index update, no provenance rewrite).
+          try { fs.renameSync(src.abs, dstAbs); renamed++; }
+          catch { conflicts.push(plan.id); aborted = true; break; }
+        }
         targetAbs = dstAbs;
       } else {
         // B2: src missing — a prior crashed run may have already renamed it. Probe the target.
@@ -80,6 +93,8 @@ export function runPhaseB(outputFolder: string): { renamed: number; conflicts: s
         htmlTargetsAbs.push(targetAbs);
       }
     }
+
+    if (aborted) continue;  // I1: renameSync failed mid-video → skip provenance + index update
 
     // ── Provenance: rewrite source-md meta in the renamed HTML + the envelope sourceMd. Best-effort. ──
     if (mdNewName) {
