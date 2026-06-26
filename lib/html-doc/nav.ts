@@ -270,7 +270,7 @@ export const NAV_SCRIPT = `<script>
           function _next(){
             // Collect still-un-dug triggers (may have changed if DOM was swapped).
             // Exclude error-state triggers — they already failed in this batch run.
-            var remaining=[].slice.call(document.querySelectorAll('.dig-trigger[data-section]'))
+            var remaining=[].slice.call(document.querySelectorAll('.dig-trigger[data-section], .dig-refresh[data-section]'))
               .filter(function(t){return t.dataset.state!=='error'&&t.dataset.state!=='loading';});
             if(cancelled||remaining.length===0){
               if(failures.length>0){
@@ -294,7 +294,7 @@ export const NAV_SCRIPT = `<script>
           _next();
         }
         _eaBtn.addEventListener('click',function(){
-          var triggers=[].slice.call(document.querySelectorAll('.dig-trigger[data-section]'));
+          var triggers=[].slice.call(document.querySelectorAll('.dig-trigger[data-section], .dig-refresh[data-section]'));
           var N=triggers.length;
           if(N===0)return;
           var X=(N*0.05).toFixed(2);
