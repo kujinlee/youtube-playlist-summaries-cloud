@@ -130,8 +130,8 @@ const DIG_DOC_CSS = `
 section{padding:2.4em 0;border-top:2px solid var(--rule)}
 section:first-of-type{border-top:0}
 .dug img{margin:2em 0}
-.dg .dig-trigger,.dg .dig-toggle{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
-.dg .dig-trigger:hover,.dg .dig-toggle:hover{text-decoration:underline}
+.dg .dig-trigger,.dg .dig-toggle,.dg .dig-refresh{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
+.dg .dig-trigger:hover,.dg .dig-toggle:hover,.dg .dig-refresh:hover{text-decoration:underline}
 section[data-dug="true"] .gist{display:none}
 section[data-dug="true"] .dug{display:block}
 section[data-dug="true"].show-gist .gist{display:block}
@@ -197,10 +197,13 @@ export function renderDigDeeperDoc(args: {
     const tsLink = startSec !== null
       ? ` <a class="ts" href="https://www.youtube.com/watch?v=${esc(videoId)}&amp;t=${startSec}s" target="_blank" rel="noopener noreferrer">▶ (${fmtClock(startSec)})</a>`
       : '';
-    // control: un-dug (with startSec) → dig-trigger; dug → dig-toggle; no startSec → neither
+    // control: un-dug (with startSec) → dig-trigger; dug → dig-toggle (+ dig-refresh if stale); no startSec → neither
     let control = '';
     if (isDug) {
       control = ` <a class="dig-toggle">show summary ⌃</a>`;
+      if (ms.isStale && startSec !== null) {
+        control += ` <a class="dig-refresh" data-section="${startSec}">↻ outdated</a>`;
+      }
     } else if (startSec !== null) {
       control = ` <a class="dig-trigger" data-section="${startSec}">dig deeper ▶</a>`;
     }

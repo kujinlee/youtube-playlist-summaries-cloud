@@ -882,11 +882,11 @@ describe('renderDigDeeperDoc', () => {
       expect(html).not.toMatch(/class="ts"[^>]*>[^<]*Introduction/);
     });
 
-    // (3) dig-trigger / dig-toggle styled as a muted small link (not big serif gold)
-    it('emits muted CSS for .dig-trigger and .dig-toggle (meta colour, .8rem)', () => {
-      expect(html).toContain('.dg .dig-trigger,.dg .dig-toggle{');
-      expect(html).toMatch(/\.dg \.dig-trigger,\.dg \.dig-toggle\{[^}]*color:var\(--meta\)/);
-      expect(html).toMatch(/\.dg \.dig-trigger,\.dg \.dig-toggle\{[^}]*font-size:\.8rem/);
+    // (3) dig-trigger / dig-toggle / dig-refresh styled as a muted small link (not big serif gold)
+    it('emits muted CSS for .dig-trigger, .dig-toggle, and .dig-refresh (meta colour, .8rem)', () => {
+      expect(html).toContain('.dg .dig-trigger,.dg .dig-toggle,.dg .dig-refresh{');
+      expect(html).toMatch(/\.dg \.dig-trigger,\.dg \.dig-toggle,\.dg \.dig-refresh\{[^}]*color:var\(--meta\)/);
+      expect(html).toMatch(/\.dg \.dig-trigger,\.dg \.dig-toggle,\.dg \.dig-refresh\{[^}]*font-size:\.8rem/);
     });
 
     // (4) gold emphasis restored on the gist lead (matches the original summary render)
@@ -897,6 +897,87 @@ describe('renderDigDeeperDoc', () => {
     // control text is unchanged (E2E depends on exact text)
     it('keeps the dig-trigger control text exactly "dig deeper ▶"', () => {
       expect(html).toContain('dig deeper ▶');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 10: .dig-refresh control on STALE dug sections (Task 5)
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 10 — .dig-refresh control on stale dug sections', () => {
+    // makeSummary section "Introduction" at startSec=60.
+    // Use makeDugWithBody to build a dug section at the matching startSec.
+    // STALE: genVersion = DIG_GENERATOR_VERSION - 1
+    // FRESH: genVersion = DIG_GENERATOR_VERSION
+
+    it('renders a .dig-refresh control on a STALE dug section, keyed on startSec', () => {
+      const summary = makeSummaryWithDugSection(312);
+      const staleDug = makeDugWithBody(312, '## Test Section\n\nStale content.', DIG_GENERATOR_VERSION - 1);
+      const html = renderDigDeeperDoc({ summary, envelope: null, dug: [staleDug], mdPath, videoId: 'vid123' });
+      expect(html).toMatch(/class="dig-refresh"[^>]*data-section="312"|data-section="312"[^>]*class="dig-refresh"/);
+    });
+
+    it('STALE dug section still has dig-toggle', () => {
+      const summary = makeSummaryWithDugSection(312);
+      const staleDug = makeDugWithBody(312, '## Test Section\n\nStale content.', DIG_GENERATOR_VERSION - 1);
+      const html = renderDigDeeperDoc({ summary, envelope: null, dug: [staleDug], mdPath, videoId: 'vid123' });
+      expect(html).toContain('class="dig-toggle"');
+    });
+
+    it('does NOT render .dig-refresh anchor on a FRESH dug section', () => {
+      const summary = makeSummaryWithDugSection(312);
+      const freshDug = makeDugWithBody(312, '## Test Section\n\nFresh content.', DIG_GENERATOR_VERSION);
+      const html = renderDigDeeperDoc({ summary, envelope: null, dug: [freshDug], mdPath, videoId: 'vid123' });
+      // The CSS contains the class name, so check for the anchor element specifically
+      expect(html).not.toContain('class="dig-refresh"');
+    });
+
+    it('FRESH dug section still has dig-toggle', () => {
+      const summary = makeSummaryWithDugSection(312);
+      const freshDug = makeDugWithBody(312, '## Test Section\n\nFresh content.', DIG_GENERATOR_VERSION);
+      const html = renderDigDeeperDoc({ summary, envelope: null, dug: [freshDug], mdPath, videoId: 'vid123' });
+      expect(html).toContain('class="dig-toggle"');
+    });
+
+    it('uses a class distinct from dig-trigger and dig-toggle for the refresh control', () => {
+      const summary = makeSummaryWithDugSection(312);
+      const staleDug = makeDugWithBody(312, '## Test Section\n\nStale content.', DIG_GENERATOR_VERSION - 1);
+      const html = renderDigDeeperDoc({ summary, envelope: null, dug: [staleDug], mdPath, videoId: 'vid123' });
+      expect(html).toMatch(/class="dig-refresh"/);
+      // Must not reuse dig-trigger or dig-toggle for the refresh element
+      expect(html).not.toMatch(/class="dig-trigger"[^>]*↻/);
+      expect(html).not.toMatch(/class="dig-toggle"[^>]*↻/);
+    });
+
+    it('data-section on .dig-refresh is exactly the startSec value', () => {
+      const summary = makeSummaryWithDugSection(312);
+      const staleDug = makeDugWithBody(312, '## Test Section\n\nStale content.', DIG_GENERATOR_VERSION - 1);
+      const html = renderDigDeeperDoc({ summary, envelope: null, dug: [staleDug], mdPath, videoId: 'vid123' });
+      // data-section must be 312 (the startSec), not some other value
+      expect(html).toContain('data-section="312"');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Behavior 11: .dig-refresh CSS present in output (Task 5)
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('Behavior 11 — .dig-refresh CSS styling', () => {
+    let html: string;
+
+    beforeAll(() => {
+      const summary = makeSummary();
+      html = renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath, videoId: 'vid123' });
+    });
+
+    it('includes .dig-refresh in the muted control CSS rule', () => {
+      expect(html).toContain('.dg .dig-refresh');
+    });
+
+    it('.dig-refresh uses meta color and .8rem font size (matches dig-trigger/toggle style)', () => {
+      expect(html).toMatch(/\.dg \.dig-refresh[^}]*color:var\(--meta\)/);
+    });
+
+    it('includes a :hover underline rule for .dig-refresh', () => {
+      expect(html).toMatch(/\.dg \.dig-refresh:hover\{text-decoration:underline\}/);
     });
   });
 });
