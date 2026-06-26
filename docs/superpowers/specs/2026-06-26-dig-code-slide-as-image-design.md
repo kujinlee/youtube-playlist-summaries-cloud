@@ -77,9 +77,16 @@ base64 inline + missing-slide placeholder) **already handle images and need no c
    slide**. If code is merely spoken or described with no on-screen slide, it stays as plain
    prose — no fence, no image.
 5. **Caption** for a code/config slide is a short human-readable description (e.g.,
-   *"OKF frontmatter: the required `type` field"*), not a verbatim transcription.
+   *"OKF frontmatter: the required type field"*), not a verbatim transcription.
+   **Caption character constraint (review H2):** captions must be plain English phrases and
+   **must not contain `[`, `]`, `(`, `)`, or `|`** — `sanitizeCaption` (`lib/dig/slide-tokens.ts:118`)
+   strips those characters, and `|`/`]` are token delimiters in the `[[SLIDE:sec|caption]]`
+   grammar, so a caption containing them is silently mangled or truncated. The prompt must
+   instruct Gemini explicitly to avoid those characters (no raw code/YAML/shell punctuation in
+   the caption — describe the slide in words).
 6. The existing **≤3 `[[SLIDE:]]` per section** cap is unchanged; code/config slides count
-   toward the same budget. "Most sections need zero slides" guidance stays.
+   toward the same shared budget (review M2: 2 diagrams + 2 code slides → still only 3 emitted).
+   "Most sections need zero slides" guidance stays.
 
 ### Result
 
@@ -102,24 +109,45 @@ becomes the actual slide screenshot for the OKF section after re-dig.
   `type: metric` fence is replaced by the slide image.
 - **No data migration script, no file rewrites** — the version bump plus the existing
   stale-refresh UI does it all.
+- **Prose-only sections (review L3):** a v2 section that legitimately had no slides re-digs to a
+  v2-equivalent prose-only section under v3 — a functional no-op costing one Gemini call per
+  click. Acceptable; the staleness UI does not distinguish "had a code fence" from "had nothing".
 
 ---
 
 ## Testing
 
-| Layer | What changes |
+### CI-automated (jest, written first / RED)
+
+| Layer | Exact change |
 |---|---|
-| **Prompt content** | Assert the built prompt **no longer** instructs "transcribe code … do not screenshot", and **does** include code/config in the `[[SLIDE:]]` trigger list. This is the contract for the policy flip. Pure string builder → straightforward unit test, written first (RED). |
-| **Selectivity tests** (PR #28: `dig/slide-tokens`, `dig/companion-doc`) | Update any fixtures/assertions that encoded "code → fence" so they reflect "code → slide". |
-| **Version stamp / staleness** | Existing test asserting the route stamps `DIG_GENERATOR_VERSION` stays green; adjust/add a staleness test so `genVersion: 2` sections compute `isStale` against `3`. |
+| **Prompt content** | `tests/lib/dig/generate.test.ts` — the test *"instructs transcribing code/commands into fenced code blocks"* (asserts `/transcribe[^.]*code block/i`, ~line 197–198) must be **inverted**: assert the prompt does **not** instruct transcribing code. **Add** a positive assertion that the prompt lists code/config/terminal among the `[[SLIDE:]]` triggers, and an assertion of the caption character constraint (H2 — prompt tells Gemini to avoid `[ ] ( ) |` in captions). |
+| **Version constant** | `tests/lib/dig/generate.test.ts` — the assertion `expect(DIG_GENERATOR_VERSION).toBe(2)` (~line 188) → `toBe(3)` (review L1). |
+| **Selectivity tests** | `tests/lib/dig/slide-tokens.test.ts`, `tests/lib/dig/companion-doc.test.ts` — update any fixtures/assertions that encoded "code → fence" to reflect "code → slide". |
+| **Staleness** | Adjust/add a test so a `genVersion: 2` section computes `isStale` against `3` (the existing route-stamps-`DIG_GENERATOR_VERSION` test stays green). |
+| **Budget (review M2)** | Add explicit rows: 2 diagrams + 1 code slide → 3 emitted; 2 diagrams + 2 code slides → still only 3 (parser-enforced cap). |
 | **Capture / render** | Unchanged — `slides.ts` and `render-dig-deeper.ts` already handle images; existing tests cover them. |
 
+### Manual-once (real Gemini call — not CI; review L2)
+
+- **Acceptance:** re-dig the OKF section (`P_E29-87THI`, section 149) and confirm the slide image
+  appears in place of the `type: metric` fence.
+
 **Honest limit:** the policy is enforced by *prompt wording*. Gemini is probabilistic, so
-"code slide → screenshot" is a strong instruction, not a guarantee. Tests verify the *prompt*
-says the right thing; they cannot verify Gemini always obeys. **Acceptance** is verified by
-re-digging the OKF section and confirming the slide image appears in place of the fence.
+"code slide → screenshot" is a strong instruction, not a guarantee. CI tests verify the *prompt*
+says the right thing; they cannot verify Gemini always obeys — hence the manual acceptance check.
 
 ---
+
+## Known limitations / edge cases
+
+- **Capture failure (review M3):** if yt-dlp or ffmpeg fails for a code/config `[[SLIDE:]]` token,
+  `slides.ts` silently strips the token — leaving prose with **no image and no fence** for that
+  point. This is the existing PR #28 behavior (per-frame ffmpeg failure → drop token; yt-dlp
+  ENOENT → strip all). Accepted as-is: the prose still explains the slide's meaning, so a dropped
+  code slide degrades to prose-only, not to a broken artifact. Logged as `[dig-slide-miss]`.
+- **Caption mangling:** mitigated by the prompt caption constraint (Policy §5); residual risk if
+  Gemini ignores it is a stripped/empty caption, never a broken token (`sanitizeCaption` is total).
 
 ## Out of scope
 
@@ -139,6 +167,10 @@ re-digging the OKF section and confirming the slide image appears in place of th
 | 2 | No fabricated slide | code only spoken/described, not on a slide | plain prose, no fence, no `[[SLIDE:]]` |
 | 3 | Genuine graphic → image | diagram/chart/architecture/UI | unchanged — `[[SLIDE:]]` |
 | 4 | Non-visual text excluded | title card, bullet list, quote, tip, speaker | no `[[SLIDE:]]`, no fence |
-| 5 | Slide budget | section with many code/visual slides | ≤3 `[[SLIDE:]]` total |
+| 5 | Slide budget — shared cap | 2 diagrams + 2 code slides in one section | only 3 `[[SLIDE:]]` emitted (parser cap) |
 | 6 | Existing dug section stale | `genVersion: 2` section loaded after bump | renders `↻ outdated`; re-dig regenerates under v3 |
 | 7 | Prompt no longer transcribes code | build prompt | string excludes "transcribe … do not screenshot"; includes code/config in `[[SLIDE:]]` list |
+| 8 | Caption constraint in prompt | build prompt | prompt instructs captions avoid `[ ] ( ) \|` (plain English) |
+| 9 | Code only spoken, not on a slide | clip has no on-screen code | prose only — no `[[SLIDE:]]`, no fence |
+| 10 | Code slide capture fails | yt-dlp/ffmpeg error on a code `[[SLIDE:]]` | token stripped → prose-only at that point; `[dig-slide-miss]` logged |
+| 11 | Version constant | read `DIG_GENERATOR_VERSION` | equals `3` |
