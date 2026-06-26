@@ -1,4 +1,4 @@
-import { buildDigPrompt, generateDig } from '@/lib/dig/generate';
+import { buildDigPrompt, generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import type { SectionWindow } from '@/lib/dig/section-window';
 
 const WIN: SectionWindow = {
@@ -179,4 +179,45 @@ test('two consecutive timeouts/transient network failures throws', async () => {
     .mockRejectedValue(abortError);
 
   await expect(generateDig(WIN, VIDEO_ID, 'en')).rejects.toThrow();
+});
+
+// ── DIG_GENERATOR_VERSION ────────────────────────────────────────────────────────
+
+describe('DIG_GENERATOR_VERSION', () => {
+  it('is the integer 2', () => {
+    expect(DIG_GENERATOR_VERSION).toBe(2);
+  });
+});
+
+// ── buildDigPrompt — slide selectivity ────────────────────────────────────────
+
+describe('buildDigPrompt — slide selectivity', () => {
+  const p = () => buildDigPrompt('en', 0, 100);
+
+  it('instructs transcribing code/commands into fenced code blocks', () => {
+    expect(p()).toMatch(/transcribe[^.]*code block/i);
+  });
+
+  it('restricts [[SLIDE:]] to genuine visuals (diagram/chart/architecture/UI layout)', () => {
+    const s = p();
+    expect(s).toMatch(/\[\[SLIDE:/);
+    expect(s).toMatch(/diagram|chart|architecture|data visualization|layout/i);
+  });
+
+  it('states that zero slides is the normal/preferred case', () => {
+    expect(p()).toMatch(/most sections.*zero|zero.*normal|none.*preferred/i);
+  });
+
+  it('no longer invites a "code screen" screenshot', () => {
+    expect(p()).not.toMatch(/code screen/i);
+  });
+
+  it('keeps the ≤3 ceiling wording and [[TS:i]] citations', () => {
+    expect(p()).toMatch(/at most 3/i);
+    expect(p()).toMatch(/\[\[TS:i\]\]/);
+  });
+
+  it('produces Korean instruction under lang=ko (unchanged)', () => {
+    expect(buildDigPrompt('ko', 0, 100)).toMatch(/한국어/);
+  });
 });

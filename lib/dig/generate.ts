@@ -8,6 +8,10 @@
 import { buildIndexedTranscript } from '@/lib/transcript-timestamps';
 import type { SectionWindow } from '@/lib/dig/section-window';
 
+/** Dig generation policy version. Bump when the slide/code policy changes so existing
+ *  dug sections become stale and can be deliberately refreshed. */
+export const DIG_GENERATOR_VERSION = 2;
+
 const DEEPDIVE_MODEL =
   process.env.GEMINI_DEEPDIVE_MODEL ?? 'gemini-2.5-pro';
 
@@ -60,7 +64,9 @@ Your task:
 - Elaborate this ONE section in depth, grounded in the transcript and video content provided.
 - Cover at least everything the summary section states, then go deeper with specifics, examples, and reasoning from the clip.
 - Cite key moments using [[TS:i]] tokens (where i is the 0-based index from the transcript below). Use these inline to anchor claims to the transcript.
-- When a slide, diagram, chart, or code screen conveys information beyond what is spoken, emit [[SLIDE:M:SS|caption]] where M:SS is the video clock time the slide is fully on screen (for example [[SLIDE:3:51|Diagram showing four capabilities]]). Use at most 3 [[SLIDE:]] tokens total.
+- If the clip shows a command, terminal/CLI, code, or config, transcribe it into a fenced code block inline in your prose — do not screenshot it. Transcribed code is sharper, copyable, and themed.
+- Emit [[SLIDE:M:SS|caption]] ONLY when a genuine visual — a diagram, chart, architecture/flow figure, data visualization, or a UI/result screenshot whose spatial layout carries meaning — cannot be conveyed in words. NEVER for title cards, bullet lists, quotes, tips, or a speaker on camera. (example: [[SLIDE:3:51|Diagram showing four capabilities]])
+- Most sections need ZERO slides; emitting none is the normal, preferred case. Use at most 3 [[SLIDE:]] tokens total.
 - Output markdown only — no preamble, no headings for the section title, no meta-commentary.
 
 Transcript and summary follow:
