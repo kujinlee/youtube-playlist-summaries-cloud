@@ -147,12 +147,18 @@ export async function resolveSlideTokens(
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /**
- * Remove any `[[SLIDE:...]]` token that survived resolution — out-of-range,
- * malformed, or otherwise unparsed — so a raw token never renders as literal
- * text. Valid tokens are already rewritten to `![](...)` before this runs.
+ * Remove any `[[SLIDE:...]]` token not already rewritten to `![](...)` — a token
+ * the parser rejected (malformed, or a caption containing `]`) or one dropped as
+ * out-of-range — so a raw token never renders as literal text. Resolved tokens
+ * contain no `[[SLIDE:` prefix, so they are untouched.
+ *
+ * Uses a lazy `.*?` (not `[^\]]*`) so a caption with an embedded `]` cannot
+ * defeat the strip; lazy stops at the first real `]]` delimiter. The negated-class
+ * form would stop at the first inner `]` and leave the token behind (review I-1).
+ * No `s` flag (es2018+) — captions are single-line phrases, never multi-line.
  */
 function stripUnresolvedSlideTokens(markdown: string): string {
-  return markdown.replace(/\[\[SLIDE:[^\]]*\]\]/g, '');
+  return markdown.replace(/\[\[SLIDE:.*?\]\]/g, '');
 }
 
 function resolveAssetPath(

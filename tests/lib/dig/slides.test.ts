@@ -74,6 +74,24 @@ test('mixed: valid token resolved to image, stray unresolved token stripped', as
   expect(out).not.toContain('[[SLIDE:');
 });
 
+test('unresolved token whose caption contains "]" is still stripped (I-1)', async () => {
+  // Out-of-range, and the caption has a literal ] — the strip must still remove it.
+  const out = await resolveSlideTokens('x [[SLIDE:999|array[0] index]] y', getOpts());
+  expect(out).not.toContain('[[SLIDE:');
+  expect(out).toContain('x');
+  expect(out).toContain('y');
+});
+
+test('yt-dlp ENOENT with mixed in-range + out-of-range tokens → neither leaks (m-2)', async () => {
+  mockExecFile.mockImplementation((_cmd: string, _args: string[], cb: (err: Error) => void) =>
+    cb(Object.assign(new Error('not found'), { code: 'ENOENT' })),
+  );
+  const out = await resolveSlideTokens('a [[SLIDE:352|InRange]] b [[SLIDE:999|OutOfRange]] c', getOpts());
+  expect(out).not.toContain('[[SLIDE:');
+  expect(out).toContain('a');
+  expect(out).toContain('c');
+});
+
 // ─── Behavior 2: Happy path → yt-dlp + ffmpeg with argv arrays ─────────────
 
 test('happy path rewrites token and calls yt-dlp then ffmpeg with array argv', async () => {
