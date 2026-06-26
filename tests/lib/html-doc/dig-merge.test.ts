@@ -9,6 +9,7 @@ import { mergeDigDoc, MergedSection, MergeResult } from '../../../lib/html-doc/d
 import type { ParsedSummary, ParsedSection } from '../../../lib/html-doc/types';
 import type { ModelEnvelope } from '../../../lib/html-doc/model-store';
 import type { DugSection } from '../../../lib/dig/companion-doc';
+import { DIG_GENERATOR_VERSION } from '../../../lib/dig/generate';
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -56,13 +57,14 @@ function makeModelSection(lead: string = 'Lead text', bulletCount: number = 3) {
   };
 }
 
-function makeDug(sectionId: number, title: string, startSec?: number): DugSection {
+function makeDug(sectionId: number, title: string, startSec?: number, genVersion = DIG_GENERATOR_VERSION): DugSection {
   return {
     sectionId,
     startSec: startSec ?? sectionId,
     title,
     bodyMarkdown: `Body for ${title}`,
     generatedAt: '2024-01-01T00:00:00Z',
+    genVersion,
   };
 }
 
@@ -154,6 +156,7 @@ describe('Behavior 2b: duplicate sectionId → first attaches, duplicate goes to
       title: 'Methods',
       bodyMarkdown: 'First body for Methods',
       generatedAt: '2024-01-01T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dugDuplicate: DugSection = {
       sectionId: 120,
@@ -161,6 +164,7 @@ describe('Behavior 2b: duplicate sectionId → first attaches, duplicate goes to
       title: 'Methods',
       bodyMarkdown: 'Duplicate body for Methods',
       generatedAt: '2024-01-02T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dug = [dugFirst, dugDuplicate];
 
@@ -517,6 +521,7 @@ describe('Behavior 2c: duplicate sectionId, all unmatched → exactly 2 orphans 
       title: 'Ghost Section',  // does not match any summary title
       bodyMarkdown: 'body-a',
       generatedAt: '2024-01-01T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dugB: DugSection = {
       sectionId: 999,          // same id — duplicate
@@ -524,6 +529,7 @@ describe('Behavior 2c: duplicate sectionId, all unmatched → exactly 2 orphans 
       title: 'Ghost Section',
       bodyMarkdown: 'body-b',
       generatedAt: '2024-01-02T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dug = [dugA, dugB];
 
@@ -564,5 +570,73 @@ describe('sectionId match (step 1) takes priority over title match (step 2)', ()
     expect(result.sections[1].dug?.bodyMarkdown).toBe('Body for Beta'); // from sectionId=100
     expect(result.orphans).toHaveLength(1);
     expect(result.orphans[0].sectionId).toBe(999);
+  });
+});
+
+// ── Task 4: isStale flag on MergedSection ─────────────────────────────────────
+
+const summaryWithOneSection = makeSummary([makeSection('Intro', 0)]);
+const envelopeForOneSection = makeEnvelope(['Intro'], [makeModelSection()]);
+
+describe('isStale: sectionId-match path (construction site 1)', () => {
+  it('marks a matched section stale when its genVersion < current', () => {
+    const { sections } = mergeDigDoc(
+      summaryWithOneSection,
+      envelopeForOneSection,
+      [makeDug(0, 'Intro', 0, DIG_GENERATOR_VERSION - 1)],
+    );
+    expect(sections.find((x) => x.dug !== null)!.isStale).toBe(true);
+  });
+
+  it('marks a matched section fresh when genVersion === current', () => {
+    const { sections } = mergeDigDoc(
+      summaryWithOneSection,
+      envelopeForOneSection,
+      [makeDug(0, 'Intro', 0, DIG_GENERATOR_VERSION)],
+    );
+    expect(sections.find((x) => x.dug !== null)!.isStale).toBe(false);
+  });
+
+  it('treats a zero genVersion as stale (legacy doc)', () => {
+    const { sections } = mergeDigDoc(
+      summaryWithOneSection,
+      envelopeForOneSection,
+      [makeDug(0, 'Intro', 0, 0)],
+    );
+    expect(sections.find((x) => x.dug !== null)!.isStale).toBe(true);
+  });
+
+  it('non-dug sections are never stale', () => {
+    const { sections } = mergeDigDoc(summaryWithOneSection, envelopeForOneSection, []);
+    expect(sections.every((x) => x.isStale === false)).toBe(true);
+  });
+});
+
+describe('isStale: title-match path (mutation site 2)', () => {
+  it('marks a title-matched section stale when genVersion < current', () => {
+    // DugSection sectionId=180 does NOT equal startSec=200 → step-1 miss → title fallback
+    const titles = ['Core Concepts'];
+    const sections = [makeSection('Core Concepts', 200)];
+    const summary = makeSummary(sections);
+    const envelope = makeEnvelope(titles, [makeModelSection()]);
+    const dug = [makeDug(180, 'Core Concepts', 180, DIG_GENERATOR_VERSION - 1)];
+
+    const { sections: merged } = mergeDigDoc(summary, envelope, dug);
+    const ms = merged.find((x) => x.dug !== null)!;
+    expect(ms).toBeDefined();
+    expect(ms.isStale).toBe(true);
+  });
+
+  it('marks a title-matched section fresh when genVersion === current', () => {
+    const titles = ['Core Concepts'];
+    const sections = [makeSection('Core Concepts', 200)];
+    const summary = makeSummary(sections);
+    const envelope = makeEnvelope(titles, [makeModelSection()]);
+    const dug = [makeDug(180, 'Core Concepts', 180, DIG_GENERATOR_VERSION)];
+
+    const { sections: merged } = mergeDigDoc(summary, envelope, dug);
+    const ms = merged.find((x) => x.dug !== null)!;
+    expect(ms).toBeDefined();
+    expect(ms.isStale).toBe(false);
   });
 });

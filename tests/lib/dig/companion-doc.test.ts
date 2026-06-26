@@ -2,6 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { upsertDugSection, readDugSectionIds, parseDugSections } from '@/lib/dig/companion-doc';
+import { DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 
 const base = (p: string, section: any) => ({
   digDeeperPath: p,
@@ -9,7 +10,7 @@ const base = (p: string, section: any) => ({
   videoId: 'abc12345678',
   language: 'en' as const,
   sourceVideoUrl: 'https://yt/x',
-  section,
+  section: { ...section, genVersion: section.genVersion ?? DIG_GENERATOR_VERSION },
 });
 
 test('first write creates frontmatter + block; readDugSectionIds reflects it', async () => {
@@ -206,7 +207,7 @@ test('special-char videoTitle round-trip: quotes, colon, hash preserved', async 
     videoId: 'abc12345678',
     language: 'en',
     sourceVideoUrl: 'https://yt/x',
-    section: { sectionId: 1, startSec: 1, title: 'T', bodyMarkdown: 'body', generatedAt: 'TS' },
+    section: { sectionId: 1, startSec: 1, title: 'T', bodyMarkdown: 'body', generatedAt: 'TS', genVersion: DIG_GENERATOR_VERSION },
   });
 
   // Second write to force read→parse→rewrite cycle
@@ -216,7 +217,7 @@ test('special-char videoTitle round-trip: quotes, colon, hash preserved', async 
     videoId: 'abc12345678',
     language: 'en',
     sourceVideoUrl: 'https://yt/x',
-    section: { sectionId: 2, startSec: 2, title: 'U', bodyMarkdown: 'body2', generatedAt: 'TS2' },
+    section: { sectionId: 2, startSec: 2, title: 'U', bodyMarkdown: 'body2', generatedAt: 'TS2', genVersion: DIG_GENERATOR_VERSION },
   });
 
   const md = await readFile(p, 'utf8');
@@ -387,4 +388,48 @@ describe('parseDugSections', () => {
 
     expect(fromParser).toEqual(fromReader);
   });
+});
+
+// ── genVersion tests ──────────────────────────────────────────────────────────
+
+test('genVersion round-trips through serialize → parse', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'dig-genver-'));
+  const p = path.join(dir, 'v-dig-deeper.md');
+  await upsertDugSection(
+    base(p, {
+      sectionId: 1,
+      startSec: 1,
+      title: 'T',
+      bodyMarkdown: 'body',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: 5,
+    }),
+  );
+  const content = await readFile(p, 'utf8');
+  const sections = parseDugSections(content);
+  expect(sections).toHaveLength(1);
+  expect(sections[0].genVersion).toBe(5);
+});
+
+test('defaults genVersion to 0 when the frontmatter omits it (legacy doc)', () => {
+  const legacy = [
+    '---',
+    'title: "T"', 'videoId: "v1"', 'language: "en"', 'sourceVideoUrl: "https://y/v1"',
+    'digVersion: { major: 1, minor: 0 }',        // legacy doc-level line — must be ignored, not crash
+    'sections:',
+    '  - sectionId: 0',
+    '    startSec: 0',
+    '    title: "Intro"',
+    '    generatedAt: "2026-01-01T00:00:00.000Z"',
+    '---',
+    '<!-- dig-section: 0 -->',
+    '## Intro',
+    '',
+    'body',
+    '<!-- /dig-section -->',
+    '',
+  ].join('\n');
+  const sections = parseDugSections(legacy);
+  expect(sections).toHaveLength(1);
+  expect(sections[0].genVersion).toBe(0);
 });

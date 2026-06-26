@@ -9,6 +9,7 @@ import { renderDigDeeperDoc } from '../../lib/html-doc/render-dig-deeper';
 import type { ParsedSummary, MagazineModel } from '../../lib/html-doc/types';
 import type { ModelEnvelope } from '../../lib/html-doc/model-store';
 import type { DugSection } from '../../lib/dig/companion-doc';
+import { DIG_GENERATOR_VERSION } from '../../lib/dig/generate';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -114,6 +115,7 @@ function makeCompanionHtmlWithSlides(): string {
       title: 'Section One',
       bodyMarkdown: `## Section One\n\n![slide](assets/${VIDEO_ID_SLIDES}/${assetFilename})\n\nKey insight about the slide content.\n`,
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
 
@@ -150,6 +152,7 @@ function makeCompanionHtmlNoSlides(): string {
       title: 'Section One',
       bodyMarkdown: '## Section One\n\nKey insight with no slides here.\n',
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
 
@@ -530,7 +533,7 @@ function makeFixtureMixedHtml(): string {
     ],
   };
   const dug: DugSection[] = [
-    { sectionId: SEC_A, startSec: SEC_A, title: 'Alpha', bodyMarkdown: '## Alpha\n\nDug body.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    { sectionId: SEC_A, startSec: SEC_A, title: 'Alpha', bodyMarkdown: '## Alpha\n\nDug body.\n', generatedAt: '2026-01-01T00:00:00.000Z', genVersion: DIG_GENERATOR_VERSION },
     // SEC_B and SEC_C are not dug
   ];
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/fixture-mixed-dig.md', videoId: VIDEO_ID_FIXTURE });
@@ -647,6 +650,7 @@ function makeFixtureMissingAssetHtml(): string {
       // references an asset path that doesn't exist — renderer returns .missing-slide
       bodyMarkdown: `## Only Section\n\n![slide](assets/${VIDEO_ID_MISSING}/nonexistent-frame.jpg)\n\nSome insight.\n`,
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
   // mdPath uses /tmp so the asset resolves to /tmp/assets/... which won't exist.
@@ -695,9 +699,9 @@ function makeFixtureOrphanHtml(): string {
   };
   const dug: DugSection[] = [
     // This one matches SEC_ORPHAN_SUMMARY
-    { sectionId: SEC_ORPHAN_SUMMARY, startSec: SEC_ORPHAN_SUMMARY, title: 'Real Section', bodyMarkdown: '## Real Section\n\nMatched.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    { sectionId: SEC_ORPHAN_SUMMARY, startSec: SEC_ORPHAN_SUMMARY, title: 'Real Section', bodyMarkdown: '## Real Section\n\nMatched.\n', generatedAt: '2026-01-01T00:00:00.000Z', genVersion: DIG_GENERATOR_VERSION },
     // This one does NOT match any summary section → orphan
-    { sectionId: SEC_ORPHAN_COMPANION, startSec: SEC_ORPHAN_COMPANION, title: 'Ghost Section', bodyMarkdown: '## Ghost Section\n\nOrphaned.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    { sectionId: SEC_ORPHAN_COMPANION, startSec: SEC_ORPHAN_COMPANION, title: 'Ghost Section', bodyMarkdown: '## Ghost Section\n\nOrphaned.\n', generatedAt: '2026-01-01T00:00:00.000Z', genVersion: DIG_GENERATOR_VERSION },
   ];
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/orphan-dig.md', videoId: VIDEO_ID_ORPHAN });
 }
@@ -801,6 +805,7 @@ function makeDigDocHtmlDug(): string {
       title: 'Section Alpha',
       bodyMarkdown: '## Section Alpha\n\nDeep insight after digging.\n',
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
   return renderDigDeeperDoc({ summary, envelope, dug, mdPath: '/tmp/dig-doc-test-dig.md', videoId: VIDEO_ID_DIG_DOC });
@@ -1083,6 +1088,7 @@ function makeDigParamHtmlDug(): string {
       title: 'Section Beta',
       bodyMarkdown: '## Section Beta\n\nDeep insight after auto-dig.\n',
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/dig-param-test-dig.md', videoId: VIDEO_ID_DIG_PARAM });
@@ -1340,6 +1346,7 @@ function makeExpandAllHtml(dugCount = 0): string {
     title: `Section ${i + 1}`,
     bodyMarkdown: `## Section ${i + 1}\n\nDug content.\n`,
     generatedAt: '2026-01-01T00:00:00.000Z',
+    genVersion: DIG_GENERATOR_VERSION,
   }));
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/expand-all-dig.md', videoId: VIDEO_ID_EA });
 }
@@ -1741,6 +1748,7 @@ test('E5 (expand-all failure): POST 500 for one section → batch continues; fai
       title: `Section ${[SEC_EA_1, SEC_EA_2, SEC_EA_3].indexOf(sec) + 1}`,
       bodyMarkdown: `## Section\n\nDug content.\n`,
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     }));
     const summary: ParsedSummary = {
       title: 'Expand All Test',
@@ -1818,4 +1826,366 @@ test('E5 (expand-all failure): POST 500 for one section → batch continues; fai
   await expect(page.locator(`section[data-start="${SEC_EA_1}"][data-dug="true"]`)).toBeVisible();
   // sec3 is dug
   await expect(page.locator(`section[data-start="${SEC_EA_3}"][data-dug="true"]`)).toBeVisible();
+});
+
+// ===========================================================================
+// DIG-REFRESH (Task 6)
+// Tests for the ↻ outdated click delegation: clicking the badge on a stale
+// dug section re-digs it and the badge disappears after the swap.
+// ===========================================================================
+
+const VIDEO_ID_REFRESH = 'vid-dig-refresh';
+const START_SEC_REFRESH = 75;
+
+/**
+ * Stale dig-doc HTML: the section is dug but genVersion < DIG_GENERATOR_VERSION,
+ * so isStale=true → the renderer emits .dig-refresh on the section heading.
+ */
+function makeStaleDigDocHtml(): string {
+  const summary: ParsedSummary = {
+    title: 'Dig Refresh Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_REFRESH}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_REFRESH,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_REFRESH}.md`,
+    sections: [
+      {
+        numeral: '1',
+        title: 'Section Gamma',
+        prose: 'Intro prose',
+        timeRange: {
+          startSec: START_SEC_REFRESH,
+          endSec: START_SEC_REFRESH + 60,
+          label: '1:15–2:15',
+          url: `https://www.youtube.com/watch?v=${VIDEO_ID_REFRESH}&t=${START_SEC_REFRESH}s`,
+        },
+      },
+    ],
+  };
+  // genVersion < DIG_GENERATOR_VERSION → isStale=true → .dig-refresh rendered
+  const dug: DugSection[] = [
+    {
+      sectionId: START_SEC_REFRESH,
+      startSec: START_SEC_REFRESH,
+      title: 'Section Gamma',
+      bodyMarkdown: '## Section Gamma\n\nOld dug content.\n',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION - 1,
+    },
+  ];
+  return renderDigDeeperDoc({
+    summary,
+    envelope: null,
+    dug,
+    mdPath: '/tmp/dig-refresh-test-dig.md',
+    videoId: VIDEO_ID_REFRESH,
+  });
+}
+
+/**
+ * Fresh dig-doc HTML: same section now dug at current genVersion → isStale=false
+ * → no .dig-refresh badge. This is what the re-GET returns after the re-dig completes.
+ */
+function makeFreshDigDocHtml(): string {
+  const summary: ParsedSummary = {
+    title: 'Dig Refresh Test',
+    channel: null,
+    duration: null,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID_REFRESH}`,
+    lang: 'EN',
+    videoId: VIDEO_ID_REFRESH,
+    tldr: null,
+    takeaways: [],
+    sourceMd: `${VIDEO_ID_REFRESH}.md`,
+    sections: [
+      {
+        numeral: '1',
+        title: 'Section Gamma',
+        prose: 'Intro prose',
+        timeRange: {
+          startSec: START_SEC_REFRESH,
+          endSec: START_SEC_REFRESH + 60,
+          label: '1:15–2:15',
+          url: `https://www.youtube.com/watch?v=${VIDEO_ID_REFRESH}&t=${START_SEC_REFRESH}s`,
+        },
+      },
+    ],
+  };
+  // genVersion = DIG_GENERATOR_VERSION → isStale=false → no .dig-refresh badge
+  const dug: DugSection[] = [
+    {
+      sectionId: START_SEC_REFRESH,
+      startSec: START_SEC_REFRESH,
+      title: 'Section Gamma',
+      bodyMarkdown: '## Section Gamma\n\nFreshly re-dug content.\n',
+      generatedAt: '2026-06-25T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
+    },
+  ];
+  return renderDigDeeperDoc({
+    summary,
+    envelope: null,
+    dug,
+    mdPath: '/tmp/dig-refresh-test-dig.md',
+    videoId: VIDEO_ID_REFRESH,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// R1: clicking ↻ outdated re-digs the section and the badge is gone after the swap
+// ---------------------------------------------------------------------------
+
+test('R1 (dig-refresh click): clicking ↻ outdated re-digs and the badge is gone after the swap', async ({ page }) => {
+  const staleHtml = makeStaleDigDocHtml();
+  const freshHtml = makeFreshDigDocHtml();
+
+  // Initial stub: serve stale HTML for the dig-doc route
+  await page.route(`**/api/html/${VIDEO_ID_REFRESH}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: staleHtml,
+    }),
+  );
+
+  // Stub POST → returns jobId
+  await page.route(`**/api/videos/${VIDEO_ID_REFRESH}/dig/${START_SEC_REFRESH}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ jobId: 'refresh-job-1' }),
+    });
+  });
+
+  // Stub SSE stream → emits done immediately
+  await page.route(`**/api/videos/${VIDEO_ID_REFRESH}/dig/${START_SEC_REFRESH}/stream**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      body: sseBody({ type: 'done' }),
+    }),
+  );
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_REFRESH}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+
+  // Confirm the stale badge is present before click
+  await expect(page.locator('.dig-refresh')).toHaveCount(1);
+
+  // CRITICAL: re-route /api/html/ to FRESH HTML before the click so the re-GET swap
+  // returns a page without .dig-refresh. Playwright applies the most-recently-registered
+  // matching route first (LIFO) — this override takes effect for the re-GET fetch.
+  await page.route(`**/api/html/${VIDEO_ID_REFRESH}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: freshHtml,
+    }),
+  );
+
+  await page.locator('.dig-refresh').click();
+
+  // After POST → SSE done → re-GET swap returns fresh HTML → no .dig-refresh badge
+  await expect(page.locator('.dig-refresh')).toHaveCount(0, { timeout: 5000 });
+});
+
+// ---------------------------------------------------------------------------
+// R2: opening a doc with stale sections fires NO dig POST until a click
+// ---------------------------------------------------------------------------
+
+test('R2 (NO dig POST on load): opening a doc with stale sections fires no dig POST until a click', async ({ page }) => {
+  const staleHtml = makeStaleDigDocHtml();
+
+  await page.route(`**/api/html/${VIDEO_ID_REFRESH}**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: staleHtml,
+    }),
+  );
+
+  let posted = false;
+  await page.route(`**/api/videos/${VIDEO_ID_REFRESH}/dig/**`, (route) => {
+    if (route.request().method() === 'POST') { posted = true; }
+    route.continue();
+  });
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_REFRESH}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+  await page.waitForTimeout(300);
+
+  expect(posted).toBe(false);
+});
+
+// ===========================================================================
+// EXPAND-ALL INCLUDES STALE SECTIONS (Task 7)
+// Tests that the ⤢ expand all button includes .dig-refresh (stale dug)
+// sections in the batch — not only .dig-trigger (un-dug) sections.
+// ===========================================================================
+
+const VIDEO_ID_EA_MIXED = 'vid-ea-mixed';
+const SEC_EA_MIXED_UNDUG = 110;   // un-dug → .dig-trigger
+const SEC_EA_MIXED_STALE = 220;   // stale dug → .dig-refresh
+
+
+// ---------------------------------------------------------------------------
+// E6: expand-all (⤢) includes STALE dug sections (.dig-refresh) in the batch
+//     Fixture: 1 un-dug (.dig-trigger) + 1 stale dug (.dig-refresh).
+//     Expected: confirm dialog counts 2 sections; after batch, no .dig-trigger
+//     and no .dig-refresh remain.
+// ---------------------------------------------------------------------------
+
+test('E6 (expand-all includes stale): ⤢ refreshes .dig-refresh sections too; dialog counts 2; both resolved after batch', async ({ page }) => {
+  // Track POST calls per section
+  const postsSeen: number[] = [];
+
+  // Stateful HTML tracking: each section independently flips to "resolved" after its POST.
+  // The re-GET for each section swap fetches the CURRENT HTML, which must not contain
+  // that section's trigger/refresh anymore — otherwise the batch loop re-queues it.
+  const resolved = new Set<number>();
+
+  function buildMixedHtml(): string {
+    // Build HTML reflecting current resolved state.
+    // - If UNDUG section is resolved: include it in dug[] at current genVersion.
+    // - If STALE section is resolved: include it in dug[] at current genVersion.
+    // - Otherwise: stale section stays in dug[] at genVersion-1; undug section absent.
+    const dugEntries: DugSection[] = [];
+    if (resolved.has(SEC_EA_MIXED_UNDUG)) {
+      dugEntries.push({
+        sectionId: SEC_EA_MIXED_UNDUG,
+        startSec: SEC_EA_MIXED_UNDUG,
+        title: 'Un-Dug Section',
+        bodyMarkdown: '## Un-Dug Section\n\nNowly dug content.\n',
+        generatedAt: '2026-06-25T00:00:00.000Z',
+        genVersion: DIG_GENERATOR_VERSION,
+      });
+    }
+    // Stale section is always dug but genVersion depends on resolved state
+    dugEntries.push({
+      sectionId: SEC_EA_MIXED_STALE,
+      startSec: SEC_EA_MIXED_STALE,
+      title: 'Stale Section',
+      bodyMarkdown: resolved.has(SEC_EA_MIXED_STALE)
+        ? '## Stale Section\n\nFreshly re-dug content.\n'
+        : '## Stale Section\n\nOld dug content.\n',
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: resolved.has(SEC_EA_MIXED_STALE) ? DIG_GENERATOR_VERSION : DIG_GENERATOR_VERSION - 1,
+    });
+    const summary: ParsedSummary = {
+      title: 'Expand All Mixed Test',
+      channel: null,
+      duration: null,
+      url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA_MIXED}`,
+      lang: 'EN',
+      videoId: VIDEO_ID_EA_MIXED,
+      tldr: null,
+      takeaways: [],
+      sourceMd: `${VIDEO_ID_EA_MIXED}.md`,
+      sections: [
+        {
+          numeral: '1',
+          title: 'Un-Dug Section',
+          prose: 'Not yet dug.',
+          timeRange: { startSec: SEC_EA_MIXED_UNDUG, endSec: SEC_EA_MIXED_UNDUG + 60, label: '1:50–2:50', url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA_MIXED}&t=${SEC_EA_MIXED_UNDUG}s` },
+        },
+        {
+          numeral: '2',
+          title: 'Stale Section',
+          prose: 'Already dug, but stale.',
+          timeRange: { startSec: SEC_EA_MIXED_STALE, endSec: SEC_EA_MIXED_STALE + 60, label: '3:40–4:40', url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA_MIXED}&t=${SEC_EA_MIXED_STALE}s` },
+        },
+      ],
+    };
+    return renderDigDeeperDoc({
+      summary,
+      envelope: null,
+      dug: dugEntries,
+      mdPath: '/tmp/expand-all-mixed-dig.md',
+      videoId: VIDEO_ID_EA_MIXED,
+    });
+  }
+
+  await page.route(`**/api/html/${VIDEO_ID_EA_MIXED}**`, (route) => {
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: buildMixedHtml(),
+    });
+  });
+
+  // POST + SSE for the un-dug section
+  await page.route(`**/api/videos/${VIDEO_ID_EA_MIXED}/dig/${SEC_EA_MIXED_UNDUG}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    postsSeen.push(SEC_EA_MIXED_UNDUG);
+    resolved.add(SEC_EA_MIXED_UNDUG);
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ jobId: `ea-mixed-job-${SEC_EA_MIXED_UNDUG}` }),
+    });
+  });
+  await page.route(`**/api/videos/${VIDEO_ID_EA_MIXED}/dig/${SEC_EA_MIXED_UNDUG}/stream**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      body: sseBody({ type: 'done' }),
+    }),
+  );
+
+  // POST + SSE for the stale dug section
+  await page.route(`**/api/videos/${VIDEO_ID_EA_MIXED}/dig/${SEC_EA_MIXED_STALE}`, (route) => {
+    if (route.request().method() !== 'POST') { route.continue(); return; }
+    postsSeen.push(SEC_EA_MIXED_STALE);
+    resolved.add(SEC_EA_MIXED_STALE);
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ jobId: `ea-mixed-job-${SEC_EA_MIXED_STALE}` }),
+    });
+  });
+  await page.route(`**/api/videos/${VIDEO_ID_EA_MIXED}/dig/${SEC_EA_MIXED_STALE}/stream**`, (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      body: sseBody({ type: 'done' }),
+    }),
+  );
+
+  const digDocUrl = `http://localhost:3000/api/html/${VIDEO_ID_EA_MIXED}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`;
+  await page.goto(digDocUrl);
+
+  // Confirm fixture: 1 .dig-trigger (un-dug) and 1 .dig-refresh (stale dug)
+  await expect(page.locator('.dig-trigger[data-section]')).toHaveCount(1);
+  await expect(page.locator('.dig-refresh[data-section]')).toHaveCount(1);
+
+  // Click expand-all → dialog should open
+  await page.locator('.dg-expand-all').click();
+  const dialog = page.locator('#_dg-ea-dlg[data-open]');
+  await expect(dialog).toBeVisible({ timeout: 3000 });
+
+  // Assert dialog counts 2 sections (not 1) — stale section is included in N
+  const msgText = await page.locator('#_dg-ea-msg').textContent();
+  expect(msgText).toContain('Expand 2 remaining sections?');
+
+  // Confirm the batch
+  await page.locator('#_dg-ea-confirm').click();
+
+  // Progress overlay should be visible
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toBeVisible({ timeout: 3000 });
+
+  // Wait for batch to complete (progress overlay auto-closes)
+  await expect(page.locator('#_dg-ea-prog[data-open]')).toHaveCount(0, { timeout: 15000 });
+
+  // After batch: no .dig-trigger AND no .dig-refresh remain — both resolved
+  await expect(page.locator('.dig-trigger, .dig-refresh')).toHaveCount(0, { timeout: 5000 });
+
+  // Both sections were POSTed
+  expect(postsSeen).toContain(SEC_EA_MIXED_UNDUG);
+  expect(postsSeen).toContain(SEC_EA_MIXED_STALE);
+  expect(postsSeen).toHaveLength(2);
 });

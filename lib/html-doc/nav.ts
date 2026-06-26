@@ -270,7 +270,7 @@ export const NAV_SCRIPT = `<script>
           function _next(){
             // Collect still-un-dug triggers (may have changed if DOM was swapped).
             // Exclude error-state triggers — they already failed in this batch run.
-            var remaining=[].slice.call(document.querySelectorAll('.dig-trigger[data-section]'))
+            var remaining=[].slice.call(document.querySelectorAll('.dig-trigger[data-section], .dig-refresh[data-section]'))
               .filter(function(t){return t.dataset.state!=='error'&&t.dataset.state!=='loading';});
             if(cancelled||remaining.length===0){
               if(failures.length>0){
@@ -294,7 +294,7 @@ export const NAV_SCRIPT = `<script>
           _next();
         }
         _eaBtn.addEventListener('click',function(){
-          var triggers=[].slice.call(document.querySelectorAll('.dig-trigger[data-section]'));
+          var triggers=[].slice.call(document.querySelectorAll('.dig-trigger[data-section], .dig-refresh[data-section]'));
           var N=triggers.length;
           if(N===0)return;
           var X=(N*0.05).toFixed(2);
@@ -319,6 +319,9 @@ export const NAV_SCRIPT = `<script>
         // Toggle (dug → show gist or dug) — zero fetch
         var tog=(e.target.closest?e.target.closest('.dig-toggle'):null);
         if(tog){e.preventDefault();var s=tog.closest('section');if(s){s.classList.toggle('show-gist');tog.textContent=s.classList.contains('show-gist')?'show dig deeper \\u25b6':'show summary \\u2303';}return;}
+        // Refresh (stale dug → re-dig in place) — must be before .dig-trigger check
+        var refresh=(e.target.closest?e.target.closest('.dig-refresh[data-section]'):null);
+        if(refresh){e.preventDefault();_startDocDig(refresh);return;}
         // Trigger (un-dug → expand in place)
         var trig=(e.target.closest?e.target.closest('.dig-trigger[data-section]'):null);
         if(!trig)return;
