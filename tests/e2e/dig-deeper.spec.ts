@@ -2027,58 +2027,6 @@ const VIDEO_ID_EA_MIXED = 'vid-ea-mixed';
 const SEC_EA_MIXED_UNDUG = 110;   // un-dug → .dig-trigger
 const SEC_EA_MIXED_STALE = 220;   // stale dug → .dig-refresh
 
-/**
- * Dig-doc HTML with a MIXED fixture:
- *   - SEC_EA_MIXED_UNDUG: un-dug → renders .dig-trigger
- *   - SEC_EA_MIXED_STALE: dug but genVersion < DIG_GENERATOR_VERSION → renders .dig-refresh
- */
-function makeExpandAllMixedHtml(): string {
-  const summary: ParsedSummary = {
-    title: 'Expand All Mixed Test',
-    channel: null,
-    duration: null,
-    url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA_MIXED}`,
-    lang: 'EN',
-    videoId: VIDEO_ID_EA_MIXED,
-    tldr: null,
-    takeaways: [],
-    sourceMd: `${VIDEO_ID_EA_MIXED}.md`,
-    sections: [
-      {
-        numeral: '1',
-        title: 'Un-Dug Section',
-        prose: 'Not yet dug.',
-        timeRange: { startSec: SEC_EA_MIXED_UNDUG, endSec: SEC_EA_MIXED_UNDUG + 60, label: '1:50–2:50', url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA_MIXED}&t=${SEC_EA_MIXED_UNDUG}s` },
-      },
-      {
-        numeral: '2',
-        title: 'Stale Section',
-        prose: 'Already dug, but stale.',
-        timeRange: { startSec: SEC_EA_MIXED_STALE, endSec: SEC_EA_MIXED_STALE + 60, label: '3:40–4:40', url: `https://www.youtube.com/watch?v=${VIDEO_ID_EA_MIXED}&t=${SEC_EA_MIXED_STALE}s` },
-      },
-    ],
-  };
-  // SEC_EA_MIXED_UNDUG is not in dug[] → renders .dig-trigger
-  // SEC_EA_MIXED_STALE has genVersion < DIG_GENERATOR_VERSION → isStale=true → renders .dig-refresh
-  const dug: DugSection[] = [
-    {
-      sectionId: SEC_EA_MIXED_STALE,
-      startSec: SEC_EA_MIXED_STALE,
-      title: 'Stale Section',
-      bodyMarkdown: '## Stale Section\n\nOld dug content.\n',
-      generatedAt: '2026-01-01T00:00:00.000Z',
-      genVersion: DIG_GENERATOR_VERSION - 1,
-    },
-  ];
-  return renderDigDeeperDoc({
-    summary,
-    envelope: null,
-    dug,
-    mdPath: '/tmp/expand-all-mixed-dig.md',
-    videoId: VIDEO_ID_EA_MIXED,
-  });
-}
-
 
 // ---------------------------------------------------------------------------
 // E6: expand-all (⤢) includes STALE dug sections (.dig-refresh) in the batch
