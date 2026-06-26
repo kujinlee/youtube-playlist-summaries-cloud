@@ -54,6 +54,26 @@ test('empty string → no exec called, empty string returned', async () => {
   expect(mockExecFile).not.toHaveBeenCalled();
 });
 
+// ─── Defense-in-depth: never leak a raw [[SLIDE:...]] token ────────────────
+
+test('out-of-range SLIDE token is stripped, never leaked as raw text', async () => {
+  // 999 is outside [300,400] → parser drops it → must be stripped, not leaked.
+  const out = await resolveSlideTokens('before [[SLIDE:999|x]] after', getOpts());
+  expect(out).not.toContain('[[SLIDE:');
+  expect(out).toContain('before');
+  expect(out).toContain('after');
+  expect(mockExecFile).not.toHaveBeenCalled();
+});
+
+test('mixed: valid token resolved to image, stray unresolved token stripped', async () => {
+  mockExecFile.mockImplementation((_cmd: string, _args: string[], cb: (err: null, stdout: string, stderr: string) => void) =>
+    cb(null, '', ''),
+  );
+  const out = await resolveSlideTokens('a [[SLIDE:352|Good]] b [[SLIDE:999|Bad]] c', getOpts());
+  expect(out).toContain('![Good](assets/abc12345678/300-352.jpg)');
+  expect(out).not.toContain('[[SLIDE:');
+});
+
 // ─── Behavior 2: Happy path → yt-dlp + ffmpeg with argv arrays ─────────────
 
 test('happy path rewrites token and calls yt-dlp then ffmpeg with array argv', async () => {

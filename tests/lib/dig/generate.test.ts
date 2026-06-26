@@ -184,8 +184,8 @@ test('two consecutive timeouts/transient network failures throws', async () => {
 // ── DIG_GENERATOR_VERSION ────────────────────────────────────────────────────────
 
 describe('DIG_GENERATOR_VERSION', () => {
-  it('is the integer 3', () => {
-    expect(DIG_GENERATOR_VERSION).toBe(3);
+  it('is the integer 4', () => {
+    expect(DIG_GENERATOR_VERSION).toBe(4);
   });
 });
 

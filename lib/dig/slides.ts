@@ -51,9 +51,11 @@ export async function resolveSlideTokens(
 
   const tokens = parseSlideTokens(markdown, startSec, endSec);
 
-  // Short-circuit: no tokens → no exec calls.
+  // Short-circuit: no resolvable tokens → no exec calls. Still strip any raw
+  // [[SLIDE:...]] that the parser rejected (out-of-range / malformed) so it
+  // never leaks into the rendered doc as literal text.
   if (tokens.length === 0) {
-    return markdown;
+    return stripUnresolvedSlideTokens(markdown);
   }
 
   // Build YouTube URL server-side from the validated videoId.
@@ -85,7 +87,7 @@ export async function resolveSlideTokens(
       // ENOENT (binary missing) or non-zero exit (download gated / unavailable) →
       // strip all tokens and return text-only markdown.
       console.warn('[dig-slide-miss] yt-dlp failed — stripping all tokens:', (err as Error).message);
-      return stripAllTokens(markdown, tokens);
+      return stripUnresolvedSlideTokens(markdown);
     }
 
     // Per-token frame extraction.
@@ -137,18 +139,20 @@ export async function resolveSlideTokens(
     }
   }
 
-  return result;
+  // Final safety net: strip any [[SLIDE:...]] that was never resolved to an
+  // image (e.g. dropped as out-of-range, or malformed) so no raw token ships.
+  return stripUnresolvedSlideTokens(result);
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function stripAllTokens(markdown: string, tokens: SlideToken[]): string {
-  let result = markdown;
-  for (const token of tokens) {
-    const escapedRaw = token.raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(new RegExp(escapedRaw, 'g'), () => '');
-  }
-  return result;
+/**
+ * Remove any `[[SLIDE:...]]` token that survived resolution — out-of-range,
+ * malformed, or otherwise unparsed — so a raw token never renders as literal
+ * text. Valid tokens are already rewritten to `![](...)` before this runs.
+ */
+function stripUnresolvedSlideTokens(markdown: string): string {
+  return markdown.replace(/\[\[SLIDE:[^\]]*\]\]/g, '');
 }
 
 function resolveAssetPath(

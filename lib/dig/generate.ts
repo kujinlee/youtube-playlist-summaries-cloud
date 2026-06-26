@@ -10,7 +10,7 @@ import type { SectionWindow } from '@/lib/dig/section-window';
 
 /** Dig generation policy version. Bump when the slide/code policy changes so existing
  *  dug sections become stale and can be deliberately refreshed. */
-export const DIG_GENERATOR_VERSION = 3;
+export const DIG_GENERATOR_VERSION = 4;
 
 const DEEPDIVE_MODEL =
   process.env.GEMINI_DEEPDIVE_MODEL ?? 'gemini-2.5-pro';

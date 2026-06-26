@@ -26,11 +26,14 @@ export interface SlideToken {
  * Grammar: captures the time part (clock M:SS / H:MM:SS OR plain integer)
  * and an optional caption.
  *
- * Time part pattern: `\d{1,2}:\d{2}(?::\d{2})?` matches M:SS, MM:SS,
- * H:MM:SS, HH:MM:SS.  The `|\d+` alternative matches a plain integer.
+ * Time part pattern: `\d{1,2}:\d{1,2}(?::\d{1,2})?` matches M:SS, MM:SS,
+ * H:MM:SS, HH:MM:SS — and tolerates non-zero-padded seconds (Gemini sometimes
+ * emits `5:2` for 5:02). The `|\d+` alternative matches a plain integer.
+ * `clockToSeconds` interprets each colon-separated part numerically, so `5:2`
+ * resolves to 5*60+2 = 302 (not 5:20).
  */
 const TOKEN_RE =
-  /\[\[SLIDE:(\d{1,2}:\d{2}(?::\d{2})?|\d+)(?:\|([^\]]*))?\]\]/g;
+  /\[\[SLIDE:(\d{1,2}:\d{1,2}(?::\d{1,2})?|\d+)(?:\|([^\]]*))?\]\]/g;
 
 /**
  * Convert a time string to integer absolute seconds.
