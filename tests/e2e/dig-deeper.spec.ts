@@ -9,6 +9,7 @@ import { renderDigDeeperDoc } from '../../lib/html-doc/render-dig-deeper';
 import type { ParsedSummary, MagazineModel } from '../../lib/html-doc/types';
 import type { ModelEnvelope } from '../../lib/html-doc/model-store';
 import type { DugSection } from '../../lib/dig/companion-doc';
+import { DIG_GENERATOR_VERSION } from '../../lib/dig/generate';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -114,6 +115,7 @@ function makeCompanionHtmlWithSlides(): string {
       title: 'Section One',
       bodyMarkdown: `## Section One\n\n![slide](assets/${VIDEO_ID_SLIDES}/${assetFilename})\n\nKey insight about the slide content.\n`,
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
 
@@ -150,6 +152,7 @@ function makeCompanionHtmlNoSlides(): string {
       title: 'Section One',
       bodyMarkdown: '## Section One\n\nKey insight with no slides here.\n',
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
 
@@ -530,7 +533,7 @@ function makeFixtureMixedHtml(): string {
     ],
   };
   const dug: DugSection[] = [
-    { sectionId: SEC_A, startSec: SEC_A, title: 'Alpha', bodyMarkdown: '## Alpha\n\nDug body.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    { sectionId: SEC_A, startSec: SEC_A, title: 'Alpha', bodyMarkdown: '## Alpha\n\nDug body.\n', generatedAt: '2026-01-01T00:00:00.000Z', genVersion: DIG_GENERATOR_VERSION },
     // SEC_B and SEC_C are not dug
   ];
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/fixture-mixed-dig.md', videoId: VIDEO_ID_FIXTURE });
@@ -647,6 +650,7 @@ function makeFixtureMissingAssetHtml(): string {
       // references an asset path that doesn't exist — renderer returns .missing-slide
       bodyMarkdown: `## Only Section\n\n![slide](assets/${VIDEO_ID_MISSING}/nonexistent-frame.jpg)\n\nSome insight.\n`,
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
   // mdPath uses /tmp so the asset resolves to /tmp/assets/... which won't exist.
@@ -695,9 +699,9 @@ function makeFixtureOrphanHtml(): string {
   };
   const dug: DugSection[] = [
     // This one matches SEC_ORPHAN_SUMMARY
-    { sectionId: SEC_ORPHAN_SUMMARY, startSec: SEC_ORPHAN_SUMMARY, title: 'Real Section', bodyMarkdown: '## Real Section\n\nMatched.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    { sectionId: SEC_ORPHAN_SUMMARY, startSec: SEC_ORPHAN_SUMMARY, title: 'Real Section', bodyMarkdown: '## Real Section\n\nMatched.\n', generatedAt: '2026-01-01T00:00:00.000Z', genVersion: DIG_GENERATOR_VERSION },
     // This one does NOT match any summary section → orphan
-    { sectionId: SEC_ORPHAN_COMPANION, startSec: SEC_ORPHAN_COMPANION, title: 'Ghost Section', bodyMarkdown: '## Ghost Section\n\nOrphaned.\n', generatedAt: '2026-01-01T00:00:00.000Z' },
+    { sectionId: SEC_ORPHAN_COMPANION, startSec: SEC_ORPHAN_COMPANION, title: 'Ghost Section', bodyMarkdown: '## Ghost Section\n\nOrphaned.\n', generatedAt: '2026-01-01T00:00:00.000Z', genVersion: DIG_GENERATOR_VERSION },
   ];
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/orphan-dig.md', videoId: VIDEO_ID_ORPHAN });
 }
@@ -801,6 +805,7 @@ function makeDigDocHtmlDug(): string {
       title: 'Section Alpha',
       bodyMarkdown: '## Section Alpha\n\nDeep insight after digging.\n',
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
   return renderDigDeeperDoc({ summary, envelope, dug, mdPath: '/tmp/dig-doc-test-dig.md', videoId: VIDEO_ID_DIG_DOC });
@@ -1078,6 +1083,7 @@ function makeDigParamHtmlDug(): string {
       title: 'Section Beta',
       bodyMarkdown: '## Section Beta\n\nDeep insight after auto-dig.\n',
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     },
   ];
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/dig-param-test-dig.md', videoId: VIDEO_ID_DIG_PARAM });
@@ -1335,6 +1341,7 @@ function makeExpandAllHtml(dugCount = 0): string {
     title: `Section ${i + 1}`,
     bodyMarkdown: `## Section ${i + 1}\n\nDug content.\n`,
     generatedAt: '2026-01-01T00:00:00.000Z',
+    genVersion: DIG_GENERATOR_VERSION,
   }));
   return renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: '/tmp/expand-all-dig.md', videoId: VIDEO_ID_EA });
 }
@@ -1736,6 +1743,7 @@ test('E5 (expand-all failure): POST 500 for one section → batch continues; fai
       title: `Section ${[SEC_EA_1, SEC_EA_2, SEC_EA_3].indexOf(sec) + 1}`,
       bodyMarkdown: `## Section\n\nDug content.\n`,
       generatedAt: '2026-01-01T00:00:00.000Z',
+      genVersion: DIG_GENERATOR_VERSION,
     }));
     const summary: ParsedSummary = {
       title: 'Expand All Test',

@@ -5,6 +5,7 @@ import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
 import type { ParsedSummary } from '@/lib/html-doc/types';
 import type { ModelEnvelope } from '@/lib/html-doc/model-store';
 import type { DugSection } from '@/lib/dig/companion-doc';
+import { DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 
 // Minimal valid JPEG bytes (SOI + EOI markers only — enough for Buffer.isBuffer / readFileSync)
 const MINIMAL_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xd9]);
@@ -43,13 +44,14 @@ function makeSummaryWithDugSection(startSec: number): ParsedSummary {
   };
 }
 
-function makeDugWithBody(startSec: number, bodyMarkdown: string): DugSection {
+function makeDugWithBody(startSec: number, bodyMarkdown: string, genVersion = DIG_GENERATOR_VERSION): DugSection {
   return {
     sectionId: startSec,
     startSec,
     title: 'Test Section',
     bodyMarkdown,
     generatedAt: '2026-01-01T00:00:00.000Z',
+    genVersion,
   };
 }
 
@@ -486,6 +488,7 @@ function makeDugSection(overrides: Partial<DugSection> = {}): DugSection {
     title: 'Introduction',
     bodyMarkdown: '## Introduction\n\nDug content for intro section.',
     generatedAt: '2026-01-01T00:00:00.000Z',
+    genVersion: DIG_GENERATOR_VERSION,
     ...overrides,
   };
 }
@@ -723,6 +726,7 @@ describe('renderDigDeeperDoc', () => {
         title: 'Orphaned Section',
         bodyMarkdown: 'Orphan body content here.',
         generatedAt: '2026-01-01T00:00:00.000Z',
+        genVersion: DIG_GENERATOR_VERSION,
       };
       html = renderDigDeeperDoc({ summary, envelope: null, dug: [orphanDug], mdPath, videoId: 'vid123' });
     });

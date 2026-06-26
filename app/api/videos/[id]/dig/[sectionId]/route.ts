@@ -8,7 +8,7 @@ import { logError, errorSummary } from '@/lib/dev-logger';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { windowForSection } from '@/lib/dig/section-window';
-import { generateDig } from '@/lib/dig/generate';
+import { generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import { resolveTranscriptTokens } from '@/lib/transcript-timestamps';
 import { resolveSlideTokens } from '@/lib/dig/slides';
 import { upsertDugSection } from '@/lib/dig/companion-doc';
@@ -163,6 +163,7 @@ async function runDigPipeline(
       title: section.title,
       bodyMarkdown: finalMd,
       generatedAt: new Date().toISOString(),
+      genVersion: DIG_GENERATOR_VERSION,
     },
   });
 

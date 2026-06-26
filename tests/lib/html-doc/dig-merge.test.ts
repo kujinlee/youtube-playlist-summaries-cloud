@@ -9,6 +9,7 @@ import { mergeDigDoc, MergedSection, MergeResult } from '../../../lib/html-doc/d
 import type { ParsedSummary, ParsedSection } from '../../../lib/html-doc/types';
 import type { ModelEnvelope } from '../../../lib/html-doc/model-store';
 import type { DugSection } from '../../../lib/dig/companion-doc';
+import { DIG_GENERATOR_VERSION } from '../../../lib/dig/generate';
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
 
@@ -56,13 +57,14 @@ function makeModelSection(lead: string = 'Lead text', bulletCount: number = 3) {
   };
 }
 
-function makeDug(sectionId: number, title: string, startSec?: number): DugSection {
+function makeDug(sectionId: number, title: string, startSec?: number, genVersion = DIG_GENERATOR_VERSION): DugSection {
   return {
     sectionId,
     startSec: startSec ?? sectionId,
     title,
     bodyMarkdown: `Body for ${title}`,
     generatedAt: '2024-01-01T00:00:00Z',
+    genVersion,
   };
 }
 
@@ -154,6 +156,7 @@ describe('Behavior 2b: duplicate sectionId → first attaches, duplicate goes to
       title: 'Methods',
       bodyMarkdown: 'First body for Methods',
       generatedAt: '2024-01-01T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dugDuplicate: DugSection = {
       sectionId: 120,
@@ -161,6 +164,7 @@ describe('Behavior 2b: duplicate sectionId → first attaches, duplicate goes to
       title: 'Methods',
       bodyMarkdown: 'Duplicate body for Methods',
       generatedAt: '2024-01-02T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dug = [dugFirst, dugDuplicate];
 
@@ -517,6 +521,7 @@ describe('Behavior 2c: duplicate sectionId, all unmatched → exactly 2 orphans 
       title: 'Ghost Section',  // does not match any summary title
       bodyMarkdown: 'body-a',
       generatedAt: '2024-01-01T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dugB: DugSection = {
       sectionId: 999,          // same id — duplicate
@@ -524,6 +529,7 @@ describe('Behavior 2c: duplicate sectionId, all unmatched → exactly 2 orphans 
       title: 'Ghost Section',
       bodyMarkdown: 'body-b',
       generatedAt: '2024-01-02T00:00:00Z',
+      genVersion: DIG_GENERATOR_VERSION,
     };
     const dug = [dugA, dugB];
 

@@ -33,6 +33,7 @@ export interface DugSection {
   title: string;
   bodyMarkdown: string;
   generatedAt: string;
+  genVersion: number;
 }
 
 // ── Internal types ────────────────────────────────────────────────────────────
@@ -66,7 +67,6 @@ function serializeFrontmatter(doc: CompanionDoc): string {
     `videoId: "${yamlQuote(doc.videoId)}"`,
     `language: "${doc.language}"`,
     `sourceVideoUrl: "${yamlQuote(doc.sourceVideoUrl)}"`,
-    `digVersion: { major: 1, minor: 0 }`,
   ];
 
   if (doc.sections.length === 0) {
@@ -78,6 +78,7 @@ function serializeFrontmatter(doc: CompanionDoc): string {
       lines.push(`    startSec: ${s.startSec}`);
       lines.push(`    title: "${yamlQuote(s.title)}"`);
       lines.push(`    generatedAt: "${yamlQuote(s.generatedAt)}"`);
+      lines.push(`    genVersion: ${s.genVersion}`);
     }
   }
 
@@ -142,7 +143,7 @@ interface ParsedFrontmatter {
   videoId: string;
   language: 'en' | 'ko';
   sourceVideoUrl: string;
-  sections: Array<{ sectionId: number; startSec: number; title: string; generatedAt: string }>;
+  sections: Array<{ sectionId: number; startSec: number; title: string; generatedAt: string; genVersion: number }>;
 }
 
 function parseFrontmatter(fmText: string): ParsedFrontmatter {
@@ -152,11 +153,11 @@ function parseFrontmatter(fmText: string): ParsedFrontmatter {
   let videoId = '';
   let language: 'en' | 'ko' = 'en';
   let sourceVideoUrl = '';
-  const sections: Array<{ sectionId: number; startSec: number; title: string; generatedAt: string }> = [];
+  const sections: Array<{ sectionId: number; startSec: number; title: string; generatedAt: string; genVersion: number }> = [];
 
   // State machine for parsing the sections block sequence
   let inSections = false;
-  let currentSection: Partial<{ sectionId: number; startSec: number; title: string; generatedAt: string }> | null = null;
+  let currentSection: Partial<{ sectionId: number; startSec: number; title: string; generatedAt: string; genVersion: number }> | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -179,6 +180,7 @@ function parseFrontmatter(fmText: string): ParsedFrontmatter {
             startSec: currentSection.startSec,
             title: currentSection.title ?? '',
             generatedAt: currentSection.generatedAt ?? '',
+            genVersion: currentSection.genVersion ?? 0,
           });
         }
         currentSection = { sectionId: parseInt(listItemMatch[1], 10) };
@@ -200,6 +202,12 @@ function parseFrontmatter(fmText: string): ParsedFrontmatter {
       const generatedAtMatch = line.match(/^\s{4}generatedAt\s*:\s*(.+)$/);
       if (generatedAtMatch && currentSection) {
         currentSection.generatedAt = parseYamlQuotedScalar(generatedAtMatch[1]);
+        continue;
+      }
+
+      const genVersionMatch = line.match(/^\s{4}genVersion\s*:\s*(\d+)/);
+      if (genVersionMatch && currentSection) {
+        currentSection.genVersion = parseInt(genVersionMatch[1], 10);
         continue;
       }
 
@@ -242,6 +250,7 @@ function parseFrontmatter(fmText: string): ParsedFrontmatter {
       startSec: currentSection.startSec,
       title: currentSection.title ?? '',
       generatedAt: currentSection.generatedAt ?? '',
+      genVersion: currentSection.genVersion ?? 0,
     });
   }
 
@@ -260,7 +269,7 @@ function parseFrontmatter(fmText: string): ParsedFrontmatter {
  */
 function parseBodySections(
   bodyText: string,
-  fmSections: Array<{ sectionId: number; startSec: number; title: string; generatedAt: string }>,
+  fmSections: Array<{ sectionId: number; startSec: number; title: string; generatedAt: string; genVersion: number }>,
 ): Map<number, { title: string; bodyMarkdown: string }> {
   const result = new Map<number, { title: string; bodyMarkdown: string }>();
   if (!bodyText.trim()) return result;
@@ -320,6 +329,7 @@ export function parseDugSections(content: string): DugSection[] {
         title: body.title !== '' ? body.title : s.title,
         bodyMarkdown: body.bodyMarkdown,
         generatedAt: s.generatedAt,
+        genVersion: s.genVersion ?? 0,
       },
     ];
   });
