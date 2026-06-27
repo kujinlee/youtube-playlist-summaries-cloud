@@ -184,8 +184,8 @@ test('two consecutive timeouts/transient network failures throws', async () => {
 // ── DIG_GENERATOR_VERSION ────────────────────────────────────────────────────────
 
 describe('DIG_GENERATOR_VERSION', () => {
-  it('is the integer 2', () => {
-    expect(DIG_GENERATOR_VERSION).toBe(2);
+  it('is the integer 4', () => {
+    expect(DIG_GENERATOR_VERSION).toBe(4);
   });
 });
 
@@ -194,8 +194,25 @@ describe('DIG_GENERATOR_VERSION', () => {
 describe('buildDigPrompt — slide selectivity', () => {
   const p = () => buildDigPrompt('en', 0, 100);
 
-  it('instructs transcribing code/commands into fenced code blocks', () => {
-    expect(p()).toMatch(/transcribe[^.]*code block/i);
+  it('no longer instructs transcribing code into fenced code blocks', () => {
+    expect(p()).not.toMatch(/transcribe[^.]*code block/i);
+  });
+
+  it('lists code/command/terminal/config among [[SLIDE:]] triggers', () => {
+    const s = p();
+    expect(s).toMatch(/\[\[SLIDE:/);
+    expect(s).toMatch(/\bcode\b/i);
+    expect(s).toMatch(/\bcommand\b/i);
+    expect(s).toMatch(/\bterminal\b|\bCLI\b/i);
+    expect(s).toMatch(/\bconfig\b/i);
+  });
+
+  it('forbids [ ] ( ) and | characters in slide captions', () => {
+    expect(p()).toMatch(/caption[\s\S]*MUST NOT contain/i);
+  });
+
+  it('forbids inventing a slide for code that is only spoken', () => {
+    expect(p()).toMatch(/only when[\s\S]*shown|actually shown/i);
   });
 
   it('restricts [[SLIDE:]] to genuine visuals (diagram/chart/architecture/UI layout)', () => {

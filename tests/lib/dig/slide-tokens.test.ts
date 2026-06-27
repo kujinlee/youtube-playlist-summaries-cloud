@@ -110,6 +110,17 @@ test('clock H:MM:SS format is accepted and converted to integer seconds', () => 
   expect(tokens[0].sec).toBe(3725);
 });
 
+test('clock M:S with single-digit seconds is accepted (5:2 → 302)', () => {
+  // Gemini sometimes emits non-zero-padded seconds; 5:2 = 5*60 + 2 = 302.
+  const tokens = parseSlideTokens('x [[SLIDE:5:2|cap]] y', 300, 400);
+  expect(tokens).toEqual([{ raw: '[[SLIDE:5:2|cap]]', sec: 302, caption: 'cap' }]);
+});
+
+test('clock M:S 6:0 → 360 (single-digit seconds, zero)', () => {
+  const tokens = parseSlideTokens('[[SLIDE:6:0|cap]]', 300, 400);
+  expect(tokens[0].sec).toBe(360);
+});
+
 test('plain integer still works after clock-format support added (back-compat)', () => {
   const tokens = parseSlideTokens('[[SLIDE:231|back-compat]]', 200, 300);
   expect(tokens).toHaveLength(1);
