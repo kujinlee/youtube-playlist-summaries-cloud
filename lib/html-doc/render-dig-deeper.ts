@@ -47,7 +47,7 @@ html.theme-ready .dg{transition:background-color .2s,color .2s}
 .dg pre code{background:none;padding:0;font-size:.85em;white-space:pre}
 .dg img{max-width:100%;height:auto;border-radius:6px;margin:.75em 0;display:block}
 .dg footer{margin-top:2.6em;padding-top:1.2em;border-top:1px solid var(--rule);color:var(--foot);font-size:.8rem}
-@media print{body{background:#fff}.dg{box-shadow:none}#theme-toggle{display:none}}
+@media print{body{background:#fff}.dg{box-shadow:none}#theme-toggle{display:none}.dg-zoom{display:none!important}}
 .missing-slide{display:inline-block;color:var(--meta);font-style:italic;font-size:.85rem;padding:.15em .4em;border:1px dashed var(--rule);border-radius:4px}
 `;
 
@@ -115,10 +115,12 @@ function buildRenderer(mdPath: string): MarkdownIt {
         return `<span class="missing-slide">${esc(altAttr)}</span>`;
       }
       const b64 = data.toString('base64');
-      return `<img src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}">`;
+      return `<img class="dig-slide" src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}">`;
     }
 
-    // Non-assets src: let markdown-it render normally but escape the src.
+    // Non-assets src (external URL): rendered escaped, but intentionally NOT a
+    // .dig-slide — external images keep default sizing and are not zoomable
+    // (only inlined slide assets get the size cap + click-to-zoom).
     return `<img src="${esc(srcAttr)}" alt="${esc(altAttr)}">`;
   };
 
@@ -129,7 +131,7 @@ function buildRenderer(mdPath: string): MarkdownIt {
 const DIG_DOC_CSS = `
 section{padding:2.4em 0;border-top:2px solid var(--rule)}
 section:first-of-type{border-top:0}
-.dug img{margin:2em 0}
+.dg img.dig-slide{margin:2em auto;max-height:360px;border:1px solid var(--rule);cursor:zoom-in}
 .dg .dig-trigger,.dg .dig-toggle,.dg .dig-refresh{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
 .dg .dig-trigger:hover,.dg .dig-toggle:hover,.dg .dig-refresh:hover{text-decoration:underline}
 section[data-dug="true"] .gist{display:none}
@@ -147,6 +149,10 @@ section[data-dug="true"].show-gist .dug{display:none}
 ._dg-box button{padding:.3em .9em;border-radius:4px;font-size:.88rem;cursor:pointer;border:1px solid var(--rule)}
 #_dg-ea-confirm{background:var(--link,#b07700);color:#fff;border-color:transparent;margin-right:.6em}
 #_dg-ea-cancel-dlg,#_dg-ea-cancel-prog{background:none;color:var(--meta)}
+.dg-zoom{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;align-items:center;justify-content:center;cursor:zoom-out}
+.dg-zoom[data-open]{display:flex}
+.dg-zoom img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:4px}
+.dg-zoom-close{position:fixed;top:1rem;right:1.2rem;font-size:1.6rem;line-height:1;color:#fff;background:none;border:none;cursor:pointer;z-index:9501}
 `;
 
 /**
@@ -262,6 +268,33 @@ export function renderDigDeeperDoc(args: {
   </div>
 </div>`;
 
+  // ── Slide zoom lightbox (Feature 1) ──────────────────────────────────────
+  // The <img> is created in JS (not static markup) so the page shell carries no
+  // <img> of its own — existing image-rule tests assert on whole-doc <img>
+  // presence/count and must see only rendered slide images.
+  const zoomOverlay = `
+<div class="dg-zoom" id="_dg-zoom" role="dialog" aria-modal="true" aria-label="Enlarged slide">
+  <button class="dg-zoom-close" id="_dg-zoom-close" aria-label="Close">✕</button>
+</div>`;
+
+  // ES5-plain to match NAV_SCRIPT. Click delegation on document so dynamically
+  // dug sections are covered. Esc no-ops unless the lightbox is open, so it
+  // never interferes with the expand-all dialog's own Esc handler (nav.ts).
+  const zoomScript = `<script>(function(){
+  var ov=document.getElementById('_dg-zoom');
+  if(!ov)return;
+  var im=document.createElement('img');im.id='_dg-zoom-img';im.alt='';ov.appendChild(im);
+  function close(){ov.removeAttribute('data-open');im.removeAttribute('src');}
+  document.addEventListener('click',function(e){
+    var t=e.target;
+    if(t&&t.classList&&t.classList.contains('dig-slide')){im.src=t.getAttribute('src');im.alt=t.getAttribute('alt')||'';ov.setAttribute('data-open','');return;}
+    if(ov.hasAttribute('data-open')){close();} // when open the overlay covers the viewport → any click (backdrop, image, or ✕) closes, matching the zoom-out cursor
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&ov.hasAttribute('data-open')){close();}
+  });
+})();</script>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -278,8 +311,8 @@ ${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
 <article class="dg">
 ${bodyHtml}
 </article>
-${expandAllDialogs}
-${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}
+${expandAllDialogs}${zoomOverlay}
+${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}${zoomScript}
 </body>
 </html>`;
 }
