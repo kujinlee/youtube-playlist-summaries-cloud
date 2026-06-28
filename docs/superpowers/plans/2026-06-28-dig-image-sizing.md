@@ -167,6 +167,7 @@ Add to `tests/lib/html-doc/render-dig-deeper.test.ts` (inside the existing top-l
     it('includes the zoom overlay markup and script (z-index 9500)', () => {
       expect(html).toContain('class="dg-zoom"');
       expect(html).toContain('id="_dg-zoom-img"');
+      expect(html).toContain('id="_dg-zoom-close"'); // ✕ button Z-tests click (LOW-2)
       expect(html).toContain('z-index:9500');
       expect(html).toContain("getElementById('_dg-zoom')"); // ZOOM_SCRIPT wired
     });
@@ -235,37 +236,49 @@ Expected: PASS.
 
 - [ ] **Step 7: Write the failing E2E behavior tests**
 
-In `tests/e2e/dig-deeper.spec.ts`, add a test that reuses the existing `makeCompanionHtmlWithSlides()` helper (line 78 — it renders the dig-deeper doc for `VIDEO_ID_SLIDES` with a base64 slide `<img>`, now a `.dig-slide`). Mirror the direct `page.route` + `page.goto` pattern used by `F5a` (≈542–548):
+In `tests/e2e/dig-deeper.spec.ts`, add **one shared helper + four small test blocks** — one per dismissal path, per the dev-process E2E rule ("one test block that exercises that specific path"; LOW-1). All reuse the existing `makeCompanionHtmlWithSlides()` helper (line 78 — renders the dig-deeper doc for `VIDEO_ID_SLIDES` with a base64 slide `<img>`, now a `.dig-slide`) and the direct `page.route` + `page.goto` pattern from `F5a` (≈542–548):
 
 ```ts
-test('Z1 (zoom lightbox): click .dig-slide opens overlay; backdrop, Esc, and ✕ all close; Esc-when-closed is a no-op', async ({ page }) => {
+// Shared open: route the slides fixture, navigate, return the overlay + an opened-state slide locator.
+async function openZoom(page: import('@playwright/test').Page) {
   const html = makeCompanionHtmlWithSlides();
   await page.route(`**/api/html/${VIDEO_ID_SLIDES}**`, (route) =>
     route.fulfill({ status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }, body: html }),
   );
   await page.goto(`http://localhost:3000/api/html/${VIDEO_ID_SLIDES}?outputFolder=${encodeURIComponent(OUTPUT_FOLDER)}&type=dig-deeper`);
-
   const overlay = page.locator('#_dg-zoom');
   const slide = page.locator('img.dig-slide').first();
   await expect(slide).toBeVisible();
+  return { overlay, slide };
+}
 
-  // Esc with the lightbox CLOSED must not throw or open anything.
-  await page.keyboard.press('Escape');
+test('Z0 (zoom): Esc with lightbox CLOSED is a no-op', async ({ page }) => {
+  const { overlay } = await openZoom(page);
   await expect(overlay).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(overlay).toBeHidden(); // still closed, no error
+});
 
-  // open → backdrop click closes
+test('Z1 (zoom dismissal — backdrop): click .dig-slide opens; backdrop click closes', async ({ page }) => {
+  const { overlay, slide } = await openZoom(page);
   await slide.click();
   await expect(overlay).toBeVisible();
-  await overlay.click({ position: { x: 5, y: 5 } }); // backdrop (corner, not the image)
+  // Overlay is a centered flexbox; the zoomed image is capped at 95vw/95vh, so on the
+  // default 1280×720 viewport the (5,5) corner is guaranteed backdrop (≥32px margin).
+  await overlay.click({ position: { x: 5, y: 5 } });
   await expect(overlay).toBeHidden();
+});
 
-  // open → Esc closes
+test('Z2 (zoom dismissal — Esc): open then Esc closes', async ({ page }) => {
+  const { overlay, slide } = await openZoom(page);
   await slide.click();
   await expect(overlay).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(overlay).toBeHidden();
+});
 
-  // open → ✕ closes
+test('Z3 (zoom dismissal — ✕): open then close button closes', async ({ page }) => {
+  const { overlay, slide } = await openZoom(page);
   await slide.click();
   await expect(overlay).toBeVisible();
   await page.locator('#_dg-zoom-close').click();
@@ -273,12 +286,12 @@ test('Z1 (zoom lightbox): click .dig-slide opens overlay; backdrop, Esc, and ✕
 });
 ```
 
-Note: `makeCompanionHtmlWithSlides()` already exists in this spec (line 78) and writes a temp asset + renders the dig-deeper doc with a base64 slide — reuse it, do not invent a new renderer. The `.dg-zoom` CSS uses `display:none → flex`, so Playwright's `toBeVisible()`/`toBeHidden()` track the `[data-open]` state correctly.
+Note: `makeCompanionHtmlWithSlides()` already exists (line 78) and writes a temp asset + renders the dig-deeper doc with a base64 slide — reuse it, do not invent a new renderer. The `.dg-zoom` CSS uses `display:none → flex`, so Playwright's `toBeVisible()`/`toBeHidden()` track the `[data-open]` state correctly. Run all four with `--grep "Z0|Z1|Z2|Z3"`.
 
 - [ ] **Step 8: Run the E2E test**
 
-Run: `npx playwright test dig-deeper --grep "Z1"`
-Expected: PASS (overlay opens on click; all three dismissal paths close it; Esc-when-closed leaves it hidden).
+Run: `npx playwright test dig-deeper --grep "Z0|Z1|Z2|Z3"`
+Expected: PASS (overlay opens on click; backdrop, Esc, and ✕ each close it; Esc-when-closed leaves it hidden).
 
 - [ ] **Step 9: Run the full suite**
 
@@ -295,6 +308,11 @@ git commit -m "feat(dig): click-to-zoom lightbox for slide images (Esc/backdrop/
 ---
 
 ## Notes for the implementer
-- If `npx playwright test` needs a dev server (`webServer` in `playwright.config`), follow the repo's existing E2E run convention — the other dig-deeper E2E tests already run under it; do not add a new server.
+- `playwright.config.ts` auto-starts the dev server (`npm run dev`, `reuseExistingServer`); the `page.route` stub intercepts `**/api/html/...` before the real route, so Z-tests need no real data — exactly like `F5a`. Do not add a new server.
 - Do NOT touch `lib/dig/slides.ts` or any capture/asset code — this feature is render-only.
 - Keep the inline `zoomScript` ES5-plain (no arrow fns/`const`) to match `NAV_SCRIPT`'s style and avoid any transpile assumptions in the served doc.
+
+## Phase-4 verification notes (from plan adversarial review)
+- **Centering is layout-conditional (MEDIUM-2):** `margin:2em auto` only visibly centers when the slide's rendered width is < the `.dg` column (~832px). A 16:9 slide caps to ~640px wide → centers; a very wide/short slide hits `max-width:100%` first and fills the column (no centering, left-aligned — acceptable). jest only asserts the rule string; **eyeball centering on a real doc** during verification, don't assume.
+- **`max-height:360px` is a starting value (spec Risk 1):** confirm a real code slide's primary text is legible at the cap on a ~1440px viewport; if not, raise toward 420–480px (do NOT re-introduce crop).
+- **Accessibility follow-up (LOW-3, out of scope):** the lightbox sets `role="dialog" aria-modal="true"` but does not trap/restore focus or `aria-hidden` the background. Note as a future a11y improvement; not in this plan's scope.
