@@ -1,7 +1,7 @@
 # Dig-Deeper Doc: Slide Vertical Auto-Crop (render-time, non-destructive)
 
 **Date:** 2026-06-28
-**Status:** Design — Phase-0 validation spike complete; awaiting user spec review, then writing-plans.
+**Status:** Design APPROVED — Phase-0 spike complete; Codex adversarial review addressed (`docs/reviews/spec-dig-slide-autocrop-codex.md`); `DIG_CROP` default ON approved. Ready for writing-plans.
 **Component:** `lib/html-doc/render-dig-deeper.ts` (+ new `lib/dig/slide-crop.ts`)
 **Version impact:** none — render-time only; no `DIG_GENERATOR_VERSION` bump, no re-dig, no asset mutation. Applies to every existing companion doc on next page load (same delivery model as PR #38 image-sizing).
 
@@ -127,7 +127,7 @@ Thresholds were tuned on one dark deck (`2kKkb01GxYQ`), so the spike was extende
 
 **Known residual limitation (documented, not eliminated):** a **dark photo or dark low-contrast graphic at the top/bottom edge** can be read as dead band and trimmed. None of the spike decks contain full-bleed dark photos; non-destructive display + zoom recovers any such case. Mitigations: the no-op guards, the adversarial fixtures above, and `DIG_CROP=off` as a one-line global kill switch.
 
-**Open decision (default on vs off):** see "Revised scope" decision below — `DIG_CROP` default is set by the user given this evidence.
+**Decision (resolved): `DIG_CROP` defaults to ON.** User-approved given the evidence — live on all docs immediately, self-limiting to dark-letterboxed slides, with `DIG_CROP=off` as a one-line kill switch and the adversarial fixtures above as the regression guard.
 
 ## Error handling
 
