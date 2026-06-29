@@ -178,7 +178,8 @@ section[data-dug="true"].show-gist .dug{display:none}
 .dg-size button{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.15em .45em}
 .dg-size-range{width:7rem;flex:0 0 auto}
 .dg-size-val{min-width:3.2em;text-align:center;flex:0 0 auto}
-@media print{:root{--dig-slide-scale:1}.dg-size{display:none!important}.dg img.dig-slide{max-height:300px}.dg figure.dig-slide-crop{width:min(100%,540px)}}
+/* print base-size is enforced by the element-level overrides above; the scale var is intentionally NOT reset via @media because the size script's inline style on documentElement outranks an @media :root rule */
+@media print{.dg-size{display:none!important}.dg img.dig-slide{max-height:300px}.dg figure.dig-slide-crop{width:min(100%,540px)}}
 `;
 
 // Shared sanitizer — used verbatim in both SIZE_HEAD_SCRIPT (head) and sizeScript (body) to avoid duplication.

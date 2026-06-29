@@ -39,14 +39,14 @@ test('S1 set range to 50 shrinks scale + updates readout', async ({ page }) => {
   await stub(page); await page.goto(URL);
   await page.locator('.dg-size-range').fill('50');
   await page.locator('.dg-size-range').dispatchEvent('input');
-  expect(await scale(page)).toBe('0.5');
+  await expect.poll(() => scale(page)).toBe('0.5');
   await expect(page.locator('.dg-size-val')).toHaveText('50%');
 });
 
 test('S2 + button steps to 110', async ({ page }) => {
   await stub(page); await page.goto(URL);
   await page.locator('.dg-size-inc').click();
-  expect(await scale(page)).toBe('1.1');
+  await expect.poll(() => scale(page)).toBe('1.1');
   await expect(page.locator('.dg-size-val')).toHaveText('110%');
 });
 
@@ -60,6 +60,7 @@ test('S3 head script applies the saved scale PRE-PAINT, before the control exist
         (window as any).__firstScaleSet = {
           ready: document.readyState,
           hasControl: !!document.querySelector('.dg-size-range'),
+          hasSizeContainer: !!document.querySelector('.dg-size'),
         };
       }
       return (orig as any).call(this, prop, ...rest);
@@ -70,6 +71,8 @@ test('S3 head script applies the saved scale PRE-PAINT, before the control exist
   const first = await page.evaluate(() => (window as any).__firstScaleSet);
   expect(first).not.toBeNull();
   expect(first.hasControl).toBe(false);                  // proves the HEAD script set it, not the body fallback
+  expect(first.hasSizeContainer).toBe(false);            // neither the container nor the range existed when the HEAD script set the var
+  expect(first.ready).toBe('loading');                   // first write happened during initial parse, not after DOMContentLoaded
   expect(await scale(page)).toBe('1.2');
   await expect(page.locator('.dg-size-range')).toHaveValue('120');
 });
@@ -78,27 +81,27 @@ test('S4 reset button works by click AND keyboard', async ({ page }) => {
   await stub(page); await page.goto(URL);
   await page.locator('.dg-size-inc').click();            // 110
   await page.locator('.dg-size-val').click();            // reset
-  expect(await scale(page)).toBe('1');
+  await expect.poll(() => scale(page)).toBe('1');
   await page.locator('.dg-size-inc').click();            // 110 again
   await page.locator('.dg-size-val').focus();
   await page.keyboard.press('Enter');                    // keyboard reset
-  expect(await scale(page)).toBe('1');
+  await expect.poll(() => scale(page)).toBe('1');
   await expect(page.locator('.dg-size-val')).toHaveText('100%');
 });
 
 // S5 table-driven sanitizer contract (PM2): snap-to-10 + clamp [50,150]; bad/missing → 100.
 // Includes the Codex H2 in-browser proof row: stored ' ' (single space) → scale '1' (whitespace → 100%).
-for (const [stored, expected] of ([['999', '1.5'], ['-1', '0.5'], ['44', '0.5'], ['120px', '1'], ['', '1'], [' ', '1']] as const)) {
+for (const [stored, expected] of ([['999', '1.5'], ['-1', '0.5'], ['44', '0.5'], ['73', '0.7'], ['120px', '1'], ['', '1'], [' ', '1']] as const)) {
   test(`S5 sanitize stored "${stored}" → scale ${expected}`, async ({ page }) => {
     await stub(page);
     await page.addInitScript((v) => localStorage.setItem('digSlideScale', v as string), stored);
     await page.goto(URL);
-    expect(await scale(page)).toBe(expected);
+    await expect.poll(() => scale(page)).toBe(expected);
   });
 }
 test('S5 missing storage → 100% (PB1 — Number(null) must NOT default to 50)', async ({ page }) => {
   await stub(page); await page.goto(URL);
-  expect(await scale(page)).toBe('1');
+  await expect.poll(() => scale(page)).toBe('1');
   await expect(page.locator('.dg-size-range')).toHaveValue('100');
 });
 
@@ -116,9 +119,9 @@ test('S6 survives blocked localStorage and proves it is actually blocked (PM3)',
   await page.goto(URL);
   expect(await page.evaluate(() => (window as any).__lsBlocked)).toBe(true);         // override took
   expect(await page.evaluate(() => { try { (window as any).localStorage.getItem('x'); return 'no-throw'; } catch { return 'throws'; } })).toBe('throws'); // really blocked
-  expect(await scale(page)).toBe('1');                   // defaulted, no FOUC crash
+  await expect.poll(() => scale(page)).toBe('1');        // defaulted, no FOUC crash
   await page.locator('.dg-size-inc').click();
-  expect(await scale(page)).toBe('1.1');                 // still operable for the session
+  await expect.poll(() => scale(page)).toBe('1.1');      // still operable for the session
   expect(pageErrors).toEqual([]);                        // no uncaught errors leaked
 });
 
@@ -128,10 +131,14 @@ test('S7 print keeps base size + hides control, on a locked wide viewport (PH2)'
   await page.addInitScript(() => localStorage.setItem('digSlideScale', '150'));
   await page.goto(URL);
   const fig = page.locator('figure.dig-slide-crop').first();
+  await expect(fig).toHaveCount(1);
   const before = parseFloat(await fig.evaluate((el) => getComputedStyle(el).width));
   expect(before).toBeGreaterThan(541);                   // 150% genuinely inflates (precondition, not vacuous)
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.dg-size')).toBeHidden();
+  // Print base-size is enforced by element-level overrides (.dg img.dig-slide, .dg figure.dig-slide-crop),
+  // not a var reset — the size script's inline style on documentElement outranks @media :root.
+  // We assert the figure WIDTH resets to base size rather than the var.
   const after = parseFloat(await fig.evaluate((el) => getComputedStyle(el).width));
   expect(after).toBeLessThanOrEqual(541);                // print override → base 540 cap, not 150%
 });
