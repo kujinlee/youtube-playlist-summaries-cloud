@@ -99,38 +99,38 @@ function buildRenderer(mdPath: string, cropMap: Map<string, CropBox | null>): Ma
       ? token.children.map((t) => t.content).join('')
       : (token.attrGet('alt') ?? '');
 
-    // Only inline relative `assets/` paths; leave absolute URLs untouched.
     if (srcAttr.startsWith('assets/')) {
       const absPath = path.resolve(docDir, srcAttr);
       // Containment check: resolved path must stay inside assetsRoot.
-      // Blocks traversal like assets/../../etc/passwd (passes startsWith but
-      // resolves outside the doc's assets directory → arbitrary file disclosure).
-      // SECURITY-CRITICAL: containment violation → silent drop.
-      // No placeholder, no attacker-controlled alt text in the output.
+      // Blocks traversal like assets/../../etc/passwd (passes the startsWith('assets/')
+      // prefix test but resolves outside the doc's assets dir → arbitrary file disclosure).
+      // SECURITY-CRITICAL: containment violation → silent drop (no placeholder, no
+      // attacker-controlled alt text in the output).
       if (!absPath.startsWith(assetsRoot + path.sep)) return '';
       let data: Buffer | null = null;
       try {
         data = fs.readFileSync(absPath);
       } catch {
-        // Benign missing file (e.g. slide not captured) — show a visible placeholder
-        // so readers know a frame was expected here.
+        // Benign missing file — visible placeholder, UNCHANGED (no figure/figcaption).
         return `<span class="missing-slide">${esc(altAttr)}</span>`;
       }
       const b64 = data.toString('base64');
       const box = cropMap.get(absPath) ?? null;
+      // figcaption only when a caption is present (empty caption is a supported state).
+      const cap = altAttr ? `<figcaption class="dig-cap">${esc(altAttr)}</figcaption>` : '';
+      let inner: string;
       if (box) {
         const keepFrac = 1 - box.trimTop - box.trimBot;
         const keepH = Math.round(box.height * keepFrac);
         const posPct = (box.trimTop / (box.trimTop + box.trimBot)) * 100;
-        // Only the native-dim aspect-ratio is per-image; the displayed-WIDTH cap
-        // lives in CSS (.dig-slide-crop). Capping width (not height) keeps short
-        // cropped frames modest in flow — a height cap would inflate their width.
-        const figStyle = `aspect-ratio:${box.width} / ${keepH}`;
-        return `<figure class="dig-slide-crop" style="${figStyle}">` +
-               `<img class="dig-slide" style="object-position:0 ${posPct.toFixed(1)}%" ` +
-               `src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}"></figure>`;
+        const cropStyle = `aspect-ratio:${box.width} / ${keepH}`;
+        inner = `<div class="dig-slide-crop" style="${cropStyle}">` +
+                `<img class="dig-slide" style="object-position:0 ${posPct.toFixed(1)}%" ` +
+                `src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}"></div>`;
+      } else {
+        inner = `<img class="dig-slide" src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}">`;
       }
-      return `<img class="dig-slide" src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}">`;
+      return `<figure class="dig-slide-fig">${inner}${cap}</figure>`;
     }
 
     // Non-assets src (external URL): rendered escaped, but intentionally NOT a
@@ -146,9 +146,11 @@ function buildRenderer(mdPath: string, cropMap: Map<string, CropBox | null>): Ma
 const DIG_DOC_CSS = `
 section{padding:2.4em 0;border-top:2px solid var(--rule)}
 section:first-of-type{border-top:0}
-.dg img.dig-slide{margin:2em auto;max-width:100%;max-height:calc(300px * var(--dig-slide-scale, 1));border:1px solid var(--rule);cursor:zoom-in}
-.dg figure.dig-slide-crop{display:block;overflow:hidden;margin:2em auto;width:min(100%, calc(540px * var(--dig-slide-scale, 1)));border:1px solid var(--rule);border-radius:6px}
-.dg figure.dig-slide-crop>img.dig-slide{display:block;width:100%;height:100%;max-height:none;margin:0;border:0;border-radius:0;object-fit:cover;cursor:zoom-in}
+.dig-slide-fig{margin:2em auto;max-width:100%}
+.dg img.dig-slide{display:block;margin:0 auto;max-width:100%;max-height:calc(300px * var(--dig-slide-scale, 1));border:1px solid var(--rule);cursor:zoom-in}
+.dg .dig-slide-crop{display:block;margin:0 auto;overflow:hidden;width:min(100%, calc(540px * var(--dig-slide-scale, 1)));border:1px solid var(--rule);border-radius:6px}
+.dg .dig-slide-crop>img.dig-slide{display:block;width:100%;height:100%;max-height:none;margin:0;border:0;border-radius:0;object-fit:cover;cursor:zoom-in}
+.dig-cap{margin:.5em auto 0;text-align:center;font-size:.8rem;color:var(--meta);line-height:1.4}
 .dg .dig-trigger,.dg .dig-toggle,.dg .dig-refresh{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
 .dg .dig-trigger:hover,.dg .dig-toggle:hover,.dg .dig-refresh:hover{text-decoration:underline}
 section[data-dug="true"] .gist{display:none}
@@ -166,10 +168,11 @@ section[data-dug="true"].show-gist .dug{display:none}
 ._dg-box button{padding:.3em .9em;border-radius:4px;font-size:.88rem;cursor:pointer;border:1px solid var(--rule)}
 #_dg-ea-confirm{background:var(--link,#b07700);color:#fff;border-color:transparent;margin-right:.6em}
 #_dg-ea-cancel-dlg,#_dg-ea-cancel-prog{background:none;color:var(--meta)}
-.dg-zoom{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;align-items:center;justify-content:center;cursor:zoom-out}
+.dg-zoom{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out}
 .dg-zoom[data-open]{display:flex}
 .dg-zoom img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:4px}
 .dg-zoom-close{position:fixed;top:1rem;right:1.2rem;font-size:1.6rem;line-height:1;color:#fff;background:none;border:none;cursor:pointer;z-index:9501}
+.dg-zoom-cap{display:none;color:#fff;font-size:.85rem;line-height:1.4;margin-top:1rem;max-width:95vw;text-align:center}
 .dg .ask-ai{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
 .dg .ask-ai:hover{text-decoration:underline}
 #_dg-ai-toast{display:none;position:fixed;left:50%;bottom:1.4rem;transform:translateX(-50%);z-index:9600;background:var(--card,#222);color:var(--ink,#fff);border:1px solid var(--rule);border-radius:6px;padding:.5em .9em;font-size:.85rem;box-shadow:0 4px 18px rgba(0,0,0,.2)}
@@ -178,8 +181,10 @@ section[data-dug="true"].show-gist .dug{display:none}
 .dg-size button{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.15em .45em}
 .dg-size-range{width:7rem;flex:0 0 auto}
 .dg-size-val{min-width:3.2em;text-align:center;flex:0 0 auto}
+.dg-caps-toggle{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.2em .6em}
+.dg-hide-caps .dig-cap{display:none}
 /* print base-size is enforced by the element-level overrides above; the scale var is intentionally NOT reset via @media because the size script's inline style on documentElement outranks an @media :root rule */
-@media print{.dg-size{display:none!important}.dg img.dig-slide{max-height:300px}.dg figure.dig-slide-crop{width:min(100%,540px)}}
+@media print{.dg-size{display:none!important}.dg-caps-toggle{display:none!important}.dg img.dig-slide{max-height:300px}.dg .dig-slide-crop{width:min(100%,540px)}}
 `;
 
 // Shared sanitizer — used verbatim in both SIZE_HEAD_SCRIPT (head) and sizeScript (body) to avoid duplication.
@@ -189,6 +194,14 @@ export const DIG_SLIDE_SANITIZE_JS = "function s(raw){if(raw==null){return 100;}
 const SIZE_HEAD_SCRIPT = `<script>(function(){try{${DIG_SLIDE_SANITIZE_JS}` +
   `var v=s(localStorage.getItem('digSlideScale'));` +
   `document.documentElement.style.setProperty('--dig-slide-scale',v/100);` +
+  `}catch(e){}})();</script>`;
+
+// Shared captions sanitizer — used in both CAPTIONS_HEAD_SCRIPT (head) and captionsScript (body).
+export const DIG_CAPTIONS_SANITIZE_JS = "function c(raw){return raw==='off'?'off':'on';}";
+
+// Pre-paint: hide captions BEFORE first paint when stored 'off' (no FOUC). Default shown.
+const CAPTIONS_HEAD_SCRIPT = `<script>(function(){try{${DIG_CAPTIONS_SANITIZE_JS}` +
+  `if(c(localStorage.getItem('digCaptions'))==='off'){document.documentElement.classList.add('dg-hide-caps');}` +
   `}catch(e){}})();</script>`;
 
 /**
@@ -237,7 +250,8 @@ export function renderDigDeeperDoc(args: {
     `<input class="dg-size-range" type="range" min="50" max="150" step="10" value="100" aria-label="Slide image size percent">` +
     `<button class="dg-size-inc" type="button" aria-label="Larger slides">+</button>` +
     `<button class="dg-size-val" type="button" aria-label="Reset slide image size to 100%">100%</button></span>`;
-  const topBar = `<div class="dg-topbar">${summaryLink} <button class="dg-expand-all">⤢ expand all</button> ${wholeAsk} ${sizeControl}</div>`;
+  const capsControl = `<button class="dg-caps-toggle" type="button" aria-pressed="true" aria-label="Toggle slide captions">▣ captions</button>`;
+  const topBar = `<div class="dg-topbar">${summaryLink} <button class="dg-expand-all">⤢ expand all</button> ${wholeAsk} ${sizeControl} ${capsControl}</div>`;
 
   // ── Sections ──────────────────────────────────────────────────────────────
   const sectionsHtml = sections.map((ms, i) => {
@@ -334,6 +348,7 @@ export function renderDigDeeperDoc(args: {
   const zoomOverlay = `
 <div class="dg-zoom" id="_dg-zoom" role="dialog" aria-modal="true" aria-label="Enlarged slide">
   <button class="dg-zoom-close" id="_dg-zoom-close" aria-label="Close">✕</button>
+  <div class="dg-zoom-cap" id="_dg-zoom-cap"></div>
 </div>`;
 
   // ES5-plain to match NAV_SCRIPT. Click delegation on document so dynamically
@@ -342,11 +357,25 @@ export function renderDigDeeperDoc(args: {
   const zoomScript = `<script>(function(){
   var ov=document.getElementById('_dg-zoom');
   if(!ov)return;
-  var im=document.createElement('img');im.id='_dg-zoom-img';im.alt='';ov.appendChild(im);
-  function close(){ov.removeAttribute('data-open');im.removeAttribute('src');}
+  var cap=document.getElementById('_dg-zoom-cap');
+  // img is inserted BEFORE the caption node so the overlay stacks img-over-caption (flex column).
+  var im=document.createElement('img');im.id='_dg-zoom-img';im.alt='';ov.insertBefore(im,cap);
+  // close() fully resets the caption; because any click while open closes first, opening a
+  // different slide is always a fresh open (consecutive-slide zoom = two clicks: close, then open).
+  function close(){ov.removeAttribute('data-open');im.removeAttribute('src');if(cap){cap.textContent='';cap.style.display='none';}}
   document.addEventListener('click',function(e){
     var t=e.target;
-    if(t&&t.classList&&t.classList.contains('dig-slide')){im.src=t.getAttribute('src');im.alt=t.getAttribute('alt')||'';ov.setAttribute('data-open','');return;}
+    if(t&&t.classList&&t.classList.contains('dig-slide')){
+      im.src=t.getAttribute('src');im.alt=t.getAttribute('alt')||'';
+      if(cap){
+        var fig=t.closest?t.closest('.dig-slide-fig'):null;
+        var capEl=fig?fig.querySelector('.dig-cap'):null;
+        var txt=capEl?capEl.textContent:'';
+        cap.textContent=txt||'';
+        cap.style.display=(txt&&!document.documentElement.classList.contains('dg-hide-caps'))?'block':'none';
+      }
+      ov.setAttribute('data-open','');return;
+    }
     if(ov.hasAttribute('data-open')){close();} // when open the overlay covers the viewport → any click (backdrop, image, or ✕) closes, matching the zoom-out cursor
   });
   document.addEventListener('keydown',function(e){
@@ -401,6 +430,26 @@ export function renderDigDeeperDoc(args: {
   val.addEventListener('click',function(){apply(100,true);});
 })();</script>`;
 
+  const captionsScript = `<script>(function(){
+  var root=document.documentElement;
+  var btn=document.querySelector('.dg-caps-toggle');
+  if(!btn)return;
+  ${DIG_CAPTIONS_SANITIZE_JS}
+  function read(){try{return c(localStorage.getItem('digCaptions'));}catch(e){return 'on';}}
+  function apply(state,persist){
+    var on=state!=='off';
+    if(on){root.classList.remove('dg-hide-caps');}else{root.classList.add('dg-hide-caps');}
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    btn.textContent=(on?'▣':'▢')+' captions';
+    if(persist){try{localStorage.setItem('digCaptions',on?'on':'off');}catch(e){}}
+  }
+  // REQUIRED, not redundant: the pre-paint head script set ONLY the dg-hide-caps class.
+  // This initial apply() syncs aria-pressed + button text to the persisted state. Do not remove.
+  apply(read(),false);
+  // Toggle off the CURRENT visible state (the class), not a re-read, to avoid any read race.
+  btn.addEventListener('click',function(){apply(root.classList.contains('dg-hide-caps')?'on':'off',true);});
+})();</script>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -411,6 +460,7 @@ export function renderDigDeeperDoc(args: {
 <title>${esc(title)}</title>
 ${THEME_HEAD_SCRIPT}
 ${SIZE_HEAD_SCRIPT}
+${CAPTIONS_HEAD_SCRIPT}
 <style>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}${DIG_DOC_CSS}</style>
 </head>
 <body>
@@ -419,7 +469,7 @@ ${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
 ${bodyHtml}
 </article>
 ${expandAllDialogs}${zoomOverlay}${aiToast}
-${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}${zoomScript}${askAiScript}${sizeScript}
+${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}${zoomScript}${askAiScript}${sizeScript}${captionsScript}
 </body>
 </html>`;
 }
