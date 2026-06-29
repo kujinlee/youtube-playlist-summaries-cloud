@@ -21,7 +21,7 @@ function writeEntry(cf: string, name: string, entry: CacheEntry): Promise<void> 
   const next = prev.catch(() => {}).then(() => {
     const cache = readCache(cf);
     cache[name] = entry;
-    const tmp = `${cf}.${process.pid}.tmp`;
+    const tmp = `${cf}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
     try {
       fs.writeFileSync(tmp, JSON.stringify(cache));
       fs.renameSync(tmp, cf);                           // atomic commit

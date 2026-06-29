@@ -1,3 +1,6 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
 export interface Trim { trimTop: number; trimBot: number }
 export interface CropBox extends Trim { width: number; height: number }
 export interface ComputeOpts { contentFrac?: number; padFrac?: number; minRetain?: number; minTrim?: number }
@@ -49,9 +52,6 @@ export function computeTrim(
 
   return { trimTop, trimBot };
 }
-
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
