@@ -178,11 +178,11 @@ section[data-dug="true"].show-gist .dug{display:none}
 .dg-size button{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.15em .45em}
 .dg-size-range{width:7rem;flex:0 0 auto}
 .dg-size-val{min-width:3.2em;text-align:center;flex:0 0 auto}
-@media print{.dg-size{display:none!important}.dg img.dig-slide{max-height:300px}.dg figure.dig-slide-crop{width:min(100%,540px)}}
+@media print{:root{--dig-slide-scale:1}.dg-size{display:none!important}.dg img.dig-slide{max-height:300px}.dg figure.dig-slide-crop{width:min(100%,540px)}}
 `;
 
 // Shared sanitizer — used verbatim in both SIZE_HEAD_SCRIPT (head) and sizeScript (body) to avoid duplication.
-const DIG_SLIDE_SANITIZE_JS = "function s(raw){if(raw==null||raw===''){return 100;}var n=Number(raw);if(!Number.isFinite(n)){return 100;}n=Math.round(n/10)*10;return Math.min(150,Math.max(50,n));}";
+export const DIG_SLIDE_SANITIZE_JS = "function s(raw){if(raw==null){return 100;}if(typeof raw==='string'&&raw.trim()===''){return 100;}var n=Number(raw);if(!Number.isFinite(n)){return 100;}n=Math.round(n/10)*10;return Math.min(150,Math.max(50,n));}";
 
 // Pre-paint: set --dig-slide-scale from sanitized localStorage BEFORE first paint (no FOUC).
 const SIZE_HEAD_SCRIPT = `<script>(function(){try{${DIG_SLIDE_SANITIZE_JS}` +

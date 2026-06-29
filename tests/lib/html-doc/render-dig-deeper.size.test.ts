@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
+import { renderDigDeeperDoc, DIG_SLIDE_SANITIZE_JS } from '@/lib/html-doc/render-dig-deeper';
 import type { ParsedSummary } from '@/lib/html-doc/types';
 import type { DugSection } from '@/lib/dig/companion-doc';
 
@@ -47,7 +47,40 @@ describe('dig slide size control', () => {
   });
 
   it('hides the control and resets slide size in print', () => {
-    expect(html).toMatch(/@media print\{[^}]*\.dg-size\{display:none!important\}/);
+    expect(html).toContain('@media print{:root{--dig-slide-scale:1}.dg-size{display:none!important}.dg img.dig-slide{max-height:300px}.dg figure.dig-slide-crop{width:min(100%,540px)}}');
     expect(html).toContain('.dg-topbar{display:flex;flex-wrap:wrap');
+  });
+});
+
+describe('DIG_SLIDE_SANITIZE_JS', () => {
+  // Build the sanitizer function once from the exported JS source string.
+  // The source defines `function s(raw){...}` — we append `return s(raw);` to
+  // make it callable as a regular Function.
+  const s = new Function('raw', DIG_SLIDE_SANITIZE_JS + ' return s(raw);') as (raw: unknown) => number;
+
+  const cases: [unknown, number][] = [
+    // null / empty / whitespace → 100 (default)
+    [null, 100],
+    ['', 100],
+    ['  ', 100],
+    // non-numeric strings → 100
+    ['120px', 100],
+    ['abc', 100],
+    // clamp: values outside [50,150] snap to nearest 10 then clamp
+    ['999', 150],
+    ['-5', 50],
+    ['44', 50],
+    // snap to nearest 10 (Math.round)
+    ['125', 130],
+    ['135', 140],
+    // in-range: pass through (string and number inputs)
+    ['100', 100],
+    [100, 100],
+    [50, 50],
+    [150, 150],
+  ];
+
+  it.each(cases)('s(%p) === %i', (input, expected) => {
+    expect(s(input)).toBe(expected);
   });
 });
