@@ -175,8 +175,10 @@ section[data-dug="true"].show-gist .dug{display:none}
 .dg-size button{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.15em .45em}
 .dg-size-range{width:7rem;flex:0 0 auto}
 .dg-size-val{min-width:3.2em;text-align:center;flex:0 0 auto}
+.dg-caps-toggle{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.2em .6em}
+.dg-hide-caps .dig-cap{display:none}
 /* print base-size is enforced by the element-level overrides above; the scale var is intentionally NOT reset via @media because the size script's inline style on documentElement outranks an @media :root rule */
-@media print{.dg-size{display:none!important}.dg img.dig-slide{max-height:300px}.dg .dig-slide-crop{width:min(100%,540px)}}
+@media print{.dg-size{display:none!important}.dg-caps-toggle{display:none!important}.dg img.dig-slide{max-height:300px}.dg .dig-slide-crop{width:min(100%,540px)}}
 `;
 
 // Shared sanitizer — used verbatim in both SIZE_HEAD_SCRIPT (head) and sizeScript (body) to avoid duplication.
@@ -186,6 +188,14 @@ export const DIG_SLIDE_SANITIZE_JS = "function s(raw){if(raw==null){return 100;}
 const SIZE_HEAD_SCRIPT = `<script>(function(){try{${DIG_SLIDE_SANITIZE_JS}` +
   `var v=s(localStorage.getItem('digSlideScale'));` +
   `document.documentElement.style.setProperty('--dig-slide-scale',v/100);` +
+  `}catch(e){}})();</script>`;
+
+// Shared captions sanitizer — used in both CAPTIONS_HEAD_SCRIPT (head) and captionsScript (body).
+export const DIG_CAPTIONS_SANITIZE_JS = "function c(raw){return raw==='off'?'off':'on';}";
+
+// Pre-paint: hide captions BEFORE first paint when stored 'off' (no FOUC). Default shown.
+const CAPTIONS_HEAD_SCRIPT = `<script>(function(){try{${DIG_CAPTIONS_SANITIZE_JS}` +
+  `if(c(localStorage.getItem('digCaptions'))==='off'){document.documentElement.classList.add('dg-hide-caps');}` +
   `}catch(e){}})();</script>`;
 
 /**
@@ -234,7 +244,8 @@ export function renderDigDeeperDoc(args: {
     `<input class="dg-size-range" type="range" min="50" max="150" step="10" value="100" aria-label="Slide image size percent">` +
     `<button class="dg-size-inc" type="button" aria-label="Larger slides">+</button>` +
     `<button class="dg-size-val" type="button" aria-label="Reset slide image size to 100%">100%</button></span>`;
-  const topBar = `<div class="dg-topbar">${summaryLink} <button class="dg-expand-all">⤢ expand all</button> ${wholeAsk} ${sizeControl}</div>`;
+  const capsControl = `<button class="dg-caps-toggle" type="button" aria-pressed="true" aria-label="Toggle slide captions">▣ captions</button>`;
+  const topBar = `<div class="dg-topbar">${summaryLink} <button class="dg-expand-all">⤢ expand all</button> ${wholeAsk} ${sizeControl} ${capsControl}</div>`;
 
   // ── Sections ──────────────────────────────────────────────────────────────
   const sectionsHtml = sections.map((ms, i) => {
@@ -398,6 +409,26 @@ export function renderDigDeeperDoc(args: {
   val.addEventListener('click',function(){apply(100,true);});
 })();</script>`;
 
+  const captionsScript = `<script>(function(){
+  var root=document.documentElement;
+  var btn=document.querySelector('.dg-caps-toggle');
+  if(!btn)return;
+  ${DIG_CAPTIONS_SANITIZE_JS}
+  function read(){try{return c(localStorage.getItem('digCaptions'));}catch(e){return 'on';}}
+  function apply(state,persist){
+    var on=state!=='off';
+    if(on){root.classList.remove('dg-hide-caps');}else{root.classList.add('dg-hide-caps');}
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    btn.textContent=(on?'▣':'▢')+' captions';
+    if(persist){try{localStorage.setItem('digCaptions',on?'on':'off');}catch(e){}}
+  }
+  // REQUIRED, not redundant: the pre-paint head script set ONLY the dg-hide-caps class.
+  // This initial apply() syncs aria-pressed + button text to the persisted state. Do not remove.
+  apply(read(),false);
+  // Toggle off the CURRENT visible state (the class), not a re-read, to avoid any read race.
+  btn.addEventListener('click',function(){apply(root.classList.contains('dg-hide-caps')?'on':'off',true);});
+})();</script>`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -408,6 +439,7 @@ export function renderDigDeeperDoc(args: {
 <title>${esc(title)}</title>
 ${THEME_HEAD_SCRIPT}
 ${SIZE_HEAD_SCRIPT}
+${CAPTIONS_HEAD_SCRIPT}
 <style>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}${DIG_DOC_CSS}</style>
 </head>
 <body>
@@ -416,7 +448,7 @@ ${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
 ${bodyHtml}
 </article>
 ${expandAllDialogs}${zoomOverlay}${aiToast}
-${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}${zoomScript}${askAiScript}${sizeScript}
+${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}${zoomScript}${askAiScript}${sizeScript}${captionsScript}
 </body>
 </html>`;
 }

@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
+import { renderDigDeeperDoc, DIG_CAPTIONS_SANITIZE_JS } from '@/lib/html-doc/render-dig-deeper';
 import type { ParsedSummary } from '@/lib/html-doc/types';
 import type { DugSection } from '@/lib/dig/companion-doc';
 import type { CropBox } from '@/lib/dig/slide-crop';
@@ -62,5 +62,39 @@ describe('dig slide captions render', () => {
     const html = render('![ext](https://example.com/a.png)');
     expect(html).toMatch(/<img src="https:\/\/example.com\/a.png" alt="ext">/);
     expect(html).not.toContain('<figure class="dig-slide-fig"');
+  });
+});
+
+describe('dig captions toggle', () => {
+  const html = render('![cap](assets/v/0-0.jpg)');
+
+  it('renders a default-on toggle button in the topbar', () => {
+    expect(html).toMatch(/<button class="dg-caps-toggle" type="button" aria-pressed="true"[^>]*>▣ captions<\/button>/);
+  });
+
+  it('includes a pre-paint head script keyed on digCaptions, before <style>', () => {
+    const headIdx = html.indexOf('digCaptions');
+    const styleIdx = html.indexOf('<style>');
+    expect(headIdx).toBeGreaterThan(-1);
+    expect(headIdx).toBeLessThan(styleIdx);
+    expect(html).toContain("classList.add('dg-hide-caps')");
+    expect((html.match(/digCaptions/g) || []).length).toBeGreaterThanOrEqual(2); // head + body
+  });
+
+  it('hides captions via .dg-hide-caps and hides the toggle in print', () => {
+    expect(html).toContain('.dg-hide-caps .dig-cap{display:none}');
+    // Plain substring (NOT a cross-brace regex): the print block is `@media print{.dg-size{…}.dg-caps-toggle{…}…}`,
+    // so a /@media print\{[^}]*\.dg-caps-toggle/ pattern cannot match (a `}` precedes .dg-caps-toggle).
+    expect(html).toContain('.dg-caps-toggle{display:none!important}');
+  });
+});
+
+describe('DIG_CAPTIONS_SANITIZE_JS', () => {
+  const c = new Function('raw', DIG_CAPTIONS_SANITIZE_JS + ' return c(raw);') as (raw: unknown) => string;
+  it.each([
+    [null, 'on'], [undefined, 'on'], ['', 'on'], ['garbage', 'on'], ['ON', 'on'],
+    ['on', 'on'], ['off', 'off'],
+  ] as [unknown, string][])('c(%p) === %s', (input, expected) => {
+    expect(c(input)).toBe(expected);
   });
 });
