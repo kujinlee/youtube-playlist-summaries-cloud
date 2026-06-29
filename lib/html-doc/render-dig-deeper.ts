@@ -11,6 +11,7 @@ import { digControl, NAV_SCRIPT, NAV_CSS } from './nav';
 import type { ParsedSummary } from './types';
 import type { ModelEnvelope } from './model-store';
 import type { DugSection } from '../dig/companion-doc';
+import type { CropBox } from '../dig/slide-crop';
 import { mergeDigDoc } from './dig-merge';
 import { buildWholeVideoPrompt, buildSectionPrompt, AI_PROVIDER } from '../ask-gemini';
 
@@ -84,7 +85,7 @@ function fmtClock(totalSec: number): string {
  * markdown-it renders these markdown links to <a href="...t=660s..."> anchors normally,
  * so html:false (which escapes raw HTML) does not affect timestamp link rendering.
  */
-function buildRenderer(mdPath: string): MarkdownIt {
+function buildRenderer(mdPath: string, cropMap: Map<string, CropBox | null>): MarkdownIt {
   const renderer = new MarkdownIt({ html: false });
   const docDir = path.dirname(mdPath);
   // assetsRoot is the only directory from which images may be inlined.
@@ -116,6 +117,17 @@ function buildRenderer(mdPath: string): MarkdownIt {
         return `<span class="missing-slide">${esc(altAttr)}</span>`;
       }
       const b64 = data.toString('base64');
+      const box = cropMap.get(absPath) ?? null;
+      if (box) {
+        const keepFrac = 1 - box.trimTop - box.trimBot;
+        const keepH = box.height * keepFrac;
+        const posPct = (box.trimTop / (box.trimTop + box.trimBot)) * 100;
+        const capPx = Math.round(360 * box.width / keepH);   // cap displayed height ≈360px
+        const figStyle = `aspect-ratio:${box.width} / ${Math.round(keepH)};width:min(100%,${capPx}px)`;
+        return `<figure class="dig-slide-crop" style="${figStyle}">` +
+               `<img class="dig-slide" style="object-position:0 ${posPct.toFixed(1)}%" ` +
+               `src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}"></figure>`;
+      }
       return `<img class="dig-slide" src="data:image/jpeg;base64,${b64}" alt="${esc(altAttr)}">`;
     }
 
@@ -133,6 +145,8 @@ const DIG_DOC_CSS = `
 section{padding:2.4em 0;border-top:2px solid var(--rule)}
 section:first-of-type{border-top:0}
 .dg img.dig-slide{margin:2em auto;max-height:360px;border:1px solid var(--rule);cursor:zoom-in}
+.dg figure.dig-slide-crop{display:block;overflow:hidden;margin:2em auto;max-width:100%;border:1px solid var(--rule);border-radius:6px}
+.dg figure.dig-slide-crop>img.dig-slide{display:block;width:100%;height:100%;max-height:none;margin:0;border:0;border-radius:0;object-fit:cover;cursor:zoom-in}
 .dg .dig-trigger,.dg .dig-toggle,.dg .dig-refresh{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
 .dg .dig-trigger:hover,.dg .dig-toggle:hover,.dg .dig-refresh:hover{text-decoration:underline}
 section[data-dug="true"] .gist{display:none}
@@ -176,9 +190,10 @@ export function renderDigDeeperDoc(args: {
   mdPath: string;
   videoId: string;
   language?: 'en' | 'ko';
+  cropMap?: Map<string, CropBox | null>;
 }): string {
-  const { summary, envelope, dug, mdPath, videoId, language = 'en' } = args;
-  const renderer = buildRenderer(mdPath);
+  const { summary, envelope, dug, mdPath, videoId, language = 'en', cropMap = new Map<string, CropBox | null>() } = args;
+  const renderer = buildRenderer(mdPath, cropMap);
 
   const { sections, orphans } = mergeDigDoc(summary, envelope, dug);
 
