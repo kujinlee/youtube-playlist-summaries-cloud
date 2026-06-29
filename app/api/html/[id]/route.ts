@@ -8,6 +8,7 @@ import { reRenderSummaryHtml } from '../../../../lib/html-doc/rerender';
 import { readModelEnvelope } from '../../../../lib/html-doc/model-store';
 import { parseDugSections } from '../../../../lib/dig/companion-doc';
 import { parseSummaryMarkdown } from '../../../../lib/html-doc/parse';
+import { prepareSlideCropMap } from '../../../../lib/dig/slide-crop-map';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -192,7 +193,8 @@ export async function GET(request: Request, { params }: Params) {
       }
     }
 
-    return serveHtml(renderDigDeeperDoc({ summary: parsed, envelope, dug, mdPath: summaryMdPath, videoId, language: video.language }));
+    const cropMap = await prepareSlideCropMap(dug, summaryMdPath);
+    return serveHtml(renderDigDeeperDoc({ summary: parsed, envelope, dug, mdPath: summaryMdPath, videoId, language: video.language, cropMap }));
   }
 
   // type === 'deep-dive'
