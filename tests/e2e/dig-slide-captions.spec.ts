@@ -71,7 +71,8 @@ test('C3 pre-paint hides captions BEFORE the toggle exists (no FOUC, PH1)', asyn
 test('C4 survives blocked localStorage (default shown, no page errors)', async ({ page }) => {
   await stub(page);
   await page.addInitScript(() => {
-    const thrower = () => { throw new Error('blocked'); };
+    (window as any).__lsHits = 0;
+    const thrower = () => { (window as any).__lsHits++; throw new Error('blocked'); };
     Object.defineProperty(window, 'localStorage', { configurable: true, get: () => ({ getItem: thrower, setItem: thrower }) });
   });
   const errs: string[] = [];
@@ -79,6 +80,7 @@ test('C4 survives blocked localStorage (default shown, no page errors)', async (
   await page.goto(URL);
   await expect(page.locator('.dig-cap')).toBeVisible();       // defaulted to shown
   expect(errs).toEqual([]);
+  expect(await page.evaluate(() => (window as any).__lsHits)).toBeGreaterThan(0);
 });
 
 test('C5 zoom overlay shows the slide caption', async ({ page }) => {

@@ -101,6 +101,11 @@ function buildRenderer(mdPath: string, cropMap: Map<string, CropBox | null>): Ma
 
     if (srcAttr.startsWith('assets/')) {
       const absPath = path.resolve(docDir, srcAttr);
+      // Containment check: resolved path must stay inside assetsRoot.
+      // Blocks traversal like assets/../../etc/passwd (passes the startsWith('assets/')
+      // prefix test but resolves outside the doc's assets dir → arbitrary file disclosure).
+      // SECURITY-CRITICAL: containment violation → silent drop (no placeholder, no
+      // attacker-controlled alt text in the output).
       if (!absPath.startsWith(assetsRoot + path.sep)) return '';
       let data: Buffer | null = null;
       try {
@@ -167,7 +172,7 @@ section[data-dug="true"].show-gist .dug{display:none}
 .dg-zoom[data-open]{display:flex}
 .dg-zoom img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:4px}
 .dg-zoom-close{position:fixed;top:1rem;right:1.2rem;font-size:1.6rem;line-height:1;color:#fff;background:none;border:none;cursor:pointer;z-index:9501}
-.dg-zoom-cap{color:#fff;font-size:.85rem;line-height:1.4;margin-top:1rem;max-width:95vw;text-align:center}
+.dg-zoom-cap{display:none;color:#fff;font-size:.85rem;line-height:1.4;margin-top:1rem;max-width:95vw;text-align:center}
 .dg .ask-ai{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
 .dg .ask-ai:hover{text-decoration:underline}
 #_dg-ai-toast{display:none;position:fixed;left:50%;bottom:1.4rem;transform:translateX(-50%);z-index:9600;background:var(--card,#222);color:var(--ink,#fff);border:1px solid var(--rule);border-radius:6px;padding:.5em .9em;font-size:.85rem;box-shadow:0 4px 18px rgba(0,0,0,.2)}
@@ -367,7 +372,7 @@ export function renderDigDeeperDoc(args: {
         var capEl=fig?fig.querySelector('.dig-cap'):null;
         var txt=capEl?capEl.textContent:'';
         cap.textContent=txt||'';
-        cap.style.display=(txt&&!document.documentElement.classList.contains('dg-hide-caps'))?'':'none';
+        cap.style.display=(txt&&!document.documentElement.classList.contains('dg-hide-caps'))?'block':'none';
       }
       ov.setAttribute('data-open','');return;
     }
