@@ -198,11 +198,13 @@ describe('VideoList — sort column headers', () => {
     );
   }
 
-  it('renders 14 sort buttons in the column header row when onSort is provided', () => {
+  it('renders 9 sort buttons in the column header row when onSort is provided', () => {
+    // Sortable: #, Title, Channel, Duration, Published, Added, Lang, OVR, My Score.
+    // Note has no sort button.
     renderWithSort();
     const headers = screen.getAllByRole('columnheader');
     const sortableHeaders = headers.filter((th) => th.querySelector('button') !== null);
-    expect(sortableHeaders).toHaveLength(14);
+    expect(sortableHeaders).toHaveLength(9);
   });
 
   it('clicking # column calls onSort("serialNumber", "asc") when unsorted', () => {
@@ -226,21 +228,18 @@ describe('VideoList — sort column headers', () => {
     expect(onSort).toHaveBeenCalledWith('overall', 'asc');
   });
 
-  it('clicking USE, DPT, ORI, RCN, CMP each call onSort with correct rating key', () => {
-    const cases: [string, SortColumn][] = [
-      ['Usefulness', 'usefulness'],
-      ['Depth', 'depth'],
-      ['Originality', 'originality'],
-      ['Recency', 'recency'],
-      ['Completeness', 'completeness'],
-    ];
-    for (const [label, key] of cases) {
-      const onSort = jest.fn();
-      const { unmount } = renderWithSort({ onSort });
-      fireEvent.click(screen.getByRole('button', { name: label }));
-      expect(onSort).toHaveBeenCalledWith(key, 'asc');
-      unmount();
-    }
+  it('clicking Channel column calls onSort("channel", "asc")', () => {
+    const onSort = jest.fn();
+    renderWithSort({ onSort });
+    fireEvent.click(screen.getByRole('button', { name: 'Channel' }));
+    expect(onSort).toHaveBeenCalledWith('channel', 'asc');
+  });
+
+  it('clicking Duration column calls onSort("durationSeconds", "asc")', () => {
+    const onSort = jest.fn();
+    renderWithSort({ onSort });
+    fireEvent.click(screen.getByRole('button', { name: 'Duration' }));
+    expect(onSort).toHaveBeenCalledWith('durationSeconds', 'asc');
   });
 
   it('clicking active column (asc) calls onSort with desc', () => {
