@@ -32,6 +32,7 @@ describe('RLS isolation', () => {
     expect(pl.data).toEqual([]);
 
     const vids = await bClient.from('videos').select('*').eq('playlist_id', A.playlistId);
+    expect(vids.error).toBeNull();                    // spec §7: "0 rows, not error" (Codex I-1)
     expect(vids.data).toEqual([]);
   });
 
@@ -67,6 +68,11 @@ describe('RLS isolation', () => {
     const reassign = await A.client.from('videos').update({ owner_id: bId })
       .eq('playlist_id', A.playlistId).eq('video_id', 'v0').select();
     expect(reassign.error).not.toBeNull();           // visible row + bad with_check ⇒ error, not 0 rows
+
+    // the rejected write left no partial change — owner_id is still A (Codex M-1)
+    const after = await A.client.from('videos').select('owner_id')
+      .eq('playlist_id', A.playlistId).eq('video_id', 'v0').single();
+    expect(after.data?.owner_id).toBe(A.userId);
   });
 
   it('cross-owner FK attack: B inserts video with playlist_id=A is rejected', async () => {
@@ -80,7 +86,8 @@ describe('RLS isolation', () => {
       .insert({ playlist_id: A.playlistId, owner_id: bId, video_id: 'x', position: 0, data: { id: 'x' } });
     expect(asB.error).not.toBeNull();
 
-    // owner_id=A (spoof): with-check policy violation → rejected
+    // owner_id=A (spoof): the FK PASSES here — (A.playlistId, A.userId) is a valid playlists
+    // row — so only the with_check(owner_id=auth.uid()) rejects B claiming owner_id=A (Codex M-2)
     const asA = await bClient.from('videos')
       .insert({ playlist_id: A.playlistId, owner_id: A.userId, video_id: 'y', position: 0, data: { id: 'y' } });
     expect(asA.error).not.toBeNull();
