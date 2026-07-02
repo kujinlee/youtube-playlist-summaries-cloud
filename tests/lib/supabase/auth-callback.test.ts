@@ -24,11 +24,13 @@ describe('OAuth callback', () => {
     exchange.mockResolvedValue({ error: { message: 'bad code' } });
     const res = await GET(req('http://localhost/auth/callback?code=abc'));
     expect(res.headers.get('location')).toContain('/auth/auth-error');
+    expect(res.headers.get('Cache-Control')).toMatch(/no-store/);
   });
 
   it('redirects to auth-error when no code is present', async () => {
     const res = await GET(req('http://localhost/auth/callback'));
     expect(exchange).not.toHaveBeenCalled();
     expect(res.headers.get('location')).toContain('/auth/auth-error');
+    expect(res.headers.get('Cache-Control')).toMatch(/no-store/);
   });
 });

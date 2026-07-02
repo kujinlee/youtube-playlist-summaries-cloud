@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { getSupabaseEnv } from './env';
 
-type CookieStore = {
+export type CookieStore = {
   getAll(): { name: string; value: string }[];
   set(name: string, value: string, options?: Record<string, unknown>): void;
 };

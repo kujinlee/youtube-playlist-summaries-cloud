@@ -5,6 +5,11 @@ describe('route categories', () => {
     expect(classifyRoute('/')).toBe('public');
     expect(classifyRoute('/about')).toBe('public');
   });
+  it('/auth/* paths are public so OAuth callback and auth-error are reachable pre-session', () => {
+    expect(classifyRoute('/auth')).toBe('public');
+    expect(classifyRoute('/auth/callback')).toBe('public');
+    expect(classifyRoute('/auth/auth-error')).toBe('public');
+  });
   it('the guest try-it path is anon-allowed', () => {
     expect(classifyRoute('/try')).toBe('anon-allowed');
     expect(classifyRoute('/try/abc')).toBe('anon-allowed');

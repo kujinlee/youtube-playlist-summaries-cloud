@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
-import { createServerSupabase } from '@/lib/supabase/server';
+import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 
 // Task 5 review (Important): the createServerSupabase factory cannot forward the
 // anti-cache headers @supabase/ssr wants, so a response carrying auth Set-Cookie
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const next = request.nextUrl.searchParams.get('next') ?? '/library';
   if (code) {
     const cookieStore = await cookies();
-    const supabase = createServerSupabase(cookieStore as never);
+    const supabase = createServerSupabase(cookieStore as unknown as CookieStore);
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return noStore(NextResponse.redirect(new URL(next, request.url)));
   }
