@@ -184,7 +184,7 @@ Unit layer (jest) for client/guard units; a dedicated **integration suite** for 
 ## 8. Success criteria
 
 - `supabase start` + `supabase db reset` reproduce the schema from migrations cleanly.
-- Google and anonymous sign-in both yield a session and (via trigger) a `profiles` row.
+- **Anonymous** sign-in yields a session and (via trigger) a `profiles` row, verified locally. **Google** sign-in's provisioning is proven locally in 1B — the `handle_new_user` trigger test covers any `auth.users` insert (Google included) producing exactly one `profiles` row, and a mocked callback test covers the code-exchange + error branches. The **live Google browser redirect** cannot run on the local stack (needs a hosted project + Google credentials) and is a documented **deploy-time manual verification** (decision 2026-07-02, Codex plan-review B1).
 - All §7 tests pass: isolation, per-op mutation semantics, the cross-owner FK attack, anonymous isolation, provisioning-no-race, service_role confinement, forced-RLS regression, integrity CHECKs.
 - No user-facing path imports the service client; `tsc --noEmit` clean.
 - Additive only: existing local-tool code paths unchanged (`LocalFsMetadataStore` remains default until 1C wires selection).
