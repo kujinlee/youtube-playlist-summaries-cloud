@@ -60,12 +60,25 @@ npm install                      # node_modules is absent in this fresh clone
 npm install @supabase/supabase-js @supabase/ssr server-only
 ```
 
-- [ ] **Step 2: Initialize the Supabase CLI project**
+- [ ] **Step 2: Initialize the Supabase CLI project + enable anonymous auth**
 
 ```bash
 npx supabase --version           # pin this version in the commit message
 npx supabase init                # creates supabase/config.toml + supabase/ dir
 ```
+
+**Codex B2 — anonymous sign-in must be enabled in config, or `signInAnonymously()` fails locally.** Edit `supabase/config.toml`:
+
+```toml
+[auth]
+enable_anonymous_sign_ins = true   # required for the guest "taste" path (spec §4)
+
+[auth.email]
+enable_confirmations = false       # local stack: admin.createUser uses email_confirm:true;
+                                   # disabling confirmations keeps signInWithPassword usable in tests
+```
+
+After Task 7's harness exists, smoke-test that `anonSession()` succeeds against a freshly `db reset` stack; if `enable_anonymous_sign_ins` is missing the call returns an "Anonymous sign-ins are disabled" error.
 
 Do **not** run `supabase start` yet (Docker daemon must be up; that is a run-time concern documented in Task 7).
 
@@ -233,18 +246,20 @@ Expected: reset succeeds, no SQL errors.
 import { adminClient } from './helpers/clients';
 
 describe('core schema', () => {
-  it('has forced RLS on every owned table', async () => {
+  it('has RLS enabled AND forced on every owned table (Codex M1)', async () => {
     const admin = adminClient();
     const { data, error } = await admin.rpc('exec_sql', {
       // helper defined in Task 7 harness; or query pg_class via a SQL function
-      sql: `select relname, relforcerowsecurity from pg_class
+      sql: `select relname, relrowsecurity, relforcerowsecurity from pg_class
             where relname in ('profiles','playlists','videos') order by relname`,
     });
     expect(error).toBeNull();
+    // both flags must be true: `enable` alone lets the table owner bypass RLS;
+    // `force` makes even the owner obey it.
     expect(data).toEqual([
-      { relname: 'playlists', relforcerowsecurity: true },
-      { relname: 'profiles', relforcerowsecurity: true },
-      { relname: 'videos', relforcerowsecurity: true },
+      { relname: 'playlists', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'profiles',  relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'videos',    relrowsecurity: true, relforcerowsecurity: true },
     ]);
   });
 });
@@ -286,16 +301,18 @@ create policy videos_owner    on videos    for all
 
 ```typescript
 // append to tests/integration/schema.test.ts
-it('defines exactly one owner policy per table', async () => {
+it('defines exactly one owner policy per table, ALL cmd, with a with_check (Codex L1)', async () => {
   const admin = adminClient();
   const { data } = await admin.rpc('exec_sql', {
-    sql: `select tablename, policyname from pg_policies
-          where schemaname='public' order by tablename`,
+    // assert cmd + that with_check is present, not just the name — a malformed
+    // policy with the right name but no with_check would otherwise pass.
+    sql: `select tablename, policyname, cmd, (with_check is not null) as has_with_check
+          from pg_policies where schemaname='public' order by tablename`,
   });
   expect(data).toEqual([
-    { tablename: 'playlists', policyname: 'playlists_owner' },
-    { tablename: 'profiles',  policyname: 'profiles_self' },
-    { tablename: 'videos',    policyname: 'videos_owner' },
+    { tablename: 'playlists', policyname: 'playlists_owner', cmd: 'ALL', has_with_check: true },
+    { tablename: 'profiles',  policyname: 'profiles_self',   cmd: 'ALL', has_with_check: true },
+    { tablename: 'videos',    policyname: 'videos_owner',    cmd: 'ALL', has_with_check: true },
   ]);
 });
 ```
@@ -524,18 +541,44 @@ git commit -m "feat(supabase): browser/server/service client factories + runtime
 - Test: `tests/lib/supabase/confinement.test.ts`
 
 **Interfaces:**
-- Produces: `findServiceImporters(entryFiles: string[]): string[]` — returns app-entry files whose transitive import graph reaches `lib/supabase/service.ts`. Empty in 1B.
+- Produces: `findServiceImporters(): string[]` — returns any user-facing Next entrypoint whose transitive import graph reaches `lib/supabase/service.ts`. Empty in 1B.
+- `collectEntrypoints(): string[]` — the exhaustive user-facing entry set (Codex H2): `app/**`, `middleware.ts` (root, edge-executed), and any `pages/**`.
 
-- [ ] **Step 1: Write the failing test**
+> **Codex H2/H3/H4:** the scan is the **build-time entrypoint confinement proof** that `service.ts` is unreachable from middleware, RSC, and route handlers (the runtime `window` guard in Task 5 is only defense-in-depth). It must (H2) cover **every** user-facing entry, not just `app/**`, and (H3) match **side-effect** imports (`import '@/lib/supabase/service'`) and re-exports, not only `... from '...'`.
+
+- [ ] **Step 1: Write the failing tests (incl. a synthetic side-effect-import fixture)**
 
 ```typescript
 // tests/lib/supabase/confinement.test.ts
-import { findServiceImporters } from '@/scripts/check-service-confinement';
+import fs from 'fs';
+import path from 'path';
+import { findServiceImporters, extractImportSpecifiers } from '@/scripts/check-service-confinement';
 
 describe('service_role confinement', () => {
-  it('no app/** entry transitively imports lib/supabase/service.ts', () => {
-    const violators = findServiceImporters();     // defaults to scanning app/**
-    expect(violators).toEqual([]);
+  it('no user-facing Next entrypoint transitively imports lib/supabase/service.ts', () => {
+    expect(findServiceImporters()).toEqual([]);   // app/**, middleware.ts, pages/**
+  });
+
+  it('extractImportSpecifiers catches side-effect + re-export imports (Codex H3)', () => {
+    const src = [
+      `import '@/lib/supabase/service';`,               // side-effect import
+      `export { createServiceClient } from './service';`, // re-export
+      `const x = await import('@/lib/supabase/service');`, // dynamic
+      `import { a } from '@/lib/supabase/env';`,          // named
+    ].join('\n');
+    const specs = extractImportSpecifiers(src);
+    expect(specs).toEqual(
+      expect.arrayContaining(['@/lib/supabase/service', './service', '@/lib/supabase/service', '@/lib/supabase/env']),
+    );
+  });
+
+  it('detects a planted violation reaching service.ts through a side-effect import', () => {
+    const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'confine-'));
+    const entry = path.join(dir, 'evil.ts');
+    fs.writeFileSync(entry, `import '${path.join(process.cwd(), 'lib/supabase/service')}';\n`);
+    // reach() is exported for this fixture check
+    const { reachesService } = require('@/scripts/check-service-confinement');
+    expect(reachesService(entry)).toBe(true);
   });
 });
 ```
@@ -545,7 +588,7 @@ describe('service_role confinement', () => {
 Run: `npx jest tests/lib/supabase/confinement.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the transitive scan**
+- [ ] **Step 3: Implement the transitive scan (broad entrypoints + side-effect imports)**
 
 ```typescript
 // scripts/check-service-confinement.ts
@@ -560,22 +603,30 @@ function resolveImport(fromFile: string, spec: string): string | null {
   if (spec.startsWith('@/')) base = path.join(ROOT, spec.slice(2));
   else if (spec.startsWith('.')) base = path.resolve(path.dirname(fromFile), spec);
   else return null;                               // bare package import — not our code
-  for (const ext of ['.ts', '.tsx', '.js', '/index.ts', '/index.tsx']) {
-    const cand = base.endsWith('.ts') || base.endsWith('.tsx') ? base : base + ext;
+  const candidates = base.endsWith('.ts') || base.endsWith('.tsx')
+    ? [base]
+    : ['.ts', '.tsx', '.js', '/index.ts', '/index.tsx'].map((e) => base + e);
+  for (const cand of candidates) {
     if (fs.existsSync(cand) && fs.statSync(cand).isFile()) return cand;
   }
   return null;
 }
 
-function importsOf(file: string): string[] {
-  const src = fs.readFileSync(file, 'utf8');
-  const re = /(?:import|export)[^'"]*from\s*['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g;
+/** Codex H3: match named/default/namespace `from` imports, bare SIDE-EFFECT imports
+ *  (`import 'x'`), re-exports (`export ... from 'x'`), and dynamic `import('x')`. */
+export function extractImportSpecifiers(src: string): string[] {
   const out: string[] = [];
-  for (let m; (m = re.exec(src)); ) out.push(m[1] ?? m[2]);
+  const patterns = [
+    /(?:import|export)\s[^;'"]*?from\s*['"]([^'"]+)['"]/g, // import/export ... from '...'
+    /import\s*['"]([^'"]+)['"]/g,                          // side-effect: import '...'
+    /import\(\s*['"]([^'"]+)['"]\s*\)/g,                   // dynamic import('...')
+    /require\(\s*['"]([^'"]+)['"]\s*\)/g,                  // require('...')
+  ];
+  for (const re of patterns) for (let m; (m = re.exec(src)); ) out.push(m[1]);
   return out;
 }
 
-function reaches(entry: string): boolean {
+export function reachesService(entry: string): boolean {
   const seen = new Set<string>();
   const stack = [entry];
   while (stack.length) {
@@ -583,7 +634,8 @@ function reaches(entry: string): boolean {
     if (seen.has(f)) continue;
     seen.add(f);
     if (path.resolve(f) === TARGET) return true;
-    for (const spec of importsOf(f)) {
+    if (!fs.existsSync(f)) continue;
+    for (const spec of extractImportSpecifiers(fs.readFileSync(f, 'utf8'))) {
       const r = resolveImport(f, spec);
       if (r) stack.push(r);
     }
@@ -600,24 +652,34 @@ function walk(dir: string): string[] {
   });
 }
 
-export function findServiceImporters(appDir = path.join(ROOT, 'app')): string[] {
-  return walk(appDir).filter((entry) => path.resolve(entry) !== TARGET && reaches(entry));
+/** Codex H2: every user-facing entry — not just app/**. */
+export function collectEntrypoints(): string[] {
+  const entries = [...walk(path.join(ROOT, 'app')), ...walk(path.join(ROOT, 'pages'))];
+  const mw = path.join(ROOT, 'middleware.ts');
+  if (fs.existsSync(mw)) entries.push(mw);
+  return entries;
+}
+
+export function findServiceImporters(): string[] {
+  return collectEntrypoints().filter((e) => path.resolve(e) !== TARGET && reachesService(e));
 }
 
 if (require.main === module) {
   const violators = findServiceImporters();
   if (violators.length) {
-    console.error('service.ts reachable from app/**:\n' + violators.join('\n'));
+    console.error('service.ts reachable from a user-facing entrypoint:\n' + violators.join('\n'));
     process.exit(1);
   }
   console.log('service_role confinement OK');
 }
 ```
 
+> A regex walker is a pragmatic backstop; if the reviewer wants stronger guarantees the implementer may swap `extractImportSpecifiers` for a TypeScript-compiler-API pass over the same entrypoint set. Keep the exported signatures + the assertions stable.
+
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `npx jest tests/lib/supabase/confinement.test.ts`
-Expected: PASS (no `app/**` entry imports the service client in 1B).
+Expected: PASS (no user-facing entry imports the service client in 1B).
 
 - [ ] **Step 5: Wire into CI-style check + commit**
 
@@ -740,22 +802,44 @@ grant execute on function exec_sql(text) to service_role;
 ```
 > The reviewer should scrutinize this: it is a deliberate test-only escape hatch, service_role-gated, and never reachable by a user JWT (RLS suite never calls it as a user). If deemed unacceptable, replace with three typed views over `pg_class`/`pg_policies`/`pg_proc`.
 
-- [ ] **Step 5: Smoke-verify the harness**
+- [ ] **Step 5: Write the exec_sql confinement test (Codex M2)**
+
+```typescript
+// tests/integration/exec-sql-guard.test.ts
+import { newUser, signInAs, anonSession } from './helpers/clients';
+
+describe('exec_sql is service_role-only', () => {
+  it('a user-JWT client cannot call exec_sql', async () => {
+    const u = await newUser();
+    const { client } = await signInAs(u.email, u.password);
+    const { error } = await client.rpc('exec_sql', { sql: 'select 1' });
+    expect(error).not.toBeNull();                    // permission denied for authenticated
+  });
+
+  it('an anon client cannot call exec_sql', async () => {
+    const { client } = await anonSession();
+    const { error } = await client.rpc('exec_sql', { sql: 'select 1' });
+    expect(error).not.toBeNull();                    // permission denied for anon
+  });
+});
+```
+
+- [ ] **Step 6: Smoke-verify the harness**
 
 ```bash
 npx supabase start
 npx supabase status -o env > .env.test.local
 npx supabase db reset
-npx jest --config jest.integration.config.ts tests/integration/schema.test.ts
+npx jest --config jest.integration.config.ts tests/integration/schema.test.ts tests/integration/exec-sql-guard.test.ts
 ```
-Expected: the previously-skipped Task 2/3 catalog tests now pass. Unskip them.
+Expected: the previously-skipped Task 2/3 catalog tests now pass (unskip them); the exec_sql guard tests pass.
 
-- [ ] **Step 6: tsc + commit**
+- [ ] **Step 7: tsc + commit**
 
 ```bash
 npx tsc --noEmit
 git add jest.integration.config.ts tests/integration/setup.ts tests/integration/helpers/clients.ts \
-        supabase/migrations/0004_test_exec_sql.sql
+        tests/integration/exec-sql-guard.test.ts supabase/migrations/0004_test_exec_sql.sql
 git commit -m "test(integration): stack-gated RLS harness (admin + user-JWT + anon clients)"
 ```
 
@@ -790,11 +874,16 @@ async function seedPlaylistWithVideos(email: string, password: string, key: stri
 }
 
 describe('RLS isolation', () => {
-  it('B cannot see A\'s playlists or videos (0 rows, not error)', async () => {
+  it('B cannot see A\'s profiles, playlists, or videos (0 rows, not error) (Codex H5)', async () => {
     const a = await newUser();
     const A = await seedPlaylistWithVideos(a.email, a.password, 'PLaaa');
     const b = await newUser();
     const { client: bClient } = await signInAs(b.email, b.password);
+
+    // profiles isolation (spec §7 requires all three tables)
+    const prof = await bClient.from('profiles').select('*').eq('id', A.userId);
+    expect(prof.error).toBeNull();
+    expect(prof.data).toEqual([]);
 
     const pl = await bClient.from('playlists').select('*').eq('id', A.playlistId);
     expect(pl.error).toBeNull();
@@ -804,7 +893,7 @@ describe('RLS isolation', () => {
     expect(vids.data).toEqual([]);
   });
 
-  it('B update/delete on A\'s invisible rows affects 0 rows (no error)', async () => {
+  it('B update AND delete on A\'s invisible rows affect 0 rows (no error) (Codex H6)', async () => {
     const a = await newUser();
     const A = await seedPlaylistWithVideos(a.email, a.password, 'PLbbb');
     const b = await newUser();
@@ -814,6 +903,28 @@ describe('RLS isolation', () => {
       .eq('playlist_id', A.playlistId).select();
     expect(upd.error).toBeNull();
     expect(upd.data).toEqual([]);                    // invisible → 0 affected
+
+    const del = await bClient.from('videos').delete()
+      .eq('playlist_id', A.playlistId).select();
+    expect(del.error).toBeNull();
+    expect(del.data).toEqual([]);                    // invisible → 0 deleted
+
+    // A's rows are untouched (verified from A's own client)
+    const stillThere = await A.client.from('videos').select('video_id')
+      .eq('playlist_id', A.playlistId).order('position');
+    expect(stillThere.data).toEqual([{ video_id: 'v0' }, { video_id: 'v1' }]);
+  });
+
+  it('with-check violation on a VISIBLE own row errors (owner_id reassignment) (Codex H6)', async () => {
+    const a = await newUser();
+    const A = await seedPlaylistWithVideos(a.email, a.password, 'PLwc');
+    const b = await newUser();
+    const { userId: bId } = await signInAs(b.email, b.password);
+
+    // A tries to hand its own (visible) video to B → with_check(owner_id=auth.uid()) fails
+    const reassign = await A.client.from('videos').update({ owner_id: bId })
+      .eq('playlist_id', A.playlistId).eq('video_id', 'v0').select();
+    expect(reassign.error).not.toBeNull();           // visible row + bad with_check ⇒ error, not 0 rows
   });
 
   it('cross-owner FK attack: B inserts video with playlist_id=A is rejected', async () => {
@@ -938,13 +1049,27 @@ create function reorder_videos(p_playlist_id uuid, items jsonb)
   returns void language plpgsql security invoker set search_path = public as $$
 declare it jsonb;
 begin
+  -- Codex H7: explicit ownership guard (defense-in-depth over the caller-RLS no-op).
+  -- A user who does not own the playlist (or whose RLS hides it) sees no matching row.
+  if not exists (
+    select 1 from playlists
+     where id = p_playlist_id
+       and (owner_id = auth.uid() or auth.role() = 'service_role')
+  ) then
+    raise exception 'not authorized for playlist %', p_playlist_id;
+  end if;
+
   for it in select * from jsonb_array_elements(items) loop
     update videos set position = (it->>'position')::int, updated_at = now()
      where playlist_id = p_playlist_id and video_id = it->>'video_id';
   end loop;
 end $$;
+
+-- Codex H7: not callable by anon/PUBLIC by default; only authenticated + service_role.
+revoke all on function reorder_videos(uuid, jsonb) from public, anon;
+grant execute on function reorder_videos(uuid, jsonb) to authenticated, service_role;
 ```
-> `SECURITY INVOKER` is deliberate — the caller's RLS still applies, so this helper cannot cross tenants. It exists only to give `writeIndex`-style reordering a single transaction boundary (PostgREST batches are not transactional). The 1C `writeIndex` will use the same pattern.
+> `SECURITY INVOKER` is deliberate — the caller's RLS still applies, so this helper cannot cross tenants. The explicit `owner_id = auth.uid()` guard + the `revoke`/`grant` are defense-in-depth so it never silently no-ops for a non-owner or runs for an anonymous/PUBLIC role. It exists only to give `writeIndex`-style reordering a single transaction boundary (PostgREST batches are not transactional). The 1C `writeIndex` will use the same pattern.
 
 - [ ] **Step 3: Run + tsc + commit**
 
@@ -971,13 +1096,13 @@ git commit -m "test(rls): integrity CHECK, deferrable reorder, anonymous isolati
 
 > **Read first (per `AGENTS.md`):** before writing `middleware.ts` or the route handler, read the middleware and route-handler guides under `node_modules/next/dist/docs/`. This repo's Next.js has breaking changes from training data — confirm the `middleware` signature, `NextResponse` cookie API, and route-handler `GET` export shape against the installed version.
 >
-> **Scope note:** full Google OAuth end-to-end needs a hosted project with Google credentials (deferred to deploy per spec §2). Locally, the **anonymous** session path is exercised by the integration suite (Task 9). This task delivers the middleware + callback code and a **pure unit test** of the route-category classifier; the Google round-trip is a documented deploy-time verification, not a 1B automated test.
+> **Scope note (Codex B1):** the live Google OAuth redirect needs a hosted project with Google credentials (spec §2) and cannot run on the local stack. It is covered in 1B by three complementary checks, with only the browser round-trip deferred: (1) the **provisioning trigger test** (Task 4) already proves that *any* `auth.users` insert — Google included — yields exactly one `profiles` row; (2) a **mocked callback unit test** (below) proves the code-exchange + error branches; (3) the **live Google round-trip** is a documented deploy-time manual check. See the decision note presented to the user before implementation.
 
-- [ ] **Step 1: Write the failing classifier test**
+- [ ] **Step 1: Write the failing classifier + provisioning-decision tests**
 
 ```typescript
 // tests/lib/supabase/route-categories.test.ts
-import { classifyRoute } from '@/lib/supabase/route-categories';
+import { classifyRoute, needsAnonProvision } from '@/lib/supabase/route-categories';
 
 describe('route categories', () => {
   it('marketing paths are public', () => {
@@ -986,10 +1111,20 @@ describe('route categories', () => {
   });
   it('the guest try-it path is anon-allowed', () => {
     expect(classifyRoute('/try')).toBe('anon-allowed');
+    expect(classifyRoute('/try/abc')).toBe('anon-allowed');
   });
   it('library paths require authentication', () => {
     expect(classifyRoute('/library')).toBe('authenticated');
     expect(classifyRoute('/library/playlists/abc')).toBe('authenticated');
+  });
+});
+
+describe('needsAnonProvision (Codex H1)', () => {
+  it('true only on anon-allowed with no existing user', () => {
+    expect(needsAnonProvision('anon-allowed', false)).toBe(true);
+    expect(needsAnonProvision('anon-allowed', true)).toBe(false);   // already has a session
+    expect(needsAnonProvision('public', false)).toBe(false);
+    expect(needsAnonProvision('authenticated', false)).toBe(false); // redirect, don't provision
   });
 });
 ```
@@ -999,7 +1134,7 @@ describe('route categories', () => {
 Run: `npx jest tests/lib/supabase/route-categories.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the classifier**
+- [ ] **Step 3: Implement the classifier + provisioning decision**
 
 ```typescript
 // lib/supabase/route-categories.ts
@@ -1013,6 +1148,11 @@ export function classifyRoute(pathname: string): RouteCategory {
   if (ANON_ALLOWED.some((p) => pathname === p || pathname.startsWith(p + '/'))) return 'anon-allowed';
   return 'authenticated';
 }
+
+/** Codex H1: an anon-allowed route auto-provisions an anonymous session on first use. */
+export function needsAnonProvision(category: RouteCategory, hasUser: boolean): boolean {
+  return category === 'anon-allowed' && !hasUser;
+}
 ```
 
 - [ ] **Step 4: Run to verify it passes**
@@ -1020,14 +1160,52 @@ export function classifyRoute(pathname: string): RouteCategory {
 Run: `npx jest tests/lib/supabase/route-categories.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Implement middleware + callback (after reading the Next docs)**
+- [ ] **Step 5: Write the mocked callback error-branch test (Codex M4/B1)**
+
+```typescript
+// tests/lib/supabase/auth-callback.test.ts
+const exchange = jest.fn();
+jest.mock('@/lib/supabase/server', () => ({
+  createServerSupabase: () => ({ auth: { exchangeCodeForSession: exchange } }),
+}));
+jest.mock('next/headers', () => ({ cookies: async () => ({ getAll: () => [], set: () => {} }) }));
+
+import { GET } from '@/app/auth/callback/route';
+
+function req(url: string) { return { nextUrl: new URL(url), url } as never; }
+
+describe('OAuth callback', () => {
+  afterEach(() => exchange.mockReset());
+
+  it('redirects to next on a successful code exchange', async () => {
+    exchange.mockResolvedValue({ error: null });
+    const res = await GET(req('http://localhost/auth/callback?code=abc&next=/library'));
+    expect(exchange).toHaveBeenCalledWith('abc');
+    expect(res.headers.get('location')).toContain('/library');
+  });
+
+  it('redirects to an auth-error route when the exchange fails (Codex M4)', async () => {
+    exchange.mockResolvedValue({ error: { message: 'bad code' } });
+    const res = await GET(req('http://localhost/auth/callback?code=abc'));
+    expect(res.headers.get('location')).toContain('/auth/auth-error');
+  });
+
+  it('redirects to auth-error when no code is present', async () => {
+    const res = await GET(req('http://localhost/auth/callback'));
+    expect(exchange).not.toHaveBeenCalled();
+    expect(res.headers.get('location')).toContain('/auth/auth-error');
+  });
+});
+```
+
+- [ ] **Step 6: Implement middleware + callback (after reading the Next docs)**
 
 ```typescript
 // middleware.ts  — confirm signature/cookie API against node_modules/next/dist/docs/
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { getSupabaseEnv } from '@/lib/supabase/env';
-import { classifyRoute } from '@/lib/supabase/route-categories';
+import { classifyRoute, needsAnonProvision } from '@/lib/supabase/route-categories';
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
@@ -1039,8 +1217,15 @@ export async function middleware(request: NextRequest) {
     },
   });
   const { data: { user } } = await supabase.auth.getUser();     // refreshes the session
+  const category = classifyRoute(request.nextUrl.pathname);
 
-  if (classifyRoute(request.nextUrl.pathname) === 'authenticated' && !user) {
+  // Codex H1: auto-provision an anonymous session on first visit to an anon-allowed route.
+  if (needsAnonProvision(category, !!user)) {
+    await supabase.auth.signInAnonymously();                    // sets cookies on `response`
+    return response;
+  }
+
+  if (category === 'authenticated' && !user) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = '/';
     return NextResponse.redirect(redirect);
@@ -1063,20 +1248,22 @@ export async function GET(request: NextRequest) {
   if (code) {
     const cookieStore = await cookies();
     const supabase = createServerSupabase(cookieStore as never);
-    await supabase.auth.exchangeCodeForSession(code);
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error) return NextResponse.redirect(new URL(next, request.url));
   }
-  return NextResponse.redirect(new URL(next, request.url));
+  // Codex M4: no code, or a failed exchange, must NOT redirect as if successful.
+  return NextResponse.redirect(new URL('/auth/auth-error', request.url));
 }
 ```
 
-- [ ] **Step 6: Full suite + tsc + commit**
+- [ ] **Step 7: Full suite + tsc + commit**
 
 ```bash
 npx jest                       # full unit suite green (integration excluded by default)
 npx tsc --noEmit               # clean — the real type gate
 git add middleware.ts app/auth/callback/route.ts lib/supabase/route-categories.ts \
-        tests/lib/supabase/route-categories.test.ts
-git commit -m "feat(auth): session-refresh middleware + OAuth callback route + route classifier"
+        tests/lib/supabase/route-categories.test.ts tests/lib/supabase/auth-callback.test.ts
+git commit -m "feat(auth): middleware (refresh + anon auto-provision) + OAuth callback with error branch"
 ```
 
 ---
@@ -1100,6 +1287,7 @@ Success criteria (spec §8): migrations reproduce the schema; Google + anonymous
 ## Known deferrals (tracked, not silently dropped)
 
 - **Async-ify the `MetadataStore` seam** — prerequisite for **1C**, not 1B (spec §1). Sync interface cannot back a networked adapter.
-- **Google OAuth E2E** — needs a hosted project + Google credentials; verified at deploy time.
+- **Live Google OAuth browser round-trip only** — needs a hosted project + Google credentials; the *provisioning* (Task 4 trigger test) and the *callback code-exchange + error branches* (Task 10 mocked test) ARE covered in 1B; only the real Google redirect is a documented deploy-time manual check (Codex B1 resolution).
 - **Anonymous retention/TTL cleanup** — a pre-public gate (spec §4); not built in 1B.
-- **`exec_sql` test RPC / typed catalog views** — reviewer's choice (Task 7); test-only, service_role-gated.
+- **`exec_sql` test RPC / typed catalog views** — reviewer's choice (Task 7); test-only, service_role-gated, with a negative anon/authenticated test (Task 7 Step 5).
+- **Middleware runtime behavior** (session refresh, anon auto-provision redirect) is unit-tested at the decision level (`needsAnonProvision`); full edge-runtime behavior is an E2E/deploy verification.
