@@ -2,10 +2,13 @@ import { newUser, signInAs, anonSession } from './helpers/clients';
 
 async function ownedPlaylist(email: string, password: string, key: string) {
   const { client, userId } = await signInAs(email, password);
-  const { data } = await client.from('playlists')
+  const { data, error } = await client.from('playlists')
     .insert({ owner_id: userId, playlist_key: key, playlist_url: `https://youtube.com/playlist?list=${key}` })
     .select('id').single();
-  return { client, userId, playlistId: data!.id };
+  // Codex I1: assert the seed insert succeeded, so downstream CHECK/isolation assertions
+  // prove the constraint — not a silently-failed seed (and give a clear message on failure).
+  if (error || !data) throw new Error(`ownedPlaylist seed insert failed: ${error?.message}`);
+  return { client, userId, playlistId: data.id };
 }
 
 describe('integrity + reordering', () => {
@@ -32,12 +35,13 @@ describe('integrity + reordering', () => {
       ({ playlist_id: playlistId, owner_id: userId, video_id: id, position: pos, data: { id } });
     await client.from('videos').insert([mk('A', 0), mk('B', 1), mk('C', 2)]);
 
-    // Reverse to [C,B,A] via an RPC that upserts all three in one transaction.
-    // Plain multi-statement upsert over PostgREST is not transactional, so reorder
-    // uses a SECURITY INVOKER function that runs under the caller's RLS. Implementer:
-    // add supabase/migrations/0005_reorder_helper.sql defining reorder_videos(jsonb)
-    // as SECURITY INVOKER; it performs the updates inside one transaction so the
-    // deferred unique constraint is checked at COMMIT.
+    // Reverse to [C,B,A] via reorder_videos, which UPDATEs all three in ONE transaction
+    // (Codex M2: it updates existing rows, not upserts). Plain multi-statement writes over
+    // PostgREST are not transactional, so the reorder uses a SECURITY INVOKER function that
+    // runs under the caller's RLS and performs the updates in one transaction — the deferred
+    // unique constraint is checked only at COMMIT, so the transient duplicate position (C→0
+    // while A is still 0) is allowed. Against a NON-deferrable constraint this would fail on
+    // the first UPDATE — so a green here proves the deferral is in effect.
     const { error } = await client.rpc('reorder_videos', {
       items: [{ video_id: 'C', position: 0 }, { video_id: 'B', position: 1 }, { video_id: 'A', position: 2 }],
       p_playlist_id: playlistId,
@@ -55,8 +59,9 @@ describe('integrity + reordering', () => {
 describe('anonymous isolation', () => {
   it('an anon session sees only its own rows', async () => {
     const { client, userId } = await anonSession();
-    await client.from('playlists')
+    const anonInsert = await client.from('playlists')
       .insert({ owner_id: userId, playlist_key: 'PLanon', playlist_url: 'https://youtube.com/playlist?list=PLanon' });
+    expect(anonInsert.error).toBeNull();               // Codex I2: prove the anon row was really created
     const mine = await client.from('playlists').select('owner_id');
     expect(mine.data).toEqual([{ owner_id: userId }]);
 
