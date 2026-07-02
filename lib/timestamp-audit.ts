@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { readIndex } from './index-store';
+import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
 import { CURRENT_DOC_VERSION } from './doc-version';
 
 const PRE_FEATURE = { major: 1, minor: 0 };
@@ -31,7 +31,9 @@ function classify(
 }
 
 export function auditTimestamps(folder: string): AuditReport {
-  const { videos } = readIndex(folder);
+  const principal = getPrincipal(folder);
+  const store = getMetadataStore();
+  const { videos } = store.readIndex(principal);
   const summaries = emptyKind();
   for (const v of videos) {
     if (v.summaryMd) {

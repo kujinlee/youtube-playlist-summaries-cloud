@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { assertOutputFolder, assertVideoId, readIndex, updateVideoFields } from '../index-store';
+import { assertVideoId } from '../index-store';
+import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
 import { generateMagazineModel } from '../gemini';
 import { parseSummaryMarkdown } from './parse';
 import { renderMagazineHtml } from './render';
@@ -13,10 +14,11 @@ export async function runHtmlDoc(
   outputFolder: string,
   onProgress: (event: ProgressEvent) => void,
 ): Promise<void> {
-  assertOutputFolder(outputFolder);
+  const principal = getPrincipal(outputFolder);
+  const store = getMetadataStore();
   assertVideoId(videoId);
 
-  const index = readIndex(outputFolder);
+  const index = store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
   if (!video) throw new Error(`Video not found in index: ${videoId}`);
   if (!video.summaryMd) throw new Error('source note not found: video has no summaryMd');
@@ -74,7 +76,7 @@ export async function runHtmlDoc(
   // Codex HIGH: if the index update fails, remove the just-written file so we don't leave an
   // orphan HTML the index doesn't reference (keeps cache ↔ index consistent).
   try {
-    updateVideoFields(outputFolder, videoId, { summaryHtml: htmlFilename });
+    store.updateVideoFields(principal, videoId, { summaryHtml: htmlFilename });
   } catch (err) {
     try { fs.unlinkSync(finalPath); } catch { /* ignore cleanup error */ }
     throw err;

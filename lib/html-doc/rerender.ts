@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { assertOutputFolder, assertVideoId, readIndex } from '../index-store';
+import { assertVideoId } from '../index-store';
+import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
 import { assertIndexRelPathWithin } from '../paths/assert-within';
 import { parseSummaryMarkdown } from './parse';
 import { renderMagazineHtml } from './render';
@@ -26,10 +27,11 @@ export function sameTitles(a: string[], b: string[]): boolean {
  * Total: returns a status for every data condition; throws only on an HTML write I/O failure.
  */
 export function reRenderSummaryHtml(videoId: string, outputFolder: string): ReRenderResult {
-  assertOutputFolder(outputFolder);
+  const principal = getPrincipal(outputFolder);
+  const store = getMetadataStore();
   assertVideoId(videoId);
 
-  const index = readIndex(outputFolder);
+  const index = store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
   // Re-render refreshes an EXISTING doc: needs a source note AND a current HTML.
   if (!video || !video.summaryMd || !video.summaryHtml) return { status: 'skipped-not-eligible' };
@@ -96,8 +98,9 @@ export interface ReRenderTally {
 
 /** Re-render every summary in a playlist. Per-video errors are isolated, never abort the batch. */
 export function reRenderAll(outputFolder: string): ReRenderTally {
-  assertOutputFolder(outputFolder);
-  const index = readIndex(outputFolder);
+  const principal = getPrincipal(outputFolder);
+  const store = getMetadataStore();
+  const index = store.readIndex(principal);
   const tally: ReRenderTally = {
     rerendered: 0, skippedNotEligible: 0, skippedNoModel: 0, skippedNoMd: 0,
     skippedUnparseable: 0, skippedDrift: 0, errors: 0, details: [],

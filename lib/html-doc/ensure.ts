@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { assertOutputFolder, assertVideoId, readIndex, updateVideoFields } from '../index-store';
+import { assertVideoId } from '../index-store';
+import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
 import { writeSummaryDoc } from '../pipeline';
 import { runHtmlDoc } from './generate';
 import { reRenderSummaryHtml } from './rerender';
@@ -22,10 +23,11 @@ export async function ensureHtmlDoc(
   current: DocVersion = CURRENT_DOC_VERSION,
   force = false,
 ): Promise<void> {
-  assertOutputFolder(outputFolder);
+  const principal = getPrincipal(outputFolder);
+  const store = getMetadataStore();
   assertVideoId(videoId);
 
-  const video = readIndex(outputFolder).videos.find((v) => v.id === videoId);
+  const video = store.readIndex(principal).videos.find((v) => v.id === videoId);
   if (!video) throw new Error(`Video not found in index: ${videoId}`);
   if (!video.summaryMd) throw new Error('no summary note for this video');
 
@@ -42,7 +44,7 @@ export async function ensureHtmlDoc(
       videoId: video.id, title: video.title, youtubeUrl: video.youtubeUrl,
       channel: video.channel, durationSeconds: video.durationSeconds, outputFolder, baseName: base,
     });
-    updateVideoFields(outputFolder, videoId, {
+    store.updateVideoFields(principal, videoId, {
       language: r.language, ratings: r.ratings, overallScore: r.overallScore,
       videoType: r.videoType, audience: r.audience, tags: r.tags, tldr: r.tldr, takeaways: r.takeaways,
     });
@@ -61,6 +63,6 @@ export async function ensureHtmlDoc(
     return;
   }
 
-  updateVideoFields(outputFolder, videoId, { docVersion: current });
+  store.updateVideoFields(principal, videoId, { docVersion: current });
   onProgress({ type: 'done' });
 }

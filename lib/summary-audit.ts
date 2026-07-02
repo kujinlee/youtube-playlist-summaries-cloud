@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { readIndex } from './index-store';
+import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
 import { checkSummaryCompleteness } from './summary-completeness';
 
 export interface SummaryAuditReport {
@@ -14,7 +14,9 @@ export interface SummaryAuditReport {
  * resolved from the index record (v.serialNumber), NOT the filename. Never throws per-file.
  */
 export function auditSummaries(folder: string): SummaryAuditReport {
-  const { videos } = readIndex(folder);
+  const principal = getPrincipal(folder);
+  const store = getMetadataStore();
+  const { videos } = store.readIndex(principal);
   const suspects: SummaryAuditReport['suspects'] = [];
   let total = 0;
   for (const v of videos) {

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { readIndex } from './index-store';
+import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
 import { auditTimestamps, countLeadingTimestamps } from './timestamp-audit';
 import { ensureHtmlDoc } from './html-doc/ensure';
 import type { ProgressEvent } from '../types';
@@ -17,7 +17,9 @@ const noop = (_e: ProgressEvent): void => {};
 // batch (and in unit tests, where ensure* is mocked, readIndex on a synthetic folder will throw).
 function tsCount(folder: string, id: string): number {
   try {
-    const v = readIndex(folder).videos.find((x) => x.id === id);
+    const principal = getPrincipal(folder);
+    const store = getMetadataStore();
+    const v = store.readIndex(principal).videos.find((x) => x.id === id);
     const rel = v?.summaryMd;
     if (!rel) return 0;
     const abs = path.join(folder, rel);

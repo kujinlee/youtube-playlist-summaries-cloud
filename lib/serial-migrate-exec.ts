@@ -1,19 +1,21 @@
 import fs from 'fs';
 import path from 'path';
-import { readIndex, writeIndex, updateVideoFields } from './index-store';
+import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
 import { planMigration } from './serial-migrate';
 import { rewriteSourceMdMeta, rewriteEnvelopeSourceMd } from './serial-provenance';
 import type { RenameOp } from './serial-migrate';
 
 export function runPhaseA(outputFolder: string): { assigned: number } {
-  const index = readIndex(outputFolder);
+  const principal = getPrincipal(outputFolder);
+  const store = getMetadataStore();
+  const index = store.readIndex(principal);
   const { assignments } = planMigration(index.videos);
   if (assignments.length === 0) return { assigned: 0 };
   const serialById = new Map(assignments.map((a) => [a.id, a.serial]));
   const videos = index.videos.map((v) =>
     serialById.has(v.id) ? { ...v, serialNumber: serialById.get(v.id)! } : v,
   );
-  writeIndex(outputFolder, { ...index, videos });   // single atomic write (temp→rename)
+  store.writeIndex(principal, { ...index, videos });   // single atomic write (temp→rename)
   return { assigned: assignments.length };
 }
 
@@ -65,7 +67,9 @@ function physicalDst(src: { abs: string }, op: RenameOp): string {
 }
 
 export function runPhaseB(outputFolder: string): { renamed: number; conflicts: string[] } {
-  const index = readIndex(outputFolder);
+  const principal = getPrincipal(outputFolder);
+  const store = getMetadataStore();
+  const index = store.readIndex(principal);
   const { perVideo } = planMigration(index.videos);
   let renamed = 0;
   const conflicts: string[] = [];
@@ -140,7 +144,7 @@ export function runPhaseB(outputFolder: string): { renamed: number; conflicts: s
     }
 
     // ── Per-video index update (bounded blast radius — B1/B2 convergence). ──
-    if (Object.keys(fieldUpdates).length > 0) updateVideoFields(outputFolder, plan.id, fieldUpdates);
+    if (Object.keys(fieldUpdates).length > 0) store.updateVideoFields(principal, plan.id, fieldUpdates);
   }
   return { renamed, conflicts };
 }
