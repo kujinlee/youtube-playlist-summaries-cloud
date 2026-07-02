@@ -28,4 +28,17 @@ describe('service_role confinement', () => {
     const { reachesService } = require('@/scripts/check-service-confinement');
     expect(reachesService(entry)).toBe(true);
   });
+
+  it('detects @/ alias style side-effect import violation in repo fixture', () => {
+    const { reachesService } = require('@/scripts/check-service-confinement');
+    const fixtureFile = path.join(process.cwd(), 'app/__confinement_fixture__.ts');
+    try {
+      fs.writeFileSync(fixtureFile, `import '@/lib/supabase/service';\n`);
+      expect(reachesService(fixtureFile)).toBe(true);
+    } finally {
+      if (fs.existsSync(fixtureFile)) {
+        fs.unlinkSync(fixtureFile);
+      }
+    }
+  });
 });
