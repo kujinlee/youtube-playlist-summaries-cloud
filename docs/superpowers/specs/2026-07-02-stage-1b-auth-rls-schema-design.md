@@ -142,7 +142,7 @@ The composite FK (§5.1) closes the B1 gap: even though the `videos` policy chec
 `is_anonymous` is set once by `handle_new_user`. A `BEFORE UPDATE` trigger raises if a client attempts to change it; app logic never trusts a client-supplied value.
 
 ### 5.4 Reusable RLS convention (for later tables)
-Owner column `owner_id uuid references profiles(id)`; `enable` + **`force`** RLS; one `for all` policy `owner_id = auth.uid()` (using + with check); any child table that references an owned parent uses a **composite FK carrying `owner_id`** (per B1); writes needing bypass go only through the worker's `service_role` client with `owner_id` set explicitly; share-token reads via a `security definer` function.
+Owner column `owner_id uuid references profiles(id)`; `enable` + **`force`** RLS; one `for all` policy `owner_id = auth.uid()` (using + with check); **an explicit `grant select, insert, update, delete … to anon, authenticated`** on the table (whole-branch review B1 — the pinned CLI default `auto_expose_new_tables` unset does NOT auto-expose new `public` tables to the Data API roles, and RLS only *filters* rows a role already has table-level access to; without the grant PostgREST returns `42501 permission denied`, not RLS-filtered rows); any child table that references an owned parent uses a **composite FK carrying `owner_id`** (per B1); writes needing bypass go only through the worker's `service_role` client with `owner_id` set explicitly; share-token reads via a `security definer` function. **1B establishes this grant step as part of the convention (migration `0006_grants.sql`) so no later stage reopens it.**
 
 ### 5.5 Principal ↔ schema mapping + method semantics (Codex B3/H3/H4)
 `Principal.outputFolder` is redefined as **"the index selector"** — local: a filesystem path; cloud: the `playlist_key`. (The `principal.ts` JSDoc is updated accordingly — a small code touch in 1B.) `principal.id` = the authenticated/anonymous `uid`.
@@ -193,5 +193,13 @@ Unit layer (jest) for client/guard units; a dedicated **integration suite** for 
 
 ## 9. Decisions (resolved 2026-07-02)
 1. **`playlist_key`** = the YouTube playlist **list-id** (extract `list=` from the URL; reject non-playlist/malformed URLs at ingest; the raw list-id is the key). Stable across renames; unique per owner.
-2. **Anon→registered upgrade** = out of scope for 1B (guests ephemeral in Stage 1); anonymous retention/cleanup tracked as a pre-public gate (§4).
+2. **Anon→registered upgrade** = out of scope for 1B (guests ephemeral in Stage 1); anonymous retention/cleanup tracked as a pre-public gate (§10).
 3. **Migrations** = plain SQL under `supabase/migrations/`.
+
+---
+
+## 10. Pre-public gates (tracked, not built in 1B)
+These must be resolved before any public/hosted launch. They are deliberately out of 1B scope but recorded so they are not silently missed.
+1. **Anonymous retention/TTL cleanup** (§4) — a job expiring anonymous `profiles` + cascaded data after N hours; unbounded anon rows otherwise accumulate.
+2. **`exec_sql` test RPC removal** (whole-branch review M2) — `0004_test_exec_sql.sql` ships a `security definer … execute(arbitrary sql)` function, `revoke`d from public/anon/authenticated and granted only to `service_role` (contained for 1B, proven by the guard test). But it applies to the **hosted** DB at deploy; a leaked service key + this function = full-DB RW via one RPC. Before public launch, **drop it in a later migration** (it is test-only) or replace with three typed catalog views. Do not let it reach production.
+3. **Google OAuth live redirect** (§8) — verified manually at deploy (needs a hosted project + Google credentials).
