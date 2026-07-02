@@ -1,6 +1,6 @@
 -- supabase/migrations/0004_test_exec_sql.sql
 -- Read-only catalog inspection for the integration suite. Granted to service_role ONLY.
-create function exec_sql(sql text) returns jsonb
+create or replace function exec_sql(sql text) returns jsonb
   language plpgsql security definer set search_path = '' as $$
 declare result jsonb;
 begin
