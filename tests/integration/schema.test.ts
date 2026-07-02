@@ -20,4 +20,19 @@ describe('core schema', () => {
       { relname: 'videos',    relrowsecurity: true, relforcerowsecurity: true },
     ]);
   });
+
+  it('defines exactly one owner policy per table, ALL cmd, with a with_check (Codex L1)', async () => {
+    const admin = adminClient();
+    const { data } = await admin.rpc('exec_sql', {
+      // assert cmd + that with_check is present, not just the name — a malformed
+      // policy with the right name but no with_check would otherwise pass.
+      sql: `select tablename, policyname, cmd, (with_check is not null) as has_with_check
+            from pg_policies where schemaname='public' order by tablename`,
+    });
+    expect(data).toEqual([
+      { tablename: 'playlists', policyname: 'playlists_owner', cmd: 'ALL', has_with_check: true },
+      { tablename: 'profiles',  policyname: 'profiles_self',   cmd: 'ALL', has_with_check: true },
+      { tablename: 'videos',    policyname: 'videos_owner',    cmd: 'ALL', has_with_check: true },
+    ]);
+  });
 });
