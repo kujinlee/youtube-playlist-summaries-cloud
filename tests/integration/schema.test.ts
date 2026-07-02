@@ -7,7 +7,9 @@ describe('core schema', () => {
     const { data, error } = await admin.rpc('exec_sql', {
       // helper defined in Task 7 harness; or query pg_class via a SQL function
       sql: `select relname, relrowsecurity, relforcerowsecurity from pg_class
-            where relname in ('profiles','playlists','videos') order by relname`,
+            where relname in ('profiles','playlists','videos')
+              and relnamespace = 'public'::regnamespace and relkind = 'r'
+            order by relname`,
     });
     expect(error).toBeNull();
     // both flags must be true: `enable` alone lets the table owner bypass RLS;
