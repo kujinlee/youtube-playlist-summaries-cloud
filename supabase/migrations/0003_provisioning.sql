@@ -21,4 +21,4 @@ begin
 end $$;
 
 create trigger profiles_is_anonymous_immutable
-  before update on profiles for each row execute function guard_is_anonymous();
+  before update on public.profiles for each row execute function guard_is_anonymous();

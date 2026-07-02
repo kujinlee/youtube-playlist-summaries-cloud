@@ -19,7 +19,8 @@ describe('provisioning trigger', () => {
   it('is SECURITY DEFINER (else the RLS-protected profiles insert would abort signup)', async () => {
     const admin = adminClient();
     const { data } = await admin.rpc('exec_sql', {
-      sql: `select prosecdef from pg_proc where proname = 'handle_new_user'`,
+      sql: `select prosecdef from pg_proc
+            where proname = 'handle_new_user' and pronamespace = 'public'::regnamespace`,
     });
     expect(data).toEqual([{ prosecdef: true }]);
   });
