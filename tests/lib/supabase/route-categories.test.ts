@@ -1,0 +1,25 @@
+import { classifyRoute, needsAnonProvision } from '@/lib/supabase/route-categories';
+
+describe('route categories', () => {
+  it('marketing paths are public', () => {
+    expect(classifyRoute('/')).toBe('public');
+    expect(classifyRoute('/about')).toBe('public');
+  });
+  it('the guest try-it path is anon-allowed', () => {
+    expect(classifyRoute('/try')).toBe('anon-allowed');
+    expect(classifyRoute('/try/abc')).toBe('anon-allowed');
+  });
+  it('library paths require authentication', () => {
+    expect(classifyRoute('/library')).toBe('authenticated');
+    expect(classifyRoute('/library/playlists/abc')).toBe('authenticated');
+  });
+});
+
+describe('needsAnonProvision (Codex H1)', () => {
+  it('true only on anon-allowed with no existing user', () => {
+    expect(needsAnonProvision('anon-allowed', false)).toBe(true);
+    expect(needsAnonProvision('anon-allowed', true)).toBe(false);   // already has a session
+    expect(needsAnonProvision('public', false)).toBe(false);
+    expect(needsAnonProvision('authenticated', false)).toBe(false); // redirect, don't provision
+  });
+});
