@@ -1,7 +1,7 @@
 # Cloud Publishing Architecture — Design Spec
 
 **Date:** 2026-07-01
-**Status:** Draft v2 — hardened after Codex adversarial review (`docs/reviews/cloud-publishing-architecture-spec-codex.md`). Awaiting user review. One item (yt-dlp ToS, §2) needs a user decision that may change §11 #5.
+**Status:** Draft v3 — hardened after Codex adversarial review (`docs/reviews/cloud-publishing-architecture-spec-codex.md`); yt-dlp ToS gate resolved (§2.1: hosted uses Gemini YouTube-URL, no server download; pixel slides deferred/on-device). Ready for the Stage 1A implementation plan.
 **Scope:** Turn the single-user, local-first YouTube-playlist-summary tool into a hosted web service that unregistered guests can try and registered users can use durably. Staged: **public demo first, built on the SaaS spine so Stage 1 is not throwaway.**
 
 Related memory: `cloud-multitenant-goal`, `data-corpus-state`, `project-context`.
@@ -31,7 +31,27 @@ The current app is unusually local-first. Three properties block naïve hosting 
 
 The heaviest, most cloud-hostile feature — **dig-deeper slide capture** — is the *only* thing needing `yt-dlp`/`ffmpeg`. Summaries run off captions + Gemini alone. This separability shapes the staged plan and the worker design.
 
-> **⚠ Legal/ToS gate (Codex H9) — needs a user decision before Stage 1D.** Running `yt-dlp` to download YouTube video on a *public server* is materially different from doing it locally: it can violate YouTube's Terms of Service, get the server's IP blocked, and make hosted dig-deeper operationally fragile. This conflicts with §11 #5 (dig-deeper in Stage 1). Resolve by choosing one: **(a)** proceed with counsel-approved scope; **(b)** drop hosted video download for the demo — dig-deeper is summary/transcript-derived only (no slide capture) in Stage 1, full slide capture deferred to Stage 2 / a local-only path; **(c)** redesign dig-deeper around officially permitted APIs/transcripts. Until resolved, treat §11 #5 as provisional.
+> **✅ Legal/ToS gate (Codex H9) — RESOLVED 2026-07-02.** The hosted product **never runs `yt-dlp`/`ffmpeg`**. All YouTube content flows through **Gemini's native YouTube-URL ingestion** — Google's API consuming Google's own video, no download on our side (ToS-clean). See §2.1.
+
+### 2.1 Content ingestion & slide capture without server-side download
+
+**Primary hosted path — Gemini YouTube-URL ingestion.** The Gemini API [officially accepts a YouTube URL as input](https://ai.google.dev/gemini-api/docs/video-understanding); Gemini's own infrastructure watches the video and returns transcript/summary/analysis. No bytes touch our server, no `yt-dlp`. This already exists in the codebase as `transcribeViaGemini` (PR #15, `transcript-fallback-gemini`) — the cloud design **promotes it from caption-gated fallback to the primary hosted path.** Constraints to design around: **public videos only**; **~8 h of YouTube/day** on the free tier (paid tier lifts per-video length limit); the URL feature is **in preview** (monitor limits). Caption-less videos are fine — Gemini watches audio+visuals directly.
+
+**ToS-clean hosted deliverables:** summaries, dig-deeper *text*, section timestamps, and visual *descriptions* ("at 4:32 a diagram shows…").
+
+**Pixel slide images — the one thing not obtainable server-side.** Gemini returns understanding, not frames. Real pixels require frame extraction = download; and **any server capture — `yt-dlp` *or* headless-Chromium screenshotting the player — is the same ToS violation** (swapping the tool doesn't help; datacenter IPs get blocked). The invariant: **real YouTube pixels can only be obtained on the *user's* device**, via the official player or a file the user already holds. Capture is therefore a **capability with two implementations** (mirrors §4.1): a *cloud* impl (Gemini descriptions / no image) and an *on-device* impl (the current `yt-dlp`/`ffmpeg` code).
+
+**On-device options for real slides, if/when hosted slides are added (ranked):**
+
+| Option | Install? | Per-use friction | Mobile | ToS posture | Notes |
+|---|---|---|---|---|---|
+| **`getDisplayMedia`** *(preferred)* | none | 1 share-prompt/session + ~15 s scrub | ❌ desktop-Chromium | cleaner ("user screenshots own screen") | in-app; no store gatekeeper; must build playback orchestration + crop |
+| User file-upload | none | upload | ✅ | clean (processing a user-provided file) | only for users who hold the file (e.g. creators' own videos) |
+| Official storyboards | none | none | ✅ | fully clean (Google-served) | low-res, sparse — not slide-quality |
+| Browser extension | one-time | one click, no prompt | ❌ | more aggressive (frame extraction) | smoother/cleaner frames, **but Chrome-Web-Store takedown risk** (YouTube-downloader policy) + per-browser build |
+| Local companion / existing localhost tool | one-time | one click after install | ❌ | personal-use (defensible) | **reuses current `yt-dlp`/`ffmpeg` code as-is**; heaviest install |
+
+**Decision:** **Stage 1 hosted = Gemini descriptions, NO pixel slides.** Real hosted slides are a **deferred, self-contained feature** (added without touching the spine); when added, `getDisplayMedia` is the default mechanism. The **local tool keeps full-quality `yt-dlp` slides** for personal use (`LocalFsAdapter` path). This does *not* require server binaries — so the Stage-1 worker image is lighter (no yt-dlp/ffmpeg).
 
 ---
 
@@ -46,11 +66,12 @@ One platform for web + worker (chosen over "Vercel frontend + external worker" b
         data / RLS   |     auth   |            |  artifacts (md / slides / html$ / pdf$)
                      |            |            |
  Browser  <——>  [ Next.js web + API ]  ——enqueue——>  [ Worker (same image / repo) ]
-   |   FSA API / zip / obsidian://                       |  yt-dlp · ffmpeg · Gemini · Playwright
+   |   FSA API / zip / obsidian://                       |  Gemini (incl. YouTube-URL) · Playwright
    |   (local export of MD, opt. HTML)                   |  honors per-user quota + daily spend cap
-   +———— "connect vault" writes .md locally              +— writes canonical MD/slides + caches html$/pdf$
+   +———— "connect vault" writes .md locally              +— writes canonical MD + caches html$/pdf$
 
    $ = derived cache (regenerable from MD), not source of truth
+   NB: hosted worker has NO yt-dlp/ffmpeg — content via Gemini YouTube-URL (§2.1)
 ```
 
 **Components**
@@ -58,7 +79,7 @@ One platform for web + worker (chosen over "Vercel frontend + external worker" b
 | Component | Responsibility | Notes |
 |---|---|---|
 | **Next.js web + API** | UI, auth session, light API (list/browse, enqueue jobs, serve/print/share docs) | Same repo as worker; deploy as web process |
-| **Worker** | Long jobs: ingestion, summary (Gemini), dig-deeper (yt-dlp/ffmpeg/Gemini), PDF (Chromium) | Same image, runs a job loop instead of `next start`. Honors quota + spend cap. |
+| **Worker** | Long jobs: ingestion + summary + dig-deeper text (all via Gemini, incl. YouTube-URL §2.1), PDF (Chromium) | Same image, runs a job loop instead of `next start`. **No yt-dlp/ffmpeg** (no server video download). Honors quota + spend cap. |
 | **Job queue** | Durable job state + hand-off web→worker | **pg-boss** on Supabase Postgres (§11 #3). Full lifecycle — idempotency, leases, retries, dead-letter — in §9. |
 | **Supabase Postgres** | Users, playlist/video index, job records, usage counters, share tokens | Source of truth for metadata. RLS-enforced isolation. |
 | **Supabase Auth** | Google OAuth sign-in | Also unlocks `mine=true` playlist path C in Stage 2. |
@@ -198,7 +219,7 @@ An unauthenticated page calling a **paid** Gemini API on the app's key is a mone
 - **PDF/Chromium resource limits (L3).** PDF is ~$0 in API terms but consumes CPU/memory/queue slots/storage. Meter it too: per-user PDF quota (the ~5), global Chromium concurrency, max page count/size, render timeout, and cache reuse by doc version.
 - **Max free-users ceiling `N`** (waitlist beyond N) + max concurrent jobs (queue-depth limit).
 
-**Cost sizing (from project data):** dig-deeper ≈ $0.046/section → a full dig doc ≈ $0.15–0.30 Gemini; 5 digs ≈ < ~$1.50/free user. Bounding free users + the daily cap keeps worst-case exposure predictable. Gemini 2.5 Flash list price (2026): $0.30 in / $2.50 out per 1M tokens.
+**Cost sizing:** hosted dig-deeper *text* via Gemini YouTube-URL is on the order of a few cents to ~$0.30/doc depending on video length and output size (the preview URL feature is currently no-charge for the ingestion itself; generation tokens bill normally); 5 digs ≈ well under a few dollars/free user. Bounding free users + the daily cap keeps worst-case exposure predictable. Gemini 2.5 Flash list price (2026): $0.30 in / $2.50 out per 1M tokens. (Historical local slide-based dig cost ≈ $0.046/section is not incurred in the hosted product — no slide capture.)
 
 ### 8.1 Accounts & billing for the POC
 
@@ -245,14 +266,15 @@ Too large for one implementation plan. Decompose; each sub-project gets its own 
 - **1B. Auth + RLS schema + anonymous auth** (§7, §7.1, §7.2). Tables, `owner_id`, forced RLS policies, storage-key scheme — **before** any SupabaseAdapter write.
 - **1C. `SupabaseAdapter` bundle** (MetadataStore/BlobStore/etc.) on the 1B schema, with the DB↔blob consistency protocol (§4.1).
 - **1D. Cost guardrails** (§8): atomic quota debit, daily spend reservation/reconcile, velocity limits + CAPTCHA, yt-dlp/PDF resource caps.
-- **1E. Worker + pg-boss + full job lifecycle + graceful shutdown** (§9). Summary path; dig-deeper path only if the §2 ToS gate permits (§11 #5).
+- **1E. Worker + pg-boss + full job lifecycle + graceful shutdown** (§9). Summary + dig-deeper *text* via Gemini YouTube-URL (§2.1); **no yt-dlp/ffmpeg** in the image.
 - **1F. Serve/print/share from storage** (§5): app-streaming, share tokens, output sanitization/CSP; "download MD/HTML/zip" + optional FSA "connect vault" (§6).
 - **1G. Operational controls (Codex M6):** per-route rate limiting, audit logging, abuse telemetry/dashboards, share-token management + revocation UI, storage/orphan cleanup jobs, backup/restore posture, and **RLS/security tests** (cross-tenant read/list/share, key traversal, token leakage).
 - **1H. Deploy**: container host, secrets, health checks, spend monitoring/alerts.
 
 **Stage 2 — SaaS**
 - Durable per-user libraries + the browse/sort UI over Postgres.
-- Usage tiers / paid plans / metering dashboard; **raise/monetize the dig-deeper & PDF limits** (the worker already carries yt-dlp/ffmpeg from Stage 1E — no image change; this is a quota/pricing change, and — if the §2 ToS gate deferred slide-capture — the point where hosted slide-capture is properly enabled).
+- Usage tiers / paid plans / metering dashboard; **raise/monetize the dig-deeper & PDF limits** (a quota/pricing change — the hosted worker is unchanged, all Gemini-based).
+- **Hosted real slide images** (deferred feature from §2.1): add on-device capture — `getDisplayMedia` preferred (no install), with file-upload/storyboard/companion as alternatives. Self-contained; does not touch the spine.
 - `mine=true` "my playlists" (roadmap C) via the Google identity.
 
 **Each stage gate** follows `docs/dev-process.md` (Codex/Claude adversarial review + user approval).
@@ -265,7 +287,7 @@ Too large for one implementation plan. Decompose; each sub-project gets its own 
 2. **Worker/web host** — **Fly.io** (long-running containers + persistent disk, simplest single-app model for the yt-dlp/ffmpeg/Chromium worker). *Cloud Run is the drop-in alternative if consolidating on GCP is preferred later — host choice does not affect the architecture.*
 3. **Queue backend** — **Postgres-backed (pg-boss)**, reusing the Supabase Postgres — one fewer service than Redis/BullMQ.
 4. **Spend guardrails (starting values, env-tunable)** — **`$DAILY_CAP` = $5/day**, **free-user ceiling `N` = 100**. Conservative for validation; raise via env once demand is proven.
-5. **Dig-deeper in Stage 1** — **provisionally yes, metered (5) for free-registered users only** (cost ≤ ~$1.50/user, backstopped by the daily cap). **Gated on the §2 yt-dlp ToS decision:** if hosted video download is disallowed, Stage 1 dig-deeper is transcript/summary-derived only (no slide capture) and hosted slide-capture moves to Stage 2 / a local path.
+5. **Dig-deeper in Stage 1** — **yes, metered (5) for free-registered users, as *text* only** (Gemini via YouTube-URL, §2.1). **No pixel slide capture in the hosted product** (ToS gate resolved: no server-side `yt-dlp`). Real slide images are a deferred, self-contained feature (`getDisplayMedia` preferred) and remain full-quality in the local tool. Cost ≤ ~$1.50/user, backstopped by the daily cap.
 
 **Object store (from §4)** — **Supabase Storage for all blobs** (source-of-truth + cache); portability preserved via the `StorageAdapter` seam and S3-compatible API.
 
