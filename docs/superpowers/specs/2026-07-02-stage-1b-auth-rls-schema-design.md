@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-02
 **Repo:** `youtube-playlist-summaries-cloud` (the cloud POC fork)
-**Status:** Draft v2 — hardened after Codex adversarial review (`docs/reviews/stage-1b-auth-rls-schema-spec-codex.md`). Awaiting user review.
+**Status:** Draft v3 — hardened after two Codex passes (`…-codex.md`, `…-codex-rereview.md`). Awaiting user review.
 **Parent:** `docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md` §7/§7.1/§7.2.
 
 **Decisions (parent + this session):**
@@ -22,6 +22,8 @@ Establish auth + the **owned, RLS-isolated core schema** backing the cloud `Meta
 
 **Stage-ordering correction (Codex B4):** the parent's "1C = SupabaseAdapter *bundle*" is **decomposed into per-contract stages** (matching the sibling-contracts plan). **1C = `SupabaseMetadataStore` only.** `artifacts` (BlobStore), `jobs` (queue/1E), `usage_counters` (cost/1D), `share_tokens` (share) are each created in the stage that uses them, **each following 1B's RLS convention** (§5.4). 1B fully establishes that convention so no later stage reopens ownership/RLS design.
 
+**Prerequisite for 1C, NOT 1B (Codex re-review, new):** the `MetadataStore` contract is currently **synchronous** (`readIndex(principal): PlaylistIndex`), which suited the local `fs.readFileSync` store but a **networked Supabase adapter cannot honor**. Before 1C, a dedicated task must **async-ify the seam**: `MetadataStore` methods return `Promise`, `LocalFsMetadataStore` wraps its sync calls, and the ~20 consumers `await`. This does not block 1B (schema + auth), but §5.5's semantics below describe the *async* adapter behavior. Flagged here so 1C is not attempted on a sync interface.
+
 **Not in 1B:** `SupabaseMetadataStore` (1C); the other tables (their stages); blob storage-key implementation (BlobStore); local-corpus data migration.
 
 ---
@@ -39,22 +41,36 @@ Establish auth + the **owned, RLS-isolated core schema** backing the cloud `Meta
 Add `@supabase/supabase-js` + `@supabase/ssr`. Client factories:
 - `lib/supabase/client.ts` — browser (`createBrowserClient`, anon key).
 - `lib/supabase/server.ts` — server (`createServerClient`) bound to Next cookies; **RLS-scoped** to the request's session; never service_role.
-- `lib/supabase/service.ts` — **service_role** client. Server-only module: a **runtime guard throws** if `typeof window !== 'undefined'` or if the service key env is absent; unused in 1B (present only to make the boundary explicit).
+- `lib/supabase/service.ts` — **service_role** client. Server-only module: first line `import 'server-only'` (build fails if it reaches a client bundle) + a **runtime guard** that throws if `typeof window !== 'undefined'` or the service key env is absent; unused in 1B.
 
 Env from `supabase start`: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server-only, never `NEXT_PUBLIC_`). Startup validation fails fast if missing.
 
-### 3.1 service_role trust boundary (Codex H1/H2)
-`FORCE RLS` only makes the *table owner* obey RLS — it does **not** stop `service_role`, which has `BYPASSRLS`. So confinement is a code-boundary problem, enforced by:
+### 3.1 service_role trust boundary (Codex H1/H2 + re-review)
+`FORCE RLS` only makes the *table owner* obey RLS — it does **not** stop `service_role`, which has `BYPASSRLS`. Confinement is a code-boundary problem; a single "no direct import" grep is insufficient (re-exports, wrappers, dynamic/transitive imports bypass it). Enforce **defense-in-depth**:
 - The service key exists only in `SUPABASE_SERVICE_ROLE_KEY` (never `NEXT_PUBLIC_`), read only inside `lib/supabase/service.ts`.
-- A **static test** (grep/lint in CI + a jest guard) asserts that no `app/**/route.ts`, server component, or `'use client'` file imports `lib/supabase/service.ts`. In 1B nothing imports it; the test locks that in.
-- User-facing reads/writes always use `server.ts`/`client.ts` (RLS-scoped).
+- `service.ts` begins with `import 'server-only'` → the build **fails** if it is ever pulled into a client bundle (covers transitive/wrapper paths into client code).
+- A **runtime guard** in `service.ts` throws if `window` is defined or the key is missing.
+- A **CI import-graph scan** (not just direct-import grep): walk the transitive import graph of every `app/**` route/server-component entry and fail if `lib/supabase/service.ts` is reachable. In 1B nothing imports it; the scan locks that in.
+- User-facing reads/writes always use `server.ts`/`client.ts` (RLS-scoped). This is layered enforcement, not a single check.
 
 ---
 
 ## 4. Auth
 
 - **Providers:** Google OAuth + Supabase **anonymous** sign-in (guest "taste"). Anonymous users get a real `auth.users` row → real `uid` → RLS-scoped identically.
-- **Provisioning (Codex B2) — single authoritative path:** a Postgres trigger `handle_new_user` `after insert on auth.users` inserts the matching `profiles` row (with `is_anonymous` from the new user). This runs inside the same transaction as user creation, so a `profiles` row **always exists before any app write** — no app-side upsert, no race.
+- **Provisioning (Codex B2 + re-review) — single authoritative path:** a Postgres trigger `handle_new_user` `after insert on auth.users` inserts the matching `profiles` row. It **must be `SECURITY DEFINER`**, owned by a role privileged over `profiles`, with `set search_path = ''` (so the insert bypasses `profiles` RLS during signup — an ordinary-privilege trigger would be blocked by RLS and abort the signup transaction). `is_anonymous` is read from `new.is_anonymous` (Supabase sets this column on anonymous sign-ups). Because it runs in the same transaction as the `auth.users` insert, a `profiles` row **always exists before any app write** — no app-side upsert, no race. Failure semantics: a trigger exception aborts signup (fail-closed); tests cover **both** Google and anonymous sign-up producing exactly one `profiles` row.
+
+```sql
+create function handle_new_user() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.profiles (id, is_anonymous)
+  values (new.id, coalesce(new.is_anonymous, false));
+  return new;
+end $$;
+create trigger on_auth_user_created
+  after insert on auth.users for each row execute function handle_new_user();
+```
 - **Session:** `@supabase/ssr` cookie sessions; `middleware.ts` refreshes the session on each request.
 - **Route categories (Codex M2):**
   - *Public* (no session needed): marketing/landing.
@@ -98,11 +114,17 @@ create table videos (
   primary key (playlist_id, video_id),
   -- Codex B1: a video's owner MUST equal its playlist's owner
   foreign key (playlist_id, owner_id) references playlists(id, owner_id) on delete cascade,
-  -- Codex H5: relational id == JSONB id
-  check (data->>'id' = video_id)
+  -- Codex H3 re-review: relational id == JSONB id AND id must be present
+  -- (a missing data.id yields NULL, and `NULL = video_id` is UNKNOWN → CHECK
+  --  would pass; the IS NOT NULL guard forces rejection).
+  check (data->>'id' is not null and data->>'id' = video_id),
+  -- Codex H2 re-review: DEFERRABLE so writeIndex reordering can transiently
+  -- duplicate a position within the transaction and settle valid at COMMIT.
+  -- Must be a CONSTRAINT (deferrable), not a unique INDEX.
+  constraint videos_playlist_position_uniq unique (playlist_id, position)
+    deferrable initially deferred
 );
 create index on videos (owner_id);
-create unique index on videos (playlist_id, position);
 ```
 
 ### 5.2 RLS policies
@@ -126,9 +148,9 @@ Owner column `owner_id uuid references profiles(id)`; `enable` + **`force`** RLS
 `Principal.outputFolder` is redefined as **"the index selector"** — local: a filesystem path; cloud: the `playlist_key`. (The `principal.ts` JSDoc is updated accordingly — a small code touch in 1B.) `principal.id` = the authenticated/anonymous `uid`.
 
 The cloud `MetadataStore` (implemented in 1C, semantics fixed here) must be **behaviorally identical to the local store**:
-- **`readIndex(principal)`** → select the `playlists` row `(owner_id=principal.id, playlist_key=principal.outputFolder)` + its `videos` `ORDER BY position`; assemble `{ playlistUrl, playlistTitle, outputFolder: principal.outputFolder, videos: rows.map(r=>r.data) }`. **If no playlist row exists → return an empty index** (`videos: []`, empty/absent url/title) — matching the local ENOENT-tolerant behavior. Never null, never throws for absent.
+- **`readIndex(principal)`** → select the `playlists` row `(owner_id=principal.id, playlist_key=principal.outputFolder)` + its `videos` `ORDER BY position`; assemble `{ playlistUrl, playlistTitle, outputFolder: principal.outputFolder, videos: rows.map(r=>r.data) }`. **If no playlist row exists → return exactly `{ playlistUrl: '', outputFolder: principal.outputFolder, videos: [] }`** — byte-identical to the local store's ENOENT branch (`lib/index-store.ts`), which returns `playlistUrl: ''` and **does not Zod-validate on read**. The cloud store likewise does not `PlaylistIndexSchema.parse()` on read, so the empty `playlistUrl` is fine (Codex H1 re-review: the schema's `.url()` is never applied on the read path — parity with local). Never null, never throws for absent.
 - **`writeIndex(principal, index)`** → in one transaction: upsert the playlist (by `owner_id`+`playlist_key`, updating `playlist_url`/`playlist_title`), then make the video set **exactly match** `index.videos` — upsert each (with `position` = its array index) and **delete videos not present**. Mirrors the local "write the whole file" semantics.
-- **`upsertVideo(principal, video)`** → upsert one `videos` row (position = current max+1 if new, preserved if existing).
+- **`upsertVideo(principal, video)`** → upsert one `videos` row (position preserved if existing). For a NEW video, position = `max(position)+1` computed **atomically** (Codex M1): the insert takes a `SELECT … FOR UPDATE`/advisory lock on the playlist row (serializing position allocation per playlist), or retries on the `videos_playlist_position_uniq` violation. Writes to a single playlist are expected to be serialized per user; the lock/retry makes concurrent allocation safe regardless.
 - **`updateVideoFields(principal, id, fields)`** → JSONB-merge `fields` into `data` for that `(playlist, video_id)`, in a transaction; excludes `id`.
 - The adapter **validates `data` against `VideoSchema`** before every write (Codex H5).
 
@@ -151,7 +173,9 @@ Test clients (Codex M4): **admin/Auth-admin API only to create users**; all data
 - **Provisioning:** immediately after sign-up (Google + anonymous), the `profiles` row exists (trigger), and a first `playlists` insert succeeds with no race.
 - **service_role confinement (Codex H1/H2):** static test — no user-facing file imports `lib/supabase/service.ts`; `service.ts` constructor guard throws client-side.
 - **Forced RLS regression:** assert `relforcerowsecurity` is true for each owned table (guards against a migration dropping `force`).
-- **Integrity:** a row with `data->>'id' != video_id` is rejected by the CHECK; `is_anonymous` client update is blocked.
+- **Integrity:** a row with `data->>'id' != video_id` **and** a row with `data` missing `id` are both rejected by the CHECK (Codex H3); `is_anonymous` client update is blocked (Codex L1).
+- **Reordering (Codex H2):** a `writeIndex` that reverses the video order (transiently duplicating `position` values) succeeds because `videos_playlist_position_uniq` is `DEFERRABLE INITIALLY DEFERRED` — the constraint is checked only at COMMIT. A test writes order [A,B,C] then [C,B,A] in one transaction and asserts success + correct final `ORDER BY position`.
+- **Trigger security (Codex re-review):** confirm `handle_new_user` is `SECURITY DEFINER`; without it the `profiles` insert would be RLS-blocked — a regression test asserts the security context.
 
 Unit layer (jest) for client/guard units; a dedicated **integration suite** for RLS gated on `supabase start` (documented run command; not part of the default `npm test` unless the stack is up).
 
