@@ -27,4 +27,9 @@ describe('supabase env', () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     expect(() => getServiceRoleKey()).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
   });
+
+  it('getServiceRoleKey returns the key when SUPABASE_SERVICE_ROLE_KEY is set', () => {
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-abc';
+    expect(getServiceRoleKey()).toBe('svc-abc');
+  });
 });
