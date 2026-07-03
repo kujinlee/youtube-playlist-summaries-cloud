@@ -1,0 +1,42 @@
+import fs from 'fs'; import path from 'path'; import crypto from 'crypto';
+import type { BlobStore, StagedRef } from '@/lib/storage/blob-store';
+import { assertLogicalKey } from '@/lib/storage/blob-store';
+import type { Principal } from '@/lib/storage/principal';
+
+/** Byte-for-byte the current -data layout: physical path = join(indexKey, key). */
+export class LocalFsBlobStore implements BlobStore {
+  private abs(p: Principal, key: string): string { assertLogicalKey(key); return path.join(p.indexKey, key); }
+
+  // contentType unused locally but required by the BlobStore interface (cloud impls will use it)
+  async put(p: Principal, key: string, bytes: Buffer, _contentType?: string): Promise<void> {
+    const dest = this.abs(p, key); fs.mkdirSync(path.dirname(dest), { recursive: true });
+    const tmp = dest + '.' + crypto.randomUUID() + '.tmp';
+    try { fs.writeFileSync(tmp, bytes); fs.renameSync(tmp, dest); }
+    catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
+  }
+
+  async get(p: Principal, key: string): Promise<Buffer | null> {
+    try { return fs.readFileSync(this.abs(p, key)); }
+    catch (e: any) { if (e.code === 'ENOENT') return null; throw e; }
+  }
+
+  async exists(p: Principal, key: string): Promise<boolean> { return (await this.get(p, key)) !== null; }
+
+  async delete(p: Principal, key: string): Promise<void> {
+    try { fs.unlinkSync(this.abs(p, key)); } catch (e: any) { if (e.code !== 'ENOENT') throw e; }
+  }
+
+  async putStaged(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<StagedRef> {
+    const tempKey = `_staging/${crypto.randomUUID()}/${key}`;
+    await this.put(p, tempKey, bytes, contentType);
+    return { principal: p, tempKey, finalKey: key };
+  }
+
+  async promote(ref: StagedRef): Promise<void> {
+    const from = this.abs(ref.principal, ref.tempKey); const to = this.abs(ref.principal, ref.finalKey);
+    if (!fs.existsSync(from) && fs.existsSync(to)) return;   // idempotent: already promoted
+    fs.mkdirSync(path.dirname(to), { recursive: true }); fs.renameSync(from, to);
+  }
+}
+
+export const localBlobStore = new LocalFsBlobStore();
