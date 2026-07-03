@@ -1,5 +1,23 @@
 # Domain Glossary
 
+## Storage Seam
+
+The vocabulary for *whose* data a storage operation targets and *which* collection it selects — introduced so one set of consumers can run against either the local single-user tool or the multi-tenant cloud backend without knowing which.
+
+- **Principal** — the identity a storage operation acts on behalf of, plus the selector for which index it targets. Every storage operation takes an explicit Principal; there is no ownerless path. Locally it is a fixed single-user sentinel; in the cloud it is the authenticated (or anonymous) user.
+- **Owner** — the tenant a Principal represents. Locally always the same single user; in the cloud the `auth.uid()` that RLS isolates data by. One owner's data is never visible to another.
+- **Index key** — the backend-neutral selector for *which* playlist index a Principal targets. Locally it resolves to an **output folder** (a real on-disk data root); in the cloud it resolves to a **playlist key** (the YouTube list-id). The abstract concept is the *index key*; "output folder" and "playlist key" are its two concrete realizations. Do **not** call the abstract selector an "output folder" — that name is only correct for the local realization.
+- **Output folder** — the concrete local data-root directory a user chooses for a playlist's artifacts (persisted on the playlist index). A valid term for the *local* concept only; it is one realization of an index key, not the abstract selector.
+
+### Artifacts
+
+The files a playlist produces, split by whether they can be rebuilt:
+
+- **Source-of-truth blob** — an artifact that cannot be recreated for free: the **summary** (Markdown) costs a Gemini call and would come back *different*; a **slide screenshot** requires re-downloading the video and cannot be recaptured at all on a hosted server. If a source blob goes missing, the system enters **repair needed** — it must surface the gap, never silently regenerate.
+- **Derived-cache blob** — an artifact that is a deterministic render of a source (the rendered **HTML doc**, the **PDF**). Safe to lose and rebuild from the source with no model call. A missing derived-cache blob simply regenerates.
+- **Repair needed** — the state of an artifact whose source-of-truth blob is committed in the index but absent from storage. Distinct from "not yet generated" (never produced) and from a missing derived cache (silently rebuilt).
+- **Promoted** — an artifact whose blob has completed its final write and is safe to serve. An artifact that is *committed* (the index references it) but not yet *promoted* may still be finalizing; readers treat it as not-yet-available rather than broken.
+
 ## Personal Review
 
 A user-authored evaluation of a video, consisting of an optional **personal score** (integer 1–5) and an optional **personal note** (free text, max 500 characters). Stored in `playlist-index.json` alongside AI-generated ratings. Distinct from AI-generated ratings in that it reflects the user's own judgment about usefulness and revisit priority.
