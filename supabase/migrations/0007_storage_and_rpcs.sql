@@ -44,6 +44,11 @@ revoke all on function claim_video_slot(uuid, text) from public;
 grant execute on function claim_video_slot(uuid, text) to authenticated, service_role;
 
 -- reconcile_membership: single-transaction archive/restore by playlist membership.
+-- Sticky three-way logic mirrors local reconcilePlaylistMembership:
+--   absent + not-yet-removed  → set archived=true, removedFromPlaylist=true
+--   present + was-removed     → set archived=false, removedFromPlaylist=false
+--   otherwise                 → leave untouched (preserves manual archive state)
+-- coalesce(..., false) treats a missing removedFromPlaylist key the same as false.
 create function reconcile_membership(p_playlist_id uuid, p_present text[])
   returns void language plpgsql security invoker set search_path = public as $$
 begin
@@ -51,10 +56,19 @@ begin
     where id = p_playlist_id and (owner_id = auth.uid() or auth.role() = 'service_role');
   if not found then raise exception 'not authorized for playlist %', p_playlist_id; end if;
 
-  update videos set data = data || jsonb_build_object(
-      'archived', not (video_id = any(p_present)),
-      'removedFromPlaylist', not (video_id = any(p_present)))
-    where playlist_id = p_playlist_id;
+  -- archive newly-absent videos that weren't already marked removed
+  update videos
+    set data = data || '{"archived":true,"removedFromPlaylist":true}'::jsonb, updated_at = now()
+    where playlist_id = p_playlist_id
+      and not (video_id = any(p_present))
+      and coalesce((data->>'removedFromPlaylist')::boolean, false) = false;
+
+  -- restore videos that have returned to the playlist
+  update videos
+    set data = data || '{"archived":false,"removedFromPlaylist":false}'::jsonb, updated_at = now()
+    where playlist_id = p_playlist_id
+      and (video_id = any(p_present))
+      and coalesce((data->>'removedFromPlaylist')::boolean, false) = true;
 end $$;
 revoke all on function reconcile_membership(uuid, text[]) from public;
 grant execute on function reconcile_membership(uuid, text[]) to authenticated, service_role;

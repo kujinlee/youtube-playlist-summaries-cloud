@@ -222,6 +222,87 @@ describe('SupabaseMetadataStore integration', () => {
     expect(vid3Restored?.removedFromPlaylist).toBe(false);
   });
 
+  // 7b. reconcilePlaylistMembership sticky parity (C-1): blanket-overwrite regression guard
+  test('reconcile sticky: manual-archive of in-playlist video is preserved (C-1)', async () => {
+    // Regression guard: the old blanket UPDATE would un-archive a manually-archived
+    // in-playlist video. The sticky logic must leave it untouched.
+    const store = await storeForNewUser();
+    await store.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
+    await store.claimVideoSlot(P, 'vid1');
+    await store.upsertVideo(P, makeVideo('vid1', 1) as any);
+
+    // manually archive the video while it is still in the playlist
+    await store.updateVideoFields(P, 'vid1', { archived: true } as any);
+    // confirm: archived=true, removedFromPlaylist absent/false (not removed from playlist)
+    const before = (await store.readIndex(P)).videos[0] as any;
+    expect(before.archived).toBe(true);
+    expect(before.removedFromPlaylist ?? false).toBe(false);
+
+    // reconcile with vid1 still present — sticky logic must leave it untouched
+    await store.reconcilePlaylistMembership(P, ['vid1']);
+
+    const after = (await store.readIndex(P)).videos[0] as any;
+    expect(after.archived).toBe(true);           // still manually archived
+    expect(after.removedFromPlaylist ?? false).toBe(false);  // not marked removed
+  });
+
+  test('reconcile sticky: auto-archive on removal (absent + not-yet-removed → archived)', async () => {
+    const store = await storeForNewUser();
+    await store.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
+    await store.claimVideoSlot(P, 'vid1');
+    await store.claimVideoSlot(P, 'vid2');
+    await store.upsertVideo(P, makeVideo('vid1', 1) as any);
+    await store.upsertVideo(P, makeVideo('vid2', 2) as any);
+
+    // vid2 is removed from the playlist
+    await store.reconcilePlaylistMembership(P, ['vid1']);
+
+    const idx = await store.readIndex(P);
+    const v2 = idx.videos.find((v) => v.id === 'vid2') as any;
+    expect(v2.archived).toBe(true);
+    expect(v2.removedFromPlaylist).toBe(true);
+    // vid1 stays untouched
+    expect(idx.videos.find((v) => v.id === 'vid1')?.archived).toBe(false);
+  });
+
+  test('reconcile sticky: restore on return (present + was-removed → archived=false)', async () => {
+    const store = await storeForNewUser();
+    await store.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
+    await store.claimVideoSlot(P, 'vid1');
+    await store.upsertVideo(P, makeVideo('vid1', 1) as any);
+
+    // first: archive it as removed
+    await store.reconcilePlaylistMembership(P, []);
+    const removed = (await store.readIndex(P)).videos[0] as any;
+    expect(removed.archived).toBe(true);
+    expect(removed.removedFromPlaylist).toBe(true);
+
+    // second: video returns to the playlist
+    await store.reconcilePlaylistMembership(P, ['vid1']);
+    const restored = (await store.readIndex(P)).videos[0] as any;
+    expect(restored.archived).toBe(false);
+    expect(restored.removedFromPlaylist).toBe(false);
+  });
+
+  test('reconcile sticky: removed-and-still-absent stays untouched (idempotent)', async () => {
+    const store = await storeForNewUser();
+    await store.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
+    await store.claimVideoSlot(P, 'vid1');
+    await store.upsertVideo(P, makeVideo('vid1', 1) as any);
+
+    // archive as removed
+    await store.reconcilePlaylistMembership(P, []);
+    const first = (await store.readIndex(P)).videos[0] as any;
+    expect(first.archived).toBe(true);
+    expect(first.removedFromPlaylist).toBe(true);
+
+    // reconcile again with it still absent — must be a no-op (idempotent)
+    await store.reconcilePlaylistMembership(P, []);
+    const second = (await store.readIndex(P)).videos[0] as any;
+    expect(second.archived).toBe(true);
+    expect(second.removedFromPlaylist).toBe(true);
+  });
+
   // 8. deleteVideo removes the row
   test('deleteVideo removes the row; readIndex no longer contains it', async () => {
     const store = await storeForNewUser();
