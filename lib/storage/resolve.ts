@@ -24,8 +24,11 @@ export function getPrincipal(outputFolder: string): Principal {
   return localPrincipal(indexKey);
 }
 
-/** The active MetadataStore. Local-only for now; use getStorageBundle() for
- *  env-selected access (Stage 1C). Kept for backward-compat with existing callers. */
+/**
+ * @deprecated Use getStorageBundle() instead, which co-selects a matched
+ *   {metadataStore, blobStore} pair from STORAGE_BACKEND. Calling this shim
+ *   and resolving blobStore independently risks mixing local and cloud stores.
+ */
 export function getMetadataStore(): MetadataStore {
   return localMetadataStore;
 }

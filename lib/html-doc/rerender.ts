@@ -27,10 +27,11 @@ export function sameTitles(a: string[], b: string[]): boolean {
 export async function reRenderSummaryHtml(
   videoId: string,
   outputFolder: string,
-  blobStore: BlobStore = getStorageBundle().blobStore,
+  blobStore?: BlobStore,
 ): Promise<ReRenderResult> {
+  const { metadataStore: store, blobStore: bundleBlob } = getStorageBundle();
+  const resolvedBlob = blobStore ?? bundleBlob;
   const principal = getPrincipal(outputFolder);
-  const { metadataStore: store } = getStorageBundle();
   assertVideoId(videoId);
 
   const index = await store.readIndex(principal);
@@ -39,15 +40,15 @@ export async function reRenderSummaryHtml(
   if (!video || !video.summaryMd || !video.summaryHtml) return { status: 'skipped-not-eligible' };
 
   const base = video.summaryMd.replace(/\.md$/, '');
-  const envelope = await readModelEnvelope(outputFolder, base, blobStore);
+  const envelope = await readModelEnvelope(outputFolder, base, resolvedBlob);
   if (!envelope) return { status: 'skipped-no-model' };
 
   let md: string;
   try {
     // Fail closed on a crafted summaryMd that escapes the output folder. assertIndexRelPathWithin
-    // validates the key for containment; the actual read goes through blobStore.
+    // validates the key for containment; the actual read goes through resolvedBlob.
     assertIndexRelPathWithin(outputFolder, video.summaryMd, '.md');
-    const mdBytes = await blobStore.get(principal, video.summaryMd);
+    const mdBytes = await resolvedBlob.get(principal, video.summaryMd);
     if (!mdBytes) return { status: 'skipped-no-md' };
     md = mdBytes.toString('utf-8');
   } catch {
@@ -69,7 +70,7 @@ export async function reRenderSummaryHtml(
 
   const html = renderMagazineHtml(parsed, envelope.model);
   const htmlRel = `htmls/${base}.html`;
-  await blobStore.put(principal, htmlRel, Buffer.from(html, 'utf-8'), 'text/html');
+  await resolvedBlob.put(principal, htmlRel, Buffer.from(html, 'utf-8'), 'text/html');
   return { status: 'rerendered', htmlPath: htmlRel, html };
 }
 
@@ -93,9 +94,10 @@ export interface ReRenderTally {
 }
 
 /** Re-render every summary in a playlist. Per-video errors are isolated, never abort the batch. */
-export async function reRenderAll(outputFolder: string, blobStore: BlobStore = getStorageBundle().blobStore): Promise<ReRenderTally> {
+export async function reRenderAll(outputFolder: string, blobStore?: BlobStore): Promise<ReRenderTally> {
+  const { metadataStore: store, blobStore: bundleBlob } = getStorageBundle();
+  const resolvedBlob = blobStore ?? bundleBlob;
   const principal = getPrincipal(outputFolder);
-  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const tally: ReRenderTally = {
     rerendered: 0, skippedNotEligible: 0, skippedNoModel: 0, skippedNoMd: 0,
@@ -103,7 +105,7 @@ export async function reRenderAll(outputFolder: string, blobStore: BlobStore = g
   };
   for (const video of index.videos) {
     try {
-      const res = await reRenderSummaryHtml(video.id, outputFolder, blobStore);
+      const res = await reRenderSummaryHtml(video.id, outputFolder, resolvedBlob);
       switch (res.status) {
         case 'rerendered': tally.rerendered++; break;
         case 'skipped-not-eligible': tally.skippedNotEligible++; break;

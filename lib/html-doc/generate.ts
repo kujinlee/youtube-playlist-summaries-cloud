@@ -4,7 +4,6 @@ import { generateMagazineModel } from '../gemini';
 import { parseSummaryMarkdown } from './parse';
 import { renderMagazineHtml } from './render';
 import { writeModelEnvelope } from './model-store';
-import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import type { ProgressEvent } from '../../types';
 
@@ -12,10 +11,11 @@ export async function runHtmlDoc(
   videoId: string,
   outputFolder: string,
   onProgress: (event: ProgressEvent) => void,
-  blobStore: BlobStore = localBlobStore,
+  blobStore?: BlobStore,
 ): Promise<void> {
   const principal = getPrincipal(outputFolder);
-  const { metadataStore: store } = getStorageBundle();
+  const { metadataStore: store, blobStore: bundleBlob } = getStorageBundle();
+  const resolvedBlob = blobStore ?? bundleBlob;
   assertVideoId(videoId);
 
   const index = await store.readIndex(principal);
@@ -26,7 +26,7 @@ export async function runHtmlDoc(
   onProgress({ type: 'start' });
   onProgress({ type: 'step', videoId, step: 'Reading summary…', current: 1, total: 3 });
 
-  const mdBytes = await blobStore.get(principal, video.summaryMd);
+  const mdBytes = await resolvedBlob.get(principal, video.summaryMd);
   if (!mdBytes) {
     throw new Error(`source note not found on disk: ${video.summaryMd}`);
   }
@@ -51,21 +51,21 @@ export async function runHtmlDoc(
     generatedAt: new Date().toISOString(),
     sourceSections: parsed.sections.map((s) => s.title),
     model,
-  }, blobStore);
+  }, resolvedBlob);
 
   onProgress({ type: 'step', videoId, step: 'Rendering HTML…', current: 3, total: 3 });
   const html = renderMagazineHtml(parsed, model);
 
   const htmlFilename = `htmls/${base}.html`;
 
-  // Atomic write via blobStore (LocalFsBlobStore uses temp+rename; cloud impls upload directly).
+  // Atomic write via resolvedBlob (LocalFsBlobStore uses temp+rename; cloud impls upload directly).
   // Codex HIGH: if the index update fails, remove the just-written file so we don't leave an
   // orphan HTML the index doesn't reference (keeps cache ↔ index consistent).
-  await blobStore.put(principal, htmlFilename, Buffer.from(html, 'utf-8'), 'text/html');
+  await resolvedBlob.put(principal, htmlFilename, Buffer.from(html, 'utf-8'), 'text/html');
   try {
     await store.updateVideoFields(principal, videoId, { summaryHtml: htmlFilename });
   } catch (err) {
-    await blobStore.delete(principal, htmlFilename).catch(() => { /* ignore cleanup error */ });
+    await resolvedBlob.delete(principal, htmlFilename).catch(() => { /* ignore cleanup error */ });
     throw err;
   }
   onProgress({ type: 'done' });
