@@ -30,10 +30,10 @@ function classify(
   else { acc.noTsWouldRegen++; acc.wouldRegenIds.push(id); }
 }
 
-export function auditTimestamps(folder: string): AuditReport {
+export async function auditTimestamps(folder: string): Promise<AuditReport> {
   const principal = getPrincipal(folder);
   const store = getMetadataStore();
-  const { videos } = store.readIndex(principal);
+  const { videos } = await store.readIndex(principal);
   const summaries = emptyKind();
   for (const v of videos) {
     if (v.summaryMd) {

@@ -54,7 +54,7 @@ export async function runBatchDocs(
 ): Promise<void> {
   const principal = getPrincipal(outputFolder);
   const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const index = await store.readIndex(principal);
   const byId = new Map(index.videos.map((v) => [v.id, v]));
 
   // PRE-PASS (no Gemini): build a flat work list, skipping current items.

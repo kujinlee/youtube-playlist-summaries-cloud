@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   }
 
   const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const index = await store.readIndex(principal);
   const eligible = index.videos.filter(
     (v): v is typeof v & { summaryMd: string } => !!v.summaryMd && !v.tldr,
   );
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
           await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
 
           // Index updated immediately after the .md write.
-          store.updateVideoFields(principal, video.id, { tldr, takeaways });
+          await store.updateVideoFields(principal, video.id, { tldr, takeaways });
 
           succeeded++;
           // Emit step as soon as core work (Gemini + index) is done.

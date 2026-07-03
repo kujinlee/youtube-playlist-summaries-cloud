@@ -21,7 +21,7 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   }
 
-  const index = getMetadataStore().readIndex(principal);
+  const index = await getMetadataStore().readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
 
   if (!video || !video.summaryMd || !video.tldr) {

@@ -94,7 +94,7 @@ export async function GET(request: Request) {
   }
 
   // Best-effort: recover orphaned MD files.
-  try { recoverOrphanedVideos(outputFolder); } catch { /* non-fatal */ }
+  try { await recoverOrphanedVideos(outputFolder); } catch { /* non-fatal */ }
 
   const rawSortColumn = searchParams.get('sortColumn');
   const sortColumn: SortColumn =
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 
   let index;
   try {
-    index = getMetadataStore().readIndex(principal);
+    index = await getMetadataStore().readIndex(principal);
   } catch (err) {
     const e = err as { statusCode?: number; message?: string };
     if (e.statusCode === 400) {

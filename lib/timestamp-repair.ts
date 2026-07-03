@@ -15,11 +15,11 @@ const noop = (_e: ProgressEvent): void => {};
 
 // before/after ▶ counts are informational logging only — a read failure must NEVER abort the
 // batch (and in unit tests, where ensure* is mocked, readIndex on a synthetic folder will throw).
-function tsCount(folder: string, id: string): number {
+async function tsCount(folder: string, id: string): Promise<number> {
   try {
     const principal = getPrincipal(folder);
     const store = getMetadataStore();
-    const v = store.readIndex(principal).videos.find((x) => x.id === id);
+    const v = (await store.readIndex(principal)).videos.find((x) => x.id === id);
     const rel = v?.summaryMd;
     if (!rel) return 0;
     const abs = path.join(folder, rel);
@@ -30,7 +30,7 @@ function tsCount(folder: string, id: string): number {
 }
 
 export async function repairTimestamps(folder: string, opts: RepairOptions): Promise<RepairResult> {
-  const a = auditTimestamps(folder);
+  const a = await auditTimestamps(folder);
   const planned: RepairItem[] = [];
   const add = (ids: string[], reason: 'stuck' | 'would-regen') => {
     for (const id of ids) planned.push({ videoId: id, kind: 'summary', reason });
@@ -48,10 +48,10 @@ export async function repairTimestamps(folder: string, opts: RepairOptions): Pro
   let i = 0;
   for (const t of targets) {           // sequential — this loop is what serializes (the lib does not)
     i++;
-    const before = tsCount(folder, t.videoId);
+    const before = await tsCount(folder, t.videoId);
     try {
       await ensureHtmlDoc(t.videoId, folder, noop, undefined, true);
-      const after = tsCount(folder, t.videoId);
+      const after = await tsCount(folder, t.videoId);
       repaired.push({ videoId: t.videoId, kind: t.kind, before, after });
       console.log(`[repair] ${i}/${targets.length} ${t.videoId} ${t.kind}: ${before} → ${after}`);
     } catch (err) {

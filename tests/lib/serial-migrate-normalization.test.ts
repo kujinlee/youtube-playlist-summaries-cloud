@@ -95,7 +95,7 @@ describe('serial migration — Unicode normalization robustness', () => {
   });
 
   describe('runPhaseBUntilStable', () => {
-    it('renames every file-bearing video and converges (final pass renames 0)', () => {
+    it('renames every file-bearing video and converges (final pass renames 0)', async () => {
       const index: PlaylistIndex = {
         playlistUrl: 'https://youtube.com/playlist?list=T',
         outputFolder,
@@ -108,8 +108,8 @@ describe('serial migration — Unicode normalization robustness', () => {
       fs.writeFileSync(path.join(outputFolder, 'alpha.md'), 'a');
       fs.writeFileSync(path.join(outputFolder, 'beta.md'), 'b');
 
-      runPhaseA(outputFolder);
-      const r = runPhaseBUntilStable(outputFolder);
+      await runPhaseA(outputFolder);
+      const r = await runPhaseBUntilStable(outputFolder);
 
       expect(r.renamed).toBe(2);
       // Exactly 2: pass 1 renames both, pass 2 renames 0 and stops. A higher count would
@@ -119,12 +119,12 @@ describe('serial migration — Unicode normalization robustness', () => {
       expect(fs.existsSync(path.join(outputFolder, '002_beta.md'))).toBe(true);
 
       // Idempotent: a fresh convergence run does nothing.
-      const again = runPhaseBUntilStable(outputFolder);
+      const again = await runPhaseBUntilStable(outputFolder);
       expect(again.renamed).toBe(0);
       expect(again.conflicts).toEqual([]);
     });
 
-    it('stops after a single pass when there is nothing to rename (phantom ops never spin)', () => {
+    it('stops after a single pass when there is nothing to rename (phantom ops never spin)', async () => {
       // serialNumber set but the file is absent → planMigration emits a rename op, but Phase B
       // can't apply it (no source) → renamed 0 on pass 1 → loop stops. (maxPasses=10 default is
       // a backstop, not the stopping condition here.)
@@ -133,7 +133,7 @@ describe('serial migration — Unicode normalization robustness', () => {
         outputFolder,
         videos: [makeVideo('v1', '2025-01-01T00:00:00Z', 'ghost.md', 5)],
       });
-      const r = runPhaseBUntilStable(outputFolder, 3);
+      const r = await runPhaseBUntilStable(outputFolder, 3);
       expect(r.renamed).toBe(0);
       expect(r.passes).toBe(1);
     });

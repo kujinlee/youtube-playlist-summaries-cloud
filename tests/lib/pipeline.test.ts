@@ -23,6 +23,7 @@ const mockGenerateSummary = jest.mocked(gemini.generateSummary);
 const mockTranscribeViaGemini = jest.mocked(gemini.transcribeViaGemini);
 const mockExtractQuickView = jest.mocked(gemini.extractQuickView);
 const mockUpsertVideo = jest.mocked(indexStore.upsertVideo);
+const mockUpdateVideoFields = jest.mocked(indexStore.updateVideoFields);
 const mockAssertOutputFolder = jest.mocked(indexStore.assertOutputFolder);
 const mockReadIndex = jest.mocked(indexStore.readIndex);
 const mockWriteIndex = jest.mocked(indexStore.writeIndex);
@@ -83,6 +84,7 @@ describe('runIngestion', () => {
     mockAssertOutputFolder.mockImplementation(() => {});
     mockDetectLanguage.mockReturnValue('en');
     mockUpsertVideo.mockImplementation(() => {});
+    mockUpdateVideoFields.mockImplementation(() => {});
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder, videos: [] });
     mockWriteIndex.mockImplementation(() => {});
     mockExtractQuickView.mockResolvedValue({ tldr: 'QV tldr', takeaways: ['qa', 'qb'] });
@@ -126,7 +128,9 @@ describe('runIngestion', () => {
     expect(errorEvents).toHaveLength(1);
     expect(errorEvents[0]).toMatchObject({ type: 'error', videoId: 'vid1' });
 
-    expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
+    // claimVideoSlot runs before writeSummaryDoc (transcript fetch); vid1 gets a slot stub
+    // before failing, then vid2 gets slot + full upsert = 3 total calls
+    expect(mockUpsertVideo).toHaveBeenCalledTimes(3);
     expect(mockUpsertVideo).toHaveBeenCalledWith(outputFolder, expect.objectContaining({ id: 'vid2' }));
     expect(events[events.length - 1]).toMatchObject({ type: 'done' });
   });
@@ -138,7 +142,8 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    expect(mockUpsertVideo).toHaveBeenCalledTimes(2);
+    // claimVideoSlot stub + full upsert = 2 calls per video → 4 total
+    expect(mockUpsertVideo).toHaveBeenCalledTimes(4);
     expect(mockUpsertVideo).toHaveBeenCalledWith(outputFolder, expect.objectContaining({ id: 'vid1' }));
     expect(mockUpsertVideo).toHaveBeenCalledWith(outputFolder, expect.objectContaining({ id: 'vid2' }));
   });
@@ -370,13 +375,12 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    expect(mockUpsertVideo).toHaveBeenCalledWith(
-      outputFolder,
-      expect.objectContaining({ id: 'vid2', archived: true, removedFromPlaylist: true }),
+    // archive/unarchive now goes through reconcilePlaylistMembership → indexStore.updateVideoFields
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder, 'vid2', expect.objectContaining({ archived: true, removedFromPlaylist: true }),
     );
-    expect(mockUpsertVideo).not.toHaveBeenCalledWith(
-      outputFolder,
-      expect.objectContaining({ id: 'vid1', removedFromPlaylist: true }),
+    expect(mockUpdateVideoFields).not.toHaveBeenCalledWith(
+      outputFolder, 'vid1', expect.objectContaining({ removedFromPlaylist: true }),
     );
   });
 
@@ -389,9 +393,9 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    expect(mockUpsertVideo).not.toHaveBeenCalledWith(
-      outputFolder,
-      expect.objectContaining({ id: 'vid2', archived: true }),
+    // reconcile: vid2 has removedFromPlaylist:true so neither condition triggers → no archive call
+    expect(mockUpdateVideoFields).not.toHaveBeenCalledWith(
+      outputFolder, 'vid2', expect.objectContaining({ archived: true }),
     );
   });
 
@@ -404,10 +408,9 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    // Returning to the playlist must restore visibility, not just clear the flag.
-    expect(mockUpsertVideo).toHaveBeenCalledWith(
-      outputFolder,
-      expect.objectContaining({ id: 'vid2', archived: false, removedFromPlaylist: false }),
+    // Returning to the playlist: reconcile calls updateVideoFields (not upsertVideo)
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder, 'vid2', expect.objectContaining({ archived: false, removedFromPlaylist: false }),
     );
   });
 
@@ -432,7 +435,7 @@ describe('runIngestion', () => {
     );
   });
 
-  it('stamps playlistIndex on already-indexed videos via reconciliation writeIndex call', async () => {
+  it('stamps playlistIndex on already-indexed videos via bulkUpdateVideoFields', async () => {
     const existingVid1 = makeIndexedVideo('vid1');
     const existingVid2 = makeIndexedVideo('vid2');
     mockReadIndex.mockReturnValue({
@@ -444,12 +447,13 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    // Already-indexed: upsertVideo not called for processing (only potentially for removed-reconciliation)
-    // writeIndex must be called at the end with both videos having playlistIndex set
-    const lastWriteCall = mockWriteIndex.mock.calls[mockWriteIndex.mock.calls.length - 1];
-    const writtenVideos: Video[] = lastWriteCall[1].videos;
-    expect(writtenVideos).toContainEqual(expect.objectContaining({ id: 'vid1', playlistIndex: 1 }));
-    expect(writtenVideos).toContainEqual(expect.objectContaining({ id: 'vid2', playlistIndex: 2 }));
+    // Already-indexed: upsertVideo not called; playlistIndex stamped via bulkUpdateVideoFields
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder, 'vid1', expect.objectContaining({ playlistIndex: 1 }),
+    );
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder, 'vid2', expect.objectContaining({ playlistIndex: 2 }),
+    );
   });
 
   it('preserves existing playlistIndex for videos no longer in the playlist', async () => {
@@ -465,11 +469,10 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    const lastWriteCall = mockWriteIndex.mock.calls[mockWriteIndex.mock.calls.length - 1];
-    const writtenVideos: Video[] = lastWriteCall[1].videos;
-    // vid2 is not in metas, so its existing playlistIndex=2 is preserved
-    const vid2Written = writtenVideos.find((v) => v.id === 'vid2');
-    expect(vid2Written?.playlistIndex).toBe(2);
+    // vid2 is absent from positionMap (removed); ?? falls back to v.playlistIndex=2
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder, 'vid2', expect.objectContaining({ playlistIndex: 2 }),
+    );
   });
 
   it('does not create a -2.md file when the same videoId appears twice in the playlist', async () => {
@@ -485,8 +488,8 @@ describe('runIngestion', () => {
     const mdFiles = fs.readdirSync(outputFolder).filter((f) => f.endsWith('.md'));
     expect(mdFiles).toHaveLength(1);
     expect(mdFiles[0]).not.toMatch(/-2\.md$/);
-    // upsertVideo called exactly once — second occurrence skipped
-    expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
+    // claimVideoSlot stub + full upsert = 2 calls for vid1; second occurrence skipped entirely
+    expect(mockUpsertVideo).toHaveBeenCalledTimes(2);
   });
 
   it('stamps videoPublishedAt and addedToPlaylistAt on new videos from VideoMeta', async () => {
@@ -511,7 +514,7 @@ describe('runIngestion', () => {
     );
   });
 
-  it('backfills dates on already-indexed videos via reconciliation writeIndex call', async () => {
+  it('backfills dates on already-indexed videos via bulkUpdateVideoFields', async () => {
     const existingVid = makeIndexedVideo('vid1'); // no dates
     mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [existingVid] });
 
@@ -524,11 +527,10 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    const lastWriteCall = mockWriteIndex.mock.calls[mockWriteIndex.mock.calls.length - 1];
-    const writtenVideos: Video[] = lastWriteCall[1].videos;
-    expect(writtenVideos).toContainEqual(
+    // vid1 has no existing dates → ?? picks from publishedMap/addedMap
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder, 'vid1',
       expect.objectContaining({
-        id: 'vid1',
         videoPublishedAt: '2024-11-12T14:30:00Z',
         addedToPlaylistAt: '2025-01-03T09:00:00Z',
       }),
@@ -552,12 +554,14 @@ describe('runIngestion', () => {
 
     await runIngestion(PLAYLIST_URL, outputFolder, () => {});
 
-    const lastWriteCall = mockWriteIndex.mock.calls[mockWriteIndex.mock.calls.length - 1];
-    const writtenVideos: Video[] = lastWriteCall[1].videos;
-    const written = writtenVideos.find((v) => v.id === 'vid1');
-    // Original values preserved — ?? ensures write-once semantics
-    expect(written?.videoPublishedAt).toBe('2024-11-12T14:30:00Z');
-    expect(written?.addedToPlaylistAt).toBe('2025-01-03T09:00:00Z');
+    // v.videoPublishedAt ?? publishedMap → existing wins via ?? write-once semantics
+    expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+      outputFolder, 'vid1',
+      expect.objectContaining({
+        videoPublishedAt: '2024-11-12T14:30:00Z',
+        addedToPlaylistAt: '2025-01-03T09:00:00Z',
+      }),
+    );
   });
 
   it('emits cancelled (not done) and stops processing when AbortSignal fires between videos', async () => {
@@ -580,8 +584,8 @@ describe('runIngestion', () => {
 
     expect(events.some((e) => e.type === 'cancelled')).toBe(true);
     expect(events.some((e) => e.type === 'done')).toBe(false);
-    // vid2 must not have been processed
-    expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
+    // vid2 must not have been processed; vid1 got claimVideoSlot stub + full upsert = 2 calls
+    expect(mockUpsertVideo).toHaveBeenCalledTimes(2);
     expect(mockUpsertVideo).toHaveBeenCalledWith(outputFolder, expect.objectContaining({ id: 'vid1' }));
   });
 
@@ -721,9 +725,12 @@ describe('runIngestion', () => {
 
   // ── playlistIndex tracks current playlist position ──
 
-  function lastWrittenVideos(): Video[] {
-    const calls = mockWriteIndex.mock.calls;
-    return calls[calls.length - 1][1].videos;
+  // playlistIndex/date stamps now go through bulkUpdateVideoFields → indexStore.updateVideoFields.
+  // Returns the fields from the LAST updateVideoFields call for the given videoId.
+  function lastUpdateFieldsFor(videoId: string): Partial<Video> | undefined {
+    const calls = mockUpdateVideoFields.mock.calls.filter((c) => c[1] === videoId);
+    if (calls.length === 0) return undefined;
+    return calls[calls.length - 1][2] as Partial<Video>;
   }
 
   describe('playlistIndex tracks current playlist position', () => {
@@ -736,7 +743,7 @@ describe('runIngestion', () => {
         ['vidW', 'vidX', 'vidY', 'vidZ', 'vidA'].map((id) => makeVideoMeta(id)),
       );
       await runIngestion(PLAYLIST_URL, outputFolder, () => {});
-      expect(lastWrittenVideos().find((v) => v.id === 'vidA')?.playlistIndex).toBe(5);
+      expect(lastUpdateFieldsFor('vidA')?.playlistIndex).toBe(5);
     });
 
     it('resolves a collision (two videos frozen at 1) to distinct current positions', async () => {
@@ -745,9 +752,8 @@ describe('runIngestion', () => {
       mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [a, b] });
       mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vidB'), makeVideoMeta('vidA')]); // B@1, A@2
       await runIngestion(PLAYLIST_URL, outputFolder, () => {});
-      const w = lastWrittenVideos();
-      expect(w.find((v) => v.id === 'vidB')?.playlistIndex).toBe(1);
-      expect(w.find((v) => v.id === 'vidA')?.playlistIndex).toBe(2);
+      expect(lastUpdateFieldsFor('vidB')?.playlistIndex).toBe(1);
+      expect(lastUpdateFieldsFor('vidA')?.playlistIndex).toBe(2);
     });
 
     it('un-archives (via reconcile upsert) AND re-numbers a removed video that returns', async () => {
@@ -759,14 +765,12 @@ describe('runIngestion', () => {
         ['vidW', 'vidX', 'vidY', 'vidD'].map((id) => makeVideoMeta(id)),
       );
       await runIngestion(PLAYLIST_URL, outputFolder, () => {});
-      // index-store is mocked, so the reconcile un-archive is observable only at the upsert call
-      // (the re-stamp pass re-reads the mocked seeded array). Mirror the existing :332 test.
-      expect(mockUpsertVideo).toHaveBeenCalledWith(
-        outputFolder,
-        expect.objectContaining({ id: 'vidD', archived: false, removedFromPlaylist: false }),
+      // reconcile calls updateVideoFields (not upsertVideo) to un-archive
+      expect(mockUpdateVideoFields).toHaveBeenCalledWith(
+        outputFolder, 'vidD', expect.objectContaining({ archived: false, removedFromPlaylist: false }),
       );
-      // playlistIndex is re-derived by the final writeIndex re-stamp pass (vidD is in positionMap)
-      expect(lastWrittenVideos().find((v) => v.id === 'vidD')?.playlistIndex).toBe(4);
+      // bulkUpdateVideoFields re-stamps playlistIndex; D is in positionMap at position 4
+      expect(lastUpdateFieldsFor('vidD')?.playlistIndex).toBe(4);
     });
 
     it('re-numbers an archived-but-still-in-playlist video (kept archived)', async () => {
@@ -777,9 +781,11 @@ describe('runIngestion', () => {
         ['vidU', 'vidV', 'vidW', 'vidX', 'vidY', 'vidE'].map((id) => makeVideoMeta(id)), // E@6
       );
       await runIngestion(PLAYLIST_URL, outputFolder, () => {});
-      const ew = lastWrittenVideos().find((v) => v.id === 'vidE');
-      expect(ew?.playlistIndex).toBe(6);
-      expect(ew?.archived).toBe(true);
+      expect(lastUpdateFieldsFor('vidE')?.playlistIndex).toBe(6);
+      // reconcile must NOT have called updateVideoFields with archived:false (it's in-playlist, not removedFromPlaylist)
+      expect(mockUpdateVideoFields).not.toHaveBeenCalledWith(
+        outputFolder, 'vidE', expect.objectContaining({ archived: false }),
+      );
     });
 
     it('preserves stable fields while re-deriving playlistIndex', async () => {
@@ -787,7 +793,7 @@ describe('runIngestion', () => {
       mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [makeIndexedVideo('vidB'), a] });
       mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vidB'), makeVideoMeta('vidA')]); // A@2
       await runIngestion(PLAYLIST_URL, outputFolder, () => {});
-      const aw = lastWrittenVideos().find((v) => v.id === 'vidA');
+      const aw = lastUpdateFieldsFor('vidA');
       expect(aw?.playlistIndex).toBe(2);
       expect(aw?.videoPublishedAt).toBe('2020-01-01T00:00:00Z'); // write-once preserved
       expect(aw?.addedToPlaylistAt).toBe('2021-01-01T00:00:00Z');
@@ -798,7 +804,7 @@ describe('runIngestion', () => {
       mockReadIndex.mockReturnValue({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [a] });
       mockFetchPlaylistVideos.mockResolvedValue([]);
       await expect(runIngestion(PLAYLIST_URL, outputFolder, () => {})).resolves.toBeUndefined();
-      expect(lastWrittenVideos().find((v) => v.id === 'vidA')?.playlistIndex).toBe(7);
+      expect(lastUpdateFieldsFor('vidA')?.playlistIndex).toBe(7);
     });
   });
 
@@ -1059,17 +1065,17 @@ describe('recoverOrphanedVideos', () => {
     jest.clearAllMocks();
   });
 
-  it('upserts any orphaned video with a valid video_id in frontmatter', () => {
+  it('upserts any orphaned video with a valid video_id in frontmatter', async () => {
     fs.writeFileSync(path.join(tempDir, '001_test-video.md'), SAMPLE_MD, 'utf-8');
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
 
-    recoverOrphanedVideos(tempDir);
+    await recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).toHaveBeenCalledTimes(1);
     expect(mockUpsertVideo).toHaveBeenCalledWith(tempDir, expect.objectContaining({ id: 'testVidAbc1' }));
   });
 
-  it('does not upsert a video already in the index', () => {
+  it('does not upsert a video already in the index', async () => {
     fs.writeFileSync(path.join(tempDir, '001_test-video.md'), SAMPLE_MD, 'utf-8');
     mockReadIndex.mockReturnValue({
       playlistUrl: '',
@@ -1077,26 +1083,26 @@ describe('recoverOrphanedVideos', () => {
       videos: [{ id: 'testVidAbc1' } as never],
     });
 
-    recoverOrphanedVideos(tempDir);
+    await recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).not.toHaveBeenCalled();
   });
 
-  it('ignores .md files with no video_id in frontmatter', () => {
+  it('ignores .md files with no video_id in frontmatter', async () => {
     const noId = SAMPLE_MD.replace('video_id: "testVidAbc1"', '');
     fs.writeFileSync(path.join(tempDir, '001_test-video.md'), noId, 'utf-8');
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
 
-    recoverOrphanedVideos(tempDir);
+    await recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).not.toHaveBeenCalled();
   });
 
-  it('ignores deep-dive .md files', () => {
+  it('ignores deep-dive .md files', async () => {
     fs.writeFileSync(path.join(tempDir, 'testVidAbc1-deep-dive.md'), SAMPLE_MD, 'utf-8');
     mockReadIndex.mockReturnValue({ playlistUrl: '', outputFolder: tempDir, videos: [] });
 
-    recoverOrphanedVideos(tempDir);
+    await recoverOrphanedVideos(tempDir);
 
     expect(mockUpsertVideo).not.toHaveBeenCalled();
   });

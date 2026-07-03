@@ -61,7 +61,7 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   try {
-    getMetadataStore().updateVideoFields(principal, videoId, patch);
+    await getMetadataStore().updateVideoFields(principal, videoId, patch);
   } catch (err) {
     const e = err as Error;
     if (e.message.startsWith('Video not found in index')) {

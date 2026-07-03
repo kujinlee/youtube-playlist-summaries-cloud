@@ -10,8 +10,8 @@
  */
 import { reRenderAll } from '../lib/html-doc/rerender';
 
-function run(outputFolder: string): void {
-  const t = reRenderAll(outputFolder);
+async function run(outputFolder: string): Promise<void> {
+  const t = await reRenderAll(outputFolder);
   // Headline counts only the actionable outcomes; "not eligible" (videos with no summary to
   // refresh) is irrelevant to a restyle and stays silent.
   const skipped = t.skippedNoModel + t.skippedNoMd + t.skippedUnparseable + t.skippedDrift;
@@ -37,4 +37,4 @@ if (folders.length === 0) {
   console.error('Usage: npm run rerender-html -- <outputFolder> [<outputFolder2> ...]');
   process.exit(1);
 }
-for (const folder of folders) run(folder);
+Promise.all(folders.map((folder) => run(folder))).catch((e) => { console.error(e); process.exit(1); });

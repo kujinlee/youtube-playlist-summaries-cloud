@@ -41,9 +41,14 @@ export class LocalFsMetadataStore implements MetadataStore {
     const idx = indexStore.readIndex(p.indexKey);
     for (const v of idx.videos) {
       const inPlaylist = present.has(v.id);
-      indexStore.updateVideoFields(p.indexKey, v.id, {
-        archived: !inPlaylist, removedFromPlaylist: !inPlaylist,
-      } as Partial<Video>);
+      // Mirror original pipeline logic: only touch videos whose archive state should change.
+      // A video with removedFromPlaylist=true that is still absent was already handled on a
+      // prior sync (or the user manually un-archived it) — leave it untouched.
+      if (!inPlaylist && !v.removedFromPlaylist) {
+        indexStore.updateVideoFields(p.indexKey, v.id, { archived: true, removedFromPlaylist: true } as Partial<Video>);
+      } else if (inPlaylist && v.removedFromPlaylist) {
+        indexStore.updateVideoFields(p.indexKey, v.id, { archived: false, removedFromPlaylist: false } as Partial<Video>);
+      }
     }
   }
 }

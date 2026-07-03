@@ -71,9 +71,9 @@ beforeEach(() => {
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe('reRenderSummaryHtml', () => {
-  it('re-renders from the cached model without calling Gemini', () => {
+  it('re-renders from the cached model without calling Gemini', async () => {
     writeModelEnvelope(dir, 'a-title', envelope());
-    const res = reRenderSummaryHtml(VIDEO_ID, dir);
+    const res = await reRenderSummaryHtml(VIDEO_ID, dir);
     expect(res.status).toBe('rerendered');
     expect(res).toHaveProperty('htmlPath', 'htmls/a-title.html');
     expect(res).toHaveProperty('html');
@@ -85,9 +85,9 @@ describe('reRenderSummaryHtml', () => {
     expect(gemini.generateMagazineModel as jest.Mock).not.toHaveBeenCalled();
   });
 
-  it('includes rendered html in the rerendered result', () => {
+  it('includes rendered html in the rerendered result', async () => {
     writeModelEnvelope(dir, 'a-title', envelope());
-    const res = reRenderSummaryHtml(VIDEO_ID, dir);
+    const res = await reRenderSummaryHtml(VIDEO_ID, dir);
     expect(res.status).toBe('rerendered');
     expect(res).toHaveProperty('html');
     if (res.status === 'rerendered') {
@@ -101,39 +101,39 @@ describe('reRenderSummaryHtml', () => {
     }
   });
 
-  it('skips when no model file exists', () => {
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-no-model' });
+  it('skips when no model file exists', async () => {
+    expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-no-model' });
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
-  it('skips when the video has no summaryMd', () => {
+  it('skips when the video has no summaryMd', async () => {
     writeIndex([baseVideo({ summaryMd: null })]);
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-not-eligible' });
+    expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-not-eligible' });
   });
 
-  it('skips when the video has no summaryHtml (nothing existing to refresh)', () => {
+  it('skips when the video has no summaryHtml (nothing existing to refresh)', async () => {
     writeModelEnvelope(dir, 'a-title', envelope());
     writeIndex([baseVideo({ summaryHtml: null })]);
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-not-eligible' });
+    expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-not-eligible' });
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
-  it('skips when the .md is missing on disk', () => {
+  it('skips when the .md is missing on disk', async () => {
     writeModelEnvelope(dir, 'a-title', envelope());
     fs.rmSync(path.join(dir, 'a-title.md'));
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-no-md' });
+    expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-no-md' });
   });
 
-  it('skips when the .md is present but unparseable', () => {
+  it('skips when the .md is present but unparseable', async () => {
     writeModelEnvelope(dir, 'a-title', envelope());
     fs.writeFileSync(path.join(dir, 'a-title.md'), '# Title only, no ## sections\n');
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-unparseable' });
+    expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-unparseable' });
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
-  it('skips on section-TITLE drift between .md and model', () => {
+  it('skips on section-TITLE drift between .md and model', async () => {
     writeModelEnvelope(dir, 'a-title', envelope(MODEL, ['First', 'Renamed Conclusion']));
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({
+    expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({
       status: 'skipped-drift',
       mdSections: ['First', 'Conclusion'],
       modelSections: ['First', 'Renamed Conclusion'],
@@ -141,10 +141,10 @@ describe('reRenderSummaryHtml', () => {
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
-  it('skips on section-COUNT drift (model has fewer sections than the .md)', () => {
+  it('skips on section-COUNT drift (model has fewer sections than the .md)', async () => {
     const oneTitle = ['First']; // .md parses to 2 sections; model envelope says 1
     writeModelEnvelope(dir, 'a-title', envelope({ sections: [MODEL.sections[0]] }, oneTitle));
-    expect(reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({
+    expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({
       status: 'skipped-drift',
       mdSections: ['First', 'Conclusion'],
       modelSections: ['First'],
@@ -152,13 +152,13 @@ describe('reRenderSummaryHtml', () => {
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
-  it('skips an unknown video id', () => {
-    expect(reRenderSummaryHtml('nope99', dir)).toEqual({ status: 'skipped-not-eligible' });
+  it('skips an unknown video id', async () => {
+    expect(await reRenderSummaryHtml('nope99', dir)).toEqual({ status: 'skipped-not-eligible' });
   });
 });
 
 describe('reRenderAll', () => {
-  it('tallies re-rendered and skipped across the index', () => {
+  it('tallies re-rendered and skipped across the index', async () => {
     // video A (baseVideo): has model + HTML → rerendered
     writeModelEnvelope(dir, 'a-title', envelope());
     // video B: summaryMd + summaryHtml set but NO model → skipped-no-model
@@ -166,7 +166,7 @@ describe('reRenderAll', () => {
     const vidB = baseVideo({ id: 'vidB', summaryMd: 'b-title.md', summaryHtml: 'htmls/b-title.html' });
     writeIndex([baseVideo(), vidB]);
 
-    const tally = reRenderAll(dir);
+    const tally = await reRenderAll(dir);
     expect(tally.rerendered).toBe(1);
     expect(tally.skippedNoModel).toBe(1);
     expect(tally.details).toEqual(
@@ -177,29 +177,29 @@ describe('reRenderAll', () => {
     );
   });
 
-  it('counts a video with no summary as not-eligible (silent)', () => {
+  it('counts a video with no summary as not-eligible (silent)', async () => {
     const vidC = baseVideo({ id: 'vidC', summaryMd: null, summaryHtml: null });
     writeModelEnvelope(dir, 'a-title', envelope());
     writeIndex([baseVideo(), vidC]);
 
-    const tally = reRenderAll(dir);
+    const tally = await reRenderAll(dir);
     expect(tally.rerendered).toBe(1);
     expect(tally.skippedNotEligible).toBe(1);
   });
 
-  it('isolates an unparseable .md as a defined skip and keeps going', () => {
+  it('isolates an unparseable .md as a defined skip and keeps going', async () => {
     writeModelEnvelope(dir, 'a-title', envelope());
     fs.writeFileSync(path.join(dir, 'b-title.md'), '# Just a title, no sections\n');
     writeModelEnvelope(dir, 'b-title', { sourceMd: 'b-title.md', generatedAt: 'now', sourceSections: ['x'], model: MODEL });
     writeIndex([baseVideo(), baseVideo({ id: 'vidB', summaryMd: 'b-title.md', summaryHtml: 'htmls/b-title.html' })]);
 
-    const tally = reRenderAll(dir);
+    const tally = await reRenderAll(dir);
     expect(tally.rerendered).toBe(1);
     expect(tally.skippedUnparseable).toBe(1);
     expect(tally.errors).toBe(0);
   });
 
-  it('isolates a per-video write failure and keeps rendering the rest', () => {
+  it('isolates a per-video write failure and keeps rendering the rest', async () => {
     // Two eligible videos with cached models; force the HTML write to throw for the FIRST only.
     fs.writeFileSync(path.join(dir, 'b-title.md'), SUMMARY_MD);
     writeModelEnvelope(dir, 'a-title', envelope());
@@ -212,7 +212,7 @@ describe('reRenderAll', () => {
       return (realRename as typeof fs.renameSync)(from, to);
     });
 
-    const tally = reRenderAll(dir);
+    const tally = await reRenderAll(dir);
     spy.mockRestore();
 
     expect(tally.errors).toBe(1);

@@ -34,7 +34,7 @@ describe('runPhaseA', () => {
     fs.rmSync(outputFolder, { recursive: true, force: true });
   });
 
-  it('Phase A assigns serials to all file-bearing videos in one write and is idempotent', () => {
+  it('Phase A assigns serials to all file-bearing videos in one write and is idempotent', async () => {
     // Seed index with 2 videos (summaryMd set, no serialNumber), processedAt ordered
     const index: PlaylistIndex = {
       playlistUrl: 'https://www.youtube.com/playlist?list=TEST',
@@ -47,13 +47,13 @@ describe('runPhaseA', () => {
     writeIndex(outputFolder, index);
 
     // First run: should assign serials
-    const r1 = runPhaseA(outputFolder);
+    const r1 = await runPhaseA(outputFolder);
     expect(r1.assigned).toBe(2);
     const after = readIndex(outputFolder).videos.map((v) => v.serialNumber).sort();
     expect(after).toEqual([1, 2]);
 
     // Second run: idempotent
-    const r2 = runPhaseA(outputFolder);
+    const r2 = await runPhaseA(outputFolder);
     expect(r2.assigned).toBe(0);
   });
 });
@@ -98,7 +98,7 @@ describe('runPhaseB', () => {
     };
   }
 
-  it('Phase B renames md+model and updates the index fields per video', () => {
+  it('Phase B renames md+model and updates the index fields per video', async () => {
     // Seed: video with serialNumber:1, summaryMd:'alpha.md'
     seedIndex([
       makeVideoB({
@@ -114,7 +114,7 @@ describe('runPhaseB', () => {
       JSON.stringify({ sourceMd: 'alpha.md', data: 'model data' }),
     );
 
-    const r = runPhaseB(outputFolder);
+    const r = await runPhaseB(outputFolder);
 
     expect(fs.existsSync(path.join(outputFolder, '001_alpha.md'))).toBe(true);
     expect(fs.existsSync(path.join(outputFolder, 'models/001_alpha.json'))).toBe(true);
@@ -122,7 +122,7 @@ describe('runPhaseB', () => {
     expect(r.conflicts).toEqual([]);
   });
 
-  it('aborts a video (conflict, no clobber) when target exists with different content', () => {
+  it('aborts a video (conflict, no clobber) when target exists with different content', async () => {
     seedIndex([
       makeVideoB({
         id: 'a',
@@ -134,14 +134,14 @@ describe('runPhaseB', () => {
     fs.writeFileSync(path.join(outputFolder, 'alpha.md'), 'new content');
     fs.writeFileSync(path.join(outputFolder, '001_alpha.md'), 'OTHER');
 
-    const r = runPhaseB(outputFolder);
+    const r = await runPhaseB(outputFolder);
 
     expect(r.conflicts).toContain('a');
     // Target file must be untouched
     expect(fs.readFileSync(path.join(outputFolder, '001_alpha.md'), 'utf8')).toBe('OTHER');
   });
 
-  it('rewrites source-md meta in renamed summary HTML', () => {
+  it('rewrites source-md meta in renamed summary HTML', async () => {
     const htmlContent = `<html><head><meta name="source-md" content="alpha.md"></head><body></body></html>`;
     seedIndex([
       makeVideoB({
@@ -154,13 +154,13 @@ describe('runPhaseB', () => {
     fs.writeFileSync(path.join(outputFolder, 'alpha.md'), 'md content');
     fs.writeFileSync(path.join(outputFolder, 'htmls/alpha.html'), htmlContent);
 
-    runPhaseB(outputFolder);
+    await runPhaseB(outputFolder);
 
     const html = fs.readFileSync(path.join(outputFolder, 'htmls/001_alpha.html'), 'utf8');
     expect(html).toContain('content="001_alpha.md"');
   });
 
-  it('is idempotent on re-run (already-prefixed files → renamed:0)', () => {
+  it('is idempotent on re-run (already-prefixed files → renamed:0)', async () => {
     seedIndex([
       makeVideoB({
         id: 'a',
@@ -170,8 +170,8 @@ describe('runPhaseB', () => {
     ]);
     fs.writeFileSync(path.join(outputFolder, 'alpha.md'), 'md content');
 
-    runPhaseB(outputFolder);
-    const r2 = runPhaseB(outputFolder);
+    await runPhaseB(outputFolder);
+    const r2 = await runPhaseB(outputFolder);
 
     expect(r2.renamed).toBe(0);
     // M2: index must not be corrupted on re-run
@@ -179,7 +179,7 @@ describe('runPhaseB', () => {
   });
 
   // M1: envelope provenance rewrite — models/<new-name>.json gets sourceMd updated.
-  it('rewrites envelope sourceMd in renamed model JSON', () => {
+  it('rewrites envelope sourceMd in renamed model JSON', async () => {
     seedIndex([
       makeVideoB({
         id: 'a',
@@ -192,7 +192,7 @@ describe('runPhaseB', () => {
       JSON.stringify({ sourceMd: 'alpha.md', generatedAt: 't' }),
     );
 
-    runPhaseB(outputFolder);
+    await runPhaseB(outputFolder);
 
     expect(fs.existsSync(path.join(outputFolder, 'models/001_alpha.json'))).toBe(true);
     const envelope = JSON.parse(
@@ -203,7 +203,7 @@ describe('runPhaseB', () => {
   });
 
   // B1: archived file renamed UNDER archived/, but the index field stays ROOT-relative.
-  it('renames archived files under archived/ and stores a root-relative index field', () => {
+  it('renames archived files under archived/ and stores a root-relative index field', async () => {
     // The video is marked archived:true, and the file lives at archived/alpha.md
     seedIndex([
       makeVideoB({
@@ -215,7 +215,7 @@ describe('runPhaseB', () => {
     // File physically lives under archived/
     fs.writeFileSync(path.join(outputFolder, 'archived/alpha.md'), 'archived md');
 
-    runPhaseB(outputFolder);
+    await runPhaseB(outputFolder);
 
     // Physical file renamed under archived/
     expect(fs.existsSync(path.join(outputFolder, 'archived/001_alpha.md'))).toBe(true);
@@ -226,7 +226,7 @@ describe('runPhaseB', () => {
   });
 
   // B2: crash mid-video (file renamed, index not yet updated) → re-run must converge the index.
-  it('repairs a stale index field when the file was already renamed by a crashed run', () => {
+  it('repairs a stale index field when the file was already renamed by a crashed run', async () => {
     // Index still says 'alpha.md' but the file on disk is ALREADY '001_alpha.md'
     // (simulating a crash between rename and updateVideoFields)
     seedIndex([
@@ -239,7 +239,7 @@ describe('runPhaseB', () => {
     fs.writeFileSync(path.join(outputFolder, '001_alpha.md'), 'already renamed');
     // alpha.md does NOT exist on disk — it was renamed in the crashed run
 
-    const r = runPhaseB(outputFolder);
+    const r = await runPhaseB(outputFolder);
 
     expect(r.renamed).toBe(0); // nothing to physically rename
     // CRITICAL: index must converge to the new name.

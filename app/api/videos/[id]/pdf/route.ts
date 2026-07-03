@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: Params) {
 
   let video;
   try {
-    const index = getMetadataStore().readIndex(principal);
+    const index = await getMetadataStore().readIndex(principal);
     video = index.videos.find((v) => v.id === videoId);
     if (!video) return NextResponse.json({ error: 'video not found' }, { status: 404 });
   } catch (err) {

@@ -26,12 +26,12 @@ export function sameTitles(a: string[], b: string[]): boolean {
  * Only refreshes summaries that already have an HTML; guards section-title alignment.
  * Total: returns a status for every data condition; throws only on an HTML write I/O failure.
  */
-export function reRenderSummaryHtml(videoId: string, outputFolder: string): ReRenderResult {
+export async function reRenderSummaryHtml(videoId: string, outputFolder: string): Promise<ReRenderResult> {
   const principal = getPrincipal(outputFolder);
   const store = getMetadataStore();
   assertVideoId(videoId);
 
-  const index = store.readIndex(principal);
+  const index = await store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
   // Re-render refreshes an EXISTING doc: needs a source note AND a current HTML.
   if (!video || !video.summaryMd || !video.summaryHtml) return { status: 'skipped-not-eligible' };
@@ -97,17 +97,17 @@ export interface ReRenderTally {
 }
 
 /** Re-render every summary in a playlist. Per-video errors are isolated, never abort the batch. */
-export function reRenderAll(outputFolder: string): ReRenderTally {
+export async function reRenderAll(outputFolder: string): Promise<ReRenderTally> {
   const principal = getPrincipal(outputFolder);
   const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const index = await store.readIndex(principal);
   const tally: ReRenderTally = {
     rerendered: 0, skippedNotEligible: 0, skippedNoModel: 0, skippedNoMd: 0,
     skippedUnparseable: 0, skippedDrift: 0, errors: 0, details: [],
   };
   for (const video of index.videos) {
     try {
-      const res = reRenderSummaryHtml(video.id, outputFolder);
+      const res = await reRenderSummaryHtml(video.id, outputFolder);
       switch (res.status) {
         case 'rerendered': tally.rerendered++; break;
         case 'skipped-not-eligible': tally.skippedNotEligible++; break;

@@ -29,11 +29,15 @@ export async function backfillPlaylistTitles(root: string, apiKey: string): Prom
   for (const folder of playlistFolders(root)) {
     const p = getPrincipal(folder); // separate principal per discovered child folder
     let index;
-    try { index = store.readIndex(p); } catch { failed.push(folder); continue; }
+    try { index = await store.readIndex(p); } catch { failed.push(folder); continue; }
     if (index.playlistTitle) { skipped.push(folder); continue; }
     const id = extractId(index.playlistUrl ?? '');
     if (!id) { failed.push(folder); continue; }
-    try { store.writeIndex(p, { ...index, playlistTitle: await fetchPlaylistTitle(id, apiKey) }); updated.push(folder); }
+    try {
+      const playlistTitle = await fetchPlaylistTitle(id, apiKey);
+      await store.setPlaylistMeta(p, { playlistUrl: index.playlistUrl ?? '', playlistTitle });
+      updated.push(folder);
+    }
     catch { failed.push(folder); }
   }
   return { updated, skipped, failed };

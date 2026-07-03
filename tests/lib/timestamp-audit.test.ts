@@ -15,7 +15,7 @@ function seed(videos: any[], files: Record<string, string>) {
   return dir;
 }
 
-it('counts only line-leading ▶ and classifies stuck vs would-regen', () => {
+it('counts only line-leading ▶ and classifies stuck vs would-regen', async () => {
   const dir = seed(
     [
       { id: 'a', summaryMd: 'a.md', docVersion: { major: 3, minor: 3 } },          // current, ▶ → withTs
@@ -33,7 +33,7 @@ it('counts only line-leading ▶ and classifies stuck vs would-regen', () => {
       'd.md': 'see ▶ inline here\n```\n  ▶ indented in fence\n```',
     },
   );
-  const r = auditTimestamps(dir);
+  const r = await auditTimestamps(dir);
   expect(r.summaries.total).toBe(5);
   expect(r.summaries.withTs).toBe(1);
   expect(r.summaries.noTsWouldRegen).toBe(2);   // b, d

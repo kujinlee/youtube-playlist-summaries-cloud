@@ -13,10 +13,10 @@ export interface SummaryAuditReport {
  * Read-only corpus sweep for truncated/suspicious summaries. Iterates the index; serial is
  * resolved from the index record (v.serialNumber), NOT the filename. Never throws per-file.
  */
-export function auditSummaries(folder: string): SummaryAuditReport {
+export async function auditSummaries(folder: string): Promise<SummaryAuditReport> {
   const principal = getPrincipal(folder);
   const store = getMetadataStore();
-  const { videos } = store.readIndex(principal);
+  const { videos } = await store.readIndex(principal);
   const suspects: SummaryAuditReport['suspects'] = [];
   let total = 0;
   for (const v of videos) {

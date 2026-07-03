@@ -17,7 +17,10 @@ function line(label: string, k: KindAudit): void {
 const folder = arg('folder') ?? process.env.OUTPUT_FOLDER ?? '';
 if (!folder) { console.error('Set --folder <outputFolder> or OUTPUT_FOLDER'); process.exit(1); }
 
-const r = auditTimestamps(folder);
-console.log(`[${folder}]`);
-line('Summaries', r.summaries);
-process.exit(r.summaries.noTsStuck > 0 ? 1 : 0);
+auditTimestamps(folder)
+  .then((r) => {
+    console.log(`[${folder}]`);
+    line('Summaries', r.summaries);
+    process.exit(r.summaries.noTsStuck > 0 ? 1 : 0);
+  })
+  .catch((e) => { console.error(e); process.exit(1); });

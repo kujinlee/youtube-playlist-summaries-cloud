@@ -12,7 +12,7 @@ const mockAudit = jest.mocked(auditTimestamps);
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockAudit.mockReturnValue({
+  mockAudit.mockResolvedValue({
     folder: 'f',
     summaries: { total: 2, withTs: 0, noTsWouldRegen: 1, noTsStuck: 1, mdMissing: 0, stuckIds: ['s1'], wouldRegenIds: ['w1'] },
   });
