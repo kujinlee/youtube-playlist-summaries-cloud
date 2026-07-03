@@ -40,6 +40,7 @@ export interface MetadataStore {
   updateVideoFields(p: Principal, id: string, fields: Partial<Video>): Promise<void>;
   bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void>;
   reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void>;
+  deleteVideo(p: Principal, videoId: string): Promise<void>;  // rollback a reserved-but-failed video (post-T4-review fix)
 }
 
 // lib/storage/blob-store.ts
@@ -273,6 +274,7 @@ export interface MetadataStore {
   updateVideoFields(p: Principal, id: string, fields: Partial<Video>): Promise<void>;
   bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void>;
   reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void>;
+  deleteVideo(p: Principal, videoId: string): Promise<void>;  // rollback a reserved-but-failed video (post-T4-review fix)
 }
 ```
 
@@ -1009,6 +1011,13 @@ export class SupabaseMetadataStore implements MetadataStore {
   async reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void> {
     const id = await this.requirePlaylistId(p);
     const { error } = await this.client.rpc('reconcile_membership', { p_playlist_id: id, p_present: currentPlaylistIds });
+    if (error) throw error;
+  }
+
+  // Rollback a reserved-but-failed video (post-T4-review fix). Owner-scoped by RLS; no RPC needed.
+  async deleteVideo(p: Principal, videoId: string): Promise<void> {
+    const id = await this.requirePlaylistId(p);
+    const { error } = await this.client.from('videos').delete().eq('playlist_id', id).eq('video_id', videoId);
     if (error) throw error;
   }
 

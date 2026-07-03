@@ -77,6 +77,11 @@ interface MetadataStore {
 
   // pipeline:388-398 — membership-driven archive/restore in ONE transaction. (F4)
   reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void>;
+
+  // Rollback for a reserved-but-failed video: removes the row so a transiently-failed
+  // ingestion retries on the next sync (added after T4 review — orphaned-stub regression).
+  // Local: splice from the index array. Cloud: DELETE WHERE playlist_id+video_id (RLS owner-scoped).
+  deleteVideo(p: Principal, videoId: string): Promise<void>;
 }
 ```
 
