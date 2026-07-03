@@ -32,3 +32,16 @@
 3. Spec §10 pre-public gates: anon-TTL + `exec_sql` removal + Google live redirect (M2).
 
 **After resolutions: READY TO MERGE**, conditioned on the user's Docker `test:integration` run going green (the grant migration is the load-bearing fix that makes it pass).
+
+---
+
+## Integration run — EXECUTED 2026-07-02 (commit 79d3a14)
+
+The stack-gated suite was run on a real local Supabase stack: **16/16 tests, 5/5 suites GREEN.** Migrations `0001→0006` apply cleanly via `db reset`. Unit suite 1505 + tsc still clean; `check:confinement` OK. The first run surfaced four issues **none of which unit tests or tsc could catch** (all fixed in 79d3a14):
+
+1. **`[analytics]` teardown** — the Logflare/Vector containers flake on healthcheck and, when unhealthy, make `supabase start` roll back the *whole* stack. Disabled in `config.toml` (unused by the suite).
+2. **service_role grant gap (same class as B1)** — the no-auto-expose default withholds grants from **all three** Data API roles; the review's B1 fix granted only `anon`+`authenticated`. `service_role` has BYPASSRLS but that does **not** bypass table GRANTs, so the admin client got permission-denied on `profiles`. `0006_grants.sql` now grants `service_role` too. (Confinement is enforced by `service.ts` + the scan, not by withholding DB grants.)
+3. **Concurrency flake** — parallel test files hammer GoTrue's admin API → intermittent `AuthRetryableFetchError`. `test:integration` now runs `--runInBand`.
+4. **env var name mismatch** — `supabase status -o env` emits `API_URL`/`ANON_KEY`/`SERVICE_ROLE_KEY`; `setup.ts` now aliases them to the `NEXT_PUBLIC_SUPABASE_*` names so the documented command works verbatim.
+
+**Verdict: READY TO MERGE — integration green confirmed on a real stack.** Remaining items are the documented pre-public gates (spec §10: drop `exec_sql`, anon TTL) and the 1C prerequisite (async-ify `MetadataStore`).
