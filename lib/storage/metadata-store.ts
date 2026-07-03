@@ -11,4 +11,7 @@ export interface MetadataStore {
   updateVideoFields(p: Principal, id: string, fields: Partial<Video>): Promise<void>;
   bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void>;
   reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void>;
+  /** Remove a video stub from the index. No-op if the id is not present.
+   *  Used to roll back a claimVideoSlot reservation when pipeline processing fails. */
+  deleteVideo(p: Principal, videoId: string): Promise<void>;
 }

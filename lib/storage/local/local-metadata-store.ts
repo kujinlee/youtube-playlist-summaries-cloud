@@ -36,6 +36,12 @@ export class LocalFsMetadataStore implements MetadataStore {
   async bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void> {
     for (const { videoId, fields } of patches) indexStore.updateVideoFields(p.indexKey, videoId, fields);
   }
+  async deleteVideo(p: Principal, videoId: string): Promise<void> {
+    const idx = indexStore.readIndex(p.indexKey);
+    const filtered = idx.videos.filter((v) => v.id !== videoId);
+    if (filtered.length === idx.videos.length) return; // id not present — no-op
+    indexStore.writeIndex(p.indexKey, { ...idx, videos: filtered });
+  }
   async reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void> {
     const present = new Set(currentPlaylistIds);
     const idx = indexStore.readIndex(p.indexKey);

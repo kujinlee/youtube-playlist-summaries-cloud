@@ -302,6 +302,10 @@ export async function runIngestion(
     }
     const meta = metas[i];
     const playlistPos = i + 1;
+    // Tracks whether claimVideoSlot reserved a stub for this video in this run.
+    // Set to false again once upsertVideo commits the full record — after that point
+    // the video is fully indexed and must NOT be deleted on failure.
+    let slotReservedThisRun = false;
     try {
       assertVideoId(meta.videoId); // defense-in-depth before any path construction
 
@@ -313,6 +317,7 @@ export async function runIngestion(
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Fetching transcript…', current: newIndex, total: newTotal });
       const { serialNumber } = await store.claimVideoSlot(principal, meta.videoId);
+      slotReservedThisRun = true;
       const slug = slugify(meta.title);
       let baseSlug = slug;
       let counter = 2;
@@ -358,6 +363,7 @@ export async function runIngestion(
       await store.upsertVideo(principal, video);
       // Mark as processed so within-run duplicates (same video appearing twice in the playlist) are skipped.
       alreadyIndexed.add(meta.videoId);
+      slotReservedThisRun = false; // fully committed — nothing to roll back
 
       // Pre-generate the summary HTML doc so it opens instantly (no on-demand Gemini wait).
       // Best-effort: the .md is already written and the video already upserted, so a transform
@@ -378,6 +384,11 @@ export async function runIngestion(
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Saved', current: newIndex, total: newTotal });
     } catch (err) {
+      // Roll back the reserved stub so the video is retried on the next sync.
+      // Best-effort: a delete failure must not shadow the original error.
+      if (slotReservedThisRun) {
+        try { await store.deleteVideo(principal, meta.videoId); } catch { /* ignore */ }
+      }
       const log = err instanceof Error ? err.message : String(err);
       onProgress({ type: 'error', videoId: meta.videoId, title: meta.title, log });
     }

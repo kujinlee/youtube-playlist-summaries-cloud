@@ -8,7 +8,7 @@ export class LocalFsBlobStore implements BlobStore {
   private abs(p: Principal, key: string): string { assertLogicalKey(key); return path.join(p.indexKey, key); }
 
   // contentType unused locally but required by the BlobStore interface (cloud impls will use it)
-  async put(p: Principal, key: string, bytes: Buffer, _contentType?: string): Promise<void> {
+  async put(p: Principal, key: string, bytes: Buffer, _contentType: string): Promise<void> {
     const dest = this.abs(p, key); fs.mkdirSync(path.dirname(dest), { recursive: true });
     const tmp = dest + '.' + crypto.randomUUID() + '.tmp';
     try { fs.writeFileSync(tmp, bytes); fs.renameSync(tmp, dest); }
@@ -20,13 +20,17 @@ export class LocalFsBlobStore implements BlobStore {
     catch (e: any) { if (e.code === 'ENOENT') return null; throw e; }
   }
 
-  async exists(p: Principal, key: string): Promise<boolean> { return (await this.get(p, key)) !== null; }
+  async exists(p: Principal, key: string): Promise<boolean> {
+    try { fs.statSync(this.abs(p, key)); return true; }
+    catch (e: any) { if (e.code === 'ENOENT') return false; throw e; }
+  }
 
   async delete(p: Principal, key: string): Promise<void> {
     try { fs.unlinkSync(this.abs(p, key)); } catch (e: any) { if (e.code !== 'ENOENT') throw e; }
   }
 
   async putStaged(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<StagedRef> {
+    assertLogicalKey(key);  // validate before building tempKey — a leading '/' on key wouldn't appear on tempKey
     const tempKey = `_staging/${crypto.randomUUID()}/${key}`;
     await this.put(p, tempKey, bytes, contentType);
     return { principal: p, tempKey, finalKey: key };

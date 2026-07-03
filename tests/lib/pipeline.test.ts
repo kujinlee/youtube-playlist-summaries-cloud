@@ -135,6 +135,33 @@ describe('runIngestion', () => {
     expect(events[events.length - 1]).toMatchObject({ type: 'done' });
   });
 
+  it('rolls back the reserved stub when summary generation fails for a new video', async () => {
+    // RED → GREEN: claimVideoSlot writes a stub; if writeSummaryDoc throws, deleteVideo must remove it
+    // so the video is eligible to retry on the next sync (alreadyIndexed skips it otherwise).
+    const indexVideos: Video[] = [];
+    mockUpsertVideo.mockImplementation((_folder: string, video: Video) => {
+      const i = indexVideos.findIndex((v) => v.id === video.id);
+      if (i >= 0) indexVideos[i] = video; else indexVideos.push(video);
+    });
+    // deleteVideo in LocalFsMetadataStore calls writeIndex to persist the filtered list
+    mockWriteIndex.mockImplementation((_folder: string, idx: { videos: Video[] }) => {
+      indexVideos.length = 0;
+      indexVideos.push(...idx.videos);
+    });
+    mockReadIndex.mockImplementation(() => ({ playlistUrl: PLAYLIST_URL, outputFolder, videos: [...indexVideos] }));
+
+    mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1')]);
+    mockFetchTranscriptSegments.mockResolvedValue([{ text: 't', offset: 0, duration: 5 }]);
+    mockGenerateSummary.mockRejectedValueOnce(new Error('Gemini down'));
+
+    const events: ProgressEvent[] = [];
+    await runIngestion(PLAYLIST_URL, outputFolder, (e) => events.push(e));
+
+    expect(events.some((e) => e.type === 'error' && 'videoId' in e && e.videoId === 'vid1')).toBe(true);
+    // Stub must have been rolled back — vid1 absent from the index so a subsequent sync retries it
+    expect(indexVideos.find((v) => v.id === 'vid1')).toBeUndefined();
+  });
+
   it('upserts all successfully processed videos to the index', async () => {
     mockFetchPlaylistVideos.mockResolvedValue([makeVideoMeta('vid1'), makeVideoMeta('vid2')]);
     mockFetchTranscriptSegments.mockResolvedValue([{ text: 'transcript', offset: 0, duration: 5 }]);

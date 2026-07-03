@@ -32,6 +32,14 @@ test('putStaged + promote makes the final key readable', async () => {
   expect((await store.get(pr, 'out.html'))?.toString()).toBe('<x>');
 });
 
-test('rejects traversal keys', async () => {
+test('rejects traversal keys — put', async () => {
   await expect(store.put(p(), '../escape', Buffer.from('x'), 'text/plain')).rejects.toThrow();
+  await expect(store.put(p(), '/absolute', Buffer.from('x'), 'text/plain')).rejects.toThrow();
+  await expect(store.put(p(), 'a/../../etc', Buffer.from('x'), 'text/plain')).rejects.toThrow();
+});
+
+test('rejects traversal keys — putStaged', async () => {
+  await expect(store.putStaged(p(), '../escape', Buffer.from('x'), 'text/plain')).rejects.toThrow();
+  await expect(store.putStaged(p(), '/absolute', Buffer.from('x'), 'text/plain')).rejects.toThrow();
+  await expect(store.putStaged(p(), 'a/../../etc', Buffer.from('x'), 'text/plain')).rejects.toThrow();
 });
