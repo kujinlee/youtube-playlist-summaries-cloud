@@ -12,19 +12,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { resolveSlideTokens, pickLargestFrom } from '@/lib/dig/slides';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { localPrincipal } from '@/lib/storage/principal';
 
 // Helper: make execFile a typed mock.
 const mockExecFile = execFile as unknown as jest.Mock;
 
+// tmpOutFolder is the "outputFolder" equivalent; tmpAssetsRoot = tmpOutFolder/assets.
+// localBlobStore.put uses principal.indexKey = tmpOutFolder, key = 'assets/videoId/assetName'
+// → physical path = path.join(tmpOutFolder, 'assets', videoId, assetName) = path.join(tmpAssetsRoot, videoId, assetName).
+// All existing path assertions (path.join(tmpAssetsRoot, ...)) remain correct after the change.
+let tmpOutFolder: string;
 let tmpAssetsRoot: string;
 
 // Create a unique temp dir per test run; remove it after all tests complete.
 beforeAll(() => {
-  tmpAssetsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'slides-test-'));
+  tmpOutFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'slides-test-'));
+  tmpAssetsRoot = path.join(tmpOutFolder, 'assets');
+  fs.mkdirSync(tmpAssetsRoot, { recursive: true });
 });
 
 afterAll(() => {
-  fs.rmSync(tmpAssetsRoot, { recursive: true, force: true });
+  fs.rmSync(tmpOutFolder, { recursive: true, force: true });
 });
 
 // Rebuild VALID_OPTS using the temp dir so it is always fresh.
@@ -456,4 +465,45 @@ test('prune prefix is hyphen-bounded: section 16 does not touch section 160 asse
   mockFfmpegPipeline('', [100]);
   await resolveSlideTokens('x [[SLIDE:17|21|S]]', { ...getOpts(), startSec: 16, endSec: 80, sectionId: 16 });
   expect(fs.existsSync(path.join(dir, '160-1-5.jpg'))).toBe(true); // 160-* untouched by section 16
+});
+
+// ─── BlobStore injection: verify logical key format ─────────────────────────
+
+test('routes slide write through blobStore.put with key assets/<videoId>/<assetName>', async () => {
+  // sectionId=300, token.sec=352, endComponent=356 → key = 'assets/abc12345678/300-352-356.jpg'
+  mockFfmpegPipeline('', [100]);
+  const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
+  const fakeBlobStore = Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put: fakePut }) as typeof localBlobStore;
+  const principal = localPrincipal(tmpOutFolder);
+  await resolveSlideTokens('see [[SLIDE:352|Loop]]', {
+    ...getOpts(),
+    blobStore: fakeBlobStore,
+    principal,
+  });
+  expect(fakePut).toHaveBeenCalledWith(
+    principal,
+    'assets/abc12345678/300-352-356.jpg',
+    expect.any(Buffer),
+    'image/jpeg',
+  );
+});
+
+test('slide key uses sectionId-start-end format: assets/<videoId>/300-171-181.jpg', async () => {
+  mockFfmpegPipeline('', [100]);
+  const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
+  const fakeBlobStore = Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put: fakePut }) as typeof localBlobStore;
+  const principal = localPrincipal(tmpOutFolder);
+  await resolveSlideTokens('x [[SLIDE:171|181|S]]', {
+    ...getOpts(),
+    startSec: 160,
+    endSec: 233,
+    blobStore: fakeBlobStore,
+    principal,
+  });
+  expect(fakePut).toHaveBeenCalledWith(
+    principal,
+    'assets/abc12345678/300-171-181.jpg',
+    expect.any(Buffer),
+    'image/jpeg',
+  );
 });

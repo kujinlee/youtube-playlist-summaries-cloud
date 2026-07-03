@@ -1,28 +1,32 @@
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import type { Browser, BrowserContext, Page } from 'playwright';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import type { BlobStore } from '@/lib/storage/blob-store';
+import type { Principal } from '@/lib/storage/principal';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
- * Render a self-contained HTML doc to a PDF via headless Chromium and save it atomically.
+ * Render a self-contained HTML doc to a PDF via headless Chromium and save it via blobStore.
  *
  * - Locked-down context: JS disabled and all non-`data:` requests blocked — a static, self-contained
  *   doc (inline CSS + base64 images) needs neither, and this shrinks the blast radius.
  * - Print media emulated so the doc's `@media print` rules apply (🖨️/theme/zoom controls hidden).
- * - Atomic write: UUID temp file in the same dir → rename; temp removed on any failure.
+ * - The rendered PDF bytes are written atomically via blobStore (LocalFsBlobStore uses temp+rename;
+ *   cloud impls upload directly).
  * - Cooperative timeout: the render is raced against a timer. On timeout the `finally` closes the
- *   browser (canceling any pending op) and a `timedOut` guard blocks a late write/rename, so a hung
+ *   browser (canceling any pending op) and a `timedOut` guard blocks a late write, so a hung
  *   Chromium can never resurrect and write after the job already reported failure. The dangling render
  *   promise gets a no-op `.catch` so its post-close rejection is not an unhandled rejection.
  */
-export async function generateDocPdf(html: string, absOutPath: string, opts: { timeoutMs?: number } = {}): Promise<void> {
+export async function generateDocPdf(
+  html: string,
+  principal: Principal,
+  key: string,
+  opts: { blobStore?: BlobStore; timeoutMs?: number } = {},
+): Promise<void> {
+  const blobStore = opts.blobStore ?? localBlobStore;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const { chromium } = await import('playwright'); // lazy: only load the driver when a PDF is requested
-  const dir = path.dirname(absOutPath);
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = path.join(dir, `.${path.basename(absOutPath, '.pdf')}.${crypto.randomUUID()}.pdf.tmp`);
 
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
@@ -58,8 +62,7 @@ export async function generateDocPdf(html: string, absOutPath: string, opts: { t
       await page!.emulateMedia({ media: 'print' });
       const buf = await page!.pdf({ printBackground: true, format: 'A4' });
       if (timedOut) return; // the timeout path already won — never write after reporting failure
-      fs.writeFileSync(tmp, buf);
-      fs.renameSync(tmp, absOutPath);
+      await blobStore.put(principal, key, buf, 'application/pdf');
     })();
     // If the timeout wins the race, `render` will reject later when the browser is closed in finally;
     // this handler keeps that from becoming an unhandled rejection.
@@ -68,10 +71,9 @@ export async function generateDocPdf(html: string, absOutPath: string, opts: { t
     await Promise.race([render, timeout]);
   } finally {
     if (timer) clearTimeout(timer);
-    // Close the browser FIRST so a hung/pending render is actually canceled, then clean the temp.
+    // Close the browser FIRST so a hung/pending render is actually canceled.
     if (page) { try { await page.close(); } catch { /* ignore */ } }
     if (context) { try { await context.close(); } catch { /* ignore */ } }
     if (browser) { try { await browser.close(); } catch { /* ignore */ } }
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* ignore */ }
   }
 }

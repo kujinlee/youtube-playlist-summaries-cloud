@@ -87,11 +87,10 @@ export async function POST(request: Request, { params }: Params) {
     abandon();
     return NextResponse.json({ error: 'invalid path' }, { status: 400 });
   }
-  const absOut = path.resolve(outputFolder, rel);
 
   emitJobEvent(jobId, { type: 'start' });
   emitJobEvent(jobId, { type: 'step', step: 'Rendering PDF…', current: 1, total: 1 });
-  generateDocPdf(build.html, absOut)
+  generateDocPdf(build.html, principal, rel)
     .then(() => {
       if (finished) return;
       emitJobEvent(jobId, { type: 'done', total: 1, current: 1, log: path.basename(rel) });

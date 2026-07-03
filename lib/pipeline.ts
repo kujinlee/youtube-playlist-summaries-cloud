@@ -5,6 +5,9 @@ import { generateSummary, extractQuickView } from './gemini';
 import { resolveTranscriptSegments } from './transcript-source';
 import { assertVideoId } from './index-store';
 import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { localPrincipal } from '@/lib/storage/principal';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import type { BlobStore } from '@/lib/storage/blob-store';
 import { slugify } from './slugify';
 import { applySerial, padSerial } from './serial-filename';
 import { checkSummaryCompleteness } from './summary-completeness';
@@ -25,6 +28,7 @@ export interface SummaryDocInput {
   durationSeconds: number;
   outputFolder: string;
   baseName: string;
+  blobStore?: BlobStore;
 }
 export interface SummaryDocResult {
   language: 'en' | 'ko';
@@ -44,7 +48,7 @@ export interface SummaryDocResult {
  * <baseName>.md. Shared by ingestion (new slug) and re-summarize (existing baseName).
  */
 export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDocResult> {
-  const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName } = input;
+  const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName, blobStore = localBlobStore } = input;
   const { segments } = await resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds);
   const transcript = segments.map((s) => s.text).join(' '); // plain text for language detection only
   const language = detectLanguage(transcript);
@@ -99,7 +103,7 @@ export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDo
     }
   }
 
-  await fs.promises.writeFile(path.join(outputFolder, `${baseName}.md`), mdContent, 'utf-8');
+  await blobStore.put(localPrincipal(outputFolder), `${baseName}.md`, Buffer.from(mdContent, 'utf-8'), 'text/markdown');
   return { language, ratings, overallScore, videoType, audience, tags, tldr: outTldr, takeaways: outTakeaways, mdContent, summaryMd: `${baseName}.md` };
 }
 

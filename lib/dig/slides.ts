@@ -24,6 +24,10 @@ import path from 'node:path';
 import util from 'node:util';
 import { assertVideoId } from '@/lib/index-store';
 import { parseSlideTokens, type SlideToken } from '@/lib/dig/slide-tokens';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { localPrincipal } from '@/lib/storage/principal';
+import type { BlobStore } from '@/lib/storage/blob-store';
+import type { Principal } from '@/lib/storage/principal';
 
 const execFileAsync = util.promisify(_execFile);
 
@@ -66,16 +70,24 @@ export interface ResolveSlideTokensOpts {
   endSec: number;
   assetsRoot: string;
   sectionId: number;
+  /** BlobStore to persist the captured frame. Defaults to `localBlobStore`. */
+  blobStore?: BlobStore;
+  /**
+   * Principal for the blobStore write. Defaults to `localPrincipal(path.dirname(assetsRoot))`,
+   * which resolves to the outputFolder when assetsRoot = path.join(outputFolder, 'assets').
+   */
+  principal?: Principal;
 }
 
 /** Download [startSec, winEnd], sample the whole window, but select the largest (most-built)
  *  frame only from the trailing TRAIL_SEC seconds. Trailing-only because Gemini's `end` reliably
  *  brackets the slide while `start` can be early (previous slide lingers at the leading edge).
- *  Returns the chosen frame's absolute timestamp (pickedSec). SECURITY: trusts outPath. */
+ *  Returns the chosen frame's bytes and absolute timestamp (pickedSec).
+ *  The caller is responsible for persisting the bytes (e.g. via blobStore.put). */
 async function captureSlideFrame(opts: {
-  youtubeUrl: string; startSec: number; endSec: number | null; outPath: string;
-}): Promise<number> {
-  const { youtubeUrl, startSec, endSec, outPath } = opts;
+  youtubeUrl: string; startSec: number; endSec: number | null;
+}): Promise<{ pickedSec: number; bytes: Buffer }> {
+  const { youtubeUrl, startSec, endSec } = opts;
   const cacheDir = path.resolve('.cache');
   fs.mkdirSync(cacheDir, { recursive: true });
   const rawEnd = endSec != null && endSec > startSec
@@ -99,11 +111,11 @@ async function captureSlideFrame(opts: {
     let best = pickLargestFrom(framesDir, minOrdinal);
     if (!best) best = pickLargestFrom(framesDir, 1);   // tiny window → fall back to whole sample
     if (!best) throw new Error('no frames sampled');
-    fs.copyFileSync(best, outPath);
+    const bytes = fs.readFileSync(best);
     const ord = parseInt(path.basename(best).match(/(\d+)\.jpg$/)![1], 10);
     let pickedSec = startSec + (ord - 1) / SAMPLE_FPS;
     pickedSec = Math.min(Math.max(pickedSec, startSec), winEnd);     // clamp
-    return Math.round(pickedSec * 10) / 10;
+    return { pickedSec: Math.round(pickedSec * 10) / 10, bytes };
   } finally {
     fs.rmSync(framesDir, { recursive: true, force: true });
     try { fs.unlinkSync(clip); } catch { /* ignore */ }
@@ -128,6 +140,8 @@ export async function resolveSlideTokens(
   opts: ResolveSlideTokensOpts,
 ): Promise<{ markdown: string; slides: Array<{ startSec: number; endSec: number; pickedSec: number }> }> {
   const { videoId, startSec, endSec, assetsRoot, sectionId } = opts;
+  const blobStore = opts.blobStore ?? localBlobStore;
+  const principal = opts.principal ?? localPrincipal(path.dirname(path.resolve(assetsRoot)));
 
   // Always validate videoId first — throws on traversal chars or invalid format.
   assertVideoId(videoId);
@@ -168,9 +182,10 @@ export async function resolveSlideTokens(
       usedNames.delete(assetName);
       continue;
     }
-    fs.mkdirSync(path.resolve(assetsRoot, videoId), { recursive: true });
+    const logicalKey = `assets/${videoId}/${assetName}`;
     try {
-      const pickedSec = await captureSlideFrame({ youtubeUrl, startSec: token.sec, endSec: token.endSec, outPath: assetPath });
+      const { pickedSec, bytes } = await captureSlideFrame({ youtubeUrl, startSec: token.sec, endSec: token.endSec });
+      await blobStore.put(principal, logicalKey, bytes, 'image/jpeg');
       written.add(assetName);  // M3: record successful capture for post-loop prune
       const imgRef = `![${token.caption}](assets/${videoId}/${assetName})`;
       const escapedRaw = token.raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -120,7 +120,7 @@ export async function buildDocHtml(
     return { ok: true, html: UNAVAILABLE_HTML };
   }
 
-  const envelope = readModelEnvelope(outputFolder, base);
+  const envelope = await readModelEnvelope(outputFolder, base);
 
   let dug: ReturnType<typeof parseDugSections> = [];
   if (digDeeperPath !== null) {
