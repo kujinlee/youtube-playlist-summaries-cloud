@@ -396,15 +396,46 @@ export function delayedStore(inner: MetadataStore = new LocalFsMetadataStore()):
 }
 ```
 
+**Enumerate behaviors first** (per the per-task checklist) — the delayed-async fake must exercise:
+
+| # | Behavior | Trigger | Expected |
+|---|---|---|---|
+| 1 | A missed `await` throws | `.videos`/`.map`/`.length`/`.has` on an unresolved Promise | test fails loudly (regression caught) |
+| 2 | Full sync completes under delay | run pipeline with `delayedStore()` | index has each video with `serialNumber` + `playlistIndex` set |
+| 3 | Re-run is idempotent | run the same sync twice | no duplicate video entries; `alreadyIndexed` skip path taken |
+
+**Reuse the existing harness:** `tests/lib/pipeline.test.ts` (60 KB) already mocks `lib/gemini` + `lib/youtube` and drives the pipeline entrypoint. Copy its mock setup verbatim; the only change is injecting `delayedStore()` as the store. Do NOT invent mock shapes — mirror `pipeline.test.ts`.
+
 ```ts
-// tests/lib/pipeline-async.test.ts — assert pipeline drives the store correctly under delay.
-// Mock lib/gemini + lib/youtube at the lib boundary; inject delayedStore via the pipeline's
-// store accessor (getStorageBundle().metadataStore — mock getStorageBundle to return delayedStore()).
-// Assert: after a sync run, the index has the expected videos with serialNumber/playlistIndex set,
-// and NO test observes an unresolved Promise (e.g. `.videos` never read off a Promise).
+// tests/lib/pipeline-async.test.ts
+// ... copy the lib/gemini + lib/youtube jest.mock(...) blocks and the pipeline import
+//     from tests/lib/pipeline.test.ts (same fixtures, same entrypoint) ...
+
+// Task 4: pipeline imports `localMetadataStore` directly → jest.mock that module to return delayedStore().
+// Task 7 (later): pipeline switches to getStorageBundle() → change the mock target to '@/lib/storage/resolve'.
+jest.mock('@/lib/storage/local/local-metadata-store', () => {
+  const { delayedStore } = require('../lib/storage/delayed-async-fake'); // tests/lib/storage/delayed-async-fake.ts
+  return { localMetadataStore: delayedStore() };
+});
+
+test('sync under a delayed store completes and stamps serialNumber + playlistIndex', async () => {
+  const outputFolder = /* tmp dir as in pipeline.test.ts */;
+  await runPipeline(/* same args as pipeline.test.ts happy-path */);      // entrypoint from pipeline.test.ts
+  const idx = readIndexFromDisk(outputFolder);
+  expect(idx.videos.length).toBeGreaterThan(0);
+  expect(idx.videos.every(v => typeof v.serialNumber === 'number')).toBe(true);
+  expect(idx.videos.every(v => typeof v.playlistIndex === 'number')).toBe(true);
+});
+
+test('re-running the sync does not duplicate videos (alreadyIndexed skip)', async () => {
+  const outputFolder = /* tmp dir */;
+  await runPipeline(/* args */); const first = readIndexFromDisk(outputFolder).videos.length;
+  await runPipeline(/* same args */); const second = readIndexFromDisk(outputFolder).videos.length;
+  expect(second).toBe(first);
+});
 ```
 
-> The pipeline obtains its store via `getStorageBundle().metadataStore` after Task 7; until then it imports `localMetadataStore`. Sequence note: if executing strictly in order, in Task 4 the pipeline still imports `localMetadataStore` directly — mock that module in the test. Task 7 swaps the accessor and this test's mock target changes to `getStorageBundle`.
+> The fake lives at `tests/lib/storage/delayed-async-fake.ts` (Step 1). `pipeline-async.test.ts` sits at `tests/lib/pipeline-async.test.ts`, so the relative import is `../lib/storage/delayed-async-fake`.
 
 - [ ] **Step 2: Run — expect FAIL** (consumers still sync)
 
@@ -564,7 +595,13 @@ git commit -m "feat(storage): BlobStore contract + LocalFsBlobStore (temp->renam
 - Consumes: `BlobStore` (Task 5). Each module obtains it via a parameter/accessor — pass `blobStore` in, defaulting to `localBlobStore`, so tests inject a fake and Task 7 can swap the bundle.
 
 Rules:
-- Compute the **logical key** in the calling module exactly as today's relative path (e.g. MD `` `${baseName}.md` ``, model `` `models/${id}.json` ``, HTML `htmlFilename`, PDF `` `${baseName}.pdf` ``, slide `` `${videoId}/slide-NN.png` ``). Physical mapping is the store's job.
+- Compute the **logical key** in the calling module exactly as today's relative path. **Verify each against the current code — do not guess:**
+  - MD `` `${baseName}.md` `` (`pipeline.ts:103`)
+  - model JSON `` `models/${id}.json` `` (`html-doc/model-store.ts`)
+  - HTML `htmlFilename` (`html-doc/generate.ts`, `rerender.ts`)
+  - PDF `` `${baseName}.pdf` `` (`pdf/generate-doc-pdf.ts`)
+  - **slide image `` `assets/${videoId}/${assetName}` `` where `assetName` = `` `${sectionId}-${sec}-${end}.jpg` `` (F8 — `dig/slides.ts:158,163,175`, `dig-section.ts:67` writes under `<outputFolder>/assets/<videoId>/`). NOT `${videoId}/slide-NN.png`. The `assets/` prefix is load-bearing: `render-dig-deeper.ts` markdown refs and its containment check both require it.**
+  Physical mapping is the store's job (`LocalFsBlobStore` = `join(indexKey, key)`).
 - Keep **scratch/cache on direct FS** — do NOT touch `lib/dig/slide-crop-cache.ts` or `.cache` writes.
 - Local behavior must be byte-for-byte identical → the existing module tests must stay green.
 - In 1C, consumers use `blobStore.put`/`get` only (not `putStaged`/`promote` — the staged flow is cloud-only, tested in Task 12). This keeps the extraction behavior-preserving.
@@ -679,7 +716,26 @@ export function getPrincipalFromSession(session: { userId: string | null }, inde
 
 Update consumers: `const { metadataStore, blobStore } = getStorageBundle();` at each entry point that currently imports the local singletons. (Routes stay on `getPrincipal(indexKey)` — do NOT wire `getPrincipalFromSession` into routes in 1C.)
 
-> This step forward-references `SupabaseMetadataStore`/`SupabaseBlobStore` (Tasks 9-10). If executing strictly in order, create minimal stub classes now (`constructor(){} ` throwing `not implemented`) so `tsc` passes, and fill them in Tasks 9-10. Note the stub in the commit message.
+> This step forward-references `SupabaseMetadataStore`/`SupabaseBlobStore` (Tasks 9-10). If executing strictly in order, create stub classes that **implement every interface method** (an empty-constructor class does NOT satisfy `MetadataStore`/`BlobStore` — `tsc` fails, F1). Each method throws. Fill them in Tasks 9-10. Note the stub in the commit message.
+>
+> ```ts
+> // lib/storage/supabase/supabase-metadata-store.ts (stub — replaced in Task 9)
+> import type { SupabaseClient } from '@supabase/supabase-js';
+> import type { MetadataStore } from '@/lib/storage/metadata-store';
+> const NI = () => { throw new Error('not implemented — stub for Task 7; filled in Task 9'); };
+> export class SupabaseMetadataStore implements MetadataStore {
+>   constructor(_client: SupabaseClient) {}
+>   readIndex = NI as MetadataStore['readIndex'];
+>   setPlaylistMeta = NI as MetadataStore['setPlaylistMeta'];
+>   claimVideoSlot = NI as MetadataStore['claimVideoSlot'];
+>   upsertVideo = NI as MetadataStore['upsertVideo'];
+>   updateVideoFields = NI as MetadataStore['updateVideoFields'];
+>   bulkUpdateVideoFields = NI as MetadataStore['bulkUpdateVideoFields'];
+>   reconcilePlaylistMembership = NI as MetadataStore['reconcilePlaylistMembership'];
+> }
+> // lib/storage/supabase/supabase-blob-store.ts (stub — replaced in Task 10): same pattern for
+> // put/get/exists/delete/putStaged/promote (6 methods), constructor(_client, _bucket).
+> ```
 
 - [ ] **Step 4:** `npx tsc --noEmit && npm test` → PASS.
 - [ ] **Step 5: Commit**
@@ -700,7 +756,7 @@ git commit -m "feat(storage): getStorageBundle backend selection + getPrincipalF
 - Test: `tests/integration/storage-policy.test.ts` (asserts bucket + policy exist; full cross-user tests in Task 12)
 
 **Interfaces:**
-- Produces: `artifacts` private bucket + `storage.objects` RLS; RPCs `claim_video_slot(p_playlist_id uuid, p_video_id text)` and `reconcile_membership(p_playlist_id uuid, p_present text[])`.
+- Produces: `artifacts` private bucket + `storage.objects` RLS; RPCs `claim_video_slot(p_playlist_id uuid, p_video_id text)`, `reconcile_membership(p_playlist_id uuid, p_present text[])`, `merge_video_data(p_playlist_id uuid, p_video_id text, p_fields jsonb)`, and `merge_video_data_bulk(p_playlist_id uuid, p_patches jsonb)`.
 
 - [ ] **Step 1: Write the SQL**
 
@@ -713,6 +769,9 @@ insert into storage.buckets (id, name, public) values ('artifacts', 'artifacts',
 
 -- storage.objects RLS: first path segment must equal auth.uid(); service_role full access.
 -- name is like '<owner_id>/<playlist_key>/<key>'. split_part(name,'/',1) = owner segment.
+-- `anon` is INTENTIONAL (F5): the parent architecture (§7/§8) mandates real anonymous guest
+-- sessions for the /try path, which will write blobs under their own anon uid. When unsigned,
+-- auth.uid() is NULL so split_part(...) = NULL is UNKNOWN → denied. Isolation holds for anon too.
 create policy "artifacts_owner_rw" on storage.objects
   for all to authenticated, anon
   using (bucket_id = 'artifacts' and split_part(name, '/', 1) = auth.uid()::text)
@@ -762,6 +821,54 @@ begin
 end $$;
 revoke all on function reconcile_membership(uuid, text[]) from public;
 grant execute on function reconcile_membership(uuid, text[]) to authenticated, service_role;
+
+-- merge_video_data: owner-guarded jsonb field merge. ARTIFACTS-AWARE (F6): the top-level
+-- `artifacts` object is deep-merged one level (so writing one artifact kind never clobbers
+-- sibling kinds); every other key is a plain shallow merge. Write-once fields (videoPublishedAt/
+-- addedToPlaylistAt) are preserved by the caller passing the already-`??`-guarded value (F2b);
+-- the accompanying integration test (Task 11) proves re-sync does not overwrite them.
+create function merge_video_data(p_playlist_id uuid, p_video_id text, p_fields jsonb)
+  returns void language plpgsql security invoker set search_path = public as $$
+begin
+  perform 1 from playlists
+    where id = p_playlist_id and (owner_id = auth.uid() or auth.role() = 'service_role');
+  if not found then raise exception 'not authorized for playlist %', p_playlist_id; end if;
+
+  update videos set
+    data = (data || (p_fields - 'artifacts'))
+      || case when p_fields ? 'artifacts'
+           then jsonb_build_object('artifacts',
+                  coalesce(data->'artifacts', '{}'::jsonb) || (p_fields->'artifacts'))
+           else '{}'::jsonb end,
+    updated_at = now()
+   where playlist_id = p_playlist_id and video_id = p_video_id;
+end $$;
+revoke all on function merge_video_data(uuid, text, jsonb) from public;
+grant execute on function merge_video_data(uuid, text, jsonb) to authenticated, service_role;
+
+-- merge_video_data_bulk: apply merge_video_data semantics to many videos in ONE transaction.
+-- p_patches = jsonb array of { "video_id": text, "fields": jsonb }.
+create function merge_video_data_bulk(p_playlist_id uuid, p_patches jsonb)
+  returns void language plpgsql security invoker set search_path = public as $$
+declare it jsonb;
+begin
+  perform 1 from playlists
+    where id = p_playlist_id and (owner_id = auth.uid() or auth.role() = 'service_role');
+  if not found then raise exception 'not authorized for playlist %', p_playlist_id; end if;
+
+  for it in select * from jsonb_array_elements(p_patches) loop
+    update videos set
+      data = (data || ((it->'fields') - 'artifacts'))
+        || case when (it->'fields') ? 'artifacts'
+             then jsonb_build_object('artifacts',
+                    coalesce(data->'artifacts', '{}'::jsonb) || ((it->'fields')->'artifacts'))
+             else '{}'::jsonb end,
+      updated_at = now()
+     where playlist_id = p_playlist_id and video_id = it->>'video_id';
+  end loop;
+end $$;
+revoke all on function merge_video_data_bulk(uuid, jsonb) from public;
+grant execute on function merge_video_data_bulk(uuid, jsonb) to authenticated, service_role;
 ```
 
 - [ ] **Step 2: Apply + verify** (requires local stack)
@@ -887,9 +994,8 @@ export class SupabaseMetadataStore implements MetadataStore {
 
   async updateVideoFields(p: Principal, videoId: string, fields: Partial<Video>): Promise<void> {
     const id = await this.requirePlaylistId(p);
-    // jsonb merge: fetch-merge-write is unsafe; use an RPC or the `||` operator via .rpc.
-    // Prefer a small merge RPC (add to 0007 if needed) OR: read data, spread, update in one round-trip
-    // guarded by updated_at optimistic check. Simplest correct 1C form: merge RPC `merge_video_data`.
+    // Server-side jsonb merge via the artifacts-aware merge_video_data RPC (Task 8) — avoids a
+    // read-modify-write race (F4) and deep-merges the `artifacts` sub-object (F6).
     const { error } = await this.client.rpc('merge_video_data', { p_playlist_id: id, p_video_id: videoId, p_fields: fields });
     if (error) throw error;
   }
@@ -914,7 +1020,7 @@ export class SupabaseMetadataStore implements MetadataStore {
 }
 ```
 
-> **Add `merge_video_data` + `merge_video_data_bulk` RPCs to `0007`** (jsonb `data = data || p_fields`, owner-guarded) — updating jsonb by `||` server-side avoids a read-modify-write race (F4). Go back to Task 8's migration and add them before running Task 9's integration coverage. (Both are `security invoker`, granted to `authenticated, service_role`.)
+> `merge_video_data` + `merge_video_data_bulk` are defined as first-class content in Task 8's `0007` migration (artifacts-aware deep merge, owner-guarded). No retroactive migration edit is needed — Task 8 ships them.
 
 - [ ] **Step 4: Run unit tests + `tsc`** → PASS.
 - [ ] **Step 5: Commit**
@@ -1091,6 +1197,34 @@ test('setPlaylistMeta create then update; claimVideoSlot allocates position+seri
 
 test('bulkUpdateVideoFields preserves all three fields + array order', async () => { /* per spec §8 case 5 */ });
 
+test('write-once fields survive re-sync (F2b): second bulkUpdate with the ??-guarded value does not overwrite', async () => {
+  const s = await storeForNewUser();
+  await s.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
+  await s.claimVideoSlot(P, 'vidAAAAAAAA');
+  await s.upsertVideo(P, { id: 'vidAAAAAAAA', youtubeUrl: 'https://youtu.be/vidAAAAAAAA', serialNumber: 1 } as any);
+  // first sync sets the write-once fields
+  await s.bulkUpdateVideoFields(P, [{ videoId: 'vidAAAAAAAA', fields: { videoPublishedAt: '2020-01-01T00:00:00Z', addedToPlaylistAt: '2020-02-01T00:00:00Z', playlistIndex: 1 } as any }]);
+  // second sync: caller re-applies the ?? guard → passes the SAME existing value → no overwrite
+  const cur = (await s.readIndex(P)).videos[0];
+  await s.bulkUpdateVideoFields(P, [{ videoId: 'vidAAAAAAAA', fields: { videoPublishedAt: cur.videoPublishedAt, addedToPlaylistAt: cur.addedToPlaylistAt, playlistIndex: 2 } as any }]);
+  const after = (await s.readIndex(P)).videos[0];
+  expect(after.videoPublishedAt).toBe('2020-01-01T00:00:00Z');   // unchanged
+  expect(after.addedToPlaylistAt).toBe('2020-02-01T00:00:00Z');  // unchanged
+  expect(after.playlistIndex).toBe(2);                            // mutable field updated
+});
+
+test('artifacts deep-merge preserves sibling kinds (F6)', async () => {
+  const s = await storeForNewUser();
+  await s.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
+  await s.claimVideoSlot(P, 'vidAAAAAAAA');
+  await s.upsertVideo(P, { id: 'vidAAAAAAAA', youtubeUrl: 'https://youtu.be/vidAAAAAAAA', serialNumber: 1 } as any);
+  await s.updateVideoFields(P, 'vidAAAAAAAA', { artifacts: { summaryMd: { key: 'a.md', status: 'promoted' } } } as any);
+  await s.updateVideoFields(P, 'vidAAAAAAAA', { artifacts: { html: { key: 'a.html', status: 'promoted' } } } as any);
+  const v = (await s.readIndex(P)).videos[0] as any;
+  expect(v.artifacts.summaryMd).toEqual({ key: 'a.md', status: 'promoted' });  // NOT clobbered
+  expect(v.artifacts.html).toEqual({ key: 'a.html', status: 'promoted' });
+});
+
 test('reconcilePlaylistMembership is atomic archive/restore', async () => { /* per §8 case 6 */ });
 
 test('RLS isolation: user B cannot read or write user A rows', async () => {
@@ -1127,7 +1261,7 @@ import { writeArtifact, resolveMissing } from '@/lib/storage/supabase/consistenc
 
 async function blobForNewUser() {
   const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
-  return { blob: new SupabaseBlobStore(client, 'artifacts'), userId };
+  return { blob: new SupabaseBlobStore(client, 'artifacts'), client, userId };
 }
 
 test('put/get round-trip; get absent → null', async () => {
@@ -1144,6 +1278,15 @@ test('Storage RLS: user B cannot read/write/delete A prefix', async () => {
   const { blob: b } = await blobForNewUser();
   expect(await b.get({ id: aId, indexKey: 'listX' }, 'secret.md')).toBeNull();          // read denied → null
   await expect(b.put({ id: aId, indexKey: 'listX' }, 'x.md', Buffer.from('x'), 'text/markdown')).rejects.toBeTruthy(); // write denied
+});
+
+test('Storage RLS list isolation (F5): user B listing the bucket sees none of A prefix', async () => {
+  const { blob: a, userId: aId } = await blobForNewUser();
+  await a.put({ id: aId, indexKey: 'listX' }, 'a/b.md', Buffer.from('s'), 'text/markdown');
+  const { client: bClient } = await blobForNewUser();
+  // list A's prefix via B's client → RLS filters to zero rows
+  const listed = await bClient.storage.from('artifacts').list(`${aId}/listX`);
+  expect(listed.data ?? []).toHaveLength(0);
 });
 
 test('promote is idempotent across a simulated copy-succeeded/delete-failed retry', async () => { /* call promote twice */ });
@@ -1227,4 +1370,6 @@ git commit -m "test(integration): concurrent claimVideoSlot allocates distinct s
 
 **Type consistency:** `claimVideoSlot` returns `{ position, serialNumber }` everywhere (RPC returns `serial_number` → mapped in T9). `Principal.indexKey` used consistently post-T1. `BlobStore` signatures identical in `blob-store.ts`, both impls, and `consistency.ts`. `getStorageBundle(ctx?)` shape matches T7 and its consumers.
 
-**Note for executor (jsonb merge):** T9 references `merge_video_data` / `merge_video_data_bulk` RPCs — these must be added to `0007` (T8) so `updateVideoFields`/`bulkUpdateVideoFields` do server-side `data = data || fields` (avoids the F4 read-modify-write race). If executing strictly in order, add them when reaching T9 and re-run `supabase db reset`.
+**Codex plan review resolved (`docs/reviews/plan-stage-1c-supabase-adapters-codex.md`):** F4 (merge RPCs now first-class in T8), F6 (artifacts-aware deep-merge via `jsonb ||` on the sub-object, unit-tested in T10), F8 (dig slide logical key corrected to `assets/${videoId}/${assetName}` in T6), F1 (T7 stub implements all 13 methods), F2b (write-once re-sync integration test in T11), F5 (anon documented as intentional + list-isolation test in T12), F7 (`pipeline-async.test.ts` written out with a behaviors table + 3 assertions). F2a and F3 (CHECK constraint) were Low/no-fix.
+
+**Note for executor (F6 verification):** the artifacts deep-merge runs in Postgres, so its correctness is proven at **integration** (T11), not in T10's mocked-client unit tests. T10 asserts `writeArtifact` *calls* `updateVideoFields` with `{ artifacts: { [kind]: … } }`; T11 asserts that writing one kind preserves sibling kinds in the actual row (see the added T11 test below).
