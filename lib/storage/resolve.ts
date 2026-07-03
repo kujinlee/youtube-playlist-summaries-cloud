@@ -12,7 +12,8 @@ import { assertOutputFolder } from '@/lib/index-store';
  *  observed by existing mocked-function assertions. */
 export function getPrincipal(outputFolder: string): Principal {
   assertOutputFolder(outputFolder); // guards; resolves internally, returns void
-  return localPrincipal(outputFolder); // raw string preserved
+  const indexKey = outputFolder;    // raw string preserved; renamed for Principal field clarity
+  return localPrincipal(indexKey);
 }
 
 /** The active MetadataStore. Local-only for now; env-selected once the

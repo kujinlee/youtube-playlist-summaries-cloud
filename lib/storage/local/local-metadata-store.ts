@@ -4,19 +4,19 @@ import type { PlaylistIndex, Video } from '@/types';
 import * as indexStore from '@/lib/index-store';
 
 /** Behavior-preserving local implementation: delegates to lib/index-store
- *  using principal.outputFolder. No behavior change vs. calling index-store directly. */
+ *  using principal.indexKey. No behavior change vs. calling index-store directly. */
 export class LocalFsMetadataStore implements MetadataStore {
   readIndex(principal: Principal): PlaylistIndex {
-    return indexStore.readIndex(principal.outputFolder);
+    return indexStore.readIndex(principal.indexKey);
   }
   writeIndex(principal: Principal, index: PlaylistIndex): void {
-    indexStore.writeIndex(principal.outputFolder, index);
+    indexStore.writeIndex(principal.indexKey, index);
   }
   upsertVideo(principal: Principal, video: Video): void {
-    indexStore.upsertVideo(principal.outputFolder, video);
+    indexStore.upsertVideo(principal.indexKey, video);
   }
   updateVideoFields(principal: Principal, id: string, fields: Partial<Video>): void {
-    indexStore.updateVideoFields(principal.outputFolder, id, fields);
+    indexStore.updateVideoFields(principal.indexKey, id, fields);
   }
 }
 

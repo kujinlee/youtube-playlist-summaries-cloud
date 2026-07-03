@@ -17,7 +17,7 @@ function getFilePairs(principal: Principal, store: MetadataStore, videoId: strin
   const video = index.videos.find((v) => v.id === videoId);
   if (!video) return [];
 
-  const base = path.resolve(principal.outputFolder);
+  const base = path.resolve(principal.indexKey);
   const pairs: FilePair[] = [];
 
   for (const relPath of [video.summaryMd]) {
@@ -66,7 +66,7 @@ function getCachedHtmlPaths(principal: Principal, store: MetadataStore, videoId:
   const index = store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
   if (!video) return [];
-  const base = path.resolve(principal.outputFolder);
+  const base = path.resolve(principal.indexKey);
   const out: string[] = [];
   for (const md of [video.summaryMd]) {
     if (!md) continue;
