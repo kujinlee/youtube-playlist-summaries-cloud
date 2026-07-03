@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { assertVideoId } from './index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import type { MetadataStore } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 
@@ -94,7 +94,7 @@ export async function archiveVideo(outputFolder: string, videoId: string): Promi
   // Validate before any filesystem operations (P1: validation-before-mutation)
   const principal = getPrincipal(outputFolder); // replaces assertOutputFolder; guards + preserves raw string
   assertVideoId(videoId);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
 
   // Delete cached HTML BEFORE moving files — index paths are still root-relative at this point.
   for (const p of await getCachedHtmlPaths(principal, store, videoId)) unlinkIfExists(p);
@@ -112,7 +112,7 @@ export async function unarchiveVideo(outputFolder: string, videoId: string): Pro
   // Validate before any filesystem operations (P1: validation-before-mutation)
   const principal = getPrincipal(outputFolder); // replaces assertOutputFolder; guards + preserves raw string
   assertVideoId(videoId);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
 
   for (const { root, archived } of await getFilePairs(principal, store, videoId)) {
     await moveIfExists(archived, root);

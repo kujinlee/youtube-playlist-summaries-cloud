@@ -1,5 +1,5 @@
 import { assertVideoId } from '../index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { generateMagazineModel } from '../gemini';
 import { parseSummaryMarkdown } from './parse';
 import { renderMagazineHtml } from './render';
@@ -15,7 +15,7 @@ export async function runHtmlDoc(
   blobStore: BlobStore = localBlobStore,
 ): Promise<void> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   assertVideoId(videoId);
 
   const index = await store.readIndex(principal);

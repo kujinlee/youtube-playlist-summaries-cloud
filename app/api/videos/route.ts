@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getPrincipal, getMetadataStore } from '../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../lib/storage/resolve';
 import { recoverOrphanedVideos } from '../../../lib/pipeline';
 import type { SortColumn, SortOrder, Video } from '../../../types';
 
@@ -103,7 +103,7 @@ export async function GET(request: Request) {
 
   let index;
   try {
-    index = await getMetadataStore().readIndex(principal);
+    index = await getStorageBundle().metadataStore.readIndex(principal);
   } catch (err) {
     const e = err as { statusCode?: number; message?: string };
     if (e.statusCode === 400) {

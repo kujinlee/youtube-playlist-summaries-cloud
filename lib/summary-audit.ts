@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { checkSummaryCompleteness } from './summary-completeness';
 
 export interface SummaryAuditReport {
@@ -15,7 +15,7 @@ export interface SummaryAuditReport {
  */
 export async function auditSummaries(folder: string): Promise<SummaryAuditReport> {
   const principal = getPrincipal(folder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const { videos } = await store.readIndex(principal);
   const suspects: SummaryAuditReport['suspects'] = [];
   let total = 0;

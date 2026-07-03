@@ -1,13 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { planMigration } from './serial-migrate';
 import { rewriteSourceMdMeta, rewriteEnvelopeSourceMd } from './serial-provenance';
 import type { RenameOp } from './serial-migrate';
 
 export async function runPhaseA(outputFolder: string): Promise<{ assigned: number }> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const { assignments } = planMigration(index.videos);
   if (assignments.length === 0) return { assigned: 0 };
@@ -67,7 +67,7 @@ function physicalDst(src: { abs: string }, op: RenameOp): string {
 
 export async function runPhaseB(outputFolder: string): Promise<{ renamed: number; conflicts: string[] }> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const { perVideo } = planMigration(index.videos);
   let renamed = 0;

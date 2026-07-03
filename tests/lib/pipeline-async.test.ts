@@ -62,7 +62,11 @@ jest.mock('@/lib/storage/resolve', () => {
   const { LocalFsMetadataStore: LocalImpl } = jest.requireActual('@/lib/storage/local/local-metadata-store') as typeof import('@/lib/storage/local/local-metadata-store');
   const { delayedStore: delayed } = require('./storage/delayed-async-fake') as typeof import('./storage/delayed-async-fake');
   const store: MetadataStore = delayed(new LocalImpl());
-  return { ...real, getMetadataStore: () => store };
+  return {
+    ...real,
+    getMetadataStore: () => store,
+    getStorageBundle: (ctx?: { supabaseClient?: unknown }) => ({ ...real.getStorageBundle(ctx as never), metadataStore: store }),
+  };
 });
 
 import { runIngestion } from '@/lib/pipeline';

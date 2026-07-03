@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { CURRENT_DOC_VERSION } from './doc-version';
 
 const PRE_FEATURE = { major: 1, minor: 0 };
@@ -32,7 +32,7 @@ function classify(
 
 export async function auditTimestamps(folder: string): Promise<AuditReport> {
   const principal = getPrincipal(folder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const { videos } = await store.readIndex(principal);
   const summaries = emptyKind();
   for (const v of videos) {

@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { NextResponse } from 'next/server';
 import { assertVideoId } from '../../../../../lib/index-store';
-import { getPrincipal, getMetadataStore } from '../../../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../../../lib/storage/resolve';
 import { fixSummary, extractQuickView } from '../../../../../lib/gemini';
 import { stripQuickViewCallout, insertQuickViewCallout } from '../../../../../lib/pipeline';
 import { logError, errorSummary } from '../../../../../lib/dev-logger';
@@ -32,7 +32,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   }
 
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
 

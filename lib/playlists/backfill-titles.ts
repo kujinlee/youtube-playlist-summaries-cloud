@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { assertOutputFolder } from '../index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { fetchPlaylistTitle } from '../youtube';
 
 function extractId(url: string): string | null {
@@ -24,7 +24,7 @@ function playlistFolders(root: string): string[] {
 
 export async function backfillPlaylistTitles(root: string, apiKey: string): Promise<{ updated: string[]; skipped: string[]; failed: string[] }> {
   assertOutputFolder(root); // within-home guard at the entry point
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const updated: string[] = [], skipped: string[] = [], failed: string[] = [];
   for (const folder of playlistFolders(root)) {
     const p = getPrincipal(folder); // separate principal per discovered child folder

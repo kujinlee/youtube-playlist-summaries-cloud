@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { assertVideoId } from '../../../../../lib/index-store';
-import { getPrincipal, getMetadataStore } from '../../../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../../../lib/storage/resolve';
 import type { Video } from '../../../../../types';
 
 type Params = { params: Promise<{ id: string }> };
@@ -61,7 +61,7 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   try {
-    await getMetadataStore().updateVideoFields(principal, videoId, patch);
+    await getStorageBundle().metadataStore.updateVideoFields(principal, videoId, patch);
   } catch (err) {
     const e = err as Error;
     if (e.message.startsWith('Video not found in index')) {

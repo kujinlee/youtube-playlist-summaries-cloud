@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { assertVideoId } from '../index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { writeSummaryDoc } from '../pipeline';
 import { runHtmlDoc } from './generate';
 import { reRenderSummaryHtml } from './rerender';
@@ -24,7 +24,7 @@ export async function ensureHtmlDoc(
   force = false,
 ): Promise<void> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   assertVideoId(videoId);
 
   const video = (await store.readIndex(principal)).videos.find((v) => v.id === videoId);

@@ -1,5 +1,5 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
-import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { getStorageBundle } from '@/lib/storage/resolve';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
@@ -24,7 +24,7 @@ export async function generateDocPdf(
   key: string,
   opts: { blobStore?: BlobStore; timeoutMs?: number } = {},
 ): Promise<void> {
-  const blobStore = opts.blobStore ?? localBlobStore;
+  const blobStore = opts.blobStore ?? getStorageBundle().blobStore;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const { chromium } = await import('playwright'); // lazy: only load the driver when a PDF is requested
 

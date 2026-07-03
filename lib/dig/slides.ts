@@ -24,7 +24,7 @@ import path from 'node:path';
 import util from 'node:util';
 import { assertVideoId } from '@/lib/index-store';
 import { parseSlideTokens, type SlideToken } from '@/lib/dig/slide-tokens';
-import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { getStorageBundle } from '@/lib/storage/resolve';
 import { localPrincipal } from '@/lib/storage/principal';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
@@ -70,7 +70,7 @@ export interface ResolveSlideTokensOpts {
   endSec: number;
   assetsRoot: string;
   sectionId: number;
-  /** BlobStore to persist the captured frame. Defaults to `localBlobStore`. */
+  /** BlobStore to persist the captured frame. Defaults to the active bundle's blobStore. */
   blobStore?: BlobStore;
   /**
    * Principal for the blobStore write. Defaults to `localPrincipal(path.dirname(assetsRoot))`,
@@ -140,7 +140,7 @@ export async function resolveSlideTokens(
   opts: ResolveSlideTokensOpts,
 ): Promise<{ markdown: string; slides: Array<{ startSec: number; endSec: number; pickedSec: number }> }> {
   const { videoId, startSec, endSec, assetsRoot, sectionId } = opts;
-  const blobStore = opts.blobStore ?? localBlobStore;
+  const blobStore = opts.blobStore ?? getStorageBundle().blobStore;
   const principal = opts.principal ?? localPrincipal(path.dirname(path.resolve(assetsRoot)));
 
   // Always validate videoId first — throws on traversal chars or invalid format.

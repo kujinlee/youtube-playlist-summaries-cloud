@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { getPrincipal, getMetadataStore } from '../../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../../lib/storage/resolve';
 import { extractQuickView } from '../../../../lib/gemini';
 import { insertQuickViewCallout } from '../../../../lib/pipeline';
 import type { ProgressEvent } from '../../../../types';
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     return new Response(JSON.stringify({ error: 'invalid outputFolder' }), { status: 400 });
   }
 
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const eligible = index.videos.filter(
     (v): v is typeof v & { summaryMd: string } => !!v.summaryMd && !v.tldr,

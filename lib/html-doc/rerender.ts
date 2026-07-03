@@ -1,10 +1,9 @@
 import { assertVideoId } from '../index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { assertIndexRelPathWithin } from '../paths/assert-within';
 import { parseSummaryMarkdown } from './parse';
 import { renderMagazineHtml } from './render';
 import { readModelEnvelope } from './model-store';
-import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import type { BlobStore } from '@/lib/storage/blob-store';
 
 export type ReRenderResult =
@@ -28,10 +27,10 @@ export function sameTitles(a: string[], b: string[]): boolean {
 export async function reRenderSummaryHtml(
   videoId: string,
   outputFolder: string,
-  blobStore: BlobStore = localBlobStore,
+  blobStore: BlobStore = getStorageBundle().blobStore,
 ): Promise<ReRenderResult> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   assertVideoId(videoId);
 
   const index = await store.readIndex(principal);
@@ -94,9 +93,9 @@ export interface ReRenderTally {
 }
 
 /** Re-render every summary in a playlist. Per-video errors are isolated, never abort the batch. */
-export async function reRenderAll(outputFolder: string, blobStore: BlobStore = localBlobStore): Promise<ReRenderTally> {
+export async function reRenderAll(outputFolder: string, blobStore: BlobStore = getStorageBundle().blobStore): Promise<ReRenderTally> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const tally: ReRenderTally = {
     rerendered: 0, skippedNotEligible: 0, skippedNoModel: 0, skippedNoMd: 0,

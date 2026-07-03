@@ -4,9 +4,8 @@ import { fetchPlaylistVideos, fetchPlaylistTitle, detectLanguage } from './youtu
 import { generateSummary, extractQuickView } from './gemini';
 import { resolveTranscriptSegments } from './transcript-source';
 import { assertVideoId } from './index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { localPrincipal } from '@/lib/storage/principal';
-import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import { slugify } from './slugify';
 import { applySerial, padSerial } from './serial-filename';
@@ -48,7 +47,7 @@ export interface SummaryDocResult {
  * <baseName>.md. Shared by ingestion (new slug) and re-summarize (existing baseName).
  */
 export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDocResult> {
-  const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName, blobStore = localBlobStore } = input;
+  const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName, blobStore = getStorageBundle().blobStore } = input;
   const { segments } = await resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds);
   const transcript = segments.map((s) => s.text).join(' '); // plain text for language detection only
   const language = detectLanguage(transcript);
@@ -177,7 +176,7 @@ export function reconstructVideo(content: string, file: string, mdPath: string):
 
 export async function recoverOrphanedVideos(outputFolder: string): Promise<void> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const indexedIds = new Set(index.videos.map((v) => v.id));
 
@@ -271,7 +270,7 @@ export async function runIngestion(
   if (!apiKey) throw new Error('YOUTUBE_API_KEY is not set');
 
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   fs.mkdirSync(outputFolder, { recursive: true });
 
   const metas = await fetchPlaylistVideos(playlistUrl, apiKey);

@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'node:fs/promises';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { windowForSection } from '@/lib/dig/section-window';
@@ -19,7 +19,7 @@ export async function digSection(
 ): Promise<void> {
   // Step 1: Read video from index
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   const index = await store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
   if (!video) {

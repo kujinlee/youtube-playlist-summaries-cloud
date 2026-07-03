@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { auditTimestamps, countLeadingTimestamps } from './timestamp-audit';
 import { ensureHtmlDoc } from './html-doc/ensure';
 import type { ProgressEvent } from '../types';
@@ -18,7 +18,7 @@ const noop = (_e: ProgressEvent): void => {};
 async function tsCount(folder: string, id: string): Promise<number> {
   try {
     const principal = getPrincipal(folder);
-    const store = getMetadataStore();
+    const { metadataStore: store } = getStorageBundle();
     const v = (await store.readIndex(principal)).videos.find((x) => x.id === id);
     const rel = v?.summaryMd;
     if (!rel) return 0;
