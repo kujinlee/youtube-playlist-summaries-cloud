@@ -2,21 +2,49 @@ import type { MetadataStore } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 import * as indexStore from '@/lib/index-store';
+import { nextSerial } from '@/lib/serial-assign';
 
-/** Behavior-preserving local implementation: delegates to lib/index-store
- *  using principal.indexKey. No behavior change vs. calling index-store directly. */
+/** Behavior-preserving local impl. Sync index-store calls wrapped in resolved Promises;
+ *  the new transactional methods replicate today's pipeline logic against the JSON file. */
 export class LocalFsMetadataStore implements MetadataStore {
-  readIndex(principal: Principal): PlaylistIndex {
-    return indexStore.readIndex(principal.indexKey);
+  async readIndex(p: Principal): Promise<PlaylistIndex> {
+    return indexStore.readIndex(p.indexKey);
   }
-  writeIndex(principal: Principal, index: PlaylistIndex): void {
-    indexStore.writeIndex(principal.indexKey, index);
+  async setPlaylistMeta(p: Principal, meta: { playlistUrl: string; playlistTitle?: string }): Promise<void> {
+    const idx = indexStore.readIndex(p.indexKey);
+    indexStore.writeIndex(p.indexKey, {
+      ...idx,
+      playlistUrl: meta.playlistUrl,
+      outputFolder: p.indexKey,
+      ...(meta.playlistTitle ? { playlistTitle: meta.playlistTitle } : {}),
+    });
   }
-  upsertVideo(principal: Principal, video: Video): void {
-    indexStore.upsertVideo(principal.indexKey, video);
+  async claimVideoSlot(p: Principal, videoId: string): Promise<{ position: number; serialNumber: number }> {
+    const idx = indexStore.readIndex(p.indexKey);
+    const position = idx.videos.length;
+    const serialNumber = nextSerial(idx.videos);
+    // reserve the slot with a minimal valid Video; real data arrives via upsertVideo
+    indexStore.upsertVideo(p.indexKey, { id: videoId, serialNumber } as Video);
+    return { position, serialNumber };
   }
-  updateVideoFields(principal: Principal, id: string, fields: Partial<Video>): void {
-    indexStore.updateVideoFields(principal.indexKey, id, fields);
+  async upsertVideo(p: Principal, video: Video): Promise<void> {
+    indexStore.upsertVideo(p.indexKey, video);
+  }
+  async updateVideoFields(p: Principal, id: string, fields: Partial<Video>): Promise<void> {
+    indexStore.updateVideoFields(p.indexKey, id, fields);
+  }
+  async bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void> {
+    for (const { videoId, fields } of patches) indexStore.updateVideoFields(p.indexKey, videoId, fields);
+  }
+  async reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void> {
+    const present = new Set(currentPlaylistIds);
+    const idx = indexStore.readIndex(p.indexKey);
+    for (const v of idx.videos) {
+      const inPlaylist = present.has(v.id);
+      indexStore.updateVideoFields(p.indexKey, v.id, {
+        archived: !inPlaylist, removedFromPlaylist: !inPlaylist,
+      } as Partial<Video>);
+    }
   }
 }
 

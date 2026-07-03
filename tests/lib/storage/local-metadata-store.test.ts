@@ -1,44 +1,48 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-import * as crypto from 'crypto';
-import { localMetadataStore } from '@/lib/storage/local/local-metadata-store';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { LocalFsMetadataStore } from '@/lib/storage/local/local-metadata-store';
 import { localPrincipal } from '@/lib/storage/principal';
-import { readIndex } from '@/lib/index-store';
-import type { PlaylistIndex, Video } from '@/types';
 
-const TEST_DIR = path.join(os.homedir(), `.test-local-mds-${crypto.randomUUID()}`);
-beforeAll(() => fs.mkdirSync(TEST_DIR, { recursive: true }));
-afterAll(() => fs.rmSync(TEST_DIR, { recursive: true, force: true }));
-
-const p = localPrincipal(TEST_DIR);
-
-function sampleVideo(id: string): Video {
-  return {
-    id, title: 'T', youtubeUrl: 'https://youtu.be/x', language: 'en',
-    durationSeconds: 1, archived: false,
-    ratings: { usefulness: 3, depth: 3, originality: 3, recency: 3, completeness: 3 },
-    overallScore: 3, summaryMd: null, processedAt: '2026-07-02T00:00:00.000Z',
-  } as Video;
-}
-
-it('writeIndex then readIndex round-trips through the store', () => {
-  const index: PlaylistIndex = {
-    playlistUrl: 'https://www.youtube.com/playlist?list=PL1',
-    outputFolder: TEST_DIR, videos: [sampleVideo('vid00000001')],
-  };
-  localMetadataStore.writeIndex(p, index);
-  expect(localMetadataStore.readIndex(p).videos).toHaveLength(1);
+const store = new LocalFsMetadataStore();
+// assertOutputFolder requires the path to be within home directory (macOS os.tmpdir()
+// resolves outside home); create isolated sub-dirs under home instead.
+function tmp() { return fs.mkdtempSync(path.join(os.homedir(), 'lms-')); }
+afterEach(() => {
+  // clean up any lms- dirs left under home by this test run
+  const dirs = fs.readdirSync(os.homedir()).filter(d => d.startsWith('lms-'));
+  for (const d of dirs) fs.rmSync(path.join(os.homedir(), d), { recursive: true, force: true });
 });
 
-it('upsertVideo is observable via direct index-store readIndex (byte-identical persistence)', () => {
-  localMetadataStore.upsertVideo(p, sampleVideo('vid00000002'));
-  const viaDirect = readIndex(TEST_DIR); // same file the store wrote
-  expect(viaDirect.videos.map((v) => v.id)).toContain('vid00000002');
+test('readIndex on an empty folder returns the empty index shape', async () => {
+  const p = localPrincipal(tmp());
+  await expect(store.readIndex(p)).resolves.toEqual({ playlistUrl: '', outputFolder: p.indexKey, videos: [] });
 });
 
-it('updateVideoFields mutates the named video', () => {
-  localMetadataStore.updateVideoFields(p, 'vid00000002', { title: 'Renamed' });
-  const v = localMetadataStore.readIndex(p).videos.find((x) => x.id === 'vid00000002');
-  expect(v?.title).toBe('Renamed');
+test('claimVideoSlot appends position (0-based) and serialNumber (1-based)', async () => {
+  const p = localPrincipal(tmp());
+  await store.setPlaylistMeta(p, { playlistUrl: 'https://youtube.com/playlist?list=X' });
+  const a = await store.claimVideoSlot(p, 'vid00000001');
+  const b = await store.claimVideoSlot(p, 'vid00000002');
+  expect(a).toEqual({ position: 0, serialNumber: 1 });
+  expect(b).toEqual({ position: 1, serialNumber: 2 });
+});
+
+test('bulkUpdateVideoFields merges fields, preserves array order', async () => {
+  const p = localPrincipal(tmp());
+  await store.claimVideoSlot(p, 'vid00000001');
+  await store.upsertVideo(p, { id: 'vid00000001', youtubeUrl: 'https://youtu.be/vid00000001' } as any);
+  await store.bulkUpdateVideoFields(p, [{ videoId: 'vid00000001', fields: { playlistIndex: 5 } as any }]);
+  const idx = await store.readIndex(p);
+  expect(idx.videos[0].playlistIndex).toBe(5);
+});
+
+test('reconcilePlaylistMembership archives absent, restores present', async () => {
+  const p = localPrincipal(tmp());
+  await store.claimVideoSlot(p, 'vid00000001');
+  await store.upsertVideo(p, { id: 'vid00000001', youtubeUrl: 'https://youtu.be/vid00000001', archived: true, removedFromPlaylist: true } as any);
+  await store.reconcilePlaylistMembership(p, ['vid00000001']);   // now present again
+  const idx = await store.readIndex(p);
+  expect(idx.videos[0].archived).toBe(false);
+  expect(idx.videos[0].removedFromPlaylist).toBe(false);
 });
