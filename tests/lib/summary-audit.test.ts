@@ -19,7 +19,7 @@ beforeEach(() => {
 });
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-it('lists truncated + structural suspects with index-sourced serial, reports missing, never throws', () => {
+it('lists truncated + structural suspects with index-sourced serial, reports missing, never throws', async () => {
   const videos = [
     writeVideo('good', 10, '010_good', 'All wrapped up.'),        // complete → not a suspect
     writeVideo('bad', 11, '011_bad', 'cut off mid'),              // mid-sentence → high
@@ -29,7 +29,7 @@ it('lists truncated + structural suspects with index-sourced serial, reports mis
   fs.writeFileSync(path.join(dir, 'playlist-index.json'),
     JSON.stringify({ playlistUrl: 'p', outputFolder: dir, videos }));
 
-  const r = auditSummaries(dir);
+  const r = await auditSummaries(dir);
 
   expect(r.total).toBe(4);
   expect(r.suspects.map((s) => s.id).sort()).toEqual(['bad', 'gone', 'tbl']);
@@ -39,7 +39,7 @@ it('lists truncated + structural suspects with index-sourced serial, reports mis
   expect(r.suspects.find((s) => s.id === 'gone')!.reason).toBe('md-missing');
 });
 
-it('resolves an archived video\'s md from the archived/ subfolder (not a false md-missing)', () => {
+it('resolves an archived video\'s md from the archived/ subfolder (not a false md-missing)', async () => {
   fs.mkdirSync(path.join(dir, 'archived'), { recursive: true });
   // archived video: summaryMd base name unchanged, file lives under archived/
   fs.writeFileSync(path.join(dir, 'archived', '005_arch.md'), '## 1. A\n▶ [0:00–1:00](u)\nComplete archived summary.');
@@ -47,21 +47,21 @@ it('resolves an archived video\'s md from the archived/ subfolder (not a false m
   fs.writeFileSync(path.join(dir, 'playlist-index.json'),
     JSON.stringify({ playlistUrl: 'p', outputFolder: dir, videos }));
 
-  const r = auditSummaries(dir);
+  const r = await auditSummaries(dir);
   expect(r.total).toBe(1);
   expect(r.suspects).toEqual([]); // found in archived/, complete → not a suspect
 });
 
-it('flags a truly-orphaned archived md (absent from both root and archived/) as md-missing', () => {
+it('flags a truly-orphaned archived md (absent from both root and archived/) as md-missing', async () => {
   const videos = [{ id: 'orph', serialNumber: 6, summaryMd: '006_orph.md', archived: true }];
   fs.writeFileSync(path.join(dir, 'playlist-index.json'),
     JSON.stringify({ playlistUrl: 'p', outputFolder: dir, videos }));
 
-  const r = auditSummaries(dir);
+  const r = await auditSummaries(dir);
   expect(r.suspects).toEqual([{ id: 'orph', serial: 6, reason: 'md-missing', confidence: 'high' }]);
 });
 
-it('rejects a summaryMd that escapes the corpus root (path traversal) without reading it', () => {
+it('rejects a summaryMd that escapes the corpus root (path traversal) without reading it', async () => {
   // Plant a file outside the corpus that a traversal path would resolve to.
   const outside = path.join(os.homedir(), `.tmp-secret-${path.basename(dir)}.md`);
   fs.writeFileSync(outside, '## 1. A\n▶ [0:00–1:00](u)\nComplete secret.');
@@ -69,12 +69,12 @@ it('rejects a summaryMd that escapes the corpus root (path traversal) without re
   fs.writeFileSync(path.join(dir, 'playlist-index.json'),
     JSON.stringify({ playlistUrl: 'p', outputFolder: dir, videos }));
 
-  const r = auditSummaries(dir);
+  const r = await auditSummaries(dir);
   fs.rmSync(outside, { force: true });
   expect(r.suspects).toEqual([{ id: 'evil', serial: 9, reason: 'unsafe path (outside corpus)', confidence: 'high' }]);
 });
 
-it('skips videos without a summaryMd and returns an empty suspect list for a clean corpus', () => {
+it('skips videos without a summaryMd and returns an empty suspect list for a clean corpus', async () => {
   const videos = [
     { id: 'nosum', serialNumber: 1 },                            // no summaryMd → not counted
     writeVideo('ok', 2, '002_ok', 'Done here.'),
@@ -82,7 +82,7 @@ it('skips videos without a summaryMd and returns an empty suspect list for a cle
   fs.writeFileSync(path.join(dir, 'playlist-index.json'),
     JSON.stringify({ playlistUrl: 'p', outputFolder: dir, videos }));
 
-  const r = auditSummaries(dir);
+  const r = await auditSummaries(dir);
   expect(r.total).toBe(1);
   expect(r.suspects).toEqual([]);
 });

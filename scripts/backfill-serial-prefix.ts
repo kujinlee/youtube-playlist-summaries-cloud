@@ -19,17 +19,17 @@ export function dryRunReport(outputFolder: string): string {
   return lines.join('\n');
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
   const folderArg = args.indexOf('--folder');
   const outputFolder = folderArg !== -1 ? args[folderArg + 1] : process.cwd();
   if (!apply) { console.log(dryRunReport(outputFolder)); console.log('\n(dry run — pass --apply to execute. Do NOT run concurrently with ingestion.)'); return; }
-  const a = runPhaseA(outputFolder);
-  const b = runPhaseBUntilStable(outputFolder);
+  const a = await runPhaseA(outputFolder);
+  const b = await runPhaseBUntilStable(outputFolder);
   console.log(`Applied: assigned ${a.assigned}, renamed ${b.renamed}, conflicts ${b.conflicts.length} (converged in ${b.passes} pass${b.passes === 1 ? '' : 'es'})`);
   if (b.conflicts.length) console.error('Conflicts (not renamed):', b.conflicts.join(', '));
 }
 
 // Run only when invoked directly (not when imported by tests).
-if (require.main === module) main();
+if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });

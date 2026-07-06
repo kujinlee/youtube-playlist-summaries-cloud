@@ -1,12 +1,10 @@
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { assertVideoId } from '../index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { assertIndexRelPathWithin } from '../paths/assert-within';
 import { parseSummaryMarkdown } from './parse';
 import { renderMagazineHtml } from './render';
 import { readModelEnvelope } from './model-store';
+import type { BlobStore } from '@/lib/storage/blob-store';
 
 export type ReRenderResult =
   | { status: 'rerendered'; htmlPath: string; html: string }
@@ -26,25 +24,33 @@ export function sameTitles(a: string[], b: string[]): boolean {
  * Only refreshes summaries that already have an HTML; guards section-title alignment.
  * Total: returns a status for every data condition; throws only on an HTML write I/O failure.
  */
-export function reRenderSummaryHtml(videoId: string, outputFolder: string): ReRenderResult {
+export async function reRenderSummaryHtml(
+  videoId: string,
+  outputFolder: string,
+  blobStore?: BlobStore,
+): Promise<ReRenderResult> {
+  const { metadataStore: store, blobStore: bundleBlob } = getStorageBundle();
+  const resolvedBlob = blobStore ?? bundleBlob;
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
   assertVideoId(videoId);
 
-  const index = store.readIndex(principal);
+  const index = await store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
   // Re-render refreshes an EXISTING doc: needs a source note AND a current HTML.
   if (!video || !video.summaryMd || !video.summaryHtml) return { status: 'skipped-not-eligible' };
 
   const base = video.summaryMd.replace(/\.md$/, '');
-  const envelope = readModelEnvelope(outputFolder, base);
+  const envelope = await readModelEnvelope(outputFolder, base, resolvedBlob);
   if (!envelope) return { status: 'skipped-no-model' };
 
   let md: string;
   try {
-    // Fail closed on a crafted summaryMd that escapes the output folder.
-    const mdAbs = assertIndexRelPathWithin(outputFolder, video.summaryMd, '.md');
-    md = fs.readFileSync(mdAbs, 'utf-8');
+    // Fail closed on a crafted summaryMd that escapes the output folder. assertIndexRelPathWithin
+    // validates the key for containment; the actual read goes through resolvedBlob.
+    assertIndexRelPathWithin(outputFolder, video.summaryMd, '.md');
+    const mdBytes = await resolvedBlob.get(principal, video.summaryMd);
+    if (!mdBytes) return { status: 'skipped-no-md' };
+    md = mdBytes.toString('utf-8');
   } catch {
     return { status: 'skipped-no-md' };
   }
@@ -64,16 +70,7 @@ export function reRenderSummaryHtml(videoId: string, outputFolder: string): ReRe
 
   const html = renderMagazineHtml(parsed, envelope.model);
   const htmlRel = `htmls/${base}.html`;
-  const finalPath = path.join(outputFolder, htmlRel);
-  fs.mkdirSync(path.dirname(finalPath), { recursive: true });
-  const tmpPath = `${finalPath}.${crypto.randomUUID()}.tmp`;
-  try {
-    fs.writeFileSync(tmpPath, html, 'utf-8');
-    fs.renameSync(tmpPath, finalPath);
-  } catch (err) {
-    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
-    throw err;
-  }
+  await resolvedBlob.put(principal, htmlRel, Buffer.from(html, 'utf-8'), 'text/html');
   return { status: 'rerendered', htmlPath: htmlRel, html };
 }
 
@@ -97,17 +94,18 @@ export interface ReRenderTally {
 }
 
 /** Re-render every summary in a playlist. Per-video errors are isolated, never abort the batch. */
-export function reRenderAll(outputFolder: string): ReRenderTally {
+export async function reRenderAll(outputFolder: string, blobStore?: BlobStore): Promise<ReRenderTally> {
+  const { metadataStore: store, blobStore: bundleBlob } = getStorageBundle();
+  const resolvedBlob = blobStore ?? bundleBlob;
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const index = await store.readIndex(principal);
   const tally: ReRenderTally = {
     rerendered: 0, skippedNotEligible: 0, skippedNoModel: 0, skippedNoMd: 0,
     skippedUnparseable: 0, skippedDrift: 0, errors: 0, details: [],
   };
   for (const video of index.videos) {
     try {
-      const res = reRenderSummaryHtml(video.id, outputFolder);
+      const res = await reRenderSummaryHtml(video.id, outputFolder, resolvedBlob);
       switch (res.status) {
         case 'rerendered': tally.rerendered++; break;
         case 'skipped-not-eligible': tally.skippedNotEligible++; break;

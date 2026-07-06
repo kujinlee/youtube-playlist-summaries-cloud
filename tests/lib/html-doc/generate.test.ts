@@ -5,6 +5,8 @@ import path from 'path';
 import { runHtmlDoc } from '../../../lib/html-doc/generate';
 import * as gemini from '../../../lib/gemini';
 import { updateVideoFields } from '../../../lib/index-store';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { localPrincipal } from '@/lib/storage/principal';
 import type { ProgressEvent } from '../../../types';
 
 jest.mock('../../../lib/gemini');
@@ -143,4 +145,37 @@ it('does not write a model envelope when the transform fails', async () => {
   mockTransform.mockRejectedValueOnce(new Error('boom'));
   await expect(runHtmlDoc(VIDEO_ID, dir, () => {})).rejects.toThrow(/boom/);
   expect(fs.existsSync(path.join(dir, 'models', 'a-title.json'))).toBe(false);
+});
+
+it('routes HTML write through blobStore.put with key htmls/a-title.html', async () => {
+  mockTransform.mockResolvedValueOnce({
+    sections: [
+      { lead: 'L1', bullets: [{ label: 'A', text: 'a' }, { label: 'B', text: 'b' }, { label: 'C', text: 'c' }] },
+      { lead: 'L2', bullets: [{ label: 'D', text: 'd' }, { label: 'E', text: 'e' }, { label: 'F', text: 'f' }] },
+    ],
+  });
+  const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
+  // Derive from localBlobStore prototype so get/exists/delete are inherited; only put is intercepted.
+  const fakeBlobStore = Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put: fakePut }) as typeof localBlobStore;
+  await runHtmlDoc(VIDEO_ID, dir, () => {}, fakeBlobStore);
+  const htmlPutCall = fakePut.mock.calls.find((c) => (c[1] as string) === 'htmls/a-title.html');
+  expect(htmlPutCall).toBeDefined();
+  expect(htmlPutCall?.[0]).toEqual(localPrincipal(dir));
+  expect(htmlPutCall?.[2]).toBeInstanceOf(Buffer);
+  expect(htmlPutCall?.[3]).toBe('text/html');
+});
+
+it('routes model write through blobStore.put with key models/a-title.json', async () => {
+  mockTransform.mockResolvedValueOnce({
+    sections: [
+      { lead: 'L1', bullets: [{ label: 'A', text: 'a' }, { label: 'B', text: 'b' }, { label: 'C', text: 'c' }] },
+    ],
+  });
+  const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
+  const fakeBlobStore = Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put: fakePut }) as typeof localBlobStore;
+  await runHtmlDoc(VIDEO_ID, dir, () => {}, fakeBlobStore);
+  const modelPutCall = fakePut.mock.calls.find((c) => (c[1] as string) === 'models/a-title.json');
+  expect(modelPutCall).toBeDefined();
+  expect(modelPutCall?.[0]).toEqual(localPrincipal(dir));
+  expect(modelPutCall?.[3]).toBe('application/json');
 });

@@ -4,9 +4,10 @@ import { fetchPlaylistVideos, fetchPlaylistTitle, detectLanguage } from './youtu
 import { generateSummary, extractQuickView } from './gemini';
 import { resolveTranscriptSegments } from './transcript-source';
 import { assertVideoId } from './index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
+import { localPrincipal } from '@/lib/storage/principal';
+import type { BlobStore } from '@/lib/storage/blob-store';
 import { slugify } from './slugify';
-import { nextSerial } from './serial-assign';
 import { applySerial, padSerial } from './serial-filename';
 import { checkSummaryCompleteness } from './summary-completeness';
 import type { ProgressEvent, Video, VideoMeta, RatingValue, VideoType, Audience, GeminiSummaryResponse } from '../types';
@@ -26,6 +27,7 @@ export interface SummaryDocInput {
   durationSeconds: number;
   outputFolder: string;
   baseName: string;
+  blobStore?: BlobStore;
 }
 export interface SummaryDocResult {
   language: 'en' | 'ko';
@@ -45,7 +47,7 @@ export interface SummaryDocResult {
  * <baseName>.md. Shared by ingestion (new slug) and re-summarize (existing baseName).
  */
 export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDocResult> {
-  const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName } = input;
+  const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName, blobStore = getStorageBundle().blobStore } = input;
   const { segments } = await resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds);
   const transcript = segments.map((s) => s.text).join(' '); // plain text for language detection only
   const language = detectLanguage(transcript);
@@ -100,7 +102,7 @@ export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDo
     }
   }
 
-  await fs.promises.writeFile(path.join(outputFolder, `${baseName}.md`), mdContent, 'utf-8');
+  await blobStore.put(localPrincipal(outputFolder), `${baseName}.md`, Buffer.from(mdContent, 'utf-8'), 'text/markdown');
   return { language, ratings, overallScore, videoType, audience, tags, tldr: outTldr, takeaways: outTakeaways, mdContent, summaryMd: `${baseName}.md` };
 }
 
@@ -172,10 +174,10 @@ export function reconstructVideo(content: string, file: string, mdPath: string):
   };
 }
 
-export function recoverOrphanedVideos(outputFolder: string): void {
+export async function recoverOrphanedVideos(outputFolder: string): Promise<void> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const { metadataStore: store } = getStorageBundle();
+  const index = await store.readIndex(principal);
   const indexedIds = new Set(index.videos.map((v) => v.id));
 
   let files: string[];
@@ -196,7 +198,7 @@ export function recoverOrphanedVideos(outputFolder: string): void {
 
       const video = reconstructVideo(content, file, mdPath);
       if (video) {
-        store.upsertVideo(principal, video);
+        await store.upsertVideo(principal, video);
         indexedIds.add(videoId);
       }
     } catch {
@@ -268,7 +270,7 @@ export async function runIngestion(
   if (!apiKey) throw new Error('YOUTUBE_API_KEY is not set');
 
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
+  const { metadataStore: store } = getStorageBundle();
   fs.mkdirSync(outputFolder, { recursive: true });
 
   const metas = await fetchPlaylistVideos(playlistUrl, apiKey);
@@ -280,14 +282,13 @@ export async function runIngestion(
   if (playlistId) {
     try { playlistTitle = await fetchPlaylistTitle(playlistId, apiKey); } catch { playlistTitle = undefined; }
   }
-  const existing = store.readIndex(principal);
-  store.writeIndex(principal, { ...existing, playlistUrl, outputFolder, ...(playlistTitle ? { playlistTitle } : {}) });
+  await store.setPlaylistMeta(principal, { playlistUrl, playlistTitle });
 
   // Recover any .md files written in a prior interrupted run before processing new videos.
-  recoverOrphanedVideos(outputFolder);
+  await recoverOrphanedVideos(outputFolder);
 
   // Build the set of already-indexed IDs so we can skip re-processing them.
-  const alreadyIndexed = new Set(store.readIndex(principal).videos.map((v) => v.id));
+  const alreadyIndexed = new Set((await store.readIndex(principal)).videos.map((v) => v.id));
 
   // Progress is over NEW (not-yet-indexed) distinct videos only — skips are instant and
   // must not inflate the bar. playlistPos (below) stays the true playlist position.
@@ -304,6 +305,10 @@ export async function runIngestion(
     }
     const meta = metas[i];
     const playlistPos = i + 1;
+    // Tracks whether claimVideoSlot reserved a stub for this video in this run.
+    // Set to false again once upsertVideo commits the full record — after that point
+    // the video is fully indexed and must NOT be deleted on failure.
+    let slotReservedThisRun = false;
     try {
       assertVideoId(meta.videoId); // defense-in-depth before any path construction
 
@@ -314,16 +319,17 @@ export async function runIngestion(
       newIndex += 1;
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Fetching transcript…', current: newIndex, total: newTotal });
-      const serial = nextSerial(store.readIndex(principal).videos);
+      const { serialNumber } = await store.claimVideoSlot(principal, meta.videoId);
+      slotReservedThisRun = true;
       const slug = slugify(meta.title);
       let baseSlug = slug;
       let counter = 2;
-      // serial makes filenames unique; collision suffix kept for slug readability only.
-      while (fs.existsSync(path.join(outputFolder, applySerial(`${baseSlug}.md`, serial)))) {
+      // serialNumber makes filenames unique; collision suffix kept for slug readability only.
+      while (fs.existsSync(path.join(outputFolder, applySerial(`${baseSlug}.md`, serialNumber)))) {
         baseSlug = `${slug}-${counter}`;
         counter++;
       }
-      const baseName = `${padSerial(serial)}_${baseSlug}`;
+      const baseName = `${padSerial(serialNumber)}_${baseSlug}`;
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Generating summary…', current: newIndex, total: newTotal });
       const { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways } =
         await writeSummaryDoc({
@@ -340,7 +346,9 @@ export async function runIngestion(
         archived: false,
         ratings,
         overallScore,
-        serialNumber: serial,
+        // serialNumber from claimVideoSlot must be threaded through — upsertVideo does a
+        // full-replacement write, so omitting it here would silently erase the reserved serial.
+        serialNumber,
         summaryMd: `${baseName}.md`,
         processedAt: new Date().toISOString(),
         docVersion: CURRENT_DOC_VERSION,
@@ -355,9 +363,10 @@ export async function runIngestion(
         ...(meta.addedToPlaylistAt !== undefined && { addedToPlaylistAt: meta.addedToPlaylistAt }),
       };
       // Index updated immediately after md write
-      store.upsertVideo(principal, video);
+      await store.upsertVideo(principal, video);
       // Mark as processed so within-run duplicates (same video appearing twice in the playlist) are skipped.
       alreadyIndexed.add(meta.videoId);
+      slotReservedThisRun = false; // fully committed — nothing to roll back
 
       // Pre-generate the summary HTML doc so it opens instantly (no on-demand Gemini wait).
       // Best-effort: the .md is already written and the video already upserted, so a transform
@@ -378,43 +387,38 @@ export async function runIngestion(
 
       onProgress({ type: 'step', videoId: meta.videoId, title: meta.title, step: 'Saved', current: newIndex, total: newTotal });
     } catch (err) {
+      // Roll back the reserved stub so the video is retried on the next sync.
+      // Best-effort: a delete failure must not shadow the original error.
+      if (slotReservedThisRun) {
+        try { await store.deleteVideo(principal, meta.videoId); } catch { /* ignore */ }
+      }
       const log = err instanceof Error ? err.message : String(err);
       onProgress({ type: 'error', videoId: meta.videoId, title: meta.title, log });
     }
   }
 
   // Reconcile removedFromPlaylist: auto-archive on removal, clear flag if video returns.
-  const currentIds = new Set(metas.map((m) => m.videoId));
-  for (const video of store.readIndex(principal).videos) {
-    const stillInPlaylist = currentIds.has(video.id);
-    if (!stillInPlaylist && !video.removedFromPlaylist) {
-      store.upsertVideo(principal, { ...video, archived: true, removedFromPlaylist: true });
-    } else if (stillInPlaylist && video.removedFromPlaylist) {
-      // Returned to the playlist → clear the removal flag AND un-archive. The video
-      // was auto-archived ON REMOVAL (removedFromPlaylist=true), so restoring it to
-      // the playlist should restore its visibility. A video the user MANUALLY archived
-      // has removedFromPlaylist=false and never enters this branch, so it's untouched.
-      store.upsertVideo(principal, { ...video, archived: false, removedFromPlaylist: false });
-    }
-  }
+  await store.reconcilePlaylistMembership(principal, metas.map((m) => m.videoId));
 
   // Stamp playlistIndex for all videos (new videos already stamped above; this covers
   // already-indexed videos that were skipped during the main loop).
   const positionMap = new Map(metas.map((m, idx) => [m.videoId, idx + 1]));
   const publishedMap = new Map(metas.map((m) => [m.videoId, m.videoPublishedAt]));
   const addedMap = new Map(metas.map((m) => [m.videoId, m.addedToPlaylistAt]));
-  const afterReconcile = store.readIndex(principal);
+  const afterReconcile = await store.readIndex(principal);
   // playlistIndex tracks the CURRENT playlist position: in-playlist videos (always in
   // positionMap) are re-derived each sync; videos removed from the playlist (absent from
   // positionMap) keep their last-known index. videoPublishedAt/addedToPlaylistAt remain
   // write-once (stable per video).
-  const videosWithIndex = afterReconcile.videos.map((v) => ({
-    ...v,
-    playlistIndex: positionMap.get(v.id) ?? v.playlistIndex,
-    videoPublishedAt: v.videoPublishedAt ?? publishedMap.get(v.id),
-    addedToPlaylistAt: v.addedToPlaylistAt ?? addedMap.get(v.id),
+  const patches = afterReconcile.videos.map((v) => ({
+    videoId: v.id,
+    fields: {
+      playlistIndex: positionMap.get(v.id) ?? v.playlistIndex,
+      videoPublishedAt: v.videoPublishedAt ?? publishedMap.get(v.id),
+      addedToPlaylistAt: v.addedToPlaylistAt ?? addedMap.get(v.id),
+    },
   }));
-  store.writeIndex(principal, { ...afterReconcile, videos: videosWithIndex });
+  await store.bulkUpdateVideoFields(principal, patches);
 
   onProgress({ type: 'done', total: newTotal });
 }

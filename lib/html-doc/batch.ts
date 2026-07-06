@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'node:fs/promises';
 import { assertVideoId } from '../index-store';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { ensureHtmlDoc } from './ensure';
 import { summaryNeedsWork } from './eligibility';
 import { parseSummaryMarkdown } from './parse';
@@ -53,8 +53,8 @@ export async function runBatchDocs(
   signal?: AbortSignal,
 ): Promise<void> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const { metadataStore: store } = getStorageBundle();
+  const index = await store.readIndex(principal);
   const byId = new Map(index.videos.map((v) => [v.id, v]));
 
   // PRE-PASS (no Gemini): build a flat work list, skipping current items.

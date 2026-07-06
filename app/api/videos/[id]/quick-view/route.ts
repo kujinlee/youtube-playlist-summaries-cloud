@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { assertVideoId } from '../../../../../lib/index-store';
-import { getPrincipal, getMetadataStore } from '../../../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../../../lib/storage/resolve';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,7 +21,7 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   }
 
-  const index = getMetadataStore().readIndex(principal);
+  const index = await getStorageBundle().metadataStore.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
 
   if (!video || !video.summaryMd || !video.tldr) {

@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { NextResponse } from 'next/server';
 import { assertVideoId } from '../../../../../lib/index-store';
-import { getPrincipal, getMetadataStore } from '../../../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../../../lib/storage/resolve';
 import { fixSummary, extractQuickView } from '../../../../../lib/gemini';
 import { stripQuickViewCallout, insertQuickViewCallout } from '../../../../../lib/pipeline';
 import { logError, errorSummary } from '../../../../../lib/dev-logger';
@@ -32,8 +32,8 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   }
 
-  const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const { metadataStore: store } = getStorageBundle();
+  const index = await store.readIndex(principal);
   const video = index.videos.find((v) => v.id === videoId);
 
   if (!video) {
@@ -52,9 +52,9 @@ export async function POST(request: Request, { params }: Params) {
     // page-refresh shows the latest corrections even if Gemini fails.
     const trimmedCorrections = typeof corrections === 'string' ? corrections.trim() : undefined;
     if (trimmedCorrections) {
-      store.updateVideoFields(principal, videoId, { corrections: trimmedCorrections });
+      await store.updateVideoFields(principal, videoId, { corrections: trimmedCorrections });
     } else if (corrections === '') {
-      store.updateVideoFields(principal, videoId, { corrections: undefined });
+      await store.updateVideoFields(principal, videoId, { corrections: undefined });
     }
 
     // Apply text corrections if provided (works on prose only — callout is stripped first)
@@ -68,7 +68,7 @@ export async function POST(request: Request, { params }: Params) {
     await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
 
     // Update index with refreshed quick-view data; clear stale HTML cache
-    store.updateVideoFields(principal, videoId, { tldr, takeaways, summaryHtml: null });
+    await store.updateVideoFields(principal, videoId, { tldr, takeaways, summaryHtml: null });
 
     return NextResponse.json({
       tldr,

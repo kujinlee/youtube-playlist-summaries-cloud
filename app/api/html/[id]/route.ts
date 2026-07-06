@@ -1,5 +1,5 @@
 import { assertVideoId } from '../../../../lib/index-store';
-import { getPrincipal, getMetadataStore } from '../../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../../lib/storage/resolve';
 import { buildDocHtml } from '../../../../lib/html-doc/build-doc-html';
 
 type Params = { params: Promise<{ id: string }> };
@@ -27,7 +27,7 @@ export async function GET(request: Request, { params }: Params) {
 
   let video;
   try {
-    const index = getMetadataStore().readIndex(principal);
+    const index = await getStorageBundle().metadataStore.readIndex(principal);
     video = index.videos.find((v) => v.id === videoId);
     if (!video) return new Response(JSON.stringify({ error: 'video not found' }), { status: 404 });
   } catch (err) {

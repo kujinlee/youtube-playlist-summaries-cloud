@@ -1,6 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { localPrincipal } from '@/lib/storage/principal';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 
 // Mock the chromium driver so no real browser launches in unit tests.
 jest.mock('playwright', () => {
@@ -43,15 +45,32 @@ beforeEach(() => {
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe('generateDocPdf', () => {
-  it('writes a %PDF- file and creates the pdfs/ dir', async () => {
+  it('writes a %PDF- file at the logical key path (via LocalFsBlobStore)', async () => {
+    const principal = localPrincipal(dir);
+    await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf');
     const out = path.join(dir, 'pdfs', 'x.pdf');
-    await generateDocPdf('<html></html>', out);
     expect(fs.existsSync(out)).toBe(true);
     expect(fs.readFileSync(out).subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
+  it('calls blobStore.put with the exact key and pdf bytes', async () => {
+    const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
+    const fakeBlobStore = { put: fakePut } as unknown as typeof localBlobStore;
+    const principal = localPrincipal(dir);
+    await generateDocPdf('<html></html>', principal, 'pdfs/y.pdf', { blobStore: fakeBlobStore });
+    expect(fakePut).toHaveBeenCalledWith(
+      principal,
+      'pdfs/y.pdf',
+      expect.any(Buffer),
+      'application/pdf',
+    );
+    const buf = fakePut.mock.calls[0]?.[2] as Buffer | undefined;
+    expect(buf?.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+  });
+
   it('emulates print media, prints background, and closes page+context+browser', async () => {
-    await generateDocPdf('<html></html>', path.join(dir, 'pdfs', 'y.pdf'));
+    const principal = localPrincipal(dir);
+    await generateDocPdf('<html></html>', principal, 'pdfs/y.pdf');
     expect(__mock.page.emulateMedia).toHaveBeenCalledWith({ media: 'print' });
     expect(__mock.pdf).toHaveBeenCalledWith(expect.objectContaining({ printBackground: true }));
     expect(__mock.page.close).toHaveBeenCalled();
@@ -59,16 +78,12 @@ describe('generateDocPdf', () => {
     expect(__mock.browser.close).toHaveBeenCalled();
   });
 
-  it('leaves no .tmp file after success', async () => {
-    await generateDocPdf('<html></html>', path.join(dir, 'pdfs', 'z.pdf'));
-    const leftovers = fs.readdirSync(path.join(dir, 'pdfs')).filter((f) => f.endsWith('.tmp'));
-    expect(leftovers).toEqual([]);
-  });
-
-  it('rejects and cleans up when render hangs (overall timeout)', async () => {
+  it('rejects and leaves no orphan when render hangs (overall timeout)', async () => {
     __mock.pdf.mockImplementationOnce(() => new Promise(() => {})); // never resolves
-    const out = path.join(dir, 'pdfs', 'hang.pdf');
-    await expect(generateDocPdf('<html></html>', out, { timeoutMs: 50 })).rejects.toThrow(/timed out/);
-    expect(fs.existsSync(out)).toBe(false);
+    const principal = localPrincipal(dir);
+    await expect(
+      generateDocPdf('<html></html>', principal, 'pdfs/hang.pdf', { timeoutMs: 50 }),
+    ).rejects.toThrow(/timed out/);
+    expect(fs.existsSync(path.join(dir, 'pdfs', 'hang.pdf'))).toBe(false);
   });
 });

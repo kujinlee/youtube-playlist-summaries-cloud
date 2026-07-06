@@ -1,21 +1,20 @@
 import fs from 'fs';
 import path from 'path';
-import { getPrincipal, getMetadataStore } from '@/lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { planMigration } from './serial-migrate';
 import { rewriteSourceMdMeta, rewriteEnvelopeSourceMd } from './serial-provenance';
 import type { RenameOp } from './serial-migrate';
 
-export function runPhaseA(outputFolder: string): { assigned: number } {
+export async function runPhaseA(outputFolder: string): Promise<{ assigned: number }> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const { metadataStore: store } = getStorageBundle();
+  const index = await store.readIndex(principal);
   const { assignments } = planMigration(index.videos);
   if (assignments.length === 0) return { assigned: 0 };
-  const serialById = new Map(assignments.map((a) => [a.id, a.serial]));
-  const videos = index.videos.map((v) =>
-    serialById.has(v.id) ? { ...v, serialNumber: serialById.get(v.id)! } : v,
+  await store.bulkUpdateVideoFields(
+    principal,
+    assignments.map((a) => ({ videoId: a.id, fields: { serialNumber: a.serial } })),
   );
-  store.writeIndex(principal, { ...index, videos });   // single atomic write (temp→rename)
   return { assigned: assignments.length };
 }
 
@@ -66,10 +65,10 @@ function physicalDst(src: { abs: string }, op: RenameOp): string {
   return path.join(path.dirname(src.abs), path.basename(op.to));
 }
 
-export function runPhaseB(outputFolder: string): { renamed: number; conflicts: string[] } {
+export async function runPhaseB(outputFolder: string): Promise<{ renamed: number; conflicts: string[] }> {
   const principal = getPrincipal(outputFolder);
-  const store = getMetadataStore();
-  const index = store.readIndex(principal);
+  const { metadataStore: store } = getStorageBundle();
+  const index = await store.readIndex(principal);
   const { perVideo } = planMigration(index.videos);
   let renamed = 0;
   const conflicts: string[] = [];
@@ -144,7 +143,7 @@ export function runPhaseB(outputFolder: string): { renamed: number; conflicts: s
     }
 
     // ── Per-video index update (bounded blast radius — B1/B2 convergence). ──
-    if (Object.keys(fieldUpdates).length > 0) store.updateVideoFields(principal, plan.id, fieldUpdates);
+    if (Object.keys(fieldUpdates).length > 0) await store.updateVideoFields(principal, plan.id, fieldUpdates);
   }
   return { renamed, conflicts };
 }
@@ -158,15 +157,15 @@ export function runPhaseB(outputFolder: string): { renamed: number; conflicts: s
  * Terminates as soon as a pass renames 0 — files that can never be renamed (no source on
  * disk) contribute 0 and therefore never cause an infinite loop.
  */
-export function runPhaseBUntilStable(
+export async function runPhaseBUntilStable(
   outputFolder: string,
   maxPasses = 10,
-): { renamed: number; conflicts: string[]; passes: number } {
+): Promise<{ renamed: number; conflicts: string[]; passes: number }> {
   let renamed = 0;
   const conflicts = new Set<string>();
   let passes = 0;
   for (let i = 0; i < maxPasses; i++) {
-    const pass = runPhaseB(outputFolder);
+    const pass = await runPhaseB(outputFolder);
     passes++;
     renamed += pass.renamed;
     for (const c of pass.conflicts) conflicts.add(c);

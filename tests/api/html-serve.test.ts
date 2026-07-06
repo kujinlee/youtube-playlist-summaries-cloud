@@ -314,7 +314,7 @@ describe('version-gated summary re-render', () => {
     writeIndex(video({ summaryHtml: 'htmls/a.html', summaryMd: 'wiki/a.md' }));
 
     const freshHtml = `<!DOCTYPE html><html><head><meta name="generator" content="${GENERATOR_VERSION}"></head><body>fresh</body></html>`;
-    mockReRender.mockReturnValue({ status: 'rerendered', htmlPath: 'htmls/a.html', html: freshHtml });
+    mockReRender.mockResolvedValue({ status: 'rerendered', htmlPath: 'htmls/a.html', html: freshHtml });
 
     const res = await GET(url(), ctx);
     expect(res.status).toBe(200);
@@ -327,7 +327,7 @@ describe('version-gated summary re-render', () => {
     fs.writeFileSync(path.join(dir, 'htmls', 'a.html'), staleCached);
     writeIndex(video({ summaryHtml: 'htmls/a.html', summaryMd: 'wiki/a.md' }));
 
-    mockReRender.mockReturnValue({ status: 'skipped-drift', mdSections: ['A'], modelSections: ['B'] });
+    mockReRender.mockResolvedValue({ status: 'skipped-drift', mdSections: ['A'], modelSections: ['B'] });
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     const res = await GET(url(), ctx);
@@ -342,7 +342,7 @@ describe('version-gated summary re-render', () => {
     fs.writeFileSync(path.join(dir, 'htmls', 'a.html'), staleCached);
     writeIndex(video({ summaryHtml: 'htmls/a.html', summaryMd: 'wiki/a.md' }));
 
-    mockReRender.mockReturnValue({ status: 'skipped-no-model' });
+    mockReRender.mockResolvedValue({ status: 'skipped-no-model' });
 
     const res = await GET(url(), ctx);
     expect(res.status).toBe(200);

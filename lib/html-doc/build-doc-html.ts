@@ -56,7 +56,7 @@ export async function buildDocHtml(
 
     // Cached HTML is stale — attempt re-render; serve the stale artifact on any skip (never fail when
     // a cached file exists).
-    const result = reRenderSummaryHtml(video.id, outputFolder);
+    const result = await reRenderSummaryHtml(video.id, outputFolder);
     switch (result.status) {
       case 'rerendered':
         return { ok: true, html: result.html };
@@ -120,7 +120,7 @@ export async function buildDocHtml(
     return { ok: true, html: UNAVAILABLE_HTML };
   }
 
-  const envelope = readModelEnvelope(outputFolder, base);
+  const envelope = await readModelEnvelope(outputFolder, base);
 
   let dug: ReturnType<typeof parseDugSections> = [];
   if (digDeeperPath !== null) {

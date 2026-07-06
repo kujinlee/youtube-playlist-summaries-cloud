@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { NextResponse } from 'next/server';
 import { assertVideoId } from '../../../../../lib/index-store';
-import { getPrincipal, getMetadataStore } from '../../../../../lib/storage/resolve';
+import { getPrincipal, getStorageBundle } from '../../../../../lib/storage/resolve';
 import { buildDocHtml } from '../../../../../lib/html-doc/build-doc-html';
 import { generateDocPdf } from '../../../../../lib/pdf/generate-doc-pdf';
 import { pdfRelPath } from '../../../../../lib/pdf/pdf-path';
@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: Params) {
 
   let video;
   try {
-    const index = getMetadataStore().readIndex(principal);
+    const index = await getStorageBundle().metadataStore.readIndex(principal);
     video = index.videos.find((v) => v.id === videoId);
     if (!video) return NextResponse.json({ error: 'video not found' }, { status: 404 });
   } catch (err) {
@@ -87,11 +87,10 @@ export async function POST(request: Request, { params }: Params) {
     abandon();
     return NextResponse.json({ error: 'invalid path' }, { status: 400 });
   }
-  const absOut = path.resolve(outputFolder, rel);
 
   emitJobEvent(jobId, { type: 'start' });
   emitJobEvent(jobId, { type: 'step', step: 'Rendering PDF…', current: 1, total: 1 });
-  generateDocPdf(build.html, absOut)
+  generateDocPdf(build.html, principal, rel)
     .then(() => {
       if (finished) return;
       emitJobEvent(jobId, { type: 'done', total: 1, current: 1, log: path.basename(rel) });

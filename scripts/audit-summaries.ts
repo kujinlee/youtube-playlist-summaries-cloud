@@ -18,13 +18,14 @@ if (!folder) {
   process.exit(0);
 }
 
-try {
-  const r = auditSummaries(folder);
-  console.log(`[${folder}] total ${r.total}, suspects ${r.suspects.length}`);
-  for (const s of r.suspects) {
-    console.log(`  ${s.serial ?? '?'} | ${s.id} | ${s.reason} | ${s.confidence}`);
-  }
-} catch (e) {
-  console.error(`audit-summaries: could not audit ${folder}: ${e instanceof Error ? e.message : String(e)}`);
-}
-process.exit(0); // read-only report tool — never gate on suspects or data errors
+auditSummaries(folder)
+  .then((r) => {
+    console.log(`[${folder}] total ${r.total}, suspects ${r.suspects.length}`);
+    for (const s of r.suspects) {
+      console.log(`  ${s.serial ?? '?'} | ${s.id} | ${s.reason} | ${s.confidence}`);
+    }
+  })
+  .catch((e) => {
+    console.error(`audit-summaries: could not audit ${folder}: ${e instanceof Error ? e.message : String(e)}`);
+  })
+  .finally(() => process.exit(0)); // read-only report tool — never gate on suspects or data errors

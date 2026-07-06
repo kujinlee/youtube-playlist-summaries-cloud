@@ -1,6 +1,8 @@
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { localPrincipal } from '@/lib/storage/principal';
 
 jest.mock('../../lib/youtube', () => ({
   fetchTranscriptSegments: jest.fn().mockResolvedValue([{ text: 'hi', offset: 0, duration: 5 }]),
@@ -48,4 +50,23 @@ it('pads body dividers even when there is no quick-view (no tldr/takeaways)', as
   });
   expect(res.mdContent).toContain('Alpha body.\n\n---\n\n## Conclusion');
   expect(res.mdContent).not.toContain('> **Concepts:**');
+});
+
+it('routes MD write through blobStore.put with key <baseName>.md', async () => {
+  const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
+  const fakeBlobStore = Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put: fakePut }) as typeof localBlobStore;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wsd-'));
+  await writeSummaryDoc({
+    videoId: 'vid', title: 'T', youtubeUrl: 'https://y/watch?v=vid',
+    channel: 'C', durationSeconds: 90, outputFolder: dir, baseName: '1_t',
+    blobStore: fakeBlobStore,
+  });
+  expect(fakePut).toHaveBeenCalledWith(
+    localPrincipal(dir),
+    '1_t.md',
+    expect.any(Buffer),
+    'text/markdown',
+  );
+  const buf = fakePut.mock.calls[0]?.[2] as Buffer | undefined;
+  expect(buf?.toString('utf-8')).toContain('Alpha body.');
 });
