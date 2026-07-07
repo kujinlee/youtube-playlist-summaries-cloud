@@ -58,9 +58,9 @@ test('a stale lease token cannot fail a reclaimed job (fencing)', async () => {
     p_job_id: id, p_worker_id: 'w1', p_lease_token: first.lease_token, p_error: 'x', p_retryable: true });
   expect(staleFail.data).toBeNull();                       // w1 lost the lease
   const row = await admin().from('jobs').select('status,locked_by,lease_token').eq('id', id).single();
-  expect(row.data.status).toBe('active');                  // stale call did NOT change status
-  expect(row.data.locked_by).toBe('w2');                   // still owned by the reclaiming worker
-  expect(row.data.lease_token).toBe(second.lease_token);
+  expect(row.data!.status).toBe('active');                  // stale call did NOT change status
+  expect(row.data!.locked_by).toBe('w2');                   // still owned by the reclaiming worker
+  expect(row.data!.lease_token).toBe(second.lease_token);
 });
 
 test('two concurrent claims get distinct jobs', async () => {
@@ -81,8 +81,8 @@ test('a crash-looping job dead-letters at max attempts (sweep)', async () => {
     await admin().rpc('sweep_expired_leases');
   }
   const row = await admin().from('jobs').select('status,attempts').eq('id', id).single();
-  expect(row.data.status).toBe('dead_letter');
-  expect(row.data.attempts).toBe(2);
+  expect(row.data!.status).toBe('dead_letter');
+  expect(row.data!.attempts).toBe(2);
 });
 
 test('fail retryable requeues with backoff; non-retryable → failed', async () => {
@@ -105,7 +105,7 @@ test('completing a cancel-requested job yields cancelled, not completed', async 
   await admin().from('jobs').update({ cancel_requested: true }).eq('id', id);
   await admin().rpc('complete_job', { p_job_id: id, p_worker_id: 'w', p_lease_token: c.lease_token, p_result: {} });
   const row = await admin().from('jobs').select('status').eq('id', id).single();
-  expect(row.data.status).toBe('cancelled');
+  expect(row.data!.status).toBe('cancelled');
 });
 
 test('claim requires service_role', async () => {

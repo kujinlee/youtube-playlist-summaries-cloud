@@ -72,7 +72,7 @@ test('re-enqueuing a live key with a divergent payload joins and keeps the origi
   expect(second.data[0].joined).toBe(true);
   expect(second.data[0].job_id).toBe(first.data[0].job_id);
   const row = await adminClient().from('jobs').select('payload').eq('id', first.data[0].job_id).single();
-  expect(row.data.payload).toEqual({ model: 'old' });   // key determines payload; divergent join ignored + logged
+  expect(row.data!.payload).toEqual({ model: 'old' });   // key determines payload; divergent join ignored + logged
 });
 
 test('anon can enqueue its own job', async () => {
@@ -92,6 +92,6 @@ test('request_cancel_job cancels a queued job; another user cannot cancel it', a
   const own = await ca.rpc('request_cancel_job', { p_job_id: j.job_id });
   expect(own.error).toBeNull();
   const row = await adminClient().from('jobs').select('status,cancel_requested').eq('id', j.job_id).single();
-  expect(row.data.status).toBe('cancelled');
-  expect(row.data.cancel_requested).toBe(true);
+  expect(row.data!.status).toBe('cancelled');
+  expect(row.data!.cancel_requested).toBe(true);
 });

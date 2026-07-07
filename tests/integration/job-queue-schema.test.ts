@@ -47,7 +47,7 @@ test('a producer cannot directly update a job (no update grant)', async () => {
     expect(upd.data ?? []).toHaveLength(0);
   }
   const check = await adminClient().from('jobs').select('status').eq('id', ins.data.id).single();
-  expect(check.data.status).toBe('queued');
+  expect(check.data!.status).toBe('queued');
 });
 
 test('idempotency index blocks a second live job for the same work target', async () => {
