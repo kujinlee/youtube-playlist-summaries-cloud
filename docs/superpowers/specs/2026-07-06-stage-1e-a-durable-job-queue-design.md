@@ -132,21 +132,21 @@ returning *;   -- includes lease_token
 ```
 `FOR UPDATE SKIP LOCKED` guarantees no two workers claim the same job. `order by created_at, id` gives stable FIFO (Claude L4).
 
-**Attempts counted once per execution.** `attempts` = number of failed executions. It is incremented **exactly once** in whichever fenced terminal update wins — either the worker's `fail()` *or* the sweep's reclaim, never both, because both fence on `(locked_by, lease_token, status='active')` and the first to run rotates/clears the lease so the other no-ops (Codex H1 / Claude H4).
+**Attempts = executions started, incremented once at claim.** `attempts` counts *executions started*, not failures: `claim` increments it by exactly one when it leases the job (`attempts += 1`). This makes the count race-free (one bump per claim, no double-count between `fail()` and the sweep) and gives every terminal path a stable value to test against. `fail()` and the sweep do **not** re-increment — they read the post-claim `attempts` and route to `dead_letter` when `attempts ≥ max_attempts`, else back to `queued`. (Consumers that later want a "failure count" derive it as `attempts − 1` for a completed job, or read `status`.) This resolves the double-count (Codex H1 / Claude H4) and reconciles the v1 wording per the plan review (Codex plan H1/H2, Claude plan M3).
 
-**State machine (guarded transitions — Codex H2).** Every transition is a guarded SQL update; terminal states (`completed`, `failed`, `dead_letter`, `cancelled`) are immutable except an explicit admin/retry op.
+**State machine (guarded transitions — Codex H2).** Every transition is a guarded SQL update; terminal states (`completed`, `failed`, `dead_letter`, `cancelled`) are immutable except an explicit admin/retry op. `attempts` is the value already bumped at claim.
 
 | From | Event | To | Guard |
 |---|---|---|---|
 | — | enqueue | `queued` | idempotency RPC (§4) |
-| `queued` | claim | `active` | `FOR UPDATE SKIP LOCKED` |
+| `queued` | claim | `active` | `FOR UPDATE SKIP LOCKED`; `attempts += 1` |
 | `active` | heartbeat | `active` | fence; extends lease |
 | `active` | handler ok **and** not cancel_requested | `completed` | fence **and** `cancel_requested=false` |
-| `active` | handler throws, retryable, `attempts+1 < max` | `queued` (backoff) | fence; `attempts+=1`, `run_after=now()+backoff` |
-| `active` | handler throws, retryable, `attempts+1 ≥ max` | `dead_letter` | fence; `attempts+=1` |
+| `active` | handler throws, retryable, `attempts < max` | `queued` (backoff) | fence; `run_after=now()+backoff` |
+| `active` | handler throws, retryable, `attempts ≥ max` | `dead_letter` | fence |
 | `active` | handler throws, non-retryable | `failed` | fence |
-| `active` | lease expired (sweep), `attempts+1 < max` | `queued` | `attempts+=1`, lease cleared |
-| `active` | lease expired (sweep), `attempts+1 ≥ max` | `dead_letter` | `attempts+=1` (fixes crash-loop, Claude B2) |
+| `active` | lease expired (sweep), `attempts < max` | `queued` | lease cleared |
+| `active` | lease expired (sweep), `attempts ≥ max` | `dead_letter` | fixes crash-loop (Claude B2) |
 | `active`/`queued` | cancel requested | `cancelled` | see below |
 
 **`failed` vs `dead_letter`:** `failed` = handler declared the error not worth retrying (bad input); `dead_letter` = retryable errors that exhausted attempts, *including crash-loops* (the sweep now dead-letters at max, so a job that always kills its worker cannot re-lease forever). Both are terminal.
