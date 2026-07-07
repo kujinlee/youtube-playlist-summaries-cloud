@@ -244,6 +244,17 @@ test('concurrent enqueue of the same key yields exactly one live job', async () 
   expect(live.data).toHaveLength(1);
 });
 
+test('re-enqueuing a live key with a divergent payload joins and keeps the original (spec §9.2)', async () => {
+  const u = await newUser(); const c = (await signInAs(u.email, u.password)).client;
+  const vid = randomUUID();
+  const first = await enqueue(c, vid, { p_payload: { model: 'old' } });
+  const second = await enqueue(c, vid, { p_payload: { model: 'new' } });
+  expect(second.data[0].joined).toBe(true);
+  expect(second.data[0].job_id).toBe(first.data[0].job_id);
+  const row = await adminClient().from('jobs').select('payload').eq('id', first.data[0].job_id).single();
+  expect(row.data.payload).toEqual({ model: 'old' });   // key determines payload; divergent join ignored + logged
+});
+
 test('anon can enqueue its own job', async () => {
   const s = await anonSession();
   const r = await enqueue(s.client, randomUUID());
@@ -328,7 +339,7 @@ grant execute on function request_cancel_job(uuid) to anon, authenticated, servi
 - [ ] **Step 4: Apply and run test to verify it passes**
 
 Run: `npx supabase db reset && npm run test:integration -- job-queue-producer`
-Expected: PASS (7 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -980,7 +991,7 @@ git commit -m "feat(queue): expose optional jobQueue on the cloud storage bundle
 - Claude-H2 (concurrency tests) → Task 2 concurrent-enqueue, Task 3 concurrent-claim.
 - Codex-H3 / Claude-L3 (null-claim test) → Task 4 asserts `claim(...,randomUUID()) === null`.
 - Codex-M1 / Claude-M4 (FK) → restored `references profiles(id) on delete cascade` (anon has a profiles row via the 0003 trigger — verified).
-- Codex-M3 / Claude-L1 (payload log) → `raise log` in `enqueue_job`; concurrent-enqueue test checks single live row.
+- Codex-M3 / Claude-L1 (payload log) → `raise log` in `enqueue_job`; Task 2 has a divergent-payload-join test asserting the original payload is kept; concurrent-enqueue test checks single live row.
 - Claude-M1 (dead code) → runner cancel test rewritten, asserts `job.id === enq.jobId`, no dead block.
 - Codex-L1 (db-reset-only) → Global Constraints note.
 - Codex-L2 / Claude H1 (no heartbeat loop) → Task 5 interface note; heartbeat tested at RPC level.
