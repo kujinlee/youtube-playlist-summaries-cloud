@@ -1,7 +1,7 @@
 # Stage 1E-a — Durable Job Queue + Lifecycle — Design Spec
 
-**Date:** 2026-07-06 (v2: 2026-07-07)
-**Status:** Draft v2 — hardened after two independent adversarial reviews (Codex `gpt-5.5` + Claude). See `docs/reviews/stage-1e-a-durable-job-queue-spec-codex.md` and `...-spec-claude-review.md`. Pending grill-with-docs + user approval.
+**Date:** 2026-07-06 (v2: 2026-07-07 adversarial; v3: 2026-07-07 grill-with-docs terminology)
+**Status:** Draft v3 — hardened after two independent adversarial reviews (Codex `gpt-5.5` + Claude; see `docs/reviews/stage-1e-a-durable-job-queue-spec-codex.md` and `...-spec-claude-review.md`) and a grill-with-docs terminology pass (glossary terms **Job / Work target / Job kind / Job version** added to `CONTEXT.md`; decision recorded in `docs/adr/0001-hand-rolled-postgres-job-queue.md`). Pending final user approval.
 **Parent:** `docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md` §9, and the 2026-07-06 roadmap revision in §10.
 **Stage:** 1E-a (first of three worker sub-slices: 1E-a queue → 1E-b worker+ingestion → 1E-c polling).
 
@@ -48,7 +48,7 @@ The local tool runs ingestion **inline** (pipeline inside the request, SSE progr
 
 - **Routes branch once.** When a `jobQueue` is present (cloud), a route enqueues and returns a job id to poll; otherwise it runs inline as today. No route changes land in 1E-a; this is the contract later slices consume.
 
-`key` is the domain idempotency tuple `(owner_id, document_id, artifact_type, version)`. `owner_id` comes from the authenticated **or anonymous** principal (parent §7 requires anon guest jobs). In 1E-a the other three are caller-supplied (tests use placeholders).
+`key` is the domain idempotency tuple **`(owner_id, work target, job kind, job version)`** — terms defined in `CONTEXT.md`. The **work target** is the video for a `summary` job and the (video, section) pair for a `dig` job; **job kind** is `summary`|`dig`; **job version** is the target `DocVersion`. `owner_id` comes from the authenticated **or anonymous** principal (parent §7 requires anon guest jobs). In 1E-a these are caller-supplied (tests use placeholders).
 
 ---
 
@@ -58,9 +58,11 @@ The local tool runs ingestion **inline** (pipeline inside the request, SSE progr
 create table jobs (
   id            uuid primary key default gen_random_uuid(),
   owner_id      uuid not null references profiles(id),
-  document_id   text not null,
-  artifact_type text not null,      -- 'summary' | 'dig' (extensible)
-  version       int  not null,
+  -- work target (video[, section]) + job kind + job version = the idempotency identity
+  video_id      text not null,      -- the work target's video
+  section_id    int  not null default -1,  -- dig: the section start-second; -1 = whole-video (summary). NB a real section can start at 0, so the sentinel is -1, not 0.
+  job_kind      text not null,      -- 'summary' | 'dig' (extensible)
+  job_version   text not null,      -- target DocVersion as comparable 'major.minor', e.g. '3.3'
   status        text not null default 'queued',  -- queued|active|completed|failed|dead_letter|cancelled
   payload       jsonb not null,
   result        jsonb,
@@ -78,8 +80,8 @@ create table jobs (
   updated_at    timestamptz not null default now()
 );
 
--- IDEMPOTENCY: at most one live-OR-succeeded job per logical artifact
-create unique index jobs_idem_active on jobs (owner_id, document_id, artifact_type, version)
+-- IDEMPOTENCY: at most one live-OR-succeeded job per (work target, job kind, job version)
+create unique index jobs_idem_active on jobs (owner_id, video_id, section_id, job_kind, job_version)
   where status in ('queued','active','completed');
 
 -- HOT PATHS
@@ -88,17 +90,17 @@ create index jobs_sweep  on jobs (lease_expires_at)          where status = 'act
 create index jobs_owner  on jobs (owner_id, created_at);     -- polling/listing (1E-c)
 ```
 
-**Idempotency = a partial unique index over `{queued, active, completed}`** (revised from v1's live-only set — Codex B4 / Claude H2). This enforces "at most one live *or already-succeeded* job per `(owner, document, artifact, version)`." Consequences:
+**Idempotency = a partial unique index over `{queued, active, completed}`** (revised from v1's live-only set — Codex B4 / Claude H2). This enforces "at most one live *or already-succeeded* job per **(work target, job kind, job version)**." Consequences:
 - Enqueuing a key with a `queued`/`active` job → **join** the running job.
-- Enqueuing a key with a `completed` job → **join/return the completed job**; it does **not** re-run paid work or regenerate the source-of-truth blob, and 1D does not re-charge. A legitimate re-run requires a **new `version`**.
+- Enqueuing a key with a `completed` job → **join/return the completed job**; it does **not** re-run paid work or regenerate the source-of-truth blob, and 1D does not re-charge. A legitimate re-run requires a **new job version** (a `DocVersion` bump).
 - Only `failed` / `cancelled` / `dead_letter` are excluded from the index → a fresh enqueue after one of those is allowed (retry).
 
 **Enqueue is one atomic RPC** (resolves Codex B3 / Claude B3):
 ```sql
 -- inside a single SECURITY INVOKER function, owner_id := auth.uid()
-insert into jobs (owner_id, document_id, artifact_type, version, payload)
-values (auth.uid(), $doc, $type, $ver, $payload)
-on conflict (owner_id, document_id, artifact_type, version)
+insert into jobs (owner_id, video_id, section_id, job_kind, job_version, payload)
+values (auth.uid(), $video, $section, $kind, $ver, $payload)   -- section := -1 for a summary job
+on conflict (owner_id, video_id, section_id, job_kind, job_version)
   where status in ('queued','active','completed')
   do nothing
 returning id, status, false as joined;
@@ -156,7 +158,7 @@ returning *;   -- includes lease_token
 
 **Sweep** runs each worker loop (Codex M3): it reclaims expired-lease `active` rows using its own `FOR UPDATE SKIP LOCKED` so concurrent workers' sweeps don't collide. (A scheduled/pg_cron sweep is deferred to 1H; the inline sweep keeps 1E-a self-contained.)
 
-**Concurrency invariant vs. the local tool (Codex M2 — needs your confirmation, see §9).** The local tool serializes ingestion per output folder (`activeByFolder`). The cloud model deliberately does **not** take a coarse per-playlist lock: idempotency prevents duplicate work on the *same* `(owner, document, artifact, version)`, and cross-artifact safety within a playlist rests on **1C's transactional `MetadataStore` methods** (`claimVideoSlot` row-lock, `reconcile*`), not on a queue-level lock. This is a deliberate divergence, stated so 1E-b's handler can rely on it.
+**Concurrency invariant vs. the local tool (Codex M2 — confirmed §9.1).** The local tool serializes ingestion per output folder (`activeByFolder`). The cloud model deliberately does **not** take a coarse per-playlist lock: idempotency prevents duplicate work on the *same* (work target, job kind, job version), and cross-artifact safety within a playlist rests on **1C's transactional `MetadataStore` methods** (`claimVideoSlot` row-lock, `reconcile*`), not on a queue-level lock. This is a deliberate divergence, stated so 1E-b's handler can rely on it.
 
 **Stub handler with a checkpoint (Claude M1).** The 1E-a handler is an echo, but exposes an **injectable await/checkpoint** so tests can pause it mid-run — which is what makes the lost-lease abort path and cancel-mid-run path actually exercisable in integration tests.
 
@@ -204,8 +206,8 @@ TDD (core logic, branching, concurrency, data integrity), via subagent-driven de
 
 ---
 
-## 9. Open decisions for review
+## 9. Resolved decisions (user-confirmed 2026-07-07)
 
-1. **Per-playlist concurrency (Codex M2).** Proposed: cloud does **not** take a coarse per-playlist lock; it relies on idempotency + 1C's transactional `MetadataStore` methods for cross-artifact safety. Confirm, or require queue-level per-playlist serialization.
-2. **Payload on join (Claude M4).** The idempotency key excludes `payload`. Proposed: the key is treated as fully determining the payload; on a join with a mismatched payload we keep the existing job and log a warning (no error). Confirm, or require rejecting mismatched-payload joins.
-3. **Dead-letter visibility.** Proposed: owners see their own `dead_letter` jobs via the RLS `select` policy; retention/admin-retry deferred to 1H. Confirm.
+1. **Per-playlist concurrency (Codex M2).** Cloud does **not** take a coarse per-playlist lock; it relies on idempotency + 1C's transactional `MetadataStore` methods (`claimVideoSlot` row-lock, `reconcile*`) for cross-artifact safety. The local `activeByFolder` serialization is intentionally not replicated.
+2. **Payload on join (Claude M4).** The idempotency key is treated as fully determining the payload. On a join with a mismatched payload, keep the existing job and log a warning (no error).
+3. **Dead-letter visibility.** Owners see their own `dead_letter` jobs via the RLS `select` policy. Retention limits + admin-retry deferred to 1H.
