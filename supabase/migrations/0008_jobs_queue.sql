@@ -90,3 +90,97 @@ begin
 end $$;
 revoke all on function request_cancel_job(uuid) from public;
 grant execute on function request_cancel_job(uuid) to anon, authenticated, service_role;
+
+-- worker RPCs (service_role only): lease fencing on locked_by + lease_token + status='active'
+
+create function claim_next_job(p_worker_id text, p_lease_seconds int, p_video_id text default null)
+  returns setof jobs language plpgsql security invoker set search_path = public as $$
+declare v_token uuid := gen_random_uuid();
+begin
+  if auth.role() <> 'service_role' then raise exception 'workers only'; end if;
+  return query
+  update jobs set status='active', locked_by=p_worker_id, lease_token=v_token,
+         lease_expires_at = now() + make_interval(secs => p_lease_seconds),
+         attempts = attempts + 1, updated_at = now()   -- one increment per execution (spec §5)
+  where id = (select id from jobs
+              where status='queued' and run_after <= now()
+                and (p_video_id is null or video_id = p_video_id)   -- test-isolation filter
+              order by created_at, id
+              for update skip locked limit 1)
+  returning *;
+end $$;
+revoke all on function claim_next_job(text,int,text) from public;
+grant execute on function claim_next_job(text,int,text) to service_role;
+
+create function heartbeat_job(p_job_id uuid, p_worker_id text, p_lease_token uuid, p_lease_seconds int)
+  returns boolean language plpgsql security invoker set search_path = public as $$
+declare v_rows int;
+begin
+  if auth.role() <> 'service_role' then raise exception 'workers only'; end if;
+  update jobs set lease_expires_at = now() + make_interval(secs => p_lease_seconds), updated_at = now()
+  where id = p_job_id and locked_by = p_worker_id and lease_token = p_lease_token and status = 'active';
+  get diagnostics v_rows = row_count;
+  return v_rows > 0;
+end $$;
+revoke all on function heartbeat_job(uuid,text,uuid,int) from public;
+grant execute on function heartbeat_job(uuid,text,uuid,int) to service_role;
+
+create function complete_job(p_job_id uuid, p_worker_id text, p_lease_token uuid, p_result jsonb)
+  returns boolean language plpgsql security invoker set search_path = public as $$
+declare v_rows int;
+begin
+  if auth.role() <> 'service_role' then raise exception 'workers only'; end if;
+  update jobs
+    set status = case when cancel_requested then 'cancelled' else 'completed' end,
+        result = p_result, locked_by = null, lease_token = null, lease_expires_at = null, updated_at = now()
+  where id = p_job_id and locked_by = p_worker_id and lease_token = p_lease_token and status = 'active';
+  get diagnostics v_rows = row_count;
+  return v_rows > 0;
+end $$;
+revoke all on function complete_job(uuid,text,uuid,jsonb) from public;
+grant execute on function complete_job(uuid,text,uuid,jsonb) to service_role;
+
+create function fail_job(p_job_id uuid, p_worker_id text, p_lease_token uuid, p_error text, p_retryable boolean)
+  returns text language plpgsql security invoker set search_path = public as $$
+declare v_attempts int; v_max int; v_cancel boolean; v_new text; v_backoff int;
+begin
+  if auth.role() <> 'service_role' then raise exception 'workers only'; end if;
+  select attempts, max_attempts, cancel_requested into v_attempts, v_max, v_cancel from jobs
+    where id = p_job_id and locked_by = p_worker_id and lease_token = p_lease_token and status = 'active'
+    for update;
+  if not found then return null; end if;            -- lost lease
+  if v_cancel then v_new := 'cancelled';
+  elsif not p_retryable then v_new := 'failed';
+  elsif v_attempts >= v_max then v_new := 'dead_letter';
+  else v_new := 'queued';
+  end if;
+  v_backoff := (10 * power(4, greatest(v_attempts - 1, 0)))::int;   -- 10, 40, 160, ...
+  update jobs set status = v_new, error = p_error,
+       run_after = case when v_new = 'queued' then now() + make_interval(secs => v_backoff) else run_after end,
+       locked_by = null, lease_token = null, lease_expires_at = null, updated_at = now()
+  where id = p_job_id;
+  return v_new;
+end $$;
+revoke all on function fail_job(uuid,text,uuid,text,boolean) from public;
+grant execute on function fail_job(uuid,text,uuid,text,boolean) to service_role;
+
+create function sweep_expired_leases() returns int
+  language plpgsql security invoker set search_path = public as $$
+declare v_count int;
+begin
+  if auth.role() <> 'service_role' then raise exception 'workers only'; end if;
+  with expired as (
+    select id from jobs where status = 'active' and lease_expires_at < now()
+    for update skip locked
+  )
+  update jobs j set
+    status = case when j.cancel_requested then 'cancelled'
+                  when j.attempts >= j.max_attempts then 'dead_letter'
+                  else 'queued' end,
+    locked_by = null, lease_token = null, lease_expires_at = null, updated_at = now()
+  from expired e where j.id = e.id;
+  get diagnostics v_count = row_count;
+  return v_count;
+end $$;
+revoke all on function sweep_expired_leases() from public;
+grant execute on function sweep_expired_leases() to service_role;
