@@ -158,7 +158,7 @@ begin
   update jobs set status = v_new, error = p_error,
        run_after = case when v_new = 'queued' then now() + make_interval(secs => v_backoff) else run_after end,
        locked_by = null, lease_token = null, lease_expires_at = null, updated_at = now()
-  where id = p_job_id;
+  where id = p_job_id and locked_by = p_worker_id and lease_token = p_lease_token and status = 'active';  -- fence the write (SELECT above already locked/confirmed; belt-and-suspenders)
   return v_new;
 end $$;
 revoke all on function fail_job(uuid,text,uuid,text,boolean) from public;
@@ -173,6 +173,8 @@ begin
     select id from jobs where status = 'active' and lease_expires_at < now()
     for update skip locked
   )
+  -- a crash-reclaim requeues with NO backoff (immediately re-claimable) by design —
+  -- distinct from fail_job's exponential backoff on an explicit retryable failure
   update jobs j set
     status = case when j.cancel_requested then 'cancelled'
                   when j.attempts >= j.max_attempts then 'dead_letter'

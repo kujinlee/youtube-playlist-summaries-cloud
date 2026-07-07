@@ -48,6 +48,21 @@ test('a stale lease token cannot complete a reclaimed job (fencing)', async () =
   expect(ok.data).toBe(true);
 });
 
+test('a stale lease token cannot fail a reclaimed job (fencing)', async () => {
+  const vid = randomUUID(); const id = await enqueueScoped(vid);
+  const first = (await claim('w1', vid, 1)).data[0];
+  await admin().from('jobs').update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq('id', id);
+  await admin().rpc('sweep_expired_leases');
+  const second = (await claim('w2', vid)).data[0];
+  const staleFail = await admin().rpc('fail_job', {
+    p_job_id: id, p_worker_id: 'w1', p_lease_token: first.lease_token, p_error: 'x', p_retryable: true });
+  expect(staleFail.data).toBeNull();                       // w1 lost the lease
+  const row = await admin().from('jobs').select('status,locked_by,lease_token').eq('id', id).single();
+  expect(row.data.status).toBe('active');                  // stale call did NOT change status
+  expect(row.data.locked_by).toBe('w2');                   // still owned by the reclaiming worker
+  expect(row.data.lease_token).toBe(second.lease_token);
+});
+
 test('two concurrent claims get distinct jobs', async () => {
   const vid = randomUUID();
   await enqueueScoped(vid); await enqueueScoped(vid, { p_job_kind: 'dig', p_section_id: 5 }); // 2 live jobs, same video
