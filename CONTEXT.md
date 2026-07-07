@@ -1,5 +1,14 @@
 # Domain Glossary
 
+## Async Jobs (Cloud)
+
+The vocabulary for the cloud-only durable work queue that runs expensive generation off-request. The local single-user tool has no jobs — it runs the same work inline. These terms name the *cloud* concept only.
+
+- **Job** — a cloud unit of durable, asynchronous generative work: one (work target, job kind, job version) the cloud queue runs off-request while the client polls for its result. A completed Job's output is a committed, promoted artifact (see Storage Seam). **Distinct from the local `job-registry` "job,"** which is a whole in-memory *playlist-ingestion run* (one per output folder, ephemeral, SSE-streamed). The two coexist: the local single-user tool keeps its coarse in-memory job; the cloud uses the fine-grained durable Job.
+- **Work target** — the fully-qualified subject a job produces for, and what makes two jobs "the same work." A **summary** job's work target is the **video**; a **dig** job's work target is the **(video, section)** pair, because dig deeper operates on a single summary section. Two jobs with the same work target (and job version) are the same unit of work — they are joined/deduplicated, never run twice. Do **not** identify a job by video alone: that would collide two digs on different sections of the same video.
+- **Job version** — the artifact version a job produces, expressed as the target **`DocVersion`** (`{major, minor}`), not an arbitrary counter. Together with the work target it forms a job's identity: a request at the same (work target, job version) joins/returns the existing job — no re-run, no re-charge — while a request after the `DocVersion` major advances is legitimately new work. This ties "re-run a job" to a real format advance (the resummarize semantics), never to a client bumping a number.
+- **Job kind** — the category of generative work a job performs: **`summary`** (produce a video's summary) or **`dig`** (elaborate a single section into the dig-deeper doc). Names the *operation*, distinct from **artifact** (a produced blob). Part of a job's identity: (work target, job kind, job version).
+
 ## Storage Seam
 
 The vocabulary for *whose* data a storage operation targets and *which* collection it selects — introduced so one set of consumers can run against either the local single-user tool or the multi-tenant cloud backend without knowing which.
