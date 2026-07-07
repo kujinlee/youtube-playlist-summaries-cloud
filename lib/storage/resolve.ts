@@ -1,15 +1,23 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MetadataStore } from '@/lib/storage/metadata-store';
 import type { BlobStore } from '@/lib/storage/blob-store';
+import type { JobQueue } from '@/lib/storage/job-queue';
 import { localPrincipal, type Principal } from '@/lib/storage/principal';
 import { localMetadataStore } from '@/lib/storage/local/local-metadata-store';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
+import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
 import { validateStorageEnv, ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import { assertOutputFolder } from '@/lib/index-store';
 
-const LOCAL_BUNDLE = { metadataStore: localMetadataStore as MetadataStore, blobStore: localBlobStore as BlobStore };
+export interface StorageBundle {
+  metadataStore: MetadataStore;
+  blobStore: BlobStore;
+  jobQueue?: JobQueue; // cloud-only; undefined for the local bundle
+}
+
+const LOCAL_BUNDLE: StorageBundle = { metadataStore: localMetadataStore as MetadataStore, blobStore: localBlobStore as BlobStore };
 
 /** Resolve a request's outputFolder into a Principal, running the local
  *  home-dir containment guard (behavior identical to today's assertOutputFolder).
@@ -33,20 +41,23 @@ export function getMetadataStore(): MetadataStore {
   return localMetadataStore;
 }
 
-/** Return a co-selected {metadataStore, blobStore} bundle from STORAGE_BACKEND.
- *  Never mixes local and cloud stores.
- *  - 'local' (default): returns the local singletons.
+/** Return a co-selected StorageBundle {metadataStore, blobStore, jobQueue?} from
+ *  STORAGE_BACKEND. Never mixes local and cloud stores.
+ *  - 'local' (default): returns the local singletons; jobQueue is undefined
+ *    (the local backend has no job queue in Stage 1E-a).
  *  - 'supabase': validates env (fail-fast), requires ctx.supabaseClient (routes
- *    are not wired in Stage 1C — passing no client throws), then returns Supabase impls. */
-export function getStorageBundle(ctx?: { supabaseClient?: SupabaseClient }): { metadataStore: MetadataStore; blobStore: BlobStore } {
+ *    are not wired in Stage 1C — passing no client throws), then returns
+ *    Supabase impls including a SupabaseJobQueue. */
+export function getStorageBundle(ctx?: { supabaseClient?: SupabaseClient }): StorageBundle {
   const backend = process.env.STORAGE_BACKEND ?? 'local';
-  if (backend === 'local') return LOCAL_BUNDLE;
+  if (backend === 'local') return LOCAL_BUNDLE; // jobQueue stays undefined
   if (backend === 'supabase') {
     validateStorageEnv(); // fail-fast on missing env
     if (!ctx?.supabaseClient) throw new Error('supabase backend requires an authenticated client (routes not wired in 1C)');
     return {
       metadataStore: new SupabaseMetadataStore(ctx.supabaseClient),
       blobStore: new SupabaseBlobStore(ctx.supabaseClient, ARTIFACTS_BUCKET),
+      jobQueue: new SupabaseJobQueue(ctx.supabaseClient),
     };
   }
   throw new Error(`unknown STORAGE_BACKEND: ${backend}`);
