@@ -7,7 +7,7 @@ describe('core schema', () => {
     const { data, error } = await admin.rpc('exec_sql', {
       // helper defined in Task 7 harness; or query pg_class via a SQL function
       sql: `select relname, relrowsecurity, relforcerowsecurity from pg_class
-            where relname in ('profiles','playlists','videos')
+            where relname in ('profiles','playlists','videos','jobs')
               and relnamespace = 'public'::regnamespace and relkind = 'r'
             order by relname`,
     });
@@ -15,6 +15,7 @@ describe('core schema', () => {
     // both flags must be true: `enable` alone lets the table owner bypass RLS;
     // `force` makes even the owner obey it.
     expect(data).toEqual([
+      { relname: 'jobs',      relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'playlists', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'profiles',  relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'videos',    relrowsecurity: true, relforcerowsecurity: true },
@@ -30,6 +31,7 @@ describe('core schema', () => {
             from pg_policies where schemaname='public' order by tablename`,
     });
     expect(data).toEqual([
+      { tablename: 'jobs',      policyname: 'jobs_owner',      cmd: 'ALL', has_with_check: true },
       { tablename: 'playlists', policyname: 'playlists_owner', cmd: 'ALL', has_with_check: true },
       { tablename: 'profiles',  policyname: 'profiles_self',   cmd: 'ALL', has_with_check: true },
       { tablename: 'videos',    policyname: 'videos_owner',    cmd: 'ALL', has_with_check: true },
