@@ -13,6 +13,7 @@ A cloud **Job**'s work target includes the **playlist**: a summary job is identi
 
 ## Consequences
 
+- The `jobs → playlists` foreign key must be **composite** `(playlist_id, owner_id) references playlists(id, owner_id)` — matching the `videos` guard and backed by `playlists.unique(id, owner_id)` — not single-column `references playlists(id)`. A single-column FK would let a caller enqueue a job carrying their own `owner_id` but another owner's `playlist_id` (RLS only checks `owner_id = auth.uid()`), and the service-role worker would then write into the victim's tenant. The dual adversarial review of the 1E-b spec caught this; the composite FK closes it.
 - This re-keys the idempotency index and changes the `enqueue_job` signature — done as a `0009` migration while the `jobs` table is still empty in every environment (1E-a undeployed), so no data migration is required.
 - 1D's quota/spend reservation FK anchors to this identity, so the playlist coordinate must be settled before 1D. Revisiting this later (moving to a shared video-level summary) would mean migrating the `jobs` table, re-pointing 1D's reservation, and re-architecting 1C storage — meaningful and cross-cutting.
 - The write location is now derived from identity (`playlistId`), never from the job payload, which closes a latent bug where a divergent payload on a joined job could misdirect an artifact.
