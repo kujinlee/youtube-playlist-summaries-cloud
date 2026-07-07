@@ -38,3 +38,53 @@ create policy jobs_owner on jobs for all
 -- producers: read + insert only (NEVER direct update/delete — lifecycle is RPC-only)
 grant select, insert on public.jobs to anon, authenticated;
 grant select, insert, update, delete on public.jobs to service_role;
+
+-- enqueue: atomic insert-or-join over live+completed states (table aliased to avoid the
+-- output-param `status` colliding with the column — plan review Codex-B2)
+create function enqueue_job(
+  p_video_id text, p_section_id int, p_job_kind text, p_job_version text, p_payload jsonb
+) returns table(job_id uuid, status text, joined boolean)
+  language plpgsql security invoker set search_path = public as $$
+declare v_id uuid; v_status text; v_payload jsonb;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  loop
+    insert into jobs as j (owner_id, video_id, section_id, job_kind, job_version, payload)
+    values (auth.uid(), p_video_id, p_section_id, p_job_kind, p_job_version, p_payload)
+    on conflict (owner_id, video_id, section_id, job_kind, job_version)
+      where j.status in ('queued','active','completed')
+      do nothing
+    returning id into v_id;
+    if v_id is not null then
+      return query select v_id, 'queued'::text, false; return;
+    end if;
+    select j.id, j.status, j.payload into v_id, v_status, v_payload from jobs j
+      where j.owner_id = auth.uid() and j.video_id = p_video_id and j.section_id = p_section_id
+        and j.job_kind = p_job_kind and j.job_version = p_job_version
+        and j.status in ('queued','active','completed')
+      limit 1;
+    if v_id is not null then
+      if v_payload is distinct from p_payload then
+        raise log 'enqueue_job: joined % with a divergent payload (kept existing)', v_id;  -- spec §9.2
+      end if;
+      return query select v_id, v_status, true; return;
+    end if;
+    -- conflicting row went terminal (failed/cancelled) in the gap: retry the insert
+  end loop;
+end $$;
+revoke all on function enqueue_job(text,int,text,text,jsonb) from public;
+grant execute on function enqueue_job(text,int,text,text,jsonb) to anon, authenticated, service_role;
+
+-- cancel: SECURITY DEFINER because producers have no direct update grant. Explicit owner guard.
+create function request_cancel_job(p_job_id uuid) returns void
+  language plpgsql security definer set search_path = public as $$
+begin
+  update jobs
+    set cancel_requested = true,
+        status = case when status = 'queued' then 'cancelled' else status end,
+        updated_at = now()
+  where id = p_job_id and owner_id = auth.uid();
+  if not found then raise exception 'job not found or not owned'; end if;
+end $$;
+revoke all on function request_cancel_job(uuid) from public;
+grant execute on function request_cancel_job(uuid) to anon, authenticated, service_role;
