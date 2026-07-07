@@ -45,10 +45,12 @@ create function enqueue_job(
   p_video_id text, p_section_id int, p_job_kind text, p_job_version text, p_payload jsonb
 ) returns table(job_id uuid, status text, joined boolean)
   language plpgsql security invoker set search_path = public as $$
-declare v_id uuid; v_status text; v_payload jsonb;
+declare v_id uuid; v_status text; v_payload jsonb; v_tries int := 0;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
   loop
+    v_tries := v_tries + 1;
+    if v_tries > 8 then raise exception 'enqueue_job: retry limit exceeded'; end if;
     insert into jobs as j (owner_id, video_id, section_id, job_kind, job_version, payload)
     values (auth.uid(), p_video_id, p_section_id, p_job_kind, p_job_version, p_payload)
     on conflict (owner_id, video_id, section_id, job_kind, job_version)
