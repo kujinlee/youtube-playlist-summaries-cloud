@@ -142,7 +142,7 @@ grant execute on function complete_job(uuid,text,uuid,jsonb) to service_role;
 
 create function fail_job(p_job_id uuid, p_worker_id text, p_lease_token uuid, p_error text, p_retryable boolean)
   returns text language plpgsql security invoker set search_path = public as $$
-declare v_attempts int; v_max int; v_cancel boolean; v_new text; v_backoff int;
+declare v_attempts int; v_max int; v_cancel boolean; v_new text; v_backoff bigint;
 begin
   if auth.role() <> 'service_role' then raise exception 'workers only'; end if;
   select attempts, max_attempts, cancel_requested into v_attempts, v_max, v_cancel from jobs
@@ -154,7 +154,7 @@ begin
   elsif v_attempts >= v_max then v_new := 'dead_letter';
   else v_new := 'queued';
   end if;
-  v_backoff := (10 * power(4, greatest(v_attempts - 1, 0)))::int;   -- 10, 40, 160, ...
+  v_backoff := (10 * power(4, least(greatest(v_attempts - 1, 0), 15)))::bigint;   -- 10, 40, 160, ...; exponent capped so the interval stays bigint-safe at high max_attempts
   update jobs set status = v_new, error = p_error,
        run_after = case when v_new = 'queued' then now() + make_interval(secs => v_backoff) else run_after end,
        locked_by = null, lease_token = null, lease_expires_at = null, updated_at = now()

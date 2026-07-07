@@ -188,7 +188,7 @@ TDD (core logic, branching, concurrency, data integrity), via subagent-driven de
 - Concurrent enqueue of the same key (parallel) → exactly one insert, the other joins; never two live rows.
 - Claim leases one job with a lease token; two concurrent claims get distinct jobs (or one `null`).
 - **Fencing:** a stale `(workerId, leaseToken)` calling `complete`/`fail`/`heartbeat` after reclaim → `ok:false`, no state change; the current lease owner's call succeeds. (Uses the stub checkpoint to force the stall.)
-- Sweep re-queues an expired-lease job and increments `attempts` once; a job at `attempts=max-1` whose lease expires → `dead_letter` (crash-loop bound).
+- Sweep re-queues an expired-lease job **without re-incrementing `attempts`** (the count was already bumped at claim, per §5); a job at `attempts=max` whose lease expires → `dead_letter` (crash-loop bound).
 - Fail retryable under max → `queued` + backoff `run_after`; non-retryable → `failed`; retryable at max → `dead_letter`.
 - Cancel: `queued` → `cancelled` immediately; `active` → checkpoint observes flag → `cancelled`; active+cancel that throws → `cancelled`, not failed/queued.
 - RLS: owner sees only own jobs; another user cannot `select`/`insert`/`cancel` into them; anon can enqueue its own; worker (service_role) can update any.
