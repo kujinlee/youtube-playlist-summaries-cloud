@@ -277,6 +277,18 @@ Too large for one implementation plan. Decompose; each sub-project gets its own 
 - **Hosted real slide images** (deferred feature from §2.1): add on-device capture — `getDisplayMedia` preferred (no install), with file-upload/storyboard/companion as alternatives. Self-contained; does not touch the spine.
 - `mine=true` "my playlists" (roadmap C) via the Google identity.
 
+**Roadmap revision — 2026-07-06 (post-1C session decisions).**
+
+- **Architecture confirmed = single-repo + seams (Option A).** One codebase, shared pipeline core, per-edge seam selected by config. Full-fork rejected: the pipeline is the shared crown jewel and cloud must eventually reach the local app's *full* capability, so duplication would force divergence or double-porting. A future `core`-package split into two thin apps (Option B) remains a low-regret packaging option — deferred, not needed now, and cheap later because 1A already drew the core/edge line.
+- **Reorder: build the 1E worker spine before 1D.** 1D's guardrails are *preflight gates on the enqueue transaction*; that path does not exist until 1E. Building 1E first lets 1D gate a real path end-to-end. **Deploy (1H) stays last — never expose the public, money-spending path before 1D guardrails exist.** Revised order: **1E-a → 1E-b → 1E-c → 1D → 1F/1G → 1H**.
+- **1E decomposed** (worker stage too large for one spec; each sub-slice its own spec → plan → impl):
+  - **1E-a** — durable JobQueue (**cloud-only**) + lifecycle: Postgres `jobs` table, domain idempotency key `(owner_id, document_id, artifact_type, version)`, hand-rolled `SELECT … FOR UPDATE SKIP LOCKED` lease + heartbeat + max-attempts/backoff + dead-letter + cooperative cancel; RLS owner-scoped; trivial handler only (no ingestion payload).
+  - **1E-b** — worker runner + hosted ingestion handler (Gemini YouTube-URL; writes via 1C stores with partial→temp→commit; runtime budgets; graceful shutdown).
+  - **1E-c** — durable progress + polling API/client (no SSE for cloud; local keeps SSE).
+  - *(Deploy/ops is the existing **1H**, not a 1E sub-slice.)*
+- **Durable queue is a cloud-only capability.** The local tool keeps its inline + SSE + in-memory `job-registry` **untouched** — no fictional local `JobQueue` impl. The seam abstracts the *producer* interface (enqueue/status/cancel); execution topology (inline vs. worker) stays an impl detail per bundle.
+- **New item — 1I. Data portability (cloud↔local).** Export a user's cloud library back into the local app (and optionally local→cloud) so they can continue in either environment. Made cheap by the shared seam contracts: migrate by reading one storage bundle and writing the other through the same `MetadataStore`/`BlobStore` interface. **Scope TBD:** one-way *download-into-fresh-local* (simple — no conflicts) vs. bidirectional *merge* (hard — needs per-record versioning + a conflict-resolution policy). Schedulable any time after 1C; **not** required for the Stage-1 public demo. Distinct from 1F's one-way artifact export (MD→Obsidian / HTML download), which is "take a copy out," not "rehydrate and keep managing locally."
+
 **Each stage gate** follows `docs/dev-process.md` (Codex/Claude adversarial review + user approval).
 
 ---
