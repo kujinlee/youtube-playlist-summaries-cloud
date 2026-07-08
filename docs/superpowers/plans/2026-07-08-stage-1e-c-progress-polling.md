@@ -550,14 +550,14 @@ Add a **real `maxItems` unit test** (Codex/Claude L3) — mock `googleapis` at t
 
 - [ ] **Step 4: Run — verify pass**
 
-Run: `npx jest youtube-extract-playlist-id`
-Expected: PASS. (The `maxItems` pagination bound is exercised via the producer unit test's mock in Task 8; the live YouTube path is not unit-tested per the mocking-boundary rule.)
+Run: `npx jest youtube-extract-playlist-id youtube-fetch-bounded`
+Expected: PASS — both the extraction tests and the `maxItems` bound test (the latter pins that `videos.list` is capped, the round-1 defect).
 
-- [ ] **Step 5: Full suite + commit**
+- [ ] **Step 5: Full gate + commit**
 
-Run: `npm test` (confirms `lib/pipeline.ts`'s existing `fetchPlaylistVideos(url, key)` two-arg calls still compile/behave — `opts` is optional).
+Gate: `npm test && npx tsc --noEmit` (confirms `lib/pipeline.ts`'s existing 2-arg `fetchPlaylistVideos(url, key)` calls still typecheck/behave — `opts` is optional).
 ```bash
-git add lib/youtube.ts tests/lib/youtube-extract-playlist-id.test.ts
+git add lib/youtube.ts tests/lib/youtube-extract-playlist-id.test.ts tests/lib/youtube-fetch-bounded.test.ts
 git commit -m "feat(1e-c): export extractPlaylistId + bounded maxItems on fetchPlaylistVideos"
 ```
 
@@ -1357,12 +1357,12 @@ export async function GET(req: Request) {
   return NextResponse.json({ jobs, rollup: rollup(jobs) }, { status: 200 });
 }
 ```
-Note: the `/playlist|fetch|youtube/i` heuristic distinguishes a `fetchPlaylistVideos` throw (→502) from other internal errors (→500). If the implementer prefers, wrap the `fetchPlaylistVideos` call in the producer in a typed `PlaylistFetchError` and check `instanceof` here instead — cleaner, and worth doing if the heuristic proves brittle in the route test.
+Note: the route maps errors purely by `instanceof` (`PlaylistTooLargeError`→422, `AllEnqueueFailedError`→503, `PlaylistFetchError`→502, else→500). There is **no** string-matching heuristic — the producer (Task 8) wraps the `fetchPlaylistVideos` throw in a typed `PlaylistFetchError`, so the 502 path is exact. Do not reintroduce a stringify-regex.
 
 - [ ] **Step 4: Run — verify pass**
 
 Run: `npx jest jobs-route`
-Expected: PASS. (If the 502 heuristic is flaky, add a `PlaylistFetchError` in Task 4/8 and switch to `instanceof`.)
+Expected: PASS.
 
 - [ ] **Step 5: Full gate + commit**
 
@@ -1545,7 +1545,7 @@ git commit -m "feat(1e-c): POST /api/jobs/cancel — by jobId or playlistId (non
 
 **Interfaces:**
 - Consumes: existing `classifyRoute`/`needsAnonProvision`.
-- Produces: for an `authenticated && !user` request whose path starts with `/api/`, a `401` JSON response carrying `response.headers` (so `getUser()`'s cookie mutations are not dropped); non-`/api` paths keep the `307` redirect.
+- Produces: for an `authenticated && !user` request whose path starts with `/api/`, a `401` JSON response onto which **only the cookies** `getUser()` scheduled on `response` are copied (`response.cookies.getAll()` → `res.cookies.set(c)`) — NOT the whole header set (which carries `x-middleware-next`); non-`/api` paths keep the `307` redirect.
 
 **Enumerated Behaviors:**
 
