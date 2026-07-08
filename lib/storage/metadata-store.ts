@@ -14,4 +14,6 @@ export interface MetadataStore {
   /** Remove a video stub from the index. No-op if the id is not present.
    *  Used to roll back a claimVideoSlot reservation when pipeline processing fails. */
   deleteVideo(p: Principal, videoId: string): Promise<void>;
+  /** Cloud-only: resolve (owner, playlist_key) to the playlists.id UUID, creating the row if absent. */
+  resolvePlaylistId(p: Principal, playlistUrl: string): Promise<string>;
 }

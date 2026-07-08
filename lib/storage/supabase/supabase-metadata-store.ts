@@ -153,6 +153,23 @@ export class SupabaseMetadataStore implements MetadataStore {
   }
 
   // ---------------------------------------------------------------------------
+  // resolvePlaylistId: upsert the (owner, playlist_key) row and return its id
+  // atomically. Owner-correct by construction (the upserted row carries
+  // owner_id); never a playlist_key-only select.
+  // ---------------------------------------------------------------------------
+  async resolvePlaylistId(p: Principal, playlistUrl: string): Promise<string> {
+    const { data: userData } = await this.client.auth.getUser();
+    const ownerId = userData?.user?.id;
+    if (!ownerId) throw new Error('resolvePlaylistId: no authenticated user');
+    const { data, error } = await this.client.from('playlists')
+      .upsert({ owner_id: ownerId, playlist_key: p.indexKey, playlist_url: playlistUrl },
+        { onConflict: 'owner_id,playlist_key' })
+      .select('id').single();
+    if (error) throw error;
+    return data.id as string;
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 

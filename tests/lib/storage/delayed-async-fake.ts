@@ -22,5 +22,6 @@ export function delayedStore(inner: MetadataStore): MetadataStore {
     bulkUpdateVideoFields: (p, x) => wrap(() => inner.bulkUpdateVideoFields(p, x)),
     reconcilePlaylistMembership: (p, ids) => wrap(() => inner.reconcilePlaylistMembership(p, ids)),
     deleteVideo: (p, id) => wrap(() => inner.deleteVideo(p, id)),
+    resolvePlaylistId: (p, url) => wrap(() => inner.resolvePlaylistId(p, url)),
   };
 }

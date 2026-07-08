@@ -42,6 +42,9 @@ export class LocalFsMetadataStore implements MetadataStore {
     if (filtered.length === idx.videos.length) return; // id not present — no-op
     indexStore.writeIndex(p.indexKey, { ...idx, videos: filtered });
   }
+  async resolvePlaylistId(): Promise<string> {
+    throw new Error('resolvePlaylistId is cloud-only (unsupported on the local backend)');
+  }
   async reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void> {
     const present = new Set(currentPlaylistIds);
     const idx = indexStore.readIndex(p.indexKey);
