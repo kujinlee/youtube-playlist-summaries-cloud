@@ -12,11 +12,17 @@ export interface LeasedJob {
 }
 export interface JobRecord {
   id: string; status: JobStatus; cancelRequested: boolean; result: unknown; error: string | null;
+  progressPhase: ProgressPhase | null; attempts: number; updatedAt: string;
+}
+export interface PlaylistJobRow {
+  jobId: string; videoId: string; status: JobStatus;
+  progressPhase: ProgressPhase | null; attempts: number; error: string | null;
 }
 
 export interface JobQueue {
   enqueue(key: JobKey, payload: unknown): Promise<EnqueueResult>;
   getStatus(jobId: string): Promise<JobRecord | null>;
+  listByPlaylist(playlistId: string): Promise<PlaylistJobRow[]>;
   requestCancel(jobId: string): Promise<{ requested: number }>;
   claim(workerId: string, leaseSeconds: number, videoId?: string | null): Promise<LeasedJob | null>;
   heartbeat(jobId: string, workerId: string, leaseToken: string, leaseSeconds: number): Promise<{ ok: boolean }>;
