@@ -32,3 +32,14 @@
 - **Concurrent reserve idempotency:** `perform … from playlists … for update` serializes reservers; `on conflict` backed by the videos PK.
 - **Composite FK / `AbortSignal.any` / `set_progress_phase` fence / spreading undefined optionals** — all sound.
 - **No hidden `JobQueue` implementer** (Codex-confirmed before it died): only `SupabaseJobQueue` — adding `setProgressPhase` breaks nothing.
+
+---
+
+## Round 2 (Codex re-run, v2.1) — 1 High → fixed (v2.2)
+The completed Codex re-run found **no Blocking, one High**: the wall-clock `setTimeout` (up to 600s) was never cleared (only `clearInterval` on the heartbeat), so a fast job leaves a ref'd timer holding Jest's event loop open → suite hangs. **Fixed in v2.2:** the wall-clock timer is stored, `unref?.()`'d, and `clearTimeout`'d in the same `finally` as the heartbeat.
+
+## Round 3 (dual, v2.2) — 1 Blocking → fixed (v2.3)
+Both reviewers independently found the **same single Blocking**: the v2.2 timer fix converted `wallClock` to an `AbortController`, but the composed-signal line still passed `[wallClock, leaseLost, …]` (controllers) to `AbortSignal.any`, which needs `.signal`s — the `as AbortSignal[]` cast masked it → `runOnce` would throw `TypeError` on the first job. Both certified the timer fix otherwise correct and the plan "ready once applied." **Fixed in v2.3:** `[wallClock.signal, leaseLost.signal, opts.shutdownSignal]` with a type-guard filter (`(s): s is AbortSignal => Boolean(s)`) replacing the `as` cast so the mistake can't be masked again. This round is the textbook case for the iterate rule — a fix (v2.2) introduced a new Blocking that only re-review caught.
+
+## Round 4 (confirmation, v2.3)
+Single scoped confirmation that the v2.3 `.signal`/type-guard edit is clean and introduces nothing new (both round-3 reviewers had pre-specified this exact fix). Result recorded below.

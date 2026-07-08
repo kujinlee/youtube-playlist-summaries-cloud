@@ -376,7 +376,13 @@ grant execute on function persist_summary(uuid,uuid,text,jsonb,text) to authenti
 
 - [ ] **Step 2: Run** → FAIL.
 
-- [ ] **Step 3: Implement** — in `worker-runner.ts`: import `JobHandler`/`HandlerCtx` from `handler-context.ts` (delete the local `JobHandler`; **re-export it for back-compat: `export type { JobHandler } from './handler-context';`** so `tests/integration/job-queue-runner.test.ts`'s `import type { JobHandler } from '@/lib/job-queue/worker-runner'` keeps compiling; update `echoHandler` to the new ctx signature). Build the composed `signal = AbortSignal.any([wallClock, leaseLost, opts.shutdownSignal].filter(Boolean) as AbortSignal[])`. **Heartbeat: derive the interval from the lease** and guard the rejection path:
+- [ ] **Step 3: Implement** — in `worker-runner.ts`: import `JobHandler`/`HandlerCtx` from `handler-context.ts` (delete the local `JobHandler`; **re-export it for back-compat: `export type { JobHandler } from './handler-context';`** so `tests/integration/job-queue-runner.test.ts`'s `import type { JobHandler } from '@/lib/job-queue/worker-runner'` keeps compiling; update `echoHandler` to the new ctx signature). Build the composed signal from the two controllers' `.signal`s plus the optional shutdown signal, using a **type-guard filter (not an `as` cast)** so a controller-vs-signal mistake can never be masked again:
+```ts
+const signal = AbortSignal.any(
+  [wallClock.signal, leaseLost.signal, opts.shutdownSignal].filter((s): s is AbortSignal => Boolean(s)),
+);
+```
+(`wallClock`/`leaseLost` are `AbortController`s → use `.signal`; `opts.shutdownSignal` is already an `AbortSignal`. Passing a bare `AbortController` to `AbortSignal.any` throws a `TypeError` at runtime.) **Heartbeat: derive the interval from the lease** and guard the rejection path:
 ```ts
 const leaseSeconds = opts.leaseSeconds ?? 120;
 const hb = setInterval(() => {
