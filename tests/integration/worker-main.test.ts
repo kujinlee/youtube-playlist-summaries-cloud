@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { adminClient, newUser, signInAs } from './helpers/clients';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
-import { runWorkerLoop } from '@/worker/main';
+import { runWorkerLoop, sleep } from '@/worker/main';
 import type { JobHandler } from '@/lib/job-queue/worker-runner';
 jest.setTimeout(20_000);
 
@@ -45,4 +45,32 @@ test('runWorkerLoop processes exactly one queued job to completed, then exits on
 
   const st = await userQ.getStatus(enq.jobId);
   expect(st?.status).toBe('completed');
+});
+
+// --- abort-aware idle sleep (the idle-backoff path runWorkerLoop uses between polls) ---
+
+test('sleep resolves PROMPTLY when the signal aborts mid-wait (SIGTERM during idle backoff)', async () => {
+  const ac = new AbortController();
+  const start = Date.now();
+  const p = sleep(10_000, ac.signal); // would block ~10s without the abort
+  setTimeout(() => ac.abort(), 20);
+  await p;
+  expect(Date.now() - start).toBeLessThan(1_000); // did not wait out the 10s
+});
+
+test('sleep resolves IMMEDIATELY when the signal is already aborted on entry', async () => {
+  const ac = new AbortController();
+  ac.abort();
+  const start = Date.now();
+  await sleep(10_000, ac.signal);
+  expect(Date.now() - start).toBeLessThan(200);
+});
+
+test('sleep removes its abort listener on the normal timeout path (no per-poll leak)', async () => {
+  const ac = new AbortController();
+  const removeSpy = jest.spyOn(ac.signal, 'removeEventListener');
+  await sleep(20, ac.signal); // let it time out normally
+  // The process-lifetime signal must not accumulate one dead 'abort' listener per idle poll.
+  expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+  removeSpy.mockRestore();
 });

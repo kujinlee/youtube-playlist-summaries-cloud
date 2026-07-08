@@ -12,11 +12,15 @@ import { validateStorageEnv } from '@/lib/supabase/storage-env';
 const POLL_MS = 2000;
 
 /** Abort-aware sleep: resolves early if `signal` fires mid-wait, so a SIGTERM during
- *  idle backoff doesn't block shutdown for up to POLL_MS. Always resolves, never rejects. */
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
+ *  idle backoff doesn't block shutdown for up to POLL_MS. Always resolves, never rejects.
+ *  Cleans up BOTH the timer and the abort listener on every path — `signal` is the
+ *  process-lifetime controller, so a listener leaked per idle poll would grow unbounded. */
+export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    if (signal.aborted) return resolve(); // already shutting down — don't wait a full POLL_MS
+    const onAbort = () => { clearTimeout(t); resolve(); };
+    const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
