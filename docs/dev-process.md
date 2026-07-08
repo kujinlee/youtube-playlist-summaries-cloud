@@ -36,7 +36,7 @@ These files are not @-included — read them when the trigger condition is met.
 
 1. **Brainstorming** → `docs/design-spec.md`
    - Dialogue → spec → `grill-with-docs` (terminology + CONTEXT.md) → Codex adversarial review
-   - Gate: grill-with-docs + adversarial review + user approval
+   - Gate: grill-with-docs + adversarial review + user approval — for big/critical specs, **iterate the review to convergence** (see Adversarial Review → Iterative Re-Review)
    - **For projects with a frontend:** brainstorming includes wireframe + design tokens. `docs/design-spec.md` must contain a `## UI Design` section (ASCII wireframe, token table, badge/component specs) before any Tailwind or styling code is written. The gate is unchanged — user approves the full spec, which now includes the UI section.
    - **For projects that write files:** `docs/design-spec.md` must contain a `## Output File Format` section with: filename convention (with example), required frontmatter/header fields, and an annotated sample file body. No pipeline or file-writing task begins until this section is approved.
    - **For projects with a list/table UI:** `docs/design-spec.md` must enumerate every sort, filter, and grouping operation the user needs — column, direction semantics, and what undefined/missing values do. Discovering missing operations after implementation counts as a spec gap.
@@ -45,7 +45,7 @@ These files are not @-included — read them when the trigger condition is met.
 
 2. **Writing Plans** → `docs/implementation-plan.md`
    - Codex adversarial review (plan)
-   - Gate: adversarial review + user approval
+   - Gate: adversarial review + user approval — for big/critical plans, **iterate the review to convergence** (see Adversarial Review → Iterative Re-Review)
    - **Required:** immediately after saving the plan, create a Post-Plan Gate checklist (see below) — do not dispatch any implementation subagent until all items are marked complete
 
 3. **Implementation** (per task)
@@ -200,6 +200,31 @@ Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every ph
 - **Code:** per-task (Claude + Codex independently). Both must complete before marking a task done.
 
 Address all High/P1 findings before showing the user. Present Medium/P2 for a decision.
+
+### Iterative Re-Review (big / critical changes) — required
+
+One review round is not the gate; **convergence** is. After addressing a round's Blocking/High findings, **re-run the full dual adversarial review (Codex + Claude) on the *revised* artifact**, and repeat until a round reaches **diminishing returns**. Fixes routinely introduce new defects or expose deeper ones that the first pass could not see — a single round gives false confidence.
+
+**When this is required** (any one triggers it):
+- Schema / identity / idempotency changes; concurrency, leasing, or locking; auth / RLS / multi-tenant isolation; money-spending or irreversible paths.
+- Refactors that touch already-merged, shared code (e.g. a function used by both local and cloud).
+- **Any round that returned a Blocking finding, or whose fixes were non-trivial** (more than a reworded line). A Blocking fix is itself a new, unreviewed design — it must be re-reviewed.
+
+For small, contained changes (single-file logic, config, thin wrappers), one round is fine — do **not** over-apply this.
+
+**The loop:**
+1. Review (Codex + Claude, independent) → group Blocking/High/Medium/Low.
+2. Address all Blocking/High (present Medium for a decision).
+3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
+4. Repeat from 2.
+
+**Stop (diminishing returns) when** a full re-review round returns **no new Blocking or High** — only Low/nits, or findings already known-and-accepted (recorded as deferred with an owner). That round is the gate; then get human approval. Do **not** stop merely because you are tired of reviewing or the artifact "feels done."
+
+**Keep going when** a round surfaces a *new* Blocking/High (common after a big rewrite) — that is proof the loop is still earning its cost; another round is mandatory.
+
+**Save every round** to `docs/reviews/` with a version/round suffix (e.g. `-v2-rereview.md`) so the convergence trail is auditable.
+
+**Empirical basis (Stage 1E-b, 2026-07-07):** the spec's first dual review found 3 Blocking + 3 High; the fixes' *re-review* found **2 new Blocking + 4 High the first round and the fixes both missed** (metadata keyed by non-owner-unique `playlist_key`, `upsertVideo` erasing artifact status, a false "abort stops billing" premise). A single round would have shipped those into the plan and the code. Re-review until convergence is cheap next to shipping a cross-tenant write or a silent double-charge.
 
 ---
 

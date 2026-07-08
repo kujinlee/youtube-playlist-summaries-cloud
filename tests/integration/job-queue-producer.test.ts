@@ -2,61 +2,75 @@
 import { randomUUID } from 'crypto';
 import { adminClient, newUser, signInAs, anonSession } from './helpers/clients';
 
-function enqueue(client: any, videoId: string, over: Record<string, unknown> = {}) {
+async function seedPlaylist(client: any, ownerId: string): Promise<string> {
+  const { data, error } = await client.from('playlists')
+    .insert({ owner_id: ownerId, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+function enqueue(client: any, playlistId: string, videoId: string, over: Record<string, unknown> = {}) {
   return client.rpc('enqueue_job', {
-    p_video_id: videoId, p_section_id: -1, p_job_kind: 'summary',
+    p_playlist_id: playlistId, p_video_id: videoId, p_section_id: -1, p_job_kind: 'summary',
     p_job_version: '3.3', p_payload: { n: 1 }, ...over,
   });
 }
 
 test('enqueue creates a queued job; same live key joins it', async () => {
-  const u = await newUser(); const c = (await signInAs(u.email, u.password)).client;
+  const u = await newUser(); const { client: c, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(c, userId);
   const vid = randomUUID();
-  const first = await enqueue(c, vid);
+  const first = await enqueue(c, pl, vid);
   expect(first.error).toBeNull();
   expect(first.data[0].status).toBe('queued');
   expect(first.data[0].joined).toBe(false);
-  const second = await enqueue(c, vid);
+  const second = await enqueue(c, pl, vid);
   expect(second.data[0].joined).toBe(true);
   expect(second.data[0].job_id).toBe(first.data[0].job_id);
 });
 
 test('a completed job is joined (not re-run) on re-enqueue of the same version', async () => {
-  const u = await newUser(); const c = (await signInAs(u.email, u.password)).client;
+  const u = await newUser(); const { client: c, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(c, userId);
   const vid = randomUUID();
-  const j = (await enqueue(c, vid)).data[0];
+  const j = (await enqueue(c, pl, vid)).data[0];
   await adminClient().from('jobs').update({ status: 'completed' }).eq('id', j.job_id); // service_role sets terminal
-  const again = await enqueue(c, vid);
+  const again = await enqueue(c, pl, vid);
   expect(again.data[0].joined).toBe(true);
   expect(again.data[0].job_id).toBe(j.job_id);
   expect(again.data[0].status).toBe('completed');
 });
 
 test('a fresh job is allowed after the prior one is cancelled', async () => {
-  const u = await newUser(); const c = (await signInAs(u.email, u.password)).client;
+  const u = await newUser(); const { client: c, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(c, userId);
   const vid = randomUUID();
-  const j = (await enqueue(c, vid)).data[0];
+  const j = (await enqueue(c, pl, vid)).data[0];
   await c.rpc('request_cancel_job', { p_job_id: j.job_id }); // queued → cancelled
-  const fresh = await enqueue(c, vid);
+  const fresh = await enqueue(c, pl, vid);
   expect(fresh.data[0].joined).toBe(false);
   expect(fresh.data[0].job_id).not.toBe(j.job_id);
 });
 
 test('a different owner enqueuing the same key gets a separate job', async () => {
   const a = await newUser(); const b = await newUser();
-  const ca = (await signInAs(a.email, a.password)).client;
-  const cb = (await signInAs(b.email, b.password)).client;
+  const { client: ca, userId: aid } = await signInAs(a.email, a.password);
+  const { client: cb, userId: bid } = await signInAs(b.email, b.password);
+  const plA = await seedPlaylist(ca, aid);
+  const plB = await seedPlaylist(cb, bid);
   const vid = randomUUID();
-  const ja = (await enqueue(ca, vid)).data[0];
-  const jb = (await enqueue(cb, vid)).data[0];
+  const ja = (await enqueue(ca, plA, vid)).data[0];
+  const jb = (await enqueue(cb, plB, vid)).data[0];
   expect(jb.joined).toBe(false);              // idem index is owner-scoped
   expect(jb.job_id).not.toBe(ja.job_id);
 });
 
 test('concurrent enqueue of the same key yields exactly one live job', async () => {
-  const u = await newUser(); const c = (await signInAs(u.email, u.password)).client;
+  const u = await newUser(); const { client: c, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(c, userId);
   const vid = randomUUID();
-  const [r1, r2] = await Promise.all([enqueue(c, vid), enqueue(c, vid)]);
+  const [r1, r2] = await Promise.all([enqueue(c, pl, vid), enqueue(c, pl, vid)]);
   const ids = [r1.data[0].job_id, r2.data[0].job_id];
   expect(ids[0]).toBe(ids[1]);                                    // both resolve to one job
   const live = await adminClient().from('jobs')
@@ -65,10 +79,11 @@ test('concurrent enqueue of the same key yields exactly one live job', async () 
 });
 
 test('re-enqueuing a live key with a divergent payload joins and keeps the original (spec §9.2)', async () => {
-  const u = await newUser(); const c = (await signInAs(u.email, u.password)).client;
+  const u = await newUser(); const { client: c, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(c, userId);
   const vid = randomUUID();
-  const first = await enqueue(c, vid, { p_payload: { model: 'old' } });
-  const second = await enqueue(c, vid, { p_payload: { model: 'new' } });
+  const first = await enqueue(c, pl, vid, { p_payload: { model: 'old' } });
+  const second = await enqueue(c, pl, vid, { p_payload: { model: 'new' } });
   expect(second.data[0].joined).toBe(true);
   expect(second.data[0].job_id).toBe(first.data[0].job_id);
   const row = await adminClient().from('jobs').select('payload').eq('id', first.data[0].job_id).single();
@@ -77,16 +92,18 @@ test('re-enqueuing a live key with a divergent payload joins and keeps the origi
 
 test('anon can enqueue its own job', async () => {
   const s = await anonSession();
-  const r = await enqueue(s.client, randomUUID());
+  const pl = await seedPlaylist(s.client, s.userId);
+  const r = await enqueue(s.client, pl, randomUUID());
   expect(r.error).toBeNull();
   expect(r.data[0].status).toBe('queued');
 });
 
 test('request_cancel_job cancels a queued job; another user cannot cancel it', async () => {
   const a = await newUser(); const b = await newUser();
-  const ca = (await signInAs(a.email, a.password)).client;
-  const cb = (await signInAs(b.email, b.password)).client;
-  const j = (await enqueue(ca, randomUUID())).data[0];
+  const { client: ca, userId: aid } = await signInAs(a.email, a.password);
+  const { client: cb } = await signInAs(b.email, b.password);
+  const pl = await seedPlaylist(ca, aid);
+  const j = (await enqueue(ca, pl, randomUUID())).data[0];
   const foreign = await cb.rpc('request_cancel_job', { p_job_id: j.job_id });
   expect(foreign.error).not.toBeNull();                            // 'job not found or not owned'
   const own = await ca.rpc('request_cancel_job', { p_job_id: j.job_id });

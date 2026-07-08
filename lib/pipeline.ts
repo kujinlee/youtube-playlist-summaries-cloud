@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fetchPlaylistVideos, fetchPlaylistTitle, detectLanguage } from './youtube';
+import { fetchPlaylistVideos, fetchPlaylistTitle } from './youtube';
 import { generateSummary, extractQuickView } from './gemini';
 import { resolveTranscriptSegments } from './transcript-source';
 import { assertVideoId } from './index-store';
@@ -9,12 +9,11 @@ import { localPrincipal } from '@/lib/storage/principal';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import { slugify } from './slugify';
 import { applySerial, padSerial } from './serial-filename';
-import { checkSummaryCompleteness } from './summary-completeness';
 import type { ProgressEvent, Video, VideoMeta, RatingValue, VideoType, Audience, GeminiSummaryResponse } from '../types';
 import { CURRENT_DOC_VERSION } from './doc-version';
-import { padDividers } from './markdown-dividers';
 import { runHtmlDoc } from './html-doc/generate';
 import { formatDuration } from './format-duration';
+import { summaryCore } from './ingestion/summary-core';
 
 const VALID_VIDEO_TYPES: VideoType[] = ['Tutorial', 'Analysis', 'Case Study', 'Framework', 'Demo', 'Interview'];
 const VALID_AUDIENCES: Audience[] = ['Beginner', 'Intermediate', 'Advanced'];
@@ -48,62 +47,14 @@ export interface SummaryDocResult {
  */
 export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDocResult> {
   const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName, blobStore = getStorageBundle().blobStore } = input;
-  const { segments } = await resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds);
-  const transcript = segments.map((s) => s.text).join(' '); // plain text for language detection only
-  const language = detectLanguage(transcript);
-  const { summary: rawSummary, ratings, overallScore, videoType, audience, tags, tldr, takeaways } =
-    await generateSummary(segments, language, videoId);
-  const summary = padDividers(rawSummary);
-  // Non-blocking observability: flag a summary that looks truncated (see summary-completeness).
-  // Never blocks the write. Layered on purpose: generateSummary (Stage 2) also warns after its
-  // retry budget is exhausted; this pipeline check is the final gate on the exact text being
-  // persisted (incl. padDividers). Two warnings for one truncation is expected, not a bug.
-  const completeness = checkSummaryCompleteness(summary);
-  if (!completeness.complete) {
-    console.warn(`[summary-suspicious] ${videoId}: ${completeness.reason} (confidence=${completeness.confidence})`);
-  }
+  const result = await summaryCore(
+    { videoId, title, youtubeUrl, channel, durationSeconds, baseName },
+    { resolveTranscriptSegments, generateSummary, extractQuickView },
+  );
+  const { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways } = result.geminiFields;
 
-  const structuralTags = ['video-summary', language];
-  const allTags = [...structuralTags, ...(tags ?? [])];
-  const frontmatterLines = [
-    '---', 'tags:', ...allTags.map((t) => `  - ${t}`),
-    `video_id: "${videoId}"`,
-    ...(channel ? [`channel: "${channel}"`] : []),
-    `lang: ${language.toUpperCase()}`,
-    ...(videoType ? [`type: ${videoType}`] : []),
-    ...(audience ? [`audience: ${audience}`] : []),
-    `score: ${overallScore}`, '---',
-  ];
-  const metaParts = [
-    channel && `**Channel:** ${channel}`,
-    `**Duration:** ${formatDuration(durationSeconds)}`,
-    `**URL:** ${youtubeUrl}`,
-  ].filter(Boolean).join(' | ');
-  const baseContent = [frontmatterLines.join('\n'), '', `# ${title}`, '', metaParts, '', '---', '', summary].join('\n');
-  let outTldr = tldr;
-  let outTakeaways = takeaways;
-  let mdContent: string;
-  if (tldr && takeaways) {
-    mdContent = insertQuickViewCallout(baseContent, tldr, takeaways, tags ?? []);
-  } else {
-    // generateSummary omitted tldr/takeaways → derive them from the full md so the Quick
-    // Reference callout is never silently skipped (same primitive the backfill route uses).
-    try {
-      const qv = await extractQuickView(baseContent);
-      outTldr = qv.tldr;
-      outTakeaways = qv.takeaways;
-      mdContent = insertQuickViewCallout(baseContent, qv.tldr, qv.takeaways, tags ?? []);
-    } catch {
-      // Extraction failed — write without the callout and clear the partial so the doc
-      // stays eligible for the backfill route (filters on !v.tldr). Never fail the summary.
-      mdContent = baseContent;
-      outTldr = undefined;
-      outTakeaways = undefined;
-    }
-  }
-
-  await blobStore.put(localPrincipal(outputFolder), `${baseName}.md`, Buffer.from(mdContent, 'utf-8'), 'text/markdown');
-  return { language, ratings, overallScore, videoType, audience, tags, tldr: outTldr, takeaways: outTakeaways, mdContent, summaryMd: `${baseName}.md` };
+  await blobStore.put(localPrincipal(outputFolder), `${baseName}.md`, Buffer.from(result.mdContent, 'utf-8'), 'text/markdown');
+  return { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways, mdContent: result.mdContent, summaryMd: `${baseName}.md` };
 }
 
 export function parseFrontmatterField(content: string, key: string): string | null {
@@ -214,50 +165,11 @@ export { slugify };
 export { formatDuration };
 
 
-/**
- * Remove an existing Quick Reference callout block from markdown content.
- * Reverses `insertQuickViewCallout` so the callout can be re-generated
- * after corrections are applied. Returns content unchanged if no callout
- * is present or the format is unexpected.
- */
-export function stripQuickViewCallout(mdContent: string): string {
-  const START_MARKER = '\n\n> [!summary] Quick Reference';
-  const END_MARKER = '\n\n---\n';
-  const startIdx = mdContent.indexOf(START_MARKER);
-  if (startIdx === -1) return mdContent; // no callout present
-  const endIdx = mdContent.indexOf(END_MARKER, startIdx);
-  if (endIdx === -1) return mdContent; // malformed — leave unchanged
-  return mdContent.slice(0, startIdx) + mdContent.slice(endIdx);
-}
-
-export function insertQuickViewCallout(
-  mdContent: string,
-  tldr: string,
-  takeaways: string[],
-  tags: string[],
-): string {
-  // Idempotency guard: don't insert if callout already present
-  if (mdContent.includes('> [!summary] Quick Reference')) return mdContent;
-
-  // Find first "\n\n---\n" — the divider between metadata line and summary body
-  const dividerIdx = mdContent.indexOf('\n\n---\n');
-  if (dividerIdx === -1) return mdContent; // unexpected format, leave unchanged
-
-  const lines = [
-    '',
-    '> [!summary] Quick Reference',
-    `> **TL;DR:** ${tldr}`,
-    '>',
-    '> **Key Takeaways:**',
-    ...takeaways.map((t) => `> - ${t}`),
-  ];
-  if (tags.length > 0) {
-    lines.push('>');
-    lines.push(`> **Concepts:** ${tags.join(' · ')}`);
-  }
-
-  return mdContent.slice(0, dividerIdx) + '\n' + lines.join('\n') + mdContent.slice(dividerIdx);
-}
+// Quick Reference callout transforms moved to the pure `lib/quick-view-callout.ts`
+// (no fs/storage deps) so `summaryCore` and the cloud worker can use them without
+// dragging in pipeline.ts's server-only graph. Re-exported here so existing callers
+// that import them from `@/lib/pipeline` (regenerate + quick-view backfill routes) keep working.
+export { stripQuickViewCallout, insertQuickViewCallout } from './quick-view-callout';
 
 export async function runIngestion(
   playlistUrl: string,

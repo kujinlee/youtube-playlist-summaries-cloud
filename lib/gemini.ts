@@ -32,6 +32,30 @@ function getApiKey(): string {
   return key;
 }
 
+/**
+ * Sleep for `ms`, but reject immediately with an `AbortError` DOMException if `signal` fires
+ * first — rather than waiting out the full delay. Used to make retry backoff abort-aware so an
+ * aborted worker doesn't sit through an exponential-backoff sleep before noticing. Cleans up its
+ * timer/listener on either path.
+ */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('aborted', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 // Controlled-generation (responseSchema) constraints. These mirror the Zod schemas above in
 // Gemini's OpenAPI-subset format so the model is constrained to emit STRUCTURALLY valid JSON
 // (no trailing commas, unquoted keys, etc. — the malformed-JSON class that retries can't fix).
@@ -138,18 +162,20 @@ export async function generateJson<T>(
   label: string,
   retries = 2,
   baseDelayMs = 400,
+  opts?: { signal?: AbortSignal },
 ): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    if (opts?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
     try {
-      const result = await model.generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS });
+      const result = await model.generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS, signal: opts?.signal });
       assertNotTruncated(result);
       return schema.parse(JSON.parse(result.response.text()));
     } catch (err) {
       lastErr = err;
       if (attempt < retries) {
         console.warn(`[gemini-retry] ${label}: attempt ${attempt + 1} failed (${err instanceof Error ? err.message : String(err)}); retrying…`);
-        if (baseDelayMs > 0) await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+        if (baseDelayMs > 0) await abortableSleep(baseDelayMs * 2 ** attempt, opts?.signal);
       }
     }
   }
@@ -202,6 +228,7 @@ export async function generateSummary(
   segments: TranscriptSegment[],
   language: 'en' | 'ko',
   videoId: string,
+  opts?: { signal?: AbortSignal },
 ): Promise<GeminiSummaryResponse> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
@@ -234,7 +261,7 @@ ${indexedTranscript}
 </transcript>`;
 
   const attempt = async (): Promise<GeminiSummaryResponse> => {
-    const parsed = await generateJson(model, prompt, GeminiResponseSchema, 'summary');
+    const parsed = await generateJson(model, prompt, GeminiResponseSchema, 'summary', undefined, undefined, opts);
     const { ratings, videoType, audience, tags } = parsed;
     const summary = resolveTranscriptTokens(parsed.summary, segments, videoId);
     const tldr = parsed.tldr ? trimToWords(parsed.tldr, 25) : undefined;
@@ -270,6 +297,9 @@ ${indexedTranscript}
     if (hasSegments && !hasTimestamp(chosen.summary)) warnTimestampMiss(videoId, segments.length, attemptsUsed);
     return chosen;
   } catch (err) {
+    // Preserve AbortError identity unwrapped — the worker (Task 6) distinguishes an intentional
+    // abort (lease lost / SIGTERM) from a real generation failure by checking `err.name`.
+    if ((err as { name?: string })?.name === 'AbortError') throw err;
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`Gemini summary failed: ${cause}`, { cause: err });
   }
@@ -474,6 +504,7 @@ export async function transcribeViaGemini(
   durationSeconds: number,
   retries = 2,
   baseDelayMs = 400,
+  opts?: { signal?: AbortSignal },
 ): Promise<TranscriptSegment[]> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
@@ -499,8 +530,9 @@ export async function transcribeViaGemini(
 
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    if (opts?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
     try {
-      const result = await model.generateContent(request, { timeout: REQUEST_TIMEOUT_MS });
+      const result = await model.generateContent(request, { timeout: REQUEST_TIMEOUT_MS, signal: opts?.signal });
       assertNotTruncated(result);
       const parsed = GeminiTranscriptSchema.parse(JSON.parse(result.response.text()));
       const segments = mapGeminiTranscriptSegments(parsed.segments);
@@ -515,7 +547,7 @@ export async function transcribeViaGemini(
       lastErr = err;
       if (attempt < retries) {
         console.warn(`[gemini-retry] transcribe ${videoId}: attempt ${attempt + 1} failed (${err instanceof Error ? err.message : String(err)}); retrying…`);
-        if (baseDelayMs > 0) await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+        if (baseDelayMs > 0) await abortableSleep(baseDelayMs * 2 ** attempt, opts?.signal);
       }
     }
   }

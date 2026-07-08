@@ -1,13 +1,22 @@
 import { randomUUID } from 'crypto';
 import { adminClient, newUser, signInAs } from './helpers/clients';
 
+async function seedPlaylist(client: any, ownerId: string): Promise<string> {
+  const { data, error } = await client.from('playlists')
+    .insert({ owner_id: ownerId, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (error) throw error;
+  return data.id as string;
+}
+
 test('a user can insert and read only their own jobs (RLS isolation)', async () => {
   const a = await newUser(); const b = await newUser();
   const ca = await signInAs(a.email, a.password);
   const cb = await signInAs(b.email, b.password);
+  const pl = await seedPlaylist(ca.client, ca.userId);
   const vid = randomUUID();
   const ins = await ca.client.from('jobs').insert({
-    owner_id: ca.userId, video_id: vid, section_id: -1,
+    owner_id: ca.userId, playlist_id: pl, video_id: vid, section_id: -1,
     job_kind: 'summary', job_version: '3.3', payload: { hi: 1 },
   }).select().single();
   expect(ins.error).toBeNull();
@@ -22,8 +31,9 @@ test('a user can insert and read only their own jobs (RLS isolation)', async () 
 test('inserting a job for another owner is rejected by the with-check policy', async () => {
   const a = await newUser(); const b = await newUser();
   const ca = await signInAs(a.email, a.password);
+  const pl = await seedPlaylist(ca.client, ca.userId);
   const ins = await ca.client.from('jobs').insert({
-    owner_id: b.user.id, video_id: randomUUID(), section_id: -1,
+    owner_id: b.user.id, playlist_id: pl, video_id: randomUUID(), section_id: -1,
     job_kind: 'summary', job_version: '3.3', payload: {},
   });
   expect(ins.error).not.toBeNull();
@@ -32,9 +42,10 @@ test('inserting a job for another owner is rejected by the with-check policy', a
 test('a producer cannot directly update a job (no update grant)', async () => {
   const a = await newUser();
   const ca = await signInAs(a.email, a.password);
+  const pl = await seedPlaylist(ca.client, ca.userId);
   const vid = randomUUID();
   const ins = await ca.client.from('jobs').insert({
-    owner_id: ca.userId, video_id: vid, section_id: -1,
+    owner_id: ca.userId, playlist_id: pl, video_id: vid, section_id: -1,
     job_kind: 'summary', job_version: '3.3', payload: {},
   }).select().single();
   const upd = await ca.client.from('jobs').update({ status: 'completed' }).eq('id', ins.data.id).select();
@@ -53,8 +64,9 @@ test('a producer cannot directly update a job (no update grant)', async () => {
 test('idempotency index blocks a second live job for the same work target', async () => {
   const a = await newUser();
   const ca = await signInAs(a.email, a.password);
+  const pl = await seedPlaylist(ca.client, ca.userId);
   const vid = randomUUID();
-  const row = { owner_id: ca.userId, video_id: vid, section_id: -1, job_kind: 'summary', job_version: '3.3', payload: {} };
+  const row = { owner_id: ca.userId, playlist_id: pl, video_id: vid, section_id: -1, job_kind: 'summary', job_version: '3.3', payload: {} };
   expect((await ca.client.from('jobs').insert(row)).error).toBeNull();
   expect((await ca.client.from('jobs').insert(row)).error).not.toBeNull();
 });

@@ -5,9 +5,13 @@ jest.setTimeout(20_000);
 const admin = () => adminClient();
 async function enqueueScoped(videoId: string, over: Record<string, unknown> = {}) {
   const u = await newUser();
-  const c = (await signInAs(u.email, u.password)).client;
+  const { client: c, userId } = await signInAs(u.email, u.password);
+  const { data: pl, error: plErr } = await c.from('playlists')
+    .insert({ owner_id: userId, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (plErr) throw plErr;
   const r = await c.rpc('enqueue_job', {
-    p_video_id: videoId, p_section_id: -1, p_job_kind: 'summary', p_job_version: '3.3', p_payload: {}, ...over });
+    p_playlist_id: pl!.id, p_video_id: videoId, p_section_id: -1, p_job_kind: 'summary', p_job_version: '3.3', p_payload: {}, ...over });
   return r.data[0].job_id as string;
 }
 const claim = (worker: string, videoId: string, lease = 120) =>
@@ -39,6 +43,7 @@ test('a stale lease token cannot complete a reclaimed job (fencing)', async () =
   const first = (await claim('w1', vid, 1)).data[0];
   await admin().from('jobs').update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq('id', id);
   await admin().rpc('sweep_expired_leases');
+  await admin().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', id);
   const second = (await claim('w2', vid)).data[0];
   const staleDone = await admin().rpc('complete_job', {
     p_job_id: id, p_worker_id: 'w1', p_lease_token: first.lease_token, p_result: {} });
@@ -53,6 +58,7 @@ test('a stale lease token cannot fail a reclaimed job (fencing)', async () => {
   const first = (await claim('w1', vid, 1)).data[0];
   await admin().from('jobs').update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq('id', id);
   await admin().rpc('sweep_expired_leases');
+  await admin().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', id);
   const second = (await claim('w2', vid)).data[0];
   const staleFail = await admin().rpc('fail_job', {
     p_job_id: id, p_worker_id: 'w1', p_lease_token: first.lease_token, p_error: 'x', p_retryable: true });
@@ -79,6 +85,7 @@ test('a crash-looping job dead-letters at max attempts (sweep)', async () => {
     await claim('w', vid, 1);
     await admin().from('jobs').update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq('id', id);
     await admin().rpc('sweep_expired_leases');
+    await admin().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', id);
   }
   const row = await admin().from('jobs').select('status,attempts').eq('id', id).single();
   expect(row.data!.status).toBe('dead_letter');
@@ -91,8 +98,13 @@ test('fail retryable requeues with backoff; non-retryable → failed', async () 
   const s = await admin().rpc('fail_job', {
     p_job_id: id, p_worker_id: 'w', p_lease_token: c.lease_token, p_error: 'boom', p_retryable: true });
   expect(s.data).toBe('queued');
-  // retryable fail set run_after = now()+10s; reset it so the next claim is eligible (plan review Claude-B2)
-  await admin().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', id);
+  // retryable fail set run_after = now()+10s; reset it using the DB clock — not the client clock —
+  // so the next claim is eligible even under client-vs-DB clock skew (plan review Claude-B2; Task 9
+  // hardening). `exec_sql` is read-only by design (wraps its arg in `select ... from (<sql>) t`, so
+  // it cannot run UPDATE directly); fetch the DB's own `now()` via `exec_sql`, then write that
+  // DB-sourced timestamp through the normal PostgREST update.
+  const dbNow = (await admin().rpc('exec_sql', { sql: `select (now() - interval '1 second') as val` })).data[0].val;
+  await admin().from('jobs').update({ run_after: dbNow }).eq('id', id);
   const c2 = (await claim('w', vid)).data[0];
   const s2 = await admin().rpc('fail_job', {
     p_job_id: id, p_worker_id: 'w', p_lease_token: c2.lease_token, p_error: 'bad input', p_retryable: false });
