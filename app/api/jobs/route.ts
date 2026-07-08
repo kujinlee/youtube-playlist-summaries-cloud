@@ -15,18 +15,19 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'authentication required' }, { status: 401 });
 
   let playlistUrl: string;
+  let indexKey: string;
   try {
     const body = await req.json();
     playlistUrl = body?.playlistUrl;
     if (typeof playlistUrl !== 'string' || !playlistUrl) return NextResponse.json({ error: 'missing playlistUrl' }, { status: 400 });
-    extractPlaylistId(playlistUrl); // throws → 400
+    indexKey = extractPlaylistId(playlistUrl); // throws → 400
   } catch { return NextResponse.json({ error: 'invalid playlist url' }, { status: 400 }); }
 
   if (!process.env.YOUTUBE_API_KEY) return NextResponse.json({ error: 'internal error' }, { status: 500 });
 
-  const bundle = getStorageBundle({ supabaseClient: supabase });
-  const principal = getPrincipalFromSession({ userId: user.id }, extractPlaylistId(playlistUrl));
   try {
+    const bundle = getStorageBundle({ supabaseClient: supabase });
+    const principal = getPrincipalFromSession({ userId: user.id }, indexKey);
     const result = await enqueuePlaylist(bundle, principal, playlistUrl);
     return NextResponse.json(result, { status: 200 });
   } catch (e) {
@@ -47,7 +48,11 @@ export async function GET(req: Request) {
   if (!playlistId) return NextResponse.json({ error: 'missing playlistId' }, { status: 400 });
   if (!UUID_RE.test(playlistId)) return NextResponse.json({ error: 'invalid playlistId' }, { status: 400 });
 
-  const bundle = getStorageBundle({ supabaseClient: supabase });
-  const jobs = await bundle.jobQueue!.listByPlaylist(playlistId);
-  return NextResponse.json({ jobs, rollup: rollup(jobs) }, { status: 200 });
+  try {
+    const bundle = getStorageBundle({ supabaseClient: supabase });
+    const jobs = await bundle.jobQueue!.listByPlaylist(playlistId);
+    return NextResponse.json({ jobs, rollup: rollup(jobs) }, { status: 200 });
+  } catch {
+    return NextResponse.json({ error: 'internal error' }, { status: 500 });
+  }
 }
