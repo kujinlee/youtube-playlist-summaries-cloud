@@ -4,7 +4,7 @@ import type { generateSummary as GenerateSummaryFn, extractQuickView as ExtractQ
 import { checkSummaryCompleteness } from '../summary-completeness';
 import { padDividers } from '../markdown-dividers';
 import { formatDuration } from '../format-duration';
-import { insertQuickViewCallout } from '@/lib/pipeline';
+import { insertQuickViewCallout } from '@/lib/quick-view-callout';
 import type { GeminiSummaryResponse, VideoType, Audience } from '../../types';
 
 export interface SummaryCoreInput {

@@ -165,50 +165,11 @@ export { slugify };
 export { formatDuration };
 
 
-/**
- * Remove an existing Quick Reference callout block from markdown content.
- * Reverses `insertQuickViewCallout` so the callout can be re-generated
- * after corrections are applied. Returns content unchanged if no callout
- * is present or the format is unexpected.
- */
-export function stripQuickViewCallout(mdContent: string): string {
-  const START_MARKER = '\n\n> [!summary] Quick Reference';
-  const END_MARKER = '\n\n---\n';
-  const startIdx = mdContent.indexOf(START_MARKER);
-  if (startIdx === -1) return mdContent; // no callout present
-  const endIdx = mdContent.indexOf(END_MARKER, startIdx);
-  if (endIdx === -1) return mdContent; // malformed — leave unchanged
-  return mdContent.slice(0, startIdx) + mdContent.slice(endIdx);
-}
-
-export function insertQuickViewCallout(
-  mdContent: string,
-  tldr: string,
-  takeaways: string[],
-  tags: string[],
-): string {
-  // Idempotency guard: don't insert if callout already present
-  if (mdContent.includes('> [!summary] Quick Reference')) return mdContent;
-
-  // Find first "\n\n---\n" — the divider between metadata line and summary body
-  const dividerIdx = mdContent.indexOf('\n\n---\n');
-  if (dividerIdx === -1) return mdContent; // unexpected format, leave unchanged
-
-  const lines = [
-    '',
-    '> [!summary] Quick Reference',
-    `> **TL;DR:** ${tldr}`,
-    '>',
-    '> **Key Takeaways:**',
-    ...takeaways.map((t) => `> - ${t}`),
-  ];
-  if (tags.length > 0) {
-    lines.push('>');
-    lines.push(`> **Concepts:** ${tags.join(' · ')}`);
-  }
-
-  return mdContent.slice(0, dividerIdx) + '\n' + lines.join('\n') + mdContent.slice(dividerIdx);
-}
+// Quick Reference callout transforms moved to the pure `lib/quick-view-callout.ts`
+// (no fs/storage deps) so `summaryCore` and the cloud worker can use them without
+// dragging in pipeline.ts's server-only graph. Re-exported here so existing callers
+// that import them from `@/lib/pipeline` (regenerate + quick-view backfill routes) keep working.
+export { stripQuickViewCallout, insertQuickViewCallout } from './quick-view-callout';
 
 export async function runIngestion(
   playlistUrl: string,
