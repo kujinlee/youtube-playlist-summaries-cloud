@@ -69,6 +69,34 @@ test('listByPlaylist is RLS-confined: user B sees [] for user A\'s playlist', as
   expect(rowsB).toEqual([]);
 });
 
+test('listByPlaylist dedupes a re-submitted video to its newest row (review D2)', async () => {
+  // The idempotency index (jobs_idem_active) excludes failed/cancelled/dead_letter, so once a
+  // job for (owner, playlist, video, section, kind, version) is failed, re-enqueuing the SAME
+  // key creates a second, distinct row rather than joining the failed one. listByPlaylist must
+  // collapse these to a single row — the newest — not surface both (stale `failed` + new `queued`).
+  const a = await newUser(); const { client: ca, userId } = await signInAs(a.email, a.password);
+  const pl = await seedPlaylist(ca, userId);
+
+  const first = await enqueue(ca, pl, 'vid-retry');
+  expect(first.error).toBeNull();
+  const firstJobId = first.data[0].job_id as string;
+
+  const admin = adminClient();
+  const { error: updErr } = await admin.from('jobs').update({ status: 'failed' }).eq('id', firstJobId);
+  expect(updErr).toBeNull();
+
+  const second = await enqueue(ca, pl, 'vid-retry');
+  expect(second.error).toBeNull();
+  const secondJobId = second.data[0].job_id as string;
+  expect(secondJobId).not.toBe(firstJobId);   // proves the idem index let a NEW row through, not a join
+
+  const rows = await new SupabaseJobQueue(ca).listByPlaylist(pl);
+  const retryRows = rows.filter(r => r.videoId === 'vid-retry');
+  expect(retryRows).toHaveLength(1);          // dedupe: exactly one row for this videoId
+  expect(retryRows[0].jobId).toBe(secondJobId);
+  expect(retryRows[0].status).toBe('queued'); // the NEW row wins, not the stale `failed` one
+});
+
 test('getStatus surfaces progressPhase, attempts, updatedAt', async () => {
   const a = await newUser(); const { client: ca, userId } = await signInAs(a.email, a.password);
   const pl = await seedPlaylist(ca, userId);

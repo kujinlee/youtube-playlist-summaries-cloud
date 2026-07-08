@@ -25,15 +25,29 @@ export class SupabaseJobQueue implements JobQueue {
       attempts: data.attempts, updatedAt: data.updated_at };
   }
 
+  /**
+   * RLS-dependent: owner confinement (`owner_id = auth.uid()`) comes entirely from Postgres RLS
+   * on the caller's session client — this method MUST NOT be called on a service_role-constructed
+   * SupabaseJobQueue (service_role bypasses RLS and would leak cross-owner rows).
+   */
   async listByPlaylist(playlistId: string): Promise<PlaylistJobRow[]> {
     const { data, error } = await this.client
       .from('jobs')
-      .select('id,video_id,status,progress_phase,attempts,error')
+      .select('id,video_id,status,progress_phase,attempts,error,created_at')
       .eq('playlist_id', playlistId).eq('job_kind', 'summary')
       .order('created_at', { ascending: true }).order('video_id', { ascending: true });
     if (error) throw error;
-    return (data ?? []).map((r) => ({ jobId: r.id, videoId: r.video_id, status: r.status,
-      progressPhase: r.progress_phase, attempts: r.attempts, error: r.error }));
+    // The idempotency index (`jobs_idem_active`) excludes failed/cancelled/dead_letter, so
+    // re-submitting a partially-failed playlist creates a SECOND row for the same videoId (a
+    // stale terminal row plus a fresh queued one). Dedupe to the latest row per videoId: iterate
+    // in ascending created_at order and let a later row overwrite an earlier one in the Map, so
+    // callers (rollup, the polling client) never see a phantom duplicate or a stale `failed`.
+    const latestByVideo = new Map<string, PlaylistJobRow>();
+    for (const r of data ?? []) {
+      latestByVideo.set(r.video_id, { jobId: r.id, videoId: r.video_id, status: r.status,
+        progressPhase: r.progress_phase, attempts: r.attempts, error: r.error });
+    }
+    return Array.from(latestByVideo.values());
   }
 
   async requestCancel(jobId: string): Promise<{ requested: number }> {

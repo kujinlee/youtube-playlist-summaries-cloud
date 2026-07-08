@@ -70,7 +70,10 @@ export async function enqueuePlaylist(
       results.push({ videoId, jobId, status, joined: didJoin });
       if (didJoin) joined += 1; else created += 1;
     } catch (e) {
-      results.push({ videoId, error: String(e) });
+      // Never echo a raw error to the client (review High — internal detail leak); log the real
+      // cause server-side (with videoId for correlation) and surface a stable public string.
+      console.error(`enqueuePlaylist: enqueue failed for video ${videoId}`, e);
+      results.push({ videoId, error: 'enqueue failed' });
     }
   }
   if (created + joined === 0) throw new AllEnqueueFailedError(playlistId);

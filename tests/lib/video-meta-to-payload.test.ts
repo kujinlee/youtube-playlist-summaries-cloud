@@ -51,3 +51,9 @@ it('carries videoId on the skipped variant too', () => {
   const r = videoMetaToIngestionPayload(meta({ videoId: 'v2', durationSeconds: -5 }), 1);
   expect(r).toEqual({ videoId: 'v2', skipped: 'non-positive-duration' });
 });
+
+it('omits a present-but-invalid datetime instead of throwing (review M1)', () => {
+  const r = videoMetaToIngestionPayload(meta({ videoPublishedAt: 'not-a-date' }), 1);
+  if (!('ok' in r)) throw new Error('expected ok');
+  expect('videoPublishedAt' in r.ok).toBe(false);
+});

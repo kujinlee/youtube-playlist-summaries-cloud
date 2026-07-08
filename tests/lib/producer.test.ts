@@ -87,11 +87,13 @@ it('mixed 4-bucket input yields exact disjoint counts summing to videos.length',
 it('best-effort: one failed enqueue does not stop the rest', async () => {
   fetchMock.mockResolvedValueOnce([meta('v1'), meta('v2')]);
   const { bundle } = fakeBundle(async (key: any) => {
-    if (key.videoId === 'v1') throw new Error('boom');
+    if (key.videoId === 'v1') throw new Error('boom: raw db secret');
     return { jobId: 'j2', status: 'queued', joined: false };
   });
   const r = await enqueuePlaylist(bundle, principal, URL_);
   expect(r.counts).toEqual({ enqueued: 1, joined: 0, skipped: 0, failed: 1 });
+  const failedEntry = r.jobs.find((j: any) => j.videoId === 'v1');
+  expect(failedEntry).toEqual({ videoId: 'v1', error: 'enqueue failed' });   // review High — no raw error leak
 });
 
 it('a fully-idempotent re-submit (all joined) is NOT a false 503', async () => {   // review L2
