@@ -77,3 +77,22 @@ it('throws the retryable Error (not PermanentTranscriptError) when the Gemini fa
   expect(caught).toBeInstanceOf(Error);
   expect((caught as Error).message).toMatch(/transcript unavailable via captions and video for vid1/);
 });
+
+it('re-throws an AbortError from the Gemini fallback UNWRAPPED (preserves identity for the worker)', async () => {
+  mockFetchCaptions.mockResolvedValueOnce([]);
+  // The forwarded signal aborts the in-flight transcription → transcribeViaGemini rejects with AbortError.
+  mockTranscribe.mockRejectedValueOnce(new DOMException('aborted', 'AbortError'));
+
+  const controller = new AbortController();
+  let caught: unknown;
+  try {
+    await resolveTranscriptSegments('vid1', VIDEO_URL, 600, { signal: controller.signal });
+  } catch (e) {
+    caught = e;
+  }
+
+  // Must NOT be re-wrapped as the generic "transcript unavailable…" Error — else the worker (Task 6)
+  // would misclassify a deliberate shutdown/lost-lease abort as a genuine transcript failure.
+  expect((caught as { name?: string })?.name).toBe('AbortError');
+  expect((caught as Error).message).not.toMatch(/transcript unavailable/);
+});

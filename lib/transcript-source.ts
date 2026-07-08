@@ -47,6 +47,11 @@ export async function resolveTranscriptSegments(
     throw new Error('Gemini returned no segments');
   } catch (geminiErr) {
     if (geminiErr instanceof PermanentTranscriptError) throw geminiErr;
+    // Preserve AbortError identity through this boundary: opts.signal is forwarded to the Gemini
+    // fallback, so an abort (worker lease lost / SIGTERM) can surface here. Re-wrapping it as a
+    // generic Error would make the worker (Task 6) misclassify a deliberate shutdown as a real
+    // transcript failure. Mirrors generateSummary's unwrapped AbortError re-throw.
+    if ((geminiErr as { name?: string })?.name === 'AbortError') throw geminiErr;
     const captionMsg = captionErr instanceof Error ? captionErr.message : String(captionErr ?? 'captions empty');
     const geminiMsg = geminiErr instanceof Error ? geminiErr.message : String(geminiErr);
     throw new Error(
