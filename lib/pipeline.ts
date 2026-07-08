@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fetchPlaylistVideos, fetchPlaylistTitle, detectLanguage } from './youtube';
+import { fetchPlaylistVideos, fetchPlaylistTitle } from './youtube';
 import { generateSummary, extractQuickView } from './gemini';
 import { resolveTranscriptSegments } from './transcript-source';
 import { assertVideoId } from './index-store';
@@ -9,12 +9,11 @@ import { localPrincipal } from '@/lib/storage/principal';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import { slugify } from './slugify';
 import { applySerial, padSerial } from './serial-filename';
-import { checkSummaryCompleteness } from './summary-completeness';
 import type { ProgressEvent, Video, VideoMeta, RatingValue, VideoType, Audience, GeminiSummaryResponse } from '../types';
 import { CURRENT_DOC_VERSION } from './doc-version';
-import { padDividers } from './markdown-dividers';
 import { runHtmlDoc } from './html-doc/generate';
 import { formatDuration } from './format-duration';
+import { summaryCore } from './ingestion/summary-core';
 
 const VALID_VIDEO_TYPES: VideoType[] = ['Tutorial', 'Analysis', 'Case Study', 'Framework', 'Demo', 'Interview'];
 const VALID_AUDIENCES: Audience[] = ['Beginner', 'Intermediate', 'Advanced'];
@@ -48,62 +47,14 @@ export interface SummaryDocResult {
  */
 export async function writeSummaryDoc(input: SummaryDocInput): Promise<SummaryDocResult> {
   const { videoId, title, youtubeUrl, channel, durationSeconds, outputFolder, baseName, blobStore = getStorageBundle().blobStore } = input;
-  const { segments } = await resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds);
-  const transcript = segments.map((s) => s.text).join(' '); // plain text for language detection only
-  const language = detectLanguage(transcript);
-  const { summary: rawSummary, ratings, overallScore, videoType, audience, tags, tldr, takeaways } =
-    await generateSummary(segments, language, videoId);
-  const summary = padDividers(rawSummary);
-  // Non-blocking observability: flag a summary that looks truncated (see summary-completeness).
-  // Never blocks the write. Layered on purpose: generateSummary (Stage 2) also warns after its
-  // retry budget is exhausted; this pipeline check is the final gate on the exact text being
-  // persisted (incl. padDividers). Two warnings for one truncation is expected, not a bug.
-  const completeness = checkSummaryCompleteness(summary);
-  if (!completeness.complete) {
-    console.warn(`[summary-suspicious] ${videoId}: ${completeness.reason} (confidence=${completeness.confidence})`);
-  }
+  const result = await summaryCore(
+    { videoId, title, youtubeUrl, channel, durationSeconds, baseName },
+    { resolveTranscriptSegments, generateSummary, extractQuickView },
+  );
+  const { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways } = result.geminiFields;
 
-  const structuralTags = ['video-summary', language];
-  const allTags = [...structuralTags, ...(tags ?? [])];
-  const frontmatterLines = [
-    '---', 'tags:', ...allTags.map((t) => `  - ${t}`),
-    `video_id: "${videoId}"`,
-    ...(channel ? [`channel: "${channel}"`] : []),
-    `lang: ${language.toUpperCase()}`,
-    ...(videoType ? [`type: ${videoType}`] : []),
-    ...(audience ? [`audience: ${audience}`] : []),
-    `score: ${overallScore}`, '---',
-  ];
-  const metaParts = [
-    channel && `**Channel:** ${channel}`,
-    `**Duration:** ${formatDuration(durationSeconds)}`,
-    `**URL:** ${youtubeUrl}`,
-  ].filter(Boolean).join(' | ');
-  const baseContent = [frontmatterLines.join('\n'), '', `# ${title}`, '', metaParts, '', '---', '', summary].join('\n');
-  let outTldr = tldr;
-  let outTakeaways = takeaways;
-  let mdContent: string;
-  if (tldr && takeaways) {
-    mdContent = insertQuickViewCallout(baseContent, tldr, takeaways, tags ?? []);
-  } else {
-    // generateSummary omitted tldr/takeaways → derive them from the full md so the Quick
-    // Reference callout is never silently skipped (same primitive the backfill route uses).
-    try {
-      const qv = await extractQuickView(baseContent);
-      outTldr = qv.tldr;
-      outTakeaways = qv.takeaways;
-      mdContent = insertQuickViewCallout(baseContent, qv.tldr, qv.takeaways, tags ?? []);
-    } catch {
-      // Extraction failed — write without the callout and clear the partial so the doc
-      // stays eligible for the backfill route (filters on !v.tldr). Never fail the summary.
-      mdContent = baseContent;
-      outTldr = undefined;
-      outTakeaways = undefined;
-    }
-  }
-
-  await blobStore.put(localPrincipal(outputFolder), `${baseName}.md`, Buffer.from(mdContent, 'utf-8'), 'text/markdown');
-  return { language, ratings, overallScore, videoType, audience, tags, tldr: outTldr, takeaways: outTakeaways, mdContent, summaryMd: `${baseName}.md` };
+  await blobStore.put(localPrincipal(outputFolder), `${baseName}.md`, Buffer.from(result.mdContent, 'utf-8'), 'text/markdown');
+  return { language, ratings, overallScore, videoType, audience, tags, tldr, takeaways, mdContent: result.mdContent, summaryMd: `${baseName}.md` };
 }
 
 export function parseFrontmatterField(content: string, key: string): string | null {
