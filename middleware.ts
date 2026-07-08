@@ -22,6 +22,14 @@ export async function middleware(request: NextRequest) {
   }
 
   if (category === 'authenticated' && !user) {
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      // API clients get JSON 401, not a redirect to an HTML page. Copy ONLY the cookies
+      // getUser() scheduled on `response` (stale-token clears) — NOT the whole header set,
+      // which carries the internal `x-middleware-next` continuation signal (review M6).
+      const res = NextResponse.json({ error: 'authentication required' }, { status: 401 });
+      for (const c of response.cookies.getAll()) res.cookies.set(c);
+      return res;
+    }
     const redirect = request.nextUrl.clone();
     redirect.pathname = '/';
     return NextResponse.redirect(redirect);
