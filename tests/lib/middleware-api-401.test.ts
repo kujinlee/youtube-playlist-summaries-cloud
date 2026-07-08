@@ -47,4 +47,8 @@ it('preserves cookies getUser() scheduled onto the 401 (review High/M6)', async 
   const res = await middleware(req('/api/jobs'));
   expect(res.status).toBe(401);
   expect(res.cookies.get('sb-x')).toBeDefined(); // the scheduled cookie survived onto the 401
+  // Regression guard (review gap, round 3 fix): the 401 must NOT copy `response.headers`
+  // wholesale, because that would carry `x-middleware-next: 1` and cause the runtime to
+  // treat the 401 as a pass-through rather than a terminal response.
+  expect(res.headers.get('x-middleware-next')).toBeNull();
 });
