@@ -22,9 +22,10 @@ export class SupabaseJobQueue implements JobQueue {
     return { id: data.id, status: data.status, cancelRequested: data.cancel_requested, result: data.result, error: data.error };
   }
 
-  async requestCancel(jobId: string): Promise<void> {
-    const { error } = await this.client.rpc('request_cancel_job', { p_job_id: jobId });
+  async requestCancel(jobId: string): Promise<{ requested: number }> {
+    const { data, error } = await this.client.rpc('request_cancel_job', { p_job_id: jobId });
     if (error) throw error;
+    return { requested: (data as number) ?? 0 };
   }
 
   async claim(workerId: string, leaseSeconds: number, videoId: string | null = null): Promise<LeasedJob | null> {

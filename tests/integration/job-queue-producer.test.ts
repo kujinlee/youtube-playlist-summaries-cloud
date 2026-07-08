@@ -105,9 +105,11 @@ test('request_cancel_job cancels a queued job; another user cannot cancel it', a
   const pl = await seedPlaylist(ca, aid);
   const j = (await enqueue(ca, pl, randomUUID())).data[0];
   const foreign = await cb.rpc('request_cancel_job', { p_job_id: j.job_id });
-  expect(foreign.error).not.toBeNull();                            // 'job not found or not owned'
+  expect(foreign.error).toBeNull();            // no longer raises
+  expect(foreign.data).toBe(0);                // foreign → 0 rows
   const own = await ca.rpc('request_cancel_job', { p_job_id: j.job_id });
   expect(own.error).toBeNull();
+  expect(own.data).toBe(1);                    // own queued → 1 row
   const row = await adminClient().from('jobs').select('status,cancel_requested').eq('id', j.job_id).single();
   expect(row.data!.status).toBe('cancelled');
   expect(row.data!.cancel_requested).toBe(true);

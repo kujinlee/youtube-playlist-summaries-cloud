@@ -17,7 +17,7 @@ export interface JobRecord {
 export interface JobQueue {
   enqueue(key: JobKey, payload: unknown): Promise<EnqueueResult>;
   getStatus(jobId: string): Promise<JobRecord | null>;
-  requestCancel(jobId: string): Promise<void>;
+  requestCancel(jobId: string): Promise<{ requested: number }>;
   claim(workerId: string, leaseSeconds: number, videoId?: string | null): Promise<LeasedJob | null>;
   heartbeat(jobId: string, workerId: string, leaseToken: string, leaseSeconds: number): Promise<{ ok: boolean }>;
   complete(jobId: string, workerId: string, leaseToken: string, result: unknown): Promise<{ ok: boolean }>;
