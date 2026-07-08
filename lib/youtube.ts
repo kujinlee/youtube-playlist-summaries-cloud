@@ -11,14 +11,24 @@ function parseDuration(iso: string): number {
           parseInt(match[3] ?? '0');
 }
 
-export async function fetchPlaylistVideos(playlistUrl: string, apiKey: string): Promise<VideoMeta[]> {
-  let playlistId: string | null;
+export function extractPlaylistId(playlistUrl: string): string {
+  let id: string | null;
   try {
-    playlistId = new URL(playlistUrl).searchParams.get('list');
+    id = new URL(playlistUrl).searchParams.get('list');
   } catch {
     throw new Error(`Invalid playlist URL: ${playlistUrl}`);
   }
-  if (!playlistId) throw new Error(`No playlist ID found in URL: ${playlistUrl}`);
+  if (!id) throw new Error(`No playlist ID found in URL: ${playlistUrl}`);
+  return id;
+}
+
+export async function fetchPlaylistVideos(
+  playlistUrl: string,
+  apiKey: string,
+  opts?: { maxItems?: number },
+): Promise<VideoMeta[]> {
+  const playlistId = extractPlaylistId(playlistUrl);
+  const maxItems = opts?.maxItems ?? Infinity;
 
   const yt = google.youtube({ version: 'v3', auth: apiKey });
 
@@ -42,13 +52,15 @@ export async function fetchPlaylistVideos(playlistUrl: string, apiKey: string): 
       }
     }
     pageToken = res.data.nextPageToken ?? undefined;
-  } while (pageToken);
+  } while (pageToken && videoIds.length < maxItems); // stop paginating once we have enough
 
+  // Bound the metadata fetch too: only look up as many ids as we will return.
+  const boundedIds = videoIds.slice(0, maxItems);
   const videos: VideoMeta[] = [];
-  for (let i = 0; i < videoIds.length; i += 50) {
+  for (let i = 0; i < boundedIds.length; i += 50) {
     const res = await yt.videos.list({
       part: ['snippet', 'contentDetails'],
-      id: videoIds.slice(i, i + 50),
+      id: boundedIds.slice(i, i + 50),
     });
     for (const item of res.data.items ?? []) {
       if (!item.id) continue;
@@ -65,7 +77,7 @@ export async function fetchPlaylistVideos(playlistUrl: string, apiKey: string): 
   }
   // videos.list doesn't guarantee response order matches input — restore playlist order
   const videoMap = new Map(videos.map((v) => [v.videoId, v]));
-  return videoIds.map((id) => videoMap.get(id)).filter(Boolean) as VideoMeta[];
+  return boundedIds.map((id) => videoMap.get(id)).filter(Boolean) as VideoMeta[];
 }
 
 export async function fetchTranscript(videoId: string): Promise<string> {
