@@ -63,6 +63,29 @@ export function getStorageBundle(ctx?: { supabaseClient?: SupabaseClient }): Sto
   throw new Error(`unknown STORAGE_BACKEND: ${backend}`);
 }
 
+/** Resolve a worker-facing storage bundle for a (ownerId, playlistId) pair.
+ *  UUID-BOUND ON PURPOSE: playlist_key is unique PER OWNER, not globally, so a
+ *  service_role worker must resolve the playlist by its UUID and assert
+ *  ownership explicitly here — never look the row up by playlist_key (that
+ *  path could silently return another owner's row when keys collide). */
+export async function getWorkerStorageBundle(
+  serviceClient: SupabaseClient, ownerId: string, playlistId: string,
+): Promise<{ blobStore: BlobStore; principal: Principal; ownerId: string; playlistId: string }> {
+  validateStorageEnv();
+  const { data, error } = await serviceClient
+    .from('playlists').select('playlist_key, owner_id').eq('id', playlistId).maybeSingle();
+  if (error) throw error;
+  if (!data || data.owner_id !== ownerId) {
+    throw new Error(`getWorkerStorageBundle: playlist ${playlistId} not owned by ${ownerId}`);
+  }
+  return {
+    blobStore: new SupabaseBlobStore(serviceClient, ARTIFACTS_BUCKET),
+    principal: { id: ownerId, indexKey: data.playlist_key },
+    ownerId,
+    playlistId,
+  };
+}
+
 /** Derive a Principal from a session. Hard-fails if the Supabase backend is
  *  active but the session has no userId — the caller must not proceed without
  *  an authenticated user in cloud mode.
