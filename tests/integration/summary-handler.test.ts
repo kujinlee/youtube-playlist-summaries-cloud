@@ -16,6 +16,7 @@ import { CURRENT_DOC_VERSION } from '@/lib/doc-version';
 import { padSerial } from '@/lib/serial-filename';
 import { slugify } from '@/lib/slugify';
 import { NonRetryableError } from '@/lib/job-queue/errors';
+import { PermanentTranscriptError } from '@/lib/transcript-source-errors';
 import type { HandlerCtx } from '@/lib/job-queue/handler-context';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import type { IngestionPayload } from '@/lib/job-queue/ingestion-payload';
@@ -256,4 +257,41 @@ test('(f) transient transcript failure propagates, not wrapped as NonRetryableEr
   expect(caught).toBeInstanceOf(Error);
   expect(caught).not.toBeInstanceOf(NonRetryableError);
   expect((caught as Error).message).toBe('transient network blip');
+});
+
+// ---------------------------------------------------------------------------
+// (g) PERMANENT transcript failure → NonRetryableError (do not burn max_attempts on a
+//     provably-unavailable transcript, each retry holding a worker slot to dead_letter).
+// ---------------------------------------------------------------------------
+test('(g) permanent transcript failure → NonRetryableError (not retryable)', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const payload = makePayload();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload });
+
+  (resolveTranscriptSegments as jest.Mock).mockReset().mockRejectedValue(
+    new PermanentTranscriptError(`no transcript available for ${videoId}: captions and video both returned zero segments`),
+  );
+
+  const handler = makeSummaryHandler(admin());
+  await expect(handler(job, mockCtx)).rejects.toBeInstanceOf(NonRetryableError);
+  expect(generateSummary).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------
+// (h) NaN durationSeconds is rejected pre-flight → NonRetryableError. Without the schema's
+//     `.finite()`, NaN slips past the `> MAX_DURATION_SECONDS` guard (NaN > MAX is false).
+// ---------------------------------------------------------------------------
+test('(h) NaN durationSeconds → NonRetryableError (does not bypass the over-long guard)', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload: makePayload({ durationSeconds: NaN }) });
+
+  const handler = makeSummaryHandler(admin());
+  await expect(handler(job, mockCtx)).rejects.toBeInstanceOf(NonRetryableError);
+  expect(generateSummary).not.toHaveBeenCalled();
 });

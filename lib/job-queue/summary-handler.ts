@@ -11,6 +11,7 @@ import { slugify } from '@/lib/slugify';
 import { padSerial } from '@/lib/serial-filename';
 import { summaryCore } from '@/lib/ingestion/summary-core';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
+import { PermanentTranscriptError } from '@/lib/transcript-source-errors';
 import { generateSummary, extractQuickView } from '@/lib/gemini';
 
 export const MAX_DURATION_SECONDS = 4 * 3600;
@@ -49,25 +50,38 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
     const baseName = `${padSerial(serial)}_${slugify(payload.title)}`;
 
     await ctx.setPhase('transcribing');
-    const core = await summaryCore(
-      {
-        videoId: job.videoId,
-        title: payload.title,
-        youtubeUrl: payload.youtubeUrl,
-        channel: payload.channel,
-        durationSeconds: payload.durationSeconds,
-        baseName,
-      },
-      {
-        resolveTranscriptSegments,
-        generateSummary: (async (...args: Parameters<typeof generateSummary>) => {
-          await ctx.setPhase('summarizing');
-          return generateSummary(...args);
-        }) as typeof generateSummary,
-        extractQuickView,
-      },
-      { signal: ctx.signal },
-    );
+    let core;
+    try {
+      core = await summaryCore(
+        {
+          videoId: job.videoId,
+          title: payload.title,
+          youtubeUrl: payload.youtubeUrl,
+          channel: payload.channel,
+          durationSeconds: payload.durationSeconds,
+          baseName,
+        },
+        {
+          resolveTranscriptSegments,
+          generateSummary: (async (...args: Parameters<typeof generateSummary>) => {
+            await ctx.setPhase('summarizing');
+            return generateSummary(...args);
+          }) as typeof generateSummary,
+          extractQuickView,
+        },
+        { signal: ctx.signal },
+      );
+    } catch (e) {
+      // A permanently-unavailable transcript (captions AND Gemini both returned zero segments) is
+      // provably non-retryable — map it to NonRetryableError so the job fails immediately instead
+      // of burning max_attempts (each cycle holding a worker slot) on its way to dead_letter. Every
+      // other error — transient transcript blip, Gemini failure, AbortError from wall-clock/lease —
+      // propagates unwrapped so the runner classifies it retryable (or 'lost' on lease abort).
+      if (e instanceof PermanentTranscriptError) {
+        throw new NonRetryableError(`transcript permanently unavailable for ${job.videoId}: ${e.message}`);
+      }
+      throw e;
+    }
 
     await ctx.setPhase('writing');
 

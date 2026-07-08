@@ -9,8 +9,10 @@ export const IngestionPayloadSchema = z.object({
   youtubeUrl: z.string(),
   title: z.string(),
   channel: z.string(),
-  durationSeconds: z.number(),
-  playlistIndex: z.number(),
+  // `.finite().positive()` rejects NaN/Infinity/≤0 — otherwise a NaN durationSeconds slips past the
+  // handler's `> MAX_DURATION_SECONDS` guard (NaN > MAX is false) and reaches transcribeViaGemini.
+  durationSeconds: z.number().finite().positive(),
+  playlistIndex: z.number().int().nonnegative(), // YouTube playlist positions are 0-indexed integers
   videoPublishedAt: z.string(),
   addedToPlaylistAt: z.string(),
 });
