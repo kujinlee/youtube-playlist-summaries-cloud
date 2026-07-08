@@ -88,8 +88,11 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
         if (createdThisRun) {
           // Provably no transcript → job fails non-retryably and will never self-heal, so remove the
           // bare reserved row (mirrors the local pipeline's rollback) rather than orphan serial+position.
+          // GUARDED: delete ONLY a row that is still the bare reservation (`data.summaryMd is null`), so a
+          // concurrent worker that reclaimed this job and already wrote/promoted a summary is never deleted.
           await serviceClient.from('videos').delete()
-            .eq('playlist_id', job.playlistId).eq('video_id', job.videoId).eq('owner_id', job.ownerId);
+            .eq('playlist_id', job.playlistId).eq('video_id', job.videoId).eq('owner_id', job.ownerId)
+            .is('data->>summaryMd', null);
         }
         throw new NonRetryableError(`transcript permanently unavailable for ${job.videoId}: ${e.message}`);
       }

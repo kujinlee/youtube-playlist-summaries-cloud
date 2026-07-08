@@ -108,29 +108,35 @@ begin
   if not (p_owner_id = auth.uid() or auth.role() = 'service_role') then raise exception 'not authorized'; end if;
   perform 1 from playlists where id = p_playlist_id and owner_id = p_owner_id;
   if not found then raise exception 'playlist % not owned by %', p_playlist_id, p_owner_id; end if;
-  -- Resolve the preserved summaryMd.key from the row being updated (v.data), NOT a detached
-  -- pre-UPDATE subquery: the UPDATE's row lock serializes concurrent persists so a status-only
-  -- write cannot clobber a concurrent key write (fixes lost-update H1/I2).
+  -- Whitelist: a summary persist writes ONLY summary-owned fields and preserves EVERYTHING else.
+  -- Layering (right wins): (1) p_video defaults — used only for keys the existing row lacks, i.e. a
+  -- first-time write off a bare reserve row; (2) the existing row's NON-summary fields win back over
+  -- those defaults, so a possibly-stale job payload can never revert operational/membership/metadata/
+  -- other-feature state (archived, removedFromPlaylist, playlistIndex, title, timestamps, dig
+  -- artifacts, personal notes, …) that a concurrent writer (reconcile_membership / merge_video_data /
+  -- upsertVideo) may have changed while this job ran; (3) the top-level summaryMd key resolved from
+  -- payload-or-existing; (4) the artifacts.summaryMd merge with a lock-consistent, KEY-SCOPED
+  -- monotonic status. The UPDATE's row lock serializes concurrent persists (Task-2 lost-update fix).
   update videos v set
-    data = (v.data || (p_video - 'artifacts'))
+    data = (p_video - 'artifacts')
+      || (v.data - 'artifacts'
+            - '{language,ratings,overallScore,summaryMd,processedAt,videoType,audience,tags,tldr,takeaways,docVersion}'::text[])
+      || jsonb_strip_nulls(jsonb_build_object('summaryMd', coalesce(p_video->>'summaryMd', v.data->>'summaryMd')))
       || jsonb_build_object('artifacts',
            coalesce(v.data->'artifacts', '{}'::jsonb)
            || jsonb_build_object('summaryMd', jsonb_build_object(
                 'key', coalesce(p_video->>'summaryMd', v.data->'artifacts'->'summaryMd'->>'key'),
-                -- Monotonic status: never downgrade a promoted artifact back to committed (a stale
-                -- worker / retry after promotion). committed->promoted and same-status pass through.
+                -- Monotonic status, KEY-SCOPED: preserve 'promoted' against a stale 'committed' write
+                -- ONLY when the artifact key is unchanged. A different key is a genuinely new artifact
+                -- that IS in committed state, so it must be allowed through (else the row would claim a
+                -- promoted artifact for a blob that has not been promoted yet).
                 'status', case
                             when v.data->'artifacts'->'summaryMd'->>'status' = 'promoted'
                                  and p_artifact_status = 'committed'
+                                 and v.data->'artifacts'->'summaryMd'->>'key'
+                                     = coalesce(p_video->>'summaryMd', v.data->'artifacts'->'summaryMd'->>'key')
                               then 'promoted'
-                            else p_artifact_status end)))
-      -- Preserve operational fields owned by OTHER features from being reverted to the job's
-      -- enqueue-time payload snapshot (e.g. a concurrent membership reconciliation that archived
-      -- the video). strip_nulls => on a fresh reserve row these keys are absent so p_video's
-      -- defaults stand; on an existing row the current value wins over the stale payload.
-      || jsonb_strip_nulls(jsonb_build_object(
-           'archived', v.data->'archived',
-           'removedFromPlaylist', v.data->'removedFromPlaylist')),
+                            else p_artifact_status end))),
     updated_at = now()
    where v.playlist_id = p_playlist_id and v.video_id = p_video_id and v.owner_id = p_owner_id;
   get diagnostics v_count = row_count;

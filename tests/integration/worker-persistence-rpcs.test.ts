@@ -123,6 +123,43 @@ test('persist_summary preserves operational fields owned by other features (arch
   expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
 });
 
+test('persist_summary preserves ALL concurrent non-summary state (membership order + other-feature fields) against the stale payload', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
+  await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_t.md', playlistIndex: 3 }, p_artifact_status: 'committed' });
+
+  // A concurrent writer (reconcile_membership / merge_video_data / dig pipeline) reorders the video
+  // and writes an other-feature field while the summary job is mid-flight.
+  const before = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  const updated = { ...before.data!.data, playlistIndex: 9, digDeeperMd: 'dd.md' };
+  const seed = await admin.from('videos').update({ data: updated }).eq('playlist_id', pl).eq('video_id', vid);
+  expect(seed.error).toBeNull();
+
+  // The stale enqueue-time payload still carries playlistIndex:3 and no digDeeperMd — persist_summary
+  // must update ONLY summary-owned fields (ratings) and leave everything else untouched.
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_t.md', playlistIndex: 3, ratings: { usefulness: 5 } }, p_artifact_status: 'promoted' });
+
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.playlistIndex).toBe(9);        // membership order NOT reverted to the stale 3
+  expect(row.data!.data.digDeeperMd).toBe('dd.md');    // other-feature field preserved
+  expect(row.data!.data.ratings).toEqual({ usefulness: 5 }); // summary-owned field DID update
+  expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
+});
+
+test('persist_summary monotonic status is KEY-SCOPED — a committed write with a NEW key is allowed through', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
+  await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_old.md' }, p_artifact_status: 'promoted' });
+  // A DIFFERENT key is a genuinely new artifact in committed state — it must NOT inherit the old
+  // key's promoted status (else the row would claim a promoted artifact for an un-promoted blob).
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_new.md' }, p_artifact_status: 'committed' });
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.artifacts.summaryMd.key).toBe('1_new.md');
+  expect(row.data!.data.artifacts.summaryMd.status).toBe('committed');
+});
+
 test('reserve_video_slot raises for an existing row that has no serialNumber (invariant)', async () => {
   const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
   const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
