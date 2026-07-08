@@ -8,13 +8,13 @@ import { z } from 'zod';
 export const IngestionPayloadSchema = z.object({
   youtubeUrl: z.string(),
   title: z.string(),
-  channel: z.string(),
+  channel: z.string().optional(),
   // `.finite().positive()` rejects NaN/Infinity/≤0 — otherwise a NaN durationSeconds slips past the
   // handler's `> MAX_DURATION_SECONDS` guard (NaN > MAX is false) and reaches transcribeViaGemini.
   durationSeconds: z.number().finite().positive(),
   playlistIndex: z.number().int().positive(), // 1-indexed (matches VideoSchema.playlistIndex and the local pipeline's i + 1)
-  videoPublishedAt: z.string(),
-  addedToPlaylistAt: z.string(),
+  videoPublishedAt: z.string().datetime().optional(),
+  addedToPlaylistAt: z.string().datetime().optional(),
 });
 
 export type IngestionPayload = z.infer<typeof IngestionPayloadSchema>;
