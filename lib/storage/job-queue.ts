@@ -1,12 +1,13 @@
 import type { DocVersion } from '@/lib/doc-version';
+import type { ProgressPhase } from '@/lib/job-queue/progress-phase';
 
 export type JobKind = 'summary' | 'dig';
 export type JobStatus = 'queued' | 'active' | 'completed' | 'failed' | 'dead_letter' | 'cancelled';
 
-export interface JobKey { videoId: string; sectionId: number; kind: JobKind; version: string; }
+export interface JobKey { playlistId: string; videoId: string; sectionId: number; kind: JobKind; version: string; }
 export interface EnqueueResult { jobId: string; status: JobStatus; joined: boolean; }
 export interface LeasedJob {
-  id: string; ownerId: string; videoId: string; sectionId: number;
+  id: string; ownerId: string; playlistId: string; videoId: string; sectionId: number;
   kind: JobKind; version: string; payload: unknown; attempts: number; leaseToken: string;
 }
 export interface JobRecord {
@@ -23,6 +24,7 @@ export interface JobQueue {
   fail(jobId: string, workerId: string, leaseToken: string, error: string, opts: { retryable: boolean }):
     Promise<{ ok: boolean; status: JobStatus | null }>;
   sweepExpired(): Promise<number>;
+  setProgressPhase(jobId: string, workerId: string, leaseToken: string, phase: ProgressPhase): Promise<{ ok: boolean }>;
 }
 
 export function docVersionKey(v: DocVersion): string { return `${v.major}.${v.minor}`; }

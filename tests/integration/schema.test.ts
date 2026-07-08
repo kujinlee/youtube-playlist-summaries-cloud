@@ -37,4 +37,44 @@ describe('core schema', () => {
       { tablename: 'videos',    policyname: 'videos_owner',    cmd: 'ALL', has_with_check: true },
     ]);
   });
+
+  it('jobs.playlist_id is a not-null uuid coordinate with a composite owner FK (1E-b)', async () => {
+    const admin = adminClient();
+    const { data, error } = await admin.rpc('exec_sql', {
+      sql: `select is_nullable, data_type from information_schema.columns
+            where table_schema = 'public' and table_name = 'jobs' and column_name = 'playlist_id'`,
+    });
+    expect(error).toBeNull();
+    expect(data).toEqual([{ is_nullable: 'NO', data_type: 'uuid' }]);
+
+    const fk = await admin.rpc('exec_sql', {
+      sql: `select conname from pg_constraint
+            where conname = 'jobs_playlist_owner_fk' and conrelid = 'public.jobs'::regclass`,
+    });
+    expect(fk.error).toBeNull();
+    expect(fk.data).toEqual([{ conname: 'jobs_playlist_owner_fk' }]);
+  });
+
+  it('jobs_idem_active includes playlist_id in its column set (1E-b)', async () => {
+    const admin = adminClient();
+    const { data, error } = await admin.rpc('exec_sql', {
+      sql: `select indexdef from pg_indexes where schemaname = 'public' and indexname = 'jobs_idem_active'`,
+    });
+    expect(error).toBeNull();
+    expect(data[0].indexdef).toContain('playlist_id');
+  });
+
+  it('jobs.progress_phase has a check constraint limiting it to the three known phases (1E-b)', async () => {
+    const admin = adminClient();
+    const { data, error } = await admin.rpc('exec_sql', {
+      sql: `select pg_get_constraintdef(oid) as def from pg_constraint
+            where conrelid = 'public.jobs'::regclass and contype = 'c'
+              and pg_get_constraintdef(oid) like '%progress_phase%'`,
+    });
+    expect(error).toBeNull();
+    expect(data).toHaveLength(1);
+    expect(data[0].def).toContain('transcribing');
+    expect(data[0].def).toContain('summarizing');
+    expect(data[0].def).toContain('writing');
+  });
 });

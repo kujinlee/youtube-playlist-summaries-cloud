@@ -1,12 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { JobQueue, JobKey, EnqueueResult, LeasedJob, JobRecord, JobStatus } from '@/lib/storage/job-queue';
+import type { ProgressPhase } from '@/lib/job-queue/progress-phase';
 
 export class SupabaseJobQueue implements JobQueue {
   constructor(private client: SupabaseClient) {}
 
   async enqueue(key: JobKey, payload: unknown): Promise<EnqueueResult> {
     const { data, error } = await this.client.rpc('enqueue_job', {
-      p_video_id: key.videoId, p_section_id: key.sectionId, p_job_kind: key.kind,
+      p_playlist_id: key.playlistId, p_video_id: key.videoId, p_section_id: key.sectionId, p_job_kind: key.kind,
       p_job_version: key.version, p_payload: payload });
     if (error) throw error;
     const row = data[0];
@@ -33,7 +34,7 @@ export class SupabaseJobQueue implements JobQueue {
     if (!data || data.length === 0) return null;
     const r = data[0];
     return {
-      id: r.id, ownerId: r.owner_id, videoId: r.video_id, sectionId: r.section_id,
+      id: r.id, ownerId: r.owner_id, playlistId: r.playlist_id, videoId: r.video_id, sectionId: r.section_id,
       kind: r.job_kind, version: r.job_version, payload: r.payload, attempts: r.attempts, leaseToken: r.lease_token };
   }
 
@@ -64,5 +65,14 @@ export class SupabaseJobQueue implements JobQueue {
     const { data, error } = await this.client.rpc('sweep_expired_leases');
     if (error) throw error;
     return data as number;
+  }
+
+  async setProgressPhase(
+    jobId: string, workerId: string, leaseToken: string, phase: ProgressPhase,
+  ): Promise<{ ok: boolean }> {
+    const { data, error } = await this.client.rpc('set_progress_phase', {
+      p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_phase: phase });
+    if (error) throw error;
+    return { ok: data === true };
   }
 }

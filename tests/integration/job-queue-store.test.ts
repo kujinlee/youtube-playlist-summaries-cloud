@@ -4,14 +4,25 @@ import { adminClient, newUser, signInAs } from './helpers/clients';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
 jest.setTimeout(20_000);
 
-const key = (videoId: string) => ({ videoId, sectionId: -1, kind: 'summary' as const, version: '3.3' });
+async function seedPlaylist(client: any, ownerId: string): Promise<string> {
+  const { data, error } = await client.from('playlists')
+    .insert({ owner_id: ownerId, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+const key = (playlistId: string, videoId: string) =>
+  ({ playlistId, videoId, sectionId: -1, kind: 'summary' as const, version: '3.3' });
 
 test('enqueue → claim(video) → complete round-trip through the store', async () => {
   const u = await newUser();
-  const userQ = new SupabaseJobQueue((await signInAs(u.email, u.password)).client);
+  const { client, userId } = await signInAs(u.email, u.password);
+  const userQ = new SupabaseJobQueue(client);
   const workerQ = new SupabaseJobQueue(adminClient());
+  const pl = await seedPlaylist(client, userId);
   const vid = randomUUID();
-  const enq = await userQ.enqueue(key(vid), { n: 1 });
+  const enq = await userQ.enqueue(key(pl, vid), { n: 1 });
   expect(enq.joined).toBe(false);
 
   const leased = await workerQ.claim('w1', 120, vid);   // scoped claim
@@ -31,10 +42,12 @@ test('claim returns null when the scoped queue is empty', async () => {
 
 test('fail through the store reports the resulting status', async () => {
   const u = await newUser();
-  const userQ = new SupabaseJobQueue((await signInAs(u.email, u.password)).client);
+  const { client, userId } = await signInAs(u.email, u.password);
+  const userQ = new SupabaseJobQueue(client);
   const workerQ = new SupabaseJobQueue(adminClient());
+  const pl = await seedPlaylist(client, userId);
   const vid = randomUUID();
-  const enq = await userQ.enqueue(key(vid), {});
+  const enq = await userQ.enqueue(key(pl, vid), {});
   const leased = await workerQ.claim('w', 120, vid);
   const r = await workerQ.fail(leased!.id, 'w', leased!.leaseToken, 'boom', { retryable: false });
   expect(r.ok).toBe(true);
