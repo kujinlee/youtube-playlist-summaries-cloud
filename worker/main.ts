@@ -31,11 +31,18 @@ export async function runWorkerLoop(deps: {
   workerId: string;
 }): Promise<void> {
   while (!deps.shutdownSignal.aborted) {
-    const r = await runOnce(deps.queue, deps.handler, {
-      workerId: deps.workerId,
-      shutdownSignal: deps.shutdownSignal,
-    });
-    if (r === 'idle') await sleep(POLL_MS, deps.shutdownSignal);
+    try {
+      const r = await runOnce(deps.queue, deps.handler, {
+        workerId: deps.workerId,
+        shutdownSignal: deps.shutdownSignal,
+      });
+      if (r === 'idle') await sleep(POLL_MS, deps.shutdownSignal);
+    } catch (e) {
+      // A transient queue/network error (e.g. sweepExpired/claim throwing) must NOT kill the
+      // long-lived worker — log, back off, and continue until shutdown is requested.
+      console.error('[worker] loop iteration error (continuing):', e);
+      await sleep(POLL_MS, deps.shutdownSignal);
+    }
   }
 }
 

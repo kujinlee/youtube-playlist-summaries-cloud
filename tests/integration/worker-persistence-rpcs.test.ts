@@ -91,6 +91,49 @@ test('persist_summary preserves a sibling artifact kind (deepDiveMd) across a su
   expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
 });
 
+test('persist_summary status is monotonic — a committed write never downgrades a promoted artifact', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
+  await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
+  // Promote first, then a stale worker / retry re-persists the same key as 'committed'.
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_t.md' }, p_artifact_status: 'promoted' });
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_t.md' }, p_artifact_status: 'committed' });
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
+});
+
+test('persist_summary preserves operational fields owned by other features (archived) against the stale payload', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
+  await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_t.md' }, p_artifact_status: 'committed' });
+
+  // A concurrent membership reconciliation archives the video directly on the row.
+  const before = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  const archivedData = { ...before.data!.data, archived: true };
+  const seed = await admin.from('videos').update({ data: archivedData }).eq('playlist_id', pl).eq('video_id', vid);
+  expect(seed.error).toBeNull();
+
+  // The job's enqueue-time snapshot still carries archived:false — must NOT revert the row.
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, title: 'T', archived: false }, p_artifact_status: 'promoted' });
+
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.archived).toBe(true);
+  expect(row.data!.data.title).toBe('T');
+  expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
+});
+
+test('reserve_video_slot raises for an existing row that has no serialNumber (invariant)', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
+  // Insert a raw videos row with no serialNumber in data (violates the reserve invariant).
+  const ins = await admin.from('videos').insert({ playlist_id: pl, owner_id: userId, video_id: vid, position: 0, data: { id: vid } });
+  expect(ins.error).toBeNull();
+  const res = await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
+  expect(res.error).not.toBeNull();
+  expect(res.data).toBeNull();
+});
+
 test('persist_summary raises when there is no video row', async () => {
   const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
   const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();

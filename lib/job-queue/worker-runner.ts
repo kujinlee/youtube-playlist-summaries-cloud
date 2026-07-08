@@ -34,7 +34,9 @@ export async function runOnce(
   const ctx: HandlerCtx = {
     isCancelled: async () => (await queue.getStatus(job.id))?.cancelRequested ?? false,
     signal,
-    setPhase: (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {}),
+    // Phase writes are ADVISORY (progress hints only) — swallow a transient failure so it can
+    // never fail an otherwise-succeeding job. Second .then handler consumes any rejection.
+    setPhase: (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {}, () => {}),
   };
 
   const wct = setTimeout(() => wallClock.abort(), opts.wallClockMs ?? 600_000);

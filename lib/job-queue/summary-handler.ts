@@ -31,6 +31,12 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
       throw new NonRetryableError(`video duration ${payload.durationSeconds}s exceeds MAX_DURATION_SECONDS`);
     }
 
+    if (job.version !== docVersionKey(CURRENT_DOC_VERSION)) {
+      throw new NonRetryableError(
+        `job doc version ${job.version} != worker version ${docVersionKey(CURRENT_DOC_VERSION)}`,
+      );
+    }
+
     const bundle = await getWorkerStorageBundle(serviceClient, job.ownerId, job.playlistId);
 
     // Idempotency skip: never re-run (and re-bill) Gemini for a job whose summary artifact
@@ -45,6 +51,7 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
     ) {
       return;
     }
+    const createdThisRun = !existing;
 
     const serial = await reserveVideoSlot(serviceClient, job.ownerId, job.playlistId, job.videoId);
     const baseName = `${padSerial(serial)}_${slugify(payload.title)}`;
@@ -78,8 +85,17 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
       // other error — transient transcript blip, Gemini failure, AbortError from wall-clock/lease —
       // propagates unwrapped so the runner classifies it retryable (or 'lost' on lease abort).
       if (e instanceof PermanentTranscriptError) {
+        if (createdThisRun) {
+          // Provably no transcript → job fails non-retryably and will never self-heal, so remove the
+          // bare reserved row (mirrors the local pipeline's rollback) rather than orphan serial+position.
+          await serviceClient.from('videos').delete()
+            .eq('playlist_id', job.playlistId).eq('video_id', job.videoId).eq('owner_id', job.ownerId);
+        }
         throw new NonRetryableError(`transcript permanently unavailable for ${job.videoId}: ${e.message}`);
       }
+      // Do NOT roll back on the retryable path — the reserved row must survive so the next attempt
+      // self-heals with the same serial. (dead_letter orphan cleanup for repeatedly-failing
+      // retryable jobs is deferred to Stage 1H dead-letter retention.)
       throw e;
     }
 
@@ -104,6 +120,12 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
       docVersion: CURRENT_DOC_VERSION,
       processedAt: new Date().toISOString(),
     };
+
+    // Shrink the stale-worker write window: if the lease was lost / SIGTERM fired during summarize,
+    // don't start the irreversible blob/persist sequence. (Full lease-fencing of persist_summary is
+    // deferred — after FIX 1/FIX 2 a stale write is idempotent and non-corrupting; the double-Gemini
+    // charge on reclaim is the known AbortSignal-does-not-stop-billing limitation, tracked to 1D.)
+    if (ctx.signal.aborted) throw new DOMException('worker signal aborted before write', 'AbortError');
 
     const key = `${baseName}.md`;
     const ref = await bundle.blobStore.putStaged(bundle.principal, key, Buffer.from(core.mdContent, 'utf-8'), 'text/markdown');

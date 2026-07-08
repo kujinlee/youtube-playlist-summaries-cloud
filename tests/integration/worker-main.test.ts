@@ -3,6 +3,7 @@ import { adminClient, newUser, signInAs } from './helpers/clients';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
 import { runWorkerLoop, sleep } from '@/worker/main';
 import type { JobHandler } from '@/lib/job-queue/worker-runner';
+import type { JobQueue } from '@/lib/storage/job-queue';
 jest.setTimeout(20_000);
 
 async function seedPlaylist(client: any, ownerId: string): Promise<string> {
@@ -45,6 +46,32 @@ test('runWorkerLoop processes exactly one queued job to completed, then exits on
 
   const st = await userQ.getStatus(enq.jobId);
   expect(st?.status).toBe('completed');
+});
+
+// --- loop resilience: a throwing sweepExpired/claim (outside runOnce's try/catch) must NOT
+//     kill the long-lived worker. Deterministic stub queue via DI; abort after recovery. ---
+test('runWorkerLoop survives a throwing claim and continues until shutdown', async () => {
+  const ac = new AbortController();
+  let claimCalls = 0;
+  let sweepCalls = 0;
+  const stubQueue = {
+    sweepExpired: async () => { sweepCalls++; return 0; },
+    claim: async () => {
+      claimCalls++;
+      if (claimCalls === 1) throw new Error('transient queue error'); // first iteration blows up
+      ac.abort(); // recovered — request clean shutdown so the loop exits
+      return null; // idle
+    },
+  } as unknown as JobQueue;
+  const stubHandler: JobHandler = async () => ({ ok: true });
+
+  // Must NOT reject even though claim threw on the first iteration.
+  await expect(
+    runWorkerLoop({ queue: stubQueue, handler: stubHandler, shutdownSignal: ac.signal, workerId: 'resilience-test' }),
+  ).resolves.toBeUndefined();
+
+  expect(claimCalls).toBeGreaterThanOrEqual(2); // recovered and ran at least one more iteration
+  expect(sweepCalls).toBeGreaterThanOrEqual(2);
 });
 
 // --- abort-aware idle sleep (the idle-backoff path runWorkerLoop uses between polls) ---

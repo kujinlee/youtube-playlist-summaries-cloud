@@ -86,6 +86,9 @@ begin
   select (v.data->>'serialNumber')::int into v_serial
     from videos v where v.playlist_id = p_playlist_id and v.video_id = p_video_id;
   if v_serial is not null then return v_serial; end if;
+  if exists (select 1 from videos v where v.playlist_id = p_playlist_id and v.video_id = p_video_id) then
+    raise exception 'reserve_video_slot: existing video %/% has no serialNumber (invariant)', p_playlist_id, p_video_id;
+  end if;
   select coalesce(max(v.position) + 1, 0), coalesce(max((v.data->>'serialNumber')::int) + 1, 1)
     into v_pos, v_serial from videos v where v.playlist_id = p_playlist_id;
   insert into videos (playlist_id, owner_id, video_id, position, data)
@@ -114,7 +117,20 @@ begin
            coalesce(v.data->'artifacts', '{}'::jsonb)
            || jsonb_build_object('summaryMd', jsonb_build_object(
                 'key', coalesce(p_video->>'summaryMd', v.data->'artifacts'->'summaryMd'->>'key'),
-                'status', p_artifact_status))),
+                -- Monotonic status: never downgrade a promoted artifact back to committed (a stale
+                -- worker / retry after promotion). committed->promoted and same-status pass through.
+                'status', case
+                            when v.data->'artifacts'->'summaryMd'->>'status' = 'promoted'
+                                 and p_artifact_status = 'committed'
+                              then 'promoted'
+                            else p_artifact_status end)))
+      -- Preserve operational fields owned by OTHER features from being reverted to the job's
+      -- enqueue-time payload snapshot (e.g. a concurrent membership reconciliation that archived
+      -- the video). strip_nulls => on a fresh reserve row these keys are absent so p_video's
+      -- defaults stand; on an existing row the current value wins over the stale payload.
+      || jsonb_strip_nulls(jsonb_build_object(
+           'archived', v.data->'archived',
+           'removedFromPlaylist', v.data->'removedFromPlaylist')),
     updated_at = now()
    where v.playlist_id = p_playlist_id and v.video_id = p_video_id and v.owner_id = p_owner_id;
   get diagnostics v_count = row_count;

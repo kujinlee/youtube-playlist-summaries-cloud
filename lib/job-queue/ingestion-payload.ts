@@ -12,7 +12,7 @@ export const IngestionPayloadSchema = z.object({
   // `.finite().positive()` rejects NaN/Infinity/≤0 — otherwise a NaN durationSeconds slips past the
   // handler's `> MAX_DURATION_SECONDS` guard (NaN > MAX is false) and reaches transcribeViaGemini.
   durationSeconds: z.number().finite().positive(),
-  playlistIndex: z.number().int().nonnegative(), // YouTube playlist positions are 0-indexed integers
+  playlistIndex: z.number().int().positive(), // 1-indexed (matches VideoSchema.playlistIndex and the local pipeline's i + 1)
   videoPublishedAt: z.string(),
   addedToPlaylistAt: z.string(),
 });

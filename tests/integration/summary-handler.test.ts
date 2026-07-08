@@ -194,6 +194,62 @@ test('(d) durationSeconds > MAX_DURATION_SECONDS → NonRetryableError', async (
 });
 
 // ---------------------------------------------------------------------------
+// (i) doc-version mismatch → NonRetryableError, Gemini not called. A job enqueued at a doc
+//     version the worker no longer speaks must fail fast, not run a stale pipeline.
+// ---------------------------------------------------------------------------
+test('(i) doc-version mismatch → NonRetryableError, Gemini not called', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const job = { ...makeJob({ ownerId: userId, playlistId, videoId, payload: makePayload() }), version: '9.9' };
+
+  const handler = makeSummaryHandler(admin());
+  await expect(handler(job, mockCtx)).rejects.toBeInstanceOf(NonRetryableError);
+  expect(generateSummary).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------
+// (j) reserve rollback: a PERMANENT transcript failure on a brand-new video removes the bare
+//     reserved row (non-retryable, never self-heals). A RETRYABLE (transient) failure must NOT
+//     delete it, so the next attempt self-heals with the same serial.
+// ---------------------------------------------------------------------------
+test('(j) permanent transcript failure rolls back the freshly-reserved row', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload: makePayload() });
+
+  (resolveTranscriptSegments as jest.Mock).mockReset().mockRejectedValue(
+    new PermanentTranscriptError(`no transcript available for ${videoId}: captions and video both returned zero segments`),
+  );
+
+  const handler = makeSummaryHandler(admin());
+  await expect(handler(job, mockCtx)).rejects.toBeInstanceOf(NonRetryableError);
+
+  const row = await admin().from('videos').select('id').eq('playlist_id', playlistId).eq('video_id', videoId).maybeSingle();
+  expect(row.data).toBeNull(); // rolled back
+});
+
+test('(j2) transient transcript failure keeps the reserved row (retryable, self-heals)', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload: makePayload() });
+
+  (resolveTranscriptSegments as jest.Mock).mockReset().mockRejectedValue(new Error('transient network blip'));
+
+  const handler = makeSummaryHandler(admin());
+  await expect(handler(job, mockCtx)).rejects.not.toBeInstanceOf(NonRetryableError);
+
+  const row = await admin().from('videos').select('data').eq('playlist_id', playlistId).eq('video_id', videoId).maybeSingle();
+  expect(row.data).not.toBeNull(); // reserved row survives for the next attempt
+  expect(typeof row.data!.data.serialNumber).toBe('number');
+});
+
+// ---------------------------------------------------------------------------
 // (e) pre-promote-crash retry (self-healing): re-reserves same serial, re-stages same
 //     deterministic key, promotes cleanly, Gemini called again (nothing was promoted).
 // ---------------------------------------------------------------------------
