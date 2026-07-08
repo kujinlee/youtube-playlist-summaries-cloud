@@ -385,7 +385,19 @@ const hb = setInterval(() => {
     .catch(() => leaseLost.abort());   // a throwing heartbeat ⇒ treat as lease-loss, never an unhandled rejection (M1)
 }, Math.floor((leaseSeconds * 1000) / 3));
 ```
-`setPhase = (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {})`; wrap the body in `try { … } finally { clearInterval(hb); }`; a `let settled = false;` guards the single `complete`/`fail`; map `err instanceof NonRetryableError` → `fail(…, { retryable: false })`. `wallClock` is an `AbortController` aborted after `opts.wallClockMs ?? 600_000`.
+`setPhase = (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {})`. **Wall-clock timer — store the handle and unref it, then clear it alongside the heartbeat in `finally`** so a fast job never leaves a ref'd 600s timer holding the event loop open (Jest would otherwise hang without `--forceExit`):
+```ts
+const wallClock = new AbortController();
+const wct = setTimeout(() => wallClock.abort(), opts.wallClockMs ?? 600_000);
+wct.unref?.();                      // don't keep the process/Jest alive on its own
+try {
+  // … heartbeat setInterval(hb), run handler under `signal`, complete/fail …
+} finally {
+  clearInterval(hb);
+  clearTimeout(wct);                // release the wall-clock timer on every exit path
+}
+```
+A `let settled = false;` guards the single `complete`/`fail`; map `err instanceof NonRetryableError` → `fail(…, { retryable: false })`.
 
 - [ ] **Step 4: Run** — `npm run test:integration -- worker-runner-runtime` → PASS.
 - [ ] **Step 5: Full guard** — `npm run test:integration && npx jest worker && npx tsc --noEmit` → green (existing runner tests updated).
