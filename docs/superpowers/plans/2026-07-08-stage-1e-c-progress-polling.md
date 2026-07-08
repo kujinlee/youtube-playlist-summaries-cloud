@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-08-stage-1e-c-progress-polling-design.md` (v4 CONVERGED). Read it before starting; this plan implements it verbatim.
 
+**Plan revision v2** — hardened after a dual adversarial plan review (Codex + Claude; `docs/reviews/plan-stage-1e-c-{codex,claude}.md`). Fixed: integration-test runner commands (Blocking), `resolvePlaylistId` on the `MetadataStore` **interface** + local stub (Blocking — else `tsc`/`next build` fails), typed `PlaylistFetchError` replacing the brittle 502 regex (Blocking), `jobQueue`-present guard before any durable write (High), `maxItems` bounding the metadata fetch (High), the live producer→enqueue→`listByPlaylist` round-trip (High), middleware copying only cookies + `Set-Cookie` assertion (High), and the missing route/poll/middleware/cancel test coverage. Route tests relocated to `tests/api/`.
+
 ## Global Constraints
 
 - **Cloud-only; never touch the local path.** No edits to `lib/job-registry.ts`, `app/api/ingest/*`, `app/page.tsx`, or any local SSE consumer.
@@ -21,7 +23,21 @@
 - **`total === 0 ⇒ rollup.terminal:false`** (an empty/foreign set must never read as "done").
 - **Cancel is cooperative:** `request_cancel_job` returns a row count, never raises, touches only non-terminal owned rows.
 - **New DB objects follow the repo's RLS/grant conventions** (see `0008`/`0009`): a return-type change requires `DROP FUNCTION` first, then re-`revoke`/re-`grant`.
-- **TDD:** every task writes a failing test first. Run the narrowest test during iteration; full `npm test` once before each commit. Integration tests run against the local Supabase Postgres via `tests/integration/helpers/clients.ts`.
+- **TDD:** every task writes a failing test first, run narrowest-first, full gate before commit.
+
+### Test-runner & gate conventions (AUTHORITATIVE — overrides any per-step command below)
+
+This repo has **two** jest configs (verified: `jest.config.ts` + `jest.integration.config.ts`):
+- **Unit tests** live in `tests/lib/**`, `tests/api/**`, `tests/components/**` and run via `npx jest <pattern>` (or `npm test` for all). `next/jest` uses **SWC — no type-checking**, so a type error can pass jest and only fail at build. **`npx tsc --noEmit` is therefore a mandatory gate step**, not optional.
+- **Integration tests** live in `tests/integration/**` and are **NOT matched by `jest.config.ts`** — `npx jest`/`npm test` will report *"No tests found"* for them. They run **only** via `npm run test:integration -- <pattern>` (`jest --config jest.integration.config.ts --runInBand`, loading `tests/integration/setup.ts`, which requires a running local Supabase + `.env.test.local`). Applying a new migration requires **`npx supabase db reset`** first.
+- **Route-handler tests go in `tests/api/**`** (repo convention — ~24 existing route tests live there and prove `new Request(...)` works), not `tests/lib/`.
+
+**Per-task gates:**
+- Pure-unit task (Tasks 3,4,6,7): iterate with `npx jest <pattern>`; **commit gate = `npm test && npx tsc --noEmit`**.
+- SQL/integration task (Tasks 1,2,5, + producer round-trip): apply with `npx supabase db reset`, iterate with `npm run test:integration -- <pattern>`; **commit gate = `npm test && npm run test:integration && npx tsc --noEmit`**.
+- Route/middleware task (Tasks 8,9,10,11): iterate with `npx jest <pattern>`; **commit gate = `npm test && npx tsc --noEmit`** (plus `npm run test:integration` for Tasks 8/10 which add integration tests).
+
+Wherever a step below says `npx jest <integration-name>` or a bare `npm test` for an integration file, read it as the corresponding `npm run test:integration -- <name>` per this section.
 
 ---
 
@@ -34,15 +50,19 @@
 - `lib/job-queue/poll-client.ts` — pure `rollup` + `pollUntilTerminal` + `MAX_VIDEOS_PER_ENQUEUE` const (or in producer).
 - `app/api/jobs/route.ts` — `POST` producer + `GET` status.
 - `app/api/jobs/cancel/route.ts` — `POST` cancel.
-- Tests: `tests/lib/video-meta-to-payload.test.ts`, `tests/lib/poll-client.test.ts`, `tests/lib/producer.test.ts`, `tests/integration/jobs-producer-polling.test.ts`, `tests/integration/cancel-job-rpc.test.ts`, `tests/integration/resolve-playlist-id.test.ts`, `tests/lib/jobs-route.test.ts`, `tests/lib/jobs-cancel-route.test.ts`, `tests/lib/middleware-api-401.test.ts`.
+- Tests (unit): `tests/lib/video-meta-to-payload.test.ts`, `tests/lib/poll-client.test.ts`, `tests/lib/producer.test.ts`, `tests/lib/youtube-extract-playlist-id.test.ts`, `tests/lib/youtube-fetch-bounded.test.ts`, `tests/lib/ingestion-payload.test.ts`, `tests/lib/middleware-api-401.test.ts`.
+- Tests (route → `tests/api/`): `tests/api/jobs-route.test.ts`, `tests/api/jobs-cancel-route.test.ts`.
+- Tests (integration → `tests/integration/`): `cancel-job-rpc.test.ts`, `jobs-producer-polling.test.ts`, `resolve-playlist-id.test.ts`, `producer-roundtrip.test.ts`, `cancel-by-playlist.test.ts`.
 
 **Modified files:**
 - `lib/storage/job-queue.ts` — widen `JobRecord`; add `PlaylistJobRow`; add `listByPlaylist`; change `requestCancel` return type.
 - `lib/storage/supabase/supabase-job-queue.ts` — widen `getStatus`; implement `listByPlaylist`; `requestCancel` returns the count.
-- `lib/storage/supabase/supabase-metadata-store.ts` — add public `resolvePlaylistId`.
+- `lib/storage/metadata-store.ts` — add `resolvePlaylistId` to the `MetadataStore` interface.
+- `lib/storage/supabase/supabase-metadata-store.ts` — implement `resolvePlaylistId`.
+- `lib/storage/local/local-metadata-store.ts` — throwing `resolvePlaylistId` stub (cloud-only).
 - `lib/job-queue/ingestion-payload.ts` — loosen `channel`/dates to optional + datetime.
-- `lib/youtube.ts` — export `extractPlaylistId`; add `maxItems` option to `fetchPlaylistVideos`.
-- `middleware.ts` — `/api/*` unauth → JSON `401` (replaying cookies), not `307`.
+- `lib/youtube.ts` — export `extractPlaylistId`; add `maxItems` option to `fetchPlaylistVideos` (bounds pagination + metadata fetch).
+- `middleware.ts` — `/api/*` unauth → JSON `401` (copying only cookies), not `307`.
 - `tests/integration/job-queue-producer.test.ts` — update the two cancel assertions to the new no-raise/count contract.
 
 ---
@@ -140,8 +160,8 @@ test('request_cancel_job returns 0 for a missing uuid and for a terminal job', a
 
 - [ ] **Step 2: Run it — verify it fails**
 
-Run: `npx jest cancel-job-rpc`
-Expected: FAIL — the current `request_cancel_job` returns `void` (so `res.data` is `null`, not `1`) and **raises** on the foreign case (so `res.error` is not null).
+Run: `npm run test:integration -- cancel-job-rpc` (integration config; runs against the current DB, pre-`0010`).
+Expected: FAIL — the current `request_cancel_job` returns `void` (so `res.data` is `null`, not `1`) and **raises** on the foreign case (so `res.error` is not null). (If it reports *"No tests found,"* you used the unit config — use `npm run test:integration`.)
 
 - [ ] **Step 3: Write the migration**
 
@@ -208,12 +228,12 @@ In `tests/integration/job-queue-producer.test.ts:107-110`, replace the raise-ass
 
 - [ ] **Step 7: Run the tests — verify pass**
 
-Run: `npx jest cancel-job-rpc job-queue-producer`
+Run: `npm run test:integration -- cancel-job-rpc job-queue-producer`
 Expected: PASS (all cancel-rpc tests + the updated producer assertions).
 
-- [ ] **Step 8: Full suite + commit**
+- [ ] **Step 8: Full gate + commit**
 
-Run: `npm test`
+Gate: `npm test && npm run test:integration && npx tsc --noEmit` (all green; `tsc` catches the `requestCancel` return-type change across callers).
 ```bash
 git add supabase/migrations/0010_cancel_job_rowcount.sql lib/storage/job-queue.ts lib/storage/supabase/supabase-job-queue.ts tests/integration/cancel-job-rpc.test.ts tests/integration/job-queue-producer.test.ts
 git commit -m "feat(1e-c): migration 0010 — request_cancel_job returns count, never raises"
@@ -297,7 +317,7 @@ test('getStatus surfaces progressPhase, attempts, updatedAt', async () => {
 
 - [ ] **Step 2: Run it — verify it fails**
 
-Run: `npx jest jobs-producer-polling`
+Run: `npm run test:integration -- jobs-producer-polling` (needs the local Supabase running; `npx supabase db reset` first if not current).
 Expected: FAIL — `q.listByPlaylist is not a function`; `getStatus` result has no `attempts`/`progressPhase`/`updatedAt`.
 
 - [ ] **Step 3: Widen the interface**
@@ -347,12 +367,12 @@ In `lib/storage/supabase/supabase-job-queue.ts`, widen `getStatus`'s select and 
 
 - [ ] **Step 5: Run the tests — verify pass**
 
-Run: `npx jest jobs-producer-polling`
+Run: `npm run test:integration -- jobs-producer-polling`
 Expected: PASS.
 
-- [ ] **Step 6: Full suite + commit**
+- [ ] **Step 6: Full gate + commit**
 
-Run: `npm test`
+Gate: `npm test && npm run test:integration && npx tsc --noEmit`
 ```bash
 git add lib/storage/job-queue.ts lib/storage/supabase/supabase-job-queue.ts tests/integration/jobs-producer-polling.test.ts
 git commit -m "feat(1e-c): widen JobRecord + add listByPlaylist (RLS-scoped, summary-only)"
@@ -484,15 +504,17 @@ export function extractPlaylistId(playlistUrl: string): string {
   return id;
 }
 ```
-Change `fetchPlaylistVideos`'s signature and reuse the helper + bound the loop:
+Change `fetchPlaylistVideos`'s signature and reuse the helper + bound **both** pagination and the metadata fetch (Codex High — cap the cost, not just the returned length):
 ```typescript
 export async function fetchPlaylistVideos(
   playlistUrl: string, apiKey: string, opts?: { maxItems?: number },
 ): Promise<VideoMeta[]> {
-  const playlistId = extractPlaylistId(playlistUrl);
+  const playlistId = extractPlaylistId(playlistUrl);       // was inline; now reuses the helper
   const maxItems = opts?.maxItems ?? Infinity;
   const yt = google.youtube({ version: 'v3', auth: apiKey });
-  // ... existing videoIds/addedDates/pageToken setup ...
+  const videoIds: string[] = [];
+  const addedDates: Record<string, string | undefined> = {};
+  let pageToken: string | undefined; let pageCount = 0; const MAX_PAGES = 100;
   do {
     if (pageCount++ >= MAX_PAGES) throw new Error(`Playlist exceeded ${MAX_PAGES} pages: ${playlistUrl}`);
     const res = await yt.playlistItems.list({ part: ['contentDetails', 'snippet'], playlistId, maxResults: 50, pageToken });
@@ -503,10 +525,28 @@ export async function fetchPlaylistVideos(
       }
     }
     pageToken = res.data.nextPageToken ?? undefined;
-  } while (pageToken && videoIds.length < maxItems);   // <-- stop once we have enough
-  // ... unchanged metadata fetch + order-restore, but slice to maxItems first ...
+  } while (pageToken && videoIds.length < maxItems);        // stop paginating once we have enough
+  // Bound the metadata fetch too: only look up as many ids as we will return.
+  const boundedIds = videoIds.slice(0, maxItems);
+  const videos: VideoMeta[] = [];
+  for (let i = 0; i < boundedIds.length; i += 50) {
+    const res = await yt.videos.list({ part: ['snippet', 'contentDetails'], id: boundedIds.slice(i, i + 50) });
+    for (const item of res.data.items ?? []) {
+      if (!item.id) continue;
+      videos.push({ videoId: item.id, title: item.snippet?.title ?? '',
+        channelTitle: item.snippet?.channelTitle ?? undefined,
+        youtubeUrl: `https://www.youtube.com/watch?v=${item.id}`,
+        durationSeconds: parseDuration(item.contentDetails?.duration ?? ''),
+        videoPublishedAt: item.snippet?.publishedAt ?? undefined, addedToPlaylistAt: addedDates[item.id] });
+    }
+  }
+  const videoMap = new Map(videos.map((v) => [v.videoId, v]));
+  return boundedIds.map((id) => videoMap.get(id)).filter(Boolean) as VideoMeta[];  // order-restore over bounded set
+}
 ```
-After the order-restore, cap the returned array: `return ordered.slice(0, maxItems);` (where `ordered` is the existing `videoIds.map(...).filter(Boolean)` result). Keep the un-bounded behavior when `maxItems === Infinity`.
+With `maxItems` omitted (`Infinity`), `slice(0, Infinity)` and the `< Infinity` guard preserve the original all-items behavior — the only external caller, `lib/pipeline.ts:188`, is 2-arg and unaffected.
+
+Add a **real `maxItems` unit test** (Codex/Claude L3) — mock `googleapis` at the module boundary so `playlistItems.list`/`videos.list` return canned pages, and assert that with `maxItems: 2` over a 5-item playlist, `playlistItems.list` is called at most twice and the result length is ≤ 2. Place it in `tests/lib/youtube-fetch-bounded.test.ts` (unit).
 
 - [ ] **Step 4: Run — verify pass**
 
@@ -523,14 +563,18 @@ git commit -m "feat(1e-c): export extractPlaylistId + bounded maxItems on fetchP
 
 ---
 
-## Task 5: Public `resolvePlaylistId` on `SupabaseMetadataStore`
+## Task 5: `resolvePlaylistId` — `MetadataStore` interface + Supabase impl + local stub
 
 **Files:**
-- Modify: `lib/storage/supabase/supabase-metadata-store.ts` (add public method)
+- Modify: `lib/storage/metadata-store.ts` (add to the `MetadataStore` interface)
+- Modify: `lib/storage/supabase/supabase-metadata-store.ts` (implement)
+- Modify: `lib/storage/local/local-metadata-store.ts` (throwing stub)
 - Test: `tests/integration/resolve-playlist-id.test.ts`
 
 **Interfaces:**
-- Produces: `SupabaseMetadataStore.resolvePlaylistId(p: Principal, playlistUrl: string): Promise<string>` — upserts `{owner_id, playlist_key: p.indexKey, playlist_url}` on conflict `(owner_id,playlist_key)`, returns the row's `id` atomically.
+- Produces: `MetadataStore.resolvePlaylistId(p: Principal, playlistUrl: string): Promise<string>` — upserts `{owner_id, playlist_key: p.indexKey, playlist_url}` on conflict `(owner_id,playlist_key)`, returns the row's `id` atomically.
+
+**Why the interface + local stub (review Blocking/H1):** `producer.ts` (Task 8) calls `bundle.metadataStore.resolvePlaylistId`, and `bundle.metadataStore` is typed `MetadataStore`. If the method lives only on the Supabase class, `tsc`/`next build` fails with `TS2339` — and jest (`next/jest`, SWC, no type-check) would hide it. So the interface must carry it, and the local impl must satisfy the interface (cloud-only → throws).
 
 **Enumerated Behaviors:**
 
@@ -569,10 +613,25 @@ test('resolvePlaylistId creates then returns the same id (idempotent, owner-scop
 
 - [ ] **Step 2: Run — verify it fails**
 
-Run: `npx jest resolve-playlist-id`
+Run: `npm run test:integration -- resolve-playlist-id`
 Expected: FAIL — `store.resolvePlaylistId is not a function`.
 
-- [ ] **Step 3: Implement the public method**
+- [ ] **Step 3a: Add to the `MetadataStore` interface + local stub**
+
+In `lib/storage/metadata-store.ts`, add to the `MetadataStore` interface (import `Principal` if not already):
+```typescript
+  /** Cloud-only: resolve (owner, playlist_key) to the playlists.id UUID, creating the row if absent. */
+  resolvePlaylistId(p: Principal, playlistUrl: string): Promise<string>;
+```
+In `lib/storage/local/local-metadata-store.ts`, add a throwing stub so the local impl satisfies the interface (the local tool never enqueues cloud jobs):
+```typescript
+  async resolvePlaylistId(): Promise<string> {
+    throw new Error('resolvePlaylistId is cloud-only (unsupported on the local backend)');
+  }
+```
+(If `localMetadataStore` is an object literal rather than a class, add `resolvePlaylistId: async () => { throw new Error('resolvePlaylistId is cloud-only'); }` in the same shape as its siblings.)
+
+- [ ] **Step 3b: Implement the public method on the Supabase store**
 
 In `lib/storage/supabase/supabase-metadata-store.ts`, add (near the existing `setPlaylistMeta`):
 ```typescript
@@ -593,15 +652,15 @@ In `lib/storage/supabase/supabase-metadata-store.ts`, add (near the existing `se
 
 - [ ] **Step 4: Run — verify pass**
 
-Run: `npx jest resolve-playlist-id`
+Run: `npm run test:integration -- resolve-playlist-id`
 Expected: PASS.
 
-- [ ] **Step 5: Full suite + commit**
+- [ ] **Step 5: Full gate + commit**
 
-Run: `npm test`
+Gate: `npm test && npm run test:integration && npx tsc --noEmit` (tsc verifies `localMetadataStore` still satisfies the widened `MetadataStore` interface).
 ```bash
-git add lib/storage/supabase/supabase-metadata-store.ts tests/integration/resolve-playlist-id.test.ts
-git commit -m "feat(1e-c): public resolvePlaylistId (atomic upsert-returning-id, owner-scoped)"
+git add lib/storage/metadata-store.ts lib/storage/local/local-metadata-store.ts lib/storage/supabase/supabase-metadata-store.ts tests/integration/resolve-playlist-id.test.ts
+git commit -m "feat(1e-c): resolvePlaylistId on MetadataStore (interface + supabase impl + local stub)"
 ```
 
 ---
@@ -783,6 +842,14 @@ describe('pollUntilTerminal', () => {
       sleep: async () => { clock += 3000; }, timeoutMs: 5000, now: () => clock,
     });
     expect(res).toMatchObject({ timedOut: true });
+  });
+  it('backs off geometrically to the cap (behavior #9)', async () => {
+    const delays: number[] = []; let clock = 0; let polls = 0;
+    await pollUntilTerminal(
+      async () => (polls++ < 5 ? [row('active')] : [row('completed')]),
+      { intervalMs: 2000, maxIntervalMs: 10000, timeoutMs: 10 ** 9,
+        now: () => clock, sleep: async (ms) => { delays.push(ms); clock += ms; } });
+    expect(delays.slice(0, 4)).toEqual([2000, 4000, 8000, 10000]); // doubles, then clamps at cap
   });
 });
 ```
@@ -966,6 +1033,34 @@ it('best-effort: one failed enqueue does not stop the rest', async () => {
   const r = await enqueuePlaylist(bundle, principal, URL_);
   expect(r.counts).toEqual({ enqueued: 1, joined: 0, skipped: 0, failed: 1 });
 });
+
+it('a fully-idempotent re-submit (all joined) is NOT a false 503', async () => {   // review L2
+  fetchMock.mockResolvedValueOnce([meta('v1'), meta('v2')]);
+  const { bundle } = fakeBundle(async () => ({ jobId: 'j', status: 'completed', joined: true }));
+  const r = await enqueuePlaylist(bundle, principal, URL_);
+  expect(r.counts).toEqual({ enqueued: 0, joined: 2, skipped: 0, failed: 0 });
+});
+
+it('resolvePlaylistId failure aborts before any enqueue', async () => {   // review L2
+  fetchMock.mockResolvedValueOnce([meta('v1')]);
+  const enqueue = jest.fn();
+  const bundle = { metadataStore: { resolvePlaylistId: jest.fn(async () => { throw new Error('db'); }) },
+                   jobQueue: { enqueue } } as any;
+  await expect(enqueuePlaylist(bundle, principal, URL_)).rejects.toThrow('db');
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
+it('throws when the bundle has no jobQueue (misconfigured/local)', async () => {   // review High
+  const bundle = { metadataStore: { resolvePlaylistId: jest.fn() } } as any;  // no jobQueue
+  await expect(enqueuePlaylist(bundle, principal, URL_)).rejects.toThrow(/jobQueue/);
+});
+
+it('wraps a fetch failure in PlaylistFetchError', async () => {   // review Blocking (502 mapping)
+  fetchMock.mockRejectedValueOnce(new Error('quota exceeded'));
+  const { bundle } = fakeBundle(async () => ({ jobId: 'j', status: 'queued', joined: false }));
+  const { PlaylistFetchError } = await import('@/lib/job-queue/producer');
+  await expect(enqueuePlaylist(bundle, principal, URL_)).rejects.toBeInstanceOf(PlaylistFetchError);
+});
 ```
 
 - [ ] **Step 2: Run — verify it fails**
@@ -993,6 +1088,11 @@ export class PlaylistTooLargeError extends Error {
 export class AllEnqueueFailedError extends Error {
   constructor(public playlistId: string) { super('all enqueue attempts failed'); }
 }
+/** Wraps a fetchPlaylistVideos failure so the route can map it to 502 by instanceof
+ *  (review Blocking — replaces the brittle stringify-regex). */
+export class PlaylistFetchError extends Error {
+  constructor(cause: string) { super(`playlist fetch failed: ${cause}`); }
+}
 
 export type JobFanoutResult =
   | { videoId: string; jobId: string; status: JobStatus; joined: boolean }
@@ -1004,11 +1104,20 @@ export interface ProducerResult { playlistId: string | null; jobs: JobFanoutResu
 export async function enqueuePlaylist(
   bundle: StorageBundle, principal: Principal, playlistUrl: string,
 ): Promise<ProducerResult> {
+  // Guard the cloud-only queue BEFORE any durable write (review High — jobQueue is optional on
+  // StorageBundle; a local/misconfigured bundle must fail here, not after resolvePlaylistId).
+  const queue = bundle.jobQueue;
+  if (!queue) throw new Error('enqueuePlaylist requires a cloud jobQueue');
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error('YOUTUBE_API_KEY is not set');
   extractPlaylistId(playlistUrl); // throws → caller maps to 400
 
-  const videos = await fetchPlaylistVideos(playlistUrl, apiKey, { maxItems: MAX_VIDEOS_PER_ENQUEUE + 1 });
+  let videos;
+  try {
+    videos = await fetchPlaylistVideos(playlistUrl, apiKey, { maxItems: MAX_VIDEOS_PER_ENQUEUE + 1 });
+  } catch (e) {
+    throw new PlaylistFetchError(String(e));   // route maps by instanceof → 502
+  }
   if (videos.length > MAX_VIDEOS_PER_ENQUEUE) throw new PlaylistTooLargeError(MAX_VIDEOS_PER_ENQUEUE, videos.length);
 
   const mapped = videos.map((m, i) => videoMetaToIngestionPayload(m, i + 1));
@@ -1026,7 +1135,7 @@ export async function enqueuePlaylist(
   const results: JobFanoutResult[] = []; let created = 0; let joined = 0;
   for (const { videoId, ok: payload } of enqueueable) {
     try {
-      const { jobId, status, joined: didJoin } = await bundle.jobQueue!.enqueue(
+      const { jobId, status, joined: didJoin } = await queue.enqueue(
         { playlistId, videoId, sectionId: -1, kind: 'summary', version }, payload);
       results.push({ videoId, jobId, status, joined: didJoin });
       if (didJoin) joined += 1; else created += 1;
@@ -1047,12 +1156,44 @@ export async function enqueuePlaylist(
 Run: `npx jest producer`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Add the live producer→enqueue→listByPlaylist integration round-trip** (spec §7 / review High/M4)
 
-Run: `npm test`
+Create `tests/integration/producer-roundtrip.test.ts` — real Supabase bundle, mock only `fetchPlaylistVideos`:
+```typescript
+jest.mock('@/lib/youtube', () => ({ ...jest.requireActual('@/lib/youtube'), fetchPlaylistVideos: jest.fn() }));
+import { randomUUID } from 'crypto';
+import { newUser, signInAs } from './helpers/clients';
+import * as youtube from '@/lib/youtube';
+import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
+import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
+import { enqueuePlaylist } from '@/lib/job-queue/producer';
+import type { VideoMeta } from '@/types';
+
+const fetchMock = jest.mocked(youtube.fetchPlaylistVideos);
+const vmeta = (id: string, dur = 100): VideoMeta =>
+  ({ videoId: id, title: id, youtubeUrl: `https://youtu.be/${id}`, durationSeconds: dur });
+
+test('producer fans out real jobs that are then pollable via listByPlaylist', async () => {
+  process.env.STORAGE_BACKEND = 'supabase'; process.env.YOUTUBE_API_KEY = 'k';
+  const a = await newUser(); const { client: ca, userId } = await signInAs(a.email, a.password);
+  const key = `PL-${randomUUID()}`; const url = `https://www.youtube.com/playlist?list=${key}`;
+  fetchMock.mockResolvedValueOnce([vmeta('v1'), vmeta('v2'), vmeta('v3', 0)]); // v3 skipped
+  const queue = new SupabaseJobQueue(ca);
+  const bundle = { metadataStore: new SupabaseMetadataStore(ca), blobStore: {} as any, jobQueue: queue };
+  const res = await enqueuePlaylist(bundle as any, { id: userId, indexKey: key }, url);
+  expect(res.counts).toEqual({ enqueued: 2, joined: 0, skipped: 1, failed: 0 });
+  const rows = await queue.listByPlaylist(res.playlistId!);
+  expect(rows.map(r => r.videoId).sort()).toEqual(['v1', 'v2']);
+});
+```
+Run: `npx supabase db reset && npm run test:integration -- producer-roundtrip` → PASS.
+
+- [ ] **Step 6: Commit**
+
+Gate: `npm test && npm run test:integration && npx tsc --noEmit`
 ```bash
-git add lib/job-queue/producer.ts tests/lib/producer.test.ts
-git commit -m "feat(1e-c): pure enqueuePlaylist producer (cap, best-effort fan-out, disjoint counts)"
+git add lib/job-queue/producer.ts tests/lib/producer.test.ts tests/integration/producer-roundtrip.test.ts
+git commit -m "feat(1e-c): pure enqueuePlaylist producer + live round-trip (cap, fan-out, disjoint counts)"
 ```
 
 ---
@@ -1061,10 +1202,10 @@ git commit -m "feat(1e-c): pure enqueuePlaylist producer (cap, best-effort fan-o
 
 **Files:**
 - Create: `app/api/jobs/route.ts`
-- Test: `tests/lib/jobs-route.test.ts`
+- Test: `tests/api/jobs-route.test.ts` (route tests go in `tests/api/**` per repo convention — review L1)
 
 **Interfaces:**
-- Consumes: `createServerSupabase` (`lib/supabase/server.ts`), `getStorageBundle`/`getPrincipalFromSession` (`lib/storage/resolve.ts`), `enqueuePlaylist`/errors (Task 8), `rollup` (Task 7), `extractPlaylistId` (Task 4).
+- Consumes: `createServerSupabase` (`lib/supabase/server.ts`), `getStorageBundle`/`getPrincipalFromSession` (`lib/storage/resolve.ts`), `enqueuePlaylist`/errors incl. `PlaylistFetchError` (Task 8), `rollup` (Task 7), `extractPlaylistId` (Task 4).
 - Produces: Next.js `POST(req)` and `GET(req)` handlers with the status codes in spec §4.1/§4.2.
 
 **Enumerated Behaviors:**
@@ -1086,7 +1227,7 @@ git commit -m "feat(1e-c): pure enqueuePlaylist producer (cap, best-effort fan-o
 
 - [ ] **Step 1: Write the failing test** (mock cookies, `createServerSupabase`, `getStorageBundle`, producer)
 
-Create `tests/lib/jobs-route.test.ts`:
+Create `tests/api/jobs-route.test.ts`:
 ```typescript
 jest.mock('next/headers', () => ({ cookies: jest.fn(async () => ({ getAll: () => [], set: () => {} })) }));
 jest.mock('@/lib/supabase/server', () => ({ createServerSupabase: jest.fn(() => ({ auth: { getUser: mockGetUser } })) }));
@@ -1132,13 +1273,24 @@ it('POST maps producer errors: 422 / 503', async () => {
   enqueueMock.mockRejectedValueOnce(new AllEnqueueFailedError('pl'));
   expect((await post({ playlistUrl: 'https://www.youtube.com/playlist?list=PLx' })).status).toBe(503);
 });
-it('GET 400 on missing/invalid uuid; 200 with rollup on a valid uuid', async () => {
+it('POST 502 on a fetch failure, 500 on a missing API key', async () => {
+  const { PlaylistFetchError } = await import('@/lib/job-queue/producer');
+  enqueueMock.mockRejectedValueOnce(new PlaylistFetchError('quota exceeded'));
+  expect((await post({ playlistUrl: 'https://www.youtube.com/playlist?list=PLx' })).status).toBe(502);
+  delete process.env.YOUTUBE_API_KEY;
+  expect((await post({ playlistUrl: 'https://www.youtube.com/playlist?list=PLx' })).status).toBe(500);
+});
+it('GET 400 on missing/invalid uuid; 200+empty rollup on a valid (foreign) uuid', async () => {
   expect((await get('')).status).toBe(400);
   expect((await get('playlistId=not-a-uuid')).status).toBe(400);
   const res = await get('playlistId=11111111-1111-1111-1111-111111111111');
   expect(res.status).toBe(200);
   const body = await res.json();
   expect(body.rollup.terminal).toBe(false); expect(body.jobs).toEqual([]);
+});
+it('GET 401 when unauthenticated', async () => {
+  mockGetUser = jest.fn(async () => ({ data: { user: null } }));
+  expect((await get('playlistId=11111111-1111-1111-1111-111111111111')).status).toBe(401);
 });
 ```
 
@@ -1156,7 +1308,7 @@ import { cookies } from 'next/headers';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { getStorageBundle, getPrincipalFromSession } from '@/lib/storage/resolve';
 import { extractPlaylistId } from '@/lib/youtube';
-import { enqueuePlaylist, PlaylistTooLargeError, AllEnqueueFailedError } from '@/lib/job-queue/producer';
+import { enqueuePlaylist, PlaylistTooLargeError, AllEnqueueFailedError, PlaylistFetchError } from '@/lib/job-queue/producer';
 import { rollup } from '@/lib/job-queue/poll-client';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1185,10 +1337,8 @@ export async function POST(req: Request) {
   } catch (e) {
     if (e instanceof PlaylistTooLargeError) return NextResponse.json({ error: 'playlist too large', limit: e.limit, found: e.found }, { status: 422 });
     if (e instanceof AllEnqueueFailedError) return NextResponse.json({ error: 'enqueue failed', playlistId: e.playlistId }, { status: 503 });
-    // fetchPlaylistVideos failure → 502; anything else → 500
-    const msg = String(e);
-    if (/playlist|fetch|youtube/i.test(msg)) return NextResponse.json({ error: 'playlist fetch failed' }, { status: 502 });
-    return NextResponse.json({ error: 'internal error' }, { status: 500 });
+    if (e instanceof PlaylistFetchError) return NextResponse.json({ error: 'playlist fetch failed' }, { status: 502 });
+    return NextResponse.json({ error: 'internal error' }, { status: 500 });   // resolve/misconfig/unexpected
   }
 }
 
@@ -1214,11 +1364,11 @@ Note: the `/playlist|fetch|youtube/i` heuristic distinguishes a `fetchPlaylistVi
 Run: `npx jest jobs-route`
 Expected: PASS. (If the 502 heuristic is flaky, add a `PlaylistFetchError` in Task 4/8 and switch to `instanceof`.)
 
-- [ ] **Step 5: Full suite + commit**
+- [ ] **Step 5: Full gate + commit**
 
-Run: `npm test`
+Gate: `npm test && npx tsc --noEmit` (tsc confirms the route's use of `getStorageBundle`/`enqueuePlaylist`/`rollup` types).
 ```bash
-git add app/api/jobs/route.ts tests/lib/jobs-route.test.ts
+git add app/api/jobs/route.ts tests/api/jobs-route.test.ts
 git commit -m "feat(1e-c): POST/GET /api/jobs — producer + poll-by-playlist status"
 ```
 
@@ -1228,7 +1378,8 @@ git commit -m "feat(1e-c): POST/GET /api/jobs — producer + poll-by-playlist st
 
 **Files:**
 - Create: `app/api/jobs/cancel/route.ts`
-- Test: `tests/lib/jobs-cancel-route.test.ts`
+- Test: `tests/api/jobs-cancel-route.test.ts` (route tests → `tests/api/**` per convention)
+- Test: `tests/integration/cancel-by-playlist.test.ts` (live non-terminal-only + count — spec §7 / review M)
 
 **Interfaces:**
 - Consumes: `createServerSupabase`, `getStorageBundle`, `jobQueue.requestCancel`/`listByPlaylist`, `TERMINAL_STATUSES` (Task 7).
@@ -1248,7 +1399,7 @@ git commit -m "feat(1e-c): POST/GET /api/jobs — producer + poll-by-playlist st
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/lib/jobs-cancel-route.test.ts`:
+Create `tests/api/jobs-cancel-route.test.ts`:
 ```typescript
 jest.mock('next/headers', () => ({ cookies: jest.fn(async () => ({ getAll: () => [], set: () => {} })) }));
 jest.mock('@/lib/supabase/server', () => ({ createServerSupabase: jest.fn(() => ({ auth: { getUser: mockGetUser } })) }));
@@ -1340,11 +1491,47 @@ export async function POST(req: Request) {
 Run: `npx jest jobs-cancel-route`
 Expected: PASS.
 
-- [ ] **Step 5: Full suite + commit**
+- [ ] **Step 5: Add the live cancel-by-playlist integration test** (spec §7 / review M)
 
-Run: `npm test`
+Create `tests/integration/cancel-by-playlist.test.ts` — seed a playlist with queued/active/completed jobs, run the same non-terminal loop the route uses (over a real `SupabaseJobQueue`), assert only the non-terminal ones flip:
+```typescript
+import { randomUUID } from 'crypto';
+import { newUser, signInAs, adminClient } from './helpers/clients';
+import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
+import { TERMINAL_STATUSES } from '@/lib/job-queue/poll-client';
+
+async function seedPlaylist(c: any, o: string) {
+  const { data } = await c.from('playlists').insert({ owner_id: o, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` }).select('id').single();
+  return data.id as string;
+}
+function enq(c: any, pl: string, vid: string) {
+  return c.rpc('enqueue_job', { p_playlist_id: pl, p_video_id: vid, p_section_id: -1, p_job_kind: 'summary', p_job_version: '3.3', p_payload: { n: 1 } });
+}
+
+test('cancel-by-playlist flags only non-terminal jobs and returns a real count', async () => {
+  const a = await newUser(); const { client: ca, userId } = await signInAs(a.email, a.password);
+  const pl = await seedPlaylist(ca, userId);
+  const jq = (await enq(ca, pl, 'vq')).data[0];              // stays queued
+  const ja = (await enq(ca, pl, 'va')).data[0];
+  const jc = (await enq(ca, pl, 'vc')).data[0];
+  await adminClient().from('jobs').update({ status: 'active' }).eq('id', ja.job_id);
+  await adminClient().from('jobs').update({ status: 'completed' }).eq('id', jc.job_id);
+  const queue = new SupabaseJobQueue(ca);
+  const rows = await queue.listByPlaylist(pl);
+  let requested = 0;
+  for (const r of rows) if (!TERMINAL_STATUSES.includes(r.status)) requested += (await queue.requestCancel(r.jobId)).requested;
+  expect(requested).toBe(2);                                  // queued + active, not completed
+  const done = await adminClient().from('jobs').select('cancel_requested').eq('id', jc.job_id).single();
+  expect(done.data!.cancel_requested).toBe(false);
+});
+```
+Run: `npx supabase db reset && npm run test:integration -- cancel-by-playlist` → PASS.
+
+- [ ] **Step 6: Commit**
+
+Gate: `npm test && npm run test:integration && npx tsc --noEmit`
 ```bash
-git add app/api/jobs/cancel/route.ts tests/lib/jobs-cancel-route.test.ts
+git add app/api/jobs/cancel/route.ts tests/api/jobs-cancel-route.test.ts tests/integration/cancel-by-playlist.test.ts
 git commit -m "feat(1e-c): POST /api/jobs/cancel — by jobId or playlistId (non-terminal only)"
 ```
 
@@ -1389,17 +1576,39 @@ it('returns 401 JSON for an unauthenticated /api/* request', async () => {
   const res = await middleware(req('/api/jobs'));
   expect(res.status).toBe(401);
 });
+it('also 401s an EXISTING local api route unauth (blast-radius pin — review M5)', async () => {
+  mockGetUser.mockResolvedValue({ data: { user: null } });
+  expect((await middleware(req('/api/videos'))).status).toBe(401);
+});
 it('still redirects (307) an unauthenticated non-api request', async () => {
   mockGetUser.mockResolvedValue({ data: { user: null } });
   const res = await middleware(req('/videos'));
   expect(res.status).toBe(307);
 });
-it('passes through an authenticated /api/* request', async () => {
+it('passes through an authenticated /api/* request (existing route unaffected)', async () => {
   mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+  expect((await middleware(req('/api/jobs'))).status).toBe(200);   // NextResponse.next()
+  expect((await middleware(req('/api/videos'))).status).toBe(200);
+});
+it('preserves cookies getUser() scheduled onto the 401 (review High/M6)', async () => {
+  // Make the mocked createServerClient invoke setAll (as a real token-refresh clear would).
+  mockGetUser.mockImplementation(async () => { setAllSpy?.([{ name: 'sb-x', value: '', options: {} }]); return { data: { user: null } }; });
   const res = await middleware(req('/api/jobs'));
-  expect(res.status).toBe(200); // NextResponse.next()
+  expect(res.status).toBe(401);
+  expect(res.cookies.get('sb-x')).toBeDefined();   // the scheduled cookie survived onto the 401
 });
 ```
+For the cookie test, the `@supabase/ssr` mock must capture the `cookies.setAll` callback the middleware passes to `createServerClient`, so the test can drive it:
+```typescript
+let setAllSpy: ((list: any[]) => void) | undefined;
+jest.mock('@supabase/ssr', () => ({
+  createServerClient: (_u: string, _k: string, cfg: any) => {
+    setAllSpy = cfg.cookies.setAll;
+    return { auth: { getUser: mockGetUser, signInAnonymously: jest.fn() } };
+  },
+}));
+```
+(Adjust to the exact `createServerClient` cookie-config shape after reading `middleware.ts` — the middleware wires `setAll` to `response.cookies.set`.)
 
 - [ ] **Step 2: Run — verify it fails**
 
@@ -1412,24 +1621,28 @@ In `middleware.ts`, replace the `if (category === 'authenticated' && !user)` blo
 ```typescript
   if (category === 'authenticated' && !user) {
     if (request.nextUrl.pathname.startsWith('/api/')) {
-      // API clients get JSON 401, not a redirect to an HTML page. Preserve any cookies
-      // getUser() scheduled on `response` (stale-token clears) by reusing its headers.
-      return NextResponse.json({ error: 'authentication required' }, { status: 401, headers: response.headers });
+      // API clients get JSON 401, not a redirect to an HTML page. Copy ONLY the cookies
+      // getUser() scheduled on `response` (stale-token clears) — NOT the whole header set,
+      // which carries the internal `x-middleware-next` continuation signal (review M6).
+      const res = NextResponse.json({ error: 'authentication required' }, { status: 401 });
+      for (const c of response.cookies.getAll()) res.cookies.set(c);
+      return res;
     }
     const redirect = request.nextUrl.clone();
     redirect.pathname = '/';
     return NextResponse.redirect(redirect);
   }
 ```
+(Read `node_modules/next/dist/docs/` for the current `NextResponse.cookies` forwarding idiom before writing — per AGENTS.md.)
 
 - [ ] **Step 4: Run — verify pass**
 
 Run: `npx jest middleware-api-401`
 Expected: PASS.
 
-- [ ] **Step 5: Full suite + commit**
+- [ ] **Step 5: Full gate + commit**
 
-Run: `npm test`
+Gate: `npm test && npx tsc --noEmit`
 ```bash
 git add middleware.ts tests/lib/middleware-api-401.test.ts
 git commit -m "feat(1e-c): middleware returns JSON 401 (cookie-preserving) for unauth /api/*"
