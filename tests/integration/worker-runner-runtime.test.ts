@@ -171,6 +171,20 @@ test('(g) wall-clock exceeded aborts and fails the job retryably', async () => {
   expect(queue.heartbeat).not.toHaveBeenCalled();
 });
 
+test("(h) a throwing terminal fail RPC resolves to 'lost', it does not reject out of runOnce", async () => {
+  const job = makeJob();
+  const queue = makeQueue(job);
+  // Handler throws (enters the catch) AND the terminal fail RPC itself throws (transient DB error).
+  queue.fail.mockRejectedValue(new Error('db unavailable'));
+  const handler: JobHandler = async () => { throw new Error('handler boom'); };
+
+  // Must RESOLVE to 'lost' — never reject — so the long-lived worker loop (Task 8) can't be
+  // crashed by an unhandled rejection escaping runOnce's declared outcome contract.
+  await expect(runOnce(queue, handler, { workerId: 'w1' })).resolves.toBe('lost');
+  expect(queue.fail).toHaveBeenCalledTimes(1);
+  expect(queue.complete).not.toHaveBeenCalled();
+});
+
 test('runOnce returns idle when the queue has no job (echoHandler smoke)', async () => {
   const queue = makeQueue(makeJob());
   queue.claim.mockResolvedValueOnce(null);

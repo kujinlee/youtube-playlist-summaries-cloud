@@ -56,11 +56,18 @@ export async function runOnce(
   } catch (e) {
     if (settled) return 'lost';
     settled = true;
-    const { ok, status } = await queue.fail(
-      job.id, opts.workerId, job.leaseToken, e instanceof Error ? e.message : String(e),
-      { retryable: !(e instanceof NonRetryableError) });
-    if (!ok) return 'lost';
-    return status === 'cancelled' ? 'cancelled' : 'failed';
+    try {
+      const { ok, status } = await queue.fail(
+        job.id, opts.workerId, job.leaseToken, e instanceof Error ? e.message : String(e),
+        { retryable: !(e instanceof NonRetryableError) });
+      if (!ok) return 'lost';
+      return status === 'cancelled' ? 'cancelled' : 'failed';
+    } catch {
+      // The terminal fail RPC itself threw (e.g. transient DB error). Resolve to 'lost' rather than
+      // rejecting out of runOnce — the declared outcome contract must be uniform so the long-lived
+      // worker loop (Task 8) never sees an unhandled rejection from runOnce.
+      return 'lost';
+    }
   } finally {
     clearInterval(hb);
     clearTimeout(wct);
