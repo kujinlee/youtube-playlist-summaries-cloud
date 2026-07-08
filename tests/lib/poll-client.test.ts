@@ -16,6 +16,11 @@ describe('rollup', () => {
   it('any active keeps it non-terminal', () => {
     expect(rollup([row('completed'), row('active')]).terminal).toBe(false);
   });
+  it('queued status is counted and not terminal', () => {
+    const r = rollup([row('queued'), row('completed')]);
+    expect(r.queued).toBe(1);
+    expect(r.terminal).toBe(false);
+  });
 });
 
 describe('pollUntilTerminal', () => {
@@ -32,10 +37,29 @@ describe('pollUntilTerminal', () => {
     const res = await pollUntilTerminal(fetchRows, { sleep: noSleep });
     expect(res).toMatchObject({ done: true });
   });
-  it('fails after maxConsecutiveErrors', async () => {
+  it('fails after maxConsecutiveErrors (3 errors in a row)', async () => {
     const fetchRows = async () => { throw new Error('boom'); };
     const res = await pollUntilTerminal(fetchRows, { sleep: noSleep, maxConsecutiveErrors: 3 });
     expect(res).toMatchObject({ failed: true });
+  });
+  it('resets the consecutive-error counter on a successful fetch (non-consecutive errors never fail)', async () => {
+    // 3 throws total, but each is immediately followed by a success, so the
+    // error streak never reaches 2-in-a-row, let alone maxConsecutiveErrors.
+    // If the implementation counted TOTAL errors instead of resetting on
+    // success, the 3rd throw below would hit maxConsecutiveErrors (3) and
+    // resolve {failed} before ever reaching the terminal row.
+    const steps: Array<'active' | 'throw' | 'completed'> = [
+      'active', 'throw', 'active', 'throw', 'active', 'throw', 'active', 'completed',
+    ];
+    let i = 0;
+    const fetchRows = async () => {
+      const step = steps[i++];
+      if (step === 'throw') throw new Error('boom');
+      return [row(step)];
+    };
+    const res = await pollUntilTerminal(fetchRows, { sleep: noSleep, maxConsecutiveErrors: 3 });
+    expect(i).toBe(steps.length); // every step was consumed; no early bail-out
+    expect(res).toMatchObject({ done: true });
   });
   it('times out if never terminal', async () => {
     let clock = 0;
