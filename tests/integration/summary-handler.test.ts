@@ -1,0 +1,259 @@
+// tests/integration/summary-handler.test.ts
+//
+// Integration suite for makeSummaryHandler (Task 7) — the idempotent, self-healing
+// summary job handler — against a live local Supabase stack. Gemini + transcript
+// resolution are mocked at the lib boundary (project mocking policy); everything else
+// (getWorkerStorageBundle, reserveVideoSlot, persistSummary, readVideo, blobStore) is real.
+//
+// Run via: npm run test:integration -- summary-handler
+// Requires: stack up + .env.test.local present (see tests/integration/setup.ts).
+
+import { randomUUID } from 'crypto';
+import { adminClient, newUser, signInAs } from './helpers/clients';
+import type { LeasedJob } from '@/lib/storage/job-queue';
+import { docVersionKey } from '@/lib/storage/job-queue';
+import { CURRENT_DOC_VERSION } from '@/lib/doc-version';
+import { padSerial } from '@/lib/serial-filename';
+import { slugify } from '@/lib/slugify';
+import { NonRetryableError } from '@/lib/job-queue/errors';
+import type { HandlerCtx } from '@/lib/job-queue/handler-context';
+import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
+import type { IngestionPayload } from '@/lib/job-queue/ingestion-payload';
+
+jest.mock('@/lib/gemini');
+jest.mock('@/lib/transcript-source');
+
+import { generateSummary, extractQuickView } from '@/lib/gemini';
+import { resolveTranscriptSegments } from '@/lib/transcript-source';
+// Imported AFTER the jest.mock calls above so makeSummaryHandler's internal imports of
+// '@/lib/gemini' and '@/lib/transcript-source' resolve to the mocked module instances.
+import { makeSummaryHandler, MAX_DURATION_SECONDS } from '@/lib/job-queue/summary-handler';
+
+jest.setTimeout(30_000);
+
+const admin = () => adminClient();
+
+async function seedPlaylist(client: any, ownerId: string): Promise<{ playlistId: string; playlistKey: string }> {
+  const playlistKey = `k-${randomUUID()}`;
+  const { data, error } = await client.from('playlists')
+    .insert({ owner_id: ownerId, playlist_key: playlistKey, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (error) throw error;
+  return { playlistId: data.id as string, playlistKey };
+}
+
+const mockCtx: HandlerCtx = {
+  isCancelled: async () => false,
+  signal: new AbortController().signal,
+  setPhase: async () => {},
+};
+
+const GEMINI_SUMMARY_RESPONSE = {
+  summary: '## 1. Alpha\n▶ [0:00](u)\nAlpha body.\n---\n## Conclusion\n▶ [1:00](u)\nWrap.',
+  ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+  overallScore: 4,
+  videoType: 'Analysis',
+  audience: 'Intermediate',
+  tags: ['x'],
+  tldr: 'This video explains alpha.',
+  takeaways: ['Do alpha'],
+};
+
+const SEGMENTS = [{ text: 'hello world', offset: 0, duration: 5 }];
+
+function resetGeminiMocks() {
+  (resolveTranscriptSegments as jest.Mock).mockReset().mockResolvedValue({ segments: SEGMENTS, source: 'captions' });
+  (generateSummary as jest.Mock).mockReset().mockResolvedValue(GEMINI_SUMMARY_RESPONSE);
+  (extractQuickView as jest.Mock).mockReset().mockResolvedValue({ tldr: 'fallback', takeaways: ['fallback'] });
+}
+
+function makePayload(over: Partial<IngestionPayload> = {}): IngestionPayload {
+  return {
+    youtubeUrl: 'https://youtu.be/abc123',
+    title: 'My Test Video',
+    channel: 'Test Channel',
+    durationSeconds: 120,
+    playlistIndex: 1,
+    videoPublishedAt: '2024-01-01T00:00:00.000Z',
+    addedToPlaylistAt: '2024-01-02T00:00:00.000Z',
+    ...over,
+  };
+}
+
+function makeJob(fields: { ownerId: string; playlistId: string; videoId: string; payload: unknown }): LeasedJob {
+  return {
+    id: randomUUID(),
+    sectionId: -1,
+    kind: 'summary',
+    version: docVersionKey(CURRENT_DOC_VERSION),
+    attempts: 1,
+    leaseToken: randomUUID(),
+    ...fields,
+  };
+}
+
+beforeEach(() => {
+  resetGeminiMocks();
+});
+
+// ---------------------------------------------------------------------------
+// (a) happy path
+// ---------------------------------------------------------------------------
+test('(a) happy path: Video row persisted + promoted + blob present', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId, playlistKey } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const payload = makePayload();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload });
+
+  const handler = makeSummaryHandler(admin());
+  await handler(job, mockCtx);
+
+  const row = await admin().from('videos').select('data').eq('playlist_id', playlistId).eq('video_id', videoId).single();
+  const data = row.data!.data as any;
+
+  expect(typeof data.serialNumber).toBe('number');
+  expect(data.serialNumber).toBeGreaterThan(0);
+  expect(data.playlistIndex).toBe(payload.playlistIndex);
+  expect(data.ratings).toEqual(GEMINI_SUMMARY_RESPONSE.ratings);
+  expect(data.artifacts.summaryMd.status).toBe('promoted');
+
+  const baseName = `${padSerial(data.serialNumber)}_${slugify(payload.title)}`;
+  expect(data.summaryMd).toBe(`${baseName}.md`);
+  expect(data.artifacts.summaryMd.key).toBe(`${baseName}.md`);
+
+  const blob = new SupabaseBlobStore(admin(), 'artifacts');
+  const principal = { id: userId, indexKey: playlistKey };
+  expect(await blob.exists(principal, `${baseName}.md`)).toBe(true);
+  const content = await blob.get(principal, `${baseName}.md`);
+  expect(content?.toString()).toContain('Alpha body.');
+});
+
+// ---------------------------------------------------------------------------
+// (b) idempotent re-run: a fresh handler on the same DB state must not call Gemini again
+// ---------------------------------------------------------------------------
+test('(b) idempotent re-run: fresh handler skips Gemini, serial unchanged', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const payload = makePayload();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload });
+
+  const handler1 = makeSummaryHandler(admin());
+  await handler1(job, mockCtx);
+
+  const before = await admin().from('videos').select('data').eq('playlist_id', playlistId).eq('video_id', videoId).single();
+  const serialBefore = before.data!.data.serialNumber;
+
+  (generateSummary as jest.Mock).mockClear();
+  (resolveTranscriptSegments as jest.Mock).mockClear();
+
+  const handler2 = makeSummaryHandler(admin()); // fresh handler instance, same DB state
+  await handler2(job, mockCtx);
+
+  expect(generateSummary).not.toHaveBeenCalled();
+  expect(resolveTranscriptSegments).not.toHaveBeenCalled();
+
+  const after = await admin().from('videos').select('data').eq('playlist_id', playlistId).eq('video_id', videoId).single();
+  expect(after.data!.data.serialNumber).toBe(serialBefore);
+  expect(after.data!.data.artifacts.summaryMd.status).toBe('promoted');
+});
+
+// ---------------------------------------------------------------------------
+// (c) malformed payload → NonRetryableError
+// ---------------------------------------------------------------------------
+test('(c) malformed payload → NonRetryableError', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload: { title: 'missing everything else' } });
+
+  const handler = makeSummaryHandler(admin());
+  await expect(handler(job, mockCtx)).rejects.toBeInstanceOf(NonRetryableError);
+  expect(generateSummary).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------
+// (d) over-long video → NonRetryableError
+// ---------------------------------------------------------------------------
+test('(d) durationSeconds > MAX_DURATION_SECONDS → NonRetryableError', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const payload = makePayload({ durationSeconds: MAX_DURATION_SECONDS + 1 });
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload });
+
+  const handler = makeSummaryHandler(admin());
+  await expect(handler(job, mockCtx)).rejects.toBeInstanceOf(NonRetryableError);
+  expect(generateSummary).not.toHaveBeenCalled();
+});
+
+// ---------------------------------------------------------------------------
+// (e) pre-promote-crash retry (self-healing): re-reserves same serial, re-stages same
+//     deterministic key, promotes cleanly, Gemini called again (nothing was promoted).
+// ---------------------------------------------------------------------------
+test('(e) pre-promote crash retry: same serial, re-promotes cleanly, Gemini called again', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const payload = makePayload();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload });
+
+  const promoteSpy = jest.spyOn(SupabaseBlobStore.prototype, 'promote')
+    .mockImplementationOnce(async () => { throw new Error('simulated crash between commit and promote'); });
+
+  const handler1 = makeSummaryHandler(admin());
+  await expect(handler1(job, mockCtx)).rejects.toThrow('simulated crash between commit and promote');
+
+  const midRow = await admin().from('videos').select('data').eq('playlist_id', playlistId).eq('video_id', videoId).single();
+  expect(midRow.data!.data.artifacts.summaryMd.status).toBe('committed');
+  const serialAfterCrash = midRow.data!.data.serialNumber;
+
+  expect(generateSummary).toHaveBeenCalledTimes(1);
+
+  // Re-run with a fresh handler; promoteSpy's mockImplementationOnce is exhausted so this
+  // call uses the real (working) implementation.
+  const handler2 = makeSummaryHandler(admin());
+  await handler2(job, mockCtx);
+
+  const finalRow = await admin().from('videos').select('data').eq('playlist_id', playlistId).eq('video_id', videoId).single();
+  expect(finalRow.data!.data.serialNumber).toBe(serialAfterCrash); // no serial drift
+  expect(finalRow.data!.data.artifacts.summaryMd.status).toBe('promoted'); // no orphan
+  expect(generateSummary).toHaveBeenCalledTimes(2); // skip did NOT fire — nothing was promoted
+
+  const baseName = `${padSerial(serialAfterCrash)}_${slugify(payload.title)}`;
+  expect(finalRow.data!.data.summaryMd).toBe(`${baseName}.md`);
+
+  promoteSpy.mockRestore();
+});
+
+// ---------------------------------------------------------------------------
+// (f) transient transcript failure → propagated as-is, NOT wrapped as NonRetryableError
+// ---------------------------------------------------------------------------
+test('(f) transient transcript failure propagates, not wrapped as NonRetryableError', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+  const videoId = randomUUID();
+  const payload = makePayload();
+  const job = makeJob({ ownerId: userId, playlistId, videoId, payload });
+
+  (resolveTranscriptSegments as jest.Mock).mockReset().mockRejectedValue(new Error('transient network blip'));
+
+  const handler = makeSummaryHandler(admin());
+  let caught: unknown;
+  try {
+    await handler(job, mockCtx);
+    throw new Error('expected handler to throw');
+  } catch (e) {
+    caught = e;
+  }
+  expect(caught).toBeInstanceOf(Error);
+  expect(caught).not.toBeInstanceOf(NonRetryableError);
+  expect((caught as Error).message).toBe('transient network blip');
+});
