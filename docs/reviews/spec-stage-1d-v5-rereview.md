@@ -1,0 +1,28 @@
+# Round-5 re-review — Stage 1D spec v5 (dual; verdict: NOT converged — v6)
+
+**Date:** 2026-07-08 · Target: v5 (commit c5efd4f)
+**Reviewers:** Codex round-5 (`task-mrco7xj2-yloidp`, session `019f43ec`) + Claude round-5 (fresh Opus `ad728794`), independent. Both: not converged; convergent on the Blocking, Claude added three High.
+
+## Blocking (both — the char cap is measured on the wrong string, with the wrong unit)
+- **B2 — char-truncation bounds transcript *text*, but the billed prompt is `buildIndexedTranscript(segments)`** (`transcript-timestamps.ts:35`, interpolated at `gemini.ts:239`), which prepends `[<i> @<m:ss>] ` + newline per line. Truncating raw text to 40 960 chars then rendering ~40 960 one-char segments → ~700k-char prompt (17×), billed via the **captions path too** (no transcribe fallback needed): summary input ≈ 700k × $0.30/1M × 12 ≈ $2.5 > est. **The §8 guard test uses the same 40 960 undercount → green CI, unsound cap.** And (Codex) `tokens ≤ characters` is **false** — a multi-byte Unicode char can split into multiple tokens; the valid invariant is `tokens ≤ bytes`. *Fix: truncate by dropping whole trailing segments until `buildIndexedTranscript(kept)` **UTF-8 byte length** ≤ `MAX_TRANSCRIPT_INPUT_BYTES`; feed the identical kept list to the prompt and `resolveTranscriptTokens`; guard test + est use the byte cap as the input-token bound; add a tiny-segment unit test proving prefixes are counted.*
+
+## High (Claude — all three new, all verified against code)
+- **H-new-1 — Thinking tokens are unbounded and unaccounted.** Both calls use `gemini-2.5-flash` (a thinking model; code comment `gemini.ts:142`); no `thinkingConfig` set. Thinking tokens bill at the output rate and may not be bounded by `maxOutputTokens` (~24 576/pass × $2.50/1M × 12 ≈ $0.72 unaccounted → est breached). *Fix: set `thinkingConfig.thinkingBudget: 0` on the cloud calls (untyped `generationConfig` passthrough, same pattern as `mediaResolution`) → no thinking tokens; est output term = `maxOutputTokens`. Verified: with thinking disabled, worst case ≈ $1.03 ≤ $1.25; enabled, it balloons past $2.5. Pin `gemini-2.5-flash` (can disable thinking; 2.5-pro cannot).* 
+- **H-new-2 / Codex-B3 — `countTokens` preflight unverified + resolution-sensitive + TOCTOU.** Must pass the **same `MEDIA_RESOLUTION_LOW`** config (else counts at default ~700k → rejects every real 30-min video → mass charged dead-letters; or under-counts → no bound); YouTube-`fileData` support unverified; mutable URL (live→VOD) can grow between preflight and `generateContent`. *Fix: preflight uses identical LOW-res `generationConfig`; reject live/upcoming (VOD-only) at the producer; pin a preflight timeout; empirically verify `countTokens` resolves YouTube `fileData` in impl — if not, honestly state the term is duration×rate-assumed (not a hard cap) and flag the user.*
+- **H-new-3 — Env-selectable model escapes the drift guard.** `GEMINI_SUMMARY_MODEL`/`GEMINI_TRANSCRIBE_MODEL` are env vars (`gemini.ts:12-13`); deploying `gemini-2.5-pro` (or a long-context tier > 200k, which the 300k transcribe input would trigger) raises real cost with green CI. *Fix: assert (startup + guard test) the active model equals the priced constant `gemini-2.5-flash` (flat-priced, no long-context surcharge); overriding the model env requires re-pricing.*
+
+## Medium
+- **M-new-1 — `MAX_TRANSCRIBE_INPUT_TOKENS`(300k) < `LOW_RES_TOKENS_PER_SEC`(200)×`max_duration_seconds`(1800)=360k.** Inconsistent. *Fix: the `countTokens` preflight **hard-rejects > 300k**, so 300k is the bound; use the code-observed ~142 tok/s (256k/1800s) as the sanity note (256k ≤ 300k, margin), drop the 200 rate that implied 360k.*
+- **M-new-2 — `countTokens` doubles video fetch/tokenize latency, no timeout specified.** Operational; pin a timeout, note the double fetch.
+- **Codex-M1 — PJ003 regex accepts a 200k-digit decimal** → `numeric` precision error before `PJ003`. *Fix: bound the integer part length: `^[0-9]{1,7}(\.[0-9]+)?$`.*
+- **Codex-B1-residual / part of H-new-3 — provider price drift** outside the guard. *Fix: date/source the price constants + a deploy-time pricing review.*
+
+## Low
+- PJ003 exponent-notation duration → regex miss → mislabeled `VideoTooLongError` (fail-closed, harmless).
+- Quick-view input bounded by summary *output* (≤ `MAX_SUMMARY_OUTPUT_TOKENS`), not the transcript cap; est's use of the transcript cap for it is a safe over-estimate — one clarifying sentence.
+
+## Round-4 → v5 resolution status
+RESOLVED: B1 (pass-count export — verified against gemini.ts), H1 (threading + margin), H2 (`CHECK ≥1`; at-most-once re-verified through `fail_job`+`sweep`), M1 (PJ003 `::int` overflow → numeric), M2 (dense-transcript failure documented), M3 (all three `auth.uid()` sites → `p_owner_id`, verified 0009:22/27/34). Still-holding: two-client, never-release, all-or-nothing, cloud-only-3-Gemini-surfaces. **NOT resolved:** B2 (char vs rendered/bytes) → the round-5 Blocking. **PARTIAL:** B3 (countTokens) → H-new-2.
+
+## v6 plan
+Byte-cap over `buildIndexedTranscript(kept)` (`tokens ≤ bytes`, rename → `MAX_TRANSCRIPT_INPUT_BYTES`) + guard/est use it + tiny-segment test; `thinkingConfig.thinkingBudget: 0` on cloud calls + pin/assert `gemini-2.5-flash`; `countTokens` LOW-res parity + VOD-only + timeout + impl-verify (honest fallback); `MAX_TRANSCRIBE_INPUT_TOKENS` consistency (300k hard reject, ~142 observed); PJ003 regex length bound; dated/sourced price constants + deploy pricing check; quick-view input clarification. Document the thinking-disabled quality tradeoff in open-q for the user's end review. → v6; round-6 dual review.
