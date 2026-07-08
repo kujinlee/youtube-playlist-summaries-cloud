@@ -191,7 +191,7 @@ async setProgressPhase(jobId, workerId, leaseToken, phase) {
 ```ts
 await adminClient().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', id);
 ```
-(insert between the `sweep` call and the next `claim` in each of the three tests).
+(insert between the `sweep` call and the next `claim` in each of the three tests). **For the L75 crash-loop test the reset MUST go *inside* the `for` loop body, immediately after `sweep_expired_leases`** — so iteration 2 can re-claim → `attempts=2` → the next sweep dead-letters. Placing it after the loop leaves the job `queued` and it never reaches `dead_letter`.
 
 - [ ] **Step 6: Update all enqueue fixtures** — in `job-queue-producer/store/runner.test.ts` (and any `enqueueScoped` helper), seed a `playlists` row per owner and pass `p_playlist_id` in every `enqueue_job` call (incl. the anon path — `anonSession()` then seed an anon-owned playlist). Extend `schema.test.ts` to assert `jobs.playlist_id` (`not null`, uuid), the composite FK `jobs_playlist_owner_fk`, `jobs_idem_active` includes `playlist_id`, and `progress_phase`'s check constraint.
 
@@ -372,11 +372,20 @@ grant execute on function persist_summary(uuid,uuid,text,jsonb,text) to authenti
 - Consumes: `ProgressPhase` (Task 1), `LeasedJob`/`JobQueue.setProgressPhase` (Task 1).
 - Produces: `HandlerCtx = { isCancelled(): Promise<boolean>; signal: AbortSignal; setPhase(p: ProgressPhase): Promise<void> }`; `JobHandler = (job: LeasedJob, ctx: HandlerCtx) => Promise<unknown>` (replaces the 1E-a `JobHandler` in `worker-runner.ts`; `echoHandler` and existing runner tests are updated to the new ctx in THIS task — no cross-task type collision); `NonRetryableError extends Error`; `runOnce(queue, handler, opts)` with `opts.shutdownSignal?: AbortSignal`.
 
-- [ ] **Step 1: Write the failing test** — with a trivial inline handler: (a) a handler that runs > one heartbeat interval keeps its lease; (b) the `setInterval` is cleared on throw (no heartbeat after settle); (c) a handler that throws `NonRetryableError` → `fail(retryable:false)` → status `failed`; (d) `setPhase('summarizing')` writes `progress_phase` on the row (via `set_progress_phase`).
+- [ ] **Step 1: Write the failing test** — with a trivial inline handler, claiming with a **short lease** (`leaseSeconds: 2`) so the heartbeat interval (`leaseSeconds*1000/3 ≈ 667ms`) fires several times before the lease would expire: (a) a handler that runs ~3s (> the 2s lease) still `complete`s successfully — proving the heartbeat **extended** the lease (without it, the lease expires and `complete` returns `ok:false`/`'lost'`); (b) the `setInterval` is cleared on throw (spy shows no heartbeat after settle); (c) a handler that throws `NonRetryableError` → `fail(retryable:false)` → status `failed`; (d) `setPhase('summarizing')` writes `progress_phase` on the row (via `set_progress_phase`); (e) **heartbeat RPC rejects → treated as lease-loss** (mock `queue.heartbeat` to throw; assert the handler is aborted and the process does not crash — no unhandled rejection); (f) **lease-lost mid-handler → no double terminal write** (force `heartbeat` `ok:false`; assert exactly one of `complete`/`fail` is attempted and it's the no-op `'lost'` path); (g) **wall-clock exceeded → prompt `fail(retryable:true)`** (tiny `wallClockMs` in opts; a slow handler is aborted and failed retryably).
 
 - [ ] **Step 2: Run** → FAIL.
 
-- [ ] **Step 3: Implement** — in `worker-runner.ts`: import `JobHandler`/`HandlerCtx` from `handler-context.ts` (delete the local `JobHandler`; update `echoHandler` to the new ctx signature). Build the composed `signal = AbortSignal.any([wallClock, leaseLost, opts.shutdownSignal].filter(Boolean) as AbortSignal[])`; `setInterval(() => queue.heartbeat(...).then(r => { if (!r.ok) leaseLost.abort(); }), 30_000)`; `setPhase = (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {})`; wrap the body in `try { … } finally { clearInterval(hb); }`; a `let settled = false;` guards the single `complete`/`fail`; map `err instanceof NonRetryableError` → `fail(…, { retryable: false })`.
+- [ ] **Step 3: Implement** — in `worker-runner.ts`: import `JobHandler`/`HandlerCtx` from `handler-context.ts` (delete the local `JobHandler`; **re-export it for back-compat: `export type { JobHandler } from './handler-context';`** so `tests/integration/job-queue-runner.test.ts`'s `import type { JobHandler } from '@/lib/job-queue/worker-runner'` keeps compiling; update `echoHandler` to the new ctx signature). Build the composed `signal = AbortSignal.any([wallClock, leaseLost, opts.shutdownSignal].filter(Boolean) as AbortSignal[])`. **Heartbeat: derive the interval from the lease** and guard the rejection path:
+```ts
+const leaseSeconds = opts.leaseSeconds ?? 120;
+const hb = setInterval(() => {
+  queue.heartbeat(job.id, opts.workerId, job.leaseToken, leaseSeconds)
+    .then(r => { if (!r.ok) leaseLost.abort(); })
+    .catch(() => leaseLost.abort());   // a throwing heartbeat ⇒ treat as lease-loss, never an unhandled rejection (M1)
+}, Math.floor((leaseSeconds * 1000) / 3));
+```
+`setPhase = (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {})`; wrap the body in `try { … } finally { clearInterval(hb); }`; a `let settled = false;` guards the single `complete`/`fail`; map `err instanceof NonRetryableError` → `fail(…, { retryable: false })`. `wallClock` is an `AbortController` aborted after `opts.wallClockMs ?? 600_000`.
 
 - [ ] **Step 4: Run** — `npm run test:integration -- worker-runner-runtime` → PASS.
 - [ ] **Step 5: Full guard** — `npm run test:integration && npx jest worker && npx tsc --noEmit` → green (existing runner tests updated).
@@ -392,11 +401,11 @@ grant execute on function persist_summary(uuid,uuid,text,jsonb,text) to authenti
 - Create: `tests/integration/summary-handler.test.ts`
 
 **Interfaces:**
-- Consumes: Task 3 (`getWorkerStorageBundle`, `reserveVideoSlot`, `persistSummary`, `readVideo`), Task 4 (signal), Task 5 (`summaryCore`), Task 6 (`HandlerCtx`, `JobHandler`, `NonRetryableError`), `CURRENT_DOC_VERSION`/`docVersionKey`, `slugify`, `padSerial`.
+- Consumes: Task 3 (`getWorkerStorageBundle`, `reserveVideoSlot`, `persistSummary`, `readVideo`), Task 4 (signal), Task 5 (`summaryCore`), Task 6 (`HandlerCtx`, `JobHandler`, `NonRetryableError`), `CURRENT_DOC_VERSION` (`lib/doc-version.ts`), `docVersionKey` (**exported from `lib/storage/job-queue.ts`**, not `doc-version.ts`), `slugify` (`lib/slugify.ts`), `padSerial` (`lib/serial-filename.ts`).
 - Produces: `makeSummaryHandler(serviceClient: SupabaseClient): JobHandler`; `IngestionPayload` (spec §6, incl. `playlistIndex`, `videoPublishedAt`, `addedToPlaylistAt`).
 - **Testing note:** call the handler directly with a mock `HandlerCtx` (`{ isCancelled: async()=>false, signal: new AbortController().signal, setPhase: async()=>{} }`) — no `runOnce` needed.
 
-- [ ] **Step 1: Write the failing test** — (a) happy path → `Video` row persisted (`serialNumber`, `playlistIndex`, `summaryMd`, `ratings`, `artifacts.summaryMd.status==='promoted'`) + blob present; (b) **idempotent re-run of the same job** (a fresh `makeSummaryHandler` on the same DB state) → the Gemini mock is **not** called again (assert via a module-level call counter reset before the first run and checked after the second) and the serial is unchanged; (c) malformed payload → `NonRetryableError`; (d) over-long video → `NonRetryableError`.
+- [ ] **Step 1: Write the failing test** — (a) happy path → `Video` row persisted (`serialNumber`, `playlistIndex`, `summaryMd`, `ratings`, `artifacts.summaryMd.status==='promoted'`) + blob present; (b) **idempotent re-run of the same job** (a fresh `makeSummaryHandler` on the same DB state) → the Gemini mock is **not** called again (assert via a module-level call counter reset before the first run and checked after the second) and the serial is unchanged; (c) malformed payload → `NonRetryableError`; (d) over-long video → `NonRetryableError`; (e) **pre-promote-crash retry (self-healing, spec §10):** run the handler once with the blob `promote` stubbed to throw *after* `persistSummary(committed)` (simulating a crash between commit and promote); re-run a fresh handler → it re-reserves the **same serial**, re-stages the same deterministic key, promotes cleanly, and ends `artifacts.summaryMd.status==='promoted'` — no orphan, no serial drift, Gemini called again (because nothing was promoted, so the skip does not fire — that is correct); (f) **transient transcript failure → retryable:** mock `resolveTranscriptSegments` to throw a non-`PermanentTranscriptError` → the handler propagates it (the runner will mark it retryable) and does **not** throw `NonRetryableError`.
 
 - [ ] **Step 2: Run** → FAIL.
 
@@ -453,3 +462,4 @@ grant execute on function persist_summary(uuid,uuid,text,jsonb,text) to authenti
 - **`playlistIndex` is 0-indexed from YouTube but `VideoSchema.playlistIndex` is `.int().positive()`** — the 1E-c producer must send a 1-based index; 1E-b fixtures use `1..N`. (Documented producer-contract note; not a 1E-b defect.)
 - `persist_summary`/`reserve_video_slot` trust the service worker's `p_owner_id` (it comes from the leased job's `ownerId`, not an external caller) — service_role is the trust boundary; deployment hardening is 1H.
 - `writeSummaryDoc` stays the local path; the cloud handler never calls it (it calls `summaryCore` + `persistSummary`).
+- **`security invoker` vs spec §8's `security definer` (reconciled):** the plan deliberately uses `security invoker` for `reserve_video_slot`/`persist_summary`/`set_progress_phase`. It is functionally equivalent-and-safer here: `service_role` bypasses RLS regardless, and the explicit `owner_id = p_owner_id` + playlist-ownership checks reject a mismatched owner even for the worker; for an authenticated caller, RLS `owner_id = auth.uid()` aligns with the guard. This supersedes spec §8's `definer` wording — no behavioural difference for the worker path.
