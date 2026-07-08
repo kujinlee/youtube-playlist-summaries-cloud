@@ -59,6 +59,29 @@ it('throws AllEnqueueFailedError when every enqueue fails', async () => {
   fetchMock.mockResolvedValueOnce([meta('v1'), meta('v2')]);
   const { bundle } = fakeBundle(async () => { throw new Error('db down'); });
   await expect(enqueuePlaylist(bundle, principal, URL_)).rejects.toBeInstanceOf(AllEnqueueFailedError);
+
+  fetchMock.mockResolvedValueOnce([meta('v1'), meta('v2')]);
+  const { bundle: bundle2 } = fakeBundle(async () => { throw new Error('db down'); });
+  let caught: unknown;
+  try { await enqueuePlaylist(bundle2, principal, URL_); } catch (e) { caught = e; }
+  expect((caught as AllEnqueueFailedError).playlistId).toBe('pl-uuid');   // review Minor — error must carry the playlistId
+});
+
+it('mixed 4-bucket input yields exact disjoint counts summing to videos.length', async () => {   // review convergent — disjointness invariant
+  fetchMock.mockResolvedValueOnce([
+    meta('v-new'),       // will be newly enqueued (joined:false)
+    meta('v-join'),      // will join an existing job (joined:true)
+    meta('v-skip', 0),   // duration<=0 -> skipped before reaching the queue
+    meta('v-fail'),       // enqueue throws -> failed
+  ]);
+  const { bundle } = fakeBundle(async (key: any) => {
+    if (key.videoId === 'v-join') return { jobId: 'j-join', status: 'queued', joined: true };
+    if (key.videoId === 'v-fail') throw new Error('boom');
+    return { jobId: 'j-new', status: 'queued', joined: false };
+  });
+  const r = await enqueuePlaylist(bundle, principal, URL_);
+  expect(r.counts).toEqual({ enqueued: 1, joined: 1, skipped: 1, failed: 1 });
+  expect(r.counts.enqueued + r.counts.joined + r.counts.skipped + r.counts.failed).toBe(4);
 });
 
 it('best-effort: one failed enqueue does not stop the rest', async () => {
@@ -88,8 +111,21 @@ it('resolvePlaylistId failure aborts before any enqueue', async () => {   // rev
 });
 
 it('throws when the bundle has no jobQueue (misconfigured/local)', async () => {   // review High
-  const bundle = { metadataStore: { resolvePlaylistId: jest.fn() } } as any;  // no jobQueue
+  const resolvePlaylistId = jest.fn();
+  const bundle = { metadataStore: { resolvePlaylistId } } as any;  // no jobQueue
   await expect(enqueuePlaylist(bundle, principal, URL_)).rejects.toThrow(/jobQueue/);
+  expect(resolvePlaylistId).not.toHaveBeenCalled();
+});
+
+it('throws when jobQueue is present but broken (no enqueue fn) — proves no orphan playlist write', async () => {   // review High + convergent test gap
+  // No fetchMock.mockResolvedValueOnce here: the fixed guard must throw before fetch is ever
+  // reached. (jest.clearAllMocks() does not drain queued *Once implementations, so leaving an
+  // unconsumed mock here would leak into the next test.)
+  const resolvePlaylistId = jest.fn(async () => 'pl-uuid');
+  const bundle = { metadataStore: { resolvePlaylistId }, jobQueue: {} } as any;  // present-but-broken queue
+  await expect(enqueuePlaylist(bundle, principal, URL_)).rejects.toThrow(/jobQueue/);
+  expect(resolvePlaylistId).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 it('wraps a fetch failure in PlaylistFetchError', async () => {   // review Blocking (502 mapping)

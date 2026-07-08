@@ -32,8 +32,12 @@ export async function enqueuePlaylist(
 ): Promise<ProducerResult> {
   // Guard the cloud-only queue BEFORE any durable write (review High — jobQueue is optional on
   // StorageBundle; a local/misconfigured bundle must fail here, not after resolvePlaylistId).
+  // Validate the contract, not just presence: a present-but-broken queue (e.g. `{}` or
+  // `{ enqueue: undefined }`) would otherwise pass a truthiness check, let resolvePlaylistId
+  // durably upsert a playlists row, and only then blow up per-item inside the try/catch below —
+  // leaving an orphan playlist row with no jobs (review High).
   const queue = bundle.jobQueue;
-  if (!queue) throw new Error('enqueuePlaylist requires a cloud jobQueue');
+  if (!queue || typeof queue.enqueue !== 'function') throw new Error('enqueuePlaylist requires a cloud jobQueue');
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error('YOUTUBE_API_KEY is not set');
   extractPlaylistId(playlistUrl); // throws → caller maps to 400
