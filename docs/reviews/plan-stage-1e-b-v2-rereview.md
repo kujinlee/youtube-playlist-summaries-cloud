@@ -41,5 +41,15 @@ The completed Codex re-run found **no Blocking, one High**: the wall-clock `setT
 ## Round 3 (dual, v2.2) — 1 Blocking → fixed (v2.3)
 Both reviewers independently found the **same single Blocking**: the v2.2 timer fix converted `wallClock` to an `AbortController`, but the composed-signal line still passed `[wallClock, leaseLost, …]` (controllers) to `AbortSignal.any`, which needs `.signal`s — the `as AbortSignal[]` cast masked it → `runOnce` would throw `TypeError` on the first job. Both certified the timer fix otherwise correct and the plan "ready once applied." **Fixed in v2.3:** `[wallClock.signal, leaseLost.signal, opts.shutdownSignal]` with a type-guard filter (`(s): s is AbortSignal => Boolean(s)`) replacing the `as` cast so the mistake can't be masked again. This round is the textbook case for the iterate rule — a fix (v2.2) introduced a new Blocking that only re-review caught.
 
-## Round 4 (confirmation, v2.3)
-Single scoped confirmation that the v2.3 `.signal`/type-guard edit is clean and introduces nothing new (both round-3 reviewers had pre-specified this exact fix). Result recorded below.
+## Round 4 (confirmation, v2.3) — CONVERGED
+Scoped confirmation (single reviewer; both round-3 reviewers had pre-specified this exact fix): all five checks pass — `wallClock`/`leaseLost` are controllers and `.signal` yields their signals; `opts.shutdownSignal` is used directly (not double-`.signal`'d); the type-guard filter narrows to `AbortSignal[]` with no cast; no stray controller form remains; the `finally` teardown (`clearInterval(hb)` + `clearTimeout(wct)`) is intact. **Verdict: CONVERGED — no Blocking/High; plan ready to implement.**
+
+## Convergence summary
+| Round | Artifact | Blocking | High | Outcome |
+|---|---|---|---|---|
+| 1 | plan v1 | 2 | 3 | revise |
+| 2 | plan v2 (Claude) / v2.1 (Codex) | 0 | 1 (timer) | fix |
+| 3 | plan v2.2 (dual) | 1 (signal, fix-introduced) | 0 | fix |
+| 4 | plan v2.3 | 0 | 0 | **CONVERGED** |
+
+Each round found strictly less-severe defects; round 3 caught a Blocking that round 2's fix introduced — the iterate-to-convergence rule earned its cost.
