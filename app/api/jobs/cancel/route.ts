@@ -13,8 +13,8 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'authentication required' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
-  const hasJob = typeof body?.jobId === 'string';
-  const hasPlaylist = typeof body?.playlistId === 'string';
+  const hasJob = body?.jobId !== undefined;
+  const hasPlaylist = body?.playlistId !== undefined;
   if (hasJob === hasPlaylist) return NextResponse.json({ error: 'provide exactly one of jobId or playlistId' }, { status: 400 });
   const value = hasJob ? body.jobId : body.playlistId;
   if (!UUID_RE.test(value)) return NextResponse.json({ error: 'invalid uuid' }, { status: 400 });

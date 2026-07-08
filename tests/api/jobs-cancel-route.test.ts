@@ -49,6 +49,14 @@ it('400 on neither/both keys or a non-uuid', async () => {
   expect((await post({ jobId: 'nope' })).status).toBe(400);
 });
 
+it('400 when both keys are present, even if playlistId is not a string', async () => {
+  expect((await post({ jobId: U, playlistId: 123 })).status).toBe(400);
+});
+
+it('400 when both keys are present, even if jobId is null', async () => {
+  expect((await post({ jobId: null, playlistId: U })).status).toBe(400);
+});
+
 it('401 when unauthenticated', async () => {
   mockGetUser = jest.fn(async () => ({ data: { user: null } }));
   expect((await post({ jobId: U })).status).toBe(401);
