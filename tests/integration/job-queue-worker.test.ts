@@ -98,8 +98,13 @@ test('fail retryable requeues with backoff; non-retryable → failed', async () 
   const s = await admin().rpc('fail_job', {
     p_job_id: id, p_worker_id: 'w', p_lease_token: c.lease_token, p_error: 'boom', p_retryable: true });
   expect(s.data).toBe('queued');
-  // retryable fail set run_after = now()+10s; reset it so the next claim is eligible (plan review Claude-B2)
-  await admin().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', id);
+  // retryable fail set run_after = now()+10s; reset it using the DB clock — not the client clock —
+  // so the next claim is eligible even under client-vs-DB clock skew (plan review Claude-B2; Task 9
+  // hardening). `exec_sql` is read-only by design (wraps its arg in `select ... from (<sql>) t`, so
+  // it cannot run UPDATE directly); fetch the DB's own `now()` via `exec_sql`, then write that
+  // DB-sourced timestamp through the normal PostgREST update.
+  const dbNow = (await admin().rpc('exec_sql', { sql: `select (now() - interval '1 second') as val` })).data[0].val;
+  await admin().from('jobs').update({ run_after: dbNow }).eq('id', id);
   const c2 = (await claim('w', vid)).data[0];
   const s2 = await admin().rpc('fail_job', {
     p_job_id: id, p_worker_id: 'w', p_lease_token: c2.lease_token, p_error: 'bad input', p_retryable: false });

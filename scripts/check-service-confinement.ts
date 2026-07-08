@@ -61,7 +61,11 @@ function walk(dir: string): string[] {
 
 /** Codex H2: every user-facing entry — not just app/**. */
 export function collectEntrypoints(): string[] {
-  const entries = [...walk(path.join(ROOT, 'app')), ...walk(path.join(ROOT, 'pages'))];
+  const entries = [
+    ...walk(path.join(ROOT, 'app')),
+    ...walk(path.join(ROOT, 'pages')),
+    ...walk(path.join(ROOT, 'worker')),
+  ];
   const mw = path.join(ROOT, 'middleware.ts');
   if (fs.existsSync(mw)) entries.push(mw);
   return entries;
