@@ -17,6 +17,9 @@ test('reserve_video_slot is idempotent sequentially', async () => {
   const a = await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
   const b = await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
   expect(a.error).toBeNull(); expect(b.error).toBeNull(); expect(a.data).toBe(b.data);
+  expect(typeof a.data).toBe('number'); expect(a.data).toBeGreaterThan(0);
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.serialNumber).toBe(a.data);
 });
 
 test('reserve_video_slot is idempotent under concurrency', async () => {
@@ -27,6 +30,26 @@ test('reserve_video_slot is idempotent under concurrency', async () => {
     admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid }),
   ]);
   expect(a.error).toBeNull(); expect(b.error).toBeNull(); expect(a.data).toBe(b.data);
+  expect(typeof a.data).toBe('number'); expect(a.data).toBeGreaterThan(0);
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.serialNumber).toBe(a.data);
+});
+
+test('reserve_video_slot allocates distinct serials/positions for distinct videos under concurrency', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId);
+  const vidA = randomUUID(); const vidB = randomUUID(); const admin = adminClient();
+  const [a, b] = await Promise.all([
+    admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vidA }),
+    admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vidB }),
+  ]);
+  expect(a.error).toBeNull(); expect(b.error).toBeNull();
+  expect(typeof a.data).toBe('number'); expect(a.data).toBeGreaterThan(0);
+  expect(typeof b.data).toBe('number'); expect(b.data).toBeGreaterThan(0);
+  expect(a.data).not.toBe(b.data);
+  const rowA = await admin.from('videos').select('position').eq('playlist_id', pl).eq('video_id', vidA).single();
+  const rowB = await admin.from('videos').select('position').eq('playlist_id', pl).eq('video_id', vidB).single();
+  expect(rowA.data!.position).not.toBe(rowB.data!.position);
 });
 
 test('status-only persist preserves the prior summaryMd key', async () => {
@@ -41,6 +64,33 @@ test('status-only persist preserves the prior summaryMd key', async () => {
   expect(row.data!.data.title).toBe('T');
 });
 
+test('persist_summary preserves a sibling artifact kind (deepDiveMd) across a summaryMd status write', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
+  await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, summaryMd: '1_t.md' }, p_artifact_status: 'committed' });
+
+  // Seed a sibling artifact kind directly onto the row (simulating a concurrently-persisted
+  // deep-dive artifact) so we can assert persist_summary never touches other artifact kinds.
+  const before = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  const seededData = {
+    ...before.data!.data,
+    artifacts: {
+      ...before.data!.data.artifacts,
+      deepDiveMd: { key: 'dd.md', status: 'committed' },
+    },
+  };
+  const seed = await admin.from('videos').update({ data: seededData }).eq('playlist_id', pl).eq('video_id', vid);
+  expect(seed.error).toBeNull();
+
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, title: 'T' }, p_artifact_status: 'promoted' });
+
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.artifacts.deepDiveMd).toEqual({ key: 'dd.md', status: 'committed' });
+  expect(row.data!.data.artifacts.summaryMd.key).toBe('1_t.md');
+  expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
+});
+
 test('persist_summary raises when there is no video row', async () => {
   const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
   const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
@@ -53,8 +103,11 @@ test('reserve_video_slot rejects an owner mismatch', async () => {
   const victimPl = await seedPlaylist(oc, oid);
   const atk = await newUser(); const { userId: aid } = await signInAs(atk.email, atk.password);
   const admin = adminClient();
-  const res = await admin.rpc('reserve_video_slot', { p_owner_id: aid, p_playlist_id: victimPl, p_video_id: randomUUID() });
+  const vid = randomUUID();
+  const res = await admin.rpc('reserve_video_slot', { p_owner_id: aid, p_playlist_id: victimPl, p_video_id: vid });
   expect(res.error).not.toBeNull();
+  const row = await admin.from('videos').select('id').eq('playlist_id', victimPl).eq('video_id', vid).maybeSingle();
+  expect(row.data).toBeNull();
 });
 
 test('persist_summary rejects an owner mismatch', async () => {
@@ -62,7 +115,10 @@ test('persist_summary rejects an owner mismatch', async () => {
   const victimPl = await seedPlaylist(oc, oid);
   const vid = randomUUID(); const admin = adminClient();
   await admin.rpc('reserve_video_slot', { p_owner_id: oid, p_playlist_id: victimPl, p_video_id: vid });
+  const before = await admin.from('videos').select('data').eq('playlist_id', victimPl).eq('video_id', vid).single();
   const atk = await newUser(); const { userId: aid } = await signInAs(atk.email, atk.password);
   const res = await admin.rpc('persist_summary', { p_owner_id: aid, p_playlist_id: victimPl, p_video_id: vid, p_video: { id: vid }, p_artifact_status: 'committed' });
   expect(res.error).not.toBeNull();
+  const after = await admin.from('videos').select('data').eq('playlist_id', victimPl).eq('video_id', vid).single();
+  expect(after.data!.data).toEqual(before.data!.data);
 });

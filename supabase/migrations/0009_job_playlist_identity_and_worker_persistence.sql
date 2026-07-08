@@ -100,20 +100,23 @@ grant execute on function reserve_video_slot(uuid,uuid,text) to authenticated, s
 
 create function persist_summary(p_owner_id uuid, p_playlist_id uuid, p_video_id text, p_video jsonb, p_artifact_status text)
   returns void language plpgsql security invoker set search_path = public as $$
-declare v_fields jsonb; v_count int;
+declare v_count int;
 begin
   if not (p_owner_id = auth.uid() or auth.role() = 'service_role') then raise exception 'not authorized'; end if;
   perform 1 from playlists where id = p_playlist_id and owner_id = p_owner_id;
   if not found then raise exception 'playlist % not owned by %', p_playlist_id, p_owner_id; end if;
-  v_fields := p_video || jsonb_build_object('artifacts', jsonb_build_object('summaryMd', jsonb_build_object(
-      'key', coalesce(p_video->>'summaryMd', (select (data->'artifacts'->'summaryMd'->>'key')
-             from videos where playlist_id = p_playlist_id and video_id = p_video_id)),
-      'status', p_artifact_status)));
-  update videos set
-    data = (data || (v_fields - 'artifacts'))
-      || jsonb_build_object('artifacts', coalesce(data->'artifacts', '{}'::jsonb) || (v_fields->'artifacts')),
+  -- Resolve the preserved summaryMd.key from the row being updated (v.data), NOT a detached
+  -- pre-UPDATE subquery: the UPDATE's row lock serializes concurrent persists so a status-only
+  -- write cannot clobber a concurrent key write (fixes lost-update H1/I2).
+  update videos v set
+    data = (v.data || (p_video - 'artifacts'))
+      || jsonb_build_object('artifacts',
+           coalesce(v.data->'artifacts', '{}'::jsonb)
+           || jsonb_build_object('summaryMd', jsonb_build_object(
+                'key', coalesce(p_video->>'summaryMd', v.data->'artifacts'->'summaryMd'->>'key'),
+                'status', p_artifact_status))),
     updated_at = now()
-   where playlist_id = p_playlist_id and video_id = p_video_id and owner_id = p_owner_id;
+   where v.playlist_id = p_playlist_id and v.video_id = p_video_id and v.owner_id = p_owner_id;
   get diagnostics v_count = row_count;
   if v_count = 0 then raise exception 'persist_summary: no video row for %/%', p_playlist_id, p_video_id; end if;
 end $$;
