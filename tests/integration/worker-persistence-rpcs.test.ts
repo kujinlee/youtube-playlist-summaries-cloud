@@ -147,6 +147,24 @@ test('persist_summary preserves ALL concurrent non-summary state (membership ord
   expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
 });
 
+test('a status-only persist preserves existing summary-owned fields (language/ratings/docVersion), not just summaryMd', async () => {
+  const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
+  const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();
+  await admin.rpc('reserve_video_slot', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid });
+  // Full summary persist populates the summary-owned fields.
+  const full = { id: vid, summaryMd: '1_t.md', language: 'en', ratings: { usefulness: 4 }, overallScore: 4, docVersion: { major: 3, minor: 3 } };
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: full, p_artifact_status: 'committed' });
+  // A status-only persist (p_video lacks summary fields) must NOT erase them — dropping docVersion
+  // would defeat the handler's idempotency skip.
+  await admin.rpc('persist_summary', { p_owner_id: userId, p_playlist_id: pl, p_video_id: vid, p_video: { id: vid, title: 'T' }, p_artifact_status: 'promoted' });
+  const row = await admin.from('videos').select('data').eq('playlist_id', pl).eq('video_id', vid).single();
+  expect(row.data!.data.language).toBe('en');
+  expect(row.data!.data.ratings).toEqual({ usefulness: 4 });
+  expect(row.data!.data.overallScore).toBe(4);
+  expect(row.data!.data.docVersion).toEqual({ major: 3, minor: 3 });
+  expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
+});
+
 test('persist_summary monotonic status is KEY-SCOPED — a committed write with a NEW key is allowed through', async () => {
   const u = await newUser(); const { client, userId } = await signInAs(u.email, u.password);
   const pl = await seedPlaylist(client, userId); const vid = randomUUID(); const admin = adminClient();

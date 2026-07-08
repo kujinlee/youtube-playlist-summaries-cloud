@@ -118,9 +118,21 @@ begin
   -- payload-or-existing; (4) the artifacts.summaryMd merge with a lock-consistent, KEY-SCOPED
   -- monotonic status. The UPDATE's row lock serializes concurrent persists (Task-2 lost-update fix).
   update videos v set
-    data = (p_video - 'artifacts')
-      || (v.data - 'artifacts'
-            - '{language,ratings,overallScore,summaryMd,processedAt,videoType,audience,tags,tldr,takeaways,docVersion}'::text[])
+    data = (p_video - 'artifacts')                            -- (1) payload defaults — fill keys a first-time bare row lacks
+      || (v.data - 'artifacts')                               -- (2) ALL existing fields win back: never clobber non-summary
+                                                              --     state AND never drop existing summary fields on a
+                                                              --     status-only persist (p_video omits them)
+      || jsonb_strip_nulls(jsonb_build_object(                -- (3) re-apply ONLY the summary-owned fields p_video PROVIDES
+           'language', p_video->'language',                   --     (present ones win; absent → existing preserved by (2))
+           'ratings', p_video->'ratings',
+           'overallScore', p_video->'overallScore',
+           'processedAt', p_video->'processedAt',
+           'videoType', p_video->'videoType',
+           'audience', p_video->'audience',
+           'tags', p_video->'tags',
+           'tldr', p_video->'tldr',
+           'takeaways', p_video->'takeaways',
+           'docVersion', p_video->'docVersion'))
       || jsonb_strip_nulls(jsonb_build_object('summaryMd', coalesce(p_video->>'summaryMd', v.data->>'summaryMd')))
       || jsonb_build_object('artifacts',
            coalesce(v.data->'artifacts', '{}'::jsonb)
