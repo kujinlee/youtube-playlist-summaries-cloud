@@ -48,11 +48,17 @@ describe('core schema', () => {
     expect(data).toEqual([{ is_nullable: 'NO', data_type: 'uuid' }]);
 
     const fk = await admin.rpc('exec_sql', {
-      sql: `select conname from pg_constraint
+      sql: `select pg_get_constraintdef(oid) as def from pg_constraint
             where conname = 'jobs_playlist_owner_fk' and conrelid = 'public.jobs'::regclass`,
     });
     expect(fk.error).toBeNull();
-    expect(fk.data).toEqual([{ conname: 'jobs_playlist_owner_fk' }]);
+    expect(fk.data).toHaveLength(1);
+    // Must span BOTH columns — a single-column FK on playlist_id alone is a cross-tenant
+    // write-injection hole (attacker enqueues a job citing another owner's playlist UUID).
+    // exec_sql runs with search_path='' so the referenced table renders schema-qualified.
+    expect(fk.data[0].def).toMatch(
+      /FOREIGN KEY \(playlist_id, owner_id\) REFERENCES (?:public\.)?playlists\(id, owner_id\)/,
+    );
   });
 
   it('jobs_idem_active includes playlist_id in its column set (1E-b)', async () => {
@@ -61,7 +67,14 @@ describe('core schema', () => {
       sql: `select indexdef from pg_indexes where schemaname = 'public' and indexname = 'jobs_idem_active'`,
     });
     expect(error).toBeNull();
-    expect(data[0].indexdef).toContain('playlist_id');
+    // Exact unique-key column set (order matters — it is the ON CONFLICT arbiter) + the partial
+    // predicate. A weaker `toContain('playlist_id')` would pass even if playlist_id were only in an
+    // INCLUDE/predicate but not the unique key, or if the predicate diverged from enqueue_job's.
+    expect(data[0].indexdef).toContain('UNIQUE INDEX jobs_idem_active');
+    expect(data[0].indexdef).toMatch(
+      /\(owner_id, playlist_id, video_id, section_id, job_kind, job_version\)/,
+    );
+    expect(data[0].indexdef).toMatch(/WHERE .*'queued'.*'active'.*'completed'/);
   });
 
   it('jobs.progress_phase has a check constraint limiting it to the three known phases (1E-b)', async () => {
@@ -73,8 +86,11 @@ describe('core schema', () => {
     });
     expect(error).toBeNull();
     expect(data).toHaveLength(1);
-    expect(data[0].def).toContain('transcribing');
-    expect(data[0].def).toContain('summarizing');
-    expect(data[0].def).toContain('writing');
+    // Exact three-element array in order — superset-proof. A CHECK permitting a 4th phase (e.g.
+    // 'debug') would place it after 'writing'::text and fail the trailing `\]`, so this rejects
+    // supersets that a per-value `toContain` would silently accept.
+    expect(data[0].def).toMatch(
+      /progress_phase = ANY \(ARRAY\['transcribing'::text, 'summarizing'::text, 'writing'::text\]\)/,
+    );
   });
 });
