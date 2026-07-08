@@ -1,7 +1,7 @@
 # Stage 1E-c — Cloud Producer Route + Durable Progress Polling — Design Spec
 
 **Date:** 2026-07-08
-**Status:** Draft **v2** — hardened after a dual adversarial review (Codex `task-mrc8sfry` + Claude; saved to `docs/reviews/spec-stage-1e-c-{codex,claude-review}.md`). v2 fixes the review's 3 Blocking + 3 High + the actionable Mediums: date-fallback poison, cancel-RPC raise/void, unauth-redirect-not-401, all-enqueue-failed masquerade, pre-fetch playlist-row orphaning, cancel-count meaning, cap-cost, and UUID/error-mapping gaps. Pending round-2 re-review to convergence, then user approval.
+**Status:** Draft **v3** — hardened over two dual adversarial-review rounds (Codex `task-mrc8sfry`/`task-mrc99njo` + Claude; saved to `docs/reviews/spec-stage-1e-c-{codex,claude-review,v2-rereview}.md`). v2 fixed round-1's 3 Blocking + 3 High + actionable Mediums. **v3 fixes the two defects round-2 found *inside* the v2 cancel-RPC fix** — migration `0010` needed `DROP FUNCTION` (return-type change) and silently broke an existing raise-asserting test — plus the counts-overlap, empty-playlist row creation, middleware-blast-radius reframing, and error-carrier nits. Pending round-3 re-review (focused on the migration + test deltas) to convergence, then user approval.
 **Parent:** `docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md` §9 (Progress via Postgres polling — Codex M1) and the §10 roadmap (`1E-a → 1E-b → 1E-c → 1D → 1F/1G → 1H`).
 **Stage:** 1E-c (last of the worker sub-slices: 1E-a queue → 1E-b worker + summary handler → **1E-c producer + polling** → [1E-b-2 dig handler, independent]).
 **Consumes:** the 1E-a `JobQueue` contract, the 1E-b `IngestionPayload` + `enqueue_job`/`request_cancel_job` RPCs (the latter re-shaped here by migration `0010`), and the 1C `SupabaseMetadataStore`.
@@ -18,7 +18,7 @@ Build the **cloud request→response loop** that turns a playlist ingestion requ
 - **Cancel route** (`POST /api/jobs/cancel`): cooperative cancel by `jobId` (one video) or `playlistId` (all non-terminal videos), reporting a real requested-count.
 - A **pure, framework-agnostic poller module** (`lib/job-queue/poll-client.ts`): bounded-backoff loop + terminal detection + shared `rollup()`. Unit-tested with a fake clock. **No React / no page wiring** → Sub-project 2.
 - **Migration `0010`**: re-shape `request_cancel_job` to **return an affected-row count**, **not raise** on foreign/missing/terminal, and touch **only non-terminal** owned rows (fixes review B/H on cancel).
-- A **minimal middleware/route-categories change**: classify `/api/*` so an unauthenticated API request gets a JSON **`401`** instead of a `307` redirect to `/` (fixes the unauth-contract Blocking). This is **not** anon provisioning — that stays 1D.
+- A **minimal middleware change**: `/api/*` is **already** classified `authenticated` and already redirects unauth requests to `/` (307). The change adjusts only the *unauth response* — for an `/api/*` path, return a JSON **`401`** instead of the 307 redirect (fixes the unauth-contract Blocking). This is **not** a new classification and **not** anon provisioning (1D). Blast radius: all ~10 existing `/api/*` routes get 401-instead-of-307 on unauth — safe, because a working authenticated flow (user present) never hits this branch, and the local routes run authenticated (§6).
 - **Payload-schema tightening** (`IngestionPayloadSchema`): make `channel`/`videoPublishedAt`/`addedToPlaylistAt` optional and datetime-validated so a producer can never inject a schema-invalid `''` date (fixes the date-poison Blocking).
 - Small **seam widenings**: `progress_phase`/`attempts`/`updated_at` through `JobRecord`/`getStatus`; `listByPlaylist` on `JobQueue`; a **public, owner-scoped, atomic** `resolvePlaylistId` on `SupabaseMetadataStore`; export `extractPlaylistId(url)` + a **bounded** `maxItems` option on `fetchPlaylistVideos`.
 
@@ -36,7 +36,7 @@ Build the **cloud request→response loop** that turns a playlist ingestion requ
 
 3. **Structural fan-out cap now; real quota in 1D.** The producer rejects a playlist over `MAX_VIDEOS_PER_ENQUEUE` (**50**) with `422` **before creating any playlist row or job** (v2 reorder). Not quota accounting — a coarse structural rail and a documented seam where 1D's atomic per-user debit + daily spend reservation plug in; gives the route a tested rejection path.
 
-4. **Authenticated-only routes; anon deferred to 1D — with a minimal middleware amendment (v2).** The routes require a signed-in `owner_id`. **Correction from v1:** delivering a JSON `401` (rather than the middleware's default `307` redirect to `/` for the `authenticated` category) requires a *small* middleware/route-categories change — an `/api/*` branch that returns `401` for an unauthenticated API request. This is bounded and security-relevant, and is **distinct** from anon **provisioning** (`signInAnonymously` under `/try`), which remains deferred to 1D with its velocity/CAPTCHA/quota guardrails. v1's "touches neither middleware nor route-categories" claim was wrong and is retracted.
+4. **Authenticated-only routes; anon deferred to 1D — with a minimal middleware amendment (v2).** The routes require a signed-in `owner_id`. **Correction from v1:** `/api/*` is already `authenticated` and already redirects unauth requests to `/` (307, `middleware.ts:24-28`). Delivering a JSON `401` requires changing that one branch to detect `/api/*` paths and return `401` instead of redirecting — a *small* middleware change (no new route category needed; `route-categories.ts` may stay as-is). It is **distinct** from anon **provisioning** (`signInAnonymously` under `/try`), deferred to 1D with velocity/CAPTCHA/quota. The change is safe for the ~10 existing `/api/*` routes (a working authenticated request has a user, so it never reaches the unauth branch). v1's "touches neither middleware" claim was wrong and is retracted.
 
 ---
 
@@ -64,7 +64,7 @@ Build the **cloud request→response loop** that turns a playlist ingestion requ
 | `lib/job-queue/ingestion-payload.ts` | `channel: z.string().optional()`, `videoPublishedAt: z.string().datetime().optional()`, `addedToPlaylistAt: z.string().datetime().optional()` (was required `z.string()`). Backward-compatible: existing string payloads still parse; `''`/invalid dates now rejected at the boundary. |
 | `lib/youtube.ts` | Extract + export `extractPlaylistId(playlistUrl): string`; add `fetchPlaylistVideos(url, key, opts?: { maxItems?: number })` — **stops paginating once `maxItems` items are collected** (cap-cost bound); refactor to reuse `extractPlaylistId`. No behavior change when `maxItems` omitted. |
 | `supabase/migrations/0010_cancel_job_rowcount.sql` | Re-shape `request_cancel_job` (see §3.7). |
-| `middleware.ts` + `lib/supabase/route-categories.ts` | Add an `/api/*` classification returning JSON `401` for an unauthenticated API request (no redirect); no anon provisioning. |
+| `middleware.ts` | In the existing `authenticated && !user` branch (`:24-28`), when `pathname.startsWith('/api/')` return a JSON `401` instead of the `307` redirect. No new route category; no anon provisioning. Covers all `/api/*` (blast radius per §6). |
 
 **Seam discipline:** route files are ~15-line adapters (build session client → derive principal → call the pure lib fn → shape/error-map the HTTP response). All branching logic lives in `lib/` pure functions tested against fakes — the split 1E-b used.
 
@@ -87,23 +87,27 @@ lib/job-queue/producer.enqueuePlaylist(bundle, principal, playlistUrl):
         → 422; NOTHING created (bounded fetch already stopped at limit+1)
   4. mapped = videos.map((meta,i) => videoMetaToIngestionPayload(meta, i+1))   // skip or ok
      enqueueable = mapped.filter(ok); skipped = mapped.filter(skip)
-  5. playlistId = bundle.metadataStore.resolvePlaylistId(principal, playlistUrl)   // FIRST durable write, only after validation
-        → throws → 500; (row only ever created for a real, within-cap playlist)
-  6. results = []; enq = 0
+  5. if enqueueable.length === 0 →                                  // empty OR all-skipped: nothing to poll
+        return { playlistId: null, jobs: skipped, counts: {enqueued:0,joined:0,skipped:skipped.length,failed:0} }
+        // short-circuit: NO playlists row is created for a playlist that yields zero jobs (review L1)
+  6. playlistId = bundle.metadataStore.resolvePlaylistId(principal, playlistUrl)   // FIRST durable write, only after validation + ≥1 enqueueable
+        → throws → 500; (row only ever created for a real, within-cap playlist with real work)
+  7. results = []; created = 0; joined = 0
      for each enqueueable video:
-        try { {jobId,status,joined} = jobQueue.enqueue(
+        try { {jobId,status,joined:didJoin} = jobQueue.enqueue(
                 {playlistId, videoId, sectionId:-1, kind:'summary',
                  version: docVersionKey(CURRENT_DOC_VERSION)}, payload)
-              results.push({videoId, jobId, status, joined}); enq++ }
+              results.push({videoId, jobId, status, joined:didJoin})
+              if didJoin then joined++ else created++ }
         catch (e) { results.push({videoId, error: String(e)}) }        // best-effort
-  7. attempted = enqueueable.length
-     if attempted > 0 && enq === 0 → throw AllEnqueueFailedError    // 503; systemic failure ≠ success
-  8. return { playlistId, jobs: [...results, ...skipped], counts: { enqueued: enq,
-              joined: <joined count>, skipped: skipped.length, failed: attempted-enq } }
+  8. attempted = enqueueable.length; succeeded = created + joined
+     if succeeded === 0 → throw AllEnqueueFailedError(playlistId)   // 503; systemic failure ≠ success (attempted≥1 here)
+  9. return { playlistId, jobs: [...results, ...skipped],
+              counts: { enqueued: created, joined, skipped: skipped.length, failed: attempted - succeeded } }
 route: → 200 { playlistId, jobs, counts }   (status codes per §4.1)
 ```
 
-`MAX_VIDEOS_PER_ENQUEUE = 50`. An **empty** playlist (`videos.length === 0`) is success: `200 { jobs: [], counts: { enqueued:0,… } }`. An **all-skipped** playlist is success with `enqueued:0` and every video in `skipped[]` — the client sees explicitly that there is nothing to poll (not an error, not a silent zero).
+`MAX_VIDEOS_PER_ENQUEUE = 50`. **Counts are DISJOINT (review M1):** `enqueued` = newly-created jobs (`joined:false`), `joined` = idempotent joins (`joined:true`), `skipped`, `failed` — so `enqueued + joined + skipped + failed === videos.length`, and a client can sum buckets without double-counting. An **empty** (`videos.length===0`) or **all-skipped** playlist short-circuits at step 5 → `200 { playlistId: null, jobs: skipped, counts:{enqueued:0,…} }`: no durable row is created, and `playlistId:null` tells the client there is nothing to poll (not an error, not a silent zero). `AllEnqueueFailedError` **carries `playlistId`** so the `503` body (§4.1) can include it.
 
 ### 3.3 Data flow — status (`GET /api/jobs?playlistId=X`)
 
@@ -150,7 +154,7 @@ Cancel is **cooperative and asynchronous**: `request_cancel_job` (v2, §3.7) set
 
 The mapper returns `{ ok }` after a `parseIngestionPayload` round-trip (the emitted payload is provably schema-valid, so an omitted date is *absent*, not `''`), or `{ skip: reason }`. Because the payload fields are now `.datetime().optional()` and the 1E-b worker copies payload timestamps into the built `Video` **by pass-through** (an absent field → `undefined` → omitted from the persisted JSON → accepted by `VideoSchema.*.datetime().optional()`), **no `''` can reach the DB**. Identity coordinates (`videoId`, playlist) are never in the payload.
 
-*(1E-b touch: the worker already validates via `parseIngestionPayload`; loosening required→optional is backward-compatible. Confirm the handler builds `Video` so an absent optional is omitted rather than written as `null`/`''` — a one-line conditional-spread if not already.)*
+*(1E-b: no worker change needed. `parseIngestionPayload` accepts the loosened optional schema (backward-compatible), and the handler builds `Video` by pure pass-through (`summary-handler.ts:119-122`) — an `undefined` field is dropped on JSON serialization, so an absent optional persists as *absent*, which `VideoSchema.*.datetime().optional()` accepts. Verified in round-2 review; no conditional-spread required.)*
 
 ### 3.6 The poller module (`lib/job-queue/poll-client.ts`)
 
@@ -174,9 +178,14 @@ Poll → `rollup` → if `terminal` resolve `done`; else back off (× up to `max
 ### 3.7 Migration `0010` — `request_cancel_job` returns a row count, never raises
 
 ```sql
--- v2: cancel returns the count of rows it actually flagged (0 = foreign/missing/terminal),
+-- The current 0008 function returns void; changing the return type to int CANNOT be done with
+-- CREATE OR REPLACE (Postgres: "cannot change return type of existing function"). DROP first —
+-- same pattern 0009 used for enqueue_job. DROP also drops the old grants; we re-issue them below.
+drop function if exists request_cancel_job(uuid);
+
+-- v3: cancel returns the count of rows it actually flagged (0 = foreign/missing/terminal),
 -- touches only NON-TERMINAL owned rows, and never raises (no ownership oracle).
-create or replace function request_cancel_job(p_job_id uuid) returns int
+create function request_cancel_job(p_job_id uuid) returns int
   language plpgsql security definer set search_path = public as $$
 declare n int;
 begin
@@ -193,7 +202,12 @@ end $$;
 revoke all on function request_cancel_job(uuid) from public;
 grant execute on function request_cancel_job(uuid) to anon, authenticated, service_role;
 ```
-`SupabaseJobQueue.requestCancel(jobId)` returns `{ requested: data }` (the int). Existing 1E-a/1E-b callers of `requestCancel` (if any) that ignored the void return are unaffected; the 1E-a schema test asserting the old signature is updated.
+`SupabaseJobQueue.requestCancel(jobId): Promise<{ requested: number }>` returns `{ requested: data }`.
+
+**Test deltas this migration forces (review round-2 H1 — enumerated, not vague):**
+- `tests/integration/job-queue-producer.test.ts:107-108` currently asserts a **foreign** cancel *raises* (`expect(foreign.error).not.toBeNull()`). Under `0010` it must become `expect(foreign.error).toBeNull(); expect(foreign.data).toBe(0);`. Add `expect(own.data).toBe(1)` at the owner-cancel (line 109-110); the `status='cancelled'` / `cancel_requested=true` asserts (112-113) still hold.
+- `tests/integration/job-queue-runner.test.ts:52` calls `userQ.requestCancel(activeJob)` and **ignores** the return — unaffected by the `void → { requested }` change; the non-terminal guard still flags the active job (returns 1).
+- No other caller reads the old return (`supabase-job-queue.ts:25` is the only wrapper).
 
 ---
 
@@ -207,7 +221,7 @@ All routes are **authenticated-only**; an unauthenticated API request is stopped
 
 | Status | Body | When |
 |---|---|---|
-| `200` | `{ playlistId, jobs: JobFanoutResult[], counts }` | fan-out ran — incl. empty (`jobs:[]`) and all-skipped (`enqueued:0`, all in `skipped`) |
+| `200` | `{ playlistId: string \| null, jobs: JobFanoutResult[], counts }` | fan-out ran. `playlistId:null` for empty/all-skipped (nothing enqueued, nothing to poll) |
 | `400` | `{ error: 'missing playlistUrl' \| 'invalid playlist url' }` | body missing / `extractPlaylistId` throws (no `?list=`) |
 | `401` | `{ error: 'authentication required' }` | no session (middleware; in-route throw is defense-in-depth) |
 | `422` | `{ error: 'playlist too large', limit, found }` | `found > MAX_VIDEOS_PER_ENQUEUE`; **nothing created** |
@@ -220,6 +234,7 @@ type JobFanoutResult =
   | { videoId: string; jobId: string; status: JobStatus; joined: boolean }
   | { videoId: string; skipped: string }
   | { videoId: string; error: string };
+// DISJOINT buckets: enqueued(new) + joined(idempotent) + skipped + failed === videos.length
 interface ProducerCounts { enqueued: number; joined: number; skipped: number; failed: number; }
 ```
 
@@ -274,7 +289,7 @@ interface Rollup {
 - **`resolvePlaylistId` is owner-scoped by construction (review M4/L1).** It upserts `{ owner_id = auth.getUser(), playlist_key, playlist_url }` with `onConflict:'owner_id,playlist_key'` and reads the id back atomically via `.select('id').single()` on the **upserted row** — so the returned UUID is always the caller's, with no separate `playlist_key`-only select (which would be unsafe if the method were ever reused under service-role, where RLS does not apply). It never relies on RLS as the only owner filter.
 - **Service role is never used by these routes** — only the worker (1E-b) holds it.
 - **Playlist-row creation is bounded to real, within-cap playlists (review H3/H2).** The upsert happens only after `fetchPlaylistVideos` succeeds and the cap passes, so a failed/oversized request creates no orphan row. Re-submitting the same playlist re-upserts the same row (idempotent). Abuse via unbounded distinct-`list=` enumeration is bounded to *existing* playlists here and fully gated by 1D's per-user quota/velocity before public exposure (1H).
-- **Unauth is a clean `401`, not a redirect (review B1).** The `/api/*` middleware branch returns JSON `401`; the in-route principal-null throw is mapped to `401` as defense-in-depth.
+- **Unauth is a clean `401`, not a redirect (review B1).** The `authenticated && !user` middleware branch returns JSON `401` for `/api/*` (instead of the 307 redirect to `/`); the in-route principal-null throw is mapped to `401` as defense-in-depth. **Blast radius (review round-2 L2):** this changes the unauth response for *every* existing `/api/*` route (~10: `ingest`, `videos`, `playlists`, `html`, `quick-view`, folder/settings helpers), not just `/api/jobs`. It is safe because those routes derive a **local** principal under `STORAGE_BACKEND=local` and local dev runs authenticated — a request with a user never reaches this branch, so no working flow regresses; only the *unauth* shape changes (307 → 401), which is strictly more correct for an API. A regression smoke test (§7) pins this.
 
 ---
 
@@ -285,9 +300,10 @@ Per `dev-process.md` layers and mocking boundaries (`lib/youtube.ts`/`lib/gemini
 | Layer | Coverage |
 |---|---|
 | **Unit** | `videoMetaToIngestionPayload`: `channelTitle→channel`, `i+1` index, `0`/`NaN`/`Infinity`→skip, **absent date/channel → field omitted (assert key ABSENT, not `''`)**, present-but-non-datetime date → omitted, valid → schema round-trip ok. `rollup`: empty→`terminal:false`, mixed, all-terminal→true, each status counted once (superset-proof). `poll-client`: backoff to cap, terminal stop, `total===0` keeps polling, `maxConsecutiveErrors`→`failed`, `timeoutMs`→`timedOut` — fake timers. |
-| **Unit — producer** | `enqueuePlaylist` vs a **fake bundle**: cap→`PlaylistTooLargeError` **with `resolvePlaylistId` never called** (order proof), empty→`[]`, all-skipped→`enqueued:0`, best-effort partial failure, **all-failed→`AllEnqueueFailedError`**, idempotent join surfaced, `resolvePlaylistId` failure aborts before enqueue. `fetchPlaylistVideos` mocked with a `maxItems`-aware fake asserting `maxItems = cap+1` is passed. |
+| **Unit — producer** | `enqueuePlaylist` vs a **fake bundle**: cap→`PlaylistTooLargeError` **with `resolvePlaylistId` never called** (order proof); **empty and all-skipped → `resolvePlaylistId` never called, `playlistId:null`** (no orphan row, review L1); best-effort partial failure; **all-failed→`AllEnqueueFailedError` carrying `playlistId`**; idempotent join → `joined++` not `enqueued++` (a fully-joined re-submit is **not** a false 503); **disjoint counts sum to `videos.length`**; `resolvePlaylistId` failure aborts before enqueue. `fetchPlaylistVideos` mocked with a `maxItems`-aware fake asserting `maxItems = cap+1` is passed. |
 | **Integration** (live Supabase) | producer→`enqueue_job`→`listByPlaylist` round-trip; **RLS cross-tenant isolation** — owner B sees `[]` for owner A's `playlistId` (mandatory); widened `getStatus` returns `progress_phase`/`attempts`/`updated_at`; `resolvePlaylistId` atomic + idempotent (same UUID on repeat, owner-correct); **`0010` `request_cancel_job`**: foreign→`0` no-raise, terminal→`0`, queued→`1`+`cancelled`, active→`1`+`cancel_requested` (status stays `active`); cancel-by-playlist flags non-terminal only and returns a real count. |
-| **Route** | `POST`/`GET`/cancel happy + `400`/`401`/`422`/`502`/`503`; body + UUID validation; the `/api/*` unauth→`401` (not `307`) middleware behavior. |
+| **Route** | `POST`/`GET`/cancel happy + `400`/`401`/`422`/`502`/`503`; body + UUID validation; disjoint `counts` sum to `videos.length`; empty/all-skipped → `playlistId:null`. |
+| **Middleware** | Unauth `/api/jobs` → JSON `401` (not `307`); **regression smoke:** an existing local route (e.g. `/api/videos`) unauth also returns `401` not `307`, and an authenticated request to it is unaffected (blast-radius pin, review round-2 L2). |
 
 **No browser E2E in 1E-c** — the browser poll loop is Sub-project 2. `poll-client` is fully covered with an injected clock.
 
