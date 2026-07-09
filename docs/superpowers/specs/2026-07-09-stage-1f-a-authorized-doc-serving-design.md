@@ -1,6 +1,12 @@
 # Stage 1F-a — Authorized, Lazy-Materialized Summary-HTML Serving (cloud)
 
-**Status:** design in review (v2 — lazy pivot) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+**Status:** design in review (v3 — A-lite spend governance) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+
+> **AFK decision (made on the user's behalf, vetoable on return):** serve-side spend
+> governance = **Option A-lite** (one atomic, idempotent-per-`(owner,doc,day)`
+> `SECURITY DEFINER` reserve RPC) over Option D (ungated, defer to 1G). It honors both
+> the user's "approximate/simple" steer *and* Stage 1D's "money kill-switch must exist
+> before the paid path is exposed" principle, and is fully reversible pre-implementation.
 **Predecessor:** Stage 1D (cost guardrails, PR #6, merged `12a9f88`).
 **North-star:** `docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md` §5 (print & share), §7 (RLS + storage-key isolation).
 **Review trail:** `docs/reviews/spec-1f-a-*.md` (v1 dual adversarial pass drove the v2 pivot; Codex was unavailable in-sandbox — gap noted for a pre-merge retry).
@@ -66,7 +72,7 @@ docs, and heal of lost/stale models — and the worker never changes.
 | D7 | **Nonce-based CSP** (not hash). | We render dynamically per request, so a per-response nonce is natural and stays valid as inline scripts evolve. |
 | D8 | **Magazine model = lazily-materialized, version/drift-gated artifact** (the glossary's "middle case" — paid but *acceptably* re-renderable). A missing/stale model is **"not yet materialized at this version,"** regenerated on view — **not** a source-of-truth "repair-needed" dead-end. | A re-rendered skim model is acceptable (not semantic ground truth), so on-demand regeneration is correct; this is what dissolves the backfill/heal Blockers. |
 | D9 | **Serve addresses playlists by `playlistId` (UUID)**, resolving to `playlist_key` with an explicit owner assertion (the `getWorkerStorageBundle` pattern, minus service_role). | Matches the cloud UUID-addressing convention (jobs table), keeps the external YouTube list-id out of app URLs, adds the D6 playlist-row assert. RLS still isolates the session path. |
-| D10 | **Serve-side model materialization governance = caps + daily-cap gate, approximate spend, no quota debit.** The call honors `CLOUD_CAPS` (bounded output); before it runs, reserve a **fixed approximate per-model estimate** against the **daily cap** and refuse ("at capacity, try later") if the day is over budget. **No** per-account quota debit (the summary was already charged). **No** strict worst-case recompute / cap-soundness extension. | Bounded per-call + owner-scoped (you only materialize *your own* docs) + cached-after-first-view makes exposure small; the approximate fixed estimate matches Stage 1D's existing spend-reservation posture ("fixed per-kind estimate… reconcile deferred") and avoids cumbersome strict accounting. |
+| D10 | **Serve-side spend governance = one atomic, idempotent-per-`(owner,doc,day)` `SECURITY DEFINER` reserve RPC (Option A-lite).** The RPC (granted to `authenticated, anon`), in a **single conditional UPDATE**: (a) refuses if the **daily cap** is over budget (→ 503 "at capacity"); (b) is **idempotent per `(owner_id, doc, UTC-day)`** — a repeat within the day returns "already charged" and does **not** re-reserve; (c) else reserves a **fixed approximate per-model estimate**. The model call honors `CLOUD_CAPS`. **No** per-account quota debit; **no** reconcile (over-reserve-on-failure is acceptable/conservative). | The per-`(owner,doc,day)` idempotency does three jobs at once — reserve, **dedup** (a reload-loop returns "already charged," no re-charge), and **abuse-bound** (a principal reserves at most once per owned doc/day; owned-doc-count is quota-bounded → no ledger-lever DoS). Keeps serve-side generation under the hard daily kill-switch (1D's principle) while staying approximate/simple (1D's posture). `SECURITY DEFINER` lets the session client invoke it without direct ledger grants, preserving D5. |
 | D11 | **Print button → nonce'd listener; local output "behavior-identical," not byte-identical.** `PRINT_BUTTON`'s inline `onclick` cannot be authorized by a nonce (nonces don't cover inline event handlers), and the CSP-level "fix" is the `unsafe-*` weakening §8 forbids — so convert it to a nonce'd `addEventListener` script. This changes the button's *markup* for both local and cloud, so B14 asserts **behavioral** parity, not byte-parity. | The only way to keep the print button *and* a strict CSP; the local no-CSP path still works (unconditional script). |
 | D12 | **Suppress dig-deeper controls on the cloud-served summary.** The rendered HTML doc's dig/nav controls read `outputFolder` and are non-functional in cloud (dig-deeper is out of scope). A render flag omits them on the cloud serve. | Avoids shipping dead controls; dig-deeper serving is a later slice. |
 | D13 | **Synchronous generate-on-miss.** On a model miss the serve request generates then serves in-line (client waits). | Simplest for a backend slice; a non-blocking "generating…" UX belongs to Sub-project 2. |
@@ -101,15 +107,21 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
    - status `committed`/finalizing → **503** "not ready, retry" (a normal
      mid-promotion window — must NOT read as 404).
    - no summary artifact / unknown → **404**.
-5. **Model resolution (lazy, D8):** `get(models/{base}.json)`.
+5. **Model resolution (lazy, D8):** read the model envelope via a **principal-aware,
+   staged/promote-capable** model store (§4.2 — the current `writeModelEnvelope`/
+   `readModelEnvelope` hardcode `localPrincipal` + plain `put` and must gain a
+   `principal` param + `putStaged→promote`).
    - Present, parseable, and **not drifted** (`envelope.sourceSections` matches the
-     current MD section titles) → use it.
-   - Absent, unparseable, or drifted → **materialize**: check the **daily cap** (over
-     budget → **503** "at capacity"); reserve the fixed approximate estimate (D10);
-     call `generateMagazineModel(sections, language, caps)` under `CLOUD_CAPS` with
-     the request `signal`; **stage → verify → promote** `models/{base}.json`
-     (idempotent — concurrent first-views resolve last-writer-wins on an equivalent
-     artifact); use the fresh model.
+     current MD section titles, and the envelope's `generatorVersion` matches) → use it
+     (no Gemini, no reserve).
+   - Absent, unparseable, or drifted → **materialize**: call the **A-lite reserve RPC**
+     (D10) for `(owner, doc, UTC-day)` — over the daily cap → **503** "at capacity";
+     "already charged" or a fresh reservation → proceed. Then
+     `generateMagazineModel(sections, language, caps)` under `CLOUD_CAPS` with the
+     request `signal`; **stage → verify → promote** `models/{base}.json` (idempotent —
+     concurrent first-views resolve last-writer-wins on an equivalent artifact); use the
+     fresh model. A generation failure after a same-day reservation is **not** re-charged
+     on retry (the RPC's per-day idempotency covers it), bounding a reload-loop.
 6. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce, dig: false })`
    (D11 nonce'd inline scripts + print listener; D12 dig controls suppressed).
 7. Return `text/html; charset=utf-8` with a nonce-based `Content-Security-Policy`
@@ -127,18 +139,33 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
 
 ### 4.2 Serve-side cost governance (money-path — relocated to serve)
 
-- `generateMagazineModel(sections, language)` gains **caps support** — this is an
+- `generateMagazineModel(sections, language)` gains **caps support** — an
   unstated-in-v1, load-bearing code change: today it takes no `maxOutputTokens` /
-  `thinkingBudget:0` / `countTokens` preflight / `signal`, and `CloudGeminiCaps` has
-  no magazine field. Add a magazine-model cap and a **schema `maxItems`** bound so the
-  paid call is bounded. The **local `runHtmlDoc` caller must keep working unchanged**
-  (caps optional; absent → current local behavior).
-- **Daily-cap gate + approximate reservation (D10):** before the call, reserve a
-  **fixed approximate per-model estimate** against the daily cap (`spend_ledger`);
-  refuse with 503 if the day is over budget. Reconcile-to-actual is deferred (matches
-  Stage 1D). **No per-account quota debit.**
-- **The Stage 1D enqueue-path caps + cap-soundness guard are UNCHANGED** — the worker
-  is untouched, so no strict recompute, no `guardrail_config` est change, no migration.
+  `thinkingBudget:0` / `countTokens` preflight / `signal`, and `CloudGeminiCaps` has no
+  magazine field. Add a magazine-model output cap + a schema **`maxItems`** bound so the
+  paid call is bounded. The **local `runHtmlDoc` caller keeps working unchanged** (caps
+  optional; absent → current local behavior).
+- **A-lite reserve RPC (D10) — this slice DOES include a small, self-contained
+  migration** (correcting v2's mistaken "no migration"): a new `SECURITY DEFINER`
+  function granted to `authenticated, anon` that, in a **single conditional UPDATE**
+  (never a racy read-then-write), checks the daily cap, is idempotent per
+  `(owner_id, doc, UTC-day)`, and reserves a fixed approximate estimate — backed by a
+  per-`(owner,doc,day)` charge marker the RPC owns (a table/column; never owner-writable
+  jsonb). It touches `spend_ledger`/`guardrail_config` **only inside the definer**, so
+  the serve path stays on the **session client** (D5 preserved). Reconcile-to-actual is
+  deferred (matches Stage 1D).
+- **Model store becomes cloud-capable:** `writeModelEnvelope`/`readModelEnvelope`
+  hardcode `localPrincipal` + plain `put` today — the serve path needs a `principal`
+  param and the `putStaged→promote` protocol (shared-code change; local callers
+  unchanged). The envelope also gains a **`generatorVersion`** field so a future
+  generator/format change invalidates cached models (beyond title-drift).
+- **Drift detection is title-based** (`sourceSections`) + `generatorVersion`; a
+  body-only MD edit with unchanged section titles serves a slightly-stale (still
+  *acceptable* — a restyle, not ground truth) model. A content-hash guard is a deferred
+  refinement, not worth the cost for an acceptable-restyle artifact.
+- **The Stage 1D *enqueue-path* caps + cap-soundness guard are UNCHANGED** — the worker
+  and `enqueue_job` are untouched; the only new money-path surface is the serve-side
+  reserve RPC above.
 
 ### 4.3 CSP nonce plumbing — `lib/html-doc/render.ts`, `theme.ts`, `nav.ts`
 
@@ -154,6 +181,10 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
   Output is **behaviorally identical** to pre-1F-a (D11 changes the print button's
   markup for both paths, so byte-identical is relaxed to behavior-identical).
 - **`dig: false`** (D12): omit the dig-deeper/nav controls.
+
+**Opts defaults (avoid local regression):** when omitted, `nonce` is `undefined` (no
+CSP attributes) and `dig` defaults to **`true`** — the exact pre-1F-a local behavior.
+Only the cloud serve path passes `{ nonce, dig: false }`.
 
 These are exported **const strings** (not functions) today, so "thread a nonce" is a
 real refactor of `theme.ts`/`nav.ts` exports, not a one-liner. The theme FOUC head
@@ -184,7 +215,8 @@ owner assertion (D9) — the YouTube list-id never appears in the URL. `playlist
 | B3 | Re-materialize on drift | `sourceSections` ≠ current MD titles | regenerate model → 200 (heal path; no manual repair) |
 | B4 | Corrupt/unparseable model | stored model bad JSON / schema-invalid | treated as absent → regenerate → 200 (never a 500) |
 | B5 | Model call honors caps | any materialization | `maxOutputTokens` + schema `maxItems` set, `thinkingBudget:0`, `countTokens` preflight, request `signal` threaded |
-| B6 | Daily cap reached | day over budget at a model miss | **503** "at capacity"; no Gemini call, no partial promote |
+| B6 | Daily cap reached | day over budget at a model miss | reserve RPC refuses → **503** "at capacity"; no Gemini call, no partial promote |
+| B6b | Reload-loop / same-day repeat not re-charged | repeated miss for same `(owner,doc)` within a UTC day | reserve RPC returns "already charged"; ≤1 reservation per `(owner,doc,day)`; cost bounded regardless of reloads or a failing generate |
 | B7 | Concurrency on first view | two simultaneous misses for one doc | idempotent stage→promote; last-writer-wins on an equivalent model; both serve 200 |
 | B8 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200, rendered HTML doc |
 | B9 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
@@ -226,11 +258,12 @@ API/route level.
 Two "iterative dual adversarial re-review to convergence" triggers
 (`docs/dev-process.md` → Adversarial Review → Iterative Re-Review):
 
-1. **Money-path change (now serve-side):** a paid Gemini call on the serve path,
-   gated by caps + the daily cap with an approximate reservation. Adversarial passes
-   must verify the call is bounded, the daily-cap gate cannot be bypassed, exposure
-   is owner-scoped, and concurrent misses cannot double-charge beyond the accepted
-   approximate model.
+1. **Money-path change (serve-side):** a new `SECURITY DEFINER` reserve RPC (A-lite,
+   D10) + the paid model call. Adversarial passes must verify: the single-UPDATE
+   reserve cannot be raced past the daily cap; the per-`(owner,doc,day)` idempotency
+   genuinely bounds a reload-loop / concurrent miss (no unbounded re-charge); the
+   definer RPC exposes no cross-owner ledger access; exposure stays owner-scoped; and
+   the model call is output-bounded.
 2. **Refactor of already-merged shared code** — `render.ts` / `theme.ts` / `nav.ts`
    (used by local and cloud). Passes must verify local **behavioral** parity (print
    button, theme FOUC) and that the nonce path introduces no `unsafe-*` CSP weakening.
@@ -262,8 +295,9 @@ Two "iterative dual adversarial re-review to convergence" triggers
 2. A doc whose model is **absent/stale (incl. every pre-1F-a doc)** materializes it
    on first view under caps + the daily-cap gate, then serves it Gemini-free
    thereafter — no manual repair, no worker change.
-3. The daily-cap gate refuses model generation when the day is over budget; no
-   per-account quota debit; the Stage 1D enqueue-path caps are untouched.
+3. The A-lite reserve RPC refuses model generation when the day is over budget, is
+   idempotent per `(owner,doc,UTC-day)` (reload-loops don't re-charge), needs no
+   per-account quota debit, and leaves the Stage 1D enqueue-path caps untouched.
 4. Local render output is **behaviorally** unchanged (print works, theme FOUC runs);
    service-role never touches the serve path.
 5. `tsc --noEmit` clean; unit suite green; `db reset` + integration green.
