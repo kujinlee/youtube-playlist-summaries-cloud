@@ -72,7 +72,7 @@ docs, and heal of lost/stale models — and the worker never changes.
 | D7 | **Nonce-based CSP** (not hash). | We render dynamically per request, so a per-response nonce is natural and stays valid as inline scripts evolve. |
 | D8 | **Magazine model = lazily-materialized, version/drift-gated artifact** (the glossary's "middle case" — paid but *acceptably* re-renderable). A missing/stale model is **"not yet materialized at this version,"** regenerated on view — **not** a source-of-truth "repair-needed" dead-end. | A re-rendered skim model is acceptable (not semantic ground truth), so on-demand regeneration is correct; this is what dissolves the backfill/heal Blockers. |
 | D9 | **Serve addresses playlists by `playlistId` (UUID)**, resolving to `playlist_key` with an explicit owner assertion (the `getWorkerStorageBundle` pattern, minus service_role). | Matches the cloud UUID-addressing convention (jobs table), keeps the external YouTube list-id out of app URLs, adds the D6 playlist-row assert. RLS still isolates the session path. |
-| D10 | **Serve-side spend governance = one atomic, idempotent-per-`(owner,doc,day)` `SECURITY DEFINER` reserve RPC (Option A-lite).** The RPC (granted to `authenticated, anon`), in a **single conditional UPDATE**: (a) refuses if the **daily cap** is over budget (→ 503 "at capacity"); (b) is **idempotent per `(owner_id, doc, UTC-day)`** — a repeat within the day returns "already charged" and does **not** re-reserve; (c) else reserves a **fixed approximate per-model estimate**. The model call honors `CLOUD_CAPS`. **No** per-account quota debit; **no** reconcile (over-reserve-on-failure is acceptable/conservative). | The per-`(owner,doc,day)` idempotency does three jobs at once — reserve, **dedup** (a reload-loop returns "already charged," no re-charge), and **abuse-bound** (a principal reserves at most once per owned doc/day; owned-doc-count is quota-bounded → no ledger-lever DoS). Keeps serve-side generation under the hard daily kill-switch (1D's principle) while staying approximate/simple (1D's posture). `SECURITY DEFINER` lets the session client invoke it without direct ledger grants, preserving D5. |
+| D10 | **Serve-side spend governance = one `SECURITY DEFINER` reserve RPC with an exact idempotent transaction (Option A-lite);** see §4.2 for the algorithm. Granted to `authenticated, anon`; derives `owner_id := auth.uid()` **internally** (never a param) and verifies the `(playlist, video)` is owned before touching money. Returns coarse `reserved | already_charged | at_capacity`. **Only `reserved` triggers generation** — `already_charged` never regenerates (503-retry), which **single-flights** the paid call. Model call honors `CLOUD_CAPS`; fixed `magazine_est_cents`; no quota debit; reconcile deferred. | `unique(owner,doc,day)` + `ON CONFLICT` makes reserve+dedup+abuse-bound atomic; internal `auth.uid()` blocks forged-owner/ledger-probe via direct PostgREST; only-`reserved`-generates bounds paid *Gemini calls* (not just charges — the v3 gap both reviewers caught). Keeps serve-side gen under the hard daily kill-switch while staying approximate. |
 | D11 | **Print button → nonce'd listener; local output "behavior-identical," not byte-identical.** `PRINT_BUTTON`'s inline `onclick` cannot be authorized by a nonce (nonces don't cover inline event handlers), and the CSP-level "fix" is the `unsafe-*` weakening §8 forbids — so convert it to a nonce'd `addEventListener` script. This changes the button's *markup* for both local and cloud, so B14 asserts **behavioral** parity, not byte-parity. | The only way to keep the print button *and* a strict CSP; the local no-CSP path still works (unconditional script). |
 | D12 | **Suppress dig-deeper controls on the cloud-served summary.** The rendered HTML doc's dig/nav controls read `outputFolder` and are non-functional in cloud (dig-deeper is out of scope). A render flag omits them on the cloud serve. | Avoids shipping dead controls; dig-deeper serving is a later slice. |
 | D13 | **Synchronous generate-on-miss.** On a model miss the serve request generates then serves in-line (client waits). | Simplest for a backend slice; a non-blocking "generating…" UX belongs to Sub-project 2. |
@@ -107,6 +107,9 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
    - status `committed`/finalizing → **503** "not ready, retry" (a normal
      mid-promotion window — must NOT read as 404).
    - no summary artifact / unknown → **404**.
+   - status `promoted` but the **MD blob `get()` returns null** (source-of-truth blob
+     lost) → a defined **repair-needed** response (409/410-class), never a 500 or a
+     mis-labeled "model absent."
 5. **Model resolution (lazy, D8):** read the model envelope via a **principal-aware,
    staged/promote-capable** model store (§4.2 — the current `writeModelEnvelope`/
    `readModelEnvelope` hardcode `localPrincipal` + plain `put` and must gain a
@@ -115,13 +118,21 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
      current MD section titles, and the envelope's `generatorVersion` matches) → use it
      (no Gemini, no reserve).
    - Absent, unparseable, or drifted → **materialize**: call the **A-lite reserve RPC**
-     (D10) for `(owner, doc, UTC-day)` — over the daily cap → **503** "at capacity";
-     "already charged" or a fresh reservation → proceed. Then
-     `generateMagazineModel(sections, language, caps)` under `CLOUD_CAPS` with the
-     request `signal`; **stage → verify → promote** `models/{base}.json` (idempotent —
-     concurrent first-views resolve last-writer-wins on an equivalent artifact); use the
-     fresh model. A generation failure after a same-day reservation is **not** re-charged
-     on retry (the RPC's per-day idempotency covers it), bounding a reload-loop.
+     (§4.2) with `(p_playlist_id, p_video_id)` — the RPC derives the owner from
+     `auth.uid()`. On its coarse status:
+     - `at_capacity` (daily cap exhausted) → **503** "at capacity."
+     - `already_charged` (this `(owner,doc,UTC-day)` was already reserved) → **do NOT
+       regenerate.** If the model is now present (a concurrent first-view finished),
+       serve it; else **503** "generating, retry shortly." This makes generation
+       **single-flight** — only the `reserved` caller calls Gemini, so concurrent misses
+       and same-day reload-loops cannot multiply paid calls (the v3 charge-once/
+       generate-many gap).
+     - `reserved` → call `generateMagazineModel(sections, language, caps)` under
+       `CLOUD_CAPS` with the request `signal`; **stage → verify → promote**
+       `models/{base}.json`; serve. A first-generation *failure* leaves the marker set,
+       so the doc returns 503 "temporarily unavailable" and **self-heals on the next
+       UTC-day view** — an accepted approximate tradeoff (bounded cost over
+       first-failure availability; **flagged for veto**).
 6. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce, dig: false })`
    (D11 nonce'd inline scripts + print listener; D12 dig controls suppressed).
 7. Return `text/html; charset=utf-8` with a nonce-based `Content-Security-Policy`
@@ -146,14 +157,31 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
   paid call is bounded. The **local `runHtmlDoc` caller keeps working unchanged** (caps
   optional; absent → current local behavior).
 - **A-lite reserve RPC (D10) — this slice DOES include a small, self-contained
-  migration** (correcting v2's mistaken "no migration"): a new `SECURITY DEFINER`
-  function granted to `authenticated, anon` that, in a **single conditional UPDATE**
-  (never a racy read-then-write), checks the daily cap, is idempotent per
-  `(owner_id, doc, UTC-day)`, and reserves a fixed approximate estimate — backed by a
-  per-`(owner,doc,day)` charge marker the RPC owns (a table/column; never owner-writable
-  jsonb). It touches `spend_ledger`/`guardrail_config` **only inside the definer**, so
-  the serve path stays on the **session client** (D5 preserved). Reconcile-to-actual is
-  deferred (matches Stage 1D).
+  migration** (correcting v2's mistaken "no migration"). It adds:
+  - a marker table `serve_model_charge(owner_id uuid, doc_key text, day date, …)` with
+    **`unique(owner_id, doc_key, day)`** (the RPC owns it; never owner-writable jsonb);
+  - a fixed **`magazine_est_cents`** in `guardrail_config` (approximate — derived roughly
+    from the magazine input+output caps × `GENERATE_JSON_RETRIES+1`; no strict
+    cap-soundness proof, per the approved approximate posture);
+  - a `SECURITY DEFINER` function `reserve_serve_model(p_playlist_id uuid, p_video_id text)`
+    granted to `authenticated, anon`, whose **exact transaction** is:
+    1. `v_owner := auth.uid()`; null → raise (unauth). **Owner is NEVER a param.**
+    2. Verify `(p_playlist_id, p_video_id)` is owned by `v_owner` (join `playlists`/
+       `videos` on `owner_id = v_owner`); not owned/absent → generic denial (no existence
+       leak) — blocks a **direct PostgREST** call with a forged `doc`.
+    3. `doc_key := p_playlist_id||'/'||p_video_id`; `day := (now() at time zone 'utc')::date`.
+    4. `INSERT INTO serve_model_charge(owner_id,doc_key,day) VALUES (v_owner,doc_key,day)
+       ON CONFLICT DO NOTHING RETURNING 1;` — **no row ⇒ return `already_charged`** (the
+       atomic dedup arbiter, mirroring `enqueue_job`'s ON-CONFLICT idempotency).
+    5. Marker inserted ⇒ the daily-cap **conditional UPDATE arbiter** (as `enqueue_job` /
+       `0011`): `UPDATE spend_ledger SET reserved = reserved + magazine_est WHERE day=…
+       AND reserved+actual+magazine_est <= daily_cap`. **0 rows ⇒ roll the whole txn back**
+       (the marker must NOT persist, else it would falsely dedup a never-charged doc) →
+       `at_capacity`. Else → `reserved`.
+  Everything touches `spend_ledger`/`guardrail_config` **only inside the definer**, so the
+  serve path stays on the **session client** (D5 preserved). Reconcile deferred (matches
+  Stage 1D). Tests: same-doc concurrent first-views (one `reserved`, rest
+  `already_charged`), different-doc cap boundary, forged/foreign `doc` denial.
 - **Model store becomes cloud-capable:** `writeModelEnvelope`/`readModelEnvelope`
   hardcode `localPrincipal` + plain `put` today — the serve path needs a `principal`
   param and the `putStaged→promote` protocol (shared-code change; local callers
@@ -174,8 +202,9 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
 - **`nonce` present** (cloud serve): stamp `nonce="<n>"` on `THEME_HEAD_SCRIPT`,
   `NAV_SCRIPT`, `THEME_TOGGLE_SCRIPT`, the print listener (D11), and the inline
   `<style>` block. Emit a full CSP: `default-src 'none'`; `script-src 'nonce-<n>'`;
-  `style-src 'nonce-<n>'`; `img-src` as needed; `base-uri 'none'`; `object-src
-  'none'` — no `unsafe-inline`/`unsafe-hashes`. Nonce generated per response
+  `style-src 'nonce-<n>'`; **`img-src 'none'`** (the summary emits no images today —
+  only external YouTube *links*; adding images requires an explicit spec change);
+  `base-uri 'none'`; `object-src 'none'` — no `unsafe-inline`/`unsafe-hashes`. Nonce generated per response
   (`crypto.randomBytes`/UUID, ≥128-bit, base64).
 - **`nonce` absent** (local `generate.ts` static file): no nonce attributes, no CSP.
   Output is **behaviorally identical** to pre-1F-a (D11 changes the print button's
@@ -199,10 +228,14 @@ script (`THEME_HEAD_SCRIPT`) must run under the strict nonce CSP (verified as a 
 | Cloud summary serve | View summary | `/api/html/{videoId}?playlist={playlistId}&type=summary` |
 | Local summary serve (unchanged) | View summary | `/api/html/{videoId}?outputFolder={outputFolder}&type=summary` |
 
-`type` is validated to `summary` (`dig-deeper` → 400/deferred). `playlist` carries
-the opaque **`playlistId` (UUID)**, resolved server-side to `playlist_key` with an
-owner assertion (D9) — the YouTube list-id never appears in the URL. `playlist`
-(cloud) and `outputFolder` (local) are mutually exclusive by backend.
+`type` is validated to `summary`; on the **cloud** backend `dig-deeper` → **400**
+(deferred), while the **local** backend keeps its existing `dig-deeper` route (no
+regression). `playlist` carries the opaque **`playlistId` (UUID)**, resolved
+server-side to `playlist_key` with an owner assertion (D9) — the YouTube list-id never
+appears in the URL. **Backend precedence:** the cloud (`STORAGE_BACKEND=supabase`) route
+**requires `playlist` and rejects `outputFolder` (400)**; the local route **requires
+`outputFolder` and rejects `playlist` (400)** — a wrong-backend param is never silently
+ignored.
 
 ---
 
@@ -216,14 +249,17 @@ owner assertion (D9) — the YouTube list-id never appears in the URL. `playlist
 | B4 | Corrupt/unparseable model | stored model bad JSON / schema-invalid | treated as absent → regenerate → 200 (never a 500) |
 | B5 | Model call honors caps | any materialization | `maxOutputTokens` + schema `maxItems` set, `thinkingBudget:0`, `countTokens` preflight, request `signal` threaded |
 | B6 | Daily cap reached | day over budget at a model miss | reserve RPC refuses → **503** "at capacity"; no Gemini call, no partial promote |
-| B6b | Reload-loop / same-day repeat not re-charged | repeated miss for same `(owner,doc)` within a UTC day | reserve RPC returns "already charged"; ≤1 reservation per `(owner,doc,day)`; cost bounded regardless of reloads or a failing generate |
-| B7 | Concurrency on first view | two simultaneous misses for one doc | idempotent stage→promote; last-writer-wins on an equivalent model; both serve 200 |
+| B6b | Reload-loop / same-day repeat: single-flight | repeated/concurrent miss for same `(owner,doc)` within a UTC day | RPC returns `already_charged` → **no regeneration**; serve if now-present else **503** "generating, retry"; **≤1 Gemini call** per `(owner,doc,day)` |
+| B7 | Concurrent first views single-flight | two simultaneous misses for one doc | `ON CONFLICT` marker → exactly one gets `reserved` (generates); the other gets `already_charged` → 503-retry, then serves the cached model; **one** Gemini call |
+| B7b | Forged/foreign doc via direct RPC | authed/anon calls `reserve_serve_model` with a doc they don't own | definer derives owner from `auth.uid()` + verifies ownership → generic denial; no charge, no existence leak |
+| B7c | Cap refused mid-reserve leaves no marker | marker inserted but the conditional ledger UPDATE affects 0 rows | whole txn rolls back → `at_capacity`; marker NOT persisted (doc still materializable once budget frees) |
 | B8 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200, rendered HTML doc |
 | B9 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
 | B10 | Foreign owner blocked | authed GET for another owner's doc/playlist | **404** (RLS row/playlist invisible) — bidirectional isolation |
 | B11 | No session | unauthenticated GET (cloud backend) | **401** |
 | B12 | Summary finalizing | `summaryMd.status === committed` | **503** "not ready, retry" (not 404) |
 | B13 | Summary absent / unknown video | no summary artifact, or unknown `videoId` | **404** (never a 500 leak) |
+| B13b | MD blob lost behind promoted | `summaryMd.status=promoted` but MD `get()` null | **repair-needed** (409/410-class), never 500 |
 | B14 | Invalid `type` | absent or not `summary` | **400** |
 | B15 | Invalid `videoId` / non-UUID `playlistId` | malformed params | **400** (UUID pre-validated before DB) |
 | B16 | CSP present + coherent | any 200 serve | full nonce CSP; header nonce matches every inline `<script>`/`<style>`/listener nonce; no `unsafe-*` |
