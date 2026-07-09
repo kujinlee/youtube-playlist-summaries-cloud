@@ -1,51 +1,55 @@
-# Stage 1F-a — Authorized, Blob-Backed Summary-HTML Serving (cloud)
+# Stage 1F-a — Authorized, Lazy-Materialized Summary-HTML Serving (cloud)
 
-**Status:** design approved 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+**Status:** design in review (v2 — lazy pivot) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
 **Predecessor:** Stage 1D (cost guardrails, PR #6, merged `12a9f88`).
 **North-star:** `docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md` §5 (print & share), §7 (RLS + storage-key isolation).
+**Review trail:** `docs/reviews/spec-1f-a-*.md` (v1 dual adversarial pass drove the v2 pivot; Codex was unavailable in-sandbox — gap noted for a pre-merge retry).
 
 ---
 
 ## 1. Purpose
 
-Serve the **summary HTML view** of a generated doc from Supabase storage, over an
-authorized, per-owner path — replacing the local-only serve route that reads the
-local filesystem via `fs.readFileSync` and authorizes with a local sentinel principal.
+Serve the **summary rendered HTML doc** of a generated doc from Supabase storage,
+over an authorized, per-owner path — replacing the local-only serve route that reads
+the local filesystem via `fs.readFileSync` and authorizes with a local sentinel
+principal.
 
 This is the **foundation slice** of Stage 1F: it establishes the authorized
 blob-backed read + ownership + CSP seam that the later slices (share tokens,
-downloads, Obsidian export) all build on. It is scoped foundation-first, but —
-because cloud does not currently store enough to render the **rendered HTML doc** — it
-necessarily includes a produce-side change (the worker must persist the magazine
-model) and the cost re-pricing that follows from adding a Gemini pass.
+downloads, Obsidian export) all build on. The **worker is not changed** — the serve
+path renders on-serve from the stored summary MD and **lazily materializes the
+magazine model on view** (version/drift-gated), exactly as the local on-view path
+already does.
 
 ---
 
-## 2. Background — why this is not a thin serve patch
+## 2. Background — the model is materialized on view, not pre-produced
 
 Ground truth from the current code:
 
 - The only real serve route is `GET /api/html/[id]` (`app/api/html/[id]/route.ts`),
-  which calls `buildDocHtml` (`lib/html-doc/build-doc-html.ts`). It reads the local
-  filesystem (`fs.readFileSync`), authorizes with the local sentinel principal
-  (`getPrincipal(outputFolder)`), and sets no CSP.
-- The cloud **worker writes only `${baseName}.md`** to the blob store
-  (`lib/job-queue/summary-handler.ts:172-179`). It does **not** write the rendered
-  HTML, the magazine model, or any dig-deeper artifact.
-- The magazine HTML renderer, `renderMagazineHtml(parsed, model)`
-  (`lib/html-doc/render.ts:56`), builds each section's **lead + bullets** from
-  `model.sections[i]` — **not** from the parsed MD. The MD supplies only titles,
-  meta, and the TL;DR callout.
-- That `model` (`models/{base}.json`) is produced by a **separate Gemini call**,
-  `generateMagazineModel(...)` (`lib/html-doc/generate.ts:39`), in the **local,
-  on-demand** `runHtmlDoc` path. It is **not** in the worker, and it is **not**
-  priced into Stage 1D's cost caps.
+  calling `buildDocHtml` (`lib/html-doc/build-doc-html.ts`). It reads the local
+  filesystem, authorizes with the local sentinel principal, and sets no CSP.
+- The cloud **worker writes only `${baseName}.md`** (`lib/job-queue/summary-handler.ts:172-179`).
+  No rendered HTML, no magazine model, no dig-deeper artifact — and **this slice
+  keeps it that way**.
+- `renderMagazineHtml(parsed, model)` (`lib/html-doc/render.ts:56`) builds each
+  section's **lead + bullets** from `model.sections[i]`, not from the MD. The MD
+  supplies titles, meta, and the TL;DR callout.
+- That `model` is produced by `generateMagazineModel(...)` (`lib/gemini.ts`), a paid
+  Gemini re-render, invoked **lazily on view** by the local `runHtmlDoc`
+  (`lib/html-doc/generate.ts:39`) and cached as `models/{base}.json`. The local
+  serve path already regenerates it when stale (`GENERATOR_VERSION` /
+  `sourceSections` drift guards).
 
-Consequence: cloud cannot render the real summary view from the single artifact it
-stores (the MD). To serve the **rendered HTML doc** we must produce and persist the
-**magazine model**. We chose to do that at produce-time in the worker (see §3, decision Y), priced as a
-new Gemini pass — rather than calling Gemini on the user-facing serve path
-(uncapped, guest-reachable, non-idempotent GET) or shipping a degraded MD-only view.
+**Design consequence (v2 pivot).** The v1 spec had the worker eagerly pre-produce
+the model (option Y). The dual adversarial review showed that breaks three ways —
+every pre-1F-a summary would have no model with no backfill path; a lost model could
+never heal; and coupling the paid pass into the atomic summary run re-bills the whole
+chain on a transient failure. The fix is to **mirror the local pattern in cloud**:
+render on-serve and **lazily (re)generate the model on view**, gated by
+absence/version/drift. One uniform mechanism covers new docs, backfill of existing
+docs, and heal of lost/stale models — and the worker never changes.
 
 ---
 
@@ -53,109 +57,107 @@ new Gemini pass — rather than calling Gemini on the user-facing serve path
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | **Access model = owner-scoped (any tier).** A Principal views only artifacts under its own `auth.uid()`; this holds identically whether the owner's **Tier** is anon or registered — the anon guest is a full **Owner**, so it is the same code path. | Completes the guest "generate → view your result" demo loop without a separate identity class. Cross-owner viewing is 1F-b (share tokens). |
-| D2 | **Summary HTML view only.** Dig-deeper serving deferred. | Dig-deeper's source artifacts (model envelope + `-dig-deeper.md` companion) are not produced in cloud — a produce-side gap that belongs to a later slice, not this seam. |
-| D3 | **Produce the magazine model in the worker (option Y).** Not on the serve path (X), not skipped for a plain-MD view (Z). | The AI-restyled **rendered HTML doc** is the intended cloud view; the cost work is unavoidable if we ship it, so do it once, at controlled produce-time, priced like every other pass. Keeps the serve path Gemini-free, fast, and free of a new uncapped cost surface. |
-| D4 | **Render on-serve from MD + stored model; do not store rendered HTML.** | Sidesteps the `GENERATOR_VERSION` staleness machinery entirely — cloud always renders with the current renderer. Render is pure in-memory string work (~1–10 ms); serve latency is dominated by blob GETs, not render. |
-| D5 | **Session/anon-scoped Supabase client on the serve path; never service-role.** | Honors Stage 1D's service-confinement gate. RLS on both the row read and the blob read confines everything to `auth.uid()`. |
-| D6 | **Defense-in-depth ownership:** RLS (hard enforcement) **plus** an explicit `owner_id === auth.uid()` assertion. | The explicit check costs nothing and documents intent; RLS remains the real backstop. |
-| D7 | **Nonce-based CSP** (not hash). | We render dynamically per request, so threading a per-response nonce is natural and stays valid as the inline theme/nav scripts evolve. |
-| D8 | **Magazine model = source-of-truth blob** (glossary's cost-not-lineage test). | It is paid + non-deterministic to recreate, so a **missing** model behind a *promoted* summary is **repair needed** — surfaced, never regenerated on the serve path (that would be a paid Gemini call on a GET). |
-| D9 | **Serve addresses playlists by `playlistId` (UUID)**, resolving to `playlist_key` with an explicit owner assertion (the `getWorkerStorageBundle` pattern, minus service_role). | Matches the cloud UUID-addressing convention (jobs table), keeps the external YouTube list-id out of app URLs, and adds a belt-and-suspenders owner-assert on the playlist row. RLS still isolates the session path. |
+| D1 | **Access model = owner-scoped (any tier).** A Principal views only artifacts under its own `auth.uid()`; identical whether the owner's **Tier** is anon or registered — the anon guest is a full **Owner**, same code path. | Completes the guest "generate → view your result" loop without a separate identity class. Cross-owner viewing is 1F-b (share tokens). |
+| D2 | **Summary rendered-HTML-doc only.** Dig-deeper serving deferred. | Dig-deeper's source artifacts (its own model + `-dig-deeper.md` companion) are not produced in cloud — a produce-side gap for a later slice. |
+| D3 | **Lazy, version/drift-gated model materialization at serve time** (option X, principled) — **not** eager worker production (Y), **not** a degraded MD-only view (Z). | Mirrors the local `runHtmlDoc` on-view pattern; one mechanism handles new/backfill/heal; **worker unchanged**; pay per-viewed-doc, once; dissolves the v1 backfill/heal/coupling Blockers. |
+| D4 | **Render on-serve; never persist rendered HTML.** The **model** IS cached after lazy generation. | Cloud always renders with the current renderer (no `GENERATOR_VERSION` staleness); the cached model makes the *second* view of a doc Gemini-free. |
+| D5 | **Session/anon-scoped Supabase client on the serve path; never service-role.** | Honors Stage 1D's service-confinement gate. RLS on both the playlist/row read and the blob read confines everything to `auth.uid()`. |
+| D6 | **Ownership via RLS + an explicit `owner_id === auth.uid()` assert on the *playlist* row** (during `playlistId → playlist_key` resolution). **No video-row owner assert** — `readIndex` returns only the `data` jsonb, which carries no `owner_id`, so a video-level assert is not implementable; RLS is the video-level backstop. | The playlist-level assert is implementable and cheap; RLS is the real per-row enforcement on the session path. |
+| D7 | **Nonce-based CSP** (not hash). | We render dynamically per request, so a per-response nonce is natural and stays valid as inline scripts evolve. |
+| D8 | **Magazine model = lazily-materialized, version/drift-gated artifact** (the glossary's "middle case" — paid but *acceptably* re-renderable). A missing/stale model is **"not yet materialized at this version,"** regenerated on view — **not** a source-of-truth "repair-needed" dead-end. | A re-rendered skim model is acceptable (not semantic ground truth), so on-demand regeneration is correct; this is what dissolves the backfill/heal Blockers. |
+| D9 | **Serve addresses playlists by `playlistId` (UUID)**, resolving to `playlist_key` with an explicit owner assertion (the `getWorkerStorageBundle` pattern, minus service_role). | Matches the cloud UUID-addressing convention (jobs table), keeps the external YouTube list-id out of app URLs, adds the D6 playlist-row assert. RLS still isolates the session path. |
+| D10 | **Serve-side model materialization governance = caps + daily-cap gate, approximate spend, no quota debit.** The call honors `CLOUD_CAPS` (bounded output); before it runs, reserve a **fixed approximate per-model estimate** against the **daily cap** and refuse ("at capacity, try later") if the day is over budget. **No** per-account quota debit (the summary was already charged). **No** strict worst-case recompute / cap-soundness extension. | Bounded per-call + owner-scoped (you only materialize *your own* docs) + cached-after-first-view makes exposure small; the approximate fixed estimate matches Stage 1D's existing spend-reservation posture ("fixed per-kind estimate… reconcile deferred") and avoids cumbersome strict accounting. |
+| D11 | **Print button → nonce'd listener; local output "behavior-identical," not byte-identical.** `PRINT_BUTTON`'s inline `onclick` cannot be authorized by a nonce (nonces don't cover inline event handlers), and the CSP-level "fix" is the `unsafe-*` weakening §8 forbids — so convert it to a nonce'd `addEventListener` script. This changes the button's *markup* for both local and cloud, so B14 asserts **behavioral** parity, not byte-parity. | The only way to keep the print button *and* a strict CSP; the local no-CSP path still works (unconditional script). |
+| D12 | **Suppress dig-deeper controls on the cloud-served summary.** The rendered HTML doc's dig/nav controls read `outputFolder` and are non-functional in cloud (dig-deeper is out of scope). A render flag omits them on the cloud serve. | Avoids shipping dead controls; dig-deeper serving is a later slice. |
+| D13 | **Synchronous generate-on-miss.** On a model miss the serve request generates then serves in-line (client waits). | Simplest for a backend slice; a non-blocking "generating…" UX belongs to Sub-project 2. |
 
 ---
 
 ## 4. Architecture
 
-### 4.1 Worker (produce-side) — `lib/job-queue/summary-handler.ts`
-
-After `summaryCore` returns and the MD is prepared, within the same idempotent run:
-
-1. `parseSummaryMarkdown(core.mdContent)` → `sections[{ title, prose }]`.
-2. `generateMagazineModel(sections, language)` — **under `CLOUD_CAPS`** (the same
-   `maxOutputTokens` / `thinkingBudget:0` / `countTokens` preflight discipline as
-   the other cloud Gemini calls). `language` comes from `core.geminiFields.language`.
-3. Build the envelope `{ sourceMd: `${baseName}.md`, generatedAt, sourceSections:
-   sections.map(s => s.title), model }` and stage → verify → promote
-   `models/${baseName}.json` via `bundle.blobStore`, mirroring the MD's
-   staged/promoted protocol.
-
-**Ordering & idempotency (load-bearing — the model is source-of-truth, D8):** the
-model is produced and promoted in the same run as the MD. The invariant **a promoted
-summary artifact implies a promoted magazine model** is what lets the serve path
-treat a *missing* model as a **repair-needed anomaly** rather than a normal state —
-so the worker **must promote the model blob before it marks the summary `promoted`**
-(`persistSummary(..., 'promoted')`). A mid-run abort then leaves at worst an orphan
-model (harmless — overwritten atomically on retry) or a still-`committed` summary
-that self-heals on the next attempt, but never a `promoted` summary without its
-model. The existing idempotency skip (`artifacts.summaryMd.status === 'promoted'` at
-the current doc version) still guards against re-billing. (Exact ordering pinned in
-the plan.)
-
-### 4.2 Cost re-pricing (Stage 1D money-path extension) — `lib/gemini-cost.ts` + migration
-
-- Add a `MAGAZINE_MODEL` pass to the cost model: a pass-count constant and an output
-  token cap, priced against `PRICED_MODEL`.
-- Extend `perRunWorstCents` to include the magazine-model pass.
-- Update the cap-soundness guard test's **inline** recompute (`tests/integration/cap-soundness.test.ts`)
-  so it still recomputes worst-case cents from raw constants and asserts
-  `summary_est_cents >= ceil(worst) * summary_max_attempts`.
-- If the new worst-case exceeds the current `guardrail_config.summary_est_cents`,
-  raise the estimate via a new migration. Never weaken the test to fit.
-
-### 4.3 Serve path — `app/api/html/[id]/route.ts` + a blob-backed summary render helper
+### 4.1 Serve path — `app/api/html/[id]/route.ts` + a blob-backed render/materialize helper
 
 > Note: neither `buildDocHtml` (its summary branch reads a cached `htmls/*.html`
-> that cloud never writes) nor `reRenderSummaryHtml` (requires `video.summaryHtml`
-> to be set) fits the cloud path as-is. The cloud render is effectively
-> `get(md)` + `get(model)` → `parseSummaryMarkdown` → `renderMagazineHtml` — the
-> `generate.ts` sequence minus the Gemini call (the model now comes from storage).
-> The plan decides whether to add a blob-backed branch to `buildDocHtml` or a new
-> focused helper; the logic below is the contract either way.
+> cloud never writes) nor `reRenderSummaryHtml` (requires `video.summaryHtml`) fits
+> as-is. The cloud render is effectively the `runHtmlDoc` sequence — `get(md)` →
+> parse → (get-or-**generate** model) → `renderMagazineHtml` — minus the local-only
+> assumptions. The plan decides whether to extend `buildDocHtml`/`runHtmlDoc` with a
+> cloud branch or add a focused helper; the logic below is the contract either way.
 
 Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
 
-1. Create a **session/anon server client** from the request (cookies/JWT).
-   `getUser()` → `ownerId`. No authenticated user → **401**.
-2. Resolve `playlistId` → `playlist_key` via the **session** client, asserting the
-   playlist row's `owner_id === auth.uid()` (the `getWorkerStorageBundle` pattern,
-   minus service_role; D9). Unknown/foreign `playlistId` → **404**. Then
-   `principal = { id: ownerId, indexKey: playlist_key }` (`getPrincipalFromSession`),
-   and build the bundle with **that** client (`getStorageBundle({ supabaseClient })`)
-   — session-scoped, RLS-enforced.
-3. `metadataStore.readIndex(principal)` → find video by `id`. Not found → **404**.
-   RLS already confines the read to `auth.uid()`; assert `owner_id === auth.uid()`
-   explicitly as defense-in-depth (D6).
-4. `blobStore.get(principal, video.summaryMd)` — missing / unknown video ⇒ genuine
-   **404**. Then `blobStore.get(principal, models/${base}.json)` — a missing model
-   behind a *promoted* summary is the glossary's **repair-needed** state (D8):
-   surface it as a distinct "needs regeneration" response (409/410-class, pinned in
-   the plan), and **never regenerate on the serve path**. The two missings are
-   different domain states, not one 404.
-5. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce })`.
-6. Return `text/html; charset=utf-8` with a `Content-Security-Policy` header whose
-   `script-src` / `style-src` carry `'nonce-<n>'`.
+1. Create a **session/anon server client** (cookies/JWT). `getUser()` → `ownerId`.
+   No authenticated user → **401**.
+2. **UUID-pre-validate `playlistId`** (bad UUID → **400**, before any DB call — else
+   Postgres `22P02` throws a 500). Resolve `playlistId` → `playlist_key` via the
+   **session** client, asserting the playlist row's `owner_id === auth.uid()` (D6/D9).
+   Unknown/foreign `playlistId` → **404**.
+3. `principal = { id: ownerId, indexKey: playlist_key }` (`getPrincipalFromSession`);
+   build the bundle with **that** client (`getStorageBundle({ supabaseClient })`) —
+   session-scoped, RLS-enforced. `metadataStore.readIndex(principal)` → find video by
+   `id`. Not found → **404** (RLS already confines the read to `auth.uid()`).
+4. **Summary status/blob** (read `artifacts.summaryMd.status`, not just blob presence):
+   - status `promoted` → proceed.
+   - status `committed`/finalizing → **503** "not ready, retry" (a normal
+     mid-promotion window — must NOT read as 404).
+   - no summary artifact / unknown → **404**.
+5. **Model resolution (lazy, D8):** `get(models/{base}.json)`.
+   - Present, parseable, and **not drifted** (`envelope.sourceSections` matches the
+     current MD section titles) → use it.
+   - Absent, unparseable, or drifted → **materialize**: check the **daily cap** (over
+     budget → **503** "at capacity"); reserve the fixed approximate estimate (D10);
+     call `generateMagazineModel(sections, language, caps)` under `CLOUD_CAPS` with
+     the request `signal`; **stage → verify → promote** `models/{base}.json`
+     (idempotent — concurrent first-views resolve last-writer-wins on an equivalent
+     artifact); use the fresh model.
+6. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce, dig: false })`
+   (D11 nonce'd inline scripts + print listener; D12 dig controls suppressed).
+7. Return `text/html; charset=utf-8` with a nonce-based `Content-Security-Policy`
+   header **and `Cache-Control: private, no-store`** (owner-private; prevents shared-
+   cache leak and stale-nonce replay).
 
 The blob key is always **server-constructed** as `{owner_id}/{playlist_key}/{key}`
 with `owner_id` from `auth.uid()` and `playlist_key` resolved server-side from the
 `playlistId`. The client supplies only `playlistId` and `videoId`; it cannot forge
-another owner's key, and RLS on `storage.objects` (first path segment must equal
-`auth.uid()`) is the hard backstop.
+another owner's key. `assertLogicalKey` + RLS on `storage.objects` (first path
+segment must equal `auth.uid()`) are the traversal/forging backstops.
 
 The local path is preserved: when `STORAGE_BACKEND=local`, the route keeps its
 current sentinel-principal / `outputFolder` behavior (no session, no CSP).
 
-### 4.4 CSP nonce plumbing — `lib/html-doc/render.ts`, `theme.ts`, `nav.ts`
+### 4.2 Serve-side cost governance (money-path — relocated to serve)
 
-`renderMagazineHtml` gains an **optional** `opts.nonce`:
+- `generateMagazineModel(sections, language)` gains **caps support** — this is an
+  unstated-in-v1, load-bearing code change: today it takes no `maxOutputTokens` /
+  `thinkingBudget:0` / `countTokens` preflight / `signal`, and `CloudGeminiCaps` has
+  no magazine field. Add a magazine-model cap and a **schema `maxItems`** bound so the
+  paid call is bounded. The **local `runHtmlDoc` caller must keep working unchanged**
+  (caps optional; absent → current local behavior).
+- **Daily-cap gate + approximate reservation (D10):** before the call, reserve a
+  **fixed approximate per-model estimate** against the daily cap (`spend_ledger`);
+  refuse with 503 if the day is over budget. Reconcile-to-actual is deferred (matches
+  Stage 1D). **No per-account quota debit.**
+- **The Stage 1D enqueue-path caps + cap-soundness guard are UNCHANGED** — the worker
+  is untouched, so no strict recompute, no `guardrail_config` est change, no migration.
 
-- **Present** (cloud serve): stamp `nonce="<n>"` on `THEME_HEAD_SCRIPT`,
-  `NAV_SCRIPT`, `THEME_TOGGLE_SCRIPT`, and the inline `<style>` block.
-- **Absent** (local `generate.ts` writing a static file): unchanged output — no
-  nonce attributes, no CSP. Local render stays byte-identical.
+### 4.3 CSP nonce plumbing — `lib/html-doc/render.ts`, `theme.ts`, `nav.ts`
 
-This touches render code **shared** by local and cloud; parity for the no-nonce
-path is a hard requirement and a test.
+`renderMagazineHtml` gains optional `opts.nonce` and `opts.dig`:
+
+- **`nonce` present** (cloud serve): stamp `nonce="<n>"` on `THEME_HEAD_SCRIPT`,
+  `NAV_SCRIPT`, `THEME_TOGGLE_SCRIPT`, the print listener (D11), and the inline
+  `<style>` block. Emit a full CSP: `default-src 'none'`; `script-src 'nonce-<n>'`;
+  `style-src 'nonce-<n>'`; `img-src` as needed; `base-uri 'none'`; `object-src
+  'none'` — no `unsafe-inline`/`unsafe-hashes`. Nonce generated per response
+  (`crypto.randomBytes`/UUID, ≥128-bit, base64).
+- **`nonce` absent** (local `generate.ts` static file): no nonce attributes, no CSP.
+  Output is **behaviorally identical** to pre-1F-a (D11 changes the print button's
+  markup for both paths, so byte-identical is relaxed to behavior-identical).
+- **`dig: false`** (D12): omit the dig-deeper/nav controls.
+
+These are exported **const strings** (not functions) today, so "thread a nonce" is a
+real refactor of `theme.ts`/`nav.ts` exports, not a one-liner. The theme FOUC head
+script (`THEME_HEAD_SCRIPT`) must run under the strict nonce CSP (verified as a test).
 
 ---
 
@@ -163,14 +165,13 @@ path is a hard requirement and a test.
 
 | Component | Link | Full URL (all params) |
 |---|---|---|
-| Cloud summary-HTML serve | View summary | `/api/html/{videoId}?playlist={playlistId}&type=summary` |
-| Local summary-HTML serve (unchanged) | View summary | `/api/html/{videoId}?outputFolder={outputFolder}&type=summary` |
+| Cloud summary serve | View summary | `/api/html/{videoId}?playlist={playlistId}&type=summary` |
+| Local summary serve (unchanged) | View summary | `/api/html/{videoId}?outputFolder={outputFolder}&type=summary` |
 
-`type` is validated to `summary` in this slice (`dig-deeper` returns 400/deferred).
-`playlist` carries the opaque **`playlistId` (UUID)**, resolved server-side to
-`playlist_key` with an owner assertion (D9) — the external YouTube list-id never
-appears in the URL. `playlist` (cloud) and `outputFolder` (local) are mutually
-exclusive by backend.
+`type` is validated to `summary` (`dig-deeper` → 400/deferred). `playlist` carries
+the opaque **`playlistId` (UUID)**, resolved server-side to `playlist_key` with an
+owner assertion (D9) — the YouTube list-id never appears in the URL. `playlist`
+(cloud) and `outputFolder` (local) are mutually exclusive by backend.
 
 ---
 
@@ -178,58 +179,61 @@ exclusive by backend.
 
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
-| B1 | Worker produces + promotes model | summary job runs to completion | `models/{base}.json` promoted alongside `{base}.md`; envelope has `sourceMd`/`sourceSections`/`model` |
-| B2 | Model generation honors caps | worker calls `generateMagazineModel` | `maxOutputTokens` set, `thinkingBudget:0`, `countTokens` preflight — same as other cloud calls |
-| B3 | Idempotent re-run does not re-bill model | job re-runs with promoted summary at current version | early return before Gemini; no second `generateMagazineModel` |
-| B4 | Cost bound stays provable | after adding the pass | cap-soundness recompute includes magazine pass; `est >= ceil(worst) * attempts` holds |
-| B5 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200 `text/html`, **rendered HTML doc** returned |
-| B6 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
-| B7 | Foreign owner blocked | authed GET for another owner's doc | 404 (RLS: row invisible) — bidirectional isolation |
-| B8 | No session | unauthenticated GET (cloud backend) | 401 |
-| B9 | Missing summary / unknown video | no summary artifact, or unknown `videoId` | genuine **404** (never a 500 leak) |
-| B9b | Missing model behind promoted summary | model blob absent though summary `promoted` | **repair-needed** response (409/410-class, distinct from 404), surfaced; **no** serve-path regeneration (D8) |
-| B10 | CSP present + coherent | any 200 serve | `Content-Security-Policy` header nonce matches every inline `<script>`/`<style>` nonce |
-| B11 | Service-role never on serve path | serve route wiring | confinement test: route builds bundle from the **session** client only |
-| B12 | Invalid `type` | `type` absent or not `summary` | 400 |
-| B13 | Invalid `videoId` / `playlistId` | malformed params (bad UUID, etc.) | 400 |
-| B14 | Local render parity | `STORAGE_BACKEND=local`, `generate.ts` render | HTML byte-identical to pre-1F-a (no nonce, no CSP) |
-| B15 | Cloud render nonce validity | cloud serve render | rendered inline tags all carry the response nonce; theme/nav scripts still execute under the CSP |
-
-Edge cases folded in above: repair-needed missing model (B9b), abort mid-run (B1 invariant), duplicate/foreign owner (B7), anon principal (B6), local parity (B14).
+| B1 | Serve cached model | authed GET, model present + not drifted | 200 `text/html`, no Gemini call |
+| B2 | Lazy materialize on miss | model absent (incl. **pre-1F-a docs**) | daily-cap OK → `generateMagazineModel` under caps → promote → 200; model cached for next view |
+| B3 | Re-materialize on drift | `sourceSections` ≠ current MD titles | regenerate model → 200 (heal path; no manual repair) |
+| B4 | Corrupt/unparseable model | stored model bad JSON / schema-invalid | treated as absent → regenerate → 200 (never a 500) |
+| B5 | Model call honors caps | any materialization | `maxOutputTokens` + schema `maxItems` set, `thinkingBudget:0`, `countTokens` preflight, request `signal` threaded |
+| B6 | Daily cap reached | day over budget at a model miss | **503** "at capacity"; no Gemini call, no partial promote |
+| B7 | Concurrency on first view | two simultaneous misses for one doc | idempotent stage→promote; last-writer-wins on an equivalent model; both serve 200 |
+| B8 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200, rendered HTML doc |
+| B9 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
+| B10 | Foreign owner blocked | authed GET for another owner's doc/playlist | **404** (RLS row/playlist invisible) — bidirectional isolation |
+| B11 | No session | unauthenticated GET (cloud backend) | **401** |
+| B12 | Summary finalizing | `summaryMd.status === committed` | **503** "not ready, retry" (not 404) |
+| B13 | Summary absent / unknown video | no summary artifact, or unknown `videoId` | **404** (never a 500 leak) |
+| B14 | Invalid `type` | absent or not `summary` | **400** |
+| B15 | Invalid `videoId` / non-UUID `playlistId` | malformed params | **400** (UUID pre-validated before DB) |
+| B16 | CSP present + coherent | any 200 serve | full nonce CSP; header nonce matches every inline `<script>`/`<style>`/listener nonce; no `unsafe-*` |
+| B17 | Cache-Control private | any 200 serve | `Cache-Control: private, no-store` |
+| B18 | Print button works under CSP | 200 serve, click print | nonce'd listener fires `window.print()`; no CSP violation |
+| B19 | Dig controls suppressed | cloud serve | no dig/nav `outputFolder`-based controls in output |
+| B20 | Service-role never on serve path | route wiring | confinement test: bundle built from the **session** client only |
+| B21 | Local render behavior-parity | `STORAGE_BACKEND=local`, `generate.ts` render | no CSP/nonce; print button still works; output behaviorally identical to pre-1F-a |
 
 ---
 
 ## 7. Testing Strategy
 
-- **Worker (unit + integration):** B1–B3 — model staged/verified/promoted; caps
-  applied to `generateMagazineModel` (mock at the `lib/gemini` boundary);
-  idempotent re-run makes no second model call; promoted-summary-implies-promoted-model invariant.
-- **Cost (integration):** B4 — cap-soundness guard recompute extended and green
-  against live `guardrail_config` after `db reset`.
-- **Serve (integration, mock at API/route level):** B5–B13 — owner/anon success,
-  foreign-owner 404 (both directions), 401, missing-summary 404 **and** repair-needed
-  missing-model (B9/B9b), `type`/param 400s, CSP header presence + nonce coherence,
-  service-role confinement.
-- **Render (unit):** B14 local no-nonce parity (byte-compare), B15 cloud nonce stamping.
+- **Serve success + lazy gen (integration, mock at API/route level; `lib/gemini`
+  mocked for `generateMagazineModel`):** B1–B4 (cached / materialize / drift / corrupt),
+  B8–B9 (owner/anon), B12–B15 (status + param codes).
+- **Cost governance:** B5 (caps applied to the model call), B6 (daily-cap refuses,
+  no partial promote), B7 (concurrency idempotency).
+- **Isolation & confinement:** B10 (foreign-owner 404, both directions), B11 (401),
+  B20 (service-role never on serve path).
+- **CSP / headers / render:** B16 (nonce coherence, no `unsafe-*`), B17 (Cache-Control),
+  B18 (print under CSP), B19 (dig suppressed), B21 (local behavior-parity — print
+  works, theme FOUC script runs).
 
-Mocking boundaries per `docs/dev-process.md`: `lib/gemini.ts` mocked for
-`generateMagazineModel`; serve E2E mocks at the API/route level, not the lib
-boundary.
+Mocking per `docs/dev-process.md`: `lib/gemini.ts` mocked; serve E2E mocks at the
+API/route level.
 
 ---
 
 ## 8. Dev-Process Re-Review Triggers
 
-This slice hits two "iterative dual adversarial re-review to convergence" triggers
+Two "iterative dual adversarial re-review to convergence" triggers
 (`docs/dev-process.md` → Adversarial Review → Iterative Re-Review):
 
-1. **Money-path change** — a new worker Gemini pass + a `guardrail_config` estimate
-   change. Adversarial passes must verify the spend bound stays provable and that
-   idempotency still prevents double-billing.
+1. **Money-path change (now serve-side):** a paid Gemini call on the serve path,
+   gated by caps + the daily cap with an approximate reservation. Adversarial passes
+   must verify the call is bounded, the daily-cap gate cannot be bypassed, exposure
+   is owner-scoped, and concurrent misses cannot double-charge beyond the accepted
+   approximate model.
 2. **Refactor of already-merged shared code** — `render.ts` / `theme.ts` / `nav.ts`
-   are used by both local and cloud. Adversarial passes must verify local render
-   parity and that the nonce path does not weaken the CSP (e.g. no `'unsafe-inline'`
-   fallback slipping in).
+   (used by local and cloud). Passes must verify local **behavioral** parity (print
+   button, theme FOUC) and that the nonce path introduces no `unsafe-*` CSP weakening.
 
 ---
 
@@ -237,12 +241,15 @@ This slice hits two "iterative dual adversarial re-review to convergence" trigge
 
 - **1F-b:** share tokens for viewing *others'* docs (hashed, revocable, scoped to
   `(document_id, owner_id)`, expiry, audit).
-- **1F-c:** raw-MD download, PDF (headless Chromium behind the authorized path),
-  zip, three-tier Obsidian export.
-- **Dig-deeper serving:** blocked on producing its model + companion artifacts in
-  cloud (a separate produce-side slice).
-- **1G:** anon-abuse controls (CAPTCHA / rate-limit on anonymous sign-in), broad
-  RLS/security test sweep.
+- **1F-c:** raw-MD download, PDF (headless Chromium behind the authorized path), zip,
+  three-tier Obsidian export.
+- **Dig-deeper serving:** blocked on producing its model + companion artifacts.
+- **Non-blocking "generating…" serve UX:** Sub-project 2 (this slice is synchronous, D13).
+- **Whole-doc `DocVersion` resummarize on view:** the existing resummarize/ingestion
+  flow, not the serve path. 1F-a serve materializes the **model** only; a major
+  `DocVersion` advance that invalidates the *summary itself* is out of scope.
+- **1G:** anon-abuse controls (CAPTCHA / rate-limit), broad RLS/security test sweep,
+  reconcile-to-actual spend.
 
 ---
 
@@ -250,10 +257,14 @@ This slice hits two "iterative dual adversarial re-review to convergence" trigge
 
 1. A cloud-generated summary is viewable at `/api/html/{videoId}?playlist={playlistId}&type=summary`
    by its owner (any tier, incl. the anon guest who made it), rendered as the
-   **rendered HTML doc**, with a nonce-based CSP — and is **invisible (404) to any
-   other principal**.
-2. The worker persists `models/{base}.json` idempotently, priced as a new pass, with
-   the cap-soundness bound still provable.
-3. Local render output is byte-unchanged; service-role never touches the serve path.
-4. `tsc --noEmit` clean; unit suite green; `db reset` + integration green.
-5. Both re-review triggers reach convergence per dev-process before merge.
+   **rendered HTML doc** with a nonce CSP + `private, no-store` — and **invisible
+   (404) to any other principal**.
+2. A doc whose model is **absent/stale (incl. every pre-1F-a doc)** materializes it
+   on first view under caps + the daily-cap gate, then serves it Gemini-free
+   thereafter — no manual repair, no worker change.
+3. The daily-cap gate refuses model generation when the day is over budget; no
+   per-account quota debit; the Stage 1D enqueue-path caps are untouched.
+4. Local render output is **behaviorally** unchanged (print works, theme FOUC runs);
+   service-role never touches the serve path.
+5. `tsc --noEmit` clean; unit suite green; `db reset` + integration green.
+6. Both re-review triggers reach convergence per dev-process before merge.
