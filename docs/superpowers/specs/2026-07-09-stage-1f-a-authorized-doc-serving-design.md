@@ -1,11 +1,12 @@
 # Stage 1F-a — Authorized, Lazy-Materialized Summary-HTML Serving (cloud)
 
-**Status:** design in review (v6 — lease-based single-flight) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+**Status:** design in review (v7 — lease + K-attempt bound) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
 
 > **Decision resolved (user chose A+, round 5):** serve-side failed/abandoned-generation recovery = a
 > short **generation lease** on the `serve_model_charge` marker, **charge-per-attempt**, and **no release
-> RPC** — which removes the v5 anon-DoS lever entirely. Needs one confirming review round (edge: an
-> honest generation running longer than the lease TTL).
+> RPC** (removes the v5 instant anon-DoS lever). **v7 adds the `K`-attempt bound** both round-6 reviewers
+> recommended, closing the residual *slow* $0 charge-only cap-trip DoS (H-1) and bounding the honest
+> failing-loop. Needs one confirming round.
 
 > **AFK decision (made on the user's behalf, vetoable on return):** serve-side spend
 > governance = **Option A-lite** (one atomic, idempotent-per-`(owner,doc,day)`
@@ -77,7 +78,7 @@ docs, and heal of lost/stale models — and the worker never changes.
 | D7 | **Nonce-based CSP** (not hash). | We render dynamically per request, so a per-response nonce is natural and stays valid as inline scripts evolve. |
 | D8 | **Magazine model = lazily-materialized, version/drift-gated artifact** (the glossary's "middle case" — paid but *acceptably* re-renderable). A missing/stale model is **"not yet materialized at this version,"** regenerated on view — **not** a source-of-truth "repair-needed" dead-end. | A re-rendered skim model is acceptable (not semantic ground truth), so on-demand regeneration is correct; this is what dissolves the backfill/heal Blockers. |
 | D9 | **Serve addresses playlists by `playlistId` (UUID)**, resolving to `playlist_key` with an explicit owner assertion (the `getWorkerStorageBundle` pattern, minus service_role). | Matches the cloud UUID-addressing convention (jobs table), keeps the external YouTube list-id out of app URLs, adds the D6 playlist-row assert. RLS still isolates the session path. |
-| D10 | **Serve-side spend governance = one `SECURITY DEFINER` lease-reserve RPC (Option A+);** see §4.2. Granted to `authenticated, anon`; derives `owner_id := auth.uid()` **internally** (never a param) and verifies the `(playlist, video)` is owned **and `promoted`** before touching money. Claims a short **generation lease** on the `serve_model_charge` marker and **charges `magazine_est_cents` per attempt**; returns coarse `reserved | in_flight | at_capacity`. **No release RPC** — a failed/aborted attempt just lets the lease expire; the next view reclaims + re-charges. No quota debit; reconcile deferred. | The lease makes generation single-flight (`in_flight` blocks a concurrent second call); charge-per-attempt keeps the **daily cap** the true bound on Gemini spend; **removing the release lever** closes the v5 $0-DoS. `auth.uid()`-internal + promoted-check blocks direct-PostgREST abuse. Keeps serve-side gen under the hard kill-switch while staying approximate. |
+| D10 | **Serve-side spend governance = one `SECURITY DEFINER` lease-reserve RPC (Option A+);** see §4.2. Granted to `authenticated, anon`; derives `owner_id := auth.uid()` **internally** and verifies `(playlist, video)` owned **and `promoted`** before touching money. Claims a short **generation lease** (single-flight), **charges `magazine_est_cents` per attempt**, and **bounds attempts to `K` per `(owner,doc,day)`**; returns coarse `reserved | in_flight | attempts_exhausted | at_capacity | denied`. **No release RPC** — a failed/aborted attempt lets the lease expire; the next view reclaims (bounded by `K`). No quota debit; reconcile deferred. | Lease = single-flight; charge-per-attempt keeps the daily cap the **dollar** bound; the **`K` counter is the *abuse* bound** — it stops a direct-RPC reclaim-loop from tripping the global cap at $0 (charge commits before generation, so reclaim-abuse is $0), capping abuse to `K·est·(owned docs)` ≪ daily cap. Removing the release lever closes the v5 instant DoS; `auth.uid()`-internal + promoted-check block direct-PostgREST forging. Keeps the hard kill-switch meaningful while staying approximate. |
 | D11 | **Print button → nonce'd listener; local output "behavior-identical," not byte-identical.** `PRINT_BUTTON`'s inline `onclick` cannot be authorized by a nonce (nonces don't cover inline event handlers), and the CSP-level "fix" is the `unsafe-*` weakening §8 forbids — so convert it to a nonce'd `addEventListener` script. This changes the button's *markup* for both local and cloud, so B14 asserts **behavioral** parity, not byte-parity. | The only way to keep the print button *and* a strict CSP; the local no-CSP path still works (unconditional script). |
 | D12 | **Suppress dig-deeper controls on the cloud-served summary.** The rendered HTML doc's dig/nav controls read `outputFolder` and are non-functional in cloud (dig-deeper is out of scope). A render flag omits them on the cloud serve. | Avoids shipping dead controls; dig-deeper serving is a later slice. |
 | D13 | **Synchronous generate-on-miss.** On a model miss the serve request generates then serves in-line (client waits). | Simplest for a backend slice; a non-blocking "generating…" UX belongs to Sub-project 2. |
@@ -126,21 +127,25 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
      with `(p_playlist_id, p_video_id)` — the RPC derives the owner from `auth.uid()`,
      verifies ownership + a `promoted` summary, and claims a short **generation lease**.
      On its coarse status:
-     - `in_flight` — another attempt holds a live lease (a concurrent view is generating).
-       Do **not** regenerate. If the model is now present, serve it; else **503**
-       "generating, retry shortly." This is the single-flight guard.
+     - `denied` — not owned, or no `promoted` summary → **404** (generic, no leak).
+     - `in_flight` — another attempt holds a live lease → do **not** regenerate; serve the
+       model if now present, else **503** "generating, retry shortly" (single-flight guard).
+     - `attempts_exhausted` — `K` attempts already used for this `(owner,doc,UTC-day)` →
+       **503** "temporarily unavailable, try later" (self-heals next UTC day).
      - `at_capacity` — daily cap exhausted → **503** "at capacity" (nothing charged).
      - `reserved` — you hold the lease and `magazine_est_cents` was charged for **this
-       attempt**. Call `generateMagazineModel(sections, language, caps)` under
-       `CLOUD_CAPS` with the request `signal`; **stage → verify → promote**
-       `models/{base}.json`; serve. **On generation failure OR client abort before
-       promote, do nothing — there is no release RPC.** The lease simply **expires**
-       (~`LEASE_TTL`, e.g. 180 s), after which the next view **reclaims** the lease and
-       regenerates. Each *reclaim* charges `magazine_est_cents` again, so the **daily cap
-       bounds total generation attempts** — a persistently-failing reload-loop trips the
-       cap after ~`cap/est` attempts, each a real seconds-long Gemini call (slow, bounded),
-       never the instant $0 ledger-drain of a release lever. **No anon-callable release
-       exists → the v5 DoS lever is gone.**
+       attempt**. Call `generateMagazineModel(sections, language, caps)` under `CLOUD_CAPS`
+       with the request `signal`; **stage → verify → promote** `models/{base}.json` using a
+       **per-attempt-unique staging key** (`_staging/{uuid}/…`, so an over-`LEASE_TTL`
+       duplicate generator can't clobber another's staged bytes; `promote` treats
+       final-already-exists as success — M-1); serve. **On generation failure OR client
+       abort before promote, do nothing — there is no release RPC.** The lease expires
+       (~`LEASE_TTL`), then the next view **reclaims** it (re-charges) — bounded to **`K`
+       attempts per `(owner,doc,UTC-day)`** (§4.2). That **`K` bound — not the daily cap —**
+       is what stops a direct-RPC reclaim-loop from tripping the global cap at $0 (the
+       charge commits *before* generation, so an attacker who never generates still pays $0);
+       with `K` small, total abuse ≤ `K·est·(owned docs)`, trivially under the cap. **No
+       anon-callable release lever exists → the v5 instant DoS is gone.**
 6. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce, dig: false })`
    (D11 nonce'd inline scripts + print listener; D12 dig controls suppressed).
 7. Return `text/html; charset=utf-8` with a nonce-based `Content-Security-Policy`
@@ -167,10 +172,12 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
 - **A-lite reserve RPC (D10) — this slice DOES include a small, self-contained
   migration** (correcting v2's mistaken "no migration"). It adds:
   - a marker/lease table `serve_model_charge(owner_id uuid, doc_key text, day date,
-    lease_expires_at timestamptz, …)` with **`unique(owner_id, doc_key, day)`**,
-    **force-RLS + `service_role`-only grants (no client policy)** — writable only inside
-    the definer RPC, never by a session client (mirrors `spend_ledger`'s lockdown;
-    prevents cross-tenant marker forging/bricking);
+    lease_expires_at timestamptz, attempt_count int not null default 0, …)` with
+    **`unique(owner_id, doc_key, day)`**, **force-RLS + `service_role`-only grants (no
+    client policy)** — writable only inside the definer RPC, never by a session client
+    (mirrors `spend_ledger`'s lockdown; prevents cross-tenant marker forging/bricking).
+    **`K`** (max generation attempts per `(owner,doc,day)`, e.g. 5) is a `guardrail_config`
+    constant — the abuse bound;
   - a fixed **`magazine_est_cents`** in `guardrail_config` (approximate — derived roughly
     from the magazine input+output caps × `GENERATE_JSON_RETRIES+1`; no strict
     cap-soundness proof, per the approved approximate posture);
@@ -178,30 +185,35 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
     granted to `authenticated, anon`, whose **exact transaction** is:
     1. `v_owner := auth.uid()`; null → raise (unauth). **Owner is NEVER a param.**
     2. Verify `(p_playlist_id, p_video_id)` is **owned by `v_owner` AND has a `promoted`
-       summary artifact** (`data->'artifacts'->'summaryMd'->>'status' = 'promoted'`); not
-       owned / absent / not-yet-promoted → generic denial (no existence leak). Blocks a
-       **direct PostgREST** call reserving for forged *or owned-but-unmaterialized* docs.
+       summary artifact** (`data->'artifacts'->'summaryMd'->>'status' = 'promoted'`); else
+       return coarse **`denied`** (no existence leak; route → 404). Blocks a **direct
+       PostgREST** call reserving for forged *or owned-but-unmaterialized* docs. (The serve
+       route independently reads the MD blob and treats null as repair-needed, so a
+       promoted-status/blob TOCTOU never 500s — M-2.)
     3. `doc_key := p_playlist_id||'/'||p_video_id`; `day := (now() at time zone 'utc')::date`.
-    4. **Claim/reclaim the lease atomically:** `INSERT INTO serve_model_charge
-       (owner_id, doc_key, day, lease_expires_at) VALUES (v_owner, doc_key, day,
-       now()+LEASE_TTL) ON CONFLICT (owner_id, doc_key, day) DO UPDATE SET
-       lease_expires_at = now()+LEASE_TTL WHERE serve_model_charge.lease_expires_at <
-       now() RETURNING (xmax = 0) AS inserted;`
-       - **No row returned** (conflict + lease still live) ⇒ another attempt owns the
-         lease ⇒ return **`in_flight`** (no charge).
-       - **Row returned** (a *new* lease inserted, or an *expired* one reclaimed) ⇒ I am
-         the generator for this attempt ⇒ go to step 5.
+    4. **Claim/reclaim the lease atomically (bounded by `K` attempts/day):** `INSERT INTO
+       serve_model_charge (owner_id, doc_key, day, lease_expires_at, attempt_count) VALUES
+       (v_owner, doc_key, day, now()+LEASE_TTL, 1) ON CONFLICT (owner_id, doc_key, day) DO
+       UPDATE SET lease_expires_at = now()+LEASE_TTL, attempt_count =
+       serve_model_charge.attempt_count + 1 WHERE serve_model_charge.lease_expires_at <
+       now() AND serve_model_charge.attempt_count < K RETURNING 1;`
+       - **Row returned** (fresh insert, or a reclaim of an *expired* lease still under `K`)
+         ⇒ I am the generator for this attempt ⇒ go to step 5.
+       - **No row returned** ⇒ read the existing row: `attempt_count >= K` ⇒
+         **`attempts_exhausted`**; else (lease still live) ⇒ **`in_flight`**. No charge.
+       (Row-returned — *not* `xmax` — is the generator signal; don't branch on
+       insert-vs-reclaim — L-1.)
     5. **Charge this attempt** via the daily-cap **conditional UPDATE arbiter** (as
        `enqueue_job` / `0011`): `UPDATE spend_ledger SET reserved = reserved + magazine_est
-       WHERE day=… AND reserved+actual+magazine_est <= daily_cap`. **0 rows ⇒** the lease
-       claim must not stand (else it blocks others while nothing generates): do the
-       claim (step 4) + charge inside a **PL/pgSQL sub-block with an `EXCEPTION`/savepoint**
-       so a cap-refusal **rolls back the lease claim** and returns **`at_capacity`**. Else →
-       **`reserved`**. **Charging every attempt** (first claim *and* each lease-reclaim) is
-       what keeps the daily cap the true bound on Gemini spend; the lease guarantees at most
-       one live attempt per `(owner,doc,day)` (single-flight). `LEASE_TTL` is set well above
-       p99 generation time (e.g. 180 s) so an honest in-progress attempt is not reclaimed;
-       a rare over-TTL generation may double-generate (last-writer-wins, bounded).
+       WHERE day=… AND reserved+actual+magazine_est <= daily_cap`. Wrap steps 4–5 in a
+       **PL/pgSQL sub-block with a savepoint**; a 0-row UPDATE does **not** auto-throw, so
+       **`IF NOT FOUND THEN RAISE`** inside the block — the outer `EXCEPTION` handler catches
+       it, rolling back the step-4 claim (a *reclaim* correctly restores the prior **expired**
+       row, not a fresh lease → the doc isn't bricked) and returns **`at_capacity`**. Else →
+       **`reserved`**. **Charging every attempt** keeps the daily cap the *dollar* bound and
+       the **`K` counter the *abuse* bound**; the lease is single-flight. `LEASE_TTL` is set
+       well above p99 generation time (e.g. 180 s); a rare over-TTL generation may
+       double-generate — bounded, and per-attempt-unique staging keys (§4.1) prevent clobber.
   Everything touches `spend_ledger`/`guardrail_config` **only inside the definer**, so the
   serve path stays on the **session client** (D5 preserved). Reconcile deferred (matches
   Stage 1D). Tests: two same-doc concurrent misses (one `reserved`, one `in_flight` —
@@ -277,10 +289,13 @@ ignored.
 | B5 | Model call honors caps | any materialization | `maxOutputTokens` + schema `maxItems` set, `thinkingBudget:0`, `countTokens` preflight, request `signal` threaded |
 | B6 | Daily cap reached | day over budget at a model miss | reserve RPC refuses → **503** "at capacity"; no Gemini call, no partial promote |
 | B6b | Concurrent miss: lease single-flight | two simultaneous misses for one `(owner,doc)` | one claims the lease → `reserved` (generates); the other → `in_flight` → **503** "generating, retry", then serves the cached model; **one** Gemini call |
-| B7 | Generation fails / client aborts before promote | `reserved` caller errors or disconnects mid-generate | **no release** — lease expires (~`LEASE_TTL`); next view **reclaims** + regenerates (charges again); total attempts bounded by the daily cap |
-| B7b | Forged/foreign/unpromoted doc via direct RPC | direct `reserve_serve_model` for a doc not owned, or owned but not `promoted` | definer derives owner from `auth.uid()`, verifies ownership **AND promoted summary** → generic denial; no charge, no leak |
-| B7c | Cap refused returns a status, no lease left | lease claimed but the conditional ledger UPDATE affects 0 rows | sub-block/`EXCEPTION` rolls back the claim → returns normal **`at_capacity`**; no leftover lease (doc materializable once budget frees) |
+| B7 | Generation fails / client aborts before promote | `reserved` caller errors or disconnects mid-generate | **no release** — lease expires (~`LEASE_TTL`); next view **reclaims** + regenerates (re-charges); bounded to **`K` attempts** per `(owner,doc,day)`, then `attempts_exhausted` |
+| B7b | Forged/foreign/unpromoted doc via direct RPC | direct `reserve_serve_model` for a doc not owned, or owned but not `promoted` | `denied` (route → 404); no charge, no existence leak |
+| B7c | Cap refused returns a status, no fresh lease | lease claimed but the conditional ledger UPDATE affects 0 rows | `IF NOT FOUND THEN RAISE` in sub-block → `EXCEPTION` rolls back the claim → **`at_capacity`**; a reclaim restores the prior *expired* row (not bricked) |
 | B7d | No anon-callable release lever | there is no `release_serve_model` RPC | a direct PostgREST caller cannot delete/void a marker → the v5 reserve→release $0 global-cap DoS is unreachable |
+| B7e | Direct reclaim-loop can't trip the global cap at $0 | attacker loops `reserve_serve_model` on an owned doc without generating | `K`-cap → ≤ `K·est` per doc/day; total ≤ `K·est·(owned docs)`, trivially under the daily cap → no global-outage DoS (H-1 closed) |
+| B7f | Attempts exhausted | `K` attempts used for one `(owner,doc,UTC-day)` | **503** "temporarily unavailable, try later"; self-heals next UTC day (fresh row) |
+| B7g | Over-TTL duplicate generators don't clobber | honest gen exceeds `LEASE_TTL`, a second view reclaims | per-attempt-unique staging key; `promote` treats final-exists as success; wasted duplicate, no 500 |
 | B8 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200, rendered HTML doc |
 | B9 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
 | B10 | Foreign owner blocked | authed GET for another owner's doc/playlist | **404** (RLS row/playlist invisible) — bidirectional isolation |
