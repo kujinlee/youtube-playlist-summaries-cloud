@@ -1,12 +1,12 @@
 # Stage 1F-a — Authorized, Lazy-Materialized Summary-HTML Serving (cloud)
 
-**Status:** design in review (v7 — lease + K-attempt bound) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+**Status:** ✅ **design CONVERGED (v8)** — the round-7 dual adversarial review returned **0 Blocking / 0 High from both passes** (Claude verdict: CONVERGED; Codex: mechanism correct, residual was a documentation invariant now written in). 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
 
-> **Decision resolved (user chose A+, round 5):** serve-side failed/abandoned-generation recovery = a
-> short **generation lease** on the `serve_model_charge` marker, **charge-per-attempt**, and **no release
-> RPC** (removes the v5 instant anon-DoS lever). **v7 adds the `K`-attempt bound** both round-6 reviewers
-> recommended, closing the residual *slow* $0 charge-only cap-trip DoS (H-1) and bounding the honest
-> failing-loop. Needs one confirming round.
+> **Converged design:** serve summary rendered-HTML-doc from Supabase storage, owner-scoped (any tier);
+> worker unchanged; render on-serve; magazine model materialized lazily on view. Serve-side spend = a
+> `SECURITY DEFINER` **lease-reserve RPC** (Option A+, user-chosen): lease single-flight + charge-per-attempt
+> + `K`-attempt bound + no release RPC. v8 states the config invariant and defers the registered-account
+> residual to 1G. **Next: user spec-approval → `writing-plans`.** See `.superpowers/sdd/progress.md`.
 
 > **AFK decision (made on the user's behalf, vetoable on return):** serve-side spend
 > governance = **Option A-lite** (one atomic, idempotent-per-`(owner,doc,day)`
@@ -78,7 +78,7 @@ docs, and heal of lost/stale models — and the worker never changes.
 | D7 | **Nonce-based CSP** (not hash). | We render dynamically per request, so a per-response nonce is natural and stays valid as inline scripts evolve. |
 | D8 | **Magazine model = lazily-materialized, version/drift-gated artifact** (the glossary's "middle case" — paid but *acceptably* re-renderable). A missing/stale model is **"not yet materialized at this version,"** regenerated on view — **not** a source-of-truth "repair-needed" dead-end. | A re-rendered skim model is acceptable (not semantic ground truth), so on-demand regeneration is correct; this is what dissolves the backfill/heal Blockers. |
 | D9 | **Serve addresses playlists by `playlistId` (UUID)**, resolving to `playlist_key` with an explicit owner assertion (the `getWorkerStorageBundle` pattern, minus service_role). | Matches the cloud UUID-addressing convention (jobs table), keeps the external YouTube list-id out of app URLs, adds the D6 playlist-row assert. RLS still isolates the session path. |
-| D10 | **Serve-side spend governance = one `SECURITY DEFINER` lease-reserve RPC (Option A+);** see §4.2. Granted to `authenticated, anon`; derives `owner_id := auth.uid()` **internally** and verifies `(playlist, video)` owned **and `promoted`** before touching money. Claims a short **generation lease** (single-flight), **charges `magazine_est_cents` per attempt**, and **bounds attempts to `K` per `(owner,doc,day)`**; returns coarse `reserved | in_flight | attempts_exhausted | at_capacity | denied`. **No release RPC** — a failed/aborted attempt lets the lease expire; the next view reclaims (bounded by `K`). No quota debit; reconcile deferred. | Lease = single-flight; charge-per-attempt keeps the daily cap the **dollar** bound; the **`K` counter is the *abuse* bound** — it stops a direct-RPC reclaim-loop from tripping the global cap at $0 (charge commits before generation, so reclaim-abuse is $0), capping abuse to `K·est·(owned docs)` ≪ daily cap. Removing the release lever closes the v5 instant DoS; `auth.uid()`-internal + promoted-check block direct-PostgREST forging. Keeps the hard kill-switch meaningful while staying approximate. |
+| D10 | **Serve-side spend governance = one `SECURITY DEFINER` lease-reserve RPC (Option A+);** see §4.2. Granted to `authenticated, anon`; derives `owner_id := auth.uid()` **internally** and verifies `(playlist, video)` owned **and `promoted`** before touching money. Claims a short **generation lease** (single-flight), **charges `magazine_est_cents` per attempt**, and **bounds attempts to `K` per `(owner,doc,day)`**; returns coarse `reserved | in_flight | attempts_exhausted | at_capacity | denied`. **No release RPC** — a failed/aborted attempt lets the lease expire; the next view reclaims (bounded by `K`). No quota debit; reconcile deferred. | Lease = single-flight; charge-per-attempt keeps the daily cap the **dollar** bound; the **`K` counter is the *abuse* bound** — it stops a direct-RPC reclaim-loop from tripping the global cap at $0 (charge commits before generation, so reclaim-abuse is $0), capping per-account abuse to `K·est·(quota docs)` — negligible for anon (2 docs), a bounded *fraction* of the cap for a registered account (residual deferred to 1G, §9). Removing the release lever closes the v5 instant DoS; `auth.uid()`-internal + promoted-check block direct-PostgREST forging. Keeps the hard kill-switch meaningful while staying approximate. |
 | D11 | **Print button → nonce'd listener; local output "behavior-identical," not byte-identical.** `PRINT_BUTTON`'s inline `onclick` cannot be authorized by a nonce (nonces don't cover inline event handlers), and the CSP-level "fix" is the `unsafe-*` weakening §8 forbids — so convert it to a nonce'd `addEventListener` script. This changes the button's *markup* for both local and cloud, so B14 asserts **behavioral** parity, not byte-parity. | The only way to keep the print button *and* a strict CSP; the local no-CSP path still works (unconditional script). |
 | D12 | **Suppress dig-deeper controls on the cloud-served summary.** The rendered HTML doc's dig/nav controls read `outputFolder` and are non-functional in cloud (dig-deeper is out of scope). A render flag omits them on the cloud serve. | Avoids shipping dead controls; dig-deeper serving is a later slice. |
 | D13 | **Synchronous generate-on-miss.** On a model miss the serve request generates then serves in-line (client waits). | Simplest for a backend slice; a non-blocking "generating…" UX belongs to Sub-project 2. |
@@ -144,8 +144,11 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
        attempts per `(owner,doc,UTC-day)`** (§4.2). That **`K` bound — not the daily cap —**
        is what stops a direct-RPC reclaim-loop from tripping the global cap at $0 (the
        charge commits *before* generation, so an attacker who never generates still pays $0);
-       with `K` small, total abuse ≤ `K·est·(owned docs)`, trivially under the cap. **No
-       anon-callable release lever exists → the v5 instant DoS is gone.**
+       per-account abuse ≤ `K·est·(quota docs)` — **negligible for anon** (2 docs); a
+       **registered** account's residual is a bounded *fraction* of the cap (attributable,
+       not the unbounded $0 drain of v5/v6) and is **explicitly deferred to 1G** per-account
+       abuse controls (§9). **No anon-callable release lever exists → the v5 instant DoS is
+       gone.**
 6. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce, dig: false })`
    (D11 nonce'd inline scripts + print listener; D12 dig controls suppressed).
 7. Return `text/html; charset=utf-8` with a nonce-based `Content-Security-Policy`
@@ -180,7 +183,12 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
     constant — the abuse bound;
   - a fixed **`magazine_est_cents`** in `guardrail_config` (approximate — derived roughly
     from the magazine input+output caps × `GENERATE_JSON_RETRIES+1`; no strict
-    cap-soundness proof, per the approved approximate posture);
+    cap-soundness proof, per the approved approximate posture). **Config invariant (pin
+    before merge):** choose `K` and `magazine_est_cents` so
+    `max_owned_promoted_docs_per_owner · K · magazine_est_cents ≤ daily_cap_cents ·
+    SAFETY_FRACTION` (e.g. ≤ 0.2) — a light serve-estimate check asserts it (the approximate
+    serve-side analogue of the enqueue cap-soundness guard). This bounds a single account's
+    reclaim-loop to a modest fraction of the cap;
   - a `SECURITY DEFINER` function `reserve_serve_model(p_playlist_id uuid, p_video_id text)`
     granted to `authenticated, anon`, whose **exact transaction** is:
     1. `v_owner := auth.uid()`; null → raise (unauth). **Owner is NEVER a param.**
@@ -220,6 +228,12 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
   one Gemini call); lease-reclaim after expiry re-generates and re-charges (daily cap
   bounds attempts); different-doc cap boundary; forged/foreign/unpromoted `doc` denial;
   cap-refusal rolls back the lease claim (no leftover marker); no anon-callable release.
+- **Staged-write concurrency (M-2/M-3):** `SupabaseBlobStore.putStaged` uses a
+  **deterministic** temp key today — port the local store's **uuid-prefixed** staging
+  (`local-blob-store.ts` already does this) so per-attempt-unique staging keys work, and
+  **harden `promote`** to treat a destination-already-exists / move-source-missing error as
+  success (re-check `finalExists`), so two concurrent over-`LEASE_TTL` promoters don't 500
+  the loser.
 - **Model store becomes cloud-capable:** `writeModelEnvelope`/`readModelEnvelope`
   hardcode `localPrincipal` + plain `put` today — the serve path needs a `principal`
   param and the `putStaged→promote` protocol (shared-code change; local callers
@@ -293,7 +307,7 @@ ignored.
 | B7b | Forged/foreign/unpromoted doc via direct RPC | direct `reserve_serve_model` for a doc not owned, or owned but not `promoted` | `denied` (route → 404); no charge, no existence leak |
 | B7c | Cap refused returns a status, no fresh lease | lease claimed but the conditional ledger UPDATE affects 0 rows | `IF NOT FOUND THEN RAISE` in sub-block → `EXCEPTION` rolls back the claim → **`at_capacity`**; a reclaim restores the prior *expired* row (not bricked) |
 | B7d | No anon-callable release lever | there is no `release_serve_model` RPC | a direct PostgREST caller cannot delete/void a marker → the v5 reserve→release $0 global-cap DoS is unreachable |
-| B7e | Direct reclaim-loop can't trip the global cap at $0 | attacker loops `reserve_serve_model` on an owned doc without generating | `K`-cap → ≤ `K·est` per doc/day; total ≤ `K·est·(owned docs)`, trivially under the daily cap → no global-outage DoS (H-1 closed) |
+| B7e | Direct reclaim-loop can't trip the global cap at $0 | attacker loops `reserve_serve_model` on an owned doc without generating | `K`-cap → ≤ `K·est` per doc/day, ≤ `K·est·(quota docs)` per account — **anon fully bounded** (2 docs); a registered account's residual is a bounded *fraction* of cap (attributable, deferred to 1G) |
 | B7f | Attempts exhausted | `K` attempts used for one `(owner,doc,UTC-day)` | **503** "temporarily unavailable, try later"; self-heals next UTC day (fresh row) |
 | B7g | Over-TTL duplicate generators don't clobber | honest gen exceeds `LEASE_TTL`, a second view reclaims | per-attempt-unique staging key; `promote` treats final-exists as success; wasted duplicate, no 500 |
 | B8 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200, rendered HTML doc |
@@ -360,8 +374,12 @@ Two "iterative dual adversarial re-review to convergence" triggers
 - **Whole-doc `DocVersion` resummarize on view:** the existing resummarize/ingestion
   flow, not the serve path. 1F-a serve materializes the **model** only; a major
   `DocVersion` advance that invalidates the *summary itself* is out of scope.
-- **1G:** anon-abuse controls (CAPTCHA / rate-limit), broad RLS/security test sweep,
-  reconcile-to-actual spend.
+- **1G:** anon-abuse controls (CAPTCHA / rate-limit on anon sign-in) + **serve-side
+  per-account velocity/abuse controls** — the `K`-attempt bound closes the anon
+  aggregate-per-account and the honest failing-loop, but a single *registered* account can
+  still reserve-loop its own docs to consume a bounded *fraction* of the daily cap at $0
+  (attributable, not unbounded); closing that residual is 1G. Broad RLS/security test
+  sweep; reconcile-to-actual spend.
 
 ---
 
@@ -374,9 +392,10 @@ Two "iterative dual adversarial re-review to convergence" triggers
 2. A doc whose model is **absent/stale (incl. every pre-1F-a doc)** materializes it
    on first view under caps + the daily-cap gate, then serves it Gemini-free
    thereafter — no manual repair, no worker change.
-3. The A-lite reserve RPC refuses model generation when the day is over budget, is
-   idempotent per `(owner,doc,UTC-day)` (reload-loops don't re-charge), needs no
-   per-account quota debit, and leaves the Stage 1D enqueue-path caps untouched.
+3. The lease-reserve RPC refuses generation when the day is over budget, bounds attempts
+   to **`K` per `(owner,doc,UTC-day)`** (reload-loops re-charge only after lease expiry, at
+   most `K`; anon fully bounded, registered residual deferred to 1G), needs no per-account
+   quota debit, and leaves the Stage 1D enqueue-path caps untouched.
 4. Local render output is **behaviorally** unchanged (print works, theme FOUC runs);
    service-role never touches the serve path.
 5. `tsc --noEmit` clean; unit suite green; `db reset` + integration green.
