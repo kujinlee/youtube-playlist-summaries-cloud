@@ -1,6 +1,6 @@
 # Stage 1F-a — Authorized, Lazy-Materialized Summary-HTML Serving (cloud)
 
-**Status:** design in review (v3 — A-lite spend governance) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+**Status:** design in review (v5 — A-lite RPC hardening) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
 
 > **AFK decision (made on the user's behalf, vetoable on return):** serve-side spend
 > governance = **Option A-lite** (one atomic, idempotent-per-`(owner,doc,day)`
@@ -129,10 +129,16 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
        generate-many gap).
      - `reserved` → call `generateMagazineModel(sections, language, caps)` under
        `CLOUD_CAPS` with the request `signal`; **stage → verify → promote**
-       `models/{base}.json`; serve. A first-generation *failure* leaves the marker set,
-       so the doc returns 503 "temporarily unavailable" and **self-heals on the next
-       UTC-day view** — an accepted approximate tradeoff (bounded cost over
-       first-failure availability; **flagged for veto**).
+       `models/{base}.json`; serve. **On generation failure OR client abort before
+       promote** (routine under synchronous D13), **void the reservation**: a small
+       definer `release_serve_model(p_playlist_id, p_video_id)` **deletes the marker** for
+       `(auth.uid(), doc, today)` (it does **not** reverse the ledger reservation — the
+       spent estimate stays counted, conservative). A same-day retry then **re-reserves
+       and re-attempts**; a persistently-failing reload-loop is bounded by the **daily
+       cap** (it trips → `at_capacity` for all — the kill-switch working). This replaces
+       the earlier "bricked until next UTC-day" behavior. **AFK decision #4 (flagged for
+       veto):** void-on-failure (good availability; cost bounded by the daily cap) vs.
+       don't-void (cost-tighter but a routine client-abort bricks the doc for the day).
 6. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce, dig: false })`
    (D11 nonce'd inline scripts + print listener; D12 dig controls suppressed).
 7. Return `text/html; charset=utf-8` with a nonce-based `Content-Security-Policy`
@@ -159,25 +165,31 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
 - **A-lite reserve RPC (D10) — this slice DOES include a small, self-contained
   migration** (correcting v2's mistaken "no migration"). It adds:
   - a marker table `serve_model_charge(owner_id uuid, doc_key text, day date, …)` with
-    **`unique(owner_id, doc_key, day)`** (the RPC owns it; never owner-writable jsonb);
+    **`unique(owner_id, doc_key, day)`**, **force-RLS + `service_role`-only grants (no
+    client policy)** — writable only inside the definer RPCs, never by a session client
+    (mirrors `spend_ledger`'s lockdown; prevents cross-tenant marker forging/bricking);
   - a fixed **`magazine_est_cents`** in `guardrail_config` (approximate — derived roughly
     from the magazine input+output caps × `GENERATE_JSON_RETRIES+1`; no strict
     cap-soundness proof, per the approved approximate posture);
   - a `SECURITY DEFINER` function `reserve_serve_model(p_playlist_id uuid, p_video_id text)`
     granted to `authenticated, anon`, whose **exact transaction** is:
     1. `v_owner := auth.uid()`; null → raise (unauth). **Owner is NEVER a param.**
-    2. Verify `(p_playlist_id, p_video_id)` is owned by `v_owner` (join `playlists`/
-       `videos` on `owner_id = v_owner`); not owned/absent → generic denial (no existence
-       leak) — blocks a **direct PostgREST** call with a forged `doc`.
+    2. Verify `(p_playlist_id, p_video_id)` is **owned by `v_owner` AND has a `promoted`
+       summary artifact** (`data->'artifacts'->'summaryMd'->>'status' = 'promoted'`); not
+       owned / absent / not-yet-promoted → generic denial (no existence leak). Blocks a
+       **direct PostgREST** call reserving for forged *or owned-but-unmaterialized* docs.
     3. `doc_key := p_playlist_id||'/'||p_video_id`; `day := (now() at time zone 'utc')::date`.
     4. `INSERT INTO serve_model_charge(owner_id,doc_key,day) VALUES (v_owner,doc_key,day)
        ON CONFLICT DO NOTHING RETURNING 1;` — **no row ⇒ return `already_charged`** (the
        atomic dedup arbiter, mirroring `enqueue_job`'s ON-CONFLICT idempotency).
     5. Marker inserted ⇒ the daily-cap **conditional UPDATE arbiter** (as `enqueue_job` /
        `0011`): `UPDATE spend_ledger SET reserved = reserved + magazine_est WHERE day=…
-       AND reserved+actual+magazine_est <= daily_cap`. **0 rows ⇒ roll the whole txn back**
-       (the marker must NOT persist, else it would falsely dedup a never-charged doc) →
-       `at_capacity`. Else → `reserved`.
+       AND reserved+actual+magazine_est <= daily_cap`. **0 rows ⇒ the marker must NOT
+       persist** (else it falsely dedups a never-charged doc). Since an uncaught `RAISE`
+       returns an *error* (not a status) and a bare `RETURN` would *leave* the marker, do
+       the marker-insert inside a **PL/pgSQL sub-block with an `EXCEPTION`/savepoint** (or
+       an explicit `DELETE` of the just-inserted marker) so the function **returns the
+       normal `at_capacity` status leaving no marker**. Else → `reserved`.
   Everything touches `spend_ledger`/`guardrail_config` **only inside the definer**, so the
   serve path stays on the **session client** (D5 preserved). Reconcile deferred (matches
   Stage 1D). Tests: same-doc concurrent first-views (one `reserved`, rest
@@ -204,7 +216,8 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
   `<style>` block. Emit a full CSP: `default-src 'none'`; `script-src 'nonce-<n>'`;
   `style-src 'nonce-<n>'`; **`img-src 'none'`** (the summary emits no images today —
   only external YouTube *links*; adding images requires an explicit spec change);
-  `base-uri 'none'`; `object-src 'none'` — no `unsafe-inline`/`unsafe-hashes`. Nonce generated per response
+  `base-uri 'none'`; `object-src 'none'`; **`frame-ancestors 'none'`; `form-action 'none'`**
+  (owner-private doc — block framing/clickjacking and form posts) — no `unsafe-inline`/`unsafe-hashes`. Nonce generated per response
   (`crypto.randomBytes`/UUID, ≥128-bit, base64).
 - **`nonce` absent** (local `generate.ts` static file): no nonce attributes, no CSP.
   Output is **behaviorally identical** to pre-1F-a (D11 changes the print button's
@@ -251,8 +264,9 @@ ignored.
 | B6 | Daily cap reached | day over budget at a model miss | reserve RPC refuses → **503** "at capacity"; no Gemini call, no partial promote |
 | B6b | Reload-loop / same-day repeat: single-flight | repeated/concurrent miss for same `(owner,doc)` within a UTC day | RPC returns `already_charged` → **no regeneration**; serve if now-present else **503** "generating, retry"; **≤1 Gemini call** per `(owner,doc,day)` |
 | B7 | Concurrent first views single-flight | two simultaneous misses for one doc | `ON CONFLICT` marker → exactly one gets `reserved` (generates); the other gets `already_charged` → 503-retry, then serves the cached model; **one** Gemini call |
-| B7b | Forged/foreign doc via direct RPC | authed/anon calls `reserve_serve_model` with a doc they don't own | definer derives owner from `auth.uid()` + verifies ownership → generic denial; no charge, no existence leak |
-| B7c | Cap refused mid-reserve leaves no marker | marker inserted but the conditional ledger UPDATE affects 0 rows | whole txn rolls back → `at_capacity`; marker NOT persisted (doc still materializable once budget frees) |
+| B7b | Forged/foreign/unpromoted doc via direct RPC | direct `reserve_serve_model` for a doc not owned, or owned but not `promoted` | definer derives owner from `auth.uid()`, verifies ownership **AND promoted summary** → generic denial; no charge, no leak |
+| B7c | Cap refused mid-reserve returns a status, no marker | marker inserted but the conditional ledger UPDATE affects 0 rows | sub-block/`EXCEPTION` (or `DELETE`) → returns normal **`at_capacity`**; marker NOT persisted (doc materializable once budget frees) |
+| B7d | Generation fails / client aborts before promote | `reserved` caller errors or disconnects mid-generate | marker **voided** (`release_serve_model`; ledger not reversed); same-day retry re-reserves + re-attempts; persistently-failing loop bounded by the daily cap |
 | B8 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200, rendered HTML doc |
 | B9 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
 | B10 | Foreign owner blocked | authed GET for another owner's doc/playlist | **404** (RLS row/playlist invisible) — bidirectional isolation |
