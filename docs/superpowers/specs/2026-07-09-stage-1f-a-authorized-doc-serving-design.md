@@ -1,6 +1,13 @@
 # Stage 1F-a — Authorized, Lazy-Materialized Summary-HTML Serving (cloud)
 
-**Status:** design in review (v5 — A-lite RPC hardening) 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+**Status:** design in review (v5) · **⚠️ ONE OPEN DECISION — PARKED FOR USER** · 2026-07-09 · **Branch:** `feat/stage-1f-a-authorized-doc-serving`
+
+> **⚠️ PARKED (round 5):** everything converged EXCEPT the **serve-side failed/abandoned-generation
+> recovery** mechanism (§4.1 step 5 / §4.2 `release_serve_model`). The v5 void-on-failure design opens a
+> **free, anon-reachable global daily-cap DoS** (reserve→release loops climb global `reserved_cents` at
+> $0 real spend). Awaiting user choice: (A) don't-void [v4, abort bricks doc ~24h]; **(A+) lease-based,
+> no release RPC [recommended]**; (C) attempt-state machine; (D) defer serve-side gate to 1G. Do NOT
+> implement §4.1 step-5 recovery / `release_serve_model` as currently written until resolved.
 
 > **AFK decision (made on the user's behalf, vetoable on return):** serve-side spend
 > governance = **Option A-lite** (one atomic, idempotent-per-`(owner,doc,day)`
