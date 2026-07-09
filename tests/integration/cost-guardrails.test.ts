@@ -20,7 +20,16 @@ beforeEach(async () => {
 
 it('seeds quota_allowance and the singleton guardrail_config', async () => {
   const { data: allow } = await svc.from('quota_allowance').select('*');
-  expect(allow).toEqual(expect.arrayContaining([{ is_anonymous: false, kind: 'summary', monthly: 20 }]));
+  // Assert the FULL 4-row seed set (order-independent) AND the exact row count — a missing
+  // or extra row would otherwise go unasserted, since `.update().match(missingRow)` in
+  // beforeEach is a silent 0-row no-op that can't surface a dropped seed row.
+  expect(allow).toHaveLength(4);
+  expect(allow).toEqual(expect.arrayContaining([
+    { is_anonymous: false, kind: 'summary', monthly: 20 },
+    { is_anonymous: false, kind: 'dig', monthly: 5 },
+    { is_anonymous: true, kind: 'summary', monthly: 2 },
+    { is_anonymous: true, kind: 'dig', monthly: 0 },
+  ]));
   const { data: cfg } = await svc.from('guardrail_config').select('*').single();
   expect(cfg).toMatchObject({ daily_cap_cents: 500, summary_est_cents: 150, summary_max_attempts: 1, max_duration_seconds: 1800 });
 });

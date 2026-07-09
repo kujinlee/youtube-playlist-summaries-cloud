@@ -62,6 +62,19 @@ describe('core schema', () => {
     ]);
   });
 
+  it('defines ZERO policies on the service-role-only tables spend_ledger and guardrail_config (1D-1)', async () => {
+    // Whole-schema net: these two tables have no client grant at all (service_role only), so a
+    // stray policy accidentally added to either would go unasserted by the scoped tests above.
+    const admin = adminClient();
+    const { data } = await admin.rpc('exec_sql', {
+      sql: `select tablename, policyname, cmd, (with_check is not null) as has_with_check
+            from pg_policies where schemaname='public'
+              and tablename in ('spend_ledger','guardrail_config')
+            order by tablename`,
+    });
+    expect(data).toEqual([]);
+  });
+
   it('jobs.playlist_id is a not-null uuid coordinate with a composite owner FK (1E-b)', async () => {
     const admin = adminClient();
     const { data, error } = await admin.rpc('exec_sql', {
