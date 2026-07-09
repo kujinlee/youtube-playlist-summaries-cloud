@@ -262,6 +262,50 @@ describe('fetchPlaylistVideos', () => {
     expect(result[0].videoPublishedAt).toBeUndefined();
     expect(result[0].addedToPlaylistAt).toBeUndefined();
   });
+
+  it('surfaces liveBroadcastContent "live" for a live stream', async () => {
+    mockPlaylistItemsList.mockResolvedValue({
+      data: { items: [{ contentDetails: { videoId: 'live12345678' } }], nextPageToken: null },
+    });
+    mockVideosList.mockResolvedValue({
+      data: {
+        items: [{
+          id: 'live12345678',
+          snippet: { title: 'Live Stream', liveBroadcastContent: 'live' },
+          contentDetails: { duration: 'PT5M' },
+        }],
+      },
+    });
+
+    const result = await fetchPlaylistVideos(
+      'https://www.youtube.com/playlist?list=PLtest123',
+      'fake-api-key',
+    );
+
+    expect(result[0].liveBroadcastContent).toBe('live');
+  });
+
+  it('surfaces liveBroadcastContent "none" for a normal VOD video', async () => {
+    mockPlaylistItemsList.mockResolvedValue({
+      data: { items: [{ contentDetails: { videoId: 'vod12345678' } }], nextPageToken: null },
+    });
+    mockVideosList.mockResolvedValue({
+      data: {
+        items: [{
+          id: 'vod12345678',
+          snippet: { title: 'Normal Video', liveBroadcastContent: 'none' },
+          contentDetails: { duration: 'PT5M' },
+        }],
+      },
+    });
+
+    const result = await fetchPlaylistVideos(
+      'https://www.youtube.com/playlist?list=PLtest123',
+      'fake-api-key',
+    );
+
+    expect(result[0].liveBroadcastContent).toBe('none');
+  });
 });
 
 describe('fetchTranscript', () => {
