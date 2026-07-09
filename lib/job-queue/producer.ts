@@ -5,6 +5,9 @@ import { docVersionKey } from '@/lib/storage/job-queue';
 import { CURRENT_DOC_VERSION } from '@/lib/doc-version';
 import { fetchPlaylistVideos, extractPlaylistId } from '@/lib/youtube';
 import { videoMetaToIngestionPayload } from '@/lib/job-queue/video-meta-to-payload';
+import type { Enqueuer, EnqueueCtx } from '@/lib/job-queue/enqueuer';
+import { QuotaExceededError, DailyCapError, VideoTooLongError } from '@/lib/job-queue/errors';
+import type { VideoMeta } from '@/types';
 
 export const MAX_VIDEOS_PER_ENQUEUE = 50;
 
@@ -23,26 +26,26 @@ export class PlaylistFetchError extends Error {
 export type JobFanoutResult =
   | { videoId: string; jobId: string; status: JobStatus; joined: boolean }
   | { videoId: string; skipped: string }
-  | { videoId: string; error: string };
-export interface ProducerCounts { enqueued: number; joined: number; skipped: number; failed: number; }
-export interface ProducerResult { playlistId: string | null; jobs: JobFanoutResult[]; counts: ProducerCounts; }
+  | { videoId: string; error: string }
+  | { videoId: string; blocked: 'quota_exceeded' | 'daily_cap' | 'too_long' };
+
+export interface ProducerCounts {
+  enqueued: number; joined: number; skipped: number; failed: number;
+  quotaBlocked: number; capBlocked: number; tooLong: number;
+}
+export interface ProducerResult {
+  playlistId: string | null; jobs: JobFanoutResult[]; counts: ProducerCounts;
+  challengeRequired?: boolean; dailyCapReached?: boolean;
+}
 
 export async function enqueuePlaylist(
-  bundle: StorageBundle, principal: Principal, playlistUrl: string,
+  sessionBundle: StorageBundle, enqueuer: Enqueuer, principal: Principal, playlistUrl: string, ctx: EnqueueCtx,
 ): Promise<ProducerResult> {
-  // Guard the cloud-only queue BEFORE any durable write (review High — jobQueue is optional on
-  // StorageBundle; a local/misconfigured bundle must fail here, not after resolvePlaylistId).
-  // Validate the contract, not just presence: a present-but-broken queue (e.g. `{}` or
-  // `{ enqueue: undefined }`) would otherwise pass a truthiness check, let resolvePlaylistId
-  // durably upsert a playlists row, and only then blow up per-item inside the try/catch below —
-  // leaving an orphan playlist row with no jobs (review High).
-  const queue = bundle.jobQueue;
-  if (!queue || typeof queue.enqueue !== 'function') throw new Error('enqueuePlaylist requires a cloud jobQueue');
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error('YOUTUBE_API_KEY is not set');
   extractPlaylistId(playlistUrl); // throws → caller maps to 400
 
-  let videos;
+  let videos: VideoMeta[];
   try {
     videos = await fetchPlaylistVideos(playlistUrl, apiKey, { maxItems: MAX_VIDEOS_PER_ENQUEUE + 1 });
   } catch (e) {
@@ -57,28 +60,86 @@ export async function enqueuePlaylist(
     .map((m) => ({ videoId: m.videoId, skipped: m.skipped }));
 
   if (enqueueable.length === 0) {
-    return { playlistId: null, jobs: skips, counts: { enqueued: 0, joined: 0, skipped: skips.length, failed: 0 } };
+    return {
+      playlistId: null, jobs: skips,
+      counts: { enqueued: 0, joined: 0, skipped: skips.length, failed: 0, quotaBlocked: 0, capBlocked: 0, tooLong: 0 },
+    };
   }
 
-  const playlistId = await bundle.metadataStore.resolvePlaylistId(principal, playlistUrl);
+  // Read liveBroadcastContent/durationSeconds from the ORIGINAL VideoMeta — the mapped
+  // IngestionPayload does not carry liveBroadcastContent (round-3 L / task-10 brief).
+  const videoMetaById = new Map(videos.map((v) => [v.videoId, v]));
+  const { maxDurationSeconds } = await enqueuer.getGuardrailConfig();
+
+  const preBlocked: JobFanoutResult[] = [];
+  const toEnqueue: { videoId: string; ok: any }[] = [];
+  for (const item of enqueueable) {
+    const vm = videoMetaById.get(item.videoId);
+    const overDuration = !!vm && vm.durationSeconds > maxDurationSeconds;
+    const liveOrUpcoming = vm?.liveBroadcastContent === 'live' || vm?.liveBroadcastContent === 'upcoming';
+    if (overDuration || liveOrUpcoming) {
+      preBlocked.push({ videoId: item.videoId, blocked: 'too_long' });
+    } else {
+      toEnqueue.push(item);
+    }
+  }
+
+  const playlistId = await sessionBundle.metadataStore.resolvePlaylistId(principal, playlistUrl);
   const version = docVersionKey(CURRENT_DOC_VERSION);
-  const results: JobFanoutResult[] = []; let created = 0; let joined = 0;
-  for (const { videoId, ok: payload } of enqueueable) {
+  const results: JobFanoutResult[] = [...preBlocked];
+  let created = 0, joined = 0, quotaBlocked = 0, capBlocked = 0, tooLongInLoop = 0;
+  let dailyCapReached = false;
+
+  for (let i = 0; i < toEnqueue.length; i++) {
+    const { videoId, ok: payload } = toEnqueue[i];
     try {
-      const { jobId, status, joined: didJoin } = await queue.enqueue(
-        { playlistId, videoId, sectionId: -1, kind: 'summary', version }, payload);
+      const { jobId, status, joined: didJoin } = await enqueuer.enqueue(
+        ctx, { playlistId, videoId, sectionId: -1, kind: 'summary', version }, payload);
       results.push({ videoId, jobId, status, joined: didJoin });
       if (didJoin) joined += 1; else created += 1;
     } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        results.push({ videoId, blocked: 'quota_exceeded' });
+        quotaBlocked += 1;
+        continue;
+      }
+      if (e instanceof DailyCapError) {
+        results.push({ videoId, blocked: 'daily_cap' });
+        capBlocked += 1;
+        dailyCapReached = true;
+        // Cap is global — no point attempting the rest; block them all too.
+        for (let j = i + 1; j < toEnqueue.length; j++) {
+          results.push({ videoId: toEnqueue[j].videoId, blocked: 'daily_cap' });
+          capBlocked += 1;
+        }
+        break;
+      }
+      if (e instanceof VideoTooLongError) {
+        // PJ003 backstop firing inside the RPC (duration passed the producer's own check,
+        // e.g. a stale/racing guardrail_config read) — still counts toward tooLong.
+        results.push({ videoId, blocked: 'too_long' });
+        tooLongInLoop += 1;
+        continue;
+      }
       // Never echo a raw error to the client (review High — internal detail leak); log the real
       // cause server-side (with videoId for correlation) and surface a stable public string.
       console.error(`enqueuePlaylist: enqueue failed for video ${videoId}`, e);
       results.push({ videoId, error: 'enqueue failed' });
     }
   }
-  if (created + joined === 0) throw new AllEnqueueFailedError(playlistId);
-  return {
-    playlistId, jobs: [...results, ...skips],
-    counts: { enqueued: created, joined, skipped: skips.length, failed: enqueueable.length - created - joined },
+
+  const failed = toEnqueue.length - created - joined - quotaBlocked - capBlocked - tooLongInLoop;
+  const counts: ProducerCounts = {
+    enqueued: created, joined, skipped: skips.length, failed,
+    quotaBlocked, capBlocked, tooLong: preBlocked.length + tooLongInLoop,
   };
+
+  // AllEnqueueFailedError signals a genuine systemic failure (every attempt errored) — it must
+  // NOT fire when videos were merely quota/cap/too_long-blocked (that's expected guardrail
+  // behavior, not a failure to surface as a 503).
+  if (created + joined === 0 && failed > 0) throw new AllEnqueueFailedError(playlistId);
+
+  const result: ProducerResult = { playlistId, jobs: [...results, ...skips], counts };
+  if (dailyCapReached) result.dailyCapReached = true;
+  return result;
 }

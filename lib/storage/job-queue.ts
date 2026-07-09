@@ -20,6 +20,7 @@ export interface PlaylistJobRow {
 }
 
 export interface JobQueue {
+  // TODO(1d-T13): remove after integration tests migrate off SupabaseJobQueue.enqueue
   enqueue(key: JobKey, payload: unknown): Promise<EnqueueResult>;
   getStatus(jobId: string): Promise<JobRecord | null>;
   listByPlaylist(playlistId: string): Promise<PlaylistJobRow[]>;
