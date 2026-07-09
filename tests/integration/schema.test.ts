@@ -7,7 +7,8 @@ describe('core schema', () => {
     const { data, error } = await admin.rpc('exec_sql', {
       // helper defined in Task 7 harness; or query pg_class via a SQL function
       sql: `select relname, relrowsecurity, relforcerowsecurity from pg_class
-            where relname in ('profiles','playlists','videos','jobs')
+            where relname in ('profiles','playlists','videos','jobs',
+                              'usage_counters','spend_ledger','quota_allowance','guardrail_config')
               and relnamespace = 'public'::regnamespace and relkind = 'r'
             order by relname`,
     });
@@ -15,26 +16,49 @@ describe('core schema', () => {
     // both flags must be true: `enable` alone lets the table owner bypass RLS;
     // `force` makes even the owner obey it.
     expect(data).toEqual([
+      { relname: 'guardrail_config', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'jobs',      relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'playlists', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'profiles',  relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'quota_allowance', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'spend_ledger', relrowsecurity: true, relforcerowsecurity: true },
+      { relname: 'usage_counters', relrowsecurity: true, relforcerowsecurity: true },
       { relname: 'videos',    relrowsecurity: true, relforcerowsecurity: true },
     ]);
   });
 
-  it('defines exactly one owner policy per table, ALL cmd, with a with_check (Codex L1)', async () => {
+  it('defines exactly one owner policy per owner-owned data table, ALL cmd, with a with_check (Codex L1)', async () => {
     const admin = adminClient();
     const { data } = await admin.rpc('exec_sql', {
       // assert cmd + that with_check is present, not just the name — a malformed
       // policy with the right name but no with_check would otherwise pass.
+      // Scoped to the owner-owned data tables (Task 1D-1): the guardrail tables
+      // (usage_counters/quota_allowance) use read-only SELECT policies instead,
+      // asserted separately below.
       sql: `select tablename, policyname, cmd, (with_check is not null) as has_with_check
-            from pg_policies where schemaname='public' order by tablename`,
+            from pg_policies where schemaname='public'
+              and tablename in ('jobs','playlists','profiles','videos')
+            order by tablename`,
     });
     expect(data).toEqual([
       { tablename: 'jobs',      policyname: 'jobs_owner',      cmd: 'ALL', has_with_check: true },
       { tablename: 'playlists', policyname: 'playlists_owner', cmd: 'ALL', has_with_check: true },
       { tablename: 'profiles',  policyname: 'profiles_self',   cmd: 'ALL', has_with_check: true },
       { tablename: 'videos',    policyname: 'videos_owner',    cmd: 'ALL', has_with_check: true },
+    ]);
+  });
+
+  it('defines the read-only guardrail policies usage_counters_owner_read and quota_allowance_read (1D-1)', async () => {
+    const admin = adminClient();
+    const { data } = await admin.rpc('exec_sql', {
+      sql: `select tablename, policyname, cmd, (with_check is not null) as has_with_check
+            from pg_policies where schemaname='public'
+              and tablename in ('usage_counters','quota_allowance')
+            order by tablename`,
+    });
+    expect(data).toEqual([
+      { tablename: 'quota_allowance', policyname: 'quota_allowance_read', cmd: 'SELECT', has_with_check: false },
+      { tablename: 'usage_counters', policyname: 'usage_counters_owner_read', cmd: 'SELECT', has_with_check: false },
     ]);
   });
 
