@@ -6,7 +6,7 @@ jest.mock('@/lib/youtube', () => ({
   fetchPlaylistVideos: jest.fn(),
 }));
 import * as youtube from '@/lib/youtube';
-import { enqueuePlaylist } from '@/lib/job-queue/producer';
+import { enqueuePlaylist, AllEnqueueFailedError } from '@/lib/job-queue/producer';
 import type { VideoMeta } from '@/types';
 
 const fetchMock = jest.mocked(youtube.fetchPlaylistVideos);
@@ -170,4 +170,56 @@ it('does not throw AllEnqueueFailedError when every enqueueable item is guardrai
   expect(r.counts.tooLong).toBe(1);
   expect(r.counts.failed).toBe(0);
   expect(r.playlistId).toBe('pl-uuid');
+});
+
+// --- Review Fix 1 (High): position-based VideoMeta association, not a videoId-keyed Map ---
+
+it('duplicate videoId, both live: BOTH occurrences bucketed too_long via position-based vm association', async () => {
+  fetchMock.mockResolvedValueOnce([
+    meta('v-dup', { liveBroadcastContent: 'live' }),
+    meta('v-dup', { liveBroadcastContent: 'live' }),
+  ]);
+  const { bundle, enqueuer, enqueue } = fakeEnqueuer(async () => ({ jobId: 'j', status: 'queued', joined: false }));
+  const r = await enqueuePlaylist(bundle, enqueuer, principal, URL_, ctx);
+  expect(r.counts.tooLong).toBe(2);
+  expect(enqueue).not.toHaveBeenCalled();
+  const tooLongJobs = r.jobs.filter((j): j is { videoId: string; blocked: 'too_long' } => 'blocked' in j && j.blocked === 'too_long');
+  expect(tooLongJobs).toHaveLength(2);
+  expect(r.counts.enqueued + r.counts.joined + r.counts.skipped + r.counts.failed
+    + r.counts.quotaBlocked + r.counts.capBlocked + r.counts.tooLong).toBe(2);
+});
+
+// --- Review Fix 2 (Medium): AllEnqueueFailedError only for genuine-errors-only, not mixed with guardrail blocks ---
+
+it('does NOT throw AllEnqueueFailedError when nothing enqueued but the mix is quota-blocked + genuinely-errored', async () => {
+  fetchMock.mockResolvedValueOnce([meta('v-quota'), meta('v-fail')]);
+  const { bundle, enqueuer } = fakeEnqueuer(async (_ctx, key) => {
+    if (key.videoId === 'v-quota') throw new QuotaExceededError();
+    throw new Error('boom');
+  });
+  const r = await enqueuePlaylist(bundle, enqueuer, principal, URL_, ctx);
+  expect(r.counts.quotaBlocked).toBe(1);
+  expect(r.counts.failed).toBe(1);
+  expect(r.counts.enqueued).toBe(0);
+  expect(r.counts.joined).toBe(0);
+  expect(r.counts.enqueued + r.counts.joined + r.counts.skipped + r.counts.failed
+    + r.counts.quotaBlocked + r.counts.capBlocked + r.counts.tooLong).toBe(2);
+});
+
+it('does NOT throw AllEnqueueFailedError when every enqueueable item is quota-blocked (zero generic errors)', async () => {
+  fetchMock.mockResolvedValueOnce([meta('v1'), meta('v2')]);
+  const { bundle, enqueuer } = fakeEnqueuer(async () => { throw new QuotaExceededError(); });
+  const r = await enqueuePlaylist(bundle, enqueuer, principal, URL_, ctx);
+  expect(r.counts.quotaBlocked).toBe(2);
+  expect(r.counts.failed).toBe(0);
+  expect(r.counts.enqueued).toBe(0);
+  expect(r.counts.joined).toBe(0);
+  expect(r.counts.enqueued + r.counts.joined + r.counts.skipped + r.counts.failed
+    + r.counts.quotaBlocked + r.counts.capBlocked + r.counts.tooLong).toBe(2);
+});
+
+it('still throws AllEnqueueFailedError when every enqueue attempt is a genuine error (no guardrail blocks at all)', async () => {
+  fetchMock.mockResolvedValueOnce([meta('v1'), meta('v2')]);
+  const { bundle, enqueuer } = fakeEnqueuer(async () => { throw new Error('boom'); });
+  await expect(enqueuePlaylist(bundle, enqueuer, principal, URL_, ctx)).rejects.toThrow(AllEnqueueFailedError);
 });

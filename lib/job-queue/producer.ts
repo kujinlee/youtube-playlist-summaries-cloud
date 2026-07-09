@@ -53,11 +53,18 @@ export async function enqueuePlaylist(
   }
   if (videos.length > MAX_VIDEOS_PER_ENQUEUE) throw new PlaylistTooLargeError(MAX_VIDEOS_PER_ENQUEUE, videos.length);
 
+  // mapped is index-aligned with videos (mapped[i] was derived from videos[i]) — zip each
+  // enqueueable item with its ORIGINAL VideoMeta by POSITION here, while that alignment is
+  // still intact. A videoId-keyed Map (the prior approach) collapses duplicate videoIds to
+  // whichever entry was inserted last, so a stray non-live/under-duration duplicate could
+  // silently overwrite and unblock an earlier live/over-duration occurrence (review High).
   const mapped = videos.map((m, i) => videoMetaToIngestionPayload(m, i + 1));
-  const enqueueable = mapped.filter((m): m is { videoId: string; ok: any } => 'ok' in m);
-  const skips: JobFanoutResult[] = mapped
-    .filter((m): m is { videoId: string; skipped: string } => 'skipped' in m)
-    .map((m) => ({ videoId: m.videoId, skipped: m.skipped }));
+  const enqueueable: { vm: VideoMeta; videoId: string; ok: any }[] = [];
+  const skips: JobFanoutResult[] = [];
+  mapped.forEach((m, i) => {
+    if ('ok' in m) enqueueable.push({ vm: videos[i], videoId: m.videoId, ok: m.ok });
+    else skips.push({ videoId: m.videoId, skipped: m.skipped });
+  });
 
   if (enqueueable.length === 0) {
     return {
@@ -66,21 +73,17 @@ export async function enqueuePlaylist(
     };
   }
 
-  // Read liveBroadcastContent/durationSeconds from the ORIGINAL VideoMeta — the mapped
-  // IngestionPayload does not carry liveBroadcastContent (round-3 L / task-10 brief).
-  const videoMetaById = new Map(videos.map((v) => [v.videoId, v]));
   const { maxDurationSeconds } = await enqueuer.getGuardrailConfig();
 
   const preBlocked: JobFanoutResult[] = [];
   const toEnqueue: { videoId: string; ok: any }[] = [];
   for (const item of enqueueable) {
-    const vm = videoMetaById.get(item.videoId);
-    const overDuration = !!vm && vm.durationSeconds > maxDurationSeconds;
-    const liveOrUpcoming = vm?.liveBroadcastContent === 'live' || vm?.liveBroadcastContent === 'upcoming';
+    const overDuration = item.vm.durationSeconds > maxDurationSeconds;
+    const liveOrUpcoming = item.vm.liveBroadcastContent === 'live' || item.vm.liveBroadcastContent === 'upcoming';
     if (overDuration || liveOrUpcoming) {
       preBlocked.push({ videoId: item.videoId, blocked: 'too_long' });
     } else {
-      toEnqueue.push(item);
+      toEnqueue.push({ videoId: item.videoId, ok: item.ok });
     }
   }
 
@@ -136,8 +139,14 @@ export async function enqueuePlaylist(
 
   // AllEnqueueFailedError signals a genuine systemic failure (every attempt errored) — it must
   // NOT fire when videos were merely quota/cap/too_long-blocked (that's expected guardrail
-  // behavior, not a failure to surface as a 503).
-  if (created + joined === 0 && failed > 0) throw new AllEnqueueFailedError(playlistId);
+  // behavior, not a failure to surface as a 503), including MIXED cases where nothing enqueued
+  // because some items were guardrail-blocked and others genuinely errored (review Medium) —
+  // in that case the bucketed ProducerResult (with dailyCapReached etc.) is more informative
+  // than a generic all-failed 503.
+  if (created === 0 && joined === 0 && failed > 0
+    && quotaBlocked === 0 && capBlocked === 0 && counts.tooLong === 0) {
+    throw new AllEnqueueFailedError(playlistId);
+  }
 
   const result: ProducerResult = { playlistId, jobs: [...results, ...skips], counts };
   if (dailyCapReached) result.dailyCapReached = true;
