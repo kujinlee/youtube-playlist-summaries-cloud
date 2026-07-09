@@ -136,3 +136,61 @@ begin
 end $$;
 revoke all on function enqueue_job(uuid,uuid,text,int,text,text,jsonb,inet) from public, anon, authenticated;
 grant execute on function enqueue_job(uuid,uuid,text,int,text,text,jsonb,inet) to service_role;
+
+-- ============================================================================
+-- enqueue_preflight — ADVISORY, service_role-only gate (spec §5). Four
+-- booleans, no cross-tenant data. Coarse and non-atomic (round-3 M3-4): the
+-- real race-free bounds are the atomic quota debit + daily-cap reserve inside
+-- enqueue_job; this gate is abuse-hardening only (velocity/ceiling/queue-depth).
+-- ============================================================================
+
+create function enqueue_preflight(p_ip inet, p_owner_id uuid)
+  returns table(admitted boolean, at_capacity boolean, velocity_exceeded boolean, challenge_required boolean)
+  language plpgsql security invoker set search_path = public as $$
+declare
+  v_cfg guardrail_config;
+  v_anon boolean; v_owner_created timestamptz;
+  v_rank bigint; v_ip_hour_count bigint;
+  v_day date; v_ledger_spent int; v_queue_depth bigint;
+begin
+  if auth.role() <> 'service_role' then raise exception 'enqueue_preflight: server only'; end if;
+  if p_owner_id is null then raise exception 'owner required'; end if;
+
+  select * into v_cfg from guardrail_config where id = true;                 -- singleton, once
+
+  select p.is_anonymous, p.created_at into v_anon, v_owner_created from profiles p where p.id = p_owner_id;
+  if v_anon is null then raise exception 'unknown owner'; end if;
+
+  -- Per-IP hourly job count (uses the jobs_velocity index: enqueue_ip, created_at).
+  select count(*) into v_ip_hour_count from jobs
+    where enqueue_ip = p_ip and created_at > now() - interval '1 hour';
+
+  velocity_exceeded   := v_ip_hour_count >= v_cfg.velocity_per_ip_hourly;
+  challenge_required  := v_anon and v_ip_hour_count > v_cfg.captcha_soft_threshold;
+
+  -- Registered-rank free-user ceiling (round-2 H3): the max_free_users ceiling
+  -- applies ONLY to registered (non-anonymous) profiles, ranked by created_at
+  -- (id as a deterministic tie-break). An anonymous owner is ALWAYS admitted —
+  -- they are velocity-limited instead, never ceiling-capped.
+  if v_anon then
+    admitted := true;
+  else
+    select count(*) into v_rank from profiles p2
+      where p2.is_anonymous = false
+        and (p2.created_at < v_owner_created
+             or (p2.created_at = v_owner_created and p2.id <= p_owner_id));
+    admitted := v_rank <= v_cfg.max_free_users;
+  end if;
+
+  -- Daily spend cap (UTC day) OR queue-depth ceiling.
+  v_day := (now() at time zone 'utc')::date;
+  select coalesce(reserved_cents, 0) + coalesce(actual_cents, 0) into v_ledger_spent
+    from spend_ledger where day = v_day;
+  select count(*) into v_queue_depth from jobs where status in ('queued', 'active');
+
+  at_capacity := coalesce(v_ledger_spent, 0) >= v_cfg.daily_cap_cents or v_queue_depth >= v_cfg.max_queue_depth;
+
+  return next;
+end $$;
+revoke all on function enqueue_preflight(inet,uuid) from public, anon, authenticated;
+grant execute on function enqueue_preflight(inet,uuid) to service_role;

@@ -246,3 +246,56 @@ it('denies a client session enqueue via BOTH signatures and a direct jobs insert
   });
   expect(denied(ins.error)).toBe(true); // direct INSERT revoked
 });
+
+// ============================ Task 3: enqueue_preflight (advisory gate) ============================
+
+it('flags velocity_exceeded once the per-IP hourly count hits the threshold, and returns exactly the four boolean keys', async () => {
+  await svc.from('guardrail_config').update({ velocity_per_ip_hourly: 2 }).eq('id', true);
+  const owner = (await newUser()).user.id;
+  const pl = await seedPlaylist(owner);
+  for (let i = 0; i < 3; i++) {
+    expect((await enq(owner, pl, randomUUID(), payload(100), 'summary', '9.9.9.9')).error).toBeNull();
+  }
+  const r = await svc.rpc('enqueue_preflight', { p_ip: '9.9.9.9', p_owner_id: owner });
+  expect(r.error).toBeNull();
+  const row = r.data![0];
+  expect(Object.keys(row).sort()).toEqual(['admitted', 'at_capacity', 'challenge_required', 'velocity_exceeded']);
+  expect(row.velocity_exceeded).toBe(true);
+});
+
+it('does not flag velocity_exceeded for a different IP with no recent jobs', async () => {
+  await svc.from('guardrail_config').update({ velocity_per_ip_hourly: 2 }).eq('id', true);
+  const owner = (await newUser()).user.id;
+  const pl = await seedPlaylist(owner);
+  for (let i = 0; i < 3; i++) {
+    expect((await enq(owner, pl, randomUUID(), payload(100), 'summary', '9.9.9.9')).error).toBeNull();
+  }
+  const r = await svc.rpc('enqueue_preflight', { p_ip: '5.5.5.5', p_owner_id: owner });
+  expect(r.error).toBeNull();
+  expect(r.data![0].velocity_exceeded).toBe(false);
+});
+
+it('admits a registered owner within the free-user ceiling; anon is always admitted regardless of the ceiling (round-2 H3)', async () => {
+  const reg = (await newUser()).user.id;
+  const within = await svc.rpc('enqueue_preflight', { p_ip: '1.1.1.1', p_owner_id: reg });
+  expect(within.error).toBeNull();
+  expect(within.data![0].admitted).toBe(true); // default max_free_users=100, rank well within it
+
+  await svc.from('guardrail_config').update({ max_free_users: 0 }).eq('id', true);
+  const capped = await svc.rpc('enqueue_preflight', { p_ip: '1.1.1.2', p_owner_id: reg });
+  expect(capped.error).toBeNull();
+  expect(capped.data![0].admitted).toBe(false); // registered, ceiling is 0 → rejected
+
+  const { userId: anonId } = await anonSession();
+  const anonRow = await svc.rpc('enqueue_preflight', { p_ip: '1.1.1.3', p_owner_id: anonId });
+  expect(anonRow.error).toBeNull();
+  expect(anonRow.data![0].admitted).toBe(true); // anon is never ceiling-capped, even at max_free_users=0
+});
+
+it('denies a client-session call to enqueue_preflight (execute revoked)', async () => {
+  const a = await newUser();
+  const { client: sa } = await signInAs(a.email, a.password);
+  const r = await sa.rpc('enqueue_preflight', { p_ip: '1.2.3.4', p_owner_id: a.user.id });
+  expect(r.error).toBeTruthy();
+  expect(r.error!.code).toBe('42501');
+});
