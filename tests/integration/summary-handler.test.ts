@@ -337,6 +337,45 @@ test('(g) permanent transcript failure → NonRetryableError (not retryable)', a
 });
 
 // ---------------------------------------------------------------------------
+// (k) config-driven duration guard (spec §10): the handler reads the LIVE
+//     guardrail_config.max_duration_seconds, not a hard-coded constant. Set it low, then assert an
+//     over-value payload is rejected (NonRetryableError, no Gemini) and an under-value one is
+//     accepted (runs the full pipeline). Restores the singleton row afterward.
+// ---------------------------------------------------------------------------
+test('(k) handler reads guardrail_config.max_duration_seconds for the duration guard', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+
+  const orig = await admin().from('guardrail_config').select('max_duration_seconds').single();
+  const origMax = orig.data!.max_duration_seconds as number;
+  try {
+    await admin().from('guardrail_config').update({ max_duration_seconds: 100 }).eq('id', true);
+
+    // over the live cap (200 > 100) → NonRetryableError, Gemini never called
+    const overJob = makeJob({
+      ownerId: userId, playlistId, videoId: randomUUID(), payload: makePayload({ durationSeconds: 200 }),
+    });
+    const handler = makeSummaryHandler(admin());
+    await expect(handler(overJob, mockCtx)).rejects.toBeInstanceOf(NonRetryableError);
+    expect(generateSummary).not.toHaveBeenCalled();
+
+    // under the live cap (50 <= 100) → accepted, pipeline runs to promotion
+    const underVideoId = randomUUID();
+    const underJob = makeJob({
+      ownerId: userId, playlistId, videoId: underVideoId, payload: makePayload({ durationSeconds: 50 }),
+    });
+    await handler(underJob, mockCtx);
+    expect(generateSummary).toHaveBeenCalledTimes(1);
+    const row = await admin().from('videos').select('data')
+      .eq('playlist_id', playlistId).eq('video_id', underVideoId).single();
+    expect(row.data!.data.artifacts.summaryMd.status).toBe('promoted');
+  } finally {
+    await admin().from('guardrail_config').update({ max_duration_seconds: origMax }).eq('id', true);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // (h) NaN durationSeconds is rejected pre-flight → NonRetryableError. Without the schema's
 //     `.finite()`, NaN slips past the `> MAX_DURATION_SECONDS` guard (NaN > MAX is false).
 // ---------------------------------------------------------------------------

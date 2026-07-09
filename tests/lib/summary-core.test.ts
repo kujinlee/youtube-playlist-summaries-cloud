@@ -94,6 +94,63 @@ describe('summaryCore', () => {
     expect(res.geminiFields.takeaways).toBeUndefined();
   });
 
+  it('with caps: truncates the segment list and forwards caps to all three deps', async () => {
+    // Two segments whose rendered buildIndexedTranscript exceeds transcriptInputBytes so the
+    // second is dropped; the TRUNCATED list must flow into generateSummary (which builds both
+    // the prompt and resolveTranscriptTokens from the same array).
+    const bigSegments = [
+      { text: 'hello world one', offset: 0, duration: 5 },   // `[0 @0:00] hello world one` = 25 bytes
+      { text: 'second segment two', offset: 10, duration: 5 }, // dropped: full = 54 bytes > 30
+    ];
+    const caps = {
+      transcribeInputTokens: 300000,
+      transcribeOutputTokens: 32768,
+      transcriptInputBytes: 30,
+      summaryOutputTokens: 8192,
+    };
+    const resolveTranscriptSegments = jest.fn().mockResolvedValue({ segments: bigSegments, source: 'captions' });
+    const generateSummary = jest.fn().mockResolvedValue({
+      summary: '## 1. Alpha\n▶ [0:00](u)\nAlpha body.\n---\n## Conclusion\n▶ [1:00](u)\nWrap.',
+      ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+      overallScore: 4, tldr: undefined, takeaways: undefined, // force the extractQuickView fallback
+    });
+    const extractQuickView = jest.fn().mockResolvedValue({ tldr: 'x', takeaways: ['y'] });
+    const deps = makeDeps({ resolveTranscriptSegments, generateSummary, extractQuickView });
+
+    await summaryCore(baseInput, deps, { caps });
+
+    // caps forwarded in opts to resolveTranscriptSegments (no signal ⇒ opts is exactly { caps })
+    expect(resolveTranscriptSegments).toHaveBeenCalledWith('vid', baseInput.youtubeUrl, 90, { caps });
+    // generateSummary receives the TRUNCATED list (first segment only) + caps in opts
+    const gsArgs = generateSummary.mock.calls[0];
+    expect(gsArgs[0]).toEqual([bigSegments[0]]);
+    expect(gsArgs[1]).toBe('en');
+    expect(gsArgs[2]).toBe('vid');
+    expect(gsArgs[3]).toEqual({ caps });
+    // extractQuickView receives caps as its 2nd positional arg
+    expect(extractQuickView).toHaveBeenCalledWith(expect.any(String), caps);
+  });
+
+  it('without caps: no truncation, no caps forwarded (local pipeline unchanged)', async () => {
+    const multi = [
+      { text: 'aaa', offset: 0, duration: 5 },
+      { text: 'bbb', offset: 10, duration: 5 },
+    ];
+    const resolveTranscriptSegments = jest.fn().mockResolvedValue({ segments: multi, source: 'captions' });
+    const generateSummary = jest.fn().mockResolvedValue({
+      summary: '## 1. Alpha\n▶ [0:00](u)\nAlpha body.\n---\n## Conclusion\n▶ [1:00](u)\nWrap.',
+      ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+      overallScore: 4, tldr: 'This video explains alpha.', takeaways: ['Do alpha'],
+    });
+    const deps = makeDeps({ resolveTranscriptSegments, generateSummary });
+
+    await summaryCore(baseInput, deps);
+
+    // Exactly 3 args (no opts object) on both deps ⇒ byte-identical to the pre-1D local call shape.
+    expect(resolveTranscriptSegments).toHaveBeenCalledWith('vid', baseInput.youtubeUrl, 90);
+    expect(generateSummary).toHaveBeenCalledWith(multi, 'en', 'vid'); // full set — no truncation
+  });
+
   it('threads opts.signal into resolveTranscriptSegments and generateSummary but not extractQuickView', async () => {
     const controller = new AbortController();
     const resolveTranscriptSegments = jest.fn().mockResolvedValue({ segments, source: 'captions' });

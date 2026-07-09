@@ -36,6 +36,32 @@ export function buildIndexedTranscript(segments: TranscriptSegment[]): string {
   return segments.map((s, i) => `[${i} @${formatTimestamp(s.offset)}] ${s.text}`).join('\n');
 }
 
+/**
+ * Return the longest PREFIX of `segments` whose RENDERED `buildIndexedTranscript` output is within
+ * `maxBytes` UTF-8 bytes (cloud cost cap — spec §9, MAX_TRANSCRIPT_INPUT_BYTES). Whole trailing
+ * segments are dropped; a segment is never split. The measure is
+ * `Buffer.byteLength(buildIndexedTranscript(kept), 'utf8')` — the actual rendered bytes, NOT the raw
+ * segment JSON and NOT JS `.length` (which under-counts CJK/emoji: a 3-byte CJK char is 1 UTF-16
+ * unit, a 4-byte emoji is 2). A list already `<= maxBytes` is returned by reference (identity — the
+ * local pipeline never truncates, so this is only reached on the cloud path). If even the first
+ * segment renders over the cap, the prefix is empty (`[]`).
+ *
+ * The same `kept` list must feed BOTH the prompt (`buildIndexedTranscript`) and
+ * `resolveTranscriptTokens`, so a `[[TS:n]]` citation can never reference a dropped segment.
+ */
+export function truncateSegmentsToByteCap(
+  segments: TranscriptSegment[],
+  maxBytes: number,
+): TranscriptSegment[] {
+  // Longest-prefix search from the full list down. `n === length` returns the SAME reference so the
+  // no-op (already-within-cap) path is a zero-copy identity, matching the local pipeline's contract.
+  for (let n = segments.length; n >= 0; n--) {
+    const kept = n === segments.length ? segments : segments.slice(0, n);
+    if (Buffer.byteLength(buildIndexedTranscript(kept), 'utf8') <= maxBytes) return kept;
+  }
+  return []; // unreachable (n===0 renders '' = 0 bytes <= maxBytes for any maxBytes >= 0) — TS exhaustiveness
+}
+
 const OWN_LINE_TOKEN = /^\s*\[\[TS:(.*?)\]\]\s*$/;
 const ANY_TOKEN = /\[\[TS:.*?\]\]/g;
 /**
