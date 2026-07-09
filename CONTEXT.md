@@ -15,6 +15,17 @@ The vocabulary for the cloud-only durable work queue that runs expensive generat
 - **Rollup** — the aggregate view of a fan-out's Jobs that the polling client reads: per-status counts plus a `total` and a `terminal` flag over the whole set. `terminal` is true **only** when `total > 0` and every Job holds a terminal status — an empty or unknown set is deliberately **not** terminal, so "nothing enqueued yet" never reads as "done".
 - **Terminal (status)** — a Job **status** with no further transition: `completed`, `failed`, `dead_letter`, or `cancelled`. The polling client stops once every Job in a rollup is terminal, and a cooperative cancel applies only to **non-terminal** Jobs. Distinct from **progress phase**, which is advisory and never "terminal."
 
+## Cost Guardrails (Cloud)
+
+The vocabulary for the Stage-1D preflight cost controls on the enqueue path — the server-side money kill-switch that must exist before the paid path is exposed. Cloud-only; the local tool spends nothing on the app's behalf.
+
+- **Quota / Allowance** — the per-**account**, per-**job kind**, per-**month** ceiling on how many Jobs an owner may create (e.g. anon: 2 summary/mo, 0 dig; registered: N summary + 5 dig/mo). Consumed by an **atomic debit** inside the enqueue transaction (`usage_counters`, keyed by month so it refills implicitly). It bounds *per-user* volume; distinct from the **daily cap**, which bounds *global dollars*.
+- **Spend reservation** — the estimated dollar cost **reserved** against the daily cap when a Job is created, and **released** on terminal failure (`failed`/`dead_letter`/`cancelled`, never on requeue). Stage 1 uses a fixed per-kind estimate, not measured Gemini tokens; **reconcile** to actual spend is a deferred refinement. Reserving up-front (not measuring after) is what makes the cap a *preflight* gate rather than a post-hoc measurement.
+- **Daily cap** — the **global** (all-owners) dollar kill-switch per UTC day (`$DAILY_CAP`, `spend_ledger`). The hard money ceiling: once the day's reserved+actual hits it, every enqueue is refused ("demo at capacity, back tomorrow") regardless of any owner's remaining quota. Independent of, and stricter than, per-account quota.
+- **Velocity limit** — a per-**IP** rate cap (Jobs/hour from one client IP) that bounds the anonymous-uid churn (clear cookies → fresh anon uid → fresh tiny quota) that per-account quota cannot catch. Enforced in the advisory **preflight**, not the authoritative debit.
+- **Tier** — the binary **anon vs registered** distinction (`profiles.is_anonymous`, set at provisioning and immutable) that selects the quota allowances. Stage 1 has no richer tier/role model.
+- **Charge-once** — the invariant that a Job's quota debit and spend reservation happen **exactly once**, at creation (the INSERT branch of `enqueue_job`). An **automatic retry** (same Job row, attempts++) never re-charges; a **manual re-submit** after a Job reached a terminal state is a *new* Job and does charge again (bounded by the monthly quota + daily cap).
+
 ## Storage Seam
 
 The vocabulary for *whose* data a storage operation targets and *which* collection it selects — introduced so one set of consumers can run against either the local single-user tool or the multi-tenant cloud backend without knowing which.

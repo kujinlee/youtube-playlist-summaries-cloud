@@ -44,6 +44,23 @@ it('falls back to Gemini when captions return an empty array', async () => {
   expect(result).toEqual({ segments: GEMINI, source: 'gemini' });
 });
 
+it('forwards caps (in opts) to the transcribeViaGemini fallback', async () => {
+  mockFetchCaptions.mockResolvedValueOnce([]);
+  mockTranscribe.mockResolvedValueOnce(GEMINI);
+  const caps = {
+    transcribeInputTokens: 300000,
+    transcribeOutputTokens: 32768,
+    transcriptInputBytes: 40960,
+    summaryOutputTokens: 8192,
+  };
+
+  const result = await resolveTranscriptSegments('vid1', VIDEO_URL, 600, { caps });
+
+  expect(result).toEqual({ segments: GEMINI, source: 'gemini' });
+  // caps ride the 6th (opts) arg so transcribeViaGemini gets the fail-closed cap + maxOutputTokens.
+  expect(mockTranscribe).toHaveBeenCalledWith(VIDEO_URL, 'vid1', 600, undefined, undefined, { caps });
+});
+
 it('throws with videoId + captured caption cause when both sources fail', async () => {
   mockFetchCaptions.mockRejectedValueOnce(new Error('Transcript is disabled on this video'));
   mockTranscribe.mockRejectedValueOnce(new Error('Gemini fetch blocked'));

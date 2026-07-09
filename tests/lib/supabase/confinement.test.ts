@@ -3,8 +3,18 @@ import path from 'path';
 import { findServiceImporters, extractImportSpecifiers } from '@/scripts/check-service-confinement';
 
 describe('service_role confinement', () => {
-  it('no user-facing Next entrypoint transitively imports lib/supabase/service.ts', () => {
-    expect(findServiceImporters()).toEqual([]);   // app/**, middleware.ts, pages/**
+  it('no UNAUTHORIZED user-facing Next entrypoint transitively imports lib/supabase/service.ts', () => {
+    // Stage 1D (H-B): app/api/jobs/route.ts is now the one deliberately authorized
+    // service-role entrypoint (it builds the two-client split's service `Enqueuer` — see
+    // check-service-confinement.ts ALLOWED_SERVICE_IMPORTERS). Everything else must still
+    // be unreachable.
+    expect(findServiceImporters()).toEqual([]);   // app/**, middleware.ts, pages/** minus the allowlist
+  });
+
+  it('app/api/jobs/route.ts (the Stage 1D allowlisted entrypoint) does reach service.ts', () => {
+    const { reachesService } = require('@/scripts/check-service-confinement');
+    const entry = path.join(process.cwd(), 'app/api/jobs/route.ts');
+    expect(reachesService(entry)).toBe(true);
   });
 
   it('extractImportSpecifiers catches side-effect + re-export imports (Codex H3)', () => {

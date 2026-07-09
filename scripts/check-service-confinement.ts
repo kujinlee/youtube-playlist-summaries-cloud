@@ -71,8 +71,18 @@ export function collectEntrypoints(): string[] {
   return entries;
 }
 
+/** Stage 1D (H-B, reviewed): the two-client split requires the enqueue route to build the
+ *  service-role `Enqueuer` (`enqueue`/`preflight` are service_role-only RPC grants as of
+ *  migration 0011 — anon/authenticated execute was revoked). This is the ONE deliberately
+ *  authorized entrypoint; everything else must still be unreachable. */
+const ALLOWED_SERVICE_IMPORTERS = [
+  path.join(ROOT, 'app/api/jobs/route.ts'),
+];
+
 export function findServiceImporters(): string[] {
-  return collectEntrypoints().filter((e) => path.resolve(e) !== TARGET && reachesService(e));
+  return collectEntrypoints()
+    .filter((e) => path.resolve(e) !== TARGET && reachesService(e))
+    .filter((e) => !ALLOWED_SERVICE_IMPORTERS.includes(path.resolve(e)));
 }
 
 if (require.main === module) {

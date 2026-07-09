@@ -1,5 +1,6 @@
 let mockGetUser: jest.Mock;
 let mockBundle: any;
+let mockPreflight: jest.Mock;
 
 jest.mock('next/headers', () => ({ cookies: jest.fn(async () => ({ getAll: () => [], set: () => {} })) }));
 jest.mock('@/lib/supabase/server', () => ({ createServerSupabase: jest.fn(() => ({ auth: { getUser: mockGetUser } })) }));
@@ -10,6 +11,14 @@ jest.mock('@/lib/storage/resolve', () => ({
 jest.mock('@/lib/job-queue/producer', () => ({
   ...jest.requireActual('@/lib/job-queue/producer'),
   enqueuePlaylist: jest.fn(),
+}));
+jest.mock('@/lib/supabase/service', () => ({
+  createServiceClient: jest.fn(() => ({ __serviceClient: true })),
+}));
+jest.mock('@/lib/job-queue/enqueuer', () => ({
+  SupabaseEnqueuer: jest.fn().mockImplementation(() => ({
+    preflight: mockPreflight,
+  })),
 }));
 
 import { POST, GET } from '@/app/api/jobs/route';
@@ -24,17 +33,26 @@ beforeEach(() => {
   process.env.YOUTUBE_API_KEY = 'k';
   mockGetUser = jest.fn(async () => ({ data: { user: { id: 'owner-1' } } }));
   mockBundle = { jobQueue: { listByPlaylist: jest.fn(async () => []) } };
+  // Default preflight verdict: fully admitted, no challenge — the route-level guardrail
+  // gate itself is covered by tests/api/jobs-route-guardrails.test.ts; this file keeps
+  // exercising the pre-existing auth/body/producer-error-mapping behavior unchanged.
+  mockPreflight = jest.fn(async () => ({
+    admitted: true, atCapacity: false, velocityExceeded: false, challengeRequired: false,
+  }));
 });
 
 const post = (body: any) => POST(new Request('http://x/api/jobs', { method: 'POST', body: JSON.stringify(body) }) as any);
 const get = (qs: string) => GET(new Request(`http://x/api/jobs?${qs}`) as any);
 
 it('POST returns 200 with the producer result', async () => {
-  const producerResult = { playlistId: 'pl', jobs: [], counts: { enqueued: 0, joined: 0, skipped: 0, failed: 0 } };
+  const producerResult = {
+    playlistId: 'pl', jobs: [],
+    counts: { enqueued: 0, joined: 0, skipped: 0, failed: 0, quotaBlocked: 0, capBlocked: 0, tooLong: 0 },
+  };
   enqueueMock.mockResolvedValueOnce(producerResult);
   const res = await post({ playlistUrl: 'https://www.youtube.com/playlist?list=PLx' });
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual(producerResult);
+  expect(await res.json()).toEqual({ ...producerResult, challengeRequired: false });
 });
 
 it('POST 400 on missing/invalid playlistUrl', async () => {

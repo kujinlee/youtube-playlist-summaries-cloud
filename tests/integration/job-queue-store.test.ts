@@ -1,8 +1,10 @@
 // tests/integration/job-queue-store.test.ts
 import { randomUUID } from 'crypto';
-import { adminClient, newUser, signInAs } from './helpers/clients';
+import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
+import { SupabaseEnqueuer } from '@/lib/job-queue/enqueuer';
 jest.setTimeout(20_000);
+beforeAll(() => ensureGuardrailHeadroom(adminClient()));
 
 async function seedPlaylist(client: any, ownerId: string): Promise<string> {
   const { data, error } = await client.from('playlists')
@@ -22,7 +24,9 @@ test('enqueue → claim(video) → complete round-trip through the store', async
   const workerQ = new SupabaseJobQueue(adminClient());
   const pl = await seedPlaylist(client, userId);
   const vid = randomUUID();
-  const enq = await userQ.enqueue(key(pl, vid), { n: 1 });
+  // T13: SupabaseJobQueue.enqueue is dropped — enqueue via the service-role SupabaseEnqueuer.
+  const enqueuer = new SupabaseEnqueuer(adminClient());
+  const enq = await enqueuer.enqueue({ ownerId: userId, enqueueIp: null }, key(pl, vid), { n: 1, durationSeconds: 100 } as never);
   expect(enq.joined).toBe(false);
 
   const leased = await workerQ.claim('w1', 120, vid);   // scoped claim
@@ -47,7 +51,8 @@ test('fail through the store reports the resulting status', async () => {
   const workerQ = new SupabaseJobQueue(adminClient());
   const pl = await seedPlaylist(client, userId);
   const vid = randomUUID();
-  const enq = await userQ.enqueue(key(pl, vid), {});
+  const enqueuer = new SupabaseEnqueuer(adminClient());
+  const enq = await enqueuer.enqueue({ ownerId: userId, enqueueIp: null }, key(pl, vid), { durationSeconds: 100 } as never);
   const leased = await workerQ.claim('w', 120, vid);
   const r = await workerQ.fail(leased!.id, 'w', leased!.leaseToken, 'boom', { retryable: false });
   expect(r.ok).toBe(true);

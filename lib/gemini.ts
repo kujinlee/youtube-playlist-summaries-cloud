@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
-import type { GenerativeModel, ResponseSchema, GenerationConfig } from '@google/generative-ai';
+import type { GenerativeModel, ResponseSchema, GenerationConfig, Content } from '@google/generative-ai';
 import { RatingsSchema, VideoTypeSchema, AudienceSchema } from '../types';
 import type { GeminiSummaryResponse } from '../types';
 import { z } from 'zod';
@@ -8,9 +8,63 @@ import type { MagazineModel } from './html-doc/types';
 import { buildIndexedTranscript, resolveTranscriptTokens } from './transcript-timestamps';
 import type { TranscriptSegment } from './transcript-timestamps';
 import { checkSummaryCompleteness } from './summary-completeness';
+import { TRANSCRIBE_RETRIES, GENERATE_JSON_RETRIES, MAX_SUMMARY_ATTEMPTS } from './gemini-cost';
+import type { CloudGeminiCaps } from './gemini-cost';
+import { NonRetryableError } from './job-queue/errors';
 
-const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL ?? 'gemini-2.5-flash';
-const TRANSCRIBE_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL ?? 'gemini-2.5-flash';
+/**
+ * Fail-closed flag for the cloud audio-fallback transcription path. While `false`, a cloud call
+ * (i.e. one that passes `caps`) to `transcribeViaGemini` throws `NonRetryableError` BEFORE billing
+ * anything — the worst-case cost of Gemini audio transcription has not been verified live, so the
+ * fallback stays disabled. Task 12/13 flips this to `true` after a live cost verification. Keep it a
+ * compile-time `const` so callers cannot accidentally re-enable an unverified money path at runtime.
+ * (Codex B1 / Claude L1.)
+ */
+export const CLOUD_TRANSCRIBE_FALLBACK_VERIFIED = false;
+
+/**
+ * Merge the enforced cloud caps (`maxOutputTokens` + `thinkingConfig.thinkingBudget:0`) into an
+ * existing `generationConfig`. When `caps` is absent (the local pipeline) the base object is returned
+ * UNCHANGED (same reference) so the local `generateContent` call shape stays byte-identical — the
+ * caps fields never appear on the local path. `thinkingConfig` is absent from the 0.24.1 SDK type but
+ * forwarded verbatim by the same generationConfig passthrough as `mediaResolution`, hence the cast.
+ */
+function withCaps(
+  base: GenerationConfig,
+  caps: CloudGeminiCaps | undefined,
+  maxOutputTokens: number,
+): GenerationConfig {
+  if (!caps) return base;
+  return { ...base, maxOutputTokens, thinkingConfig: { thinkingBudget: 0 } } as GenerationConfig;
+}
+
+/**
+ * countTokens preflight for the cloud transcribe path: count the input tokens of the SAME LOW-res
+ * request that would be sent to `generateContent`, and throw `NonRetryableError` if it exceeds
+ * `caps.transcribeInputTokens` (the boundary is inclusive — `== cap` passes, `cap + 1` throws). This
+ * is a distinct `NonRetryableError` site from the fail-closed flag throw and is exported so the
+ * over-cap branch is independently testable while the fail-closed flag short-circuits transcribe.
+ */
+export async function assertTranscribeInputWithinCap(
+  model: Pick<GenerativeModel, 'countTokens'>,
+  request: { contents: Content[] },
+  generationConfig: GenerationConfig,
+  caps: CloudGeminiCaps,
+): Promise<void> {
+  const { totalTokens } = await model.countTokens({
+    generateContentRequest: { contents: request.contents, generationConfig },
+  });
+  if (totalTokens > caps.transcribeInputTokens) {
+    throw new NonRetryableError(
+      `transcribe input ${totalTokens} tokens exceeds cap ${caps.transcribeInputTokens}`,
+    );
+  }
+}
+
+// Resolved model constants (post-`??`) — exported so the cost guard test can assert
+// resolved model == priced model without re-deriving the env-resolution expression.
+export const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL ?? 'gemini-2.5-flash';
+export const TRANSCRIBE_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL ?? 'gemini-2.5-flash';
 const REQUEST_TIMEOUT_MS = 60_000;
 
 // Client instantiated per-call so GEMINI_API_KEY changes (e.g. in tests) are picked up without
@@ -160,7 +214,7 @@ export async function generateJson<T>(
   prompt: string,
   schema: { parse: (x: unknown) => T },
   label: string,
-  retries = 2,
+  retries = GENERATE_JSON_RETRIES,
   baseDelayMs = 400,
   opts?: { signal?: AbortSignal },
 ): Promise<T> {
@@ -198,7 +252,8 @@ function warnTimestampMiss(videoId: string, segmentCount: number, attempts: numb
 
 // Max SUCCESSFUL parsed attempts for the summary quality loop (completeness + timestamp re-rolls
 // share this single budget). Each attempt may still use generateJson's inner retries for hard errors.
-const MAX_SUMMARY_ATTEMPTS = 4;
+// Imported from ./gemini-cost — single source, so the cost guard's SUMMARY_MAX_PASSES derivation
+// can never drift from the actual loop bound (round-2 M1/H2).
 // A complete summary that just lacks resolvable ▶ is often deterministic (the LIS drops all tokens),
 // so cap those re-rolls rather than burning the full budget every generation. Incompleteness still
 // gets the full MAX_SUMMARY_ATTEMPTS.
@@ -228,12 +283,16 @@ export async function generateSummary(
   segments: TranscriptSegment[],
   language: 'en' | 'ko',
   videoId: string,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps },
 ): Promise<GeminiSummaryResponse> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
     model: SUMMARY_MODEL,
-    generationConfig: { responseMimeType: 'application/json', responseSchema: SUMMARY_RESPONSE_SCHEMA },
+    generationConfig: withCaps(
+      { responseMimeType: 'application/json', responseSchema: SUMMARY_RESPONSE_SCHEMA },
+      opts?.caps,
+      opts?.caps?.summaryOutputTokens ?? 0,
+    ),
   });
   const lang = language === 'ko' ? 'Korean (한국어)' : 'English';
   const indexedTranscript = buildIndexedTranscript(segments);
@@ -318,11 +377,16 @@ const QuickViewSchema = z.object({
 
 export async function extractQuickView(
   summaryMarkdown: string,
+  caps?: CloudGeminiCaps,
 ): Promise<{ tldr: string; takeaways: string[] }> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
     model: SUMMARY_MODEL,
-    generationConfig: { responseMimeType: 'application/json', responseSchema: QUICK_VIEW_RESPONSE_SCHEMA },
+    generationConfig: withCaps(
+      { responseMimeType: 'application/json', responseSchema: QUICK_VIEW_RESPONSE_SCHEMA },
+      caps,
+      caps?.summaryOutputTokens ?? 0,
+    ),
   });
 
   const prompt = `Extract a quick reference summary from this video summary. Return a JSON object with:
@@ -502,22 +566,27 @@ export async function transcribeViaGemini(
   youtubeUrl: string,
   videoId: string,
   durationSeconds: number,
-  retries = 2,
+  retries = TRANSCRIBE_RETRIES,
   baseDelayMs = 400,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps },
 ): Promise<TranscriptSegment[]> {
+  const caps = opts?.caps;
   const client = new GoogleGenerativeAI(getApiKey());
-  const model = client.getGenerativeModel({
-    model: TRANSCRIBE_MODEL,
-    // mediaResolution is honored by the API but absent from the 0.24.1 SDK type. It MUST stay inside
-    // generationConfig (the SDK spreads generationConfig into the request body; a top-level field is
-    // dropped). LOW downsamples video frames only — audio is unaffected — cutting ~700k→~256k tokens.
-    generationConfig: {
+  // mediaResolution is honored by the API but absent from the 0.24.1 SDK type. It MUST stay inside
+  // generationConfig (the SDK spreads generationConfig into the request body; a top-level field is
+  // dropped). LOW downsamples video frames only — audio is unaffected — cutting ~700k→~256k tokens.
+  // withCaps merges maxOutputTokens+thinkingBudget:0 only on the cloud (caps) path — mediaResolution/
+  // responseMimeType/responseSchema are preserved; the local path keeps this object byte-identical.
+  const generationConfig = withCaps(
+    {
       responseMimeType: 'application/json',
       responseSchema: TRANSCRIBE_RESPONSE_SCHEMA,
       mediaResolution: 'MEDIA_RESOLUTION_LOW',
     } as GenerationConfig,
-  });
+    caps,
+    caps?.transcribeOutputTokens ?? 0,
+  );
+  const model = client.getGenerativeModel({ model: TRANSCRIBE_MODEL, generationConfig });
   const request = {
     contents: [{
       role: 'user',
@@ -527,6 +596,20 @@ export async function transcribeViaGemini(
       ],
     }],
   };
+
+  // Cloud path (caps present): fail-closed BEFORE any billing. The audio-fallback cost is unverified,
+  // so throw a NonRetryableError up front — before the countTokens preflight and before generateContent
+  // (bill nothing). Once Task 12/13 verifies cost and flips the flag, the countTokens preflight runs
+  // and rejects an over-cap input as a DISTINCT NonRetryableError site. The local path (no caps) skips
+  // both and is unchanged.
+  if (caps) {
+    if (!CLOUD_TRANSCRIBE_FALLBACK_VERIFIED) {
+      throw new NonRetryableError(
+        'cloud audio-fallback transcription is disabled: worst-case cost unverified (CLOUD_TRANSCRIBE_FALLBACK_VERIFIED=false)',
+      );
+    }
+    await assertTranscribeInputWithinCap(model, request, generationConfig, caps);
+  }
 
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {

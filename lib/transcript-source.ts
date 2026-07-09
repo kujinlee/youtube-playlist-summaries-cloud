@@ -2,6 +2,7 @@ import { fetchTranscriptSegments } from './youtube';
 import { transcribeViaGemini } from './gemini';
 import { PermanentTranscriptError } from './transcript-source-errors';
 import type { TranscriptSegment } from './transcript-timestamps';
+import type { CloudGeminiCaps } from './gemini-cost';
 
 /**
  * Resolve a video's transcript: try YouTube captions first; if they throw or come back empty, fall
@@ -15,14 +16,16 @@ import type { TranscriptSegment } from './transcript-timestamps';
  *   stays diagnosable.
  *
  * `opts.signal`, if provided, is forwarded to the Gemini fallback so an in-flight transcription can
- * be aborted (e.g. worker lease lost / SIGTERM). Omitted entirely when absent so existing callers'
- * calls to transcribeViaGemini are unchanged.
+ * be aborted (e.g. worker lease lost / SIGTERM). `opts.caps`, if provided (cloud path only), is
+ * forwarded so the transcribe fallback enforces its token caps and fail-closed `countTokens`
+ * preflight. When BOTH are absent the 6th `opts` arg is omitted entirely, so the local pipeline's
+ * calls to transcribeViaGemini stay byte-identical (no caps, no preflight).
  */
 export async function resolveTranscriptSegments(
   videoId: string,
   youtubeUrl: string,
   durationSeconds: number,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps },
 ): Promise<{ segments: TranscriptSegment[]; source: 'captions' | 'gemini' }> {
   let captionErr: unknown;
   let captionsEmpty = false;
@@ -35,7 +38,7 @@ export async function resolveTranscriptSegments(
   }
 
   try {
-    const segments = opts?.signal
+    const segments = (opts?.signal || opts?.caps)
       ? await transcribeViaGemini(youtubeUrl, videoId, durationSeconds, undefined, undefined, opts)
       : await transcribeViaGemini(youtubeUrl, videoId, durationSeconds);
     if (segments.length) return { segments, source: 'gemini' };

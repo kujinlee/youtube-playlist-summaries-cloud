@@ -72,6 +72,7 @@ export async function fetchPlaylistVideos(
         durationSeconds: parseDuration(item.contentDetails?.duration ?? ''),
         videoPublishedAt: item.snippet?.publishedAt ?? undefined,
         addedToPlaylistAt: addedDates[item.id],
+        liveBroadcastContent: item.snippet?.liveBroadcastContent ?? undefined,
       });
     }
   }

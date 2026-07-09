@@ -12,14 +12,47 @@ import { padSerial } from '@/lib/serial-filename';
 import { summaryCore } from '@/lib/ingestion/summary-core';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { PermanentTranscriptError } from '@/lib/transcript-source-errors';
-import { generateSummary, extractQuickView } from '@/lib/gemini';
+import { generateSummary, extractQuickView, SUMMARY_MODEL } from '@/lib/gemini';
+import {
+  MAX_TRANSCRIBE_INPUT_TOKENS,
+  MAX_TRANSCRIBE_OUTPUT_TOKENS,
+  MAX_TRANSCRIPT_INPUT_BYTES,
+  MAX_SUMMARY_OUTPUT_TOKENS,
+  PRICED_MODEL,
+  type CloudGeminiCaps,
+} from '@/lib/gemini-cost';
 
+// Absolute sanity ceiling retained as a fallback/export; the LIVE duration guard reads
+// guardrail_config.max_duration_seconds (spec §10) so an admin raising the cap is honored.
 export const MAX_DURATION_SECONDS = 4 * 3600;
+
+// The cloud-path token/byte caps (spec §9), built once from the single-source gemini-cost constants.
+// Local callers of summaryCore pass no caps → no maxOutputTokens, no thinkingBudget, no truncation,
+// no countTokens preflight → the local pipeline stays behaviorally unchanged.
+const CLOUD_CAPS: CloudGeminiCaps = {
+  transcribeInputTokens: MAX_TRANSCRIBE_INPUT_TOKENS,
+  transcribeOutputTokens: MAX_TRANSCRIBE_OUTPUT_TOKENS,
+  transcriptInputBytes: MAX_TRANSCRIPT_INPUT_BYTES,
+  summaryOutputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
+};
+
+/** Live guardrail duration cap — the value the producer pre-block and enqueue_job PJ003 also read. */
+async function readMaxDurationSeconds(client: SupabaseClient): Promise<number> {
+  const { data, error } = await client
+    .from('guardrail_config').select('max_duration_seconds').single();
+  if (error) throw error;
+  return data.max_duration_seconds as number;
+}
 
 /** Idempotent, self-healing `summary` job handler (spec §5–§10). See Task 3/5/6 seams:
  *  getWorkerStorageBundle/reserveVideoSlot/persistSummary/readVideo (owner-safe RPCs),
  *  summaryCore (store-agnostic pipeline), HandlerCtx (phase/cancel/signal). */
 export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
+  // Fail fast at init if the resolved summary model drifts from the model the §8 cost caps are
+  // priced against — a mis-priced model env would silently break the provable spend bound.
+  if (SUMMARY_MODEL !== PRICED_MODEL) {
+    throw new Error(`summary model "${SUMMARY_MODEL}" != priced model "${PRICED_MODEL}": cost caps are mis-priced`);
+  }
   return async (job, ctx) => {
     let payload;
     try {
@@ -27,8 +60,14 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
     } catch (e) {
       throw new NonRetryableError(`invalid ingestion payload: ${e instanceof Error ? e.message : String(e)}`);
     }
-    if (payload.durationSeconds > MAX_DURATION_SECONDS) {
-      throw new NonRetryableError(`video duration ${payload.durationSeconds}s exceeds MAX_DURATION_SECONDS`);
+    // Defense-in-depth behind enqueue_job's PJ003 guardrail: re-read the LIVE duration cap and
+    // reject an over-long payload before spending any Gemini budget (spec §10 — config-driven, the
+    // last of the three coupled sites: producer pre-block, PJ003, this handler guard).
+    const maxDurationSeconds = await readMaxDurationSeconds(serviceClient);
+    if (payload.durationSeconds > maxDurationSeconds) {
+      throw new NonRetryableError(
+        `video duration ${payload.durationSeconds}s exceeds max_duration_seconds ${maxDurationSeconds}`,
+      );
     }
 
     if (job.version !== docVersionKey(CURRENT_DOC_VERSION)) {
@@ -76,7 +115,7 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
           }) as typeof generateSummary,
           extractQuickView,
         },
-        { signal: ctx.signal },
+        { signal: ctx.signal, caps: CLOUD_CAPS },
       );
     } catch (e) {
       // A permanently-unavailable transcript (captions AND Gemini both returned zero segments) is

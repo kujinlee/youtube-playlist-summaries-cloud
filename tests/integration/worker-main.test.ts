@@ -1,10 +1,12 @@
 import { randomUUID } from 'crypto';
-import { adminClient, newUser, signInAs } from './helpers/clients';
+import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
+import { SupabaseEnqueuer } from '@/lib/job-queue/enqueuer';
 import { runWorkerLoop, sleep } from '@/worker/main';
 import type { JobHandler } from '@/lib/job-queue/worker-runner';
 import type { JobQueue } from '@/lib/storage/job-queue';
 jest.setTimeout(20_000);
+beforeAll(() => ensureGuardrailHeadroom(adminClient()));
 
 async function seedPlaylist(client: any, ownerId: string): Promise<string> {
   const { data, error } = await client.from('playlists')
@@ -24,7 +26,9 @@ test('runWorkerLoop processes exactly one queued job to completed, then exits on
   const workerQ = new SupabaseJobQueue(adminClient());
   const pl = await seedPlaylist(client, userId);
   const vid = randomUUID();
-  const enq = await userQ.enqueue(key(pl, vid), { hi: 1 });
+  // T13: SupabaseJobQueue.enqueue is dropped — enqueue via the service-role SupabaseEnqueuer.
+  const enqueuer = new SupabaseEnqueuer(adminClient());
+  const enq = await enqueuer.enqueue({ ownerId: userId, enqueueIp: null }, key(pl, vid), { hi: 1, durationSeconds: 100 } as never);
 
   const ac = new AbortController();
   const stubHandler: JobHandler = async (job) => {

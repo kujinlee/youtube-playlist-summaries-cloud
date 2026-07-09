@@ -20,7 +20,6 @@ export interface PlaylistJobRow {
 }
 
 export interface JobQueue {
-  enqueue(key: JobKey, payload: unknown): Promise<EnqueueResult>;
   getStatus(jobId: string): Promise<JobRecord | null>;
   listByPlaylist(playlistId: string): Promise<PlaylistJobRow[]>;
   requestCancel(jobId: string): Promise<{ requested: number }>;

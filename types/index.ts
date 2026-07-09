@@ -34,6 +34,7 @@ export const VideoMetaSchema = z.object({
   channelTitle: z.string().optional(),
   videoPublishedAt: z.string().datetime().optional(),
   addedToPlaylistAt: z.string().datetime().optional(),
+  liveBroadcastContent: z.string().optional(),
 });
 export type VideoMeta = z.infer<typeof VideoMetaSchema>;
 
