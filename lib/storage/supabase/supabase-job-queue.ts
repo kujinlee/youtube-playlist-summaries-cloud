@@ -1,19 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { JobQueue, JobKey, EnqueueResult, LeasedJob, JobRecord, JobStatus, PlaylistJobRow } from '@/lib/storage/job-queue';
+import type { JobQueue, LeasedJob, JobRecord, JobStatus, PlaylistJobRow } from '@/lib/storage/job-queue';
 import type { ProgressPhase } from '@/lib/job-queue/progress-phase';
 
 export class SupabaseJobQueue implements JobQueue {
   constructor(private client: SupabaseClient) {}
-
-  // TODO(1d-T13): remove after integration tests migrate off SupabaseJobQueue.enqueue
-  async enqueue(key: JobKey, payload: unknown): Promise<EnqueueResult> {
-    const { data, error } = await this.client.rpc('enqueue_job', {
-      p_playlist_id: key.playlistId, p_video_id: key.videoId, p_section_id: key.sectionId, p_job_kind: key.kind,
-      p_job_version: key.version, p_payload: payload });
-    if (error) throw error;
-    const row = data[0];
-    return { jobId: row.job_id, status: row.status, joined: row.joined };
-  }
 
   async getStatus(jobId: string): Promise<JobRecord | null> {
     const { data, error } = await this.client

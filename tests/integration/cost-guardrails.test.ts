@@ -278,10 +278,18 @@ it('does not flag velocity_exceeded for a different IP with no recent jobs', asy
 });
 
 it('admits a registered owner within the free-user ceiling; anon is always admitted regardless of the ceiling (round-2 H3)', async () => {
+  // T13: the free-user ceiling ranks over ALL registered profiles ever created (not scoped to
+  // this test/file) — with the full integration suite creating real auth users across many
+  // files, the default max_free_users=100 from beforeEach is no longer a safe assumption for
+  // "well within it" once total registered profiles can exceed 100 by the time this test runs
+  // (jest's default sequencer doesn't run files in file-name order). Pin an explicitly generous
+  // ceiling for the "admitted" half of this test; the "capped" half below still exercises
+  // max_free_users=0 the same as before.
+  await svc.from('guardrail_config').update({ max_free_users: 10_000_000 }).eq('id', true);
   const reg = (await newUser()).user.id;
   const within = await svc.rpc('enqueue_preflight', { p_ip: '1.1.1.1', p_owner_id: reg });
   expect(within.error).toBeNull();
-  expect(within.data![0].admitted).toBe(true); // default max_free_users=100, rank well within it
+  expect(within.data![0].admitted).toBe(true); // generous ceiling, rank well within it
 
   await svc.from('guardrail_config').update({ max_free_users: 0 }).eq('id', true);
   const capped = await svc.rpc('enqueue_preflight', { p_ip: '1.1.1.2', p_owner_id: reg });

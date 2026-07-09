@@ -1,8 +1,12 @@
 import { randomUUID } from 'crypto';
-import { adminClient, newUser, signInAs } from './helpers/clients';
+import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
 jest.setTimeout(20_000);
 
 const admin = () => adminClient();
+beforeAll(() => ensureGuardrailHeadroom(admin()));
+
+// T13: session-client enqueue_job (6-arg) is dropped — enqueue via the service client with the
+// owner's id explicit (8-arg SECURITY DEFINER RPC).
 async function enqueueScoped(videoId: string, over: Record<string, unknown> = {}) {
   const u = await newUser();
   const { client: c, userId } = await signInAs(u.email, u.password);
@@ -10,8 +14,9 @@ async function enqueueScoped(videoId: string, over: Record<string, unknown> = {}
     .insert({ owner_id: userId, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` })
     .select('id').single();
   if (plErr) throw plErr;
-  const r = await c.rpc('enqueue_job', {
-    p_playlist_id: pl!.id, p_video_id: videoId, p_section_id: -1, p_job_kind: 'summary', p_job_version: '3.3', p_payload: {}, ...over });
+  const r = await admin().rpc('enqueue_job', {
+    p_owner_id: userId, p_playlist_id: pl!.id, p_video_id: videoId, p_section_id: -1, p_job_kind: 'summary',
+    p_job_version: '3.3', p_payload: { durationSeconds: 100 }, p_enqueue_ip: null, ...over });
   return r.data[0].job_id as string;
 }
 const claim = (worker: string, videoId: string, lease = 120) =>
@@ -40,6 +45,11 @@ test('heartbeat extends the lease for the current owner and rejects a stale toke
 
 test('a stale lease token cannot complete a reclaimed job (fencing)', async () => {
   const vid = randomUUID(); const id = await enqueueScoped(vid);
+  // T13: enqueue_job now stamps max_attempts from guardrail_config.summary_max_attempts (default
+  // 1 — summary jobs are billed exactly once), so the sweep below would dead-letter after a
+  // single expired lease. This test is about lease-fencing mechanics, not billing policy — bump
+  // the cap so the swept lease requeues instead (same pattern as the dead-letter test below).
+  await admin().from('jobs').update({ max_attempts: 5 }).eq('id', id);
   const first = (await claim('w1', vid, 1)).data[0];
   await admin().from('jobs').update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq('id', id);
   await admin().rpc('sweep_expired_leases');
@@ -55,6 +65,9 @@ test('a stale lease token cannot complete a reclaimed job (fencing)', async () =
 
 test('a stale lease token cannot fail a reclaimed job (fencing)', async () => {
   const vid = randomUUID(); const id = await enqueueScoped(vid);
+  // T13: see the max_attempts note above — bump the cap so the swept lease requeues (attempt 2)
+  // instead of dead-lettering, so there IS a second claimant ('w2') for the fencing check.
+  await admin().from('jobs').update({ max_attempts: 5 }).eq('id', id);
   const first = (await claim('w1', vid, 1)).data[0];
   await admin().from('jobs').update({ lease_expires_at: new Date(Date.now() - 1000).toISOString() }).eq('id', id);
   await admin().rpc('sweep_expired_leases');
@@ -71,7 +84,10 @@ test('a stale lease token cannot fail a reclaimed job (fencing)', async () => {
 
 test('two concurrent claims get distinct jobs', async () => {
   const vid = randomUUID();
-  await enqueueScoped(vid); await enqueueScoped(vid, { p_job_kind: 'dig', p_section_id: 5 }); // 2 live jobs, same video
+  // T13: enqueue_job now rejects any p_job_kind other than 'summary' (unsupported_job_kind) —
+  // use a distinct p_section_id (still part of the idempotency key) instead of job_kind='dig'
+  // to get two independently-claimable live jobs for the same video.
+  await enqueueScoped(vid); await enqueueScoped(vid, { p_section_id: 5 }); // 2 live jobs, same video
   const [a, b] = await Promise.all([claim('wa', vid), claim('wb', vid)]);
   const ids = [a.data[0]?.id, b.data[0]?.id];
   expect(ids[0]).toBeTruthy(); expect(ids[1]).toBeTruthy();
@@ -94,6 +110,10 @@ test('a crash-looping job dead-letters at max attempts (sweep)', async () => {
 
 test('fail retryable requeues with backoff; non-retryable → failed', async () => {
   const vid = randomUUID(); const id = await enqueueScoped(vid);
+  // T13: this test needs 2 attempts to be allowed (retryable fail on attempt 1 → 'queued', then
+  // a second claim + non-retryable fail → 'failed'); enqueue_job's default max_attempts (1, from
+  // guardrail_config.summary_max_attempts) would dead-letter on the very first retryable fail.
+  await admin().from('jobs').update({ max_attempts: 5 }).eq('id', id);
   const c = (await claim('w', vid)).data[0];
   const s = await admin().rpc('fail_job', {
     p_job_id: id, p_worker_id: 'w', p_lease_token: c.lease_token, p_error: 'boom', p_retryable: true });
