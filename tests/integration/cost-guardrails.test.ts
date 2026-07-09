@@ -1,6 +1,8 @@
 // tests/integration/cost-guardrails.test.ts
 import { randomUUID } from 'crypto';
 import { adminClient, anonSession, newUser, signInAs } from './helpers/clients';
+import { SupabaseEnqueuer } from '@/lib/job-queue/enqueuer';
+import { QuotaExceededError } from '@/lib/job-queue/errors';
 
 const svc = adminClient();
 
@@ -298,4 +300,56 @@ it('denies a client-session call to enqueue_preflight (execute revoked)', async 
   const r = await sa.rpc('enqueue_preflight', { p_ip: '1.2.3.4', p_owner_id: a.user.id });
   expect(r.error).toBeTruthy();
   expect(r.error!.code).toBe('42501');
+});
+
+// ============================ Task 5: SupabaseEnqueuer ============================
+
+describe('SupabaseEnqueuer', () => {
+  const enqueuer = new SupabaseEnqueuer(svc);
+
+  it('enqueue() returns a jobId and joined:false for a fresh (playlist, video) pair', async () => {
+    const owner = (await newUser()).user.id;
+    const pl = await seedPlaylist(owner);
+    const result = await enqueuer.enqueue(
+      { ownerId: owner, enqueueIp: '1.2.3.4' },
+      { playlistId: pl, videoId: randomUUID(), sectionId: -1, kind: 'summary', version: '1.0' },
+      payload(100) as never,
+    );
+    expect(result.joined).toBe(false);
+    expect(typeof result.jobId).toBe('string');
+    expect(result.jobId.length).toBeGreaterThan(0);
+  });
+
+  it('enqueue() throws QuotaExceededError once the monthly allowance is exhausted', async () => {
+    await svc.from('quota_allowance').update({ monthly: 1 }).match({ is_anonymous: false, kind: 'summary' });
+    const owner = (await newUser()).user.id;
+    const pl = await seedPlaylist(owner);
+    await enqueuer.enqueue(
+      { ownerId: owner, enqueueIp: '1.2.3.4' },
+      { playlistId: pl, videoId: randomUUID(), sectionId: -1, kind: 'summary', version: '1.0' },
+      payload(100) as never,
+    );
+    await expect(
+      enqueuer.enqueue(
+        { ownerId: owner, enqueueIp: '1.2.3.4' },
+        { playlistId: pl, videoId: randomUUID(), sectionId: -1, kind: 'summary', version: '1.0' },
+        payload(100) as never,
+      ),
+    ).rejects.toBeInstanceOf(QuotaExceededError);
+  });
+
+  it('preflight() resolves to a PreflightVerdict with the four boolean keys', async () => {
+    const owner = (await newUser()).user.id;
+    const verdict = await enqueuer.preflight('1.2.3.4', owner);
+    expect(Object.keys(verdict).sort()).toEqual(['admitted', 'atCapacity', 'challengeRequired', 'velocityExceeded']);
+    expect(typeof verdict.admitted).toBe('boolean');
+    expect(typeof verdict.atCapacity).toBe('boolean');
+    expect(typeof verdict.velocityExceeded).toBe('boolean');
+    expect(typeof verdict.challengeRequired).toBe('boolean');
+  });
+
+  it('getGuardrailConfig() resolves maxDurationSeconds from the singleton row', async () => {
+    const cfg = await enqueuer.getGuardrailConfig();
+    expect(cfg).toEqual({ maxDurationSeconds: 1800 });
+  });
 });
