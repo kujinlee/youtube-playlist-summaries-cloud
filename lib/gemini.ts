@@ -8,9 +8,12 @@ import type { MagazineModel } from './html-doc/types';
 import { buildIndexedTranscript, resolveTranscriptTokens } from './transcript-timestamps';
 import type { TranscriptSegment } from './transcript-timestamps';
 import { checkSummaryCompleteness } from './summary-completeness';
+import { TRANSCRIBE_RETRIES, GENERATE_JSON_RETRIES, MAX_SUMMARY_ATTEMPTS } from './gemini-cost';
 
-const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL ?? 'gemini-2.5-flash';
-const TRANSCRIBE_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL ?? 'gemini-2.5-flash';
+// Resolved model constants (post-`??`) — exported so the cost guard test can assert
+// resolved model == priced model without re-deriving the env-resolution expression.
+export const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL ?? 'gemini-2.5-flash';
+export const TRANSCRIBE_MODEL = process.env.GEMINI_TRANSCRIBE_MODEL ?? 'gemini-2.5-flash';
 const REQUEST_TIMEOUT_MS = 60_000;
 
 // Client instantiated per-call so GEMINI_API_KEY changes (e.g. in tests) are picked up without
@@ -160,7 +163,7 @@ export async function generateJson<T>(
   prompt: string,
   schema: { parse: (x: unknown) => T },
   label: string,
-  retries = 2,
+  retries = GENERATE_JSON_RETRIES,
   baseDelayMs = 400,
   opts?: { signal?: AbortSignal },
 ): Promise<T> {
@@ -198,7 +201,8 @@ function warnTimestampMiss(videoId: string, segmentCount: number, attempts: numb
 
 // Max SUCCESSFUL parsed attempts for the summary quality loop (completeness + timestamp re-rolls
 // share this single budget). Each attempt may still use generateJson's inner retries for hard errors.
-const MAX_SUMMARY_ATTEMPTS = 4;
+// Imported from ./gemini-cost — single source, so the cost guard's SUMMARY_MAX_PASSES derivation
+// can never drift from the actual loop bound (round-2 M1/H2).
 // A complete summary that just lacks resolvable ▶ is often deterministic (the LIS drops all tokens),
 // so cap those re-rolls rather than burning the full budget every generation. Incompleteness still
 // gets the full MAX_SUMMARY_ATTEMPTS.
@@ -502,7 +506,7 @@ export async function transcribeViaGemini(
   youtubeUrl: string,
   videoId: string,
   durationSeconds: number,
-  retries = 2,
+  retries = TRANSCRIBE_RETRIES,
   baseDelayMs = 400,
   opts?: { signal?: AbortSignal },
 ): Promise<TranscriptSegment[]> {
