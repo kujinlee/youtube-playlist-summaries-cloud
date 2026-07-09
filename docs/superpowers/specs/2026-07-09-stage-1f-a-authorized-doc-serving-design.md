@@ -15,7 +15,7 @@ local filesystem via `fs.readFileSync` and authorizes with a local sentinel prin
 This is the **foundation slice** of Stage 1F: it establishes the authorized
 blob-backed read + ownership + CSP seam that the later slices (share tokens,
 downloads, Obsidian export) all build on. It is scoped foundation-first, but —
-because cloud does not currently store enough to render the magazine view — it
+because cloud does not currently store enough to render the **rendered HTML doc** — it
 necessarily includes a produce-side change (the worker must persist the magazine
 model) and the cost re-pricing that follows from adding a Gemini pass.
 
@@ -42,8 +42,8 @@ Ground truth from the current code:
   priced into Stage 1D's cost caps.
 
 Consequence: cloud cannot render the real summary view from the single artifact it
-stores (the MD). To serve the magazine view we must produce and persist the model.
-We chose to do that at produce-time in the worker (see §3, decision Y), priced as a
+stores (the MD). To serve the **rendered HTML doc** we must produce and persist the
+**magazine model**. We chose to do that at produce-time in the worker (see §3, decision Y), priced as a
 new Gemini pass — rather than calling Gemini on the user-facing serve path
 (uncapped, guest-reachable, non-idempotent GET) or shipping a degraded MD-only view.
 
@@ -53,13 +53,15 @@ new Gemini pass — rather than calling Gemini on the user-facing serve path
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | **Access model = owner-or-anon.** A principal views only docs under its own `auth.uid()` (permanent user or Supabase anonymous user). | Same code path (`auth.uid()`) for both; completes the guest "generate → view your result" demo loop. Cross-owner viewing is 1F-b (share tokens). |
+| D1 | **Access model = owner-scoped (any tier).** A Principal views only artifacts under its own `auth.uid()`; this holds identically whether the owner's **Tier** is anon or registered — the anon guest is a full **Owner**, so it is the same code path. | Completes the guest "generate → view your result" demo loop without a separate identity class. Cross-owner viewing is 1F-b (share tokens). |
 | D2 | **Summary HTML view only.** Dig-deeper serving deferred. | Dig-deeper's source artifacts (model envelope + `-dig-deeper.md` companion) are not produced in cloud — a produce-side gap that belongs to a later slice, not this seam. |
-| D3 | **Produce the magazine model in the worker (option Y).** Not on the serve path (X), not skipped for a plain-MD view (Z). | The AI skim view is the intended cloud view; the cost work is unavoidable if we ship it, so do it once, at controlled produce-time, priced like every other pass. Keeps the serve path Gemini-free, fast, and free of a new uncapped cost surface. |
+| D3 | **Produce the magazine model in the worker (option Y).** Not on the serve path (X), not skipped for a plain-MD view (Z). | The AI-restyled **rendered HTML doc** is the intended cloud view; the cost work is unavoidable if we ship it, so do it once, at controlled produce-time, priced like every other pass. Keeps the serve path Gemini-free, fast, and free of a new uncapped cost surface. |
 | D4 | **Render on-serve from MD + stored model; do not store rendered HTML.** | Sidesteps the `GENERATOR_VERSION` staleness machinery entirely — cloud always renders with the current renderer. Render is pure in-memory string work (~1–10 ms); serve latency is dominated by blob GETs, not render. |
 | D5 | **Session/anon-scoped Supabase client on the serve path; never service-role.** | Honors Stage 1D's service-confinement gate. RLS on both the row read and the blob read confines everything to `auth.uid()`. |
 | D6 | **Defense-in-depth ownership:** RLS (hard enforcement) **plus** an explicit `owner_id === auth.uid()` assertion. | The explicit check costs nothing and documents intent; RLS remains the real backstop. |
 | D7 | **Nonce-based CSP** (not hash). | We render dynamically per request, so threading a per-response nonce is natural and stays valid as the inline theme/nav scripts evolve. |
+| D8 | **Magazine model = source-of-truth blob** (glossary's cost-not-lineage test). | It is paid + non-deterministic to recreate, so a **missing** model behind a *promoted* summary is **repair needed** — surfaced, never regenerated on the serve path (that would be a paid Gemini call on a GET). |
+| D9 | **Serve addresses playlists by `playlistId` (UUID)**, resolving to `playlist_key` with an explicit owner assertion (the `getWorkerStorageBundle` pattern, minus service_role). | Matches the cloud UUID-addressing convention (jobs table), keeps the external YouTube list-id out of app URLs, and adds a belt-and-suspenders owner-assert on the playlist row. RLS still isolates the session path. |
 
 ---
 
@@ -78,13 +80,17 @@ After `summaryCore` returns and the MD is prepared, within the same idempotent r
    `models/${baseName}.json` via `bundle.blobStore`, mirroring the MD's
    staged/promoted protocol.
 
-**Ordering & idempotency:** the model is produced and promoted in the same run as
-the MD, so the existing idempotency skip (`artifacts.summaryMd.status === 'promoted'`
-at the current doc version) still guards against re-billing. The model write is
-placed so a mid-run abort leaves at worst an orphan model (harmless — overwritten
-atomically on the next attempt), never a promoted MD without a model that the serve
-path would then fail to render. (Exact ordering pinned in the plan; the invariant:
-**a promoted summary artifact implies a promoted model artifact.**)
+**Ordering & idempotency (load-bearing — the model is source-of-truth, D8):** the
+model is produced and promoted in the same run as the MD. The invariant **a promoted
+summary artifact implies a promoted magazine model** is what lets the serve path
+treat a *missing* model as a **repair-needed anomaly** rather than a normal state —
+so the worker **must promote the model blob before it marks the summary `promoted`**
+(`persistSummary(..., 'promoted')`). A mid-run abort then leaves at worst an orphan
+model (harmless — overwritten atomically on retry) or a still-`committed` summary
+that self-heals on the next attempt, but never a `promoted` summary without its
+model. The existing idempotency skip (`artifacts.summaryMd.status === 'promoted'` at
+the current doc version) still guards against re-billing. (Exact ordering pinned in
+the plan.)
 
 ### 4.2 Cost re-pricing (Stage 1D money-path extension) — `lib/gemini-cost.ts` + migration
 
@@ -107,27 +113,34 @@ path would then fail to render. (Exact ordering pinned in the plan; the invarian
 > The plan decides whether to add a blob-backed branch to `buildDocHtml` or a new
 > focused helper; the logic below is the contract either way.
 
-Cloud request: `GET /api/html/{videoId}?playlist={playlist_key}&type=summary`
+Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
 
 1. Create a **session/anon server client** from the request (cookies/JWT).
    `getUser()` → `ownerId`. No authenticated user → **401**.
-2. `principal = { id: ownerId, indexKey: playlist_key }`
-   (`getPrincipalFromSession`). Build the bundle with **that** client
-   (`getStorageBundle({ supabaseClient })`) — session-scoped, RLS-enforced.
+2. Resolve `playlistId` → `playlist_key` via the **session** client, asserting the
+   playlist row's `owner_id === auth.uid()` (the `getWorkerStorageBundle` pattern,
+   minus service_role; D9). Unknown/foreign `playlistId` → **404**. Then
+   `principal = { id: ownerId, indexKey: playlist_key }` (`getPrincipalFromSession`),
+   and build the bundle with **that** client (`getStorageBundle({ supabaseClient })`)
+   — session-scoped, RLS-enforced.
 3. `metadataStore.readIndex(principal)` → find video by `id`. Not found → **404**.
    RLS already confines the read to `auth.uid()`; assert `owner_id === auth.uid()`
    explicitly as defense-in-depth (D6).
-4. `blobStore.get(principal, video.summaryMd)` and
-   `blobStore.get(principal, models/${base}.json)`. Either missing → **404**
-   ("unavailable — regenerate").
+4. `blobStore.get(principal, video.summaryMd)` — missing / unknown video ⇒ genuine
+   **404**. Then `blobStore.get(principal, models/${base}.json)` — a missing model
+   behind a *promoted* summary is the glossary's **repair-needed** state (D8):
+   surface it as a distinct "needs regeneration" response (409/410-class, pinned in
+   the plan), and **never regenerate on the serve path**. The two missings are
+   different domain states, not one 404.
 5. `parseSummaryMarkdown` → `renderMagazineHtml(parsed, model, { nonce })`.
 6. Return `text/html; charset=utf-8` with a `Content-Security-Policy` header whose
    `script-src` / `style-src` carry `'nonce-<n>'`.
 
 The blob key is always **server-constructed** as `{owner_id}/{playlist_key}/{key}`
-with `owner_id` from `auth.uid()`. The client supplies only `playlist_key` and
-`videoId`; it cannot forge another owner's key, and RLS on `storage.objects`
-(first path segment must equal `auth.uid()`) is the hard backstop.
+with `owner_id` from `auth.uid()` and `playlist_key` resolved server-side from the
+`playlistId`. The client supplies only `playlistId` and `videoId`; it cannot forge
+another owner's key, and RLS on `storage.objects` (first path segment must equal
+`auth.uid()`) is the hard backstop.
 
 The local path is preserved: when `STORAGE_BACKEND=local`, the route keeps its
 current sentinel-principal / `outputFolder` behavior (no session, no CSP).
@@ -150,11 +163,14 @@ path is a hard requirement and a test.
 
 | Component | Link | Full URL (all params) |
 |---|---|---|
-| Cloud summary-HTML serve | View summary | `/api/html/{videoId}?playlist={playlist_key}&type=summary` |
+| Cloud summary-HTML serve | View summary | `/api/html/{videoId}?playlist={playlistId}&type=summary` |
 | Local summary-HTML serve (unchanged) | View summary | `/api/html/{videoId}?outputFolder={outputFolder}&type=summary` |
 
 `type` is validated to `summary` in this slice (`dig-deeper` returns 400/deferred).
-`playlist` (cloud) and `outputFolder` (local) are mutually exclusive by backend.
+`playlist` carries the opaque **`playlistId` (UUID)**, resolved server-side to
+`playlist_key` with an owner assertion (D9) — the external YouTube list-id never
+appears in the URL. `playlist` (cloud) and `outputFolder` (local) are mutually
+exclusive by backend.
 
 ---
 
@@ -166,19 +182,20 @@ path is a hard requirement and a test.
 | B2 | Model generation honors caps | worker calls `generateMagazineModel` | `maxOutputTokens` set, `thinkingBudget:0`, `countTokens` preflight — same as other cloud calls |
 | B3 | Idempotent re-run does not re-bill model | job re-runs with promoted summary at current version | early return before Gemini; no second `generateMagazineModel` |
 | B4 | Cost bound stays provable | after adding the pass | cap-soundness recompute includes magazine pass; `est >= ceil(worst) * attempts` holds |
-| B5 | Owner views own summary | authed GET, own `videoId`+`playlist` | 200 `text/html`, magazine view rendered |
+| B5 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200 `text/html`, **rendered HTML doc** returned |
 | B6 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
 | B7 | Foreign owner blocked | authed GET for another owner's doc | 404 (RLS: row invisible) — bidirectional isolation |
 | B8 | No session | unauthenticated GET (cloud backend) | 401 |
-| B9 | Missing MD or model | promoted-but-incomplete / absent artifact | 404 "unavailable" (never a 500 leak) |
+| B9 | Missing summary / unknown video | no summary artifact, or unknown `videoId` | genuine **404** (never a 500 leak) |
+| B9b | Missing model behind promoted summary | model blob absent though summary `promoted` | **repair-needed** response (409/410-class, distinct from 404), surfaced; **no** serve-path regeneration (D8) |
 | B10 | CSP present + coherent | any 200 serve | `Content-Security-Policy` header nonce matches every inline `<script>`/`<style>` nonce |
 | B11 | Service-role never on serve path | serve route wiring | confinement test: route builds bundle from the **session** client only |
 | B12 | Invalid `type` | `type` absent or not `summary` | 400 |
-| B13 | Invalid `videoId` / `playlist` | malformed params | 400 |
+| B13 | Invalid `videoId` / `playlistId` | malformed params (bad UUID, etc.) | 400 |
 | B14 | Local render parity | `STORAGE_BACKEND=local`, `generate.ts` render | HTML byte-identical to pre-1F-a (no nonce, no CSP) |
 | B15 | Cloud render nonce validity | cloud serve render | rendered inline tags all carry the response nonce; theme/nav scripts still execute under the CSP |
 
-Edge cases folded in above: absent model (B9), abort mid-run (B1 invariant), duplicate/foreign owner (B7), anon principal (B6), local parity (B14).
+Edge cases folded in above: repair-needed missing model (B9b), abort mid-run (B1 invariant), duplicate/foreign owner (B7), anon principal (B6), local parity (B14).
 
 ---
 
@@ -190,8 +207,9 @@ Edge cases folded in above: absent model (B9), abort mid-run (B1 invariant), dup
 - **Cost (integration):** B4 — cap-soundness guard recompute extended and green
   against live `guardrail_config` after `db reset`.
 - **Serve (integration, mock at API/route level):** B5–B13 — owner/anon success,
-  foreign-owner 404 (both directions), 401, missing-artifact 404, `type`/param 400s,
-  CSP header presence + nonce coherence, service-role confinement.
+  foreign-owner 404 (both directions), 401, missing-summary 404 **and** repair-needed
+  missing-model (B9/B9b), `type`/param 400s, CSP header presence + nonce coherence,
+  service-role confinement.
 - **Render (unit):** B14 local no-nonce parity (byte-compare), B15 cloud nonce stamping.
 
 Mocking boundaries per `docs/dev-process.md`: `lib/gemini.ts` mocked for
@@ -230,9 +248,10 @@ This slice hits two "iterative dual adversarial re-review to convergence" trigge
 
 ## 10. Success Criteria
 
-1. A cloud-generated summary is viewable at `/api/html/{videoId}?playlist=…&type=summary`
-   by its owner (or the anon guest who made it), rendered as the magazine view,
-   with a nonce-based CSP — and is **invisible (404) to any other principal**.
+1. A cloud-generated summary is viewable at `/api/html/{videoId}?playlist={playlistId}&type=summary`
+   by its owner (any tier, incl. the anon guest who made it), rendered as the
+   **rendered HTML doc**, with a nonce-based CSP — and is **invisible (404) to any
+   other principal**.
 2. The worker persists `models/{base}.json` idempotently, priced as a new pass, with
    the cap-soundness bound still provable.
 3. Local render output is byte-unchanged; service-role never touches the serve path.
