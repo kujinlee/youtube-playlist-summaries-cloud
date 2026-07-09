@@ -4,7 +4,7 @@
 
 **Goal:** Serve a cloud-generated summary as a rendered HTML doc over an authorized, owner-scoped path (`GET /api/html/{videoId}?playlist={playlistId}&type=summary`), lazily materializing the paid magazine model on view under a `SECURITY DEFINER` lease-reserve RPC and a nonce CSP — with the worker unchanged and the local serve path preserved.
 
-**Architecture:** The serve route builds a **session/anon Supabase client** (never service_role), resolves `playlistId → playlist_key` with an owner assert, reads the summary MD blob under RLS, and renders on-serve. The magazine model is read from a principal-aware model store; on absence/drift the route calls `reserve_serve_model` (a definer RPC that leases single-flight, charges `magazine_est_cents` per attempt against the daily cap, and bounds attempts to `K` per `(owner,doc,UTC-day)`), then generates under output caps and stages→promotes the model. Rendered HTML carries a strict nonce CSP and `Cache-Control: private, no-store`. Shared render code (`render.ts`/`theme.ts`/`nav.ts`) gains an optional nonce so the local static-file path stays behaviorally identical.
+**Architecture:** The serve route builds a **session/anon Supabase client** (never service_role), resolves `playlistId → playlist_key` with an owner assert, reads the summary MD blob under RLS, and renders on-serve. The magazine model is read from a principal-aware model store; on absence/drift the route calls `reserve_serve_model` (a definer RPC that leases single-flight, charges `magazine_est_cents` per attempt against the daily cap, and bounds attempts to `K` per `(owner,doc,UTC-day)`), then generates under output caps and **upserts** the model (overwrite-safe cache; a re-generated model on drift / version-bump replaces the prior blob). Rendered HTML carries a strict nonce CSP and `Cache-Control: private, no-store`. Shared render code (`render.ts`/`theme.ts`/`nav.ts`) gains an optional nonce so the local static-file path stays behaviorally identical.
 
 **Tech Stack:** Next.js (App Router, `app/api/html/[id]/route.ts`), TypeScript, `@supabase/ssr` (`createServerSupabase`), Supabase Postgres + PL/pgSQL migrations (`supabase/migrations/`), `@google/generative-ai` (`generateMagazineModel`), Zod (envelope schema), Jest + ts-jest (unit + integration; integration runs against a real DB via `npx supabase db reset` + `npm run test:integration -- --runInBand`).
 
@@ -29,17 +29,21 @@ Copied verbatim from the spec (§ referenced). Every task's requirements implici
 **New files**
 - `supabase/migrations/0012_serve_model_charge.sql` — `serve_model_charge` table, three `guardrail_config` columns, `reserve_serve_model` definer RPC.
 - `lib/html-doc/csp.ts` — `generateNonce()` + `buildSummaryCsp(nonce)`.
-- `lib/html-doc/serve-doc.ts` — `resolveMagazineModel(...)` (read model / drift-gate / reserve-and-generate / stage→promote).
+- `lib/html-doc/serve-doc.ts` — `resolveMagazineModel(...)` (read model / drift-gate / reserve-and-generate / upsert).
+- `lib/storage/serve-playlist.ts` — `resolveOwnedPlaylistKey(client, playlistId, ownerId)` (session-client owner-assert, D6/D9).
+- `tests/integration/helpers/seed.ts` — shared `seedPlaylist`/`seedPromotedVideo`/`seedSummaryBlob` (worker-fidelity seed, reused by Tasks 1/6/7).
 - `tests/**` — unit + integration test files named per task.
 
 **Modified files**
-- `lib/gemini-cost.ts` — add magazine caps constants + `CloudGeminiCaps` magazine fields.
-- `lib/gemini.ts` — `generateMagazineModel` gains `opts?: { caps?; signal? }` + preflight + maxItems.
-- `lib/html-doc/model-store.ts` — `Principal`-param signatures, `generatorVersion` envelope field, staged writer.
+- `lib/gemini-cost.ts` — add magazine caps constants + **optional** `CloudGeminiCaps` magazine fields.
+- `lib/gemini.ts` — `generateMagazineModel` gains `opts?: { caps?; signal? }` + preflight + **cloud-only** maxItems clone (shared schema unchanged).
+- `lib/html-doc/model-store.ts` — `Principal`-param signatures, `generatorVersion` envelope field (single upsert writer — no staged writer).
 - `lib/html-doc/generate.ts`, `lib/html-doc/rerender.ts`, `lib/html-doc/build-doc-html.ts` — update model-store call sites (behavior-identical).
 - `lib/storage/supabase/supabase-blob-store.ts` — uuid-prefixed staging + hardened `promote`.
 - `lib/html-doc/render.ts`, `lib/html-doc/theme.ts`, `lib/html-doc/nav.ts` — optional `nonce`/`dig`; print listener.
+- `lib/html-doc/render-dig-deeper.ts` — SECOND consumer of the shared theme/nav symbols; updated to the new function exports (no nonce; print listener wired) so it compiles and the local dig-deeper print button keeps working.
 - `app/api/html/[id]/route.ts` — cloud serve branch; local path preserved.
+- `scripts/check-service-confinement.ts` — no change unless `export` must be added to `collectEntrypoints`/`reachesService`/`findServiceImporters` (already exported).
 
 ---
 
@@ -55,6 +59,7 @@ Dependency order: **1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9**. Tasks 2
 
 **Files:**
 - Create: `supabase/migrations/0012_serve_model_charge.sql`
+- Create: `tests/integration/helpers/seed.ts` (shared promoted-video seed helper — reused by Tasks 1, 6, 7 so the seed shape can never drift)
 - Test: `tests/integration/serve-model-charge.test.ts`
 
 **Interfaces:**
@@ -66,24 +71,93 @@ Dependency order: **1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9**. Tasks 2
 
 > **Definer/RLS note (verify in review):** `serve_model_charge` and `spend_ledger` are FORCE-RLS with no client policy. The RPC writes them only because it is `SECURITY DEFINER` owned by a **BYPASSRLS** role (Supabase applies migrations as `postgres`, which has `bypassrls`) — the bypass comes from the *owner role attribute*, not the owner-exemption that FORCE RLS removes. Do not `alter function ... owner to` a non-bypassrls role. `auth.uid()` reads the request JWT GUC and is independent of `SECURITY DEFINER`.
 
+- [ ] **Step 0: Write the shared promoted-video seed helper (fidelity — mirrors the worker row)**
+
+The RED tests for Tasks 1, 6, and 7 all seed a "promoted summary" video row. The real worker row
+(`lib/job-queue/summary-handler.ts:149-164` + `persist_summary`, `0009_...:104-156`) carries fields the
+serve route and the reserve RPC actually read: **top-level `owner_id`** (`videos.owner_id uuid not null`
+with the composite FK `(playlist_id, owner_id) → playlists(id, owner_id)`, `0001_core_schema.sql:25,32`
+— omitting it makes every `insert` fail its NOT-NULL/FK before the test reaches the RPC), plus a `data`
+jsonb with **top-level `summaryMd` / `language` / `serialNumber`** AND
+`artifacts.summaryMd.{key, status:'promoted'}`. A single shared helper guarantees all three tasks seed
+the identical shape (fixes the "seed omits the field the real route reads → premature 404" class):
+
+```typescript
+// tests/integration/helpers/seed.ts
+import { randomUUID } from 'crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
+
+/** Create an owned playlist row; returns its UUID id + playlist_key (the principal.indexKey). */
+export async function seedPlaylist(
+  svc: SupabaseClient, ownerId: string,
+): Promise<{ playlistId: string; playlistKey: string }> {
+  const playlistKey = `k-${randomUUID()}`;
+  const { data, error } = await svc.from('playlists')
+    .insert({ owner_id: ownerId, playlist_key: playlistKey, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (error) throw error;
+  return { playlistId: data!.id as string, playlistKey };
+}
+
+/** Insert a video row MIRRORING the worker's promoted shape (summary-handler.ts:149-164 +
+ *  persist_summary 0009). Sets top-level owner_id (NOT NULL + composite FK) and a `data` jsonb
+ *  with the top-level `summaryMd`/`language`/`serialNumber` the route reads AND
+ *  `artifacts.summaryMd.{key,status}` the reserve RPC + route status-gate read. Defaults to
+ *  `status:'promoted'`; pass `status:'committed'` for the finalizing-window / unpromoted cases. */
+export async function seedPromotedVideo(
+  svc: SupabaseClient,
+  opts: { ownerId: string; playlistId: string; videoId?: string; base?: string;
+          status?: 'promoted' | 'committed'; position?: number },
+): Promise<{ videoId: string; base: string }> {
+  const videoId = opts.videoId ?? `v-${randomUUID()}`;
+  const base = opts.base ?? videoId;
+  const status = opts.status ?? 'promoted';
+  const { error } = await svc.from('videos').insert({
+    playlist_id: opts.playlistId,
+    owner_id: opts.ownerId,                       // NOT NULL + composite FK (playlist_id, owner_id)
+    video_id: videoId,
+    position: opts.position ?? 1,
+    data: {
+      id: videoId,
+      serialNumber: opts.position ?? 1,
+      language: 'en',                             // route passes video.language to resolveMagazineModel
+      summaryMd: `${base}.md`,                    // top-level key the route get()s (summary-handler.ts:157)
+      docVersion: 1,
+      artifacts: { summaryMd: { key: `${base}.md`, status } },
+    },
+  });
+  if (error) throw error;
+  return { videoId, base };
+}
+
+/** Upload the summary MD blob to {owner}/{playlist_key}/{base}.md — the exact key the route get()s
+ *  (SupabaseBlobStore objectKey = `${p.id}/${p.indexKey}/${key}`). Needed only by Tasks 6/7 (the
+ *  reserve RPC in Task 1 reads DB status only, not the blob). */
+export async function seedSummaryBlob(
+  svc: SupabaseClient, ownerId: string, playlistKey: string, base: string, md: string,
+): Promise<void> {
+  const { error } = await svc.storage.from(ARTIFACTS_BUCKET)
+    .upload(`${ownerId}/${playlistKey}/${base}.md`, Buffer.from(md, 'utf-8'),
+            { contentType: 'text/markdown', upsert: true });
+  if (error) throw error;
+}
+```
+
 - [ ] **Step 1: Write the failing integration test**
 
 ```typescript
 // tests/integration/serve-model-charge.test.ts
-import { randomUUID } from 'crypto';
 import { adminClient, newUser, signInAs, anonSession } from './helpers/clients';
+import { seedPlaylist, seedPromotedVideo } from './helpers/seed';
 
 const svc = adminClient();
 
-async function seedPromotedDoc(ownerId: string, videoId = `v-${randomUUID()}`) {
-  const { data: pl } = await svc.from('playlists')
-    .insert({ owner_id: ownerId, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` })
-    .select('id').single();
-  await svc.from('videos').insert({
-    playlist_id: pl!.id, video_id: videoId, position: 1,
-    data: { id: videoId, artifacts: { summaryMd: { key: `${videoId}.md`, status: 'promoted' } } },
-  });
-  return { playlistId: pl!.id as string, videoId };
+/** Task-1 convenience: playlist + promoted video in one call (RPC needs only the DB row). */
+async function seedPromotedDoc(ownerId: string, videoId?: string) {
+  const { playlistId } = await seedPlaylist(svc, ownerId);
+  const { videoId: vid } = await seedPromotedVideo(svc, { ownerId, playlistId, videoId });
+  return { playlistId, videoId: vid };
 }
 
 beforeEach(async () => {
@@ -154,11 +228,11 @@ it('denies a foreign or unpromoted doc via direct RPC (no charge, no leak)', asy
   const { client } = await signInAs(attacker.email, attacker.password);
   const { data: foreign } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
   expect(foreign).toBe('denied');
-  // owned but only 'committed' (not promoted):
-  const { playlistId: pl2 } = await seedPromotedDoc(owner.user.id, 'v-committed');
-  await svc.from('videos').update({ data: { id: 'v-committed', artifacts: { summaryMd: { key: 'x.md', status: 'committed' } } } }).eq('video_id', 'v-committed');
+  // owned but only 'committed' (not promoted) — seeded via the shared helper with status:'committed':
+  const { playlistId: pl2 } = await seedPlaylist(svc, owner.user.id);
+  const { videoId: vCommitted } = await seedPromotedVideo(svc, { ownerId: owner.user.id, playlistId: pl2, status: 'committed' });
   const { client: oc } = await signInAs(owner.email, owner.password);
-  const { data: unpromoted } = await oc.rpc('reserve_serve_model', { p_playlist_id: pl2, p_video_id: 'v-committed' });
+  const { data: unpromoted } = await oc.rpc('reserve_serve_model', { p_playlist_id: pl2, p_video_id: vCommitted });
   expect(unpromoted).toBe('denied');
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led ?? []).toEqual([]); // nothing charged
@@ -169,7 +243,137 @@ it('has no anon-callable release RPC', async () => {
   const { error } = await client.rpc('release_serve_model', {});
   expect(error).toBeTruthy(); // function does not exist — the v5 release-DoS lever is absent
 });
+
+// ---- Grant / RLS lockdown (the marker table is service_role-only + force-RLS; the RPC is the
+//      only client-callable money surface, and it derives the owner from auth.uid() internally) ----
+
+it('a session client CANNOT select/insert/update/delete serve_model_charge directly', async () => {
+  const u = await newUser();
+  const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }); // create a row (as owner)
+  const docKey = `${playlistId}/${videoId}`;
+  // Snapshot the TRUE row via the service client (bypasses RLS) so we can prove it is byte-for-byte
+  // unchanged after the denied writes — not merely that a row still exists (F3: the old
+  // `expect(rows.length).toBe(1)` would pass even if attempt_count had been mutated).
+  const { data: before } = await svc.from('serve_model_charge')
+    .select('attempt_count, lease_expires_at').eq('owner_id', u.user.id).single();
+
+  // force-RLS + no client policy → every direct verb sees/affects zero rows / is refused.
+  const sel = await client.from('serve_model_charge').select('*');
+  expect(sel.data ?? []).toEqual([]);                                   // invisible under RLS
+  const ins = await client.from('serve_model_charge')
+    .insert({ owner_id: u.user.id, doc_key: docKey, day: '2026-07-09', lease_expires_at: '2999-01-01', attempt_count: 0 });
+  expect(ins.error).toBeTruthy();                                       // insert refused
+  // UPDATE/DELETE must be NON-vacuous: chain `.select()` so a write that actually matched a row would
+  // RETURN it. A Supabase `.update()`/`.delete()` without `.select()` returns `{ data: null }` even on a
+  // real write, so the old `expect(upd.data ?? []).toEqual([])` was always green (F3). Under force-RLS the
+  // filtered write matches no visible row → zero rows returned.
+  const upd = await client.from('serve_model_charge')
+    .update({ attempt_count: 999 }).eq('owner_id', u.user.id).select();
+  expect(upd.data ?? []).toEqual([]);                                   // update returned no row (matched nothing)
+  const del = await client.from('serve_model_charge')
+    .delete().eq('owner_id', u.user.id).select();
+  expect(del.data ?? []).toEqual([]);                                   // delete returned no row (matched nothing)
+
+  // The authoritative proof: the real row is UNCHANGED in BOTH fields the RPC governs.
+  const { data: after } = await svc.from('serve_model_charge')
+    .select('attempt_count, lease_expires_at').eq('owner_id', u.user.id).single();
+  expect(after).toEqual(before);                                        // attempt_count AND lease_expires_at intact
+
+  // And the table is genuinely FORCE-RLS (an owner cannot bypass its own policy-less table). Query the
+  // catalog via the service-role-only `exec_sql` helper (0004), same pattern as schema.test.ts.
+  const { data: forced } = await svc.rpc('exec_sql', {
+    sql: `select relforcerowsecurity from pg_class
+          where relname = 'serve_model_charge' and relnamespace = 'public'::regnamespace and relkind = 'r'`,
+  });
+  expect(forced).toEqual([{ relforcerowsecurity: true }]);
+});
+
+it('an anon session CAN execute reserve_serve_model (owner derived from its anon auth.uid())', async () => {
+  const { client, userId } = await anonSession();                      // anon is a full Owner (helpers/clients returns userId)
+  const { playlistId, videoId } = await seedPromotedDoc(userId);
+  const { data: status, error } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(error).toBeNull();
+  expect(status).toBe('reserved');                                     // execute granted to anon
+});
+
+it('a caller cannot charge ANOTHER owner (owner is auth.uid(), never a param)', async () => {
+  const owner = await newUser();
+  const attacker = await newUser();
+  const { playlistId, videoId } = await seedPromotedDoc(owner.user.id);
+  const { client } = await signInAs(attacker.email, attacker.password);
+  // The RPC has no owner param; the attacker's auth.uid() ≠ owner → ownership check fails → denied, no charge.
+  const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(status).toBe('denied');
+  const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
+  expect(led ?? []).toEqual([]);
+});
+
+// ---- Real concurrency (Promise.all) — the history-sensitive money path ----
+
+it('same-doc concurrent miss: exactly ONE reserved, ONE in_flight, ONE charge (single-flight)', async () => {
+  const u = await newUser();
+  const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const [a, b] = await Promise.all([
+    client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
+    client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
+  ]);
+  expect([a.data, b.data].sort()).toEqual(['in_flight', 'reserved']); // one winner, one single-flight guard
+  const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
+  expect(led![0].reserved_cents).toBe(6);                             // exactly one charge
+});
+
+it('CONCURRENT expired-lease reclaim at K-1: exactly one reclaim wins (reserved), the loser sees the live K-th lease (in_flight), attempt_count=5, one charge', async () => {
+  // This is the EXACT race the M-1 status fix guards (F4): a loser seeing attempt_count = K while the
+  // winner's K-th lease is still LIVE must report in_flight (single-flight), NOT a spurious
+  // attempts_exhausted, and MUST NOT add a 6th charge. Sequential calls never exercise it.
+  const u = await newUser();
+  const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const docKey = `${playlistId}/${videoId}`;
+  for (let i = 1; i <= 4; i++) { // drive attempt_count to 4 (K-1), expiring the lease each time
+    await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+    await svc.from('serve_model_charge').update({ lease_expires_at: '2000-01-01T00:00:00Z' }).eq('doc_key', docKey);
+  }
+  // Two concurrent reclaims at K-1: one takes the K-th (LIVE) lease; the other must read that live lease.
+  const [a, b] = await Promise.all([
+    client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
+    client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
+  ]);
+  expect([a.data, b.data].sort()).toEqual(['in_flight', 'reserved']); // one reclaim, one single-flight guard
+  const { data: row } = await svc.from('serve_model_charge').select('attempt_count').eq('doc_key', docKey).single();
+  expect(row!.attempt_count).toBe(5);                                 // only the K-th reclaim incremented it
+  const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
+  expect(led![0].reserved_cents).toBe(30);                           // 5·6 — the loser added no 6th charge
+});
+
+it('two DIFFERENT docs with only one magazine_est_cents of cap left: one reserved, one at_capacity', async () => {
+  const u = await newUser();
+  const { playlistId } = await seedPlaylist(svc, u.user.id);
+  const { videoId: v1 } = await seedPromotedVideo(svc, { ownerId: u.user.id, playlistId, position: 1 });
+  const { videoId: v2 } = await seedPromotedVideo(svc, { ownerId: u.user.id, playlistId, position: 2 });
+  await svc.from('guardrail_config').update({ daily_cap_cents: 6 }).eq('id', true); // room for exactly one charge
+  const { client } = await signInAs(u.email, u.password);
+  const [a, b] = await Promise.all([
+    client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: v1 }),
+    client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: v2 }),
+  ]);
+  expect([a.data, b.data].sort()).toEqual(['at_capacity', 'reserved']); // cap serializes; one wins, one refused
+  const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
+  expect(led![0].reserved_cents).toBe(6);                              // the cap is a hard ceiling
+  // F11: assert WHICH doc won and that the marker table holds EXACTLY one row (the loser's at_capacity
+  // claim rolled back → no marker). `a` is v1's result, `b` is v2's.
+  const winner = a.data === 'reserved' ? v1 : v2;
+  const { data: markers } = await svc.from('serve_model_charge').select('doc_key');
+  expect(markers).toEqual([{ doc_key: `${playlistId}/${winner}` }]);   // one row, for the winner only
+});
 ```
+
+> `./helpers/clients` already returns `{ client, userId }` from both `signInAs` and `anonSession`, and
+> `newUser()` returns `{ user: { id }, email, password }` — the tests above use those exact shapes, no
+> helper change needed.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -216,6 +420,7 @@ declare
   v_promoted boolean;
   v_claimed int;
   v_existing int;
+  v_lease_live boolean;
   v_result text;
 begin
   if v_owner is null then raise exception 'reserve_serve_model: unauthenticated'; end if;
@@ -246,10 +451,20 @@ begin
     get diagnostics v_claimed = row_count;   -- row-returned (fresh OR reclaim) is the generator signal, not xmax
 
     if v_claimed = 0 then
-      -- No claim: existing live lease (in_flight) or K reached (attempts_exhausted). No charge.
-      select attempt_count into v_existing from serve_model_charge
+      -- No claim: either a live lease (in_flight) or all K attempts used AND the last lease expired
+      -- (attempts_exhausted). Derive from BOTH attempt_count AND lease_expires_at, so a concurrent
+      -- K-boundary reclaim (loser sees attempt_count = K while the winner's K-th lease is still LIVE)
+      -- reports `in_flight` (single-flight guard), NOT a spurious `attempts_exhausted` (M-1 status race).
+      -- No charge either way. (ON CONFLICT row-lock serialization makes this read see the committed row.)
+      select attempt_count, lease_expires_at > now()
+        into v_existing, v_lease_live
+        from serve_model_charge
         where owner_id = v_owner and doc_key = v_doc_key and day = v_day;
-      v_result := case when v_existing >= v_cfg.max_serve_attempts then 'attempts_exhausted' else 'in_flight' end;
+      v_result := case
+                    when v_lease_live then 'in_flight'                                   -- lease still held → single-flight
+                    when v_existing >= v_cfg.max_serve_attempts then 'attempts_exhausted' -- expired AND K used up
+                    else 'in_flight'                                                     -- expired but < K (transient; a reclaim will win next)
+                  end;
     else
       -- 5. Charge THIS attempt against the daily cap (conditional-UPDATE arbiter, as enqueue_job/0011).
       insert into spend_ledger (day) values (v_day) on conflict do nothing;
@@ -273,16 +488,16 @@ grant execute on function reserve_serve_model(uuid, text) to authenticated, anon
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx supabase db reset && npm run test:integration -- --runInBand serve-model-charge`
-Expected: PASS — all 7 `it(...)` blocks green.
+Expected: PASS — all 13 `it(...)` blocks green.
 
 - [ ] **Step 5: Iterative dual-adversarial re-review (money-path)**
 
-Run `superpowers:requesting-code-review` (Claude) and `codex:rescue` (adversarial) on `0012_serve_model_charge.sql` + the test. Verify: the single conditional-UPDATE cannot be raced past the daily cap; `K` genuinely bounds a reload/reclaim loop (no unbounded re-charge); at-capacity truly rolls back the claim (reclaim restores the prior expired row, not a fresh lease); no cross-owner ledger/marker access; the definer owner is BYPASSRLS. Save to `docs/reviews/task-1-serve-model-charge-review.md` (Claude) and `-codex.md`. **Re-review the revised SQL until a round returns no new Blocking/High.**
+Run `superpowers:requesting-code-review` (Claude) and `codex:rescue` (adversarial) on `0012_serve_model_charge.sql` + the test. Verify: the single conditional-UPDATE cannot be raced past the daily cap; `K` genuinely bounds a reload/reclaim loop (no unbounded re-charge); at-capacity truly rolls back the claim (reclaim restores the prior expired row, not a fresh lease); the **no-claim status derivation uses BOTH `attempt_count` AND `lease_expires_at`** so a concurrent K-boundary reclaim reports `in_flight`, never a spurious `attempts_exhausted` (M-1 status race); the grant/RLS lockdown holds (session clients cannot touch `serve_model_charge`; anon+authenticated can `execute` the RPC; owner is `auth.uid()`-internal); no cross-owner ledger/marker access; the definer owner is BYPASSRLS. Save to `docs/reviews/task-1-serve-model-charge-review.md` (Claude) and `-codex.md`. **Re-review the revised SQL until a round returns no new Blocking/High.**
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/0012_serve_model_charge.sql tests/integration/serve-model-charge.test.ts docs/reviews/task-1-serve-model-charge-*.md
+git add supabase/migrations/0012_serve_model_charge.sql tests/integration/helpers/seed.ts tests/integration/serve-model-charge.test.ts docs/reviews/task-1-serve-model-charge-*.md
 git commit -m "feat(1f-a): serve_model_charge migration + reserve_serve_model lease-reserve RPC"
 ```
 
@@ -298,12 +513,12 @@ git commit -m "feat(1f-a): serve_model_charge migration + reserve_serve_model le
 **Interfaces:**
 - Consumes: existing `withCaps(base, caps, maxOutputTokens)` (`lib/gemini.ts:32`), `assertMagazineInputWithinCap` (new, below), `generateJson(model, prompt, schema, label, retries, baseDelayMs, opts)` (`lib/gemini.ts:212`).
 - Produces:
-  - `CloudGeminiCaps` gains `magazineInputTokens: number` and `magazineOutputTokens: number`.
+  - `CloudGeminiCaps` gains **optional** `magazineInputTokens?: number` and `magazineOutputTokens?: number`. **Optional (not required)** so the four existing `CloudGeminiCaps` literals — `summary-handler.ts:33-36` and the fixtures in `tests/lib/{transcript-source,summary-core,gemini-caps}.test.ts` — still typecheck without edits (avoids a `tsc` break outside the narrow jest run — Codex-M3). `SERVE_CAPS` (Task 6) supplies both, so the cloud paid path always carries a magazine bound.
   - Constants `MAX_MAGAZINE_INPUT_TOKENS = 16384`, `MAX_MAGAZINE_OUTPUT_TOKENS = 4096`, `MAGAZINE_MAX_PASSES = GENERATE_JSON_RETRIES + 1` in `gemini-cost.ts`.
   - `generateMagazineModel(sections: Array<{ title: string; prose: string }>, language: 'en' | 'ko', opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal }): Promise<MagazineModel>` — local call `generateMagazineModel(sections, language)` unchanged.
   - `assertMagazineInputWithinCap(model, prompt, generationConfig, caps): Promise<void>` (exported).
 
-> The two magazine fields (input + output) satisfy B5's "countTokens preflight" and the money-path re-review's "output-bounded paid call" — an unbounded magazine input is an unbounded cost. §4.2's hard requirement is the *output* cap + `maxItems`; the input preflight is the safety analogue of `assertTranscribeInputWithinCap`.
+> The two magazine fields (input + output) satisfy B5's "countTokens preflight" and the money-path re-review's "output-bounded paid call" — an unbounded magazine input is an unbounded cost. §4.2's hard requirement is the *output* cap; the input preflight is the safety analogue of `assertTranscribeInputWithinCap`. **The array bound is applied on the CLOUD path only (per-call schema clone), never on the shared `MAGAZINE_RESPONSE_SCHEMA`** — see Step 4 (H-1 fix).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -335,13 +550,30 @@ beforeEach(() => {
   mockCountTokens.mockResolvedValue({ totalTokens: 100 });
 });
 
-it('the schema sections array carries minItems and a maxItems bound', async () => {
+it('CLOUD call: the per-call schema clone carries a GENEROUS maxItems bound (cost bound, cloud-only)', async () => {
   const { generateMagazineModel } = await import('@/lib/gemini');
   await generateMagazineModel([{ title: 'A', prose: 'p' }], 'en', { caps });
   const cfg = mockGetGenerativeModel.mock.calls[0][0].generationConfig;
   const arr = cfg.responseSchema.properties.sections;
   expect(arr.minItems).toBe(1);
-  expect(arr.maxItems).toBeGreaterThanOrEqual(1);
+  // Bound present but generous enough it can never reject a real doc (H-1: NOT the too-tight 20).
+  expect(arr.maxItems).toBeGreaterThanOrEqual(200);
+});
+
+it('the SHARED MAGAZINE_RESPONSE_SCHEMA has NO maxItems (local domain unchanged — H-1)', async () => {
+  const { MAGAZINE_RESPONSE_SCHEMA } = await import('@/lib/gemini');
+  expect(MAGAZINE_RESPONSE_SCHEMA.properties.sections.maxItems).toBeUndefined();
+});
+
+it('LOCAL call: a >20-section summary still SUCCEEDS (no maxItems rejection, no count mismatch)', async () => {
+  const { generateMagazineModel } = await import('@/lib/gemini');
+  const big = Array.from({ length: 25 }, (_, i) => ({ title: `S${i}`, prose: 'p' }));
+  const bigModel = { sections: big.map(() => ({ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] })) };
+  mockGenerateContent.mockResolvedValueOnce({ response: { text: () => JSON.stringify(bigModel), candidates: [{ finishReason: 'STOP' }] } });
+  const out = await generateMagazineModel(big, 'en'); // local (no caps) — must not throw
+  expect(out.sections.length).toBe(25);
+  const cfg = mockGetGenerativeModel.mock.calls[0][0].generationConfig;
+  expect(cfg.responseSchema.properties.sections.maxItems).toBeUndefined(); // local uses the un-cloned shared schema
 });
 
 it('caps set maxOutputTokens + thinkingBudget:0 on the paid call', async () => {
@@ -389,7 +621,8 @@ After line 26 (`export const QUICKVIEW_MAX_PASSES = ...`):
 export const MAGAZINE_MAX_PASSES = GENERATE_JSON_RETRIES + 1; // = 3
 ```
 
-Extend `CloudGeminiCaps` (replace lines 36-41):
+Extend `CloudGeminiCaps` (replace lines 36-41) — the two magazine fields are **optional** so the four
+existing caps literals (`summary-handler.ts`, three test fixtures) still compile untouched:
 
 ```typescript
 export interface CloudGeminiCaps {
@@ -397,37 +630,50 @@ export interface CloudGeminiCaps {
   transcribeOutputTokens: number;
   transcriptInputBytes: number;
   summaryOutputTokens: number;
-  magazineInputTokens: number;
-  magazineOutputTokens: number;
+  magazineInputTokens?: number;   // cloud serve path only (SERVE_CAPS, Task 6); optional → existing literals unaffected
+  magazineOutputTokens?: number;
 }
 ```
 
-- [ ] **Step 4: Implement — schema maxItems + capped `generateMagazineModel`**
+- [ ] **Step 4: Implement — cloud-only maxItems clone + capped `generateMagazineModel`**
 
-In `lib/gemini.ts`, add `maxItems` to `MAGAZINE_RESPONSE_SCHEMA.properties.sections` (line 164-166):
+**Do NOT add `maxItems` to the shared `MAGAZINE_RESPONSE_SCHEMA`** (H-1). That const is the *same*
+schema the **local** `runHtmlDoc`/`generate.ts:39` call uses; a `maxItems: 20` there caps controlled
+generation at 20 sections, and the existing hard check `if (parsed.sections.length !== sections.length)
+throw 'section count mismatch'` (gemini.ts:497) then **throws on any >20-section summary** — a silent
+local-domain narrowing AND a permanent paid brick in cloud (every view reserves → charges → throws →
+reclaims until `K`, then 503 forever). Leave `MAGAZINE_RESPONSE_SCHEMA` exactly as-is (`minItems: 1`, no
+`maxItems`). Bound the **cloud** call two ways, both harmless to a real doc: (a) `maxOutputTokens` is the
+real output/cost cap; (b) a **per-call schema clone** with a *generous* `maxItems` (large enough it can
+never reject a real doc — e.g. 200) applied ONLY when `caps` is present. Add a module constant:
 
 ```typescript
-    sections: {
-      type: SchemaType.ARRAY,
-      minItems: 1,
-      maxItems: 20,
+export const MAGAZINE_MAX_SECTIONS = 200; // cloud-only structural bound; generous — never rejects a real doc
 ```
 
 Add a magazine preflight (after `assertTranscribeInputWithinCap`, ~line 62):
 
 ```typescript
-/** countTokens preflight for the paid magazine transform (mirrors assertTranscribeInputWithinCap). */
+/** countTokens preflight for the paid magazine transform (mirrors assertTranscribeInputWithinCap).
+ *  `magazineInputTokens` is OPTIONAL on CloudGeminiCaps, so narrow it to a local `number` first — a
+ *  `> (number | undefined)` compare is a TS18048 strict-null break (F1/H-1). SERVE_CAPS (Task 6) always
+ *  supplies it; a cloud caps object missing it is a misconfiguration → NonRetryableError, never a
+ *  silently-skipped preflight. */
 export async function assertMagazineInputWithinCap(
   model: Pick<GenerativeModel, 'countTokens'>,
   prompt: string,
   generationConfig: GenerationConfig,
   caps: CloudGeminiCaps,
 ): Promise<void> {
+  const cap = caps.magazineInputTokens;
+  if (cap == null) {
+    throw new NonRetryableError('cloud magazine caps missing magazineInputTokens');
+  }
   const { totalTokens } = await model.countTokens({
     generateContentRequest: { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig },
   });
-  if (totalTokens > caps.magazineInputTokens) {
-    throw new NonRetryableError(`magazine input ${totalTokens} tokens exceeds cap ${caps.magazineInputTokens}`);
+  if (totalTokens > cap) {
+    throw new NonRetryableError(`magazine input ${totalTokens} tokens exceeds cap ${cap}`);
   }
 }
 ```
@@ -441,11 +687,26 @@ export async function generateMagazineModel(
   opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal },
 ): Promise<MagazineModel> {
   const caps = opts?.caps;
+  // Fail closed on a cloud caps object missing either magazine field (F1): otherwise the output cap
+  // below would silently become `maxOutputTokens: 0` and the input preflight would be un-narrowable.
+  // SERVE_CAPS (Task 6) always supplies both, so this only fires on a genuine misconfiguration.
+  if (caps && (caps.magazineInputTokens == null || caps.magazineOutputTokens == null)) {
+    throw new NonRetryableError('cloud magazine caps missing magazineInputTokens/magazineOutputTokens');
+  }
   const client = new GoogleGenerativeAI(getApiKey());
+  // Cloud (caps present): clone the schema and add a GENEROUS maxItems (cost bound) — never mutate the
+  // shared const (H-1). Local (no caps): use the shared schema unchanged, exactly as pre-1F-a.
+  const responseSchema = caps
+    ? { ...MAGAZINE_RESPONSE_SCHEMA, properties: {
+        ...MAGAZINE_RESPONSE_SCHEMA.properties,
+        sections: { ...MAGAZINE_RESPONSE_SCHEMA.properties.sections, maxItems: MAGAZINE_MAX_SECTIONS },
+      } }
+    : MAGAZINE_RESPONSE_SCHEMA;
   const generationConfig = withCaps(
-    { responseMimeType: 'application/json', responseSchema: MAGAZINE_RESPONSE_SCHEMA },
+    { responseMimeType: 'application/json', responseSchema },
     caps,
-    caps?.magazineOutputTokens ?? 0,
+    caps?.magazineOutputTokens ?? 0, // guard above guarantees non-null when caps present; `?? 0` is the
+                                     // local no-caps path only, where withCaps ignores maxOutputTokens
   );
   const model = client.getGenerativeModel({ model: SUMMARY_MODEL, generationConfig });
   const lang = language === 'ko' ? 'Korean (한국어)' : 'English';
@@ -478,31 +739,44 @@ ${numbered}
     }
     return parsed;
   } catch (err) {
-    if ((err as { name?: string })?.name === 'AbortError') throw err; // preserve abort identity for the serve path
+    if ((err as { name?: string })?.name === 'AbortError') throw err;        // preserve abort identity for the serve path
+    if (err instanceof NonRetryableError) throw err;                         // preserve the input-cap-breach identity (M-3)
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`Gemini magazine transform failed: ${cause}`, { cause: err });
   }
 }
 ```
 
+Change `const MAGAZINE_RESPONSE_SCHEMA` (`gemini.ts:161`) to **`export const`** — the new Step-1 test
+imports it to assert the shared schema has no `maxItems`; also export `MAGAZINE_MAX_SECTIONS`.
+`NonRetryableError` is already imported in `gemini.ts` (line 13 — `assertTranscribeInputWithinCap` throws
+it); reuse that import.
+
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx jest gemini-magazine-caps`
-Expected: PASS (4 tests).
+Expected: PASS (6 tests).
 
-- [ ] **Step 6: Guard against local regressions + commit**
+- [ ] **Step 6: Guard against local regressions + typecheck + commit**
 
 Run: `npx jest gemini html-doc` (existing gemini + render tests)
-Expected: PASS — local `generateMagazineModel(sections, language)` callers unaffected.
+Expected: PASS — local `generateMagazineModel(sections, language)` callers unaffected (incl. the new
+>20-section local-success test).
+
+Run: `npx tsc --noEmit`
+Expected: clean — the optional `magazineInputTokens?`/`magazineOutputTokens?` fields leave the four
+existing `CloudGeminiCaps` literals (`summary-handler.ts` + the three `.test.ts` fixtures) compiling
+untouched; no fixture edits needed (Codex-M3). If any literal is instead written to REQUIRE the fields,
+update all four here and re-run `tsc`.
 
 ```bash
 git add lib/gemini-cost.ts lib/gemini.ts tests/lib/gemini-magazine-caps.test.ts
-git commit -m "feat(1f-a): generateMagazineModel caps + magazine schema maxItems + input preflight"
+git commit -m "feat(1f-a): generateMagazineModel caps + cloud-only magazine maxItems clone + input preflight"
 ```
 
 ---
 
-### Task 3: Model store becomes cloud-capable (principal param + staged writer + generatorVersion)
+### Task 3: Model store becomes cloud-capable (principal param + generatorVersion)
 
 **Files:**
 - Modify: `lib/html-doc/model-store.ts` (whole file)
@@ -516,14 +790,13 @@ git commit -m "feat(1f-a): generateMagazineModel caps + magazine schema maxItems
 - Produces:
   - `ModelEnvelopeSchema` gains `generatorVersion: z.string().min(1).optional()` (optional → old local envelopes still parse; the cloud freshness gate requires `=== GENERATOR_VERSION`).
   - `readModelEnvelope(principal: Principal, base: string, blobStore?: BlobStore): Promise<ModelEnvelope | null>`
-  - `writeModelEnvelope(principal: Principal, base: string, envelope: ModelEnvelope, blobStore?: BlobStore): Promise<void>` (plain `put` — local)
-  - `writeModelEnvelopeStaged(principal: Principal, base: string, envelope: ModelEnvelope, blobStore: BlobStore): Promise<void>` (putStaged uuid→promote — cloud)
+  - `writeModelEnvelope(principal: Principal, base: string, envelope: ModelEnvelope, blobStore?: BlobStore): Promise<void>` — the **single upsert writer** (plain `put` → Supabase `upload(upsert:true)`, overwrite-safe), used by **both** the local generate path and the cloud serve path; a re-generated model on drift / version-bump overwrites the prior blob (self-heal). No staged model writer.
 
 - [ ] **Step 1: Write the failing test**
 
 ```typescript
 // tests/lib/model-store-cloud.test.ts
-import { ModelEnvelopeSchema, readModelEnvelope, writeModelEnvelope, writeModelEnvelopeStaged } from '@/lib/html-doc/model-store';
+import { ModelEnvelopeSchema, readModelEnvelope, writeModelEnvelope } from '@/lib/html-doc/model-store';
 import type { BlobStore, StagedRef } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
@@ -560,13 +833,15 @@ it('writeModelEnvelope (plain put) round-trips under a cloud principal', async (
   expect(read?.generatorVersion).toBe('magazine-skim v2');
 });
 
-it('writeModelEnvelopeStaged stages then promotes to the final key', async () => {
+it('writeModelEnvelope overwrites an existing final via upsert (put, no staging)', async () => {
   const store = fakeStore();
   const promote = jest.spyOn(store, 'promote');
-  await writeModelEnvelopeStaged(P, 'a', envelope, store);
-  expect(promote).toHaveBeenCalledTimes(1);
-  expect(store.blobs.has('owner-1/pk-1/models/a.json')).toBe(true);
-  expect([...store.blobs.keys()].some((x) => x.includes('_staging'))).toBe(false); // temp gone
+  await writeModelEnvelope(P, 'a', envelope, store);
+  await writeModelEnvelope(P, 'a', { ...envelope, generatorVersion: 'magazine-skim v3' }, store); // overwrites
+  const read = await readModelEnvelope(P, 'a', store);
+  expect(read?.generatorVersion).toBe('magazine-skim v3'); // last write wins (upsert)
+  expect(promote).not.toHaveBeenCalled();                  // no staging path for the model
+  expect([...store.blobs.keys()].some((x) => x.includes('_staging'))).toBe(false);
 });
 
 it('readModelEnvelope returns null for a schema-invalid envelope (treated as absent)', async () => {
@@ -579,7 +854,7 @@ it('readModelEnvelope returns null for a schema-invalid envelope (treated as abs
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx jest model-store-cloud`
-Expected: FAIL — `writeModelEnvelopeStaged` not exported; `writeModelEnvelope` signature is `(outputFolder, base, ...)`.
+Expected: FAIL — `ModelEnvelopeSchema` rejects the new `generatorVersion` field, and `writeModelEnvelope`/`readModelEnvelope` still take `(outputFolder, base, …)`, not a `Principal`.
 
 - [ ] **Step 3: Rewrite `lib/html-doc/model-store.ts`**
 
@@ -609,7 +884,13 @@ function serialize(envelope: ModelEnvelope): Buffer {
   return Buffer.from(`${JSON.stringify(envelope, null, 2)}\n`, 'utf-8');
 }
 
-/** Plain-put write (local path). */
+/**
+ * The single model writer for BOTH the local generate path and the cloud serve path.
+ * `put` maps to Supabase `upload(upsert:true)` (atomic per object), so a re-generated model on
+ * drift / `generatorVersion` bump OVERWRITES the prior blob — the cache self-heals rather than
+ * getting stuck on a stale envelope. (The staged→promote protocol is create-if-absent and stays
+ * on the BlobStore for the worker's multi-blob MD commit — it is NOT used for the model.)
+ */
 export async function writeModelEnvelope(
   principal: Principal,
   base: string,
@@ -617,17 +898,6 @@ export async function writeModelEnvelope(
   blobStore: BlobStore = localBlobStore,
 ): Promise<void> {
   await blobStore.put(principal, MODEL_KEY(base), serialize(envelope), 'application/json');
-}
-
-/** Staged (per-attempt-unique uuid temp key) → promote write (cloud serve path). */
-export async function writeModelEnvelopeStaged(
-  principal: Principal,
-  base: string,
-  envelope: ModelEnvelope,
-  blobStore: BlobStore,
-): Promise<void> {
-  const ref = await blobStore.putStaged(principal, MODEL_KEY(base), serialize(envelope), 'application/json');
-  await blobStore.promote(ref);
 }
 
 /** Read + validate. Returns null if absent, unparseable, or schema-invalid. */
@@ -671,7 +941,7 @@ export async function readModelEnvelope(
 
 Add `GENERATOR_VERSION` to the `./render` import in `generate.ts` line 5: `import { renderMagazineHtml, GENERATOR_VERSION } from './render';`
 
-`lib/html-doc/rerender.ts` line 43 — change `readModelEnvelope(outputFolder, base, resolvedBlob)` to `readModelEnvelope(getPrincipal(outputFolder), base, resolvedBlob)` (import `getPrincipal` from `@/lib/storage/resolve` if not already present).
+`lib/html-doc/rerender.ts` line 43 — change `readModelEnvelope(outputFolder, base, resolvedBlob)` to `readModelEnvelope(principal, base, resolvedBlob)`, reusing the existing `const principal = getPrincipal(outputFolder)` already in scope at `rerender.ts:34` (F9 — do NOT recompute `getPrincipal(outputFolder)`; `getPrincipal` is already imported and `principal` is already bound above this line).
 
 `lib/html-doc/build-doc-html.ts` line 123 — change `readModelEnvelope(outputFolder, base)` to `readModelEnvelope(getPrincipal(outputFolder), base)` (import `getPrincipal` from `@/lib/storage/resolve`).
 
@@ -684,7 +954,7 @@ Expected: PASS — new tests green; existing local model-store/render/rerender/b
 
 ```bash
 git add lib/html-doc/model-store.ts lib/html-doc/generate.ts lib/html-doc/rerender.ts lib/html-doc/build-doc-html.ts tests/lib/model-store-cloud.test.ts
-git commit -m "feat(1f-a): principal-aware model store + staged writer + generatorVersion envelope field"
+git commit -m "feat(1f-a): principal-aware model store (single upsert writer) + generatorVersion envelope field"
 ```
 
 ---
@@ -742,6 +1012,23 @@ it('promote rethrows when move fails AND the final is genuinely absent', async (
   const store = new SupabaseBlobStore(client, 'artifacts');
   await expect(store.promote({ principal: P, tempKey: '_staging/u/models/a.json', finalKey: 'models/a.json' })).rejects.toBeTruthy();
 });
+
+it('promote resolves on a concurrent worker-retry race: final ABSENT on precheck, move FAILS, final PRESENT on recheck (F5)', async () => {
+  // The real race the post-error recheck exists for (WORKER MD path — the only staged→promote consumer):
+  // precheck sees no final (so we attempt the move), a concurrent promoter — a re-dispatched/retried
+  // summary job promoting the same MD key — wins (move → destination-exists/source-missing error), and the
+  // recheck now sees the final present → promote() must RESOLVE, not throw. A buggy impl with only the precheck
+  // and no post-error recheck would throw here (the earlier two tests both pass without the recheck).
+  const download = jest.fn()
+    .mockResolvedValueOnce({ data: null, error: { message: 'not found' } })                       // precheck: absent
+    .mockResolvedValue({ data: { arrayBuffer: async () => new ArrayBuffer(1) }, error: null });   // recheck: present
+  const move = jest.fn().mockResolvedValue({ error: { message: 'The resource already exists' } }); // racer won
+  const remove = jest.fn().mockResolvedValue({ error: null });
+  const { client } = fakeClient({ download, move, remove });
+  const store = new SupabaseBlobStore(client, 'artifacts');
+  await expect(store.promote({ principal: P, tempKey: '_staging/u/models/a.json', finalKey: 'models/a.json' })).resolves.toBeUndefined();
+  expect(move).toHaveBeenCalledTimes(1); // attempted the move, then swallowed the race error after the recheck
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -771,7 +1058,7 @@ In `lib/storage/supabase/supabase-blob-store.ts` add `import crypto from 'crypto
     }
     const { error } = await this.b().move(from, to);
     if (error) {
-      // A concurrent over-TTL promoter may have won the race: destination-exists / source-missing.
+      // A concurrent promoter (worker job retry / re-run of the same MD key) may have won the race: destination-exists / source-missing.
       // Re-check the final; treat a present final as success, else rethrow.
       if (await this.exists(ref.principal, ref.finalKey)) {
         await this.b().remove([from]).catch(() => {});
@@ -785,7 +1072,7 @@ In `lib/storage/supabase/supabase-blob-store.ts` add `import crypto from 'crypto
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx jest supabase-blob-store-staging`
-Expected: PASS (3 tests).
+Expected: PASS (4 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -803,7 +1090,11 @@ git commit -m "feat(1f-a): SupabaseBlobStore uuid-prefixed staging + promote rac
 - Modify: `lib/html-doc/theme.ts:78-105` (script consts → nonce'd functions; print button + listener)
 - Modify: `lib/html-doc/nav.ts:189` (`NAV_SCRIPT` const → `navScript(nonce?)`)
 - Modify: `lib/html-doc/render.ts:1-7,56-124` (opts; emit nonce'd scripts; suppress dig)
+- **Modify: `lib/html-doc/render-dig-deeper.ts:5-10,468,474,479` (the SECOND consumer of these shared symbols — update its call sites to the new functions with NO nonce; wire `printListenerScript()` so the local dig-deeper print button keeps working). Without this, Task 5 fails `tsc` at its own commit (`TS2305` — the const exports are gone) and the local dig-deeper print button regresses (B21).**
 - Test: `tests/lib/render-nonce.test.ts`
+- Test: `tests/lib/render-dig-deeper-parity.test.ts` (dig-deeper renders + print button still fires; local, no CSP)
+- **Modify: `tests/lib/html-doc/theme.test.ts:2-9,76-81` (the SECOND test consumer of the removed const exports — F2/H-2). It imports `THEME_HEAD_SCRIPT`/`THEME_TOGGLE_SCRIPT`/`PRINT_BUTTON` by name (→ `TS2305` once they become functions) and asserts `PRINT_BUTTON` contains the inline `onclick="window.print()"` (→ fails once D11 removes it). Rewired to the new function exports in Step 6c.**
+- **Modify: `tests/lib/html-doc/render.test.ts:157-162` (asserts the rendered `html` contains `onclick="window.print()"` at :160 — D11 deletes it). Rewired to the print-listener assertion in Step 6c.**
 
 **Interfaces:**
 - Consumes: existing palettes/`themeStyleBlock`/`STRUCTURAL_CSS`/`NAV_CSS`/`digControl`.
@@ -874,10 +1165,63 @@ it('generateNonce yields ≥128-bit base64, distinct per call', () => {
 });
 ```
 
+Also write the JSDOM behavior test — it proves the print button actually *fires* (B18/B21), not merely
+that a listener string is present, for BOTH the summary render and the local dig-deeper render (the
+second shared consumer). Separate file so it can run under the `jsdom` environment:
+
+```typescript
+// tests/lib/render-dig-deeper-parity.test.ts
+/** @jest-environment jsdom */
+import { renderMagazineHtml } from '@/lib/html-doc/render';
+import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
+import type { ParsedSummary, MagazineModel } from '@/lib/html-doc/types';
+
+const parsed: ParsedSummary = {
+  title: 'T', channel: 'C', duration: '1:00', url: null, lang: 'EN', videoId: 'vid',
+  tldr: 'This video x', takeaways: ['a'],
+  sections: [{ numeral: '1', title: 'Intro', prose: 'p', timeRange: { startSec: 5, endSec: 9, label: '0:05', url: 'https://y?t=5s' } }],
+  sourceMd: 'a.md',
+};
+const model: MagazineModel = { sections: [{ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] };
+
+/** Inject rendered HTML, execute every inline <script>, then click #print-btn and assert window.print fired. */
+function drivePrint(html: string): number {
+  document.documentElement.innerHTML = html.replace(/^[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*$/i, '');
+  const printSpy = jest.fn();
+  (window as unknown as { print: () => void }).print = printSpy;
+  for (const s of Array.from(document.querySelectorAll('script'))) {
+    if (!s.textContent) continue;
+    // Isolate each inline <script> exec, mirroring the browser (F10): a throwing dig-deeper script
+    // (zoom/askAi/captions/size touch DOM/APIs jsdom lacks) must NOT abort the remaining scripts, or the
+    // print listener would never bind and the test would fail for the wrong reason.
+    try { new Function(s.textContent)(); } catch { /* per-script isolation, like a real browser */ }
+  }
+  (document.getElementById('print-btn') as HTMLButtonElement)?.click();
+  return printSpy.mock.calls.length;
+}
+
+it('B18/B21: the LOCAL summary print button actually fires window.print()', () => {
+  expect(drivePrint(renderMagazineHtml(parsed, model))).toBeGreaterThan(0);
+});
+
+it('B21: the LOCAL dig-deeper print button still fires window.print() after the shared refactor', () => {
+  // renderDigDeeperDoc(args) — a minimal 1-section fixture; the print button + listener must survive.
+  const html = renderDigDeeperDoc({
+    summary: parsed, envelope: null, dug: [], mdPath: 'a.md', videoId: 'vid', language: 'en',
+  });
+  expect(drivePrint(html)).toBeGreaterThan(0);
+});
+```
+
+> `renderDigDeeperDoc(args)` (render-dig-deeper.ts:223) takes `{ summary, envelope, dug, mdPath, videoId,
+> language?, cropMap? }`; `envelope: null` + `dug: []` is the minimal valid input. The load-bearing
+> assertion is that the local dig-deeper doc's print button fires — proving the shared-symbol refactor
+> did not regress it (the B-1 second-consumer defect).
+
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest render-nonce`
-Expected: FAIL — `@/lib/html-doc/csp` does not exist; `renderMagazineHtml` ignores opts; inline `onclick` still present.
+Run: `npx jest render-nonce render-dig-deeper-parity`
+Expected: FAIL — `@/lib/html-doc/csp` does not exist; `renderMagazineHtml` ignores opts; inline `onclick` still present; and the dig-deeper parity test cannot resolve the new function names yet.
 
 - [ ] **Step 3: Create `lib/html-doc/csp.ts`**
 
@@ -950,19 +1294,22 @@ export function themeToggleScript(nonce?: string): string {
 
 - [ ] **Step 5: Refactor `nav.ts` — `NAV_SCRIPT` const → `navScript(nonce?)`**
 
-In `lib/html-doc/nav.ts`, change the export at line 189 from `export const NAV_SCRIPT = `<script>` to a function that stamps the nonce on the opening tag. Keep the entire existing script body verbatim; only the wrapper changes:
+Do **not** re-paste the ~250-line script body (Codex-L1 — easy for a fresh subagent to botch, hard to
+review). Keep the existing `NAV_SCRIPT` string **verbatim** as a private module const and wrap it — the
+only change is injecting the nonce into the opening `<script>` tag. In `lib/html-doc/nav.ts` line 189,
+change `export const NAV_SCRIPT = \`<script>` to a private `const NAV_SCRIPT = \`<script>` (drop the
+`export`), then add directly below it:
 
 ```typescript
+// NAV_SCRIPT keeps its existing verbatim body; navScript only stamps the nonce onto the opening tag.
 export function navScript(nonce?: string): string {
-  return `<script${nonce ? ` nonce="${nonce}"` : ''}>
-(function(){
-  // ...ENTIRE existing NAV_SCRIPT body, unchanged, from line 190 through line 442...
-})();
-</script>`;
+  return nonce ? NAV_SCRIPT.replace('<script>', `<script nonce="${nonce}">`) : NAV_SCRIPT;
 }
 ```
 
-(Move the existing multi-line template body inside the function unchanged; only the first line's `<script>` gains the optional nonce attribute.)
+This is a purely mechanical diff: the multi-line body is untouched; `render.ts` (Step 6) and
+`render-dig-deeper.ts` (Step 6b) call `navScript(nonce)` / `navScript()` instead of `NAV_SCRIPT`. (The
+opening tag appears once at the start of the string, so the single `.replace('<script>', …)` is exact.)
 
 - [ ] **Step 6: Refactor `render.ts` — opts, nonce'd emit, dig suppression**
 
@@ -1004,20 +1351,112 @@ In the returned template: `${THEME_HEAD_SCRIPT}` → `${themeHeadScript(nonce)}`
 ${showDig ? navScript(nonce) : ''}${themeToggleScript(nonce)}${printListenerScript(nonce)}
 ```
 
-- [ ] **Step 7: Run test to verify it passes + no regression**
+- [ ] **Step 6b: Update the SECOND shared consumer — `lib/html-doc/render-dig-deeper.ts` (B-1 Blocking)**
 
-Run: `npx jest render-nonce html-doc render theme nav`
-Expected: PASS — new nonce tests green; existing render/theme/nav tests pass (print now via listener; assert any test still checking the old inline `onclick` is updated to check the listener — fix inline if present).
+`render-dig-deeper.ts` imports the exact symbols this task converts from consts to functions. Removing
+the const exports breaks its `tsc` at this commit AND — if the print button isn't rewired — regresses the
+local dig-deeper print button (B21). The dig-deeper doc is a **local**, CSP-free artifact, so **every
+call passes NO nonce** (output stays behavior-identical). Edit:
+
+- Import (lines 5-10): replace the removed const names with the new functions —
+  `import { themeStyleBlock, themeHeadScript, THEME_TOGGLE_BUTTON, themeToggleScript, printButton, printListenerScript, BASE_PALETTE_LIGHT_PRE, BASE_PALETTE_LIGHT_POST, BASE_PALETTE_DARK_PRE, BASE_PALETTE_DARK_POST, type Palette } from './theme';`
+  and `import { digControl, navScript, NAV_CSS } from './nav';`
+- Line 468: `${THEME_HEAD_SCRIPT}` → `${themeHeadScript()}`
+- Line 474: `${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}` → `${THEME_TOGGLE_BUTTON}${printButton()}`
+- Line 479: `${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}${zoomScript}...` →
+  `${navScript()}${themeToggleScript()}${printListenerScript()}${zoomScript}...`
+  (**add `printListenerScript()`** — the print button now has no inline `onclick`, so without this listener
+  the dig-deeper print button silently stops working. `printListenerScript` runs unconditionally, exactly
+  like the old inline handler did.)
+
+- [ ] **Step 6c: Update the two EXISTING test consumers of the removed const exports (F2/H-2 — the test-side twin of the B-1 compile break)**
+
+`tests/lib/html-doc/theme.test.ts` imports `THEME_HEAD_SCRIPT`/`THEME_TOGGLE_SCRIPT`/`PRINT_BUTTON` by
+name (now functions → `TS2305`) and `tests/lib/html-doc/render.test.ts:160` asserts the deleted inline
+`onclick`. Neither compiles/passes after Steps 4/6 unless updated HERE, at Task 5's own commit. Concrete
+edits:
+
+**`tests/lib/html-doc/theme.test.ts`** — rewrite the import block (lines 2-9) to pull the new functions
+(`THEME_TOGGLE_BUTTON` stays a const), then materialize the three script strings ONCE so the rest of the
+file (the executed-in-jsdom blocks) references them unchanged:
+
+```typescript
+import {
+  themeStyleBlock,
+  themeHeadScript,
+  THEME_TOGGLE_BUTTON,
+  themeToggleScript,
+  printButton,
+  printListenerScript,
+  type Palette,
+} from '../../../lib/html-doc/theme';
+
+// The script consts became functions (Task 5); call them once so the executed-script tests below
+// (which reference these names) keep working with zero further edits.
+const THEME_HEAD_SCRIPT = themeHeadScript();
+const THEME_TOGGLE_SCRIPT = themeToggleScript();
+```
+
+Then replace the `describe('PRINT_BUTTON', …)` block (lines 76-81) — the print wiring moved out of the
+button markup (D11) into `printListenerScript()`:
+
+```typescript
+describe('printButton + printListenerScript', () => {
+  it('renders a print button with NO inline onclick (D11)', () => {
+    expect(printButton()).toContain('id="print-btn"');
+    expect(printButton()).not.toContain('onclick'); // inline handler removed for the nonce CSP
+  });
+  it('wires window.print() via an addEventListener listener', () => {
+    expect(printListenerScript()).toContain("addEventListener('click'");
+    expect(printListenerScript()).toContain('window.print()');
+  });
+});
+```
+
+(The `describe('THEME_HEAD_SCRIPT', …)` and `describe('THEME_TOGGLE_SCRIPT', …)` blocks and both
+executed-script `describe`s are unchanged — they read the local `THEME_HEAD_SCRIPT`/`THEME_TOGGLE_SCRIPT`
+consts defined above.)
+
+**`tests/lib/html-doc/render.test.ts`** — replace the Print-button assertion block (lines 157-162):
+
+```typescript
+  it('includes a Print button hidden in print, wired via a listener (D11)', () => {
+    const html = renderMagazineHtml(parsed, model);
+    expect(html).toContain('id="print-btn"');
+    expect(html).not.toContain('onclick="window.print()"'); // D11: inline onclick removed for BOTH paths
+    expect(html).toContain('window.print()');               // print wired via the (nonce-less, local) listener
+    expect(html).toContain('#theme-toggle,#print-btn{display:none}');
+  });
+```
+
+- [ ] **Step 7: Run test to verify it passes + typecheck + no regression**
+
+Run: `npx jest render-nonce render-dig-deeper-parity html-doc render theme nav`
+Expected: PASS — new nonce + dig-deeper parity tests green; existing render/theme/nav/dig-deeper tests
+pass (print now via listener; update any test still asserting the old inline `onclick` to assert the
+listener instead).
+
+Run: `npx tsc --noEmit`
+Expected: clean — proves `render-dig-deeper.ts` (and every other consumer) compiles against the new
+function exports at THIS commit, not deferred to Task 9 (the B-1 compile break).
 
 - [ ] **Step 8: Iterative dual-adversarial re-review (shared code)**
 
-Run `superpowers:requesting-code-review` + `codex:rescue` on `render.ts`/`theme.ts`/`nav.ts`/`csp.ts`. Verify: local behavioral parity (print button fires, theme FOUC runs, dig controls present locally); the nonce path adds no `unsafe-*`; header nonce will match every emitted inline `<script>`/`<style>` (coherence). Save to `docs/reviews/task-5-render-nonce-review.md` / `-codex.md`. **Re-review until a round returns no new Blocking/High.**
+Run `superpowers:requesting-code-review` + `codex:rescue` on the **full shared set**:
+`render.ts`/`theme.ts`/`nav.ts`/`csp.ts` **AND `render-dig-deeper.ts`** (the second consumer B-1
+exposed — its inclusion here is mandatory: fixing a shared-code Blocking is itself a new, unreviewed
+shared-code change). Verify: local behavioral parity on **both** renderers (summary AND dig-deeper print
+buttons fire; theme FOUC runs; dig controls present locally); the nonce path adds no `unsafe-*`; the
+header nonce will match every emitted inline `<script>`/`<style>` (coherence); `render-dig-deeper.ts`
+passes NO nonce (local CSP-free) yet still emits `printListenerScript()`. Save to
+`docs/reviews/task-5-render-nonce-review.md` / `-codex.md`. **Re-review until a round returns no new
+Blocking/High.**
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add lib/html-doc/csp.ts lib/html-doc/render.ts lib/html-doc/theme.ts lib/html-doc/nav.ts tests/lib/render-nonce.test.ts docs/reviews/task-5-render-nonce-*.md
-git commit -m "feat(1f-a): nonce/dig render opts + CSP builder + print listener (local behavior-parity)"
+git add lib/html-doc/csp.ts lib/html-doc/render.ts lib/html-doc/theme.ts lib/html-doc/nav.ts lib/html-doc/render-dig-deeper.ts tests/lib/render-nonce.test.ts tests/lib/render-dig-deeper-parity.test.ts tests/lib/html-doc/theme.test.ts tests/lib/html-doc/render.test.ts docs/reviews/task-5-render-nonce-*.md
+git commit -m "feat(1f-a): nonce/dig render opts + CSP builder + print listener (local behavior-parity, dig-deeper included)"
 ```
 
 ---
@@ -1029,7 +1468,7 @@ git commit -m "feat(1f-a): nonce/dig render opts + CSP builder + print listener 
 - Test: `tests/integration/serve-doc-materialize.test.ts`
 
 **Interfaces:**
-- Consumes: `readModelEnvelope`/`writeModelEnvelopeStaged` (Task 3), `generateMagazineModel(sections, language, { caps, signal })` (Task 2), `CloudGeminiCaps` + magazine constants (Task 2), `reserve_serve_model` RPC (Task 1), `BlobStore`, `Principal`, `GENERATOR_VERSION` (`render.ts`), `ParsedSummary`.
+- Consumes: `readModelEnvelope`/`writeModelEnvelope` (Task 3 — the upsert writer overwrites the cache on drift/version-bump), `generateMagazineModel(sections, language, { caps, signal })` (Task 2), `CloudGeminiCaps` + magazine constants (Task 2), `reserve_serve_model` RPC (Task 1), `BlobStore`, `Principal`, `GENERATOR_VERSION` (`render.ts`), `ParsedSummary`.
 - Produces:
 
 ```typescript
@@ -1057,10 +1496,11 @@ export async function resolveMagazineModel(args: {
 
 ```typescript
 // tests/integration/serve-doc-materialize.test.ts
-import { randomUUID } from 'crypto';
 import { adminClient, newUser, signInAs } from './helpers/clients';
+import { seedPlaylist, seedPromotedVideo } from './helpers/seed';
 import { resolveMagazineModel } from '@/lib/html-doc/serve-doc';
-import { readModelEnvelope } from '@/lib/html-doc/model-store';
+import { readModelEnvelope, writeModelEnvelope } from '@/lib/html-doc/model-store';
+import { GENERATOR_VERSION } from '@/lib/html-doc/render';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import type { ParsedSummary } from '@/lib/html-doc/types';
@@ -1078,12 +1518,13 @@ const parsed = (): ParsedSummary => ({
   sections: [{ numeral: '1', title: 'Intro', prose: 'body', timeRange: null }], sourceMd: 'v.md',
 });
 
+// Shared helper — inserts owner_id (NOT NULL + composite FK) + the worker's promoted `data` shape,
+// so the reserve RPC sees an owned+promoted doc. resolveMagazineModel operates on `parsed` directly,
+// so no MD blob is needed here (only the DB row).
 async function seed(ownerId: string) {
-  const playlist_key = `k-${randomUUID()}`;
-  const { data: pl } = await svc.from('playlists').insert({ owner_id: ownerId, playlist_key, playlist_url: `https://x/${randomUUID()}` }).select('id').single();
-  const videoId = `v-${randomUUID()}`;
-  await svc.from('videos').insert({ playlist_id: pl!.id, video_id: videoId, position: 1, data: { id: videoId, artifacts: { summaryMd: { key: `${videoId}.md`, status: 'promoted' } } } });
-  return { playlistId: pl!.id as string, playlist_key, videoId };
+  const { playlistId, playlistKey } = await seedPlaylist(svc, ownerId);
+  const { videoId } = await seedPromotedVideo(svc, { ownerId, playlistId });
+  return { playlistId, playlist_key: playlistKey, videoId };
 }
 
 beforeEach(async () => {
@@ -1093,7 +1534,7 @@ beforeEach(async () => {
   (generateMagazineModel as jest.Mock).mockClear();
 });
 
-it('materializes on miss: reserves, generates under caps, promotes, returns ok', async () => {
+it('materializes on miss: reserves, generates under caps, upserts, returns ok', async () => {
   const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
   const { client } = await signInAs(u.email, u.password);
   const principal = { id: u.user.id, indexKey: playlist_key };
@@ -1104,7 +1545,7 @@ it('materializes on miss: reserves, generates under caps, promotes, returns ok',
   const caps = (generateMagazineModel as jest.Mock).mock.calls[0][2].caps;
   expect(caps.magazineOutputTokens).toBeGreaterThan(0); // B5: caps threaded
   const env = await readModelEnvelope(principal, videoId, blob);
-  expect(env?.generatorVersion).toBeDefined(); // promoted + cached
+  expect(env?.generatorVersion).toBeDefined(); // upserted + cached
 });
 
 it('serves the cached model without a second Gemini call (B1)', async () => {
@@ -1144,6 +1585,46 @@ it('re-materializes on drift (sourceSections mismatch) — B3', async () => {
   expect(res.status).toBe('ok');
   expect(generateMagazineModel).toHaveBeenCalledTimes(1); // regenerated
 });
+
+it('re-materializes on a STALE generatorVersion even when sourceSections match (F6 — version gate)', async () => {
+  const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const principal = { id: u.user.id, indexKey: playlist_key };
+  const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+  const p = parsed();
+  // Seed a cached envelope whose sourceSections MATCH the current parse (NO title drift) but whose
+  // generatorVersion is stale (guaranteed ≠ current via the `-STALE` suffix). ONLY the version check can
+  // trigger regeneration here — this test goes red if a future edit drops that check, since title-drift
+  // alone would keep serving the cache (that is the exact regression F6 guards).
+  await writeModelEnvelope(principal, videoId, {
+    sourceMd: p.sourceMd!,
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceSections: p.sections.map((s) => s.title),
+    generatorVersion: `${GENERATOR_VERSION}-STALE`,
+    model: { sections: [{ lead: 'old', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
+  }, blob);
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  expect(res.status).toBe('ok');
+  expect(generateMagazineModel).toHaveBeenCalledTimes(1);         // stale version → REGENERATED, not served from cache
+  // The returned model is the freshly-generated one (mock lead 'L'), NOT the seeded stale model (lead 'old').
+  if (res.status === 'ok') expect(res.model.sections[0].lead).toBe('L');
+  // Persistence proof (Option A): writeModelEnvelope upserts (plain `put`), so the stale blob was
+  // OVERWRITTEN in place. Re-read the persisted envelope and assert it now carries the CURRENT version
+  // and the fresh model — this is the on-disk half of the money-path heal (a create-if-absent promote
+  // could NOT have replaced it).
+  const persisted = await readModelEnvelope(principal, videoId, blob);
+  expect(persisted?.generatorVersion).toBe(GENERATOR_VERSION);
+  expect(persisted?.model.sections[0].lead).toBe('L');
+  // Self-heal proof: a SECOND view with the same fresh parse now serves from the overwritten cache —
+  // NO additional Gemini call and NO second reserve/charge. serve_model_charge still holds exactly the
+  // ONE attempt from the regen above (attempt_count === 1), so the doc does not re-charge every view.
+  (generateMagazineModel as jest.Mock).mockClear();
+  const res2 = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  expect(res2.status).toBe('ok');
+  expect(generateMagazineModel).not.toHaveBeenCalled();
+  const { data: charge } = await svc.from('serve_model_charge').select('attempt_count').eq('owner_id', u.user.id).single();
+  expect(charge?.attempt_count).toBe(1);
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1159,7 +1640,7 @@ import type { BlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary, MagazineModel } from './types';
 import { GENERATOR_VERSION } from './render';
-import { readModelEnvelope, writeModelEnvelopeStaged } from './model-store';
+import { readModelEnvelope, writeModelEnvelope } from './model-store';
 import { generateMagazineModel } from '@/lib/gemini';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import {
@@ -1228,14 +1709,17 @@ export async function resolveMagazineModel(args: {
     default: throw new Error(`reserve_serve_model: unexpected status ${String(reserveStatus)}`);
   }
 
-  // We hold the lease and this attempt was charged. Generate → stage(uuid) → promote → serve.
+  // We hold the lease and this attempt was charged. Generate → upsert (overwrite) → serve.
+  // The model uses writeModelEnvelope (plain `put` → `upload(upsert:true)`), NOT staged→promote: a
+  // regenerated model on drift / version-bump must OVERWRITE the stale blob so the doc self-heals
+  // (create-if-absent promote could never replace it → re-reserve + re-charge every view until K, then 503).
   // On failure/abort do NOTHING (no release RPC): the lease expires and the next view reclaims (≤ K).
   const model = await generateMagazineModel(
     parsed.sections.map((s) => ({ title: s.title, prose: s.prose })),
     language,
     { caps: SERVE_CAPS, signal },
   );
-  await writeModelEnvelopeStaged(principal, base, {
+  await writeModelEnvelope(principal, base, {
     sourceMd: parsed.sourceMd ?? `${base}.md`,
     generatedAt: new Date().toISOString(),
     sourceSections: titles,
@@ -1249,13 +1733,13 @@ export async function resolveMagazineModel(args: {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx supabase db reset && npm run test:integration -- --runInBand serve-doc-materialize`
-Expected: PASS (4 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add lib/html-doc/serve-doc.ts tests/integration/serve-doc-materialize.test.ts
-git commit -m "feat(1f-a): resolveMagazineModel serve helper (drift-gate + reserve + stage/promote)"
+git commit -m "feat(1f-a): resolveMagazineModel serve helper (drift-gate + reserve + upsert)"
 ```
 
 ---
@@ -1271,13 +1755,17 @@ git commit -m "feat(1f-a): resolveMagazineModel serve helper (drift-gate + reser
 - Produces: `GET /api/html/{videoId}?playlist={playlistId}&type=summary` cloud response (HTML + CSP + `Cache-Control: private, no-store`), status mapping per §4.1.
 
 > The `artifacts` field is on the DB `data` jsonb but not in the Zod `VideoSchema`; read it via a cast: `(video as unknown as { artifacts?: { summaryMd?: { key?: string; status?: string } } }).artifacts?.summaryMd`.
+>
+> **summaryMd source (Codex H-2):** the worker sets top-level `video.summaryMd` (summary-handler:157)
+> AND `artifacts.summaryMd.{key,status}` (persist_summary, 0009) to the same value. The route reads
+> **status from `artifact.status`** and **the MD key from `artifact.key` (falling back to
+> `video.summaryMd`)**. Both are valid ONLY because the shared seed helper (`seedPromotedVideo`) sets all
+> three fields to `${base}.md` — so a real-DB drive reaches the blob, never a false 404/409.
 
 - [ ] **Step 1: Write the failing test (route-level; gemini + supabase mocked)**
 
 ```typescript
 // tests/api/html-serve-cloud.test.ts
-import { GET } from '@/app/api/html/[id]/route';
-
 const validPlaylist = '11111111-1111-1111-1111-111111111111';
 const validVideo = 'vid123';
 const promotedSummaryMd = `# T\n**Channel:** C | **Duration:** 1:00\n\n## 1. Intro\nbody\n`;
@@ -1286,24 +1774,42 @@ let mockUser: { id: string } | null;
 let mockIndexVideos: any[];
 let mockMdBytes: Buffer | null;
 let mockResolve: any;
+let mockBlobGet: jest.Mock;
 
 jest.mock('next/headers', () => ({ cookies: async () => ({ getAll: () => [], set: () => {} }) }));
-jest.mock('@/lib/supabase/server', () => ({ createServerSupabase: () => ({ auth: { getUser: async () => ({ data: { user: mockUser } }) } }) }));
-jest.mock('@/lib/storage/resolve', () => ({
-  ...jest.requireActual('@/lib/storage/resolve'),
-  getStorageBundle: () => ({
-    metadataStore: { readIndex: async () => ({ videos: mockIndexVideos }) },
-    blobStore: { get: async () => mockMdBytes },
-  }),
-  getPrincipalFromSession: () => ({ id: mockUser?.id, indexKey: 'pk' }),
+// A stable session-client sentinel so the B20 test can assert getStorageBundle received THIS client.
+jest.mock('@/lib/supabase/server', () => ({
+  createServerSupabase: jest.fn(() => ({ __session: true, auth: { getUser: async () => ({ data: { user: mockUser } }) } })),
 }));
+// B20: getStorageBundle MUST be called with { supabaseClient: <session client> }. The mock THROWS if the
+// session client is absent, so a bare getStorageBundle() (service-role default) fails the test.
+jest.mock('@/lib/storage/resolve', () => {
+  const actual = jest.requireActual('@/lib/storage/resolve');
+  return {
+    ...actual,
+    getStorageBundle: jest.fn((arg?: { supabaseClient?: unknown }) => {
+      if (!arg || !arg.supabaseClient) throw new Error('B20: getStorageBundle called without a session supabaseClient');
+      return {
+        metadataStore: { readIndex: async () => ({ videos: mockIndexVideos }) },
+        blobStore: { get: mockBlobGet },
+      };
+    }),
+    getPrincipalFromSession: () => ({ id: mockUser?.id, indexKey: 'pk' }),
+  };
+});
 jest.mock('@/lib/html-doc/serve-doc', () => ({ resolveMagazineModel: async () => mockResolve }));
 // Playlist resolution helper (owner-asserted playlistId → playlist_key) is mocked to succeed by default:
 jest.mock('@/lib/storage/serve-playlist', () => ({ resolveOwnedPlaylistKey: async () => 'pk' }));
 
+import { GET } from '@/app/api/html/[id]/route';
+import { getStorageBundle } from '@/lib/storage/resolve';
+import { createServerSupabase } from '@/lib/supabase/server';
+const mockGetStorageBundle = getStorageBundle as jest.Mock;
+
 function req(qs: string) { return new Request(`http://localhost/api/html/${validVideo}?${qs}`); }
 const params = { params: Promise.resolve({ id: validVideo }) };
 
+// Mirrors the worker row (summary-handler.ts:149-164): top-level summaryMd + language + the promoted artifact.
 const promotedVideo = { id: validVideo, language: 'en', summaryMd: `${validVideo}.md`, artifacts: { summaryMd: { key: `${validVideo}.md`, status: 'promoted' } } };
 
 beforeEach(() => {
@@ -1311,11 +1817,14 @@ beforeEach(() => {
   mockUser = { id: 'owner-1' };
   mockIndexVideos = [promotedVideo];
   mockMdBytes = Buffer.from(promotedSummaryMd, 'utf-8');
+  mockBlobGet = jest.fn(async () => mockMdBytes);
   mockResolve = { status: 'ok', model: { sections: [{ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] } };
+  mockGetStorageBundle.mockClear();
+  (createServerSupabase as jest.Mock).mockClear();
 });
 afterEach(() => { delete process.env.STORAGE_BACKEND; });
 
-it('B8/B16/B17: owner gets 200 HTML with a coherent nonce CSP + private no-store', async () => {
+it('B8/B16/B17/B20: owner gets 200 HTML with a coherent nonce CSP + private no-store, bundle built from the SESSION client', async () => {
   const res = await GET(req(`playlist=${validPlaylist}&type=summary`), params);
   expect(res.status).toBe(200);
   expect(res.headers.get('content-type')).toMatch(/text\/html/);
@@ -1325,6 +1834,9 @@ it('B8/B16/B17: owner gets 200 HTML with a coherent nonce CSP + private no-store
   const html = await res.text();
   for (const tag of html.match(/<script[^>]*>/g) ?? []) expect(tag).toContain(`nonce="${nonce}"`);
   expect(csp).not.toMatch(/unsafe-/);
+  // B20: the bundle was built from the exact session client createServerSupabase returned — never bare.
+  const sessionClient = (createServerSupabase as jest.Mock).mock.results[0].value;
+  expect(mockGetStorageBundle).toHaveBeenCalledWith({ supabaseClient: sessionClient });
 });
 
 it('B11: no session → 401', async () => { mockUser = null; expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(401); });
@@ -1348,6 +1860,11 @@ it('B6b: resolve busy (in_flight) → 503', async () => { mockResolve = { status
 it('reserve denied → 404 (generic, no leak)', async () => { mockResolve = { status: 'denied' }; expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(404); });
 it('at_capacity → 503', async () => { mockResolve = { status: 'at_capacity' }; expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(503); });
 it('attempts_exhausted → 503', async () => { mockResolve = { status: 'attempts_exhausted' }; expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(503); });
+it('a storage/logical-key error with statusCode===400 surfaces as 400 (not 500) after the cloud split', async () => {
+  // e.g. assertLogicalKey rejecting a bad key inside blobStore.get → { statusCode: 400 }.
+  mockBlobGet = jest.fn(async () => { throw Object.assign(new Error('invalid logical key'), { statusCode: 400 }); });
+  expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(400);
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1427,12 +1944,15 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
     const video = index.videos.find((v) => v.id === videoId) as Video | undefined;
     if (!video) return json({ error: 'not found' }, 404);
 
-    const artifact = (video as unknown as { artifacts?: { summaryMd?: { status?: string } } }).artifacts?.summaryMd;
+    const artifact = (video as unknown as { artifacts?: { summaryMd?: { key?: string; status?: string } } }).artifacts?.summaryMd;
     const status = artifact?.status;
     if (status === 'committed') return json({ error: 'not ready, retry' }, 503); // finalizing window (B12)
     if (status !== 'promoted') return json({ error: 'not found' }, 404);          // absent/unknown (B13)
 
-    const mdKey = video.summaryMd;
+    // Key source: prefer artifacts.summaryMd.key (the artifact record), fall back to top-level
+    // video.summaryMd. persist_summary (0009) writes BOTH to the same value, so they agree; reading the
+    // artifact key first addresses Codex H-2 (don't fetch a blob the artifact record doesn't govern).
+    const mdKey = artifact?.key ?? video.summaryMd;
     if (!mdKey) return json({ error: 'not found' }, 404);
     const mdBytes = await bundle.blobStore.get(principal, mdKey);
     if (!mdBytes) return json({ error: 'repair needed' }, 409); // promoted but blob lost (B13b)
@@ -1500,36 +2020,136 @@ async function serveLocal(videoId: string, searchParams: URLSearchParams): Promi
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes + local path unregressed**
 
-Run: `npx jest html-serve-cloud`
-Expected: PASS (all route behaviors B6/B6b/B8/B11–B16/B17 + URL-contract + denied/at_capacity/attempts_exhausted).
+Run: `npx jest html-serve`
+Expected: PASS — this matches BOTH `html-serve-cloud` (new) AND the pre-existing
+`tests/api/html-serve.test.ts` (the LOCAL path). The whole-file rewrite splits `GET` into
+`serveCloud`/`serveLocal` and adds `if (searchParams.get('playlist')) return 400` to the local branch, so
+the local suite MUST be re-run here (M-1), not deferred to Task 9. Update any local-path assertion that
+the new wrong-backend-param guard changes; the pre-1F-a local behaviors (outputFolder required, summary +
+dig-deeper types, 404/400 mapping) must all stay green.
 
-- [ ] **Step 6: Add the service-role confinement check for the serve route (B20)**
+- [ ] **Step 6: Prove the serve route is confined to the session client (B20) — do NOT allowlist it**
 
-Append `app/api/html/[id]/route.ts` to the confinement allowlist scan in `scripts/check-service-confinement.ts` (the serve route must build its bundle from the session client only — assert `createServiceClient`/`createServiceRoleClient` is never imported in this file).
+**The plan's original instruction was backwards** (Codex Blocking-2). In the real
+`scripts/check-service-confinement.ts`, `ALLOWED_SERVICE_IMPORTERS` is the set of entrypoints *permitted*
+to reach `lib/supabase/service.ts`. Adding the serve route there would **explicitly authorize
+service-role on the serve path — the exact opposite of D5/B20.** The serve route must simply NOT reach
+`service.ts` (it imports `getStorageBundle` / `getPrincipalFromSession` / `resolveOwnedPlaylistKey` /
+`createServerSupabase`, none of which transitively import `service.ts`). The check already scans
+`app/**` as an entrypoint, so the route is covered automatically — a violation there means the script
+FAILS, which is what we want to keep green.
 
-Run: `npm run check:confinement`
-Expected: PASS — no service-role import on the serve path.
-
-- [ ] **Step 7: Isolation integration test (B9/B10) — real RLS, gemini mocked**
+Add a focused assertion test that pins this contract (using the script's exported helpers):
 
 ```typescript
-// tests/integration/html-serve-isolation.test.ts (add alongside serve-doc-materialize)
-// Seed owner A's promoted doc; a signed-in owner B calling readIndex on A's playlist_key sees no video
-// (RLS) → route resolves foreign playlistId to null → 404. Anon owner viewing its OWN doc → 200 path.
-// Assert resolveOwnedPlaylistKey returns null for B on A's playlistId, and the promoted video is
-// invisible to B's session client (bidirectional isolation).
+// tests/lib/serve-route-confinement.test.ts
+import path from 'path';
+import { collectEntrypoints, reachesService, findServiceImporters } from '@/scripts/check-service-confinement';
+
+const ROUTE = path.join(process.cwd(), 'app/api/html/[id]/route.ts');
+
+it('the serve route is scanned as an entrypoint', () => {
+  expect(collectEntrypoints().map((e) => path.resolve(e))).toContain(path.resolve(ROUTE));
+});
+it('the serve route does NOT reach lib/supabase/service.ts (session client only — B20)', () => {
+  expect(reachesService(ROUTE)).toBe(false);
+});
+it('the serve route is NOT in the service-role allowlist and is not a violator', () => {
+  expect(findServiceImporters().map((e) => path.resolve(e))).not.toContain(path.resolve(ROUTE));
+});
+```
+
+Run: `npx jest serve-route-confinement && npm run check:confinement`
+Expected: PASS — the serve route is scanned, does not reach `service.ts`, and the script prints
+`service_role confinement OK`. (If `check-service-confinement.ts` does not already export
+`collectEntrypoints`/`reachesService`/`findServiceImporters`, add the `export` keyword to those three
+functions — they are pure and side-effect-free; only the `require.main === module` block runs the CLI.)
+
+- [ ] **Step 7: Isolation integration test (B9/B10) — real RLS, runnable (NOT prose)**
+
+This is one of the stage's core auth/RLS success criteria and the route test is fully mocked, so the
+**real-DB** proof must be runnable code (Codex Blocking-3). It drives the actual RLS enforcement points —
+`resolveOwnedPlaylistKey` (the D6/D9 owner-assert on the session client) and
+`getStorageBundle({ supabaseClient }).metadataStore.readIndex` (the video-row RLS backstop) — with real
+session/anon clients, seeded via the shared helper so the video shape matches the worker:
+
+```typescript
+// tests/integration/html-serve-isolation.test.ts
+import { adminClient, newUser, signInAs, anonSession } from './helpers/clients';
+import { seedPlaylist, seedPromotedVideo, seedSummaryBlob } from './helpers/seed';
+import { resolveOwnedPlaylistKey } from '@/lib/storage/serve-playlist';
+import { getStorageBundle } from '@/lib/storage/resolve';
+
+const svc = adminClient();
+const MD = `# T\n**Channel:** C | **Duration:** 1:00\n\n## 1. Intro\nbody\n`;
+
+/** Seed an owner + one promoted doc (DB row via helper + the MD blob at {owner}/{key}/{base}.md). */
+async function seedOwnerDoc(ownerId: string) {
+  const { playlistId, playlistKey } = await seedPlaylist(svc, ownerId);
+  const { videoId, base } = await seedPromotedVideo(svc, { ownerId, playlistId });
+  await seedSummaryBlob(svc, ownerId, playlistKey, base, MD);
+  return { playlistId, playlistKey, videoId };
+}
+
+it('B8/B9: an owner (registered OR anon) passes BOTH RLS gates for the 200 path (owner-assert + video visible)', async () => {
+  // HONEST SCOPE (F7): this test drives the two REAL RLS enforcement points the 200 path depends on —
+  // resolveOwnedPlaylistKey (owner-assert) and readIndex (video-row RLS). It does NOT call GET, so it
+  // does not itself assert HTTP 200; the 200/404 STATUS MAPPING is proven by the mocked route test
+  // (Task 7 Step 1, `res.status === 200`). The two layers together cover B9 without either overclaiming.
+  // registered
+  const a = await newUser();
+  const aDoc = await seedOwnerDoc(a.user.id);
+  const { client: aClient } = await signInAs(a.email, a.password);
+  expect(await resolveOwnedPlaylistKey(aClient, aDoc.playlistId, a.user.id)).toBe(aDoc.playlistKey);
+  const aIndex = await getStorageBundle({ supabaseClient: aClient })
+    .metadataStore.readIndex({ id: a.user.id, indexKey: aDoc.playlistKey });
+  expect(aIndex.videos.find((v) => v.id === aDoc.videoId)).toBeTruthy(); // own video visible → both RLS gates pass
+
+  // anon owner — identical path (auth.uid() is the anon uid)
+  const { client: anonClient, userId: anonId } = await anonSession();
+  const anonDoc = await seedOwnerDoc(anonId);
+  expect(await resolveOwnedPlaylistKey(anonClient, anonDoc.playlistId, anonId)).toBe(anonDoc.playlistKey);
+  const anonIndex = await getStorageBundle({ supabaseClient: anonClient })
+    .metadataStore.readIndex({ id: anonId, indexKey: anonDoc.playlistKey });
+  expect(anonIndex.videos.find((v) => v.id === anonDoc.videoId)).toBeTruthy();
+});
+
+it('B10: a foreign owner is blocked BOTH directions (playlist-assert null + RLS-invisible video → 404)', async () => {
+  const a = await newUser();
+  const b = await newUser();
+  const aDoc = await seedOwnerDoc(a.user.id);
+  const bDoc = await seedOwnerDoc(b.user.id);
+  const { client: aClient } = await signInAs(a.email, a.password);
+  const { client: bClient } = await signInAs(b.email, b.password);
+
+  // (1) B on A's playlistId → owner-assert returns null → route 404.
+  expect(await resolveOwnedPlaylistKey(bClient, aDoc.playlistId, b.user.id)).toBeNull();
+  // (2) Even handed A's playlist_key directly, B's session sees NO video (RLS row-invisible) → route 404.
+  const bSeesA = await getStorageBundle({ supabaseClient: bClient })
+    .metadataStore.readIndex({ id: b.user.id, indexKey: aDoc.playlistKey });
+  expect(bSeesA.videos.find((v) => v.id === aDoc.videoId)).toBeUndefined();
+  // (3) Symmetric: A cannot see B's doc.
+  expect(await resolveOwnedPlaylistKey(aClient, bDoc.playlistId, a.user.id)).toBeNull();
+  const aSeesB = await getStorageBundle({ supabaseClient: aClient })
+    .metadataStore.readIndex({ id: a.user.id, indexKey: bDoc.playlistKey });
+  expect(aSeesB.videos.find((v) => v.id === bDoc.videoId)).toBeUndefined();
+});
 ```
 
 Run: `npx supabase db reset && npm run test:integration -- --runInBand html-serve-isolation`
-Expected: PASS.
+Expected: PASS — own (registered + anon) resolves and sees its doc; foreign is null/invisible both
+directions.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add app/api/html/[id]/route.ts lib/storage/serve-playlist.ts scripts/check-service-confinement.ts tests/api/html-serve-cloud.test.ts tests/integration/html-serve-isolation.test.ts
-git commit -m "feat(1f-a): cloud serve branch on /api/html/[id] (auth, owner-assert, CSP, status mapping)"
+# check-service-confinement.ts already EXPORTS collectEntrypoints/reachesService/findServiceImporters
+# and needs NO allowlist edit (the serve route must NOT be allowlisted). Include it only if you had to
+# add `export` to those helpers.
+git add app/api/html/[id]/route.ts lib/storage/serve-playlist.ts tests/api/html-serve-cloud.test.ts tests/lib/serve-route-confinement.test.ts tests/integration/html-serve-isolation.test.ts
+git commit -m "feat(1f-a): cloud serve branch on /api/html/[id] (auth, owner-assert, CSP, status mapping, B20 confinement)"
 ```
 
 ---
@@ -1553,13 +2173,16 @@ const svc = adminClient();
 const SAFETY_FRACTION = 0.2;
 const MAX_OWNED_PROMOTED_DOCS_ANON = 2; // anon summary quota (0011); the fully-bounded case asserted hard
 
-beforeEach(async () => {
-  await svc.from('guardrail_config').update({ daily_cap_cents: 500, magazine_est_cents: 6, max_serve_attempts: 5 }).eq('id', true);
-});
+// NO beforeEach mutation — this suite pins the MIGRATION DEFAULTS after `db reset`. Setting the values
+// here then asserting them would be tautological (Codex High-1): it would pass even if 0012's defaults
+// were wrong, which is exactly what this invariant exists to catch. The suite must run against a freshly
+// reset DB (Step 2/4 do `npx supabase db reset` first) so it reads the real 0012 defaults untouched.
 
-it('anon reclaim-loop worst case is within the daily-cap safety fraction (§4.2)', async () => {
+it('the 0012 MIGRATION DEFAULTS satisfy the anon config invariant (§4.2) — read, do not set', async () => {
   const { data: cfg } = await svc.from('guardrail_config')
     .select('daily_cap_cents, magazine_est_cents, max_serve_attempts').single();
+  // These are the reset-DB defaults (magazine_est_cents=6, max_serve_attempts=5, daily_cap_cents=500),
+  // NOT values this test wrote. If a future migration retunes them past the bound, this fails.
   const worst = MAX_OWNED_PROMOTED_DOCS_ANON * cfg!.max_serve_attempts * cfg!.magazine_est_cents; // 2·5·6 = 60
   const bound = cfg!.daily_cap_cents * SAFETY_FRACTION;                                            // 500·0.2 = 100
   expect(worst).toBeLessThanOrEqual(bound);
@@ -1568,18 +2191,30 @@ it('anon reclaim-loop worst case is within the daily-cap safety fraction (§4.2)
 it('documents the registered residual as deferred to 1G (NOT asserted as bounded)', async () => {
   // A registered account (summary quota 20) reclaim-loop = 20·5·6 = 600 > 100. This is the
   // attributable, bounded-fraction residual explicitly deferred to 1G per spec §9 — recorded here
-  // so the convergence trail shows it is known-and-accepted, not overlooked.
+  // (reading the same defaults) so the convergence trail shows it is known-and-accepted, not overlooked.
   const REGISTERED_DOCS = 20;
   const { data: cfg } = await svc.from('guardrail_config').select('daily_cap_cents, magazine_est_cents, max_serve_attempts').single();
   const registeredWorst = REGISTERED_DOCS * cfg!.max_serve_attempts * cfg!.magazine_est_cents;
   expect(registeredWorst).toBeGreaterThan(cfg!.daily_cap_cents * SAFETY_FRACTION); // deferred to 1G
+});
+
+it('(optional) a representative TUNED tuple also satisfies the invariant — this test MAY set values', async () => {
+  // Separate from the defaults test: here mutation is legitimate because we are checking a hypothetical
+  // retune, not the shipped defaults. Restore afterwards so no cross-file leakage.
+  const { data: before } = await svc.from('guardrail_config').select('daily_cap_cents, magazine_est_cents, max_serve_attempts').single();
+  await svc.from('guardrail_config').update({ daily_cap_cents: 800, magazine_est_cents: 8, max_serve_attempts: 4 }).eq('id', true);
+  const { data: cfg } = await svc.from('guardrail_config').select('daily_cap_cents, magazine_est_cents, max_serve_attempts').single();
+  expect(MAX_OWNED_PROMOTED_DOCS_ANON * cfg!.max_serve_attempts * cfg!.magazine_est_cents)
+    .toBeLessThanOrEqual(cfg!.daily_cap_cents * SAFETY_FRACTION);
+  await svc.from('guardrail_config').update(before!).eq('id', true);
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx supabase db reset && npm run test:integration -- --runInBand serve-config-invariant`
-Expected: FAIL if columns/defaults are missing (Task 1 not applied) or values violate the bound.
+Expected: FAIL if columns/defaults are missing (Task 1 not applied). Because the invariant test now reads
+the real 0012 defaults (not values it set), a wrong default genuinely fails it.
 
 - [ ] **Step 3: Confirm pinned values satisfy the invariant**
 
@@ -1588,7 +2223,7 @@ Values are pinned in `0012` (Task 1): `magazine_est_cents=6`, `max_serve_attempt
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx supabase db reset && npm run test:integration -- --runInBand serve-config-invariant`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1646,7 +2281,7 @@ git commit --allow-empty -m "chore(1f-a): final verification — tsc/unit/integr
 | D1 owner-scoped any tier | 7 (auth.uid path, anon identical); 6/7 isolation tests |
 | D2 summary-only, dig-deeper deferred | 7 (type must be `summary`; cloud dig-deeper → 400) |
 | D3 lazy version/drift-gated materialization | 6 (`resolveMagazineModel` drift+version gate) |
-| D4 render on-serve, never persist HTML; cache the model | 6 (model staged→promote; HTML rendered in 7, not stored) |
+| D4 render on-serve, never persist HTML; cache the model | 6 (model upserted/cached via `writeModelEnvelope`; HTML rendered in 7, not stored) |
 | D5 session client, never service_role | 7 (`getStorageBundle({supabaseClient})`); 7 step 6 confinement; Task 1 RPC touches ledger only inside definer |
 | D6/D9 playlistId UUID + owner-assert on playlist row | 7 (`resolveOwnedPlaylistKey`, UUID pre-validate) |
 | D7 nonce CSP | 5 (`buildSummaryCsp`, `generateNonce`) |
@@ -1655,9 +2290,9 @@ git commit --allow-empty -m "chore(1f-a): final verification — tsc/unit/integr
 | D11 print listener + local behavior-parity | 5 (`printButton`/`printListenerScript`; local no-nonce) |
 | D12/B19 suppress dig controls | 5 (`dig:false`); 7 passes it |
 | D13 synchronous generate-on-miss | 6 (in-line generate) |
-| §4.2 exact reserve transaction (savepoint, IF NOT FOUND RAISE, K bound, at_capacity) | 1 (Step 3 SQL + tests) |
-| §4.2 magazine caps + maxItems | 2 |
-| §4.2 model store principal + staged + generatorVersion | 3 |
+| §4.2 exact reserve transaction (savepoint, IF NOT FOUND RAISE, K bound, at_capacity) + no-claim status from `attempt_count` AND `lease_expires_at` (M-1 race) + grant/RLS + real concurrency | 1 (Step 3 SQL + Step 1 tests) |
+| §4.2 magazine caps + **cloud-only** maxItems (shared schema unchanged; >20-section local preserved) | 2 |
+| §4.2 model store principal + upsert writer + generatorVersion | 3 |
 | §4.2 SupabaseBlobStore uuid staging + promote hardening | 4 |
 | §4.3 CSP nonce plumbing (render/theme/nav), FOUC under CSP | 5 |
 | §5 URL contracts (cloud requires playlist/rejects outputFolder; wrong-backend 400; dig-deeper→400 cloud) | 7 |
@@ -1669,19 +2304,80 @@ git commit --allow-empty -m "chore(1f-a): final verification — tsc/unit/integr
 | §10 success criteria 1–6 | 7 (1), 6 (2), 1/8 (3), 5 (4), 9 (5), 1/5/9 (6) |
 | §8 re-review triggers (money-path, shared-code) | 1 (Step 5), 5 (Step 8), 9 (Step 5) |
 
-**Coverage gaps found and closed inline:** (a) the spec's "countTokens preflight" (B5) needed a magazine *input* bound — added `magazineInputTokens` + `assertMagazineInputWithinCap` in Task 2. (b) The B20 confinement check needed the serve route added to `check-service-confinement.ts` — folded into Task 7 Step 6. (c) The owner-asserted `playlistId→playlist_key` resolution had no existing session-client helper (only the service_role `getWorkerStorageBundle`) — added `resolveOwnedPlaylistKey` in Task 7. **No spec item is left without a task.**
+**Coverage gaps found and closed inline:** (a) the spec's "countTokens preflight" (B5) needed a magazine *input* bound — added `magazineInputTokens` + `assertMagazineInputWithinCap` in Task 2. (b) The B20 confinement check is proved by a focused assertion test that the serve route is scanned, does NOT reach `service.ts`, and is NOT in the allowlist (Task 7 Step 6) — the route is never allowlisted. (c) The owner-asserted `playlistId→playlist_key` resolution had no existing session-client helper (only the service_role `getWorkerStorageBundle`) — added `resolveOwnedPlaylistKey` in Task 7. **No spec item is left without a task.**
+
+### 1b. Dual-adversarial review findings — addressed in this revision
+
+Every finding from `docs/reviews/plan-1f-a-codex.md` + `-claude.md` is folded in:
+
+| # | Finding | Fix location |
+|---|---|---|
+| BLOCK | Seed omits `owner_id` (NOT NULL + composite FK) + top-level `summaryMd`/`language`/`serialNumber` + `artifacts` | Shared `tests/integration/helpers/seed.ts` (`seedPromotedVideo`), used by Tasks 1/6/7 |
+| BLOCK | Service-confinement instruction backwards (would allowlist the serve route) | Task 7 Step 6 — no allowlist; assertion test that the route does NOT reach `service.ts` |
+| BLOCK | B9/B10 isolation was prose, not runnable | Task 7 Step 7 — real integration test (own registered+anon 200 path; foreign 404 both directions) |
+| BLOCK | Task 5 breaks `render-dig-deeper.ts` (tsc + print regression) | Task 5 Files + Step 6b + `tsc --noEmit` + dig-deeper parity test + re-review scope expanded |
+| HIGH | `maxItems:20` on shared schema regresses local + bricks >20-section cloud | Task 2 — cloud-only per-call schema clone (`MAGAZINE_MAX_SECTIONS=200`); shared schema untouched; >20-section local-success test |
+| HIGH | Task 8 invariant test tautological | Task 8 — reads reset-DB defaults without mutating; separate optional tuned-tuple test |
+| HIGH | Route tests don't prove B20 | Task 7 Step 1 — `getStorageBundle` = `jest.fn` that throws without a session client; assert called with `{ supabaseClient: <session client> }` |
+| HIGH | Task 1 lacks grant/RLS assertions | Task 1 Step 1 — session-client cannot CRUD `serve_model_charge`; anon+authenticated CAN execute the RPC; cannot charge another owner |
+| HIGH | summaryMd source ambiguity | Task 7 — route reads `artifact.key ?? video.summaryMd`; seed sets all three; note added |
+| MED | K-boundary status race | Task 1 SQL — no-claim status derives from `attempt_count` AND `lease_expires_at` (live lease → `in_flight`) |
+| MED | No real concurrency tests | Task 1 — 3 `Promise.all` tests (concurrent miss, expired-lease reclaim at K-1, different-doc cap boundary) |
+| MED | `CloudGeminiCaps` expansion breaks tsc | Task 2 — magazine fields OPTIONAL + `tsc --noEmit` step |
+| MED | Task 5 print test too weak | Task 5 — JSDOM `drivePrint` test asserting `window.print` fires (summary + dig-deeper) |
+| MED | Local path not re-run | Task 7 Step 5 — `npx jest html-serve` (matches cloud + local suites) |
+| MED | Input-cap breach throws generic Error | Task 2 — rethrow `NonRetryableError` unwrapped in the catch |
+| LOW | `navScript` re-pastes body | Task 5 Step 5 — mechanical `NAV_SCRIPT.replace('<script>', …)` wrapper |
+| LOW | No 400-path route test | Task 7 Step 1 — `statusCode===400` storage error → 400 test |
+
+### 1c. Round-2 re-review fixes (F1–F11) — finding → fix map
+
+Consolidated from `docs/reviews/plan-1f-a-codex-v2-rereview.md` + `plan-1f-a-claude-v2-rereview.md`. All
+round-1 findings were already CONFIRMED-FIXED; these are the remaining round-2 items.
+
+| # | Sev | Finding | Fix location |
+|---|---|---|---|
+| F1 | Blocking/High | `assertMagazineInputWithinCap` compares `>` on the now-OPTIONAL `caps.magazineInputTokens` (TS18048), and `maxOutputTokens` could silently become 0 | Task 2 Step 4 — narrow `magazineInputTokens` to a local `number` (throw `NonRetryableError` if null); guard-throw at the top of `generateMagazineModel` when a cloud caps object is missing either magazine field; note that `SERVE_CAPS` always supplies both |
+| F2 | High | Task 5 removes the `THEME_HEAD_SCRIPT`/`THEME_TOGGLE_SCRIPT`/`PRINT_BUTTON` const exports + the inline print `onclick`, breaking `theme.test.ts` (TS2305) and the `theme.test.ts:79` / `render.test.ts:160` onclick assertions | Task 5 — both files added to Files list + Step 9 `git add`; concrete rewire in new Step 6c (function imports, materialize `THEME_HEAD_SCRIPT`/`THEME_TOGGLE_SCRIPT` locally, `printButton()`/`printListenerScript()` assertions); Step 7 command already runs `theme`/`render` |
+| F3 | High | Task 1 grant/RLS UPDATE/DELETE assertions vacuous (`.update()`/`.delete()` return `{data:null}` w/o `.select()`; final check only asserted row-exists) | Task 1 Step 1 — chain `.select()` (zero rows) + snapshot/compare `attempt_count` AND `lease_expires_at` via the service client (unchanged) + `pg_class.relforcerowsecurity = true` via `exec_sql` |
+| F4 | High | K-1 reclaim concurrency test was sequential — missed the M-1 race (loser sees `attempt_count=K` while winner's K-th lease is live) | Task 1 Step 1 — rewritten to a two-racer `Promise.all` at K-1; asserts one `reserved` + one `in_flight`, `attempt_count=5`, `reserved_cents=30` |
+| F5 | Medium | promote-hardening test could pass without the post-error recheck | Task 4 Step 1 — added the concurrent-promoter (worker-retry) race test (final absent on precheck, `move` fails, final present on recheck → `resolve`); count 3→4 |
+| F6 | Medium | No direct test that a STALE `generatorVersion` triggers regeneration | Task 6 Step 1 — seed a version-stale, title-matching envelope; assert Gemini called once + returned fresh model; count 4→5 |
+| F7 | Medium | B9/B10 isolation test overclaimed "200" (never calls GET) | Task 7 Step 7 — reworded to "passes BOTH RLS gates for the 200 path"; note that HTTP 200/404 mapping is proven by the mocked route test (Step 1) |
+| F8 | Low | Expected test counts wrong (Task 2 said 4/shows 6; Task 8 said 2/shows 3) | Task 2 Step 5 →6; Task 8 Step 4 →3; (spillover from F3/F4/F5/F6: Task 1 →13, Task 4 →4, Task 6 →5) |
+| F9 | Low | `rerender.ts` recomputed `getPrincipal(outputFolder)` instead of reusing the in-scope `const principal` | Task 3 Step 4 — reuse `principal` (rerender.ts:34) |
+| F10 | Low | JSDOM `drivePrint` didn't isolate per-script exec | Task 5 Step 1 — wrap each inline-`<script>` exec in try/catch (browser per-script isolation) |
+| F11 | Low | Two-docs cap test asserted only the 6¢ ledger total | Task 1 Step 1 — additionally assert WHICH doc won and that `serve_model_charge` holds exactly one row |
+
+All four MUST-FIX items (F1–F4) are closed. No F1–F11 item is left open.
+
+### 1d. Option A — cloud model persists via upsert (money-path fork, 2026-07-09)
+
+| Item | Decision | Fix location |
+|---|---|---|
+| Root cause | The cloud serve path persisted the model via a staged writer (`putStaged`→`promote`). Task 4's hardened `promote` is **create-if-absent**, so a re-generated model on drift / `generatorVersion` bump could never replace the stale blob → the doc re-reserves + re-charges up to `K` (30¢)/day, then 503s, and never heals (fleet-wide on any `GENERATOR_VERSION` bump). | — |
+| Fix | The cloud serve path (`resolveMagazineModel`, Task 6) now persists via **`writeModelEnvelope`** (plain `put` → Supabase `upload(upsert:true)`, atomic per object, overwrite-safe). One regen+recharge per doc per version-bump, then cached; two concurrent generators both upsert a valid fresh model → last-writer-wins, both correct. | Task 6 Step 3 |
+| Dead code removed | `writeModelEnvelopeStaged` (its only production consumer was the serve path) is deleted from Task 3 (Produces, impl, test, imports). `writeModelEnvelope` is now the single model writer for both local generate and cloud serve. | Task 3 |
+| Retained | `putStaged`/`promote`/`StagedRef` on the `BlobStore` interface and **Task 4** stay — the **worker** MD path (`consistency.ts` → `summary-handler.ts:173-178`) still uses staged→promote; idempotent (create-if-absent) promote is correct for worker job retries / re-runs. | Task 4 (unchanged) |
+| Test strengthened | Task 6 F6 now re-reads the persisted envelope after a stale-version regen (proves the upsert OVERWROTE the stale blob) and a second view self-heals from cache with no extra Gemini call and no second charge (`attempt_count === 1`). | Task 6 Step 1 |
 
 ### 2. Placeholder scan
 
-No `TBD`/`TODO`/"handle edge cases"/"similar to Task N" remain. Every code step contains real, runnable code and every run step names an exact command + expected result. Two intentional prose-directed edits — the `nav.ts` `NAV_SCRIPT`→`navScript` wrapper (Task 5 Step 5) and the isolation test body (Task 7 Step 7) — reference existing verbatim code / a precisely specified assertion rather than re-pasting 250 lines; both name the exact file, line, and transformation.
+No `TBD`/`TODO`/"handle edge cases"/"similar to Task N" remain. Every code step contains real, runnable code and every run step names an exact command + expected result. The Task 7 isolation test is now **runnable code** (was prose), and the Task 5 dig-deeper parity test calls the real `renderDigDeeperDoc({ summary, envelope: null, dug: [], mdPath, videoId, language })` with concrete args (no placeholder). One intentional prose-directed edit remains — the `nav.ts` `NAV_SCRIPT`→`navScript` wrapper (Task 5 Step 5) — but it is now a single mechanical `.replace('<script>', …)` over the existing verbatim string, not a re-paste.
 
 ### 3. Type consistency
 
-- `CloudGeminiCaps` gains `magazineInputTokens` + `magazineOutputTokens` (Task 2) and both are supplied by `SERVE_CAPS` (Task 6) and the unit fixture (Task 2) — consistent.
+- `CloudGeminiCaps` gains **optional** `magazineInputTokens?` + `magazineOutputTokens?` (Task 2) — both are supplied by `SERVE_CAPS` (Task 6) and the unit fixture (Task 2), while the four existing literals (`summary-handler` + three fixtures) compile untouched (optional). Because the fields are optional, Task 2 (F1) narrows `magazineInputTokens` to a local `number` inside `assertMagazineInputWithinCap` and guard-throws `NonRetryableError` at the top of `generateMagazineModel` if a cloud caps object lacks either field — so `>`/`maxOutputTokens` never see `number | undefined` (no TS18048) and `maxOutputTokens: 0` can never be silently produced. A `tsc --noEmit` step in Task 2 proves it. `MAGAZINE_RESPONSE_SCHEMA` is exported and left byte-identical (no `maxItems`); the cloud bound is a per-call clone (`MAGAZINE_MAX_SECTIONS`) — consistent across Tasks 2 and 6.
 - `generateMagazineModel(sections, language, opts?: { caps?; signal? })` — the same 3-arg shape is called by Task 6 (`{ caps: SERVE_CAPS, signal }`) and asserted by Task 2 tests; local 2-arg callers unchanged.
-- Model-store signatures `readModelEnvelope(principal, base, blobStore?)` / `writeModelEnvelope(principal, …)` / `writeModelEnvelopeStaged(principal, …)` (Task 3) are used with a `Principal` first arg by Tasks 6 and the updated local call sites — consistent.
+- Model-store signatures `readModelEnvelope(principal, base, blobStore?)` / `writeModelEnvelope(principal, …)` (Task 3 — the single upsert writer, no staged variant) are used with a `Principal` first arg by Task 6 (cloud serve) and the updated local call sites — consistent.
 - `resolveMagazineModel` `ResolveResult` union (`ok|busy|attempts_exhausted|at_capacity|denied`) produced in Task 6 is exhaustively switched in Task 7 — every variant is mapped to an HTTP status.
 - `reserve_serve_model` returns `reserved|in_flight|attempts_exhausted|at_capacity|denied` (Task 1) and is branched on identically in Task 6 (`in_flight`→busy). Names match.
 - `buildSummaryCsp`/`generateNonce` (Task 5) are imported and used in Task 7; `renderMagazineHtml(parsed, model, { nonce, dig })` third-arg shape matches across Tasks 5 and 7.
+- Shared `tests/integration/helpers/seed.ts` (`seedPlaylist`/`seedPromotedVideo`/`seedSummaryBlob`) is created in Task 1 and consumed by Tasks 1/6/7 with one row shape — no per-task seed drift.
+- `render-dig-deeper.ts` (Task 5) consumes the new `themeHeadScript`/`printButton`/`printListenerScript`/`themeToggleScript`/`navScript` exports (all no-nonce) — the same functions Task 5 defines; verified by a `tsc --noEmit` at Task 5's commit.
 
 No signature/name drift found.
+
+### 4. Coverage result
+
+**All 4 Blocking, 5 High, 6 Medium, and 2 Low findings** from the dual adversarial review (`plan-1f-a-codex.md` + `plan-1f-a-claude.md`) are folded in (see §1b for the finding→fix map). The money-path core transaction (Task 1 reserve RPC) was reviewed SOUND and is unchanged except the M-1 status-race derivation (no-claim status now keys off `attempt_count` AND `lease_expires_at`). **No remaining coverage gap.** Two items still require live human/tooling confirmation during execution (not plan gaps): (a) the Task 1 + Task 5 iterative dual re-reviews must reach convergence on the *revised* artifacts before those tasks are marked done (both are re-review triggers; Task 5's scope now includes `render-dig-deeper.ts`); (b) the Task 5 JSDOM dig-deeper fixture arg is concrete but should be smoke-run once against the real `renderDigDeeperDoc` signature.

@@ -116,10 +116,14 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
    - status `promoted` but the **MD blob `get()` returns null** (source-of-truth blob
      lost) → a defined **repair-needed** response (409/410-class), never a 500 or a
      mis-labeled "model absent."
-5. **Model resolution (lazy, D8):** read the model envelope via a **principal-aware,
-   staged/promote-capable** model store (§4.2 — the current `writeModelEnvelope`/
-   `readModelEnvelope` hardcode `localPrincipal` + plain `put` and must gain a
-   `principal` param + `putStaged→promote`).
+5. **Model resolution (lazy, D8):** read the model envelope via a **principal-aware**
+   model store (§4.2 — the current `writeModelEnvelope`/`readModelEnvelope` hardcode
+   `localPrincipal` and must gain a `principal` param; the model persists via plain `put`
+   → Supabase `upload(upsert:true)`, **overwrite-safe**, so a drift/version-bump
+   regeneration replaces the stale cache and self-heals). *(2026-07-09, money-path
+   decision: cloud model persists via put/upsert so drift/version-bump regeneration
+   overwrites the cache and self-heals; staged-promote remains for the worker MD
+   multi-blob commit.)*
    - Present, parseable, and **not drifted** (`envelope.sourceSections` matches the
      current MD section titles, and the envelope's `generatorVersion` matches) → use it
      (no Gemini, no reserve).
@@ -135,11 +139,12 @@ Cloud request: `GET /api/html/{videoId}?playlist={playlistId}&type=summary`
      - `at_capacity` — daily cap exhausted → **503** "at capacity" (nothing charged).
      - `reserved` — you hold the lease and `magazine_est_cents` was charged for **this
        attempt**. Call `generateMagazineModel(sections, language, caps)` under `CLOUD_CAPS`
-       with the request `signal`; **stage → verify → promote** `models/{base}.json` using a
-       **per-attempt-unique staging key** (`_staging/{uuid}/…`, so an over-`LEASE_TTL`
-       duplicate generator can't clobber another's staged bytes; `promote` treats
-       final-already-exists as success — M-1); serve. **On generation failure OR client
-       abort before promote, do nothing — there is no release RPC.** The lease expires
+       with the request `signal`; **upsert** `models/{base}.json` via plain `put` (Supabase
+       `upload(upsert:true)` is atomic per object, so a drift/version-bump regeneration
+       **overwrites** the stale cache and self-heals; two concurrent over-`LEASE_TTL`
+       generators both upsert a valid fresh model → last-writer-wins, both correct); serve.
+       **On generation failure OR client abort before the write, do nothing — there is no
+       release RPC.** The lease expires
        (~`LEASE_TTL`), then the next view **reclaims** it (re-charges) — bounded to **`K`
        attempts per `(owner,doc,UTC-day)`** (§4.2). That **`K` bound — not the daily cap —**
        is what stops a direct-RPC reclaim-loop from tripping the global cap at $0 (the
@@ -221,24 +226,28 @@ current sentinel-principal / `outputFolder` behavior (no session, no CSP).
        **`reserved`**. **Charging every attempt** keeps the daily cap the *dollar* bound and
        the **`K` counter the *abuse* bound**; the lease is single-flight. `LEASE_TTL` is set
        well above p99 generation time (e.g. 180 s); a rare over-TTL generation may
-       double-generate — bounded, and per-attempt-unique staging keys (§4.1) prevent clobber.
+       double-generate — bounded, and the model's **last-writer-wins upsert** (§4.1; each
+       writer persists a complete, valid, current-version envelope) means neither clobbers.
   Everything touches `spend_ledger`/`guardrail_config` **only inside the definer**, so the
   serve path stays on the **session client** (D5 preserved). Reconcile deferred (matches
   Stage 1D). Tests: two same-doc concurrent misses (one `reserved`, one `in_flight` —
   one Gemini call); lease-reclaim after expiry re-generates and re-charges (daily cap
   bounds attempts); different-doc cap boundary; forged/foreign/unpromoted `doc` denial;
   cap-refusal rolls back the lease claim (no leftover marker); no anon-callable release.
-- **Staged-write concurrency (M-2/M-3):** `SupabaseBlobStore.putStaged` uses a
-  **deterministic** temp key today — port the local store's **uuid-prefixed** staging
+- **Staged-write concurrency (M-2/M-3) — worker MD path:** `SupabaseBlobStore.putStaged`
+  uses a **deterministic** temp key today — port the local store's **uuid-prefixed** staging
   (`local-blob-store.ts` already does this) so per-attempt-unique staging keys work, and
   **harden `promote`** to treat a destination-already-exists / move-source-missing error as
-  success (re-check `finalExists`), so two concurrent over-`LEASE_TTL` promoters don't 500
-  the loser.
+  success (re-check `finalExists`), so two concurrent promoters — a re-dispatched/retried
+  summary job promoting the same MD key — don't 500 the loser. (This staged→promote
+  protocol backs the **worker's** MD commit only; the serve-side **model** now persists via
+  put/upsert — see §4.1 and the D8 note below.)
 - **Model store becomes cloud-capable:** `writeModelEnvelope`/`readModelEnvelope`
-  hardcode `localPrincipal` + plain `put` today — the serve path needs a `principal`
-  param and the `putStaged→promote` protocol (shared-code change; local callers
-  unchanged). The envelope also gains a **`generatorVersion`** field so a future
-  generator/format change invalidates cached models (beyond title-drift).
+  hardcode `localPrincipal` today — the serve path needs a `principal` param; the model
+  persists via plain `put` → Supabase `upload(upsert:true)` (**overwrite-safe**, so a
+  drift/version-bump regeneration replaces the stale cache and self-heals — the serve model
+  does **not** use staged→promote). The envelope also gains a **`generatorVersion`** field so
+  a future generator/format change invalidates cached models (beyond title-drift).
 - **Drift detection is title-based** (`sourceSections`) + `generatorVersion`; a
   body-only MD edit with unchanged section titles serves a slightly-stale (still
   *acceptable* — a restyle, not ground truth) model. A content-hash guard is a deferred
@@ -297,19 +306,19 @@ ignored.
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
 | B1 | Serve cached model | authed GET, model present + not drifted | 200 `text/html`, no Gemini call |
-| B2 | Lazy materialize on miss | model absent (incl. **pre-1F-a docs**) | daily-cap OK → `generateMagazineModel` under caps → promote → 200; model cached for next view |
+| B2 | Lazy materialize on miss | model absent (incl. **pre-1F-a docs**) | daily-cap OK → `generateMagazineModel` under caps → **upsert** the model → 200; model cached for next view |
 | B3 | Re-materialize on drift | `sourceSections` ≠ current MD titles | regenerate model → 200 (heal path; no manual repair) |
 | B4 | Corrupt/unparseable model | stored model bad JSON / schema-invalid | treated as absent → regenerate → 200 (never a 500) |
 | B5 | Model call honors caps | any materialization | `maxOutputTokens` + schema `maxItems` set, `thinkingBudget:0`, `countTokens` preflight, request `signal` threaded |
-| B6 | Daily cap reached | day over budget at a model miss | reserve RPC refuses → **503** "at capacity"; no Gemini call, no partial promote |
+| B6 | Daily cap reached | day over budget at a model miss | reserve RPC refuses → **503** "at capacity"; no Gemini call, nothing written |
 | B6b | Concurrent miss: lease single-flight | two simultaneous misses for one `(owner,doc)` | one claims the lease → `reserved` (generates); the other → `in_flight` → **503** "generating, retry", then serves the cached model; **one** Gemini call |
-| B7 | Generation fails / client aborts before promote | `reserved` caller errors or disconnects mid-generate | **no release** — lease expires (~`LEASE_TTL`); next view **reclaims** + regenerates (re-charges); bounded to **`K` attempts** per `(owner,doc,day)`, then `attempts_exhausted` |
+| B7 | Generation fails / client aborts before the write | `reserved` caller errors or disconnects mid-generate | **no release** — lease expires (~`LEASE_TTL`); next view **reclaims** + regenerates (re-charges); bounded to **`K` attempts** per `(owner,doc,day)`, then `attempts_exhausted` |
 | B7b | Forged/foreign/unpromoted doc via direct RPC | direct `reserve_serve_model` for a doc not owned, or owned but not `promoted` | `denied` (route → 404); no charge, no existence leak |
 | B7c | Cap refused returns a status, no fresh lease | lease claimed but the conditional ledger UPDATE affects 0 rows | `IF NOT FOUND THEN RAISE` in sub-block → `EXCEPTION` rolls back the claim → **`at_capacity`**; a reclaim restores the prior *expired* row (not bricked) |
 | B7d | No anon-callable release lever | there is no `release_serve_model` RPC | a direct PostgREST caller cannot delete/void a marker → the v5 reserve→release $0 global-cap DoS is unreachable |
 | B7e | Direct reclaim-loop can't trip the global cap at $0 | attacker loops `reserve_serve_model` on an owned doc without generating | `K`-cap → ≤ `K·est` per doc/day, ≤ `K·est·(quota docs)` per account — **anon fully bounded** (2 docs); a registered account's residual is a bounded *fraction* of cap (attributable, deferred to 1G) |
 | B7f | Attempts exhausted | `K` attempts used for one `(owner,doc,UTC-day)` | **503** "temporarily unavailable, try later"; self-heals next UTC day (fresh row) |
-| B7g | Over-TTL duplicate generators don't clobber | honest gen exceeds `LEASE_TTL`, a second view reclaims | per-attempt-unique staging key; `promote` treats final-exists as success; wasted duplicate, no 500 |
+| B7g | Over-TTL duplicate generators don't clobber | honest gen exceeds `LEASE_TTL`, a second view reclaims | **last-writer-wins upsert** — each writes a complete, valid, current-version envelope, so neither clobbers; wasted duplicate, no 500 |
 | B8 | Owner views own summary | authed GET, own `videoId`+`playlistId` | 200, rendered HTML doc |
 | B9 | Anon views own summary | anon-session GET, own doc | 200 — identical path (`auth.uid()` is the anon uid) |
 | B10 | Foreign owner blocked | authed GET for another owner's doc/playlist | **404** (RLS row/playlist invisible) — bidirectional isolation |
@@ -334,7 +343,7 @@ ignored.
   mocked for `generateMagazineModel`):** B1–B4 (cached / materialize / drift / corrupt),
   B8–B9 (owner/anon), B12–B15 (status + param codes).
 - **Cost governance:** B5 (caps applied to the model call), B6 (daily-cap refuses,
-  no partial promote), B7 (concurrency idempotency).
+  nothing written), B7 (concurrency idempotency).
 - **Isolation & confinement:** B10 (foreign-owner 404, both directions), B11 (401),
   B20 (service-role never on serve path).
 - **CSP / headers / render:** B16 (nonce coherence, no `unsafe-*`), B17 (Cache-Control),
