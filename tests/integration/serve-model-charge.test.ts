@@ -82,7 +82,7 @@ it('at_capacity on a RECLAIM restores the prior expired marker row unchanged (no
   // at_capacity test covers.
   const { error: seedErr } = await svc.from('serve_model_charge').insert({
     owner_id: u.user.id, doc_key: docKey, day: utcDay,
-    lease_expires_at: new Date(Date.now() - 1000).toISOString(), attempt_count: 1,
+    lease_expires_at: '2000-01-01T00:00:00Z', attempt_count: 1, // fixed old literal (clock-skew-proof; matches sibling tests)
   });
   expect(seedErr).toBeNull();
   const { data: before } = await svc.from('serve_model_charge')
