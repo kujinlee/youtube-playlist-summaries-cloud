@@ -1,6 +1,6 @@
 # Stage 1G — Per-Owner Serve Budget (G1) — Design Spec
 
-**Status:** v2 (round-1 dual review addressed — 1 Blocking + 2 High + reorder + Lows; pending round-2 re-review → user approval)
+**Status:** v3 — CONVERGED (round-2 dual re-review: 0 new Blocking/High both passes; round-1 fixes verified genuine; round-2 Low wording clarified). Pending user spec-approval.
 **Date:** 2026-07-10 · **Branch:** `feat/stage-1g-per-owner-serve-budget` (off master @ 4052c7d, after 1F-c PR #9)
 **Scope:** ONE item from the Stage 1G backlog — G1, the registered-account serve residual. G2–G8 remain a separate prioritized backlog.
 
@@ -93,8 +93,10 @@ exception
 
 The `reserve_serve_model` result switch (currently `denied`/`in_flight`/`attempts_exhausted`/`at_capacity`/`reserved`/`default: throw`) gains a `case 'owner_over_budget'` **before** the `default: throw` (an unhandled status throws → 500, so this thread-through is mandatory). That case invokes the serve-stale fallback (D5).
 
-### D5 — Serve-stale fallback (owner path, HTML only) — VERSION-only staleness
-**Corrected per review H1 (the critical fix).** The owner route renders the **current** `parsed` markdown against `resolved.model`, and `render.ts` pairs `parsed.sections[i]` with `model.sections[i]` **by array position**. So a stale model may only be safely rendered against current markdown when the section titles still line up — i.e. when staleness is purely `GENERATOR_VERSION`-driven, **not** content/titles-driven. If the summary's titles were edited/reordered since materialization, positional pairing would emit a current heading with a *different* section's stale lead/bullets (and drop extra current sections) — silently-wrong hybrid content. So serve-stale is gated on **titles-match**:
+### D5 — Serve-stale fallback (owner path, HTML only) — title-stable staleness
+**Corrected per review H1 (the critical fix).** The owner route renders the **current** `parsed` markdown against `resolved.model`, and `render.ts` pairs `parsed.sections[i]` with `model.sections[i]` **by array position**. So a stale model may only be safely rendered against current markdown when the section titles still line up. If the summary's titles were edited/reordered since materialization, positional pairing would emit a current heading with a *different* section's stale lead/bullets (and drop extra current sections) — silently-wrong hybrid content. So serve-stale is gated on **titles-match** (`sameTitles`):
+
+**Precise guarantee (review round-2 Low):** `sameTitles` compares section *headings* only, so the gate guarantees **positional coherence** (each heading is paired with the lead/bullets generated *for that same heading* — H1 is fully closed), but it does **not** prove the *body prose* under a heading is unchanged. Two staleness sub-cases pass the gate: (a) pure `GENERATOR_VERSION` bump, same source → the stale render is byte-equivalent content in an older generator style (ideal); (b) body prose edited under an unchanged heading → the stale render is *coherent* (correct heading↔lead pairing) but reflects the *older* prose. Both are honest degradations (not mismatched hybrids), signalled by `X-Magazine-Stale`; current content is always available via the MD path (D7). This is acceptable for an over-budget owner's own doc; a source-content hash to distinguish (a) from (b) is deliberately out of scope (YAGNI — the coherence property is what matters for correctness).
 
 On `case 'owner_over_budget'`, read the cached envelope (`readModelEnvelope(principal, base, blobStore)`) and compute `sameTitles` (the same title-equality check `isFresh` uses):
 - **Envelope exists AND `sameTitles` is true** (version may differ — the generator-storm case, which is exactly G1's motivation) → `return { status: 'ok', model: envelope.model, stale: true }`. The route renders current `parsed` against this model — positional pairing is correct because titles align; the only difference is the older generator's leads/bullets for the *same* sections. No charge (reserve rolled back in D3).
@@ -136,8 +138,8 @@ The canonical-seed / cap-soundness guard (`tests/**/cost-guardrails*.test.ts`, `
 | **P2** | Under budget, needs materialize | fresh absent, `spent + 6 ≤ cap`, global ok | `reserved` → generate → 200; `serve_owner_budget.spent += 6`; `spend_ledger += 6` |
 | **P3** | Per-owner cap blocks | `spent + 6 > per_owner_serve_daily_cents`, global has room | RPC `owner_over_budget`; **full rollback** — `serve_owner_budget`, `spend_ledger`, `serve_model_charge.attempt_count` all unchanged |
 | **P4** | Over budget wins over global (reorder) | owner over budget AND global also full | RPC `owner_over_budget` (per-owner 5a checked first); full rollback; → serve-stale path (D5) applies even in a globally-full window (free stale serve relieves pool pressure) |
-| **P4b** | Under budget, global full | owner under cap, global pool full | RPC `at_capacity` (passes 5a, fails 5b); rollback; **no** stale fallback (deferred — §2) → 503 |
-| **P5** | Over budget + stale model, titles match | P3 AND envelope exists AND `sameTitles` true (version-only stale) | 200, serve **stale** rendering, `X-Magazine-Stale: 1`, **no charge** |
+| **P4b** | Under budget, global full | owner under cap, global pool full | RPC `at_capacity` (passes 5a → `serve_owner_budget` +6, then fails 5b); **the 5a `serve_owner_budget` increment rolls back** (no per-owner phantom spend), attempt_count unchanged; **no** stale fallback (deferred — §2) → 503 |
+| **P5** | Over budget + stale model, titles match | P3 AND envelope exists AND `sameTitles` true (title-stable stale) | 200, serve **stale** rendering (positionally coherent; may reflect older prose per D5), `X-Magazine-Stale: 1`, **no charge** |
 | **P6** | Over budget + no model | P3 AND no envelope | 503 `daily refresh budget reached` |
 | **P6b** | Over budget + stale model, titles DRIFTED | P3 AND envelope exists AND `sameTitles` false | 503 (NOT served stale — positional mis-pairing avoided, review H1); current content still via MD (P7) |
 | **P7** | Over budget + MD download | P3, `format=md` | 200 raw markdown (never reaches reserve), no header, no charge |
@@ -172,4 +174,4 @@ The canonical-seed / cap-soundness guard (`tests/**/cost-guardrails*.test.ts`, `
 
 **Accepted design choices (remaining, non-blocking):**
 - **R3** — `X-Magazine-Stale` is a header only, lost once an `.html` file is saved. Accepted as a backend signal; a visible in-document "previous version" banner is a frontend / Sub-project 2 follow-up.
-- **R4** — Default 60¢ = 10 materializations/day. During a `GENERATOR_VERSION` storm a heavy owner re-materializes ≤10 docs/day, serving version-only-stale meanwhile (P5). Tunable if legitimate registered use needs more.
+- **R4** — Default 60¢ = 10 materializations/day. During a `GENERATOR_VERSION` storm a heavy owner re-materializes ≤10 docs/day, serving title-stable-stale meanwhile (P5). Tunable if legitimate registered use needs more.
