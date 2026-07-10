@@ -180,6 +180,26 @@ describe('html-download (owner route, real DB)', () => {
     expect(body2.error).toBe('invalid format');
   });
 
+  it('M1: owner GET format=md&download=1 with a CORRUPT non-string data.title → 200 (not 500), filename falls back to base', async () => {
+    // Simulate corrupt JSONB data.title (e.g. a number) — `video` in the route is a type CAST, not
+    // a zod parse, so nothing upstream prevents this at runtime. Seed normally, then directly
+    // clobber data.title with a number via the admin client (bypassing app-level types) to
+    // reproduce the corrupt-DB-data scenario.
+    const { playlistId, videoId, base } = await ownerAndDoc('Some Fine Title');
+    const { data: row, error: readErr } = await svc.from('videos').select('data')
+      .eq('video_id', videoId).eq('playlist_id', playlistId).single();
+    if (readErr) throw readErr;
+    const corruptData = { ...(row!.data as Record<string, unknown>), title: 12345 as unknown };
+    const { error: updErr } = await svc.from('videos').update({ data: corruptData })
+      .eq('video_id', videoId).eq('playlist_id', playlistId);
+    if (updErr) throw updErr;
+
+    const res = await GET(req(videoId, `playlist=${playlistId}&type=summary&format=md&download=1`), invoke(videoId));
+
+    expect(res.status).toBe(200); // NOT 500 — the numeric title must not crash .trim()
+    expect(res.headers.get('content-disposition')).toMatch(new RegExp(`filename="${base}\\.md"`));
+  });
+
   it('C6: owner GET format=md when the MD blob is missing behind promoted → 409 repair needed', async () => {
     const u = await newUser();
     const { playlistId, videoId } = await seedDoc(u.user.id, 'No Blob Title');

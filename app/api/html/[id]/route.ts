@@ -75,11 +75,17 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
     // `base === videoId` would be wrong — coherence comes from `base` being deterministic per video.)
     const base = mdKey.replace(/\.md$/, '');
 
+    // M1 (1F-c whole-branch review): `video` is a cast, not zod-parsed, so a corrupt non-string
+    // data.title would reach fileResponse and throw on .trim(). Coerce defensively — symmetric with
+    // the share path (lib/share/serve.ts) — so non-string/blank → undefined → filename falls back to base.
+    const rawTitle: unknown = video.title;
+    const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : undefined;
+
     if (format === 'md') {
       // D4 money invariant: short-circuits AFTER the mdBytes read/409 check but BEFORE any model
       // resolution — must NOT call resolveMagazineModel / reserve_serve_model / generation.
       return fileResponse(mdBytes, {
-        kind: 'md', download, base, title: video.title,
+        kind: 'md', download, base, title,
         cache: 'private, no-store', // helper adds nosniff; inline md → text/plain, download md → text/markdown
       });
     }
@@ -102,7 +108,7 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
     const nonce = generateNonce();
     const html = renderMagazineHtml(parsed, resolved.model, { nonce, dig: false }); // D11 nonce + D12 no dig
     return fileResponse(html, {
-      kind: 'html', download, base, title: video.title,
+      kind: 'html', download, base, title,
       cache: 'private, no-store', csp: buildSummaryCsp(nonce),
     });
   } catch (err) {
