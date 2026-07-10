@@ -73,3 +73,27 @@ it('LOCAL call (no caps) is unchanged: no maxOutputTokens, no thinkingConfig, no
   expect(cfg.thinkingConfig).toBeUndefined();
   expect(mockCountTokens).not.toHaveBeenCalled();
 });
+
+it('fails closed (NonRetryableError) when caps is present but missing magazineOutputTokens — no Gemini call made', async () => {
+  const { generateMagazineModel } = await import('@/lib/gemini');
+  const { NonRetryableError } = await import('@/lib/job-queue/errors');
+  const badCaps = { ...caps, magazineOutputTokens: undefined } as unknown as CloudGeminiCaps;
+  await expect(generateMagazineModel([{ title: 'A', prose: 'p' }], 'en', { caps: badCaps }))
+    .rejects.toThrow(/missing/);
+  await expect(generateMagazineModel([{ title: 'A', prose: 'p' }], 'en', { caps: badCaps }))
+    .rejects.toBeInstanceOf(NonRetryableError);
+  expect(mockGenerateContent).not.toHaveBeenCalled();
+  expect(mockCountTokens).not.toHaveBeenCalled();
+});
+
+it('fails closed (NonRetryableError) when caps is present but missing magazineInputTokens — no Gemini call made', async () => {
+  const { generateMagazineModel } = await import('@/lib/gemini');
+  const { NonRetryableError } = await import('@/lib/job-queue/errors');
+  const badCaps = { ...caps, magazineInputTokens: undefined } as unknown as CloudGeminiCaps;
+  await expect(generateMagazineModel([{ title: 'A', prose: 'p' }], 'en', { caps: badCaps }))
+    .rejects.toThrow(/missing/);
+  await expect(generateMagazineModel([{ title: 'A', prose: 'p' }], 'en', { caps: badCaps }))
+    .rejects.toBeInstanceOf(NonRetryableError);
+  expect(mockGenerateContent).not.toHaveBeenCalled();
+  expect(mockCountTokens).not.toHaveBeenCalled();
+});
