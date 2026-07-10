@@ -50,16 +50,28 @@ it('materializes on miss: reserves, generates under caps, upserts, returns ok', 
   expect(env?.generatorVersion).toBeDefined(); // upserted + cached
 });
 
-it('serves the cached model without a second Gemini call (B1)', async () => {
+it('serves the cached model without a second Gemini call OR a second reserve/charge (B1)', async () => {
   const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
   const { client } = await signInAs(u.email, u.password);
   const principal = { id: u.user.id, indexKey: playlist_key };
   const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
   await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
   (generateMagazineModel as jest.Mock).mockClear();
+  const doc_key = `${playlistId}/${videoId}`; // reserve_serve_model's v_doc_key formula (0012, line 53)
+  // Force the materialize call's lease to look EXPIRED. Without this, a spurious reserve on the
+  // fresh-cache path would hit the RPC's own single-flight guard (lease still live → no-op, no
+  // charge) and the assertion below would pass EVEN IF resolveMagazineModel's isFresh() short-circuit
+  // were removed — a false negative. With the lease forced expired, any reserve call would take the
+  // reclaim branch: bump attempt_count, charge, and call generateMagazineModel — so this test
+  // genuinely fails if the fresh-cache path ever calls reserve_serve_model.
+  await svc.from('serve_model_charge').update({ lease_expires_at: '2000-01-01T00:00:00Z' })
+    .eq('owner_id', u.user.id).eq('doc_key', doc_key);
   const res2 = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
   expect(res2.status).toBe('ok');
   expect(generateMagazineModel).not.toHaveBeenCalled();
+  const { data: charge } = await svc.from('serve_model_charge').select('attempt_count')
+    .eq('owner_id', u.user.id).eq('doc_key', doc_key).single();
+  expect(charge?.attempt_count).toBe(1); // unchanged — fresh-cache path never reserved/charged again
 });
 
 it('at_capacity when the day is over budget — no Gemini call, no promote (B6)', async () => {
@@ -126,4 +138,22 @@ it('re-materializes on a STALE generatorVersion even when sourceSections match (
   expect(generateMagazineModel).not.toHaveBeenCalled();
   const { data: charge } = await svc.from('serve_model_charge').select('attempt_count').eq('owner_id', u.user.id).single();
   expect(charge?.attempt_count).toBe(1);
+});
+
+it('degrades a corrupt cached model file (malformed JSON) to a regenerate, never a throw (B4)', async () => {
+  const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const principal = { id: u.user.id, indexKey: playlist_key };
+  const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+  // Seed a CORRUPT models/<base>.json directly via the blob store (bypassing writeModelEnvelope's
+  // zod validation, which would refuse to persist invalid JSON) — simulates a hand-corrupted or
+  // partially-written blob. readModelEnvelope must swallow the JSON.parse failure and return null
+  // (model-store.ts:58-63), so resolveMagazineModel treats it as a cache MISS, not a thrown error.
+  await blob.put(principal, `models/${videoId}.json`, Buffer.from('{ not valid json', 'utf-8'), 'application/json');
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  expect(res.status).toBe('ok');
+  expect(generateMagazineModel).toHaveBeenCalledTimes(1); // corrupt cache treated as absent → regenerated, not thrown
+  const persisted = await readModelEnvelope(principal, videoId, blob);
+  expect(persisted?.generatorVersion).toBe(GENERATOR_VERSION); // valid envelope now persisted, overwriting the corrupt blob
+  expect(persisted?.model.sections[0].lead).toBe('L'); // freshly-generated (mock) model, not a leftover of the corrupt file
 });
