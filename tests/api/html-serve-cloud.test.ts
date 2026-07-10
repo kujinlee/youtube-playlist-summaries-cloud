@@ -7,6 +7,7 @@ let mockIndexVideos: any[];
 let mockMdBytes: Buffer | null;
 let mockResolve: any;
 let mockBlobGet: jest.Mock;
+let mockPlaylistKey: string | null;
 
 jest.mock('next/headers', () => ({ cookies: async () => ({ getAll: () => [], set: () => {} }) }));
 // A stable session-client sentinel so the B20 test can assert getStorageBundle received THIS client.
@@ -29,14 +30,17 @@ jest.mock('@/lib/storage/resolve', () => {
     getPrincipalFromSession: () => ({ id: mockUser?.id, indexKey: 'pk' }),
   };
 });
-jest.mock('@/lib/html-doc/serve-doc', () => ({ resolveMagazineModel: async () => mockResolve }));
-// Playlist resolution helper (owner-asserted playlistId → playlist_key) is mocked to succeed by default:
-jest.mock('@/lib/storage/serve-playlist', () => ({ resolveOwnedPlaylistKey: async () => 'pk' }));
+jest.mock('@/lib/html-doc/serve-doc', () => ({ resolveMagazineModel: jest.fn(async () => mockResolve) }));
+// Playlist resolution helper (owner-asserted playlistId → playlist_key) is mocked to succeed by default;
+// mockPlaylistKey is mutable so tests can simulate a foreign/unowned playlist (resolves to null).
+jest.mock('@/lib/storage/serve-playlist', () => ({ resolveOwnedPlaylistKey: async () => mockPlaylistKey }));
 
 import { GET } from '@/app/api/html/[id]/route';
 import { getStorageBundle } from '@/lib/storage/resolve';
 import { createServerSupabase } from '@/lib/supabase/server';
+import { resolveMagazineModel } from '@/lib/html-doc/serve-doc';
 const mockGetStorageBundle = getStorageBundle as jest.Mock;
+const mockResolveMagazineModel = resolveMagazineModel as jest.Mock;
 
 function req(qs: string) { return new Request(`http://localhost/api/html/${validVideo}?${qs}`); }
 const params = { params: Promise.resolve({ id: validVideo }) };
@@ -51,8 +55,10 @@ beforeEach(() => {
   mockMdBytes = Buffer.from(promotedSummaryMd, 'utf-8');
   mockBlobGet = jest.fn(async () => mockMdBytes);
   mockResolve = { status: 'ok', model: { sections: [{ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] } };
+  mockPlaylistKey = 'pk';
   mockGetStorageBundle.mockClear();
   (createServerSupabase as jest.Mock).mockClear();
+  mockResolveMagazineModel.mockClear();
 });
 afterEach(() => { delete process.env.STORAGE_BACKEND; });
 
@@ -65,6 +71,10 @@ it('B8/B16/B17/B20: owner gets 200 HTML with a coherent nonce CSP + private no-s
   const nonce = csp.match(/'nonce-([^']+)'/)![1];
   const html = await res.text();
   for (const tag of html.match(/<script[^>]*>/g) ?? []) expect(tag).toContain(`nonce="${nonce}"`);
+  // CSP regression guard: style-src has no unsafe-inline, so a dropped style-nonce silently breaks rendering.
+  const styleTags = html.match(/<style[^>]*>/g) ?? [];
+  expect(styleTags.length).toBeGreaterThan(0);
+  for (const tag of styleTags) expect(tag).toContain(`nonce="${nonce}"`);
   expect(csp).not.toMatch(/unsafe-/);
   // B20: the bundle was built from the exact session client createServerSupabase returned — never bare.
   const sessionClient = (createServerSupabase as jest.Mock).mock.results[0].value;
@@ -96,4 +106,34 @@ it('a storage/logical-key error with statusCode===400 surfaces as 400 (not 500) 
   // e.g. assertLogicalKey rejecting a bad key inside blobStore.get → { statusCode: 400 }.
   mockBlobGet = jest.fn(async () => { throw Object.assign(new Error('invalid logical key'), { statusCode: 400 }); });
   expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(400);
+});
+
+it('auth boundary: foreign/unowned playlist (resolveOwnedPlaylistKey → null) → generic 404, no existence leak', async () => {
+  // Simulates a playlistId that is well-formed (passes the UUID regex) but not owned by this user —
+  // resolveOwnedPlaylistKey returns null in that case. The route's `if (!playlistKey) return 404` line
+  // otherwise has no coverage at any layer. Must be indistinguishable from other 404s (no owner/existence leak).
+  mockPlaylistKey = null;
+  const res = await GET(req(`playlist=${validPlaylist}&type=summary`), params);
+  expect(res.status).toBe(404);
+  const body = await res.json();
+  expect(body).toEqual({ error: 'not found' });
+});
+
+it('money coherence: base is derived from the promoted MD key, not videoId, while videoId is passed through unchanged', async () => {
+  // Real worker keys MD as `${padSerial(serial)}_${slug}.md` (e.g. "0001_intro.md"), which is NOT videoId.
+  // The cache (resolveMagazineModel `base`) must key on that stable serial_slug base while the reserve-RPC
+  // charge keys on videoId. Pin both independently so a regression that swaps base<->videoId is caught.
+  const distinctVideoId = 'abcDEF12345'; // clearly different from the MD key below, 11-char YouTube-style id
+  mockIndexVideos = [{
+    id: distinctVideoId,
+    language: 'en',
+    summaryMd: '0001_intro.md',
+    artifacts: { summaryMd: { key: '0001_intro.md', status: 'promoted' } },
+  }];
+  const res = await GET(new Request(`http://localhost/api/html/${distinctVideoId}?playlist=${validPlaylist}&type=summary`), { params: Promise.resolve({ id: distinctVideoId }) });
+  expect(res.status).toBe(200);
+  expect(mockResolveMagazineModel).toHaveBeenCalledTimes(1);
+  const call = mockResolveMagazineModel.mock.calls[0][0];
+  expect(call.base).toBe('0001_intro');
+  expect(call.videoId).toBe(distinctVideoId);
 });
