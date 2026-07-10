@@ -63,7 +63,9 @@ async function readColumnDefaults(cols: string[]): Promise<Record<string, number
 const QUOTA_SEED_MONTHLY = { anon: 2, registered: 20 } as const; // 0011: insert ...(true,'summary',2),(false,'summary',20)
 
 beforeAll(async () => {
-  const defaults = await readColumnDefaults(['daily_cap_cents', 'magazine_est_cents', 'max_serve_attempts']);
+  const defaults = await readColumnDefaults([
+    'daily_cap_cents', 'magazine_est_cents', 'max_serve_attempts', 'per_owner_serve_daily_cents',
+  ]);
   const { error } = await svc.from('guardrail_config').update(defaults).eq('id', true);
   if (error) throw error;
 

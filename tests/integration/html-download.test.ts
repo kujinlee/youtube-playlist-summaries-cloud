@@ -45,9 +45,11 @@ beforeEach(async () => {
   // Supabase stack persists across test runs, so a stale spend_ledger row from an earlier file/run
   // could otherwise trip at_capacity here (mirrors serve-model-charge.test.ts's own beforeEach).
   await svc.from('serve_model_charge').delete().neq('owner_id', '00000000-0000-0000-0000-000000000000');
+  await svc.from('serve_owner_budget').delete().neq('owner_id', '00000000-0000-0000-0000-000000000000');
   await svc.from('spend_ledger').delete().neq('day', '1900-01-01');
   await svc.from('guardrail_config').update({
     daily_cap_cents: 500, magazine_est_cents: 6, max_serve_attempts: 5, lease_ttl_seconds: 180,
+    per_owner_serve_daily_cents: 60,
   }).eq('id', true);
 });
 
