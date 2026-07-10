@@ -81,6 +81,21 @@ beforeEach(async () => {
   }).eq('id', true);
 });
 
+// ── Helpers (CRITICAL — review Blocking): the migration adds CHECK (per_owner_serve_daily_cents >=
+// magazine_est_cents=6), so you CANNOT set the cap to 3 to force over-budget (the UPDATE would violate
+// the CHECK). Instead keep cap >= 6 and PRE-SEED serve_owner_budget at the cap, so the next attempt's
+// (spent + 6 > cap) triggers owner_over_budget. Use this pattern for every over-budget scenario. ──
+const utcDay = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC) — matches (now() at tz 'utc')::date
+const setOwnerCap = (cents: number) =>
+  svc.from('guardrail_config').update({ per_owner_serve_daily_cents: cents }).eq('id', true); // cents MUST be >= 6
+const preseedBudget = (ownerId: string, spent: number, day: string = utcDay()) =>
+  svc.from('serve_owner_budget').insert({ owner_id: ownerId, day, spent_cents: spent });
+const snapshot = async (ownerId: string) => ({
+  ob: (await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', ownerId)).data ?? [],
+  led: (await svc.from('spend_ledger').select('reserved_cents')).data ?? [],
+  smc: (await svc.from('serve_model_charge').select('attempt_count').eq('owner_id', ownerId)).data ?? [],
+});
+
 it('P2/P12: config has per_owner_serve_daily_cents default 60', async () => {
   const { data } = await svc.from('guardrail_config').select('per_owner_serve_daily_cents').single();
   expect(data!.per_owner_serve_daily_cents).toBe(60);
@@ -98,55 +113,66 @@ it('P2: first reserve charges owner budget and global ledger by 6 each', async (
   expect(led![0].reserved_cents).toBe(6);
 });
 
-it('P3: per-owner cap blocks with owner_over_budget and full rollback (no attempt, no spend)', async () => {
+it('P3: per-owner cap blocks with owner_over_budget and FULL rollback from an existing budget row', async () => {
   const u = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
-  await svc.from('guardrail_config').update({ per_owner_serve_daily_cents: 3 }).eq('id', true); // < 6 → first attempt blocked
+  await setOwnerCap(6);                 // valid (>= est=6)
+  await preseedBudget(u.user.id, 6);    // already at cap → next attempt (6+6>6) is blocked
   const { client } = await signInAs(u.email, u.password);
+  const before = await snapshot(u.user.id);
   const { data: st } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
   expect(st).toBe('owner_over_budget');
-  // Full rollback: no owner-budget row, no spend, no lease/attempt marker.
-  const { data: ob } = await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', u.user.id);
-  expect(ob!.every((r) => r.spent_cents === 0) || ob!.length === 0).toBe(true);
-  const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
-  expect((led ?? []).reduce((a, r) => a + r.reserved_cents, 0)).toBe(0);
-  const { data: smc } = await svc.from('serve_model_charge').select('attempt_count');
-  expect(smc!.length).toBe(0);
+  const after = await snapshot(u.user.id);
+  // Full rollback: all three tables byte-identical to before (no increment, no attempt/lease marker).
+  expect(after).toEqual(before);
 });
 
 it('P4: over budget AND global full → owner_over_budget (per-owner checked first)', async () => {
   const u = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
-  await svc.from('guardrail_config').update({ per_owner_serve_daily_cents: 3, daily_cap_cents: 3 }).eq('id', true);
+  await setOwnerCap(6);
+  await preseedBudget(u.user.id, 6);
+  await svc.from('guardrail_config').update({ daily_cap_cents: 3 }).eq('id', true); // global also full (no CHECK vs est on daily_cap)
   const { client } = await signInAs(u.email, u.password);
   const { data: st } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
   expect(st).toBe('owner_over_budget'); // NOT at_capacity — per-owner arbiter runs first
 });
 
-it('P4b: under budget, global full → at_capacity, per-owner increment rolled back (no phantom spend)', async () => {
+it('P4b: under budget, global full → at_capacity, 5a per-owner increment rolled back (no phantom spend)', async () => {
   const u = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
-  await svc.from('guardrail_config').update({ daily_cap_cents: 3 }).eq('id', true); // owner cap stays 60
+  await svc.from('guardrail_config').update({ daily_cap_cents: 3 }).eq('id', true); // owner cap stays default 60 (under budget)
   const { client } = await signInAs(u.email, u.password);
+  const before = await snapshot(u.user.id);
   const { data: st } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
   expect(st).toBe('at_capacity');
-  const { data: ob } = await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', u.user.id);
-  expect((ob ?? []).reduce((a, r) => a + r.spent_cents, 0)).toBe(0); // 5a increment rolled back by 5b PJ004
+  const after = await snapshot(u.user.id);
+  expect(after).toEqual(before); // 5a serve_owner_budget increment AND the step-4 claim rolled back by 5b PJ004
 });
 
-it('P8: owner isolation — A at cap does not affect B', async () => {
+it('P9: a maxed-out PRIOR-day budget row does not block today (daily reset)', async () => {
+  const u = await newUser();
+  const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
+  await setOwnerCap(6);
+  const yesterday = new Date(Date.parse(utcDay()) - 86400000).toISOString().slice(0, 10);
+  await preseedBudget(u.user.id, 6, yesterday); // yesterday maxed
+  const { client } = await signInAs(u.email, u.password);
+  const { data: st } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(st).toBe('reserved'); // today's (owner, today) row starts fresh at 0 → 0+6<=6
+  const { data: today } = await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', u.user.id).eq('day', utcDay()).single();
+  expect(today!.spent_cents).toBe(6);
+});
+
+it('P8: owner isolation — A at cap does not block B (independent rows, valid cap)', async () => {
   const a = await newUser(); const b = await newUser();
   const da = await seedPromotedDoc(a.user.id); const db = await seedPromotedDoc(b.user.id);
-  await svc.from('guardrail_config').update({ per_owner_serve_daily_cents: 3 }).eq('id', true);
+  await setOwnerCap(6);                 // valid for everyone
+  await preseedBudget(a.user.id, 6);    // ONLY A is maxed today; B has no row
   const ca = await signInAs(a.email, a.password); const cb = await signInAs(b.email, b.password);
   const { data: sa } = await ca.client.rpc('reserve_serve_model', { p_playlist_id: da.playlistId, p_video_id: da.videoId });
   const { data: sb } = await cb.client.rpc('reserve_serve_model', { p_playlist_id: db.playlistId, p_video_id: db.videoId });
-  expect(sa).toBe('owner_over_budget');
-  expect(sb).toBe('owner_over_budget'); // both blocked because cap=3<6 — but rows are independent
-  // Raise cap and confirm B can proceed independently
-  await svc.from('guardrail_config').update({ per_owner_serve_daily_cents: 60 }).eq('id', true);
-  const { data: sb2 } = await cb.client.rpc('reserve_serve_model', { p_playlist_id: db.playlistId, p_video_id: db.videoId });
-  expect(sb2).toBe('reserved');
+  expect(sa).toBe('owner_over_budget'); // A blocked by A's own row
+  expect(sb).toBe('reserved');          // B unaffected — proves per-owner keying, not shared/misconfig
 });
 
 it('P10: cap boundary is exact (spent + 6 <= cap)', async () => {
@@ -160,10 +186,10 @@ it('P10: cap boundary is exact (spent + 6 <= cap)', async () => {
   expect(s2).toBe('owner_over_budget');  // 6 + 6 > 6
 });
 
-it('P15: K·6 per-attempt charges the owner budget (reclaim to K)', async () => {
+it('R5: each of the K reclaim attempts charges the owner budget (K·6¢ total)', async () => {
   const u = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
-  await svc.from('guardrail_config').update({ per_owner_serve_daily_cents: 60 }).eq('id', true);
+  await setOwnerCap(60); // headroom for all K attempts (5×6=30 <= 60)
   const { client } = await signInAs(u.email, u.password);
   const docKey = `${playlistId}/${videoId}`;
   for (let i = 1; i <= 5; i++) {
@@ -294,7 +320,9 @@ grant execute on function reserve_serve_model(uuid, text) to authenticated, anon
 create function reserve_serve_model_meta()
   returns table(secdef boolean, cfg text[])
   language sql security definer set search_path = public as $$
-    select p.prosecdef, p.proconfig from pg_proc p where p.proname = 'reserve_serve_model'
+    select p.prosecdef, p.proconfig
+    from pg_proc p
+    where p.oid = 'public.reserve_serve_model(uuid,text)'::regprocedure  -- exact overload, not proname match
   $$;
 revoke all on function reserve_serve_model_meta() from public;
 grant execute on function reserve_serve_model_meta() to authenticated, anon, service_role;
@@ -305,7 +333,8 @@ Finalize the P17 test using the helper:
 it('P17: reserve_serve_model retains SECURITY DEFINER + search_path', async () => {
   const { data } = await svc.rpc('reserve_serve_model_meta');
   expect(data![0].secdef).toBe(true);
-  expect(data![0].cfg).toEqual(expect.arrayContaining(['search_path=public']));
+  // Tolerant matcher — proconfig element may render quoted / with spacing depending on PG.
+  expect((data![0].cfg ?? []).some((v: string) => v.replace(/\s/g, '') === 'search_path=public')).toBe(true);
 });
 it('P17: an authenticated session can still reserve (writes to service_role-only tables succeed)', async () => {
   const u = await newUser();
@@ -326,25 +355,53 @@ Add `per_owner_serve_daily_cents: 60` to the canonical `guardrail_config` assert
 Run: `npx supabase db reset && npm run test:integration -- --runInBand -t "serve-owner-budget" && npm run test:integration -- --runInBand -t "serve-model-charge" && npm run test:integration -- --runInBand -t "serve-config-invariant"`
 Expected: all PASS; existing serve-model-charge behaviors unchanged (owner cap 60 doesn't bite their small spends).
 
-- [ ] **Step 6: Add the concurrency behavior (P16 concurrent same-owner two-doc)**
+- [ ] **Step 6: Add spec-P15 (concurrency at the boundary) and spec-P16 (over-budget + live lease)**
 
+**Spec P15 — same owner, two docs, one slot, concurrent** (this is spec P15, not P16 — the plan's earlier draft mislabeled it):
 ```ts
-it('P16: concurrent same-owner, two docs, one slot left → one reserved, one owner_over_budget', async () => {
+it('P15: concurrent same-owner, two docs, one slot → one reserved, one owner_over_budget (+6 not +12, one marker)', async () => {
   const u = await newUser();
   const d1 = await seedPromotedDoc(u.user.id); const d2 = await seedPromotedDoc(u.user.id);
-  await svc.from('guardrail_config').update({ per_owner_serve_daily_cents: 6 }).eq('id', true);
+  await setOwnerCap(6); // exactly one 6¢ slot; both start at 0
   const { client } = await signInAs(u.email, u.password);
   const [r1, r2] = await Promise.all([
     client.rpc('reserve_serve_model', { p_playlist_id: d1.playlistId, p_video_id: d1.videoId }),
     client.rpc('reserve_serve_model', { p_playlist_id: d2.playlistId, p_video_id: d2.videoId }),
   ]);
-  const outcomes = [r1.data, r2.data].sort();
-  expect(outcomes).toEqual(['owner_over_budget', 'reserved']); // exactly one wins
+  expect([r1.data, r2.data].sort()).toEqual(['owner_over_budget', 'reserved']); // exactly one wins
   const { data: ob } = await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', u.user.id).single();
-  expect(ob!.spent_cents).toBe(6); // +6, not +12 — row lock serialized them
+  expect(ob!.spent_cents).toBe(6);                              // +6 not +12 — serve_owner_budget row lock serialized them
+  const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
+  expect(led!.reduce((a, r) => a + r.reserved_cents, 0)).toBe(6); // global charged once (loser's 5a rolled back before 5b)
+  const { data: smc } = await svc.from('serve_model_charge').select('doc_key').eq('owner_id', u.user.id);
+  expect(smc!.length).toBe(1);                                  // only the winner holds a lease marker (loser's step-4 claim rolled back)
 });
 ```
-Run the focused test; confirm PASS.
+
+**Spec P16 — over budget AND a live lease → `in_flight`, NOT owner_over_budget** (step-4 can't claim → 5a/5b never run → serve-stale not reached):
+```ts
+it('P16: over budget + a live lease → in_flight (budget arbiter never runs), no charge', async () => {
+  const u = await newUser();
+  const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
+  await setOwnerCap(6);
+  await preseedBudget(u.user.id, 6); // over budget
+  // Plant a LIVE lease for this doc (so step-4 ON CONFLICT finds attempt_count < K but lease_expires_at > now() → no claim).
+  await svc.from('serve_model_charge').insert({
+    owner_id: u.user.id, doc_key: `${playlistId}/${videoId}`, day: utcDay(),
+    lease_expires_at: new Date(Date.now() + 180_000).toISOString(), attempt_count: 1,
+  });
+  const before = await snapshot(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const { data: st } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(st).toBe('in_flight');                 // live lease wins over the budget check (step-4 precedes 5a)
+  const after = await snapshot(u.user.id);
+  expect(after.led).toEqual(before.led);        // no global charge
+  // serve_owner_budget untouched by this call (the pre-seeded row is unchanged)
+  const { data: ob } = await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', u.user.id).single();
+  expect(ob!.spent_cents).toBe(6);
+});
+```
+Run both focused tests; confirm PASS.
 
 - [ ] **Step 7: Full integration + tsc, then commit**
 
@@ -371,36 +428,38 @@ git commit -m "feat(1g): serve_owner_budget + per-owner-first arbiter in reserve
 
 - [ ] **Step 1: Write the failing unit tests** (`tests/lib/html-doc/read-model.test.ts` — add to it)
 
-```ts
-import { sameTitles, readTitleStableModel } from '@/lib/html-doc/read-model';
+**Add these to the EXISTING `tests/lib/html-doc/read-model.test.ts`**, reusing its already-defined `jest.mock('@/lib/html-doc/model-store', …)` factory + `mockReadModelEnvelope`, and its `envelope()` / `roStore` / `principal` / `fakeModel` / `titles` fixtures (lines 11–23). Do NOT introduce a `fakeBlobWithEnvelope`/blob stub — a partial envelope would fail `readModelEnvelope`'s `ModelEnvelopeSchema.strict()` parse (it needs the full `{sourceMd, generatedAt, sourceSections, generatorVersion, model}`); mock `readModelEnvelope` instead (the repo convention, per the file's header note). Also import the two new symbols in the existing import line: `import { readFreshMagazineModel, isFresh, sameTitles, readTitleStableModel } from '@/lib/html-doc/read-model';`
 
+```ts
 describe('sameTitles', () => {
   it('true iff same length and same order', () => {
-    expect(sameTitles({ sourceSections: ['A', 'B'] }, ['A', 'B'])).toBe(true);
-    expect(sameTitles({ sourceSections: ['A', 'B'] }, ['B', 'A'])).toBe(false);
-    expect(sameTitles({ sourceSections: ['A'] }, ['A', 'B'])).toBe(false);
+    expect(sameTitles(envelope(), titles)).toBe(true);                       // ['A','B'] === ['A','B']
+    expect(sameTitles(envelope({ sourceSections: ['B', 'A'] }), titles)).toBe(false);
+    expect(sameTitles(envelope({ sourceSections: ['A'] }), titles)).toBe(false);
   });
 });
 
 describe('readTitleStableModel', () => {
-  const principal = /* build a test principal */ {} as any;
-  it('returns ok with the model when the envelope exists and titles match (version ignored)', async () => {
-    const blobStore = fakeBlobWithEnvelope({ sourceSections: ['A', 'B'], generatorVersion: 'OLD', model: FAKE_MODEL });
-    const r = await readTitleStableModel({ blobStore, principal, base: 'b', titles: ['A', 'B'] });
-    expect(r).toEqual({ status: 'ok', model: FAKE_MODEL }); // stale version is fine
+  afterEach(() => mockReadModelEnvelope.mockReset());
+
+  it('ok with the model when the envelope exists and titles match — version ignored (stale ok)', async () => {
+    mockReadModelEnvelope.mockResolvedValue(envelope({ generatorVersion: 'OLD' })); // stale VERSION, same titles
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
+    expect(r).toEqual({ status: 'ok', model: fakeModel });
+    expect(mockReadModelEnvelope).toHaveBeenCalledWith(principal, 'b', roStore);
   });
-  it('returns none when titles drifted', async () => {
-    const blobStore = fakeBlobWithEnvelope({ sourceSections: ['A', 'B'], generatorVersion: 'OLD', model: FAKE_MODEL });
-    const r = await readTitleStableModel({ blobStore, principal, base: 'b', titles: ['X', 'B'] });
+  it('none when titles drifted (positional mis-pair would occur → refuse)', async () => {
+    mockReadModelEnvelope.mockResolvedValue(envelope({ sourceSections: ['X', 'B'], generatorVersion: 'OLD' }));
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
     expect(r).toEqual({ status: 'none' });
   });
-  it('returns none when no envelope', async () => {
-    const r = await readTitleStableModel({ blobStore: fakeEmptyBlob(), principal, base: 'b', titles: ['A'] });
+  it('none when no envelope', async () => {
+    mockReadModelEnvelope.mockResolvedValue(null);
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
     expect(r).toEqual({ status: 'none' });
   });
 });
 ```
-(Mirror the existing `read-model.test.ts` fake-blob helpers; if none exist, build a minimal `ReadOnlyBlobStore` stub whose `get` returns a serialized envelope.)
 
 - [ ] **Step 2: Run — confirm fail** (`npx jest read-model` → `sameTitles`/`readTitleStableModel` not exported).
 
@@ -462,15 +521,61 @@ export type ResolveResult =
     case 'reserved': break;
 ```
 
-- [ ] **Step 5: Write failing integration tests** (`tests/integration/serve-doc-materialize.test.ts` — add)
+- [ ] **Step 5: Write the integration tests FIRST (RED), then implement Step 4** (`tests/integration/serve-doc-materialize.test.ts` — add)
 
+> TDD note (review L1): author these BEFORE the Step-4 `serve-doc.ts` change so they fail first. They hit a real Supabase, so the over-budget state is forced with the cap-preseed pattern (NOT `cap=3` — that violates the CHECK), and "no charge" is proven by an observable before/after snapshot (a `jest.spyOn` on the RPC is not possible against the real DB — drop it). Follow this file's existing convention for mocking `generateMagazineModel` and for `writeModelEnvelope`.
+
+Setup helpers (mirror Task 1): `setOwnerCap(6)` + `preseedBudget(owner, 6)` to force over-budget; `writeModelEnvelope(principal, base, { …, sourceSections, generatorVersion, model }, blobStore)` to materialize a cached model. A **title-match** stale envelope uses `sourceSections = parsed.sections.map(s=>s.title)` with `generatorVersion: 'OLD'`; a **title-drift** envelope uses `sourceSections` deliberately different from the current parsed titles.
+
+```ts
+// P5 — over budget + title-match stale model → ok+stale, NO charge.
+it('P5: over budget + title-stable model → { ok, stale:true }, no charge', async () => {
+  // seed promoted doc + parsed; writeModelEnvelope with matching titles + generatorVersion 'OLD'
+  await setOwnerCap(6); await preseedBudget(ownerId, 6);
+  const before = await snapshot(ownerId);
+  const r = await resolveMagazineModel({ /* over-budget owner client, parsed, base, … */ });
+  expect(r).toEqual({ status: 'ok', model: expect.anything(), stale: true });
+  expect(await snapshot(ownerId)).toEqual(before); // reserve rolled back → no charge, no new lease
+});
+
+// P6 — over budget + no cached model → over_budget.
+it('P6: over budget + no model → { over_budget }', async () => {
+  await setOwnerCap(6); await preseedBudget(ownerId, 6);
+  const r = await resolveMagazineModel({ /* … no envelope written … */ });
+  expect(r).toEqual({ status: 'over_budget' });
+});
+
+// P6b — over budget + title-DRIFTED model → over_budget (NOT stale — avoids positional mis-pair).
+it('P6b: over budget + titles drifted → { over_budget } (not stale)', async () => {
+  // writeModelEnvelope with sourceSections that DIFFER from the current parsed titles
+  await setOwnerCap(6); await preseedBudget(ownerId, 6);
+  const r = await resolveMagazineModel({ /* … */ });
+  expect(r).toEqual({ status: 'over_budget' });
+});
+
+// P14 — fresh model + owner over budget → ok WITHOUT reserving (observable no-charge, no rpc spy).
+it('P14: fresh model + over budget → { ok } served free (reserve never runs)', async () => {
+  // writeModelEnvelope with matching titles AND current GENERATOR_VERSION (fresh)
+  await setOwnerCap(6); await preseedBudget(ownerId, 6);
+  const before = await snapshot(ownerId);
+  const r = await resolveMagazineModel({ /* … */ });
+  expect(r).toEqual({ status: 'ok', model: expect.anything() }); // no `stale` — fresh path (serve-doc returns at readFreshMagazineModel)
+  expect(await snapshot(ownerId)).toEqual(before); // reserve never called → nothing changed
+});
+
+// P13 — stale-then-recovered: stale served over budget; under budget it re-materializes to current version.
+it('P13: recovers to fresh (no stale) once under budget', async () => {
+  // writeModelEnvelope with matching titles + generatorVersion 'OLD'
+  await setOwnerCap(6); await preseedBudget(ownerId, 6);
+  const stale = await resolveMagazineModel({ /* … */ });
+  expect(stale).toMatchObject({ status: 'ok', stale: true });
+  // Clear the over-budget state (fresh day OR delete today's budget row), leaving the stale envelope:
+  await svc.from('serve_owner_budget').delete().eq('owner_id', ownerId);
+  const fresh = await resolveMagazineModel({ /* same args; generateMagazineModel mocked per file convention */ });
+  expect(fresh.status).toBe('ok');
+  expect((fresh as { stale?: boolean }).stale).toBeUndefined(); // re-materialized to current version, not stale
+});
 ```
-- P5: over budget + a materialized model whose titles match current → resolveMagazineModel returns { status:'ok', stale:true }; spend_ledger + serve_owner_budget UNCHANGED (no charge).
-- P6: over budget + no model → { status:'over_budget' }.
-- P6b: over budget + a materialized model whose titles DRIFTED (edit the parsed titles) → { status:'over_budget' } (NOT stale).
-- P14: fresh model + owner over budget → { status:'ok' } WITHOUT calling reserve (assert via rpc spy that reserve_serve_model was not called).
-```
-Seed a promoted doc, materialize a model (write an envelope via `writeModelEnvelope` with a matching then a drifted title set), set `per_owner_serve_daily_cents=3`, call `resolveMagazineModel` with an over-budget owner. For "no charge", snapshot `serve_owner_budget`/`spend_ledger` before/after and assert unchanged.
 
 - [ ] **Step 6: Run — confirm pass** (`npx jest read-model && npm run test:integration -- --runInBand -t "serve-doc-materialize" && npx tsc --noEmit`).
 
@@ -511,10 +616,11 @@ it('staleMarker sets X-Magazine-Stale on html; absent by default', () => {
 
 - [ ] **Step 3: Implement `staleMarker` in `file-response.ts`**
 
-Add `staleMarker?: boolean` to the opts type; after the existing header assignments:
+Add `staleMarker?: boolean` to the opts type; after the existing header assignments (guard on `kind === 'html'` so the "html only" invariant is enforced in code, not just by the caller — review L2):
 ```ts
-  if (opts.staleMarker) headers['X-Magazine-Stale'] = '1';
+  if (opts.staleMarker && opts.kind === 'html') headers['X-Magazine-Stale'] = '1';
 ```
+Add a unit assertion that `staleMarker: true` with `kind: 'md'` does NOT set the header.
 
 - [ ] **Step 4: Write the failing owner-route integration tests** (`tests/integration/html-download.test.ts` — add)
 
@@ -522,9 +628,9 @@ Add `staleMarker?: boolean` to the opts type; after the existing header assignme
 - P6 (route): owner over budget, no model → GET (html) returns 503 { error: 'daily refresh budget reached, try tomorrow' }.
 - P5 (route): owner over budget, title-stable model exists → 200, body is the rendered magazine, header X-Magazine-Stale: 1.
 - P1 (route): fresh model, owner over budget → 200, NO X-Magazine-Stale (served free).
-- P7 (route): owner over budget, format=md&download=1 → 200 raw markdown, no X-Magazine-Stale, no reserve call (unchanged 1F-c path).
+- P7 (route): owner over budget, format=md&download=1 → 200 raw markdown, no X-Magazine-Stale (returns before resolveMagazineModel — unchanged 1F-c path).
 ```
-Set `per_owner_serve_daily_cents=3`; materialize a matching-title model for the stale case; use the existing owner-serve integration harness.
+Force over-budget with the cap-preseed pattern (`per_owner_serve_daily_cents` stays ≥ 6): `svc.from('guardrail_config').update({ per_owner_serve_daily_cents: 6 })` + `svc.from('serve_owner_budget').insert({ owner_id, day: <utc today>, spent_cents: 6 })`. **Do NOT set the cap to 3** (violates the CHECK). Materialize a matching-title stale model (`writeModelEnvelope` with `generatorVersion:'OLD'`) for the P5 case; use the existing owner-serve integration harness.
 
 - [ ] **Step 5: Implement in `serveCloud`** (`app/api/html/[id]/route.ts`)
 
@@ -570,6 +676,7 @@ git commit -m "feat(1g): owner route over_budget 503 + X-Magazine-Stale on serve
 
 ## Self-Review notes (author)
 
-- **Spec coverage:** D1 (T1 table), D2 (T1 column+CHECK), D3 (T1 arbiter+definer+P17), D4 (T2 ResolveResult+case), D5 (T2 title-stable read), D6 (T3 route+header), D7 (unchanged — asserted by P7/P11), D8 (T1 config guard). Behaviors: P1/P7/P14 (T2+T3), P2/P3/P4/P4b/P8/P10/P15/P16/P17 (T1), P5/P6/P6b (T2+T3), P11/P12 (T2/T1).
+- **Spec coverage:** D1 (T1 table), D2 (T1 column+CHECK), D3 (T1 arbiter+definer+P17), D4 (T2 ResolveResult+case), D5 (T2 title-stable read), D6 (T3 route+header), D7 (unchanged — asserted by P7/P11), D8 (T1 config guard). **Behaviors — every P1–P17 covered:** P2/P3/P4/P4b/P8/P9/P10/P15/P16/P17 + R5 (T1, RPC-level); P5/P6/P6b/P13/P14/P11 (T2, resolve-level); P1/P5/P6/P7 (T3, route-level); P12 (T1). Note the label corrections from plan-v1 (review): the two-doc concurrency test is spec **P15** (was mislabeled P16); spec **P16** is the new live-lease→in_flight test; the K·6 test is **R5** (spec §4), not P15.
+- **Over-budget test pattern (review Blocking):** NEVER set `per_owner_serve_daily_cents < magazine_est_cents` (violates the CHECK). Force over-budget via `setOwnerCap(6)` + `preseedBudget(owner, 6)` (helpers in Task 1 Step 1). Rollback tests use `snapshot()` before/after and assert full-table equality.
 - **Type consistency:** `readTitleStableModel` returns `{status:'ok'|'none'}` (distinct from `readFreshMagazineModel`'s `'ok'|'not_ready'` — deliberate, different callers); `ResolveResult.ok.stale?` threaded to `fileResponse.staleMarker`. `owner_over_budget` (RPC string) → `over_budget` (ResolveResult) → 503 — three distinct names, intentional and mapped in T2/T3.
 - **Confirm during execution:** the exact `read-model.test.ts` fake-blob helpers (build a minimal `ReadOnlyBlobStore` stub if absent); the `serve-config-invariant.test.ts` canonical-config shape; that `pg_proc.proconfig` renders as `['search_path=public']` in this Postgres (adjust the P17 `arrayContaining` matcher if the format differs, e.g. quoted).
