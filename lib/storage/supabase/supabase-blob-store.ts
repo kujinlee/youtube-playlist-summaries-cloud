@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BlobStore, StagedRef } from '@/lib/storage/blob-store';
 import { assertLogicalKey } from '@/lib/storage/blob-store';
@@ -35,8 +36,8 @@ export class SupabaseBlobStore implements BlobStore {
   }
 
   async putStaged(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<StagedRef> {
-    assertLogicalKey(key);  // validate before building tempKey — reject '/absolute' before any upload
-    const tempKey = `_staging/${key}`;
+    assertLogicalKey(key); // validate before building tempKey — reject '/absolute' before any upload
+    const tempKey = `_staging/${crypto.randomUUID()}/${key}`; // per-attempt-unique (ports local-blob-store)
     await this.put(p, tempKey, bytes, contentType);
     return { principal: p, tempKey, finalKey: key };
   }
@@ -45,12 +46,19 @@ export class SupabaseBlobStore implements BlobStore {
     const from = this.objectKey(ref.principal, ref.tempKey);
     const to = this.objectKey(ref.principal, ref.finalKey);
     // move = copy+delete (non-atomic). Idempotent: if final already present, ensure temp gone and return.
-    const finalExists = await this.exists(ref.principal, ref.finalKey);
-    if (finalExists) {
-      await this.b().remove([from]).catch(() => {});  // best-effort temp cleanup
+    if (await this.exists(ref.principal, ref.finalKey)) {
+      await this.b().remove([from]).catch(() => {});
       return;
     }
     const { error } = await this.b().move(from, to);
-    if (error) throw error;
+    if (error) {
+      // A concurrent promoter (worker job retry / re-run of the same MD key) may have won the race: destination-exists / source-missing.
+      // Re-check the final; treat a present final as success, else rethrow.
+      if (await this.exists(ref.principal, ref.finalKey)) {
+        await this.b().remove([from]).catch(() => {});
+        return;
+      }
+      throw error;
+    }
   }
 }
