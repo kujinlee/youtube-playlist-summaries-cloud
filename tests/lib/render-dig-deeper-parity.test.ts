@@ -11,8 +11,8 @@ const parsed: ParsedSummary = {
 };
 const model: MagazineModel = { sections: [{ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] };
 
-/** Inject rendered HTML, execute every inline <script>, then click #print-btn and assert window.print fired. */
-function drivePrint(html: string): number {
+/** Inject rendered HTML and execute every inline <script> (binds listeners), but do NOT click yet. */
+function renderAndBind(html: string): jest.Mock {
   document.documentElement.innerHTML = html.replace(/^[\s\S]*?<body[^>]*>/i, '').replace(/<\/body>[\s\S]*$/i, '');
   const printSpy = jest.fn();
   (window as unknown as { print: () => void }).print = printSpy;
@@ -23,18 +23,30 @@ function drivePrint(html: string): number {
     // print listener would never bind and the test would fail for the wrong reason.
     try { new Function(s.textContent)(); } catch { /* per-script isolation, like a real browser */ }
   }
-  (document.getElementById('print-btn') as HTMLButtonElement)?.click();
-  return printSpy.mock.calls.length;
+  return printSpy;
 }
 
-it('B18/B21: the LOCAL summary print button actually fires window.print()', () => {
-  expect(drivePrint(renderMagazineHtml(parsed, model))).toBeGreaterThan(0);
+/**
+ * Prove the CLICK — not merely script execution/load — causes window.print():
+ * assert 0 calls right after binding (before any click), then click #print-btn,
+ * then assert exactly 1 call. Catches both a non-binding listener (stays 0 after
+ * click) and a load-time/other-path print (already >0 before click).
+ */
+function drivePrintAssertingClickCausesPrint(html: string): void {
+  const printSpy = renderAndBind(html);
+  expect(printSpy).toHaveBeenCalledTimes(0);
+  (document.getElementById('print-btn') as HTMLButtonElement)?.click();
+  expect(printSpy).toHaveBeenCalledTimes(1);
+}
+
+it('B18/B21: the LOCAL summary print button actually fires window.print() via click, not load', () => {
+  drivePrintAssertingClickCausesPrint(renderMagazineHtml(parsed, model));
 });
 
-it('B21: the LOCAL dig-deeper print button still fires window.print() after the shared refactor', () => {
+it('B21: the LOCAL dig-deeper print button still fires window.print() via click after the shared refactor', () => {
   // renderDigDeeperDoc(args) — a minimal 1-section fixture; the print button + listener must survive.
   const html = renderDigDeeperDoc({
     summary: parsed, envelope: null, dug: [], mdPath: 'a.md', videoId: 'vid', language: 'en',
   });
-  expect(drivePrint(html)).toBeGreaterThan(0);
+  drivePrintAssertingClickCausesPrint(html);
 });

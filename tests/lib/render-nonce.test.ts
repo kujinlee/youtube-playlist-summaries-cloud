@@ -18,7 +18,9 @@ it('local render (no opts): no nonce attributes, dig controls present, print but
   expect(html).toContain('print-btn'); // button still present
   // NOTE: repo targets ES2017, so the dotAll `s` flag is unavailable; `[\s\S]*` gives the same
   // newline-spanning match the brief's `/…/s` intended, and compiles under `tsc --noEmit`.
-  expect(html).toMatch(/addEventListener\('click'[^)]*\)[\s\S]*window\.print\(\)|window\.print\(\)/); // listener wires print
+  // Require the actual D11 wiring form (addEventListener('click' ... window.print()) — a bare
+  // window.print() anywhere in the doc must NOT satisfy this assertion.
+  expect(html).toMatch(/addEventListener\('click'[^)]*\)[\s\S]*window\.print\(\)/); // listener wires print via addEventListener
 });
 
 it('cloud render ({nonce, dig:false}): every inline script/style carries the SAME nonce; no dig controls', () => {
