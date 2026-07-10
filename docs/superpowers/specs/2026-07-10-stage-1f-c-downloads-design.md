@@ -1,6 +1,7 @@
 # Stage 1F-c — Downloads (MD + rendered HTML), owner + share-token (cloud)
 
-**Status:** 🟡 **design DRAFT (v1)** — brainstormed and design-approved by the user 2026-07-10; not yet through dual adversarial review. **Branch:** `feat/stage-1f-c-downloads`.
+**Status:** 🟡 **design DRAFT (v2)** — design-approved by the user 2026-07-10; v1 dual adversarial review returned 1 Blocking + 2 High + 2 Medium + 3 Low, all addressed here. **Next: re-review to convergence → user spec-approval → `writing-plans`.** **Branch:** `feat/stage-1f-c-downloads`.
+**Review trail:** `docs/reviews/spec-1f-c-{codex,claude}-v1.md`.
 
 > **Design in one paragraph:** let a summary doc be **downloaded** as raw markdown (`.md`) or self-contained rendered HTML (`.html`), by the **owner** (session) or a **share-token holder** (1F-b link), by adding `format` + `download` query params to the two existing serve routes. Downloading is a thin layer over 1F-a (owner) and 1F-b (share): the MD path is a pure storage passthrough that never touches the model or money; the HTML path reuses the exact serve render + money path of each caller. No server-side PDF (print → "Save as PDF" in the browser, already shipped), no Obsidian FSA (deferred).
 
@@ -34,53 +35,65 @@ Both routes read the raw MD bytes **before** any model resolution. A download is
 | D5 | **HTML download reuses each caller's existing money path verbatim:** owner → `resolveMagazineModel` (materialize + charge once, cached, exactly like a view); share → `readFreshMagazineModel` (serve-if-fresh, else "not ready", **never charges**). | Downloading HTML is materially identical to viewing it; the only delta is the disposition header. All 1F-a/1F-b money invariants hold. |
 | D6 | **Share-token downloads authorize both formats.** The token grants "read this doc's content"; md and html are two encodings of that content. | The user accepted that a share link is a save-the-file capability; no per-format token distinction. |
 | D7 | **Filename = RFC 5987**: `Content-Disposition: attachment; filename="<ascii>.<ext>"; filename*=UTF-8''<pct-encoded>`. ascii fallback = the sanitized base key (`{serial}_{slug}`); `filename*` carries the unicode doc title. Extension `.md` / `.html`. **Both paths use the title** — the owner route has `video.title` from the index; the share route gets it for free from the `videos.data` row `getShareServeContext` already reads (add `title` to `ShareServeContext`). No MD parse needed on either MD path. | Unicode titles (e.g. the `건강` playlist) download with a correct human name on owner AND share; ascii base-key fallback for legacy clients. |
-| D8 | **Downloaded HTML is byte-identical to the served HTML** for that caller (owner: full render; share: share-mode strip). The HTTP response keeps the caller's CSP + cache headers; the saved file has no CSP but is safe standalone (self-contained, inline CSS, no external requests). | One render path, no divergence; share downloads keep the owner-structure strip (no leak). |
+| D8 | **Downloaded HTML uses the same render as the served HTML** for that caller (owner: full render; share: share-mode strip) — same body modulo the per-response nonce. The HTTP response keeps the caller's CSP + cache headers (+ `nosniff`); the saved file has no CSP but is safe standalone: self-contained, inline CSS, no external requests, and the only inline script is the nonce'd `window.print()` print handler (no network / no exfiltration, harmless from `file://`, L2). | One render path, no divergence; share downloads keep the owner-structure strip (no leak). |
 | D9 | **Error behavior matches each caller's existing view path:** owner missing-blob → **409** "repair needed"; share missing-blob / corrupt-MD / bad-token → coarse **404**; bad `format` → **400**. | Downloads inherit, not redefine, each path's error contract. |
-| D10 | **The new MD-download branch is added to 1F-b's money guards** (B18 zero-`reserve` proof + B18b import guard + B18c graph): the share MD path must reach no charging code. | The MD branch is a new anonymous code path; the never-charges guarantee must provably extend to it. |
+| D10 | **The new MD-download branch is added to 1F-b's money guards** (B18 zero-`reserve` proof + B18b import guard + B18c graph). **The new `lib/html-doc/file-response.ts` helper is added to the B18b guard's scan set** (`shareSources`) and kept a **pure, dependency-free leaf** (no imports beyond Node/web `Response`), so the share route's import of it cannot smuggle in charging code. | The MD branch is a new anonymous code path; the never-charges guarantee must provably extend to it AND to any helper it pulls in (round-1 High: the guard scanned `app/s`/`lib/share`/`read-model.ts` only — a new helper would be unscanned). |
+| D11 | **`X-Content-Type-Options: nosniff` on EVERY download/serve response** (md + html, inline + attachment). **Inline `format=md` (no `download`) is served as `text/plain; charset=utf-8`**, not `text/markdown`; the `.md` *download* uses `text/markdown` + attachment. | Raw MD is unescaped AI/worker-authored content that can contain `<script>`/`<html>`; `nosniff` blocks content-sniffing, and `text/plain` inline guarantees a sniffing UA cannot execute it on the app origin (round-1 High: worst case = owner content executing in a share recipient's authenticated origin). |
+| D12 | **The share MD branch performs the SAME mandatory pre-response `getShareServeContext` re-check** (revoked/un-promoted → coarse 404) immediately before returning bytes, exactly as the share HTML path does today (`s/route.ts:57-59`). | Round-1 **Blocking**: the MD branch returned right after the blob read, *before* the existing re-check, reopening the D14/B10b revoke-mid-request window that 1F-b closed. |
 
 ## 4. Architecture
 
 ### 4.1 Owner route — `app/api/html/[id]/route.ts` (`serveCloud`)
 
-Add near the top of `serveCloud`, alongside the existing `type` check:
-- `const format = searchParams.get('format') ?? 'html';` — reject if not `html`/`md` → **400**.
-- `const download = searchParams.get('download') === '1';`
+After the existing `type` check (`:29-30`, which stays first), add:
+- `const format = searchParams.get('format') ?? 'html';` — if not `html`/`md` → **400** (validated after `type`, so `?format=pdf&type=bad` returns the type-400 first; L3).
+- `const download = searchParams.get('download') === '1';` (any other value → inline).
 
-After the existing `mdBytes` read (`:60`, and its `:61` 409-on-missing):
+After the existing `mdBytes` read (`:60`, and its `:61` 409-on-missing), with `base = mdKey.replace(/\.md$/,'')`:
 ```ts
 if (format === 'md') {
-  return fileResponse(mdBytes, 'text/markdown; charset=utf-8', {
-    download, base, title: video.title, ext: 'md',
-    cache: 'private, no-store',
+  return fileResponse(mdBytes, {
+    kind: 'md', download, base, title: video.title,
+    cache: 'private, no-store',  // helper adds nosniff; inline md → text/plain, download md → text/markdown
   });
 }
 ```
-(`base = mdKey.replace(/\.md$/,'')`, computed before the branch.) The `format === 'html'` path is the existing render, unchanged, except the final `Response` routes through the same helper so `download` can add the disposition (`Content-Type: text/html`, ext `html`, same `private, no-store` + CSP header).
+The `format === 'html'` path is the existing render, unchanged, except the final `Response` routes through the same helper (`kind: 'html'`) so `download` can add the disposition — same `private, no-store` + CSP header + the new `nosniff`.
 
 ### 4.2 Share route — `app/s/[token]/route.ts`
 
-`getShareServeContext` is extended to also return the doc title (`ShareServeContext` gains `title: string`, read from the `vid.data` row it already fetches — no extra query, no MD parse). After the existing `mdBytes` read (`:37-45`, keep the bad-key→404 catch):
+`getShareServeContext` is extended to also return the doc title (`ShareServeContext` gains **`title?: string`** — read from `vid.data.title` on the row it already fetches, validated `typeof === 'string' && .trim()`, else omitted; no extra query, no MD parse; legacy/unvalidated rows without a title fall back to the base key, L1). `format` + `download` are parsed at the top and **`format` is validated first, before the token lookup** — a bad `format` → **400** (token-independent → not a token-existence oracle; C11 covers only a *valid/absent* format with a bad token → 404; M2).
+
+After the existing `mdBytes` read (`:37-45`, keep the bad-key→404 catch), the MD branch **must run the same mandatory re-check the HTML path runs at `:57-59` before returning** (D12):
 ```ts
 if (format === 'md') {
-  return fileResponse(mdBytes, 'text/markdown; charset=utf-8', {
-    download, base: ctx.mdKey.replace(/\.md$/,''), title: ctx.title, ext: 'md',
-    cache: 'no-store', referrerPolicy: 'no-referrer',
+  const recheck = await getShareServeContext(svc, token);   // D12/B10b: revoked/un-promoted mid-request → 404
+  if ('status' in recheck) return notFound();
+  return fileResponse(mdBytes, {
+    kind: 'md', download, base: ctx.mdKey.replace(/\.md$/,''), title: ctx.title,
+    cache: 'no-store', referrerPolicy: 'no-referrer',   // helper adds nosniff; inline md → text/plain
   });
 }
 ```
-`format` + `download` are parsed from the request URL and **`format` is validated first, before the token lookup** — a bad `format` → **400** (token-independent, so it is not a token-existence oracle; matches the owner path C5). The `format === 'html'` path is the existing share render (share-mode strip), plus the disposition when `download=1`. The MD branch **imports and calls nothing new** beyond the already-present get-only read — it must not touch `read-model`/`serve-doc`/`reserve`. (Returning the title is still parse-free — it comes from the DB row, D4 intact.)
+The `format === 'html'` path is the existing share render (share-mode strip) + disposition when `download=1`. The MD branch **imports and calls nothing new** beyond the already-present get-only read and `fileResponse` (a pure leaf) — it must not touch `read-model`/`serve-doc`/`reserve`. (Title comes from the DB row, D4 parse-free intact.)
 
-### 4.3 Shared filename/disposition helper — `lib/html-doc/file-response.ts` (new)
+### 4.3 Shared filename/disposition helper — `lib/html-doc/file-response.ts` (new, pure leaf)
+
+**Pure and dependency-free** (imports nothing but the web `Response`; no app imports) so adding it to the B18b guard's `shareSources` scan set (D10) keeps the share money-graph provably clean.
 
 ```ts
 export function fileResponse(
   body: Buffer | string,
-  contentType: string,
-  opts: { download: boolean; base: string; title?: string; ext: 'md' | 'html';
+  opts: { kind: 'md' | 'html'; download: boolean; base: string; title?: string;
           cache: string; csp?: string; referrerPolicy?: string },
 ): Response
 ```
-Builds the `Response` with `Content-Type`, `Cache-Control`, optional CSP + `Referrer-Policy`, and — when `download` — `Content-Disposition: attachment; filename="<asciiSafe(base)>.<ext>"; filename*=UTF-8''<encodeRFC5987(title ?? base)>.<ext>`. `asciiSafe` strips/replaces non-ASCII and `"`/`;`/path chars; `encodeRFC5987` percent-encodes per RFC 5987. Pure, unit-tested.
+- **Content-Type:** `html` → `text/html; charset=utf-8`. `md` **inline** (no download) → **`text/plain; charset=utf-8`** (a sniffing UA cannot execute embedded HTML); `md` **download** → `text/markdown; charset=utf-8`. (D11)
+- **Always** sets **`X-Content-Type-Options: nosniff`**, plus `Cache-Control` (from `cache`), optional CSP (`csp`) + `Referrer-Policy` (`referrerPolicy`).
+- **When `download`:** `Content-Disposition: attachment; filename="<asciiSafe(name)>.<ext>"; filename*=UTF-8''<encodeRFC5987(name)>.<ext>` where `name = (title?.trim()) || base`, `ext` = `kind` (`md`/`html`).
+- **`asciiSafe(s)`** — replace every byte in `[\x00-\x1f\x7f]` (incl. CR/LF), plus `"` `\` `/` `;`, with `_`; strip leading/trailing dots and spaces; if the result is empty, use the literal `summary`. The ASCII half NEVER contains the raw title's control/quote/path chars, so `Content-Disposition` cannot be header-injected or filename-broken.
+- **`encodeRFC5987(s)`** — a strict allowlist percent-encoder: pass only `A-Za-z0-9` and `!#$&+-.^_\`|~`; percent-encode (`%HH`, UTF-8 bytes) **everything else**, so CR/LF/`;`/`"`/quotes become `%0D`/`%0A`/… — never literal in the header.
+- Pure, unit-tested (ascii fallback, unicode round-trip, empty/all-non-ASCII/CRLF-in-title, disposition present iff `download`, content-type per kind+download, `nosniff` always present).
 
 ## 5. URL Contracts
 
@@ -89,7 +102,7 @@ Builds the `Response` with `Content-Type`, `Cache-Control`, optional CSP + `Refe
 | `/api/html/[id]` | session (owner) | `playlist=<uuid>`, `type=summary`, `format=html\|md` (default html), `download=1?` | inline or `attachment`; md=text/markdown (no charge), html=rendered (1F-a money path) |
 | `/s/[token]` | none (bearer) | `format=html\|md` (default html), `download=1?` | inline or `attachment`; md=text/markdown (never charge), html=share render (never charge) |
 
-Existing callers (no `format`/`download`) get byte-identical responses to today (D2).
+Existing callers (no `format`/`download`) get an **equivalent** response to today (D2): same status, same header name/value set (owner: CSP + `private,no-store`, **no** `Referrer-Policy`; share: CSP + `no-store` + `no-referrer`) **plus the new `nosniff`**, same rendered body modulo the per-response nonce, and no `Content-Disposition`. A regression test pins these (esp. that the owner path gains no `Referrer-Policy`).
 
 ## 6. Enumerated Behaviors
 
@@ -105,21 +118,25 @@ Existing callers (no `format`/`download`) get byte-identical responses to today 
 | C8 | Share download MD | share GET `format=md&download=1`, live token | **200** `text/markdown`, `attachment`; **no charge, no generation, no reserve** |
 | C9 | Share download HTML | share GET `format=html&download=1`, live token, fresh model | 200 `text/html`, `attachment`, share-mode strip; **never charges**; `no-store`+`no-referrer` |
 | C10 | Share HTML not-ready | share `format=html`, model absent/stale | **503** "not ready" (1F-b path); no charge |
-| C11 | Share denied (any format) | expired/revoked/unknown/malformed token, any `format`/`download` | **coarse 404**, no body leak, before blob read |
+| C11 | Share denied (valid/absent format) | expired/revoked/unknown/malformed token, `format` valid or absent | **coarse 404**, no body leak, before blob read |
+| C11b | Revoke/un-promote mid-MD-download | token live at initial resolve, revoked/un-promoted before the MD response | **coarse 404** — the MD branch re-runs `getShareServeContext` before returning (D12/B10b) |
 | C12 | Share MD missing/corrupt blob | live token, blob lost or unparseable | coarse **404** (MD branch: missing→404; MD is not parsed on the md path, so "corrupt" only affects html) |
 | C13 | Filename RFC 5987 | any `download=1` | `Content-Disposition: attachment; filename="<ascii>.<ext>"; filename*=UTF-8''<pct>`; unicode title round-trips |
 | C14 | Filename ascii fallback | title is non-ASCII (건강) | `filename="<ascii base-key>.<ext>"` present as fallback + `filename*` unicode |
-| C15 | MD path never charges (both) | C2/C3/C8 | `spend_ledger`/`serve_model_charge` unchanged; zero `reserve_serve_model`; MD branch reaches no charging import (extends B18/B18b/B18c) |
+| C15 | MD path never charges (both) | C2/C3/C8 | `spend_ledger`/`serve_model_charge` unchanged; zero `reserve_serve_model`; MD branch + `file-response.ts` (now in the B18b `shareSources` scan set) reach no charging import (extends B18/B18b/B18c) |
 | C16 | Share download isolation | share `format=md`/`html` for owner A via B's token | coarse 404 (confused-deputy guard unchanged); no cross-owner file |
 | C17 | Downloaded HTML self-contained | any html download | opens offline (inline CSS, print button); no external request; share download has no owner-structure leak |
 | C18 | Disposition absent = inline | `format=md` without `download` | no `Content-Disposition`; served inline |
+| C19 | Anti-sniffing header always | any md or html response (inline or download, both paths) | `X-Content-Type-Options: nosniff` present (D11) |
+| C20 | Inline MD is non-executable | `format=md` without `download` | `Content-Type: text/plain; charset=utf-8` (not `text/markdown`) — a sniffing UA cannot execute embedded `<script>` on the app origin (D11) |
+| C21 | Filename edge cases | title empty / all-non-ASCII / contains CR-LF-quote-`;` | ASCII `filename` = sanitized base (or literal `summary` if empty), never containing control/quote/path chars; `filename*` strict-percent-encoded (CR/LF → `%0D%0A`); no header injection |
 
 ## 7. Testing Strategy
 
-- **Unit** — `fileResponse` / filename helper: ascii fallback, RFC 5987 `filename*` for unicode, extension, disposition present iff `download`, content-type, headers.
-- **Owner route (integration/route)** — C1–C6: view-unchanged regression; MD download no-charge (spy on `reserve_serve_model`, ledger unchanged); HTML download = charge-once path; bad format 400; missing blob 409.
-- **Share route (integration)** — C7–C12, C16: view-unchanged; MD download no-charge (extends the 1F-b B18 money proof to the md branch); HTML download never-charge + share-mode strip; denied-all-formats coarse 404; confused-deputy for both formats.
-- **Money guards (C15)** — extend the 1F-b import-guard + B18 zero-`reserve` proof so the new MD branch is covered; assert the share MD path imports no charging module.
+- **Unit (`fileResponse` / filename helper)** — ascii fallback; RFC 5987 `filename*` unicode round-trip; **CR/LF/quote/`;`-in-title → percent-encoded, no header injection** (C21); **empty / all-non-ASCII title → `summary`/base fallback**; disposition present iff `download`; content-type per kind+download (**inline md = `text/plain`**, C20); **`nosniff` always present** (C19).
+- **Owner route (integration/route)** — C1–C6: view-unchanged regression (**same header set incl. new `nosniff`, no `Referrer-Policy`, no `Content-Disposition`**, M3); MD download no-charge (spy on `reserve_serve_model`, ledger unchanged); HTML download = charge-once path; bad format 400 (after type); missing blob 409.
+- **Share route (integration)** — C7–C12, C11b, C16: view-unchanged; MD download no-charge; **revoke/un-promote-mid-MD-download → 404 (the D12 re-check, a B10b test for `format=md`)**; HTML download never-charge + share-mode strip; denied coarse 404; confused-deputy for both formats.
+- **Money guards (C15)** — extend the 1F-b import-guard so **`lib/html-doc/file-response.ts` is in the `shareSources` scan set** and assert it is a pure dependency-free leaf; extend the B18 zero-`reserve` proof so the `format=md` share branch is covered.
 - **Mock boundary** — Gemini mocked at `lib/gemini.ts`; MD downloads make zero Gemini calls (asserted).
 
 ## 8. Dev-Process Re-Review Triggers
@@ -139,6 +156,6 @@ Money-adjacent + anonymous-path + reuses the 1F-b service_role surface → **ite
 
 1. Owner downloads their summary as `.md` (no charge) or `.html` (charge-once, same as viewing); a share-link holder downloads both formats (never charging the owner).
 2. No download path weakens 1F-a/1F-b: MD downloads never touch the model/money on either path; share HTML download reuses the never-charge guard; the new MD branch is covered by the extended B18/B18b/B18c guards.
-3. Existing `/api/html/[id]` and `/s/[token]` callers (no `format`/`download`) get byte-identical responses.
+3. Existing `/api/html/[id]` and `/s/[token]` callers (no `format`/`download`) get an equivalent response: same status + same header set/values (plus new `nosniff`) + same body modulo nonce + no `Content-Disposition` (the owner path gains no `Referrer-Policy`) — pinned by a regression test.
 4. Filenames are correct for unicode titles (RFC 5987) with an ascii fallback; downloaded HTML is self-contained and (for shares) leaks no owner structure.
 5. `tsc` clean; unit + integration suites green; spec cleared dual adversarial review to convergence.
