@@ -33,7 +33,7 @@ Both routes read the raw MD bytes **before** any model resolution. A download is
 | D4 | **MD download is a pure passthrough — it never resolves the model, never charges, never generates**, on BOTH the owner and share paths. It short-circuits right after the MD blob read. | The raw `.md` is the worker-written canonical file already in storage; rendering/charging is irrelevant to it. |
 | D5 | **HTML download reuses each caller's existing money path verbatim:** owner → `resolveMagazineModel` (materialize + charge once, cached, exactly like a view); share → `readFreshMagazineModel` (serve-if-fresh, else "not ready", **never charges**). | Downloading HTML is materially identical to viewing it; the only delta is the disposition header. All 1F-a/1F-b money invariants hold. |
 | D6 | **Share-token downloads authorize both formats.** The token grants "read this doc's content"; md and html are two encodings of that content. | The user accepted that a share link is a save-the-file capability; no per-format token distinction. |
-| D7 | **Filename = RFC 5987**: `Content-Disposition: attachment; filename="<ascii>.<ext>"; filename*=UTF-8''<pct-encoded>`. ascii fallback = the sanitized base key (`{serial}_{slug}`); `filename*` carries the unicode doc title. Extension `.md` / `.html`. | Unicode titles (e.g. the `건강` playlist) must download with a correct name; ascii fallback for legacy clients. |
+| D7 | **Filename = RFC 5987**: `Content-Disposition: attachment; filename="<ascii>.<ext>"; filename*=UTF-8''<pct-encoded>`. ascii fallback = the sanitized base key (`{serial}_{slug}`); `filename*` carries the unicode doc title. Extension `.md` / `.html`. **Both paths use the title** — the owner route has `video.title` from the index; the share route gets it for free from the `videos.data` row `getShareServeContext` already reads (add `title` to `ShareServeContext`). No MD parse needed on either MD path. | Unicode titles (e.g. the `건강` playlist) download with a correct human name on owner AND share; ascii base-key fallback for legacy clients. |
 | D8 | **Downloaded HTML is byte-identical to the served HTML** for that caller (owner: full render; share: share-mode strip). The HTTP response keeps the caller's CSP + cache headers; the saved file has no CSP but is safe standalone (self-contained, inline CSS, no external requests). | One render path, no divergence; share downloads keep the owner-structure strip (no leak). |
 | D9 | **Error behavior matches each caller's existing view path:** owner missing-blob → **409** "repair needed"; share missing-blob / corrupt-MD / bad-token → coarse **404**; bad `format` → **400**. | Downloads inherit, not redefine, each path's error contract. |
 | D10 | **The new MD-download branch is added to 1F-b's money guards** (B18 zero-`reserve` proof + B18b import guard + B18c graph): the share MD path must reach no charging code. | The MD branch is a new anonymous code path; the never-charges guarantee must provably extend to it. |
@@ -59,18 +59,16 @@ if (format === 'md') {
 
 ### 4.2 Share route — `app/s/[token]/route.ts`
 
-After the existing `mdBytes` read (`:37-45`, keep the bad-key→404 catch):
+`getShareServeContext` is extended to also return the doc title (`ShareServeContext` gains `title: string`, read from the `vid.data` row it already fetches — no extra query, no MD parse). After the existing `mdBytes` read (`:37-45`, keep the bad-key→404 catch):
 ```ts
 if (format === 'md') {
   return fileResponse(mdBytes, 'text/markdown; charset=utf-8', {
-    download, base: ctx.mdKey.replace(/\.md$/,''), ext: 'md',  // no title: MD path stays parse-free (D4)
+    download, base: ctx.mdKey.replace(/\.md$/,''), title: ctx.title, ext: 'md',
     cache: 'no-store', referrerPolicy: 'no-referrer',
   });
 }
 ```
-`format` + `download` are parsed from the request URL and **`format` is validated first, before the token lookup** — a bad `format` → **400** (token-independent, so it is not a token-existence oracle; matches the owner path C5). The `format === 'html'` path is the existing share render (share-mode strip), plus the disposition when `download=1`. The MD branch **imports and calls nothing new** beyond the already-present get-only read — it must not touch `read-model`/`serve-doc`/`reserve`.
-
-Note: the share MD branch does **not** parse the MD (D4 — pure passthrough), so its `filename*` derives from the **base key** only (no unicode doc title). The owner MD branch (§4.1) already holds `video.title` from the index read, so it passes the unicode title for a friendlier `filename*`. This owner-has-title / share-base-key asymmetry is intentional (the share path must not pay a parse just to name a file).
+`format` + `download` are parsed from the request URL and **`format` is validated first, before the token lookup** — a bad `format` → **400** (token-independent, so it is not a token-existence oracle; matches the owner path C5). The `format === 'html'` path is the existing share render (share-mode strip), plus the disposition when `download=1`. The MD branch **imports and calls nothing new** beyond the already-present get-only read — it must not touch `read-model`/`serve-doc`/`reserve`. (Returning the title is still parse-free — it comes from the DB row, D4 intact.)
 
 ### 4.3 Shared filename/disposition helper — `lib/html-doc/file-response.ts` (new)
 
