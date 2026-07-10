@@ -44,4 +44,11 @@ describe('fileResponse', () => {
     const r = fileResponse('<html>', { kind: 'html', download: false, base: 'b', cache: 'private, no-store', csp: 'x' });
     expect(get(r, 'Referrer-Policy')).toBeNull();
   });
+  it('Buffer body round-trips byte-exactly (proves the as-BodyInit cast is safe)', async () => {
+    const buf = Buffer.from('# héllo\n\nbody', 'utf-8');
+    const r = fileResponse(buf, { kind: 'md', download: true, base: '00001_x', cache: 'no-store' });
+    const rClone = r.clone();
+    expect(await r.text()).toBe('# héllo\n\nbody');
+    expect(Buffer.from(await rClone.arrayBuffer()).equals(buf)).toBe(true);
+  });
 });
