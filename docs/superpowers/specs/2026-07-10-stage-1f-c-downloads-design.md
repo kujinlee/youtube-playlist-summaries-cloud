@@ -1,7 +1,7 @@
 # Stage 1F-c — Downloads (MD + rendered HTML), owner + share-token (cloud)
 
-**Status:** 🟡 **design DRAFT (v2)** — design-approved by the user 2026-07-10; v1 dual adversarial review returned 1 Blocking + 2 High + 2 Medium + 3 Low, all addressed here. **Next: re-review to convergence → user spec-approval → `writing-plans`.** **Branch:** `feat/stage-1f-c-downloads`.
-**Review trail:** `docs/reviews/spec-1f-c-{codex,claude}-v1.md`.
+**Status:** 🟡 **design DRAFT (v3)** — design-approved 2026-07-10. v1 dual review: 1 Blocking + 2 High + 2 Med + 3 Low → v2. v2 re-review (round 2): 0 new Blocking, 2 new High (both reconciliation defects — the v2 `text/plain` + ASCII-filename fixes didn't propagate to C3/§5/§4.3) + 1 Med + 3 Low → this v3. **Next: re-review round 3 to convergence → user spec-approval → `writing-plans`.** **Branch:** `feat/stage-1f-c-downloads`.
+**Review trail:** `docs/reviews/spec-1f-c-{codex,claude}-v1.md`, `-v2-rereview.md`.
 
 > **Design in one paragraph:** let a summary doc be **downloaded** as raw markdown (`.md`) or self-contained rendered HTML (`.html`), by the **owner** (session) or a **share-token holder** (1F-b link), by adding `format` + `download` query params to the two existing serve routes. Downloading is a thin layer over 1F-a (owner) and 1F-b (share): the MD path is a pure storage passthrough that never touches the model or money; the HTML path reuses the exact serve render + money path of each caller. No server-side PDF (print → "Save as PDF" in the browser, already shipped), no Obsidian FSA (deferred).
 
@@ -62,7 +62,7 @@ The `format === 'html'` path is the existing render, unchanged, except the final
 
 ### 4.2 Share route — `app/s/[token]/route.ts`
 
-`getShareServeContext` is extended to also return the doc title (`ShareServeContext` gains **`title?: string`** — read from `vid.data.title` on the row it already fetches, validated `typeof === 'string' && .trim()`, else omitted; no extra query, no MD parse; legacy/unvalidated rows without a title fall back to the base key, L1). `format` + `download` are parsed at the top and **`format` is validated first, before the token lookup** — a bad `format` → **400** (token-independent → not a token-existence oracle; C11 covers only a *valid/absent* format with a bad token → 404; M2).
+`getShareServeContext` is extended to also return the doc title (`ShareServeContext` gains **`title?: string`** — read from `vid.data.title` on the row it already fetches, validated `typeof === 'string' && .trim()`, else omitted; no extra query, no MD parse; legacy/unvalidated rows without a title fall back to the base key, L1). `format` + `download` are parsed at the top and **`format` is validated first — before both the `TOKEN_RE` shape check (`:25`) and the token lookup** — a bad `format` → **400** (token-independent → not a token-existence oracle; so `/s/<malformed>?format=pdf` → 400, not 404. C11 covers only a *valid/absent* format with a bad token → 404; M2 / B-L2).
 
 After the existing `mdBytes` read (`:37-45`, keep the bad-key→404 catch), the MD branch **must run the same mandatory re-check the HTML path runs at `:57-59` before returning** (D12):
 ```ts
@@ -90,17 +90,17 @@ export function fileResponse(
 ```
 - **Content-Type:** `html` → `text/html; charset=utf-8`. `md` **inline** (no download) → **`text/plain; charset=utf-8`** (a sniffing UA cannot execute embedded HTML); `md` **download** → `text/markdown; charset=utf-8`. (D11)
 - **Always** sets **`X-Content-Type-Options: nosniff`**, plus `Cache-Control` (from `cache`), optional CSP (`csp`) + `Referrer-Policy` (`referrerPolicy`).
-- **When `download`:** `Content-Disposition: attachment; filename="<asciiSafe(name)>.<ext>"; filename*=UTF-8''<encodeRFC5987(name)>.<ext>` where `name = (title?.trim()) || base`, `ext` = `kind` (`md`/`html`).
-- **`asciiSafe(s)`** — replace every byte in `[\x00-\x1f\x7f]` (incl. CR/LF), plus `"` `\` `/` `;`, with `_`; strip leading/trailing dots and spaces; if the result is empty, use the literal `summary`. The ASCII half NEVER contains the raw title's control/quote/path chars, so `Content-Disposition` cannot be header-injected or filename-broken.
-- **`encodeRFC5987(s)`** — a strict allowlist percent-encoder: pass only `A-Za-z0-9` and `!#$&+-.^_\`|~`; percent-encode (`%HH`, UTF-8 bytes) **everything else**, so CR/LF/`;`/`"`/quotes become `%0D`/`%0A`/… — never literal in the header.
+- **When `download`:** `Content-Disposition: attachment; filename="<asciiSafe(base)>.<ext>"; filename*=UTF-8''<encodeRFC5987(title?.trim() || base)>.<ext>`, `ext` = `kind`. **The ASCII `filename=` half ALWAYS uses the base key** (`{serial}_{slug}`, already ASCII), **never the unicode title** (per D7) — a non-Latin-1 `filename=` value throws when constructing the header in undici/Fetch and violates RFC 6266; the unicode title rides only in `filename*`.
+- **`asciiSafe(s)`** — replace every byte in `[\x00-\x1f\x7f]` (incl. CR/LF) **and every non-printable-ASCII byte `[^\x20-\x7e]`** (guaranteeing a printable-ASCII, header-safe result even if `base` ever held one), plus `"` `\` `/` `;`, with `_`; strip leading/trailing dots and spaces; empty → literal `summary`. The ASCII half thus never carries control/quote/path chars → no header injection or filename breakout.
+- **`encodeRFC5987(s)`** — a strict allowlist percent-encoder: pass only `A-Za-z0-9` and the RFC 5987 `attr-char` punctuation `! # $ & + - . ^ _ \` | ~` (in a regex class, place `-` at an edge so `+-.` is not parsed as a **range** that would silently admit `,`); percent-encode (`%HH`, UTF-8 bytes) everything else, so CR/LF/`;`/`"`/quotes become `%0D`/`%0A`/… — never literal in the header.
 - Pure, unit-tested (ascii fallback, unicode round-trip, empty/all-non-ASCII/CRLF-in-title, disposition present iff `download`, content-type per kind+download, `nosniff` always present).
 
 ## 5. URL Contracts
 
 | Route | Auth | Params | Response |
 |---|---|---|---|
-| `/api/html/[id]` | session (owner) | `playlist=<uuid>`, `type=summary`, `format=html\|md` (default html), `download=1?` | inline or `attachment`; md=text/markdown (no charge), html=rendered (1F-a money path) |
-| `/s/[token]` | none (bearer) | `format=html\|md` (default html), `download=1?` | inline or `attachment`; md=text/markdown (never charge), html=share render (never charge) |
+| `/api/html/[id]` | session (owner) | `playlist=<uuid>`, `type=summary`, `format=html\|md` (default html), `download=1?` | inline or `attachment` (+`nosniff`); **md inline=`text/plain`, md download=`text/markdown`** (no charge); html=rendered (1F-a money path) |
+| `/s/[token]` | none (bearer) | `format=html\|md` (default html), `download=1?` | inline or `attachment` (+`nosniff`); **md inline=`text/plain`, md download=`text/markdown`** (never charge); html=share render (never charge) |
 
 Existing callers (no `format`/`download`) get an **equivalent** response to today (D2): same status, same header name/value set (owner: CSP + `private,no-store`, **no** `Referrer-Policy`; share: CSP + `no-store` + `no-referrer`) **plus the new `nosniff`**, same rendered body modulo the per-response nonce, and no `Content-Disposition`. A regression test pins these (esp. that the owner path gains no `Referrer-Policy`).
 
@@ -110,7 +110,7 @@ Existing callers (no `format`/`download`) get an **equivalent** response to toda
 |---|---|---|---|
 | C1 | Owner view unchanged | owner GET, no `format`/`download` | identical to 1F-a today (inline HTML, materialize+charge path) |
 | C2 | Owner download MD | owner GET `format=md&download=1` | **200** `text/markdown`, `attachment` filename; **no model resolution, no charge** |
-| C3 | Owner view MD inline | owner GET `format=md` (no download) | 200 `text/markdown` inline; no charge |
+| C3 | Owner view MD inline | owner GET `format=md` (no download) | 200 **`text/plain; charset=utf-8`** inline (D11 — not `text/markdown`, so embedded HTML can't execute) + `nosniff`; no charge |
 | C4 | Owner download HTML | owner GET `format=html&download=1` | 200 `text/html`, `attachment`; 1F-a materialize+charge-once path; CSP + `private,no-store` present |
 | C5 | Bad format (either path) | owner OR share GET `format=pdf` | **400** — validated before token/model work; on the share path this is token-independent (no oracle) |
 | C6 | Owner MD missing blob | promoted but `summaryMd` blob lost | **409** "repair needed" (same as 1F-a view) |
@@ -136,7 +136,7 @@ Existing callers (no `format`/`download`) get an **equivalent** response to toda
 - **Unit (`fileResponse` / filename helper)** — ascii fallback; RFC 5987 `filename*` unicode round-trip; **CR/LF/quote/`;`-in-title → percent-encoded, no header injection** (C21); **empty / all-non-ASCII title → `summary`/base fallback**; disposition present iff `download`; content-type per kind+download (**inline md = `text/plain`**, C20); **`nosniff` always present** (C19).
 - **Owner route (integration/route)** — C1–C6: view-unchanged regression (**same header set incl. new `nosniff`, no `Referrer-Policy`, no `Content-Disposition`**, M3); MD download no-charge (spy on `reserve_serve_model`, ledger unchanged); HTML download = charge-once path; bad format 400 (after type); missing blob 409.
 - **Share route (integration)** — C7–C12, C11b, C16: view-unchanged; MD download no-charge; **revoke/un-promote-mid-MD-download → 404 (the D12 re-check, a B10b test for `format=md`)**; HTML download never-charge + share-mode strip; denied coarse 404; confused-deputy for both formats.
-- **Money guards (C15)** — extend the 1F-b import-guard so **`lib/html-doc/file-response.ts` is in the `shareSources` scan set** and assert it is a pure dependency-free leaf; extend the B18 zero-`reserve` proof so the `format=md` share branch is covered.
+- **Money guards (C15)** — the 1F-b import-guard is a **flat, non-recursive grep** over an explicit file set, so adding `lib/html-doc/file-response.ts` to `shareSources` catches only imports written *in that file*; the real protection is an explicit **leaf assertion** the plan MUST add — `file-response.ts` contains **no `import … from '@/…'`** (a dependency-free leaf), so it cannot transitively reach charging code. (`shareSources` uses `.filter(existsSync)` → the file must exist when the guard runs; TDD ordering.) Extend the B18 zero-`reserve` proof so the `format=md` share branch is covered.
 - **Mock boundary** — Gemini mocked at `lib/gemini.ts`; MD downloads make zero Gemini calls (asserted).
 
 ## 8. Dev-Process Re-Review Triggers
