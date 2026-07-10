@@ -90,10 +90,12 @@ const setOwnerCap = (cents: number) =>
   svc.from('guardrail_config').update({ per_owner_serve_daily_cents: cents }).eq('id', true); // cents MUST be >= 6
 const preseedBudget = (ownerId: string, spent: number, day: string = utcDay()) =>
   svc.from('serve_owner_budget').insert({ owner_id: ownerId, day, spent_cents: spent });
+// Full-row snapshot (review Low): select('*') + stable ordering so `toEqual(before)` is TRUE byte-identity —
+// it catches changes to day/doc_key/lease_expires_at/actual_cents/updated_at, not just the value columns.
 const snapshot = async (ownerId: string) => ({
-  ob: (await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', ownerId)).data ?? [],
-  led: (await svc.from('spend_ledger').select('reserved_cents')).data ?? [],
-  smc: (await svc.from('serve_model_charge').select('attempt_count').eq('owner_id', ownerId)).data ?? [],
+  ob: (await svc.from('serve_owner_budget').select('*').eq('owner_id', ownerId).order('day')).data ?? [],
+  led: (await svc.from('spend_ledger').select('*').order('day')).data ?? [],
+  smc: (await svc.from('serve_model_charge').select('*').eq('owner_id', ownerId).order('doc_key')).data ?? [],
 });
 
 it('P2/P12: config has per_owner_serve_daily_cents default 60', async () => {
