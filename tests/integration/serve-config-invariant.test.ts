@@ -99,9 +99,13 @@ async function readGuardrailConfig() {
   };
 }
 
-// Codex Critical #1: read the doc-count operands from `quota_allowance` (0011) instead of
-// hardcoding 2 / 20, so a future quota bump is caught by this invariant instead of silently
-// diverging from what's actually seeded.
+// Codex Critical #1: read the doc-count operands from `quota_allowance` (0011) rather than
+// inlining 2 / 20 as magic numbers in the arithmetic. NOTE: because the beforeAll restores
+// `quota_allowance` to the seed literals (2 / 20) for order-safety, this test does NOT catch a
+// future quota-SEED drift (the restore masks it) — unlike the `guardrail_config` cost operands,
+// which ARE drift-proof via information_schema column DEFAULTs. Making quota fully drift-proof
+// requires the mutating files to restore it (or a canonical seed source) so this test can read
+// LIVE quota with no self-reset. Tracked as a follow-up (Codex Task-8 re-check: SHIP-WITH-FOLLOWUP).
 async function readQuotaMonthly(isAnonymous: boolean): Promise<number> {
   const { data, error } = await svc.from('quota_allowance')
     .select('monthly').match({ is_anonymous: isAnonymous, kind: 'summary' }).single();
