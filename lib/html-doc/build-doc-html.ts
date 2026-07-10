@@ -5,6 +5,7 @@ import { renderDigDeeperDoc } from './render-dig-deeper';
 import { GENERATOR_VERSION } from './render';
 import { reRenderSummaryHtml } from './rerender';
 import { readModelEnvelope } from './model-store';
+import { getPrincipal } from '@/lib/storage/resolve';
 import { parseDugSections } from '../dig/companion-doc';
 import { parseSummaryMarkdown } from './parse';
 import { prepareSlideCropMap } from '../dig/slide-crop-map';
@@ -120,7 +121,7 @@ export async function buildDocHtml(
     return { ok: true, html: UNAVAILABLE_HTML };
   }
 
-  const envelope = await readModelEnvelope(outputFolder, base);
+  const envelope = await readModelEnvelope(getPrincipal(outputFolder), base);
 
   let dug: ReturnType<typeof parseDugSections> = [];
   if (digDeeperPath !== null) {

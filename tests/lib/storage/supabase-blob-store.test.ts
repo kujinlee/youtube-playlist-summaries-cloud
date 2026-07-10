@@ -172,19 +172,19 @@ describe('delete', () => {
 // putStaged — staging key, returned ref
 // ---------------------------------------------------------------------------
 describe('putStaged', () => {
-  test('uploads to _staging/<key> prefixed with owner/indexKey', async () => {
+  test('uploads to _staging/<uuid>/<key> prefixed with owner/indexKey', async () => {
     const storage = mockStorage();
     const store = new SupabaseBlobStore(clientWith(storage) as any, 'artifacts');
     await store.putStaged({ id: 'owner-1', indexKey: 'listX' }, 'a/b.md', Buffer.from('x'), 'text/markdown');
-    // object key = owner-1/listX/_staging/a/b.md
-    expect(storage.lastUpload!.path).toBe('owner-1/listX/_staging/a/b.md');
+    // object key = owner-1/listX/_staging/<uuid>/a/b.md — uuid-prefixed, per-attempt-unique
+    expect(storage.lastUpload!.path).toMatch(/^owner-1\/listX\/_staging\/[0-9a-f-]{36}\/a\/b\.md$/);
   });
 
   test('returns StagedRef with correct tempKey and finalKey', async () => {
     const storage = mockStorage();
     const store = new SupabaseBlobStore(clientWith(storage) as any, 'artifacts');
     const ref = await store.putStaged(p, 'my/file.md', Buffer.from('x'), 'text/plain');
-    expect(ref.tempKey).toBe('_staging/my/file.md');
+    expect(ref.tempKey).toMatch(/^_staging\/[0-9a-f-]{36}\/my\/file\.md$/);
     expect(ref.finalKey).toBe('my/file.md');
     expect(ref.principal).toBe(p);
   });

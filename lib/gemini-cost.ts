@@ -14,6 +14,8 @@ export const MAX_TRANSCRIBE_INPUT_TOKENS = 300000;
 export const MAX_TRANSCRIBE_OUTPUT_TOKENS = 32768;
 export const MAX_TRANSCRIPT_INPUT_BYTES = 40960;
 export const MAX_SUMMARY_OUTPUT_TOKENS = 8192;
+export const MAX_MAGAZINE_INPUT_TOKENS = 16384;
+export const MAX_MAGAZINE_OUTPUT_TOKENS = 4096;
 
 // ---- Retry-loop constants (these ARE the default-parameter values in gemini.ts) -------------
 export const TRANSCRIBE_RETRIES = 2;
@@ -24,6 +26,7 @@ export const MAX_SUMMARY_ATTEMPTS = 4;
 export const TRANSCRIBE_MAX_PASSES = TRANSCRIBE_RETRIES + 1; // = 3
 export const SUMMARY_MAX_PASSES = MAX_SUMMARY_ATTEMPTS * (GENERATE_JSON_RETRIES + 1); // = 12
 export const QUICKVIEW_MAX_PASSES = GENERATE_JSON_RETRIES + 1; // = 3
+export const MAGAZINE_MAX_PASSES = GENERATE_JSON_RETRIES + 1; // = 3
 
 // ---- Prompt/schema overhead + dated prices (gemini-2.5-flash, 2026-07) -----------------------
 export const PROMPT_SCHEMA_OVERHEAD_TOKENS = 4000;
@@ -38,6 +41,8 @@ export interface CloudGeminiCaps {
   transcribeOutputTokens: number;
   transcriptInputBytes: number;
   summaryOutputTokens: number;
+  magazineInputTokens?: number;   // cloud serve path only (SERVE_CAPS, Task 6); optional → existing literals unaffected
+  magazineOutputTokens?: number;
 }
 
 /**

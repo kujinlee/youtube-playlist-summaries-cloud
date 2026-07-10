@@ -75,31 +75,46 @@ html.theme-ready body,html.theme-ready #theme-toggle,html.theme-ready #print-btn
  * of a valid stored value leaves `data-theme` unset so the CSS media query follows the OS.
  * All storage access is wrapped so a throw (sandboxed/disabled storage) is a silent no-op.
  */
-export const THEME_HEAD_SCRIPT =
-  `<script>(function(){try{var t=localStorage.getItem('${STORAGE_KEY}');` +
-  `if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>`;
+/** ` nonce="..."` attribute when a nonce is supplied (cloud CSP), else empty (local, no CSP). */
+export function nonceAttr(nonce?: string): string {
+  return nonce ? ` nonce="${nonce}"` : '';
+}
 
-/** Toggle button markup, injected immediately after `<body>`. Icon is set by the handler. */
+/** Inline `<head>` FOUC script — runs before first paint. Nonce'd under the cloud CSP. */
+export function themeHeadScript(nonce?: string): string {
+  return `<script${nonceAttr(nonce)}>(function(){try{var t=localStorage.getItem('${STORAGE_KEY}');` +
+    `if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>`;
+}
+
+/** Toggle button markup (no script) — unchanged. */
 export const THEME_TOGGLE_BUTTON =
   `<button id="theme-toggle" type="button" aria-label="Toggle light and dark theme" title="Toggle light/dark">\u{1F319}</button>`;
 
-/** Print button markup, injected next to the theme toggle. Inline window.print() — safe: these
- * are self-contained docs we emit directly (markdown-it html:false governs content, not chrome). */
-export const PRINT_BUTTON =
-  `<button id="print-btn" type="button" onclick="window.print()" aria-label="Print" title="Print">\u{1F5A8}\u{FE0F}</button>`;
+/** Print button markup — NO inline onclick (D11); the listener below wires it under the CSP. */
+export function printButton(): string {
+  return `<button id="print-btn" type="button" aria-label="Print" title="Print">\u{1F5A8}\u{FE0F}</button>`;
+}
+
+/** Nonce'd print listener replacing the old inline onclick (works with or without a nonce). */
+export function printListenerScript(nonce?: string): string {
+  return `<script${nonceAttr(nonce)}>(function(){var b=document.getElementById('print-btn');` +
+    `if(b)b.addEventListener('click',function(){window.print()})})();</script>`;
+}
 
 /**
  * End-of-`<body>` handler. Effective theme = explicit `data-theme`, else system preference.
  * Click flips it, sets `data-theme`, persists to localStorage (try/catch), and syncs the icon.
  * After the first paint it adds `theme-ready` to <html> so subsequent theme changes animate
  * but the initial load does not (kills the light→dark fade for dark-default readers).
+ * Nonce'd under the cloud CSP.
  */
-export const THEME_TOGGLE_SCRIPT =
-  `<script>(function(){` +
-  `var root=document.documentElement,btn=document.getElementById('theme-toggle');if(!btn)return;` +
-  `function systemDark(){return!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)}` +
-  `function effective(){var a=root.getAttribute('data-theme');return a==='dark'||a==='light'?a:(systemDark()?'dark':'light')}` +
-  `function syncIcon(){btn.textContent=effective()==='dark'?'\u{2600}\u{FE0F}':'\u{1F319}'}` +
-  `btn.addEventListener('click',function(){var next=effective()==='dark'?'light':'dark';` +
-  `root.setAttribute('data-theme',next);try{localStorage.setItem('${STORAGE_KEY}',next)}catch(e){}syncIcon()});` +
-  `syncIcon();requestAnimationFrame(function(){root.classList.add('theme-ready')})})();</script>`;
+export function themeToggleScript(nonce?: string): string {
+  return `<script${nonceAttr(nonce)}>(function(){` +
+    `var root=document.documentElement,btn=document.getElementById('theme-toggle');if(!btn)return;` +
+    `function systemDark(){return!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)}` +
+    `function effective(){var a=root.getAttribute('data-theme');return a==='dark'||a==='light'?a:(systemDark()?'dark':'light')}` +
+    `function syncIcon(){btn.textContent=effective()==='dark'?'\u{2600}\u{FE0F}':'\u{1F319}'}` +
+    `btn.addEventListener('click',function(){var next=effective()==='dark'?'light':'dark';` +
+    `root.setAttribute('data-theme',next);try{localStorage.setItem('${STORAGE_KEY}',next)}catch(e){}syncIcon()});` +
+    `syncIcon();requestAnimationFrame(function(){root.classList.add('theme-ready')})})();</script>`;
+}

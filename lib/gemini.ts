@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
-import type { GenerativeModel, ResponseSchema, GenerationConfig, Content } from '@google/generative-ai';
+import type { GenerativeModel, ResponseSchema, GenerationConfig, Content, ArraySchema, ObjectSchema } from '@google/generative-ai';
 import { RatingsSchema, VideoTypeSchema, AudienceSchema } from '../types';
 import type { GeminiSummaryResponse } from '../types';
 import { z } from 'zod';
@@ -58,6 +58,29 @@ export async function assertTranscribeInputWithinCap(
     throw new NonRetryableError(
       `transcribe input ${totalTokens} tokens exceeds cap ${caps.transcribeInputTokens}`,
     );
+  }
+}
+
+/** countTokens preflight for the paid magazine transform (mirrors assertTranscribeInputWithinCap).
+ *  `magazineInputTokens` is OPTIONAL on CloudGeminiCaps, so narrow it to a local `number` first — a
+ *  `> (number | undefined)` compare is a TS18048 strict-null break (F1/H-1). SERVE_CAPS (Task 6) always
+ *  supplies it; a cloud caps object missing it is a misconfiguration → NonRetryableError, never a
+ *  silently-skipped preflight. */
+export async function assertMagazineInputWithinCap(
+  model: Pick<GenerativeModel, 'countTokens'>,
+  prompt: string,
+  generationConfig: GenerationConfig,
+  caps: CloudGeminiCaps,
+): Promise<void> {
+  const cap = caps.magazineInputTokens;
+  if (cap == null) {
+    throw new NonRetryableError('cloud magazine caps missing magazineInputTokens');
+  }
+  const { totalTokens } = await model.countTokens({
+    generateContentRequest: { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig },
+  });
+  if (totalTokens > cap) {
+    throw new NonRetryableError(`magazine input ${totalTokens} tokens exceeds cap ${cap}`);
   }
 }
 
@@ -158,7 +181,17 @@ const QUICK_VIEW_RESPONSE_SCHEMA: ResponseSchema = {
   required: ['tldr', 'takeaways'],
 };
 
-const MAGAZINE_RESPONSE_SCHEMA: ResponseSchema = {
+export const MAGAZINE_MAX_SECTIONS = 200; // cloud-only structural bound; generous — never rejects a real doc
+
+// `ResponseSchema` (= `Schema`) is a 6-way union, so a plain `ResponseSchema` annotation would make
+// `.properties.sections.maxItems` untypeable (not every union member has `.properties`, and the
+// generic `properties` index signature types every value as the union `Schema` again, which lacks
+// `.maxItems`). Pin the concrete shape here — literal values are unchanged, only the exported TS
+// type is narrowed — so both the cloud-only maxItems clone below and this test's shared-schema
+// assertion (`MAGAZINE_RESPONSE_SCHEMA.properties.sections.maxItems`) type-check under strict mode.
+type MagazineResponseSchemaType = ObjectSchema & { properties: { sections: ArraySchema } };
+
+export const MAGAZINE_RESPONSE_SCHEMA: MagazineResponseSchemaType = {
   type: SchemaType.OBJECT,
   properties: {
     sections: {
@@ -464,12 +497,34 @@ ${mdContent}
 export async function generateMagazineModel(
   sections: Array<{ title: string; prose: string }>,
   language: 'en' | 'ko',
+  opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal },
 ): Promise<MagazineModel> {
+  const caps = opts?.caps;
+  // Fail closed on a cloud caps object missing either magazine field (F1): otherwise the output cap
+  // below would silently become `maxOutputTokens: 0` and the input preflight would be un-narrowable.
+  // SERVE_CAPS (Task 6) always supplies both, so this only fires on a genuine misconfiguration.
+  if (caps && (caps.magazineInputTokens == null || caps.magazineOutputTokens == null)) {
+    throw new NonRetryableError('cloud magazine caps missing magazineInputTokens/magazineOutputTokens');
+  }
   const client = new GoogleGenerativeAI(getApiKey());
-  const model = client.getGenerativeModel({
-    model: SUMMARY_MODEL,
-    generationConfig: { responseMimeType: 'application/json', responseSchema: MAGAZINE_RESPONSE_SCHEMA },
-  });
+  // Cloud (caps present): clone the schema and add a GENEROUS maxItems (cost bound) — never mutate the
+  // shared const (H-1). Local (no caps): use the shared schema unchanged, exactly as pre-1F-a.
+  const responseSchema: ResponseSchema = caps
+    ? {
+        ...MAGAZINE_RESPONSE_SCHEMA,
+        properties: {
+          ...MAGAZINE_RESPONSE_SCHEMA.properties,
+          sections: { ...MAGAZINE_RESPONSE_SCHEMA.properties.sections, maxItems: MAGAZINE_MAX_SECTIONS },
+        },
+      }
+    : MAGAZINE_RESPONSE_SCHEMA;
+  const generationConfig = withCaps(
+    { responseMimeType: 'application/json', responseSchema },
+    caps,
+    caps?.magazineOutputTokens ?? 0, // guard above guarantees non-null when caps present; `?? 0` is the
+                                     // local no-caps path only, where withCaps ignores maxOutputTokens
+  );
+  const model = client.getGenerativeModel({ model: SUMMARY_MODEL, generationConfig });
   const lang = language === 'ko' ? 'Korean (한국어)' : 'English';
 
   const numbered = sections
@@ -493,12 +548,15 @@ ${numbered}
 </sections>`;
 
   try {
-    const parsed = await generateJson(model, prompt, MagazineModelSchema, 'magazine');
+    if (caps) await assertMagazineInputWithinCap(model, prompt, generationConfig, caps); // cloud preflight; local skips
+    const parsed = await generateJson(model, prompt, MagazineModelSchema, 'magazine', undefined, undefined, opts);
     if (parsed.sections.length !== sections.length) {
       throw new Error(`section count mismatch: got ${parsed.sections.length}, expected ${sections.length}`);
     }
     return parsed;
   } catch (err) {
+    if ((err as { name?: string })?.name === 'AbortError') throw err;        // preserve abort identity for the serve path
+    if (err instanceof NonRetryableError) throw err;                         // preserve the input-cap-breach identity (M-3)
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`Gemini magazine transform failed: ${cause}`, { cause: err });
   }

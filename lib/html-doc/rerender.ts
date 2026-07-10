@@ -40,7 +40,7 @@ export async function reRenderSummaryHtml(
   if (!video || !video.summaryMd || !video.summaryHtml) return { status: 'skipped-not-eligible' };
 
   const base = video.summaryMd.replace(/\.md$/, '');
-  const envelope = await readModelEnvelope(outputFolder, base, resolvedBlob);
+  const envelope = await readModelEnvelope(principal, base, resolvedBlob);
   if (!envelope) return { status: 'skipped-no-model' };
 
   let md: string;
