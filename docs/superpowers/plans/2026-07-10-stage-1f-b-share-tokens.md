@@ -6,13 +6,14 @@
 
 **Architecture:** A new generate-free leaf module (`read-model.ts`) makes "the share path never generates/charges" structural — importing it into the anonymous route cannot pull in the Gemini/reserve code. A `force`-RLS `share_tokens` table with four `SECURITY DEFINER` RPCs (create/revoke/revoke-all/list) owns all writes; the anonymous `/s/[token]` route validates the token and does a read-only, token-gated `service_role` fetch of exactly one doc's blobs, guarded against confused-deputy by resolving on the global `(playlist_id, owner_id)`.
 
-**Tech Stack:** Next.js (route handlers), Supabase (Postgres + storage, RLS + definer RPCs), TypeScript (strict), Zod, jest + ts-jest (unit), real-DB integration (`--runInBand`), ESLint `no-restricted-imports`.
+**Tech Stack:** Next.js (route handlers), Supabase (Postgres + storage, RLS + definer RPCs), TypeScript (strict), Zod, jest + ts-jest (unit), real-DB integration (`--runInBand`). No ESLint in this repo — static guards are jest grep tests.
 
 **Spec:** `docs/superpowers/specs/2026-07-10-stage-1f-b-share-tokens-design.md` (v4 CONVERGED). Behaviors B1–B24 in spec §6 are the test contract.
 
 ## Global Constraints
 
-- **Never charges (D2/D13):** the share path calls NO `reserve_serve_model` RPC, NO `generateMagazineModel`, and never touches `spend_ledger`/`serve_model_charge`. Proven by B18 (rows unchanged + zero-call spies), B18b (ESLint import ban + `.rpc(`/`reserve_serve_model` grep), B18c (`read-model.ts` module graph never reaches `@/lib/gemini`).
+- **Never charges (D2/D13):** the share path calls NO `reserve_serve_model` RPC, NO `generateMagazineModel`, and never touches `spend_ledger`/`serve_model_charge`. Proven by B18 (rows unchanged + zero-call spy on `SupabaseClient.prototype.rpc`), B18b (a **jest grep guard** — the repo has NO ESLint, so `no-restricted-imports` is unavailable; the guard greps share sources for forbidden imports/`.rpc('reserve_serve_model')`), B18c (`read-model.ts` module graph never reaches `@/lib/gemini`).
+- **Token hash storage:** `share_tokens.token_hash` is **`text` holding the lowercase hex of the SHA-256** (64 chars), NOT `bytea`. Reason: a Node `Buffer` passed as a `bytea` RPC arg / `.eq()` filter over PostgREST serializes as a JSON object, not a Postgres bytea — mint and lookup would silently break. Hex-text is the faithful "SHA-256-hashed at rest" storage (spec D6) with a format CHECK.
 - **One privileged surface (D4/D16):** the anonymous route is the only new `service_role` user; it uses a **runtime `get`-only wrapper** `{ get: store.get.bind(store) }`, never a full `SupabaseBlobStore` on the serve path.
 - **Confused-deputy guard (D15):** resolve the doc by global `playlist_id AND owner_id` (never `readIndex`, which keys on per-owner-unique `playlist_key`) and assert the resolved `owner_id` equals the token row's. Copy `getWorkerStorageBundle` (`lib/storage/resolve.ts:71`).
 - **Token (D5/D6):** 256-bit `crypto.randomBytes(32)`, base64url, in the URL; stored SHA-256-hashed (32 bytes). Plaintext generated in the mint route, returned once, never stored/logged.
@@ -44,9 +45,10 @@
 **Modify:**
 - `lib/storage/blob-store.ts` — add `export type ReadOnlyBlobStore = Pick<BlobStore, 'get'>`.
 - `lib/html-doc/model-store.ts` — widen `readModelEnvelope` param to `ReadOnlyBlobStore`.
-- `lib/html-doc/render.ts` — import `GENERATOR_VERSION` from `./constants` (re-export for back-compat); add `share?: boolean` option + strip logic.
-- `lib/html-doc/serve-doc.ts` — import `GENERATOR_VERSION` from `./constants`, `isFresh`+`readFreshMagazineModel` from `./read-model`; use the helper at both read sites (`:52`, `:66`).
-- `.eslintrc*` (or `eslint.config.*`) — `no-restricted-imports` scoped to `app/s/**` + `lib/share/**` + `lib/html-doc/read-model.ts`.
+- `lib/html-doc/render.ts` — `import { GENERATOR_VERSION } from './constants'; export { GENERATOR_VERSION };` (import for local use at `:112` AND re-export for back-compat); add `share?: boolean` option + strip logic.
+- `lib/html-doc/serve-doc.ts` — import `GENERATOR_VERSION` from `./constants`, `readFreshMagazineModel` from `./read-model`; use the helper at both read sites (`:52`, `:66`).
+
+**Reuse (do not recreate):** `tests/integration/helpers/seed.ts` already exports `seedPlaylist(svc, ownerId)`, `seedPromotedVideo(svc, {ownerId, playlistId, videoId?, base?, status?})`, and `seedSummaryBlob(svc, ownerId, playlistKey, base, md)` — all matching the real `0001` schema. Compose these; do NOT write a new seed helper.
 
 ---
 
@@ -174,7 +176,7 @@ import { readModelEnvelope } from './model-store';
 // GENERATE-FREE LEAF (spec D13/B18c): this module and its entire import graph must never
 // reach @/lib/gemini, @/lib/gemini-cost, or serve-doc. Importing it into the anonymous
 // /s/[token] route therefore cannot pull in the charging code. Enforced by tests/lib/share/
-// import-guard.test.ts + the ESLint no-restricted-imports rule.
+// import-guard.test.ts (a jest grep guard; the repo has no ESLint).
 
 export function isFresh(
   envelope: { sourceSections: string[]; generatorVersion?: string },
@@ -207,19 +209,20 @@ Expected: PASS (6 tests).
 
 - [ ] **Step 8: Refactor `render.ts` to source `GENERATOR_VERSION` from constants**
 
-In `lib/html-doc/render.ts:9`, replace the literal declaration with a re-export:
+In `lib/html-doc/render.ts:9`, replace the literal declaration with an **import + re-export** (a bare `export … from` creates NO local binding, but `render.ts:112` uses `GENERATOR_VERSION` locally in the non-share `<meta generator>` branch → it must be imported for local use AND re-exported for the ~10 external consumers that `import { GENERATOR_VERSION } from './render'`):
 
 ```ts
-export { GENERATOR_VERSION } from './constants';
+import { GENERATOR_VERSION } from './constants';
+export { GENERATOR_VERSION };
 ```
 
-Run: `npx jest render` — expected PASS (existing render tests unchanged; the re-export keeps `import { GENERATOR_VERSION } from './render'` working for any current consumer).
+Run: `npx tsc --noEmit && npx jest render` — expected: tsc clean (no `TS2304`); existing render tests unchanged.
 
 - [ ] **Step 9: Refactor `serve-doc.ts` to use the leaf helper at both read sites**
 
 Edit `lib/html-doc/serve-doc.ts`:
 - Line 5: `import { GENERATOR_VERSION } from './render';` → `import { GENERATOR_VERSION } from './constants';`
-- Delete the local `isFresh` (lines 32-36); add `import { isFresh, readFreshMagazineModel } from './read-model';`
+- Delete the local `isFresh` (lines 32-36); add `import { readFreshMagazineModel } from './read-model';` (import ONLY `readFreshMagazineModel` — `isFresh` is unused after this refactor since both read sites go through the helper; leaving it imported is dead code).
 - Replace the first read site (lines 52-54):
 
 ```ts
@@ -236,7 +239,7 @@ Edit `lib/html-doc/serve-doc.ts`:
     }
 ```
 
-(`GENERATOR_VERSION` is still imported because `writeModelEnvelope` at line 89 uses it. `isFresh` import remains available if any other site needs it; remove if unused to satisfy `no-unused-vars`.)
+(`GENERATOR_VERSION` is still imported from `./constants` because `writeModelEnvelope` at line 89 uses it.)
 
 - [ ] **Step 10: Run the full suite — confirm no owner-path regression**
 
@@ -285,7 +288,7 @@ git commit -m "feat(1f-b): read-model.ts generate-free leaf + ReadOnlyBlobStore 
 
 **Interfaces:**
 - Produces (SQL callable via PostgREST `.rpc(...)`):
-  - `create_share_token(p_playlist_id uuid, p_video_id text, p_expiry timestamptz, p_token_hash bytea) returns timestamptz`
+  - `create_share_token(p_playlist_id uuid, p_video_id text, p_expiry timestamptz, p_token_hash text) returns timestamptz`
   - `revoke_share_token(p_id uuid) returns boolean`
   - `revoke_all_share_tokens(p_playlist_id uuid, p_video_id text) returns integer`
   - `list_share_tokens(p_playlist_id uuid, p_video_id text) returns table(id uuid, created_at timestamptz, expires_at timestamptz, revoked_at timestamptz)`
@@ -296,19 +299,23 @@ git commit -m "feat(1f-b): read-model.ts generate-free leaf + ReadOnlyBlobStore 
 ```ts
 import { createHash, randomBytes } from 'crypto';
 import { adminClient, newUser, signInAs } from './helpers/clients';
-// Assume a helper that seeds an owned playlist + a promoted-summary video for a user and
-// returns { playlistId, videoId }. If none exists, add one to helpers (see seedPromotedDoc).
-import { seedPromotedDoc } from './helpers/seed';
+import { seedPlaylist, seedPromotedVideo } from './helpers/seed'; // EXISTING helpers — do not recreate
 
 const svc = adminClient();
-const hashOf = (t: Buffer) => createHash('sha256').update(t).digest();
+// token_hash is stored as lowercase hex TEXT (not bytea — see Global Constraints).
+const hexHash = () => createHash('sha256').update(randomBytes(32)).digest('hex');
+async function seedDoc(ownerId: string) {
+  const { playlistId } = await seedPlaylist(svc, ownerId);
+  const { videoId } = await seedPromotedVideo(svc, { ownerId, playlistId });
+  return { playlistId, videoId };
+}
 
 describe('share_tokens RPCs', () => {
   it('create_share_token stores a row for an owned+promoted doc and returns expires_at', async () => {
     const u = await newUser();
     const { client } = await signInAs(u.email, u.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
-    const hash = hashOf(randomBytes(32));
+    const { playlistId, videoId } = await seedDoc(u.user.id);
+    const hash = hexHash();
     const expiry = new Date(Date.now() + 30 * 864e5).toISOString();
     const { data, error } = await client.rpc('create_share_token', {
       p_playlist_id: playlistId, p_video_id: videoId, p_expiry: expiry, p_token_hash: hash,
@@ -323,21 +330,21 @@ describe('share_tokens RPCs', () => {
   it('create_share_token raises for a doc the caller does not own (coarse)', async () => {
     const owner = await newUser(); const other = await newUser();
     const { client: otherClient } = await signInAs(other.email, other.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, owner.user.id);
+    const { playlistId, videoId } = await seedDoc(owner.user.id);
     const { error } = await otherClient.rpc('create_share_token', {
       p_playlist_id: playlistId, p_video_id: videoId,
-      p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: hashOf(randomBytes(32)),
+      p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: hexHash(),
     });
     expect(error).not.toBeNull(); // raised → route maps to 404
   });
 
   it('create_share_token rejects a hostile expiry (past and > now+366d)', async () => {
     const u = await newUser(); const { client } = await signInAs(u.email, u.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const { playlistId, videoId } = await seedDoc(u.user.id);
     for (const expiry of [new Date(Date.now() - 864e5).toISOString(),
                           new Date(Date.now() + 366 * 864e5).toISOString()]) {
       const { error } = await client.rpc('create_share_token', {
-        p_playlist_id: playlistId, p_video_id: videoId, p_expiry: expiry, p_token_hash: hashOf(randomBytes(32)),
+        p_playlist_id: playlistId, p_video_id: videoId, p_expiry: expiry, p_token_hash: hexHash(),
       });
       expect(error).not.toBeNull();
     }
@@ -345,29 +352,29 @@ describe('share_tokens RPCs', () => {
 
   it('accepts exactly now+365d (grace margin — B-L5 boundary)', async () => {
     const u = await newUser(); const { client } = await signInAs(u.email, u.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const { playlistId, videoId } = await seedDoc(u.user.id);
     const { error } = await client.rpc('create_share_token', {
       p_playlist_id: playlistId, p_video_id: videoId,
-      p_expiry: new Date(Date.now() + 365 * 864e5).toISOString(), p_token_hash: hashOf(randomBytes(32)),
+      p_expiry: new Date(Date.now() + 365 * 864e5).toISOString(), p_token_hash: hexHash(),
     });
     expect(error).toBeNull();
   });
 
-  it('rejects a wrong-length token hash (CHECK)', async () => {
+  it('rejects a malformed token hash (CHECK: not 64 hex chars)', async () => {
     const u = await newUser(); const { client } = await signInAs(u.email, u.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const { playlistId, videoId } = await seedDoc(u.user.id);
     const { error } = await client.rpc('create_share_token', {
       p_playlist_id: playlistId, p_video_id: videoId,
-      p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: Buffer.alloc(16),
+      p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: 'not-a-valid-hex-hash',
     });
     expect(error).not.toBeNull();
   });
 
   it('revoke_share_token sets revoked_at only for the owner; list never returns the hash', async () => {
     const u = await newUser(); const { client } = await signInAs(u.email, u.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const { playlistId, videoId } = await seedDoc(u.user.id);
     await client.rpc('create_share_token', { p_playlist_id: playlistId, p_video_id: videoId,
-      p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: hashOf(randomBytes(32)) });
+      p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: hexHash() });
     const { data: listed } = await client.rpc('list_share_tokens', { p_playlist_id: playlistId, p_video_id: videoId });
     expect(listed).toHaveLength(1);
     expect(Object.keys((listed as any[])[0])).not.toContain('token_hash');
@@ -381,18 +388,18 @@ describe('share_tokens RPCs', () => {
 
   it('revoke_all_share_tokens revokes every live token for the doc and returns the count', async () => {
     const u = await newUser(); const { client } = await signInAs(u.email, u.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const { playlistId, videoId } = await seedDoc(u.user.id);
     for (let i = 0; i < 3; i++) await client.rpc('create_share_token', { p_playlist_id: playlistId,
-      p_video_id: videoId, p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: hashOf(randomBytes(32)) });
+      p_video_id: videoId, p_expiry: new Date(Date.now() + 864e5).toISOString(), p_token_hash: hexHash() });
     const { data: count } = await client.rpc('revoke_all_share_tokens', { p_playlist_id: playlistId, p_video_id: videoId });
     expect(count).toBe(3);
   });
 
   it('direct INSERT/UPDATE on share_tokens is denied for an authenticated session (B23)', async () => {
     const u = await newUser(); const { client } = await signInAs(u.email, u.password);
-    const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const { playlistId, videoId } = await seedDoc(u.user.id);
     const { error } = await client.from('share_tokens').insert({
-      token_hash: hashOf(randomBytes(32)), owner_id: u.user.id, playlist_id: playlistId, video_id: videoId,
+      token_hash: hexHash(), owner_id: u.user.id, playlist_id: playlistId, video_id: videoId,
     });
     expect(error).not.toBeNull();
   });
@@ -402,27 +409,9 @@ describe('share_tokens RPCs', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx supabase db reset && npm run test:integration -- --runInBand -t "share_tokens RPCs"`
-Expected: FAIL — relation `share_tokens` / function `create_share_token` does not exist. (If `seedPromotedDoc` doesn't exist, create `tests/integration/helpers/seed.ts` first — see Step 3a.)
+Expected: FAIL — relation `share_tokens` / function `create_share_token` does not exist. (The `seedPlaylist`/`seedPromotedVideo` helpers already exist in `tests/integration/helpers/seed.ts` — do NOT recreate them.)
 
-- [ ] **Step 3a: (If needed) add the seed helper** (`tests/integration/helpers/seed.ts`)
-
-```ts
-import type { SupabaseClient } from '@supabase/supabase-js';
-/** Seed an owned playlist + one video whose summary artifact is 'promoted'. */
-export async function seedPromotedDoc(svc: SupabaseClient, ownerId: string) {
-  const playlistId = crypto.randomUUID();
-  const playlistKey = `pl_${playlistId.slice(0, 8)}`;
-  await svc.from('playlists').insert({ id: playlistId, owner_id: ownerId, playlist_key: playlistKey, title: 'T' });
-  const videoId = 'vid00000001';
-  const data = { id: videoId, title: 'V', artifacts: { summaryMd: { key: '00001_v.md', status: 'promoted' } }, summaryMd: '00001_v.md' };
-  await svc.from('videos').insert({ playlist_id: playlistId, owner_id: ownerId, video_id: videoId, position: 0, data });
-  return { playlistId, videoId, playlistKey };
-}
-```
-
-(Adjust column/JSONB shape to match the real `videos`/`playlists` schema in `0001` if it differs — the load-bearing fields are `owner_id`, `playlist_key`, and `data.artifacts.summaryMd.{key,status}`.)
-
-- [ ] **Step 3b: Write the migration** (`supabase/migrations/0013_share_tokens.sql`)
+- [ ] **Step 3: Write the migration** (`supabase/migrations/0013_share_tokens.sql`)
 
 ```sql
 -- supabase/migrations/0013_share_tokens.sql
@@ -432,7 +421,7 @@ export async function seedPromotedDoc(svc: SupabaseClient, ownerId: string) {
 
 create table share_tokens (
   id            uuid primary key default gen_random_uuid(),
-  token_hash    bytea not null unique check (octet_length(token_hash) = 32),  -- sha256; plaintext never stored
+  token_hash    text not null unique check (token_hash ~ '^[0-9a-f]{64}$'),  -- lowercase hex of sha256; plaintext never stored
   owner_id      uuid not null references profiles(id) on delete cascade,
   playlist_id   uuid not null,
   video_id      text not null,
@@ -447,14 +436,14 @@ create index share_tokens_owner_idx on share_tokens (owner_id);
 
 -- Ownership + promoted predicate helper (inlined; same shape as reserve_serve_model, 0012:44-47).
 create function create_share_token(
-  p_playlist_id uuid, p_video_id text, p_expiry timestamptz, p_token_hash bytea
+  p_playlist_id uuid, p_video_id text, p_expiry timestamptz, p_token_hash text
 ) returns timestamptz language plpgsql security definer set search_path = public as $$
 declare
   v_owner uuid := auth.uid();
   v_promoted boolean;
 begin
   if v_owner is null then raise exception 'create_share_token: unauthenticated'; end if;
-  if octet_length(p_token_hash) <> 32 then raise exception 'create_share_token: bad hash length'; end if;
+  if p_token_hash !~ '^[0-9a-f]{64}$' then raise exception 'create_share_token: bad hash format'; end if;
   -- Trust-boundary TTL bound (+1h grace absorbs app/DB clock skew; still rejects > ~1 year).
   if not (p_expiry is null
           or (p_expiry > now() and p_expiry <= now() + make_interval(days => 365) + interval '1 hour')) then
@@ -506,11 +495,11 @@ begin
     order by t.created_at;
 end $$;
 
-revoke all on function create_share_token(uuid, text, timestamptz, bytea) from public;
+revoke all on function create_share_token(uuid, text, timestamptz, text) from public;
 revoke all on function revoke_share_token(uuid) from public;
 revoke all on function revoke_all_share_tokens(uuid, text) from public;
 revoke all on function list_share_tokens(uuid, text) from public;
-grant execute on function create_share_token(uuid, text, timestamptz, bytea) to authenticated;
+grant execute on function create_share_token(uuid, text, timestamptz, text) to authenticated;
 grant execute on function revoke_share_token(uuid) to authenticated;
 grant execute on function revoke_all_share_tokens(uuid, text) to authenticated;
 grant execute on function list_share_tokens(uuid, text) to authenticated;
@@ -524,7 +513,7 @@ Expected: PASS (all cases).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/migrations/0013_share_tokens.sql tests/integration/share-tokens-rpc.test.ts tests/integration/helpers/seed.ts
+git add supabase/migrations/0013_share_tokens.sql tests/integration/share-tokens-rpc.test.ts
 git commit -m "feat(1f-b): share_tokens table + create/revoke/revoke-all/list definer RPCs"
 ```
 
@@ -537,7 +526,7 @@ git commit -m "feat(1f-b): share_tokens table + create/revoke/revoke-all/list de
 
 **Interfaces:**
 - Produces:
-  - `lib/share/token.ts`: `export function generateShareToken(): { token: string; tokenHash: Buffer }`; `export function hashShareToken(token: string): Buffer`
+  - `lib/share/token.ts`: `export function generateShareToken(): { token: string; tokenHash: string }`; `export function hashShareToken(token: string): string` (lowercase hex of the SHA-256 — matches the `text` column; see Global Constraints)
   - `lib/share/ttl.ts`: `export const MAX_SHARE_TTL_DAYS = 365`; `export function resolveExpiry(ttlDays: number | 'never' | undefined): { ok: true; expiresAt: Date | null } | { ok: false }`
 
 - [ ] **Step 1: Write the failing tests**
@@ -549,18 +538,18 @@ import { generateShareToken, hashShareToken } from '@/lib/share/token';
 import { createHash } from 'crypto';
 
 describe('share token crypto', () => {
-  it('generates a 43-char base64url token (256-bit) and its sha256 hash', () => {
+  it('generates a 43-char base64url token (256-bit) and its 64-char hex sha256 hash', () => {
     const { token, tokenHash } = generateShareToken();
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 bytes base64url, no padding
-    expect(tokenHash).toEqual(createHash('sha256').update(token).digest());
-    expect(tokenHash).toHaveLength(32);
+    expect(tokenHash).toBe(createHash('sha256').update(token).digest('hex'));
+    expect(tokenHash).toMatch(/^[0-9a-f]{64}$/);
   });
   it('two tokens differ', () => {
     expect(generateShareToken().token).not.toBe(generateShareToken().token);
   });
-  it('hashShareToken is deterministic and matches sha256(token)', () => {
+  it('hashShareToken is deterministic and matches sha256(token) hex', () => {
     const { token, tokenHash } = generateShareToken();
-    expect(hashShareToken(token)).toEqual(tokenHash);
+    expect(hashShareToken(token)).toBe(tokenHash);
   });
 });
 ```
@@ -600,14 +589,16 @@ Run: `npx jest share/token share/ttl` — Expected FAIL (modules missing).
 ```ts
 import { randomBytes, createHash } from 'crypto';
 
-/** 256-bit opaque bearer token (base64url, unpadded) + its sha256 hash for at-rest storage. */
-export function generateShareToken(): { token: string; tokenHash: Buffer } {
+/** 256-bit opaque bearer token (base64url, unpadded) + its sha256 hash (lowercase hex) for
+ *  at-rest storage. Hex (not a Buffer) because token_hash is a `text` column and a Buffer would
+ *  not serialize to it over PostgREST (see Global Constraints). */
+export function generateShareToken(): { token: string; tokenHash: string } {
   const token = randomBytes(32).toString('base64url');
   return { token, tokenHash: hashShareToken(token) };
 }
 
-export function hashShareToken(token: string): Buffer {
-  return createHash('sha256').update(token).digest();
+export function hashShareToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 ```
 
@@ -663,7 +654,11 @@ const parsed = {
   sourceMd: '00042_my-secret-slug.md', tldr: 'td', takeaways: [],
   sections: [{ title: 'S1', prose: 'p', timestamp: null }], sourceSectionsRaw: [],
 } as any;
-const model = { title: 'V', dek: 'd', sections: [{ heading: 'S1', body: 'b' }] } as any;
+// MagazineSection requires `lead: string` + `bullets: Bullet[]` (types.ts:39-43) — render.ts:92/98
+// read m.bullets[].text and m.lead, so a {heading,body} fixture would throw before any assertion.
+const model = { title: 'V', dek: 'd', sections: [
+  { lead: 'S1', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] },
+] } as any;
 
 describe('renderMagazineHtml share mode', () => {
   it('strips the MD key + video-id + generator metas when share:true', () => {
@@ -868,14 +863,22 @@ git commit -m "feat(1f-b): mint + revoke + revoke-all share routes"
 
 ```ts
 import { adminClient, newUser } from './helpers/clients';
-import { seedPromotedDoc } from './helpers/seed';
-import { generateShareToken, hashShareToken } from '@/lib/share/token';
+import { seedPlaylist, seedPromotedVideo } from './helpers/seed'; // EXISTING helpers
+import { generateShareToken } from '@/lib/share/token';
 import { getShareServeContext } from '@/lib/share/serve';
 
 const svc = adminClient();
 
-async function mintDirect(ownerId: string, playlistId: string, videoId: string, over: Partial<any> = {}) {
-  const { token, tokenHash } = generateShareToken();
+/** Seed an owned promoted doc; returns coordinates incl. the real base (seedPromotedVideo keys
+ *  the MD as `${base}.md`). Pass status:'committed' for the un-promoted case. */
+async function seedDoc(ownerId: string, status: 'promoted' | 'committed' = 'promoted') {
+  const { playlistId, playlistKey } = await seedPlaylist(svc, ownerId);
+  const { videoId, base } = await seedPromotedVideo(svc, { ownerId, playlistId, status });
+  return { playlistId, playlistKey, videoId, base };
+}
+
+async function mintDirect(ownerId: string, playlistId: string, videoId: string, over: Record<string, unknown> = {}) {
+  const { token, tokenHash } = generateShareToken(); // tokenHash is 64-char hex TEXT
   await svc.from('share_tokens').insert({ token_hash: tokenHash, owner_id: ownerId,
     playlist_id: playlistId, video_id: videoId, expires_at: new Date(Date.now() + 864e5).toISOString(), ...over });
   return token;
@@ -883,18 +886,18 @@ async function mintDirect(ownerId: string, playlistId: string, videoId: string, 
 
 describe('getShareServeContext', () => {
   it('resolves a live token to the doc coordinates', async () => {
-    const u = await newUser(); const { playlistId, videoId, playlistKey } = await seedPromotedDoc(svc, u.user.id);
+    const u = await newUser(); const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
     const token = await mintDirect(u.user.id, playlistId, videoId);
     const ctx = await getShareServeContext(svc, token);
-    expect(ctx).toMatchObject({ ownerId: u.user.id, playlistKey, playlistId, videoId, mdKey: '00001_v.md' });
+    expect(ctx).toMatchObject({ ownerId: u.user.id, playlistKey, playlistId, videoId, mdKey: `${base}.md` });
   });
   it('denies an expired token before resolving', async () => {
-    const u = await newUser(); const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const u = await newUser(); const { playlistId, videoId } = await seedDoc(u.user.id);
     const token = await mintDirect(u.user.id, playlistId, videoId, { expires_at: new Date(Date.now() - 864e5).toISOString() });
     expect(await getShareServeContext(svc, token)).toEqual({ status: 'denied' });
   });
   it('denies a revoked token', async () => {
-    const u = await newUser(); const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const u = await newUser(); const { playlistId, videoId } = await seedDoc(u.user.id);
     const token = await mintDirect(u.user.id, playlistId, videoId, { revoked_at: new Date().toISOString() });
     expect(await getShareServeContext(svc, token)).toEqual({ status: 'denied' });
   });
@@ -902,10 +905,8 @@ describe('getShareServeContext', () => {
     expect(await getShareServeContext(svc, generateShareToken().token)).toEqual({ status: 'denied' });
   });
   it('denies when the summary is no longer promoted', async () => {
-    const u = await newUser(); const { playlistId, videoId } = await seedPromotedDoc(svc, u.user.id);
+    const u = await newUser(); const { playlistId, videoId } = await seedDoc(u.user.id, 'committed');
     const token = await mintDirect(u.user.id, playlistId, videoId);
-    await svc.from('videos').update({ data: { id: videoId, artifacts: { summaryMd: { key: '00001_v.md', status: 'committed' } } } })
-      .match({ playlist_id: playlistId, video_id: videoId });
     expect(await getShareServeContext(svc, token)).toEqual({ status: 'denied' });
   });
 });
@@ -943,13 +944,16 @@ export async function getShareServeContext(
   if (tok.revoked_at) return denied;
   if (tok.expires_at && new Date(tok.expires_at).getTime() <= Date.now()) return denied;
 
+  // Resolve by the GLOBAL (id, owner_id) — never by playlist_key — AND re-assert the owner (D15).
   const { data: pl, error: plErr } = await serviceClient
-    .from('playlists').select('playlist_key, owner_id').eq('id', tok.playlist_id).maybeSingle();
+    .from('playlists').select('playlist_key, owner_id')
+    .eq('id', tok.playlist_id).eq('owner_id', tok.owner_id).maybeSingle();
   if (plErr) throw plErr;
   if (!pl || pl.owner_id !== tok.owner_id) return denied; // confused-deputy guard (D15)
 
   const { data: vid, error: vidErr } = await serviceClient
-    .from('videos').select('data, owner_id').eq('playlist_id', tok.playlist_id).eq('video_id', tok.video_id).maybeSingle();
+    .from('videos').select('data, owner_id')
+    .eq('playlist_id', tok.playlist_id).eq('video_id', tok.video_id).eq('owner_id', tok.owner_id).maybeSingle();
   if (vidErr) throw vidErr;
   if (!vid || vid.owner_id !== tok.owner_id) return denied;
 
@@ -981,9 +985,8 @@ git commit -m "feat(1f-b): getShareServeContext token resolution + confused-depu
 **§8 re-review trigger — money-invariant (B18) + isolation (B19).** Deliverable: the anonymous serve route wiring Tasks 1/3/4/6 together, proven generation-free at runtime and by static guard.
 
 **Files:**
-- Create: `app/s/[token]/route.ts`, `tests/lib/share/import-guard.test.ts`
-- Modify: ESLint config (`.eslintrc.json` or `eslint.config.mjs` — whichever the repo uses)
-- Test: extend `tests/integration/share-serve.test.ts` (or new `tests/integration/share-route.test.ts`) with the full-route cases
+- Create: `app/s/[token]/route.ts`, `tests/lib/share/import-guard.test.ts`, `tests/integration/share-route.test.ts`
+- (No ESLint config — the repo has none; the static guard is the jest `import-guard.test.ts`.)
 
 **Interfaces:**
 - Consumes: `getShareServeContext` (Task 6); `createServiceClient` (`@/lib/supabase/service`); `SupabaseBlobStore` + `ARTIFACTS_BUCKET`; `readFreshMagazineModel` (Task 1, from `@/lib/html-doc/read-model`); `parseSummaryMarkdown`; `renderMagazineHtml` (share mode, Task 4); `generateNonce`/`buildSummaryCsp` (`@/lib/html-doc/csp`).
@@ -995,7 +998,6 @@ Cover, against a real DB + real storage (seed a promoted doc + write its MD blob
 
 ```
 - B6  valid token, fresh model → 200 text/html; headers no-store + no-referrer + CSP; body has the summary, NOT the MD key.
-- B18 money: snapshot spend_ledger + serve_model_charge before/after B6 → unchanged; spy/asserts no reserve_serve_model rpc call.
 - B7  valid token, model absent → 503-class "not ready".
 - B9/B10/B12 expired/revoked/unknown → 404 (coarse) with no body.
 - B11 malformed token (bad shape) → 404 before any DB call.
@@ -1003,7 +1005,9 @@ Cover, against a real DB + real storage (seed a promoted doc + write its MD blob
 - B10b in-flight revoke: revoke between context-resolve and response → final re-check → 404.
 ```
 
-Write these using the established integration harness (call the route's `GET` with a `Request` whose URL carries the token path param; assert `response.status`, headers, and body). Use `writeModelEnvelope(principal, base, envelope, serviceStore)` to seed a fresh model.
+**B18 money proof — assert across EVERY case above, not just B6** (this is the money invariant): before the whole block, snapshot `spend_ledger` and `serve_model_charge` (full row sets). Install a spy on the reserve RPC via `jest.spyOn(SupabaseClient.prototype, 'rpc')` (the route builds its own service client, so spy the prototype, not an injected client). After each case, assert the spy was **never** called with `'reserve_serve_model'`; after the block, assert both tables' rows are byte-identical to the snapshot. `generateMagazineModel` is already mocked at `lib/gemini.ts` — assert that mock has **zero** calls.
+
+Write these using the established integration harness (call the route's `GET` with a `Request` whose URL carries the token path param; assert `response.status`, headers, and body). Seed via `seedPlaylist` + `seedPromotedVideo` + `seedSummaryBlob`; seed a fresh model with `writeModelEnvelope(principal, base, envelope, serviceStore)` (a full service-role `SupabaseBlobStore`).
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -1014,17 +1018,17 @@ Run: `npm run test:integration -- --runInBand -t "share-route"` — Expected FAI
 ```ts
 import { createServiceClient } from '@/lib/supabase/service';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
-import { ARTIFACTS_BUCKET } from '@/lib/storage/supabase/constants'; // adjust to the real export
+import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import { getShareServeContext } from '@/lib/share/serve';
-import { hashShareToken } from '@/lib/share/token';
 import { readFreshMagazineModel } from '@/lib/html-doc/read-model';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { renderMagazineHtml } from '@/lib/html-doc/render';
 import { generateNonce, buildSummaryCsp } from '@/lib/html-doc/csp';
 import type { ReadOnlyBlobStore } from '@/lib/storage/blob-store';
 
-// NEVER import: @/lib/html-doc/serve-doc, @/lib/gemini, resolveMagazineModel, generateMagazineModel
-// (spec B18b — also enforced by ESLint no-restricted-imports + import-guard.test.ts).
+// MONEY GUARD (spec B18b, enforced by tests/lib/share/import-guard.test.ts): this module must not
+// import the charging/serve-doc modules and must never call the reserve RPC. (Do NOT name the
+// forbidden symbols here — the guard greps this file's raw text for them.)
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32-byte base64url
 const notFound = () => new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
@@ -1076,17 +1080,37 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 - [ ] **Step 4: Write the import-guard test (B18b)** (`tests/lib/share/import-guard.test.ts`)
 
 ```ts
-import { readFileSync } from 'fs';
-import { execSync } from 'child_process';
+import { readFileSync, readdirSync, existsSync } from 'fs';
+import { join } from 'path';
 
-const shareSources = execSync('git ls-files app/s lib/share lib/html-doc/read-model.ts', { encoding: 'utf-8' })
-  .split('\n').filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+// Filesystem walk — NOT `git ls-files` (which sees only tracked files, so a new-but-uncommitted
+// share source would be skipped and the guard would pass vacuously). Assert the scan is non-empty
+// and includes the route, so an empty/broken scan fails loudly.
+function walk(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) return walk(p);
+    return e.isFile() && p.endsWith('.ts') && !p.endsWith('.test.ts') ? [p] : [];
+  });
+}
+const root = process.cwd();
+const shareSources = [
+  ...walk(join(root, 'app/s')),
+  ...walk(join(root, 'lib/share')),
+  join(root, 'lib/html-doc/read-model.ts'),
+].filter((f) => existsSync(f));
 
 describe('B18b — share sources never reach the charging code', () => {
+  // Scoped to import/call syntax (not bare identifiers) so a comment can't false-trip the guard.
   const forbidden = [
-    /from ['"].*\/serve-doc['"]/, /from ['"]@\/lib\/gemini['"]/, /from ['"]@\/lib\/gemini-cost['"]/,
-    /\bresolveMagazineModel\b/, /\bgenerateMagazineModel\b/, /reserve_serve_model/, /\.rpc\(/,
+    /from ['"][^'"]*\/serve-doc['"]/, /from ['"]@\/lib\/gemini['"]/, /from ['"]@\/lib\/gemini-cost['"]/,
+    /resolveMagazineModel\s*\(/, /generateMagazineModel\s*\(/, /reserve_serve_model/, /\.rpc\s*\(/,
   ];
+  it('scans a non-empty set including the serve route', () => {
+    expect(shareSources.length).toBeGreaterThan(0);
+    expect(shareSources.some((f) => f.endsWith('app/s/[token]/route.ts'))).toBe(true);
+  });
   it.each(shareSources)('%s imports/calls nothing that charges', (file) => {
     const src = readFileSync(file, 'utf-8');
     for (const re of forbidden) expect(src).not.toMatch(re);
@@ -1094,34 +1118,17 @@ describe('B18b — share sources never reach the charging code', () => {
 });
 ```
 
-- [ ] **Step 5: Add the ESLint `no-restricted-imports` rule**
+> **No ESLint step.** The repo has no ESLint config, dependency, or `lint` script (verified). The static money guard is therefore the jest `import-guard.test.ts` above (grep-based), NOT an `no-restricted-imports` rule. Do not add ESLint for this slice.
 
-In the repo's ESLint config, add an override scoped to `app/s/**/*.ts`, `lib/share/**/*.ts`, `lib/html-doc/read-model.ts`:
+- [ ] **Step 5: Run to verify pass + tsc**
 
-```json
-{
-  "files": ["app/s/**/*.ts", "lib/share/**/*.ts", "lib/html-doc/read-model.ts"],
-  "rules": {
-    "no-restricted-imports": ["error", { "paths": [
-      { "name": "@/lib/gemini", "message": "share path must never import the Gemini client (spec B18b)" },
-      { "name": "@/lib/gemini-cost", "message": "share path must never import gemini-cost (spec B18b)" },
-      { "name": "@/lib/html-doc/serve-doc", "message": "share path must never import serve-doc (it charges) (spec B18b)" }
-    ]}]
-  }
-}
-```
+Run: `npx jest import-guard && npm run test:integration -- --runInBand -t "share-route" && npx tsc --noEmit`
+Expected: all PASS/clean. **Sanity-check the guard is not vacuous:** temporarily add `import '@/lib/gemini';` to `app/s/[token]/route.ts`, confirm `npx jest import-guard` FAILS (both the "non-empty set" expectation still passes and the per-file grep now trips), then revert and confirm it passes again.
 
-(Match the config's actual format — flat `eslint.config.mjs` `overrides` vs `.eslintrc.json` `overrides`.)
-
-- [ ] **Step 6: Run to verify pass + lint + tsc**
-
-Run: `npx jest import-guard && npm run test:integration -- --runInBand -t "share-route" && npm run lint && npx tsc --noEmit`
-Expected: all PASS/clean. Sanity-check the guard: temporarily add `import '@/lib/gemini'` to `app/s/[token]/route.ts`, confirm `npm run lint` AND `npx jest import-guard` both fail, then revert.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add "app/s/[token]/route.ts" tests/lib/share/import-guard.test.ts tests/integration/share-route.test.ts .eslintrc.json eslint.config.mjs 2>/dev/null
+git add "app/s/[token]/route.ts" tests/lib/share/import-guard.test.ts tests/integration/share-route.test.ts
 git commit -m "feat(1f-b): anonymous /s/[token] serve route + money-invariant proof + import guard"
 ```
 
@@ -1132,7 +1139,7 @@ git commit -m "feat(1f-b): anonymous /s/[token] serve route + money-invariant pr
 1. `npx tsc --noEmit` — 0 errors.
 2. `npx jest` — full unit suite green (grows with Tasks 1,3,4,7 unit tests).
 3. `npx supabase db reset && npm run test:integration -- --runInBand` — all green (Tasks 2, 6, 7 integration).
-4. `npm run lint` — clean, and the `no-restricted-imports` guard demonstrably fails on a deliberately-bad import (Task 7 Step 6 sanity check).
+4. `npx jest import-guard` — passes, and demonstrably FAILS on a deliberately-bad import (Task 7 Step 5 sanity check). (No `npm run lint` — the repo has no ESLint.)
 5. Behaviors B1–B24 each have a covering test (map each row to its test in the per-task review).
 6. Each of Tasks 1, 2, 6, 7 cleared per-task dual adversarial review (Claude + Codex) with §8 iterative re-review; reviews saved to `docs/reviews/task-1f-b-N-<name>-{review,codex}.md`.
 7. Stage-complete: `superpowers:finishing-a-development-branch` → whole-branch holistic review → PR to `master` (`gh ... --repo kujinlee/youtube-playlist-summaries-cloud`; two-remotes footgun).
@@ -1140,4 +1147,5 @@ git commit -m "feat(1f-b): anonymous /s/[token] serve route + money-invariant pr
 ## Self-Review notes (author)
 
 - **Spec coverage:** D1–D16 → Tasks: D2/D3/D13 (T1+T7), D5/D6 (T3), D7 (T2+T3), D8/D14 (T2+T7 re-check), D9 (T2), D10 (T4+T7), D11 (T6+T7), D15 (T6), D16 (T1+T7). Behaviors B1–B24 → T2 (B1–B5c,B14–B17,B23,B24), T4 (B22), T6 (B9–B13,B19b), T7 (B6–B8,B10b,B13b,B18–B21). RPCs (create/revoke/revoke-all/list) → T2. Routes (mint/revoke/revoke-all/serve) → T5/T7.
-- **Known implementation unknowns to confirm during execution (not placeholders — verify against code):** the exact `ARTIFACTS_BUCKET` import path; the `videos.data` JSONB shape for `artifacts.summaryMd`; whether the repo uses `.eslintrc.json` or flat `eslint.config.mjs`; the existing `tests/api/*` mocking harness shape. Each task's first step is a failing test that will surface any mismatch immediately.
+- **Resolved during plan review (Post-Plan Gate, v2):** `ARTIFACTS_BUCKET` = `@/lib/supabase/storage-env`; `videos.data` JSONB shape confirmed via existing `seedPromotedVideo` (`artifacts.summaryMd.{key,status}` + top-level `summaryMd`); repo has NO ESLint (guard is a jest grep test); `token_hash` stored as hex `text` (not `bytea`, which won't serialize over PostgREST). The `seed.ts` helpers (`seedPlaylist`/`seedPromotedVideo`/`seedSummaryBlob`) already exist and match `0001` — compose them, don't recreate.
+- **Confirm during execution:** the existing `tests/api/*` mocking harness shape (Task 5); the `tests/integration/*` route-invocation harness (Task 7). Each task's first step is a failing test that surfaces any mismatch immediately.
