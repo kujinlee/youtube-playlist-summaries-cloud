@@ -58,7 +58,7 @@ async function seedDoc(ownerId: string, status: 'promoted' | 'committed' = 'prom
 async function mintDirect(
   ownerId: string, playlistId: string, videoId: string, over: Record<string, unknown> = {},
 ): Promise<string> {
-  const { token, tokenHash } = generateShareToken(); // 64-char hex TEXT
+  const { token, tokenHash } = generateShareToken(); // token: 43-char base64url (returned to caller); tokenHash: 64-char hex (stored in TEXT column)
   const { error } = await svc.from('share_tokens').insert({
     token_hash: tokenHash, owner_id: ownerId, playlist_id: playlistId, video_id: videoId,
     expires_at: new Date(Date.now() + 864e5).toISOString(), ...over,
@@ -100,8 +100,11 @@ describe('share-route', () => {
   let chargeBefore: unknown[];
 
   beforeAll(async () => {
-    const { data: ledger } = await svc.from('spend_ledger').select('*');
-    const { data: charge } = await svc.from('serve_model_charge').select('*');
+    // .order() keeps the byte-compare snapshot below order-deterministic (Codex/Claude cosmetic fix)
+    // — without it, two `select('*')` calls over the same rows are not guaranteed to come back in
+    // the same order, which could make the afterAll toEqual flaky/false-negative.
+    const { data: ledger } = await svc.from('spend_ledger').select('*').order('day');
+    const { data: charge } = await svc.from('serve_model_charge').select('*').order('owner_id').order('doc_key').order('day');
     ledgerBefore = ledger ?? [];
     chargeBefore = charge ?? [];
     // Spy on the PROTOTYPE — the route constructs its own service client per request, so an
@@ -118,8 +121,8 @@ describe('share-route', () => {
   });
 
   afterAll(async () => {
-    const { data: ledgerAfter } = await svc.from('spend_ledger').select('*');
-    const { data: chargeAfter } = await svc.from('serve_model_charge').select('*');
+    const { data: ledgerAfter } = await svc.from('spend_ledger').select('*').order('day');
+    const { data: chargeAfter } = await svc.from('serve_model_charge').select('*').order('owner_id').order('doc_key').order('day');
     expect(ledgerAfter ?? []).toEqual(ledgerBefore); // byte-identical row sets — no charge ever landed
     expect(chargeAfter ?? []).toEqual(chargeBefore);
     expect(generateMagazineModel).not.toHaveBeenCalled(); // zero generation calls across the whole block
@@ -149,6 +152,36 @@ describe('share-route', () => {
     const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
     await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
     // Deliberately no writeModelEnvelope call — model absent.
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
+    expect(res.status).toBe(503);
+  });
+
+  it('B8: valid token, materialized model is STALE (wrong generatorVersion) → 503 not-ready (never 200, never a charge)', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    // Materialize a model envelope that exists but is stale — wrong generatorVersion, so
+    // isFresh() (lib/html-doc/read-model.ts) must reject it just like the absent case above.
+    const serviceStore = new SupabaseBlobStore(svc, ARTIFACTS_BUCKET);
+    const principal = { id: u.user.id, indexKey: playlistKey };
+    await writeModelEnvelope(
+      principal,
+      base,
+      {
+        sourceMd: `${base}.md`,
+        generatedAt: new Date().toISOString(),
+        sourceSections: ['Intro'],
+        generatorVersion: 'stale-vX', // deliberately mismatched — must NOT equal GENERATOR_VERSION
+        model: {
+          sections: [
+            { lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] },
+          ],
+        },
+      },
+      serviceStore,
+    );
     const token = await mintDirect(u.user.id, playlistId, videoId);
 
     const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
@@ -244,6 +277,41 @@ describe('share-route', () => {
     const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
     expect(res.status).toBe(404);
     expect(hookFired).toBe(true); // proves the mandatory second (pre-response) re-check ran and caught it
+    mockOnSecondCallSinceArm = null;
+  });
+
+  it('B10b: video un-promoted (artifacts.summaryMd.status flipped away from promoted) between the initial resolve and the mandatory pre-response re-check → 404', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    await seedFreshModel(u.user.id, playlistKey, base);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    mockArmedAtCount = mockGlobalCallCount;
+    let hookFired = false;
+    mockOnSecondCallSinceArm = async () => {
+      hookFired = true;
+      // Instead of revoking the token, flip the video's promotion status away from 'promoted'
+      // strictly between the route's first resolve and its mandatory pre-response re-check
+      // (D14/B10b) — the re-check reads `videos.data.artifacts.summaryMd.status` fresh, so this
+      // must ALSO be caught even though the token row itself never changes.
+      const { data: vid, error: vidErr } = await svc
+        .from('videos').select('data')
+        .eq('playlist_id', playlistId).eq('video_id', videoId).eq('owner_id', u.user.id).single();
+      if (vidErr) throw vidErr;
+      const nextData = {
+        ...(vid!.data as Record<string, unknown>),
+        artifacts: { summaryMd: { key: `${base}.md`, status: 'committed' } },
+      };
+      const { error: updErr } = await svc
+        .from('videos').update({ data: nextData })
+        .eq('playlist_id', playlistId).eq('video_id', videoId).eq('owner_id', u.user.id);
+      if (updErr) throw updErr;
+    };
+
+    const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
+    expect(res.status).toBe(404);
+    expect(hookFired).toBe(true); // proves the mandatory second (pre-response) re-check ran and caught the un-promote
     mockOnSecondCallSinceArm = null;
   });
 });

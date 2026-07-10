@@ -57,4 +57,21 @@ describe('service_role confinement', () => {
       }
     }
   });
+
+  it('findServiceImporters() FLAGS a new unauthorized reacher under app/ (Codex Low + Claude Minor)', () => {
+    // The other tests above only prove reachesService(fixture) works in isolation — they don't
+    // prove the repo-wide scan/allowlist combo actually catches a new, non-allowlisted importer.
+    // A bug where the allowlist was too broad (e.g. matched by prefix, or the walk skipped a dir)
+    // would make findServiceImporters() vacuously return [] even with a real violator present.
+    const fixtureFile = path.join(process.cwd(), 'app/__confinement_unauth_fixture__.ts');
+    try {
+      fs.writeFileSync(fixtureFile, `import '@/lib/supabase/service';\n`);
+      const violators = findServiceImporters().map((f) => path.resolve(f));
+      expect(violators).toContain(path.resolve(fixtureFile));
+    } finally {
+      if (fs.existsSync(fixtureFile)) {
+        fs.unlinkSync(fixtureFile);
+      }
+    }
+  });
 });

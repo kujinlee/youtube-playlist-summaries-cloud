@@ -21,13 +21,16 @@ const shareSources = [
 
 // Matches BOTH named imports (`import { x } from '<mod>'`) and bare side-effect imports
 // (`import '<mod>'`) — the `import`/`from` keyword must directly precede the quoted specifier so a
-// mid-string or commented-out module path doesn't false-trip it.
-const importOf = (mod: string) => new RegExp(`(?:from|import)\\s*\\(?['"]${mod.replace(/[/-]/g, '\\$&')}['"]`);
+// mid-string or commented-out module path doesn't false-trip it. An optional `(?:/[^'"]*)?` before
+// the closing quote also catches subpath imports (e.g. `@/lib/gemini/foo`) so a forbidden module
+// can't be smuggled in through a deeper path (Codex Medium).
+const importOf = (mod: string) =>
+  new RegExp(`(?:from|import)\\s*\\(?['"]${mod.replace(/[/-]/g, '\\$&')}(?:/[^'"]*)?['"]`);
 
 describe('B18b — share sources never reach the charging code', () => {
   // Scoped to import/call syntax (not bare identifiers) so a comment can't false-trip the guard.
   const forbidden = [
-    /from ['"][^'"]*\/serve-doc['"]/, /import\s*\(?['"][^'"]*\/serve-doc['"]/,
+    /from ['"][^'"]*\/serve-doc(?:\/[^'"]*)?['"]/, /import\s*\(?['"][^'"]*\/serve-doc(?:\/[^'"]*)?['"]/,
     importOf('@/lib/gemini'), importOf('@/lib/gemini-cost'),
     /resolveMagazineModel\s*\(/, /generateMagazineModel\s*\(/, /reserve_serve_model/, /\.rpc\s*\(/,
   ];
@@ -38,5 +41,30 @@ describe('B18b — share sources never reach the charging code', () => {
   it.each(shareSources)('%s imports/calls nothing that charges', (file) => {
     const src = readFileSync(file, 'utf-8');
     for (const re of forbidden) expect(src).not.toMatch(re);
+  });
+
+  // PLANTED NEGATIVE CONTROLS (Codex Medium): prove the widened regexes actually catch a named
+  // import, a bare side-effect import, AND a subpath import of each forbidden module — not just
+  // that they happen to miss the real (clean) files above. A guard that vacuously passes because
+  // its pattern is too narrow is worse than no guard.
+  describe('planted violations are caught by the matcher (proves the widened regex works)', () => {
+    const cases: Array<{ label: string; src: string; re: RegExp }> = [
+      // @/lib/gemini
+      { label: '@/lib/gemini named import', src: `import { generateMagazineModel } from '@/lib/gemini';`, re: importOf('@/lib/gemini') },
+      { label: '@/lib/gemini bare side-effect import', src: `import '@/lib/gemini';`, re: importOf('@/lib/gemini') },
+      { label: '@/lib/gemini subpath import', src: `import { foo } from '@/lib/gemini/foo';`, re: importOf('@/lib/gemini') },
+      // @/lib/gemini-cost
+      { label: '@/lib/gemini-cost named import', src: `import { perRunWorstCents } from '@/lib/gemini-cost';`, re: importOf('@/lib/gemini-cost') },
+      { label: '@/lib/gemini-cost bare side-effect import', src: `import '@/lib/gemini-cost';`, re: importOf('@/lib/gemini-cost') },
+      { label: '@/lib/gemini-cost subpath import', src: `import { foo } from '@/lib/gemini-cost/foo';`, re: importOf('@/lib/gemini-cost') },
+      // serve-doc
+      { label: 'serve-doc named import (from)', src: `import { resolveMagazineModel } from '@/lib/serve-doc';`, re: /from ['"][^'"]*\/serve-doc(?:\/[^'"]*)?['"]/ },
+      { label: 'serve-doc bare side-effect import', src: `import '@/lib/serve-doc';`, re: /import\s*\(?['"][^'"]*\/serve-doc(?:\/[^'"]*)?['"]/ },
+      { label: 'serve-doc subpath import (from)', src: `import { resolveMagazineModel } from '@/lib/serve-doc/internal';`, re: /from ['"][^'"]*\/serve-doc(?:\/[^'"]*)?['"]/ },
+      { label: 'serve-doc subpath bare side-effect import', src: `import '@/lib/serve-doc/internal';`, re: /import\s*\(?['"][^'"]*\/serve-doc(?:\/[^'"]*)?['"]/ },
+    ];
+    it.each(cases)('$label is flagged', ({ src, re }) => {
+      expect(src).toMatch(re);
+    });
   });
 });

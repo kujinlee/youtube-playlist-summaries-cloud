@@ -13,8 +13,12 @@ import type { ReadOnlyBlobStore } from '@/lib/storage/blob-store';
 // forbidden symbols here — the guard greps this file's raw text for them.)
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32-byte base64url
-const notFound = () => new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
-const notReady = () => new Response(JSON.stringify({ error: 'not ready, retry shortly' }), { status: 503 });
+// Both denial responses carry no-store/no-referrer too (Claude Minor): a cached 503 for a
+// valid-but-not-ready token could otherwise outlive the model being materialized, and a cached
+// 404 could leak token-existence timing via a shared/browser cache.
+const DENIAL_HEADERS = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
+const notFound = () => new Response(JSON.stringify({ error: 'not found' }), { status: 404, headers: DENIAL_HEADERS });
+const notReady = () => new Response(JSON.stringify({ error: 'not ready, retry shortly' }), { status: 503, headers: DENIAL_HEADERS });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
