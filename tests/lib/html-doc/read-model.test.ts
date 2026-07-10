@@ -41,6 +41,9 @@ describe('readFreshMagazineModel', () => {
     mockReadModelEnvelope.mockResolvedValue(envelope());
     const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles });
     expect(r).toEqual({ status: 'ok', model: fakeModel });
+    // Arg-passthrough: prove the helper forwards (principal, base, blobStore) unchanged
+    // rather than swallowing or reordering them (the mock otherwise hides this).
+    expect(mockReadModelEnvelope).toHaveBeenCalledWith(principal, 'b', roStore);
   });
 
   it('returns not_ready when the envelope is absent', async () => {
@@ -56,18 +59,70 @@ describe('readFreshMagazineModel', () => {
   });
 });
 
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, existsSync, statSync } from 'fs';
+import { join, dirname, basename } from 'path';
 
 describe('B18c — read-model.ts is a generate-free leaf', () => {
-  it('imports nothing that could charge or generate', () => {
-    const src = readFileSync(join(process.cwd(), 'lib/html-doc/read-model.ts'), 'utf-8');
-    const imports = [...src.matchAll(/from ['"]([^'"]+)['"]/g)].map((m) => m[1]);
-    for (const bad of ['@/lib/gemini', '@/lib/gemini-cost', './serve-doc', '@/lib/html-doc/serve-doc']) {
-      expect(imports).not.toContain(bad);
+  // Matches `import ... from '<spec>'`, `export ... from '<spec>'` (incl. `import type` /
+  // `export type`), and side-effect `import '<spec>'`. Character classes match across
+  // newlines, so multi-line named-import blocks are covered too.
+  const IMPORT_SPEC_RE =
+    /(?:import|export)\s+(?:type\s+)?[^'";]*?from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"]/g;
+
+  // Forbidden if the resolved path OR the raw specifier contains any of these as a substring —
+  // deliberately broad so a subpath import (e.g. `@/lib/gemini/foo`) is still caught.
+  const FORBIDDEN = ['@/lib/gemini', '@/lib/gemini-cost', 'serve-doc', 'reserve_serve_model'];
+  const isForbidden = (spec: string) => FORBIDDEN.some((bad) => spec.includes(bad));
+
+  /** Resolve an import specifier to a file path, or null for a bare npm package
+   *  (which cannot be one of this app's own gemini/serve-doc modules by definition). */
+  function resolveSpecifier(spec: string, fromFile: string): string | null {
+    if (spec.startsWith('.')) return join(dirname(fromFile), spec);
+    if (spec.startsWith('@/')) return join(process.cwd(), spec.slice(2));
+    return null;
+  }
+
+  function resolveToFile(base: string): string | null {
+    for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts')]) {
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
     }
-    // constants.ts (the GENERATOR_VERSION source) must itself import nothing.
-    const consts = readFileSync(join(process.cwd(), 'lib/html-doc/constants.ts'), 'utf-8');
-    expect(consts).not.toMatch(/\bimport\b/);
+    return null;
+  }
+
+  it('the entire transitive import graph never reaches gemini/gemini-cost/serve-doc', () => {
+    const root = join(process.cwd(), 'lib/html-doc/read-model.ts');
+    const visitedFiles = new Set<string>(); // cycle guard + traversal evidence
+    const allSpecifiers: string[] = [];
+
+    function walk(file: string) {
+      if (visitedFiles.has(file)) return; // guard against import cycles
+      visitedFiles.add(file);
+      const src = readFileSync(file, 'utf-8');
+      for (const m of src.matchAll(IMPORT_SPEC_RE)) {
+        const spec = m[1] ?? m[2];
+        if (!spec) continue;
+        allSpecifiers.push(spec);
+        const resolvedBase = resolveSpecifier(spec, file);
+        if (!resolvedBase) continue; // bare npm package — nothing further to walk
+        const resolved = resolveToFile(resolvedBase);
+        if (resolved) walk(resolved);
+      }
+    }
+
+    walk(root);
+
+    // No specifier anywhere in the reachable graph names a forbidden module...
+    for (const spec of allSpecifiers) expect(isForbidden(spec)).toBe(false);
+    // ...and no resolved file path in the reachable graph is one either (catches the case
+    // where a forbidden module is reached via a relative path that doesn't textually
+    // contain the `@/lib/gemini` alias, e.g. a deep `../../gemini` relative import).
+    for (const file of visitedFiles) expect(isForbidden(file)).toBe(false);
+
+    // Sanity check: the traversal must be non-trivial. A walker broken by a regex or
+    // resolution bug could silently visit only `read-model.ts` itself and pass vacuously —
+    // assert it actually descended into both of read-model.ts's real dependencies.
+    const visitedBasenames = [...visitedFiles].map((f) => basename(f));
+    expect(visitedBasenames).toEqual(expect.arrayContaining(['model-store.ts', 'constants.ts']));
+    expect(visitedFiles.size).toBeGreaterThanOrEqual(3);
   });
 });
