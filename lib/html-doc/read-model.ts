@@ -19,7 +19,7 @@ export function isFresh(
 }
 
 /** Read-only, generation-free: returns the cached model iff present AND fresh; otherwise
- *  not_ready. Never calls reserve_serve_model or generateMagazineModel. */
+ *  not_ready. Never reserves spend or generates a model (no charging RPC, no LLM call). */
 export async function readFreshMagazineModel(args: {
   blobStore: ReadOnlyBlobStore;
   principal: Principal;

@@ -17,6 +17,12 @@ describe('service_role confinement', () => {
     expect(reachesService(entry)).toBe(true);
   });
 
+  it('app/s/[token]/route.ts (the Stage 1F-b allowlisted share-serve entrypoint) does reach service.ts', () => {
+    const { reachesService } = require('@/scripts/check-service-confinement');
+    const entry = path.join(process.cwd(), 'app/s/[token]/route.ts');
+    expect(reachesService(entry)).toBe(true);
+  });
+
   it('extractImportSpecifiers catches side-effect + re-export imports (Codex H3)', () => {
     const src = [
       `import '@/lib/supabase/service';`,               // side-effect import
