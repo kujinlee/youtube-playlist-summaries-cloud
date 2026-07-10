@@ -32,7 +32,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const readOnly: ReadOnlyBlobStore = { get: fullStore.get.bind(fullStore) }; // runtime get-only (D16)
   const principal = { id: ctx.ownerId, indexKey: ctx.playlistKey };
 
-  const mdBytes = await readOnly.get(principal, ctx.mdKey);
+  let mdBytes;
+  try {
+    mdBytes = await readOnly.get(principal, ctx.mdKey);
+  } catch (err) {
+    // Corrupt persisted mdKey (e.g. a path-traversal key) makes the store's assertLogicalKey throw
+    // (statusCode 400). Coarse 404, never a 500 leak (B13b). A genuine infra error (no 400) still
+    // surfaces as 500 rather than being masked as "not found".
+    if ((err as { statusCode?: number }).statusCode === 400) return notFound();
+    throw err;
+  }
   if (!mdBytes) return notFound(); // MD lost behind promoted (B13b)
 
   let parsed;
