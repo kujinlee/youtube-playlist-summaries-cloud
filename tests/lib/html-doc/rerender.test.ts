@@ -74,7 +74,7 @@ afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
 describe('reRenderSummaryHtml', () => {
   it('re-renders from the cached model without calling Gemini', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     const res = await reRenderSummaryHtml(VIDEO_ID, dir);
     expect(res.status).toBe('rerendered');
     expect(res).toHaveProperty('htmlPath', 'htmls/a-title.html');
@@ -88,7 +88,7 @@ describe('reRenderSummaryHtml', () => {
   });
 
   it('includes rendered html in the rerendered result', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     const res = await reRenderSummaryHtml(VIDEO_ID, dir);
     expect(res.status).toBe('rerendered');
     expect(res).toHaveProperty('html');
@@ -114,27 +114,27 @@ describe('reRenderSummaryHtml', () => {
   });
 
   it('skips when the video has no summaryHtml (nothing existing to refresh)', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     writeIndex([baseVideo({ summaryHtml: null })]);
     expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-not-eligible' });
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
   it('skips when the .md is missing on disk', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     fs.rmSync(path.join(dir, 'a-title.md'));
     expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-no-md' });
   });
 
   it('skips when the .md is present but unparseable', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     fs.writeFileSync(path.join(dir, 'a-title.md'), '# Title only, no ## sections\n');
     expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({ status: 'skipped-unparseable' });
     expect(fs.existsSync(path.join(dir, 'htmls', 'a-title.html'))).toBe(false);
   });
 
   it('skips on section-TITLE drift between .md and model', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope(MODEL, ['First', 'Renamed Conclusion']));
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope(MODEL, ['First', 'Renamed Conclusion']));
     expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({
       status: 'skipped-drift',
       mdSections: ['First', 'Conclusion'],
@@ -145,7 +145,7 @@ describe('reRenderSummaryHtml', () => {
 
   it('skips on section-COUNT drift (model has fewer sections than the .md)', async () => {
     const oneTitle = ['First']; // .md parses to 2 sections; model envelope says 1
-    await writeModelEnvelope(dir, 'a-title', envelope({ sections: [MODEL.sections[0]] }, oneTitle));
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope({ sections: [MODEL.sections[0]] }, oneTitle));
     expect(await reRenderSummaryHtml(VIDEO_ID, dir)).toEqual({
       status: 'skipped-drift',
       mdSections: ['First', 'Conclusion'],
@@ -159,7 +159,7 @@ describe('reRenderSummaryHtml', () => {
   });
 
   it('routes HTML write through blobStore.put with key htmls/a-title.html', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
     // Inherit get/delete/exists from localBlobStore prototype; only intercept put.
     const fakeBlobStore = Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put: fakePut }) as typeof localBlobStore;
@@ -177,7 +177,7 @@ describe('reRenderSummaryHtml', () => {
 describe('reRenderAll', () => {
   it('tallies re-rendered and skipped across the index', async () => {
     // video A (baseVideo): has model + HTML → rerendered
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     // video B: summaryMd + summaryHtml set but NO model → skipped-no-model
     fs.writeFileSync(path.join(dir, 'b-title.md'), SUMMARY_MD);
     const vidB = baseVideo({ id: 'vidB', summaryMd: 'b-title.md', summaryHtml: 'htmls/b-title.html' });
@@ -196,7 +196,7 @@ describe('reRenderAll', () => {
 
   it('counts a video with no summary as not-eligible (silent)', async () => {
     const vidC = baseVideo({ id: 'vidC', summaryMd: null, summaryHtml: null });
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     writeIndex([baseVideo(), vidC]);
 
     const tally = await reRenderAll(dir);
@@ -205,9 +205,9 @@ describe('reRenderAll', () => {
   });
 
   it('isolates an unparseable .md as a defined skip and keeps going', async () => {
-    await writeModelEnvelope(dir, 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
     fs.writeFileSync(path.join(dir, 'b-title.md'), '# Just a title, no sections\n');
-    await writeModelEnvelope(dir, 'b-title', { sourceMd: 'b-title.md', generatedAt: 'now', sourceSections: ['x'], model: MODEL });
+    await writeModelEnvelope(localPrincipal(dir), 'b-title', { sourceMd: 'b-title.md', generatedAt: 'now', sourceSections: ['x'], model: MODEL });
     writeIndex([baseVideo(), baseVideo({ id: 'vidB', summaryMd: 'b-title.md', summaryHtml: 'htmls/b-title.html' })]);
 
     const tally = await reRenderAll(dir);
@@ -219,8 +219,8 @@ describe('reRenderAll', () => {
   it('isolates a per-video write failure and keeps rendering the rest', async () => {
     // Two eligible videos with cached models; force the HTML write to throw for the FIRST only.
     fs.writeFileSync(path.join(dir, 'b-title.md'), SUMMARY_MD);
-    await writeModelEnvelope(dir, 'a-title', envelope());
-    await writeModelEnvelope(dir, 'b-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'a-title', envelope());
+    await writeModelEnvelope(localPrincipal(dir), 'b-title', envelope());
     writeIndex([baseVideo(), baseVideo({ id: 'vidB', summaryMd: 'b-title.md', summaryHtml: 'htmls/b-title.html' })]);
 
     const realRename = fs.renameSync;

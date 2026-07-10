@@ -2,7 +2,7 @@ import { assertVideoId } from '../index-store';
 import { getPrincipal, getStorageBundle } from '@/lib/storage/resolve';
 import { generateMagazineModel } from '../gemini';
 import { parseSummaryMarkdown } from './parse';
-import { renderMagazineHtml } from './render';
+import { renderMagazineHtml, GENERATOR_VERSION } from './render';
 import { writeModelEnvelope } from './model-store';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import type { ProgressEvent } from '../../types';
@@ -46,10 +46,11 @@ export async function runHtmlDoc(
   // A later HTML/index failure may leave this model as an orphan; that's intentional and harmless —
   // re-render is gated on summaryHtml (set only on full success), and a retry overwrites it atomically.
   const base = video.summaryMd.replace(/\.md$/, '');
-  await writeModelEnvelope(outputFolder, base, {
+  await writeModelEnvelope(principal, base, {
     sourceMd: video.summaryMd,
     generatedAt: new Date().toISOString(),
     sourceSections: parsed.sections.map((s) => s.title),
+    generatorVersion: GENERATOR_VERSION,
     model,
   }, resolvedBlob);
 
