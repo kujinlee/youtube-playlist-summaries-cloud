@@ -3,6 +3,7 @@ import { hashShareToken } from './token';
 
 export type ShareServeContext = {
   ownerId: string; playlistKey: string; playlistId: string; videoId: string; mdKey: string;
+  title?: string;
 };
 
 /** Validate a bearer token and resolve the one doc it authorizes, guarded against
@@ -46,5 +47,9 @@ export async function getShareServeContext(
   const mdKey = artifact?.key ?? (vid.data as { summaryMd?: string }).summaryMd;
   if (!mdKey) return denied;
 
-  return { ownerId: tok.owner_id, playlistKey: pl.playlist_key, playlistId: tok.playlist_id, videoId: tok.video_id, mdKey };
+  const rawTitle = (vid.data as { title?: unknown }).title;
+  const title = typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle : undefined;
+
+  return { ownerId: tok.owner_id, playlistKey: pl.playlist_key, playlistId: tok.playlist_id,
+           videoId: tok.video_id, mdKey, title };
 }
