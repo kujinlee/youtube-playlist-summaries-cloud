@@ -72,6 +72,38 @@ it('returns at_capacity and leaves NO fresh lease when the daily cap is exhauste
   expect(rows).toEqual([]);
 });
 
+it('at_capacity on a RECLAIM restores the prior expired marker row unchanged (not bricked, not incremented, not a fresh live lease)', async () => {
+  const u = await newUser();
+  const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
+  const docKey = `${playlistId}/${videoId}`;
+  const utcDay = new Date().toISOString().slice(0, 10);
+  // Seed a PRIOR EXPIRED marker directly (simulating a previous attempt whose lease has lapsed) —
+  // this is the reclaim path (ON CONFLICT DO UPDATE), not the fresh-insert path the existing
+  // at_capacity test covers.
+  const { error: seedErr } = await svc.from('serve_model_charge').insert({
+    owner_id: u.user.id, doc_key: docKey, day: utcDay,
+    lease_expires_at: new Date(Date.now() - 1000).toISOString(), attempt_count: 1,
+  });
+  expect(seedErr).toBeNull();
+  const { data: before } = await svc.from('serve_model_charge')
+    .select('attempt_count, lease_expires_at').eq('doc_key', docKey).single();
+  expect(before).not.toBeNull();
+  expect(before!.attempt_count).toBe(1);
+  await svc.from('guardrail_config').update({ daily_cap_cents: 3 }).eq('id', true); // below magazine_est_cents=6
+  const { client } = await signInAs(u.email, u.password);
+  const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(status).toBe('at_capacity');
+  // B7c: the savepoint must roll back the RECLAIM (increment + fresh lease) back to the prior
+  // expired row exactly — not brick it, not leave it incremented, not convert it into a fresh
+  // live lease. Compare against the true pre-call snapshot (not a literal string) to avoid any
+  // timestamptz formatting mismatch.
+  const { data: after } = await svc.from('serve_model_charge')
+    .select('attempt_count, lease_expires_at').eq('doc_key', docKey).single();
+  expect(after).toEqual(before);
+  const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
+  expect(led ?? []).toEqual([]); // the spend_ledger insert (step 5) rolled back with the claim — no row for the day
+});
+
 it('denies a foreign or unpromoted doc via direct RPC (no charge, no leak)', async () => {
   const owner = await newUser();
   const attacker = await newUser();
@@ -102,13 +134,16 @@ it('a session client CANNOT select/insert/update/delete serve_model_charge direc
   const u = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
   const { client } = await signInAs(u.email, u.password);
-  await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }); // create a row (as owner)
+  const { data: setupStatus } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }); // create a row (as owner)
+  expect(setupStatus).toBe('reserved'); // guard against a false-green: prove setup actually created the row
   const docKey = `${playlistId}/${videoId}`;
   // Snapshot the TRUE row via the service client (bypasses RLS) so we can prove it is byte-for-byte
   // unchanged after the denied writes — not merely that a row still exists (F3: the old
   // `expect(rows.length).toBe(1)` would pass even if attempt_count had been mutated).
   const { data: before } = await svc.from('serve_model_charge')
     .select('attempt_count, lease_expires_at').eq('owner_id', u.user.id).single();
+  expect(before).not.toBeNull();     // guard against a false-green: before === after === null must not pass
+  expect(before!.attempt_count).toBe(1);
 
   // force-RLS + no client policy → every direct verb sees/affects zero rows / is refused.
   const sel = await client.from('serve_model_charge').select('*');
