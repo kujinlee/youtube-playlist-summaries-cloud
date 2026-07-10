@@ -21,7 +21,11 @@ export async function getShareServeContext(
   if (tokErr) throw tokErr;
   if (!tok) return denied;
   if (tok.revoked_at) return denied;
-  if (tok.expires_at && new Date(tok.expires_at).getTime() <= Date.now()) return denied;
+  if (tok.expires_at) {
+    const expiresAtMs = new Date(tok.expires_at).getTime();
+    // Fail CLOSED: an unparseable expires_at (NaN) must deny, not be treated as live.
+    if (Number.isNaN(expiresAtMs) || expiresAtMs <= Date.now()) return denied;
+  }
 
   // Resolve by the GLOBAL (id, owner_id) — never by playlist_key — AND re-assert the owner (D15).
   const { data: pl, error: plErr } = await serviceClient
