@@ -17,6 +17,12 @@ describe('service_role confinement', () => {
     expect(reachesService(entry)).toBe(true);
   });
 
+  it('app/s/[token]/route.ts (the Stage 1F-b allowlisted share-serve entrypoint) does reach service.ts', () => {
+    const { reachesService } = require('@/scripts/check-service-confinement');
+    const entry = path.join(process.cwd(), 'app/s/[token]/route.ts');
+    expect(reachesService(entry)).toBe(true);
+  });
+
   it('extractImportSpecifiers catches side-effect + re-export imports (Codex H3)', () => {
     const src = [
       `import '@/lib/supabase/service';`,               // side-effect import
@@ -45,6 +51,23 @@ describe('service_role confinement', () => {
     try {
       fs.writeFileSync(fixtureFile, `import '@/lib/supabase/service';\n`);
       expect(reachesService(fixtureFile)).toBe(true);
+    } finally {
+      if (fs.existsSync(fixtureFile)) {
+        fs.unlinkSync(fixtureFile);
+      }
+    }
+  });
+
+  it('findServiceImporters() FLAGS a new unauthorized reacher under app/ (Codex Low + Claude Minor)', () => {
+    // The other tests above only prove reachesService(fixture) works in isolation — they don't
+    // prove the repo-wide scan/allowlist combo actually catches a new, non-allowlisted importer.
+    // A bug where the allowlist was too broad (e.g. matched by prefix, or the walk skipped a dir)
+    // would make findServiceImporters() vacuously return [] even with a real violator present.
+    const fixtureFile = path.join(process.cwd(), 'app/__confinement_unauth_fixture__.ts');
+    try {
+      fs.writeFileSync(fixtureFile, `import '@/lib/supabase/service';\n`);
+      const violators = findServiceImporters().map((f) => path.resolve(f));
+      expect(violators).toContain(path.resolve(fixtureFile));
     } finally {
       if (fs.existsSync(fixtureFile)) {
         fs.unlinkSync(fixtureFile);

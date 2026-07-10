@@ -73,10 +73,16 @@ export function collectEntrypoints(): string[] {
 
 /** Stage 1D (H-B, reviewed): the two-client split requires the enqueue route to build the
  *  service-role `Enqueuer` (`enqueue`/`preflight` are service_role-only RPC grants as of
- *  migration 0011 — anon/authenticated execute was revoked). This is the ONE deliberately
- *  authorized entrypoint; everything else must still be unreachable. */
+ *  migration 0011 — anon/authenticated execute was revoked). This is one deliberately
+ *  authorized entrypoint; everything else must still be unreachable.
+ *
+ *  Stage 1F-b (spec D4/D16): the anonymous `/s/[token]` share-serve route is the second (and,
+ *  per spec, the ONLY other) deliberately authorized `service_role` entrypoint — there is no
+ *  session to scope RLS by for an anonymous visitor, so it uses a runtime `get`-only blob-store
+ *  wrapper plus `getShareServeContext`'s explicit confused-deputy guard instead of RLS. */
 const ALLOWED_SERVICE_IMPORTERS = [
   path.join(ROOT, 'app/api/jobs/route.ts'),
+  path.join(ROOT, 'app/s/[token]/route.ts'),
 ];
 
 export function findServiceImporters(): string[] {

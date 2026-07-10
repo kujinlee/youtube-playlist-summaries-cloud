@@ -13,6 +13,11 @@ export interface BlobStore {
   promote(ref: StagedRef): Promise<void>;
 }
 
+/** A read-only view of a BlobStore — exactly the `get` method. The share serve path
+ *  passes a runtime `{ get: store.get.bind(store) }` wrapper so write methods are
+ *  unreachable at runtime, not merely hidden by the type (spec D16). */
+export type ReadOnlyBlobStore = Pick<BlobStore, 'get'>;
+
 export function assertLogicalKey(key: string): void {
   if (key.startsWith('/') || key.split('/').includes('..') || key.includes('\0')) {
     throw Object.assign(new Error(`invalid blob key: ${key}`), { statusCode: 400 });
