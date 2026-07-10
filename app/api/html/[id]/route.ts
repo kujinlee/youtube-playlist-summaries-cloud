@@ -29,8 +29,9 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
   if (searchParams.get('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
   const type = searchParams.get('type');
   if (type !== 'summary') return json({ error: 'unsupported or missing type' }, 400); // cloud dig-deeper deferred
-  const format = searchParams.get('format') ?? 'html';
-  if (format !== 'html' && format !== 'md') return json({ error: 'invalid format' }, 400);
+  const formatValues = searchParams.getAll('format');
+  const format = formatValues.length === 0 ? 'html' : formatValues[0];
+  if (formatValues.length > 1 || (format !== 'html' && format !== 'md')) return json({ error: 'invalid format' }, 400);
   const download = searchParams.get('download') === '1';
   const playlistId = searchParams.get('playlist');
   if (!playlistId || !UUID_RE.test(playlistId)) return json({ error: 'invalid playlist' }, 400); // before any DB call

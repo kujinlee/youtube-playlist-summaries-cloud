@@ -91,6 +91,16 @@ describe('html-download (owner route, real DB)', () => {
     expect(res.headers.get('x-content-type-options')).toBe('nosniff'); // NEW
     expect(res.headers.get('referrer-policy')).toBeNull();             // still absent
     expect(res.headers.get('content-disposition')).toBeNull();         // still absent
+
+    // Full header-set assertion: prove no unintended extra header appears, and that the only
+    // keys present are the legacy set (content-type, cache-control) PLUS the new
+    // x-content-type-options and the html-branch content-security-policy. Pattern-match the CSP
+    // nonce value rather than hard-coding it (generateNonce() is random per request).
+    const keys = [...res.headers.keys()].sort();
+    expect(keys).toEqual(
+      ['cache-control', 'content-security-policy', 'content-type', 'x-content-type-options'].sort(),
+    );
+    expect(res.headers.get('content-security-policy')).toMatch(/'nonce-[A-Za-z0-9+/=]+'/);
   });
 
   it('C2: owner GET format=md&download=1 → 200 text/markdown, attachment filename="<base>.md"; no reserve_serve_model call; spend_ledger unchanged', async () => {
@@ -154,6 +164,20 @@ describe('html-download (owner route, real DB)', () => {
     expect(res2.status).toBe(400);
     const body2 = await res2.json();
     expect(body2.error).toBe('unsupported or missing type'); // proves the type check ran before the format check
+  });
+
+  it('C5b: duplicate format params (e.g. format=html&format=pdf) → 400 invalid format, not the first value', async () => {
+    const { playlistId, videoId } = await ownerAndDoc();
+
+    const res1 = await GET(req(videoId, `playlist=${playlistId}&type=summary&format=html&format=pdf`), invoke(videoId));
+    expect(res1.status).toBe(400);
+    const body1 = await res1.json();
+    expect(body1.error).toBe('invalid format');
+
+    const res2 = await GET(req(videoId, `playlist=${playlistId}&type=summary&format=md&format=pdf`), invoke(videoId));
+    expect(res2.status).toBe(400);
+    const body2 = await res2.json();
+    expect(body2.error).toBe('invalid format');
   });
 
   it('C6: owner GET format=md when the MD blob is missing behind promoted → 409 repair needed', async () => {
