@@ -6,6 +6,7 @@ import { readFreshMagazineModel } from '@/lib/html-doc/read-model';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { renderMagazineHtml } from '@/lib/html-doc/render';
 import { generateNonce, buildSummaryCsp } from '@/lib/html-doc/csp';
+import { fileResponse } from '@/lib/html-doc/file-response';
 import type { ReadOnlyBlobStore } from '@/lib/storage/blob-store';
 
 // MONEY GUARD (spec B18b, enforced by tests/lib/share/import-guard.test.ts): this module must not
@@ -19,8 +20,20 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32-byte base64url
 const DENIAL_HEADERS = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' };
 const notFound = () => new Response(JSON.stringify({ error: 'not found' }), { status: 404, headers: DENIAL_HEADERS });
 const notReady = () => new Response(JSON.stringify({ error: 'not ready, retry shortly' }), { status: 503, headers: DENIAL_HEADERS });
+const notFound400 = () => new Response(JSON.stringify({ error: 'invalid format' }), { status: 400, headers: DENIAL_HEADERS });
 
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
+  // format/download are parsed and validated FIRST — token-independent (no oracle): a bad `format`
+  // on a malformed token must 400 without ever reaching TOKEN_RE/DB, so it can't leak
+  // token-existence timing (D12/B-L2). `getAll` (not `.get`) so a duplicate ?format=… param can't
+  // bypass validation via the first value (the owner route shipped exactly this bypass — Codex
+  // Medium — fixed here from the start).
+  const { searchParams } = new URL(_req.url);
+  const formatValues = searchParams.getAll('format');
+  const format = formatValues.length === 0 ? 'html' : formatValues[0];
+  if (formatValues.length > 1 || (format !== 'html' && format !== 'md')) return notFound400();
+  const download = searchParams.get('download') === '1';
+
   const { token } = await params;
   if (!TOKEN_RE.test(token)) return notFound(); // malformed → before any DB call (B11)
 
@@ -44,6 +57,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   }
   if (!mdBytes) return notFound(); // MD lost behind promoted (B13b)
 
+  if (format === 'md') {
+    // D4 money invariant: short-circuits AFTER the mdBytes read/bad-key catch but BEFORE
+    // parseSummaryMarkdown/readFreshMagazineModel — must NOT resolve a model or charge.
+    // D12/B10b: still runs the SAME mandatory pre-response re-check the html path runs, so a
+    // revoke/un-promote landing between the initial resolve (above) and this response is caught —
+    // read-only, never charges.
+    const recheck = await getShareServeContext(svc, token);
+    if ('status' in recheck) return notFound();
+    return fileResponse(mdBytes, {
+      kind: 'md', download, base: ctx.mdKey.replace(/\.md$/, ''), title: ctx.title,
+      cache: 'no-store', referrerPolicy: 'no-referrer', // helper adds nosniff; inline md → text/plain
+    });
+  }
+
   let parsed;
   try { parsed = parseSummaryMarkdown(mdBytes.toString('utf-8')); }
   catch { return notFound(); } // corrupt/unparsable MD → coarse 404, never 500 (B13b)
@@ -60,13 +87,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   const nonce = generateNonce();
   const html = renderMagazineHtml(parsed, model.model, { nonce, dig: false, share: true });
-  return new Response(html, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Security-Policy': buildSummaryCsp(nonce),
-      'Cache-Control': 'no-store',
-      'Referrer-Policy': 'no-referrer',
-    },
+  return fileResponse(html, {
+    kind: 'html', download, base: ctx.mdKey.replace(/\.md$/, ''), title: ctx.title,
+    cache: 'no-store', csp: buildSummaryCsp(nonce), referrerPolicy: 'no-referrer',
   });
 }
