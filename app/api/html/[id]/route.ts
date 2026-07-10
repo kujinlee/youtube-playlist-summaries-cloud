@@ -8,6 +8,7 @@ import { resolveMagazineModel } from '@/lib/html-doc/serve-doc';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { renderMagazineHtml } from '@/lib/html-doc/render';
 import { generateNonce, buildSummaryCsp } from '@/lib/html-doc/csp';
+import { fileResponse } from '@/lib/html-doc/file-response';
 import type { Video } from '@/types';
 
 type Params = { params: Promise<{ id: string }> };
@@ -28,6 +29,9 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
   if (searchParams.get('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
   const type = searchParams.get('type');
   if (type !== 'summary') return json({ error: 'unsupported or missing type' }, 400); // cloud dig-deeper deferred
+  const format = searchParams.get('format') ?? 'html';
+  if (format !== 'html' && format !== 'md') return json({ error: 'invalid format' }, 400);
+  const download = searchParams.get('download') === '1';
   const playlistId = searchParams.get('playlist');
   if (!playlistId || !UUID_RE.test(playlistId)) return json({ error: 'invalid playlist' }, 400); // before any DB call
   try { assertVideoId(videoId); } catch { return json({ error: 'invalid videoId' }, 400); }
@@ -60,8 +64,6 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
     const mdBytes = await bundle.blobStore.get(principal, mdKey);
     if (!mdBytes) return json({ error: 'repair needed' }, 409); // promoted but blob lost (B13b)
 
-    const parsed = parseSummaryMarkdown(mdBytes.toString('utf-8'));
-    parsed.sourceMd = mdKey;
     // IDENTITY COHERENCE (Task 5/6 carry-forward): `base` is the canonical, DB-persisted baseName
     // (`${padSerial(serial)}_${slug}` — the worker's summary-handler key), derived deterministically
     // from the SAME summaryMd key the model store is keyed on (readModelEnvelope/writeModelEnvelope use
@@ -71,6 +73,18 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
     // hit. (NOTE: base is NOT videoId in this system; the summary key is serial_slug, so an assertion
     // `base === videoId` would be wrong — coherence comes from `base` being deterministic per video.)
     const base = mdKey.replace(/\.md$/, '');
+
+    if (format === 'md') {
+      // D4 money invariant: short-circuits AFTER the mdBytes read/409 check but BEFORE any model
+      // resolution — must NOT call resolveMagazineModel / reserve_serve_model / generation.
+      return fileResponse(mdBytes, {
+        kind: 'md', download, base, title: video.title,
+        cache: 'private, no-store', // helper adds nosniff; inline md → text/plain, download md → text/markdown
+      });
+    }
+
+    const parsed = parseSummaryMarkdown(mdBytes.toString('utf-8'));
+    parsed.sourceMd = mdKey;
 
     const resolved = await resolveMagazineModel({
       supabaseClient: supabase, blobStore: bundle.blobStore, principal,
@@ -86,13 +100,9 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
 
     const nonce = generateNonce();
     const html = renderMagazineHtml(parsed, resolved.model, { nonce, dig: false }); // D11 nonce + D12 no dig
-    return new Response(html, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Content-Security-Policy': buildSummaryCsp(nonce),
-        'Cache-Control': 'private, no-store',
-      },
+    return fileResponse(html, {
+      kind: 'html', download, base, title: video.title,
+      cache: 'private, no-store', csp: buildSummaryCsp(nonce),
     });
   } catch (err) {
     const e = err as { statusCode?: number; message?: string };

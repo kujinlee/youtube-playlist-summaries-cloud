@@ -23,7 +23,7 @@ export async function seedPlaylist(
 export async function seedPromotedVideo(
   svc: SupabaseClient,
   opts: { ownerId: string; playlistId: string; videoId?: string; base?: string;
-          status?: 'promoted' | 'committed'; position?: number },
+          status?: 'promoted' | 'committed'; position?: number; title?: string },
 ): Promise<{ videoId: string; base: string }> {
   const videoId = opts.videoId ?? `v-${randomUUID()}`;
   const base = opts.base ?? videoId;
@@ -40,6 +40,7 @@ export async function seedPromotedVideo(
       summaryMd: `${base}.md`,                    // top-level key the route get()s (summary-handler.ts:157)
       docVersion: 1,
       artifacts: { summaryMd: { key: `${base}.md`, status } },
+      ...(opts.title !== undefined ? { title: opts.title } : {}), // optional: download-filename tests (C2/C8)
     },
   });
   if (error) throw error;
