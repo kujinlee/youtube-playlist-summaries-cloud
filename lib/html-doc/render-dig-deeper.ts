@@ -3,11 +3,11 @@ import path from 'path';
 import MarkdownIt from 'markdown-it';
 import type { RenderRuleRecord } from 'markdown-it/lib/renderer.mjs';
 import {
-  themeStyleBlock, THEME_HEAD_SCRIPT, THEME_TOGGLE_BUTTON, THEME_TOGGLE_SCRIPT, PRINT_BUTTON,
+  themeStyleBlock, themeHeadScript, THEME_TOGGLE_BUTTON, themeToggleScript, printButton, printListenerScript,
   BASE_PALETTE_LIGHT_PRE, BASE_PALETTE_LIGHT_POST, BASE_PALETTE_DARK_PRE, BASE_PALETTE_DARK_POST,
   type Palette,
 } from './theme';
-import { digControl, NAV_SCRIPT, NAV_CSS } from './nav';
+import { digControl, navScript, NAV_CSS } from './nav';
 import type { ParsedSummary } from './types';
 import type { ModelEnvelope } from './model-store';
 import type { DugSection } from '../dig/companion-doc';
@@ -465,18 +465,18 @@ export function renderDigDeeperDoc(args: {
 <meta name="generator" content="dig-deeper-doc v1">
 <meta name="source-md" content="${esc(path.basename(mdPath))}">
 <title>${esc(title)}</title>
-${THEME_HEAD_SCRIPT}
+${themeHeadScript()}
 ${SIZE_HEAD_SCRIPT}
 ${CAPTIONS_HEAD_SCRIPT}
 <style>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}${DIG_DOC_CSS}</style>
 </head>
 <body>
-${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
+${THEME_TOGGLE_BUTTON}${printButton()}
 <article class="dg">
 ${bodyHtml}
 </article>
 ${expandAllDialogs}${zoomOverlay}${aiToast}
-${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}${zoomScript}${askAiScript}${sizeScript}${captionsScript}
+${navScript()}${themeToggleScript()}${printListenerScript()}${zoomScript}${askAiScript}${sizeScript}${captionsScript}
 </body>
 </html>`;
 }

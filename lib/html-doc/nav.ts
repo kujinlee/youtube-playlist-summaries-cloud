@@ -186,7 +186,7 @@ export const NAV_CSS =
 // Injected at end-of-body (DOM ready).
 // DRIFT WARNING: the inline JS functions (applyDug/applyIdle) intentionally duplicate
 // the TS helpers above and must be kept in sync — the inline string is not covered by jsdom tests.
-export const NAV_SCRIPT = `<script>
+const NAV_SCRIPT = `<script>
 (function(){
   // ── cross-doc nav (dig-deeper → summary) ─────────────────────────────────
   document.querySelectorAll('a.dig').forEach(function(a){
@@ -441,3 +441,8 @@ export const NAV_SCRIPT = `<script>
   });
 })();
 </script>`;
+
+// NAV_SCRIPT keeps its existing verbatim body; navScript only stamps the nonce onto the opening tag.
+export function navScript(nonce?: string): string {
+  return nonce ? NAV_SCRIPT.replace('<script>', `<script nonce="${nonce}">`) : NAV_SCRIPT;
+}

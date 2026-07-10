@@ -154,10 +154,11 @@ describe('renderMagazineHtml', () => {
     expect(html).not.toMatch(/<html[^>]*data-theme=/);
   });
 
-  it('includes a Print button hidden in print', () => {
+  it('includes a Print button hidden in print, wired via a listener (D11)', () => {
     const html = renderMagazineHtml(parsed, model);
     expect(html).toContain('id="print-btn"');
-    expect(html).toContain('onclick="window.print()"');
+    expect(html).not.toContain('onclick="window.print()"'); // D11: inline onclick removed for BOTH paths
+    expect(html).toContain('window.print()');               // print wired via the (nonce-less, local) listener
     expect(html).toContain('#theme-toggle,#print-btn{display:none}');
   });
 });

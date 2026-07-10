@@ -1,10 +1,10 @@
 import type { ParsedSummary, MagazineModel } from './types';
 import {
-  themeStyleBlock, THEME_HEAD_SCRIPT, THEME_TOGGLE_BUTTON, THEME_TOGGLE_SCRIPT, PRINT_BUTTON,
+  themeStyleBlock, themeHeadScript, THEME_TOGGLE_BUTTON, themeToggleScript, printButton, printListenerScript, nonceAttr,
   BASE_PALETTE_LIGHT_PRE, BASE_PALETTE_LIGHT_POST, BASE_PALETTE_DARK_PRE, BASE_PALETTE_DARK_POST,
   type Palette,
 } from './theme';
-import { digControl, NAV_SCRIPT, NAV_CSS } from './nav';
+import { digControl, navScript, NAV_CSS } from './nav';
 
 export const GENERATOR_VERSION = 'magazine-skim v2';
 
@@ -53,7 +53,13 @@ function esc(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function renderMagazineHtml(parsed: ParsedSummary, model: MagazineModel): string {
+export function renderMagazineHtml(
+  parsed: ParsedSummary,
+  model: MagazineModel,
+  opts: { nonce?: string; dig?: boolean } = {},
+): string {
+  const { nonce } = opts;
+  const showDig = opts.dig ?? true; // pre-1F-a local default
   const metaParts = [parsed.channel, parsed.duration]
     .filter(Boolean)
     .map((s) => esc(s as string));
@@ -82,7 +88,7 @@ export function renderMagazineHtml(parsed: ParsedSummary, model: MagazineModel):
         : '';
       const startSec = s.timeRange ? s.timeRange.startSec : null;
       const dataStart = startSec != null ? ` data-start="${startSec}"` : '';
-      const dig = startSec != null ? digControl(startSec) : '';
+      const dig = showDig && startSec != null ? digControl(startSec) : '';
       const bullets = m.bullets
         .map((b) => `<li>${esc(b.text)}</li>`)
         .join('');
@@ -107,11 +113,11 @@ export function renderMagazineHtml(parsed: ParsedSummary, model: MagazineModel):
 <meta name="source-md" content="${esc(sourceMd)}">
 <meta name="video-id" content="${esc(parsed.videoId ?? '')}">
 <title>${esc(parsed.title)}</title>
-${THEME_HEAD_SCRIPT}
-<style>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}</style>
+${themeHeadScript(nonce)}
+<style${nonceAttr(nonce)}>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}</style>
 </head>
 <body>
-${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
+${THEME_TOGGLE_BUTTON}${printButton()}
 <article class="v4">
   <h1 class="doc-title">${esc(parsed.title)}</h1>
   <p class="doc-meta">${metaLine}</p>
@@ -119,7 +125,7 @@ ${THEME_TOGGLE_BUTTON}${PRINT_BUTTON}
   ${sections}
   <footer>Skim view — generated from the source note${footerSource}. Full text lives in the source <code>.md</code>.</footer>
 </article>
-${NAV_SCRIPT}${THEME_TOGGLE_SCRIPT}
+${showDig ? navScript(nonce) : ''}${themeToggleScript(nonce)}${printListenerScript(nonce)}
 </body>
 </html>`;
 }

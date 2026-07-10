@@ -1,12 +1,18 @@
 /** @jest-environment jsdom */
 import {
   themeStyleBlock,
-  THEME_HEAD_SCRIPT,
+  themeHeadScript,
   THEME_TOGGLE_BUTTON,
-  THEME_TOGGLE_SCRIPT,
-  PRINT_BUTTON,
+  themeToggleScript,
+  printButton,
+  printListenerScript,
   type Palette,
 } from '../../../lib/html-doc/theme';
+
+// The script consts became functions (Task 5); call them once so the executed-script tests below
+// (which reference these names) keep working with zero further edits.
+const THEME_HEAD_SCRIPT = themeHeadScript();
+const THEME_TOGGLE_SCRIPT = themeToggleScript();
 
 const LIGHT: Palette = { page: '#ffffff', card: '#fafafa', ink: '#111111', shadow: '0 1px 3px rgba(0,0,0,.08)' };
 const DARK: Palette = { page: '#0f1115', card: '#16181d', ink: '#e3e6ea', shadow: '0 1px 3px rgba(0,0,0,.5)' };
@@ -73,10 +79,14 @@ describe('THEME_TOGGLE_BUTTON', () => {
   });
 });
 
-describe('PRINT_BUTTON', () => {
-  it('exports a print button with a window.print() handler', () => {
-    expect(PRINT_BUTTON).toContain('id="print-btn"');
-    expect(PRINT_BUTTON).toContain('onclick="window.print()"');
+describe('printButton + printListenerScript', () => {
+  it('renders a print button with NO inline onclick (D11)', () => {
+    expect(printButton()).toContain('id="print-btn"');
+    expect(printButton()).not.toContain('onclick'); // inline handler removed for the nonce CSP
+  });
+  it('wires window.print() via an addEventListener listener', () => {
+    expect(printListenerScript()).toContain("addEventListener('click'");
+    expect(printListenerScript()).toContain('window.print()');
   });
 });
 
