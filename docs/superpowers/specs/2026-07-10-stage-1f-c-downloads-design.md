@@ -1,7 +1,7 @@
 # Stage 1F-c — Downloads (MD + rendered HTML), owner + share-token (cloud)
 
-**Status:** 🟡 **design DRAFT (v3)** — design-approved 2026-07-10. v1 dual review: 1 Blocking + 2 High + 2 Med + 3 Low → v2. v2 re-review (round 2): 0 new Blocking, 2 new High (both reconciliation defects — the v2 `text/plain` + ASCII-filename fixes didn't propagate to C3/§5/§4.3) + 1 Med + 3 Low → this v3. **Next: re-review round 3 to convergence → user spec-approval → `writing-plans`.** **Branch:** `feat/stage-1f-c-downloads`.
-**Review trail:** `docs/reviews/spec-1f-c-{codex,claude}-v1.md`, `-v2-rereview.md`.
+**Status:** ✅ **design CONVERGED (v4)** — v1 dual review (1 Blocking/2 High/2 Med/3 Low) → v2; round-2 re-review (0 new Blocking, 2 new High reconciliation defects) → v3; **round-3 re-review returned 0 new Blocking / 0 new High / 0 new Medium from both passes (CONVERGED)** → v4 folds the one cosmetic Low. **Next: user spec-approval → `writing-plans`.** **Branch:** `feat/stage-1f-c-downloads`.
+**Review trail:** `docs/reviews/spec-1f-c-{codex,claude}-v1.md`, `-v2-rereview.md`, `-v3-rereview.md`.
 
 > **Design in one paragraph:** let a summary doc be **downloaded** as raw markdown (`.md`) or self-contained rendered HTML (`.html`), by the **owner** (session) or a **share-token holder** (1F-b link), by adding `format` + `download` query params to the two existing serve routes. Downloading is a thin layer over 1F-a (owner) and 1F-b (share): the MD path is a pure storage passthrough that never touches the model or money; the HTML path reuses the exact serve render + money path of each caller. No server-side PDF (print → "Save as PDF" in the browser, already shipped), no Obsidian FSA (deferred).
 
@@ -121,7 +121,7 @@ Existing callers (no `format`/`download`) get an **equivalent** response to toda
 | C11 | Share denied (valid/absent format) | expired/revoked/unknown/malformed token, `format` valid or absent | **coarse 404**, no body leak, before blob read |
 | C11b | Revoke/un-promote mid-MD-download | token live at initial resolve, revoked/un-promoted before the MD response | **coarse 404** — the MD branch re-runs `getShareServeContext` before returning (D12/B10b) |
 | C12 | Share MD missing/corrupt blob | live token, blob lost or unparseable | coarse **404** (MD branch: missing→404; MD is not parsed on the md path, so "corrupt" only affects html) |
-| C13 | Filename RFC 5987 | any `download=1` | `Content-Disposition: attachment; filename="<ascii>.<ext>"; filename*=UTF-8''<pct>`; unicode title round-trips |
+| C13 | Filename RFC 5987 | any `download=1` | `Content-Disposition: attachment; filename="<asciiSafe(base-key)>.<ext>"; filename*=UTF-8''<pct(title‖base)>`; unicode title round-trips in `filename*` |
 | C14 | Filename ascii fallback | title is non-ASCII (건강) | `filename="<ascii base-key>.<ext>"` present as fallback + `filename*` unicode |
 | C15 | MD path never charges (both) | C2/C3/C8 | `spend_ledger`/`serve_model_charge` unchanged; zero `reserve_serve_model`; MD branch + `file-response.ts` (now in the B18b `shareSources` scan set) reach no charging import (extends B18/B18b/B18c) |
 | C16 | Share download isolation | share `format=md`/`html` for owner A via B's token | coarse 404 (confused-deputy guard unchanged); no cross-owner file |
