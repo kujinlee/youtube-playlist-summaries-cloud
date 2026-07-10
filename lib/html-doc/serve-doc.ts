@@ -2,8 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary, MagazineModel } from './types';
-import { GENERATOR_VERSION } from './render';
-import { readModelEnvelope, writeModelEnvelope } from './model-store';
+import { GENERATOR_VERSION } from './constants';
+import { writeModelEnvelope } from './model-store';
+import { readFreshMagazineModel } from './read-model';
 import { generateMagazineModel } from '@/lib/gemini';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import {
@@ -29,12 +30,6 @@ export type ResolveResult =
   | { status: 'at_capacity' }
   | { status: 'denied' };
 
-function isFresh(envelope: { sourceSections: string[]; generatorVersion?: string }, titles: string[]): boolean {
-  const sameTitles = envelope.sourceSections.length === titles.length &&
-    envelope.sourceSections.every((t, i) => t === titles[i]);
-  return sameTitles && envelope.generatorVersion === GENERATOR_VERSION;
-}
-
 export async function resolveMagazineModel(args: {
   supabaseClient: SupabaseClient;
   blobStore: BlobStore;
@@ -49,10 +44,8 @@ export async function resolveMagazineModel(args: {
   const { supabaseClient, blobStore, principal, playlistId, videoId, base, parsed, language, signal } = args;
   const titles = parsed.sections.map((s) => s.title);
 
-  const existing = await readModelEnvelope(principal, base, blobStore);
-  if (existing && isFresh(existing, titles)) {
-    return { status: 'ok', model: existing.model }; // B1 — no Gemini, no reserve
-  }
+  const fresh = await readFreshMagazineModel({ blobStore, principal, base, titles });
+  if (fresh.status === 'ok') return { status: 'ok', model: fresh.model }; // B1 — no Gemini, no reserve
 
   // Absent / drifted / stale-version → materialize under the reserve RPC.
   const { data: reserveStatus, error } = await supabaseClient.rpc('reserve_serve_model', {
@@ -63,8 +56,8 @@ export async function resolveMagazineModel(args: {
     case 'denied': return { status: 'denied' };
     case 'in_flight': {
       // Single-flight: another attempt holds the lease. Serve the model if it landed meanwhile, else busy.
-      const now = await readModelEnvelope(principal, base, blobStore);
-      return now && isFresh(now, titles) ? { status: 'ok', model: now.model } : { status: 'busy' };
+      const now = await readFreshMagazineModel({ blobStore, principal, base, titles });
+      return now.status === 'ok' ? now : { status: 'busy' };
     }
     case 'attempts_exhausted': return { status: 'attempts_exhausted' };
     case 'at_capacity': return { status: 'at_capacity' };

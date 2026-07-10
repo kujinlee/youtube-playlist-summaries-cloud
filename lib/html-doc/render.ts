@@ -5,8 +5,8 @@ import {
   type Palette,
 } from './theme';
 import { digControl, navScript, NAV_CSS } from './nav';
-
-export const GENERATOR_VERSION = 'magazine-skim v2';
+import { GENERATOR_VERSION } from './constants';
+export { GENERATOR_VERSION };
 
 const SERIF = `Georgia, 'Nanum Myeongjo', 'Apple SD Gothic Neo', 'Times New Roman', serif`;
 

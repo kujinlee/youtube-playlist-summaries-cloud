@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { MagazineModelSchema } from './types';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
-import type { BlobStore } from '@/lib/storage/blob-store';
+import type { BlobStore, ReadOnlyBlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
 /**
@@ -50,7 +50,7 @@ export async function writeModelEnvelope(
 export async function readModelEnvelope(
   principal: Principal,
   base: string,
-  blobStore: BlobStore = localBlobStore,
+  blobStore: ReadOnlyBlobStore = localBlobStore,
 ): Promise<ModelEnvelope | null> {
   const bytes = await blobStore.get(principal, MODEL_KEY(base));
   if (!bytes) return null;
