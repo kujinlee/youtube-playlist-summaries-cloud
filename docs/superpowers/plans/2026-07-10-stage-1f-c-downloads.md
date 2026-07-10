@@ -181,18 +181,28 @@ const shareSources = [
 ].filter((f) => existsSync(f));
 ```
 
-And add a leaf assertion (the guard is a flat grep, so scanning the file only catches direct imports — the real protection is that it imports nothing from `@/`):
+And add a leaf assertion (the guard is a flat grep, so scanning the file only catches direct imports — the real protection is that it imports nothing from `@/`). The regex must catch **every** `@/` import form — the `from`-clause form, a bare side-effect `import '@/…'` (which has NO `from`), a dynamic `import('@/…')`, and `require('@/…')` — so match the `'@/` / `"@/` literal directly rather than anchoring on `from`:
 
 ```ts
-it('file-response.ts is a dependency-free leaf (no @/ imports)', () => {
+it('file-response.ts is a dependency-free leaf (no @/ imports, any form)', () => {
   const src = readFileSync(join(root, 'lib/html-doc/file-response.ts'), 'utf-8');
-  expect(src).not.toMatch(/from ['"]@\//);
+  // Any @/ import: `from '@/…'`, bare `import '@/…'`, dynamic `import('@/…')`, `require('@/…')`.
+  // The file legitimately imports nothing from '@/', so a bare literal match is both sufficient
+  // and precise (it does not appear in any string/comment in this leaf).
+  expect(src).not.toMatch(/['"]@\//);
 });
 ```
 
-- [ ] **Step 6: Run to verify the guard passes**
+- [ ] **Step 6: Run to verify the guard passes + planted negative controls**
 
-Run: `npx jest import-guard` — Expected PASS (file-response.ts has no forbidden imports and no `@/` import). Sanity: temporarily add `import '@/lib/gemini';` to `file-response.ts`, confirm `npx jest import-guard` FAILS (both the forbidden-import scan and the leaf assertion), then revert.
+Run: `npx jest import-guard` — Expected PASS (file-response.ts has no forbidden imports and no `@/` import in any form).
+
+Sanity — plant each `@/` import form in turn in `file-response.ts`, confirm `npx jest import-guard` FAILS, then revert, for **all three**:
+1. bare side-effect: `import '@/lib/gemini';` (has no `from` — this is the form the old `from`-anchored regex missed; it must now fail the leaf assertion).
+2. dynamic: `void import('@/lib/gemini');`
+3. require: `require('@/lib/gemini');`
+
+Each must trip the leaf assertion (the bare/dynamic/require forms may slip past the forbidden-import scan, which is exactly why the literal-match leaf assertion is the load-bearing check).
 
 - [ ] **Step 7: Commit**
 
@@ -285,9 +295,11 @@ git commit -m "feat(1f-c): getShareServeContext returns doc title for download f
 **Interfaces:**
 - Consumes: `fileResponse` (Task 1).
 
+**Test-infra prerequisite (H1 — seed writes a title):** `tests/integration/helpers/seed.ts` `seedPromotedVideo` currently writes a `data` blob with **no `title`**, so any title-derived-filename assertion (C2 owner, C8 share) would silently fall back to the base key and prove nothing. Before writing these tests, extend `seedPromotedVideo` with an **optional** `title?: string` param that, when provided, writes `data.title` (keep the param optional so the ~dozen existing callers compile untouched under `tsc`). Give the download tests a real title (e.g. `'My Doc Title'`). A hostile-title case (C21, quote/CRLF) still needs a custom `svc.from('videos').insert` — the helper is for the happy-path title, not header-injection fixtures.
+
 - [ ] **Step 1: Write the failing tests** (`tests/integration/html-download.test.ts`)
 
-Against a real DB + seeded promoted doc + MD blob (use `seedPlaylist`/`seedPromotedVideo`/`seedSummaryBlob`; authenticate as the owner with `signInAs`). Cover:
+Against a real DB + seeded promoted doc + MD blob (use `seedPlaylist`/`seedPromotedVideo` **with the new `title` arg**/`seedSummaryBlob`; authenticate as the owner with `signInAs`). Cover:
 
 ```
 - C1  owner GET (no format/download) → 200 text/html, CSP + private,no-store, NOW nosniff, NO Referrer-Policy, no Content-Disposition (view regression).
@@ -314,9 +326,11 @@ After the `type` check (`:29-30`), add:
   const download = searchParams.get('download') === '1';
 ```
 
-Compute `base` **before** the model branch (move it up), and insert the MD short-circuit right after the `mdBytes` 409 check (`:60-61`):
+Compute `base` **before** the model branch (move it up), and insert the MD short-circuit right after the `mdBytes` 409 check (`:60-61`). **Move the existing `// IDENTITY COHERENCE …` comment that sits above the old `base` declaration up with it** (do not leave it orphaned at the old site) so the derivation stays documented at its new location:
 
 ```ts
+    // IDENTITY COHERENCE: base (filename stem) is the MD key sans .md — the same key the
+    // model/blob are addressed by, so download filename and served doc cannot diverge.
     const base = mdKey.replace(/\.md$/, '');
     if (format === 'md') {
       return fileResponse(mdBytes, {
@@ -376,6 +390,8 @@ Cover, inside the existing B18 money-proof block (so the ledger snapshot + `rese
 - C5s share GET format=pdf (valid token) → 400; and /s/<malformed>?format=pdf → 400 (format before TOKEN_RE).
 - C11 share GET format=md, expired/revoked/unknown token → coarse 404 before blob read.
 - C11b revoke/un-promote BETWEEN the initial resolve and the response on the md path → 404 (the D12 re-check). Use the existing jest.mock('@/lib/share/serve') 2nd-call-hook pattern: on the md branch's re-check call, revoke the token, expect 404.
+- C12 share GET format=md when the MD blob is missing behind a promoted artifact → 404 (the md branch does not leak a 5xx/empty body on a missing blob; the bad-key catch at `:37-45` yields the coarse 404 for the md path too).
+- C16 cross-owner isolation for BOTH formats: owner B mints a token for B's doc; requesting A's doc key via that token → 404 for `format=md` AND for `format=html`. Proves the md short-circuit inherits the unchanged confused-deputy guard + D12 re-check (it must NOT open an isolation hole the html path lacks).
 - C19 every response (md/html, inline/download) has X-Content-Type-Options: nosniff.
 - C21 filename edge: a video whose title contains a quote/CRLF → header not injected (filename= is the base key; filename* percent-encoded).
 ```
@@ -397,7 +413,7 @@ At the top of `GET`, parse + validate `format` **before** `TOKEN_RE` (D12/B-L2),
   const download = searchParams.get('download') === '1';
 ```
 
-(Add a small `const notFound400 = () => new Response(JSON.stringify({ error: 'invalid format' }), { status: 400, headers: DENIAL_HEADERS });` next to the existing `notFound`/`notReady`. Rename `_req` param to `req` since we now read its URL.)
+(Add a small `const notFound400 = () => new Response(JSON.stringify({ error: 'invalid format' }), { status: 400, headers: DENIAL_HEADERS });` next to the existing `notFound`/`notReady`. **Keep the `_req` param name** — a `_`-prefixed param that is now read (`_req.url`) still compiles cleanly; do not rename it, to keep the diff minimal.)
 
 Insert the MD branch after the `mdBytes` read + bad-key catch (`:37-45`), BEFORE the parse/model — and it MUST run the re-check first (D12):
 
