@@ -49,9 +49,9 @@ const svc = adminClient();
 const MD = `# T\n**Channel:** C | **Duration:** 1:00\n\n## 1. Intro\nbody\n`;
 const CORRUPT_MD = 'not a valid markdown doc at all — no ## headings, so the parser throws.';
 
-async function seedDoc(ownerId: string, status: 'promoted' | 'committed' = 'promoted') {
+async function seedDoc(ownerId: string, status: 'promoted' | 'committed' = 'promoted', title?: string) {
   const { playlistId, playlistKey } = await seedPlaylist(svc, ownerId);
-  const { videoId, base } = await seedPromotedVideo(svc, { ownerId, playlistId, status });
+  const { videoId, base } = await seedPromotedVideo(svc, { ownerId, playlistId, status, title });
   return { playlistId, playlistKey, videoId, base };
 }
 
@@ -313,5 +313,191 @@ describe('share-route', () => {
     expect(res.status).toBe(404);
     expect(hookFired).toBe(true); // proves the mandatory second (pre-response) re-check ran and caught the un-promote
     mockOnSecondCallSinceArm = null;
+  });
+
+  // ---- 1F-c: format/download + MD branch (with re-check) + money proof ----------------------
+
+  it('C7: share GET (no format/download), live token → 200 html view regression w/ nosniff, no Content-Disposition', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    await seedFreshModel(u.user.id, playlistKey, base);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/text\/html/);
+    expect(res.headers.get('Cache-Control')).toBe('no-store');
+    expect(res.headers.get('Referrer-Policy')).toBe('no-referrer');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff'); // NEW
+    expect(res.headers.get('Content-Disposition')).toBeNull();
+  });
+
+  it('C8: format=md&download=1, live token → 200 text/markdown attachment filename+filename*; never charges', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id, 'promoted', 'My Doc Title');
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}?format=md&download=1`), invoke(token));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/text\/markdown/);
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('Content-Disposition')).toBe(
+      `attachment; filename="${base}.md"; filename*=UTF-8''My%20Doc%20Title.md`,
+    );
+    expect(generateMagazineModel).not.toHaveBeenCalled(); // D4 — md path never generates/charges
+  });
+
+  it('C8b: format=md (no download), live token → 200 text/plain; charset=utf-8, nosniff', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}?format=md`), invoke(token));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('Content-Disposition')).toBeNull();
+  });
+
+  it('C9: format=html&download=1, live token, fresh model → 200 html attachment; share-mode strip; never charges', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id, 'promoted', 'My Doc Title');
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    await seedFreshModel(u.user.id, playlistKey, base);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}?format=html&download=1`), invoke(token));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/text\/html/);
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.headers.get('Content-Disposition')).toBe(
+      `attachment; filename="${base}.html"; filename*=UTF-8''My%20Doc%20Title.html`,
+    );
+    const html = await res.text();
+    expect(html).toContain('Intro');
+    expect(html).not.toContain(`${base}.md`); // share-mode strip — no owner-structure/MD-key leak
+    expect(generateMagazineModel).not.toHaveBeenCalled(); // share html path never generates — freshness only
+  });
+
+  it('C5s: format=pdf → 400 for a valid token AND for a malformed token (format validated before TOKEN_RE — no oracle)', async () => {
+    const u = await newUser();
+    const { playlistId, videoId } = await seedDoc(u.user.id);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res1 = await GET(new Request(`http://localhost/s/${token}?format=pdf`), invoke(token));
+    expect(res1.status).toBe(400);
+
+    const fromSpy = jest.spyOn(SupabaseClient.prototype, 'from');
+    const before = fromSpy.mock.calls.length;
+    const res2 = await GET(new Request('http://localhost/s/short?format=pdf'), invoke('short'));
+    expect(res2.status).toBe(400);
+    expect(fromSpy.mock.calls.length).toBe(before); // no DB call — format checked before token shape
+    fromSpy.mockRestore();
+  });
+
+  it('C5b: duplicate format params (e.g. format=html&format=pdf) → 400, not the first value', async () => {
+    const u = await newUser();
+    const { playlistId, videoId } = await seedDoc(u.user.id);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res1 = await GET(new Request(`http://localhost/s/${token}?format=html&format=pdf`), invoke(token));
+    expect(res1.status).toBe(400);
+    const res2 = await GET(new Request(`http://localhost/s/${token}?format=md&format=pdf`), invoke(token));
+    expect(res2.status).toBe(400);
+  });
+
+  it('C11: expired/revoked/unknown token, format=md → coarse 404 before blob read', async () => {
+    const u = await newUser();
+    const { playlistId, videoId } = await seedDoc(u.user.id);
+
+    const expiredToken = await mintDirect(u.user.id, playlistId, videoId, {
+      expires_at: new Date(Date.now() - 864e5).toISOString(),
+    });
+    let res = await GET(new Request(`http://localhost/s/${expiredToken}?format=md`), invoke(expiredToken));
+    expect(res.status).toBe(404);
+
+    const revokedToken = await mintDirect(u.user.id, playlistId, videoId, {
+      revoked_at: new Date().toISOString(),
+    });
+    res = await GET(new Request(`http://localhost/s/${revokedToken}?format=md`), invoke(revokedToken));
+    expect(res.status).toBe(404);
+
+    const unknownToken = generateShareToken().token;
+    res = await GET(new Request(`http://localhost/s/${unknownToken}?format=md`), invoke(unknownToken));
+    expect(res.status).toBe(404);
+  });
+
+  it('C11b: revoke lands between the initial resolve and the MD branch re-check → 404 (D12)', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    // Same "2 calls since arm" hook as B10b above — for the md branch this is exactly
+    // [initial resolve, md-branch re-check] since the md path never reaches the html branch's
+    // separate re-check.
+    mockArmedAtCount = mockGlobalCallCount;
+    let hookFired = false;
+    mockOnSecondCallSinceArm = async (tok) => {
+      hookFired = true;
+      await svc.from('share_tokens').update({ revoked_at: new Date().toISOString() }).eq('token_hash', hashShareToken(tok));
+    };
+
+    const res = await GET(new Request(`http://localhost/s/${token}?format=md`), invoke(token));
+    expect(res.status).toBe(404);
+    expect(hookFired).toBe(true); // proves the md branch's own re-check ran and caught the revoke
+    mockOnSecondCallSinceArm = null;
+  });
+
+  it('C12: format=md, MD blob missing behind a promoted status → 404 (never 500)', async () => {
+    const u = await newUser();
+    const { playlistId, videoId } = await seedDoc(u.user.id);
+    // Deliberately no seedSummaryBlob call — the MD blob is missing.
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}?format=md`), invoke(token));
+    expect(res.status).toBe(404);
+  });
+
+  it('C16: cross-owner isolation — token owner_id says B but coords resolve to A\'s doc → 404 for md AND html', async () => {
+    const a = await newUser();
+    const b = await newUser();
+    const { playlistId, videoId } = await seedDoc(a.user.id); // A's promoted doc
+    const token = await mintDirect(b.user.id, playlistId, videoId); // B "owns" the token row, A owns the coords
+
+    const resMd = await GET(new Request(`http://localhost/s/${token}?format=md`), invoke(token));
+    expect(resMd.status).toBe(404); // confused-deputy guard (D15) — proves the md short-circuit inherits it
+
+    const resHtml = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
+    expect(resHtml.status).toBe(404); // same guard on the html path — no isolation gap between formats
+  });
+
+  it('C21: hostile title (quote/CRLF) in a share doc → header not injected on md download', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey } = await seedPlaylist(svc, u.user.id);
+    const videoId = 'v-hostile21';
+    const base = videoId;
+    const hostileTitle = 'a"\r\nb;c';
+    const { error } = await svc.from('videos').insert({
+      playlist_id: playlistId, owner_id: u.user.id, video_id: videoId, position: 1,
+      data: {
+        id: videoId, title: hostileTitle, language: 'en', summaryMd: `${base}.md`, docVersion: 1,
+        artifacts: { summaryMd: { key: `${base}.md`, status: 'promoted' } },
+      },
+    });
+    if (error) throw error;
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}?format=md&download=1`), invoke(token));
+    expect(res.status).toBe(200);
+    const cd = res.headers.get('Content-Disposition')!;
+    expect(cd).not.toMatch(/[\r\n]/);
+    expect(cd).toContain(`filename="${base}.md"`); // ascii half is the base key, never the raw title
+    expect(cd).toContain('%0D%0A'); // CR/LF percent-encoded in filename*, never literal
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 });

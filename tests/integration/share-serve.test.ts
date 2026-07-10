@@ -56,4 +56,20 @@ describe('getShareServeContext', () => {
     const ctx = await getShareServeContext(svc, token);
     expect(ctx).toEqual({ status: 'denied' });                      // must deny, and leak no B coords
   });
+  it('returns the doc title from the video row (for download filenames)', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey } = await seedPlaylist(svc, u.user.id);
+    // seedPromotedVideo writes data.title? — set it explicitly so the assertion is meaningful:
+    const videoId = 'v-titletest';
+    await svc.from('videos').insert({
+      playlist_id: playlistId, owner_id: u.user.id, video_id: videoId, position: 5,
+      data: { id: videoId, title: 'My Doc Title', language: 'en', summaryMd: 'v-titletest.md',
+              docVersion: 1, artifacts: { summaryMd: { key: 'v-titletest.md', status: 'promoted' } } },
+    });
+    const { token, tokenHash } = generateShareToken();
+    await svc.from('share_tokens').insert({ token_hash: tokenHash, owner_id: u.user.id,
+      playlist_id: playlistId, video_id: videoId, expires_at: new Date(Date.now() + 864e5).toISOString() });
+    const ctx = await getShareServeContext(svc, token);
+    expect(ctx).toMatchObject({ ownerId: u.user.id, playlistKey, mdKey: 'v-titletest.md', title: 'My Doc Title' });
+  });
 });

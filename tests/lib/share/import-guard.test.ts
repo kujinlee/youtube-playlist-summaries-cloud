@@ -17,6 +17,7 @@ const shareSources = [
   ...walk(join(root, 'app/s')),
   ...walk(join(root, 'lib/share')),
   join(root, 'lib/html-doc/read-model.ts'),
+  join(root, 'lib/html-doc/file-response.ts'),   // 1F-c: share md/html downloads route through this
 ].filter((f) => existsSync(f));
 
 // Matches BOTH named imports (`import { x } from '<mod>'`) and bare side-effect imports
@@ -41,6 +42,14 @@ describe('B18b — share sources never reach the charging code', () => {
   it.each(shareSources)('%s imports/calls nothing that charges', (file) => {
     const src = readFileSync(file, 'utf-8');
     for (const re of forbidden) expect(src).not.toMatch(re);
+  });
+
+  it('file-response.ts is a dependency-free leaf (no @/ imports, any form)', () => {
+    const src = readFileSync(join(root, 'lib/html-doc/file-response.ts'), 'utf-8');
+    // Any @/ import: `from '@/…'`, bare `import '@/…'`, dynamic `import('@/…')`, `require('@/…')`.
+    // The file legitimately imports nothing from '@/', so a bare literal match is both sufficient
+    // and precise (it does not appear in any string/comment in this leaf).
+    expect(src).not.toMatch(/['"]@\//);
   });
 
   // PLANTED NEGATIVE CONTROLS (Codex Medium): prove the widened regexes actually catch a named
