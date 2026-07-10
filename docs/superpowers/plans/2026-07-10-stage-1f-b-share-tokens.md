@@ -746,7 +746,7 @@ describe('POST /api/share', () => {
   it('201 returns token + url + expiresAt once, calls create_share_token with a 32-byte hash', async () => {
     // rpc('create_share_token') → { data: <iso>, error: null }
     // assert response.status === 201; body.token matches /^[A-Za-z0-9_-]{43}$/;
-    // body.url === `/s/${body.token}`; the rpc arg p_token_hash has length 32.
+    // body.url === `/s/${body.token}`; the rpc arg p_token_hash matches /^[0-9a-f]{64}$/ (64 hex chars).
   });
   it('400 when ttlDays is out of range (0 / 366 / -1)', async () => { /* resolveExpiry → {ok:false} */ });
   it('404 (coarse) when the RPC raises (unowned/unpromoted)', async () => {
