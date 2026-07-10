@@ -56,10 +56,11 @@ function esc(s: string): string {
 export function renderMagazineHtml(
   parsed: ParsedSummary,
   model: MagazineModel,
-  opts: { nonce?: string; dig?: boolean } = {},
+  opts: { nonce?: string; dig?: boolean; share?: boolean } = {},
 ): string {
   const { nonce } = opts;
   const showDig = opts.dig ?? true; // pre-1F-a local default
+  const share = opts.share ?? false;
   const metaParts = [parsed.channel, parsed.duration]
     .filter(Boolean)
     .map((s) => esc(s as string));
@@ -102,16 +103,16 @@ export function renderMagazineHtml(
     .join('\n');
 
   const sourceMd = parsed.sourceMd ?? '';
-  const footerSource = sourceMd ? ` <code>${esc(sourceMd)}</code>` : '';
+  const footerSource = (!share && sourceMd) ? ` <code>${esc(sourceMd)}</code>` : '';
 
   return `<!DOCTYPE html>
 <html lang="${esc((parsed.lang || 'en').toLowerCase())}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="generator" content="${GENERATOR_VERSION}">
+${share ? '' : `<meta name="generator" content="${GENERATOR_VERSION}">
 <meta name="source-md" content="${esc(sourceMd)}">
-<meta name="video-id" content="${esc(parsed.videoId ?? '')}">
+<meta name="video-id" content="${esc(parsed.videoId ?? '')}">`}
 <title>${esc(parsed.title)}</title>
 ${themeHeadScript(nonce)}
 <style${nonceAttr(nonce)}>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}</style>
