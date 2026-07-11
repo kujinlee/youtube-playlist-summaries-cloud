@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Revision:** v4 (2026-07-11) — Round-3 re-review (on v3) found 0 Blocking + 2 High + 2 Medium + 2 Low, all confirmed and fixed here (see Self-Review "Round-3"): a request-sequence guard in `fetchVideos` (stale `listVideos` could re-poison `playlistUrl` → wrong-playlist Refresh on a spend path), `jobsFrom` strict-typing, `onProgressRef` assign-in-render, fake-timer `afterEach` restore, `status()` terminal derivation, and a design-bullet fix. Prior: v3 — incorporates Round-1 **and Round-2** dual adversarial review (`docs/reviews/plan-2b-cloud-ingest-codex.md`/`-review.md` = R1; `-codex-v2-rereview.md`/`-v2-rereview.md` = R2). R1 found 3 Blocking + 5 High + 3 Medium + 3 Low; R2 (on the v2 rewrite) found 1 Blocking + 3 High + 2 Medium + 3 Low — all in Task 7's **test fixtures** + wiring details (both reviewers confirmed the v2 component *logic* genuinely fixed). Principal v2 changes: (a) `pollUntilTerminal` extension (`onProgress`, `isFatal`, `AbortSignal`, `{aborted}`); (b) Task 7 probe-first + cancellable; (c) Task 9 real `fetchVideos`/`playlistUrl`; (d) correct tokens; (e) store-layer integration test; (f) focus trap, ✕ submit-guard, refetch-dedup, 422 fallback. **v3 (R2) fixes:** (g) Task 7 `timedOut` → give-up (was done/mixed); (h) Task 7 test `status()` builds **real job rows** from bucket counts (the poll recomputes rollup from rows — empty rows never go terminal); (i) split the "renders progress" test (fake timers, non-terminal) from "resolves done/mixed" (real timers, immediate terminal) so React batching can't coalesce away the transient; (j) `onProgress` held in a **ref** so a mid-ingest refetch can't overwrite the user's current sort; (k) Task 9 resets `playlistUrl`/`refreshError` on playlist change (Refresh can't re-POST the previous playlist); (l) `CloudAppBody` gets `useRouter()`; (m) probe-401 `cancelled`-guarded; (n) Task 1 abort tests use an incrementing `now` backstop (RED can't hang) + an abort-during-sleep test.
+**Revision:** v5 (2026-07-11) — **CONVERGED.** Round-4 re-review: Claude returned CONVERGED (0 B/H/M, 2 benign Low); Codex found 1 High — Task 8 did not remove the two pre-existing `toBeDisabled()` sidebar tests, so enabling the button would fail the suite. v5 fixes Task 8 to **replace** those two obsolete tests with enabled-button tests (mechanical, self-verified against the real `playlist-sidebar.test.tsx` mock var `mockListPlaylists` + `playlists` fixture + `/no playlists yet/i` copy). Convergence trend R1→R4: 3B+5H → 1B+3H → 0B+2H → 0B+1H(test-list). Prior: v4 — Round-3 re-review (on v3) found 0 Blocking + 2 High + 2 Medium + 2 Low, all confirmed and fixed (see Self-Review "Round-3"): a request-sequence guard in `fetchVideos` (stale `listVideos` could re-poison `playlistUrl` → wrong-playlist Refresh on a spend path), `jobsFrom` strict-typing, `onProgressRef` assign-in-render, fake-timer `afterEach` restore, `status()` terminal derivation, and a design-bullet fix. Prior: v3 — incorporates Round-1 **and Round-2** dual adversarial review (`docs/reviews/plan-2b-cloud-ingest-codex.md`/`-review.md` = R1; `-codex-v2-rereview.md`/`-v2-rereview.md` = R2). R1 found 3 Blocking + 5 High + 3 Medium + 3 Low; R2 (on the v2 rewrite) found 1 Blocking + 3 High + 2 Medium + 3 Low — all in Task 7's **test fixtures** + wiring details (both reviewers confirmed the v2 component *logic* genuinely fixed). Principal v2 changes: (a) `pollUntilTerminal` extension (`onProgress`, `isFatal`, `AbortSignal`, `{aborted}`); (b) Task 7 probe-first + cancellable; (c) Task 9 real `fetchVideos`/`playlistUrl`; (d) correct tokens; (e) store-layer integration test; (f) focus trap, ✕ submit-guard, refetch-dedup, 422 fallback. **v3 (R2) fixes:** (g) Task 7 `timedOut` → give-up (was done/mixed); (h) Task 7 test `status()` builds **real job rows** from bucket counts (the poll recomputes rollup from rows — empty rows never go terminal); (i) split the "renders progress" test (fake timers, non-terminal) from "resolves done/mixed" (real timers, immediate terminal) so React batching can't coalesce away the transient; (j) `onProgress` held in a **ref** so a mid-ingest refetch can't overwrite the user's current sort; (k) Task 9 resets `playlistUrl`/`refreshError` on playlist change (Refresh can't re-POST the previous playlist); (l) `CloudAppBody` gets `useRouter()`; (m) probe-401 `cancelled`-guarded; (n) Task 1 abort tests use an incrementing `now` backstop (RED can't hang) + an abort-during-sleep test.
 
 **Goal:** Let a signed-in cloud user create content — enter a YouTube playlist URL, enqueue it through the existing cloud job queue, watch progress to completion with every guardrail outcome surfaced, and Refresh an existing playlist to pick up new videos.
 
@@ -1278,26 +1278,38 @@ git commit -m "feat(2b): IngestProgressBanner probe-first cancellable polling ba
 **Interfaces:**
 - Produces: `PlaylistSidebar` gains optional prop `onNewPlaylist?: () => void`; the "+ New playlist" button is enabled and calls it.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: REPLACE the two obsolete disabled-button tests**
 
-Add to `tests/components/playlist-sidebar.test.tsx` (match the file's existing api-mock variable names — the exploration shows `listPlaylists` mocked via `jest.mock('@/lib/client/api', …)`):
+The existing `tests/components/playlist-sidebar.test.tsx` has **two tests asserting the button is disabled** — `"+ New playlist" is disabled and clicking it makes no listPlaylists/fetch call` (`:101-113`, `expect(newButton).toBeDisabled()`) and `"+ New playlist" still renders (disabled) in the empty state` (`:115-121`, `expect(newButton).toBeDisabled()`). Enabling the button (Step 3) makes **both fail** (R4 High). **Delete both** and replace with the enabled-button tests below. Use the file's existing mock variable `mockListPlaylists` and the `playlists` fixture — do **not** introduce a new mock:
 
 ```tsx
-it('renders an enabled "+ New playlist" that fires onNewPlaylist', async () => {
-  (listPlaylists as jest.MockedFunction<typeof listPlaylists>).mockResolvedValue([]);
+it('"+ New playlist" is enabled and fires onNewPlaylist without a fetch', async () => {
+  mockListPlaylists.mockResolvedValue(playlists);
   const onNewPlaylist = jest.fn();
   render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} />);
-  const btn = await screen.findByRole('button', { name: /new playlist/i });
-  expect(btn).toBeEnabled();
-  fireEvent.click(btn);
+  await screen.findByText('ML Talks');
+  const newButton = screen.getByRole('button', { name: /new playlist/i });
+  expect(newButton).toBeEnabled();
+  fireEvent.click(newButton);
   expect(onNewPlaylist).toHaveBeenCalledTimes(1);
+  expect(global.fetch).not.toHaveBeenCalled();
+});
+
+it('"+ New playlist" is enabled in the empty state', async () => {
+  mockListPlaylists.mockResolvedValue([]);
+  const onNewPlaylist = jest.fn();
+  render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} />);
+  await screen.findByText(/no playlists yet/i);
+  expect(screen.getByRole('button', { name: /new playlist/i })).toBeEnabled();
 });
 ```
+
+> **Note:** `onNewPlaylist` is an optional prop; `PlaylistSidebar` still renders without it. Removing the two disabled tests is mandatory — leaving either makes `npx jest playlist-sidebar` fail at Step 4.
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx jest playlist-sidebar`
-Expected: FAIL — button disabled / `onNewPlaylist` not wired.
+Expected: FAIL — the new enabled-button tests fail because the button is still `disabled` (Step 3 not yet done). (The two obsolete disabled tests are already removed.)
 
 - [ ] **Step 3: Implement**
 
@@ -1646,5 +1658,11 @@ git commit -m "test(2b): integration — store-layer rollup/poll + owner isolati
 - R3-M fake-timer tests leak on throw → file-scope `afterEach(() => jest.useRealTimers())` + `unmount()`/`clearAllTimers()` in the progress test (Task 7 Step 1). ✅
 - R3-L `status()` `.rollup.terminal` not derived → `status()` derives `total`+`terminal` from the built rows. ✅
 - R3-L design bullet contradicted impl → Task 7 design bullet #4 now matches (`timedOut → give-up`). ✅
+
+**Round-4 findings → resolution (v5):**
+- R4-H (Codex) Task 8 left the two pre-existing `toBeDisabled()` sidebar tests → suite would fail once the button is enabled → v5 Step 1 now **replaces** them with enabled-button tests (real mock var `mockListPlaylists`). ✅
+- R4-L (Claude) deferred-A/B test may log a benign act() warning (jest.setup does not fail on console.error) → optional `await act` tidy; left as-is. Accepted.
+- R4-L (Claude) abort-during-wait RED via ~5s Jest timeout (parks, no hang) → already accepted in R3. Accepted.
+- **Both R4 reviewers confirmed every R3 fix genuine; Claude returned CONVERGED. After the mechanical v5 Task 8 fix, no Blocking/High/Medium remain. Gate cleared.**
 
 **Spec coverage / type consistency:** `IngestResult` (T2) reused by T5/T6/T9; `getJobStatus` `{jobs,rollup}` (T3) consumed by T7; `PollOptions.onProgress` snapshot `{rollup,rows}` identical T1/T7; `onNewPlaylist` name identical T8/T9; `refetchVideos` typed `() => void` matches `IngestProgressBanner.onProgress`; `Rollup`/`PlaylistJobRow` imported from source, never redefined.
