@@ -4,6 +4,7 @@ import type { Video } from '@/types';
 import AskGeminiMenuItem from './AskGeminiMenuItem';
 import { CURRENT_DOC_VERSION, isOlder } from '@/lib/doc-version';
 import { useScope } from '@/lib/client/scope';
+import { summaryHref } from '@/lib/client/api';
 
 interface VideoMenuProps {
   video: Video;
@@ -14,6 +15,7 @@ interface VideoMenuProps {
   onGenerateHtml: (videoId: string) => void;
   onResummarize?: (videoId: string) => void;
   onSavePdf?: (videoId: string, type: 'summary' | 'dig-deeper') => void;
+  onShare?: () => void;
   onClose: () => void;
   busy?: boolean;
 }
@@ -39,8 +41,9 @@ function obsidianHref(baseOutputFolder: string, outputFolder: string, file: stri
 
 const itemClass = 'block w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700';
 const disabledClass = 'block w-full px-4 py-2 text-left text-sm text-zinc-500 cursor-not-allowed';
+const mutedItemClass = 'block w-full px-4 py-2 text-left text-sm text-[var(--text-muted)] cursor-not-allowed';
 
-export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArchive, onEditCorrections, onGenerateHtml, onResummarize = () => {}, onSavePdf = () => {}, onClose, busy = false }: VideoMenuProps) {
+export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArchive, onEditCorrections, onGenerateHtml, onResummarize = () => {}, onSavePdf = () => {}, onShare, onClose, busy = false }: VideoMenuProps) {
   const scope = useScope();
   // Stage 2a T15b: cloud mode allowlist. Doc generation, PDF export, Obsidian, Ask-Gemini and
   // corrections all depend on the local filesystem/output-folder pipeline (out of scope for
@@ -61,6 +64,54 @@ export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArc
           Watch on YouTube
         </a>
       </li>
+      {cloudMode && (() => {
+        // Stage 2c T6: View/Download/Share, gated on summaryReady (the DB-computed readiness
+        // flag — true once the summary artifact has finished writing). While not ready, render
+        // each as a disabled <span> (no href, no click) rather than an inert anchor/button, so
+        // getByRole('link'/'button') correctly finds nothing until the doc is actually servable.
+        const ready = video.summaryReady === true;
+        const pid = scope.mode === 'cloud' ? scope.playlistId : '';
+        return (
+          <>
+            <li role="none">
+              {ready ? (
+                <a href={summaryHref(pid, video.id)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
+                  View summary ↗
+                </a>
+              ) : (
+                <span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>View summary ↗</span>
+              )}
+            </li>
+            <li role="none">
+              {ready ? (
+                <a href={summaryHref(pid, video.id, { format: 'md', download: true })} onClick={onClose} download className={itemClass}>
+                  Download Markdown
+                </a>
+              ) : (
+                <span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>Download Markdown</span>
+              )}
+            </li>
+            <li role="none">
+              {ready ? (
+                <a href={summaryHref(pid, video.id, { format: 'html', download: true })} onClick={onClose} download className={itemClass}>
+                  Download HTML
+                </a>
+              ) : (
+                <span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>Download HTML</span>
+              )}
+            </li>
+            <li role="none">
+              {ready ? (
+                <button type="button" onClick={() => { onShare?.(); onClose(); }} className={itemClass}>
+                  Share…
+                </button>
+              ) : (
+                <span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>Share…</span>
+              )}
+            </li>
+          </>
+        );
+      })()}
       {!cloudMode && (
         <li role="none">
           <AskGeminiMenuItem video={video} onClose={onClose} />
