@@ -21,9 +21,9 @@ export function IngestProgressBanner({ playlistId, onProgress }: { playlistId: s
   const router = useRouter();
   const [state, setState] = useState<BannerState>({ kind: 'hidden' });
   const [dismissed, setDismissed] = useState(false);
-  // Hold the latest onProgress in a ref so a mid-ingest refetch always uses the current
-  // sort (the effect below captures only playlistId — R2 Medium). Assign during render, not
-  // in a passive effect, so no poll callback can fire against a stale value (R3 Medium).
+  // Hold the latest onProgress in a ref so a poll advance always calls the CURRENT parent
+  // callback — the effect below captures only playlistId (R2 Medium). Assign during render,
+  // not in a passive effect, so no poll callback can fire against a stale value (R3 Medium).
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
 
@@ -36,7 +36,7 @@ export function IngestProgressBanner({ playlistId, onProgress }: { playlistId: s
 
     const fireIfAdvanced = (r: Rollup) => {
       const d = doneCount(r);
-      if (d !== lastFired) { lastFired = d; try { onProgressRef.current?.(); } catch { /* isolate */ } }
+      if (d > lastFired) { lastFired = d; try { onProgressRef.current?.(); } catch { /* isolate */ } }
     };
 
     (async () => {

@@ -84,6 +84,25 @@ describe('IngestProgressBanner', () => {
     expect(onProgress).toHaveBeenCalled(); // done count advanced 0 → 2
   });
 
+  it('fires parent onProgress only on strict advances (not regressions or repeats)', async () => {
+    jest.useFakeTimers();
+    const onProgress = jest.fn();
+    getJobStatusMock
+      .mockResolvedValueOnce(status({ total: 3, completed: 1, active: 2 })) // probe → baseline done=1
+      .mockResolvedValueOnce(status({ total: 3, completed: 2, active: 1 })) // poll1 advance 1→2 → FIRE
+      .mockResolvedValueOnce(status({ total: 3, completed: 1, active: 2 })) // poll2 regress 2→1 → no fire
+      .mockResolvedValueOnce(status({ total: 3, completed: 2, active: 1 })) // poll3 repeat →2 (==max) → no fire
+      .mockResolvedValue(status({ total: 3, completed: 3 }));               // poll4 terminal 2→3 → FIRE
+    const { unmount } = render(<IngestProgressBanner playlistId="p" onProgress={onProgress} />);
+    await act(async () => {});                                        // probe + poll1 (immediate)
+    await act(async () => { await jest.advanceTimersByTimeAsync(2000); }); // poll2
+    await act(async () => { await jest.advanceTimersByTimeAsync(4000); }); // poll3
+    await act(async () => { await jest.advanceTimersByTimeAsync(8000); }); // poll4 terminal
+    expect(onProgress).toHaveBeenCalledTimes(2);
+    unmount();
+    jest.clearAllTimers();
+  });
+
   it('shows mixed state when terminal with failures', async () => {
     getJobStatusMock
       .mockResolvedValueOnce(status({ total: 3, active: 3 }))            // probe (live)
