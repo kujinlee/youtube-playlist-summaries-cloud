@@ -27,14 +27,17 @@ test('rollup reflects seeded jobs and pollUntilTerminal resolves on terminal', a
 
   const q = new SupabaseJobQueue(ca);
   const before = rollup(await q.listByPlaylist(pl));
-  expect(before).toMatchObject({ total: 2, terminal: false });
+  expect(before).toEqual({ queued: 2, active: 0, completed: 0, failed: 0, dead_letter: 0, cancelled: 0, total: 2, terminal: false });
 
-  // Drive both to terminal, then poll must resolve done.
+  // Drive to a MIXED terminal (one completed, one failed) so the store surfaces >1 terminal bucket.
   const admin = adminClient();
-  await admin.from('jobs').update({ status: 'completed' }).eq('playlist_id', pl);
+  const u1 = await admin.from('jobs').update({ status: 'completed' }).eq('playlist_id', pl).eq('video_id', 'vid-a');
+  expect(u1.error).toBeNull();
+  const u2 = await admin.from('jobs').update({ status: 'failed' }).eq('playlist_id', pl).eq('video_id', 'vid-b');
+  expect(u2.error).toBeNull();
   const res = await pollUntilTerminal(() => q.listByPlaylist(pl), { intervalMs: 5, maxIntervalMs: 5, sleep: async () => {}, now: () => 0 });
   expect(res).toMatchObject({ done: true });
-  expect((res as any).rollup).toMatchObject({ total: 2, completed: 2, terminal: true });
+  expect((res as any).rollup).toEqual({ queued: 0, active: 0, completed: 1, failed: 1, dead_letter: 0, cancelled: 0, total: 2, terminal: true });
 });
 
 test('owner isolation: user B rollup sees none of user A jobs', async () => {
