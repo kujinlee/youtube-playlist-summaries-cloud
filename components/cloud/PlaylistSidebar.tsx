@@ -7,8 +7,8 @@
  * playlist, linking to `/?playlist=<uuid>` (spec §9 URL Contracts). The active item is
  * derived from the current `?playlist` query param via `useSearchParams()`.
  *
- * "+ New playlist" is a deliberately inert affordance — ingest ships in Stage 2b. It must
- * never navigate or issue a request; `disabled` on a native `<button>` guarantees both.
+ * "+ New playlist" invokes the optional `onNewPlaylist` callback (ingest UI wiring lands
+ * elsewhere in Stage 2b); it never fetches or navigates on its own.
  *
  * Not wrapped in useScope()/ScopeProvider: that wiring lands in T15 alongside CloudApp's
  * full library view. This component only needs the (unscoped) playlist list + the URL.
@@ -24,7 +24,11 @@ const activeLinkClass =
 const inactiveLinkClass =
   'block truncate rounded-r px-2 py-1.5 border-l-2 border-transparent text-[var(--text-secondary)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)]';
 
-export default function PlaylistSidebar() {
+interface PlaylistSidebarProps {
+  onNewPlaylist?: () => void;
+}
+
+export default function PlaylistSidebar({ onNewPlaylist }: PlaylistSidebarProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activePlaylistId = searchParams.get('playlist');
@@ -95,9 +99,8 @@ export default function PlaylistSidebar() {
 
       <button
         type="button"
-        disabled
-        title="Adding playlists comes with ingest"
-        className="mt-3 w-full cursor-not-allowed rounded border border-[var(--border)] px-2 py-1.5 text-left text-sm text-[var(--text-muted)]"
+        onClick={onNewPlaylist}
+        className="mt-3 w-full rounded border border-[var(--border)] px-2 py-1.5 text-left text-sm text-[var(--text-primary)] hover:bg-[var(--surface-overlay)]"
       >
         + New playlist
       </button>

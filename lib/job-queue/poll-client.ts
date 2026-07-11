@@ -20,33 +20,81 @@ export interface PollOptions {
   maxConsecutiveErrors?: number;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  onProgress?: (snapshot: { rollup: Rollup; rows: PlaylistJobRow[] }) => void; // after each successful fetch, incl. terminal; isolated (throwing does not affect polling)
+  isFatal?: (err: unknown) => boolean;  // if true for a fetch error → stop immediately, do NOT retry
+  signal?: AbortSignal;                 // when aborted → stop; resolves { aborted: true }
 }
 export type PollResult =
   | { done: true; rollup: Rollup; rows: PlaylistJobRow[] }
   | { timedOut: true; rollup: Rollup; rows: PlaylistJobRow[] }
-  | { failed: true; error: string };
+  | { failed: true; error: string; fatal?: true }  // fatal:true when isFatal matched
+  | { aborted: true };                                 // signal aborted
+
+function abortableSleep(
+  ms: number,
+  sleep: (ms: number) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    signal.addEventListener('abort', finish, { once: true });
+    sleep(ms).then(finish, finish);
+  });
+}
 
 export async function pollUntilTerminal(
-  fetchRows: () => Promise<PlaylistJobRow[]>, opts: PollOptions = {},
+  fetchRows: () => Promise<PlaylistJobRow[]>,
+  opts: PollOptions = {},
 ): Promise<PollResult> {
   const intervalMs = opts.intervalMs ?? 2000;
   const maxIntervalMs = opts.maxIntervalMs ?? 10000;
   const timeoutMs = opts.timeoutMs ?? 10 * 60_000;
-  const maxErrors = opts.maxConsecutiveErrors ?? 5;
+  const maxConsecutiveErrors = opts.maxConsecutiveErrors ?? 5;
   const sleep = opts.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = opts.now ?? (() => Date.now());
+
   const start = now();
-  let delay = intervalMs; let errors = 0; let lastRows: PlaylistJobRow[] = [];
+  let delay = intervalMs;
+  let errors = 0;
+  let lastRows: PlaylistJobRow[] = [];
+
   for (;;) {
+    if (opts.signal?.aborted) return { aborted: true };
+
+    let rows: PlaylistJobRow[];
     try {
-      lastRows = await fetchRows(); errors = 0;
-      const r = rollup(lastRows);
-      if (r.terminal) return { done: true, rollup: r, rows: lastRows };
-    } catch (e) {
-      if (++errors >= maxErrors) return { failed: true, error: String(e) };
+      rows = await fetchRows();
+    } catch (err) {
+      if (opts.signal?.aborted) return { aborted: true };            // abort wins over error
+      if (opts.isFatal?.(err)) return { failed: true, error: String(err), fatal: true };
+      errors += 1;
+      if (errors >= maxConsecutiveErrors) return { failed: true, error: String(err) };
+      if (now() - start >= timeoutMs) return { timedOut: true, rollup: rollup(lastRows), rows: lastRows };
+      await abortableSleep(delay, sleep, opts.signal);
+      delay = Math.min(delay * 2, maxIntervalMs);
+      continue;
     }
-    if (now() - start >= timeoutMs) return { timedOut: true, rollup: rollup(lastRows), rows: lastRows };
-    await sleep(delay);
+
+    if (opts.signal?.aborted) return { aborted: true };              // abort wins over just-completed fetch
+
+    lastRows = rows;
+    errors = 0;
+    const r = rollup(rows);
+    // Isolated: a throwing onProgress must not be miscounted as a fetch failure.
+    try { opts.onProgress?.({ rollup: r, rows }); } catch { /* swallow callback error */ }
+    if (r.terminal) return { done: true, rollup: r, rows };
+
+    if (now() - start >= timeoutMs) return { timedOut: true, rollup: r, rows };
+
+    await abortableSleep(delay, sleep, opts.signal);
     delay = Math.min(delay * 2, maxIntervalMs);
   }
 }
