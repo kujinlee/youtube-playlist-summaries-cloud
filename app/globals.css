@@ -10,6 +10,21 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Stage 2a §8.2 — semantic design tokens. Formalizes the existing ad-hoc zinc dark
+     theme; used by all new cloud components (CloudApp onward, T13–T15). */
+  --surface-base: #09090b;    /* zinc-950 — app background */
+  --surface-raised: #18181b;  /* zinc-900 — sidebar, cards, rows */
+  --surface-overlay: #27272a; /* zinc-800 — dropdowns, menus, hover */
+  --border: #27272a;          /* zinc-800 — default borders */
+  --border-strong: #3f3f46;   /* zinc-700 — focus/active borders */
+  --text-primary: #fafafa;    /* zinc-50 — headings, values */
+  --text-secondary: #a1a1aa;  /* zinc-400 — labels, captions */
+  --text-muted: #71717a;      /* zinc-500 — disabled, hints */
+  --accent: #3b82f6;          /* blue-500 — primary actions, active nav */
+  --success: #22c55e;         /* green-500 — done/positive */
+  --warning: #f59e0b;         /* amber-500 — pending/attention */
+  --danger: #ef4444;          /* red-500 — destructive, errors */
 }
 
 body {

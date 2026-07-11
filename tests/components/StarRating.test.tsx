@@ -2,22 +2,38 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import StarRating from '@/components/StarRating';
+import { ScopeProvider, type Scope } from '@/lib/client/scope';
+import { saveAnnotation, UnauthorizedError } from '@/lib/client/api';
 
-const VIDEO_ID     = 'abc123';
-const OUTPUT_FOLDER = '/tmp/out';
+jest.mock('@/lib/client/api', () => ({
+  saveAnnotation: jest.fn(),
+  UnauthorizedError: class UnauthorizedError extends Error {},
+}));
 
-let fetchMock: jest.Mock;
+const mockRouterReplace = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
+}));
+
+const VIDEO_ID = 'abc123';
+const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/tmp/out', baseOutputFolder: '/tmp' };
+const CLOUD_SCOPE: Scope = { mode: 'cloud', playlistId: 'pl-1' };
+
+const saveAnnotationMock = saveAnnotation as jest.Mock;
 
 beforeEach(() => {
-  fetchMock = jest.fn().mockResolvedValue({ ok: true } as Response);
-  global.fetch = fetchMock as typeof global.fetch;
+  saveAnnotationMock.mockReset();
+  saveAnnotationMock.mockResolvedValue(undefined);
+  mockRouterReplace.mockReset();
 });
 
 afterEach(() => jest.clearAllMocks());
 
 function renderStars(value?: number, onChange = jest.fn()) {
   render(
-    <StarRating videoId={VIDEO_ID} outputFolder={OUTPUT_FOLDER} value={value} onChange={onChange} />,
+    <ScopeProvider scope={LOCAL_SCOPE}>
+      <StarRating videoId={VIDEO_ID} value={value} onChange={onChange} />
+    </ScopeProvider>,
   );
   return { onChange };
 }
@@ -70,9 +86,8 @@ describe('StarRating', () => {
     });
 
     it('stars are disabled while a save is in flight', async () => {
-      // Fetch that never resolves → saving state persists
-      fetchMock = jest.fn(() => new Promise<Response>(() => {}));
-      global.fetch = fetchMock as typeof global.fetch;
+      // apiClient call that never resolves → saving state persists
+      saveAnnotationMock.mockReturnValue(new Promise(() => {}));
       const { onChange } = renderStars(2);
       act(() => { fireEvent.click(getStarInputs()[3]); }); // start save
       await waitFor(() => {
@@ -81,8 +96,7 @@ describe('StarRating', () => {
     });
 
     it('on API failure: first calls onChange(newScore) then calls onChange(previousScore)', async () => {
-      fetchMock = jest.fn().mockResolvedValue({ ok: false } as Response);
-      global.fetch = fetchMock as typeof global.fetch;
+      saveAnnotationMock.mockRejectedValue(new Error('save failed'));
       const { onChange } = renderStars(2);
       fireEvent.click(getStarInputs()[3]); // click star 4
       await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
@@ -90,25 +104,35 @@ describe('StarRating', () => {
       expect(onChange).toHaveBeenNthCalledWith(2, 2);  // rollback
     });
 
-    it('fires the correct API request body when setting a score', async () => {
+    it('calls saveAnnotation with the scope, videoId, and personalScore when setting a score', async () => {
       renderStars(undefined);
       fireEvent.click(getStarInputs()[2]); // star 3
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-      const [url, opts] = fetchMock.mock.calls[0];
-      expect(url).toBe(`/api/videos/${VIDEO_ID}/review`);
-      expect(JSON.parse((opts as RequestInit).body as string)).toMatchObject({
-        outputFolder: OUTPUT_FOLDER,
-        personalScore: 3,
-      });
+      await waitFor(() => expect(saveAnnotationMock).toHaveBeenCalled());
+      expect(saveAnnotationMock).toHaveBeenCalledWith(LOCAL_SCOPE, VIDEO_ID, { personalScore: 3 });
     });
 
-    it('sends personalScore: null when clearing the active star', async () => {
+    it('calls saveAnnotation with personalScore: null when clearing the active star', async () => {
       renderStars(3);
       fireEvent.click(getStarInputs()[2]); // click active star 3 → clear
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-      const [, opts] = fetchMock.mock.calls[0];
-      const body = JSON.parse((opts as RequestInit).body as string);
-      expect(body.personalScore).toBeNull(); // null serializes as null in JSON
+      await waitFor(() => expect(saveAnnotationMock).toHaveBeenCalled());
+      expect(saveAnnotationMock).toHaveBeenCalledWith(LOCAL_SCOPE, VIDEO_ID, { personalScore: null });
+    });
+  });
+
+  describe('unauthorized (cloud mode)', () => {
+    it('redirects to /login on UnauthorizedError instead of rolling back the optimistic update', async () => {
+      saveAnnotationMock.mockRejectedValue(new UnauthorizedError('unauthorized'));
+      const onChange = jest.fn();
+      render(
+        <ScopeProvider scope={CLOUD_SCOPE}>
+          <StarRating videoId={VIDEO_ID} value={2} onChange={onChange} />
+        </ScopeProvider>,
+      );
+      fireEvent.click(getStarInputs()[3]); // click star 4
+      await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/login'));
+      // Only the optimistic update fired — no rollback call.
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(4);
     });
   });
 });

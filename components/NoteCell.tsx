@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useScope } from '@/lib/client/scope';
+import { saveAnnotation, UnauthorizedError } from '@/lib/client/api';
 
 interface NoteCellProps {
   videoId: string;
-  outputFolder: string;
   value: string | undefined;
   onChange: (note: string | undefined) => void;
 }
@@ -13,7 +15,9 @@ function truncate(text: string, len: number): string {
   return text.length <= len ? text : text.slice(0, len) + '…';
 }
 
-export default function NoteCell({ videoId, outputFolder, value, onChange }: NoteCellProps) {
+export default function NoteCell({ videoId, value, onChange }: NoteCellProps) {
+  const scope = useScope();
+  const router = useRouter();
   const [open,   setOpen]   = useState(false);
   const [draft,  setDraft]  = useState('');
   const [saving, setSaving] = useState(false);
@@ -51,20 +55,15 @@ export default function NoteCell({ videoId, outputFolder, value, onChange }: Not
     setSaving(true);
     setError('');
     try {
-      const res = await fetch(`/api/videos/${encodeURIComponent(videoId)}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outputFolder, personalNote: draft }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({})) as { error?: string };
-        setError(data.error ?? 'Save failed');
-        return;
-      }
+      await saveAnnotation(scope, videoId, { personalNote: draft });
       onChange(draft || undefined);
       setOpen(false);
-    } catch {
-      setError('Save failed');
+    } catch (e) {
+      if (e instanceof UnauthorizedError) {
+        router.replace('/login');
+        return;
+      }
+      setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
       setSaving(false);
     }

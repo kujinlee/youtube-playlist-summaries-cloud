@@ -1,8 +1,14 @@
 /** @jest-environment jsdom */
 import React from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
-import Page from '@/app/page';
+import Page from '@/components/local/LocalApp';
 import type { Video, ProgressEvent, SortColumn, SortOrder } from '@/types';
+
+// StarRating/NoteCell/VideoQuickView call useRouter() (pre-merge fix: redirect to /login on
+// UnauthorizedError) — every render needs an app-router context, which jsdom doesn't provide.
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: jest.fn() }),
+}));
 
 // ── EventSource mock ──────────────────────────────────────────────────────────
 type ESHandler = ((event: MessageEvent) => void) | null;

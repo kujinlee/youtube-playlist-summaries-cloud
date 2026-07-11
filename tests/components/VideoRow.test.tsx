@@ -3,6 +3,28 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import VideoRow from '@/components/VideoRow';
 import type { Video } from '@/types';
+import { ScopeProvider, type Scope } from '@/lib/client/scope';
+
+// StarRating/NoteCell/VideoQuickView call useRouter() (pre-merge fix: redirect to /login on
+// UnauthorizedError) — every render needs an app-router context, which jsdom doesn't provide.
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: jest.fn() }),
+}));
+
+const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/Users/test/vault', baseOutputFolder: '/Users/test/vault' };
+
+// VideoRow's leaf components (StarRating/NoteCell/VideoQuickView) call useScope(), so every
+// render must be wrapped in a ScopeProvider — VideoRow renders <tr>, and jsdom requires a
+// table/tbody wrapper for correct DOM structure.
+function renderInTable(node: React.ReactElement, scope: Scope = LOCAL_SCOPE) {
+  return render(
+    <ScopeProvider scope={scope}>
+      <table>
+        <tbody>{node}</tbody>
+      </table>
+    </ScopeProvider>,
+  );
+}
 
 const baseVideo: Video = {
   id: 'abc123',
@@ -26,7 +48,6 @@ const baseVideo: Video = {
 const BASE_OUTPUT_FOLDER = '/Users/test/vault';
 const OUTPUT_FOLDER = BASE_OUTPUT_FOLDER; // flat: playlist lives at vault root
 
-// VideoRow renders <tr> — jsdom requires a table/tbody wrapper for correct DOM structure
 function renderRow(
   overrides: Partial<Video> = {},
   options: {
@@ -40,22 +61,18 @@ function renderRow(
   const video = { ...baseVideo, ...overrides };
   const onAnnotationChange = options.onAnnotationChange ?? jest.fn();
   const onResummarize = options.onResummarize ?? jest.fn();
-  render(
-    <table>
-      <tbody>
-        <VideoRow
-          video={video}
-          rank={1}
-          outputFolder={OUTPUT_FOLDER}
-          baseOutputFolder={BASE_OUTPUT_FOLDER}
-          dimUnscored={options.dimUnscored ?? false}
-          onArchive={options.onArchive ?? jest.fn()}
-          onGenerateHtml={options.onGenerateHtml ?? jest.fn()}
-          onResummarize={onResummarize}
-          onAnnotationChange={onAnnotationChange}
-        />
-      </tbody>
-    </table>,
+  renderInTable(
+    <VideoRow
+      video={video}
+      rank={1}
+      outputFolder={OUTPUT_FOLDER}
+      baseOutputFolder={BASE_OUTPUT_FOLDER}
+      dimUnscored={options.dimUnscored ?? false}
+      onArchive={options.onArchive ?? jest.fn()}
+      onGenerateHtml={options.onGenerateHtml ?? jest.fn()}
+      onResummarize={onResummarize}
+      onAnnotationChange={onAnnotationChange}
+    />,
   );
   return { onAnnotationChange, onResummarize, video };
 }
@@ -80,21 +97,17 @@ describe('VideoRow', () => {
     // (the Published/Added cells use `text-zinc-400`), so scope assertions to it —
     // otherwise an absent publish date also renders an em dash and the query is ambiguous.
     function rankCellText(rank: number | undefined): string {
-      const { container } = render(
-        <table>
-          <tbody>
-            <VideoRow
-              video={baseVideo}
-              rank={rank}
-              outputFolder={OUTPUT_FOLDER}
-              baseOutputFolder={BASE_OUTPUT_FOLDER}
-              dimUnscored={false}
-              onArchive={jest.fn()}
-              onGenerateHtml={jest.fn()}
-              onAnnotationChange={jest.fn()}
-            />
-          </tbody>
-        </table>,
+      const { container } = renderInTable(
+        <VideoRow
+          video={baseVideo}
+          rank={rank}
+          outputFolder={OUTPUT_FOLDER}
+          baseOutputFolder={BASE_OUTPUT_FOLDER}
+          dimUnscored={false}
+          onArchive={jest.fn()}
+          onGenerateHtml={jest.fn()}
+          onAnnotationChange={jest.fn()}
+        />,
       );
       const cell = container.querySelector('td.tabular-nums.text-zinc-500');
       return cell?.textContent ?? '';
@@ -261,21 +274,18 @@ describe('VideoRow', () => {
 
       it('encodes special characters in vault name', () => {
         const specialFolder = '/Users/test/my vault & notes';
-        render(
-          <table>
-            <tbody>
-              <VideoRow
-                video={baseVideo}
-                rank={1}
-                outputFolder={specialFolder}
-                baseOutputFolder={specialFolder}
-                dimUnscored={false}
-                onArchive={jest.fn()}
-                onGenerateHtml={jest.fn()}
-                onAnnotationChange={jest.fn()}
-              />
-            </tbody>
-          </table>,
+        renderInTable(
+          <VideoRow
+            video={baseVideo}
+            rank={1}
+            outputFolder={specialFolder}
+            baseOutputFolder={specialFolder}
+            dimUnscored={false}
+            onArchive={jest.fn()}
+            onGenerateHtml={jest.fn()}
+            onAnnotationChange={jest.fn()}
+          />,
+          { mode: 'local', outputFolder: specialFolder, baseOutputFolder: specialFolder },
         );
         fireEvent.click(screen.getByRole('button', { name: /menu/i }));
         const link = screen.getByRole('link', { name: /open in obsidian/i });
@@ -293,21 +303,18 @@ describe('VideoRow', () => {
           outputFolder: string,
           overrides: Partial<Video> = {},
         ) {
-          render(
-            <table>
-              <tbody>
-                <VideoRow
-                  video={{ ...baseVideo, ...overrides }}
-                  rank={1}
-                  outputFolder={outputFolder}
-                  baseOutputFolder={baseOutputFolder}
-                  dimUnscored={false}
-                  onArchive={jest.fn()}
-                  onGenerateHtml={jest.fn()}
-                  onAnnotationChange={jest.fn()}
-                />
-              </tbody>
-            </table>,
+          renderInTable(
+            <VideoRow
+              video={{ ...baseVideo, ...overrides }}
+              rank={1}
+              outputFolder={outputFolder}
+              baseOutputFolder={baseOutputFolder}
+              dimUnscored={false}
+              onArchive={jest.fn()}
+              onGenerateHtml={jest.fn()}
+              onAnnotationChange={jest.fn()}
+            />,
+            { mode: 'local', outputFolder, baseOutputFolder },
           );
           fireEvent.click(screen.getByRole('button', { name: /menu/i }));
         }
@@ -457,11 +464,11 @@ describe('VideoRow', () => {
     };
 
     it('shows an hourglass next to the menu while busy', () => {
-      render(<table><tbody><VideoRow {...rowProps} busy /></tbody></table>);
+      renderInTable(<VideoRow {...rowProps} busy />);
       expect(screen.getByLabelText('Regenerating')).toBeInTheDocument();
     });
     it('no hourglass when not busy', () => {
-      render(<table><tbody><VideoRow {...rowProps} /></tbody></table>);
+      renderInTable(<VideoRow {...rowProps} />);
       expect(screen.queryByLabelText('Regenerating')).toBeNull();
     });
   });
@@ -469,7 +476,8 @@ describe('VideoRow', () => {
   describe('VideoRow — expand/collapse', () => {
     beforeEach(() => {
       // Provide a default fetch mock so VideoQuickView does not throw when
-      // a test expands a row that has no tldr (VideoQuickView fetches on mount).
+      // a test expands a row that has no tldr (VideoQuickView loads via
+      // getQuickView() -> apiClient -> fetch on mount).
       global.fetch = jest.fn().mockReturnValue(new Promise(() => {}));
     });
 

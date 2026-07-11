@@ -7,8 +7,10 @@ import { summaryNeedsWork, summarySelectable, videoNeedsBatchWork } from '../lib
 
 interface VideoListProps {
   videos: Video[];
-  outputFolder: string;
-  baseOutputFolder: string;
+  /** Local-mode only — threaded down to VideoRow/VideoMenu for Obsidian URI derivation.
+   *  Absent/'' in cloud mode (VideoMenu hides everything that depends on it). */
+  outputFolder?: string;
+  baseOutputFolder?: string;
   showArchive: boolean;
   minPersonalScore?: number;
   busyVideoId?: string | null;
@@ -47,8 +49,8 @@ const noop = () => {};
 
 export default function VideoList({
   videos,
-  outputFolder,
-  baseOutputFolder,
+  outputFolder = '',
+  baseOutputFolder = '',
   showArchive,
   minPersonalScore = 0,
   busyVideoId = null,

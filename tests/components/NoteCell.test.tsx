@@ -2,22 +2,38 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import NoteCell from '@/components/NoteCell';
+import { ScopeProvider, type Scope } from '@/lib/client/scope';
+import { saveAnnotation, UnauthorizedError } from '@/lib/client/api';
 
-const VIDEO_ID      = 'abc123';
-const OUTPUT_FOLDER = '/tmp/out';
+jest.mock('@/lib/client/api', () => ({
+  saveAnnotation: jest.fn(),
+  UnauthorizedError: class UnauthorizedError extends Error {},
+}));
 
-let fetchMock: jest.Mock;
+const mockRouterReplace = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
+}));
+
+const VIDEO_ID = 'abc123';
+const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/tmp/out', baseOutputFolder: '/tmp' };
+const CLOUD_SCOPE: Scope = { mode: 'cloud', playlistId: 'pl-1' };
+
+const saveAnnotationMock = saveAnnotation as jest.Mock;
 
 beforeEach(() => {
-  fetchMock = jest.fn().mockResolvedValue({ ok: true } as Response);
-  global.fetch = fetchMock as typeof global.fetch;
+  saveAnnotationMock.mockReset();
+  saveAnnotationMock.mockResolvedValue(undefined);
+  mockRouterReplace.mockReset();
 });
 
 afterEach(() => jest.clearAllMocks());
 
 function renderNote(value?: string, onChange = jest.fn()) {
   render(
-    <NoteCell videoId={VIDEO_ID} outputFolder={OUTPUT_FOLDER} value={value} onChange={onChange} />,
+    <ScopeProvider scope={LOCAL_SCOPE}>
+      <NoteCell videoId={VIDEO_ID} value={value} onChange={onChange} />
+    </ScopeProvider>,
   );
   return { onChange };
 }
@@ -26,6 +42,16 @@ function openPopover(value?: string, onChange = jest.fn()) {
   const result = renderNote(value, onChange);
   fireEvent.click(screen.getByRole('button', { name: /add note|edit note|—|.*/i }));
   return result;
+}
+
+function openPopoverCloud(value?: string, onChange = jest.fn()) {
+  render(
+    <ScopeProvider scope={CLOUD_SCOPE}>
+      <NoteCell videoId={VIDEO_ID} value={value} onChange={onChange} />
+    </ScopeProvider>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /add note|edit note|—|.*/i }));
+  return { onChange };
 }
 
 describe('NoteCell', () => {
@@ -115,8 +141,7 @@ describe('NoteCell', () => {
 
   describe('saving state', () => {
     it('Save and Cancel buttons are disabled while saving', async () => {
-      fetchMock = jest.fn(() => new Promise<Response>(() => {}));
-      global.fetch = fetchMock as typeof global.fetch;
+      saveAnnotationMock.mockReturnValue(new Promise(() => {}));
       openPopover('note');
       act(() => { fireEvent.click(screen.getByRole('button', { name: /save/i })); });
       await waitFor(() => {
@@ -126,11 +151,7 @@ describe('NoteCell', () => {
     });
 
     it('shows inline error and keeps popover open when API call fails', async () => {
-      fetchMock = jest.fn().mockResolvedValue({
-        ok: false,
-        json: () => Promise.resolve({ error: 'internal error' }),
-      } as unknown as Response);
-      global.fetch = fetchMock as typeof global.fetch;
+      saveAnnotationMock.mockRejectedValue(new Error('internal error'));
       const { onChange } = openPopover('note');
       fireEvent.click(screen.getByRole('button', { name: /save/i }));
       await waitFor(() => {
@@ -141,8 +162,7 @@ describe('NoteCell', () => {
     });
 
     it('Escape and backdrop are no-ops while saving', () => {
-      fetchMock = jest.fn(() => new Promise<Response>(() => {}));
-      global.fetch = fetchMock as typeof global.fetch;
+      saveAnnotationMock.mockReturnValue(new Promise(() => {}));
       openPopover('note');
       act(() => { fireEvent.click(screen.getByRole('button', { name: /save/i })); });
       fireEvent.keyDown(window, { key: 'Escape' });
@@ -152,25 +172,21 @@ describe('NoteCell', () => {
     });
   });
 
-  describe('request body', () => {
-    it('sends personalNote with the typed text', async () => {
+  describe('saveAnnotation call', () => {
+    it('calls saveAnnotation with the scope, videoId, and personalNote', async () => {
       openPopover('old');
       fireEvent.change(screen.getByRole('textbox'), { target: { value: 'updated note' } });
       fireEvent.click(screen.getByRole('button', { name: /save/i }));
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-      const [url, opts] = fetchMock.mock.calls[0];
-      expect(url).toBe(`/api/videos/${VIDEO_ID}/review`);
-      const body = JSON.parse((opts as RequestInit).body as string);
-      expect(body).toMatchObject({ outputFolder: OUTPUT_FOLDER, personalNote: 'updated note' });
+      await waitFor(() => expect(saveAnnotationMock).toHaveBeenCalled());
+      expect(saveAnnotationMock).toHaveBeenCalledWith(LOCAL_SCOPE, VIDEO_ID, { personalNote: 'updated note' });
     });
 
-    it('sends personalNote: "" when textarea is cleared (triggers deletion)', async () => {
+    it('calls saveAnnotation with personalNote: "" when textarea is cleared (triggers deletion)', async () => {
       openPopover('old note');
       fireEvent.change(screen.getByRole('textbox'), { target: { value: '' } });
       fireEvent.click(screen.getByRole('button', { name: /save/i }));
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-      const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-      expect(body.personalNote).toBe('');
+      await waitFor(() => expect(saveAnnotationMock).toHaveBeenCalled());
+      expect(saveAnnotationMock).toHaveBeenCalledWith(LOCAL_SCOPE, VIDEO_ID, { personalNote: '' });
     });
 
     it('does not reject a 500-char note (maxLength enforced by textarea)', async () => {
@@ -178,9 +194,20 @@ describe('NoteCell', () => {
       openPopover(undefined);
       fireEvent.change(screen.getByRole('textbox'), { target: { value: maxNote } });
       fireEvent.click(screen.getByRole('button', { name: /save/i }));
-      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-      const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-      expect(body.personalNote).toHaveLength(500);
+      await waitFor(() => expect(saveAnnotationMock).toHaveBeenCalled());
+      const patch = saveAnnotationMock.mock.calls[0][2];
+      expect(patch.personalNote).toHaveLength(500);
+    });
+  });
+
+  describe('unauthorized (cloud mode)', () => {
+    it('redirects to /login on UnauthorizedError instead of showing the inline error', async () => {
+      saveAnnotationMock.mockRejectedValue(new UnauthorizedError('unauthorized'));
+      const { onChange } = openPopoverCloud('note');
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/login'));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(onChange).not.toHaveBeenCalled();
     });
   });
 });

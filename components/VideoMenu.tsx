@@ -3,6 +3,7 @@
 import type { Video } from '@/types';
 import AskGeminiMenuItem from './AskGeminiMenuItem';
 import { CURRENT_DOC_VERSION, isOlder } from '@/lib/doc-version';
+import { useScope } from '@/lib/client/scope';
 
 interface VideoMenuProps {
   video: Video;
@@ -40,6 +41,12 @@ const itemClass = 'block w-full px-4 py-2 text-left text-sm text-zinc-200 hover:
 const disabledClass = 'block w-full px-4 py-2 text-left text-sm text-zinc-500 cursor-not-allowed';
 
 export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArchive, onEditCorrections, onGenerateHtml, onResummarize = () => {}, onSavePdf = () => {}, onClose, busy = false }: VideoMenuProps) {
+  const scope = useScope();
+  // Stage 2a T15b: cloud mode allowlist. Doc generation, PDF export, Obsidian, Ask-Gemini and
+  // corrections all depend on the local filesystem/output-folder pipeline (out of scope for
+  // 2a/2b) — cloud only ever shows "Watch on YouTube" + Archive/Unarchive. Local mode is
+  // unchanged (full menu).
+  const cloudMode = scope.mode === 'cloud';
   const summaryFile = video.summaryMd?.replace(/\.md$/, '') ?? video.id;
   const hasSummary = !!video.summaryMd;
   const htmlViewHref = `/api/html/${encodeURIComponent(video.id)}?outputFolder=${encodeURIComponent(outputFolder)}&type=summary`;
@@ -54,25 +61,31 @@ export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArc
           Watch on YouTube
         </a>
       </li>
-      <li role="none">
-        <AskGeminiMenuItem video={video} onClose={onClose} />
-      </li>
-      <li role="none">
-        <a href={obsidianHref(baseOutputFolder, outputFolder, summaryFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
-          Open in Obsidian
-        </a>
-      </li>
-      <li role="none">
-        {(() => {
-          const current = !!video.summaryHtml && !isOlder(video.docVersion ?? { major: 1, minor: 0 }, CURRENT_DOC_VERSION);
-          if (!hasSummary) return <span aria-disabled="true" className={disabledClass}>HTML doc</span>;
-          if (busy) return <span aria-disabled="true" className={disabledClass}>HTML doc <span aria-hidden="true">⏳</span></span>;
-          return current
-            ? <a href={htmlViewHref} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>HTML doc</a>
-            : <button type="button" onClick={() => { onGenerateHtml(video.id); onClose(); }} className={itemClass}>HTML doc</button>;
-        })()}
-      </li>
-      {hasSummary && (
+      {!cloudMode && (
+        <li role="none">
+          <AskGeminiMenuItem video={video} onClose={onClose} />
+        </li>
+      )}
+      {!cloudMode && (
+        <li role="none">
+          <a href={obsidianHref(baseOutputFolder, outputFolder, summaryFile)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
+            Open in Obsidian
+          </a>
+        </li>
+      )}
+      {!cloudMode && (
+        <li role="none">
+          {(() => {
+            const current = !!video.summaryHtml && !isOlder(video.docVersion ?? { major: 1, minor: 0 }, CURRENT_DOC_VERSION);
+            if (!hasSummary) return <span aria-disabled="true" className={disabledClass}>HTML doc</span>;
+            if (busy) return <span aria-disabled="true" className={disabledClass}>HTML doc <span aria-hidden="true">⏳</span></span>;
+            return current
+              ? <a href={htmlViewHref} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>HTML doc</a>
+              : <button type="button" onClick={() => { onGenerateHtml(video.id); onClose(); }} className={itemClass}>HTML doc</button>;
+          })()}
+        </li>
+      )}
+      {!cloudMode && hasSummary && (
         <li role="none">
           {/* Always force-regenerates (never opens cached) — for a doc the audit flags or that looks off. */}
           {busy
@@ -80,7 +93,7 @@ export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArc
             : <button type="button" onClick={() => { onResummarize(video.id); onClose(); }} className={itemClass}>Re-summarize</button>}
         </li>
       )}
-      {video.summaryHtml && (
+      {!cloudMode && video.summaryHtml && (
         <li role="none">
           {/* Save a self-contained PDF of the summary HTML doc into the pdfs/ folder. Requires the
               HTML doc to exist (summaryHtml) — same precondition as the "HTML doc" open-link. */}
@@ -89,14 +102,14 @@ export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArc
             : <button type="button" onClick={() => { onSavePdf(video.id, 'summary'); onClose(); }} className={itemClass}>Save summary PDF</button>}
         </li>
       )}
-      {video.digDeeperMd && (
+      {!cloudMode && video.digDeeperMd && (
         <li role="none">
           {busy
             ? <span aria-disabled="true" className={disabledClass}>Save dig-deeper PDF <span aria-hidden="true">⏳</span></span>
             : <button type="button" onClick={() => { onSavePdf(video.id, 'dig-deeper'); onClose(); }} className={itemClass}>Save dig-deeper PDF</button>}
         </li>
       )}
-      {video.summaryMd && (
+      {!cloudMode && video.summaryMd && (
         <li role="none">
           <button
             type="button"

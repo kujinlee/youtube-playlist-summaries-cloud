@@ -1,8 +1,20 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MetadataStore } from '@/lib/storage/metadata-store';
+import type { MetadataStore, PlaylistSummary } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 import { emptyPlaylistIndex } from '@/lib/storage/empty-index';
+
+// ---------------------------------------------------------------------------
+// stripComputed: drop the DB-computed `updatedAt` key before any write to
+// `videos.data`. readIndex() surfaces `updatedAt` (sourced from the
+// `updated_at` column/trigger) into the Video object for read consumers; it
+// must never round-trip back into the jsonb payload on a write, since the
+// column + trigger are the single source of truth for that value.
+// ---------------------------------------------------------------------------
+function stripComputed<T extends object>(v: T): Omit<T, 'updatedAt'> {
+  const { updatedAt: _omit, ...rest } = v as any;
+  return rest;
+}
 
 export class SupabaseMetadataStore implements MetadataStore {
   constructor(private client: SupabaseClient) {}
@@ -21,7 +33,7 @@ export class SupabaseMetadataStore implements MetadataStore {
 
     const { data: rows, error: vErr } = await this.client
       .from('videos')
-      .select('data')
+      .select('data, updated_at')
       .eq('playlist_id', pl.id)
       .order('position', { ascending: true });
     if (vErr) throw vErr;
@@ -30,7 +42,7 @@ export class SupabaseMetadataStore implements MetadataStore {
       playlistUrl: pl.playlist_url,
       outputFolder: p.indexKey,
       ...(pl.playlist_title ? { playlistTitle: pl.playlist_title } : {}),
-      videos: (rows ?? []).map((r) => r.data as Video),
+      videos: (rows ?? []).map((r) => ({ ...(r.data as Video), updatedAt: r.updated_at as string })),
     };
   }
 
@@ -84,7 +96,7 @@ export class SupabaseMetadataStore implements MetadataStore {
     const id = await this.requirePlaylistId(p);
     const { error } = await this.client
       .from('videos')
-      .update({ data: video })
+      .update({ data: stripComputed(video) })
       .eq('playlist_id', id)
       .eq('video_id', video.id);
     if (error) throw error;
@@ -103,7 +115,7 @@ export class SupabaseMetadataStore implements MetadataStore {
     const { error } = await this.client.rpc('merge_video_data', {
       p_playlist_id: id,
       p_video_id: videoId,
-      p_fields: fields,
+      p_fields: stripComputed(fields),
     });
     if (error) throw error;
   }
@@ -119,7 +131,7 @@ export class SupabaseMetadataStore implements MetadataStore {
     const id = await this.requirePlaylistId(p);
     const { error } = await this.client.rpc('merge_video_data_bulk', {
       p_playlist_id: id,
-      p_patches: patches.map((x) => ({ video_id: x.videoId, fields: x.fields })),
+      p_patches: patches.map((x) => ({ video_id: x.videoId, fields: stripComputed(x.fields) })),
     });
     if (error) throw error;
   }
@@ -167,6 +179,54 @@ export class SupabaseMetadataStore implements MetadataStore {
       .select('id').single();
     if (error) throw error;
     return data.id as string;
+  }
+
+  // ---------------------------------------------------------------------------
+  // listPlaylists: cloud-only. Session client + RLS (owner_id = auth.uid()) already
+  // scopes this, but the explicit .eq('owner_id', ownerId) is defense-in-depth. Ordered
+  // by playlist_title (nulls last) then created_at — created_at MUST be in the select
+  // since it is both an ORDER BY column and part of the returned PlaylistSummary.
+  // ---------------------------------------------------------------------------
+  async listPlaylists(ownerId: string): Promise<PlaylistSummary[]> {
+    const { data, error } = await this.client
+      .from('playlists')
+      .select('id, playlist_key, playlist_url, playlist_title, created_at')
+      .eq('owner_id', ownerId)
+      .order('playlist_title', { nullsFirst: false })
+      .order('created_at');
+    if (error) throw error;
+    return (data ?? []).map((r) => ({
+      id: r.id,
+      playlistKey: r.playlist_key,
+      playlistUrl: r.playlist_url,
+      playlistTitle: r.playlist_title,
+      createdAt: r.created_at,
+    }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // updateVideoAnnotations: distinct write path from updateVideoFields/merge_video_data
+  // (unchanged). The allowlist ({personalScore, personalNote, archived}) and the
+  // owner_id = auth.uid() guard are enforced IN SQL by update_video_annotations — this
+  // is the sole caller-facing surface for personal-annotation writes; no p_owner is
+  // ever sent. The RPC returns an integer row-count; > 0 means the row existed and was
+  // updated under the caller's ownership.
+  // ---------------------------------------------------------------------------
+  async updateVideoAnnotations(
+    p: Principal,
+    videoId: string,
+    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
+    clear: ('personalScore' | 'personalNote')[],
+  ): Promise<{ found: boolean }> {
+    const id = await this.requirePlaylistId(p);
+    const { data, error } = await this.client.rpc('update_video_annotations', {
+      p_playlist_id: id,
+      p_video_id: videoId,
+      p_set: set,
+      p_clear: clear,
+    });
+    if (error) throw error;
+    return { found: (data ?? 0) > 0 };
   }
 
   // ---------------------------------------------------------------------------

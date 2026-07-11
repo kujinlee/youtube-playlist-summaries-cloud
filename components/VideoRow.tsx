@@ -14,8 +14,10 @@ interface VideoRowProps {
   video: Video;
   /** Serial number shown in the # column; undefined for videos with no summary yet (renders as an em dash). */
   rank?: number;
-  outputFolder: string;
-  baseOutputFolder: string;
+  /** Local-mode only (Obsidian URI derivation, corrections panel). Absent/'' in cloud mode —
+   *  VideoMenu hides everything that depends on it (see cloudMode gating in VideoMenu.tsx). */
+  outputFolder?: string;
+  baseOutputFolder?: string;
   dimUnscored: boolean;
   busy?: boolean;
   onArchive: (videoId: string, action: 'archive' | 'unarchive') => void;
@@ -36,7 +38,7 @@ const LANG_COLOR: Record<string, string> = {
 // Total column count in VideoList: 1 checkbox + 1 chevron + 10 data columns = 12
 const TOTAL_COLUMNS = 12;
 
-export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, dimUnscored, busy = false, onArchive, onGenerateHtml, onResummarize = () => {}, onSavePdf = () => {}, onAnnotationChange, selected = false, selectable = true, onToggleSelect = () => {} }: VideoRowProps) {
+export default function VideoRow({ video, rank, outputFolder = '', baseOutputFolder = '', dimUnscored, busy = false, onArchive, onGenerateHtml, onResummarize = () => {}, onSavePdf = () => {}, onAnnotationChange, selected = false, selectable = true, onToggleSelect = () => {} }: VideoRowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showCorrections, setShowCorrections] = useState(false);
@@ -149,7 +151,6 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
         <td className={`px-3 py-2 ${cellDim}`} aria-label="My Score">
           <StarRating
             videoId={video.id}
-            outputFolder={outputFolder}
             value={video.personalScore}
             onChange={(score) => onAnnotationChange(video.id, { personalScore: score })}
           />
@@ -159,7 +160,6 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
         <td className={`px-3 py-2 ${cellDim}`} aria-label="Note">
           <NoteCell
             videoId={video.id}
-            outputFolder={outputFolder}
             value={video.personalNote}
             onChange={(note) => onAnnotationChange(video.id, { personalNote: note })}
           />
@@ -173,7 +173,6 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
               tldr={video.tldr}
               takeaways={video.takeaways}
               tags={video.tags}
-              outputFolder={outputFolder}
             />
           </td>
         </tr>
