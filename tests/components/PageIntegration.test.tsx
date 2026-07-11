@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import React from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
-import Page from '@/app/page';
+import Page from '@/components/local/LocalApp';
 import type { Video, ProgressEvent, SortColumn, SortOrder } from '@/types';
 
 // ── EventSource mock ──────────────────────────────────────────────────────────
