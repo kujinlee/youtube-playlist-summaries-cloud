@@ -100,3 +100,17 @@ it('does not let Refresh re-POST the previous playlist after cross-playlist navi
   expect(createIngestMock).not.toHaveBeenCalledWith('https://youtube.com/playlist?list=A');
   resolveB({ videos: [], playlistUrl: 'https://youtube.com/playlist?list=B', playlistTitle: 'B' });
 });
+
+it('Refresh is guarded against double-fire (two rapid clicks POST once)', async () => {
+  let resolve!: (v: any) => void;
+  createIngestMock.mockReturnValue(new Promise((r) => { resolve = r; }) as any);
+  setSearchParams('playlist=p-uuid');
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  const refresh = await screen.findByRole('button', { name: /refresh/i });
+  await waitFor(() => expect(refresh).toBeEnabled());
+  fireEvent.click(refresh);
+  fireEvent.click(refresh); // second click before the first createIngest resolves
+  expect(createIngestMock).toHaveBeenCalledTimes(1);
+  resolve(result());
+  await waitFor(() => expect(createIngestMock).toHaveBeenCalledTimes(1));
+});

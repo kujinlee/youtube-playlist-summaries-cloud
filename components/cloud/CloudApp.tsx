@@ -130,6 +130,11 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
   // since navigated away from) can be dropped instead of poisoning `playlistUrl` with the
   // WRONG playlist's URL — which would let Refresh re-POST (and re-bill) that other playlist.
   const reqSeq = useRef(0);
+  // Synchronous double-submit guard for the Refresh spend path (mirrors NewPlaylistModal's
+  // submittingRef) — closes the sub-frame window before React's setRefreshing(true) re-render
+  // disables the button. Unlike the modal, Refresh does not unmount, so it resets in `finally`
+  // so the user can refresh again.
+  const refreshingRef = useRef(false);
 
   const fetchVideos = useCallback(
     async (col: SortColumn | null, order: SortOrder) => {
@@ -173,7 +178,8 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
   );
 
   async function onRefresh() {
-    if (!playlistUrl) return;
+    if (!playlistUrl || refreshingRef.current) return;
+    refreshingRef.current = true;
     setRefreshing(true);
     setRefreshError(null);
     try {
@@ -187,6 +193,7 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
       }
       setRefreshError(err instanceof IngestError ? ingestErrorMessage(err) : 'Refresh failed. Try again.');
     } finally {
+      refreshingRef.current = false;
       setRefreshing(false);
     }
   }
