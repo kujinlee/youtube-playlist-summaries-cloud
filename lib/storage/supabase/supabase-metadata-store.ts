@@ -5,14 +5,18 @@ import type { PlaylistIndex, Video } from '@/types';
 import { emptyPlaylistIndex } from '@/lib/storage/empty-index';
 
 // ---------------------------------------------------------------------------
-// stripComputed: drop the DB-computed `updatedAt` key before any write to
-// `videos.data`. readIndex() surfaces `updatedAt` (sourced from the
-// `updated_at` column/trigger) into the Video object for read consumers; it
-// must never round-trip back into the jsonb payload on a write, since the
-// column + trigger are the single source of truth for that value.
+// stripComputed: drop the DB-computed `updatedAt` and `summaryReady` keys
+// before any write to `videos.data`. readIndex() surfaces `updatedAt`
+// (sourced from the `updated_at` column/trigger) and `summaryReady` (derived
+// from `data.artifacts.summaryMd.status === 'promoted'`) into the Video
+// object for read consumers; neither must ever round-trip back into the
+// jsonb payload on a write — `updatedAt`'s source of truth is the column/
+// trigger, and `summaryReady`'s source of truth is `artifacts.summaryMd.status`
+// itself, so persisting a stale derived boolean would let it drift from the
+// artifact it's supposed to reflect.
 // ---------------------------------------------------------------------------
-function stripComputed<T extends object>(v: T): Omit<T, 'updatedAt'> {
-  const { updatedAt: _omit, ...rest } = v as any;
+function stripComputed<T extends object>(v: T): Omit<T, 'updatedAt' | 'summaryReady'> {
+  const { updatedAt: _u, summaryReady: _s, ...rest } = v as any;
   return rest;
 }
 
@@ -42,7 +46,13 @@ export class SupabaseMetadataStore implements MetadataStore {
       playlistUrl: pl.playlist_url,
       outputFolder: p.indexKey,
       ...(pl.playlist_title ? { playlistTitle: pl.playlist_title } : {}),
-      videos: (rows ?? []).map((r) => ({ ...(r.data as Video), updatedAt: r.updated_at as string })),
+      videos: (rows ?? []).map((r) => ({
+        ...(r.data as Video),
+        updatedAt: r.updated_at as string,
+        summaryReady:
+          (r.data as { artifacts?: { summaryMd?: { status?: string } } })
+            .artifacts?.summaryMd?.status === 'promoted',
+      })),
     };
   }
 

@@ -79,6 +79,10 @@ export const VideoSchema = z.object({
   // "2026-07-11T01:12:57.796832+00:00" — an offset suffix, not "Z" — so the default
   // Z-only datetime() would reject every real DB-sourced value.
   updatedAt: z.string().datetime({ offset: true }).optional(),
+  // Stage 2c: cloud-only readiness flag, derived from artifacts.summaryMd.status === 'promoted'.
+  // Optional → the local path never sets it (same back-compat pattern as updatedAt). Gates the
+  // cloud View/Download/Share menu items; the serving route enforces the same predicate server-side.
+  summaryReady: z.boolean().optional(),
 });
 export type Video = z.infer<typeof VideoSchema>;
 
