@@ -199,3 +199,52 @@ it('P16: over budget + a live lease → in_flight (budget arbiter never runs), n
   const { data: ob } = await svc.from('serve_owner_budget').select('spent_cents').eq('owner_id', u.user.id).single();
   expect(ob!.spent_cents).toBe(6);
 });
+
+// ---- Grant / RLS lockdown (mirrors serve-model-charge.test.ts's sibling money-table lockdown —
+//      serve_owner_budget is service_role-only + force-RLS with no client policy; the RPC's internal
+//      5a step is the only client-reachable write path) ----
+
+it('a session client CANNOT select/insert/update/delete serve_owner_budget directly', async () => {
+  const u = await newUser();
+  // Seed a REAL row via the service client first, so "select returns []" proves RLS hides an
+  // EXISTING row, not just an empty table.
+  const { error: seedErr } = await preseedBudget(u.user.id, 6);
+  expect(seedErr).toBeNull();
+  const { client } = await signInAs(u.email, u.password);
+
+  // Snapshot the TRUE row via the service client (bypasses RLS) so we can prove it is byte-for-byte
+  // unchanged after the denied writes.
+  const { data: before } = await svc.from('serve_owner_budget')
+    .select('owner_id, day, spent_cents').eq('owner_id', u.user.id).single();
+  expect(before).not.toBeNull();          // guard against a false-green: before === after === null must not pass
+  expect(before!.spent_cents).toBe(6);
+
+  // force-RLS + no client policy → every direct verb sees/affects zero rows / is refused.
+  const sel = await client.from('serve_owner_budget').select('*');
+  expect(sel.data ?? []).toEqual([]);                                   // invisible under RLS
+  const ins = await client.from('serve_owner_budget')
+    .insert({ owner_id: u.user.id, day: utcDay(), spent_cents: 999 });
+  expect(ins.error).toBeTruthy();                                       // insert refused
+  // UPDATE/DELETE must be NON-vacuous: chain `.select()` so a write that actually matched a row would
+  // RETURN it. Without `.select()` a Supabase update()/delete() returns `{ data: null }` even on a real
+  // write, which would make an `expect(data ?? []).toEqual([])` assertion vacuously true.
+  const upd = await client.from('serve_owner_budget')
+    .update({ spent_cents: 999 }).eq('owner_id', u.user.id).select();
+  expect(upd.data ?? []).toEqual([]);                                   // update returned no row (matched nothing)
+  const del = await client.from('serve_owner_budget')
+    .delete().eq('owner_id', u.user.id).select();
+  expect(del.data ?? []).toEqual([]);                                   // delete returned no row (matched nothing)
+
+  // The authoritative proof: the real row is UNCHANGED after the attempted writes.
+  const { data: after } = await svc.from('serve_owner_budget')
+    .select('owner_id, day, spent_cents').eq('owner_id', u.user.id).single();
+  expect(after).toEqual(before);
+
+  // And the table is genuinely FORCE-RLS (an owner cannot bypass its own policy-less table). Query the
+  // catalog via the service-role-only `exec_sql` helper (0004), same pattern as serve-model-charge.test.ts.
+  const { data: forced } = await svc.rpc('exec_sql', {
+    sql: `select relforcerowsecurity from pg_class
+          where relname = 'serve_owner_budget' and relnamespace = 'public'::regnamespace and relkind = 'r'`,
+  });
+  expect(forced).toEqual([{ relforcerowsecurity: true }]);
+});
