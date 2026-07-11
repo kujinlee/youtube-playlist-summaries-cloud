@@ -1,4 +1,4 @@
-import type { MetadataStore } from '@/lib/storage/metadata-store';
+import type { MetadataStore, PlaylistSummary } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 import * as indexStore from '@/lib/index-store';
@@ -44,6 +44,9 @@ export class LocalFsMetadataStore implements MetadataStore {
   }
   async resolvePlaylistId(): Promise<string> {
     throw new Error('resolvePlaylistId is cloud-only (unsupported on the local backend)');
+  }
+  async listPlaylists(): Promise<PlaylistSummary[]> {
+    throw new Error('listPlaylists is cloud-only');
   }
   async reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void> {
     const present = new Set(currentPlaylistIds);

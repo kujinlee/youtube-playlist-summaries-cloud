@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MetadataStore } from '@/lib/storage/metadata-store';
+import type { MetadataStore, PlaylistSummary } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 import { emptyPlaylistIndex } from '@/lib/storage/empty-index';
@@ -179,6 +179,29 @@ export class SupabaseMetadataStore implements MetadataStore {
       .select('id').single();
     if (error) throw error;
     return data.id as string;
+  }
+
+  // ---------------------------------------------------------------------------
+  // listPlaylists: cloud-only. Session client + RLS (owner_id = auth.uid()) already
+  // scopes this, but the explicit .eq('owner_id', ownerId) is defense-in-depth. Ordered
+  // by playlist_title (nulls last) then created_at — created_at MUST be in the select
+  // since it is both an ORDER BY column and part of the returned PlaylistSummary.
+  // ---------------------------------------------------------------------------
+  async listPlaylists(ownerId: string): Promise<PlaylistSummary[]> {
+    const { data, error } = await this.client
+      .from('playlists')
+      .select('id, playlist_key, playlist_url, playlist_title, created_at')
+      .eq('owner_id', ownerId)
+      .order('playlist_title', { nullsFirst: false })
+      .order('created_at');
+    if (error) throw error;
+    return (data ?? []).map((r) => ({
+      id: r.id,
+      playlistKey: r.playlist_key,
+      playlistUrl: r.playlist_url,
+      playlistTitle: r.playlist_title,
+      createdAt: r.created_at,
+    }));
   }
 
   // ---------------------------------------------------------------------------

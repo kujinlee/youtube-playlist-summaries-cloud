@@ -1,6 +1,16 @@
 import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 
+/** Cloud-only row shape for MetadataStore.listPlaylists — one entry per playlist owned
+ *  by a given user (createdAt sourced from the playlists.created_at column). */
+export interface PlaylistSummary {
+  id: string;
+  playlistKey: string;
+  playlistUrl: string;
+  playlistTitle: string | null;
+  createdAt: string;
+}
+
 /** Read/write access to a principal's playlist index + video records.
  *  Local impl delegates to lib/index-store; cloud impl (later) is Postgres. */
 export interface MetadataStore {
@@ -16,4 +26,9 @@ export interface MetadataStore {
   deleteVideo(p: Principal, videoId: string): Promise<void>;
   /** Cloud-only: resolve (owner, playlist_key) to the playlists.id UUID, creating the row if absent. */
   resolvePlaylistId(p: Principal, playlistUrl: string): Promise<string>;
+  /** Cloud-only: list all playlists owned by ownerId, ordered by title (nulls last) then
+   *  created_at. Local impl throws — the local sidebar is not rendered in 2a and the
+   *  filesystem-backed equivalent (listRecentPlaylists) needs a filesystem root, not an
+   *  ownerId, and returns a different shape. */
+  listPlaylists(ownerId: string): Promise<PlaylistSummary[]>;
 }
