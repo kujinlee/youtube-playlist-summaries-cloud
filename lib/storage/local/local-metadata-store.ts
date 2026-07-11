@@ -48,6 +48,32 @@ export class LocalFsMetadataStore implements MetadataStore {
   async listPlaylists(): Promise<PlaylistSummary[]> {
     throw new Error('listPlaylists is cloud-only');
   }
+  // Interface-shape parity only — not on a local runtime path (the local review route
+  // branch is unchanged and still calls updateVideoFields directly). Allowlist applied
+  // in-process (the cloud impl enforces it server-side, in SQL); `undefined` values are
+  // dropped by JSON.stringify on write, matching updateVideoFields' existing clear-by-
+  // undefined convention (see app/api/videos/[id]/review/route.ts serveLocal).
+  async updateVideoAnnotations(
+    p: Principal,
+    videoId: string,
+    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
+    clear: ('personalScore' | 'personalNote')[],
+  ): Promise<{ found: boolean }> {
+    const idx = indexStore.readIndex(p.indexKey);
+    if (!idx.videos.some((v) => v.id === videoId)) return { found: false };
+
+    const allow = new Set(['personalScore', 'personalNote', 'archived']);
+    const fields: Partial<Video> = {};
+    for (const [k, v] of Object.entries(set)) {
+      if (allow.has(k)) (fields as Record<string, unknown>)[k] = v;
+    }
+    for (const k of clear) {
+      if (allow.has(k)) (fields as Record<string, unknown>)[k] = undefined;
+    }
+    indexStore.updateVideoFields(p.indexKey, videoId, fields);
+    return { found: true };
+  }
+
   async reconcilePlaylistMembership(p: Principal, currentPlaylistIds: string[]): Promise<void> {
     const present = new Set(currentPlaylistIds);
     const idx = indexStore.readIndex(p.indexKey);

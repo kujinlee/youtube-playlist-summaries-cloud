@@ -31,4 +31,18 @@ export interface MetadataStore {
    *  filesystem-backed equivalent (listRecentPlaylists) needs a filesystem root, not an
    *  ownerId, and returns a different shape. */
   listPlaylists(ownerId: string): Promise<PlaylistSummary[]>;
+  /** Owner-guarded personal-annotation write (Task 7). `set` supplies allowlisted
+   *  ({personalScore, personalNote, archived}) values to merge in; `clear` lists
+   *  allowlisted keys to remove. The cloud impl enforces the allowlist AND the
+   *  owner_id = auth.uid() guard server-side, in SQL (update_video_annotations RPC) —
+   *  this is a distinct write path from updateVideoFields/merge_video_data, which is
+   *  left unchanged. Returns { found: true } iff a row existed for (playlistId, videoId)
+   *  under the caller's ownership, regardless of whether the sliced payload was empty;
+   *  callers 404 on found:false. */
+  updateVideoAnnotations(
+    p: Principal,
+    videoId: string,
+    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
+    clear: ('personalScore' | 'personalNote')[],
+  ): Promise<{ found: boolean }>;
 }

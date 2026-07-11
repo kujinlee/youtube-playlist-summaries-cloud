@@ -205,6 +205,31 @@ export class SupabaseMetadataStore implements MetadataStore {
   }
 
   // ---------------------------------------------------------------------------
+  // updateVideoAnnotations: distinct write path from updateVideoFields/merge_video_data
+  // (unchanged). The allowlist ({personalScore, personalNote, archived}) and the
+  // owner_id = auth.uid() guard are enforced IN SQL by update_video_annotations — this
+  // is the sole caller-facing surface for personal-annotation writes; no p_owner is
+  // ever sent. The RPC returns an integer row-count; > 0 means the row existed and was
+  // updated under the caller's ownership.
+  // ---------------------------------------------------------------------------
+  async updateVideoAnnotations(
+    p: Principal,
+    videoId: string,
+    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
+    clear: ('personalScore' | 'personalNote')[],
+  ): Promise<{ found: boolean }> {
+    const id = await this.requirePlaylistId(p);
+    const { data, error } = await this.client.rpc('update_video_annotations', {
+      p_playlist_id: id,
+      p_video_id: videoId,
+      p_set: set,
+      p_clear: clear,
+    });
+    if (error) throw error;
+    return { found: (data ?? 0) > 0 };
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 
