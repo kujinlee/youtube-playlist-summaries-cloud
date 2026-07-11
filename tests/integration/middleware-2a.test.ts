@@ -129,6 +129,14 @@ describe('middleware — cloud mode (STORAGE_BACKEND=supabase)', () => {
     expect(new URL(res.headers.get('location') as string).pathname).toBe('/login');
   });
 
+  it('anon /s/<token> share link PASSES THROUGH (public) — not redirected, no anon-provision (the route self-authorizes via the share token)', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    const res = await middleware(req('/s/AbC-1234567890_AbC-1234567890_AbC-1234567890abc'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
+    expect(mockSignInAnonymously).not.toHaveBeenCalled();
+  });
+
   it('/try still triggers anon-provision (signInAnonymously) — preserved verbatim', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
     const res = await middleware(req('/try'));

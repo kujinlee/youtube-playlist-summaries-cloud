@@ -14,6 +14,12 @@ describe('route categories', () => {
     expect(classifyRoute('/try')).toBe('anon-allowed');
     expect(classifyRoute('/try/abc')).toBe('anon-allowed');
   });
+  it('/s/<token> share links are public (route self-authorizes via the share token; middleware must not gate anon recipients)', () => {
+    expect(classifyRoute('/s')).toBe('public');
+    expect(classifyRoute('/s/AbC-1234567890_AbC-1234567890_AbC-1234567890abc')).toBe('public');
+    // A sibling path that merely starts with "/s" must NOT be swept in (prefix is boundary-aware).
+    expect(classifyRoute('/settings')).toBe('authenticated');
+  });
   it('library paths require authentication', () => {
     expect(classifyRoute('/library')).toBe('authenticated');
     expect(classifyRoute('/library/playlists/abc')).toBe('authenticated');
