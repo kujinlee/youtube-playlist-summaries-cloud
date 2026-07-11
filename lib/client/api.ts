@@ -144,11 +144,13 @@ export async function createIngest(playlistUrl: string): Promise<IngestResult> {
   });
   if (res.status === 401) throw new UnauthorizedError('unauthorized');
   if (!res.ok) {
-    const body = await res.json().catch(() => ({} as Record<string, unknown>));
+    const raw = await res.json().catch(() => null);
+    const body: Record<string, unknown> = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
     const info: { retryAfterSeconds?: number; limit?: number; found?: number } = {};
     if (res.status === 429) {
       const h = res.headers.get('retry-after');
-      info.retryAfterSeconds = h ? Number(h) : 60;
+      const n = h != null ? Number(h) : NaN;
+      info.retryAfterSeconds = Number.isFinite(n) ? n : 60;
     }
     if (res.status === 422) {
       if (typeof body.limit === 'number') info.limit = body.limit;

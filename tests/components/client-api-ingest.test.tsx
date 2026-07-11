@@ -51,6 +51,27 @@ describe('createIngest', () => {
     const err = await createIngest('u').catch((e) => e);
     expect(err).toBeInstanceOf(IngestError); expect(err.status).toBe(status);
   });
+  it('maps a 422 with a null JSON body to IngestError generic copy without crashing', async () => {
+    global.fetch = mockRes(422, null);
+    const err = await createIngest('u').catch((e) => e);
+    expect(err).toBeInstanceOf(IngestError);
+    expect(err.status).toBe(422);
+    expect(err.info).toEqual({});
+    expect(ingestErrorMessage(err)).toBe('That playlist is too large. Try a smaller one.');
+  });
+  it('ignores stringy 422 limit/found and falls back to generic copy', async () => {
+    global.fetch = mockRes(422, { error: 'too large', limit: '50', found: '80' });
+    const err = await createIngest('u').catch((e) => e);
+    expect(err).toBeInstanceOf(IngestError);
+    expect(err.info).toEqual({});
+    expect(ingestErrorMessage(err)).toBe('That playlist is too large. Try a smaller one.');
+  });
+  it('defaults Retry-After to 60 on a malformed header', async () => {
+    global.fetch = mockRes(429, { error: 'rate limited' }, { 'retry-after': 'later' });
+    const err = await createIngest('u').catch((e) => e);
+    expect(err.status).toBe(429);
+    expect(err.info.retryAfterSeconds).toBe(60);
+  });
 });
 
 describe('ingestErrorMessage', () => {
