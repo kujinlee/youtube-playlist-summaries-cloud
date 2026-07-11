@@ -1,17 +1,23 @@
 /** @jest-environment jsdom */
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useSearchParams } from 'next/navigation';
-import { listPlaylists } from '@/lib/client/api';
+import { listPlaylists, UnauthorizedError } from '@/lib/client/api';
 import PlaylistSidebar from '@/components/cloud/PlaylistSidebar';
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
 
+const replace = jest.fn();
 jest.mock('next/navigation', () => ({
   useSearchParams: jest.fn(),
+  useRouter: () => ({ replace }),
 }));
 
-jest.mock('@/lib/client/api', () => ({
-  listPlaylists: jest.fn(),
-}));
+jest.mock('@/lib/client/api', () => {
+  class UnauthorizedError extends Error {}
+  return {
+    listPlaylists: jest.fn(),
+    UnauthorizedError,
+  };
+});
 
 const mockListPlaylists = listPlaylists as jest.MockedFunction<typeof listPlaylists>;
 const mockUseSearchParams = useSearchParams as jest.MockedFunction<typeof useSearchParams>;
@@ -75,6 +81,15 @@ it('marks the item matching ?playlist as the active item', async () => {
   expect(activeLink).toHaveAttribute('aria-current', 'page');
   const inactiveLink = screen.getByRole('link', { name: 'ML Talks' });
   expect(inactiveLink).not.toHaveAttribute('aria-current');
+});
+
+it('redirects to /login when listPlaylists rejects with UnauthorizedError, and shows no inline error', async () => {
+  mockListPlaylists.mockRejectedValue(new UnauthorizedError('unauthorized'));
+  render(<PlaylistSidebar />);
+
+  await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
+  expect(screen.queryByText('unauthorized')).not.toBeInTheDocument();
+  expect(screen.queryByText('Failed to load playlists.')).not.toBeInTheDocument();
 });
 
 it('shows an onboarding empty state when there are no playlists', async () => {

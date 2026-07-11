@@ -109,6 +109,8 @@ function PlaylistLibrary({ playlistId }: { playlistId: string }) {
   useEffect(() => {
     setVideos(null);
     setError(null);
+    setSortColumn(null);
+    setSortOrder('asc');
     fetchVideos(null, 'asc');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudScope]);

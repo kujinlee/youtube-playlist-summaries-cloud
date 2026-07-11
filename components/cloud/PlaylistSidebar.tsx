@@ -15,8 +15,8 @@
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { listPlaylists } from '@/lib/client/api';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { listPlaylists, UnauthorizedError } from '@/lib/client/api';
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
 
 const activeLinkClass =
@@ -25,6 +25,7 @@ const inactiveLinkClass =
   'block truncate rounded-r px-2 py-1.5 border-l-2 border-transparent text-[var(--text-secondary)] hover:bg-[var(--surface-overlay)] hover:text-[var(--text-primary)]';
 
 export default function PlaylistSidebar() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const activePlaylistId = searchParams.get('playlist');
 
@@ -38,13 +39,17 @@ export default function PlaylistSidebar() {
         if (!cancelled) setPlaylists(result);
       })
       .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load playlists.');
+        if (cancelled) return;
+        if (err instanceof UnauthorizedError) {
+          router.replace('/login');
+          return;
         }
+        setError(err instanceof Error ? err.message : 'Failed to load playlists.');
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
