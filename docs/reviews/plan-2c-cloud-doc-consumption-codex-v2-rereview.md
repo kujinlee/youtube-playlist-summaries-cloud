@@ -82,3 +82,9 @@ None found.
    Problem: Component tests cover default `30` and `Never`, but not explicit `7d`. The client seam covers `7` only through an error-mapping test, not UI mapping.  
    Fix: Add `TTL 7d -> createShare(..., 7)` component test.
 
+
+---
+
+## Round-3 confirmation pass (Codex, v2.1→v2.2)
+
+Codex confirmation on the three v2.1 fixes: (1) exact-shape store test migration CONFIRMED-FIXED; (2) route-test string-expiry mock + id assertion CONFIRMED-FIXED; (4) double-click honest note CONFIRMED-FIXED. (3) a11y Tab-trap test: still-broken *selector mismatch* — the test's querySelectorAll included disabled controls + [tabindex] while the NewPlaylistModal handler uses 'button:not([disabled]), input:not([disabled]), [href], textarea, select'. **Fixed in v2.2**: test now uses the identical selector (Copy/Revoke render disabled pre-Create, so the :not([disabled]) exclusion matters). No Blocking/High remained. **CONVERGED.**

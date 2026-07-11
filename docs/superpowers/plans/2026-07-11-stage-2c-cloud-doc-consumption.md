@@ -792,10 +792,11 @@ test('a11y: initial focus lands in the dialog; Tab from the last focusable wraps
   render(<ShareDialog {...baseProps} />);
   const dialog = screen.getByRole('dialog');
   expect(dialog.contains(document.activeElement)).toBe(true);        // initial focus inside dialog
-  // Query focusables in DOM order using the SAME selector family the trap handler uses, so the
-  // test's notion of first/last matches the handler's:
-  const focusables = dialog.querySelectorAll<HTMLElement>(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  // Use the EXACT selector the trap handler uses (copy from NewPlaylistModal:25 into ShareDialog),
+  // so the test's first/last match the handler's — including the `:not([disabled])` exclusion, since
+  // Copy/Revoke render disabled before Create and would otherwise skew last (Codex R3 finding):
+  const SEL = 'button:not([disabled]), input:not([disabled]), [href], textarea, select';
+  const focusables = Array.from(dialog.querySelectorAll<HTMLElement>(SEL));
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
   last.focus();
