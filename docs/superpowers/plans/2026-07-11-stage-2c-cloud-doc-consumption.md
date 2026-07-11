@@ -158,25 +158,32 @@ Expected: PASS.
 
 - [ ] **Step 5: Write the failing route test (response includes id)**
 
-Open `tests/api/share-mint-route.test.ts`. **Critical (Claude M3):** this file's `beforeEach` default mock (≈`:19`) currently resolves the rpc to a **scalar** (`{ data: <ISO string>, error: null }`). After the route change (`Array.isArray(data) ? data[0] : null`), a scalar default yields `row = null` → 404, so **every happy-path test that does not override the mock will break**. Update the default mock to the array-row shape, and note the mock variable in this file is named **`mockRpc`** (not `rpc`):
+Open `tests/api/share-mint-route.test.ts`. **Critical (Claude M3):** this file's `beforeEach` default mock (`:19`) currently resolves the rpc to a **scalar** ISO string:
+```ts
+mockRpc = jest.fn(async () => ({ data: new Date(Date.now() + 30 * 864e5).toISOString(), error: null }));
+```
+After the route change (`Array.isArray(data) ? data[0] : null`), a scalar default yields `row = null` → 404, so **every happy-path test that does not override the mock breaks**. Change the default to a **single-row array** — and keep `expires_at` a **STRING** (not null), because the existing "201" test (`:37`) asserts `typeof body.expiresAt === 'string'`; a null would break it. The mock variable is named **`mockRpc`** (not `rpc`):
 
 ```ts
-// beforeEach default (≈ line 19) — change the scalar to a single-row array:
-mockRpc.mockResolvedValue({ data: [{ id: 'share-uuid-1', expires_at: null }], error: null });
-
-// The 201 happy-path assertion now includes id:
-// ...POST /api/share with a valid body...
-expect(res.status).toBe(201);
-const body = await res.json();
-expect(body).toEqual({
-  id: 'share-uuid-1',
-  token: expect.any(String),
-  url: expect.stringMatching(/^\/s\/.+/),
-  expiresAt: null,
-});
+// beforeEach default (line 19): scalar → single-row array, expires_at stays an ISO string
+mockRpc = jest.fn(async () => ({
+  data: [{ id: 'share-uuid-1', expires_at: new Date(Date.now() + 30 * 864e5).toISOString() }],
+  error: null,
+}));
 ```
 
-Keep the existing error-path assertions (400 missing fields, 400 invalid ttl, 401 no user, 404 on rpc error) unchanged **except** the rpc-error path's mock must be `{ data: null, error: {...} }` → still 404. If any existing assertion reads `body.expiresAt` as a string, it still holds — `expires_at` in the row echoes the input (null here).
+Then, in the existing "201 returns { token, url, expiresAt }" test (`:30-40`), **add** an `id` assertion alongside the existing ones (do NOT replace the whole body with a strict `toEqual` — the expiry is a live timestamp):
+
+```ts
+expect(res.status).toBe(201);
+const body = await res.json();
+expect(body.id).toBe('share-uuid-1');
+expect(typeof body.token).toBe('string');
+expect(body.url).toMatch(/^\/s\/.+/);
+expect(typeof body.expiresAt).toBe('string');   // unchanged — still holds with the string expiry
+```
+
+Keep the existing error-path assertions (400 missing fields, 400 invalid ttl, 401 no user) unchanged. The rpc-error/denial path already mocks `{ data: null, error: {...} }` (`:58`) → `row = null` → still 404, correct as-is.
 
 - [ ] **Step 6: Run it — verify it fails**
 
@@ -313,12 +320,29 @@ expect(persisted).not.toHaveProperty('updatedAt');
 
 Run: `npx jest supabase-metadata-store` — the derivation test and the strip test both pass.
 
-- [ ] **Step 7: Confirm local path untouched + full regression**
+- [ ] **Step 7: Migrate existing exact-shape `readIndex` assertions (Codex R2-H2 — REQUIRED)**
+
+The derivation adds a **concrete `false`** for artifacts-absent rows (`undefined?.summaryMd?.status === 'promoted'` → `false`, NOT `undefined`). `updatedAt` is currently `undefined` in these fixtures and `toEqual` ignores undefined props — but a concrete `false` is **not** ignored, so any existing exact `toEqual` on `idx.videos` breaks. Before running the suite, grep and migrate:
+
+```bash
+grep -rn "idx.videos).toEqual\|\.videos).toEqual" tests/
+```
+
+Known site: `tests/lib/storage/supabase-metadata-store.test.ts:159` —
+```ts
+// before:
+expect(idx.videos).toEqual([{ id: 'v1' }, { id: 'v2' }]);
+// after (rows have no artifacts → summaryReady: false):
+expect(idx.videos).toEqual([{ id: 'v1', summaryReady: false }, { id: 'v2', summaryReady: false }]);
+```
+Update every exact-shape `readIndex` assertion the grep finds the same way (add `summaryReady: false`, or `true` if that fixture's `data.artifacts.summaryMd.status === 'promoted'`). Do NOT weaken a `toEqual` to `toMatchObject` to dodge it — the point is that the shape genuinely changed.
+
+- [ ] **Step 8: Confirm local path untouched + full regression**
 
 Run: `npx jest && npx tsc --noEmit`
 Expected: full unit suite green (including all existing local-store and serveLocal tests — they must still pass unchanged, proving the local path is unaffected); 0 type errors.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add types/index.ts lib/storage/supabase/supabase-metadata-store.ts \
@@ -760,14 +784,23 @@ test('backdrop + Escape are inert while REVOKE is in flight', async () => {
   await act(async () => { resolve({ revoked: true }); });
 });
 
-test('a11y: initial focus lands in the dialog on the TTL group; Tab is trapped', () => {
+test('a11y: initial focus lands in the dialog; Tab from the last focusable wraps to the first', () => {
+  // The trap is a manual keydown handler (mirroring NewPlaylistModal:29-41): it only wraps when
+  // document.activeElement === last (Tab) or === first (Shift+Tab). jsdom does NOT move focus on a
+  // Tab keydown by itself, so the test must FOCUS the last element first to exercise the wrap branch —
+  // otherwise the handler is a no-op and the assertion is vacuous.
   render(<ShareDialog {...baseProps} />);
   const dialog = screen.getByRole('dialog');
-  // initial focus is inside the dialog (on the default-checked 30d radio or the radiogroup)
-  expect(dialog.contains(document.activeElement)).toBe(true);
-  // focus trap: Tab from the last focusable cycles back into the dialog (never escapes to <body>)
+  expect(dialog.contains(document.activeElement)).toBe(true);        // initial focus inside dialog
+  // Query focusables in DOM order using the SAME selector family the trap handler uses, so the
+  // test's notion of first/last matches the handler's:
+  const focusables = dialog.querySelectorAll<HTMLElement>(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  last.focus();
   fireEvent.keyDown(dialog, { key: 'Tab' });
-  expect(dialog.contains(document.activeElement)).toBe(true);
+  expect(document.activeElement).toBe(first);                        // wrapped to first (not <body>)
 });
 
 test('revoke no-op ({revoked:false}) still clears the held share (acceptable for 2c)', async () => {
@@ -780,6 +813,8 @@ test('revoke no-op ({revoked:false}) still clears the held share (acceptable for
   await waitFor(() => expect(screen.queryByDisplayValue(/\/s\/tok$/)).not.toBeInTheDocument());
 });
 ```
+
+> **Honest test note (Codex R2-M2 — 2b act-flush precedent):** the two rapid-double-click tests assert `createShare`/`revokeShare` is called exactly once, but RTL cannot fully *isolate* the synchronous `inFlightRef` from ordinary state-based button-disable: `fireEvent.click` runs inside `act()`, which flushes the first click's `setState` (disabling the button) before the second event dispatches, so the test can pass with state-disable alone and no ref. Keep both tests (they guard the observable "one request per intent" contract) AND still implement the synchronous `inFlightRef` — it closes the sub-frame window between the click handler firing and React committing the disabled state, which state-disable alone leaves open. This is a correctness-by-construction requirement (same conclusion the 2b whole-branch review reached for the Refresh/modal spend paths), not something RTL can prove here. Note share-create does **not** charge, so this is defense-in-depth (duplicate tokens are explicitly acceptable per spec §1), not a money-gate.
 
 - [ ] **Step 2: Run — verify it fails**
 
