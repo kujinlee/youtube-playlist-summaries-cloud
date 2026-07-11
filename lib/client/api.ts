@@ -190,3 +190,17 @@ export async function setArchived(scope: Scope, videoId: string, archived: boole
   });
   await handle<{ ok: true }>(res);
 }
+
+/** Builds the serveCloud summary-doc URL. View = no opts; downloads set format + download=1. */
+export function summaryHref(
+  playlistId: string,
+  videoId: string,
+  opts?: { format?: 'md' | 'html'; download?: boolean },
+): string {
+  const params = new URLSearchParams();
+  params.set('playlist', playlistId);
+  params.set('type', 'summary');
+  if (opts?.format) params.set('format', opts.format);
+  if (opts?.download) params.set('download', '1');
+  return `/api/html/${encodeURIComponent(videoId)}?${params.toString()}`;
+}
