@@ -1,11 +1,22 @@
 # Whole-Branch Review — Stage 2a (Cloud Auth, Shell & Library)
 
-**Reviewer:** Claude (controller-level synthesis) · **Date:** 2026-07-11
-**Range:** `master 4d5b597..4c933d4` — 40 commits, 86 files, +5339/−943
-**Verdict:** **READY for PR** (per-task dual-reviewed; cross-cutting invariants verified; deferred nits + flags below). Formal Codex+Claude whole-branch dual pass recommended before merge (see Process note).
+**Reviewers:** Codex (gpt-5.5) + Claude (opus), independent · **Date:** 2026-07-11
+**Range:** `master 4d5b597..HEAD`
+**Verdict:** **READY after fixes** — formal dual whole-branch review run; 1 High (Codex) + 1 Medium (Claude) found and FIXED; all money/RLS/local invariants hold.
 
 ## Process note
-Every one of the 16 tasks was individually dual-reviewed (Codex from coordinator + independent Claude), saved to `docs/reviews/task-2a-*`. The security-critical annotation RPC (T7) got the full **§8 iterative** treatment. This whole-branch pass is a **controller-level cross-cutting synthesis** — the formal Codex+Claude whole-branch dual review was deferred because the account hit a session limit (resets 4:20am). Recommend running `/code-review ultra <PR#>` (or the dual pass at reset) before merge as a final net.
+Every one of the 16 tasks was individually dual-reviewed (Codex + Claude), saved to `docs/reviews/task-2a-*`; the annotation RPC (T7) got the full **§8 iterative** pass. The **formal Codex + Claude whole-branch dual review** then ran (after the session limit reset), scoped to cross-cutting invariants + the `/s` fix.
+
+## Formal whole-branch dual-review findings
+- **Codex → NOT-READY, 1 High:** the branch-level invariant "any cloud `UnauthorizedError` → `/login`" (spec §11) was incomplete — `CloudApp`/`PlaylistSidebar` redirect, but the retargeted leaf components **swallowed** it (`StarRating` silent rollback, `NoteCell` inline error, `VideoQuickView` "not yet generated"). Verified real. **→ FIXED:** the 3 leaves now `router.replace('/login')` on `UnauthorizedError` before generic handling + tests.
+- **Claude → READY, 0 Blocking/0 High; 1 Medium:** anonymous (`/try`) users are locked out of `/login` — the `/login`→`/` redirect fires for any user incl. anon, so an anon can't upgrade to a real account (open-signup product gap). **→ FIXED:** gate the redirect on `user && !user.is_anonymous` + test. (Claude missed the leaf-401 gap Codex caught — reconciled: Codex's finding governs, controller-verified.)
+- **Claude Low (accepted):** L1 cloud E2E documented-skip (accepted, backlog); L2 `types/index.ts` `updatedAt` comment imprecise (cosmetic); L3 no CI config for the integration runner (pre-existing).
+
+## Both passes independently VERIFIED (invariants hold)
+- Money/RLS: all 5 cloud routes = session client + getUser 401 + UUID guard + `resolveOwnedPlaylistKey` owner-assert 404; `0007`/`merge_video_data` diff **empty**; `0016` RPC INVOKER + `auth.uid()` + SQL allowlist + grant-authenticated; **no service-role into user-facing stores**; no cross-owner path.
+- Local app: `LocalApp` == old `app/page.tsx` body + only the `ScopeProvider` wrapper (byte-identical logic); shared leaves' local requests unchanged.
+- Auth flow + the new `/s` fix boundary-safe (`/settings` stays authenticated; `/s/<token>` public; route self-authorizes via token).
+- Cross-task: memoized scope (no VideoQuickView refetch loop), single Suspense boundary, `updated_at` trigger + RPC + `readIndex` surfacing + `stripComputed` interact correctly, migration 0015→0016 order correct.
 
 ## Cross-cutting invariants — VERIFIED
 1. **Schema is additive & minimal:** only 2 new migrations — `0015_video_updated_at_trigger.sql` (BEFORE UPDATE trigger) and `0016_update_video_annotations.sql` (the annotation RPC). No existing migration edited.
@@ -24,4 +35,4 @@ Every one of the 16 tasks was individually dual-reviewed (Codex from coordinator
 listPlaylists `created_at` secondary-sort test-strength; `/api/playlists` serveCloud try/catch for `{error}` body; cloud quick-view `[id]`-absent test; `UUID_RE` dedup across routes; **T7 RPC value-domain validation** (allowlists keys not value ranges — own-row only, matches codebase posture); getQuickView local `+`/`%20` encoding (route-equivalent); NoteCell/StarRating fallback error wording; AccountMenu signOut error handling + `aria-controls`; VideoMenu "Watch on YouTube" vs spec "Open"; CloudApp unspecified copy + no retry-on-error affordance; midnight-UTC preseed test flake; design-token `--color-*` alias polish.
 
 ## Recommendation
-**READY for PR to `master`.** Merge is the user's gate. Suggest the formal dual whole-branch review (`/code-review ultra`) on the PR before merge, and closing the `/s` anon-share question.
+**READY to merge.** Formal Codex + Claude whole-branch dual review complete; the one High (leaf-401) + one Medium (anon-`/login`) were fixed (commit `2ed1b2a`), and the `/s` anon-share bug fixed (commit `2957e24`). All money/RLS/isolation/local-preservation invariants verified across the 16 tasks by both passes. Post-fix: `tsc` 0, `npm test` 174 suites / 1879 tests. Remaining items are accepted backlog (cloud E2E harness; minor nits) — none block merge.
