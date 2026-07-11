@@ -13,7 +13,17 @@ import { NextRequest } from 'next/server';
 
 const req = (path: string) => new NextRequest(new Request(`http://localhost${path}`));
 
-beforeEach(() => jest.clearAllMocks());
+// Stage 2a T9: middleware is now a no-op in local mode (STORAGE_BACKEND unset/'local').
+// This file exercises cloud behavior, so force cloud mode for every test here.
+const priorBackend = process.env.STORAGE_BACKEND;
+beforeEach(() => {
+  jest.clearAllMocks();
+  process.env.STORAGE_BACKEND = 'supabase';
+});
+afterAll(() => {
+  if (priorBackend === undefined) delete process.env.STORAGE_BACKEND;
+  else process.env.STORAGE_BACKEND = priorBackend;
+});
 
 it('returns 401 JSON for an unauthenticated /api/* request', async () => {
   mockGetUser.mockResolvedValue({ data: { user: null } });

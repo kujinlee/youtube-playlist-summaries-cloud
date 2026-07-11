@@ -13,7 +13,7 @@ function noStore(res: NextResponse): NextResponse {
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
-  const next = request.nextUrl.searchParams.get('next') ?? '/library';
+  const next = request.nextUrl.searchParams.get('next') ?? '/';
   if (code) {
     const cookieStore = await cookies();
     const supabase = createServerSupabase(cookieStore as unknown as CookieStore);

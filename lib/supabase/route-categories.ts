@@ -1,6 +1,6 @@
 export type RouteCategory = 'public' | 'anon-allowed' | 'authenticated';
 
-const PUBLIC_EXACT = ['/', '/about'];
+const PUBLIC_EXACT = ['/', '/about', '/login'];
 /** OAuth callback + auth-error must be reachable pre-session — classify any /auth/* as public. */
 const PUBLIC_PREFIX = ['/auth'];
 const ANON_ALLOWED = ['/try'];
