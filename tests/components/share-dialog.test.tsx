@@ -109,6 +109,27 @@ test('revoke success → clears held share, back to "No link yet"', async () => 
   await waitFor(() => expect(screen.queryByDisplayValue(/\/s\/tok$/)).not.toBeInTheDocument());
 });
 
+test('revoke 401 → router.replace(/login)', async () => {
+  createShareMock.mockResolvedValue({ id: 's1', token: 'tok', url: '/s/tok', expiresAt: null });
+  revokeShareMock.mockRejectedValue(new UnauthorizedError('unauthorized'));
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  fireEvent.click(screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
+});
+
+test('revoke error → inline role=alert, stays open', async () => {
+  createShareMock.mockResolvedValue({ id: 's1', token: 'tok', url: '/s/tok', expiresAt: null });
+  revokeShareMock.mockRejectedValue(new Error('revoke failed'));
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  fireEvent.click(screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/revoke failed/i));
+  expect(baseProps.onClose).not.toHaveBeenCalled();
+});
+
 test('dismissal: ✕/Close, Escape, backdrop all call onClose', () => {
   // Three independent dismissal mechanisms are exercised in one test block; each render() must be
   // torn down before the next (RTL's automatic afterEach cleanup only runs between `test()` blocks,

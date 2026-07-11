@@ -34,7 +34,7 @@ export default function ShareDialog({ playlistId, videoId, videoTitle, onClose }
     };
   }, []);
 
-  const guardedClose = () => { if (!busy) onClose(); };
+  const guardedClose = () => { if (!inFlightRef.current && !busy) onClose(); };
 
   const focusables = () =>
     Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [href], textarea, select') ?? []);
@@ -125,7 +125,6 @@ export default function ShareDialog({ playlistId, videoId, videoTitle, onClose }
           <div className="flex gap-3">
             <label className="flex items-center gap-1 text-sm">
               <input
-                ref={ttlGroupRef}
                 type="radio"
                 name="share-ttl"
                 value="7"
@@ -136,6 +135,7 @@ export default function ShareDialog({ playlistId, videoId, videoTitle, onClose }
             </label>
             <label className="flex items-center gap-1 text-sm">
               <input
+                ref={ttlGroupRef}
                 type="radio"
                 name="share-ttl"
                 value="30"
