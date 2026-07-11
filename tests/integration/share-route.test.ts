@@ -98,6 +98,7 @@ describe('share-route', () => {
   let rpcSpy: jest.SpyInstance;
   let ledgerBefore: unknown[];
   let chargeBefore: unknown[];
+  let ownerBudgetBefore: unknown[];
 
   beforeAll(async () => {
     // .order() keeps the byte-compare snapshot below order-deterministic (Codex/Claude cosmetic fix)
@@ -105,8 +106,10 @@ describe('share-route', () => {
     // the same order, which could make the afterAll toEqual flaky/false-negative.
     const { data: ledger } = await svc.from('spend_ledger').select('*').order('day');
     const { data: charge } = await svc.from('serve_model_charge').select('*').order('owner_id').order('doc_key').order('day');
+    const { data: ownerBudget } = await svc.from('serve_owner_budget').select('*').order('owner_id').order('day');
     ledgerBefore = ledger ?? [];
     chargeBefore = charge ?? [];
+    ownerBudgetBefore = ownerBudget ?? [];
     // Spy on the PROTOTYPE — the route constructs its own service client per request, so an
     // injected-instance spy would never see the calls the route itself makes.
     rpcSpy = jest.spyOn(SupabaseClient.prototype, 'rpc');
@@ -123,8 +126,13 @@ describe('share-route', () => {
   afterAll(async () => {
     const { data: ledgerAfter } = await svc.from('spend_ledger').select('*').order('day');
     const { data: chargeAfter } = await svc.from('serve_model_charge').select('*').order('owner_id').order('doc_key').order('day');
+    const { data: ownerBudgetAfter } = await svc.from('serve_owner_budget').select('*').order('owner_id').order('day');
     expect(ledgerAfter ?? []).toEqual(ledgerBefore); // byte-identical row sets — no charge ever landed
     expect(chargeAfter ?? []).toEqual(chargeBefore);
+    // Stage 1G / G1 Task 2 (P11): the per-owner serve budget is only ever touched by
+    // reserve_serve_model (5a) — since that RPC is never called on the share path (asserted in
+    // afterEach below), no share owner should have gained/changed a serve_owner_budget row either.
+    expect(ownerBudgetAfter ?? []).toEqual(ownerBudgetBefore);
     expect(generateMagazineModel).not.toHaveBeenCalled(); // zero generation calls across the whole block
     rpcSpy.mockRestore();
   });
