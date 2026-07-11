@@ -14,16 +14,27 @@
  * `ScopeProvider` around the main pane so the shared leaves (StarRating/NoteCell/
  * VideoQuickView/VideoMenu) resolve their own scope-aware requests.
  */
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { FilterState, SortColumn, SortOrder, Video } from '@/types';
 import { FILTER_DEFAULTS } from '@/types';
 import AccountMenu from './AccountMenu';
 import PlaylistSidebar from './PlaylistSidebar';
+import { NewPlaylistModal } from './NewPlaylistModal';
+import { IngestSummaryNotice } from './IngestSummaryNotice';
+import { IngestProgressBanner } from './IngestProgressBanner';
 import FilterBar from '@/components/FilterBar';
 import VideoList from '@/components/VideoList';
 import { ScopeProvider, type Scope } from '@/lib/client/scope';
-import { listVideos, setArchived, UnauthorizedError } from '@/lib/client/api';
+import {
+  createIngest,
+  ingestErrorMessage,
+  IngestError,
+  listVideos,
+  setArchived,
+  UnauthorizedError,
+  type IngestResult,
+} from '@/lib/client/api';
 
 export interface CloudAppProps {
   session: { userId: string; email: string } | null;
@@ -53,14 +64,24 @@ export default function CloudApp({ session }: CloudAppProps) {
 }
 
 function CloudAppBody() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const playlistId = searchParams.get('playlist');
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [summary, setSummary] = useState<IngestResult | null>(null);
+
+  function onIngestSuccess(result: IngestResult) {
+    setModalOpen(false);
+    setSummary(result);
+    router.push(`/?playlist=${result.playlistId}`); // playlistId non-null here
+  }
+
   return (
     <div className="flex">
-      <PlaylistSidebar />
+      <PlaylistSidebar onNewPlaylist={() => setModalOpen(true)} />
       {playlistId ? (
-        <PlaylistLibrary playlistId={playlistId} />
+        <PlaylistLibrary playlistId={playlistId} summary={summary} setSummary={setSummary} />
       ) : (
         <section
           aria-label="Cloud library"
@@ -69,11 +90,20 @@ function CloudAppBody() {
           <p>Pick a playlist from the sidebar to view its videos.</p>
         </section>
       )}
+      {modalOpen && (
+        <NewPlaylistModal onClose={() => setModalOpen(false)} onSuccess={onIngestSuccess} />
+      )}
     </div>
   );
 }
 
-function PlaylistLibrary({ playlistId }: { playlistId: string }) {
+interface PlaylistLibraryProps {
+  playlistId: string;
+  summary: IngestResult | null;
+  setSummary: (result: IngestResult | null) => void;
+}
+
+function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryProps) {
   const router = useRouter();
   // Memoized so StarRating/NoteCell/VideoQuickView (mounted under the ScopeProvider below)
   // don't see a new scope identity — and re-run their fetch effects — on every render.
@@ -86,13 +116,37 @@ function PlaylistLibrary({ playlistId }: { playlistId: string }) {
   const [showArchive, setShowArchive] = useState(false);
   const [filters, setFilters] = useState<FilterState>(FILTER_DEFAULTS);
 
+  // Tie the ingest URL to the playlist it belongs to, and DERIVE the live URL by matching the
+  // currently-viewed playlistId. Refresh can therefore never re-POST (re-bill) a playlist you've
+  // navigated away from — not even for the one render before the reset effect runs, and regardless
+  // of whether PlaylistLibrary is ever keyed by playlistId. The reqSeq guard below still drops
+  // stale video-list responses; this makes the SPEND path correct by construction.
+  const [urlEntry, setUrlEntry] = useState<{ playlistId: string; url: string } | null>(null);
+  const playlistUrl = urlEntry && urlEntry.playlistId === playlistId ? urlEntry.url : null;
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [bannerNonce, setBannerNonce] = useState(0);
+  // Stamps every fetchVideos call so a stale in-flight response (e.g. from a playlist we've
+  // since navigated away from) can be dropped instead of poisoning `playlistUrl` with the
+  // WRONG playlist's URL — which would let Refresh re-POST (and re-bill) that other playlist.
+  const reqSeq = useRef(0);
+  // Synchronous double-submit guard for the Refresh spend path (mirrors NewPlaylistModal's
+  // submittingRef) — closes the sub-frame window before React's setRefreshing(true) re-render
+  // disables the button. Unlike the modal, Refresh does not unmount, so it resets in `finally`
+  // so the user can refresh again.
+  const refreshingRef = useRef(false);
+
   const fetchVideos = useCallback(
     async (col: SortColumn | null, order: SortOrder) => {
+      const seq = ++reqSeq.current;
       try {
         const result = await listVideos(cloudScope, col ? { column: col, order } : undefined);
+        if (seq !== reqSeq.current) return; // a newer fetch superseded this — drop it
         setVideos(result.videos);
+        setUrlEntry({ playlistId, url: result.playlistUrl });
         setError(null);
       } catch (err) {
+        if (seq !== reqSeq.current) return;
         if (err instanceof UnauthorizedError) {
           router.replace('/login');
           return;
@@ -100,7 +154,7 @@ function PlaylistLibrary({ playlistId }: { playlistId: string }) {
         setError(err instanceof Error ? err.message : 'Failed to load videos.');
       }
     },
-    [cloudScope, router],
+    [cloudScope, playlistId, router],
   );
 
   // Fetch on mount and whenever the selected playlist changes. Sort re-fetches are triggered
@@ -111,9 +165,38 @@ function PlaylistLibrary({ playlistId }: { playlistId: string }) {
     setError(null);
     setSortColumn(null);
     setSortOrder('asc');
+    // playlistUrl is derived from urlEntry.playlistId === playlistId, so it goes null the
+    // instant playlistId changes — no explicit reset needed here.
+    setRefreshError(null);
     fetchVideos(null, 'asc');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudScope]);
+
+  const refetchVideos = useCallback(
+    () => fetchVideos(sortColumn, sortOrder),
+    [fetchVideos, sortColumn, sortOrder],
+  );
+
+  async function onRefresh() {
+    if (!playlistUrl || refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const result = await createIngest(playlistUrl);
+      setSummary(result);
+      setBannerNonce((n) => n + 1); // remount banner → re-probe picks up new active jobs
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        router.replace('/login');
+        return;
+      }
+      setRefreshError(err instanceof IngestError ? ingestErrorMessage(err) : 'Refresh failed. Try again.');
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }
 
   const handleSort = useCallback(
     (col: SortColumn, order: SortOrder) => {
@@ -180,6 +263,26 @@ function PlaylistLibrary({ playlistId }: { playlistId: string }) {
   return (
     <ScopeProvider scope={cloudScope}>
       <section aria-label="Cloud library" className="flex-1 px-6 py-6">
+        {summary && summary.playlistId === playlistId && (
+          <IngestSummaryNotice result={summary} onDismiss={() => setSummary(null)} />
+        )}
+        <IngestProgressBanner key={bannerNonce} playlistId={playlistId} onProgress={refetchVideos} />
+        <div className="flex items-center justify-between py-2">
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={playlistUrl === null || refreshing}
+            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          >
+            ⟳ Refresh
+          </button>
+        </div>
+        {refreshError && (
+          <p role="alert" className="mb-4 text-sm text-[var(--danger)]">
+            {refreshError}
+          </p>
+        )}
+
         {error && (
           <p role="alert" className="mb-4 text-sm text-[var(--danger)]">
             {error}

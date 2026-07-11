@@ -4,6 +4,9 @@
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
 import type { Scope } from '@/lib/client/scope';
 import type { SortColumn, SortOrder, Video } from '@/types';
+import type { ProducerCounts, JobFanoutResult } from '@/lib/job-queue/producer';
+import type { PlaylistJobRow } from '@/lib/storage/job-queue';
+import type { Rollup } from '@/lib/job-queue/poll-client';
 
 export class UnauthorizedError extends Error {}
 
@@ -100,6 +103,71 @@ export async function saveAnnotation(scope: Scope, videoId: string, patch: Annot
     body: JSON.stringify(body),
   });
   await handle<{ ok: true }>(res);
+}
+
+export interface IngestResult {
+  playlistId: string | null;
+  jobs: JobFanoutResult[];
+  counts: ProducerCounts;
+  challengeRequired: boolean;
+  dailyCapReached?: boolean;
+}
+
+export class IngestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly info: { retryAfterSeconds?: number; limit?: number; found?: number } = {},
+  ) {
+    super(`ingest failed (${status})`);
+    this.name = 'IngestError';
+  }
+}
+
+export function ingestErrorMessage(err: IngestError): string {
+  switch (err.status) {
+    case 400: return 'Enter a valid YouTube playlist URL.';
+    case 403: return "This account can't ingest right now.";
+    case 422:
+      return typeof err.info.found === 'number' && typeof err.info.limit === 'number'
+        ? `That playlist has ${err.info.found} videos; the limit is ${err.info.limit}. Try a smaller one.`
+        : 'That playlist is too large. Try a smaller one.';
+    case 429: return `You're adding playlists too quickly — try again in ${err.info.retryAfterSeconds}s.`;
+    case 502: return "Couldn't reach YouTube for that playlist. Try again.";
+    case 503: return 'The service is at capacity. Try again shortly.';
+    default:  return 'Something went wrong. Try again.';
+  }
+}
+
+export async function createIngest(playlistUrl: string): Promise<IngestResult> {
+  const res = await fetch('/api/jobs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playlistUrl }),
+  });
+  if (res.status === 401) throw new UnauthorizedError('unauthorized');
+  if (!res.ok) {
+    const raw = await res.json().catch(() => null);
+    const body: Record<string, unknown> = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    const info: { retryAfterSeconds?: number; limit?: number; found?: number } = {};
+    if (res.status === 429) {
+      const h = res.headers.get('retry-after');
+      const n = Number(h);
+      info.retryAfterSeconds = h && Number.isFinite(n) && n >= 1 ? n : 60;
+    }
+    if (res.status === 422) {
+      if (typeof body.limit === 'number') info.limit = body.limit;
+      if (typeof body.found === 'number') info.found = body.found;
+    }
+    throw new IngestError(res.status, info);
+  }
+  return res.json();
+}
+
+export async function getJobStatus(
+  playlistId: string,
+): Promise<{ jobs: PlaylistJobRow[]; rollup: Rollup }> {
+  const res = await fetch(`/api/jobs?playlistId=${encodeURIComponent(playlistId)}`);
+  return handle(res);
 }
 
 export async function setArchived(scope: Scope, videoId: string, archived: boolean): Promise<void> {

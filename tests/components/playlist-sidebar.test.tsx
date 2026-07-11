@@ -98,24 +98,22 @@ it('shows an onboarding empty state when there are no playlists', async () => {
   expect(await screen.findByText(/no playlists yet/i)).toBeInTheDocument();
 });
 
-it('"+ New playlist" is disabled and clicking it makes no listPlaylists/fetch call', async () => {
+it('"+ New playlist" is enabled and fires onNewPlaylist without a fetch', async () => {
   mockListPlaylists.mockResolvedValue(playlists);
-  render(<PlaylistSidebar />);
+  const onNewPlaylist = jest.fn();
+  render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} />);
   await screen.findByText('ML Talks');
-  expect(mockListPlaylists).toHaveBeenCalledTimes(1);
-
   const newButton = screen.getByRole('button', { name: /new playlist/i });
-  expect(newButton).toBeDisabled();
+  expect(newButton).toBeEnabled();
   fireEvent.click(newButton);
-
-  expect(mockListPlaylists).toHaveBeenCalledTimes(1);
+  expect(onNewPlaylist).toHaveBeenCalledTimes(1);
   expect(global.fetch).not.toHaveBeenCalled();
 });
 
-it('"+ New playlist" still renders (disabled) in the empty state', async () => {
+it('"+ New playlist" is enabled in the empty state', async () => {
   mockListPlaylists.mockResolvedValue([]);
-  render(<PlaylistSidebar />);
+  const onNewPlaylist = jest.fn();
+  render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} />);
   await screen.findByText(/no playlists yet/i);
-  const newButton = screen.getByRole('button', { name: /new playlist/i });
-  expect(newButton).toBeDisabled();
+  expect(screen.getByRole('button', { name: /new playlist/i })).toBeEnabled();
 });
