@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Revision:** v2 (2026-07-11) — incorporates Round-1 dual adversarial review (`docs/reviews/plan-2b-cloud-ingest-codex.md`, `-review.md`). Round-1 found 3 Blocking + 5 High + 3 Medium + 3 Low across both reviewers; all are addressed here. Principal changes vs v1: (a) `pollUntilTerminal` gains a coherent extension — `onProgress`, `isFatal`, `AbortSignal`, and an `{aborted}` result — so the banner can show incremental progress, redirect on 401, and be cancelled on navigation; (b) Task 7 rewritten as **probe-first + cancellable** with real (working) code, not the broken v1 draft; (c) Task 9 wiring uses the **real** `fetchVideos(col, order)` + adds `playlistUrl` state; (d) **correct design tokens** (`--surface-*`/`--text-primary`/`--warning`) throughout; (e) store-layer integration test; (f) focus trap, ✕ submit-guard, refetch-dedup, 422 fallback.
+**Revision:** v3 (2026-07-11) — incorporates Round-1 **and Round-2** dual adversarial review (`docs/reviews/plan-2b-cloud-ingest-codex.md`/`-review.md` = R1; `-codex-v2-rereview.md`/`-v2-rereview.md` = R2). R1 found 3 Blocking + 5 High + 3 Medium + 3 Low; R2 (on the v2 rewrite) found 1 Blocking + 3 High + 2 Medium + 3 Low — all in Task 7's **test fixtures** + wiring details (both reviewers confirmed the v2 component *logic* genuinely fixed). Principal v2 changes: (a) `pollUntilTerminal` extension (`onProgress`, `isFatal`, `AbortSignal`, `{aborted}`); (b) Task 7 probe-first + cancellable; (c) Task 9 real `fetchVideos`/`playlistUrl`; (d) correct tokens; (e) store-layer integration test; (f) focus trap, ✕ submit-guard, refetch-dedup, 422 fallback. **v3 (R2) fixes:** (g) Task 7 `timedOut` → give-up (was done/mixed); (h) Task 7 test `status()` builds **real job rows** from bucket counts (the poll recomputes rollup from rows — empty rows never go terminal); (i) split the "renders progress" test (fake timers, non-terminal) from "resolves done/mixed" (real timers, immediate terminal) so React batching can't coalesce away the transient; (j) `onProgress` held in a **ref** so a mid-ingest refetch can't overwrite the user's current sort; (k) Task 9 resets `playlistUrl`/`refreshError` on playlist change (Refresh can't re-POST the previous playlist); (l) `CloudAppBody` gets `useRouter()`; (m) probe-401 `cancelled`-guarded; (n) Task 1 abort tests use an incrementing `now` backstop (RED can't hang) + an abort-during-sleep test.
 
 **Goal:** Let a signed-in cloud user create content — enter a YouTube playlist URL, enqueue it through the existing cloud job queue, watch progress to completion with every guardrail outcome surfaced, and Refresh an existing playlist to pick up new videos.
 
@@ -208,20 +208,40 @@ describe('pollUntilTerminal extensions', () => {
     expect(fetchRows).toHaveBeenCalledTimes(3);
   });
 
+  // Abort tests use an INCREMENTING `now` + finite `timeoutMs` so the RED run (current
+  // code has no signal handling) terminates via timeout instead of hanging forever
+  // (R2 Medium). On the implemented code, abort wins before timeout.
+  const abortable = () => { let t = 0; return { intervalMs: 1, maxIntervalMs: 1, timeoutMs: 500, sleep: async () => {}, now: () => (t += 50) }; };
+
   it('aborts via signal and resolves { aborted: true }', async () => {
     const ac = new AbortController();
     let calls = 0;
     const fetchRows = jest.fn(async () => { calls++; if (calls === 2) ac.abort(); return [row('active')]; });
-    const res = await pollUntilTerminal(fetchRows, { ...fast, signal: ac.signal });
+    const res = await pollUntilTerminal(fetchRows, { ...abortable(), signal: ac.signal });
     expect(res).toEqual({ aborted: true });
   });
 
   it('a pre-aborted signal never fetches', async () => {
     const ac = new AbortController(); ac.abort();
-    const fetchRows = jest.fn();
-    const res = await pollUntilTerminal(fetchRows, { ...fast, signal: ac.signal });
+    const fetchRows = jest.fn(async () => [row('active')]);
+    const res = await pollUntilTerminal(fetchRows, { ...abortable(), signal: ac.signal });
     expect(res).toEqual({ aborted: true });
     expect(fetchRows).not.toHaveBeenCalled();
+  });
+
+  it('aborting during the wait resolves { aborted: true } without another fetch', async () => {
+    const ac = new AbortController();
+    let resolveSleep!: () => void;
+    const sleep = () => new Promise<void>((r) => { resolveSleep = r; });
+    const fetchRows = jest.fn(async () => [row('active')]);
+    let t = 0;
+    const p = pollUntilTerminal(fetchRows, { intervalMs: 1, maxIntervalMs: 1, timeoutMs: 500, sleep, now: () => (t += 10), signal: ac.signal });
+    await Promise.resolve(); await Promise.resolve(); // let fetch #1 run and the loop park on sleep
+    ac.abort();
+    resolveSleep();
+    const res = await p;
+    expect(res).toEqual({ aborted: true });
+    expect(fetchRows).toHaveBeenCalledTimes(1); // no fetch after abort
   });
 
   it('works with none of the new options (backward compatible)', async () => {
@@ -993,7 +1013,18 @@ import { getJobStatus, UnauthorizedError } from '@/lib/client/api';
 const getJobStatusMock = getJobStatus as jest.MockedFunction<typeof getJobStatus>;
 
 const roll = (over: any) => ({ queued: 0, active: 0, completed: 0, failed: 0, dead_letter: 0, cancelled: 0, total: 0, terminal: false, ...over });
-const status = (over: any) => ({ jobs: [], rollup: roll(over) });
+// Build REAL job rows from bucket counts. The banner polls via
+// getJobStatus(...).then(r => r.jobs), and pollUntilTerminal RECOMPUTES rollup from
+// those rows — so jobs must match the rollup or terminal is never reached (R2 Blocking).
+const jobsFrom = (r: any) =>
+  ([] as string[])
+    .concat(Array(r.queued).fill('queued'), Array(r.active).fill('active'),
+      Array(r.completed).fill('completed'), Array(r.failed).fill('failed'),
+      Array(r.dead_letter).fill('dead_letter'), Array(r.cancelled).fill('cancelled'))
+    .map((s, i) => ({ jobId: `j${i}`, videoId: `v${i}`, status: s, progressPhase: null, attempts: 0, error: null }));
+// `over` must be internally consistent (total === sum of buckets) so probe (.rollup)
+// and poll (rollup(jobs)) agree.
+const status = (over: any) => { const r = roll(over); return { jobs: jobsFrom(r), rollup: r }; };
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -1018,22 +1049,33 @@ describe('IngestProgressBanner', () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
   });
 
-  it('shows N of M then resolves to complete, firing parent onProgress on advance', async () => {
+  // Observable transient render: use fake timers + a never-terminal poll so the
+  // 'progress' commit is not coalesced with a terminal one (R2 High #2).
+  it('renders "N of M" and a progressbar while non-terminal', async () => {
+    jest.useFakeTimers();
+    getJobStatusMock.mockResolvedValue(status({ total: 2, active: 2 })); // never terminal
+    render(<IngestProgressBanner playlistId="p" />);
+    await act(async () => {}); // flush probe + first poll microtasks; loop then parks on the fake timer
+    expect(screen.getByText(/Ingesting 0 of 2/)).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    jest.useRealTimers();
+  });
+
+  // Stable terminal state only (poll #1 is immediately terminal → no sleep → fast under real timers).
+  it('resolves to complete and fires parent onProgress on advance', async () => {
     getJobStatusMock
-      .mockResolvedValueOnce(status({ total: 2, queued: 1, active: 1 }))        // probe (progress)
-      .mockResolvedValue(status({ total: 2, completed: 2, terminal: true }));    // first poll (terminal)
+      .mockResolvedValueOnce(status({ total: 2, queued: 1, active: 1 })) // probe (live)
+      .mockResolvedValue(status({ total: 2, completed: 2 }));            // poll → all-terminal rows
     const onProgress = jest.fn();
     render(<IngestProgressBanner playlistId="p" onProgress={onProgress} />);
-    expect(await screen.findByText(/Ingesting 0 of 2/)).toBeInTheDocument();
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
     await waitFor(() => expect(screen.getByText(/Ingest complete/)).toBeInTheDocument());
-    expect(onProgress).toHaveBeenCalled(); // completed advanced 0 → 2
+    expect(onProgress).toHaveBeenCalled(); // done count advanced 0 → 2
   });
 
   it('shows mixed state when terminal with failures', async () => {
     getJobStatusMock
-      .mockResolvedValueOnce(status({ total: 3, active: 1 }))                                  // probe
-      .mockResolvedValue(status({ total: 3, completed: 2, failed: 1, terminal: true }));       // poll terminal
+      .mockResolvedValueOnce(status({ total: 3, active: 3 }))            // probe (live)
+      .mockResolvedValue(status({ total: 3, completed: 2, failed: 1 })); // poll → terminal, mixed
     render(<IngestProgressBanner playlistId="p" />);
     await waitFor(() => expect(screen.getByText(/2 done · 1 failed/)).toBeInTheDocument());
   });
@@ -1082,7 +1124,7 @@ Create `components/cloud/IngestProgressBanner.tsx`:
 ```tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getJobStatus, UnauthorizedError } from '@/lib/client/api';
 import { pollUntilTerminal, type Rollup } from '@/lib/job-queue/poll-client';
@@ -1103,6 +1145,10 @@ export function IngestProgressBanner({ playlistId, onProgress }: { playlistId: s
   const router = useRouter();
   const [state, setState] = useState<BannerState>({ kind: 'hidden' });
   const [dismissed, setDismissed] = useState(false);
+  // Hold the latest onProgress in a ref so a mid-ingest refetch always uses the
+  // current sort (the effect below captures only playlistId — R2 Medium).
+  const onProgressRef = useRef(onProgress);
+  useEffect(() => { onProgressRef.current = onProgress; });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1113,7 +1159,7 @@ export function IngestProgressBanner({ playlistId, onProgress }: { playlistId: s
 
     const fireIfAdvanced = (r: Rollup) => {
       const d = doneCount(r);
-      if (d !== lastFired) { lastFired = d; try { onProgress?.(); } catch { /* isolate */ } }
+      if (d !== lastFired) { lastFired = d; try { onProgressRef.current?.(); } catch { /* isolate */ } }
     };
 
     (async () => {
@@ -1122,7 +1168,7 @@ export function IngestProgressBanner({ playlistId, onProgress }: { playlistId: s
       try {
         first = await getJobStatus(playlistId);
       } catch (err) {
-        if (err instanceof UnauthorizedError) { router.replace('/login'); return; }
+        if (err instanceof UnauthorizedError) { if (!cancelled) router.replace('/login'); return; }
         return; // transient probe failure, never showed → stay hidden
       }
       if (cancelled) return;
@@ -1151,7 +1197,8 @@ export function IngestProgressBanner({ playlistId, onProgress }: { playlistId: s
         setState({ kind: 'gaveup' });
         return;
       }
-      const r = result.rollup; // done | timedOut
+      if ('timedOut' in result) { setState({ kind: 'gaveup' }); return; } // 10-min cap → give-up (spec §6)
+      const r = result.rollup; // done (all rows terminal)
       fireIfAdvanced(r);
       const failed = r.failed + r.dead_letter;
       setState(failed > 0 ? { kind: 'mixed', completed: r.completed, failed } : { kind: 'done', total: r.total });
@@ -1281,6 +1328,7 @@ git commit -m "feat(2b): enable + New playlist affordance in sidebar"
 **Wiring contract (implement exactly — corrects Round-1 H3/H4/H5):**
 
 *In `CloudAppBody` (owns modal + summary):*
+- **Add `const router = useRouter()`** — `CloudAppBody` does not currently import a router; `onIngestSuccess` needs it for `router.push` (R2 Low).
 - `const [modalOpen, setModalOpen] = useState(false)` and `const [summary, setSummary] = useState<IngestResult | null>(null)`.
 - Pass `onNewPlaylist={() => setModalOpen(true)}` to `<PlaylistSidebar />`.
 - When `modalOpen`, render `<NewPlaylistModal onClose={() => setModalOpen(false)} onSuccess={onIngestSuccess} />`:
@@ -1295,6 +1343,7 @@ git commit -m "feat(2b): enable + New playlist affordance in sidebar"
 
 *In `PlaylistLibrary` (mounts banner/notice/Refresh; owns `playlistUrl`):*
 - Add state `const [playlistUrl, setPlaylistUrl] = useState<string | null>(null)` and `const [refreshError, setRefreshError] = useState<string | null>(null)`; **inside `fetchVideos`, after `setVideos(result.videos)` add `setPlaylistUrl(result.playlistUrl)`** (the value was previously discarded).
+- **Reset `playlistUrl` and `refreshError` on playlist change** — in the existing mount/reset `useEffect(() => { setVideos(null); … }, [cloudScope])` (`CloudApp.tsx:109-116`), add `setPlaylistUrl(null); setRefreshError(null);` **before** `fetchVideos(null, 'asc')`. Without this, navigating A→B leaves A's `playlistUrl` live until B's `listVideos` resolves, so a Refresh click in that window would re-POST **playlist A** (R2 High). The Refresh button's `disabled={playlistUrl === null || refreshing}` then correctly disables Refresh during the reload window.
 - Add `const refetchVideos = useCallback(() => fetchVideos(sortColumn, sortOrder), [fetchVideos, sortColumn, sortOrder])`.
 - Add `const [bannerNonce, setBannerNonce] = useState(0)`.
 - At the **top of the `<section aria-label="Cloud library">`**, above the existing `{error && …}` alert, render (always, not gated on `videos.length`):
@@ -1522,9 +1571,20 @@ git commit -m "test(2b): integration — store-layer rollup/poll + owner isolati
 - M1/#7 refetch storm → `fireIfAdvanced` dedup. ✅
 - M2/#9 focus trap → Task 6 trap + test. ✅
 - M3/#9 integration layer → Task 10 store-layer + owner isolation. ✅
-- M4/#10 impossible mock → Task 7 tests use consistent rollups. ✅
+- M4/#10 impossible mock → **v2 claim was FALSE** (the `status()` helper still returned `jobs:[]`); fixed in v3 via the `jobsFrom` helper (Task 7 Step 1). ✅ (v3)
 - L1/#11 onProgress throw → Task 1 isolates in try/catch + test. ✅
 - L2/#10 ✕ guard → Task 6 all dismissal guarded while submitting. ✅
 - L3/#11 422 undefined → Task 2 generic fallback + test. ✅
+
+**Round-2 findings → resolution (v3):**
+- R2-B1 impossible mock reintroduced → `jobsFrom(rollup)` builds real rows so `rollup(jobs)` reproduces the intended rollup (Task 7 Step 1). ✅
+- R2-H `timedOut` as done → Task 7 resolution branch now maps `timedOut → gaveup`. ✅
+- R2-H transient render coalesced → split into a fake-timer "renders progress" test (never-terminal) + real-timer "resolves done/mixed" (immediate terminal, stable-state assertion only). ✅
+- R2-H Refresh wrong-playlist → Task 9 resets `playlistUrl`/`refreshError` on playlist change; Refresh disabled during the reload window. ✅
+- R2-M stale `onProgress` → held in `onProgressRef`, updated each render (Task 7). ✅
+- R2-M abort test RED-hang → abort tests use incrementing `now` + finite `timeoutMs` backstop (Task 1). ✅
+- R2-L abort-during-sleep uncovered → added the controlled-`sleep` abort test (Task 1). ✅
+- R2-L `CloudAppBody` missing `useRouter()` → added to the wiring contract (Task 9). ✅
+- R2-L probe-401 not `cancelled`-guarded → `if (!cancelled) router.replace('/login')` (Task 7). ✅
 
 **Spec coverage / type consistency:** `IngestResult` (T2) reused by T5/T6/T9; `getJobStatus` `{jobs,rollup}` (T3) consumed by T7; `PollOptions.onProgress` snapshot `{rollup,rows}` identical T1/T7; `onNewPlaylist` name identical T8/T9; `refetchVideos` typed `() => void` matches `IngestProgressBanner.onProgress`; `Rollup`/`PlaylistJobRow` imported from source, never redefined.
