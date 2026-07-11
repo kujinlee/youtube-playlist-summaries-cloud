@@ -113,4 +113,10 @@ describe('getJobStatus', () => {
     global.fetch = mockRes(401, { error: 'authentication required' });
     await expect(getJobStatus('p')).rejects.toBeInstanceOf(UnauthorizedError);
   });
+  it('encodes the playlistId into the query string', async () => {
+    const payload = { jobs: [], rollup: { queued: 0, active: 0, completed: 0, failed: 0, dead_letter: 0, cancelled: 0, total: 0, terminal: false } };
+    global.fetch = mockRes(200, payload);
+    await getJobStatus('p uuid&x=1');
+    expect(global.fetch).toHaveBeenCalledWith('/api/jobs?playlistId=p%20uuid%26x%3D1');
+  });
 });
