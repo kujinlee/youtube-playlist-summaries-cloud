@@ -95,4 +95,42 @@ describe('NewPlaylistModal', () => {
     fireEvent.keyDown(dialog, { key: 'Tab' });
     expect(document.activeElement).toBe(focusables[0]);
   });
+
+  it('guards against double-submit — two rapid submits call createIngest once', async () => {
+    let resolve!: (v: any) => void;
+    createIngestMock.mockReturnValue(new Promise((r) => { resolve = r; }) as any);
+    render(<NewPlaylistModal onClose={() => {}} onSuccess={() => {}} />);
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'https://youtube.com/playlist?list=X' } });
+    const form = screen.getByRole('textbox').closest('form')!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(createIngestMock).toHaveBeenCalledTimes(1);
+    resolve(okResult('p'));
+  });
+
+  it('traps focus in reverse: Shift+Tab from the first focusable wraps to the last', () => {
+    render(<NewPlaylistModal onClose={() => {}} onSuccess={() => {}} />);
+    const dialog = screen.getByRole('dialog');
+    const focusables = dialog.querySelectorAll<HTMLElement>('button, input, [href], textarea, select');
+    const first = focusables[0];
+    first.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(focusables[focusables.length - 1]);
+  });
+
+  it('re-enables the Add button after a null-playlistId result', async () => {
+    createIngestMock.mockResolvedValue(okResult(null) as any);
+    render(<NewPlaylistModal onClose={() => {}} onSuccess={() => {}} />);
+    fillAndSubmit();
+    expect(await screen.findByText('No videos could be ingested from that playlist.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add/i })).toBeEnabled();
+  });
+
+  it('re-enables the Add button after an IngestError', async () => {
+    createIngestMock.mockRejectedValue(new IngestError(422, {}));
+    render(<NewPlaylistModal onClose={() => {}} onSuccess={() => {}} />);
+    fillAndSubmit();
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add/i })).toBeEnabled();
+  });
 });

@@ -12,6 +12,7 @@ export function NewPlaylistModal({ onClose, onSuccess }: { onClose: () => void; 
   const dialogRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     returnFocusRef.current = document.activeElement as HTMLElement | null;
@@ -38,12 +39,15 @@ export function NewPlaylistModal({ onClose, onSuccess }: { onClose: () => void; 
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
       const result = await createIngest(url);
       if (result.playlistId === null) {
         setError('No videos could be ingested from that playlist.');
+        submittingRef.current = false;
         setSubmitting(false);
         return;
       }
@@ -51,6 +55,7 @@ export function NewPlaylistModal({ onClose, onSuccess }: { onClose: () => void; 
     } catch (err) {
       if (err instanceof UnauthorizedError) { router.replace('/login'); return; }
       setError(err instanceof IngestError ? ingestErrorMessage(err) : 'Something went wrong. Try again.');
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
