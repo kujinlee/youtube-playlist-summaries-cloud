@@ -19,6 +19,7 @@ Copied verbatim from spec §11–§12. Every task's requirements implicitly incl
 - **No guardrail weakening** — 2c is display/link-only for docs; it changes no threshold and bypasses no gate.
 - **Iterative dual-review flags (§12):** Task 1 (share create/revoke — money-adjacent multi-tenant RPC/token surface) and Task 2 (`summaryReady` read-model change threading through `listVideos` serveCloud) get the iterative dual-review treatment: re-review the revised artifact after any Blocking/High fix until a round returns no new Blocking/High.
 - **Backend touches are read-model / response-shape only** — no doc generation, no charging, no new table, no guardrail surface. Cloud PDF + deep-dive generation and full share-management (list/revoke-any) are explicitly deferred (spec §1).
+- **Design tokens that EXIST (use ONLY these; jest/jsdom cannot catch an invalid CSS var, so a wrong token ships an unstyled component — this is the exact defect the 2b review caught):** `--surface-base`, `--surface-raised`, `--surface-overlay`, `--border`, `--border-strong`, `--text-primary`, `--text-secondary`, `--text-muted`, `--accent`, `--success`, `--warning`, `--danger` (all in `app/globals.css`). Modal backdrop uses literal `rgba(0,0,0,.4)` (matches `NewPlaylistModal`). **The spec §6 token names `--bg`, `--bg-elevated`, `--text` are WRONG (do not exist) — they map to `--surface-base`, `--surface-raised`, `--text-primary` respectively. `NewPlaylistModal.tsx` already uses the correct set; copy from it, not from spec §6.**
 
 **Resolved planning hooks (spec §2):**
 1. `summaryReady?: boolean` — derived, added to the shared `VideoSchema` as `.optional()` and populated **only** in the cloud store mapping (`SupabaseMetadataStore.readIndex`); local path never sets it. (Task 2)
@@ -62,14 +63,22 @@ Copied verbatim from spec §11–§12. Every task's requirements implicitly incl
 - Consumes: existing `create_share_token(p_playlist_id uuid, p_video_id text, p_expiry timestamptz, p_token_hash text)` (migration `0013_share_tokens.sql:22-46`), currently `returns timestamptz`; `generateShareToken()`, `resolveExpiry()` (unchanged).
 - Produces: `POST /api/share` 201 response `{ id: string; token: string; url: string; expiresAt: string | null }`. The RPC now `returns table(id uuid, expires_at timestamptz)` (single row). Task 4's `createShare` relies on this shape.
 
-**Context the brief cannot know:** Postgres cannot `CREATE OR REPLACE` a function across a return-type change, so the migration must `DROP FUNCTION` then `CREATE`. Dropping a function also drops its `GRANT EXECUTE`, so the grant to `authenticated` (from `0013:86`) **must be re-applied** in `0017`. The `RETURNING` clause is qualified as `share_tokens.id` to avoid ambiguity with the new `id` OUT column. Logic (owner check, hash-format check, TTL bound, promoted predicate, insert) is otherwise byte-identical to `0013`.
+**Context the brief cannot know:** Postgres cannot `CREATE OR REPLACE` a function across a return-type change, so the migration must `DROP FUNCTION` then `CREATE`. Dropping a function also drops its `GRANT EXECUTE`, so the grant to `authenticated` (from `0013:86`) **must be re-applied** in `0017`. The `RETURNING` clause is qualified as `share_tokens.id` to avoid ambiguity with the new `id` OUT column. Logic (owner check, hash-format check, TTL bound, promoted predicate, insert) is otherwise byte-identical to `0013`. The whole migration runs in one transaction, so the RPC is never *missing* mid-migration.
+
+**Deploy-ordering note (Codex H3 — accepted as documented):** the return type changes scalar→row, so the route change and the migration are a matched pair. **Deploy migration `0017` and the route change together in a single atomic deploy** (this project applies migrations + app code together, not as a rolling blue-green with live share-create traffic). During a hypothetical version-skew window, new-route-vs-old-RPC returns 404 on every create, and old-route-vs-new-RPC reads `data` as an array — both self-heal once both halves land. If a future rolling-deploy model is ever adopted, prefer a versioned RPC name (`create_share_token_v2`) instead of DROP+CREATE. For the current atomic-deploy model, no version-skew window exists.
+
+**Caller audit (Codex M1 / Claude L3 — accepted):** `grep -rn create_share_token` returns exactly three non-defining sites: `app/api/share/route.ts` (migrated in this task), `tests/integration/share-tokens-rpc.test.ts`, and `tests/api/share-mint-route.test.ts`. In `share-tokens-rpc.test.ts`, only the **"returns expires_at"** test (≈`:15-28`) *reads* the RPC return; the other ~10 calls are seeding calls that ignore `data` and need no change. **Keep** that test's existing row-exists/owner assertions (`:26-28`) — only the return-shape assertion changes.
 
 - [ ] **Step 1: Write the failing integration test (RPC returns id)**
 
 Open `tests/integration/share-tokens-rpc.test.ts`. Find the `create_share_token` happy-path call (it currently reads `data` as the scalar expiry). Change that assertion block to expect a single-row result carrying `id` and `expires_at`:
 
 ```ts
-// After signInAs(userA) and seeding a promoted video (existing helpers in this file):
+// After signInAs(userA) and seeding a promoted video (existing helpers in this file).
+// KEEP the original row-exists / owner assertions (share-tokens-rpc.test.ts:26-28);
+// only the return-shape assertion changes from scalar to a single row.
+
+// (a) 'never' expiry → returns a row with id + expires_at: null
 const { data, error } = await userAClient.rpc('create_share_token', {
   p_playlist_id: playlistId,
   p_video_id: videoId,
@@ -80,6 +89,17 @@ expect(error).toBeNull();
 const row = Array.isArray(data) ? data[0] : data;
 expect(row).toMatchObject({ id: expect.any(String), expires_at: null });
 expect(row.id).toMatch(/^[0-9a-f-]{36}$/i);   // uuid
+
+// (b) non-null expiry round-trips (Codex M2): returned expires_at echoes the input.
+// Use a SECOND distinct token hash — token_hash is UNIQUE.
+const iso = new Date(Date.now() + 7 * 864e5).toISOString();
+const { data: data2, error: err2 } = await userAClient.rpc('create_share_token', {
+  p_playlist_id: playlistId, p_video_id: videoId, p_expiry: iso, p_token_hash: tokenHash2,
+});
+expect(err2).toBeNull();
+const row2 = Array.isArray(data2) ? data2[0] : data2;
+expect(row2.id).toMatch(/^[0-9a-f-]{36}$/i);
+expect(new Date(row2.expires_at).getTime()).toBeCloseTo(new Date(iso).getTime(), -3); // ~seconds
 ```
 
 - [ ] **Step 2: Run it — verify it fails**
@@ -138,11 +158,13 @@ Expected: PASS.
 
 - [ ] **Step 5: Write the failing route test (response includes id)**
 
-Open `tests/api/share-mint-route.test.ts`. Update the mocked `supabase.rpc` to return the new row shape and assert `id` is in the 201 body:
+Open `tests/api/share-mint-route.test.ts`. **Critical (Claude M3):** this file's `beforeEach` default mock (≈`:19`) currently resolves the rpc to a **scalar** (`{ data: <ISO string>, error: null }`). After the route change (`Array.isArray(data) ? data[0] : null`), a scalar default yields `row = null` → 404, so **every happy-path test that does not override the mock will break**. Update the default mock to the array-row shape, and note the mock variable in this file is named **`mockRpc`** (not `rpc`):
 
 ```ts
-// The rpc mock must now resolve to { data: [{ id, expires_at }], error: null }:
-rpc.mockResolvedValue({ data: [{ id: 'share-uuid-1', expires_at: null }], error: null });
+// beforeEach default (≈ line 19) — change the scalar to a single-row array:
+mockRpc.mockResolvedValue({ data: [{ id: 'share-uuid-1', expires_at: null }], error: null });
+
+// The 201 happy-path assertion now includes id:
 // ...POST /api/share with a valid body...
 expect(res.status).toBe(201);
 const body = await res.json();
@@ -154,7 +176,7 @@ expect(body).toEqual({
 });
 ```
 
-Keep the existing error-path assertions (400 missing fields, 400 invalid ttl, 401 no user, 404 on rpc error) unchanged **except** that the rpc-error path's mock must be `{ data: null, error: {...} }` → still 404.
+Keep the existing error-path assertions (400 missing fields, 400 invalid ttl, 401 no user, 404 on rpc error) unchanged **except** the rpc-error path's mock must be `{ data: null, error: {...} }` → still 404. If any existing assertion reads `body.expiresAt` as a string, it still holds — `expires_at` in the row echoes the input (null here).
 
 - [ ] **Step 6: Run it — verify it fails**
 
@@ -202,7 +224,7 @@ git commit -m "feat(2c): create_share_token returns id; POST /api/share includes
 
 **Files:**
 - Modify: `types/index.ts` (`VideoSchema`, near the `updatedAt` field ~`:76-81`)
-- Modify: `lib/storage/supabase/supabase-metadata-store.ts:45` (`readIndex` mapping)
+- Modify: `lib/storage/supabase/supabase-metadata-store.ts` — `readIndex` mapping (~`:45`) AND `stripComputed` (~`:14`)
 - Test: `tests/lib/supabase-metadata-store-summary-ready.test.ts` *(create)*
 
 **Interfaces:**
@@ -210,6 +232,8 @@ git commit -m "feat(2c): create_share_token returns id; POST /api/share includes
 - Produces: `Video.summaryReady?: boolean` — `true` iff the cloud row's `data.artifacts.summaryMd.status === 'promoted'`, else `false`; `undefined` on the local path. Tasks 6/7 gate on it.
 
 **Context the brief cannot know:** `artifacts` is NOT a typed field on `VideoSchema` — it lives only in the DB `videos.data` jsonb and is read via ad-hoc casts (`app/api/html/[id]/route.ts:55`, `lib/share/serve.ts:44`). The canonical readiness predicate `artifacts.summaryMd.status === 'promoted'` is used at those sites + `lib/job-queue/summary-handler.ts:87`. `BlobStatus` = `'pending' | 'committed' | 'promoted' | 'repair_needed'` (`lib/storage/blob-store.ts:3`). serveLocal (`app/api/videos/route.ts:94-128`) and serveCloud (`:134-176`) are separate functions but share the `Video` type via `sortVideos`; the local store (`LocalMetadataStore.readIndex`) has no `artifacts`, so making the field `.optional()` and deriving it only cloud-side leaves local `undefined` — identical to the `updatedAt` precedent.
+
+**Invariant to preserve (Claude M2 — REQUIRED):** `summaryReady` is a **read-computed** key exactly like `updatedAt` — derived from the DB row on read, never a source-of-truth field in `videos.data`. `stripComputed<T>(v)` (`supabase-metadata-store.ts:14`) strips `updatedAt` before **every** write to `videos.data` (it guards `upsertVideo`, `updateVideoFields`, `bulkUpdateVideoFields`) precisely so a read-surfaced computed key can never round-trip into the jsonb. `summaryReady` **must be added to `stripComputed`** too. No current caller round-trips a `readIndex`-sourced `Video` back to a write, so nothing breaks today — but omitting it silently breaks the stated invariant and risks a future write baking a stale `summaryReady` into `videos.data` (where the serving route would then read a lie). This is a required step, not optional polish.
 
 - [ ] **Step 1: Write the failing derivation test**
 
@@ -250,7 +274,7 @@ In `types/index.ts`, inside `VideoSchema` (immediately after the `updatedAt` fie
 
 - [ ] **Step 4: Derive it in the cloud store mapping**
 
-In `lib/storage/supabase/supabase-metadata-store.ts:45`, replace the `videos:` mapping with:
+In `lib/storage/supabase/supabase-metadata-store.ts` (~`:45`), replace the `videos:` mapping with:
 
 ```ts
       videos: (rows ?? []).map((r) => ({
@@ -262,22 +286,44 @@ In `lib/storage/supabase/supabase-metadata-store.ts:45`, replace the `videos:` m
       })),
 ```
 
-- [ ] **Step 5: Run the derivation test — verify it passes**
+- [ ] **Step 5: Add `summaryReady` to `stripComputed` (write-side invariant)**
 
-Run: `npx jest supabase-metadata-store-summary-ready`
-Expected: PASS.
+In the same file (~`:14`), extend `stripComputed` so `summaryReady` (like `updatedAt`) can never round-trip into `videos.data`:
 
-- [ ] **Step 6: Confirm local path untouched + full regression**
+```ts
+function stripComputed<T extends object>(v: T): Omit<T, 'updatedAt' | 'summaryReady'> {
+  const { updatedAt: _u, summaryReady: _s, ...rest } = v as any;
+  return rest;
+}
+```
+
+Also update the block comment above it (which currently explains only `updatedAt`) to note that `summaryReady` is likewise a read-computed key derived from `artifacts.summaryMd.status` and must never persist to the jsonb.
+
+- [ ] **Step 6: Write + run the strip test (mirror the existing `updatedAt` strip test)**
+
+Find the existing test that asserts `updatedAt` is stripped before a write (search `tests/` for `stripComputed` or the `updatedAt` write-strip assertion, e.g. in a `supabase-metadata-store` write test). Add a sibling assertion — pass a `Video` carrying `summaryReady: true` (and `updatedAt`) into `upsertVideo`, capture the payload written to `videos.data`, and assert **neither** `summaryReady` **nor** `updatedAt` appears:
+
+```ts
+// with the store's write path mocked to capture the persisted `data`:
+await store.upsertVideo(principal, { ...videoFixture, updatedAt: 'x', summaryReady: true } as any);
+const persisted = capturedInsert.data;         // the object written to videos.data
+expect(persisted).not.toHaveProperty('summaryReady');
+expect(persisted).not.toHaveProperty('updatedAt');
+```
+
+Run: `npx jest supabase-metadata-store` — the derivation test and the strip test both pass.
+
+- [ ] **Step 7: Confirm local path untouched + full regression**
 
 Run: `npx jest && npx tsc --noEmit`
 Expected: full unit suite green (including all existing local-store and serveLocal tests — they must still pass unchanged, proving the local path is unaffected); 0 type errors.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add types/index.ts lib/storage/supabase/supabase-metadata-store.ts \
         tests/lib/supabase-metadata-store-summary-ready.test.ts
-git commit -m "feat(2c): derive cloud-only summaryReady from promoted artifact status"
+git commit -m "feat(2c): derive cloud-only summaryReady (promoted); strip it before writes"
 ```
 
 ---
@@ -327,6 +373,15 @@ test('download html: format=html & download=1', () => {
   expect(url.searchParams.get('download')).toBe('1');
   expect(url.searchParams.get('type')).toBe('summary');
   expect(url.searchParams.get('playlist')).toBe(PID);
+});
+
+test('videoId with reserved chars is percent-encoded in the path', () => {
+  // proves encodeURIComponent(videoId) is actually load-bearing
+  const href = summaryHref(PID, 'a/b?c#d', { format: 'md', download: true });
+  expect(href.startsWith('/api/html/a%2Fb%3Fc%23d?')).toBe(true);
+  const url = new URL(href, 'https://app.test');
+  expect(url.pathname).toBe('/api/html/a%2Fb%3Fc%23d');
+  expect(url.searchParams.get('format')).toBe('md');   // query intact, not swallowed by the '?'
 });
 ```
 
@@ -531,9 +586,11 @@ git commit -m "feat(2c): createShare/revokeShare client seam (401 → Unauthoriz
 - **Repeated Create** mints a fresh token; state replaces the held id/url with the newest (spec §1 accepts multiple valid tokens; Revoke targets only the currently-held id).
 - **a11y:** `role="dialog"` + `aria-modal="true"`, focus-trapped; focus restore to the trigger is the caller's job (Task 7); error line `role="alert"`; disabled state via `aria-disabled`.
 
-**Tokens (spec §6):** `--border`, `--text`, `--text-muted`, `--bg`, `--bg-elevated`, `--accent`; `--danger` for the error line; backdrop `rgba(0,0,0,.4)`. Use only these — no invented tokens.
+**Tokens (REAL names — the spec §6 list is wrong; see Global Constraints):** `--surface-base` (dialog body), `--surface-raised`/`--surface-overlay` (elevated field/panel), `--border`, `--text-primary`, `--text-muted`, `--accent`; `--danger` for the error line; backdrop `rgba(0,0,0,.4)`. Use **only** tokens that exist in `app/globals.css` — `--bg`, `--bg-elevated`, `--text` do NOT exist. Copy the exact token usage from `NewPlaylistModal.tsx` (`--surface-base`, `--text-primary`, `--text-muted`, `--border`, `--accent`, `--danger`).
 
 > **Implementer:** model structure + focus-trap + in-flight-guard on `components/cloud/NewPlaylistModal.tsx` (Stage 2b) — it already implements `role="dialog"`, `aria-modal`, a focus trap, a `submittingRef` synchronous in-flight guard, and backdrop/Escape dismissal disabled while submitting. Reuse that skeleton; do NOT invent a new modal pattern. A synchronous in-flight ref (like `submittingRef`) must guard BOTH create and revoke so a double-click cannot fire two requests.
+>
+> **Focus restore is the CALLER's job — drop the modal's self-restore (Claude M4).** `NewPlaylistModal` restores focus itself via `useEffect(() => { …; return () => returnFocusRef.current?.focus(); }, [])` capturing `document.activeElement` at mount. Task 7 (`VideoRow`) restores focus to the ☰ trigger in `onClose`. If you keep the modal's self-restore, on close the modal's unmount cleanup focuses the *stale* captured element, overriding the trigger and **failing Task 7's `toHaveFocus()` test**. When adapting the skeleton, **remove the self-restore cleanup** so `VideoRow` is the sole focus-restore owner. Keep the initial-focus-into-the-dialog effect (focus the TTL group on mount).
 
 - [ ] **Step 1: Write the failing component tests**
 
@@ -655,6 +712,73 @@ test('backdrop + Escape are inert while create is in flight', async () => {
   expect(baseProps.onClose).not.toHaveBeenCalled();
   await act(async () => { resolve({ id: 's1', token: 't', url: '/s/t', expiresAt: null }); });
 });
+
+test('TTL 7d → createShare called with 7', async () => {
+  jest.spyOn(api, 'createShare').mockResolvedValue({ id: 's1', token: 't', url: '/s/t', expiresAt: null });
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('radio', { name: /7d/i }));
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => expect(api.createShare).toHaveBeenCalledWith('p1', 'v1', 7));
+});
+
+test('rapid double-click Create fires createShare exactly once (synchronous in-flight guard)', async () => {
+  let resolve!: (v: api.CreateShareResult) => void;
+  const spy = jest.spyOn(api, 'createShare').mockReturnValue(new Promise((r) => { resolve = r; }));
+  render(<ShareDialog {...baseProps} />);
+  const btn = screen.getByRole('button', { name: /create link/i });
+  fireEvent.click(btn);
+  fireEvent.click(btn);   // second click while first is pending
+  expect(spy).toHaveBeenCalledTimes(1);
+  await act(async () => { resolve({ id: 's1', token: 't', url: '/s/t', expiresAt: null }); });
+});
+
+test('rapid double-click Revoke fires revokeShare exactly once', async () => {
+  jest.spyOn(api, 'createShare').mockResolvedValue({ id: 's1', token: 't', url: '/s/t', expiresAt: null });
+  let resolve!: (v: { revoked: boolean }) => void;
+  const spy = jest.spyOn(api, 'revokeShare').mockReturnValue(new Promise((r) => { resolve = r; }));
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  const rb = screen.getByRole('button', { name: /revoke/i });
+  fireEvent.click(rb);
+  fireEvent.click(rb);
+  expect(spy).toHaveBeenCalledTimes(1);
+  await act(async () => { resolve({ revoked: true }); });
+});
+
+test('backdrop + Escape are inert while REVOKE is in flight', async () => {
+  jest.spyOn(api, 'createShare').mockResolvedValue({ id: 's1', token: 't', url: '/s/t', expiresAt: null });
+  let resolve!: (v: { revoked: boolean }) => void;
+  jest.spyOn(api, 'revokeShare').mockReturnValue(new Promise((r) => { resolve = r; }));
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  fireEvent.click(screen.getByRole('button', { name: /revoke/i }));   // revoke pending
+  fireEvent.click(screen.getByTestId('share-dialog-backdrop'));
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  expect(baseProps.onClose).not.toHaveBeenCalled();
+  await act(async () => { resolve({ revoked: true }); });
+});
+
+test('a11y: initial focus lands in the dialog on the TTL group; Tab is trapped', () => {
+  render(<ShareDialog {...baseProps} />);
+  const dialog = screen.getByRole('dialog');
+  // initial focus is inside the dialog (on the default-checked 30d radio or the radiogroup)
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  // focus trap: Tab from the last focusable cycles back into the dialog (never escapes to <body>)
+  fireEvent.keyDown(dialog, { key: 'Tab' });
+  expect(dialog.contains(document.activeElement)).toBe(true);
+});
+
+test('revoke no-op ({revoked:false}) still clears the held share (acceptable for 2c)', async () => {
+  jest.spyOn(api, 'createShare').mockResolvedValue({ id: 's1', token: 'tok', url: '/s/tok', expiresAt: null });
+  jest.spyOn(api, 'revokeShare').mockResolvedValue({ revoked: false });  // already-revoked / non-owned
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  fireEvent.click(screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.queryByDisplayValue(/\/s\/tok$/)).not.toBeInTheDocument());
+});
 ```
 
 - [ ] **Step 2: Run — verify it fails**
@@ -672,7 +796,9 @@ Implement per the Behavior/a11y/Tokens spec above, reusing the `NewPlaylistModal
 - Full URL = `window.location.origin + result.url`, shown in a readonly input.
 - Copy: `navigator.clipboard.writeText(fullUrl)` → transient "Copied ✓" in an `aria-live="polite"` region; on reject → `inputRef.current?.select()`.
 - Error line `role="alert"` shows `err.message`; `UnauthorizedError` → `router.replace('/login')` (import from `@/lib/client/api`).
-- A synchronous `inFlightRef` (mirror `submittingRef`) blocks a second create/revoke and gates backdrop/Escape.
+- A single synchronous `inFlightRef` (mirror `submittingRef`) blocks a second create AND a second revoke, and gates backdrop/Escape while either request is pending.
+- **Initial focus** lands inside the dialog on mount (the TTL group / default-checked 30d radio). **Do NOT** include the modal's self focus-restore cleanup — `VideoRow` (Task 7) owns restoring focus to the ☰ trigger (see the M4 note above).
+- **Revoke resolution:** clear the held share on any *resolved* revoke regardless of the `{ revoked }` boolean — `{ revoked: false }` (already-revoked / non-owned id) is a 200, not an error, and 2c treats it as "the link is gone." Only a *thrown* error (non-2xx) shows the inline alert.
 
 - [ ] **Step 4: Run — verify it passes**
 
@@ -765,28 +891,30 @@ Expected: FAIL — items not rendered / `onShare` prop unknown.
 
 - [ ] **Step 3: Implement**
 
-Add `onShare?: () => void` to `VideoMenuProps` (`components/VideoMenu.tsx:8-19`). Inside the `cloudMode` branch (after *Watch on YouTube*, before *Archive*), render the four items. Suggested helper for the ready/disabled fork within cloud:
+Add `onShare?: () => void` to `VideoMenuProps` (`components/VideoMenu.tsx:8-19`). Inside the `cloudMode` branch (after *Watch on YouTube*, before *Archive*), render the four items. **Match the existing menu markup EXACTLY** — existing items are `<li role="none"><a className={itemClass}>…</a></li>` / `<button>` with **no `role="menuitem"`** (the *Watch on YouTube* `<li>` at `VideoMenu.tsx:59-63` is the template). **Do NOT add `role="menuitem"` to the new anchors** — an `<a href>` with an explicit `role="menuitem"` is no longer exposed as a `link`, which breaks the Step-1 `getByRole('link')` assertions (Claude M1). Ready/disabled fork:
 
 ```tsx
 const ready = video.summaryReady === true;
-const pid = scope.mode === 'cloud' ? scope.playlistId : '';
+const pid = scope.mode === 'cloud' ? scope.playlistId : '';   // cloudMode branch → always cloud scope
 // View summary
 ready ? (
-  <li><a role="menuitem" href={summaryHref(pid, video.id)} target="_blank" rel="noopener noreferrer"
-         onClick={onClose}>View summary ↗</a></li>
+  <li role="none"><a className={itemClass} href={summaryHref(pid, video.id)}
+         target="_blank" rel="noopener noreferrer" onClick={onClose}>View summary ↗</a></li>
 ) : (
-  <li><span aria-disabled="true" title="Finalizing…" className="/* muted token */">View summary ↗</span></li>
+  <li role="none"><span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>View summary ↗</span></li>
 )
-// Download Markdown / HTML: same fork, anchors carry `download`; disabled → span with the same title.
-// Share…:
+// Download Markdown / HTML: same fork; anchors add the `download` attribute + the format/download opts;
+//   disabled → <span aria-disabled title="Finalizing…"> (NO href).
+// Share… (button, not a link — so role is fine to omit; match existing button items):
 ready ? (
-  <li><button type="button" role="menuitem" onClick={() => { onShare?.(); onClose(); }}>Share…</button></li>
+  <li role="none"><button type="button" className={itemClass}
+        onClick={() => { onShare?.(); onClose(); }}>Share…</button></li>
 ) : (
-  <li><span aria-disabled="true" title="Finalizing…">Share…</span></li>
+  <li role="none"><span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>Share…</span></li>
 )
 ```
 
-Match the existing menu's markup/class conventions (see the *Watch on YouTube* `<li>` at `VideoMenu.tsx:59-63`). Use only the spec §6 tokens for the muted/disabled look.
+Reuse the existing `itemClass` string this menu already applies to its `<a>`/`<button>` items; for the muted/disabled variant use the real `--text-muted` token (see Global Constraints — do NOT use `--text`/`--bg`). **`pid` guard (L1):** these items live inside the `cloudMode` branch where `scope.mode === 'cloud'`, so `scope.playlistId` is defined; do not call `summaryHref` outside that branch.
 
 - [ ] **Step 4: Run — verify it passes**
 
