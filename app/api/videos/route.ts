@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getPrincipal, getStorageBundle } from '../../../lib/storage/resolve';
+import { cookies } from 'next/headers';
+import { getPrincipal, getStorageBundle, getPrincipalFromSession } from '../../../lib/storage/resolve';
 import { recoverOrphanedVideos } from '../../../lib/pipeline';
+import { createServerSupabase, type CookieStore } from '../../../lib/supabase/server';
+import { resolveOwnedPlaylistKey } from '../../../lib/storage/serve-playlist';
 import type { SortColumn, SortOrder, Video } from '../../../types';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const AUDIENCE_ORDER: Record<string, number> = { Beginner: 1, Intermediate: 2, Advanced: 3 };
 
@@ -80,6 +85,13 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
 }
 
 export async function GET(request: Request) {
+  const backend = process.env.STORAGE_BACKEND ?? 'local';
+  if (backend === 'supabase') return serveCloud(request);
+  return serveLocal(request);
+}
+
+// ---- LOCAL path — preserved verbatim (pre-2a Task 5 behavior, filesystem-backed) ----
+async function serveLocal(request: Request): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const outputFolder = searchParams.get('outputFolder');
   if (!outputFolder) {
@@ -111,6 +123,54 @@ export async function GET(request: Request) {
     }
     throw err;
   }
+  const videos = sortVideos(index.videos, sortColumn, sortOrder);
+  return NextResponse.json({ videos, playlistUrl: index.playlistUrl, playlistTitle: index.playlistTitle });
+}
+
+// ---- CLOUD path (Stage 2a Task 5) — session-scoped Supabase, owner-asserted via
+// resolveOwnedPlaylistKey + RLS. Mirrors the app/api/html/[id]/route.ts serveCloud flow:
+// createServerSupabase → getUser → UUID guard → resolveOwnedPlaylistKey → getPrincipalFromSession
+// → getStorageBundle({supabaseClient}). Does NOT call recoverOrphanedVideos (filesystem-only).
+async function serveCloud(request: Request): Promise<Response> {
+  const { searchParams } = new URL(request.url);
+
+  const cookieStore = (await cookies()) as unknown as CookieStore;
+  const supabase = createServerSupabase(cookieStore);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'authentication required' }, { status: 401 });
+
+  const playlistId = searchParams.get('playlist');
+  if (!playlistId || !UUID_RE.test(playlistId)) {
+    return NextResponse.json({ error: 'invalid playlist' }, { status: 400 }); // before any DB call
+  }
+
+  if (searchParams.get('outputFolder')) {
+    return NextResponse.json({ error: 'outputFolder not valid on this backend' }, { status: 400 });
+  }
+
+  const playlistKey = await resolveOwnedPlaylistKey(supabase, playlistId, user.id); // owner-asserted (D6/D9)
+  if (!playlistKey) return NextResponse.json({ error: 'not found' }, { status: 404 });
+
+  const principal = getPrincipalFromSession({ userId: user.id }, playlistKey);
+  const bundle = getStorageBundle({ supabaseClient: supabase }); // session-scoped, RLS-enforced
+
+  let index;
+  try {
+    index = await bundle.metadataStore.readIndex(principal);
+  } catch (err) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 400) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  const rawSortColumn = searchParams.get('sortColumn');
+  const sortColumn: SortColumn =
+    rawSortColumn && SORT_COLUMNS.has(rawSortColumn as SortColumn) ? (rawSortColumn as SortColumn) : 'name';
+  const rawSortOrder = searchParams.get('sortOrder');
+  const sortOrder: SortOrder = rawSortOrder === 'asc' || rawSortOrder === 'desc' ? rawSortOrder : 'asc';
+
   const videos = sortVideos(index.videos, sortColumn, sortOrder);
   return NextResponse.json({ videos, playlistUrl: index.playlistUrl, playlistTitle: index.playlistTitle });
 }
