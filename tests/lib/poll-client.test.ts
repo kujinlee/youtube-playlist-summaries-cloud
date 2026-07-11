@@ -143,19 +143,33 @@ describe('pollUntilTerminal extensions', () => {
     expect(fetchRows).not.toHaveBeenCalled();
   });
 
-  it('aborting during the wait resolves { aborted: true } without another fetch', async () => {
+  it('aborting during the wait wakes the waiter and resolves { aborted: true } without another fetch', async () => {
     const ac = new AbortController();
-    let resolveSleep!: () => void;
-    const sleep = () => new Promise<void>((r) => { resolveSleep = r; });
+    const neverResolvingSleep = () => new Promise<void>(() => {}); // only abort can end the wait
     const fetchRows = jest.fn(async () => [row('active')]);
     let t = 0;
-    const p = pollUntilTerminal(fetchRows, { intervalMs: 1, maxIntervalMs: 1, timeoutMs: 500, sleep, now: () => (t += 10), signal: ac.signal });
-    await Promise.resolve(); await Promise.resolve(); // let fetch #1 run and the loop park on sleep
+    const p = pollUntilTerminal(fetchRows, { intervalMs: 1, maxIntervalMs: 1, timeoutMs: 500, sleep: neverResolvingSleep, now: () => (t += 10), signal: ac.signal });
+    await Promise.resolve(); await Promise.resolve(); // fetch #1 runs, loop parks on sleep
     ac.abort();
-    resolveSleep();
     const res = await p;
     expect(res).toEqual({ aborted: true });
     expect(fetchRows).toHaveBeenCalledTimes(1); // no fetch after abort
+  });
+
+  it('abort during a terminal fetch still resolves { aborted: true } and does not fire onProgress', async () => {
+    const ac = new AbortController();
+    const onProgress = jest.fn();
+    const fetchRows = jest.fn(async () => { ac.abort(); return [row('completed')]; });
+    const res = await pollUntilTerminal(fetchRows, { ...abortable(), signal: ac.signal, onProgress });
+    expect(res).toEqual({ aborted: true });
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
+  it('abort during a failing fetch resolves { aborted: true } (not failed)', async () => {
+    const ac = new AbortController();
+    const fetchRows = jest.fn(async () => { ac.abort(); throw new Error('net'); });
+    const res = await pollUntilTerminal(fetchRows, { ...abortable(), maxConsecutiveErrors: 1, signal: ac.signal });
+    expect(res).toEqual({ aborted: true });
   });
 
   it('works with none of the new options (backward compatible)', async () => {

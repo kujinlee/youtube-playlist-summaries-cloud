@@ -27,8 +27,28 @@ export interface PollOptions {
 export type PollResult =
   | { done: true; rollup: Rollup; rows: PlaylistJobRow[] }
   | { timedOut: true; rollup: Rollup; rows: PlaylistJobRow[] }
-  | { failed: true; error: string; fatal?: boolean }  // fatal:true when isFatal matched
+  | { failed: true; error: string; fatal?: true }  // fatal:true when isFatal matched
   | { aborted: true };                                 // signal aborted
+
+function abortableSleep(
+  ms: number,
+  sleep: (ms: number) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    signal.addEventListener('abort', finish, { once: true });
+    sleep(ms).then(finish, finish);
+  });
+}
 
 export async function pollUntilTerminal(
   fetchRows: () => Promise<PlaylistJobRow[]>,
@@ -48,20 +68,22 @@ export async function pollUntilTerminal(
 
   for (;;) {
     if (opts.signal?.aborted) return { aborted: true };
-    if (now() - start >= timeoutMs) return { timedOut: true, rollup: rollup(lastRows), rows: lastRows };
 
     let rows: PlaylistJobRow[];
     try {
       rows = await fetchRows();
     } catch (err) {
+      if (opts.signal?.aborted) return { aborted: true };            // abort wins over error
       if (opts.isFatal?.(err)) return { failed: true, error: String(err), fatal: true };
       errors += 1;
       if (errors >= maxConsecutiveErrors) return { failed: true, error: String(err) };
-      if (opts.signal?.aborted) return { aborted: true };
-      await sleep(delay);
+      if (now() - start >= timeoutMs) return { timedOut: true, rollup: rollup(lastRows), rows: lastRows };
+      await abortableSleep(delay, sleep, opts.signal);
       delay = Math.min(delay * 2, maxIntervalMs);
       continue;
     }
+
+    if (opts.signal?.aborted) return { aborted: true };              // abort wins over just-completed fetch
 
     lastRows = rows;
     errors = 0;
@@ -70,8 +92,9 @@ export async function pollUntilTerminal(
     try { opts.onProgress?.({ rollup: r, rows }); } catch { /* swallow callback error */ }
     if (r.terminal) return { done: true, rollup: r, rows };
 
-    if (opts.signal?.aborted) return { aborted: true };
-    await sleep(delay);
+    if (now() - start >= timeoutMs) return { timedOut: true, rollup: r, rows };
+
+    await abortableSleep(delay, sleep, opts.signal);
     delay = Math.min(delay * 2, maxIntervalMs);
   }
 }
