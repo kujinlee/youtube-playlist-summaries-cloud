@@ -114,7 +114,8 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
     return NextResponse.json({ error: 'invalid playlist' }, { status: 400 }); // before any DB call
   }
 
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  const raw = await request.json().catch(() => null) as unknown;
+  const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
 
   if (body && 'outputFolder' in body) {
     return NextResponse.json({ error: 'outputFolder not valid on this backend' }, { status: 400 });

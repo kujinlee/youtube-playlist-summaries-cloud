@@ -85,6 +85,14 @@ describe('POST /api/videos/[id]/review (cloud)', () => {
     expect(res.status).toBe(400);
   });
 
+  it('non-object JSON body (bare number) → 400, not 500 (T8 review finding)', async () => {
+    const a = await newUser();
+    const { client } = await signInAs(a.email, a.password);
+    mockClient = client;
+    const res = await review('v1', `playlist=${VALID_BUT_FOREIGN}`, 1);
+    expect(res.status).toBe(400);
+  });
+
   it('personalScore out of bounds (0) → 400', async () => {
     const a = await newUser();
     const { client } = await signInAs(a.email, a.password);

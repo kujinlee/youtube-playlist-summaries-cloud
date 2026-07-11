@@ -86,6 +86,14 @@ describe('POST /api/videos/[id]/archive (cloud)', () => {
     expect(res.status).toBe(400);
   });
 
+  it('non-object JSON body (bare number) → 400, not 500 (T8 review finding)', async () => {
+    const a = await newUser();
+    const { client } = await signInAs(a.email, a.password);
+    mockClient = client;
+    const res = await archive('v1', `playlist=${VALID_BUT_FOREIGN}`, 1);
+    expect(res.status).toBe(400);
+  });
+
   it('missing video (video not seeded) → 404', async () => {
     const a = await newUser();
     const { playlistId } = await seedPlaylist(svc, a.user.id);
