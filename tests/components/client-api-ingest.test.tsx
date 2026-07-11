@@ -72,6 +72,21 @@ describe('createIngest', () => {
     expect(err.status).toBe(429);
     expect(err.info.retryAfterSeconds).toBe(60);
   });
+  it('defaults Retry-After to 60 on an empty header value', async () => {
+    global.fetch = mockRes(429, { error: 'rate limited' }, { 'retry-after': '' });
+    const err = await createIngest('u').catch((e) => e);
+    expect(err.info.retryAfterSeconds).toBe(60);
+  });
+  it('defaults Retry-After to 60 on a zero header value', async () => {
+    global.fetch = mockRes(429, { error: 'rate limited' }, { 'retry-after': '0' });
+    const err = await createIngest('u').catch((e) => e);
+    expect(err.info.retryAfterSeconds).toBe(60);
+  });
+  it('defaults Retry-After to 60 on a negative header value', async () => {
+    global.fetch = mockRes(429, { error: 'rate limited' }, { 'retry-after': '-5' });
+    const err = await createIngest('u').catch((e) => e);
+    expect(err.info.retryAfterSeconds).toBe(60);
+  });
 });
 
 describe('ingestErrorMessage', () => {

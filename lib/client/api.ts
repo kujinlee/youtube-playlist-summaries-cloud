@@ -149,8 +149,8 @@ export async function createIngest(playlistUrl: string): Promise<IngestResult> {
     const info: { retryAfterSeconds?: number; limit?: number; found?: number } = {};
     if (res.status === 429) {
       const h = res.headers.get('retry-after');
-      const n = h != null ? Number(h) : NaN;
-      info.retryAfterSeconds = Number.isFinite(n) ? n : 60;
+      const n = Number(h);
+      info.retryAfterSeconds = h && Number.isFinite(n) && n >= 1 ? n : 60;
     }
     if (res.status === 422) {
       if (typeof body.limit === 'number') info.limit = body.limit;
