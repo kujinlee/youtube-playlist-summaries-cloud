@@ -202,11 +202,12 @@ could be ingested from that playlist." No navigation, no banner, no summary noti
 | Poll gave up | ⚠ "Lost connection to progress updates — reload to retry." · persists until ✕ |
 
 ### Design tokens
-Reuse the 2a token set: `--border`, `--text`, `--text-muted`, `--bg`, `--bg-elevated`,
-`--accent`. Additions if not already present:
-- `--progress-track` = `--border`; `--progress-fill` = `--accent`.
+Reuse the 2a token set (`app/globals.css`): `--surface-base`, `--surface-raised`,
+`--surface-overlay`, `--border`, `--border-strong`, `--text-primary`, `--text-secondary`,
+`--text-muted`, `--accent`, `--success`, `--warning`, `--danger`. No new tokens are added.
+- Progress bar: track = `--border`; fill = `--accent`.
 - `--danger` — Phase-1 error text / mixed-terminal warning.
-- `--warn` — soft `challengeRequired` notice.
+- `--warning` — soft `challengeRequired` notice.
 - Modal backdrop: `rgba(0,0,0,.4)`.
 
 Accessibility: progress banner uses `role="progressbar"` with
