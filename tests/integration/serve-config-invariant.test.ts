@@ -91,13 +91,14 @@ function assertPositiveInt(value: unknown, label: string): number {
 
 async function readGuardrailConfig() {
   const { data, error } = await svc.from('guardrail_config')
-    .select('daily_cap_cents, magazine_est_cents, max_serve_attempts').single();
+    .select('daily_cap_cents, magazine_est_cents, max_serve_attempts, per_owner_serve_daily_cents').single();
   expect(error).toBeNull();
   expect(data).toBeTruthy();
   return {
     dailyCapCents: assertPositiveInt(data!.daily_cap_cents, 'guardrail_config.daily_cap_cents'),
     magazineEstCents: assertPositiveInt(data!.magazine_est_cents, 'guardrail_config.magazine_est_cents'),
     maxServeAttempts: assertPositiveInt(data!.max_serve_attempts, 'guardrail_config.max_serve_attempts'),
+    perOwnerServeDailyCents: assertPositiveInt(data!.per_owner_serve_daily_cents, 'guardrail_config.per_owner_serve_daily_cents'),
   };
 }
 
@@ -124,13 +125,18 @@ it('the 0012 MIGRATION DEFAULTS satisfy the anon config invariant (§4.2)', asyn
   expect(worst).toBeLessThanOrEqual(bound);
 });
 
-it('documents the registered residual as deferred to 1G (NOT asserted as bounded)', async () => {
-  // A registered account (summary quota 20) reclaim-loop = 20·5·6 = 600 > 100. This is the
-  // attributable, bounded-fraction residual explicitly deferred to 1G per spec §9 — recorded here
-  // (reading the live quota + config) so the convergence trail shows it is known-and-accepted, not
-  // overlooked.
+it('1G per-owner serve cap bounds the registered residual within the safety fraction (§4.2)', async () => {
+  // Pre-1G, a registered account (summary quota 20) reclaim-loop was unbounded across the month:
+  // 20·5·6 = 600 > 100, the residual spec §9 flagged. 1G (migration 0014) added a per-owner DAILY
+  // serve cap (`per_owner_serve_daily_cents`, default 60) so a single owner's per-day serve spend
+  // can no longer exceed that value regardless of monthly quota. The live-config invariant is now
+  // that this per-owner daily residual sits within the same bounded fraction of the global cap the
+  // anon case satisfies — reading live config so a future retune of either column is caught, not
+  // masked. (The pre-1G worst figure is asserted too, as the motivation this cap resolves.)
   const registeredDocs = await readQuotaMonthly(false);           // quota_allowance seed (0011): 20
-  const { dailyCapCents, magazineEstCents, maxServeAttempts } = await readGuardrailConfig();
-  const registeredWorst = registeredDocs * maxServeAttempts * magazineEstCents;
-  expect(registeredWorst).toBeGreaterThan(dailyCapCents * SAFETY_FRACTION); // deferred to 1G
+  const { dailyCapCents, magazineEstCents, maxServeAttempts, perOwnerServeDailyCents } = await readGuardrailConfig();
+  const preCapWorst = registeredDocs * maxServeAttempts * magazineEstCents;
+  const bound = dailyCapCents * SAFETY_FRACTION;                  // 500·0.2 = 100
+  expect(preCapWorst).toBeGreaterThan(bound);                    // 600 > 100 — the residual 1G exists to bound
+  expect(perOwnerServeDailyCents).toBeLessThanOrEqual(bound);    // 60 <= 100 — now bounded by the per-owner daily cap
 });
