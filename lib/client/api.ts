@@ -204,3 +204,30 @@ export function summaryHref(
   if (opts?.download) params.set('download', '1');
   return `/api/html/${encodeURIComponent(videoId)}?${params.toString()}`;
 }
+
+export type ShareTtl = 7 | 30 | 'never';
+
+export interface CreateShareResult {
+  id: string;
+  token: string;
+  url: string;                 // path only: '/s/<token>' — caller prefixes window.location.origin
+  expiresAt: string | null;
+}
+
+export async function createShare(
+  playlistId: string,
+  videoId: string,
+  ttl: ShareTtl,
+): Promise<CreateShareResult> {
+  const res = await fetch('/api/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlistId, videoId, ttlDays: ttl }),
+  });
+  return handle<CreateShareResult>(res);
+}
+
+export async function revokeShare(shareId: string): Promise<{ revoked: boolean }> {
+  const res = await fetch(`/api/share/${encodeURIComponent(shareId)}/revoke`, { method: 'POST' });
+  return handle<{ revoked: boolean }>(res);
+}
