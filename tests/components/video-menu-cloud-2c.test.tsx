@@ -20,18 +20,20 @@ const video = {
   overallScore: 3, summaryMd: 'base.md', processedAt: '2026-01-01T00:00:00.000Z',
 };
 
-const baseProps = { outputFolder: '/o', baseOutputFolder: '/o', onArchive() {}, onEditCorrections() {}, onGenerateHtml() {}, onClose() {}, busy: false };
+const baseProps = { outputFolder: '/o', baseOutputFolder: '/o', onArchive() {}, onEditCorrections() {}, onGenerateHtml() {}, busy: false };
 const cloudProps = { ...baseProps };
 const localProps = { ...baseProps };
 
 let onShare: jest.Mock;
+let onClose: jest.Mock;
 
 beforeEach(() => {
   onShare = jest.fn();
+  onClose = jest.fn();
 });
 
 test('cloud + summaryReady: View/Download/Share render with exact hrefs', () => {
-  renderCloud(<VideoMenu {...cloudProps} video={{ ...video, summaryReady: true } as any} onShare={onShare} />);
+  renderCloud(<VideoMenu {...cloudProps} video={{ ...video, summaryReady: true } as any} onShare={onShare} onClose={onClose} />);
   const view = screen.getByRole('link', { name: /view summary/i });
   expect(view).toHaveAttribute('target', '_blank');
   expect(view).toHaveAttribute('href', `/api/html/${video.id}?playlist=${PID}&type=summary`);
@@ -46,23 +48,39 @@ test('cloud + summaryReady: View/Download/Share render with exact hrefs', () => 
 
   fireEvent.click(screen.getByRole('button', { name: /share/i }));
   expect(onShare).toHaveBeenCalledTimes(1);
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
 test('cloud + NOT ready: the four items are disabled with "Finalizing…" and no href', () => {
-  renderCloud(<VideoMenu {...cloudProps} video={{ ...video, summaryReady: false } as any} onShare={onShare} />);
+  renderCloud(<VideoMenu {...cloudProps} video={{ ...video, summaryReady: false } as any} onShare={onShare} onClose={onClose} />);
+
   const view = screen.getByText(/view summary/i);
   expect(view).toHaveAttribute('aria-disabled', 'true');
   expect(view).toHaveAttribute('title', 'Finalizing…');
   expect(screen.queryByRole('link', { name: /view summary/i })).not.toBeInTheDocument();
-  // Share disabled → clicking does nothing
+
+  const md = screen.getByText(/download markdown/i);
+  expect(md).toHaveAttribute('aria-disabled', 'true');
+  expect(md).toHaveAttribute('title', 'Finalizing…');
+  expect(screen.queryByRole('link', { name: /download markdown/i })).not.toBeInTheDocument();
+
+  const htmlDl = screen.getByText(/download html/i);
+  expect(htmlDl).toHaveAttribute('aria-disabled', 'true');
+  expect(htmlDl).toHaveAttribute('title', 'Finalizing…');
+  expect(screen.queryByRole('link', { name: /download html/i })).not.toBeInTheDocument();
+
+  // Share disabled → it's a span, not a button, and clicking does nothing
+  expect(screen.queryByRole('button', { name: /share/i })).not.toBeInTheDocument();
   const share = screen.getByText(/share/i);
   fireEvent.click(share);
   expect(onShare).not.toHaveBeenCalled();
 });
 
 test('local mode: 2c items absent, existing menu unchanged', () => {
-  renderLocal(<VideoMenu {...localProps} video={{ ...video, summaryReady: undefined } as any} />);
+  renderLocal(<VideoMenu {...localProps} video={{ ...video, summaryReady: undefined } as any} onClose={onClose} />);
   expect(screen.queryByText(/view summary/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/download markdown/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/download html/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/share/i)).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: /watch on youtube/i })).toBeInTheDocument();
 });
