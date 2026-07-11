@@ -105,7 +105,10 @@ describe('upsertVideo', () => {
 
     const result = readIndex(dir);
     expect(result.videos).toHaveLength(1);
-    expect(result.videos[0]).toEqual(video);
+    // updatedAt is stamped dynamically by upsertVideo (Stage 2a) — match all
+    // other fields exactly and assert its presence/shape separately.
+    expect(result.videos[0]).toEqual(expect.objectContaining({ ...video, updatedAt: expect.any(String) }));
+    expect(new Date(result.videos[0].updatedAt!).toISOString()).toBe(result.videos[0].updatedAt);
   });
 
   it('replaces existing video by ID without adding a duplicate', () => {

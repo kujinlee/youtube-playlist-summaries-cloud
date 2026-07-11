@@ -101,10 +101,13 @@ export function upsertVideo(outputFolder: string, video: Video): void {
   assertVideoId(video.id);
   const index = readIndex(outputFolder);
   const i = index.videos.findIndex((v) => v.id === video.id);
+  // Stamp only the single mutated video — never touch writeIndex, which
+  // rewrites the whole playlist file and would re-stamp every sibling video.
+  const stamped: Video = { ...video, updatedAt: new Date().toISOString() };
   if (i === -1) {
-    index.videos.push(video);
+    index.videos.push(stamped);
   } else {
-    index.videos[i] = video;
+    index.videos[i] = stamped;
   }
   writeIndex(outputFolder, index);
 }
@@ -119,6 +122,8 @@ export function updateVideoFields(outputFolder: string, id: string, fields: Part
   }
   // Exclude id from fields — callers must not change a video's identity
   const { id: _discarded, ...safeFields } = fields;
-  index.videos[i] = { ...index.videos[i], ...safeFields };
+  // Stamp only the single mutated video — never touch writeIndex, which
+  // rewrites the whole playlist file and would re-stamp every sibling video.
+  index.videos[i] = { ...index.videos[i], ...safeFields, updatedAt: new Date().toISOString() };
   writeIndex(outputFolder, index);
 }
