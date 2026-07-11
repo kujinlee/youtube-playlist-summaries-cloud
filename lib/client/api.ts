@@ -5,6 +5,8 @@ import type { PlaylistSummary } from '@/lib/storage/metadata-store';
 import type { Scope } from '@/lib/client/scope';
 import type { SortColumn, SortOrder, Video } from '@/types';
 import type { ProducerCounts, JobFanoutResult } from '@/lib/job-queue/producer';
+import type { PlaylistJobRow } from '@/lib/storage/job-queue';
+import type { Rollup } from '@/lib/job-queue/poll-client';
 
 export class UnauthorizedError extends Error {}
 
@@ -159,6 +161,13 @@ export async function createIngest(playlistUrl: string): Promise<IngestResult> {
     throw new IngestError(res.status, info);
   }
   return res.json();
+}
+
+export async function getJobStatus(
+  playlistId: string,
+): Promise<{ jobs: PlaylistJobRow[]; rollup: Rollup }> {
+  const res = await fetch(`/api/jobs?playlistId=${encodeURIComponent(playlistId)}`);
+  return handle(res);
 }
 
 export async function setArchived(scope: Scope, videoId: string, archived: boolean): Promise<void> {

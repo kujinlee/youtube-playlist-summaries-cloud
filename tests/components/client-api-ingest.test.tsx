@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-import { createIngest, IngestError, ingestErrorMessage, UnauthorizedError, type IngestResult } from '@/lib/client/api';
+import { createIngest, getJobStatus, IngestError, ingestErrorMessage, UnauthorizedError, type IngestResult } from '@/lib/client/api';
 
 function mockRes(status: number, body: any = {}, headers: Record<string, string> = {}) {
   return jest.fn().mockResolvedValue({
@@ -99,4 +99,18 @@ describe('ingestErrorMessage', () => {
   it('502', () => expect(msg(502)).toBe("Couldn't reach YouTube for that playlist. Try again."));
   it('503', () => expect(msg(503)).toBe('The service is at capacity. Try again shortly.'));
   it('500 / unknown', () => expect(msg(500)).toBe('Something went wrong. Try again.'));
+});
+
+describe('getJobStatus', () => {
+  it('GETs by playlistId and returns { jobs, rollup }', async () => {
+    const payload = { jobs: [], rollup: { queued: 0, active: 0, completed: 0, failed: 0, dead_letter: 0, cancelled: 0, total: 0, terminal: false } };
+    global.fetch = mockRes(200, payload);
+    const r = await getJobStatus('p-uuid');
+    expect(global.fetch).toHaveBeenCalledWith('/api/jobs?playlistId=p-uuid');
+    expect(r).toEqual(payload);
+  });
+  it('maps 401 to UnauthorizedError', async () => {
+    global.fetch = mockRes(401, { error: 'authentication required' });
+    await expect(getJobStatus('p')).rejects.toBeInstanceOf(UnauthorizedError);
+  });
 });
