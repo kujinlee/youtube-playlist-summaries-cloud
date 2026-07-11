@@ -5,6 +5,12 @@ import VideoList from '../../components/VideoList';
 import type { Video } from '../../types';
 import { ScopeProvider, type Scope } from '../../lib/client/scope';
 
+// StarRating/NoteCell/VideoQuickView call useRouter() (pre-merge fix: redirect to /login on
+// UnauthorizedError) — every render needs an app-router context, which jsdom doesn't provide.
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: jest.fn() }),
+}));
+
 function v(id: string, over: Partial<Video> = {}): Video {
   return {
     id, title: `T${id}`, youtubeUrl: `https://youtu.be/${id}`, language: 'en', durationSeconds: 1,

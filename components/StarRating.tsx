@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useScope } from '@/lib/client/scope';
-import { saveAnnotation } from '@/lib/client/api';
+import { saveAnnotation, UnauthorizedError } from '@/lib/client/api';
 
 interface StarRatingProps {
   videoId: string;
@@ -12,6 +13,7 @@ interface StarRatingProps {
 
 export default function StarRating({ videoId, value, onChange }: StarRatingProps) {
   const scope = useScope();
+  const router = useRouter();
   const [hover, setHover]   = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -22,7 +24,11 @@ export default function StarRating({ videoId, value, onChange }: StarRatingProps
     setSaving(true);
     try {
       await saveAnnotation(scope, videoId, { personalScore: newScore ?? null });
-    } catch {
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        router.replace('/login');
+        return;
+      }
       onChange(prev);
     } finally {
       setSaving(false);

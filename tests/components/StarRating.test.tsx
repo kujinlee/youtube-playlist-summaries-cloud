@@ -3,20 +3,28 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import StarRating from '@/components/StarRating';
 import { ScopeProvider, type Scope } from '@/lib/client/scope';
-import { saveAnnotation } from '@/lib/client/api';
+import { saveAnnotation, UnauthorizedError } from '@/lib/client/api';
 
 jest.mock('@/lib/client/api', () => ({
   saveAnnotation: jest.fn(),
+  UnauthorizedError: class UnauthorizedError extends Error {},
+}));
+
+const mockRouterReplace = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
 }));
 
 const VIDEO_ID = 'abc123';
 const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/tmp/out', baseOutputFolder: '/tmp' };
+const CLOUD_SCOPE: Scope = { mode: 'cloud', playlistId: 'pl-1' };
 
 const saveAnnotationMock = saveAnnotation as jest.Mock;
 
 beforeEach(() => {
   saveAnnotationMock.mockReset();
   saveAnnotationMock.mockResolvedValue(undefined);
+  mockRouterReplace.mockReset();
 });
 
 afterEach(() => jest.clearAllMocks());
@@ -108,6 +116,23 @@ describe('StarRating', () => {
       fireEvent.click(getStarInputs()[2]); // click active star 3 → clear
       await waitFor(() => expect(saveAnnotationMock).toHaveBeenCalled());
       expect(saveAnnotationMock).toHaveBeenCalledWith(LOCAL_SCOPE, VIDEO_ID, { personalScore: null });
+    });
+  });
+
+  describe('unauthorized (cloud mode)', () => {
+    it('redirects to /login on UnauthorizedError instead of rolling back the optimistic update', async () => {
+      saveAnnotationMock.mockRejectedValue(new UnauthorizedError('unauthorized'));
+      const onChange = jest.fn();
+      render(
+        <ScopeProvider scope={CLOUD_SCOPE}>
+          <StarRating videoId={VIDEO_ID} value={2} onChange={onChange} />
+        </ScopeProvider>,
+      );
+      fireEvent.click(getStarInputs()[3]); // click star 4
+      await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/login'));
+      // Only the optimistic update fired — no rollback call.
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith(4);
     });
   });
 });

@@ -3,20 +3,28 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import NoteCell from '@/components/NoteCell';
 import { ScopeProvider, type Scope } from '@/lib/client/scope';
-import { saveAnnotation } from '@/lib/client/api';
+import { saveAnnotation, UnauthorizedError } from '@/lib/client/api';
 
 jest.mock('@/lib/client/api', () => ({
   saveAnnotation: jest.fn(),
+  UnauthorizedError: class UnauthorizedError extends Error {},
+}));
+
+const mockRouterReplace = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
 }));
 
 const VIDEO_ID = 'abc123';
 const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/tmp/out', baseOutputFolder: '/tmp' };
+const CLOUD_SCOPE: Scope = { mode: 'cloud', playlistId: 'pl-1' };
 
 const saveAnnotationMock = saveAnnotation as jest.Mock;
 
 beforeEach(() => {
   saveAnnotationMock.mockReset();
   saveAnnotationMock.mockResolvedValue(undefined);
+  mockRouterReplace.mockReset();
 });
 
 afterEach(() => jest.clearAllMocks());
@@ -34,6 +42,16 @@ function openPopover(value?: string, onChange = jest.fn()) {
   const result = renderNote(value, onChange);
   fireEvent.click(screen.getByRole('button', { name: /add note|edit note|—|.*/i }));
   return result;
+}
+
+function openPopoverCloud(value?: string, onChange = jest.fn()) {
+  render(
+    <ScopeProvider scope={CLOUD_SCOPE}>
+      <NoteCell videoId={VIDEO_ID} value={value} onChange={onChange} />
+    </ScopeProvider>,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /add note|edit note|—|.*/i }));
+  return { onChange };
 }
 
 describe('NoteCell', () => {
@@ -179,6 +197,17 @@ describe('NoteCell', () => {
       await waitFor(() => expect(saveAnnotationMock).toHaveBeenCalled());
       const patch = saveAnnotationMock.mock.calls[0][2];
       expect(patch.personalNote).toHaveLength(500);
+    });
+  });
+
+  describe('unauthorized (cloud mode)', () => {
+    it('redirects to /login on UnauthorizedError instead of showing the inline error', async () => {
+      saveAnnotationMock.mockRejectedValue(new UnauthorizedError('unauthorized'));
+      const { onChange } = openPopoverCloud('note');
+      fireEvent.click(screen.getByRole('button', { name: /save/i }));
+      await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/login'));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(onChange).not.toHaveBeenCalled();
     });
   });
 });

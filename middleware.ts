@@ -31,8 +31,10 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Stage 2a T9: an already-authenticated user visiting /login has nothing to do there.
-  if (pathname === '/login' && user) {
+  // Stage 2a T9: an already-authenticated (non-anonymous) user visiting /login has nothing
+  // to do there. Anonymous users (provisioned at /try) must still be able to reach /login
+  // to sign in with Google and upgrade to a real account (pre-merge fix, whole-branch review).
+  if (pathname === '/login' && user && !user.is_anonymous) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = '/';
     return NextResponse.redirect(redirect);

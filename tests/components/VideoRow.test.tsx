@@ -5,6 +5,12 @@ import VideoRow from '@/components/VideoRow';
 import type { Video } from '@/types';
 import { ScopeProvider, type Scope } from '@/lib/client/scope';
 
+// StarRating/NoteCell/VideoQuickView call useRouter() (pre-merge fix: redirect to /login on
+// UnauthorizedError) — every render needs an app-router context, which jsdom doesn't provide.
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: jest.fn() }),
+}));
+
 const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/Users/test/vault', baseOutputFolder: '/Users/test/vault' };
 
 // VideoRow's leaf components (StarRating/NoteCell/VideoQuickView) call useScope(), so every

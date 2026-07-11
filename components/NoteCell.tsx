@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useScope } from '@/lib/client/scope';
-import { saveAnnotation } from '@/lib/client/api';
+import { saveAnnotation, UnauthorizedError } from '@/lib/client/api';
 
 interface NoteCellProps {
   videoId: string;
@@ -16,6 +17,7 @@ function truncate(text: string, len: number): string {
 
 export default function NoteCell({ videoId, value, onChange }: NoteCellProps) {
   const scope = useScope();
+  const router = useRouter();
   const [open,   setOpen]   = useState(false);
   const [draft,  setDraft]  = useState('');
   const [saving, setSaving] = useState(false);
@@ -57,6 +59,10 @@ export default function NoteCell({ videoId, value, onChange }: NoteCellProps) {
       onChange(draft || undefined);
       setOpen(false);
     } catch (e) {
+      if (e instanceof UnauthorizedError) {
+        router.replace('/login');
+        return;
+      }
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
       setSaving(false);

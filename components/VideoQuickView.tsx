@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Badge from './Badge';
 import { useScope } from '@/lib/client/scope';
-import { getQuickView } from '@/lib/client/api';
+import { getQuickView, UnauthorizedError } from '@/lib/client/api';
 
 interface VideoQuickViewProps {
   videoId: string;
@@ -24,6 +25,7 @@ export default function VideoQuickView({
   tags,
 }: VideoQuickViewProps) {
   const scope = useScope();
+  const router = useRouter();
   // Initial state reflects props at mount time. This component is always unmounted
   // and remounted by VideoRow ({isExpanded && <VideoQuickView />}), so stale-prop
   // drift is not a concern in this usage.
@@ -44,11 +46,17 @@ export default function VideoQuickView({
           setState({ status: 'ready', tldr: data.tldr, takeaways: data.takeaways ?? [], tags: data.tags ?? [] });
         }
       })
-      .catch(() => {
-        if (!cancelled) setState({ status: 'error' });
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof UnauthorizedError) {
+          router.replace('/login');
+          return;
+        }
+        setState({ status: 'error' });
       });
 
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId, tldr, scope]);
 
   if (state.status === 'loading') {

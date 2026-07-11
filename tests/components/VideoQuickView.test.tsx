@@ -3,20 +3,30 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import VideoQuickView from '@/components/VideoQuickView';
 import { ScopeProvider, type Scope } from '@/lib/client/scope';
-import { getQuickView } from '@/lib/client/api';
+import { getQuickView, UnauthorizedError } from '@/lib/client/api';
 
 jest.mock('@/lib/client/api', () => ({
   getQuickView: jest.fn(),
+  UnauthorizedError: class UnauthorizedError extends Error {},
+}));
+
+const mockRouterReplace = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockRouterReplace }),
 }));
 
 const VIDEO_ID = 'abc123XYZ01';
 const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/tmp/vault', baseOutputFolder: '/tmp' };
+const CLOUD_SCOPE: Scope = { mode: 'cloud', playlistId: 'pl-1' };
 
 const getQuickViewMock = getQuickView as jest.Mock;
 
-function renderQuickView(props: Omit<React.ComponentProps<typeof VideoQuickView>, 'videoId'> = {}) {
+function renderQuickView(
+  props: Omit<React.ComponentProps<typeof VideoQuickView>, 'videoId'> = {},
+  scope: Scope = LOCAL_SCOPE,
+) {
   return render(
-    <ScopeProvider scope={LOCAL_SCOPE}>
+    <ScopeProvider scope={scope}>
       <VideoQuickView videoId={VIDEO_ID} {...props} />
     </ScopeProvider>,
   );
@@ -25,6 +35,7 @@ function renderQuickView(props: Omit<React.ComponentProps<typeof VideoQuickView>
 describe('VideoQuickView', () => {
   beforeEach(() => {
     getQuickViewMock.mockReset();
+    mockRouterReplace.mockReset();
   });
 
   afterEach(() => {
@@ -81,5 +92,14 @@ describe('VideoQuickView', () => {
     // Concepts section absent when tags are empty — assert no tag text rendered
     expect(screen.queryByText('rag')).not.toBeInTheDocument();
     expect(screen.queryByText('llm')).not.toBeInTheDocument();
+  });
+
+  describe('unauthorized (cloud mode)', () => {
+    it('redirects to /login on UnauthorizedError instead of showing the "not yet generated" alert', async () => {
+      getQuickViewMock.mockRejectedValue(new UnauthorizedError('unauthorized'));
+      renderQuickView({}, CLOUD_SCOPE);
+      await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/login'));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
   });
 });

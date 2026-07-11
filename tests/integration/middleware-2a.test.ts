@@ -105,12 +105,19 @@ describe('middleware — cloud mode (STORAGE_BACKEND=supabase)', () => {
   });
 
   it('authed /login redirects to /', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', is_anonymous: false } } });
     const res = await middleware(req('/login'));
     expect([302, 307]).toContain(res.status);
     const loc = res.headers.get('location');
     expect(loc).not.toBeNull();
     expect(new URL(loc as string).pathname).toBe('/');
+  });
+
+  it('authed-ANONYMOUS user visiting /login PASSES THROUGH (no redirect) — anon users must be able to reach sign-in to upgrade', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'anon-1', is_anonymous: true } } });
+    const res = await middleware(req('/login'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
   });
 
   it('unauth /api/videos returns JSON 401, NOT a redirect', async () => {
