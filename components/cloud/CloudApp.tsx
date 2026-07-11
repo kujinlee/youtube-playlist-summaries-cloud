@@ -116,7 +116,13 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
   const [showArchive, setShowArchive] = useState(false);
   const [filters, setFilters] = useState<FilterState>(FILTER_DEFAULTS);
 
-  const [playlistUrl, setPlaylistUrl] = useState<string | null>(null);
+  // Tie the ingest URL to the playlist it belongs to, and DERIVE the live URL by matching the
+  // currently-viewed playlistId. Refresh can therefore never re-POST (re-bill) a playlist you've
+  // navigated away from — not even for the one render before the reset effect runs, and regardless
+  // of whether PlaylistLibrary is ever keyed by playlistId. The reqSeq guard below still drops
+  // stale video-list responses; this makes the SPEND path correct by construction.
+  const [urlEntry, setUrlEntry] = useState<{ playlistId: string; url: string } | null>(null);
+  const playlistUrl = urlEntry && urlEntry.playlistId === playlistId ? urlEntry.url : null;
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [bannerNonce, setBannerNonce] = useState(0);
@@ -132,7 +138,7 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
         const result = await listVideos(cloudScope, col ? { column: col, order } : undefined);
         if (seq !== reqSeq.current) return; // a newer fetch superseded this — drop it
         setVideos(result.videos);
-        setPlaylistUrl(result.playlistUrl); // previously discarded
+        setUrlEntry({ playlistId, url: result.playlistUrl });
         setError(null);
       } catch (err) {
         if (seq !== reqSeq.current) return;
@@ -143,7 +149,7 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
         setError(err instanceof Error ? err.message : 'Failed to load videos.');
       }
     },
-    [cloudScope, router],
+    [cloudScope, playlistId, router],
   );
 
   // Fetch on mount and whenever the selected playlist changes. Sort re-fetches are triggered
@@ -154,7 +160,8 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
     setError(null);
     setSortColumn(null);
     setSortOrder('asc');
-    setPlaylistUrl(null); // disables Refresh during the reload window
+    // playlistUrl is derived from urlEntry.playlistId === playlistId, so it goes null the
+    // instant playlistId changes — no explicit reset needed here.
     setRefreshError(null);
     fetchVideos(null, 'asc');
     // eslint-disable-next-line react-hooks/exhaustive-deps

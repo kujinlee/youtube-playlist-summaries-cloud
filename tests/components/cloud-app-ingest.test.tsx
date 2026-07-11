@@ -81,3 +81,22 @@ it('drops a stale listVideos response so Refresh uses the current playlist url (
   await waitFor(() => expect(createIngestMock).toHaveBeenCalledWith('https://youtube.com/playlist?list=B'));
   expect(createIngestMock).not.toHaveBeenCalledWith('https://youtube.com/playlist?list=A');
 });
+
+it('does not let Refresh re-POST the previous playlist after cross-playlist navigation', async () => {
+  const { listVideos } = jest.requireMock('@/lib/client/api');
+  let resolveB!: (v: any) => void;
+  (listVideos as jest.Mock)
+    .mockResolvedValueOnce({ videos: [], playlistUrl: 'https://youtube.com/playlist?list=A', playlistTitle: 'A' }) // A loads
+    .mockReturnValueOnce(new Promise((r) => { resolveB = r; }));  // B stays pending
+  createIngestMock.mockResolvedValue(result() as any);
+  setSearchParams('playlist=A');
+  const { rerender } = render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  const refresh = await screen.findByRole('button', { name: /refresh/i });
+  await waitFor(() => expect(refresh).toBeEnabled());          // A loaded → Refresh enabled with A's url
+  setSearchParams('playlist=B');
+  rerender(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />); // now viewing B; B's fetch pending; urlEntry still {A}
+  await waitFor(() => expect(screen.getByRole('button', { name: /refresh/i })).toBeDisabled());
+  fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
+  expect(createIngestMock).not.toHaveBeenCalledWith('https://youtube.com/playlist?list=A');
+  resolveB({ videos: [], playlistUrl: 'https://youtube.com/playlist?list=B', playlistTitle: 'B' });
+});
