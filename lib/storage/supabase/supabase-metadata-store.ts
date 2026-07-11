@@ -4,6 +4,18 @@ import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 import { emptyPlaylistIndex } from '@/lib/storage/empty-index';
 
+// ---------------------------------------------------------------------------
+// stripComputed: drop the DB-computed `updatedAt` key before any write to
+// `videos.data`. readIndex() surfaces `updatedAt` (sourced from the
+// `updated_at` column/trigger) into the Video object for read consumers; it
+// must never round-trip back into the jsonb payload on a write, since the
+// column + trigger are the single source of truth for that value.
+// ---------------------------------------------------------------------------
+function stripComputed<T extends object>(v: T): Omit<T, 'updatedAt'> {
+  const { updatedAt: _omit, ...rest } = v as any;
+  return rest;
+}
+
 export class SupabaseMetadataStore implements MetadataStore {
   constructor(private client: SupabaseClient) {}
 
@@ -84,7 +96,7 @@ export class SupabaseMetadataStore implements MetadataStore {
     const id = await this.requirePlaylistId(p);
     const { error } = await this.client
       .from('videos')
-      .update({ data: video })
+      .update({ data: stripComputed(video) })
       .eq('playlist_id', id)
       .eq('video_id', video.id);
     if (error) throw error;
@@ -103,7 +115,7 @@ export class SupabaseMetadataStore implements MetadataStore {
     const { error } = await this.client.rpc('merge_video_data', {
       p_playlist_id: id,
       p_video_id: videoId,
-      p_fields: fields,
+      p_fields: stripComputed(fields),
     });
     if (error) throw error;
   }
@@ -119,7 +131,7 @@ export class SupabaseMetadataStore implements MetadataStore {
     const id = await this.requirePlaylistId(p);
     const { error } = await this.client.rpc('merge_video_data_bulk', {
       p_playlist_id: id,
-      p_patches: patches.map((x) => ({ video_id: x.videoId, fields: x.fields })),
+      p_patches: patches.map((x) => ({ video_id: x.videoId, fields: stripComputed(x.fields) })),
     });
     if (error) throw error;
   }

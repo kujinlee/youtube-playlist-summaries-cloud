@@ -259,6 +259,21 @@ describe('upsertVideo', () => {
     expect(eqCalls.some((c) => c.args[1] === 'playlist_id' && c.args[2] === 'pl-id')).toBe(true);
     expect(eqCalls.some((c) => c.args[1] === 'video_id' && c.args[2] === 'vid1')).toBe(true);
   });
+
+  test('strips a caller-supplied updatedAt before writing to data', async () => {
+    const client = buildMockClient({
+      playlistRow: { id: 'pl-id', playlist_url: 'https://yt.be/list' },
+    });
+    const store = new SupabaseMetadataStore(client as any);
+    // Simulates a Video sourced from readIndex(), which surfaces updatedAt.
+    const video = { id: 'vid1', updatedAt: '2026-01-01T00:00:00Z' } as any;
+    await store.upsertVideo(p, video);
+    const updateCall = client.calls.find((c) => c.method === 'update');
+    expect(updateCall).toBeDefined();
+    const written = (updateCall!.args[1] as any).data;
+    expect(written).not.toHaveProperty('updatedAt');
+    expect(written).toEqual({ id: 'vid1' });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -276,6 +291,22 @@ describe('updateVideoFields', () => {
     expect((rpc!.args as any).p_playlist_id).toBe('pl-id');
     expect((rpc!.args as any).p_video_id).toBe('vid1');
     expect((rpc!.args as any).p_fields).toEqual({ summaryMd: 'hello' });
+  });
+
+  test('strips a caller-supplied updatedAt from p_fields before the RPC call', async () => {
+    const client = buildMockClient({
+      playlistRow: { id: 'pl-id', playlist_url: 'https://yt.be/list' },
+    });
+    const store = new SupabaseMetadataStore(client as any);
+    await store.updateVideoFields(p, 'vid1', {
+      personalScore: 5,
+      updatedAt: '2026-01-01T00:00:00Z',
+    } as any);
+    const rpc = client.rpcCalls.find((c) => c.name === 'merge_video_data');
+    expect(rpc).toBeDefined();
+    const pFields = (rpc!.args as any).p_fields;
+    expect(pFields).not.toHaveProperty('updatedAt');
+    expect(pFields).toEqual({ personalScore: 5 });
   });
 });
 
@@ -310,6 +341,28 @@ describe('bulkUpdateVideoFields', () => {
     await store.bulkUpdateVideoFields(p, [{ videoId: 'v1', fields: {} as any }]);
     const rpc = client.rpcCalls.find((c) => c.name === 'merge_video_data_bulk');
     expect((rpc!.args as any).p_playlist_id).toBe('pl-uuid-42');
+  });
+
+  test('strips a caller-supplied updatedAt from each patch fields before the RPC call', async () => {
+    const client = buildMockClient({
+      playlistRow: { id: 'pl-id', playlist_url: 'https://yt.be/list' },
+    });
+    const store = new SupabaseMetadataStore(client as any);
+    const patches = [
+      { videoId: 'vid1', fields: { summaryMd: 'a', updatedAt: '2026-01-01T00:00:00Z' } as any },
+      { videoId: 'vid2', fields: { summaryMd: 'b', updatedAt: '2026-01-02T00:00:00Z' } as any },
+    ];
+    await store.bulkUpdateVideoFields(p, patches);
+    const rpc = client.rpcCalls.find((c) => c.name === 'merge_video_data_bulk');
+    expect(rpc).toBeDefined();
+    const pPatches = (rpc!.args as any).p_patches;
+    expect(pPatches).toEqual([
+      { video_id: 'vid1', fields: { summaryMd: 'a' } },
+      { video_id: 'vid2', fields: { summaryMd: 'b' } },
+    ]);
+    for (const patch of pPatches) {
+      expect(patch.fields).not.toHaveProperty('updatedAt');
+    }
   });
 });
 
