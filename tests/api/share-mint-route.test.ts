@@ -16,7 +16,10 @@ const post = (body: any) =>
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetUser = jest.fn(async () => ({ data: { user: { id: 'owner-1' } } }));
-  mockRpc = jest.fn(async () => ({ data: new Date(Date.now() + 30 * 864e5).toISOString(), error: null }));
+  mockRpc = jest.fn(async () => ({
+    data: [{ id: 'share-uuid-1', expires_at: new Date(Date.now() + 30 * 864e5).toISOString() }],
+    error: null,
+  }));
 });
 
 describe('POST /api/share', () => {
@@ -32,6 +35,7 @@ describe('POST /api/share', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
 
+    expect(body.id).toBe('share-uuid-1');
     expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(body.url).toBe(`/s/${body.token}`);
     expect(typeof body.expiresAt).toBe('string');
