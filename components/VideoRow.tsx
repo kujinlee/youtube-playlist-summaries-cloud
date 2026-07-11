@@ -149,7 +149,6 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
         <td className={`px-3 py-2 ${cellDim}`} aria-label="My Score">
           <StarRating
             videoId={video.id}
-            outputFolder={outputFolder}
             value={video.personalScore}
             onChange={(score) => onAnnotationChange(video.id, { personalScore: score })}
           />
@@ -159,7 +158,6 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
         <td className={`px-3 py-2 ${cellDim}`} aria-label="Note">
           <NoteCell
             videoId={video.id}
-            outputFolder={outputFolder}
             value={video.personalNote}
             onChange={(note) => onAnnotationChange(video.id, { personalNote: note })}
           />
@@ -173,7 +171,6 @@ export default function VideoRow({ video, rank, outputFolder, baseOutputFolder, 
               tldr={video.tldr}
               takeaways={video.takeaways}
               tags={video.tags}
-              outputFolder={outputFolder}
             />
           </td>
         </tr>

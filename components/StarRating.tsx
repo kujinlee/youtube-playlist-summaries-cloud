@@ -1,15 +1,17 @@
 'use client';
 
 import { useState } from 'react';
+import { useScope } from '@/lib/client/scope';
+import { saveAnnotation } from '@/lib/client/api';
 
 interface StarRatingProps {
   videoId: string;
-  outputFolder: string;
   value: number | undefined;
   onChange: (score: number | undefined) => void;
 }
 
-export default function StarRating({ videoId, outputFolder, value, onChange }: StarRatingProps) {
+export default function StarRating({ videoId, value, onChange }: StarRatingProps) {
+  const scope = useScope();
   const [hover, setHover]   = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -19,12 +21,7 @@ export default function StarRating({ videoId, outputFolder, value, onChange }: S
     onChange(newScore);
     setSaving(true);
     try {
-      const res = await fetch(`/api/videos/${encodeURIComponent(videoId)}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outputFolder, personalScore: newScore ?? null }),
-      });
-      if (!res.ok) throw new Error('save failed');
+      await saveAnnotation(scope, videoId, { personalScore: newScore ?? null });
     } catch {
       onChange(prev);
     } finally {

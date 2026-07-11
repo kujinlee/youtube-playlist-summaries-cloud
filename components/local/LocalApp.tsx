@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FilterState, ProgressEvent, SortColumn, SortOrder, Video } from '@/types';
 import type { BatchMode } from '@/lib/html-doc/batch';
 import { FILTER_DEFAULTS } from '@/types';
@@ -13,6 +13,7 @@ import HtmlDocStatusBar from '@/components/HtmlDocStatusBar';
 import PdfStatusBar from '@/components/PdfStatusBar';
 import VideoList from '@/components/VideoList';
 import { summaryNeedsWork, videoNeedsBatchWork } from '@/lib/html-doc/eligibility';
+import { ScopeProvider } from '@/lib/client/scope';
 
 type IngestStatus = 'idle' | 'running' | 'error';
 
@@ -507,173 +508,183 @@ export default function LocalApp() {
   const willGenerateCount = selectedVideos.filter((x) => videoNeedsBatchWork(x, batchMode)).length;
   const skipCount = selectedVideos.length - willGenerateCount;
 
+  // Stable scope object (memoized on the two fields that define it) so shared components
+  // mounted under this provider (StarRating/NoteCell/VideoQuickView via useScope()) don't
+  // see a new identity — and re-run their data-fetching effects — on every LocalApp render.
+  const scope = useMemo(
+    () => ({ mode: 'local' as const, outputFolder, baseOutputFolder }),
+    [outputFolder, baseOutputFolder],
+  );
+
   return (
-    <main className="min-h-screen bg-zinc-950">
-      <Header
-        defaultBaseOutputFolder={baseOutputFolder}
-        defaultOutputFolder={outputFolder}
-        currentPlaylistUrl={currentPlaylistUrl}
-        currentPlaylistTitle={currentPlaylistTitle}
-        onIngest={handleIngest}
-        onSync={handleSync}
-        onFolderChange={handleFolderChange}
-        onRootChange={handleRootChange}
-        onResolvedTarget={handleResolvedTarget}
-        disabled={ingest.status === 'running'}
-      />
+    <ScopeProvider scope={scope}>
+      <main className="min-h-screen bg-zinc-950">
+        <Header
+          defaultBaseOutputFolder={baseOutputFolder}
+          defaultOutputFolder={outputFolder}
+          currentPlaylistUrl={currentPlaylistUrl}
+          currentPlaylistTitle={currentPlaylistTitle}
+          onIngest={handleIngest}
+          onSync={handleSync}
+          onFolderChange={handleFolderChange}
+          onRootChange={handleRootChange}
+          onResolvedTarget={handleResolvedTarget}
+          disabled={ingest.status === 'running'}
+        />
 
-      {ingest.status !== 'idle' && (
-        <section aria-label="Ingestion progress" className="bg-zinc-900 px-6 py-3 border-b border-zinc-800">
-          {ingest.status === 'running' && (
-            <div role="status" aria-live="polite" className="space-y-1">
-              <div className="flex items-center gap-3">
-                <div
-                  className="flex-1 h-2 bg-zinc-700 rounded-full overflow-hidden"
-                  role="progressbar"
-                  aria-valuenow={ingest.progress}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                >
+        {ingest.status !== 'idle' && (
+          <section aria-label="Ingestion progress" className="bg-zinc-900 px-6 py-3 border-b border-zinc-800">
+            {ingest.status === 'running' && (
+              <div role="status" aria-live="polite" className="space-y-1">
+                <div className="flex items-center gap-3">
                   <div
-                    className="h-full bg-blue-600 rounded-full transition-all duration-300"
-                    style={{ width: `${ingest.progress}%` }}
-                  />
+                    className="flex-1 h-2 bg-zinc-700 rounded-full overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={ingest.progress}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div
+                      className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                      style={{ width: `${ingest.progress}%` }}
+                    />
+                  </div>
+                  <span className="text-xs tabular-nums text-zinc-400 w-8 text-right">{ingest.progress}%</span>
+                  <button
+                    type="button"
+                    onClick={handleCancel}
+                    aria-label="Cancel ingestion"
+                    className="text-zinc-400 hover:text-zinc-100 text-xs px-2 py-1 rounded border border-zinc-700 hover:border-zinc-500 transition-colors"
+                  >
+                    Cancel
+                  </button>
                 </div>
-                <span className="text-xs tabular-nums text-zinc-400 w-8 text-right">{ingest.progress}%</span>
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  aria-label="Cancel ingestion"
-                  className="text-zinc-400 hover:text-zinc-100 text-xs px-2 py-1 rounded border border-zinc-700 hover:border-zinc-500 transition-colors"
-                >
-                  Cancel
-                </button>
+                {ingest.total > 0 && (
+                  <p className="text-xs text-zinc-400">
+                    New video {ingest.current} of {ingest.total}
+                    {ingest.step ? ` · ${ingest.step}` : ''}
+                  </p>
+                )}
+                {ingest.title && <p className="text-xs text-zinc-500 truncate">{ingest.title}</p>}
               </div>
-              {ingest.total > 0 && (
-                <p className="text-xs text-zinc-400">
-                  New video {ingest.current} of {ingest.total}
-                  {ingest.step ? ` · ${ingest.step}` : ''}
-                </p>
-              )}
-              {ingest.title && <p className="text-xs text-zinc-500 truncate">{ingest.title}</p>}
-            </div>
-          )}
-          {ingest.error && <p role="alert" className="text-xs text-red-400 mt-1">{ingest.error}</p>}
-          {ingest.status === 'error' && !ingest.error && (
-            <p role="alert" className="text-xs text-red-400">Ingestion failed.</p>
-          )}
+            )}
+            {ingest.error && <p role="alert" className="text-xs text-red-400 mt-1">{ingest.error}</p>}
+            {ingest.status === 'error' && !ingest.error && (
+              <p role="alert" className="text-xs text-red-400">Ingestion failed.</p>
+            )}
+          </section>
+        )}
+
+        {syncNote && ingest.status === 'idle' && (
+          <p className="px-6 py-1 text-xs text-zinc-400">{syncNote}</p>
+        )}
+
+        {/* Stats bar */}
+        <section aria-label="Statistics" className="px-6 py-4 flex gap-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
+            <p className="text-xl font-semibold tabular-nums text-zinc-50">{totalVideos}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Total videos</p>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
+            <p className="text-xl font-semibold tabular-nums text-zinc-50">{avgScore}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Avg score</p>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
+            <p className="text-xl font-semibold tabular-nums text-zinc-50">{koreanCount}</p>
+            <p className="text-xs text-zinc-400 mt-0.5">Korean</p>
+          </div>
         </section>
-      )}
 
-      {syncNote && ingest.status === 'idle' && (
-        <p className="px-6 py-1 text-xs text-zinc-400">{syncNote}</p>
-      )}
-
-      {/* Stats bar */}
-      <section aria-label="Statistics" className="px-6 py-4 flex gap-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
-          <p className="text-xl font-semibold tabular-nums text-zinc-50">{totalVideos}</p>
-          <p className="text-xs text-zinc-400 mt-0.5">Total videos</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
-          <p className="text-xl font-semibold tabular-nums text-zinc-50">{avgScore}</p>
-          <p className="text-xs text-zinc-400 mt-0.5">Avg score</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 min-w-24">
-          <p className="text-xl font-semibold tabular-nums text-zinc-50">{koreanCount}</p>
-          <p className="text-xs text-zinc-400 mt-0.5">Korean</p>
-        </div>
-      </section>
-
-      {/* Filter row */}
-      <div className="flex items-center justify-between px-6 py-2 border-b border-zinc-800">
-        <FilterBar
-          filters={filters}
-          onChange={handleFilterChange}
-          backfillCount={backfillCount}
-          onBackfill={() => setShowBackfill(true)}
-        />
-        <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer ml-4">
-          <input
-            type="checkbox"
-            checked={showArchive}
-            onChange={(e) => setShowArchive(e.target.checked)}
-            className="rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
+        {/* Filter row */}
+        <div className="flex items-center justify-between px-6 py-2 border-b border-zinc-800">
+          <FilterBar
+            filters={filters}
+            onChange={handleFilterChange}
+            backfillCount={backfillCount}
+            onBackfill={() => setShowBackfill(true)}
           />
-          Show Archive
-        </label>
-      </div>
+          <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer ml-4">
+            <input
+              type="checkbox"
+              checked={showArchive}
+              onChange={(e) => setShowArchive(e.target.checked)}
+              className="rounded border-zinc-600 bg-zinc-800 text-blue-600 focus:ring-blue-500"
+            />
+            Show Archive
+          </label>
+        </div>
 
-      <div className="px-6 py-4">
-        <BulkActionBar
-          selectedCount={selected.size}
-          willGenerateCount={willGenerateCount}
-          skipCount={skipCount}
-          mode={batchMode}
-          onModeChange={setBatchMode}
-          onGenerate={handleBatchGenerate}
-          onClear={clearSelection}
-        />
-        <VideoList
-          videos={filteredVideos}
-          outputFolder={outputFolder}
-          baseOutputFolder={baseOutputFolder}
-          showArchive={true}
-          busyVideoId={busyVideoId}
-          onArchive={handleArchive}
-          onGenerateHtml={handleGenerateHtml}
-          onResummarize={handleResummarize}
-          onSavePdf={handleSavePdf}
-          sortColumn={sortColumn}
-          sortOrder={sortOrder}
-          onSort={handleSort}
-          minPersonalScore={filters.minPersonalScore}
-          onAnnotationChange={handleAnnotationChange}
-          selected={selected}
-          onToggleSelect={toggleSelect}
-          onSelectAllNeeding={selectAllNeeding}
-          activeBatchVideoIds={batchJob?.videoIds ?? EMPTY_SET}
-          batchMode={batchMode}
-        />
-      </div>
+        <div className="px-6 py-4">
+          <BulkActionBar
+            selectedCount={selected.size}
+            willGenerateCount={willGenerateCount}
+            skipCount={skipCount}
+            mode={batchMode}
+            onModeChange={setBatchMode}
+            onGenerate={handleBatchGenerate}
+            onClear={clearSelection}
+          />
+          <VideoList
+            videos={filteredVideos}
+            outputFolder={outputFolder}
+            baseOutputFolder={baseOutputFolder}
+            showArchive={true}
+            busyVideoId={busyVideoId}
+            onArchive={handleArchive}
+            onGenerateHtml={handleGenerateHtml}
+            onResummarize={handleResummarize}
+            onSavePdf={handleSavePdf}
+            sortColumn={sortColumn}
+            sortOrder={sortOrder}
+            onSort={handleSort}
+            minPersonalScore={filters.minPersonalScore}
+            onAnnotationChange={handleAnnotationChange}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onSelectAllNeeding={selectAllNeeding}
+            activeBatchVideoIds={batchJob?.videoIds ?? EMPTY_SET}
+            batchMode={batchMode}
+          />
+        </div>
 
-      {htmlJob && (
-        <HtmlDocStatusBar
-          videoId={htmlJob.videoId}
-          jobId={htmlJob.jobId}
-          title={htmlJob.title}
-          viewUrl={htmlJob.viewUrl}
-          label={htmlJob.label}
-          onClose={handleHtmlClose}
-          onError={() => setBusyVideoId(null)}
-        />
-      )}
-      {pdfJob && (
-        <PdfStatusBar
-          videoId={pdfJob.videoId}
-          jobId={pdfJob.jobId}
-          title={pdfJob.title}
-          errorMessage={pdfJob.error}
-          onClose={handlePdfClose}
-          onError={() => setBusyVideoId(null)}
-        />
-      )}
-      {batchJob && (
-        <BatchDocStatusBar
-          jobId={batchJob.jobId}
-          onClose={handleBatchClose}
-          onProgressEvent={handleBatchProgress}
-        />
-      )}
-      {showBackfill && (
-        <BackfillOverlay
-          outputFolder={outputFolder}
-          onClose={() => {
-            setShowBackfill(false);
-            fetchVideos(outputFolder, sortColumn, sortOrder);
-          }}
-        />
-      )}
-    </main>
+        {htmlJob && (
+          <HtmlDocStatusBar
+            videoId={htmlJob.videoId}
+            jobId={htmlJob.jobId}
+            title={htmlJob.title}
+            viewUrl={htmlJob.viewUrl}
+            label={htmlJob.label}
+            onClose={handleHtmlClose}
+            onError={() => setBusyVideoId(null)}
+          />
+        )}
+        {pdfJob && (
+          <PdfStatusBar
+            videoId={pdfJob.videoId}
+            jobId={pdfJob.jobId}
+            title={pdfJob.title}
+            errorMessage={pdfJob.error}
+            onClose={handlePdfClose}
+            onError={() => setBusyVideoId(null)}
+          />
+        )}
+        {batchJob && (
+          <BatchDocStatusBar
+            jobId={batchJob.jobId}
+            onClose={handleBatchClose}
+            onProgressEvent={handleBatchProgress}
+          />
+        )}
+        {showBackfill && (
+          <BackfillOverlay
+            outputFolder={outputFolder}
+            onClose={() => {
+              setShowBackfill(false);
+              fetchVideos(outputFolder, sortColumn, sortOrder);
+            }}
+          />
+        )}
+      </main>
+    </ScopeProvider>
   );
 }

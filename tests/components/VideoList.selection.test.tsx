@@ -1,7 +1,9 @@
 /** @jest-environment jsdom */
 import { render, screen, fireEvent } from '@testing-library/react';
+import React from 'react';
 import VideoList from '../../components/VideoList';
 import type { Video } from '../../types';
+import { ScopeProvider, type Scope } from '../../lib/client/scope';
 
 function v(id: string, over: Partial<Video> = {}): Video {
   return {
@@ -19,15 +21,27 @@ const baseProps = {
   selected: new Set<string>(), onToggleSelect: () => {}, onSelectAllNeeding: () => {},
 };
 
+const LOCAL_SCOPE: Scope = { mode: 'local', outputFolder: '/p', baseOutputFolder: '/p' };
+
+// VideoList renders real VideoRow rows here (not mocked), whose leaf components
+// (StarRating/NoteCell/VideoQuickView) call useScope() — every render needs a ScopeProvider.
+function renderList(props: React.ComponentProps<typeof VideoList>) {
+  return render(
+    <ScopeProvider scope={LOCAL_SCOPE}>
+      <VideoList {...props} />
+    </ScopeProvider>,
+  );
+}
+
 it('CA1: clicking a row checkbox calls onToggleSelect with the videoId', () => {
   const onToggleSelect = jest.fn();
-  render(<VideoList {...baseProps} videos={[v('a')]} onToggleSelect={onToggleSelect} />);
+  renderList({ ...baseProps, videos: [v('a')], onToggleSelect });
   fireEvent.click(screen.getByLabelText('Select Ta'));
   expect(onToggleSelect).toHaveBeenCalledWith('a');
 });
 
 it('CA2: a row with no summaryMd has a disabled checkbox', () => {
-  render(<VideoList {...baseProps} videos={[v('a', { summaryMd: null })]} />);
+  renderList({ ...baseProps, videos: [v('a', { summaryMd: null })] });
   expect(screen.getByLabelText('Select Ta')).toBeDisabled();
 });
 
@@ -38,7 +52,7 @@ it('CA3: header select-all calls onSelectAllNeeding with only missing/stale visi
     v('b', { summaryHtml: 'b.html', docVersion: { major: 3, minor: 3 } }), // current
     v('c', { summaryMd: null }),                                     // not selectable
   ];
-  render(<VideoList {...baseProps} videos={videos} onSelectAllNeeding={onSelectAllNeeding} />);
+  renderList({ ...baseProps, videos, onSelectAllNeeding });
   fireEvent.click(screen.getByLabelText('Select all needing generation'));
   const arg = onSelectAllNeeding.mock.calls[0][0] as Video[];
   expect(arg.map((x) => x.id)).toEqual(['a']);
@@ -46,11 +60,11 @@ it('CA3: header select-all calls onSelectAllNeeding with only missing/stale visi
 
 it('CA1: header checkbox is checked when all needing rows are selected', () => {
   const videos = [v('a', { summaryHtml: null })];
-  render(<VideoList {...baseProps} videos={videos} selected={new Set(['a'])} />);
+  renderList({ ...baseProps, videos, selected: new Set(['a']) });
   expect(screen.getByLabelText('Select all needing generation')).toBeChecked();
 });
 
 it('H3: a row in the active batch has a disabled checkbox', () => {
-  render(<VideoList {...baseProps} videos={[v('a')]} activeBatchVideoIds={new Set(['a'])} />);
+  renderList({ ...baseProps, videos: [v('a')], activeBatchVideoIds: new Set(['a']) });
   expect(screen.getByLabelText('Select Ta')).toBeDisabled();
 });
