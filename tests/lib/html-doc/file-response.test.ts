@@ -51,4 +51,14 @@ describe('fileResponse', () => {
     expect(await r.text()).toBe('# héllo\n\nbody');
     expect(Buffer.from(await rClone.arrayBuffer()).equals(buf)).toBe(true);
   });
+  it('staleMarker sets X-Magazine-Stale on html; absent by default', () => {
+    const on = fileResponse('<html>', { kind: 'html', download: false, base: 'b', cache: 'private, no-store', csp: 'x', staleMarker: true });
+    expect(on.headers.get('X-Magazine-Stale')).toBe('1');
+    const off = fileResponse('<html>', { kind: 'html', download: false, base: 'b', cache: 'private, no-store', csp: 'x' });
+    expect(off.headers.get('X-Magazine-Stale')).toBeNull();
+  });
+  it('staleMarker is ignored on kind:"md" (html-only invariant enforced in code, not just by caller)', () => {
+    const r = fileResponse('# hi', { kind: 'md', download: false, base: 'b', cache: 'no-store', staleMarker: true });
+    expect(r.headers.get('X-Magazine-Stale')).toBeNull();
+  });
 });

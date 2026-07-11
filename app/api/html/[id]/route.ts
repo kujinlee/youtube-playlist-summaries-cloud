@@ -102,6 +102,7 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
       case 'busy': return json({ error: 'generating, retry shortly' }, 503);   // B6b
       case 'attempts_exhausted': return json({ error: 'temporarily unavailable, try later' }, 503); // B7f
       case 'at_capacity': return json({ error: 'at capacity' }, 503);          // B6
+      case 'over_budget': return json({ error: 'daily refresh budget reached, try tomorrow' }, 503); // D6/G1
       case 'ok': break;
     }
 
@@ -110,6 +111,7 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
     return fileResponse(html, {
       kind: 'html', download, base, title,
       cache: 'private, no-store', csp: buildSummaryCsp(nonce),
+      staleMarker: resolved.stale === true, // D6: serve-stale-over-budget flags X-Magazine-Stale
     });
   } catch (err) {
     const e = err as { statusCode?: number; message?: string };

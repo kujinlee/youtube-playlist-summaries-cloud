@@ -12,6 +12,11 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, newUser, signInAs } from './helpers/clients';
 import { seedPlaylist, seedPromotedVideo, seedSummaryBlob } from './helpers/seed';
+import { writeModelEnvelope } from '@/lib/html-doc/model-store';
+import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
+import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
+import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
+import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 
 jest.mock('next/headers', () => ({ cookies: async () => ({ getAll: () => [], set: () => {} }) }));
 
@@ -81,6 +86,15 @@ function req(videoId: string, qs: string) {
   return new Request(`http://localhost/api/html/${videoId}?${qs}`);
 }
 function invoke(id: string) { return { params: Promise.resolve({ id }) }; }
+
+// ── Stage 1G / Task 3 owner-budget helpers — replicated from tests/integration/serve-owner-budget.test.ts
+// (module-local there, not exported). CHECK (per_owner_serve_daily_cents >= magazine_est_cents=6) means
+// the cap must NEVER be set below 6 — force over-budget by pre-seeding spent_cents AT the cap instead. ──
+const utcDay = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC — matches (now() at tz 'utc')::date
+const setOwnerCap = (cents: number) =>
+  svc.from('guardrail_config').update({ per_owner_serve_daily_cents: cents }).eq('id', true); // cents MUST be >= 6
+const preseedBudget = (ownerId: string, spent: number, day: string = utcDay()) =>
+  svc.from('serve_owner_budget').insert({ owner_id: ownerId, day, spent_cents: spent });
 
 describe('html-download (owner route, real DB)', () => {
   it('C1: owner GET (no format/download) → 200 html, CSP + private,no-store, nosniff, NO Referrer-Policy, no Content-Disposition (view regression)', async () => {
@@ -211,5 +225,88 @@ describe('html-download (owner route, real DB)', () => {
 
     const res = await GET(req(videoId, `playlist=${playlistId}&type=summary&format=md`), invoke(videoId));
     expect(res.status).toBe(409);
+  });
+
+  // ── Stage 1G / Task 3: owner route wiring of ResolveResult.over_budget / .stale (spec D6) ──
+
+  it('P6: owner over budget, no cached model → 503 { error: daily refresh budget reached, try tomorrow }', async () => {
+    const { u, playlistId, videoId } = await ownerAndDoc();
+    await setOwnerCap(6);
+    await preseedBudget(u.user.id, 6); // next 6¢ attempt (6+6>6) is blocked → owner_over_budget
+
+    const res = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toBe('daily refresh budget reached, try tomorrow');
+    expect(res.headers.get('x-magazine-stale')).toBeNull();
+  });
+
+  it('P5: owner over budget, title-stable model exists → 200 rendered magazine, X-Magazine-Stale: 1', async () => {
+    const { u, playlistId, playlistKey, videoId, base } = await ownerAndDoc();
+    const principal = { id: u.user.id, indexKey: playlistKey };
+    const blob = new SupabaseBlobStore(mockClient, ARTIFACTS_BUCKET);
+    const titles = parseSummaryMarkdown(MD).sections.map((s) => s.title); // matches the route's own parse
+
+    await writeModelEnvelope(principal, base, {
+      sourceMd: `${base}.md`,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      sourceSections: titles,          // title-stable: same titles as the current MD
+      generatorVersion: 'OLD',         // NOT current GENERATOR_VERSION → not fresh, but title-stable
+      model: { sections: [{ lead: 'old-stale-lead', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
+    }, blob);
+    await setOwnerCap(6);
+    await preseedBudget(u.user.id, 6);
+
+    const res = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/text\/html/);
+    expect(res.headers.get('x-magazine-stale')).toBe('1');
+    const body = await res.text();
+    expect(body).toContain('old-stale-lead'); // proves the served body is the STALE cached model, not a 503/regen
+  });
+
+  it('P1: fresh model, owner over budget → 200 served free, NO X-Magazine-Stale (fresh short-circuit, no reserve)', async () => {
+    const { u, playlistId, playlistKey, videoId, base } = await ownerAndDoc();
+    const principal = { id: u.user.id, indexKey: playlistKey };
+    const blob = new SupabaseBlobStore(mockClient, ARTIFACTS_BUCKET);
+    const titles = parseSummaryMarkdown(MD).sections.map((s) => s.title);
+
+    await writeModelEnvelope(principal, base, {
+      sourceMd: `${base}.md`,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      sourceSections: titles,
+      generatorVersion: GENERATOR_VERSION, // FRESH — matches current version
+      model: { sections: [{ lead: 'fresh-lead', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
+    }, blob);
+    await setOwnerCap(6);
+    await preseedBudget(u.user.id, 6);
+    const rpcSpy = jest.spyOn(SupabaseClient.prototype, 'rpc');
+
+    const res = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-magazine-stale')).toBeNull();
+    const body = await res.text();
+    expect(body).toContain('fresh-lead');
+    const reserveCalls = rpcSpy.mock.calls.filter((c) => c[0] === 'reserve_serve_model');
+    expect(reserveCalls.length).toBe(0); // fresh short-circuit precedes the reserve RPC — served free
+    expect(generateMagazineModel).not.toHaveBeenCalled();
+    rpcSpy.mockRestore();
+  });
+
+  it('P7: owner over budget, format=md&download=1 → 200 raw markdown, no X-Magazine-Stale (MD short-circuits before resolveMagazineModel)', async () => {
+    const { u, playlistId, videoId, base } = await ownerAndDoc();
+    await setOwnerCap(6);
+    await preseedBudget(u.user.id, 6);
+
+    const res = await GET(req(videoId, `playlist=${playlistId}&type=summary&format=md&download=1`), invoke(videoId));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/text\/markdown/);
+    expect(res.headers.get('x-magazine-stale')).toBeNull();
+    expect(res.headers.get('content-disposition')).toMatch(new RegExp(`attachment; filename="${base}\\.md"`));
+    expect(generateMagazineModel).not.toHaveBeenCalled();
   });
 });
