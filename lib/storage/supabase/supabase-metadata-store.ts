@@ -21,7 +21,7 @@ export class SupabaseMetadataStore implements MetadataStore {
 
     const { data: rows, error: vErr } = await this.client
       .from('videos')
-      .select('data')
+      .select('data, updated_at')
       .eq('playlist_id', pl.id)
       .order('position', { ascending: true });
     if (vErr) throw vErr;
@@ -30,7 +30,7 @@ export class SupabaseMetadataStore implements MetadataStore {
       playlistUrl: pl.playlist_url,
       outputFolder: p.indexKey,
       ...(pl.playlist_title ? { playlistTitle: pl.playlist_title } : {}),
-      videos: (rows ?? []).map((r) => r.data as Video),
+      videos: (rows ?? []).map((r) => ({ ...(r.data as Video), updatedAt: r.updated_at as string })),
     };
   }
 

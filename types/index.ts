@@ -73,6 +73,12 @@ export const VideoSchema = z.object({
   takeaways: z.array(z.string()).optional(),
   corrections: z.string().optional(),
   docVersion: DocVersionSchema.optional(), // absent ⇒ pre-feature {1,0}; stamped to CURRENT_DOC_VERSION on (re)generation
+  // Cloud-only (Stage 2a Task 1): sourced from videos.updated_at (readIndex), never persisted
+  // in the local FS JSON, so it must stay optional for back-compat. `{ offset: true }` is
+  // required (not just `Z`) because PostgREST serializes timestamptz as e.g.
+  // "2026-07-11T01:12:57.796832+00:00" — an offset suffix, not "Z" — so the default
+  // Z-only datetime() would reject every real DB-sourced value.
+  updatedAt: z.string().datetime({ offset: true }).optional(),
 });
 export type Video = z.infer<typeof VideoSchema>;
 
