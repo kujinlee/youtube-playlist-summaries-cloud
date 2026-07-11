@@ -4,7 +4,7 @@
 // something this task introduced; no test in the repo uses that pattern). The repo's established
 // convention for mocking a sibling lib module (see tests/lib/html-doc/serve-doc-mapping.test.ts) is a
 // full `jest.mock(..., () => ({...}))` factory, used below. Assertions/interfaces are unchanged.
-import { readFreshMagazineModel, isFresh } from '@/lib/html-doc/read-model';
+import { readFreshMagazineModel, isFresh, sameTitles, readTitleStableModel } from '@/lib/html-doc/read-model';
 import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
 import type { ReadOnlyBlobStore } from '@/lib/storage/blob-store';
 
@@ -56,6 +56,35 @@ describe('readFreshMagazineModel', () => {
     mockReadModelEnvelope.mockResolvedValue(envelope({ generatorVersion: 'old' }));
     const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles });
     expect(r).toEqual({ status: 'not_ready' });
+  });
+});
+
+describe('sameTitles', () => {
+  it('true iff same length and same order', () => {
+    expect(sameTitles(envelope(), titles)).toBe(true);                       // ['A','B'] === ['A','B']
+    expect(sameTitles(envelope({ sourceSections: ['B', 'A'] }), titles)).toBe(false);
+    expect(sameTitles(envelope({ sourceSections: ['A'] }), titles)).toBe(false);
+  });
+});
+
+describe('readTitleStableModel', () => {
+  afterEach(() => mockReadModelEnvelope.mockReset());
+
+  it('ok with the model when the envelope exists and titles match — version ignored (stale ok)', async () => {
+    mockReadModelEnvelope.mockResolvedValue(envelope({ generatorVersion: 'OLD' })); // stale VERSION, same titles
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
+    expect(r).toEqual({ status: 'ok', model: fakeModel });
+    expect(mockReadModelEnvelope).toHaveBeenCalledWith(principal, 'b', roStore);
+  });
+  it('none when titles drifted (positional mis-pair would occur → refuse)', async () => {
+    mockReadModelEnvelope.mockResolvedValue(envelope({ sourceSections: ['X', 'B'], generatorVersion: 'OLD' }));
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
+    expect(r).toEqual({ status: 'none' });
+  });
+  it('none when no envelope', async () => {
+    mockReadModelEnvelope.mockResolvedValue(null);
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
+    expect(r).toEqual({ status: 'none' });
   });
 });
 

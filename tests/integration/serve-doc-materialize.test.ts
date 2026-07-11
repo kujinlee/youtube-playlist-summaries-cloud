@@ -29,10 +29,27 @@ async function seed(ownerId: string) {
   return { playlistId, playlist_key: playlistKey, videoId };
 }
 
+// ── Owner-budget helpers (mirrors tests/integration/serve-owner-budget.test.ts — see that file's
+// header comment for why cap must stay >= 6 / magazine_est_cents, never lowered directly). ──
+const utcDay = () => new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+const setOwnerCap = (cents: number) =>
+  svc.from('guardrail_config').update({ per_owner_serve_daily_cents: cents }).eq('id', true); // cents MUST be >= 6
+const preseedBudget = (ownerId: string, spent: number, day: string = utcDay()) =>
+  svc.from('serve_owner_budget').insert({ owner_id: ownerId, day, spent_cents: spent });
+const snapshot = async (ownerId: string) => ({
+  ob: (await svc.from('serve_owner_budget').select('*').eq('owner_id', ownerId).order('day')).data ?? [],
+  led: (await svc.from('spend_ledger').select('*').order('day')).data ?? [],
+  smc: (await svc.from('serve_model_charge').select('*').eq('owner_id', ownerId).order('doc_key')).data ?? [],
+});
+
 beforeEach(async () => {
   await svc.from('serve_model_charge').delete().neq('owner_id', '00000000-0000-0000-0000-000000000000');
+  await svc.from('serve_owner_budget').delete().neq('owner_id', '00000000-0000-0000-0000-000000000000');
   await svc.from('spend_ledger').delete().neq('day', '1900-01-01');
-  await svc.from('guardrail_config').update({ daily_cap_cents: 500, magazine_est_cents: 6, max_serve_attempts: 5, lease_ttl_seconds: 180 }).eq('id', true);
+  await svc.from('guardrail_config').update({
+    daily_cap_cents: 500, magazine_est_cents: 6, max_serve_attempts: 5, lease_ttl_seconds: 180,
+    per_owner_serve_daily_cents: 60,
+  }).eq('id', true);
   (generateMagazineModel as jest.Mock).mockClear();
 });
 
@@ -156,4 +173,94 @@ it('degrades a corrupt cached model file (malformed JSON) to a regenerate, never
   const persisted = await readModelEnvelope(principal, videoId, blob);
   expect(persisted?.generatorVersion).toBe(GENERATOR_VERSION); // valid envelope now persisted, overwriting the corrupt blob
   expect(persisted?.model.sections[0].lead).toBe('L'); // freshly-generated (mock) model, not a leftover of the corrupt file
+});
+
+// ── Stage 1G / G1 Task 2: owner_over_budget → title-stable serve-stale (spec D5) ──
+const staleModel = { sections: [{ lead: 'old', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] };
+
+it('P5: over budget + title-stable model → { ok, stale:true }, no charge', async () => {
+  const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const principal = { id: u.user.id, indexKey: playlist_key };
+  const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+  const p = parsed();
+  await writeModelEnvelope(principal, videoId, {
+    sourceMd: p.sourceMd!, generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceSections: p.sections.map((s) => s.title), generatorVersion: 'OLD', model: staleModel,
+  }, blob);
+  await setOwnerCap(6); await preseedBudget(u.user.id, 6);
+  const before = await snapshot(u.user.id);
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  expect(res).toEqual({ status: 'ok', model: expect.anything(), stale: true });
+  if (res.status === 'ok') expect(res.model.sections[0].lead).toBe('old'); // the STALE model, not a regeneration
+  expect(generateMagazineModel).not.toHaveBeenCalled();
+  expect(await snapshot(u.user.id)).toEqual(before); // reserve rolled back → no charge, no new lease
+});
+
+it('P6: over budget + no cached model → { over_budget }', async () => {
+  const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const principal = { id: u.user.id, indexKey: playlist_key };
+  const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+  await setOwnerCap(6); await preseedBudget(u.user.id, 6);
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  expect(res).toEqual({ status: 'over_budget' });
+  expect(generateMagazineModel).not.toHaveBeenCalled();
+});
+
+it('P6b: over budget + titles DRIFTED → { over_budget } (not stale — avoids positional mis-pair)', async () => {
+  const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const principal = { id: u.user.id, indexKey: playlist_key };
+  const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+  const p = parsed();
+  await writeModelEnvelope(principal, videoId, {
+    sourceMd: p.sourceMd!, generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceSections: ['Something Else'], generatorVersion: 'OLD', model: staleModel, // deliberately mismatched titles
+  }, blob);
+  await setOwnerCap(6); await preseedBudget(u.user.id, 6);
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  expect(res).toEqual({ status: 'over_budget' });
+  expect(generateMagazineModel).not.toHaveBeenCalled();
+});
+
+it('P14: fresh model + owner over budget → { ok } served free (reserve never runs)', async () => {
+  const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const principal = { id: u.user.id, indexKey: playlist_key };
+  const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+  const p = parsed();
+  await writeModelEnvelope(principal, videoId, {
+    sourceMd: p.sourceMd!, generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceSections: p.sections.map((s) => s.title), generatorVersion: GENERATOR_VERSION, // FRESH — matches current version
+    model: { sections: [{ lead: 'fresh', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
+  }, blob);
+  await setOwnerCap(6); await preseedBudget(u.user.id, 6);
+  const before = await snapshot(u.user.id);
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  expect(res).toEqual({ status: 'ok', model: expect.anything() }); // no `stale` — fresh path (readFreshMagazineModel short-circuit)
+  expect((res as { stale?: boolean }).stale).toBeUndefined();
+  expect(generateMagazineModel).not.toHaveBeenCalled();
+  expect(await snapshot(u.user.id)).toEqual(before); // reserve never called (fresh short-circuit precedes the RPC) → nothing changed
+});
+
+it('P13: stale served over budget; recovers to fresh (no stale) once under budget', async () => {
+  const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+  const { client } = await signInAs(u.email, u.password);
+  const principal = { id: u.user.id, indexKey: playlist_key };
+  const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+  const p = parsed();
+  await writeModelEnvelope(principal, videoId, {
+    sourceMd: p.sourceMd!, generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceSections: p.sections.map((s) => s.title), generatorVersion: 'OLD', model: staleModel,
+  }, blob);
+  await setOwnerCap(6); await preseedBudget(u.user.id, 6);
+  const stale = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  expect(stale).toMatchObject({ status: 'ok', stale: true });
+  // Clear today's over-budget state, leaving the stale envelope in place.
+  await svc.from('serve_owner_budget').delete().eq('owner_id', u.user.id);
+  const fresh = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  expect(fresh.status).toBe('ok');
+  expect((fresh as { stale?: boolean }).stale).toBeUndefined(); // re-materialized to current version, not stale
+  if (fresh.status === 'ok') expect(fresh.model.sections[0].lead).toBe('L'); // freshly-generated (mock), not the stale 'old' model
 });

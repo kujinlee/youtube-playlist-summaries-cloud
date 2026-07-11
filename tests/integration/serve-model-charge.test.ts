@@ -16,6 +16,7 @@ beforeEach(async () => {
   await svc.from('spend_ledger').delete().neq('day', '1900-01-01');
   await svc.from('guardrail_config').update({
     daily_cap_cents: 500, magazine_est_cents: 6, max_serve_attempts: 5, lease_ttl_seconds: 180,
+    per_owner_serve_daily_cents: 60,
   }).eq('id', true);
 });
 

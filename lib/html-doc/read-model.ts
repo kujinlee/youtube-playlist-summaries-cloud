@@ -9,13 +9,19 @@ import { readModelEnvelope } from './model-store';
 // /s/[token] route therefore cannot pull in the charging code. Enforced by tests/lib/share/
 // import-guard.test.ts (a jest grep guard; the repo has no ESLint).
 
+export function sameTitles(
+  envelope: { sourceSections: string[] },
+  titles: string[],
+): boolean {
+  return envelope.sourceSections.length === titles.length &&
+    envelope.sourceSections.every((t, i) => t === titles[i]);
+}
+
 export function isFresh(
   envelope: { sourceSections: string[]; generatorVersion?: string },
   titles: string[],
 ): boolean {
-  const sameTitles = envelope.sourceSections.length === titles.length &&
-    envelope.sourceSections.every((t, i) => t === titles[i]);
-  return sameTitles && envelope.generatorVersion === GENERATOR_VERSION;
+  return sameTitles(envelope, titles) && envelope.generatorVersion === GENERATOR_VERSION;
 }
 
 /** Read-only, generation-free: returns the cached model iff present AND fresh; otherwise
@@ -30,4 +36,19 @@ export async function readFreshMagazineModel(args: {
   const existing = await readModelEnvelope(principal, base, blobStore);
   if (existing && isFresh(existing, titles)) return { status: 'ok', model: existing.model };
   return { status: 'not_ready' };
+}
+
+/** Title-stable read (spec D5): returns the cached model iff the envelope exists AND its section
+ *  titles match `titles` (generator version may differ — the version-bump case). Positionally
+ *  coherent to render against current markdown. Never reserves/generates (pure blob read). */
+export async function readTitleStableModel(args: {
+  blobStore: ReadOnlyBlobStore;
+  principal: Principal;
+  base: string;
+  titles: string[];
+}): Promise<{ status: 'ok'; model: MagazineModel } | { status: 'none' }> {
+  const { blobStore, principal, base, titles } = args;
+  const existing = await readModelEnvelope(principal, base, blobStore);
+  if (existing && sameTitles(existing, titles)) return { status: 'ok', model: existing.model };
+  return { status: 'none' };
 }

@@ -4,7 +4,7 @@ import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary, MagazineModel } from './types';
 import { GENERATOR_VERSION } from './constants';
 import { writeModelEnvelope } from './model-store';
-import { readFreshMagazineModel } from './read-model';
+import { readFreshMagazineModel, readTitleStableModel } from './read-model';
 import { generateMagazineModel } from '@/lib/gemini';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import {
@@ -24,10 +24,11 @@ const SERVE_CAPS: CloudGeminiCaps = {
 };
 
 export type ResolveResult =
-  | { status: 'ok'; model: MagazineModel }
+  | { status: 'ok'; model: MagazineModel; stale?: boolean }
   | { status: 'busy' }
   | { status: 'attempts_exhausted' }
   | { status: 'at_capacity' }
+  | { status: 'over_budget' }
   | { status: 'denied' };
 
 export async function resolveMagazineModel(args: {
@@ -61,6 +62,13 @@ export async function resolveMagazineModel(args: {
     }
     case 'attempts_exhausted': return { status: 'attempts_exhausted' };
     case 'at_capacity': return { status: 'at_capacity' };
+    case 'owner_over_budget': {
+      // Spec D5: serve the title-stable stale rendering instead of failing; else 503.
+      const staleRead = await readTitleStableModel({ blobStore, principal, base, titles });
+      return staleRead.status === 'ok'
+        ? { status: 'ok', model: staleRead.model, stale: true }
+        : { status: 'over_budget' };
+    }
     case 'reserved': break;
     default: throw new Error(`reserve_serve_model: unexpected status ${String(reserveStatus)}`);
   }

@@ -27,7 +27,7 @@ export function fileResponse(
   body: Buffer | string,
   opts: {
     kind: 'md' | 'html'; download: boolean; base: string; title?: string;
-    cache: string; csp?: string; referrerPolicy?: string;
+    cache: string; csp?: string; referrerPolicy?: string; staleMarker?: boolean;
   },
 ): Response {
   const contentType =
@@ -42,6 +42,9 @@ export function fileResponse(
   };
   if (opts.csp) headers['Content-Security-Policy'] = opts.csp;
   if (opts.referrerPolicy) headers['Referrer-Policy'] = opts.referrerPolicy;
+  // "html only" invariant enforced here in code (not just by the caller): a stale-served
+  // markdown response (opts.kind === 'md') must never carry this header.
+  if (opts.staleMarker && opts.kind === 'html') headers['X-Magazine-Stale'] = '1';
 
   if (opts.download) {
     const ext = opts.kind; // 'md' | 'html'
