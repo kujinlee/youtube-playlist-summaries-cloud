@@ -111,11 +111,16 @@ describe('dig-cloud (integration, real DB)', () => {
 
     const rpcSpy = jest.spyOn(SupabaseClient.prototype, 'rpc'); // explicit target (matches pdf-cloud.test.ts)
     const { data: ucBefore } = await admin.from('usage_counters').select('*').eq('owner_id', user.id);
+    const { data: slBefore } = await admin.from('spend_ledger').select('*'); // spend_ledger is global-by-day
     const res = await enqueueDig({ supabase: client, enqueuer: new SupabaseEnqueuer(admin), userId: user.id, isAnonymous: false, videoId: 'VID', playlistId, sectionId: 132, enqueueIp: null });
     expect(res.status).toBe(200);
     expect(rpcSpy.mock.calls.filter((c) => c[0] === 'enqueue_job').length).toBe(0);
     const { data: ucAfter } = await admin.from('usage_counters').select('*').eq('owner_id', user.id);
     expect(ucAfter ?? []).toEqual(ucBefore ?? []);
+    // The dedup (200-ready) path must also leave the global spend_ledger untouched — a spurious
+    // ledger write bypassing usage_counters/enqueue_job would otherwise slip past the checks above.
+    const { data: slAfter } = await admin.from('spend_ledger').select('*');
+    expect(slAfter ?? []).toEqual(slBefore ?? []);
     rpcSpy.mockRestore();
   });
 
@@ -145,15 +150,22 @@ describe('dig-cloud (integration, real DB)', () => {
     await Promise.all([run(0), run(132)]);
     const blob = new SupabaseBlobStore(admin, 'artifacts');
     const p = { id: user.id, indexKey: playlistKey };
-    expect(await blob.exists(p, digSectionKey('0007_intro', 0))).toBe(true);
-    expect(await blob.exists(p, digSectionKey('0007_intro', 132))).toBe(true);
+    // Assert CONTENT, not just existence: a swap bug (section 0's body under 132's key) would pass
+    // two exists() checks but fail these — each blob must carry its OWN sectionId frontmatter.
+    expect((await blob.get(p, digSectionKey('0007_intro', 0)))!.toString('utf-8')).toContain('sectionId: 0');
+    expect((await blob.get(p, digSectionKey('0007_intro', 132)))!.toString('utf-8')).toContain('sectionId: 132');
   });
 
   it('version bump re-enqueues + charges: an OLD completed dig row + old blob does NOT dedup the current version', async () => {
     const { user, email, password } = await newUser();
     const { client } = await signInAs(email, password);
     const { playlistId, playlistKey, base } = await seedVideoWithSummary(user.id);
-    await admin.from('jobs').insert({ owner_id: user.id, playlist_id: playlistId, video_id: 'VID', section_id: 132, job_kind: 'dig', job_version: 'dig-0', status: 'completed', payload: {}, max_attempts: 1 });
+    // supabase-js RESOLVES {error} on an insert failure (RLS/constraint/NOT-NULL) rather than
+    // rejecting — an unchecked insert that silently no-ops would make this test indistinguishable
+    // from a fresh enqueue (202 + used=1), passing for the wrong reason. Throw so the precondition
+    // (an OLD-version completed row actually exists) is guaranteed before we assert non-dedup.
+    const { error: oldRowErr } = await admin.from('jobs').insert({ owner_id: user.id, playlist_id: playlistId, video_id: 'VID', section_id: 132, job_kind: 'dig', job_version: 'dig-0', status: 'completed', payload: {}, max_attempts: 1 });
+    if (oldRowErr) throw oldRowErr;
     const olderKey = digSectionKey(base, 132).replace(/\.r\d+\.md$/, '.r0.md');
     await new SupabaseBlobStore(admin, 'artifacts').put({ id: user.id, indexKey: playlistKey }, olderKey, Buffer.from('old'), 'text/markdown');
     const res = await enqueueDig({ supabase: client, enqueuer: new SupabaseEnqueuer(admin), userId: user.id, isAnonymous: false, videoId: 'VID', playlistId, sectionId: 132, enqueueIp: null });
@@ -166,7 +178,9 @@ describe('dig-cloud (integration, real DB)', () => {
     const { user, email, password } = await newUser();
     const { client } = await signInAs(email, password);
     const { playlistId } = await seedVideoWithSummary(user.id);
-    await admin.from('jobs').insert({ owner_id: user.id, playlist_id: playlistId, video_id: 'VID', section_id: 132, job_kind: 'dig', job_version: digJobVersion(), status: 'completed', payload: {}, max_attempts: 1 });
+    // Throw on insert failure so the §9.2 precondition (a CURRENT-version completed row) is guaranteed.
+    const { error: curRowErr } = await admin.from('jobs').insert({ owner_id: user.id, playlist_id: playlistId, video_id: 'VID', section_id: 132, job_kind: 'dig', job_version: digJobVersion(), status: 'completed', payload: {}, max_attempts: 1 });
+    if (curRowErr) throw curRowErr;
     const res = await enqueueDig({ supabase: client, enqueuer: new SupabaseEnqueuer(admin), userId: user.id, isAnonymous: false, videoId: 'VID', playlistId, sectionId: 132, enqueueIp: null });
     expect(res.status).toBe(409); // enqueue_job JOINs the completed row; blob still absent → repair
   });
