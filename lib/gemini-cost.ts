@@ -52,12 +52,15 @@ export const DIG_GENERATE_MAX_PASSES = 3;        // worst-case billable calls in
                                                   // then one more retry on a transient HTTP status)
 export const DIG_EST_CENTS = 150;                // MUST match guardrail_config.dig_est_cents default (migration 0011)
 
-// Thinking is disabled on the dig cloud path via generationConfig.thinkingConfig.thinkingBudget:0
-// (generate.ts) — gemini-2.5-pro has "thinking" ON by default and thought tokens bill at the
-// OUTPUT rate, separate from maxOutputTokens. The constant is kept explicit (rather than simply
-// omitted) so the proof visibly accounts for every billable output category, not just the ones
-// that happen to be non-zero.
-export const MAX_DIG_THINKING_TOKENS = 0;
+// Thinking is BOUNDED (not disabled) on the dig cloud path via generationConfig.thinkingConfig.
+// thinkingBudget (generate.ts). gemini-2.5-pro CANNOT disable thinking — its valid thinkingBudget
+// range is 128-32768 (thinkingBudget:0 is a Flash-family-only setting; on Pro it is either
+// rejected by the API or silently ignored, leaving thought tokens unbounded, up to 32768, billed
+// at the OUTPUT rate, separate from maxOutputTokens). 2048 is a valid, generous Pro budget — the
+// API honors thinkingBudget as a hard cap (documented contract; live-verifiable via
+// usageMetadata.thoughtsTokenCount), so accounting this constant in digWorstCents() is a sound
+// upper bound on the billable thinking-token category.
+export const MAX_DIG_THINKING_TOKENS = 2048;
 
 export interface CloudGeminiCaps {
   transcribeInputTokens: number;
@@ -105,8 +108,8 @@ export function perRunWorstCents(cfg: { maxDurationSeconds: number }): number {
  * construction, ≤ the whole summary's output cap; transitively dependent on that constant staying
  * an honest bound on the summary path) + prompt/schema overhead, priced at
  * `PRICE_DIG_IN_PER_1M_CENTS`; plus output tokens: `MAX_DIG_OUTPUT_TOKENS` (generated prose) +
- * `MAX_DIG_THINKING_TOKENS` (thinking, disabled — see its own comment — kept explicit so every
- * billable output category is accounted for), both priced at `PRICE_DIG_OUT_PER_1M_CENTS`.
+ * `MAX_DIG_THINKING_TOKENS` (thinking, bounded — not disabled, gemini-2.5-pro cannot disable
+ * thinking — see its own comment), both priced at `PRICE_DIG_OUT_PER_1M_CENTS`.
  * Multiplied by `DIG_GENERATE_MAX_PASSES` (the worst-case retry-loop call count), rounded up. This
  * is the mechanical proof that the dig path cannot bill more than `DIG_EST_CENTS` per job — see
  * the guard test asserting digWorstCents() <= DIG_EST_CENTS.

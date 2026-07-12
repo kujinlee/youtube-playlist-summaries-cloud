@@ -105,6 +105,10 @@ export interface GenerateDigOpts {
   maxOutputTokens?: number;
   maxVideoSeconds?: number;
   mediaResolution?: 'LOW';
+  /** Valid gemini-2.5-pro thinkingBudget (128-32768) — Pro cannot disable thinking, so this bounds
+   *  (not disables) thought-token spend. Sourced from MAX_DIG_THINKING_TOKENS (lib/gemini-cost.ts)
+   *  by the caller so digWorstCents()'s accounting can never drift from the actual request. */
+  thinkingBudget?: number;
   signal?: AbortSignal;
 }
 
@@ -134,9 +138,12 @@ function buildRequestBody(
   // mime_type/file_uri parts above (snake_case, proven-working across 9 versions — left untouched),
   // generationConfig itself uses the documented camelCase REST field names (maxOutputTokens,
   // mediaResolution, thinkingConfig) — the SAME form the production summary cloud path sends
-  // (lib/gemini.ts:26-40, :633-645, "honored by the API"). thinkingConfig.thinkingBudget:0 disables
-  // gemini-2.5-pro's default-on "thinking" tokens (billed at the OUTPUT rate, separate from
-  // maxOutputTokens) — required for digWorstCents() to be a genuine upper bound.
+  // (lib/gemini.ts:26-40, :633-645, "honored by the API"). thinkingConfig.thinkingBudget BOUNDS
+  // (does not disable) gemini-2.5-pro's default-on "thinking" tokens (billed at the OUTPUT rate,
+  // separate from maxOutputTokens) — Pro cannot disable thinking (valid range 128-32768;
+  // thinkingBudget:0 is Flash-only and would be rejected/ignored on Pro). The value is set ONLY
+  // when the caller supplies opts.thinkingBudget — never hardcoded here — so the local no-opts
+  // path stays byte-identical and the budget always traces back to the caller's constant.
   const generationConfig: Record<string, unknown> = {};
   if (opts?.maxOutputTokens !== undefined) {
     generationConfig.maxOutputTokens = opts.maxOutputTokens;
@@ -144,10 +151,10 @@ function buildRequestBody(
   if (opts?.mediaResolution === 'LOW') {
     generationConfig.mediaResolution = 'MEDIA_RESOLUTION_LOW';
   }
-  const hasGenerationConfig = Object.keys(generationConfig).length > 0;
-  if (hasGenerationConfig) {
-    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  if (opts?.thinkingBudget !== undefined) {
+    generationConfig.thinkingConfig = { thinkingBudget: opts.thinkingBudget };
   }
+  const hasGenerationConfig = Object.keys(generationConfig).length > 0;
 
   return {
     contents: [

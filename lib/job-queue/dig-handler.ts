@@ -19,6 +19,7 @@ import {
   MAX_SUMMARY_OUTPUT_TOKENS,
   MAX_DIG_OUTPUT_TOKENS,
   MAX_DIG_VIDEO_SECONDS,
+  MAX_DIG_THINKING_TOKENS,
   PRICED_DIG_MODEL,
   type CloudGeminiCaps,
 } from '@/lib/gemini-cost';
@@ -94,8 +95,10 @@ export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
     // buildIndexedTranscript and resolveTranscriptTokens (token indexes are positional into it).
     const cappedSegments = truncateSegmentsToByteCap(window.transcriptWindow, CLOUD_CAPS.transcriptInputBytes);
     // Cost-governing opts (spec docs/superpowers/specs/2026-07-12-dig-cost-bound-hardening.md):
-    // caps output tokens + video segment duration, forces LOW media resolution, and threads the
-    // job's lease/shutdown signal so an abort cancels the in-flight (billable) Gemini call.
+    // caps output tokens + video segment duration, forces LOW media resolution, bounds thinking to
+    // the same MAX_DIG_THINKING_TOKENS constant digWorstCents() accounts for (so they can't drift),
+    // and threads the job's lease/shutdown signal so an abort cancels the in-flight (billable)
+    // Gemini call.
     const raw = await generateDig(
       { ...window, transcriptWindow: cappedSegments },
       job.videoId,
@@ -104,6 +107,7 @@ export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
         maxOutputTokens: MAX_DIG_OUTPUT_TOKENS,
         maxVideoSeconds: MAX_DIG_VIDEO_SECONDS,
         mediaResolution: 'LOW',
+        thinkingBudget: MAX_DIG_THINKING_TOKENS,
         signal: ctx.signal,
       },
     );

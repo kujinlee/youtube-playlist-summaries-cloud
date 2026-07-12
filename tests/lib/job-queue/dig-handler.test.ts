@@ -14,7 +14,7 @@ import { generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import { digSectionKey, digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
 import { NonRetryableError } from '@/lib/job-queue/errors';
 import { buildIndexedTranscript } from '@/lib/transcript-timestamps';
-import { MAX_TRANSCRIPT_INPUT_BYTES, MAX_DIG_OUTPUT_TOKENS, MAX_DIG_VIDEO_SECONDS } from '@/lib/gemini-cost';
+import { MAX_TRANSCRIPT_INPUT_BYTES, MAX_DIG_OUTPUT_TOKENS, MAX_DIG_VIDEO_SECONDS, MAX_DIG_THINKING_TOKENS } from '@/lib/gemini-cost';
 
 const put = new Map<string, Buffer>();
 const blobStore = {
@@ -111,7 +111,7 @@ it('rejects a stale-version job (job.version != current) as NonRetryableError, n
 
 // ── Cost-bound hardening (docs/superpowers/specs/2026-07-12-dig-cost-bound-hardening.md) ────
 
-it('passes cost-governing opts (maxOutputTokens, maxVideoSeconds, mediaResolution LOW, signal) to generateDig', async () => {
+it('passes cost-governing opts (maxOutputTokens, maxVideoSeconds, mediaResolution LOW, thinkingBudget, signal) to generateDig', async () => {
   await makeDigHandler({} as any)(job as any, ctx as any);
 
   expect(generateDig as jest.Mock).toHaveBeenCalledWith(
@@ -122,6 +122,7 @@ it('passes cost-governing opts (maxOutputTokens, maxVideoSeconds, mediaResolutio
       maxOutputTokens: MAX_DIG_OUTPUT_TOKENS,
       maxVideoSeconds: MAX_DIG_VIDEO_SECONDS,
       mediaResolution: 'LOW',
+      thinkingBudget: MAX_DIG_THINKING_TOKENS,
       signal: ctx.signal,
     }),
   );

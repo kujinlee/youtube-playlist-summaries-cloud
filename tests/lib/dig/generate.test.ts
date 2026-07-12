@@ -200,17 +200,29 @@ describe('generateDig — opts (cost-governing caps)', () => {
     expect(body.contents[0].parts[0].video_metadata.end_offset.seconds).toBe(WIN.endSec);
   });
 
-  it('with maxOutputTokens + mediaResolution: sets camelCase generationConfig.maxOutputTokens, LOW media resolution, and disables thinking', async () => {
+  it('with maxOutputTokens + mediaResolution + thinkingBudget: sets camelCase generationConfig.maxOutputTokens, LOW media resolution, and a bounded thinking budget', async () => {
     const spy = jest.spyOn(global, 'fetch').mockResolvedValue(makeOkResponse('MD'));
 
-    await generateDig(WIN, VIDEO_ID, 'en', { maxOutputTokens: 16384, mediaResolution: 'LOW' });
+    await generateDig(WIN, VIDEO_ID, 'en', { maxOutputTokens: 16384, mediaResolution: 'LOW', thinkingBudget: 2048 });
 
     const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
     expect(body.generationConfig.maxOutputTokens).toBe(16384);
     expect(body.generationConfig.mediaResolution).toBe('MEDIA_RESOLUTION_LOW');
-    // thinking is billed at the OUTPUT rate, separate from maxOutputTokens — must be disabled for
-    // the digWorstCents() bound to hold (mirrors lib/gemini.ts's production summary cloud path).
-    expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(0);
+    // thinking is billed at the OUTPUT rate, separate from maxOutputTokens — gemini-2.5-pro cannot
+    // disable thinking (valid range 128-32768), so a bounded budget is set for the digWorstCents()
+    // bound to hold (mirrors lib/gemini.ts's production summary cloud path).
+    expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(2048);
+  });
+
+  it('with thinkingBudget only (no maxOutputTokens/mediaResolution): still sets generationConfig.thinkingConfig', async () => {
+    const spy = jest.spyOn(global, 'fetch').mockResolvedValue(makeOkResponse('MD'));
+
+    await generateDig(WIN, VIDEO_ID, 'en', { thinkingBudget: 2048 });
+
+    const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(2048);
+    expect(body.generationConfig.maxOutputTokens).toBeUndefined();
+    expect(body.generationConfig.mediaResolution).toBeUndefined();
   });
 
   it('with maxVideoSeconds: clamps end_offset.seconds to startSec + maxVideoSeconds when the window exceeds it', async () => {
