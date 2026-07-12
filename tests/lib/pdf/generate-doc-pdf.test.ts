@@ -22,6 +22,7 @@ jest.mock('playwright', () => {
 });
 
 import { generateDocPdf } from '@/lib/pdf/generate-doc-pdf';
+import { PdfRendererUnavailable } from '@/lib/pdf/pdf-renderer-error';
 
 interface PwMock {
   page: { setContent: jest.Mock; emulateMedia: jest.Mock; pdf: jest.Mock; close: jest.Mock; setDefaultTimeout: jest.Mock; route: jest.Mock };
@@ -81,9 +82,85 @@ describe('generateDocPdf', () => {
   it('rejects and leaves no orphan when render hangs (overall timeout)', async () => {
     __mock.pdf.mockImplementationOnce(() => new Promise(() => {})); // never resolves
     const principal = localPrincipal(dir);
-    await expect(
-      generateDocPdf('<html></html>', principal, 'pdfs/hang.pdf', { timeoutMs: 50 }),
-    ).rejects.toThrow(/timed out/);
+    const err = await generateDocPdf('<html></html>', principal, 'pdfs/hang.pdf', { timeoutMs: 50 }).catch((e) => e);
+    expect(err).toBeInstanceOf(PdfRendererUnavailable);
+    expect((err as PdfRendererUnavailable).statusCode).toBe(503);
+    expect((err as Error).message).toMatch(/timed out/);
     expect(fs.existsSync(path.join(dir, 'pdfs', 'hang.pdf'))).toBe(false);
+  });
+
+  describe('returnBuffer / typed error / container args (Task 5)', () => {
+    const principal = localPrincipal('/tmp/unused-for-blobstore-tests');
+    const put = jest.fn(async () => {});
+    const blobStore = { put } as unknown as { put: jest.Mock };
+
+    beforeEach(() => { put.mockReset(); delete process.env.STORAGE_BACKEND; });
+
+    it('returnBuffer returns the same bytes it writes', async () => {
+      const buf = await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
+        blobStore: blobStore as unknown as typeof localBlobStore,
+        returnBuffer: true,
+      });
+      expect(Buffer.isBuffer(buf)).toBe(true);
+      expect(put).toHaveBeenCalledWith(principal, 'pdfs/x.pdf', buf, 'application/pdf');
+    });
+
+    it('default (no returnBuffer) preserves void behavior', async () => {
+      const result = await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
+        blobStore: blobStore as unknown as typeof localBlobStore,
+      });
+      expect(result).toBeUndefined();
+      expect(put).toHaveBeenCalledTimes(1);
+    });
+
+    it('launch failure throws PdfRendererUnavailable(503), not a plain Error', async () => {
+      __mock.chromium.launch.mockRejectedValueOnce(new Error('no binary'));
+      const err = await generateDocPdf('<h></h>', principal, 'pdfs/x.pdf', {
+        blobStore: blobStore as unknown as typeof localBlobStore,
+      }).catch((e) => e);
+      expect(err).toBeInstanceOf(PdfRendererUnavailable);
+      expect((err as PdfRendererUnavailable).statusCode).toBe(503);
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it('timeout throws PdfRendererUnavailable and writes nothing', async () => {
+      __mock.chromium.launch.mockImplementationOnce(async () => ({
+        newContext: async () => ({
+          newPage: async () => ({
+            setContent: () => new Promise(() => {}), // hang forever
+            emulateMedia: jest.fn(),
+            pdf: jest.fn(),
+            route: jest.fn(),
+            setDefaultTimeout: jest.fn(),
+            close: jest.fn(),
+          }),
+          close: jest.fn(),
+        }),
+        close: jest.fn(),
+      }));
+      const err = await generateDocPdf('<h></h>', principal, 'pdfs/x.pdf', {
+        blobStore: blobStore as unknown as typeof localBlobStore,
+        timeoutMs: 20,
+      }).catch((e) => e);
+      expect(err).toBeInstanceOf(PdfRendererUnavailable);
+      expect(put).not.toHaveBeenCalled();
+    });
+
+    it('launches without container sandbox args when STORAGE_BACKEND is not supabase', async () => {
+      await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
+        blobStore: blobStore as unknown as typeof localBlobStore,
+      });
+      const [opts] = __mock.chromium.launch.mock.calls.at(-1) as [{ args?: string[] }];
+      expect(opts.args).toBeUndefined();
+    });
+
+    it('launches with --no-sandbox/--disable-dev-shm-usage args when STORAGE_BACKEND=supabase', async () => {
+      process.env.STORAGE_BACKEND = 'supabase';
+      await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
+        blobStore: blobStore as unknown as typeof localBlobStore,
+      });
+      const [opts] = __mock.chromium.launch.mock.calls.at(-1) as [{ args?: string[] }];
+      expect(opts.args).toEqual(['--no-sandbox', '--disable-dev-shm-usage']);
+    });
   });
 });
