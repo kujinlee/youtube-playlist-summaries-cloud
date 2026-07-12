@@ -83,8 +83,10 @@ afterward):
   (i.e. reads did see the original generation surviving past a subsequent overwrite window, or a
   round that wrote `A`).
 - Inverted `observedValues.has(0xbb)` alone to `toBe(false)` → failed with
-  `Expected: false, Received: true`, proving `0xbb` specifically was observed — i.e. a concurrent
-  overwrite genuinely became visible to a reader running in the same round.
+  `Expected: false, Received: true`, proving `0xbb` specifically was observed — i.e. a post-seed
+  overwrite became visible to a reader during the concurrent-dispatch run. (The set retains no
+  round/timing information, so this does not localize the observation to a specific round's
+  in-flight write — see "Precisely what this proves.")
 
 ## Precisely what this proves
 
