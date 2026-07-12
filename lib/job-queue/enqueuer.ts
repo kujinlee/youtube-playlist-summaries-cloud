@@ -23,6 +23,8 @@ export interface GuardrailConfigView {
   maxDurationSeconds: number;
 }
 
+export interface DigJobPayload { durationSeconds: number; } // enqueue_job reads only durationSeconds (PJ003 backstop)
+
 /**
  * Service-role enqueue/preflight surface. Deliberately has NO read/list/status
  * method — the two-client split (session for reads, service for
@@ -30,7 +32,7 @@ export interface GuardrailConfigView {
  * service-role, which would bypass RLS and risk a cross-owner leak.
  */
 export interface Enqueuer {
-  enqueue(ctx: EnqueueCtx, key: JobKey, payload: IngestionPayload): Promise<EnqueueResult>;
+  enqueue(ctx: EnqueueCtx, key: JobKey, payload: IngestionPayload | DigJobPayload): Promise<EnqueueResult>;
   preflight(ip: string | null, ownerId: string): Promise<PreflightVerdict>;
   getGuardrailConfig(): Promise<GuardrailConfigView>;
 }
@@ -44,7 +46,7 @@ export interface Enqueuer {
 export class SupabaseEnqueuer implements Enqueuer {
   constructor(private serviceClient: SupabaseClient) {}
 
-  async enqueue(ctx: EnqueueCtx, key: JobKey, payload: IngestionPayload): Promise<EnqueueResult> {
+  async enqueue(ctx: EnqueueCtx, key: JobKey, payload: IngestionPayload | DigJobPayload): Promise<EnqueueResult> {
     const { data, error } = await this.serviceClient.rpc('enqueue_job', {
       p_owner_id: ctx.ownerId, p_playlist_id: key.playlistId, p_video_id: key.videoId, p_section_id: key.sectionId,
       p_job_kind: key.kind, p_job_version: key.version, p_payload: payload, p_enqueue_ip: ctx.enqueueIp,
