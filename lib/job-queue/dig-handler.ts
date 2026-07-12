@@ -8,7 +8,7 @@ import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { windowForSection } from '@/lib/dig/section-window';
 import { generateDig } from '@/lib/dig/generate';
-import { resolveTranscriptTokens } from '@/lib/transcript-timestamps';
+import { resolveTranscriptTokens, truncateSegmentsToByteCap } from '@/lib/transcript-timestamps';
 import { resolveSummaryMdKey } from '@/lib/dig/cloud/resolve-summary-key';
 import { digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
 import { writeDigSectionBlob } from '@/lib/dig/cloud/write-dig-section-blob';
@@ -79,8 +79,13 @@ export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
     if (!window) throw new NonRetryableError(`section ${sectionId} has no timeRange`);
 
     await ctx.setPhase('summarizing');
-    const raw = await generateDig(window, job.videoId, video.language);
-    const withTs = resolveTranscriptTokens(raw, segments, job.videoId, video.durationSeconds);
+    // Cap the section's transcript window to the same input-byte bound the summary path enforces
+    // (summary-core.ts:77). Bounds the paid dig generation call's input, and — per the
+    // transcript-timestamps.ts:49 contract — the SAME list must feed both generateDig's
+    // buildIndexedTranscript and resolveTranscriptTokens (token indexes are positional into it).
+    const cappedSegments = truncateSegmentsToByteCap(window.transcriptWindow, CLOUD_CAPS.transcriptInputBytes);
+    const raw = await generateDig({ ...window, transcriptWindow: cappedSegments }, job.videoId, video.language);
+    const withTs = resolveTranscriptTokens(raw, cappedSegments, job.videoId, video.durationSeconds);
     // resolveSlideTokens intentionally SKIPPED — text-only slice; [[SLIDE:...]] tokens preserved verbatim.
 
     if (ctx.signal.aborted) throw new DOMException('worker signal aborted before dig write', 'AbortError');

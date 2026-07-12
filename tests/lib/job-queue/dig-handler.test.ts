@@ -13,6 +13,8 @@ import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import { digSectionKey, digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
 import { NonRetryableError } from '@/lib/job-queue/errors';
+import { buildIndexedTranscript } from '@/lib/transcript-timestamps';
+import { MAX_TRANSCRIPT_INPUT_BYTES } from '@/lib/gemini-cost';
 
 const put = new Map<string, Buffer>();
 const blobStore = {
@@ -62,12 +64,34 @@ it('generates the section dig and writes the per-section blob with tokens preser
   expect(body).toContain('slides: []');
   expect(body).toContain('[[SLIDE:2:12|2:20|cap]]'); // preserved, NOT resolved
   expect(ctx.setPhase).toHaveBeenCalledWith('transcribing');
+  expect(ctx.setPhase).toHaveBeenCalledWith('summarizing');
   expect(ctx.setPhase).toHaveBeenCalledWith('writing');
+});
+
+it('caps the dig transcript window to MAX_TRANSCRIPT_INPUT_BYTES before generateDig (money invariant)', async () => {
+  // Section 2 ("Encoder", startSec=132) is the last section, so its window runs [132, durationSeconds=600).
+  // Seed enough large segments inside that range to blow well past the byte cap.
+  const bigSegments = Array.from({ length: 400 }, (_, i) => ({
+    text: 'x'.repeat(100),
+    offset: 132 + i, // 132..531, all < 600 (video.durationSeconds) and >= section start
+    duration: 1,
+  }));
+  (resolveTranscriptSegments as jest.Mock).mockResolvedValue({ segments: bigSegments, source: 'captions' });
+  // Sanity: the un-truncated indexed transcript must actually exceed the cap, or this test proves nothing.
+  expect(Buffer.byteLength(buildIndexedTranscript(bigSegments), 'utf8')).toBeGreaterThan(MAX_TRANSCRIPT_INPUT_BYTES);
+
+  await makeDigHandler({} as any)(job as any, ctx as any);
+
+  const passedWindow = (generateDig as jest.Mock).mock.calls[0][0];
+  expect(Buffer.byteLength(buildIndexedTranscript(passedWindow.transcriptWindow), 'utf8')).toBeLessThanOrEqual(MAX_TRANSCRIPT_INPUT_BYTES);
+  expect(passedWindow.transcriptWindow.length).toBeLessThan(bigSegments.length);
 });
 
 it('throws NonRetryableError when the section is not in the summary', async () => {
   const badJob = { ...job, sectionId: 999 };
   await expect(makeDigHandler({} as any)(badJob as any, ctx as any)).rejects.toBeInstanceOf(NonRetryableError);
+  expect(generateDig as jest.Mock).not.toHaveBeenCalled();
+  expect(blobStore.promote).not.toHaveBeenCalled();
 });
 
 it('a real PermanentTranscriptError is rethrown as NonRetryableError (so the runner does not retry/re-charge)', async () => {
