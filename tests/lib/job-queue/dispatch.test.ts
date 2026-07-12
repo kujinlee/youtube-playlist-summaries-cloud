@@ -19,7 +19,6 @@ it('throws NonRetryableError for an unknown kind', async () => {
   // Assert the CLASS, not just the message: the dead-letter-vs-retry distinction depends on it
   // being NonRetryableError (worker-runner.ts classifies retryable = !(e instanceof NonRetryableError)).
   // A plain Error with the same message would silently become a retry loop.
-  const err = await h(mkJob('bogus') as any, ctx as any).catch((e) => e);
-  expect(err).toBeInstanceOf(NonRetryableError);
-  expect(err.message).toMatch(/no handler for kind/);
+  await expect(h(mkJob('bogus') as any, ctx as any)).rejects.toThrow(NonRetryableError);
+  await expect(h(mkJob('bogus') as any, ctx as any)).rejects.toThrow(/no handler for kind/);
 });
