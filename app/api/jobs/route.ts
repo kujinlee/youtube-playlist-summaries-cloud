@@ -7,26 +7,13 @@ import { extractPlaylistId } from '@/lib/youtube';
 import { enqueuePlaylist, PlaylistTooLargeError, AllEnqueueFailedError, PlaylistFetchError } from '@/lib/job-queue/producer';
 import { SupabaseEnqueuer } from '@/lib/job-queue/enqueuer';
 import { rollup } from '@/lib/job-queue/poll-client';
+import { parseClientIp } from '@/lib/http/client-ip';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // No verdict-specific retry value is available from `enqueue_preflight` (it returns only
 // booleans) — 60s is a fixed, conservative default until the RPC surfaces a real retry hint.
 const RETRY_AFTER_SECONDS = 60;
-
-/** `Fly-Client-IP` is set by Fly.io's edge and cannot be spoofed by the client past the
- *  proxy; `X-Forwarded-For`'s FIRST hop is the original client when present (later hops are
- *  appended by intermediate proxies), so prefer Fly's header and fall back to XFF[0]. */
-function parseClientIp(req: Request): string | null {
-  const fly = req.headers.get('fly-client-ip');
-  if (fly) return fly;
-  const xff = req.headers.get('x-forwarded-for');
-  if (xff) {
-    const first = xff.split(',')[0]?.trim();
-    if (first) return first;
-  }
-  return null;
-}
 
 export async function POST(req: Request) {
   const cookieStore = (await cookies()) as unknown as CookieStore;
