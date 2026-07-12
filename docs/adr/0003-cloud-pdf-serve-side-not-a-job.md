@@ -50,10 +50,18 @@ generative work.
 ## Consequences
 
 - **Atomicity is the load-bearing assumption.** Skipping `committed → promoted` is safe **only
-  if** the cloud blob store's `put` is atomic (an object is never visible mid-upload). This
-  **must be verified against Supabase Storage during implementation**; if it turns out
-  non-atomic, the cache write falls back to `putStaged → promote` (a move, which is atomic),
-  keeping the content-addressed key and bare-existence read.
+  if** the cloud blob store's `put` (`upload(..., { upsert: true })`) is **visibility-atomic** on
+  both new and existing objects — a concurrent `get` sees either the old object or the complete
+  new one, never a partial. Supabase Storage is S3-backed and a single PUT has this property, but
+  it **must be verified during implementation** (provider docs + a concurrent overwrite/read
+  test) **before plan approval** (round-1 dual review: Codex flagged it Blocking-until-proven;
+  Claude judged the S3 PUT atomic — the verification settles it empirically).
+  **Correction (round-1 B2):** an earlier draft of this ADR named `putStaged → promote` as the
+  "atomic fallback." That is **wrong** — `promote` is `copy + delete`, which is **non-atomic**
+  (`lib/storage/supabase/supabase-blob-store.ts:45`). If `put` is ever shown *not* to be atomic,
+  the correct fallback is **unique staging keys + an atomic manifest pointer** (a DB/cache row
+  whose single-row update flips the "current PDF key"), keeping the content-addressed blob and a
+  bare-existence read — **not** `promote`.
 - **No artifact record, so `merge_video_data` and the `artifacts` map stay untouched.** The
   cache is invisible to `consistency.resolveMissing`; superseded content-addressed blobs orphan
   on content change and are swept by a later GC (a recorded backlog item, not built here).

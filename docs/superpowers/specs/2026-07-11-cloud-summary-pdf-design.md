@@ -64,30 +64,64 @@ every later view/print reuses the cached copy — no regeneration, no cost.
 
 ## 2. Locked decisions
 
-**Decision A — route structure.** New `GET /api/pdf/[id]` route. Extract the shared
-gate→read→**resolve-model** core out of `app/api/html/[id]/route.ts` (`serveCloud`, lines
-~45–107) into a helper (e.g. `lib/html-doc/serve-summary-core.ts`) that returns
-`{ parsed, model, base, title, stale }` (or a typed error/status). The helper stops **before**
-rendering: each route renders its own HTML afterward, because the nonce + CSP are an
-HTML-*response* concern (the html route emits a CSP header; the PDF path renders with a
-throwaway nonce since Chromium runs with JS disabled). Both routes call the helper. Rejected
-alternative: a `format=pdf` branch on the html route — lower diff but bloats an already-dense
-route and couples a Chromium dependency into "html".
+**Decision A — route structure, extracted as a TWO-STAGE seam.** New `GET /api/pdf/[id]` route.
+Extract `serveCloud`'s core (`app/api/html/[id]/route.ts`, lines ~45–107) into **two** helpers
+so the html route's `format=md` money short-circuit survives the refactor (round-1 Codex-H3 /
+Claude-H2):
+
+- **Stage 1 — `loadSummaryForServe(...)`** (gate + read): auth → owner playlist → readIndex →
+  find video → gate `summaryMd.status` → read the md blob. Returns
+  `{ mdBytes, base, title }` or a typed error/status. **Does NOT resolve the model.**
+- **Stage 2 — `resolveAndParse(...)`** (parse + `resolveMagazineModel`): the *paid* transform.
+  Returns `{ parsed, model, stale }` or a typed status.
+
+Call graph — each route composes the stages so the md path never resolves:
+- **html route:** Stage 1 → if `format==='md'` **stream `mdBytes` and STOP (no Stage 2, no
+  charge)**; else Stage 2 → render with a **fresh CSP nonce** + CSP header.
+- **pdf route:** Stage 1 → Stage 2 → render **nonce-free** (see Decision B) → Chromium.
+
+Neither helper renders HTML — the nonce/CSP is an HTML-*response* concern owned by each route.
+A **mandatory parity test** asserts `format=md` calls neither `resolveMagazineModel` nor
+`reserve_serve_model`. Rejected alternative: a single `gate→read→resolve` helper — it cannot
+express the md short-circuit without either charging free md downloads or duplicating gate+read.
+Also rejected: a `format=pdf` branch on the html route — bloats an already-dense route and
+couples Chromium into "html".
 
 > **`base`** = the canonical DB-persisted summary basename `${padSerial(serial)}_${slug}`,
 > derived deterministically as `mdKey.replace(/\.md$/, '')`. It is **not** the videoId. The
 > magazine model store is keyed on `base`, so recomputing it per request keeps the model cache
 > and the reserve charge coherent (see the `serveCloud` identity-coherence comment).
 
-**Decision B — cache key.** Content-addressed: `pdfs/{base}.{sha256(html).slice(0,16)}.pdf`.
-On every request the route resolves + renders the HTML (cheap — the magazine model is cached,
-so no re-charge — and render is in-memory), hashes it, and checks blob existence at the
-computed key. Hit → stream the cached blob, **skipping only Chromium**. Miss → render PDF,
-cache, stream. This **never serves a stale PDF**: any change to summary content, magazine
-model, or render code yields different HTML → a different key → automatic regeneration.
-Rejected alternative: version-in-key (`…v{docVersion}.r{PDF_RENDER_VERSION}.pdf`) — cheaper
-hits (skips the resolve too) but serves stale if a version bump is forgotten; correctness wins
-because a stale printed/shared PDF is the bad outcome.
+**Decision B — cache key (content-addressed over a DETERMINISTIC, nonce-free render, salted
+with the PDF renderer version).** Key:
+
+```
+pdfs/{base}.r{PDF_RENDER_VERSION}.{sha256(htmlNonceFree).slice(0,16)}.pdf
+```
+
+Two round-1 corrections are baked in:
+
+- **Nonce-free hash input (round-1 Blocking, both reviewers).** `renderMagazineHtml` embeds a
+  fresh CSP nonce in ~5 places (`lib/html-doc/render.ts:117–129`). Hashing *that* would make the
+  HTML — and thus the key — differ on **every** request, so the cache would **never** hit and
+  Chromium would spin on every view. The PDF is therefore rendered with the nonce **omitted /
+  constant** (`renderMagazineHtml(parsed, model, { nonce: undefined, dig: false })`) — inert
+  anyway, since Chromium runs JS-disabled and the PDF response carries no CSP header — and the
+  hash is taken over that stable string.
+- **`PDF_RENDER_VERSION` salt (round-1 High, both reviewers).** A4 size, margins,
+  `printBackground`, print-media emulation, fonts, and the Chromium/Playwright version live in
+  `generateDocPdf`, **not** in the HTML string — so a render-settings change would otherwise
+  serve stale PDFs forever behind an unchanged HTML hash. A `PDF_RENDER_VERSION` constant (bumped
+  when any PDF render setting or the pinned Chromium changes) salts the key so such changes bust
+  the cache.
+
+On every request the route runs Stage 1 + Stage 2 (Decision A), renders the nonce-free HTML
+(cheap — the magazine model is cached, so no re-charge — render is in-memory), computes the key,
+and checks blob existence. Hit → stream the cached blob, **skipping only Chromium**. Miss →
+render PDF, cache, stream. Combined with the `PDF_RENDER_VERSION` salt, this **never serves a
+stale PDF**: any change to summary content, magazine model, HTML render, *or PDF render
+settings* changes the key → automatic regeneration. Rejected alternative: `docVersion`-in-key —
+misses model drift within a version; the content hash captures it precisely.
 
 ---
 
@@ -114,39 +148,58 @@ does for an HTML view — governed by the per-owner serve budget + daily cap, **
 quota (the summary was already charged). So a "View PDF" of a summary whose model isn't yet
 cached triggers **the same** on-view materialization an HTML view would, and never more:
 
-- Model already cached (e.g. the user viewed the HTML summary first) → **PDF is free.**
-- Model not cached → **one** magazine-model materialization (identical to a first HTML view),
-  then cached for both HTML and PDF.
-- Second/cached-PDF view → **free.**
+- Model cached and fresh → resolve returns before the reserve RPC → **no charge** (the common
+  repeat-view case).
+- Model absent / drifted / version-bumped → **one** magazine-model materialization (identical to
+  the first HTML view), then cached for both HTML and PDF.
 
-**Worst case, "View PDF" costs at most one pre-existing on-view model materialization — the
-same the HTML view already triggers — and adds zero new charge line.** (This statement stays
-true under a future eager/persisted-HTML policy, §12: the PDF's cost is entirely *inherited*
-from whatever produces the HTML doc.)
+**Precise invariant (round-1 B3 correction):** cache-hit *detection itself* requires resolving
+the model (Decision B hashes the rendered HTML), so a PDF view is **not unconditionally free even
+when the PDF blob exists** — if the model was evicted or bumped, that resolve charges, exactly as
+an HTML view would. The correct statement is: **"View PDF" adds *no charge beyond the current
+HTML-doc materialization policy* — at most one pre-existing on-view model materialization, the
+same an HTML view triggers, and zero new charge line.** (Stays true under a future
+eager/persisted-HTML policy, §12: the PDF's cost is entirely *inherited* from whatever produces
+the HTML doc — under eager mode the model is always pre-cached, so PDF views never charge.)
 
 **Request flow — `GET /api/pdf/[id]?playlist=<uuid>&type=summary`:**
 
 1. Reject `outputFolder` (400); require `type === 'summary'` (else 400 — dig deferred);
    require a UUID `playlist` (400 before any DB call); `assertVideoId` (400).
-2. `supabase.auth.getUser()` → no user → **401**.
-3. `resolveOwnedPlaylistKey` (owner-asserted) → null → **404**.
-4. `readIndex` (session-client, RLS), find video → absent → **404**.
-5. Gate `artifacts.summaryMd.status`: `committed` → **503** (finalizing window); not
-   `promoted` → **404**.
-6. Read the md blob (`artifacts.summaryMd.key ?? video.summaryMd`) → lost → **409** (repair
-   needed).
-7. `resolveMagazineModel(...)` — statuses map exactly as in `serveCloud`: `denied`→404,
-   `busy`/`at_capacity`/`over_budget`/`attempts_exhausted`→503, `ok`→continue.
-8. `renderMagazineHtml(parsed, model, { nonce, dig: false })` → HTML string.
-9. `sha256(html)` → key `pdfs/{base}.{hash16}.pdf`. **Blob exists?** stream it (skip 10).
-10. `generateDocPdf(html, principal, key, { returnBuffer: true })` → Chromium renders A4,
-    writes the blob **and returns the buffer** (small backward-compatible tweak; the local
-    POST route ignores the return). ~1–2s; 30s cooperative timeout already built in.
-11. Respond `200`: `application/pdf`, `Content-Disposition: inline`,
-    `Cache-Control: private, no-store`.
+2. **Stage 1 `loadSummaryForServe`** (Decision A): `auth.getUser()` → no user → **401**;
+   `resolveOwnedPlaylistKey` → null → **404**; `readIndex` (session-client, RLS), find video →
+   absent → **404**; gate `summaryMd.status` (`committed`→**503**, not `promoted`→**404**);
+   read md blob (`artifacts.summaryMd.key ?? video.summaryMd`) → lost → **409**. Also assert
+   `mdKey` ends in `.md` and is a single basename (round-1 M1) → else **409/500** (corrupt row).
+3. **Stage 2 `resolveAndParse`**: parse md → `resolveMagazineModel(...)` — statuses map exactly
+   as in `serveCloud`: `denied`→404, `busy`/`at_capacity`/`over_budget`/`attempts_exhausted`→503,
+   `ok`→continue.
+4. Render **nonce-free**: `renderMagazineHtml(parsed, model, { nonce: undefined, dig: false })`
+   → deterministic HTML string.
+5. Compute key `pdfs/{base}.r{PDF_RENDER_VERSION}.{sha256(html).slice(0,16)}.pdf`; assert it via
+   `assertLogicalKey` (round-1 M1). **Single `get(principal, key)`** (round-1 M2 — `exists()`
+   downloads the blob anyway, so do one `get`): bytes present → **stream them, done** (Chromium
+   skipped).
+6. **Cache miss → render under two distinct guards (round-1 H1/H3):**
+   - **Per-key single-flight** (a `Map<cacheKey, Promise>`): a concurrent request for the **same**
+     key awaits the in-flight render, then cache-hits — so a burst on one video renders **once**.
+   - **Global concurrency cap** (a process-level semaphore, `PDF_MAX_CONCURRENCY`, e.g. 2–4):
+     bounds total concurrent Chromium across **different** keys. Saturated → **503** ("busy,
+     retry"), never an unbounded browser launch.
+
+   Inside a slot: `generateDocPdf(html, principal, key, { returnBuffer: true })` →
+   `Promise<Buffer | void>`; on **timeout it writes nothing and returns no buffer** (round-1 M3).
+   Chromium launch failure / timeout → typed `PdfRendererUnavailable` → **503**, never 500
+   (round-1 H2). ~1–2s; 30s cooperative timeout already built in.
+7. Respond `200`: `application/pdf`, `Content-Disposition: inline`,
+   `Cache-Control: private, no-store`. Propagate **`X-Magazine-Stale: 1`** when Stage 2 returned
+   `stale` (round-1 M4 — parity with the html route; harmless on a saved file, meaningful to a
+   viewer/automation).
 
 Owner isolation is automatic: `SupabaseBlobStore` keys every object under `auth.uid()` as the
-first path segment, and all reads/writes here use the **session client** (RLS-enforced).
+first path segment, and all reads/writes here use the **session client** (RLS-enforced). The
+concurrency semaphore is a per-web-instance in-memory guard (not cross-instance) — it bounds
+Chromium memory on one process; horizontal scale bounds it across instances.
 
 ---
 
@@ -154,11 +207,13 @@ first path segment, and all reads/writes here use the **session client** (RLS-en
 
 | File | Change |
 |---|---|
-| `app/api/pdf/[id]/route.ts` *(new)* | Cloud-only `GET`. Local backend → 400 ("use the export action"). Implements the flow in §3. |
-| `lib/html-doc/serve-summary-core.ts` *(new)* | Shared gate→read→resolve-model helper extracted from `serveCloud`; returns `{ parsed, model, base, title, stale }` or a typed status. Stops before rendering — each route renders its own HTML (§2, Decision A). |
-| `app/api/html/[id]/route.ts` *(refactor)* | `serveCloud` calls the extracted helper (behavior-preserving). **Already-merged shared code → iterative dual-review (§11).** |
-| `lib/pdf/generate-doc-pdf.ts` *(extend)* | Add `opts.returnBuffer?: boolean`; when set, also return the rendered `Buffer`. Backward-compatible — existing callers unaffected. |
-| `components/cloud/VideoMenu` *(extend allowlist)* | Add **View PDF** (`<a target="_blank">`, inline href), gated on `summaryReady` (disabled "Finalizing…" when not ready). `cloudMode`-only. |
+| `app/api/pdf/[id]/route.ts` *(new)* | Cloud-only `GET`. Local backend → 400 ("use the export action"). Implements the flow in §3, incl. the concurrency-semaphore + single-flight guard and the typed-503 mapping. |
+| `lib/html-doc/serve-summary-core.ts` *(new)* | **Two** extracted helpers (§2, Decision A): `loadSummaryForServe` (gate + read → `{ mdBytes, base, title }` or typed status) and `resolveAndParse` (parse + `resolveMagazineModel` → `{ parsed, model, stale }` or typed status). Neither renders HTML. |
+| `app/api/html/[id]/route.ts` *(refactor)* | `serveCloud` rewired through the two helpers, **preserving the `format=md` short-circuit (no Stage 2 for md)** and CSP/nonce. **Already-merged shared money code → iterative dual-review (§14).** |
+| `lib/pdf/generate-doc-pdf.ts` *(extend)* | (a) `opts.returnBuffer?: boolean` → return type `Promise<Buffer \| void>`; **no buffer and no write when the timeout wins** (round-1 M3). (b) Throw a typed `PdfRendererUnavailable` (carrying `statusCode: 503`) on launch failure/timeout instead of a plain `Error` (round-1 H2). (c) Accept container-safe launch args (round-1 M1/§10). Backward-compatible — the local POST caller ignores the return and the new error type. |
+| `lib/pdf/pdf-render-version.ts` *(new)* | `PDF_RENDER_VERSION` constant + a `pdfCacheKey(base, htmlNonceFree)` helper (asserts the final key via `assertLogicalKey`). Bumped when any PDF render setting or the pinned Chromium changes. |
+| `lib/pdf/pdf-concurrency.ts` *(new)* | Process-level semaphore (`PDF_MAX_CONCURRENCY`) + per-key single-flight map; saturated → a typed "busy" (→503). |
+| `components/VideoMenu.tsx` *(extend cloud allowlist)* | Add **View PDF** (`<a target="_blank">`, inline href), gated on `summaryReady` (disabled "Finalizing…" when not ready). `cloudMode`-only. *(Round-1 L1: the existing component is `components/VideoMenu.tsx` — extend it; do NOT create a parallel `components/cloud/VideoMenu`.)* |
 | `lib/client/api.ts` *(extend, optional)* | `pdfHref(playlistId, videoId)` URL builder for the menu link (parity with `summaryHref`). |
 
 No new table, no new RPC, no migration, no artifact record write (the cache is a pure blob
@@ -229,12 +284,17 @@ gate is satisfied by explicit statement: **zero overlays added.**
   attempts), 409 (promoted but blob lost), 500 (unexpected).
 - Because View PDF is `summaryReady`-gated, the promotion-race (503/404) is largely avoided; a
   rare stale-flag click just surfaces the route's error in the opened tab — acceptable.
-- **Chromium launch failure** surfaces the existing install-hint message; the route returns
-  **503** ("PDF renderer unavailable, try later"), never a 500 leak. The 30s cooperative
-  timeout + browser-close-in-`finally` (already in `generateDocPdf`) bound hangs and leaks.
-- Concurrent first-views of the same video may both render (PDF is idempotent — same HTML →
-  same bytes → same key), wasting at most one duplicate Chromium spin; correctness is
-  unaffected. A single-flight lease is noted as optional hardening (§12), not built here.
+- **Chromium launch failure / timeout** → `generateDocPdf` throws the typed
+  `PdfRendererUnavailable` (`statusCode: 503`); the route maps it to **503** ("PDF renderer
+  unavailable, try later"), never a 500 leak (round-1 H2 — the current route catch maps only
+  `statusCode===400`→400, else 500, so a plain `Error` would have leaked as 500). The 30s
+  cooperative timeout + browser-close-in-`finally` bound hangs and leaks.
+- **Concurrency guard (round-1 H1/H3, in-slice — NOT deferred).** A process-level semaphore caps
+  concurrent Chromium renders (`PDF_MAX_CONCURRENCY`); a saturated semaphore returns **503**
+  ("busy, retry") rather than launching an unbounded number of browsers and OOM-killing the
+  shared web process for all tenants. Per-cache-key **single-flight** collapses concurrent
+  identical first-views into one render (the rest await it, then cache-hit), so a burst on one
+  video renders once, not N times.
 
 ---
 
@@ -245,8 +305,26 @@ Chromium must run in the **web tier**, so the web deployment must be **container
 ~300 MB Chromium binary). This is the codebase's **first cloud Chromium use** — `generateDocPdf`
 was scoped to "local, single-user `npm run dev` on a Mac."
 
-- **Verification task (Phase 4):** confirm Chromium launches in the web container, measure
-  cold-start + per-render memory, and confirm concurrent renders don't exhaust the tier.
+- **Container launch args (round-1 M1).** A hardened container usually cannot run Chromium's
+  default sandbox; `chromium.launch()` currently passes no args. The web-tier launch must add the
+  container-appropriate flags (typically `--no-sandbox`, and `--disable-dev-shm-usage` to avoid
+  `/dev/shm` exhaustion). Prefer configuring the image's seccomp so the sandbox *can* run; only
+  drop the sandbox if the platform forces it. This is a launch-arg change in `generateDocPdf`
+  gated behind the cloud/backend check so the local Mac path is unchanged.
+- **Put-atomicity verification (round-1 B2 — BLOCKING-until-verified).** The bare-put/no-promotion
+  design (Decision B, ADR 0003) rests on Supabase Storage `upload(upsert:true)` being
+  visibility-atomic on **both new and existing** objects (a concurrent `get` sees either the old
+  or the complete new object, never a partial). This **must be verified** (provider docs +
+  a concurrent overwrite/read test) **before plan approval**. If it does **not** hold, fall back
+  to **unique staging keys + an atomic manifest pointer** — **not** `putStaged→promote`, whose
+  `promote` is `copy+delete` (**non-atomic**, `supabase-blob-store.ts:45`); ADR 0003 is corrected
+  accordingly.
+- **Concurrency memory sizing (round-1 H1/H3).** Set `PDF_MAX_CONCURRENCY` from the measured
+  per-render Chromium peak RSS vs. the container's memory limit (leave headroom for normal request
+  traffic); the semaphore returns 503 above it.
+- **Verification task (Phase 4):** confirm Chromium launches in the web container with the chosen
+  args, measure cold-start + per-render peak memory, set `PDF_MAX_CONCURRENCY`, and confirm a
+  concurrent burst degrades to 503 rather than OOM.
 - **Fallback if the web tier cannot host Chromium:** the rejected durable-worker-job approach
   (Chromium isolated to the worker container, client polls) — recorded so the pivot is cheap.
 
@@ -262,26 +340,42 @@ boundary; E2E at the route level.
     `type≠summary`→400, bad playlist/videoId→400, no user→401.
   - `resolveMagazineModel` status mapping (denied/busy/at_capacity/over_budget/
     attempts_exhausted/ok) — parity with the html route.
-  - **Cache-hit skips Chromium**: with the hashed blob present, `generateDocPdf` is **not
-    called**; response streams the cached bytes.
-  - **Cache-miss calls `generateDocPdf` exactly once**, then caches at the hashed key.
-  - Hash key derivation is deterministic for identical HTML and differs when HTML differs.
+  - **Nonce-free determinism (round-1 B1) — the key regression test:** two renders of the same
+    `(parsed, model)` produce **byte-identical** HTML → **identical** cache key → the second
+    request is a **cache hit** and `generateDocPdf` is **not** called. Guards against the nonce
+    ever leaking back into the PDF hash input.
+  - **`PDF_RENDER_VERSION` busts the cache (round-1 H1/H4):** identical HTML but a bumped
+    `PDF_RENDER_VERSION` yields a different key → regenerates (no stale PDF after a render change).
+  - **Cache-hit skips Chromium**: with the keyed blob present, `generateDocPdf` is **not called**;
+    the single `get()` streams the cached bytes (round-1 M2 — no double download).
+  - **Cache-miss calls `generateDocPdf` exactly once**, then caches at the keyed path.
+  - **`format=md` charges nothing (round-1 H2/H3) — the refactor guard:** a `?format=md` request
+    on the html route calls **neither** `resolveMagazineModel` **nor** `reserve_serve_model`
+    (Stage 2 is not entered).
+  - **Concurrency + single-flight (round-1 H1/H3):** N concurrent identical cache-miss requests
+    invoke `generateDocPdf` **once** (single-flight); a request past `PDF_MAX_CONCURRENCY` gets
+    **503**, not an extra browser launch.
+  - **Typed 503 (round-1 H2):** a `generateDocPdf` that throws `PdfRendererUnavailable` maps to
+    **503**, not 500.
+  - `generateDocPdf` **timeout** (round-1 M3): on timeout it **writes nothing** and returns **no
+    buffer**; with `returnBuffer` it returns the same bytes it writes on success; default (unset)
+    preserves the old `void` behavior.
   - Response headers: `application/pdf`, `Content-Disposition: inline`,
-    `Cache-Control: private, no-store`.
+    `Cache-Control: private, no-store`; `X-Magazine-Stale: 1` when Stage 2 is stale (round-1 M4).
   - Refactor behavior-preservation: the html route's html/md responses (bytes, status codes,
-    headers, all `resolveMagazineModel` status mappings) are unchanged after `serveCloud` is
-    rewired through `serve-summary-core`.
-  - `generateDocPdf` `returnBuffer` option returns the same bytes it writes; default
-    (unset) preserves the old `void` behavior.
+    headers, all `resolveMagazineModel` status mappings, the md short-circuit) are unchanged after
+    `serveCloud` is rewired through the two helpers.
 - **Component**
-  - `VideoMenu` cloud: View PDF present with exact href when `summaryReady`; disabled +
-    "Finalizing…" when not; local mode unaffected (field ignored).
+  - `VideoMenu` cloud (`components/VideoMenu.tsx`): View PDF present with exact href when
+    `summaryReady`; disabled + "Finalizing…" when not; local mode unaffected (field ignored).
 - **Integration (real Supabase, `signInAs`)**
-  - Generate a PDF → the hashed blob is persisted; a second request is served from cache with
+  - Generate a PDF → the keyed blob is persisted; a second request is served from cache with
     Chromium invoked **once** total.
+  - **Put-atomicity check (round-1 B2):** concurrent overwrite + read of the same content-addressed
+    key never yields a partial/corrupt object (the empirical half of the §10 verification).
   - Owner isolation: a second owner cannot PDF the first owner's video (404, no blob read).
-  - Money: PDF of an already-HTML-viewed summary triggers **no** additional
-    `reserve_serve_model` charge (model cache reused).
+  - Money: PDF of an already-HTML-viewed summary (model cached + fresh) triggers **no** additional
+    `reserve_serve_model` charge.
 - **E2E** — documented-skip, consistent with the 2a cloud-E2E harness gap.
 - **Chromium-in-cloud** — the §10 verification task.
 
@@ -326,9 +420,12 @@ boundary; E2E at the route level.
   of `lib/dig/dig-section.ts` + a new artifact kind for the dig companion `.md`/slides +
   per-section `genVersion` ↔ `job_version` reconciliation.
 - **Cloud dig PDF** — rides on cloud dig generation (`type=dig-deeper` on this route).
-- **Orphan-blob GC** — sweep superseded content-addressed PDF blobs.
-- **Single-flight PDF render** — lease per `(video, hash)` to avoid duplicate concurrent
-  Chromium spins, if the wasted CPU proves to matter.
+- **Orphan-blob GC** — sweep superseded content-addressed PDF blobs (bumping `PDF_RENDER_VERSION`
+  or changing content orphans the old-key blob; unbounded without a sweep).
+- **Cross-instance single-flight** — the in-slice single-flight (§9) is *per web instance*; a
+  cross-instance lease (e.g. an advisory lock keyed on the cache key) would collapse duplicate
+  renders across a horizontally-scaled fleet, if the duplicated CPU across instances proves to
+  matter. *(In-instance single-flight + the concurrency cap ship in this slice — round-1 H1/H3.)*
 
 ---
 
@@ -351,12 +448,19 @@ boundary; E2E at the route level.
 
 Per `docs/dev-process.md`, these get the iterative dual-review treatment:
 
-- **`serveCloud` core extraction** — a refactor of already-merged, shared, heavily-reviewed
-  code used by the html route; verify the html/md paths are byte-for-byte behavior-preserved
-  and no gating/charge step is dropped or reordered.
+- **`serveCloud` two-stage extraction** — a refactor of already-merged, shared, heavily-reviewed
+  money code; verify the html/md paths are byte-for-byte behavior-preserved, that **`format=md`
+  never enters Stage 2** (no model resolve/charge — round-1 H2/H3), and that no gating/charge step
+  is dropped or reordered.
 - **The money-adjacent resolve path** — the PDF route threads `resolveMagazineModel`
-  (charge + per-owner budget); verify a PDF never charges more than the equivalent HTML view,
-  never re-charges on a model-cache hit, and never leaks non-owner state.
-- **Cloud Chromium introduction** — verify the render is sandboxed as today (JS disabled, only
-  `data:` requests) and that a launch/timeout failure degrades to 503, never a 500 or a hung
-  request.
+  (charge + per-owner budget); verify a PDF never charges more than the equivalent HTML view and
+  never leaks non-owner state (note the round-1 B3 precision: cache-hit *detection* resolves the
+  model, so a PDF view is free only when the model is cached+fresh — never *more* than an HTML view).
+- **Cloud Chromium introduction** — verify the render is sandboxed (JS disabled, only `data:`
+  requests), uses the deterministic **nonce-free** hash input (round-1 B1), a launch/timeout
+  failure degrades to **503** via the typed error (round-1 H2), and the **concurrency cap +
+  single-flight** actually bound concurrent browsers (round-1 H1/H3).
+- **Put-atomicity (round-1 B2, BLOCKING-until-verified)** — the bare-put/no-promotion design
+  rests on `upload(upsert:true)` being visibility-atomic on new *and* existing objects; verify
+  empirically before plan approval, and confirm ADR 0003's fallback is the staging-key + atomic
+  pointer, **not** the non-atomic `promote`.
