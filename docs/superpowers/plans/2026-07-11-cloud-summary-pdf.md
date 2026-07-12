@@ -314,7 +314,11 @@ failure it THROWS `PdfRendererUnavailable`** (never returns undefined). `returnB
 written `Buffer` on success. The existing local caller (`app/api/videos/[id]/pdf/route.ts`) already
 `.catch`es errors, so a subclassed Error is backward-compatible.
 
-- [ ] **Step 1: Add the failing/updated tests** (mock `playwright`).
+- [ ] **Step 1: Add the failing/updated tests.** **`tests/lib/pdf/generate-doc-pdf.test.ts` already
+  exists with its own `jest.mock('playwright')`** (round-2 plan review Low-1) — do NOT append a second
+  `jest.mock('playwright')`; **merge** these cases into the existing mock/handles (reuse its `chromium.launch`
+  mock; add per-test `mockRejectedValueOnce`/`mockImplementationOnce` overrides). The block below shows
+  the mock *shape* to reconcile with the existing one:
 
 ```ts
 jest.mock('playwright', () => {
@@ -425,7 +429,9 @@ backward-compatible with its `.catch(logError)`).
 **Files:** Create `lib/html-doc/serve-summary-core.ts`; Test
 `tests/api/serve-summary-core.test.ts` (use the mock header from `tests/api/html-serve-cloud.test.ts:1-45`).
 
-**Interfaces — Produces:**
+**Interfaces — Produces:** *(If you materialize these named types explicitly rather than relying on
+inferred return types, `import type { StorageBundle } from '@/lib/storage/resolve'` — it is exported
+there — and `import type { Principal } from '@/lib/storage/principal'`, `Video` from `@/types`.)*
 - `type LoadResult = { ok: true; mdBytes: Buffer; mdKey: string; base: string; title?: string;
   principal: Principal; playlistId: string; video: Video; bundle: StorageBundle } | { ok: false;
   status: number; error: string }`
@@ -512,12 +518,15 @@ export async function resolveAndParse(supabase: SupabaseClient, load: OkLoad, si
     supabaseClient: supabase, blobStore: load.bundle.blobStore, principal: load.principal,
     playlistId: load.playlistId, videoId: load.video.id, base: load.base, parsed, language, signal,
   });
+  // Error strings copied VERBATIM from serveCloud (app/api/html/[id]/route.ts:101-105) — the html
+  // route's existing tests (html-download.test.ts:241 P6) assert the EXACT strings, and Task 7
+  // requires them green before+after the refactor. Do NOT paraphrase. (Round-2 plan review High-1.)
   switch (resolved.status) {
     case 'denied': return { ok: false as const, status: 404, error: 'not found' };
     case 'busy': return { ok: false as const, status: 503, error: 'generating, retry shortly' };
-    case 'attempts_exhausted': return { ok: false as const, status: 503, error: 'temporarily unavailable' };
+    case 'attempts_exhausted': return { ok: false as const, status: 503, error: 'temporarily unavailable, try later' };
     case 'at_capacity': return { ok: false as const, status: 503, error: 'at capacity' };
-    case 'over_budget': return { ok: false as const, status: 503, error: 'daily refresh budget reached' };
+    case 'over_budget': return { ok: false as const, status: 503, error: 'daily refresh budget reached, try tomorrow' };
     case 'ok': return { ok: true as const, parsed, model: resolved.model, stale: resolved.stale === true };
   }
 }
