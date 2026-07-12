@@ -118,10 +118,13 @@ Two round-1 corrections are baked in:
 On every request the route runs Stage 1 + Stage 2 (Decision A), renders the nonce-free HTML
 (cheap — the magazine model is cached, so no re-charge — render is in-memory), computes the key,
 and checks blob existence. Hit → stream the cached blob, **skipping only Chromium**. Miss →
-render PDF, cache, stream. Combined with the `PDF_RENDER_VERSION` salt, this **never serves a
-stale PDF**: any change to summary content, magazine model, HTML render, *or PDF render
-settings* changes the key → automatic regeneration. Rejected alternative: `docVersion`-in-key —
-misses model drift within a version; the content hash captures it precisely.
+render PDF, cache, stream. Combined with the `PDF_RENDER_VERSION` salt, a stale PDF is
+**collision-negligible**: any change to summary content, magazine model, HTML render, *or PDF
+render settings* changes the key → automatic regeneration. (Not the absolute "never" — the key
+truncates the SHA-256 to 16 hex chars/64 bits, so a same-`base` collision is astronomically
+unlikely but not mathematically impossible; round-2 Low. Use the full digest in the key if the
+absolute guarantee is ever required.) Rejected alternative: `docVersion`-in-key — misses model
+drift within a version; the content hash captures it precisely.
 
 ---
 
@@ -165,12 +168,18 @@ the HTML doc — under eager mode the model is always pre-cached, so PDF views n
 **Request flow — `GET /api/pdf/[id]?playlist=<uuid>&type=summary`:**
 
 1. Reject `outputFolder` (400); require `type === 'summary'` (else 400 — dig deferred);
-   require a UUID `playlist` (400 before any DB call); `assertVideoId` (400).
+   require a UUID `playlist` (400 before any DB call); `assertVideoId` (400). Any stray
+   `format`/`download` query params are **ignored** (round-2 Low) — this slice serves summary PDF
+   inline only; those params are the deferred download-to-disk / format hooks (§7, §12).
 2. **Stage 1 `loadSummaryForServe`** (Decision A): `auth.getUser()` → no user → **401**;
    `resolveOwnedPlaylistKey` → null → **404**; `readIndex` (session-client, RLS), find video →
-   absent → **404**; gate `summaryMd.status` (`committed`→**503**, not `promoted`→**404**);
-   read md blob (`artifacts.summaryMd.key ?? video.summaryMd`) → lost → **409**. Also assert
-   `mdKey` ends in `.md` and is a single basename (round-1 M1) → else **409/500** (corrupt row).
+   absent → **404**; gate `summaryMd.status` (`committed`→**503**, not `promoted`→**404**); select
+   `mdKey = artifacts.summaryMd.key ?? video.summaryMd`. **`assertCloudSummaryMdKey(mdKey)` runs
+   HERE — immediately after selecting `mdKey`, BEFORE the blob read and before deriving `base`**
+   (round-2 Medium): it enforces a single path component, a `.md` suffix, a non-empty base, and no
+   `/ \ .. NUL` → else **409** (corrupt row); a nested key like `nested/foo.md` is rejected, so it
+   never reaches `blobStore.get` and can never produce nested `models/…`/`pdfs/…` paths. Then read
+   the md blob → lost → **409**.
 3. **Stage 2 `resolveAndParse`**: parse md → `resolveMagazineModel(...)` — statuses map exactly
    as in `serveCloud`: `denied`→404, `busy`/`at_capacity`/`over_budget`/`attempts_exhausted`→503,
    `ok`→continue.
@@ -191,6 +200,19 @@ the HTML doc — under eager mode the model is always pre-cached, so PDF views n
    `Promise<Buffer | void>`; on **timeout it writes nothing and returns no buffer** (round-1 M3).
    Chromium launch failure / timeout → typed `PdfRendererUnavailable` → **503**, never 500
    (round-1 H2). ~1–2s; 30s cooperative timeout already built in.
+
+   **Both guards MUST clean up in `finally` (round-2 High).** On *any* settle — success, error, or
+   timeout — the semaphore slot is released **and** the single-flight `Map` entry is deleted
+   (`inFlight.delete(cacheKey)`). Omitting either poisons the system: a leaked map entry makes that
+   key **permanently busy** (all future requests await a stale rejected promise), and a leaked slot
+   **bleeds total capacity to zero** over successive failures until process restart. Same-key
+   waiters on a *failed* leader receive the leader's error (→ 503), **not** a cached failure — the
+   entry is gone, so the next request retries cleanly.
+
+   *Charge note (round-2 Low):* a saturation-503 can occur **after** Stage 2 already materialized
+   (and possibly charged for) the model. That is **not** a new or double charge — the model charge
+   is the pre-existing on-view materialization (§3 money invariant), the 503 only means "couldn't
+   render right now"; the retry finds the model cached and renders free.
 7. Respond `200`: `application/pdf`, `Content-Disposition: inline`,
    `Cache-Control: private, no-store`. Propagate **`X-Magazine-Stale: 1`** when Stage 2 returned
    `stale` (round-1 M4 — parity with the html route; harmless on a saved file, meaningful to a
@@ -208,7 +230,8 @@ Chromium memory on one process; horizontal scale bounds it across instances.
 | File | Change |
 |---|---|
 | `app/api/pdf/[id]/route.ts` *(new)* | Cloud-only `GET`. Local backend → 400 ("use the export action"). Implements the flow in §3, incl. the concurrency-semaphore + single-flight guard and the typed-503 mapping. |
-| `lib/html-doc/serve-summary-core.ts` *(new)* | **Two** extracted helpers (§2, Decision A): `loadSummaryForServe` (gate + read → `{ mdBytes, base, title }` or typed status) and `resolveAndParse` (parse + `resolveMagazineModel` → `{ parsed, model, stale }` or typed status). Neither renders HTML. |
+| `lib/html-doc/serve-summary-core.ts` *(new)* | **Two** extracted helpers (§2, Decision A): `loadSummaryForServe` (gate + read → `{ mdBytes, base, title }` or typed status; calls `assertCloudSummaryMdKey(mdKey)` **before** the blob read — round-2 Medium) and `resolveAndParse` (parse + `resolveMagazineModel` → `{ parsed, model, stale }` or typed status). Neither renders HTML. |
+| `lib/html-doc/assert-cloud-summary-md-key.ts` *(new)* | `assertCloudSummaryMdKey(mdKey)`: single path component, `.md` suffix, non-empty base, no `/ \ .. NUL`. Rejects corrupt nested/foreign keys before any storage op. |
 | `app/api/html/[id]/route.ts` *(refactor)* | `serveCloud` rewired through the two helpers, **preserving the `format=md` short-circuit (no Stage 2 for md)** and CSP/nonce. **Already-merged shared money code → iterative dual-review (§14).** |
 | `lib/pdf/generate-doc-pdf.ts` *(extend)* | (a) `opts.returnBuffer?: boolean` → return type `Promise<Buffer \| void>`; **no buffer and no write when the timeout wins** (round-1 M3). (b) Throw a typed `PdfRendererUnavailable` (carrying `statusCode: 503`) on launch failure/timeout instead of a plain `Error` (round-1 H2). (c) Accept container-safe launch args (round-1 M1/§10). Backward-compatible — the local POST caller ignores the return and the new error type. |
 | `lib/pdf/pdf-render-version.ts` *(new)* | `PDF_RENDER_VERSION` constant + a `pdfCacheKey(base, htmlNonceFree)` helper (asserts the final key via `assertLogicalKey`). Bumped when any PDF render setting or the pinned Chromium changes. |
@@ -355,6 +378,14 @@ boundary; E2E at the route level.
   - **Concurrency + single-flight (round-1 H1/H3):** N concurrent identical cache-miss requests
     invoke `generateDocPdf` **once** (single-flight); a request past `PDF_MAX_CONCURRENCY` gets
     **503**, not an extra browser launch.
+  - **Failure cleanup (round-2 High) — the poison-prevention test:** when the leader render
+    **errors or times out**, the single-flight map entry is deleted and the semaphore slot released
+    (both in `finally`); a subsequent request for the same key **retries** (not permanently busy),
+    and repeated failures do **not** bleed `PDF_MAX_CONCURRENCY` toward zero. Same-key waiters on a
+    failed leader get **503**, not a poisoned entry.
+  - **`assertCloudSummaryMdKey` (round-2 Medium):** a `summaryMd.key` of `nested/foo.md` (or any
+    non-`.md`, slash, `..`, NUL) is rejected with **409 before** any `blobStore.get`/model/PDF path
+    is built — no nested `models/…`/`pdfs/…` keys.
   - **Typed 503 (round-1 H2):** a `generateDocPdf` that throws `PdfRendererUnavailable` maps to
     **503**, not 500.
   - `generateDocPdf` **timeout** (round-1 M3): on timeout it **writes nothing** and returns **no

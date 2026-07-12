@@ -42,7 +42,8 @@ generative work.
   is a torn read of a partial upload — which cannot occur if the blob store's `put` is atomic
   (the object becomes visible only when the upload completes).
 - **Synchronous serve+cache route with a bare atomic put (chosen).** Render on demand, cache
-  the PDF at a content-addressed key `pdfs/{base}.{sha256(html).slice}.pdf`, stream it back
+  the PDF at a content-addressed key `pdfs/{base}.r{PDF_RENDER_VERSION}.{sha256(htmlNonceFree).slice(0,16)}.pdf`
+  (nonce-free render input + a render-version salt — see the slice spec Decision B), stream it back
   inline. Reuses the entire `serveCloud` gate→read→resolve→render core (extracted to a shared
   helper); adds only Chromium + the cache check. Precedent: the **local** PDF (also a
   derived-cache blob) already writes with a bare `blobStore.put`, not the staging dance.
