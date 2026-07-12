@@ -30,6 +30,7 @@ it('202 enqueued when absent (charges once)', async () => {
   const r = await enqueueDig(base);
   expect(r.status).toBe(202);
   expect(r.body).toEqual({ status: 'enqueued', jobId: 'job1', sectionId: 132 });
+  expect(enqueuer.enqueue).toHaveBeenCalledTimes(1); // charges exactly once (not zero, not twice)
   expect(enqueuer.enqueue).toHaveBeenCalledWith(
     { ownerId: 'u1', enqueueIp: null },
     expect.objectContaining({ kind: 'dig', sectionId: 132, version: expect.stringMatching(/^dig-/) }),
@@ -47,6 +48,9 @@ it('403 for an anonymous user (never reads/enqueues)', async () => {
   const r = await enqueueDig({ ...base, isAnonymous: true });
   expect(r.status).toBe(403);
   expect(loadSummaryForServe).not.toHaveBeenCalled();
+  // Money invariant: the anon 403 must precede ALL service-role work, not just the tenant read.
+  expect(enqueuer.preflight).not.toHaveBeenCalled();
+  expect(enqueuer.enqueue).not.toHaveBeenCalled();
 });
 it('propagates loadSummaryForServe failure status (404/503/409)', async () => {
   (loadSummaryForServe as jest.Mock).mockResolvedValue({ ok: false, status: 404, error: 'not found' });
@@ -81,6 +85,11 @@ it('joined a COMPLETED row but the blob is still absent → 409 repair, NOT 202 
   const r = await enqueueDig(base);
   expect(r.status).toBe(409);
   expect(exists).toHaveBeenCalledTimes(2); // dedup + re-check
+  // Both checks must target the SAME per-section blob (principal + key) — a re-check of the wrong
+  // key could pass the count assertion yet mask a lost blob.
+  const expectedKey = digSectionKey('0007_intro', 132);
+  expect(exists).toHaveBeenNthCalledWith(1, { id: 'u1', indexKey: 'PLk' }, expectedKey);
+  expect(exists).toHaveBeenNthCalledWith(2, { id: 'u1', indexKey: 'PLk' }, expectedKey);
 });
 it('joined a COMPLETED row and the blob is now present (concurrent promote) → 200 ready', async () => {
   let calls = 0;
