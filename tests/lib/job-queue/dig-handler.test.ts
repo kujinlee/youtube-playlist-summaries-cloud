@@ -14,7 +14,7 @@ import { generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import { digSectionKey, digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
 import { NonRetryableError } from '@/lib/job-queue/errors';
 import { buildIndexedTranscript } from '@/lib/transcript-timestamps';
-import { MAX_TRANSCRIPT_INPUT_BYTES } from '@/lib/gemini-cost';
+import { MAX_TRANSCRIPT_INPUT_BYTES, MAX_DIG_OUTPUT_TOKENS, MAX_DIG_VIDEO_SECONDS } from '@/lib/gemini-cost';
 
 const put = new Map<string, Buffer>();
 const blobStore = {
@@ -107,4 +107,55 @@ it('rejects a stale-version job (job.version != current) as NonRetryableError, n
   await expect(makeDigHandler({} as any)(staleJob as any, ctx as any)).rejects.toBeInstanceOf(NonRetryableError);
   expect(generateDig as jest.Mock).not.toHaveBeenCalled();
   expect(blobStore.promote).not.toHaveBeenCalled();
+});
+
+// ── Cost-bound hardening (docs/superpowers/specs/2026-07-12-dig-cost-bound-hardening.md) ────
+
+it('passes cost-governing opts (maxOutputTokens, maxVideoSeconds, mediaResolution LOW, signal) to generateDig', async () => {
+  await makeDigHandler({} as any)(job as any, ctx as any);
+
+  expect(generateDig as jest.Mock).toHaveBeenCalledWith(
+    expect.anything(),
+    job.videoId,
+    'en',
+    expect.objectContaining({
+      maxOutputTokens: MAX_DIG_OUTPUT_TOKENS,
+      maxVideoSeconds: MAX_DIG_VIDEO_SECONDS,
+      mediaResolution: 'LOW',
+      signal: ctx.signal,
+    }),
+  );
+});
+
+describe('makeDigHandler — model fail-fast guard (money-critical)', () => {
+  const ORIGINAL_MODEL_ENV = process.env.GEMINI_DEEPDIVE_MODEL;
+
+  afterEach(() => {
+    if (ORIGINAL_MODEL_ENV === undefined) delete process.env.GEMINI_DEEPDIVE_MODEL;
+    else process.env.GEMINI_DEEPDIVE_MODEL = ORIGINAL_MODEL_ENV;
+  });
+
+  // NOTE: jest.isolateModules() is NOT sufficient here — its mock registry cascades reads from
+  // the OUTER (file-static) mock registry when the isolated overlay hasn't set an entry yet (by
+  // design, so .mockImplementation() on the outer instance still applies inside isolation). Since
+  // this file's top-level `jest.mock('@/lib/dig/generate', ...)` factory already ran once (via the
+  // static imports above) and cached DEEPDIVE_MODEL's pre-env-change value in that outer registry,
+  // an isolateModules() require would silently return the STALE cached mock instead of a fresh one.
+  // `jest.resetModules()` clears the registry Maps outright (factory *registrations* persist, so
+  // the mock still applies) forcing genuine re-execution of generate.ts against the new env var.
+  // This does not disturb other tests in this file: their `generateDig`/`makeDigHandler` bindings
+  // were captured once at file-load time and remain valid references after a registry reset.
+  it('throws at init when GEMINI_DEEPDIVE_MODEL resolves to a non-priced model (mirrors summary-handler\'s SUMMARY_MODEL guard)', () => {
+    process.env.GEMINI_DEEPDIVE_MODEL = 'gemini-1.5-flash';
+    jest.resetModules();
+    const { makeDigHandler: freshMakeDigHandler } = require('@/lib/job-queue/dig-handler');
+    expect(() => freshMakeDigHandler({} as any)).toThrow(/gemini-1\.5-flash.*priced model/);
+  });
+
+  it('does NOT throw when GEMINI_DEEPDIVE_MODEL is unset (defaults to gemini-2.5-pro, the priced model)', () => {
+    delete process.env.GEMINI_DEEPDIVE_MODEL;
+    jest.resetModules();
+    const { makeDigHandler: freshMakeDigHandler } = require('@/lib/job-queue/dig-handler');
+    expect(() => freshMakeDigHandler({} as any)).not.toThrow();
+  });
 });

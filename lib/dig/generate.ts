@@ -12,7 +12,10 @@ import type { SectionWindow } from '@/lib/dig/section-window';
  *  dug sections become stale and can be deliberately refreshed. */
 export const DIG_GENERATOR_VERSION = 9;
 
-const DEEPDIVE_MODEL =
+// Exported (not just module-local) so the cloud dig-handler can fail-fast at init if this drifts
+// from PRICED_DIG_MODEL (lib/gemini-cost.ts) — an env override to an unpriced model must not
+// silently break the provable dig spend bound. The LOCAL dig-section path never reads this export.
+export const DEEPDIVE_MODEL =
   process.env.GEMINI_DEEPDIVE_MODEL ?? 'gemini-2.5-pro';
 
 const GEMINI_REST_BASE =
@@ -90,10 +93,26 @@ interface GeminiRestResponse {
   candidates?: GeminiCandidate[];
 }
 
+/**
+ * Optional cost-governing knobs, additive to the base 3-arg `generateDig` signature. ALL fields
+ * are optional and, when `opts` is absent/empty, change nothing about the request body or
+ * behavior — the LOCAL dig-section path (`lib/dig/dig-section.ts:61`) calls `generateDig` with no
+ * 4th argument and MUST stay byte-identical. Only the cloud `dig` job handler passes these, to
+ * make the per-job Gemini spend mechanically bounded (docs/superpowers/specs/2026-07-12-dig-cost-
+ * bound-hardening.md).
+ */
+export interface GenerateDigOpts {
+  maxOutputTokens?: number;
+  maxVideoSeconds?: number;
+  mediaResolution?: 'LOW';
+  signal?: AbortSignal;
+}
+
 function buildRequestBody(
   window: SectionWindow,
   videoId: string,
   lang: 'en' | 'ko',
+  opts?: GenerateDigOpts,
 ): object {
   const { startSec, endSec, transcriptWindow, summaryProse } = window;
   const transcriptBlock = buildIndexedTranscript(transcriptWindow);
@@ -101,6 +120,27 @@ function buildRequestBody(
     buildDigPrompt(lang, startSec, endSec) +
     (transcriptBlock ? `\n${transcriptBlock}\n` : '') +
     `\nSummary section:\n${summaryProse}`;
+
+  // Clamp the video segment's end offset to a bounded duration when requested (cloud cost bound —
+  // video input is the dominant, duration-scaling cost term). Absent opts.maxVideoSeconds: the
+  // original endSec is used unchanged, matching today's local behavior exactly.
+  const clampedEndSec =
+    opts?.maxVideoSeconds !== undefined
+      ? Math.min(endSec, startSec + opts.maxVideoSeconds)
+      : endSec;
+
+  // generationConfig is entirely OMITTED when no opts request it — the local path's request body
+  // stays byte-identical to today. This file's REST body uses snake_case field names throughout
+  // (file_data, video_metadata, start_offset...) — generation_config/media_resolution mirror that
+  // same snake_case convention (the Gemini REST API's protobuf-JSON mapping accepts either).
+  const generationConfig: Record<string, unknown> = {};
+  if (opts?.maxOutputTokens !== undefined) {
+    generationConfig.max_output_tokens = opts.maxOutputTokens;
+  }
+  if (opts?.mediaResolution === 'LOW') {
+    generationConfig.media_resolution = 'MEDIA_RESOLUTION_LOW';
+  }
+  const hasGenerationConfig = Object.keys(generationConfig).length > 0;
 
   return {
     contents: [
@@ -114,13 +154,14 @@ function buildRequestBody(
             },
             video_metadata: {
               start_offset: { seconds: startSec },
-              end_offset: { seconds: endSec },
+              end_offset: { seconds: clampedEndSec },
             },
           },
           { text: promptText },
         ],
       },
     ],
+    ...(hasGenerationConfig ? { generation_config: generationConfig } : {}),
   };
 }
 
@@ -128,10 +169,17 @@ async function callGeminiRest(
   model: string,
   apiKey: string,
   body: object,
+  externalSignal?: AbortSignal,
 ): Promise<Response> {
   const url = `${GEMINI_REST_BASE}/${model}:generateContent`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // Compose the per-request timeout signal with an optional external signal (e.g. the cloud job's
+  // lease/shutdown signal) so EITHER aborts the fetch. Absent externalSignal, behavior is unchanged
+  // (AbortSignal.any with a single real signal behaves like that signal alone).
+  const signal = externalSignal
+    ? AbortSignal.any([controller.signal, externalSignal])
+    : controller.signal;
   try {
     return await fetch(url, {
       method: 'POST',
@@ -140,7 +188,7 @@ async function callGeminiRest(
         'x-goog-api-key': apiKey,
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal,
     });
   } finally {
     clearTimeout(timer);
@@ -165,29 +213,33 @@ function extractText(data: GeminiRestResponse): string {
  * @param window   Section window produced by Task 2's windowForSection.
  * @param videoId  YouTube video ID (11 chars).
  * @param lang     Output language.
+ * @param opts     Optional cost-governing caps + external abort signal (cloud path only — see
+ *                 GenerateDigOpts). Absent/empty: behavior is unchanged from before this param existed.
  * @returns        Raw markdown string.
  */
 export async function generateDig(
   window: SectionWindow,
   videoId: string,
   lang: 'en' | 'ko',
+  opts?: GenerateDigOpts,
 ): Promise<string> {
   const apiKey = getApiKey();
   const model = DEEPDIVE_MODEL;
-  const body = buildRequestBody(window, videoId, lang);
+  const body = buildRequestBody(window, videoId, lang, opts);
+  const signal = opts?.signal;
 
   let res: Response;
 
   try {
-    res = await callGeminiRest(model, apiKey, body);
+    res = await callGeminiRest(model, apiKey, body, signal);
   } catch (err) {
     // Network or timeout error on first attempt — retry once.
-    res = await callGeminiRest(model, apiKey, body);
+    res = await callGeminiRest(model, apiKey, body, signal);
   }
 
   // One retry on transient HTTP failure.
   if (!res.ok && TRANSIENT_STATUSES.has(res.status)) {
-    res = await callGeminiRest(model, apiKey, body);
+    res = await callGeminiRest(model, apiKey, body, signal);
   }
 
   if (!res.ok) {
