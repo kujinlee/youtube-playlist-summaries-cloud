@@ -201,13 +201,17 @@ the HTML doc — under eager mode the model is always pre-cached, so PDF views n
    Chromium launch failure / timeout → typed `PdfRendererUnavailable` → **503**, never 500
    (round-1 H2). ~1–2s; 30s cooperative timeout already built in.
 
-   **Both guards MUST clean up in `finally` (round-2 High).** On *any* settle — success, error, or
-   timeout — the semaphore slot is released **and** the single-flight `Map` entry is deleted
-   (`inFlight.delete(cacheKey)`). Omitting either poisons the system: a leaked map entry makes that
-   key **permanently busy** (all future requests await a stale rejected promise), and a leaked slot
-   **bleeds total capacity to zero** over successive failures until process restart. Same-key
-   waiters on a *failed* leader receive the leader's error (→ 503), **not** a cached failure — the
-   entry is gone, so the next request retries cleanly.
+   **Both guards MUST clean up in `finally` (round-2 High).** Ordering: enter single-flight
+   (create the `Map` entry) **first**, then try to acquire the semaphore. On *any* settle —
+   success, error, or timeout — the single-flight `Map` entry is deleted (`inFlight.delete(cacheKey)`)
+   **unconditionally**, and the semaphore slot is released **only if it was actually acquired**
+   (round-3 Low — a saturation path that *threw* on acquire must **not** release, or the counting
+   semaphore over-releases and admits more than `PDF_MAX_CONCURRENCY` browsers — the exact OOM the
+   cap prevents). Omitting the map cleanup makes that key **permanently busy** (future requests
+   await a stale rejected promise); leaking a slot **bleeds total capacity to zero** over
+   successive failures until process restart. Same-key waiters on a *failed* leader receive the
+   leader's error (→ 503), **not** a cached failure — the entry is gone, so the next request retries
+   cleanly.
 
    *Charge note (round-2 Low):* a saturation-503 can occur **after** Stage 2 already materialized
    (and possibly charged for) the model. That is **not** a new or double charge — the model charge
