@@ -10,19 +10,23 @@
 // is stubbed to mimic its real contract — it MUST write to the blob store via the passed
 // `opts.blobStore` (real Supabase storage) and return the buffer, so the cache round-trip is real.
 //
-// Proves:
+// Proves (all concurrency proofs are DETERMINISTIC — see the render-latch mechanism below, not
+// wall-clock timing):
 //  - round-trip cache: first request renders+caches the pdf blob; second serves from cache
 //    (generateDocPdf called exactly ONCE total).
 //  - owner isolation: a SECOND real user session requesting the FIRST owner's video → 404.
-//  - the money invariant NON-VACUOUSLY: with a FRESH magazine model pre-seeded, the PDF request
-//    makes NO reserve_serve_model RPC and spend_ledger is unchanged — proven against a mutation
-//    control (same request, no fresh model) that DOES reserve once, so a regression that starts
-//    charging on a fresh/cache hit would be caught.
+//  - the money invariant NON-VACUOUSLY, on BOTH the cache-MISS and a genuine cache-HIT request:
+//    with a FRESH magazine model pre-seeded, neither PDF request makes a reserve_serve_model RPC
+//    and spend_ledger is unchanged — proven against a mutation control (same request shape, no
+//    fresh model) that DOES reserve once, so a regression that starts charging on a fresh/miss/hit
+//    request would be caught.
 //  - owner-scoped PDF cache flight key (H1): two DIFFERENT owners with IDENTICAL summary content
-//    (same md/model/base -> identical content hash) firing genuinely concurrent requests BOTH get
-//    their own owner-namespaced pdf blob written — a bare content-hash flight key would collapse
-//    the two in-flight renders into one and silently drop the second owner's write.
-//  - (best-effort) concurrent same-owner same-content miss collapses into exactly one render.
+//    (same md/model/base -> identical content hash) firing genuinely, deterministically concurrent
+//    requests (latched until BOTH have entered generateDocPdf) BOTH get their own owner-namespaced
+//    pdf blob written — a bare content-hash flight key would collapse owner-2 into owner-1's
+//    in-flight render, which this test detects as a hard timeout, not a silent pass.
+//  - concurrent same-owner same-content miss collapses into exactly one render (single-flight),
+//    proven by latching request 1 inside generateDocPdf before starting request 2.
 import { AsyncLocalStorage } from 'async_hooks';
 import { randomUUID } from 'crypto';
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -64,23 +68,77 @@ jest.mock('@/lib/gemini', () => ({
 import { generateMagazineModel } from '@/lib/gemini';
 
 const SMALL_PDF_BUFFER = Buffer.from('%PDF-1.4 fake pdf bytes for test\n', 'utf-8');
-// Widened ONLY by the concurrency test below (reset in its own try/finally) to make the
-// same-owner single-flight race reproducible: the DB round-trips a real request performs before
-// reaching runSingleFlight are fast on local loopback Postgres, so an instant stub risks the first
-// request's render+put completing (and clearing the flight-map entry) before the second request
-// even registers — an artificial delay here widens that window without affecting correctness.
-let renderDelayMs = 0;
+
+// --- Render latch: deterministic concurrency control (Task-11 dual-review fix) -----------------
+// Replaces wall-clock sleeps for the two concurrency proofs (H1 owner-scoping and single-flight)
+// with a controllable deferred-promise latch. When armed, the `generateDocPdf` stub (a) signals
+// "entered" the instant it's called — so a test can await until N calls are SIMULTANEOUSLY
+// in-flight — then (b) suspends on a shared `release` gate until the test explicitly releases it,
+// before doing its real-contract work (`blobStore.put` + return the buffer). This guarantees
+// genuine overlap deterministically — no timing-dependent race, no sleep-for-overlap.
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => { resolve = res; });
+  return { promise, resolve };
+}
+let latchArmed = false;
+let entryCount = 0;
+let releaseGate = deferred();
+let entryWaiters: Array<{ target: number; resolve: () => void }> = [];
+/** Arm the latch: subsequent `generateDocPdf` calls block on `releaseGate` after signaling entry. */
+function armLatch(): void {
+  latchArmed = true;
+  entryCount = 0;
+  releaseGate = deferred();
+  entryWaiters = [];
+}
+/** Resolves once `entryCount` reaches `target` — proves `target` calls are simultaneously
+ *  in-flight (all past the cache-miss check + flight registration, all suspended on the SAME
+ *  release gate) before the test releases them. This is what makes overlap deterministic instead
+ *  of timing-dependent. `timeoutMs` is a FAILSAFE upper bound for the failure case only (a broken
+ *  regression that never reaches `target` entries) — it is not used to establish overlap, so it
+ *  does not reintroduce a timing-dependent proof; it just turns a silent hang into a fast, loud,
+ *  descriptive failure. `guardMsg` names the exact regression a timeout here would indicate. */
+function waitForEntries(target: number, guardMsg: string, timeoutMs = 4000): Promise<void> {
+  if (entryCount >= target) return Promise.resolve();
+  const d = deferred();
+  entryWaiters.push({ target, resolve: d.resolve });
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<void>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`waitForEntries(${target}) timed out after ${timeoutMs}ms — ${guardMsg}`)), timeoutMs);
+  });
+  // clearTimeout on the winning path too — an uncanceled timer keeps the event loop (and Jest's
+  // process) alive for up to `timeoutMs` after a normal, successful resolution.
+  return Promise.race([d.promise, timeout]).finally(() => clearTimeout(timer));
+}
+/** Release every call currently suspended on the latch and disarm it. */
+function releaseLatch(): void {
+  releaseGate.resolve();
+  latchArmed = false;
+}
+
 jest.mock('@/lib/pdf/generate-doc-pdf', () => ({ generateDocPdf: jest.fn() }));
 import { generateDocPdf } from '@/lib/pdf/generate-doc-pdf';
 (generateDocPdf as jest.Mock).mockImplementation(
   async (_html: string, principal: Principal, key: string, opts: { blobStore: BlobStore }) => {
-    if (renderDelayMs > 0) await new Promise((r) => setTimeout(r, renderDelayMs));
+    if (latchArmed) {
+      entryCount++;
+      entryWaiters = entryWaiters.filter(({ target, resolve }) => {
+        if (entryCount >= target) { resolve(); return false; }
+        return true;
+      });
+      await releaseGate.promise; // suspended here until the test calls releaseLatch()
+    }
     await opts.blobStore.put(principal, key, SMALL_PDF_BUFFER, 'application/pdf');
     return SMALL_PDF_BUFFER;
   },
 );
 
 import { GET } from '@/app/api/pdf/[id]/route';
+
+// Real Supabase round-trips (auth signup/sign-in, storage, RPCs) for up to two owners per test —
+// matches the budget siblings in this directory already use (e.g. blob-store.test.ts, job-queue-*).
+jest.setTimeout(20_000);
 
 const svc = adminClient();
 const MD = `# T\n**Channel:** C | **Duration:** 1:00\n\n## 1. Intro\nbody\n`;
@@ -96,7 +154,10 @@ afterAll(() => { if (priorBackend === undefined) delete process.env.STORAGE_BACK
 beforeEach(async () => {
   (generateMagazineModel as jest.Mock).mockClear();
   (generateDocPdf as jest.Mock).mockClear();
-  renderDelayMs = 0;
+  latchArmed = false;
+  entryCount = 0;
+  releaseGate = deferred();
+  entryWaiters = [];
   // Clear the shared money tables and pin generous, deterministic guardrail headroom — this local
   // Supabase stack persists across test runs, so a stale spend_ledger row from an earlier file/run
   // could otherwise trip at_capacity here (mirrors html-download.test.ts's own beforeEach).
@@ -205,38 +266,59 @@ describe('pdf-cloud (GET /api/pdf/[id], real DB)', () => {
     expect(generateDocPdf).not.toHaveBeenCalled();
   });
 
-  it('money: fresh model -> PDF request makes NO reserve_serve_model RPC; spend_ledger unchanged', async () => {
+  it('money: fresh model -> PDF request makes NO reserve_serve_model RPC on EITHER a cache-MISS or a genuine cache-HIT; spend_ledger unchanged', async () => {
     const { u, playlistId, playlistKey, videoId, base } = await ownerAndDoc();
     const principal: Principal = { id: u.user.id, indexKey: playlistKey };
     await primeFreshModel(mockClient, base, principal);
     const { data: ledgerBefore } = await svc.from('spend_ledger').select('*').order('day');
     const rpcSpy = jest.spyOn(SupabaseClient.prototype, 'rpc');
 
-    const res = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+    try {
+      // Request 1 — cache MISS: renders + caches the pdf blob.
+      const res1 = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+      expect(res1.status).toBe(200);
+      expect(generateDocPdf).toHaveBeenCalledTimes(1);
+      const reserveCallsMiss = rpcSpy.mock.calls.filter((c) => c[0] === 'reserve_serve_model');
+      expect(reserveCallsMiss.length).toBe(0); // B1 fresh short-circuit — no reserve RPC on the miss either
 
-    expect(res.status).toBe(200);
-    const reserveCalls = rpcSpy.mock.calls.filter((c) => c[0] === 'reserve_serve_model');
-    expect(reserveCalls.length).toBe(0); // B1 fresh short-circuit — no reserve RPC at all
-    const { data: ledgerAfter } = await svc.from('spend_ledger').select('*').order('day');
-    expect(ledgerAfter ?? []).toEqual(ledgerBefore ?? []);
-    expect(generateMagazineModel).not.toHaveBeenCalled();
-    rpcSpy.mockRestore();
+      // Reset the spy's call record so the next assertions are scoped to request 2's OWN RPC activity.
+      rpcSpy.mockClear();
+
+      // Request 2 — genuine cache HIT (same params; the pdf is now cached from request 1 above).
+      // This is the branch the prior version of this test never exercised: `resolveAndParse` (the
+      // charging path) runs BEFORE the pdf cache check in the route, so a regression that starts
+      // charging on the hit branch specifically would NOT have been caught by a miss-only proof.
+      const res2 = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+      expect(res2.status).toBe(200);
+      const reserveCallsHit = rpcSpy.mock.calls.filter((c) => c[0] === 'reserve_serve_model');
+      expect(reserveCallsHit.length).toBe(0); // no reserve RPC on the hit branch either
+      expect(generateDocPdf).toHaveBeenCalledTimes(1); // still ONE total — the hit branch does not re-render
+
+      const { data: ledgerAfter } = await svc.from('spend_ledger').select('*').order('day');
+      expect(ledgerAfter ?? []).toEqual(ledgerBefore ?? []);
+      expect(generateMagazineModel).not.toHaveBeenCalled();
+    } finally {
+      rpcSpy.mockRestore();
+    }
   });
 
-  it('money mutation control: WITHOUT a fresh model, the SAME request DOES call reserve_serve_model once (proves the no-charge assertion above is non-vacuous)', async () => {
+  it('money mutation control: WITHOUT a fresh model, the SAME request DOES call reserve_serve_model once (proves the no-charge assertions above are non-vacuous)', async () => {
     const { playlistId, videoId } = await ownerAndDoc(); // no model seeded — absent, must reserve+generate
     const rpcSpy = jest.spyOn(SupabaseClient.prototype, 'rpc');
 
-    const res = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+    try {
+      const res = await GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
 
-    expect(res.status).toBe(200);
-    const reserveCalls = rpcSpy.mock.calls.filter((c) => c[0] === 'reserve_serve_model');
-    expect(reserveCalls.length).toBe(1); // absent model -> charged path: proves the spy would have caught a regression above
-    expect(generateMagazineModel).toHaveBeenCalledTimes(1);
-    rpcSpy.mockRestore();
+      expect(res.status).toBe(200);
+      const reserveCalls = rpcSpy.mock.calls.filter((c) => c[0] === 'reserve_serve_model');
+      expect(reserveCalls.length).toBe(1); // absent model -> charged path: proves the spy would have caught a regression above
+      expect(generateMagazineModel).toHaveBeenCalledTimes(1);
+    } finally {
+      rpcSpy.mockRestore();
+    }
   });
 
-  it('owner-scoped cache (H1): two DIFFERENT owners, IDENTICAL content (same md/model/base) -> BOTH owner-namespaced pdf blobs get written on genuinely concurrent requests', async () => {
+  it('owner-scoped cache (H1): two DIFFERENT owners, IDENTICAL content (same md/model/base) -> BOTH owner-namespaced pdf blobs get written on genuinely, deterministically concurrent requests', async () => {
     const sharedBase = `shared-${randomUUID().slice(0, 8)}`;
     const first = await ownerAndDoc('Doc A', sharedBase);
     const firstClient = first.client;
@@ -249,43 +331,79 @@ describe('pdf-cloud (GET /api/pdf/[id], real DB)', () => {
     await primeFreshModel(secondClient, sharedBase, p2);
 
     const key = expectedFreshPdfKey(sharedBase); // identical for both — same md/model/base => same content hash
+    const blob1 = new SupabaseBlobStore(firstClient, ARTIFACTS_BUCKET);
+    const blob2 = new SupabaseBlobStore(secondClient, ARTIFACTS_BUCKET);
+    expect(await blob1.get(p1, key)).toBeNull(); // neither owner's pdf blob exists yet
+    expect(await blob2.get(p2, key)).toBeNull();
 
+    armLatch();
     // ALS-scoped so each request's ENTIRE async chain sees its own session client regardless of
     // interleaving (see the module-level comment on mockAls) — a bare shared `mockClient` variable
     // would be unsafe here since both requests perform the identical await shape before reaching
     // createServerSupabase.
-    const [res1, res2] = await Promise.all([
-      mockAls.run(firstClient, () => GET(req(first.videoId, `playlist=${first.playlistId}&type=summary`), invoke(first.videoId))),
-      mockAls.run(secondClient, () => GET(req(second.videoId, `playlist=${second.playlistId}&type=summary`), invoke(second.videoId))),
-    ]);
+    const p1Res = mockAls.run(firstClient, () => GET(req(first.videoId, `playlist=${first.playlistId}&type=summary`), invoke(first.videoId)));
+    const p2Res = mockAls.run(secondClient, () => GET(req(second.videoId, `playlist=${second.playlistId}&type=summary`), invoke(second.videoId)));
 
+    // DETERMINISTIC regression guard: with the H1 fix (owner-scoped flight key
+    // `${principal.id}/${principal.indexKey}/${key}`), both owners' requests take DIFFERENT flight
+    // keys, so BOTH genuinely enter `generateDocPdf` and get latched here (entryCount reaches 2).
+    // If a regression reverted to a BARE content-hash flight key, owner-2's request would find
+    // owner-1's flight already registered under the SAME key and join it WITHOUT ever calling
+    // `generateDocPdf` itself — entryCount would get stuck at 1, and this await would time out: a
+    // loud, deterministic failure, not a silent pass (which is exactly what the old timing-based
+    // version of this test was vulnerable to — request 1 could finish and clear its flight entry
+    // before request 2 even registered, so even a broken bare-key flight would happen to render
+    // twice and pass).
+    await waitForEntries(2, "expected BOTH owners to enter generateDocPdf concurrently (owner-scoped flight key) — only one entered, i.e. a bare content-hash flight key collapsed owner-2's request into owner-1's in-flight render");
+    releaseLatch();
+
+    const [res1, res2] = await Promise.all([p1Res, p2Res]);
     expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
 
-    const blob1 = new SupabaseBlobStore(firstClient, ARTIFACTS_BUCKET);
-    const blob2 = new SupabaseBlobStore(secondClient, ARTIFACTS_BUCKET);
+    expect(generateDocPdf).toHaveBeenCalledTimes(2); // exactly one render PER owner — no collapse across owners
+    const calledPrincipalIds = (generateDocPdf as jest.Mock).mock.calls
+      .map((c) => (c[1] as Principal).id)
+      .sort();
+    expect(calledPrincipalIds).toEqual([p1.id, p2.id].sort()); // both owners' renders genuinely happened, distinctly
+
     const owner1Pdf = await blob1.get(p1, key);
     const owner2Pdf = await blob2.get(p2, key);
     expect(owner1Pdf).not.toBeNull(); // owner 1's own pdf blob exists
+    expect(owner1Pdf!.equals(SMALL_PDF_BUFFER)).toBe(true);
     expect(owner2Pdf).not.toBeNull(); // owner 2's own pdf blob exists — NOT dropped by a bare content-hash flight key
+    expect(owner2Pdf!.equals(SMALL_PDF_BUFFER)).toBe(true);
   });
 
-  it('(best-effort) concurrent same-owner same-content miss collapses into exactly ONE render (single-flight)', async () => {
+  it('concurrent same-owner same-content miss collapses into exactly ONE render (single-flight) — deterministic via latch, no sleep', async () => {
     const { playlistId, playlistKey, videoId, base, u } = await ownerAndDoc();
     const principal: Principal = { id: u.user.id, indexKey: playlistKey };
     await primeFreshModel(mockClient, base, principal);
-    renderDelayMs = 40; // widen the render window so both requests reliably overlap in-flight
 
-    try {
-      const [res1, res2] = await Promise.all([
-        GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId)),
-        GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId)),
-      ]);
-      expect(res1.status).toBe(200);
-      expect(res2.status).toBe(200);
-      expect(generateDocPdf).toHaveBeenCalledTimes(1); // single-flight collapse — one render for both callers
-    } finally {
-      renderDelayMs = 0;
-    }
+    armLatch();
+    const p1 = GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+    // Wait until request 1 is CONFIRMED inside generateDocPdf — i.e. past its own cache-miss check
+    // and past registering the flight key in `inFlight` (lib/pdf/pdf-concurrency.ts) — and
+    // suspended on the release gate. Only THEN start request 2 (same owner, same params, same
+    // flight key). Because request 1 cannot proceed past the latch until we call releaseLatch(),
+    // its flight-map entry is guaranteed to still be registered no matter how long request 2's own
+    // real DB round-trips take to reach the route's cache/flight check — so request 2 deterministically
+    // either (a) joins request 1's still-pending single-flight promise (never entering
+    // generateDocPdf itself), or (b) — only possible once released — observes the now-genuinely-
+    // cached blob directly. Either way `generateDocPdf` cannot be called a second time: a bare
+    // no-single-flight regression would instead make request 2 enter generateDocPdf itself while
+    // request 1 is still latched, pushing entryCount to 2 and failing the call-count assertion below.
+    await waitForEntries(1, 'expected request 1 to enter generateDocPdf — it never did');
+    const p2 = GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+    releaseLatch();
+
+    const [res1, res2] = await Promise.all([p1, p2]);
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+    expect(generateDocPdf).toHaveBeenCalledTimes(1); // single-flight collapse — one render for both callers
+    const body1 = Buffer.from(await res1.arrayBuffer());
+    const body2 = Buffer.from(await res2.arrayBuffer());
+    expect(body1.equals(SMALL_PDF_BUFFER)).toBe(true);
+    expect(body2.equals(SMALL_PDF_BUFFER)).toBe(true);
   });
 });
