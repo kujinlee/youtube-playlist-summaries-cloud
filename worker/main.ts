@@ -6,6 +6,8 @@ import type { JobHandler } from '@/lib/job-queue/worker-runner';
 import { runOnce } from '@/lib/job-queue/worker-runner';
 import { SupabaseJobQueue } from '@/lib/storage/supabase/supabase-job-queue';
 import { makeSummaryHandler } from '@/lib/job-queue/summary-handler';
+import { makeDigHandler } from '@/lib/job-queue/dig-handler';
+import { makeJobHandler } from '@/lib/job-queue/dispatch';
 import { getSupabaseEnv, getServiceRoleKey } from '@/lib/supabase/env';
 import { validateStorageEnv } from '@/lib/supabase/storage-env';
 
@@ -60,7 +62,10 @@ export async function main(): Promise<void> {
   });
 
   const queue = new SupabaseJobQueue(client);
-  const handler = makeSummaryHandler(client);
+  const handler = makeJobHandler({
+    summary: makeSummaryHandler(client),
+    dig: makeDigHandler(client),
+  });
   const workerId = `${os.hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
 
   const ac = new AbortController();
