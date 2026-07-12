@@ -205,6 +205,12 @@ export function summaryHref(
   return `/api/html/${encodeURIComponent(videoId)}?${params.toString()}`;
 }
 
+/** Builds the serveCloud PDF URL. */
+export function pdfHref(playlistId: string, videoId: string): string {
+  const p = new URLSearchParams({ playlist: playlistId, type: 'summary' });
+  return `/api/pdf/${encodeURIComponent(videoId)}?${p.toString()}`;
+}
+
 export type ShareTtl = 7 | 30 | 'never';
 
 export interface CreateShareResult {
