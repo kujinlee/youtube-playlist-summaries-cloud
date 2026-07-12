@@ -47,6 +47,22 @@ it('400 on non-integer sectionId, before auth', async () => {
 it('400 on missing/invalid playlist uuid, before auth', async () => {
   const res = await POST(req('https://x/api/videos/vid1/dig/132?playlist=nope'), params('vid1', '132') as any);
   expect(res.status).toBe(400);
+  expect(createServerSupabase).not.toHaveBeenCalled();
+});
+it('400 on whitespace sectionId, before auth', async () => {
+  const res = await POST(req(`https://x/api/videos/vid1/dig/${encodeURIComponent(' ')}?playlist=${UUID}`), params('vid1', ' ') as any);
+  expect(res.status).toBe(400);
+  expect(createServerSupabase).not.toHaveBeenCalled();
+});
+it('400 on negative-integer sectionId', async () => {
+  const res = await POST(req(`https://x/api/videos/vid1/dig/-5?playlist=${UUID}`), params('vid1', '-5') as any);
+  expect(res.status).toBe(400);
+  expect(createServerSupabase).not.toHaveBeenCalled();
+});
+it('400 on invalid videoId, before auth', async () => {
+  const res = await POST(req(`https://x/api/videos/bad%20id/dig/132?playlist=${UUID}`), params('bad id', '132') as any);
+  expect(res.status).toBe(400);
+  expect(createServerSupabase).not.toHaveBeenCalled();
 });
 it('401 when unauthenticated', async () => {
   (createServerSupabase as jest.Mock).mockReturnValue({ auth: { getUser: async () => ({ data: { user: null } }) } });
@@ -62,6 +78,28 @@ it('delegates to enqueueDig and serializes its result', async () => {
   expect(enqueueDig).toHaveBeenCalledWith(expect.objectContaining({
     userId: 'u1', isAnonymous: false, videoId: 'vid1', playlistId: UUID, sectionId: 132,
   }));
+});
+
+it('delegates to enqueueDig with isAnonymous: true for an anonymous profile, and surfaces its 403', async () => {
+  (createServerSupabase as jest.Mock).mockReturnValue(authed(true));
+  (enqueueDig as jest.Mock).mockResolvedValue({ status: 403, body: { error: 'dig requires an account' } });
+  const res = await POST(req(`https://x/api/videos/vid1/dig/132?playlist=${UUID}`), params('vid1', '132') as any);
+  expect(res.status).toBe(403);
+  expect(enqueueDig).toHaveBeenCalledWith(expect.objectContaining({ isAnonymous: true }));
+});
+
+// Locks in the fail-closed fix: a null/errored profile read (RLS denial, missing row, transient
+// error) must NEVER be silently treated as a registered user. Only an explicit is_anonymous===false
+// grants registered access.
+it('treats a null/missing profile read as anonymous (fail-closed), not registered', async () => {
+  (createServerSupabase as jest.Mock).mockReturnValue({
+    auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: null }) }) }) }),
+  });
+  (enqueueDig as jest.Mock).mockResolvedValue({ status: 403, body: { error: 'dig requires an account' } });
+  const res = await POST(req(`https://x/api/videos/vid1/dig/132?playlist=${UUID}`), params('vid1', '132') as any);
+  expect(enqueueDig).toHaveBeenCalledWith(expect.objectContaining({ isAnonymous: true }));
+  expect(res.status).toBe(403);
 });
 
 // Requirement carried from the Task 5 review: EVERY 429 from enqueueDig (rate-limited OR

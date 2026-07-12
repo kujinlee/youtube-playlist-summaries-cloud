@@ -32,6 +32,7 @@ export async function POST(request: Request, { params }: Params) {
     const url = new URL(request.url);
     // 400-before-401 validation
     if (url.searchParams.has('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
+    if (!sectionIdParam || sectionIdParam.trim() === '') return json({ error: 'invalid sectionId' }, 400);
     const sectionId = Number(sectionIdParam);
     if (!Number.isInteger(sectionId) || sectionId < 0) return json({ error: 'invalid sectionId' }, 400);
     const playlistId = url.searchParams.get('playlist');
@@ -46,6 +47,9 @@ export async function POST(request: Request, { params }: Params) {
     // Authoritative anon status = profiles.is_anonymous (the SAME column enqueue_job checks at
     // 0011:101), read via the session client under RLS (a user may read their own profile). Do NOT
     // trust user.is_anonymous — it is not guaranteed to be populated in this project's auth config.
+    // Fail CLOSED: only an explicit is_anonymous===false grants registered access. A null/errored
+    // profile read (RLS denial, missing row, transient error) must be treated as anonymous (→ 403),
+    // never silently as registered. Matches the "authoritative anon status" claim above.
     const { data: profile } = await supabase.from('profiles').select('is_anonymous').eq('id', user.id).single();
 
     // challengeRequired (soft captcha-UX advisory from enqueuer.preflight) is deliberately NOT
@@ -54,7 +58,7 @@ export async function POST(request: Request, { params }: Params) {
     // a dig-trigger UI needs to react to it.
     const result = await enqueueDig({
       supabase, enqueuer: new SupabaseEnqueuer(createServiceClient()),
-      userId: user.id, isAnonymous: profile?.is_anonymous === true,
+      userId: user.id, isAnonymous: profile?.is_anonymous !== false,
       videoId, playlistId, sectionId, enqueueIp: parseClientIp(request),
     });
     return json(result.body, result.status);
