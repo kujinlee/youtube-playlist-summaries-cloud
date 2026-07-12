@@ -17,7 +17,7 @@ label actually covers **two nearly-independent subsystems**:
 - **Cloud summary PDF** — pure Chromium render of an already-generated summary. No Gemini,
   no new charging, and `generateDocPdf` already writes through the backend-agnostic
   `blobStore`.
-- **Cloud dig (deep-dive) generation** — one expensive `gemini-2.5-pro` call, a new durable
+- **Cloud dig generation** — one expensive `gemini-2.5-pro` call, a new durable
   job kind (`dig` is currently hard-rejected at enqueue), a new artifact kind for the dig
   companion `.md` + slide assets, and new charging/guardrail wiring.
 
@@ -34,7 +34,8 @@ dig-PDF that rides on it, are separate later specs (see §12).
 ## 1. Goal & scope
 
 A signed-in cloud user picks **View PDF** on a video whose summary is ready and gets a
-print-ready A4 PDF of the magazine summary, opened **inline in a new tab** (view + print via
+print-ready A4 PDF of the summary's **rendered HTML doc** (magazine-styled), opened **inline in
+a new tab** (view + print via
 the browser's own PDF viewer). The PDF is **generated lazily on first request** and **cached**;
 every later view/print reuses the cached copy — no regeneration, no cost.
 
@@ -47,7 +48,7 @@ every later view/print reuses the cached copy — no regeneration, no cost.
 - Cloud `VideoMenu`: one **View PDF** item (inline new tab), gated on `summaryReady`.
 
 **Out of scope (deferred / unchanged)**
-- **Cloud dig (deep-dive) generation** and **dig PDF** — separate later slices.
+- **Cloud dig generation** and **dig PDF** — separate later slices.
 - **PDF sharing** — the cached PDF simply persists, ready for a later share slice. When that
   lands it must use **token-pull** (the cached blob served through the authorized
   `lib/share/serve.ts` path), **not** a direct/signed Storage URL — see §12 for the reasoning.
@@ -97,11 +98,31 @@ md-read, `resolveMagazineModel` (the existing paid, per-owner-budget-guarded tra
 `renderMagazineHtml(parsed, model, { dig: false })`, then feeds the HTML **string** to the
 existing `generateDocPdf` instead of returning it as an HTML response.
 
-**Money invariant (no new surface).** A PDF inherits the *same* `reserve_serve_model` charge
-an HTML view would incur, and **only** when the magazine model is not already cached. If the
-user has already viewed the HTML summary, the model is cached → the PDF is free. A cached-PDF
-view (any second view) is free. **Worst case, a PDF costs exactly one existing magazine
-transform, never more, never a new line item.**
+**Serve-side materialization, not a Job.** In the glossary's terms this is a **derived-cache
+blob materialized on the serve path** — the same pattern as the magazine model and the rendered
+HTML doc — **not** a durable **Job** (the Async-Jobs vocabulary is reserved for expensive
+*generative* work run off-request: `summary`, `dig`). A PDF is a cheap, model-less,
+deterministic render, so it belongs on the synchronous serve path, cached like any derived
+artifact — never enqueued, never leased, never polled. This choice and the bare-put write
+discipline (Decision B) are recorded in **`docs/adr/0003-cloud-pdf-serve-side-not-a-job.md`**.
+
+**Money invariant (no new surface).** Per the glossary, the PDF is a **derived-cache blob** —
+a *model-less* render, so **the PDF never charges anything of its own.** Printing the rendered
+HTML doc to PDF costs no Gemini call. The only step in the chain that can cost money is the
+**magazine model** (the *middle-case* artifact), which materializes **on view** exactly as it
+does for an HTML view — governed by the per-owner serve budget + daily cap, **never** monthly
+quota (the summary was already charged). So a "View PDF" of a summary whose model isn't yet
+cached triggers **the same** on-view materialization an HTML view would, and never more:
+
+- Model already cached (e.g. the user viewed the HTML summary first) → **PDF is free.**
+- Model not cached → **one** magazine-model materialization (identical to a first HTML view),
+  then cached for both HTML and PDF.
+- Second/cached-PDF view → **free.**
+
+**Worst case, "View PDF" costs at most one pre-existing on-view model materialization — the
+same the HTML view already triggers — and adds zero new charge line.** (This statement stays
+true under a future eager/persisted-HTML policy, §12: the PDF's cost is entirely *inherited*
+from whatever produces the HTML doc.)
 
 **Request flow — `GET /api/pdf/[id]?playlist=<uuid>&type=summary`:**
 
@@ -277,7 +298,30 @@ boundary; E2E at the route level.
   share.)
 - **Download-to-disk** — add `download=1` → `Content-Disposition: attachment` on the same
   route + a "Download PDF" menu item.
-- **Cloud dig (deep-dive) generation** — durable `dig` job kind + handler + worker dispatch +
+- **Cloud HTML-doc persistence (eager/lazy, configurable)** — a follow-up slice that lets the
+  rendered HTML doc (and its magazine model) be **persisted** and optionally **pre-generated at
+  ingest** instead of only materialized on view. Design intent so it is built config-first:
+  - A **single global config switch** (natural home: the `guardrail_config` singleton) selects
+    `lazy` (materialize model+HTML on view — today's behavior, the **default**) vs `eager` (the
+    ingest worker materializes model+HTML right after writing the summary MD). Both paths
+    implemented once; flipping the mode is a config change, not a code change.
+  - **Why deferred:** the ideal human view is not settled — magazine style is an initial
+    attempt — so eagerly pre-baking magazine-styled HTML risks pre-generating output that gets
+    discarded. Flip to `eager` once the view stabilizes.
+  - **Cost basis (measured 2026-07-11 from `lib/gemini-cost.ts`):** the magazine **model** is
+    ~5–6¢ worst-case (`magazine_est_cents=6`) vs the **summary** at ~115–150¢
+    (`summary_est_cents=150`) — the model is **~4% of summary cost** (summary is
+    transcription-dominated; the model runs on already-extracted text). So eager pre-generation
+    is cheap to "absorb as initial processing cost" (~+4% ingest); its only real downside is
+    paying for docs never viewed, which at 4% is negligible.
+  - **Charge bucket:** the ~5–6¢ **self-coordinates via cache-hit-no-charge**
+    (`reserve_serve_model` only charges on a cache miss, so an eagerly-cached model makes the
+    on-view path free). Eager mode's one addition is folding the model cost into the ingest
+    reservation (`summary_est_cents`, +~4%); the daily-cap math then shifts that spend from the
+    serve budget to the ingest reservation.
+  - Reverses the glossary's "the magazine model is **never eagerly pre-produced by the worker**"
+    — **ADR-worthy** when built.
+- **Cloud dig generation** — durable `dig` job kind + handler + worker dispatch +
   enqueue guardrail wiring (`dig_est_cents`, quota debit, ledger reserve) + fs→blobStore port
   of `lib/dig/dig-section.ts` + a new artifact kind for the dig companion `.md`/slides +
   per-section `genVersion` ↔ `job_version` reconciliation.
