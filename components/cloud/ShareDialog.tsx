@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { createShare, revokeShare, UnauthorizedError, type CreateShareResult, type ShareTtl } from '@/lib/client/api';
 
@@ -100,7 +101,12 @@ export default function ShareDialog({ playlistId, videoId, videoTitle, onClose }
 
   const fullUrl = share ? window.location.origin + share.url : '';
 
-  return (
+  // This is a fixed full-screen overlay. It is rendered from inside a <tbody> (VideoRow),
+  // where a bare <div> is invalid DOM (hydration error). Portal it to <body> so it escapes
+  // the table and nests validly.
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       data-testid="share-dialog-backdrop"
       onClick={guardedClose}
@@ -206,6 +212,7 @@ export default function ShareDialog({ playlistId, videoId, videoTitle, onClose }
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
