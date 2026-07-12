@@ -6,6 +6,7 @@
 import { adminClient } from './helpers/clients';
 import * as C from '@/lib/gemini-cost';
 import { SUMMARY_MODEL, TRANSCRIBE_MODEL } from '@/lib/gemini';
+import { DEEPDIVE_MODEL } from '@/lib/dig/generate';
 
 it('est >= independently-recomputed worst case x max_attempts (live config)', async () => {
   const { data: cfg } = await adminClient().from('guardrail_config').select('*').single();
@@ -22,4 +23,16 @@ it('est >= independently-recomputed worst case x max_attempts (live config)', as
 });
 it('resolved models equal the priced model', () => {
   expect(SUMMARY_MODEL).toBe(C.PRICED_MODEL); expect(TRANSCRIBE_MODEL).toBe(C.PRICED_MODEL);
+});
+
+// Dig drift-guard (mirrors the summary block above): dig_est_cents / dig_max_attempts are
+// runtime-editable guardrail_config columns (migration 0011) — the unit guard's
+// `expect(DIG_EST_CENTS).toBe(150)` only checks the source-code constant, not the live DB value.
+// This proves the LIVE config still honors the digWorstCents() bound.
+it('dig: live guardrail_config.dig_est_cents >= digWorstCents() x dig_max_attempts', async () => {
+  const { data: cfg } = await adminClient().from('guardrail_config').select('*').single();
+  expect(cfg!.dig_est_cents).toBeGreaterThanOrEqual(Math.ceil(C.digWorstCents()) * cfg!.dig_max_attempts);
+});
+it('dig: resolved model equals the priced dig model', () => {
+  expect(DEEPDIVE_MODEL).toBe(C.PRICED_DIG_MODEL);
 });

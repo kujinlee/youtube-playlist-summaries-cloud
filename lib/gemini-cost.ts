@@ -52,6 +52,13 @@ export const DIG_GENERATE_MAX_PASSES = 3;        // worst-case billable calls in
                                                   // then one more retry on a transient HTTP status)
 export const DIG_EST_CENTS = 150;                // MUST match guardrail_config.dig_est_cents default (migration 0011)
 
+// Thinking is disabled on the dig cloud path via generationConfig.thinkingConfig.thinkingBudget:0
+// (generate.ts) — gemini-2.5-pro has "thinking" ON by default and thought tokens bill at the
+// OUTPUT rate, separate from maxOutputTokens. The constant is kept explicit (rather than simply
+// omitted) so the proof visibly accounts for every billable output category, not just the ones
+// that happen to be non-zero.
+export const MAX_DIG_THINKING_TOKENS = 0;
+
 export interface CloudGeminiCaps {
   transcribeInputTokens: number;
   transcribeOutputTokens: number;
@@ -93,20 +100,29 @@ export function perRunWorstCents(cfg: { maxDurationSeconds: number }): number {
  * Genuine one-run worst-case cost in whole cents (rounded up) for a single cloud `dig` job
  * execution. Per billable pass: the clamped video segment (`MAX_DIG_VIDEO_SECONDS` at LOW media
  * resolution's `DIG_VIDEO_TOKENS_PER_SEC`) + the transcript window (`MAX_TRANSCRIPT_INPUT_BYTES`
- * used as a conservative token upper-bound — bytes ≥ tokens for this alphabet) + prompt/schema
- * overhead, priced at `PRICE_DIG_IN_PER_1M_CENTS`; plus output tokens (`MAX_DIG_OUTPUT_TOKENS`)
- * priced at `PRICE_DIG_OUT_PER_1M_CENTS`. Multiplied by `DIG_GENERATE_MAX_PASSES` (the worst-case
- * retry-loop call count), rounded up. This is the mechanical proof that the dig path cannot bill
- * more than `DIG_EST_CENTS` per job — see the guard test asserting digWorstCents() <= DIG_EST_CENTS.
+ * used as a conservative token upper-bound — bytes ≥ tokens for this alphabet) + the summary
+ * section's prose (bounded by `MAX_SUMMARY_OUTPUT_TOKENS` — a section's summary prose is, by
+ * construction, ≤ the whole summary's output cap; transitively dependent on that constant staying
+ * an honest bound on the summary path) + prompt/schema overhead, priced at
+ * `PRICE_DIG_IN_PER_1M_CENTS`; plus output tokens: `MAX_DIG_OUTPUT_TOKENS` (generated prose) +
+ * `MAX_DIG_THINKING_TOKENS` (thinking, disabled — see its own comment — kept explicit so every
+ * billable output category is accounted for), both priced at `PRICE_DIG_OUT_PER_1M_CENTS`.
+ * Multiplied by `DIG_GENERATE_MAX_PASSES` (the worst-case retry-loop call count), rounded up. This
+ * is the mechanical proof that the dig path cannot bill more than `DIG_EST_CENTS` per job — see
+ * the guard test asserting digWorstCents() <= DIG_EST_CENTS.
  */
 export function digWorstCents(): number {
   const videoInputTokens = MAX_DIG_VIDEO_SECONDS * DIG_VIDEO_TOKENS_PER_SEC; // clamped video segment @ LOW res
   const transcriptInputTokens = MAX_TRANSCRIPT_INPUT_BYTES; // conservative: bytes used as a token upper-bound
+  const summaryProseInputTokens = MAX_SUMMARY_OUTPUT_TOKENS; // section summaryProse <= whole-summary output cap
   const overheadInputTokens = PROMPT_SCHEMA_OVERHEAD_TOKENS; // dig prompt/schema text, same overhead constant as summary
 
   const inputCentsPerPass =
-    ((videoInputTokens + transcriptInputTokens + overheadInputTokens) * PRICE_DIG_IN_PER_1M_CENTS) / 1_000_000;
-  const outputCentsPerPass = (MAX_DIG_OUTPUT_TOKENS * PRICE_DIG_OUT_PER_1M_CENTS) / 1_000_000;
+    ((videoInputTokens + transcriptInputTokens + summaryProseInputTokens + overheadInputTokens) *
+      PRICE_DIG_IN_PER_1M_CENTS) /
+    1_000_000;
+  const outputCentsPerPass =
+    ((MAX_DIG_OUTPUT_TOKENS + MAX_DIG_THINKING_TOKENS) * PRICE_DIG_OUT_PER_1M_CENTS) / 1_000_000;
 
   const totalCents = (inputCentsPerPass + outputCentsPerPass) * DIG_GENERATE_MAX_PASSES;
   return Math.ceil(totalCents);

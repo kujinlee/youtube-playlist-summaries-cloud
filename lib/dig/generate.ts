@@ -130,17 +130,24 @@ function buildRequestBody(
       : endSec;
 
   // generationConfig is entirely OMITTED when no opts request it — the local path's request body
-  // stays byte-identical to today. This file's REST body uses snake_case field names throughout
-  // (file_data, video_metadata, start_offset...) — generation_config/media_resolution mirror that
-  // same snake_case convention (the Gemini REST API's protobuf-JSON mapping accepts either).
+  // stays byte-identical to today. Unlike the file_data/video_metadata/start_offset/end_offset/
+  // mime_type/file_uri parts above (snake_case, proven-working across 9 versions — left untouched),
+  // generationConfig itself uses the documented camelCase REST field names (maxOutputTokens,
+  // mediaResolution, thinkingConfig) — the SAME form the production summary cloud path sends
+  // (lib/gemini.ts:26-40, :633-645, "honored by the API"). thinkingConfig.thinkingBudget:0 disables
+  // gemini-2.5-pro's default-on "thinking" tokens (billed at the OUTPUT rate, separate from
+  // maxOutputTokens) — required for digWorstCents() to be a genuine upper bound.
   const generationConfig: Record<string, unknown> = {};
   if (opts?.maxOutputTokens !== undefined) {
-    generationConfig.max_output_tokens = opts.maxOutputTokens;
+    generationConfig.maxOutputTokens = opts.maxOutputTokens;
   }
   if (opts?.mediaResolution === 'LOW') {
-    generationConfig.media_resolution = 'MEDIA_RESOLUTION_LOW';
+    generationConfig.mediaResolution = 'MEDIA_RESOLUTION_LOW';
   }
   const hasGenerationConfig = Object.keys(generationConfig).length > 0;
+  if (hasGenerationConfig) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
 
   return {
     contents: [
@@ -161,7 +168,7 @@ function buildRequestBody(
         ],
       },
     ],
-    ...(hasGenerationConfig ? { generation_config: generationConfig } : {}),
+    ...(hasGenerationConfig ? { generationConfig } : {}),
   };
 }
 
