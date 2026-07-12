@@ -46,3 +46,20 @@ Per pass: video (`900 × 66 = 59,400` tok) + transcript (`MAX_TRANSCRIPT_INPUT_B
 ## Assumptions surfaced for the merge gate
 - LOW media resolution + a 15-min video cap slightly change what dig "sees" for very long / visually-dense sections. Reasonable defaults; documented; reversible.
 - Price constants are conservative and dated; revisit if Gemini pricing changes materially.
+
+---
+
+## RESOLUTION (2026-07-12): cloud dig → gemini-2.5-flash (human-decided)
+
+**Why the pro approach failed:** three adversarial rounds established (verified against Google docs + developer reports) that **gemini-2.5-pro cannot be cost-bounded per job**: thinking cannot be disabled (min budget 128) and `thinkingBudget` is a **soft** limit the model can overflow (and reports of it being ignored). Worst-case Pro dig ≥228¢ > 150¢ — unprovable by any config.
+
+**Human decision:** run **cloud** dig generation on **gemini-2.5-flash**, which CAN hard-disable thinking (`thinkingBudget: 0` — valid on Flash-family, proven by the summary transcribe path in `lib/gemini.ts`). The **local** dig path stays on `gemini-2.5-pro` (unchanged).
+
+**New provable bound (flash rates, thinking disabled):**
+- Prices: reuse the existing dated flash constants `PRICE_IN_PER_1M_CENTS=30`, `PRICE_OUT_PER_1M_CENTS=250` (same source-of-truth the summary bound uses). Drop the pro-padded `PRICE_DIG_*`.
+- `MAX_DIG_THINKING_TOKENS = 0` (flash genuinely disables thinking via `thinkingConfig.thinkingBudget: 0`).
+- `PRICED_DIG_MODEL = 'gemini-2.5-flash'`; the cloud handler passes this model + `thinkingBudget: 0` explicitly.
+- Per pass: input `(video 59,400 + transcript 40,960 + summaryProse 8,192 + overhead 4,000) × 30/1M ≈ 3.4¢` + output `16,384 × 250/1M ≈ 4.1¢` ≈ **7.5¢**; × 3 passes ≈ **23¢ ≤ 150¢** (margin ≈ 127¢).
+- Video LOW resolution (66 tok/s) + 15-min video clamp + 16K output cap all retained (still valid on flash).
+
+**Changes:** `generate.ts` gains an additive `opts.model` (cloud passes flash; local no-opts → `DEEPDIVE_MODEL`=pro, unchanged) and sets `thinkingConfig.thinkingBudget: 0` when the caller supplies `thinkingBudget: 0`; `gemini-cost.ts` reprices dig at flash rates + `MAX_DIG_THINKING_TOKENS=0` + `PRICED_DIG_MODEL='gemini-2.5-flash'`; `dig-handler.ts` passes `model: PRICED_DIG_MODEL` + `thinkingBudget: 0`; the `cap-soundness` live drift-guard reflects the new (~23¢) bound. Flash + video + LOW-res + thinkingBudget:0 is the exact proven pattern the summary transcribe path uses.
