@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Money invariant:** dig is a durable Job, **charged once at enqueue** via `enqueue_job` (quota `dig`=5/day registered, **0 anon**; `dig_est_cents`=150; `dig_max_attempts`=1). It must **never** route through `resolveMagazineModel`/`reserve_serve_model`. No charge on dedup.
+- **Money invariant:** dig is a durable Job, **charged once at enqueue** via `enqueue_job` (quota `dig`=5/month registered, **0 anon**; `dig_est_cents`=150; `dig_max_attempts`=1). It must **never** route through `resolveMagazineModel`/`reserve_serve_model`. No charge on dedup.
 - **Two-client split:** session client (RLS) for auth + all tenant reads; service-role `SupabaseEnqueuer` for the enqueue RPC only. Never a service-role read of tenant data from the route.
 - **Text-only:** run `generateDig`; **skip `resolveSlideTokens`**; preserve `[[SLIDE:...]]` tokens verbatim in the persisted doc; `slides: []` in frontmatter.
 - **Per-section blobs:** one blob per dug section at `dig/{base}/{sectionId}.r{DIG_GENERATOR_VERSION}.md`, written via staged→promote. No shared mutable companion doc (eliminates the lost-update race by construction).
@@ -60,7 +60,7 @@
 `tests/integration/enqueue-dig.test.ts` — uses the real local Supabase via the service client. Mirror the setup in `tests/integration/summary-handler.test.ts` (`adminClient`, `newUser`, `seedPlaylist`, `ensureGuardrailHeadroom`). Note: `ensureGuardrailHeadroom` is exported from `./helpers/clients` (NOT a `./helpers/guardrails` module — that does not exist).
 
 ```ts
-import { adminClient, newUser, ensureGuardrailHeadroom } from './helpers/clients';
+import { adminClient, newUser, anonSession, ensureGuardrailHeadroom } from './helpers/clients';
 import { seedPlaylist } from './helpers/seed';
 
 const admin = adminClient();
@@ -98,10 +98,13 @@ describe('enqueue_job admits dig', () => {
   });
 
   it('anonymous user (dig allowance 0) is rejected with quota_exceeded (PJ001)', async () => {
-    const anon = await admin.auth.admin.createUser({ email: `anon-${Date.now()}@t.dev`, password: 'x', email_confirm: true });
-    await admin.from('profiles').update({ is_anonymous: true }).eq('id', anon.data.user!.id);
-    const { playlistId } = await seedPlaylist(admin, anon.data.user!.id);
-    const { error } = await enqueueDigRpc(anon.data.user!.id, playlistId, 'vid-dig-3', 132);
+    // `profiles.is_anonymous` is immutable (profiles_is_anonymous_immutable trigger) — you CANNOT
+    // update it. Create a genuine anonymous user via the anon sign-up path so provisioning sets it.
+    const { userId: anonId } = await anonSession();
+    const { data: prof } = await admin.from('profiles').select('is_anonymous').eq('id', anonId).single();
+    expect(prof!.is_anonymous).toBe(true); // guard: prove we really have an anon before asserting the reject
+    const { playlistId } = await seedPlaylist(admin, anonId);
+    const { error } = await enqueueDigRpc(anonId, playlistId, 'vid-dig-3', 132);
     expect(error?.code).toBe('PJ001');
   });
 });
@@ -1040,11 +1043,14 @@ import { cookies } from 'next/headers';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-export async function POST(req: Request, ctx: { params: Promise<{ id: string; sectionId: string }> }) {
-  const { id: videoId, sectionId: sectionIdRaw } = await ctx.params;
+// Match the EXISTING route's signature exactly (route.ts:13) — do not introduce a second binding.
+// If the current route is `POST(request: Request, { params }: { params: Promise<{ id: string; sectionId: string }> })`,
+// keep that shape; adapt the destructuring so both branches read the same videoId/sectionId.
+export async function POST(request: Request, { params }: { params: Promise<{ id: string; sectionId: string }> }) {
+  const { id: videoId, sectionId: sectionIdRaw } = await params;
 
   if ((process.env.STORAGE_BACKEND ?? 'local') === 'supabase') {
-    const url = new URL(req.url);
+    const url = new URL(request.url);
     // 400-before-401 validation
     if (url.searchParams.has('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
     const sectionId = Number(sectionIdRaw);
@@ -1066,7 +1072,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
     const result = await enqueueDig({
       supabase, enqueuer: new SupabaseEnqueuer(createServiceClient()),
       userId: user.id, isAnonymous: profile?.is_anonymous === true,
-      videoId, playlistId, sectionId, enqueueIp: parseClientIp(req),
+      videoId, playlistId, sectionId, enqueueIp: parseClientIp(request),
     });
     return json(result.body, result.status);
   }
@@ -1102,6 +1108,19 @@ git commit -m "feat(cloud-dig): cloud trigger branch on POST dig route + shared 
 
 Mirror `tests/integration/pdf-cloud.test.ts` for owner-isolation + spend mutation-control, and `tests/integration/summary-handler.test.ts` for the direct-handler blob round-trip. Mock only `@/lib/gemini` and `@/lib/transcript-source`; everything else real.
 
+- [ ] **Step 0: Extend `seedPromotedVideo` to persist `durationSeconds` and `youtubeUrl`**
+
+The real `seedPromotedVideo` (`tests/integration/helpers/seed.ts`) writes `data` WITHOUT `durationSeconds` or `youtubeUrl`. But `enqueueDig` reads `load.video.durationSeconds` (→ `enqueue_job` PJ003 backstop reads `payload.durationSeconds`; NULL → **400**, breaking every 202-expecting test) and the handler reads `video.youtubeUrl`. Add both to the helper's `opts` and `data` with defaults, keeping existing callers working:
+
+```ts
+// in seedPromotedVideo opts:  durationSeconds?: number; youtubeUrl?: string;
+// in the inserted `data` object, alongside language/summaryMd:
+durationSeconds: opts.durationSeconds ?? 600,
+youtubeUrl: opts.youtubeUrl ?? `https://youtu.be/${videoId}`,
+```
+
+Run the existing suites that use `seedPromotedVideo` (`npx jest pdf-cloud html`) to confirm the two added fields don't disturb them.
+
 - [ ] **Step 1: Write the round-trip test**
 
 A summary must exist first (dig sources sections from it). Seed a promoted video + its summary blob (with a real section at `startSec=132`), then enqueue a dig via `enqueueDig` (charge-once), then run `makeDigHandler` directly against a leased-shaped job, then assert the per-section blob.
@@ -1127,7 +1146,16 @@ const admin = adminClient();
 const SUMMARY_MD = `# T\n\n## 2. Encoder\n▶ [2:12–2:20](https://youtu.be/VID?t=132s)\nProse.\n`;
 const digCtx = () => ({ isCancelled: async () => false, signal: new AbortController().signal, setPhase: async () => {} });
 
-beforeAll(async () => { process.env.STORAGE_BACKEND = 'supabase'; await ensureGuardrailHeadroom(admin); });
+beforeAll(async () => {
+  process.env.STORAGE_BACKEND = 'supabase';
+  await ensureGuardrailHeadroom(admin);
+  // dig is the FIRST integration path that goes through enqueue_preflight — pin its admission
+  // ceilings generously so cross-file accumulation of registered users / queued jobs on the shared
+  // local Postgres cannot flake the 202-expecting tests (see cost-guardrails.test.ts:283-288).
+  await admin.from('guardrail_config').update({ max_free_users: 10_000_000, max_queue_depth: 10_000_000 }).eq('id', true);
+  // raise registered dig quota so back-to-back digs in one owner don't hit the 5/month cap.
+  await admin.from('quota_allowance').update({ monthly: 100_000 }).eq('is_anonymous', false).eq('kind', 'dig');
+});
 afterAll(() => { delete process.env.STORAGE_BACKEND; });
 beforeEach(async () => {
   (resolveTranscriptSegments as jest.Mock).mockResolvedValue({ segments: [{ text: 'x', offset: 132, duration: 5 }], source: 'captions' });
@@ -1329,6 +1357,13 @@ All Blocking/High/Medium addressed in this revision:
 - **H3/anon** → anon read from `profiles.is_anonymous` in the route, not `user.is_anonymous` (Task 6).
 - **M1** import path fixed; **M2** `digSectionKey` base guard; **M3/M4** version/mask/concurrency tests strengthened; **M5** spec status codes corrected (503/404/409).
 - **L1** migration verify wording pinned to the exact live index columns; **L2** quota relabeled 5/month; **L3** phase reuse noted; **L4** rpc spy → `SupabaseClient.prototype`.
+
+## Round-2 re-review dispositions — CONVERGED (`docs/reviews/plan-cloud-dig-generation-codex-v2.md`)
+Both reviewers (Codex + Claude) independently confirmed **0 new Blocking / 0 new High in production code** and verified all 7 round-1 fixes are genuinely correct against real code (completed-join returns `status='completed'`; `digJobVersion()` shared both sides; `readVideo` retains raw `artifacts` — H1 truly fixed; the transcript catch does not swallow `AbortError`; `profiles_self` RLS permits own-row read — H3 works; base guard + fixtures parse correctly). Convergence gate met. Remaining findings were all in the **Task 7 integration harness** and are fixed here:
+- **(High, deterministic) `seedPromotedVideo` omitted `durationSeconds`/`youtubeUrl`** → null `durationSeconds` tripped `enqueue_job` PJ003 → 400 on every 202-expecting test. Fixed: Task 7 Step 0 extends the helper.
+- **(Medium) anon test used `profiles.update({is_anonymous})`** — blocked by the immutable trigger → not a real anon. Fixed: uses `anonSession()` + asserts `is_anonymous`.
+- **(Medium) preflight ceilings unpinned** — dig is the first integration path through `enqueue_preflight`; Fixed: `beforeAll` pins `max_free_users`/`max_queue_depth` + dig quota.
+- **(Low) Task 6 param binding** aligned to the existing `POST(request, { params })` signature; **(Low) stale "5/day"** → 5/month.
 
 ## Deferred with rationale (recorded for later slices)
 - **L5 (abort not threaded into `generateDig`)** — bounded by `dig_max_attempts=1` + `generateDig`'s own 60s timeout, and the blob is abort-safe (staged→promote after the abort check). Threading a signal into `generateDig`/`callGeminiRest` touches shared local dig code; deferred to a hardening pass.
