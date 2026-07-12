@@ -10,6 +10,13 @@ it('job version encodes the dig generator version', () => {
 it.each([['neg', -1], ['float', 1.5], ['nan', NaN]])('rejects a non-nonneg-int sectionId: %s', (_l, bad) => {
   expect(() => digSectionKey('b', bad as number)).toThrow(/invalid dig sectionId/);
 });
-it.each([['slash', 'a/b'], ['parent', '..'], ['nul', 'a\0b']])('rejects an unsafe base: %s', (_l, bad) => {
+it.each([
+  ['slash', 'a/b'],
+  ['backslash', 'a\\b'],
+  ['parent', '..'],
+  ['lone-dot', '.'],
+  ['nul', 'a\0b'],
+  ['empty', ''],
+])('rejects an unsafe base: %s', (_l, bad) => {
   expect(() => digSectionKey(bad, 1)).toThrow();
 });
