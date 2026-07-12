@@ -37,6 +37,9 @@ describe('share-summary-2c integration', () => {
       p_token_hash: hexHash(),
     });
     expect(error).toBeNull();
+    // Task 1 contract: create_share_token returns BOTH id and expires_at — assert the full row
+    // shape so a regression that drops expires_at (returning only {id}) fails this test.
+    expect(data?.[0]).toMatchObject({ id: expect.any(String), expires_at: null });
     const shareId = data![0].id as string;
     expect(shareId).toMatch(/^[0-9a-f-]{36}$/i);
 
