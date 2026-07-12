@@ -1,7 +1,23 @@
 # Development Process
 
-Gate-based workflow — no phase begins until the previous is reviewed and approved.
-This file is the canonical source for the workflow. It lives in the project repo so the process is reproducible by anyone who clones it.
+Gate-based workflow. This file is the canonical source for the workflow. It lives in the project repo so the process is reproducible by anyone who clones it.
+
+---
+
+## Human-in-the-Loop Policy — Conditional AFK
+
+The **spec is the human gate.** Design, terminology, and goal decisions are settled *with* the human in Phase 1. Once `docs/design-spec.md` is approved the goal is fixed, and **plan (Phase 2) and implementation (Phase 3) proceed autonomously** — dual adversarial review to convergence is the quality gate, not a human sign-off. At convergence the coordinator *notifies* the human and continues; it does not sit and wait for an ack.
+
+Pull the human back in only for an **unexpected situation** — something the automated loop cannot resolve on its own:
+- a genuine ambiguity or fork the spec did not settle (a real decision, not a mechanical choice with an obvious default);
+- an adversarial-review round that **cannot reach convergence** — a Blocking/High that resists fixing, or fixes that keep surfacing new Blocking/High;
+- a **blocker**: missing access/credentials, an external dependency down, a gate that will not go green;
+- anything that would **move the goal** (change the spec) rather than approach it;
+- an **outward-facing or hard-to-reverse action** — push, merge, deploy, delete, spend. These stay human gates regardless (see Phase 5).
+
+If none of those apply, keep going. Routine gates (plan approval, per-task review) do **not** require a human stop — carrying the work forward through trial-and-error toward a fixed goal is the point; a human ack there rarely changes the outcome and costs a round-trip.
+
+**Notification is mandatory whenever you actually need the human.** When an unexpected situation above arises, or a long autonomous run has completed and only a human gate (e.g. merge) remains, send a phone notification (`PushNotification` — one line, lead with the decision needed). Silently "waiting" without notifying wastes the human's time: they cannot act on a request they never saw. Do **not** notify for routine progress or for something you can decide yourself.
 
 ---
 
@@ -44,12 +60,13 @@ These files are not @-included — read them when the trigger condition is met.
    - **For tasks that include UI components generating URLs or containing modals/overlays:** `docs/design-spec.md` must contain a `## URL Contracts` table (`Component | Link text | Full URL with all params`) — one row per distinct link — and a `## Overlay Dismissal` table (`Component | Mechanism | Expected result`) — one row per dismissal path. Gate: user approves both tables before any component task begins.
 
 2. **Writing Plans** → `docs/implementation-plan.md`
-   - Codex adversarial review (plan)
-   - Gate: adversarial review + user approval — for big/critical plans, **iterate the review to convergence** (see Adversarial Review → Iterative Re-Review)
-   - **Required:** immediately after saving the plan, create a Post-Plan Gate checklist (see below) — do not dispatch any implementation subagent until all items are marked complete
+   - Dual adversarial review (Codex + Claude, independent)
+   - Gate (Conditional AFK): **dual adversarial review to convergence** (see Adversarial Review → Iterative Re-Review) *is* the gate. On convergence — a full re-review round with no new Blocking/High — **notify the human and proceed** to implementation without waiting. Stop for the human only on non-convergence or a goal-affecting ambiguity (per Human-in-the-Loop Policy).
+   - **Required:** immediately after saving the plan, create a Post-Plan Gate checklist (see below) — do not dispatch any implementation subagent until the gate is satisfied (convergence, or human decision when one was needed)
 
 3. **Implementation** (per task)
-   - **Execution method default (set 2026-06-09):** use **`superpowers:subagent-driven-development`** — a fresh subagent per task with two-stage review between tasks. Proceed with this method automatically; do **not** ask the user to choose between subagent-driven and inline execution each time. (The Phase 2 plan-approval gate still applies — this default governs only *how* an already-approved plan is executed.)
+   - **Execution method default (set 2026-06-09):** use **`superpowers:subagent-driven-development`** — a fresh subagent per task with two-stage review between tasks. Proceed with this method automatically; do **not** ask the user to choose between subagent-driven and inline execution each time. (Under Conditional AFK the plan gate is satisfied by convergence; this default governs only *how* the plan is executed.)
+   - Per-task two-stage review to convergence is autonomous. Surface a task to the human only on an unexpected situation (Human-in-the-Loop Policy): a blocker, a genuine ambiguity, or a plan/spec contradiction the review loop cannot resolve.
    - At task start: create a TaskCreate checklist (see Per-Task Checklist below) — do not write any code until the list exists
    - Write failing tests → implement → Claude code review → Codex adversarial review → address → mark done
    - Save each review to `docs/reviews/task-N-<name>-review.md` (Claude) and `docs/reviews/task-N-<name>-codex.md` (Codex)
@@ -86,19 +103,21 @@ These files are not @-included — read them when the trigger condition is met.
 
 ## Post-Plan Gate Checklist
 
-Immediately after saving the plan document, create these items with `TaskCreate`. Do not dispatch any implementation subagent until all items are marked `completed` with `TaskUpdate`.
+Immediately after saving the plan document, create these items with `TaskCreate`. Do not dispatch any implementation subagent until the gate is satisfied.
 
 ```
-[ ] Run Codex adversarial review of the plan (codex:rescue --fresh; include plan file as context)
-[ ] Save review to docs/reviews/plan-<feature>-codex.md
-[ ] Address all Blocking and High findings; present Medium findings for user decision
-[ ] Get explicit human approval ("looks good, proceed" or equivalent)
+[ ] Run the dual adversarial review of the plan (Codex + Claude, independent)
+[ ] Save each round to docs/reviews/plan-<feature>-*.md; iterate to convergence
+[ ] Address all Blocking/High; record Medium/Low dispositions in the review doc
+[ ] Convergence reached — a full re-review round with no new Blocking/High?
+      YES → notify the human (PushNotification) and PROCEED to implementation.
+      NO, or a goal-affecting ambiguity surfaced → notify the human and WAIT for a decision.
 [ ] Clear sentinel: rm .claude/plan-gate-pending  (if sentinel exists from the write hook)
 ```
 
-**Rule:** the "Get human approval" step is not done until the human has responded affirmatively in the conversation. Do not mark it complete speculatively.
+**Rule (Conditional AFK):** the plan gate is **convergence**, not a human ack. When the dual review converges with no unresolved Blocking/High and no goal-affecting ambiguity, notify the human and proceed to implementation without waiting for a reply. Stop and wait for the human only when: review cannot converge, an ambiguity would change the goal (spec), or the next step is outward-facing/irreversible (push/merge/deploy — always a human gate). Never mark a "wait for human" step complete speculatively.
 
-**Why both hook and task list?** The hook (PreToolUse on Agent) provides a machine-enforceable backstop — it blocks subagent dispatch if the sentinel file exists. The task list provides the human-readable contract that guides what needs to happen before the sentinel is cleared. Neither is sufficient alone: the hook cannot enforce that reviews happened; the task list cannot prevent premature dispatch if ignored.
+**Why both hook and task list?** The hook (PreToolUse on Agent) is a machine-enforceable backstop — it blocks subagent dispatch while the sentinel file exists; clear the sentinel only once the gate is satisfied (convergence, or a human decision when one was actually needed). The task list is the human-readable contract for what must happen first. Neither is sufficient alone.
 
 ---
 
