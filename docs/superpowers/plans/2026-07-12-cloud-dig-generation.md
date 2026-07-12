@@ -14,8 +14,11 @@
 - **Two-client split:** session client (RLS) for auth + all tenant reads; service-role `SupabaseEnqueuer` for the enqueue RPC only. Never a service-role read of tenant data from the route.
 - **Text-only:** run `generateDig`; **skip `resolveSlideTokens`**; preserve `[[SLIDE:...]]` tokens verbatim in the persisted doc; `slides: []` in frontmatter.
 - **Per-section blobs:** one blob per dug section at `dig/{base}/{sectionId}.r{DIG_GENERATOR_VERSION}.md`, written via staged→promote. No shared mutable companion doc (eliminates the lost-update race by construction).
-- **Idempotent + version-aware, no force:** current-version blob present → `200 ready`, no charge. Job `version` = `dig-${DIG_GENERATOR_VERSION}` so a version bump lands in a distinct `jobs_idem_active` slot and re-enqueues+charges.
-- **Anon dig = 0 → 403** (distinct from registered quota-exhausted → 429).
+- **Idempotent + version-aware, no force:** current-version blob present → `200 ready`, no charge. Job `version` = `dig-${DIG_GENERATOR_VERSION}` so a version bump lands in a distinct `jobs_idem_active` slot and re-enqueues+charges. The handler **rejects `job.version !== digJobVersion()`** so a stale queued job cannot write a current-version blob it never paid for.
+- **Completed-row-masks-missing-blob:** on `enqueue_job` returning `joined && status==='completed'` while the current-version blob was absent, re-check the blob → present ⇒ `200 ready`, absent ⇒ `409 repair` — never `202` for a job that will not run.
+- **Anon dig = 0 → 403**, read from `profiles.is_anonymous` (authoritative), distinct from registered quota-exhausted → 429. Registered dig quota is **5 per month** (`usage_counters` keyed by `date_trunc('month')`), not per day.
+- **Summary-gate status codes** (reusing `loadSummaryForServe`): finalizing (`committed`) → 503; absent/not-promoted → 404; blob lost → 409. There is no 409 "not committed".
+- **Handler and trigger resolve the summary key identically** (`artifacts.summaryMd.key ?? summaryMd`, validated by `assertCloudSummaryMdKey`) so they never key different blobs.
 - **400-before-401 ordering:** backend gate + all input validation return 400 before auth returns 401.
 - **Mocking boundaries:** Gemini at `lib/gemini`; YouTube/transcript at `lib/transcript-source`; integration tests mock at the route/worker seam only.
 - **Local path untouched:** `lib/dig/dig-section.ts`, the in-memory `job-registry`, and the `stream`/`dig-state` routes are not modified. The cloud work is additive.
@@ -27,9 +30,10 @@
 | File | Create/Modify | Responsibility |
 |---|---|---|
 | `supabase/migrations/0018_enqueue_dig.sql` | Create | `create or replace enqueue_job` with the kind guard relaxed to admit `'dig'`. |
-| `lib/dig/cloud/dig-blob-key.ts` | Create | `digSectionKey(base, sectionId)` + `digJobVersion()` — the shared key/version contract used by both the trigger (dedup) and the handler (write). |
+| `lib/dig/cloud/dig-blob-key.ts` | Create | `digSectionKey(base, sectionId)` + `digJobVersion()` — the shared key/version contract used by both the trigger (dedup) and the handler (write). Single-component `base` guard. |
+| `lib/dig/cloud/resolve-summary-key.ts` | Create | `resolveSummaryMdKey(video)` — `artifacts.summaryMd.key ?? summaryMd`, validated; the single rule both trigger and handler use to derive `base` (prevents divergence). |
 | `lib/dig/cloud/write-dig-section-blob.ts` | Create | Serialize one section to the per-section doc format and write via staged→promote. |
-| `lib/job-queue/dig-handler.ts` | Create | `makeDigHandler(serviceClient): JobHandler` — the text-only generation handler. |
+| `lib/job-queue/dig-handler.ts` | Create | `makeDigHandler(serviceClient): JobHandler` — text-only handler: version guard → summary-key resolve → generate → write. |
 | `lib/job-queue/dispatch.ts` | Create | `makeJobHandler({summary, dig})` — pure kind→handler dispatcher. |
 | `worker/main.ts` | Modify | Register both handlers via the dispatcher. |
 | `lib/job-queue/enqueuer.ts` | Modify | Widen `Enqueuer.enqueue` payload to `IngestionPayload \| DigJobPayload`. |
@@ -53,12 +57,11 @@
 
 - [ ] **Step 1: Write the failing integration test**
 
-`tests/integration/enqueue-dig.test.ts` — uses the real local Supabase via the service client. Mirror the setup in `tests/integration/summary-handler.test.ts` (`adminClient`, `newUser`, `seedPlaylist`, `ensureGuardrailHeadroom`).
+`tests/integration/enqueue-dig.test.ts` — uses the real local Supabase via the service client. Mirror the setup in `tests/integration/summary-handler.test.ts` (`adminClient`, `newUser`, `seedPlaylist`, `ensureGuardrailHeadroom`). Note: `ensureGuardrailHeadroom` is exported from `./helpers/clients` (NOT a `./helpers/guardrails` module — that does not exist).
 
 ```ts
-import { adminClient, newUser } from './helpers/clients';
+import { adminClient, newUser, ensureGuardrailHeadroom } from './helpers/clients';
 import { seedPlaylist } from './helpers/seed';
-import { ensureGuardrailHeadroom } from './helpers/guardrails';
 
 const admin = adminClient();
 
@@ -143,7 +146,7 @@ revoke all on function enqueue_job(uuid, uuid, text, int, text, text, jsonb, ine
 grant execute on function enqueue_job(uuid, uuid, text, int, text, text, jsonb, inet) to service_role;
 ```
 
-**Verification step inside this task (do before Step 4):** confirm the live `jobs_idem_active` unique index columns match `enqueue_job`'s `ON CONFLICT` target. Run `grep -n "jobs_idem_active\|on conflict" supabase/migrations/*.sql`. The index must include `(owner_id, video_id, section_id, job_kind, job_version)` (partial: `where status in ('queued','active','completed')`) and the `ON CONFLICT` list must match whatever columns the live index actually has (an intervening migration may have added `playlist_id`). If they mismatch, the migration is wrong — stop and reconcile. Since summary already enqueues through this exact `ON CONFLICT`, a match is expected; this is a guard against a latent mismatch, not new work.
+**Verification step inside this task (do before Step 4):** confirm the live `jobs_idem_active` unique index columns match `enqueue_job`'s `ON CONFLICT` target. Run `grep -n "jobs_idem_active\|on conflict" supabase/migrations/*.sql`. Both are (verified in round-1 review) `(owner_id, playlist_id, video_id, section_id, job_kind, job_version)` with the partial predicate `where status in ('queued','active','completed')` — the `playlist_id` column was added by `0009_job_playlist_identity_and_worker_persistence.sql`. Reproduce the `ON CONFLICT` list **exactly** as it appears in the 0011 body; do not alter the column set. If your grep shows a different live set, stop and reconcile before proceeding.
 
 - [ ] **Step 4: Apply the migration + run the test**
 
@@ -221,8 +224,13 @@ export function digSectionKey(base: string, sectionId: number): string {
   if (!Number.isInteger(sectionId) || sectionId < 0) {
     throw Object.assign(new Error(`invalid dig sectionId: ${sectionId}`), { statusCode: 400 });
   }
+  // `base` MUST be a single path component. assertLogicalKey does NOT reject an interior '/', so
+  // `dig/a/b/1.r9.md` would slip past it — guard the base explicitly here.
+  if (base.length === 0 || /[/\\\0]/.test(base) || base === '.' || base === '..') {
+    throw Object.assign(new Error(`invalid dig base: ${base}`), { statusCode: 400 });
+  }
   const key = `dig/${base}/${sectionId}.r${DIG_GENERATOR_VERSION}.md`;
-  assertLogicalKey(key); // rejects a base containing '/', '..', '\0'
+  assertLogicalKey(key); // belt-and-suspenders: leading '/', '..' segment, '\0'
   return key;
 }
 ```
@@ -372,12 +380,13 @@ git commit -m "feat(cloud-dig): per-section blob key + staged→promote writer (
 ### Task 3: Dig worker handler
 
 **Files:**
+- Create: `lib/dig/cloud/resolve-summary-key.ts`
 - Create: `lib/job-queue/dig-handler.ts`
-- Test: `tests/lib/job-queue/dig-handler.test.ts`
+- Test: `tests/lib/dig/cloud/resolve-summary-key.test.ts`, `tests/lib/job-queue/dig-handler.test.ts`
 
 **Interfaces:**
-- Consumes: `JobHandler`, `HandlerCtx` (`lib/job-queue/handler-context.ts`); `LeasedJob` (`lib/storage/job-queue.ts`); `getWorkerStorageBundle` (`lib/storage/resolve.ts` → `{blobStore, principal}`); `readVideo(client, playlistId, videoId): Promise<Video|null>` (`lib/storage/worker-persistence.ts`); `parseSummaryMarkdown` (`lib/html-doc/parse.ts`); `resolveTranscriptSegments` (`lib/transcript-source.ts`); `windowForSection` (`lib/dig/section-window.ts`); `generateDig` (`lib/dig/generate.ts`); `resolveTranscriptTokens` (`lib/transcript-timestamps.ts`); `writeDigSectionBlob` (Task 2); `NonRetryableError` (`lib/job-queue/errors.ts`).
-- Produces: `makeDigHandler(serviceClient: SupabaseClient): JobHandler`.
+- Consumes: `JobHandler`, `HandlerCtx` (`lib/job-queue/handler-context.ts`); `LeasedJob` (`lib/storage/job-queue.ts`); `getWorkerStorageBundle` (`lib/storage/resolve.ts` → `{blobStore, principal}`); `readVideo(client, playlistId, videoId): Promise<Video|null>` (`lib/storage/worker-persistence.ts` — return retains the raw `artifacts` jsonb, accessed via cast as `summary-handler.ts:85` does); `parseSummaryMarkdown` (`lib/html-doc/parse.ts`); `resolveTranscriptSegments` (`lib/transcript-source.ts`); `PermanentTranscriptError` (`lib/transcript-source-errors.ts`); `windowForSection` (`lib/dig/section-window.ts`); `generateDig` (`lib/dig/generate.ts`); `resolveTranscriptTokens` (`lib/transcript-timestamps.ts`); `writeDigSectionBlob`, `digJobVersion` (Task 2); `assertCloudSummaryMdKey` (`lib/html-doc/assert-cloud-summary-md-key.ts`); `NonRetryableError` (`lib/job-queue/errors.ts`).
+- Produces: `resolveSummaryMdKey(video): string | null`; `makeDigHandler(serviceClient: SupabaseClient): JobHandler`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -397,7 +406,8 @@ import { getWorkerStorageBundle } from '@/lib/storage/resolve';
 import { readVideo } from '@/lib/storage/worker-persistence';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
-import { digSectionKey } from '@/lib/dig/cloud/dig-blob-key';
+import { digSectionKey, digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
+import { NonRetryableError } from '@/lib/job-queue/errors';
 
 const put = new Map<string, Buffer>();
 const blobStore = {
@@ -410,21 +420,25 @@ const principal = { id: 'owner1', indexKey: 'PLk' };
 const ctx = { isCancelled: async () => false, signal: new AbortController().signal, setPhase: jest.fn(async () => {}) };
 const job = { id: 'j1', ownerId: 'owner1', playlistId: 'pl-uuid', videoId: 'vid1', sectionId: 132, kind: 'dig', version: `dig-${DIG_GENERATOR_VERSION}`, payload: { durationSeconds: 600 }, attempts: 0, leaseToken: 'lt' };
 
+// Real summary-section format: a `▶ [M:SS–M:SS](url?t=<sec>s)` line (en-dash range, trailing `s`).
+// parseSummaryMarkdown is NOT mocked, so fixtures MUST parse — see lib/html-doc/parse.ts:16,23,32.
 const SUMMARY_MD = `# Title
 
 ## 1. Intro
-[00:00](https://youtu.be/vid1?t=0)
+▶ [0:00–2:12](https://youtu.be/vid1?t=0s)
 Intro prose.
 
 ## 2. Encoder
-[02:12](https://youtu.be/vid1?t=132)
+▶ [2:12–2:20](https://youtu.be/vid1?t=132s)
 Encoder prose.
 `;
 
 beforeEach(() => {
   put.clear();
   (getWorkerStorageBundle as jest.Mock).mockResolvedValue({ blobStore, principal, ownerId: 'owner1', playlistId: 'pl-uuid' });
-  (readVideo as jest.Mock).mockResolvedValue({ id: 'vid1', title: 'Vid One', youtubeUrl: 'https://youtu.be/vid1', language: 'en', durationSeconds: 600, summaryMd: '0007_intro.md' });
+  // artifacts.summaryMd.key is the authoritative key (top-level summaryMd is a fallback) — the handler
+  // must resolve base the SAME way loadSummaryForServe does (H1).
+  (readVideo as jest.Mock).mockResolvedValue({ id: 'vid1', title: 'Vid One', youtubeUrl: 'https://youtu.be/vid1', language: 'en', durationSeconds: 600, summaryMd: '0007_intro.md', artifacts: { summaryMd: { key: '0007_intro.md', status: 'promoted' } } });
   blobStore.get.mockResolvedValue(Buffer.from(SUMMARY_MD, 'utf-8'));
   (resolveTranscriptSegments as jest.Mock).mockResolvedValue({ segments: [{ text: 'hi', offset: 132, duration: 5 }], source: 'captions' });
   (generateDig as jest.Mock).mockResolvedValue('Dig prose. [[SLIDE:2:12|2:20|cap]] End.');
@@ -444,12 +458,21 @@ it('generates the section dig and writes the per-section blob with tokens preser
 
 it('throws NonRetryableError when the section is not in the summary', async () => {
   const badJob = { ...job, sectionId: 999 };
-  await expect(makeDigHandler({} as any)(badJob as any, ctx as any)).rejects.toThrow(/section 999 not found/);
+  await expect(makeDigHandler({} as any)(badJob as any, ctx as any)).rejects.toBeInstanceOf(NonRetryableError);
 });
 
-it('propagates a PermanentTranscriptError from the resolver (non-retryable, no write)', async () => {
-  (resolveTranscriptSegments as jest.Mock).mockRejectedValue(Object.assign(new Error('no transcript'), { name: 'PermanentTranscriptError' }));
-  await expect(makeDigHandler({} as any)(job as any, ctx as any)).rejects.toThrow('no transcript');
+it('a real PermanentTranscriptError is rethrown as NonRetryableError (so the runner does not retry/re-charge)', async () => {
+  const { PermanentTranscriptError } = jest.requireActual('@/lib/transcript-source-errors');
+  (resolveTranscriptSegments as jest.Mock).mockRejectedValue(new PermanentTranscriptError('no transcript'));
+  const err = await makeDigHandler({} as any)(job as any, ctx as any).catch((e) => e);
+  expect(err).toBeInstanceOf(NonRetryableError); // NOT the raw PermanentTranscriptError (worker-runner.ts:64 only treats NonRetryableError as non-retryable)
+  expect(blobStore.promote).not.toHaveBeenCalled();
+});
+
+it('rejects a stale-version job (job.version != current) as NonRetryableError, no generation', async () => {
+  const staleJob = { ...job, version: 'dig-0' };
+  await expect(makeDigHandler({} as any)(staleJob as any, ctx as any)).rejects.toBeInstanceOf(NonRetryableError);
+  expect(generateDig as jest.Mock).not.toHaveBeenCalled();
   expect(blobStore.promote).not.toHaveBeenCalled();
 });
 ```
@@ -467,6 +490,7 @@ Expected: FAIL — module not found.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { JobHandler } from '@/lib/job-queue/handler-context';
 import { NonRetryableError } from '@/lib/job-queue/errors';
+import { PermanentTranscriptError } from '@/lib/transcript-source-errors';
 import { getWorkerStorageBundle } from '@/lib/storage/resolve';
 import { readVideo } from '@/lib/storage/worker-persistence';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
@@ -474,31 +498,51 @@ import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { windowForSection } from '@/lib/dig/section-window';
 import { generateDig } from '@/lib/dig/generate';
 import { resolveTranscriptTokens } from '@/lib/transcript-timestamps';
+import { resolveSummaryMdKey } from '@/lib/dig/cloud/resolve-summary-key';
+import { digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
 import { writeDigSectionBlob } from '@/lib/dig/cloud/write-dig-section-blob';
-// import { CLOUD_CAPS } from ...  // reuse summary-handler's caps (see Step 3 note)
+// CLOUD_CAPS: reuse summary-handler's caps (see Step 3 note — import if exported, else replicate).
 
 export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
   return async (job, ctx) => {
     if (job.kind !== 'dig') throw new NonRetryableError(`dig handler received kind=${job.kind}`);
+    // Version guard (mirror summary-handler.ts:74-76): a job charged under a different
+    // DIG_GENERATOR_VERSION must NOT write a current-version blob it never paid for.
+    if (job.version !== digJobVersion()) {
+      throw new NonRetryableError(`dig job version ${job.version} != worker ${digJobVersion()}`);
+    }
     const sectionId = job.sectionId;
 
     const video = await readVideo(serviceClient, job.playlistId, job.videoId);
     if (!video) throw new NonRetryableError('video not found');
-    if (!video.summaryMd) throw new NonRetryableError('summary not available for dig');
-    const base = video.summaryMd.replace(/\.md$/, '');
+    // SAME summary-key rule as the trigger's loadSummaryForServe (artifacts.summaryMd.key ??
+    // summaryMd, validated) — guarantees the handler writes the exact base the trigger deduped on.
+    const mdKey = resolveSummaryMdKey(video);
+    if (!mdKey) throw new NonRetryableError('summary not available for dig');
+    const base = mdKey.replace(/\.md$/, '');
 
     const bundle = await getWorkerStorageBundle(serviceClient, job.ownerId, job.playlistId);
 
-    const mdBytes = await bundle.blobStore.get(bundle.principal, video.summaryMd);
+    const mdBytes = await bundle.blobStore.get(bundle.principal, mdKey);
     if (!mdBytes) throw new NonRetryableError('summary blob missing');
     const parsed = parseSummaryMarkdown(mdBytes.toString('utf-8'));
     const section = parsed.sections.find((s) => s.timeRange?.startSec === sectionId);
     if (!section) throw new NonRetryableError(`section ${sectionId} not found`);
 
     await ctx.setPhase('transcribing');
-    const { segments } = await resolveTranscriptSegments(
-      job.videoId, video.youtubeUrl, video.durationSeconds, { signal: ctx.signal, caps: CLOUD_CAPS },
-    );
+    let segments;
+    try {
+      ({ segments } = await resolveTranscriptSegments(
+        job.videoId, video.youtubeUrl, video.durationSeconds, { signal: ctx.signal, caps: CLOUD_CAPS },
+      ));
+    } catch (e) {
+      // A permanent no-transcript is provably non-retryable — map it so the runner fails immediately
+      // instead of retrying (and re-charging Gemini). Mirrors summary-handler.ts:126-136.
+      if (e instanceof PermanentTranscriptError) {
+        throw new NonRetryableError(`transcript permanently unavailable for ${job.videoId}: ${e.message}`);
+      }
+      throw e; // transient / AbortError → let the runner classify + retry
+    }
 
     const window = windowForSection(section, parsed.sections, segments, video.durationSeconds);
     if (!window) throw new NonRetryableError(`section ${sectionId} has no timeRange`);
@@ -522,16 +566,35 @@ export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
 }
 ```
 
+**Also create `lib/dig/cloud/resolve-summary-key.ts`** (the single summary-key rule, so the handler and trigger can never diverge — H1):
+
+```ts
+import { assertCloudSummaryMdKey } from '@/lib/html-doc/assert-cloud-summary-md-key';
+
+/** The authoritative summary md key for a video: the artifact record's key, falling back to the
+ *  top-level `summaryMd` — the EXACT rule loadSummaryForServe uses (serve-summary-core.ts:56).
+ *  Returns null when absent or when the key fails the single-component guard. */
+export function resolveSummaryMdKey(video: unknown): string | null {
+  const v = video as { artifacts?: { summaryMd?: { key?: string } }; summaryMd?: string | null };
+  const key = v.artifacts?.summaryMd?.key ?? v.summaryMd ?? null;
+  if (!key) return null;
+  try { assertCloudSummaryMdKey(key); } catch { return null; }
+  return key;
+}
+```
+
+Add a focused test `tests/lib/dig/cloud/resolve-summary-key.test.ts`: prefers `artifacts.summaryMd.key` over top-level `summaryMd`; falls back to `summaryMd` when the artifact key is absent; returns `null` for a missing key and for a corrupt (`nested/foo.md`) key.
+
 - [ ] **Step 4: Run — confirm pass**
 
-Run: `npx jest dig-handler`
-Expected: PASS.
+Run: `npx jest dig-handler resolve-summary-key`
+Expected: PASS (handler happy path + section-missing + real-PermanentTranscriptError→NonRetryableError + stale-version guard; helper prefers artifact key, falls back, rejects corrupt/absent).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/job-queue/dig-handler.ts tests/lib/job-queue/dig-handler.test.ts
-git commit -m "feat(cloud-dig): makeDigHandler — text-only per-section generation onto BlobStore"
+git add lib/dig/cloud/resolve-summary-key.ts lib/job-queue/dig-handler.ts tests/lib/dig/cloud/resolve-summary-key.test.ts tests/lib/job-queue/dig-handler.test.ts
+git commit -m "feat(cloud-dig): makeDigHandler — version guard, shared summary-key, transcript-error wrap, text-only write"
 ```
 
 ---
@@ -680,13 +743,13 @@ import { digSectionKey } from '@/lib/dig/cloud/dig-blob-key';
 const SUMMARY_MD = `# T
 
 ## 2. Encoder
-[02:12](https://youtu.be/vid1?t=132)
+▶ [2:12–2:20](https://youtu.be/vid1?t=132s)
 Prose.
 `;
-const okLoad = (existsResult: boolean) => ({
+const okLoad = (existsResult: boolean, existsFn?: jest.Mock) => ({
   ok: true, mdBytes: Buffer.from(SUMMARY_MD, 'utf-8'), base: '0007_intro',
   principal: { id: 'u1', indexKey: 'PLk' },
-  bundle: { blobStore: { exists: jest.fn(async () => existsResult) } },
+  bundle: { blobStore: { exists: existsFn ?? jest.fn(async () => existsResult) } },
   video: { id: 'vid1', durationSeconds: 600, youtubeUrl: 'https://youtu.be/vid1', title: 'T', language: 'en' },
   playlistId: 'pl', mdKey: '0007_intro.md',
 });
@@ -746,6 +809,28 @@ it('maps preflight verdicts: velocity→429, capacity→503, !admitted→403', a
   expect((await enqueueDig(base)).status).toBe(503);
   enqueuer.preflight.mockResolvedValueOnce({ admitted: false, atCapacity: false, velocityExceeded: false, challengeRequired: false });
   expect((await enqueueDig(base)).status).toBe(403);
+});
+it('joined a COMPLETED row but the blob is still absent → 409 repair, NOT 202 (§9.2)', async () => {
+  const exists = jest.fn(async () => false); // absent at dedup AND at the post-enqueue re-check
+  (loadSummaryForServe as jest.Mock).mockResolvedValue(okLoad(false, exists));
+  enqueuer.enqueue.mockResolvedValueOnce({ jobId: 'jc', status: 'completed', joined: true });
+  const r = await enqueueDig(base);
+  expect(r.status).toBe(409);
+  expect(exists).toHaveBeenCalledTimes(2); // dedup + re-check
+});
+it('joined a COMPLETED row and the blob is now present (concurrent promote) → 200 ready', async () => {
+  let calls = 0;
+  const exists = jest.fn(async () => (calls++ === 0 ? false : true)); // miss at dedup, hit on re-check
+  (loadSummaryForServe as jest.Mock).mockResolvedValue(okLoad(false, exists));
+  enqueuer.enqueue.mockResolvedValueOnce({ jobId: 'jc', status: 'completed', joined: true });
+  const r = await enqueueDig(base);
+  expect(r.status).toBe(200);
+  expect(r.body).toEqual({ status: 'ready', sectionId: 132 });
+});
+it('joined a live queued/active row → 202 (normal in-flight join, no re-check needed)', async () => {
+  (loadSummaryForServe as jest.Mock).mockResolvedValue(okLoad(false));
+  enqueuer.enqueue.mockResolvedValueOnce({ jobId: 'jq', status: 'queued', joined: true });
+  expect((await enqueueDig(base)).status).toBe(202);
 });
 ```
 
@@ -812,6 +897,15 @@ export async function enqueueDig(deps: EnqueueDigDeps): Promise<EnqueueDigResult
       { playlistId: deps.playlistId, videoId: deps.videoId, sectionId: deps.sectionId, kind: 'dig', version: digJobVersion() },
       { durationSeconds: load.video.durationSeconds },
     );
+    // §9.2: the idempotency index includes 'completed'. If we joined a completed row while the
+    // current-version blob was absent above, do NOT promise a job that will never run. Re-check the
+    // blob: a concurrent worker may have just promoted it (→ ready), else the blob was lost (→ repair).
+    if (res.joined && res.status === 'completed') {
+      if (await load.bundle.blobStore.exists(load.principal, key)) {
+        return { status: 200, body: { status: 'ready', sectionId: deps.sectionId } };
+      }
+      return { status: 409, body: { error: 'repair needed', sectionId: deps.sectionId } };
+    }
     return { status: 202, body: { status: 'enqueued', jobId: res.jobId, sectionId: deps.sectionId } };
   } catch (e) {
     if (e instanceof QuotaExceededError) return { status: 429, body: { error: 'quota exceeded' } };
@@ -882,7 +976,12 @@ import { createServerSupabase } from '@/lib/supabase/server';
 import { enqueueDig } from '@/lib/dig/cloud/enqueue-dig-core';
 
 const UUID = '11111111-1111-1111-1111-111111111111';
-const authed = (isAnon = false) => ({ auth: { getUser: async () => ({ data: { user: { id: 'u1', is_anonymous: isAnon } } }) } });
+// The route reads profiles.is_anonymous via supabase.from(...).select().eq().single(), so the mock
+// client must expose both auth.getUser and a from() chain returning { is_anonymous }.
+const authed = (isAnon = false) => ({
+  auth: { getUser: async () => ({ data: { user: { id: 'u1' } } }) },
+  from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { is_anonymous: isAnon } }) }) }) }),
+});
 const req = (url: string) => new Request(url, { method: 'POST' });
 const params = (id: string, sectionId: string) => ({ params: Promise.resolve({ id, sectionId }) });
 
@@ -959,9 +1058,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string; se
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return json({ error: 'authentication required' }, 401);
 
+    // Authoritative anon status = profiles.is_anonymous (the SAME column enqueue_job checks at
+    // 0011:101), read via the session client under RLS (a user may read their own profile). Do NOT
+    // trust user.is_anonymous — it is not guaranteed to be populated in this project's auth config.
+    const { data: profile } = await supabase.from('profiles').select('is_anonymous').eq('id', user.id).single();
+
     const result = await enqueueDig({
       supabase, enqueuer: new SupabaseEnqueuer(createServiceClient()),
-      userId: user.id, isAnonymous: (user as { is_anonymous?: boolean }).is_anonymous === true,
+      userId: user.id, isAnonymous: profile?.is_anonymous === true,
       videoId, playlistId, sectionId, enqueueIp: parseClientIp(req),
     });
     return json(result.body, result.status);
@@ -1003,9 +1107,9 @@ Mirror `tests/integration/pdf-cloud.test.ts` for owner-isolation + spend mutatio
 A summary must exist first (dig sources sections from it). Seed a promoted video + its summary blob (with a real section at `startSec=132`), then enqueue a dig via `enqueueDig` (charge-once), then run `makeDigHandler` directly against a leased-shaped job, then assert the per-section blob.
 
 ```ts
-import { adminClient, newUser, signInAs } from './helpers/clients';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
 import { seedPlaylist, seedPromotedVideo, seedSummaryBlob } from './helpers/seed';
-import { ensureGuardrailHeadroom } from './helpers/guardrails';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { makeDigHandler } from '@/lib/job-queue/dig-handler';
 import { enqueueDig } from '@/lib/dig/cloud/enqueue-dig-core';
@@ -1019,7 +1123,8 @@ import { generateDig } from '@/lib/dig/generate';
 jest.mock('@/lib/dig/generate', () => ({ ...jest.requireActual('@/lib/dig/generate'), generateDig: jest.fn() }));
 
 const admin = adminClient();
-const SUMMARY_MD = `# T\n\n## 2. Encoder\n[02:12](https://youtu.be/VID?t=132)\nProse.\n`;
+// Real parseable section format (▶, en-dash range, trailing `s`) — parseSummaryMarkdown is real here.
+const SUMMARY_MD = `# T\n\n## 2. Encoder\n▶ [2:12–2:20](https://youtu.be/VID?t=132s)\nProse.\n`;
 const digCtx = () => ({ isCancelled: async () => false, signal: new AbortController().signal, setPhase: async () => {} });
 
 beforeAll(async () => { process.env.STORAGE_BACKEND = 'supabase'; await ensureGuardrailHeadroom(admin); });
@@ -1093,7 +1198,7 @@ it('dedup: blob present → 200 ready, NO enqueue rpc, ledger + usage unchanged'
   // pre-seed the current-version dig blob
   await new SupabaseBlobStore(admin, 'artifacts').put({ id: user.id, indexKey: playlistKey }, digSectionKey(base, 132), Buffer.from('---\n---\nx\n'), 'text/markdown');
 
-  const rpcSpy = jest.spyOn((admin as any).constructor.prototype, 'rpc');
+  const rpcSpy = jest.spyOn(SupabaseClient.prototype, 'rpc'); // explicit target (matches pdf-cloud.test.ts)
   const { data: ucBefore } = await admin.from('usage_counters').select('*').eq('owner_id', user.id);
   const res = await enqueueDig({ supabase: client, enqueuer: new SupabaseEnqueuer(admin), userId: user.id, isAnonymous: false, videoId: 'VID', playlistId, sectionId: 132, enqueueIp: null });
   expect(res.status).toBe(200);
@@ -1122,7 +1227,7 @@ Seed a summary with two sections (`startSec` 0 and 132). Enqueue + run dig for b
 it('concurrent dig of two sections of one video: both blobs land intact', async () => {
   const { user, email, password } = await newUser();
   const { client } = await signInAs(email, password);
-  const TWO = `# T\n\n## 1. Intro\n[00:00](https://youtu.be/VID?t=0)\nIntro.\n\n## 2. Encoder\n[02:12](https://youtu.be/VID?t=132)\nEnc.\n`;
+  const TWO = `# T\n\n## 1. Intro\n▶ [0:00–2:12](https://youtu.be/VID?t=0s)\nIntro.\n\n## 2. Encoder\n▶ [2:12–2:20](https://youtu.be/VID?t=132s)\nEnc.\n`;
   const { playlistId, playlistKey } = await seedPlaylist(admin, user.id).then(async (pl) => {
     await seedPromotedVideo(admin, { ownerId: user.id, playlistId: pl.playlistId, videoId: 'VID', base: '0007_intro', title: 'T' });
     await seedSummaryBlob(admin, user.id, pl.playlistKey, '0007_intro', TWO);
@@ -1140,25 +1245,50 @@ it('concurrent dig of two sections of one video: both blobs land intact', async 
 });
 ```
 
-- [ ] **Step 5: Version-aware — an older-version blob does not dedup**
+- [ ] **Step 5: Version-aware + completed-row-masks-blob (idempotency/version/§9.2 proofs)**
+
+Inserting `jobs` rows directly: include every NOT-NULL column the live `jobs` schema (0008/0009) requires without a default — at minimum `owner_id, playlist_id, video_id, section_id, job_kind, job_version, status, payload, max_attempts`. Verify against the migration before writing.
 
 ```ts
-it('an older-version blob does not satisfy dedup (current-version key absent → 202)', async () => {
+it('version bump re-enqueues + charges: an OLD completed dig row + old blob does NOT dedup the current version', async () => {
   const { user, email, password } = await newUser();
   const { client } = await signInAs(email, password);
   const { playlistId, playlistKey, base } = await seedVideoWithSummary(user.id);
-  // seed a blob at a DIFFERENT (older) version key; digSectionKey uses the CURRENT version.
+  await admin.from('jobs').insert({ owner_id: user.id, playlist_id: playlistId, video_id: 'VID', section_id: 132, job_kind: 'dig', job_version: 'dig-0', status: 'completed', payload: {}, max_attempts: 1 });
   const olderKey = digSectionKey(base, 132).replace(/\.r\d+\.md$/, '.r0.md');
   await new SupabaseBlobStore(admin, 'artifacts').put({ id: user.id, indexKey: playlistKey }, olderKey, Buffer.from('old'), 'text/markdown');
   const res = await enqueueDig({ supabase: client, enqueuer: new SupabaseEnqueuer(admin), userId: user.id, isAnonymous: false, videoId: 'VID', playlistId, sectionId: 132, enqueueIp: null });
-  expect(res.status).toBe(202); // not deduped — current-version key absent
+  expect(res.status).toBe(202); // current-version slot free → enqueued
+  const { data: uc } = await admin.from('usage_counters').select('used').eq('owner_id', user.id).eq('kind', 'dig').single();
+  expect(uc!.used).toBe(1); // charged once for the new version
+});
+
+it('completed CURRENT-version job row but blob absent → 409 repair, never a phantom 202 (§9.2)', async () => {
+  const { user, email, password } = await newUser();
+  const { client } = await signInAs(email, password);
+  const { playlistId } = await seedVideoWithSummary(user.id);
+  await admin.from('jobs').insert({ owner_id: user.id, playlist_id: playlistId, video_id: 'VID', section_id: 132, job_kind: 'dig', job_version: digJobVersion(), status: 'completed', payload: {}, max_attempts: 1 });
+  const res = await enqueueDig({ supabase: client, enqueuer: new SupabaseEnqueuer(admin), userId: user.id, isAnonymous: false, videoId: 'VID', playlistId, sectionId: 132, enqueueIp: null });
+  expect(res.status).toBe(409); // enqueue_job JOINs the completed row; blob still absent → repair
+});
+
+it('concurrent SAME-section enqueue charges exactly once (atomic INSERT-or-JOIN)', async () => {
+  const { user, email, password } = await newUser();
+  const { client } = await signInAs(email, password);
+  const { playlistId } = await seedVideoWithSummary(user.id);
+  const call = () => enqueueDig({ supabase: client, enqueuer: new SupabaseEnqueuer(admin), userId: user.id, isAnonymous: false, videoId: 'VID', playlistId, sectionId: 132, enqueueIp: null });
+  const [a, b] = await Promise.all([call(), call()]);
+  expect(a.status).toBe(202);
+  expect(b.status).toBe(202);
+  const { data: uc } = await admin.from('usage_counters').select('used').eq('owner_id', user.id).eq('kind', 'dig').single();
+  expect(uc!.used).toBe(1); // one INSERT (charge) + one JOIN (no charge)
 });
 ```
 
 - [ ] **Step 6: Run the integration suite**
 
 Run: `npx jest tests/integration/dig-cloud.test.ts`
-Expected: PASS (all 6). If `rpcSpy` on `admin.constructor.prototype` is brittle, spy on `SupabaseClient.prototype.rpc` from `@supabase/supabase-js` as `pdf-cloud.test.ts` does — match that file's exact technique.
+Expected: PASS (round-trip, owner isolation, no-charge-dedup + mutation control, concurrency, version-bump-charge, completed-row-repair, same-section-single-charge). The rpc spy targets `SupabaseClient.prototype` (matching `pdf-cloud.test.ts`).
 
 - [ ] **Step 7: Full suite + typecheck, then commit**
 
@@ -1182,15 +1312,29 @@ git commit -m "test(cloud-dig): integration — round-trip, isolation, no-charge
 - §8 concurrency (per-section blobs) → Task 2 key design + Task 7 Step 4 proof. ✓
 - §9 charging/idempotency/version → Task 1 (RPC), Task 2 (`digJobVersion`/version-in-key), Task 5 (dedup + charge mapping), Task 7 Steps 3/5. ✓
 - §9.1 idempotency-vs-version → resolved: `version = dig-${DIG_GENERATOR_VERSION}` (distinct `jobs_idem_active` slot per version) + blob-is-dedup-authority; Task 1 Step 3 verifies the index/ON CONFLICT match. ✓
-- §11 behaviors 1–18 → covered across Task 5 unit + Task 6 route + Task 7 integration (row 15 transcript-absent = Task 3 test; row 16 crash-before-promote = staged→promote in Task 2/3; row 17 concurrency = Task 7 Step 4; row 18 token preservation = Tasks 2/3/7). ✓
+- §11 behaviors 1–21 → covered across Task 5 unit + Task 6 route + Task 7 integration (rows 11a–c summary-gate = Task 5 passthrough of `loadSummaryForServe`; row 15 transcript-absent = Task 3 real-error test; row 16 crash-before-promote = staged→promote in Task 2/3; row 17 concurrency + row 21 version-bump = Task 7 Step 4/5; row 18 token preservation = Tasks 2/3/7; row 19 stale-version = Task 3 guard test; row 20 completed-row-mask = Task 5 + Task 7 §9.2 tests). ✓
 - §13 "summary check must not charge a magazine model" → satisfied by using `loadSummaryForServe` (which stops before `resolveMagazineModel`), asserted structurally in Task 5. ✓
 
 **2. Placeholder scan:** The only intentional "…" is the verbatim-copy instruction in Task 1 Step 3 (reproduce the 0011 `enqueue_job` body, change one named line) — a precise transcription against a named source, not a vague placeholder. Task 3 Step 3 names the exact source (`summary-handler.ts` `CLOUD_CAPS`) to reuse for caps. No TODO/TBD/"handle errors" placeholders.
 
 **3. Type consistency:** `digSectionKey`/`digJobVersion` (Task 2) are consumed identically in Tasks 3, 5, 7. `EnqueueDigDeps`/`enqueueDig` return `{status, body}` consumed verbatim by Task 6. `JobKey`/`DigJobPayload`/`EnqueueResult` match the widened enqueuer signature. `makeDigHandler(serviceClient): JobHandler` matches the dispatcher's `Record<JobKind, JobHandler>` in Task 4. ✓
 
-## Known items handed to the adversarial review (not gaps — decisions to stress-test)
-- Task 1 Step 3's verbatim reproduction of `enqueue_job` — verify no line other than the guard changed, and the est/attempts dig dispatch is preserved.
-- Task 5 reuses `loadSummaryForServe`, whose `committed`→503 gate means a dig requested during the summary's finalizing window returns 503 (retry), not 409. Confirm that is acceptable vs. the spec's 409 "summary not ready" (both are non-terminal; 503 is arguably more correct). Flag for review.
-- Task 3 caps reuse — confirm the dig model (`gemini-2.5-pro`) is not subject to a `PRICED_MODEL` guard that would reject it, and that `CLOUD_CAPS` token limits are appropriate for the dig prompt.
-- Task 6 `user.is_anonymous` — confirm the Supabase user object surfaces `is_anonymous` in this project's auth config; if not, derive anon status from `profiles.is_anonymous` via the session client before calling `enqueueDig`.
+## Round-1 dual-review dispositions (Codex + Claude → `docs/reviews/plan-cloud-dig-generation-codex.md`)
+All Blocking/High/Medium addressed in this revision:
+- **B1 (fixtures unparseable)** → all summary fixtures use the real `▶ [M:SS–M:SS](…?t=<sec>s)` format.
+- **B2 (completed row masks missing blob)** → `enqueueDig` re-checks the blob on `joined && completed` → 200/409, never a phantom 202 (Task 5 + Task 7 tests).
+- **B3 (stale-version job)** → handler version guard `job.version !== digJobVersion()` (Task 3 + test).
+- **H1 (base divergence)** → shared `resolveSummaryMdKey`; handler and trigger key the same blob (Task 3).
+- **H2 (transcript error not non-retryable)** → handler wraps `PermanentTranscriptError`→`NonRetryableError`; test uses the real class asserting `NonRetryableError` (Task 3).
+- **H3/anon** → anon read from `profiles.is_anonymous` in the route, not `user.is_anonymous` (Task 6).
+- **M1** import path fixed; **M2** `digSectionKey` base guard; **M3/M4** version/mask/concurrency tests strengthened; **M5** spec status codes corrected (503/404/409).
+- **L1** migration verify wording pinned to the exact live index columns; **L2** quota relabeled 5/month; **L3** phase reuse noted; **L4** rpc spy → `SupabaseClient.prototype`.
+
+## Deferred with rationale (recorded for later slices)
+- **L5 (abort not threaded into `generateDig`)** — bounded by `dig_max_attempts=1` + `generateDig`'s own 60s timeout, and the blob is abort-safe (staged→promote after the abort check). Threading a signal into `generateDig`/`callGeminiRest` touches shared local dig code; deferred to a hardening pass.
+- **L6 (GC vs completed-job row)** — a future GC slice that deletes a dig blob MUST delete the completed job row too, or it recreates the §9.2 mask. Recorded as a constraint for the GC slice.
+
+## Still to confirm during implementation (named source, not a placeholder)
+- Task 1 Step 3: verify no line other than the kind guard changed and the est/attempts dig dispatch is preserved (diff against the 0011 body).
+- Task 3 caps reuse: confirm `gemini-2.5-pro` is not rejected by a `PRICED_MODEL`-style guard and that `CLOUD_CAPS` token limits suit the dig prompt.
+- Task 5/6: confirm the session client can read its own `profiles.is_anonymous` under RLS (add the anon path to the integration suite if in doubt).

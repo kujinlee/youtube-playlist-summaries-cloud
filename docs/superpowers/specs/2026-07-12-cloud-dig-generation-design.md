@@ -97,14 +97,22 @@ route's 400-before-401 discipline.
 | Bad video id / sectionId / playlist / outputFolder present | `400` | error. |
 | Unauthenticated | `401` | error. |
 | Playlist not owned by caller | `404` | "not found" (owner isolation — do not distinguish "not yours" from "absent"). |
-| Summary for this video not committed yet | `409` | "summary not ready" — dig presupposes a committed summary to source sections from. |
+| Summary **finalizing** (artifact `committed`, promote in flight) | `503` | "not ready, retry" — transient. (Real `loadSummaryForServe` semantics; dig reuses that gate.) |
+| Summary **absent / not promoted** | `404` | "not found". |
+| Summary **blob lost** (promoted but blob missing) | `409` | "repair needed". |
 | `sectionId` not a real section of this video | `404` | "section not found". |
-| Anonymous user (dig quota = 0) | `403` | quota — anon cannot dig. |
-| Daily dig quota exhausted (> 5 registered) | `429` | quota-exceeded. |
+| Anonymous user (dig quota = 0) | `403` | quota — anon cannot dig. Anon status read from `profiles.is_anonymous` (authoritative), not the auth-user object. |
+| Registered dig quota exhausted (> 5 **per month**) | `429` | quota-exceeded. |
 
 **No SSE / progress stream in this slice.** The response reports the *enqueue decision*, not the
 *render result*. How a caller learns the job finished (poll the jobs table, or a future SSE) is the
 consumption slice's contract.
+
+**Idempotency/blob-mask edge:** if `enqueue_job` JOINs a `completed` job row (the `jobs_idem_active`
+index includes `completed`) but the trigger already found the current-version blob **absent**, the
+trigger re-checks the blob: present now (a concurrent worker just promoted) → `200 ready`; still
+absent → `409 repair needed`. It must **not** return `202 enqueued` for a completed row with no blob
+(that job will never run again). See §9.2.
 
 ---
 
@@ -117,17 +125,29 @@ explicit ownership assert, never by key), threading the dig progress phase (`dig
 signal, and the generation caps.
 
 **Steps:**
-1. Read the summary blob for the video via `BlobStore.get`; `parseSummaryMarkdown`.
-2. Find the section whose `timeRange.startSec === sectionId`. Missing → permanent failure
-   (should not happen — the trigger validated it, but the handler re-checks defensively).
-3. `resolveTranscriptSegments(videoId, url, duration)` — shared resolver: YouTube captions first,
-   Gemini transcription fallback. Both-empty → `PermanentTranscriptError` (non-retryable).
-4. `windowForSection(section, sections, segments, duration)` → `SectionWindow`.
-5. `generateDig(window, videoId, lang)` → raw markdown (may contain `[[SLIDE:...]]` tokens).
-6. `resolveTranscriptTokens(...)` as local does.
-7. **Skip `resolveSlideTokens`** — no video download, no frame capture. Slide tokens remain **inline
+1. **Version guard (first).** If `job.version !== digJobVersion()` (i.e. the job was charged under a
+   different `DIG_GENERATOR_VERSION`), throw `NonRetryableError` — do **not** generate. Mirrors
+   `summary-handler.ts`'s doc-version guard. Prevents a stale queued job from writing a
+   current-version blob it never paid for (§9.3).
+2. `readVideo`, then resolve the summary key the **same way the trigger does**:
+   `artifacts.summaryMd.key ?? summaryMd`, validated with `assertCloudSummaryMdKey`; derive `base`
+   from that exact key. (Shared helper so the handler and trigger can never key different blobs.)
+3. Read the summary blob via `BlobStore.get`; `parseSummaryMarkdown`.
+4. Find the section whose `timeRange.startSec === sectionId`. Missing → `NonRetryableError`.
+5. `resolveTranscriptSegments(videoId, url, duration, { signal, caps })` — shared resolver. **Catch
+   `PermanentTranscriptError` and rethrow as `NonRetryableError`** (as summary does) so the runner
+   classifies it non-retryable rather than retrying (and re-charging) it.
+6. `windowForSection(section, sections, segments, duration)` → `SectionWindow`.
+7. `generateDig(window, videoId, lang)` → raw markdown (may contain `[[SLIDE:...]]` tokens).
+8. `resolveTranscriptTokens(...)` as local does.
+9. **Skip `resolveSlideTokens`** — no video download, no frame capture. Slide tokens remain **inline
    and verbatim**.
-8. `writeDigSectionBlob(...)` — staged→promote the per-section blob (Unit 4).
+10. `writeDigSectionBlob(...)` — staged→promote the per-section blob (Unit 4).
+
+**Progress phase:** the DB `progress_phase` CHECK admits only `transcribing | summarizing | writing`
+(no `digging`). This slice reuses those three (transcript resolve → `transcribing`, generate →
+`summarizing`, write → `writing`). A dedicated `digging` phase is deferred to the consumption slice
+that would render it (would require a type + CHECK-constraint migration).
 
 **No shared companion-doc read-modify-write** — that is the whole point of the per-section design
 (§8). The handler only ever *writes its own* section blob; it never reads-then-rewrites a document
@@ -208,22 +228,39 @@ blob, so there is no read-modify-write and no lost update — by construction, w
 - **Dig is a durable Job**, charged **once at enqueue** via `enqueue_job` — the same charge-once
   invariant summary ingest uses. It is **not** the serve-side `reserve_serve_model` lazy-restyle
   path; there is no second/magazine model for dig.
-- Config already in schema: quota `dig` = **5/day registered, 0 anon**; `dig_est_cents = 150`;
-  `dig_max_attempts = 1`. This slice adds none of it — only unblocks the RPC.
+- Config already in schema: quota `dig` = **5 per month registered, 0 anon** (`usage_counters` is
+  keyed by `date_trunc('month', …)`; `quota_allowance.monthly`); `dig_est_cents = 150`;
+  `dig_max_attempts = 1`. A separate `spend_ledger` enforces the global **daily** cost cap. This
+  slice adds none of it — only unblocks the RPC.
 - **No charge on dedup.** The authoritative "already done" signal is the **current-version blob's
   existence**. The trigger checks that blob first; present → `200 ready`, no enqueue, no charge.
 - **Version-aware regeneration.** Because the blob key embeds `.r{DIG_GENERATOR_VERSION}`, a version
   bump makes the current-version blob absent → the trigger enqueues + charges for a fresh generation.
   Older-version blobs are ignored (and are GC candidates for a future slice; not deleted here).
 
-### 9.1 Open question flagged for the plan + adversarial review
-The jobs idempotency unique index keys on `(playlist, video, section, kind)` but **not version**. A
-completed dig-job row must not permanently block a legitimate version-bump re-enqueue. The plan must
-resolve enqueue-idempotency-vs-version explicitly. Intended resolution: **the blob is the dedup
-authority** (trigger enqueues only when the current-version blob is absent), and the unique index is
-scoped so it only prevents *concurrent/in-flight* duplicate enqueues — not a permanent lock after
-completion. The plan must verify the actual index/DDL semantics against this intent and adjust the
-migration if the index would otherwise block re-enqueue.
+### 9.1 Idempotency-vs-version — RESOLVED (verified by dual review)
+The live `jobs_idem_active` partial unique index is
+`(owner_id, playlist_id, video_id, section_id, job_kind, job_version) where status in
+('queued','active','completed')` (migration `0009`). Because it **includes `job_version`**, encoding
+`DIG_GENERATOR_VERSION` into the job version (`digJobVersion() = 'dig-${DIG_GENERATOR_VERSION}'`)
+gives version-aware behavior for free: a same-version `completed` row JOINs (no charge — correct
+dedup), a version bump lands in a **new** slot (re-enqueue + charge). `enqueue_job`'s est/attempts
+dispatch already routes `'dig'` to `dig_est_cents`/`dig_max_attempts`, and `loadSummaryForServe`
+never reaches `resolveMagazineModel`. No index change needed.
+
+### 9.2 Completed-row-masks-missing-blob edge — the ONE place the index and the blob disagree
+Because the index includes `completed`, a completed dig-job row can outlive its blob (wrong-key
+promote, storage repair/delete, a future GC slice). If the trigger finds the current-version blob
+**absent** and `enqueue_job` then JOINs a `completed` row, returning `202 enqueued` would promise a
+job that never runs. Resolution: on `joined && status === 'completed'`, the trigger **re-checks the
+blob** → present ⇒ `200 ready`; still absent ⇒ `409 repair needed`. (A future GC slice must delete
+the completed job row alongside the blob to keep the two dedup authorities consistent.)
+
+### 9.3 Stale-job version guard
+The handler keys the blob off `DIG_GENERATOR_VERSION` at run time. A job charged under an older
+version but processed after a bump would write a current-version blob with no current-version charge.
+The handler therefore rejects `job.version !== digJobVersion()` up front (§6 step 1), exactly as the
+summary handler rejects a doc-version mismatch.
 
 ---
 
@@ -234,12 +271,15 @@ client → POST /api/videos/[id]/dig/[sectionId]?playlist=<uuid>
    ├─ backend gate (supabase?) ──────────────── no → 400
    ├─ validate id / sectionId / no outputFolder  → 400 on fail
    ├─ auth (session client) ──────────────────── none → 401
-   ├─ owner-assert playlist by UUID ──────────── not owned → 404
-   ├─ summary committed? ─────────────────────── no → 409
+   ├─ profiles.is_anonymous? ─────────────────── yes → 403 (before any read)
+   ├─ loadSummaryForServe (owner-assert + gate): not owned → 404
+   │     summary finalizing → 503 · absent → 404 · blob lost → 409
    ├─ section exists? ────────────────────────── no → 404
    ├─ dedup: current-version blob present? ── yes → 200 {status:'ready'}   (no charge)
-   └─ enqueue_job(kind=dig, section)  [quota 5/day reg, 0 anon; charge-once; est 150]
-         ├─ anon / quota exhausted → 403 / 429
+   ├─ preflight (velocity/capacity) ──────────── 429 / 503 / 403
+   └─ enqueue_job(kind=dig, section)  [quota 5/month reg, 0 anon; charge-once; est 150]
+         ├─ quota exhausted / cap / too_long → 429 / 503 / 400
+         ├─ joined a COMPLETED row + blob absent → re-check → 200 ready | 409 repair
          └─ ok → 202 {status:'enqueued', jobId}
 
 worker leases dig job → makeDigHandler
@@ -266,14 +306,19 @@ worker leases dig job → makeDigHandler
 | 8 | Non-supabase backend | cloud branch on local backend | 400. |
 | 9 | Unauthenticated | no session | 401. |
 | 10 | Not owner | playlist owned by another user | 404 "not found". |
-| 11 | Summary not committed | video summary artifact not `promoted`/committed | 409. |
+| 11a | Summary finalizing | summary artifact `committed` (promote in flight) | 503 "not ready, retry". |
+| 11b | Summary absent | summary artifact not `promoted` | 404. |
+| 11c | Summary blob lost | `promoted` but blob missing | 409 "repair needed". |
 | 12 | Section not found | sectionId not a section of the video | 404. |
-| 13 | Anonymous | anon principal, dig quota 0 | 403 quota. |
-| 14 | Quota exhausted | > 5 dig enqueues that day | 429. |
-| 15 | Transcript absent | captions empty + Gemini fallback empty | job fails with `PermanentTranscriptError` (non-retryable); no blob promoted. |
+| 13 | Anonymous | `profiles.is_anonymous = true` (dig quota 0) | 403 (checked before any read/enqueue). |
+| 14 | Quota exhausted | > 5 dig enqueues **this month** (registered) | 429. |
+| 15 | Transcript absent | captions empty + Gemini fallback empty | handler catches `PermanentTranscriptError`, rethrows `NonRetryableError`; no blob promoted; job → `failed` (non-retryable), not `dead_letter`. |
 | 16 | Worker crash mid-render | lease expires before promote | staged blob never promoted → no torn source-of-truth; retry bounded by `dig_max_attempts=1`. |
 | 17 | Concurrent two-section dig | sections A and B of one video enqueued together | both jobs complete; **both** per-section blobs present; neither clobbers the other. |
 | 18 | Slide tokens preserved | `generateDig` emits `[[SLIDE:...]]` | tokens appear **verbatim** in the persisted blob; `slides: []` in frontmatter. |
+| 19 | Stale-version job | job charged under an older `DIG_GENERATOR_VERSION`, processed after a bump | handler rejects `job.version !== digJobVersion()` → `NonRetryableError`; no blob written (§9.3). |
+| 20 | Completed row, blob absent | current-version blob missing but a `completed` dig row exists | trigger re-checks blob → present ⇒ 200 ready, absent ⇒ 409 repair; **never** 202 for a job that won't run (§9.2). |
+| 21 | Version-bump re-enqueue | a `completed` older-version dig row exists | current-version blob absent → enqueue + charge (new `job_version` slot, §9.1). |
 
 ---
 
