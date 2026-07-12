@@ -200,17 +200,19 @@ describe('generateDig — opts (cost-governing caps)', () => {
     expect(body.contents[0].parts[0].video_metadata.end_offset.seconds).toBe(WIN.endSec);
   });
 
-  it('with maxOutputTokens + mediaResolution + thinkingBudget: sets camelCase generationConfig.maxOutputTokens, LOW media resolution, and a bounded thinking budget', async () => {
+  it('with maxOutputTokens + mediaResolution + thinkingBudget: each opt maps to its camelCase generationConfig field (generic plumbing — value passes through verbatim)', async () => {
     const spy = jest.spyOn(global, 'fetch').mockResolvedValue(makeOkResponse('MD'));
 
+    // This is a GENERIC opts-plumbing test: it proves each opt lands on the right camelCase
+    // generationConfig field and the value is passed through verbatim. The thinkingBudget value
+    // here (2048) is ARBITRARY — it is NOT the cloud invariant. The actual cloud cost invariant is
+    // flash + thinkingBudget:0 (thinking hard-disabled), asserted by the 'thinkingBudget: 0 IS
+    // honored' test below and by MAX_DIG_THINKING_TOKENS===0 in tests/lib/gemini-cost.test.ts.
     await generateDig(WIN, VIDEO_ID, 'en', { maxOutputTokens: 16384, mediaResolution: 'LOW', thinkingBudget: 2048 });
 
     const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
     expect(body.generationConfig.maxOutputTokens).toBe(16384);
     expect(body.generationConfig.mediaResolution).toBe('MEDIA_RESOLUTION_LOW');
-    // thinking is billed at the OUTPUT rate, separate from maxOutputTokens — gemini-2.5-pro cannot
-    // disable thinking (valid range 128-32768), so a bounded budget is set for the digWorstCents()
-    // bound to hold (mirrors lib/gemini.ts's production summary cloud path).
     expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(2048);
   });
 
