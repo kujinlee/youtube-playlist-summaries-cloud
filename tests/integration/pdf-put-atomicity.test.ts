@@ -12,14 +12,18 @@
 //   B1 — the object exists from the seed put() onward, so a `null` read after that point is a
 //        torn-read-surfaced-as-a-Storage-error, not benign absence. Every post-seed read is
 //        asserted non-null; a null read fails the test loud instead of being skipped.
-//   B2 — concurrency and generation coverage must be PROVEN, not assumed. Each round fires one
-//        `put` that flips the written value together with several `get`s in the same
-//        `Promise.all` (real read/write overlap, not sequenced awaits). The written value
-//        alternates every round, and the set of `buf[0]` values observed across all rounds is
-//        asserted to contain BOTH 0xaa and 0xbb — a deterministic proof that overwrites became
-//        visible to concurrent readers and that reads observed multiple generations. This does
-//        NOT depend on catching a mid-write tear at the right instant (unreliable); it depends
-//        only on the value alternating across rounds and reads happening throughout the run.
+//   B2 — concurrency and generation coverage are exercised explicitly. Each round fires one
+//        `put` that flips the written value together with several `get`s created in the same
+//        synchronous tick and awaited via one `Promise.all` — client-level concurrent dispatch
+//        (reads in flight alongside the write), not sequenced write-then-read. The real atomicity
+//        oracle is the per-read homogeneity check (below): it runs on every read under that
+//        concurrent dispatch and never observes a torn mix. The written value alternates every
+//        round and the set of observed `buf[0]` values is asserted to contain BOTH 0xaa and 0xbb
+//        — this proves overwrites propagate to concurrent readers (fresh post-seed writes become
+//        visible, not just the seed surviving), i.e. generation coverage. It does NOT by itself
+//        prove any single read's server-side processing overlapped a write's commit window — that
+//        is unobservable from the client, and because each round's pre-value also alternates, both
+//        generations would appear from alternation alone.
 import { adminClient, newUser, signInAs } from './helpers/clients';
 import { seedPlaylist } from './helpers/seed';
 import { getStorageBundle, getPrincipalFromSession } from '@/lib/storage/resolve';
@@ -38,7 +42,7 @@ test('put(upsert) is visibility-atomic: concurrent overwrite+read observes only 
   const { blobStore } = getStorageBundle({ supabaseClient: client });
   const principal = getPrincipalFromSession({ userId: u.user.id }, playlistKey);
   const key = 'pdfs/atomicity-probe.bin';
-  const SIZE = 512_000;                        // 512 KB — big enough to tear over HTTP, small enough for CI
+  const SIZE = 512_000;                        // 512 KB — a pragmatic probe size (large enough a non-atomic backend could plausibly expose a partial read over HTTP; not a proof of tear-ability), small enough for CI
   const A = Buffer.alloc(SIZE, 0xaa), B = Buffer.alloc(SIZE, 0xbb);
   const ROUNDS = 14;
   const READS_PER_ROUND = 4;
@@ -72,10 +76,14 @@ test('put(upsert) is visibility-atomic: concurrent overwrite+read observes only 
       }
     }
 
-    // B2: deterministic proof of read/write overlap. The written value alternates every round, so
-    // if every read only ever observed the pre-round value, `observedValues` would contain a
-    // single element. Observing BOTH 0xaa and 0xbb proves overwrites became visible to concurrent
-    // readers across the run (generation coverage), not just the seed value surviving untouched.
+    // B2: generation coverage — overwrites propagate to concurrent readers. Observing BOTH 0xaa
+    // and 0xbb proves reads saw fresh post-seed overwrites (not just the seed value frozen in
+    // place), and that the tear detector above ran against multiple generations. It does NOT by
+    // itself prove any single read overlapped its round's in-flight write: each round's pre-value
+    // also alternates, so both generations would appear from alternation alone. The atomicity
+    // guarantee comes from the per-read homogeneity assertion never failing under the concurrent
+    // dispatch above, not from this set check. Server-side visibility overlap is unobservable from
+    // the client (see docs/reviews/spec-cloud-pdf-atomicity.md "Precisely what this proves").
     expect(observedValues.has(0xaa)).toBe(true);
     expect(observedValues.has(0xbb)).toBe(true);
   } finally {

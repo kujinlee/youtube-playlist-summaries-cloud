@@ -93,15 +93,25 @@ afterward):
 - Every read's buffer was **whole** (full expected length) and **homogeneous** (no byte-level
   mixing of the two written generations) — i.e. no torn/partial object was ever observed.
 - Every read's buffer was a **valid generation** (`0xaa` or `0xbb`), never any other value.
-- Reads **did overlap** in-flight overwrites: across 14 rounds of alternating writes run
-  concurrently with reads, **both** generations (`0xaa` and `0xbb`) were observed by readers —
-  proving overwrite visibility was actually exercised, not just the seed value surviving
-  untouched.
+- Overwrites **propagated to concurrent readers**: across 14 rounds of alternating writes issued
+  concurrently with reads (same-tick dispatch + a single `Promise.all` per round), **both**
+  generations (`0xaa` and `0xbb`) were observed — proving reads saw fresh post-seed overwrites,
+  not just the seed value surviving untouched. This is **generation coverage**, not a per-read
+  timing/overlap proof: because each round's pre-value also alternates, both generations would
+  appear from alternation alone, so this set result does not by itself establish that any single
+  read's server-side processing overlapped a write's commit window (see the disclaimer below).
 
-This is what the test demonstrates — nothing more. It does not claim a specific count of
-"interleavings" (there is no way to observe from the client which reads landed truly mid-write at
-the storage-server level; the proof above is a value-based existence proof, not a timing
-measurement), and it does not claim exhaustive coverage of every possible race window.
+This is what the test demonstrates — nothing more. **The atomicity evidence is the per-read
+homogeneity / whole-length check never failing** across all 56 reads issued under concurrent
+dispatch — that is the tear detector; the both-generations set check only establishes generation
+coverage, not atomicity. It does not claim a specific count of "interleavings" (there is no way to
+observe from the client which reads landed truly mid-write at the storage-server level; the
+both-generations result is a value-based existence proof, not a timing measurement), and it does
+not claim exhaustive coverage of every possible race window. The tear detector catches an
+**observable** torn read (byte-level mixing of `A`/`B`, or truncation); a hypothetical backend
+that was internally non-atomic but always returned a fully homogeneous old *or* new buffer would
+be indistinguishable from atomic here — but by definition that is not an observable torn read,
+which is exactly the property Task 8's cache depends on.
 
 ## Scope and caveat (read before treating this as a production guarantee)
 
