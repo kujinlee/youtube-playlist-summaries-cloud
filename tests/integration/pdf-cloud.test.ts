@@ -134,6 +134,54 @@ import { generateDocPdf } from '@/lib/pdf/generate-doc-pdf';
   },
 );
 
+// --- runSingleFlight spy: real behavior preserved (Task-11 re-review Fix 1) ---------------------
+// Codex Medium: the route checks the pdf blob cache BEFORE runSingleFlight, so releasing the latch
+// as soon as request 1 merely ENTERS generateDocPdf does not prove single-flight CONTENTION —
+// request 1 could finish + write the cache before request 2 even reaches the flight section, making
+// request 2 a plain cache HIT rather than a genuine flight JOIN (a "no single-flight" regression
+// would still pass). Spying on runSingleFlight (while delegating to its REAL implementation, via a
+// second jest.requireActual call against the SAME cached module instance — same `inFlight` map,
+// same closure state the route itself uses) lets a test observe the exact moment request 2 reaches
+// the flight section, deterministically, instead of guessing from generateDocPdf entry alone.
+jest.mock('@/lib/pdf/pdf-concurrency', () => {
+  const actual = jest.requireActual('@/lib/pdf/pdf-concurrency');
+  return { __esModule: true, ...actual, runSingleFlight: jest.fn(actual.runSingleFlight) };
+});
+import { runSingleFlight } from '@/lib/pdf/pdf-concurrency';
+const runSingleFlightMock = runSingleFlight as jest.Mock;
+const realRunSingleFlight = (jest.requireActual('@/lib/pdf/pdf-concurrency') as {
+  runSingleFlight: (key: string, fn: () => Promise<unknown>) => Promise<unknown>;
+}).runSingleFlight;
+let flightWaiters: Array<{ target: number; resolve: () => void }> = [];
+runSingleFlightMock.mockImplementation((key: string, fn: () => Promise<unknown>) => {
+  const result = realRunSingleFlight(key, fn);
+  flightWaiters = flightWaiters.filter(({ target, resolve }) => {
+    if (runSingleFlightMock.mock.calls.length >= target) { resolve(); return false; }
+    return true;
+  });
+  return result;
+});
+/** Resolves once EITHER `runSingleFlight` has been invoked `target` times total (the expected,
+ *  healthy signal — request 2 reached the flight section and either joined request 1's in-flight
+ *  promise or, once released, found the fresh cache) OR `generateDocPdf` has been entered `target`
+ *  times (a tolerant fallback: if a regression removed `runSingleFlight` from the route entirely,
+ *  request 2 would instead enter the stub itself while request 1 is still latched). Both signals
+ *  share ONE timer, so whichever loses the race never leaves a lingering timeout/rejection behind —
+ *  see the Task-11 re-review Fix 2 note above `releaseLatch` for why that matters here. */
+function waitForSecondArrival(guardMsg: string, timeoutMs = 4000): Promise<void> {
+  if (runSingleFlightMock.mock.calls.length >= 2 || entryCount >= 2) return Promise.resolve();
+  const d = deferred();
+  let settled = false;
+  const trySettle = () => { if (!settled) { settled = true; d.resolve(); } };
+  flightWaiters.push({ target: 2, resolve: trySettle });
+  entryWaiters.push({ target: 2, resolve: trySettle });
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<void>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`waitForSecondArrival timed out after ${timeoutMs}ms — ${guardMsg}`)), timeoutMs);
+  });
+  return Promise.race([d.promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 import { GET } from '@/app/api/pdf/[id]/route';
 
 // Real Supabase round-trips (auth signup/sign-in, storage, RPCs) for up to two owners per test —
@@ -154,10 +202,12 @@ afterAll(() => { if (priorBackend === undefined) delete process.env.STORAGE_BACK
 beforeEach(async () => {
   (generateMagazineModel as jest.Mock).mockClear();
   (generateDocPdf as jest.Mock).mockClear();
+  runSingleFlightMock.mockClear(); // clears call history only — mockImplementation set above persists
   latchArmed = false;
   entryCount = 0;
   releaseGate = deferred();
   entryWaiters = [];
+  flightWaiters = [];
   // Clear the shared money tables and pin generous, deterministic guardrail headroom — this local
   // Supabase stack persists across test runs, so a stale spend_ledger row from an earlier file/run
   // could otherwise trip at_capacity here (mirrors html-download.test.ts's own beforeEach).
@@ -337,73 +387,111 @@ describe('pdf-cloud (GET /api/pdf/[id], real DB)', () => {
     expect(await blob2.get(p2, key)).toBeNull();
 
     armLatch();
-    // ALS-scoped so each request's ENTIRE async chain sees its own session client regardless of
-    // interleaving (see the module-level comment on mockAls) — a bare shared `mockClient` variable
-    // would be unsafe here since both requests perform the identical await shape before reaching
-    // createServerSupabase.
-    const p1Res = mockAls.run(firstClient, () => GET(req(first.videoId, `playlist=${first.playlistId}&type=summary`), invoke(first.videoId)));
-    const p2Res = mockAls.run(secondClient, () => GET(req(second.videoId, `playlist=${second.playlistId}&type=summary`), invoke(second.videoId)));
+    let p1Res: Promise<Response> | undefined;
+    let p2Res: Promise<Response> | undefined;
+    try {
+      // ALS-scoped so each request's ENTIRE async chain sees its own session client regardless of
+      // interleaving (see the module-level comment on mockAls) — a bare shared `mockClient` variable
+      // would be unsafe here since both requests perform the identical await shape before reaching
+      // createServerSupabase.
+      p1Res = mockAls.run(firstClient, () => GET(req(first.videoId, `playlist=${first.playlistId}&type=summary`), invoke(first.videoId)));
+      p2Res = mockAls.run(secondClient, () => GET(req(second.videoId, `playlist=${second.playlistId}&type=summary`), invoke(second.videoId)));
 
-    // DETERMINISTIC regression guard: with the H1 fix (owner-scoped flight key
-    // `${principal.id}/${principal.indexKey}/${key}`), both owners' requests take DIFFERENT flight
-    // keys, so BOTH genuinely enter `generateDocPdf` and get latched here (entryCount reaches 2).
-    // If a regression reverted to a BARE content-hash flight key, owner-2's request would find
-    // owner-1's flight already registered under the SAME key and join it WITHOUT ever calling
-    // `generateDocPdf` itself — entryCount would get stuck at 1, and this await would time out: a
-    // loud, deterministic failure, not a silent pass (which is exactly what the old timing-based
-    // version of this test was vulnerable to — request 1 could finish and clear its flight entry
-    // before request 2 even registered, so even a broken bare-key flight would happen to render
-    // twice and pass).
-    await waitForEntries(2, "expected BOTH owners to enter generateDocPdf concurrently (owner-scoped flight key) — only one entered, i.e. a bare content-hash flight key collapsed owner-2's request into owner-1's in-flight render");
-    releaseLatch();
+      // DETERMINISTIC regression guard: with the H1 fix (owner-scoped flight key
+      // `${principal.id}/${principal.indexKey}/${key}`), both owners' requests take DIFFERENT flight
+      // keys, so BOTH genuinely enter `generateDocPdf` and get latched here (entryCount reaches 2).
+      // If a regression reverted to a BARE content-hash flight key, owner-2's request would find
+      // owner-1's flight already registered under the SAME key and join it WITHOUT ever calling
+      // `generateDocPdf` itself — entryCount would get stuck at 1, and this await would time out: a
+      // loud, deterministic failure, not a silent pass (which is exactly what the old timing-based
+      // version of this test was vulnerable to — request 1 could finish and clear its flight entry
+      // before request 2 even registered, so even a broken bare-key flight would happen to render
+      // twice and pass).
+      await waitForEntries(2, "expected BOTH owners to enter generateDocPdf concurrently (owner-scoped flight key) — only one entered, i.e. a bare content-hash flight key collapsed owner-2's request into owner-1's in-flight render");
+      releaseLatch();
 
-    const [res1, res2] = await Promise.all([p1Res, p2Res]);
-    expect(res1.status).toBe(200);
-    expect(res2.status).toBe(200);
+      const [res1, res2] = await Promise.all([p1Res, p2Res]);
+      expect(res1.status).toBe(200);
+      expect(res2.status).toBe(200);
 
-    expect(generateDocPdf).toHaveBeenCalledTimes(2); // exactly one render PER owner — no collapse across owners
-    const calledPrincipalIds = (generateDocPdf as jest.Mock).mock.calls
-      .map((c) => (c[1] as Principal).id)
-      .sort();
-    expect(calledPrincipalIds).toEqual([p1.id, p2.id].sort()); // both owners' renders genuinely happened, distinctly
+      expect(generateDocPdf).toHaveBeenCalledTimes(2); // exactly one render PER owner — no collapse across owners
+      const calledPrincipalIds = (generateDocPdf as jest.Mock).mock.calls
+        .map((c) => (c[1] as Principal).id)
+        .sort();
+      expect(calledPrincipalIds).toEqual([p1.id, p2.id].sort()); // both owners' renders genuinely happened, distinctly
 
-    const owner1Pdf = await blob1.get(p1, key);
-    const owner2Pdf = await blob2.get(p2, key);
-    expect(owner1Pdf).not.toBeNull(); // owner 1's own pdf blob exists
-    expect(owner1Pdf!.equals(SMALL_PDF_BUFFER)).toBe(true);
-    expect(owner2Pdf).not.toBeNull(); // owner 2's own pdf blob exists — NOT dropped by a bare content-hash flight key
-    expect(owner2Pdf!.equals(SMALL_PDF_BUFFER)).toBe(true);
+      const owner1Pdf = await blob1.get(p1, key);
+      const owner2Pdf = await blob2.get(p2, key);
+      expect(owner1Pdf).not.toBeNull(); // owner 1's own pdf blob exists
+      expect(owner1Pdf!.equals(SMALL_PDF_BUFFER)).toBe(true);
+      expect(owner2Pdf).not.toBeNull(); // owner 2's own pdf blob exists — NOT dropped by a bare content-hash flight key
+      expect(owner2Pdf!.equals(SMALL_PDF_BUFFER)).toBe(true);
+    } finally {
+      // Task-11 re-review Fix 2 (Codex Low): if any assertion above throws, releaseLatch() may never
+      // be reached, leaving generateDocPdf's stub suspended inside withPdfSlot/runSingleFlight
+      // forever — that live in-flight promise (and withPdfSlot's `active` slot count) would leak
+      // into later tests. Always release the latch and drain both requests before the test exits, so
+      // a failure here is a clean, isolated failure with no cascade.
+      releaseLatch();
+      await Promise.allSettled([p1Res, p2Res].filter((p): p is Promise<Response> => p !== undefined));
+    }
   });
 
-  it('concurrent same-owner same-content miss collapses into exactly ONE render (single-flight) — deterministic via latch, no sleep', async () => {
+  it('concurrent same-owner same-content miss collapses into exactly ONE render (single-flight) — deterministic contention proof via runSingleFlight spy, no sleep', async () => {
     const { playlistId, playlistKey, videoId, base, u } = await ownerAndDoc();
     const principal: Principal = { id: u.user.id, indexKey: playlistKey };
     await primeFreshModel(mockClient, base, principal);
 
     armLatch();
-    const p1 = GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
-    // Wait until request 1 is CONFIRMED inside generateDocPdf — i.e. past its own cache-miss check
-    // and past registering the flight key in `inFlight` (lib/pdf/pdf-concurrency.ts) — and
-    // suspended on the release gate. Only THEN start request 2 (same owner, same params, same
-    // flight key). Because request 1 cannot proceed past the latch until we call releaseLatch(),
-    // its flight-map entry is guaranteed to still be registered no matter how long request 2's own
-    // real DB round-trips take to reach the route's cache/flight check — so request 2 deterministically
-    // either (a) joins request 1's still-pending single-flight promise (never entering
-    // generateDocPdf itself), or (b) — only possible once released — observes the now-genuinely-
-    // cached blob directly. Either way `generateDocPdf` cannot be called a second time: a bare
-    // no-single-flight regression would instead make request 2 enter generateDocPdf itself while
-    // request 1 is still latched, pushing entryCount to 2 and failing the call-count assertion below.
-    await waitForEntries(1, 'expected request 1 to enter generateDocPdf — it never did');
-    const p2 = GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
-    releaseLatch();
+    let p1: Promise<Response> | undefined;
+    let p2: Promise<Response> | undefined;
+    try {
+      p1 = GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+      // Wait until request 1 is CONFIRMED inside generateDocPdf — i.e. past its own cache-miss check
+      // and past registering the flight key in `inFlight` (lib/pdf/pdf-concurrency.ts) — and
+      // suspended on the release gate.
+      await waitForEntries(1, 'expected request 1 to enter generateDocPdf — it never did');
 
-    const [res1, res2] = await Promise.all([p1, p2]);
-    expect(res1.status).toBe(200);
-    expect(res2.status).toBe(200);
-    expect(generateDocPdf).toHaveBeenCalledTimes(1); // single-flight collapse — one render for both callers
-    const body1 = Buffer.from(await res1.arrayBuffer());
-    const body2 = Buffer.from(await res2.arrayBuffer());
-    expect(body1.equals(SMALL_PDF_BUFFER)).toBe(true);
-    expect(body2.equals(SMALL_PDF_BUFFER)).toBe(true);
+      p2 = GET(req(videoId, `playlist=${playlistId}&type=summary`), invoke(videoId));
+      // Task-11 re-review Fix 1 (Codex Medium): the route checks the pdf blob cache BEFORE
+      // runSingleFlight, so releasing the latch as soon as request 1 merely ENTERS the stub (the
+      // prior version of this test) does not prove CONTENTION — request 1 could finish + write the
+      // cache before request 2 even reaches runSingleFlight, making request 2 a plain cache HIT
+      // rather than a genuine flight JOIN; a "no single-flight" regression would still pass (request
+      // 2 would just hit the now-populated cache). Instead wait until request 2 has provably reached
+      // the flight section while request 1 is still latched and the cache is STILL unwritten: either
+      // `runSingleFlight` has been invoked a SECOND time (the healthy path — request 2 joins request
+      // 1's in-flight promise), or, tolerant of a regression that removed `runSingleFlight` from the
+      // route entirely, `generateDocPdf` has been entered a second time itself. ONLY THEN release.
+      await waitForSecondArrival(
+        "expected request 2 to reach contention with request 1's still-latched, still-uncached render — " +
+        'either a 2nd runSingleFlight call (single-flight JOIN) or a 2nd generateDocPdf entry ' +
+        '(fallback signal if runSingleFlight were removed) — neither happened',
+      );
+      releaseLatch();
+
+      const [res1, res2] = await Promise.all([p1, p2]);
+      expect(res1.status).toBe(200);
+      expect(res2.status).toBe(200);
+      // REGRESSION GUARD: request 2 is GUARANTEED (by waitForSecondArrival above) to have reached
+      // contention — either joined request 1's flight or entered the stub itself — while the cache
+      // was still unwritten. So `generateDocPdf` can only have been called once IF single-flight
+      // genuinely collapsed the two callers. With single-flight removed/broken, request 2 (arriving
+      // while the cache is unwritten) enters the stub a SECOND time -> generateDocPdf called twice
+      // -> this assertion fails. That is the regression this test guards against.
+      expect(generateDocPdf).toHaveBeenCalledTimes(1); // single-flight collapse — one render for both callers
+      const body1 = Buffer.from(await res1.arrayBuffer());
+      const body2 = Buffer.from(await res2.arrayBuffer());
+      expect(body1.equals(SMALL_PDF_BUFFER)).toBe(true);
+      expect(body2.equals(SMALL_PDF_BUFFER)).toBe(true);
+    } finally {
+      // Task-11 re-review Fix 2 (Codex Low): if any assertion above throws, releaseLatch() may never
+      // be reached, leaving generateDocPdf's stub suspended inside withPdfSlot/runSingleFlight
+      // forever — that live in-flight promise (and withPdfSlot's `active` slot count) would leak
+      // into later tests. Always release the latch and drain both requests before the test exits, so
+      // a failure here is a clean, isolated failure with no cascade.
+      releaseLatch();
+      await Promise.allSettled([p1, p2].filter((p): p is Promise<Response> => p !== undefined));
+    }
   });
 });
