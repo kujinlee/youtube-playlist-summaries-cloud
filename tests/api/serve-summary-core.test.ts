@@ -53,19 +53,19 @@ describe('loadSummaryForServe', () => {
   it('gates committed → 503', async () => {
     mockIndexVideos = [{ ...promotedVideo, artifacts: { summaryMd: { status: 'committed' } } }];
     const r = await loadSummaryForServe(sessionClient, { videoId: validVideo, playlistId: PID, userId: 'u' });
-    expect(r).toMatchObject({ ok: false, status: 503 });
+    expect(r).toMatchObject({ ok: false, status: 503, error: 'not ready, retry' }); // exact string — guards drift
   });
 
   it('unknown video → 404', async () => {
     mockIndexVideos = [];
     const r = await loadSummaryForServe(sessionClient, { videoId: validVideo, playlistId: PID, userId: 'u' });
-    expect(r).toMatchObject({ ok: false, status: 404 });
+    expect(r).toMatchObject({ ok: false, status: 404, error: 'not found' });
   });
 
   it('foreign/unowned playlist → 404', async () => {
     mockPlaylistKey = null;
     const r = await loadSummaryForServe(sessionClient, { videoId: validVideo, playlistId: PID, userId: 'u' });
-    expect(r).toMatchObject({ ok: false, status: 404 });
+    expect(r).toMatchObject({ ok: false, status: 404, error: 'not found' });
   });
 
   it('rejects a nested mdKey with 409 BEFORE reading the blob', async () => {
@@ -74,14 +74,14 @@ describe('loadSummaryForServe', () => {
       artifacts: { summaryMd: { key: 'nested/foo.md', status: 'promoted' } },
     }];
     const r = await loadSummaryForServe(sessionClient, { videoId: validVideo, playlistId: PID, userId: 'u' });
-    expect(r).toMatchObject({ ok: false, status: 409 });
+    expect(r).toMatchObject({ ok: false, status: 409, error: 'corrupt summary key' });
     expect(mockBlobGet).not.toHaveBeenCalled();
   });
 
   it('promoted but blob missing → 409 repair needed', async () => {
     mockMdBytes = null;
     const r = await loadSummaryForServe(sessionClient, { videoId: validVideo, playlistId: PID, userId: 'u' });
-    expect(r).toMatchObject({ ok: false, status: 409 });
+    expect(r).toMatchObject({ ok: false, status: 409, error: 'repair needed' });
   });
 
   it('promoted → ok WITHOUT resolving the model', async () => {

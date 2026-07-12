@@ -79,8 +79,12 @@ export async function loadSummaryForServe(
 
 type OkLoad = Extract<LoadResult, { ok: true }>;
 
+// The resolved magazine model, typed straight off resolveMagazineModel's `ok` arm so Task 7/8
+// consumers get the real MagazineModel contract instead of `unknown`. (Task-6 review Minor.)
+type ResolvedModel = Extract<Awaited<ReturnType<typeof resolveMagazineModel>>, { status: 'ok' }>['model'];
+
 export type ResolveAndParseResult =
-  | { ok: true; parsed: ReturnType<typeof parseSummaryMarkdown>; model: unknown; stale: boolean }
+  | { ok: true; parsed: ReturnType<typeof parseSummaryMarkdown>; model: ResolvedModel; stale: boolean }
   | { ok: false; status: number; error: string };
 
 /**
