@@ -17,8 +17,8 @@ const json = (body: unknown, status: number) => new Response(JSON.stringify(body
  * content-addressed (`pdfCacheKey`, keyed on the NONCE-FREE rendered HTML so the cache hits
  * deterministically), and stream it inline. Composes Task 6's two-stage serve-summary-core
  * (gate+read, then parse+resolve — money is charged there) with Tasks 3-5's PDF cache/concurrency/
- * render primitives. Cloud-only: the local backend keeps its own export action (see AGENTS.md route
- * conventions in app/api/html/[id]/route.ts serveLocal).
+ * render primitives. Cloud-only: the local backend keeps its own export action (see the sibling
+ * serveLocal conventions in app/api/html/[id]/route.ts).
  */
 export async function GET(request: Request, { params }: Params) {
   if ((process.env.STORAGE_BACKEND ?? 'local') !== 'supabase') return json({ error: 'use the export action' }, 400);
@@ -26,7 +26,8 @@ export async function GET(request: Request, { params }: Params) {
   const { searchParams } = new URL(request.url);
   // URL contract mirrors app/api/html/[id]/route.ts's serveCloud: cloud requires `playlist`,
   // rejects `outputFolder`, and only serves `type=summary` (dig-deeper deferred).
-  if (searchParams.get('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
+  // `.has()` not `.get()`: PRESENCE rejects, even `?outputFolder=` (empty string, falsy) must 400.
+  if (searchParams.has('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
   if (searchParams.get('type') !== 'summary') return json({ error: 'unsupported or missing type' }, 400);
   const playlistId = searchParams.get('playlist');
   if (!playlistId || !UUID_RE.test(playlistId)) return json({ error: 'invalid playlist' }, 400); // before any DB call
