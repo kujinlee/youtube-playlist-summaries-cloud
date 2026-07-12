@@ -19,12 +19,15 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  *   the timer fired before the write started — the common hung-render case, where no bytes exist yet.
  *   The guard is BEST-EFFORT, not an absolute barrier: if `page.pdf()` already produced bytes and the
  *   timer fires while `blobStore.put` is mid-flight, that put may still complete after the caller sees
- *   the 503 (closing the browser does not cancel a storage upload). That late write is HARMLESS by
- *   design — it writes the COMPLETE, correct PDF of this exact nonce-free HTML to its own
- *   content-addressed key `pdfs/{base}.r{V}.{sha256(html)}.pdf` via an atomic put (verified in Task 1 /
- *   ADR 0003). It can only ever populate its own key with idempotent correct bytes, never a torn or
- *   wrong-generation object, so a later request simply hits the cache. Preventing it would require the
- *   staging-key + promote dance ADR 0003 deliberately rejected. The dangling render promise gets a
+ *   the 503 (closing the browser does not cancel a storage upload). That late write is HARMLESS when the
+ *   caller passes a CONTENT-ADDRESSED `key` — as the cloud PDF cache does via `pdfCacheKey`
+ *   (`pdfs/{base}.r{V}.{sha256(html)}.pdf`): it writes the COMPLETE, correct PDF of this exact nonce-free
+ *   HTML to its own key via an atomic put (verified in Task 1 / ADR 0003), so it can only ever populate
+ *   its own key with idempotent correct bytes — never a torn or wrong-generation object — and a later
+ *   request simply hits the cache. Preventing it would require the staging-key + promote dance ADR 0003
+ *   deliberately rejected. (A hypothetical caller passing a MUTABLE, non-content-addressed `key` would
+ *   not get this guarantee — a late write could then clobber newer bytes; no such caller exists today,
+ *   and the local job route awaits completion before reporting done.) The dangling render promise gets a
  *   no-op `.catch` so its post-close rejection is not an unhandled rejection. (`returnBuffer` stays
  *   safe regardless: `rendered` is set only after the write completes and every failure path throws
  *   before the return, so a timed-out call never returns un-written bytes.)
