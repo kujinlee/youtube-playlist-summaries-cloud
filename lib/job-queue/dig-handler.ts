@@ -7,7 +7,7 @@ import { readVideo } from '@/lib/storage/worker-persistence';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
 import { windowForSection } from '@/lib/dig/section-window';
-import { generateDig, DEEPDIVE_MODEL } from '@/lib/dig/generate';
+import { generateDig } from '@/lib/dig/generate';
 import { resolveTranscriptTokens, truncateSegmentsToByteCap } from '@/lib/transcript-timestamps';
 import { resolveSummaryMdKey } from '@/lib/dig/cloud/resolve-summary-key';
 import { digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
@@ -39,12 +39,6 @@ const CLOUD_CAPS: CloudGeminiCaps = {
  *  rule shared with the HTTP trigger — H1), windowForSection/generateDig/resolveTranscriptTokens
  *  (Task 2 generation pipeline), writeDigSectionBlob (Task 2 per-section blob writer). */
 export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
-  // Fail fast at init if the resolved dig model drifts from the model digWorstCents() (lib/gemini-
-  // cost.ts) is priced against — mirrors summary-handler.ts's SUMMARY_MODEL guard. An env override
-  // to an unpriced model would silently break the provable dig spend bound.
-  if (DEEPDIVE_MODEL !== PRICED_DIG_MODEL) {
-    throw new Error(`dig model "${DEEPDIVE_MODEL}" != priced model "${PRICED_DIG_MODEL}": cost caps are mis-priced`);
-  }
   return async (job, ctx) => {
     if (job.kind !== 'dig') throw new NonRetryableError(`dig handler received kind=${job.kind}`);
     // Version guard (mirror summary-handler.ts:73-77): a job charged under a different
@@ -94,16 +88,20 @@ export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
     // transcript-timestamps.ts:49 contract — the SAME list must feed both generateDig's
     // buildIndexedTranscript and resolveTranscriptTokens (token indexes are positional into it).
     const cappedSegments = truncateSegmentsToByteCap(window.transcriptWindow, CLOUD_CAPS.transcriptInputBytes);
-    // Cost-governing opts (spec docs/superpowers/specs/2026-07-12-dig-cost-bound-hardening.md):
-    // caps output tokens + video segment duration, forces LOW media resolution, bounds thinking to
-    // the same MAX_DIG_THINKING_TOKENS constant digWorstCents() accounts for (so they can't drift),
-    // and threads the job's lease/shutdown signal so an abort cancels the in-flight (billable)
-    // Gemini call.
+    // Cost-governing opts (spec docs/superpowers/specs/2026-07-12-dig-cost-bound-hardening.md,
+    // "## RESOLUTION (2026-07-12): cloud dig → gemini-2.5-flash"): pins the billed model to
+    // PRICED_DIG_MODEL (flash) — a constant, not DEEPDIVE_MODEL's env-overridable default — so
+    // cloud dig cost is env-independent and can never drift from what digWorstCents() prices; caps
+    // output tokens + video segment duration; forces LOW media resolution; and — because the model
+    // is flash — thinkingBudget: MAX_DIG_THINKING_TOKENS (0) genuinely DISABLES thinking (not
+    // merely bounds it, as gemini-2.5-pro would). Threads the job's lease/shutdown signal so an
+    // abort cancels the in-flight (billable) Gemini call.
     const raw = await generateDig(
       { ...window, transcriptWindow: cappedSegments },
       job.videoId,
       video.language,
       {
+        model: PRICED_DIG_MODEL,
         maxOutputTokens: MAX_DIG_OUTPUT_TOKENS,
         maxVideoSeconds: MAX_DIG_VIDEO_SECONDS,
         mediaResolution: 'LOW',

@@ -37,21 +37,19 @@ describe('digWorstCents — mechanical proof of the dig per-job spend bound', ()
     expect(MAX_DIG_OUTPUT_TOKENS).toBe(16384);
   });
 
-  it('PRICED_DIG_MODEL is gemini-2.5-pro (the model these prices are dated against)', () => {
-    expect(PRICED_DIG_MODEL).toBe('gemini-2.5-pro');
+  it('PRICED_DIG_MODEL is gemini-2.5-flash (RESOLUTION 2026-07-12: pro cannot be cost-bounded)', () => {
+    expect(PRICED_DIG_MODEL).toBe('gemini-2.5-flash');
   });
 
-  // Thinking is BOUNDED (not disabled) via generationConfig.thinkingConfig.thinkingBudget
-  // (lib/dig/generate.ts) — gemini-2.5-pro CANNOT disable thinking (valid thinkingBudget range is
-  // 128-32768; thinkingBudget:0 is Flash-only and would be rejected/ignored on Pro). 2048 is a
-  // valid, generous Pro budget, and thought tokens bill at the OUTPUT rate, separate from
-  // maxOutputTokens. This term is kept explicit in digWorstCents() so the proof visibly accounts
-  // for every billable output category.
-  it('MAX_DIG_THINKING_TOKENS is 2048 (a valid gemini-2.5-pro thinking budget, not 0)', () => {
-    expect(MAX_DIG_THINKING_TOKENS).toBe(2048);
+  // Thinking is genuinely DISABLED (not merely bounded) via generationConfig.thinkingConfig.
+  // thinkingBudget (lib/dig/generate.ts) — gemini-2.5-flash hard-supports thinkingBudget: 0 (the
+  // same setting the summary transcribe path already relies on), unlike gemini-2.5-pro (min budget
+  // 128, thinkingBudget is a soft cap). So the thinking term in digWorstCents() is honestly 0.
+  it('MAX_DIG_THINKING_TOKENS is 0 (flash hard-disables thinking via thinkingBudget: 0)', () => {
+    expect(MAX_DIG_THINKING_TOKENS).toBe(0);
   });
 
-  it('the new worst-case (with summaryProse + bounded thinking=2048 terms) is 118 cents, still <= DIG_EST_CENTS', () => {
-    expect(digWorstCents()).toBe(118);
+  it('the new worst-case (flash rates, thinking=0) is 23 cents, still <= DIG_EST_CENTS', () => {
+    expect(digWorstCents()).toBe(23);
   });
 });

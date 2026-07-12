@@ -12,9 +12,11 @@ import type { SectionWindow } from '@/lib/dig/section-window';
  *  dug sections become stale and can be deliberately refreshed. */
 export const DIG_GENERATOR_VERSION = 9;
 
-// Exported (not just module-local) so the cloud dig-handler can fail-fast at init if this drifts
-// from PRICED_DIG_MODEL (lib/gemini-cost.ts) — an env override to an unpriced model must not
-// silently break the provable dig spend bound. The LOCAL dig-section path never reads this export.
+// Exported so the LOCAL dig-section path (lib/dig/dig-section.ts) and tests can reference the
+// default/env-overridable model. The cloud dig-handler does NOT read this export for pricing
+// purposes — it pins the billed model explicitly via `opts.model: PRICED_DIG_MODEL`
+// (lib/gemini-cost.ts), so an env override here can never drift the cloud spend bound; only the
+// local, unpriced path is affected by GEMINI_DEEPDIVE_MODEL.
 export const DEEPDIVE_MODEL =
   process.env.GEMINI_DEEPDIVE_MODEL ?? 'gemini-2.5-pro';
 
@@ -105,10 +107,16 @@ export interface GenerateDigOpts {
   maxOutputTokens?: number;
   maxVideoSeconds?: number;
   mediaResolution?: 'LOW';
-  /** Valid gemini-2.5-pro thinkingBudget (128-32768) — Pro cannot disable thinking, so this bounds
-   *  (not disables) thought-token spend. Sourced from MAX_DIG_THINKING_TOKENS (lib/gemini-cost.ts)
-   *  by the caller so digWorstCents()'s accounting can never drift from the actual request. */
+  /** Thinking-token budget, sourced from MAX_DIG_THINKING_TOKENS (lib/gemini-cost.ts) by the
+   *  caller so digWorstCents()'s accounting can never drift from the actual request. The cloud
+   *  path passes gemini-2.5-flash + `0`, which genuinely HARD-DISABLES thinking (Flash-family
+   *  supports thinkingBudget: 0). Local dig (no opts) stays on gemini-2.5-pro, which cannot
+   *  disable thinking (min budget 128) — this field is simply never set on that path. */
   thinkingBudget?: number;
+  /** Model to call, e.g. `PRICED_DIG_MODEL` (lib/gemini-cost.ts) from the cloud handler, pinning
+   *  the billed/priced model independent of the DEEPDIVE_MODEL env override. Absent → DEEPDIVE_MODEL
+   *  (local dig-section path), unchanged. */
+  model?: string;
   signal?: AbortSignal;
 }
 
@@ -138,12 +146,13 @@ function buildRequestBody(
   // mime_type/file_uri parts above (snake_case, proven-working across 9 versions — left untouched),
   // generationConfig itself uses the documented camelCase REST field names (maxOutputTokens,
   // mediaResolution, thinkingConfig) — the SAME form the production summary cloud path sends
-  // (lib/gemini.ts:26-40, :633-645, "honored by the API"). thinkingConfig.thinkingBudget BOUNDS
-  // (does not disable) gemini-2.5-pro's default-on "thinking" tokens (billed at the OUTPUT rate,
-  // separate from maxOutputTokens) — Pro cannot disable thinking (valid range 128-32768;
-  // thinkingBudget:0 is Flash-only and would be rejected/ignored on Pro). The value is set ONLY
-  // when the caller supplies opts.thinkingBudget — never hardcoded here — so the local no-opts
-  // path stays byte-identical and the budget always traces back to the caller's constant.
+  // (lib/gemini.ts:26-40, :633-645, "honored by the API"). thinkingConfig.thinkingBudget DISABLES
+  // thinking on the cloud path: the cloud caller passes gemini-2.5-flash + thinkingBudget: 0, and
+  // flash genuinely honors 0 as a hard off-switch (unlike gemini-2.5-pro, which cannot disable
+  // thinking — min budget 128). The value is set ONLY when the caller supplies opts.thinkingBudget
+  // (0 !== undefined, so 0 IS emitted — do not change this to a truthy check) — never hardcoded
+  // here — so the local no-opts path stays byte-identical and the budget always traces back to the
+  // caller's constant (MAX_DIG_THINKING_TOKENS).
   const generationConfig: Record<string, unknown> = {};
   if (opts?.maxOutputTokens !== undefined) {
     generationConfig.maxOutputTokens = opts.maxOutputTokens;
@@ -238,7 +247,7 @@ export async function generateDig(
   opts?: GenerateDigOpts,
 ): Promise<string> {
   const apiKey = getApiKey();
-  const model = DEEPDIVE_MODEL;
+  const model = opts?.model ?? DEEPDIVE_MODEL;
   const body = buildRequestBody(window, videoId, lang, opts);
   const signal = opts?.signal;
 

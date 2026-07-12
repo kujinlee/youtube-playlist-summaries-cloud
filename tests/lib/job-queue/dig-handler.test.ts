@@ -14,7 +14,7 @@ import { generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import { digSectionKey, digJobVersion } from '@/lib/dig/cloud/dig-blob-key';
 import { NonRetryableError } from '@/lib/job-queue/errors';
 import { buildIndexedTranscript } from '@/lib/transcript-timestamps';
-import { MAX_TRANSCRIPT_INPUT_BYTES, MAX_DIG_OUTPUT_TOKENS, MAX_DIG_VIDEO_SECONDS, MAX_DIG_THINKING_TOKENS } from '@/lib/gemini-cost';
+import { MAX_TRANSCRIPT_INPUT_BYTES, MAX_DIG_OUTPUT_TOKENS, MAX_DIG_VIDEO_SECONDS, MAX_DIG_THINKING_TOKENS, PRICED_DIG_MODEL } from '@/lib/gemini-cost';
 
 const put = new Map<string, Buffer>();
 const blobStore = {
@@ -111,7 +111,7 @@ it('rejects a stale-version job (job.version != current) as NonRetryableError, n
 
 // ── Cost-bound hardening (docs/superpowers/specs/2026-07-12-dig-cost-bound-hardening.md) ────
 
-it('passes cost-governing opts (maxOutputTokens, maxVideoSeconds, mediaResolution LOW, thinkingBudget, signal) to generateDig', async () => {
+it('passes cost-governing opts (model, maxOutputTokens, maxVideoSeconds, mediaResolution LOW, thinkingBudget, signal) to generateDig', async () => {
   await makeDigHandler({} as any)(job as any, ctx as any);
 
   expect(generateDig as jest.Mock).toHaveBeenCalledWith(
@@ -119,6 +119,7 @@ it('passes cost-governing opts (maxOutputTokens, maxVideoSeconds, mediaResolutio
     job.videoId,
     'en',
     expect.objectContaining({
+      model: PRICED_DIG_MODEL,
       maxOutputTokens: MAX_DIG_OUTPUT_TOKENS,
       maxVideoSeconds: MAX_DIG_VIDEO_SECONDS,
       mediaResolution: 'LOW',
@@ -128,7 +129,7 @@ it('passes cost-governing opts (maxOutputTokens, maxVideoSeconds, mediaResolutio
   );
 });
 
-describe('makeDigHandler — model fail-fast guard (money-critical)', () => {
+describe('makeDigHandler — cloud dig model is env-independent (money invariant)', () => {
   const ORIGINAL_MODEL_ENV = process.env.GEMINI_DEEPDIVE_MODEL;
 
   afterEach(() => {
@@ -139,24 +140,43 @@ describe('makeDigHandler — model fail-fast guard (money-critical)', () => {
   // NOTE: jest.isolateModules() is NOT sufficient here — its mock registry cascades reads from
   // the OUTER (file-static) mock registry when the isolated overlay hasn't set an entry yet (by
   // design, so .mockImplementation() on the outer instance still applies inside isolation). Since
-  // this file's top-level `jest.mock('@/lib/dig/generate', ...)` factory already ran once (via the
-  // static imports above) and cached DEEPDIVE_MODEL's pre-env-change value in that outer registry,
-  // an isolateModules() require would silently return the STALE cached mock instead of a fresh one.
-  // `jest.resetModules()` clears the registry Maps outright (factory *registrations* persist, so
-  // the mock still applies) forcing genuine re-execution of generate.ts against the new env var.
-  // This does not disturb other tests in this file: their `generateDig`/`makeDigHandler` bindings
-  // were captured once at file-load time and remain valid references after a registry reset.
-  it('throws at init when GEMINI_DEEPDIVE_MODEL resolves to a non-priced model (mirrors summary-handler\'s SUMMARY_MODEL guard)', () => {
-    process.env.GEMINI_DEEPDIVE_MODEL = 'gemini-1.5-flash';
+  // this file's top-level `jest.mock(...)` factories already ran once (via the static imports
+  // above) and cached module state from BEFORE the env change, an isolateModules() require would
+  // silently return the STALE cached modules instead of fresh ones. `jest.resetModules()` clears
+  // the registry Maps outright (factory *registrations* persist, so the mocks still apply) forcing
+  // genuine re-execution of dig-handler.ts (and its deps) against the new env var. This does not
+  // disturb other tests in this file: their `generateDig`/`makeDigHandler` bindings were captured
+  // once at file-load time and remain valid references after a registry reset.
+  //
+  // The guard this used to test (dig-handler throwing at init when DEEPDIVE_MODEL != PRICED_DIG_MODEL)
+  // is now OBSOLETE and removed: the cloud handler pins the billed model explicitly via
+  // `opts.model: PRICED_DIG_MODEL` (a constant), so cloud dig cost can never drift from what
+  // digWorstCents() prices — regardless of GEMINI_DEEPDIVE_MODEL. This test proves that positively:
+  // an arbitrary env override does not throw AND does not change the model generateDig is called with.
+  it('an arbitrary GEMINI_DEEPDIVE_MODEL env override does not throw and does not change the billed cloud model', async () => {
+    process.env.GEMINI_DEEPDIVE_MODEL = 'gemini-1.5-flash'; // arbitrary non-priced model
     jest.resetModules();
-    const { makeDigHandler: freshMakeDigHandler } = require('@/lib/job-queue/dig-handler');
-    expect(() => freshMakeDigHandler({} as any)).toThrow(/gemini-1\.5-flash.*priced model/);
-  });
 
-  it('does NOT throw when GEMINI_DEEPDIVE_MODEL is unset (defaults to gemini-2.5-pro, the priced model)', () => {
-    delete process.env.GEMINI_DEEPDIVE_MODEL;
-    jest.resetModules();
     const { makeDigHandler: freshMakeDigHandler } = require('@/lib/job-queue/dig-handler');
-    expect(() => freshMakeDigHandler({} as any)).not.toThrow();
+    const { generateDig: freshGenerateDig } = require('@/lib/dig/generate');
+    const { getWorkerStorageBundle: freshGetWorkerStorageBundle } = require('@/lib/storage/resolve');
+    const { readVideo: freshReadVideo } = require('@/lib/storage/worker-persistence');
+    const { resolveTranscriptSegments: freshResolveTranscriptSegments } = require('@/lib/transcript-source');
+    const { PRICED_DIG_MODEL: freshPricedDigModel } = require('@/lib/gemini-cost');
+
+    (freshGetWorkerStorageBundle as jest.Mock).mockResolvedValue({ blobStore, principal, ownerId: 'owner1', playlistId: 'pl-uuid' });
+    (freshReadVideo as jest.Mock).mockResolvedValue({ id: 'vid1', title: 'Vid One', youtubeUrl: 'https://youtu.be/vid1', language: 'en', durationSeconds: 600, summaryMd: '0007_intro.md', artifacts: { summaryMd: { key: '0007_intro.md', status: 'promoted' } } });
+    (freshResolveTranscriptSegments as jest.Mock).mockResolvedValue({ segments: [{ text: 'hi', offset: 132, duration: 5 }], source: 'captions' });
+    (freshGenerateDig as jest.Mock).mockResolvedValue('Dig prose. [[SLIDE:2:12|2:20|cap]] End.');
+
+    await expect(freshMakeDigHandler({} as any)(job as any, ctx as any)).resolves.toBeDefined();
+
+    expect(freshPricedDigModel).toBe('gemini-2.5-flash');
+    expect(freshGenerateDig as jest.Mock).toHaveBeenCalledWith(
+      expect.anything(),
+      job.videoId,
+      'en',
+      expect.objectContaining({ model: freshPricedDigModel }),
+    );
   });
 });

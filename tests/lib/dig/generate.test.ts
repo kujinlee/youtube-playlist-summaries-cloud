@@ -1,4 +1,4 @@
-import { buildDigPrompt, generateDig, DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
+import { buildDigPrompt, generateDig, DIG_GENERATOR_VERSION, DEEPDIVE_MODEL } from '@/lib/dig/generate';
 import type { SectionWindow } from '@/lib/dig/section-window';
 
 const WIN: SectionWindow = {
@@ -241,6 +241,33 @@ describe('generateDig — opts (cost-governing caps)', () => {
 
     const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
     expect(body.contents[0].parts[0].video_metadata.end_offset.seconds).toBe(WIN.endSec);
+  });
+
+  it('with opts.thinkingBudget: 0: the flash thinkingBudget:0 IS honored, not skipped as falsy (0 !== undefined)', async () => {
+    const spy = jest.spyOn(global, 'fetch').mockResolvedValue(makeOkResponse('MD'));
+
+    await generateDig(WIN, VIDEO_ID, 'en', { thinkingBudget: 0 });
+
+    const body = JSON.parse((spy.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.generationConfig.thinkingConfig.thinkingBudget).toBe(0);
+  });
+
+  it('with opts.model: uses the given model in the request URL (cloud path pins gemini-2.5-flash)', async () => {
+    const spy = jest.spyOn(global, 'fetch').mockResolvedValue(makeOkResponse('MD'));
+
+    await generateDig(WIN, VIDEO_ID, 'en', { model: 'gemini-2.5-flash' });
+
+    const [url] = spy.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('gemini-2.5-flash:generateContent');
+  });
+
+  it('without opts.model: uses DEEPDIVE_MODEL (default gemini-2.5-pro) — proves local path unchanged', async () => {
+    const spy = jest.spyOn(global, 'fetch').mockResolvedValue(makeOkResponse('MD'));
+
+    await generateDig(WIN, VIDEO_ID, 'en');
+
+    const [url] = spy.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`${DEEPDIVE_MODEL}:generateContent`);
   });
 
   it('a pre-aborted opts.signal causes generateDig to reject (fetch aborts)', async () => {
