@@ -36,6 +36,7 @@ const { __mock } = jest.requireMock('playwright') as { __mock: PwMock };
 let dir: string;
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-'));
+  __mock.chromium.launch.mockClear();
   __mock.pdf.mockClear();
   __mock.page.setContent.mockClear();
   __mock.page.emulateMedia.mockClear();
@@ -102,6 +103,7 @@ describe('generateDocPdf', () => {
         returnBuffer: true,
       });
       expect(Buffer.isBuffer(buf)).toBe(true);
+      expect((buf as Buffer).subarray(0, 5).toString('latin1')).toBe('%PDF-'); // returns the real rendered bytes, not just any Buffer
       expect(put).toHaveBeenCalledWith(principal, 'pdfs/x.pdf', buf, 'application/pdf');
     });
 
@@ -159,8 +161,9 @@ describe('generateDocPdf', () => {
       await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
         blobStore: blobStore as unknown as typeof localBlobStore,
       });
-      const [opts] = __mock.chromium.launch.mock.calls.at(-1) as [{ args?: string[] }];
+      const [opts] = __mock.chromium.launch.mock.calls.at(-1) as [{ args?: string[]; timeout?: number }];
       expect(opts.args).toEqual(['--no-sandbox', '--disable-dev-shm-usage']);
+      expect(opts.timeout).toBe(30_000); // supabase branch must still carry the launch timeout, not just args
     });
   });
 });

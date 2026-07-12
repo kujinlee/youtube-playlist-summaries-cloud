@@ -15,12 +15,24 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  * - The rendered PDF bytes are written atomically via blobStore (LocalFsBlobStore uses temp+rename;
  *   cloud impls upload directly).
  * - Cooperative timeout: the render is raced against a timer. On timeout the `finally` closes the
- *   browser (canceling any pending op) and a `timedOut` guard blocks a late write, so a hung
- *   Chromium can never resurrect and write after the job already reported failure. The dangling render
- *   promise gets a no-op `.catch` so its post-close rejection is not an unhandled rejection.
- * - Any failure (launch or render/timeout) is wrapped as `PdfRendererUnavailable` (503) so callers
- *   never have to distinguish "browser wouldn't start" from "render didn't finish in time" — both are
- *   the renderer being unavailable right now.
+ *   browser (canceling pending Chromium ops) and the `timedOut` guard skips the blobStore write when
+ *   the timer fired before the write started — the common hung-render case, where no bytes exist yet.
+ *   The guard is BEST-EFFORT, not an absolute barrier: if `page.pdf()` already produced bytes and the
+ *   timer fires while `blobStore.put` is mid-flight, that put may still complete after the caller sees
+ *   the 503 (closing the browser does not cancel a storage upload). That late write is HARMLESS by
+ *   design — it writes the COMPLETE, correct PDF of this exact nonce-free HTML to its own
+ *   content-addressed key `pdfs/{base}.r{V}.{sha256(html)}.pdf` via an atomic put (verified in Task 1 /
+ *   ADR 0003). It can only ever populate its own key with idempotent correct bytes, never a torn or
+ *   wrong-generation object, so a later request simply hits the cache. Preventing it would require the
+ *   staging-key + promote dance ADR 0003 deliberately rejected. The dangling render promise gets a
+ *   no-op `.catch` so its post-close rejection is not an unhandled rejection. (`returnBuffer` stays
+ *   safe regardless: `rendered` is set only after the write completes and every failure path throws
+ *   before the return, so a timed-out call never returns un-written bytes.)
+ * - Any failure on the render path (launch, timeout, or the render/storage write) is wrapped as
+ *   `PdfRendererUnavailable` (503) with the original error preserved in `cause` — a deliberate, uniform
+ *   "renderer unavailable, retry" posture for a serve endpoint: callers needn't distinguish "browser
+ *   wouldn't start" / "didn't finish in time" / "transient storage blip", and the real failure class
+ *   stays in `cause` for logs. (Task-5 review Medium: accepted as a deliberate transient-retry choice.)
  * - `opts.returnBuffer` returns the written PDF bytes on success (e.g. for direct HTTP responses);
  *   the default preserves the original void/fire-and-forget behavior used by the local job route.
  * - `STORAGE_BACKEND === 'supabase'` launches Chromium with `--no-sandbox --disable-dev-shm-usage`,
@@ -76,7 +88,8 @@ export async function generateDocPdf(
       await page!.setContent(html, { waitUntil: 'load' });
       await page!.emulateMedia({ media: 'print' });
       const buf = await page!.pdf({ printBackground: true, format: 'A4' });
-      if (timedOut) return; // the timeout path already won — never write after reporting failure
+      if (timedOut) return; // timer fired before we produced bytes → skip the write (best-effort; a put
+                            // already in flight may still complete — harmless for a content-addressed key, see docblock)
       await blobStore.put(principal, key, buf, 'application/pdf');
       rendered = buf; // only set once the write has actually completed
     })();
