@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Video } from '@/types';
 import { formatDuration } from '@/lib/format-duration';
 import Badge from './Badge';
@@ -9,6 +9,8 @@ import VideoMenu from './VideoMenu';
 import StarRating from './StarRating';
 import NoteCell from './NoteCell';
 import VideoQuickView from './VideoQuickView';
+import ShareDialog from './cloud/ShareDialog';
+import { useScope } from '@/lib/client/scope';
 
 interface VideoRowProps {
   video: Video;
@@ -42,6 +44,10 @@ export default function VideoRow({ video, rank, outputFolder = '', baseOutputFol
   const [menuOpen, setMenuOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showCorrections, setShowCorrections] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const scope = useScope();
+  const playlistId = scope.mode === 'cloud' ? scope.playlistId : '';
   const { overallScore } = video;
 
   // opacity-40 must NOT be on the <tr> — it creates a CSS stacking context that
@@ -95,6 +101,7 @@ export default function VideoRow({ video, rank, outputFolder = '', baseOutputFol
           <div className="relative flex items-center gap-2">
             <span className={`text-sm text-zinc-100 ${cellDim}`}>{video.title}</span>
             <button
+              ref={menuTriggerRef}
               type="button"
               aria-label="Menu"
               aria-haspopup="true"
@@ -119,6 +126,7 @@ export default function VideoRow({ video, rank, outputFolder = '', baseOutputFol
                   onResummarize={onResummarize}
                   onSavePdf={onSavePdf}
                   onEditCorrections={() => setShowCorrections(true)}
+                  onShare={() => { setMenuOpen(false); setShowShare(true); }}
                   onClose={() => setMenuOpen(false)}
                 />
               </div>
@@ -184,6 +192,14 @@ export default function VideoRow({ video, rank, outputFolder = '', baseOutputFol
           initialCorrections={video.corrections}
           onClose={() => setShowCorrections(false)}
           onSuccess={(patch) => onAnnotationChange(video.id, patch)}
+        />
+      )}
+      {showShare && (
+        <ShareDialog
+          playlistId={playlistId}
+          videoId={video.id}
+          videoTitle={video.title}
+          onClose={() => { setShowShare(false); menuTriggerRef.current?.focus(); }}
         />
       )}
     </>

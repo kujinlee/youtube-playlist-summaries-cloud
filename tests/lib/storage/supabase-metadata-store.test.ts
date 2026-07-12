@@ -156,7 +156,10 @@ describe('readIndex', () => {
     expect(idx.playlistUrl).toBe('https://yt.be/list');
     expect(idx.playlistTitle).toBe('My List');
     expect(idx.outputFolder).toBe('listX');
-    expect(idx.videos).toEqual([{ id: 'v1' }, { id: 'v2' }]);
+    expect(idx.videos).toEqual([
+      { id: 'v1', summaryReady: false },
+      { id: 'v2', summaryReady: false },
+    ]);
     // Verify video query is ordered ascending.
     expect(client.calls.some((c) => c.method === 'order' && (c.args[2] as any)?.ascending === true)).toBe(true);
   });
@@ -271,6 +274,23 @@ describe('upsertVideo', () => {
     const updateCall = client.calls.find((c) => c.method === 'update');
     expect(updateCall).toBeDefined();
     const written = (updateCall!.args[1] as any).data;
+    expect(written).not.toHaveProperty('updatedAt');
+    expect(written).toEqual({ id: 'vid1' });
+  });
+
+  test('strips a caller-supplied summaryReady (and updatedAt) before writing to data', async () => {
+    const client = buildMockClient({
+      playlistRow: { id: 'pl-id', playlist_url: 'https://yt.be/list' },
+    });
+    const store = new SupabaseMetadataStore(client as any);
+    // Simulates a Video sourced from readIndex(), which surfaces both
+    // updatedAt and the derived summaryReady flag.
+    const video = { id: 'vid1', updatedAt: 'x', summaryReady: true } as any;
+    await store.upsertVideo(p, video);
+    const updateCall = client.calls.find((c) => c.method === 'update');
+    expect(updateCall).toBeDefined();
+    const written = (updateCall!.args[1] as any).data;
+    expect(written).not.toHaveProperty('summaryReady');
     expect(written).not.toHaveProperty('updatedAt');
     expect(written).toEqual({ id: 'vid1' });
   });

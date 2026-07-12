@@ -18,11 +18,12 @@ export async function POST(request: Request) {
   if (!user) return json({ error: 'authentication required' }, 401);
 
   const { token, tokenHash } = generateShareToken();
-  const { data: expiresAt, error } = await supabase.rpc('create_share_token', {
+  const { data, error } = await supabase.rpc('create_share_token', {
     p_playlist_id: body.playlistId, p_video_id: body.videoId,
     p_expiry: expiry.expiresAt ? expiry.expiresAt.toISOString() : null,
     p_token_hash: tokenHash,
   });
-  if (error) return json({ error: 'not found' }, 404); // coarse — unowned/unpromoted/bounds
-  return json({ token, url: `/s/${token}`, expiresAt }, 201);
+  const row = Array.isArray(data) ? data[0] : null;
+  if (error || !row) return json({ error: 'not found' }, 404); // coarse — unowned/unpromoted/bounds
+  return json({ id: row.id, token, url: `/s/${token}`, expiresAt: row.expires_at }, 201);
 }

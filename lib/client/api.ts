@@ -190,3 +190,44 @@ export async function setArchived(scope: Scope, videoId: string, archived: boole
   });
   await handle<{ ok: true }>(res);
 }
+
+/** Builds the serveCloud summary-doc URL. View = no opts; downloads set format + download=1. */
+export function summaryHref(
+  playlistId: string,
+  videoId: string,
+  opts?: { format?: 'md' | 'html'; download?: boolean },
+): string {
+  const params = new URLSearchParams();
+  params.set('playlist', playlistId);
+  params.set('type', 'summary');
+  if (opts?.format) params.set('format', opts.format);
+  if (opts?.download) params.set('download', '1');
+  return `/api/html/${encodeURIComponent(videoId)}?${params.toString()}`;
+}
+
+export type ShareTtl = 7 | 30 | 'never';
+
+export interface CreateShareResult {
+  id: string;
+  token: string;
+  url: string;                 // path only: '/s/<token>' — caller prefixes window.location.origin
+  expiresAt: string | null;
+}
+
+export async function createShare(
+  playlistId: string,
+  videoId: string,
+  ttl: ShareTtl,
+): Promise<CreateShareResult> {
+  const res = await fetch('/api/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlistId, videoId, ttlDays: ttl }),
+  });
+  return handle<CreateShareResult>(res);
+}
+
+export async function revokeShare(shareId: string): Promise<{ revoked: boolean }> {
+  const res = await fetch(`/api/share/${encodeURIComponent(shareId)}/revoke`, { method: 'POST' });
+  return handle<{ revoked: boolean }>(res);
+}

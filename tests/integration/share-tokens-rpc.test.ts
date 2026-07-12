@@ -14,18 +14,39 @@ async function seedDoc(ownerId: string) {
 describe('share_tokens RPCs', () => {
   it('create_share_token stores a row for an owned+promoted doc and returns expires_at', async () => {
     const u = await newUser();
-    const { client } = await signInAs(u.email, u.password);
+    const { client: userAClient } = await signInAs(u.email, u.password);
     const { playlistId, videoId } = await seedDoc(u.user.id);
-    const hash = hexHash();
-    const expiry = new Date(Date.now() + 30 * 864e5).toISOString();
-    const { data, error } = await client.rpc('create_share_token', {
-      p_playlist_id: playlistId, p_video_id: videoId, p_expiry: expiry, p_token_hash: hash,
+    const tokenHash = hexHash();
+    const tokenHash2 = hexHash();
+
+    // (a) 'never' expiry → returns a row with id + expires_at: null
+    const { data, error } = await userAClient.rpc('create_share_token', {
+      p_playlist_id: playlistId,
+      p_video_id: videoId,
+      p_expiry: null, // 'never'
+      p_token_hash: tokenHash,
     });
     expect(error).toBeNull();
-    expect(new Date(data as string).getTime()).toBeCloseTo(new Date(expiry).getTime(), -3);
+    const row = Array.isArray(data) ? data[0] : data;
+    expect(row).toMatchObject({ id: expect.any(String), expires_at: null });
+    expect(row.id).toMatch(/^[0-9a-f-]{36}$/i); // uuid
+
+    // (b) non-null expiry round-trips (Codex M2): returned expires_at echoes the input.
+    // Use a SECOND distinct token hash — token_hash is UNIQUE.
+    const iso = new Date(Date.now() + 7 * 864e5).toISOString();
+    const { data: data2, error: err2 } = await userAClient.rpc('create_share_token', {
+      p_playlist_id: playlistId, p_video_id: videoId, p_expiry: iso, p_token_hash: tokenHash2,
+    });
+    expect(err2).toBeNull();
+    const row2 = Array.isArray(data2) ? data2[0] : data2;
+    expect(row2.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(new Date(row2.expires_at).getTime()).toBeCloseTo(new Date(iso).getTime(), -3); // ~seconds
+
+    // KEEP the original row-exists / owner assertions — two rows now exist (calls (a) and (b) above).
     const { data: rows } = await svc.from('share_tokens').select('*').eq('playlist_id', playlistId);
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     expect((rows![0] as any).owner_id).toBe(u.user.id);
+    expect((rows![1] as any).owner_id).toBe(u.user.id);
   });
 
   it('create_share_token raises for a doc the caller does not own (coarse)', async () => {
