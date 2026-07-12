@@ -23,7 +23,8 @@ export async function seedPlaylist(
 export async function seedPromotedVideo(
   svc: SupabaseClient,
   opts: { ownerId: string; playlistId: string; videoId?: string; base?: string;
-          status?: 'promoted' | 'committed'; position?: number; title?: string },
+          status?: 'promoted' | 'committed'; position?: number; title?: string;
+          durationSeconds?: number; youtubeUrl?: string },
 ): Promise<{ videoId: string; base: string }> {
   const videoId = opts.videoId ?? `v-${randomUUID()}`;
   const base = opts.base ?? videoId;
@@ -40,6 +41,11 @@ export async function seedPromotedVideo(
       summaryMd: `${base}.md`,                    // top-level key the route get()s (summary-handler.ts:157)
       docVersion: 1,
       artifacts: { summaryMd: { key: `${base}.md`, status } },
+      // Task 7 (cloud dig): enqueueDig reads load.video.durationSeconds (NULL trips enqueue_job's
+      // PJ003 duration backstop -> 400) and the dig handler reads video.youtubeUrl. Additive with
+      // defaults so existing callers (pdf-cloud, html-*) that don't pass these keep working.
+      durationSeconds: opts.durationSeconds ?? 600,
+      youtubeUrl: opts.youtubeUrl ?? `https://youtu.be/${videoId}`,
       ...(opts.title !== undefined ? { title: opts.title } : {}), // optional: download-filename tests (C2/C8)
     },
   });
