@@ -1,4 +1,9 @@
-export const PDF_MAX_CONCURRENCY = Math.max(1, parseInt(process.env.PDF_MAX_CONCURRENCY ?? '3', 10) || 3);
+// Parse then clamp SEPARATELY: `parseInt('0') || 3` would turn an explicit `0` into 3 (defeating the
+// floor). Default to 3 only when the env is absent/unparseable; otherwise clamp to a floor of 1 so
+// `PDF_MAX_CONCURRENCY=0` (or negative) means "minimum 1 render", never a silent capacity inflation.
+// (Task-4 dual review: Codex Medium.)
+const parsedMaxConcurrency = parseInt(process.env.PDF_MAX_CONCURRENCY ?? '3', 10);
+export const PDF_MAX_CONCURRENCY = Number.isNaN(parsedMaxConcurrency) ? 3 : Math.max(1, parsedMaxConcurrency);
 export class PdfBusyError extends Error { statusCode = 503; constructor() { super('PDF renderer busy'); this.name = 'PdfBusyError'; } }
 
 const inFlight = new Map<string, Promise<unknown>>();
