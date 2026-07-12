@@ -84,3 +84,24 @@ test('local mode: 2c items absent, existing menu unchanged', () => {
   expect(screen.queryByText(/share/i)).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: /watch on youtube/i })).toBeInTheDocument();
 });
+
+test('cloud + summaryReady: View PDF renders with exact href, target _blank, rel noopener', () => {
+  renderCloud(<VideoMenu {...cloudProps} video={{ ...video, summaryReady: true } as any} onShare={onShare} onClose={onClose} />);
+  const pdf = screen.getByRole('link', { name: /view pdf/i });
+  expect(pdf).toHaveAttribute('target', '_blank');
+  expect(pdf).toHaveAttribute('rel', expect.stringContaining('noopener'));
+  expect(pdf).toHaveAttribute('href', `/api/pdf/${video.id}?playlist=${PID}&type=summary`);
+});
+
+test('cloud + NOT ready: View PDF is a disabled span, not a link', () => {
+  renderCloud(<VideoMenu {...cloudProps} video={{ ...video, summaryReady: false } as any} onShare={onShare} onClose={onClose} />);
+  expect(screen.queryByRole('link', { name: /view pdf/i })).not.toBeInTheDocument();
+  const pdf = screen.getByText(/view pdf/i);
+  expect(pdf).toHaveAttribute('aria-disabled', 'true');
+  expect(pdf).toHaveAttribute('title', 'Finalizing…');
+});
+
+test('local mode: View PDF absent', () => {
+  renderLocal(<VideoMenu {...localProps} video={{ ...video, summaryReady: true } as any} onClose={onClose} />);
+  expect(screen.queryByText(/view pdf/i)).not.toBeInTheDocument();
+});
