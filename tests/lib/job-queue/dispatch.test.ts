@@ -1,4 +1,5 @@
 import { makeJobHandler } from '@/lib/job-queue/dispatch';
+import { NonRetryableError } from '@/lib/job-queue/errors';
 
 const ctx = { isCancelled: async () => false, signal: new AbortController().signal, setPhase: async () => {} };
 const mkJob = (kind: string) => ({ id: 'j', ownerId: 'o', playlistId: 'p', videoId: 'v', sectionId: -1, kind, version: 'x', payload: {}, attempts: 0, leaseToken: 't' });
@@ -15,5 +16,10 @@ it('routes by job.kind', async () => {
 
 it('throws NonRetryableError for an unknown kind', async () => {
   const h = makeJobHandler({ summary: jest.fn(), dig: jest.fn() });
-  await expect(h(mkJob('bogus') as any, ctx as any)).rejects.toThrow(/no handler for kind/);
+  // Assert the CLASS, not just the message: the dead-letter-vs-retry distinction depends on it
+  // being NonRetryableError (worker-runner.ts classifies retryable = !(e instanceof NonRetryableError)).
+  // A plain Error with the same message would silently become a retry loop.
+  const err = await h(mkJob('bogus') as any, ctx as any).catch((e) => e);
+  expect(err).toBeInstanceOf(NonRetryableError);
+  expect(err.message).toMatch(/no handler for kind/);
 });
