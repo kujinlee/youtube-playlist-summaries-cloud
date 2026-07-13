@@ -211,10 +211,12 @@ it('fail_job(retryable) at max_attempts=1 dead-letters and never releases the re
   expect(after.data).toEqual(before.data); // never-release: reservation retained
 });
 
-it('rejects a non-summary job_kind with unsupported_job_kind', async () => {
+it('rejects an unsupported job_kind with unsupported_job_kind', async () => {
+  // 'dig' became a supported kind in migration 0018 (cloud dig-deeper generation slice) —
+  // use a genuinely unsupported value here so this test still exercises the guard.
   const owner = (await newUser()).user.id;
   const pl = await seedPlaylist(owner);
-  const r = await enq(owner, pl, randomUUID(), payload(100), 'dig');
+  const r = await enq(owner, pl, randomUUID(), payload(100), 'bogus');
   expect(r.error).toBeTruthy();
   expect(r.error!.message).toMatch(/unsupported_job_kind/);
 });

@@ -12,7 +12,12 @@ import type { SectionWindow } from '@/lib/dig/section-window';
  *  dug sections become stale and can be deliberately refreshed. */
 export const DIG_GENERATOR_VERSION = 9;
 
-const DEEPDIVE_MODEL =
+// Exported so the LOCAL dig-section path (lib/dig/dig-section.ts) and tests can reference the
+// default/env-overridable model. The cloud dig-handler does NOT read this export for pricing
+// purposes — it pins the billed model explicitly via `opts.model: PRICED_DIG_MODEL`
+// (lib/gemini-cost.ts), so an env override here can never drift the cloud spend bound; only the
+// local, unpriced path is affected by GEMINI_DEEPDIVE_MODEL.
+export const DEEPDIVE_MODEL =
   process.env.GEMINI_DEEPDIVE_MODEL ?? 'gemini-2.5-pro';
 
 const GEMINI_REST_BASE =
@@ -90,10 +95,36 @@ interface GeminiRestResponse {
   candidates?: GeminiCandidate[];
 }
 
+/**
+ * Optional cost-governing knobs, additive to the base 3-arg `generateDig` signature. ALL fields
+ * are optional and, when `opts` is absent/empty, change nothing about the request body or
+ * behavior — the LOCAL dig-section path (`lib/dig/dig-section.ts:61`) calls `generateDig` with no
+ * 4th argument and MUST stay byte-identical. Only the cloud `dig` job handler passes these, to
+ * make the per-job Gemini spend mechanically bounded (docs/superpowers/specs/2026-07-12-dig-cost-
+ * bound-hardening.md).
+ */
+export interface GenerateDigOpts {
+  maxOutputTokens?: number;
+  maxVideoSeconds?: number;
+  mediaResolution?: 'LOW';
+  /** Thinking-token budget, sourced from MAX_DIG_THINKING_TOKENS (lib/gemini-cost.ts) by the
+   *  caller so digWorstCents()'s accounting can never drift from the actual request. The cloud
+   *  path passes gemini-2.5-flash + `0`, which genuinely HARD-DISABLES thinking (Flash-family
+   *  supports thinkingBudget: 0). Local dig (no opts) stays on gemini-2.5-pro, which cannot
+   *  disable thinking (min budget 128) — this field is simply never set on that path. */
+  thinkingBudget?: number;
+  /** Model to call, e.g. `PRICED_DIG_MODEL` (lib/gemini-cost.ts) from the cloud handler, pinning
+   *  the billed/priced model independent of the DEEPDIVE_MODEL env override. Absent → DEEPDIVE_MODEL
+   *  (local dig-section path), unchanged. */
+  model?: string;
+  signal?: AbortSignal;
+}
+
 function buildRequestBody(
   window: SectionWindow,
   videoId: string,
   lang: 'en' | 'ko',
+  opts?: GenerateDigOpts,
 ): object {
   const { startSec, endSec, transcriptWindow, summaryProse } = window;
   const transcriptBlock = buildIndexedTranscript(transcriptWindow);
@@ -101,6 +132,38 @@ function buildRequestBody(
     buildDigPrompt(lang, startSec, endSec) +
     (transcriptBlock ? `\n${transcriptBlock}\n` : '') +
     `\nSummary section:\n${summaryProse}`;
+
+  // Clamp the video segment's end offset to a bounded duration when requested (cloud cost bound —
+  // video input is the dominant, duration-scaling cost term). Absent opts.maxVideoSeconds: the
+  // original endSec is used unchanged, matching today's local behavior exactly.
+  const clampedEndSec =
+    opts?.maxVideoSeconds !== undefined
+      ? Math.min(endSec, startSec + opts.maxVideoSeconds)
+      : endSec;
+
+  // generationConfig is entirely OMITTED when no opts request it — the local path's request body
+  // stays byte-identical to today. Unlike the file_data/video_metadata/start_offset/end_offset/
+  // mime_type/file_uri parts above (snake_case, proven-working across 9 versions — left untouched),
+  // generationConfig itself uses the documented camelCase REST field names (maxOutputTokens,
+  // mediaResolution, thinkingConfig) — the SAME form the production summary cloud path sends
+  // (lib/gemini.ts:26-40, :633-645, "honored by the API"). thinkingConfig.thinkingBudget DISABLES
+  // thinking on the cloud path: the cloud caller passes gemini-2.5-flash + thinkingBudget: 0, and
+  // flash genuinely honors 0 as a hard off-switch (unlike gemini-2.5-pro, which cannot disable
+  // thinking — min budget 128). The value is set ONLY when the caller supplies opts.thinkingBudget
+  // (0 !== undefined, so 0 IS emitted — do not change this to a truthy check) — never hardcoded
+  // here — so the local no-opts path stays byte-identical and the budget always traces back to the
+  // caller's constant (MAX_DIG_THINKING_TOKENS).
+  const generationConfig: Record<string, unknown> = {};
+  if (opts?.maxOutputTokens !== undefined) {
+    generationConfig.maxOutputTokens = opts.maxOutputTokens;
+  }
+  if (opts?.mediaResolution === 'LOW') {
+    generationConfig.mediaResolution = 'MEDIA_RESOLUTION_LOW';
+  }
+  if (opts?.thinkingBudget !== undefined) {
+    generationConfig.thinkingConfig = { thinkingBudget: opts.thinkingBudget };
+  }
+  const hasGenerationConfig = Object.keys(generationConfig).length > 0;
 
   return {
     contents: [
@@ -114,13 +177,14 @@ function buildRequestBody(
             },
             video_metadata: {
               start_offset: { seconds: startSec },
-              end_offset: { seconds: endSec },
+              end_offset: { seconds: clampedEndSec },
             },
           },
           { text: promptText },
         ],
       },
     ],
+    ...(hasGenerationConfig ? { generationConfig } : {}),
   };
 }
 
@@ -128,10 +192,17 @@ async function callGeminiRest(
   model: string,
   apiKey: string,
   body: object,
+  externalSignal?: AbortSignal,
 ): Promise<Response> {
   const url = `${GEMINI_REST_BASE}/${model}:generateContent`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // Compose the per-request timeout signal with an optional external signal (e.g. the cloud job's
+  // lease/shutdown signal) so EITHER aborts the fetch. Absent externalSignal, behavior is unchanged
+  // (AbortSignal.any with a single real signal behaves like that signal alone).
+  const signal = externalSignal
+    ? AbortSignal.any([controller.signal, externalSignal])
+    : controller.signal;
   try {
     return await fetch(url, {
       method: 'POST',
@@ -140,7 +211,7 @@ async function callGeminiRest(
         'x-goog-api-key': apiKey,
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
+      signal,
     });
   } finally {
     clearTimeout(timer);
@@ -165,29 +236,33 @@ function extractText(data: GeminiRestResponse): string {
  * @param window   Section window produced by Task 2's windowForSection.
  * @param videoId  YouTube video ID (11 chars).
  * @param lang     Output language.
+ * @param opts     Optional cost-governing caps + external abort signal (cloud path only — see
+ *                 GenerateDigOpts). Absent/empty: behavior is unchanged from before this param existed.
  * @returns        Raw markdown string.
  */
 export async function generateDig(
   window: SectionWindow,
   videoId: string,
   lang: 'en' | 'ko',
+  opts?: GenerateDigOpts,
 ): Promise<string> {
   const apiKey = getApiKey();
-  const model = DEEPDIVE_MODEL;
-  const body = buildRequestBody(window, videoId, lang);
+  const model = opts?.model ?? DEEPDIVE_MODEL;
+  const body = buildRequestBody(window, videoId, lang, opts);
+  const signal = opts?.signal;
 
   let res: Response;
 
   try {
-    res = await callGeminiRest(model, apiKey, body);
+    res = await callGeminiRest(model, apiKey, body, signal);
   } catch (err) {
     // Network or timeout error on first attempt — retry once.
-    res = await callGeminiRest(model, apiKey, body);
+    res = await callGeminiRest(model, apiKey, body, signal);
   }
 
   // One retry on transient HTTP failure.
   if (!res.ok && TRANSIENT_STATUSES.has(res.status)) {
-    res = await callGeminiRest(model, apiKey, body);
+    res = await callGeminiRest(model, apiKey, body, signal);
   }
 
   if (!res.ok) {

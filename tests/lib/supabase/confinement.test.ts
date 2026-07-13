@@ -23,6 +23,12 @@ describe('service_role confinement', () => {
     expect(reachesService(entry)).toBe(true);
   });
 
+  it('app/api/videos/[id]/dig/[sectionId]/route.ts (Task 6 allowlisted cloud dig entrypoint) does reach service.ts', () => {
+    const { reachesService } = require('@/scripts/check-service-confinement');
+    const entry = path.join(process.cwd(), 'app/api/videos/[id]/dig/[sectionId]/route.ts');
+    expect(reachesService(entry)).toBe(true);
+  });
+
   it('extractImportSpecifiers catches side-effect + re-export imports (Codex H3)', () => {
     const src = [
       `import '@/lib/supabase/service';`,               // side-effect import

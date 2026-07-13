@@ -79,10 +79,16 @@ export function collectEntrypoints(): string[] {
  *  Stage 1F-b (spec D4/D16): the anonymous `/s/[token]` share-serve route is the second (and,
  *  per spec, the ONLY other) deliberately authorized `service_role` entrypoint — there is no
  *  session to scope RLS by for an anonymous visitor, so it uses a runtime `get`-only blob-store
- *  wrapper plus `getShareServeContext`'s explicit confused-deputy guard instead of RLS. */
+ *  wrapper plus `getShareServeContext`'s explicit confused-deputy guard instead of RLS.
+ *
+ *  Task 6 (cloud dig trigger): the dig route is the third deliberately authorized entrypoint —
+ *  it builds `SupabaseEnqueuer(createServiceClient())` for the enqueue RPC ONLY, mirroring
+ *  app/api/jobs/route.ts's two-client split. The `profiles.is_anonymous` tenant read still goes
+ *  through the SESSION client (RLS), never the service client — see enqueue-dig-core.ts. */
 const ALLOWED_SERVICE_IMPORTERS = [
   path.join(ROOT, 'app/api/jobs/route.ts'),
   path.join(ROOT, 'app/s/[token]/route.ts'),
+  path.join(ROOT, 'app/api/videos/[id]/dig/[sectionId]/route.ts'),
 ];
 
 export function findServiceImporters(): string[] {

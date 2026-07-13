@@ -23,3 +23,22 @@ it('est >= independently-recomputed worst case x max_attempts (live config)', as
 it('resolved models equal the priced model', () => {
   expect(SUMMARY_MODEL).toBe(C.PRICED_MODEL); expect(TRANSCRIBE_MODEL).toBe(C.PRICED_MODEL);
 });
+
+// Dig drift-guard (mirrors the summary block above): dig_est_cents / dig_max_attempts are
+// runtime-editable guardrail_config columns (migration 0011) — the unit guard's
+// `expect(DIG_EST_CENTS).toBe(150)` only checks the source-code constant, not the live DB value.
+// This proves the LIVE config still honors the digWorstCents() bound.
+it('dig: live guardrail_config.dig_est_cents >= digWorstCents() x dig_max_attempts', async () => {
+  const { data: cfg } = await adminClient().from('guardrail_config').select('*').single();
+  expect(cfg!.dig_est_cents).toBeGreaterThanOrEqual(Math.ceil(C.digWorstCents()) * cfg!.dig_max_attempts);
+});
+// RESOLUTION (2026-07-12): cloud dig now runs on gemini-2.5-flash while local dig stays on
+// DEEPDIVE_MODEL (gemini-2.5-pro) — those are now intentionally DIFFERENT models, so a
+// DEEPDIVE_MODEL === PRICED_DIG_MODEL equality no longer makes sense (and would be false by
+// construction). The cloud handler (lib/job-queue/dig-handler.ts) pins the billed model
+// explicitly by passing `model: PRICED_DIG_MODEL` into generateDig — a constant, never sourced
+// from the env-overridable DEEPDIVE_MODEL — so there is no runtime drift for this guard to catch:
+// cloud dig cost is env-independent by construction, not by an init-time equality check.
+it('dig: the priced dig model is the flash model the cloud handler pins by construction', () => {
+  expect(C.PRICED_DIG_MODEL).toBe('gemini-2.5-flash');
+});
