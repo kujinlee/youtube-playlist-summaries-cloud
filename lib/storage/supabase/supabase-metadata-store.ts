@@ -264,6 +264,27 @@ export class SupabaseMetadataStore implements MetadataStore {
   }
 
   // ---------------------------------------------------------------------------
+  // deletePlaylist: hard-delete a playlist row owned by the caller (Task 8).
+  // RLS already scopes DELETE to owner_id = auth.uid(); the explicit .eq('owner_id')
+  // is defense-in-depth, matching listPlaylists/setPlaylistTitleIfNull convention.
+  // T6's cascade FKs (0019) remove the playlist's videos/jobs/share_tokens as a side
+  // effect — no separate cleanup calls here. A non-owner/nonexistent id deletes 0 rows
+  // without erroring.
+  // ---------------------------------------------------------------------------
+  async deletePlaylist(p: Principal, playlistId: string): Promise<void> {
+    const { data: userData } = await this.client.auth.getUser();
+    const ownerId = userData?.user?.id;
+    if (!ownerId) throw new Error('deletePlaylist: no authenticated user');
+
+    const { error } = await this.client
+      .from('playlists')
+      .delete()
+      .eq('id', playlistId)
+      .eq('owner_id', ownerId);
+    if (error) throw error;
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
 

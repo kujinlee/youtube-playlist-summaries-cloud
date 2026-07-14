@@ -491,6 +491,34 @@ describe('setPlaylistTitleIfNull', () => {
 });
 
 // ---------------------------------------------------------------------------
+// deletePlaylist
+// ---------------------------------------------------------------------------
+describe('deletePlaylist', () => {
+  test('deletes from playlists filtered by BOTH id and owner_id', async () => {
+    const client = buildMockClient({ userId: 'owner-uuid' });
+    const store = new SupabaseMetadataStore(client as any);
+    await store.deletePlaylist(p, 'pl-id-1');
+    expect(client.calls.some((c) => c.method === 'delete' && c.args[0] === 'playlists')).toBe(true);
+    const eqCalls = client.calls.filter((c) => c.method === 'eq' && c.args[0] === 'playlists');
+    expect(eqCalls.some((c) => c.args[1] === 'id' && c.args[2] === 'pl-id-1')).toBe(true);
+    expect(eqCalls.some((c) => c.args[1] === 'owner_id' && c.args[2] === 'owner-uuid')).toBe(true);
+  });
+
+  test('throws when no authenticated user', async () => {
+    const client = buildMockClient({ userId: '' });
+    (client.auth as any).getUser = () => Promise.resolve({ data: { user: null } });
+    const store = new SupabaseMetadataStore(client as any);
+    await expect(store.deletePlaylist(p, 'pl-id-1')).rejects.toThrow('no authenticated user');
+  });
+
+  test('throws on delete error', async () => {
+    const client = buildMockClient({ userId: 'owner-uuid', errors: { 'playlists.delete': 'db down' } });
+    const store = new SupabaseMetadataStore(client as any);
+    await expect(store.deletePlaylist(p, 'pl-id-1')).rejects.toThrow('db down');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Error propagation
 // ---------------------------------------------------------------------------
 describe('error propagation', () => {

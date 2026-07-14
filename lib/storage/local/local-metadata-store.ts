@@ -45,6 +45,9 @@ export class LocalFsMetadataStore implements MetadataStore {
   async resolvePlaylistId(): Promise<string> {
     throw new Error('resolvePlaylistId is cloud-only (unsupported on the local backend)');
   }
+  async deletePlaylist(): Promise<void> {
+    throw new Error('deletePlaylist is cloud-only (unsupported on the local backend)');
+  }
   // Local parity for the cloud conditional update (Task 3): fills playlistTitle only
   // when currently absent/null in the JSON index; a no-op otherwise.
   async setPlaylistTitleIfNull(p: Principal, title: string): Promise<{ updated: boolean }> {

@@ -51,4 +51,12 @@ export interface MetadataStore {
     set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
     clear: ('personalScore' | 'personalNote')[],
   ): Promise<{ found: boolean }>;
+  /** Cloud-only: hard-delete a playlist row owned by the caller (Task 8). RLS already
+   *  scopes this to `owner_id = auth.uid()`; the explicit owner_id predicate in the
+   *  cloud impl is defense-in-depth, not the sole guard. T6's cascade FKs remove the
+   *  playlist's videos/jobs/share_tokens as a side effect — no separate cleanup calls
+   *  are made here. A non-owner id (or an id that does not exist) deletes 0 rows and
+   *  throws nothing — the caller's own data is untouched either way. Local impl
+   *  throws — the delete UI is cloud-only (spec §B6). */
+  deletePlaylist(p: Principal, playlistId: string): Promise<void>;
 }

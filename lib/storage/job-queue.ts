@@ -23,6 +23,12 @@ export interface JobQueue {
   getStatus(jobId: string): Promise<JobRecord | null>;
   listByPlaylist(playlistId: string): Promise<PlaylistJobRow[]>;
   requestCancel(jobId: string): Promise<{ requested: number }>;
+  /** Cancel every non-terminal (queued/active) job for a playlist (Task 8) by calling the
+   *  SECURITY DEFINER `request_cancel_playlist_jobs` RPC (0019), which self-guards on
+   *  `owner_id = auth.uid()` — a non-owner playlistId cancels 0 rows. Added to the
+   *  interface (not just the class) because T9's DELETE route consumes it through
+   *  `bundle.jobQueue` typed as `JobQueue`; `SupabaseJobQueue` is the sole implementer. */
+  requestCancelPlaylist(playlistId: string): Promise<{ cancelled: number }>;
   claim(workerId: string, leaseSeconds: number, videoId?: string | null): Promise<LeasedJob | null>;
   heartbeat(jobId: string, workerId: string, leaseToken: string, leaseSeconds: number): Promise<{ ok: boolean }>;
   complete(jobId: string, workerId: string, leaseToken: string, result: unknown): Promise<{ ok: boolean }>;
