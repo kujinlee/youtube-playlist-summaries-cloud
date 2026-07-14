@@ -1,6 +1,11 @@
 jest.mock('@/lib/youtube', () => ({
   ...jest.requireActual('@/lib/youtube'),
   fetchPlaylistVideos: jest.fn(),
+  // T2: producer now also calls fetchPlaylistTitleOrNull after resolvePlaylistId. Stub it here
+  // so these pre-existing tests never hit the real (network-backed) implementation; the
+  // default jest.fn() resolves to undefined, which is falsy, so no title is persisted and
+  // bundle.metadataStore (no setPlaylistMeta here) is never touched.
+  fetchPlaylistTitleOrNull: jest.fn(),
 }));
 import * as youtube from '@/lib/youtube';
 import { enqueuePlaylist, PlaylistTooLargeError, AllEnqueueFailedError, MAX_VIDEOS_PER_ENQUEUE } from '@/lib/job-queue/producer';
