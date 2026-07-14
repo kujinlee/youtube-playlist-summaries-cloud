@@ -5,6 +5,7 @@ import { recoverOrphanedVideos } from '../../../lib/pipeline';
 import { createServerSupabase, type CookieStore } from '../../../lib/supabase/server';
 import { resolveOwnedPlaylistKey } from '../../../lib/storage/serve-playlist';
 import type { SortColumn, SortOrder, Video } from '../../../types';
+import { logError } from '../../../lib/dev-logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -22,11 +23,11 @@ const SORT_COLUMNS = new Set<SortColumn>([
 
 function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Video[] {
   const sorted = [...videos].sort((a, b) => {
-    let aVal: string | number;
-    let bVal: string | number;
+    let aVal: string | number | undefined;
+    let bVal: string | number | undefined;
     if (column === 'name') {
-      aVal = a.title.toLowerCase();
-      bVal = b.title.toLowerCase();
+      aVal = a.title?.toLowerCase();
+      bVal = b.title?.toLowerCase();
     } else if (column === 'overall') {
       aVal = a.overallScore;
       bVal = b.overallScore;
@@ -71,12 +72,18 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
       const cmp = aCh.localeCompare(bCh);
       return order === 'asc' ? cmp : -cmp;
     } else if (column === 'durationSeconds') {
-      const cmp = a.durationSeconds - b.durationSeconds;
-      return order === 'asc' ? cmp : -cmp;
+      aVal = a.durationSeconds;
+      bVal = b.durationSeconds;
     } else {
-      aVal = a.ratings[column as keyof typeof a.ratings];
-      bVal = b.ratings[column as keyof typeof b.ratings];
+      aVal = a.ratings?.[column as keyof typeof a.ratings];
+      bVal = b.ratings?.[column as keyof typeof b.ratings];
     }
+    // Incomplete rows (a reserved slot whose summary hasn't landed, so this sort key
+    // is absent) sort LAST regardless of direction — never dereference undefined and
+    // 500 the whole list. Mirrors the nulls-last handling for channel/personalScore.
+    const aMissing = aVal === undefined || aVal === null;
+    const bMissing = bVal === undefined || bVal === null;
+    if (aMissing || bMissing) return aMissing === bMissing ? 0 : aMissing ? 1 : -1;
     if (aVal < bVal) return order === 'asc' ? -1 : 1;
     if (aVal > bVal) return order === 'asc' ? 1 : -1;
     return 0;
@@ -121,6 +128,7 @@ async function serveLocal(request: Request): Promise<Response> {
     if (e.statusCode === 400) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
+    logError('videos:readIndex', err);   // never swallow: log the real cause before Next returns a bare 500
     throw err;
   }
   const videos = sortVideos(index.videos, sortColumn, sortOrder);
@@ -162,6 +170,7 @@ async function serveCloud(request: Request): Promise<Response> {
     if (e.statusCode === 400) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
+    logError('videos:readIndex', err);   // never swallow: log the real cause before Next returns a bare 500
     throw err;
   }
 
