@@ -45,6 +45,7 @@ function makeMockBlob(opts: { tempExists?: boolean } = {}) {
     },
     async delete() {},
     async deletePrefix() {},
+    async list() { return []; },
     async putStaged(principal, key, _bytes, _contentType) {
       order.push('putStaged');
       stagedRef = { principal, tempKey: `_staging/${key}`, finalKey: key };

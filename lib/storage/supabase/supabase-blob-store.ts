@@ -73,6 +73,14 @@ export class SupabaseBlobStore implements BlobStore {
     }
   }
 
+  async list(p: Principal, prefix: string): Promise<string[]> {
+    assertLogicalKey(prefix);
+    const ownerRoot = `${p.id}/${p.indexKey}/`;
+    const dirPath = `${ownerRoot}${prefix}`.replace(/\/$/, '');
+    const full = await this.collectObjectPaths(dirPath); // returns full object paths (or [] if absent)
+    return full.map((f) => f.slice(ownerRoot.length)); // strip owner root → logical key
+  }
+
   /** Recursively walks a Supabase Storage "directory" (non-recursive `.list`, paginated at
    *  100/page) and returns every file's full object path. Folder entries surface with
    *  `id === null` and are descended into; file entries (`id !== null`) are collected. */
