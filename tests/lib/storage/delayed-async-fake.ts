@@ -23,6 +23,7 @@ export function delayedStore(inner: MetadataStore): MetadataStore {
     reconcilePlaylistMembership: (p, ids) => wrap(() => inner.reconcilePlaylistMembership(p, ids)),
     deleteVideo: (p, id) => wrap(() => inner.deleteVideo(p, id)),
     resolvePlaylistId: (p, url) => wrap(() => inner.resolvePlaylistId(p, url)),
+    setPlaylistTitleIfNull: (p, title) => wrap(() => inner.setPlaylistTitleIfNull(p, title)),
     listPlaylists: (ownerId) => wrap(() => inner.listPlaylists(ownerId)),
     updateVideoAnnotations: (p, id, set, clear) => wrap(() => inner.updateVideoAnnotations(p, id, set, clear)),
   };

@@ -192,6 +192,30 @@ export class SupabaseMetadataStore implements MetadataStore {
   }
 
   // ---------------------------------------------------------------------------
+  // setPlaylistTitleIfNull: conditional update — fills playlist_title ONLY when it is
+  // currently null, so a concurrent ingest's real title (setPlaylistMeta, T2) is never
+  // clobbered. Scoped by owner_id (from auth.getUser, mirroring setPlaylistMeta) and
+  // playlist_key (p.indexKey) — no separate listId param. `.select('id')` on the update
+  // lets us derive `updated` from whether a row actually matched (and was updated), not
+  // just whether the statement ran — a no-op conditional update returns an empty array.
+  // ---------------------------------------------------------------------------
+  async setPlaylistTitleIfNull(p: Principal, title: string): Promise<{ updated: boolean }> {
+    const { data: userData } = await this.client.auth.getUser();
+    const ownerId = userData?.user?.id;
+    if (!ownerId) throw new Error('setPlaylistTitleIfNull: no authenticated user');
+
+    const { data, error } = await this.client
+      .from('playlists')
+      .update({ playlist_title: title })
+      .eq('owner_id', ownerId)
+      .eq('playlist_key', p.indexKey)
+      .is('playlist_title', null)
+      .select('id');
+    if (error) throw error;
+    return { updated: (data?.length ?? 0) > 0 };
+  }
+
+  // ---------------------------------------------------------------------------
   // listPlaylists: cloud-only. Session client + RLS (owner_id = auth.uid()) already
   // scopes this, but the explicit .eq('owner_id', ownerId) is defense-in-depth. Ordered
   // by playlist_title (nulls last) then created_at — created_at MUST be in the select

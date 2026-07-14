@@ -26,6 +26,12 @@ export interface MetadataStore {
   deleteVideo(p: Principal, videoId: string): Promise<void>;
   /** Cloud-only: resolve (owner, playlist_key) to the playlists.id UUID, creating the row if absent. */
   resolvePlaylistId(p: Principal, playlistUrl: string): Promise<string>;
+  /** Conditional title fill (BUG-6 backfill, Task 3/4): sets `playlist_title` to `title`
+   *  ONLY when the row's title is currently null/absent, so it never clobbers a title a
+   *  concurrent ingest just wrote. Scoped on `p.indexKey` (the playlist_key) — no separate
+   *  listId param. Returns whether a row was actually updated (not merely attempted), so
+   *  callers (the backfill route) can count real persists, not no-op conditional updates. */
+  setPlaylistTitleIfNull(p: Principal, title: string): Promise<{ updated: boolean }>;
   /** Cloud-only: list all playlists owned by ownerId, ordered by title (nulls last) then
    *  created_at. Local impl throws — the local sidebar is not rendered in 2a and the
    *  filesystem-backed equivalent (listRecentPlaylists) needs a filesystem root, not an
