@@ -72,8 +72,22 @@ Environment: app on `localhost:3001`, worker under Node 22, local Supabase (migr
   dynamically → `undefined` in the browser bundle → login threw. Fixed to static `NEXT_PUBLIC_*` refs.
   (Uncommitted, needs the proper workflow.)
 
-## Feature request (design item, not a bug)
+### P2 — BUG-6: cloud playlists show "Untitled playlist" (title never fetched)
+- **Symptom:** every cloud playlist in the sidebar renders "Untitled playlist".
+- **Root cause:** the cloud ingest path (`producer.ts:90` → `resolvePlaylistId(playlistUrl)`) creates the
+  `playlists` row but never calls `fetchPlaylistTitle` / sets `playlist_title` (the column exists,
+  migration 0001). The LOCAL path does (`pipeline.ts:195`). The sidebar falls back to
+  `p.playlistTitle ?? 'Untitled playlist'`.
+- **Fix:** in the cloud enqueue path fetch the YouTube playlist title (`lib/youtube.ts:114
+  fetchPlaylistTitle`) and persist it to `playlists.playlist_title`; backfill existing null rows.
 
+## Feature requests (design items, not bugs)
+
+- **Delete a playlist.** `app/api/playlists/route.ts` is GET-only; no delete route or UI. The
+  videos→playlists FK is `on delete cascade` (DB rows cascade for free), but **Storage blobs
+  (summaries/PDFs) would orphan** — a delete feature must also remove the owner's blob objects for that
+  playlist (and decide whether to cancel in-flight jobs). Needs: owner-scoped `DELETE` route + blob
+  cleanup + sidebar control + confirmation. Small feature, one design decision (blob cleanup).
 - **Paged / batched ingestion for playlists > 50.** Current hard cap rejects large playlists. Proposed:
   ingest in pages (default 5–10, user-selectable up to e.g. 30), with a "next batch" control. Its own
   Phase-1 spec + gate.
