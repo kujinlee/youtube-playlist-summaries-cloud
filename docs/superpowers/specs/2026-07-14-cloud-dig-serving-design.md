@@ -69,7 +69,7 @@ Dig branch (after the shared `outputFolder`/`playlist`/`assertVideoId`/auth gate
 - `format`: **html only** this slice. `format=md` with `type=dig-deeper` → `400 'invalid format'` (dig `md`/download is a later slice; there is no single dig `.md`).
 - `const load = await loadDigForServe(supabase, {videoId, playlistId, userId})`; on `!ok` → `json(load.error, load.status)`.
 - `const nonce = generateNonce()`.
-- `const html = renderDigDeeperDoc({ summary: load.summary, envelope: load.envelope, dug: load.dug, nonce, videoId, language, mdPath: `${load.base}.md` })`.
+- `const html = renderDigDeeperDoc({ summary: load.summary, envelope: load.envelope, dug: load.dug, readOnly: true, nonce, videoId, language: load.language, mdPath: `${load.base}.md` })`.
 - `return fileResponse(html, { kind:'html', download, base: load.base, title: load.title, cache:'private, no-store', csp: buildSummaryCsp(nonce) })`.
 - Error catch mirrors summary: `e.statusCode === 400` → 400; else `logError('html:dig-serve', err)` + 500.
 
@@ -79,10 +79,17 @@ Add a `STORAGE_BACKEND === 'supabase'` branch at the top (dispatch like the html
 
 Cloud branch: `?playlist={uuid}` required (UUID-validated) → auth (`getUser`, 401 anon) → `assertVideoId` → owner-assert + gate (reuse the same `resolveOwnedPlaylistKey` + `readIndex` + `base` derivation as the loader; factor the shared prefix out of Unit A so both use it) → list `dig/{base}/` current-version blobs → `{ sectionIds: number[] }` sorted **ascending** by `startSec` (== sectionId). Zero dug → `{ sectionIds: [] }` (**200**, not 404 — lets the frontend distinguish "nothing dug" from an error).
 
-### Unit D — shared adapters (small, flagged)
+### Unit D — shared renderer `readOnly` + `nonce` (flagged: the main shared-code change)
 
-- **`renderDigDeeperDoc` nonce threading** (`lib/html-doc/render-dig-deeper.ts`) — add an **optional** `nonce?: string` to its args, threaded to the inline `<style>`/`<script>` blocks (the theme/nav helpers already accept a nonce). Default (omitted) = no nonce attribute, so the **local path is byte-identical**. This is the only shared-code behavior change; it is guarded by a local render test.
-- **`parseCloudDigSectionBlob(bytes: Buffer) → DugSection`** — parse the cloud dig blob's YAML frontmatter (`sectionId, startSec, title, language, genVersion, slides: []`) + markdown body into the existing `DugSection` shape (`lib/dig/companion-doc.ts:30`). Near 1:1. Rejects a malformed/foreign blob (throws → mapped to a skipped/absent section, not a 500 of the whole doc — decided in the plan's edge-case table).
+`renderDigDeeperDoc` (`lib/html-doc/render-dig-deeper.ts`) is a **fully interactive** local artifact: it emits ~10 inline `<script>` blocks and controls. Three of its controls **trigger generation** (`dig deeper ▶` / `expand all` / `↻ outdated`) and drive behaviors that belong to the **deferred frontend/SSE slice** — on cloud today they would be dead chrome. The cloud serve is **read-only**, and it runs under the strict summary CSP (`script-src 'nonce-…'`) which blocks any un-nonced inline script. So this slice adds a **static read-only mode** plus **nonce threading**:
+
+Add two optional args: `readOnly?: boolean` and `nonce?: string`. Both default off → **local path byte-identical** (guarded by a test).
+
+- **Partition rule for `readOnly: true` — omit everything that requires `navScript`** (which is the entire generation/toggle engine): the topbar summary back-link, the `expand all` button, `expandAllDialogs` markup, the per-section `dig-trigger` / `dig-refresh` / `dig-toggle` controls, and the `navScript()` call itself. **Keep every self-contained script/control**: theme toggle (+ pre-paint head script), print, slide-zoom, Ask-AI, slide-size (+ head), captions (+ head). Dug sections render fully expanded and static.
+- **Nonce threading:** pass `nonce` to the already-nonce-capable helpers (`themeHeadScript`, `themeToggleScript`, `printListenerScript`, `navScript`, `nonceAttr` for `<style>`) and add an optional `nonce` to the four dig-local scripts that lack it (`SIZE_HEAD_SCRIPT`, `CAPTIONS_HEAD_SCRIPT`, `zoomScript`, `askAiScript`, `sizeScript`, `captionsScript`). Every emitted `<script>`/`<style>` under `readOnly` carries `nonce="…"` so the summary CSP admits it.
+- **`parseCloudDigSectionBlob(bytes: Buffer) → DugSection`** — parse the cloud dig blob's YAML frontmatter (`sectionId, startSec, title, language, genVersion, slides: []`) + markdown body into the existing `DugSection` shape (`lib/dig/companion-doc.ts:30`). Near 1:1. Rejects a malformed/foreign blob (throws → mapped to a skipped/absent section, not a 500 of the whole doc — behavior 19).
+
+> The cloud html route calls `renderDigDeeperDoc({ …, readOnly: true, nonce })`. Everything the reader can *do* (theme, zoom, Ask-AI, size, captions) still works statically; only the generation triggers are absent until the frontend slice re-enables them.
 
 ---
 
@@ -149,6 +156,10 @@ The cloud dig blobs preserve `[[SLIDE:start|end|caption]]` tokens inline (slide 
 | 18 | Dig-state: not owner | playlist not owned | 404 'not found' |
 | 19 | Malformed dig blob | one blob fails frontmatter parse | that section is skipped/absent, the rest of the doc still renders (never a whole-doc 500) |
 | 20 | Local paths untouched | `STORAGE_BACKEND` unset/local | html `dig-deeper` and dig-state local branches byte-identical to today |
+| 21 | `readOnly` omits triggers | `renderDigDeeperDoc({readOnly:true})` | no `dig-trigger` / `dig-refresh` / `expand all` / `dig-toggle` / summary back-link / `expandAllDialogs` / `navScript` in output |
+| 22 | `readOnly` keeps self-contained UI | `renderDigDeeperDoc({readOnly:true})` | theme, print, slide-zoom, Ask-AI, size, captions scripts present |
+| 23 | Every script/style nonced | `renderDigDeeperDoc({readOnly:true, nonce})` | every emitted `<script>`/`<style>` carries `nonce="…"`; none un-nonced |
+| 24 | Default render unchanged | `renderDigDeeperDoc({...})` (no readOnly/nonce) | output byte-identical to pre-slice local render (protects local) |
 
 ---
 
@@ -181,5 +192,5 @@ Mirrors the summary serve path exactly: `401` anon, `404` not-owned / not-found 
 
 1. **Money invariant** — prove no charge path is reachable from dig serve under any branch (the central risk; dig serve sits next to the charging summary serve in the same route).
 2. **Owner isolation / RLS** — the blob `list(prefix)` must be session-scoped and owner-asserted; a cross-tenant `dig/{base}/` enumeration is the worst-case leak.
-3. **Shared-code safety** — the `renderDigDeeperDoc` nonce change must not alter local output.
+3. **Shared-code safety** — the `renderDigDeeperDoc` `readOnly`/`nonce` change must not alter local output (both default off → byte-identical). The `readOnly` partition must omit exactly the nav-coupled controls and nothing self-contained; a missed `<script>` left un-nonced would be silently CSP-blocked on cloud.
 4. **Version awareness** — stale `.r{oldV}` blobs must never render as current content.
