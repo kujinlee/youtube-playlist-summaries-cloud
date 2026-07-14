@@ -19,7 +19,8 @@
 - **Delete failure ordering:** DB row deleted before blobs; blob-cleanup failure still returns 200 (invisible orphans accepted, §B5/D5). `playlist_key` captured before the DB delete.
 - **Migration is `0019_share_tokens_cascade.sql`** (next after `0018_enqueue_dig`).
 - **Commit trailers** end with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01VvbM4MyLuP1hdhhfr4JPtf`.
-- Run the narrowest test first (`npx jest <name>`), full `npm test` once before each commit.
+- **Test runners (review B1, Codex — `npm test`/`npx jest` run `jest.config.ts`, which EXCLUDES `tests/integration/**`).** Unit/component: `npx jest <name>` (narrow) → `npm test` (full). Integration (real local Supabase): `npm run test:integration -- <pattern>` (uses `jest.integration.config.ts --runInBand`). **Every commit gate that includes an integration test must run `npm test && npm run test:integration && npx tsc --noEmit`** — a bare `npm test` does not exercise the Supabase/RLS/migration coverage.
+- **Principal construction (review B2/H2, Codex + Claude).** Cloud store/blob methods take a `Principal` whose `indexKey` MUST be the row's `playlist_key`. Build it with `getPrincipalFromSession({ userId: user.id }, playlist_key)` (`lib/storage/resolve.ts:93`) — never pass an ad-hoc object. The blob object path is `${p.id}/${p.indexKey}/…`, so a wrong `indexKey` deletes the wrong prefix.
 
 ## File Structure
 
@@ -37,7 +38,9 @@
 | `lib/storage/blob-store.ts` | add `deletePrefix` to interface (+ `assertLogicalKey` reuse) | T7 |
 | `lib/storage/supabase/supabase-blob-store.ts` | recursive list+remove impl | T7 |
 | `lib/storage/local/local-blob-store.ts` | recursive fs remove impl | T7 |
-| `lib/storage/supabase/supabase-job-queue.ts` | `requestCancelPlaylist(playlistId)` wrapper on the RPC | T8 |
+| `lib/storage/job-queue.ts` | add `requestCancelPlaylist` to the `JobQueue` interface | T8 |
+| `lib/storage/supabase/supabase-job-queue.ts` | `requestCancelPlaylist(playlistId)` impl on the RPC | T8 |
+| `components/cloud/CloudApp.tsx` | thread `session.userId` → `CloudAppBody` → sidebar | T5 |
 | `app/api/playlists/[id]/route.ts` | DELETE route orchestration (new) | T9 |
 | `components/cloud/DeletePlaylistDialog.tsx` | confirm modal (new) | T10 |
 
@@ -86,6 +89,7 @@
 | 2 | No fake title on miss | fetch returns null | `setPlaylistMeta` NOT called (row stays null) |
 | 3 | Title throw ≠ ingest fail | `fetchPlaylistTitleOrNull` throws | enqueue still proceeds; ProducerResult returned; no rethrow |
 | 4 | Runs only after resolve | — | called with the resolved `playlistId`'s principal/url after `resolvePlaylistId` |
+| 5 | All-videos-skipped path | 0 enqueueable | early return fires BEFORE `resolvePlaylistId` (no playlist row created) → no title work, correct (nothing to name) |
 
 - [ ] **Step 1:** Write failing tests. Arrange `enqueuePlaylist` with mocked `sessionBundle.metadataStore` (`resolvePlaylistId` returns an id, `setPlaylistMeta` a spy), mocked enqueuer, and `lib/youtube` (`fetchPlaylistTitleOrNull` variants), `YOUTUBE_API_KEY` set. Assert the spy per behaviors 1–3.
 - [ ] **Step 2:** Run `npx jest producer-title` → FAIL.
@@ -102,22 +106,22 @@
 - Test: `tests/lib/storage/supabase-metadata-store.test.ts` (add), `tests/integration/backfill-titles.test.ts` (new, integration piece)
 
 **Interfaces:**
-- Produces: `MetadataStore.setPlaylistTitleIfNull(p: Principal, listId: string, title: string): Promise<void>` — `update playlists set playlist_title=$title where owner_id=auth.uid() and playlist_key=$listId and playlist_title is null`.
+- Produces: `MetadataStore.setPlaylistTitleIfNull(p: Principal, title: string): Promise<{ updated: boolean }>` — scopes on `p.indexKey` (the `playlist_key`), so no separate `listId` param (review Low, Claude — redundant): `update playlists set playlist_title=$title where owner_id=auth.uid() and playlist_key=$p.indexKey and playlist_title is null`, returning whether a row was actually updated (review M1, Codex — lets the route count only real persists, not no-op conditional updates). Use `.select()` on the update (or the returned rowcount) to derive `updated`.
 
 **Enumerated Behaviors**
 
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
-| 1 | Fills a null title | row has null title | `playlist_title` set; owner+key+`is null` predicate in the query |
-| 2 | Does not clobber | row already titled | `is null` predicate ⇒ 0 rows updated, existing title unchanged (integration) |
+| 1 | Fills a null title | row has null title | `playlist_title` set; returns `{updated:true}`; owner+key+`is null` predicate in the query |
+| 2 | Does not clobber | row already titled | `is null` predicate ⇒ 0 rows updated, existing title unchanged, returns `{updated:false}` (integration) |
 | 3 | Owner-scoped | — | update filtered by `owner_id`/RLS; never another owner's row |
-| 4 | Local impl parity | local backend | updates the JSON index title only when currently absent (or minimal parity) |
+| 4 | Local impl parity | local backend | updates the JSON index title only when currently absent; returns `{updated}` accordingly |
 
-- [ ] **Step 1:** Unit test (cloud): mock client `.from().update().eq().eq().is()` chain; assert the update payload `{playlist_title:title}` and the three predicates (`owner_id`, `playlist_key`, `playlist_title is null`). Add the interface method (TS compile fails until impls exist).
+- [ ] **Step 1:** Unit test (cloud): mock client `.from().update().eq().eq().is().select()` chain; assert the update payload `{playlist_title:title}`, the three predicates (`owner_id`, `playlist_key` from `p.indexKey`, `playlist_title is null`), and that a returned row ⇒ `{updated:true}` / empty ⇒ `{updated:false}`. Add the interface method (TS compile fails until impls exist).
 - [ ] **Step 2:** Run `npx jest supabase-metadata-store` → FAIL.
-- [ ] **Step 3:** Implement cloud method (auth.getUser → ownerId guard, then the scoped conditional update); implement local method (read index, set title only if absent); keep interface + both impls in sync.
-- [ ] **Step 4:** Run unit → PASS. Write the **integration** behavior-2 test (real local Supabase): seed a titled row, call `setPlaylistTitleIfNull` → title unchanged; seed a null row → title set. Run `npx jest backfill-titles` (integration) → PASS.
-- [ ] **Step 5:** Full `npm test`; commit `feat(playlist-ux): setPlaylistTitleIfNull conditional update (no clobber)`.
+- [ ] **Step 3:** Implement cloud method (auth.getUser → ownerId guard, then the scoped conditional update with `.select('id')`, `updated = (data?.length ?? 0) > 0`); implement local method (read index, set title only if absent, return `{updated}`); keep interface + both impls in sync.
+- [ ] **Step 4:** Run unit → PASS. Write the **integration** behavior-2 test (real local Supabase): seed a titled row, call `setPlaylistTitleIfNull` → `{updated:false}` + title unchanged; seed a null row → `{updated:true}` + title set. Run `npm run test:integration -- backfill-titles` → PASS.
+- [ ] **Step 5:** `npm test && npm run test:integration && npx tsc --noEmit`; commit `feat(playlist-ux): setPlaylistTitleIfNull conditional update (no clobber, returns updated)`.
 
 ---
 
@@ -144,23 +148,25 @@
 | 7 | Owner isolation | another owner's null rows | never touched (RLS session client) |
 | 8 | Local branch | `STORAGE_BACKEND!=='supabase'` | 404/unsupported (cloud-only) |
 
-- [ ] **Step 1:** Write failing tests: unit for behaviors 1,2,4,5,6 (mock the store `listPlaylists`/`setPlaylistTitleIfNull` and `lib/youtube`); integration for 3,7 (real Supabase, two owners). 
-- [ ] **Step 2:** Run `npx jest backfill-titles-route` → FAIL (route missing).
-- [ ] **Step 3:** Implement route (cloud branch): getUser→401; apiKey→500; `listPlaylists(user.id)`; filter null-title; slice(0,200); for-each `try { const t = await fetchPlaylistTitleOrNull(p.playlistKey, apiKey); if (t) { await store.setPlaylistTitleIfNull(principal, p.playlistKey, t); updated++; } } catch {} ; attempted++`. Return counts.
-- [ ] **Step 4:** Run tests → PASS.
-- [ ] **Step 5:** Full `npm test`; commit `feat(playlist-ux): POST /api/playlists/backfill-titles (bounded, isolated)`.
+- [ ] **Step 1:** Write failing tests: unit for behaviors 1,2,4,5,6 (mock the store `listPlaylists`/`setPlaylistTitleIfNull` and `lib/youtube`); integration for 3,7 (real Supabase, two owners, via `tests/integration/helpers/clients`). 
+- [ ] **Step 2:** Run `npx jest backfill-titles-route` (unit) → FAIL (route missing).
+- [ ] **Step 3:** Implement route (cloud branch): getUser→401; `const apiKey = process.env.YOUTUBE_API_KEY` once →500 if unset; `listPlaylists(user.id)`; filter null-title; `slice(0,200)`; for-each: `const principal = getPrincipalFromSession({ userId: user.id }, p.playlistKey)` (review B2/H2); `try { const t = await fetchPlaylistTitleOrNull(p.playlistKey, apiKey); if (t) { const { updated: u } = await store.setPlaylistTitleIfNull(principal, t); if (u) updated++; } } catch {}` then `attempted++`. Return `{updated, attempted}` — `updated` counts only real persists (review M1).
+- [ ] **Step 4:** Run unit → PASS; run `npm run test:integration -- backfill-titles-route` → PASS.
+- [ ] **Step 5:** `npm test && npm run test:integration && npx tsc --noEmit`; commit `feat(playlist-ux): POST /api/playlists/backfill-titles (bounded, isolated)`.
 
 ---
 
 ### Task 5: Sidebar auto-backfill trigger + client fn
 
 **Files:**
-- Modify: `lib/client/api.ts` (add `backfillPlaylistTitles`), `components/cloud/PlaylistSidebar.tsx`
+- Modify: `lib/client/api.ts` (add `backfillPlaylistTitles`), `components/cloud/PlaylistSidebar.tsx`, `components/cloud/CloudApp.tsx` (thread `session.userId` → `CloudAppBody` → `PlaylistSidebar`)
 - Test: `tests/components/cloud/PlaylistSidebar.backfill.test.tsx` (new)
 
 **Interfaces:**
-- Consumes: backfill route (T4).
-- Produces: `backfillPlaylistTitles(): Promise<{updated:number; attempted:number}>`.
+- Consumes: backfill route (T4). `CloudApp` already holds `session: { userId, email } | null` (`CloudApp.tsx:40,43`); `CloudAppBody()` currently takes no props and renders `<PlaylistSidebar onNewPlaylist=… />` (`:66,82`).
+- Produces: `backfillPlaylistTitles(): Promise<{updated:number; attempted:number}>`; `PlaylistSidebar` gains a required-in-cloud `userId: string` prop.
+
+**userId threading (review H1, Codex + Claude — `PlaylistSidebar` has no owner id today, and §A2 requires a per-user key):** `CloudApp` passes `session?.userId` into `CloudAppBody`, which passes it into `PlaylistSidebar`. The per-session `sessionStorage` key is `backfilledTitles:${userId}` so a same-tab account switch uses a distinct key.
 
 **Enumerated Behaviors**
 
@@ -169,14 +175,15 @@
 | 1 | Fires when null titles present | loaded list has ≥1 null title | one POST to backfill, then a re-fetch of the list |
 | 2 | Does NOT loop | post-backfill refetch still has null rows | backfill NOT fired again (`useRef` one-shot, not state-derived) |
 | 3 | Skips when all titled | no null titles | no backfill call |
-| 4 | Once per session | remount with flag set | `sessionStorage['backfilledTitles:'+userId]` present ⇒ no call |
-| 5 | StrictMode safe | double-invoke effect | fires once |
+| 4 | Once per session, per user | remount with flag set | `sessionStorage['backfilledTitles:'+userId]` present ⇒ no call |
+| 5 | Distinct users, same tab | userId A then B | distinct keys → B still eligible |
+| 6 | StrictMode safe | double-invoke effect | fires once |
 
-- [ ] **Step 1:** Write failing component tests. Mock `lib/client/api` (`listPlaylists`, `backfillPlaylistTitles`). Render sidebar with a null-title fixture; assert one backfill call + refetch (behavior 1); re-render with still-null refetch (behavior 2); titled fixture (3); pre-set sessionStorage (4).
+- [ ] **Step 1:** Write failing component tests. Mock `lib/client/api` (`listPlaylists`, `backfillPlaylistTitles`). Render sidebar with a `userId` prop + null-title fixture; assert one backfill call + refetch (b1); re-render with still-null refetch (b2); titled fixture (b3); pre-set `sessionStorage['backfilledTitles:'+userId]` (b4); two userIds → two keys (b5).
 - [ ] **Step 2:** Run `npx jest PlaylistSidebar.backfill` → FAIL.
-- [ ] **Step 3:** Add `backfillPlaylistTitles` to `lib/client/api.ts`. In the sidebar, add a `useRef(false)` one-shot guard + per-user `sessionStorage` key (`backfilledTitles:${userId}`); in the load effect, after fetching, if `!ref.current && !sessionStorage.get(key) && list.some(p=>!p.playlistTitle)` → set both guards, `await backfillPlaylistTitles()`, re-fetch list.
+- [ ] **Step 3:** Add `backfillPlaylistTitles` to `lib/client/api.ts`. Thread `userId` through `CloudApp`→`CloudAppBody`→`PlaylistSidebar`. In the sidebar, add a `useRef(false)` one-shot guard + per-user `sessionStorage` key (`backfilledTitles:${userId}`); in the load effect, after fetching, if `!ref.current && !sessionStorage.getItem(key) && list.some(p=>!p.playlistTitle)` → set both guards, `await backfillPlaylistTitles()`, re-fetch list.
 - [ ] **Step 4:** Run tests → PASS.
-- [ ] **Step 5:** Full `npm test`; commit `feat(playlist-ux): sidebar auto-backfill titles once/session (BUG-6)`.
+- [ ] **Step 5:** `npm test && npx tsc --noEmit`; commit `feat(playlist-ux): sidebar auto-backfill titles once/session per user (BUG-6)`.
 
 ---
 
@@ -200,11 +207,13 @@
 | 5 | Cancel owner-guard | another owner calls for a playlist not theirs | 0 rows; nothing changed |
 | 6 | Terminal untouched | a `completed`/`failed` job | left unchanged |
 
-- [ ] **Step 1:** Write failing integration tests (real local Supabase): behaviors 2,3 in `share-tokens-cascade.test.ts`; 4,5,6 in `cancel-playlist-jobs.test.ts` (seed via service client, invoke RPC via the owner's session client).
-- [ ] **Step 2:** Run `npx jest share-tokens-cascade cancel-playlist-jobs` → FAIL (constraint/RPC absent — apply migrations first via `supabase migration up` or the test harness reset).
-- [ ] **Step 3:** Write the migration: orphan-cleanup `delete`; `alter table … add constraint … foreign key (playlist_id, owner_id) references playlists(id, owner_id) on delete cascade`; `create index if not exists share_tokens_playlist_id_idx`; the `request_cancel_playlist_jobs` function (verbatim from §B4) + `revoke all … from public` + `grant execute … to authenticated, service_role`. Apply the migration to local.
-- [ ] **Step 4:** Run tests → PASS.
-- [ ] **Step 5:** Full `npm test` (integration incl.); commit `feat(playlist-ux): 0019 share_tokens cascade FK + request_cancel_playlist_jobs RPC`.
+**RED validity (review H3-Codex / M1-Claude):** the RED step is sound because `0019` does not exist yet — the constraint and RPC are genuinely absent, so behaviors 2–6 fail for the right reason on the current local schema (no `supabase db reset` gymnastics needed; Claude confirmed). **Orphan-cleanup (behavior 1) is only observable pre-FK** (once the FK exists you can't insert an orphan to test cleanup), so it is verified indirectly: assert the migration APPLIES CLEANLY (the `ALTER ADD CONSTRAINT` succeeds) against the local schema — proving the cleanup delete ran / no orphans block it. It is a defensive one-shot for rows orphaned by pre-cascade playlist deletes; document that in the migration comment.
+
+- [ ] **Step 1:** Write failing integration tests (real local Supabase, via `tests/integration/helpers/clients`): behaviors 2,3 in `share-tokens-cascade.test.ts`; 4,5,6 in `cancel-playlist-jobs.test.ts` (seed via `adminClient`, invoke RPC via the owner's `signInAs` session client). Behavior 1 = a test that the migration is already applied and the constraint exists (`information_schema` / a clean cascade), i.e. the ALTER did not fail.
+- [ ] **Step 2:** Run `npm run test:integration -- share-tokens-cascade cancel-playlist-jobs` → FAIL (constraint/RPC absent).
+- [ ] **Step 3:** Write the migration: orphan-cleanup `delete` (with a comment: defensive, for rows orphaned by pre-cascade deletes); `alter table … add constraint … foreign key (playlist_id, owner_id) references playlists(id, owner_id) on delete cascade`; `create index if not exists share_tokens_playlist_id_idx`; the `request_cancel_playlist_jobs` function (verbatim from §B4) + `revoke all … from public` + `grant execute … to authenticated, service_role` (matches the sibling `request_cancel_job` grant pattern, `0010:22`; service_role has no JWT so `auth.uid()` is null there — inert but consistent, review L1). Apply the migration to local (`npx supabase migration up` or harness reset).
+- [ ] **Step 4:** Run `npm run test:integration -- share-tokens-cascade cancel-playlist-jobs` → PASS.
+- [ ] **Step 5:** `npm test && npm run test:integration && npx tsc --noEmit`; commit `feat(playlist-ux): 0019 share_tokens cascade FK + request_cancel_playlist_jobs RPC`.
 
 ---
 
@@ -229,22 +238,22 @@
 | 6 | Absent = no error | prefix empty of objects | resolves, no throw |
 | 7 | Local recursive | local backend | `fs.rm(join(indexKey,prefix),{recursive,force})`; ENOENT-safe |
 
-- [ ] **Step 1:** Write failing unit tests: mock the Supabase storage `.list`/`.remove` to assert recursion+pagination+empty-prefix path building and `assertLogicalKey` rejection; local test with a temp dir asserting recursive removal + ENOENT tolerance.
+- [ ] **Step 1:** Write failing unit tests: mock the Supabase storage `.list`/`.remove` to assert recursion+pagination+empty-prefix path building and `assertLogicalKey` rejection (`'..'` throws, `''` allowed); local test with a temp dir asserting recursive removal + ENOENT tolerance, and that `deletePrefix(p,'')` targets exactly the `indexKey` dir (the playlist root), not above it.
 - [ ] **Step 2:** Run `npx jest blob-store-delete-prefix` → FAIL.
-- [ ] **Step 3:** Add interface method. Supabase impl: `assertLogicalKey(prefix)`; recursive walk — `list('<owner>/<indexKey>/<prefix>'.replace(/\/$/,''), {limit:100, offset})`, for entries with `id===null` recurse into the sub-path, collect file object paths, `remove(batch)` in ≤1000 chunks; tolerate empties. Local impl: `assertLogicalKey(prefix)` then `fs.rm(join(indexKey, prefix), {recursive:true, force:true})`.
-- [ ] **Step 4:** Run unit → PASS. Write + run the integration test (real Storage): put flat + nested objects under a principal, `deletePrefix(p,'')`, assert `.list` returns empty.
-- [ ] **Step 5:** Full `npm test`; commit `feat(playlist-ux): BlobStore.deletePrefix recursive (traversal-guarded)`.
+- [ ] **Step 3:** Add interface method. Supabase impl: `assertLogicalKey(prefix)`; recursive walk — `list('<owner>/<indexKey>/<prefix>'.replace(/\/$/,''), {limit:100, offset})`, for entries with `id===null` recurse into the sub-path, collect file object paths, `remove(batch)` in ≤1000 chunks; tolerate empties. Local impl: `assertLogicalKey(prefix)` then `fs.rm(join(indexKey, prefix), {recursive:true, force:true})` (`''` → the playlist's own index dir, the intended target; `assertLogicalKey` already blocks `..`).
+- [ ] **Step 4:** Run unit → PASS. Write + run the **integration** test through a **session-scoped** `SupabaseBlobStore` (review M3, Claude — proves the RLS `.list`/`.remove` path under `artifacts_owner_rw`, not the service client): put flat + nested (`dig/**`) objects under a principal, `deletePrefix(p,'')`, assert `.list` returns empty. Run `npm run test:integration -- supabase-blob-delete-prefix` → PASS.
+- [ ] **Step 5:** `npm test && npm run test:integration && npx tsc --noEmit`; commit `feat(playlist-ux): BlobStore.deletePrefix recursive (traversal-guarded)`.
 
 ---
 
 ### Task 8: `MetadataStore.deletePlaylist` + `requestCancelPlaylist` wrapper
 
 **Files:**
-- Modify: `lib/storage/metadata-store.ts`, `lib/storage/supabase/supabase-metadata-store.ts`, `lib/storage/local/local-metadata-store.ts`, `lib/storage/supabase/supabase-job-queue.ts`
-- Test: `tests/lib/storage/supabase-metadata-store.test.ts` (add), `tests/integration/delete-playlist-store.test.ts` (new)
+- Modify: `lib/storage/metadata-store.ts`, `lib/storage/supabase/supabase-metadata-store.ts`, `lib/storage/local/local-metadata-store.ts`, `lib/storage/job-queue.ts` (interface), `lib/storage/supabase/supabase-job-queue.ts`
+- Test: `tests/lib/storage/supabase-metadata-store.test.ts` (add), `tests/lib/storage/supabase-job-queue-cancel-playlist.test.ts` (new unit), `tests/integration/delete-playlist-store.test.ts` (new)
 
 **Interfaces:**
-- Produces: `MetadataStore.deletePlaylist(p: Principal, playlistId: string): Promise<void>` (cloud: `.delete().eq('id',id).eq('owner_id',ownerId)`); `SupabaseJobQueue.requestCancelPlaylist(playlistId: string): Promise<{cancelled:number}>` (calls the RPC).
+- Produces: `MetadataStore.deletePlaylist(p: Principal, playlistId: string): Promise<void>` (cloud: `.delete().eq('id',id).eq('owner_id',ownerId)`); `JobQueue.requestCancelPlaylist(playlistId: string): Promise<{cancelled:number}>` — **added to the `JobQueue` interface in `lib/storage/job-queue.ts`, not just the class** (review B3-Codex/H2-Claude — T9 calls it through `bundle.jobQueue` typed as `JobQueue`; `SupabaseJobQueue` is the sole implementer, so widening the interface is clean). Implementation calls `rpc('request_cancel_playlist_jobs', { p_playlist_id })`.
 
 **Enumerated Behaviors**
 
@@ -256,11 +265,11 @@
 | 4 | Cancel wrapper | `requestCancelPlaylist(id)` | RPC `request_cancel_playlist_jobs` invoked; returns count |
 | 5 | Local delete | local backend | throws cloud-only (delete UI is cloud-only) |
 
-- [ ] **Step 1:** Unit: assert the delete query chain predicates and the queue wrapper's RPC name. Add interface methods.
-- [ ] **Step 2:** `npx jest supabase-metadata-store` → FAIL.
-- [ ] **Step 3:** Implement cloud `deletePlaylist` (auth guard → scoped delete), queue `requestCancelPlaylist` (`rpc('request_cancel_playlist_jobs',{p_playlist_id})`), local `deletePlaylist` throw.
-- [ ] **Step 4:** Unit → PASS. Integration `delete-playlist-store.test.ts`: seed playlist+video+job+share_token, `deletePlaylist` → assert all gone via SQL; non-owner attempt leaves data (isolation).
-- [ ] **Step 5:** Full `npm test`; commit `feat(playlist-ux): deletePlaylist store method + requestCancelPlaylist wrapper`.
+- [ ] **Step 1:** Unit: assert the delete query chain predicates (`.eq('id')` AND `.eq('owner_id')`) and the queue wrapper's RPC name (`request_cancel_playlist_jobs`). Add the `JobQueue` interface method + `MetadataStore` interface method (TS fails until impls land).
+- [ ] **Step 2:** `npx jest supabase-metadata-store supabase-job-queue-cancel-playlist` → FAIL.
+- [ ] **Step 3:** Implement cloud `deletePlaylist` (auth guard → scoped delete), queue `requestCancelPlaylist` (`rpc('request_cancel_playlist_jobs',{p_playlist_id})` → `{cancelled: (data as number) ?? 0}`), local `deletePlaylist` throws cloud-only (matches `resolvePlaylistId`/`listPlaylists`; delete UI is cloud-only — spec §B6).
+- [ ] **Step 4:** Unit → PASS. Integration `delete-playlist-store.test.ts` (via `helpers/clients`): seed playlist+video+job+share_token, `deletePlaylist` → assert all gone via SQL; non-owner attempt leaves data (isolation). Run `npm run test:integration -- delete-playlist-store` → PASS.
+- [ ] **Step 5:** `npm test && npm run test:integration && npx tsc --noEmit`; commit `feat(playlist-ux): deletePlaylist store method + requestCancelPlaylist (JobQueue iface)`.
 
 ---
 
@@ -281,17 +290,19 @@
 |---|---|---|---|
 | 1 | 401 | no session | 401 |
 | 2 | 404 not owned/missing | id not the owner's | 404, nothing deleted |
-| 3 | Happy path order | valid delete | read key → cancel (all kinds) → DB delete (cascade) → blob deletePrefix('') → 200 |
+| 3 | Happy path order | valid delete | read row → cancel (all kinds) → DB delete (cascade) → blob deletePrefix('') → 200 |
 | 4 | Blob failure ⇒ 200 | `deletePrefix` throws | still 200 `{deleted:true}` (log; invisible orphans) |
-| 5 | key captured pre-delete | — | `playlist_key` read before the DB delete (used for blob prefix) |
+| 5 | key captured pre-delete | — | `playlist_key` read before the DB delete (used to build the blob Principal) |
 | 6 | Second delete | already deleted | 404; client maps 404→resolve |
 | 7 | Cloud-only | local backend | 404/unsupported |
 
-- [ ] **Step 1:** Write failing tests: integration for 1,2,3,6 (real Supabase — seed, DELETE, assert DB+blobs gone, isolation); unit for 4,5 (mock bundle so `blobStore.deletePrefix` rejects → still 200; assert key read precedes delete call order).
-- [ ] **Step 2:** `npx jest delete-playlist-route` → FAIL.
-- [ ] **Step 3:** Implement route (cloud branch): getUser→401; read the playlist (RLS) → 404 if absent; capture `playlist_key`; `try{ await queue.requestCancelPlaylist(id) }catch{log}`; `await metadataStore.deletePlaylist(principal, id)`; `try{ await blobStore.deletePrefix(principal,'') }catch{log}`; return `{deleted:true}`. Add client `deletePlaylist` (DELETE; 404→resolve; 401→throw UnauthorizedError).
-- [ ] **Step 4:** Run tests → PASS.
-- [ ] **Step 5:** Full `npm test`; commit `feat(playlist-ux): DELETE /api/playlists/[id] hard-delete (cancel→cascade→blobs)`.
+**404 source (review M2, Claude):** the 404 comes from the **pre-delete read** (`select id, playlist_key from playlists where id = <id>` under the RLS session client → no row ⇒ 404), NOT from the delete rowcount. The read also yields the `playlist_key` used to build the blob Principal.
+
+- [ ] **Step 1:** Write failing tests: integration for 1,2,3,6 (real Supabase via `helpers/clients` — seed, DELETE, assert DB+blobs gone, non-owner isolation); unit for 4,5 (mock bundle so `blobStore.deletePrefix` rejects → still 200; assert the row read precedes the delete, and the Principal passed to `deletePrefix` has `indexKey === playlist_key`).
+- [ ] **Step 2:** `npx jest delete-playlist-route` (unit) → FAIL.
+- [ ] **Step 3:** Implement route (cloud branch): getUser→401; `select('id, playlist_key').eq('id', id).maybeSingle()` under the RLS client → **404 if no row**; capture `playlist_key`; `const principal = getPrincipalFromSession({ userId: user.id }, playlist_key)` (review B2); `try{ await bundle.jobQueue.requestCancelPlaylist(id) }catch{log}`; `await bundle.metadataStore.deletePlaylist(principal, id)`; `try{ await bundle.blobStore.deletePrefix(principal,'') }catch{log}`; return `{deleted:true}`. Add client `deletePlaylist` (DELETE; 404→resolve; 401→throw `UnauthorizedError`).
+- [ ] **Step 4:** Run unit → PASS; `npm run test:integration -- delete-playlist-route` → PASS.
+- [ ] **Step 5:** `npm test && npm run test:integration && npx tsc --noEmit`; commit `feat(playlist-ux): DELETE /api/playlists/[id] hard-delete (cancel→cascade→blobs)`.
 
 ---
 
@@ -322,8 +333,8 @@
 - [ ] **Step 1:** Write failing component tests for the modal (behaviors 2–9, all four dismissal paths + disabled-mid-delete + success nav + error) and the sidebar (behavior 1: trash is a sibling of `<Link>`, click opens modal without navigation). Mock `deletePlaylist`.
 - [ ] **Step 2:** `npx jest DeletePlaylistDialog PlaylistSidebar.delete` → FAIL.
 - [ ] **Step 3:** Build `DeletePlaylistDialog` (adapt `NewPlaylistModal`: focus trap, Esc/backdrop/✕/Cancel all gated on `!deleting`; Delete → `setDeleting(true)`, call `deletePlaylist(id)`, on success `onDeleted()`, on error show message + `setDeleting(false)`). Wire into the sidebar `<li>` as a sibling button; `onDeleted` refetches and navigates to `/` when the deleted id is the active one.
-- [ ] **Step 4:** Run component tests → PASS. Write the E2E (`playlist-delete.spec.ts`, route-level mock): fixtures include a null-title AND a titled playlist (conditional-render rule); exercise open→each dismissal path→delete→list updates.
-- [ ] **Step 5:** Full `npm test` + `npx playwright test playlist-delete`; commit `feat(playlist-ux): sidebar delete button + confirm modal`.
+- [ ] **Step 4:** Run component tests → PASS. Write the E2E (`playlist-delete.spec.ts`, route-level mock) as **post-green wiring/regression coverage** (per dev-process "E2E covers wiring" — the component tests above are the failing-first gate; the E2E is broad regression, review L2-Codex): fixtures include a null-title AND a titled playlist (conditional-render rule); exercise open→each dismissal path→delete→list updates.
+- [ ] **Step 5:** `npm test && npx tsc --noEmit` + `npx playwright test playlist-delete`; commit `feat(playlist-ux): sidebar delete button + confirm modal`.
 
 ---
 

@@ -288,8 +288,10 @@ treats 404 on delete as success (already deleted).
 
 ### B6. API surface
 
-- New `MetadataStore.deletePlaylist(p, playlistId): Promise<void>` (session-client delete;
-  local impl: recursive fs remove of the playlist dir, or no-op if out of scope for local).
+- New `MetadataStore.deletePlaylist(p, playlistId): Promise<void>` (cloud: session-client
+  `.delete().eq('id',id).eq('owner_id',ownerId)`). **Local impl throws cloud-only** — the delete
+  route + sidebar UI are cloud-only, matching `resolvePlaylistId`/`listPlaylists` which already
+  throw on the local backend (spec §Non-goals: "Local-backend playlist delete UI is out of scope").
 - New `lib/client/api.ts` → `deletePlaylist(id): Promise<void>` and
   `backfillPlaylistTitles(): Promise<{updated:number; attempted:number}>` (matches the §A2 route
   contract — review Low, Codex round 2). `deletePlaylist` treats HTTP 404 as
