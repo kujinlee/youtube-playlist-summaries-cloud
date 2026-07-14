@@ -111,10 +111,14 @@ export function detectLanguage(transcript: string): 'en' | 'ko' {
   return korean / Math.max(transcript.length, 1) > 0.1 ? 'ko' : 'en';
 }
 
-export async function fetchPlaylistTitle(playlistId: string, apiKey: string): Promise<string> {
+export async function fetchPlaylistTitleOrNull(playlistId: string, apiKey: string): Promise<string | null> {
   const yt = google.youtube({ version: 'v3', auth: apiKey });
   const res = await yt.playlists.list({ part: ['snippet'], id: [playlistId] });
-  return res.data.items?.[0]?.snippet?.title ?? playlistId;
+  return res.data.items?.[0]?.snippet?.title ?? null;
+}
+
+export async function fetchPlaylistTitle(playlistId: string, apiKey: string): Promise<string> {
+  return (await fetchPlaylistTitleOrNull(playlistId, apiKey)) ?? playlistId;
 }
 
 export class ChannelNotFoundError extends Error {}
