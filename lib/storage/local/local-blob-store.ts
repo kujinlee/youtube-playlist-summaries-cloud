@@ -41,6 +41,13 @@ export class LocalFsBlobStore implements BlobStore {
     if (!fs.existsSync(from) && fs.existsSync(to)) return;   // idempotent: already promoted
     fs.mkdirSync(path.dirname(to), { recursive: true }); fs.renameSync(from, to);
   }
+
+  // '' → path.join(indexKey, '') === indexKey, i.e. the playlist's own index dir (intended
+  // target, not above it). force:true makes an absent path a no-op (ENOENT-safe).
+  async deletePrefix(p: Principal, prefix: string): Promise<void> {
+    assertLogicalKey(prefix);
+    await fs.promises.rm(path.join(p.indexKey, prefix), { recursive: true, force: true });
+  }
 }
 
 export const localBlobStore = new LocalFsBlobStore();

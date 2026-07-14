@@ -47,6 +47,12 @@ export class SupabaseJobQueue implements JobQueue {
     return { requested: (data as number) ?? 0 };
   }
 
+  async requestCancelPlaylist(playlistId: string): Promise<{ cancelled: number }> {
+    const { data, error } = await this.client.rpc('request_cancel_playlist_jobs', { p_playlist_id: playlistId });
+    if (error) throw error;
+    return { cancelled: (data as number) ?? 0 };
+  }
+
   async claim(workerId: string, leaseSeconds: number, videoId: string | null = null): Promise<LeasedJob | null> {
     const { data, error } = await this.client.rpc('claim_next_job', {
       p_worker_id: workerId, p_lease_seconds: leaseSeconds, p_video_id: videoId });

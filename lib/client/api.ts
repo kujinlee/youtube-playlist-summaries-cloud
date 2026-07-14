@@ -47,6 +47,13 @@ export async function listPlaylists(): Promise<PlaylistSummary[]> {
   return data.playlists;
 }
 
+/** Bounded, owner-scoped backfill for playlists missing a real YouTube title (BUG-6).
+ *  Invoked by PlaylistSidebar's auto-backfill trigger — see app/api/playlists/backfill-titles. */
+export async function backfillPlaylistTitles(): Promise<{ updated: number; attempted: number }> {
+  const res = await fetch('/api/playlists/backfill-titles', { method: 'POST' });
+  return handle<{ updated: number; attempted: number }>(res);
+}
+
 export interface VideoListResult {
   videos: Video[];
   playlistUrl: string;
@@ -236,4 +243,17 @@ export async function createShare(
 export async function revokeShare(shareId: string): Promise<{ revoked: boolean }> {
   const res = await fetch(`/api/share/${encodeURIComponent(shareId)}/revoke`, { method: 'POST' });
   return handle<{ revoked: boolean }>(res);
+}
+
+/** Full hard-delete of a cloud playlist (Task 9). A 404 means the playlist is already gone
+ *  (this call, or a concurrent one, already deleted it) — treated as success, not an error,
+ *  so a double-click or a stale UI doesn't surface a spurious failure. */
+export async function deletePlaylist(id: string): Promise<void> {
+  const res = await fetch(`/api/playlists/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (res.status === 404) return;
+  if (res.status === 401) throw new UnauthorizedError('unauthorized');
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `request failed with status ${res.status}`);
+  }
 }

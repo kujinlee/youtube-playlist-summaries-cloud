@@ -3,7 +3,7 @@ import type { Principal } from '@/lib/storage/principal';
 import type { JobStatus } from '@/lib/storage/job-queue';
 import { docVersionKey } from '@/lib/storage/job-queue';
 import { CURRENT_DOC_VERSION } from '@/lib/doc-version';
-import { fetchPlaylistVideos, extractPlaylistId } from '@/lib/youtube';
+import { fetchPlaylistVideos, extractPlaylistId, fetchPlaylistTitleOrNull } from '@/lib/youtube';
 import { videoMetaToIngestionPayload } from '@/lib/job-queue/video-meta-to-payload';
 import type { Enqueuer, EnqueueCtx } from '@/lib/job-queue/enqueuer';
 import { QuotaExceededError, DailyCapError, VideoTooLongError } from '@/lib/job-queue/errors';
@@ -88,6 +88,14 @@ export async function enqueuePlaylist(
   }
 
   const playlistId = await sessionBundle.metadataStore.resolvePlaylistId(principal, playlistUrl);
+  // BUG-6 forward-fix: best-effort persist of the real YouTube title. A miss (null) or a
+  // throw (quota, network, etc.) must never fail ingest — the row simply stays untitled and
+  // the backfill route (T4) retries later.
+  try {
+    const listId = extractPlaylistId(playlistUrl);
+    const t = await fetchPlaylistTitleOrNull(listId, apiKey);
+    if (t) await sessionBundle.metadataStore.setPlaylistMeta(principal, { playlistUrl, playlistTitle: t });
+  } catch { /* leave null; backfill retries */ }
   const version = docVersionKey(CURRENT_DOC_VERSION);
   const results: JobFanoutResult[] = [...preBlocked];
   let created = 0, joined = 0, quotaBlocked = 0, capBlocked = 0, tooLongInLoop = 0;

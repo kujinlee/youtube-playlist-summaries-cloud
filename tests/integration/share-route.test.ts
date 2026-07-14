@@ -470,17 +470,27 @@ describe('share-route', () => {
     expect(res.status).toBe(404);
   });
 
-  it('C16: cross-owner isolation — token owner_id says B but coords resolve to A\'s doc → 404 for md AND html', async () => {
+  it('C16: cross-owner isolation — a share_token row claiming owner B for A\'s playlist is now DB-rejected (0019 composite FK); D15 stays as defense-in-depth', async () => {
+    // Pre-0019 this confused-deputy row (token owner_id=B, coords resolve to A's doc) was
+    // directly insertable and caught only by the app-level D15 guard (lib/share/serve.ts) at
+    // request time. 0019's composite FK share_tokens(playlist_id, owner_id) ->
+    // playlists(id, owner_id) now makes such a row structurally impossible to insert — the DB
+    // rejects it at the source, before any request can ever be served against it. D15 remains
+    // in place as defense-in-depth for any other path that might construct an inconsistent row.
     const a = await newUser();
     const b = await newUser();
     const { playlistId, videoId } = await seedDoc(a.user.id); // A's promoted doc
-    const token = await mintDirect(b.user.id, playlistId, videoId); // B "owns" the token row, A owns the coords
 
-    const resMd = await GET(new Request(`http://localhost/s/${token}?format=md`), invoke(token));
-    expect(resMd.status).toBe(404); // confused-deputy guard (D15) — proves the md short-circuit inherits it
-
-    const resHtml = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
-    expect(resHtml.status).toBe(404); // same guard on the html path — no isolation gap between formats
+    // mintDirect throws the raw PostgrestError object (not an Error instance), which
+    // `.rejects.toThrow()` cannot reliably match — assert on the rejection directly instead.
+    let caught: unknown;
+    try {
+      await mintDirect(b.user.id, playlistId, videoId); // B "owns" the token row, A owns the coords
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeDefined();
+    expect((caught as { code?: string }).code).toBe('23503'); // foreign_key_violation
   });
 
   it('C21: hostile title (quote/CRLF) in a share doc → header not injected on md download', async () => {

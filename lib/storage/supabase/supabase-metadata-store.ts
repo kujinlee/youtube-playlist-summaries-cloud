@@ -192,6 +192,30 @@ export class SupabaseMetadataStore implements MetadataStore {
   }
 
   // ---------------------------------------------------------------------------
+  // setPlaylistTitleIfNull: conditional update — fills playlist_title ONLY when it is
+  // currently null, so a concurrent ingest's real title (setPlaylistMeta, T2) is never
+  // clobbered. Scoped by owner_id (from auth.getUser, mirroring setPlaylistMeta) and
+  // playlist_key (p.indexKey) — no separate listId param. `.select('id')` on the update
+  // lets us derive `updated` from whether a row actually matched (and was updated), not
+  // just whether the statement ran — a no-op conditional update returns an empty array.
+  // ---------------------------------------------------------------------------
+  async setPlaylistTitleIfNull(p: Principal, title: string): Promise<{ updated: boolean }> {
+    const { data: userData } = await this.client.auth.getUser();
+    const ownerId = userData?.user?.id;
+    if (!ownerId) throw new Error('setPlaylistTitleIfNull: no authenticated user');
+
+    const { data, error } = await this.client
+      .from('playlists')
+      .update({ playlist_title: title })
+      .eq('owner_id', ownerId)
+      .eq('playlist_key', p.indexKey)
+      .is('playlist_title', null)
+      .select('id');
+    if (error) throw error;
+    return { updated: (data?.length ?? 0) > 0 };
+  }
+
+  // ---------------------------------------------------------------------------
   // listPlaylists: cloud-only. Session client + RLS (owner_id = auth.uid()) already
   // scopes this, but the explicit .eq('owner_id', ownerId) is defense-in-depth. Ordered
   // by playlist_title (nulls last) then created_at — created_at MUST be in the select
@@ -237,6 +261,27 @@ export class SupabaseMetadataStore implements MetadataStore {
     });
     if (error) throw error;
     return { found: (data ?? 0) > 0 };
+  }
+
+  // ---------------------------------------------------------------------------
+  // deletePlaylist: hard-delete a playlist row owned by the caller (Task 8).
+  // RLS already scopes DELETE to owner_id = auth.uid(); the explicit .eq('owner_id')
+  // is defense-in-depth, matching listPlaylists/setPlaylistTitleIfNull convention.
+  // T6's cascade FKs (0019) remove the playlist's videos/jobs/share_tokens as a side
+  // effect — no separate cleanup calls here. A non-owner/nonexistent id deletes 0 rows
+  // without erroring.
+  // ---------------------------------------------------------------------------
+  async deletePlaylist(p: Principal, playlistId: string): Promise<void> {
+    const { data: userData } = await this.client.auth.getUser();
+    const ownerId = userData?.user?.id;
+    if (!ownerId) throw new Error('deletePlaylist: no authenticated user');
+
+    const { error } = await this.client
+      .from('playlists')
+      .delete()
+      .eq('id', playlistId)
+      .eq('owner_id', ownerId);
+    if (error) throw error;
   }
 
   // ---------------------------------------------------------------------------

@@ -22,6 +22,10 @@ function buildMockClient(overrides: {
   rpcResults?: Record<string, unknown>;
   userId?: string;
   errors?: Record<string, string | null>;
+  /** Rows returned by an `.update().select()` chain (e.g. setPlaylistTitleIfNull's
+   *  conditional update) — a non-empty array simulates a row that matched the
+   *  predicates (including `is('playlist_title', null)`) and was updated. */
+  updateSelectResult?: { id: string }[];
 } = {}) {
   const {
     playlistRow = null,
@@ -29,6 +33,7 @@ function buildMockClient(overrides: {
     rpcResults = {},
     userId = 'user-uuid-1',
     errors = {},
+    updateSelectResult = [],
   } = overrides;
 
   const calls: Array<{ method: string; args: unknown[] }> = [];
@@ -44,13 +49,23 @@ function buildMockClient(overrides: {
     let _op: string | null = null;
     let _payload: unknown = null;
     let _upsertOpts: unknown = null;
+    let _selectAfterOp = false;
 
     builder.select = (cols?: string) => {
       record('select', table, cols);
+      // A .select() chained after .update() (setPlaylistTitleIfNull's
+      // `.update().eq().eq().is().select('id')`) makes the builder terminal —
+      // resolve with updateSelectResult instead of the plain update ack.
+      if (_op === 'update') _selectAfterOp = true;
       return builder;
     };
     builder.eq = (col: string, val: unknown) => {
       record('eq', table, col, val);
+      _filter[col] = val;
+      return builder;
+    };
+    builder.is = (col: string, val: unknown) => {
+      record('is', table, col, val);
       _filter[col] = val;
       return builder;
     };
@@ -94,6 +109,9 @@ function buildMockClient(overrides: {
       // Only called when the builder is awaited directly (update/delete chain).
       const errKey = `${table}.${_op}`;
       const err = errors[errKey] ? new Error(errors[errKey]!) : null;
+      if (_op === 'update' && _selectAfterOp) {
+        return Promise.resolve({ data: err ? null : updateSelectResult, error: err }).then(resolve);
+      }
       return Promise.resolve({ data: null, error: err }).then(resolve);
     };
 
@@ -429,6 +447,74 @@ describe('deleteVideo', () => {
     const client = buildMockClient({ playlistRow: null });
     const store = new SupabaseMetadataStore(client as any);
     await expect(store.deleteVideo(p, 'vid1')).rejects.toThrow('playlist not found');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setPlaylistTitleIfNull
+// ---------------------------------------------------------------------------
+describe('setPlaylistTitleIfNull', () => {
+  test('updates playlist_title and scopes by owner_id, playlist_key, is-null; returns {updated:true} on a matched row', async () => {
+    const client = buildMockClient({ userId: 'owner-uuid', updateSelectResult: [{ id: 'pl-id' }] });
+    const store = new SupabaseMetadataStore(client as any);
+    const result = await store.setPlaylistTitleIfNull(p, 'Real Title');
+    expect(result).toEqual({ updated: true });
+
+    const updateCall = client.calls.find((c) => c.method === 'update' && c.args[0] === 'playlists');
+    expect(updateCall).toBeDefined();
+    expect(updateCall!.args[1]).toEqual({ playlist_title: 'Real Title' });
+
+    const eqCalls = client.calls.filter((c) => c.method === 'eq' && c.args[0] === 'playlists');
+    expect(eqCalls.some((c) => c.args[1] === 'owner_id' && c.args[2] === 'owner-uuid')).toBe(true);
+    // playlist_key predicate comes from p.indexKey — NOT a separate listId param.
+    expect(eqCalls.some((c) => c.args[1] === 'playlist_key' && c.args[2] === p.indexKey)).toBe(true);
+
+    const isCall = client.calls.find((c) => c.method === 'is' && c.args[0] === 'playlists');
+    expect(isCall).toBeDefined();
+    expect(isCall!.args[1]).toBe('playlist_title');
+    expect(isCall!.args[2]).toBeNull();
+  });
+
+  test('returns {updated:false} when no row matches (already titled — is-null predicate excludes it)', async () => {
+    const client = buildMockClient({ userId: 'owner-uuid', updateSelectResult: [] });
+    const store = new SupabaseMetadataStore(client as any);
+    const result = await store.setPlaylistTitleIfNull(p, 'Real Title');
+    expect(result).toEqual({ updated: false });
+  });
+
+  test('throws when no authenticated user', async () => {
+    const client = buildMockClient({ userId: '' });
+    (client.auth as any).getUser = () => Promise.resolve({ data: { user: null } });
+    const store = new SupabaseMetadataStore(client as any);
+    await expect(store.setPlaylistTitleIfNull(p, 'Real Title')).rejects.toThrow('no authenticated user');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deletePlaylist
+// ---------------------------------------------------------------------------
+describe('deletePlaylist', () => {
+  test('deletes from playlists filtered by BOTH id and owner_id', async () => {
+    const client = buildMockClient({ userId: 'owner-uuid' });
+    const store = new SupabaseMetadataStore(client as any);
+    await store.deletePlaylist(p, 'pl-id-1');
+    expect(client.calls.some((c) => c.method === 'delete' && c.args[0] === 'playlists')).toBe(true);
+    const eqCalls = client.calls.filter((c) => c.method === 'eq' && c.args[0] === 'playlists');
+    expect(eqCalls.some((c) => c.args[1] === 'id' && c.args[2] === 'pl-id-1')).toBe(true);
+    expect(eqCalls.some((c) => c.args[1] === 'owner_id' && c.args[2] === 'owner-uuid')).toBe(true);
+  });
+
+  test('throws when no authenticated user', async () => {
+    const client = buildMockClient({ userId: '' });
+    (client.auth as any).getUser = () => Promise.resolve({ data: { user: null } });
+    const store = new SupabaseMetadataStore(client as any);
+    await expect(store.deletePlaylist(p, 'pl-id-1')).rejects.toThrow('no authenticated user');
+  });
+
+  test('throws on delete error', async () => {
+    const client = buildMockClient({ userId: 'owner-uuid', errors: { 'playlists.delete': 'db down' } });
+    const store = new SupabaseMetadataStore(client as any);
+    await expect(store.deletePlaylist(p, 'pl-id-1')).rejects.toThrow('db down');
   });
 });
 

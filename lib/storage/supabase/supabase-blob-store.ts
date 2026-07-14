@@ -61,4 +61,40 @@ export class SupabaseBlobStore implements BlobStore {
       throw error;
     }
   }
+
+  async deletePrefix(p: Principal, prefix: string): Promise<void> {
+    assertLogicalKey(prefix);
+    const root = `${p.id}/${p.indexKey}/${prefix}`.replace(/\/$/, '');
+    const objectPaths = await this.collectObjectPaths(root);
+    for (let i = 0; i < objectPaths.length; i += 1000) {
+      const batch = objectPaths.slice(i, i + 1000);
+      const { error } = await this.b().remove(batch);
+      if (error) throw error;
+    }
+  }
+
+  /** Recursively walks a Supabase Storage "directory" (non-recursive `.list`, paginated at
+   *  100/page) and returns every file's full object path. Folder entries surface with
+   *  `id === null` and are descended into; file entries (`id !== null`) are collected. */
+  private async collectObjectPaths(dirPath: string): Promise<string[]> {
+    const paths: string[] = [];
+    const limit = 100;
+    let offset = 0;
+    for (;;) {
+      const { data, error } = await this.b().list(dirPath, { limit, offset });
+      if (error) throw error;
+      const entries = data ?? [];
+      for (const entry of entries) {
+        const entryPath = `${dirPath}/${entry.name}`;
+        if (entry.id === null) {
+          paths.push(...(await this.collectObjectPaths(entryPath)));
+        } else {
+          paths.push(entryPath);
+        }
+      }
+      if (entries.length < limit) break;
+      offset += limit;
+    }
+    return paths;
+  }
 }
