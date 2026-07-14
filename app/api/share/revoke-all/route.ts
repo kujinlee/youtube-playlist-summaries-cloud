@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
+import { logError } from '@/lib/dev-logger';
 const json = (b: unknown, s: number) => new Response(JSON.stringify(b), { status: s });
 
 export async function POST(request: Request) {
@@ -11,6 +12,6 @@ export async function POST(request: Request) {
   const { data: count, error } = await supabase.rpc('revoke_all_share_tokens', {
     p_playlist_id: body.playlistId, p_video_id: body.videoId,
   });
-  if (error) return json({ error: 'internal error' }, 500);
+  if (error) { logError('share:revoke-all', error); return json({ error: 'internal error' }, 500); }
   return json({ count }, 200);
 }

@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { logError } from '@/lib/dev-logger';
 import { assertVideoId } from '../../../../lib/index-store';
 import { getPrincipal, getStorageBundle } from '../../../../lib/storage/resolve';
 import { buildDocHtml } from '../../../../lib/html-doc/build-doc-html';
@@ -65,6 +66,7 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
   } catch (err) {
     const e = err as { statusCode?: number; message?: string };
     if (e.statusCode === 400) return json({ error: e.message }, 400);
+    logError('html:serve', err);   // unexpected (not the 400) — surface before the generic 500
     return json({ error: 'internal error' }, 500);
   }
 }
@@ -89,6 +91,7 @@ async function serveLocal(videoId: string, searchParams: URLSearchParams): Promi
   } catch (err) {
     const e = err as { statusCode?: number; message?: string };
     if (e.statusCode === 400) return json({ error: e.message }, 400);
+    logError('html:local', err);   // never swallow: log before Next returns a bare 500
     throw err;
   }
 

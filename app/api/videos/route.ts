@@ -5,6 +5,7 @@ import { recoverOrphanedVideos } from '../../../lib/pipeline';
 import { createServerSupabase, type CookieStore } from '../../../lib/supabase/server';
 import { resolveOwnedPlaylistKey } from '../../../lib/storage/serve-playlist';
 import type { SortColumn, SortOrder, Video } from '../../../types';
+import { logError } from '../../../lib/dev-logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -22,23 +23,27 @@ const SORT_COLUMNS = new Set<SortColumn>([
 
 function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Video[] {
   const sorted = [...videos].sort((a, b) => {
-    let aVal: string | number;
-    let bVal: string | number;
+    let aVal: string | number | undefined;
+    let bVal: string | number | undefined;
     if (column === 'name') {
-      aVal = a.title.toLowerCase();
-      bVal = b.title.toLowerCase();
+      aVal = a.title?.toLowerCase();
+      bVal = b.title?.toLowerCase();
     } else if (column === 'overall') {
       aVal = a.overallScore;
       bVal = b.overallScore;
     } else if (column === 'language') {
-      aVal = a.language ?? '';
-      bVal = b.language ?? '';
+      // Preserve undefined (don't coalesce to '') so an incomplete row sorts LAST via the
+      // shared nulls-last tail, not first — uniform with every other column.
+      aVal = a.language;
+      bVal = b.language;
     } else if (column === 'videoType') {
-      aVal = a.videoType ?? '';
-      bVal = b.videoType ?? '';
+      aVal = a.videoType;
+      bVal = b.videoType;
     } else if (column === 'audience') {
-      aVal = AUDIENCE_ORDER[a.audience ?? ''] ?? 0;
-      bVal = AUDIENCE_ORDER[b.audience ?? ''] ?? 0;
+      // Absent audience (== null catches undefined/null) → undefined (sorts last, consistent with
+      // the shared tail); present-but-unrecognized → rank 0 (as before).
+      aVal = a.audience == null ? undefined : (AUDIENCE_ORDER[a.audience] ?? 0);
+      bVal = b.audience == null ? undefined : (AUDIENCE_ORDER[b.audience] ?? 0);
     } else if (column === 'serialNumber') {
       // Videos with no summary yet have no serial — always sort them last, regardless of direction.
       if (a.serialNumber === undefined && b.serialNumber === undefined) return 0;
@@ -71,11 +76,18 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
       const cmp = aCh.localeCompare(bCh);
       return order === 'asc' ? cmp : -cmp;
     } else if (column === 'durationSeconds') {
-      const cmp = a.durationSeconds - b.durationSeconds;
-      return order === 'asc' ? cmp : -cmp;
+      aVal = a.durationSeconds;
+      bVal = b.durationSeconds;
     } else {
-      aVal = a.ratings[column as keyof typeof a.ratings];
-      bVal = b.ratings[column as keyof typeof b.ratings];
+      aVal = a.ratings?.[column as keyof typeof a.ratings];
+      bVal = b.ratings?.[column as keyof typeof b.ratings];
+    }
+    // Incomplete rows (a reserved slot whose summary hasn't landed, so this sort key
+    // is absent) sort LAST regardless of direction — never dereference undefined and
+    // 500 the whole list. Mirrors the nulls-last handling for channel/personalScore.
+    if (aVal == null || bVal == null) {   // == null catches undefined (and any jsonb null)
+      if (aVal == null && bVal == null) return 0;
+      return aVal == null ? 1 : -1;       // the missing one sorts last, both directions
     }
     if (aVal < bVal) return order === 'asc' ? -1 : 1;
     if (aVal > bVal) return order === 'asc' ? 1 : -1;
@@ -121,6 +133,7 @@ async function serveLocal(request: Request): Promise<Response> {
     if (e.statusCode === 400) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
+    logError('videos:readIndex', err);   // never swallow: log the real cause before Next returns a bare 500
     throw err;
   }
   const videos = sortVideos(index.videos, sortColumn, sortOrder);
@@ -162,6 +175,7 @@ async function serveCloud(request: Request): Promise<Response> {
     if (e.statusCode === 400) {
       return NextResponse.json({ error: e.message }, { status: 400 });
     }
+    logError('videos:readIndex', err);   // never swallow: log the real cause before Next returns a bare 500
     throw err;
   }
 

@@ -8,6 +8,7 @@ import { enqueuePlaylist, PlaylistTooLargeError, AllEnqueueFailedError, Playlist
 import { SupabaseEnqueuer } from '@/lib/job-queue/enqueuer';
 import { rollup } from '@/lib/job-queue/poll-client';
 import { parseClientIp } from '@/lib/http/client-ip';
+import { logError } from '@/lib/dev-logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
     if (e instanceof PlaylistTooLargeError) return NextResponse.json({ error: 'playlist too large', limit: e.limit, found: e.found }, { status: 422 });
     if (e instanceof AllEnqueueFailedError) return NextResponse.json({ error: 'enqueue failed', playlistId: e.playlistId }, { status: 503 });
     if (e instanceof PlaylistFetchError) return NextResponse.json({ error: 'playlist fetch failed' }, { status: 502 });
+    logError('jobs:enqueue', e);   // unexpected (not the 422/503/502 above) — surface before the generic 500
     return NextResponse.json({ error: 'internal error' }, { status: 500 });   // resolve/misconfig/unexpected
   }
 }
@@ -73,7 +75,8 @@ export async function GET(req: Request) {
     const bundle = getStorageBundle({ supabaseClient: supabase });
     const jobs = await bundle.jobQueue!.listByPlaylist(playlistId);
     return NextResponse.json({ jobs, rollup: rollup(jobs) }, { status: 200 });
-  } catch {
+  } catch (err) {
+    logError(`jobs:poll:${playlistId}`, err);   // never swallow: surface the real cause to console + dev-errors.log
     return NextResponse.json({ error: 'internal error' }, { status: 500 });
   }
 }

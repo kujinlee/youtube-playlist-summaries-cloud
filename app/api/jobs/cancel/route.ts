@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { getStorageBundle } from '@/lib/storage/resolve';
 import { TERMINAL_STATUSES } from '@/lib/job-queue/poll-client';
+import { logError } from '@/lib/dev-logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,7 +33,8 @@ export async function POST(req: Request) {
       if (!TERMINAL_STATUSES.includes(r.status)) requested += (await queue.requestCancel(r.jobId)).requested;
     }
     return NextResponse.json({ requested }, { status: 200 });
-  } catch {
+  } catch (err) {
+    logError('jobs:cancel', err);   // never swallow the cancel RPC's real failure
     return NextResponse.json({ error: 'internal error' }, { status: 500 });
   }
 }
