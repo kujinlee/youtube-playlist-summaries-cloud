@@ -40,9 +40,10 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
       aVal = a.videoType;
       bVal = b.videoType;
     } else if (column === 'audience') {
-      // Absent audience → undefined (sorts last); present-but-unrecognized → rank 0 (as before).
-      aVal = a.audience === undefined ? undefined : (AUDIENCE_ORDER[a.audience] ?? 0);
-      bVal = b.audience === undefined ? undefined : (AUDIENCE_ORDER[b.audience] ?? 0);
+      // Absent audience (== null catches undefined/null) → undefined (sorts last, consistent with
+      // the shared tail); present-but-unrecognized → rank 0 (as before).
+      aVal = a.audience == null ? undefined : (AUDIENCE_ORDER[a.audience] ?? 0);
+      bVal = b.audience == null ? undefined : (AUDIENCE_ORDER[b.audience] ?? 0);
     } else if (column === 'serialNumber') {
       // Videos with no summary yet have no serial — always sort them last, regardless of direction.
       if (a.serialNumber === undefined && b.serialNumber === undefined) return 0;
