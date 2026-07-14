@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logError } from '@/lib/dev-logger';
 import { cookies } from 'next/headers';
 import { assertVideoId } from '../../../../../lib/index-store';
 import { getPrincipal, getStorageBundle, getPrincipalFromSession } from '../../../../../lib/storage/resolve';
@@ -88,6 +89,7 @@ async function serveLocal(request: Request, videoId: string): Promise<Response> 
     if (e.message.startsWith('Video not found in index')) {
       return NextResponse.json({ error: 'video not found' }, { status: 404 });
     }
+    logError('review', err);   // unexpected (not the 404) — surface before the generic 500
     return NextResponse.json({ error: 'internal error' }, { status: 500 });
   }
 

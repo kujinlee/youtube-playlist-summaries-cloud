@@ -1,5 +1,6 @@
 import { listChannelPlaylists } from '../../../../lib/playlists/channel-provider';
 import { ChannelNotFoundError } from '../../../../lib/youtube';
+import { logError } from '@/lib/dev-logger';
 
 export async function GET(request: Request) {
   const handle = new URL(request.url).searchParams.get('handle');
@@ -10,6 +11,7 @@ export async function GET(request: Request) {
     return Response.json(await listChannelPlaylists(handle, apiKey));
   } catch (err) {
     if (err instanceof ChannelNotFoundError) return Response.json({ error: `No channel found for '${handle}'` }, { status: 404 });
+    logError('playlists:channel', err);   // unexpected (not the 404) — surface before the generic 502
     return Response.json({ error: 'Could not reach YouTube' }, { status: 502 });
   }
 }

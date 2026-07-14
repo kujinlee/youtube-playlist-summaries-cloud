@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logError } from '@/lib/dev-logger';
 import { readSettings } from '../../../lib/settings-store';
 import { resolveOutputFolder, normalizeToRoot, InvalidPlaylistUrlError } from '../../../lib/output-folder';
 
@@ -37,6 +38,7 @@ export async function GET(request: Request) {
     if (err instanceof InvalidPlaylistUrlError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
+    logError('resolve-folder', err);   // unexpected (not the InvalidPlaylistUrl 400) — surface before the 500
     return NextResponse.json({ error: 'failed to resolve folder' }, { status: 500 });
   }
 }

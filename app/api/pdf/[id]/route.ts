@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { logError } from '@/lib/dev-logger';
 import { assertVideoId } from '@/lib/index-store';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { loadSummaryForServe, resolveAndParse } from '@/lib/html-doc/serve-summary-core';
@@ -80,6 +81,7 @@ export async function GET(request: Request, { params }: Params) {
       return json({ error: 'PDF renderer unavailable, retry' }, 503);
     }
     if (e.statusCode === 400) return json({ error: e.message }, 400);
+    logError('pdf', err);   // unexpected (not the 503/400 above) — surface before the generic 500
     return json({ error: 'internal error' }, 500);
   }
 }

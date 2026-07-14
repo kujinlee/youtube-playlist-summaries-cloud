@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { normalizeToRoot } from '../../../lib/output-folder';
+import { logError } from '@/lib/dev-logger';
 
 // Reduce a folder path to the data ROOT. The header calls this when the user
 // Browses to or types a folder, so a pick of `<root>/<slug>` or `<root>/<slug>/raw`
@@ -13,8 +14,9 @@ export async function GET(request: Request) {
 
   try {
     return NextResponse.json({ root: normalizeToRoot(path) });
-  } catch {
+  } catch (err) {
     // Filesystem / unexpected error — generic 500, no path leak.
+    logError('normalize-folder', err);   // never swallow: surface the real cause
     return NextResponse.json({ error: 'failed to normalize folder' }, { status: 500 });
   }
 }

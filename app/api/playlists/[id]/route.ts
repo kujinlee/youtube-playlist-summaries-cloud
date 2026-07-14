@@ -19,6 +19,7 @@
 import { cookies } from 'next/headers';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { getStorageBundle, getPrincipalFromSession } from '@/lib/storage/resolve';
+import { logError } from '@/lib/dev-logger';
 
 const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status });
 
@@ -81,7 +82,8 @@ export async function DELETE(_request: Request, { params }: Params): Promise<Res
     }
 
     return json({ deleted: true }, 200);
-  } catch {
+  } catch (err) {
+    logError(`playlists:delete:${id}`, err);   // never swallow the delete's real failure
     return json({ error: 'internal error' }, 500);
   }
 }
