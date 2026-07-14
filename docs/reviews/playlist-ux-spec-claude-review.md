@@ -91,3 +91,62 @@ Traced worker/delete races: DB-commit-before-blobs is the correct order. Every p
 - Concurrent double-DELETE: second request's step-2 read 404s (row gone) → client treats as success. ✔
 
 The `ALTER TABLE ADD CONSTRAINT` (§B2) will not fail on existing data: the orphan-cleanup `DELETE` runs first and removes any row lacking a matching `(id, owner_id)`, and no playlist-delete path exists today so there are effectively no orphans to clean. The cleanup query is owner-safe (matches on both `playlist_id` and `owner_id`).
+
+---
+
+## Round 2 re-review
+
+**Revised spec:** `docs/superpowers/specs/2026-07-13-playlist-sidebar-ux-design.md` (post round-1 fixes)
+**Scope:** (a) verify each round-1 fix is genuinely fixed in spec text against real code; (b) hunt for new defects the fixes introduced, with special attention to the all-kinds cancel RPC × cascade-delete × lease-sweep × `complete_job`/`persist_summary` worker interaction.
+**Method:** re-read `lib/youtube.ts`, `producer.ts`, `supabase-metadata-store.ts`, `blob-store.ts` (+ local/supabase impls), `dig-blob-key.ts`, `worker-runner.ts`, migrations `0002/0008/0009/0010/0012/0013/0018`, `app/api/jobs/cancel/route.ts`, `supabase-job-queue.ts`, `PlaylistSidebar.tsx`; traced the cancel→cascade→worker path end-to-end.
+
+### Verdict: convergence reached — **no new Blocking, no new High.** All seven round-1 items GENUINELY FIXED. New findings are Low only.
+
+### Round-1 fix verification
+
+**1. H1 fake-title fallback — GENUINELY FIXED.**
+`fetchPlaylistTitleOrNull` (§A0) returns `snippet?.title ?? null` (no list-id fallback); A1 (producer) and A2 (backfill) both call it and persist **only** a non-null title, so a 200-empty-items miss leaves the row null → `'Untitled playlist'` fallback + backfill-retry both keep working. **Delegation is safe:** the retained `fetchPlaylistTitle = (await fetchPlaylistTitleOrNull(id,key)) ?? id` is behaviorally identical to today's `?? playlistId`, so the three existing callers — `pipeline.ts:195`, `output-folder.ts:73`, `lib/playlists/backfill-titles.ts:37` — are unchanged. **Remaining list-id-persisting path:** only `lib/playlists/backfill-titles.ts` (the *local-filesystem* backfill) still persists the fallback via the delegated `fetchPlaylistTitle` — but that is the local backend, explicitly out of scope (§2), and it writes local `playlist-index.json`, never a cloud row. No **cloud** path persists a list-id. Fixed for the spec's cloud scope. (See Low N4 for a naming/awareness note on that module.)
+
+**2. H2 auto-backfill loop — GENUINELY FIXED.**
+§A2 trigger now mandates a `useRef(false)` one-shot set **before** the call and explicitly *not* derived from `playlists` state, so the post-backfill refetch (which may still hold null rows) cannot re-fire it; React 18 StrictMode's setup→cleanup→setup on the same fiber preserves the ref, absorbing the double-invoke. A `sessionStorage` flag suppresses re-runs across remounts/navigations, and the **25-row server cap** (§A2 step 2) is a hard backstop. The unbounded loop is closed. Residual multi-tab duplication is bounded, not a reintroduced loop — see Low N2.
+
+**3. Dig cancel gap — GENUINELY FIXED.**
+Confirmed the gap is real: `SupabaseJobQueue.listByPlaylist` (`supabase-job-queue.ts:28`) filters `.eq('job_kind','summary')`, so the existing route cancel misses `dig`. The new `request_cancel_playlist_jobs` (§B4) is correct SQL: `security definer set search_path = public`; **no `job_kind` filter** (all kinds); `where playlist_id = p_playlist_id and owner_id = auth.uid() and status in ('queued','active')` — owner-guarded, terminal statuses (completed/failed/cancelled/dead_letter) untouched, queued→cancelled / active→flagged, mirroring `request_cancel_job` (`0010`); `revoke all … from public` + `grant execute … to authenticated, service_role` (drops `anon` vs `0010` — least-privilege, and the delete route is authenticated-only, so correct). No injection surface (single uuid param, no dynamic SQL). See the cancel × cascade × worker trace below — no worker error path.
+
+**4. Backfill clobber / NOT NULL — GENUINELY FIXED.**
+`setPlaylistTitleIfNull` (§A2) updates only `playlist_title` with predicate `owner_id = auth.uid() and playlist_key = $listId and playlist_title is null`. It never touches `playlist_url`, so the `NOT NULL` column cannot be violated/blanked; the `is null` predicate makes it non-clobbering of a concurrently-written real title. Owner-scoping is correct **even though `playlist_key` is not globally unique** (two owners can share a list-id): the `playlists_owner` RLS policy (`0002:4-5`, `using` **and** `with check` = `owner_id = auth.uid()`) confines a session-client update to the caller's own row. (Minor: the spec writes the predicate in SQL-notation `auth.uid()`; implemented as a session-client `.update().eq('playlist_key',…).is('playlist_title',null)` the owner scope comes from RLS, not a literal `auth.uid()` in JS — same result. Impl-clarity only.)
+
+**5. Path traversal — GENUINELY FIXED.**
+`assertLogicalKey(prefix)` is now mandated **first** in both `deletePrefix` impls (§B3). Verified against the real predicate (`blob-store.ts:21-25`): `''` → `startsWith('/')` false, `''.split('/')=['']` no `'..'`, no `\0` → **passes** (empty-prefix legal, as claimed); `'..'`, `'../other'`, `'foo/../bar'` all contain a `'..'` path segment → **throw**. Both impls further run under owner-scoped storage/fs roots, so it is defense-in-depth over an already-scoped path.
+
+**6. `serve_model_charge` retention — GENUINELY ADDRESSED (documented, claim verified true).**
+The "never re-matched (fresh UUID)" claim is **factually true**: `resolvePlaylistId` (`supabase-metadata-store.ts:186-191`) upserts on `(owner_id, playlist_key)`; after a delete the row is gone, so re-ingesting the same YouTube playlist **inserts a new row with a fresh `gen_random_uuid()` id** → `doc_key = '<new-uuid>/<video_id>'` can never collide with the old `doc_key`. No false dedup, no double-charge, no cross-tenant read (rows are `owner_id`-scoped, force-RLS, service-role-only). Not a leak. Retention is defensible (immutable billing/audit, same posture as `spend_ledger`/`usage_counters`). Two minor caveats in Low N3 (unbounded across re-create cycles; privacy wording of the "permanent delete" copy).
+
+**7. Round-1 Low items — all PRESENT.**
+- `share_tokens(playlist_id)` index: §B2 line 175 `create index if not exists share_tokens_playlist_id_idx …`. ✔
+- Delete route `.eq('owner_id', user.id)`: §B5 step 4. ✔
+- Trash button **sibling** of `<Link>`, not nested, `<li>` holds `[<Link>,<button>]` + `stopPropagation/preventDefault`: §B7. ✔
+- B2 cascade integration test **mandatory** (queried via service client since RLS hides the row): §7 "B2 cascade (integration — MANDATORY)". ✔
+
+### Cancel × cascade × lease-sweep × worker trace (the convergence-critical check)
+
+Traced an **active** dig/summary job whose row is cascade-deleted mid-flight after `request_cancel_playlist_jobs` flags it:
+- `complete_job` / `fail_job` / `heartbeat_job` / `set_progress_phase` all key on `id = … and status = 'active'` (`0008`) → row gone → **0 rows** → return `false`/`null`. `worker-runner.ts:56-57` maps `ok=false` → `'lost'`; `:62-66` maps `fail` `ok=false` → `'lost'`; `:67-72` even a *throwing* terminal RPC resolves to `'lost'`. No unhandled rejection.
+- `persist_summary` (`0009`) **raises** `'playlist … not owned'` when the playlist row is gone (it `raise`s, it does not no-op — §B4's "no-op" wording understates this, carried Low N5). That raise occurs **inside** the handler, is caught at `worker-runner.ts:58`, and routes to `fail` → `'lost'`. No crash.
+- `ctx.isCancelled` → `queue.getStatus(gone-id)` → null → `false`; benign (handler keeps running, terminal write no-ops).
+- Queued→cancelled jobs are never claimed (`claim_next_job` filters `status='queued'`), then cascade-deleted — no worker ever touches them.
+- `sweep_expired_leases` simply finds no row. Row-lock serialization between the cancel `UPDATE` and `claim_next_job`'s `for update skip locked` prevents any lost-update or deadlock.
+
+**Conclusion:** cancelling then cascade-deleting an active job's row produces **no worker error path** — every terminal write degrades to `'lost'`. The spec's core new-interaction claim holds.
+
+### New findings (Low only)
+
+- **N1 (Low) — migration number placeholder.** §B2/§B4 name the file `00NN_share_tokens_cascade.sql`. The highest existing migration is `0018_enqueue_dig.sql`, so the concrete file must be **`0019_…`**. Trivial, but pin it so the migration actually applies in order.
+- **N2 (Low) — `sessionStorage` is per-tab, not per-session-shared.** §A2 says the flag runs backfill "at most once per browser **session** across mounts/navigations." `sessionStorage` is scoped per tab/window, so N tabs = up to N backfill calls. This does **not** reintroduce the H2 loop: each call is capped at 25 rows and is idempotent (only null rows), so once titles fill, further calls do 0 work — the cost is a bounded handful of duplicate YouTube lookups, not an unbounded loop. Reword "per session" → "per tab", or accept as-is; either way bounded.
+- **N3 (Low) — retention vs. the "permanent delete" promise.** The confirm copy (§B7) says delete "permanently removes the playlist, all its summaries, PDFs, and any share links. This cannot be undone." Correct for those; but `serve_model_charge` (and `spend_ledger`/`usage_counters`) retain rows whose `doc_key` embeds `playlist_id/video_id` — a per-video record survives the "permanent" delete, and the table grows unbounded across repeated delete→re-ingest cycles (no FK to `playlists`; cascade is only on `profiles`). Defensible as an immutable billing/audit ledger (money was spent), but (a) the growth is worth a future storage/retention sweeper note, and (b) the user-facing "permanently removes … all its summaries" copy slightly overstates vs. retained billing residue — consider a one-line spec note that immutable billing records are intentionally exempt.
+- **N4 (Low/info) — existing `lib/playlists/backfill-titles.ts`.** A **local-filesystem** `export async function backfillPlaylistTitles(root, apiKey)` already exists and still persists the list-id fallback (unfixed H1 for local, out of scope). Name overlap with the spec's `lib/client/api.ts → backfillPlaylistTitles()` is in a different module (no collision), but implementers should be aware of the existing symbol and that the local path is deliberately left unchanged.
+- **N5 (Low, carried) — §B4 "no-op" wording.** As in round-1: for an active job whose row is cascade-deleted, `persist_summary` **raises** (caught → `fail` → `'lost'`) rather than no-oping; only `complete_job`/`fail_job` literally no-op. Behavior is correct; one-line wording fix only.
+
+### Convergence statement
+
+This is a full re-review round that **verified every round-1 Blocking/High/Medium/Low fix as genuinely applied (not reworded)** and surfaced **no new Blocking or High** — only five Low notes, all with obvious dispositions. Per `docs/dev-process.md` → Iterative Re-Review "Stop (diminishing returns)", this round **is the gate**: the spec has converged. Remaining Low items can be folded into implementation or accepted as documented.

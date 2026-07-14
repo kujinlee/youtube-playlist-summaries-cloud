@@ -107,7 +107,11 @@ New owner-scoped route **`POST /api/playlists/backfill-titles`** (cloud branch):
 
 1. Read `YOUTUBE_API_KEY` once (500 if unset).
 2. List the caller's playlists (RLS-scoped session client); select those with `playlist_title`
-   null, **capped at `BACKFILL_MAX_PER_CALL` (25)** rows/call (bounds YouTube quota per request).
+   null. Backfill **all** of them in the call (the goal is to name every existing row — review M-a,
+   Codex round 2: a hard 25-cap would leave a user's 26th+ playlist permanently untitled), bounded
+   only by a high safety ceiling `BACKFILL_MAX_PER_CALL` (200) as a runaway backstop. Each is one
+   YouTube quota unit; realistic owner counts are dozens, and the trigger already runs at most once
+   per session (below), so total quota is bounded.
 3. For each, `fetchPlaylistTitleOrNull(playlist_key, apiKey)`. On a **non-null** real title,
    persist with a **conditional update** (see below). A null (no item) or a thrown
    network/quota error skips that row — per-playlist try/catch, never 500s the batch.
@@ -129,9 +133,14 @@ rate-limiting):
 - The one-shot is a **`useRef` guard**, NOT derived from `playlists` state — so the post-backfill
   refetch (which may still contain null rows) cannot re-fire it. React 18 StrictMode double-invoke
   is absorbed by the ref.
-- Additionally gated by a **`sessionStorage` flag** (`backfilledTitles`) so it runs **at most once
-  per browser session** across mounts/navigations, not once per mount.
-- Server-side row cap (step 2) is the backstop even if a client ignores both guards.
+- Additionally gated by a **per-user `sessionStorage` flag** keyed `backfilledTitles:${user.id}`
+  (review M-b, Codex round 2 — an origin-global key would let a sign-out/sign-in in the same tab
+  suppress backfill for the next account) so it runs **at most once per browser session** across
+  mounts/navigations, not once per mount.
+- `sessionStorage` is per-tab, so N open tabs can each fire once (review N2, Claude) — bounded, not
+  a reintroduced loop: the server row-ceiling (step 2) and `setPlaylistTitleIfNull`'s null-only
+  idempotency (a second tab's call updates 0 rows) are the backstop even if a client ignores the
+  guards.
 
 - Idempotent (only fills null rows); safe to call repeatedly.
 - Fully null-safe: read path unchanged; the `?? 'Untitled playlist'` fallback still covers a row
@@ -150,15 +159,20 @@ rate-limiting):
 | In-flight jobs (queued/active) | Best-effort cancel-first (B4) |
 | `playlists` row | Session-client `DELETE` (RLS owner-guarded) |
 
-**Intentionally retained (review M1, Codex M1 + Claude Low):** `serve_model_charge` *is*
-playlist-scoped (its `doc_key = '<playlist_id>/<video_id>'`, `0012:53`) and does **not** expire —
-but it is an **immutable spend/billing-audit ledger**: the money was actually spent, so a delete
-must not erase it. A re-ingested playlist gets a fresh UUID, so old `doc_key`s never collide and
-the retained rows are inert. `serve_owner_budget`, `spend_ledger`, `usage_counters` are
-owner/day-keyed accounting and likewise retained by design. This retention is a deliberate
-decision, not an oversight; it is **not** a leak (owner-scoped, never re-matched).
+**Intentionally retained (review M1, Codex M1 + Claude Low/N3):** `serve_model_charge` *is*
+playlist-scoped (its `doc_key = '<playlist_id>/<video_id>'`, `0012:53`) — but it is an **immutable
+spend/billing-audit ledger**: the money was actually spent, so a delete must not erase it. A
+re-ingested playlist gets a fresh UUID (verified: `resolvePlaylistId` inserts a new
+`gen_random_uuid` row after delete), so old `doc_key`s never collide and the retained rows are
+inert (**not a leak** — owner-scoped, never re-matched). `serve_owner_budget`, `spend_ledger`,
+`usage_counters` are owner/day-keyed accounting, likewise retained by design. Caveat (N3): these
+audit rows accumulate across delete/re-create cycles — normal ledger growth, out of scope here; a
+retention/GC policy for old accounting rows is a separate concern, not something a playlist delete
+should own.
 
-### B2. DB — migration `00NN_share_tokens_cascade.sql`
+### B2. DB — migration `0019_share_tokens_cascade.sql`
+
+(Next number after `0018_enqueue_dig` — review N1, Claude.)
 
 Add the same composite cascade FK the codebase already uses for `videos`/`jobs`, so a single
 `DELETE playlists` cascades **all** DB state atomically (one transaction, no RPC):
@@ -234,8 +248,14 @@ grant execute on function request_cancel_playlist_jobs(uuid) to authenticated, s
 Mirrors the per-job `request_cancel_job` (`0010`) but scoped to a whole playlist, owner-guarded via
 `auth.uid()`. The DELETE route calls it once (best-effort). This stops **queued** jobs (any kind)
 from being claimed during the delete window. An **active** job whose row is then cascade-deleted
-keeps running to completion but its lease-fenced `complete_job`/`fail_job` (WHERE `status='active'`)
-no-op against the missing row — no crash.
+keeps running to completion; its lease-fenced `complete_job`/`fail_job`/`heartbeat` (WHERE
+`status='active'`) then **match 0 rows** against the missing row → `worker-runner` maps that to
+`'lost'` and a `persist_summary` that raises is caught → `fail` → `'lost'` (verified by both
+round-2 reviewers). No unhandled rejection, no crash. This is the documented **best-effort**
+posture, not true quiescence (see B5 residual). Handlers do **not** currently poll `ctx.isCancelled`
+mid-generation, so an active job can spend until it finishes or its heartbeat notices the vanished
+row (≈ `leaseSeconds/3`); making handlers poll `cancel_requested` mid-flight is a deliberate
+**out-of-scope** future enhancement (review M-c, Codex round 2), not required here.
 
 ### B5. Delete sequence + failure semantics
 
@@ -271,7 +291,8 @@ treats 404 on delete as success (already deleted).
 - New `MetadataStore.deletePlaylist(p, playlistId): Promise<void>` (session-client delete;
   local impl: recursive fs remove of the playlist dir, or no-op if out of scope for local).
 - New `lib/client/api.ts` → `deletePlaylist(id): Promise<void>` and
-  `backfillPlaylistTitles(): Promise<{updated:number}>`. `deletePlaylist` treats HTTP 404 as
+  `backfillPlaylistTitles(): Promise<{updated:number; attempted:number}>` (matches the §A2 route
+  contract — review Low, Codex round 2). `deletePlaylist` treats HTTP 404 as
   success (already gone); throws `UnauthorizedError` on 401.
 
 ### B7. UI — sidebar delete control + confirm modal
@@ -321,7 +342,7 @@ None move the goal (real names + full hard-delete).
 
 | # | Decision | Default (chosen) | Alternatives |
 |---|---|---|---|
-| D1 | Backfill trigger | Auto, once/session (`useRef` + `sessionStorage`), capped 25 rows/call | Manual "fix names" button; on-ingest only |
+| D1 | Backfill trigger | Auto, once/session (`useRef` + per-user `sessionStorage`), all null rows/call (ceiling 200) | Manual "fix names" button; on-ingest only |
 | D2 | Delete DB mechanism | Composite cascade FK on `share_tokens` + session-client delete | `delete_playlist` SECURITY DEFINER RPC |
 | D3 | Delete confirmation | Simple confirm modal (Cancel/Delete) | Type-to-confirm playlist name |
 | D4 | In-flight jobs | Cancel-first via all-kinds `request_cancel_playlist_jobs` RPC, then cascade-delete | Skip cancel (rely on cascade + lease no-op) |
@@ -338,7 +359,7 @@ E2E mocks at route level).
 - **A1 forward fix (unit):** producer persists a real title after resolve; a **null** (no-item)
   result persists **nothing** (row stays null — no fake `PLxxxx`); a title-fetch throw does NOT
   fail ingest (videos still enqueue).
-- **A2 backfill (unit + integration):** route caps at 25 rows/call; selects only null-title rows;
+- **A2 backfill (unit + integration):** route backfills all null-title rows (ceiling 200); selects only null-title rows;
   persists via `setPlaylistTitleIfNull` (conditional `WHERE playlist_title IS NULL` — a concurrent
   real title is NOT clobbered); a null/thrown fetch skips that row; returns counts; idempotent
   (second call updates 0). Integration against real local Supabase: null-title row → titled after
@@ -346,14 +367,12 @@ E2E mocks at route level).
 - **A2 trigger (component):** the `useRef` one-shot fires backfill at most once even when the
   post-backfill refetch still contains null rows (no loop); the `sessionStorage` flag suppresses a
   second run on remount; StrictMode double-invoke fires it once.
-- **B2 migration (integration):** adding a share_token then deleting its playlist removes the
-  share_token (cascade); pre-existing orphan cleanup runs; cross-owner FK holds.
-- **B3 deletePrefix (unit + integration):** removes flat + nested (`dig/**`) objects; paginates
-  past 100; empty prefix = whole playlist; absent = no error. Local impl: recursive fs remove,
-  ENOENT-safe.
 - **B2 cascade (integration — MANDATORY):** insert a share_token for a playlist → delete the
   playlist → the share_token row is gone (proves the RLS-bypassing RI cascade); pre-existing
   orphan cleanup runs; a cross-owner share_token is untouched.
+- **B3 deletePrefix (unit + integration):** removes flat + nested (`dig/**`) objects; paginates
+  past 100; empty prefix = whole playlist; absent = no error; `'..'` prefix throws. Local impl:
+  recursive fs remove, ENOENT-safe.
 - **B4 cancel RPC (integration):** a queued **dig** job and a queued summary job for a playlist are
   BOTH `cancelled` by `request_cancel_playlist_jobs` (all-kinds); another owner's job is untouched
   (owner-guard); returns the row count.
