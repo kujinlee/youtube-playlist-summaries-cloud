@@ -138,3 +138,61 @@ future use, to avoid a future caller nuking a shared local root.
 - Integration helpers used by the plan (`adminClient`, `newUser`, `signInAs`, `seedPlaylist`,
   `seedPromotedVideo`, `seedSummaryBlob`, `ensureGuardrailHeadroom`) all exist and match the described
   usage.
+
+---
+
+## Round 2 re-review
+
+**Reviewer:** Claude (adversarial), verified against live code.
+**Date:** 2026-07-13
+**Scope:** (a) verify each round-1 finding is genuinely fixed, not reworded; (b) hunt for defects the fixes introduced.
+
+### Verdict — CONVERGENCE (0 Blocking, 0 High)
+
+All 2 High / 3 Medium / 4 Low from round 1 are genuinely fixed. Three **Medium** residuals remain — each a mechanical implementation-sketch gap (a `tsc --noEmit` gate would catch all three) rather than an architectural or goal-moving defect. None are Blocking or High. The plan is safe to execute; the three Mediums are worth a one-line tightening each so the executing subagent doesn't hit an avoidable mid-task typecheck failure.
+
+### Round-1 items — FIXED / NOT-FIXED
+
+1. **Integration test runner (Codex B1)** — **FIXED.** Global Constraints (plan:22) now names `npm run test:integration -- <pattern>` and the combined gate `npm test && npm run test:integration && npx tsc --noEmit`. Verified per task: T3 (Step4 `-- backfill-titles`, Step5 full gate), T4 (`-- backfill-titles-route`), T6 (`-- share-tokens-cascade cancel-playlist-jobs`), T7 (`-- supabase-blob-delete-prefix`), T8 (`-- delete-playlist-store`), T9 (`-- delete-playlist-route`) all carry the integration run **and** the full gate. T5/T10 (no integration) correctly use `npm test && npx tsc --noEmit` (+ playwright for T10). `package.json:18` confirms the script; `jest.config.ts` excludes `tests/integration/**`, so the split is real, not cosmetic.
+
+2. **Principal construction (B2/H2)** — **FIXED.** `resolve.ts:93` signature is `getPrincipalFromSession(session:{userId:string|null}, indexKey:string)`. T4 Step3 builds `getPrincipalFromSession({ userId: user.id }, p.playlistKey)` (field name matches `PlaylistSummary.playlistKey`, `supabase-metadata-store.ts:210`); T9 Step3 builds it with the `playlist_key` captured from the pre-delete read. Both call sites match the real 2-arg signature. Global Constraints (plan:23) forbids the ad-hoc object. Genuinely fixed.
+
+3. **`requestCancelPlaylist` on the `JobQueue` interface (Codex B3 / H2)** — **FIXED (design), with a residual — see M-A.** File Structure (plan:41) now lists `lib/storage/job-queue.ts` for T8; T8 interfaces (plan:256) states the method is "added to the `JobQueue` interface … not just the class," and Step1 adds it. Verified `job-queue.ts:22-33` is the interface and `SupabaseJobQueue` is the sole implementer (`resolve.ts:60`), so widening is clean and does **not** force the local bundle (which supplies no `jobQueue` — `resolve.ts:20,53`) or break existing callers (adding a method never breaks callers). The interface fix is real; the *route call site* still lacks the optional-chaining guard the round-1 fix note called for (M-A below).
+
+4. **T5 userId threading + distinct-user test (H1)** — **FIXED (design), with a residual — see M-B.** Plan now threads `session.userId` CloudApp→CloudAppBody→PlaylistSidebar (plan:162,169), lists `CloudApp.tsx` in T5 Files, keys the guard on `backfilledTitles:${userId}`, and adds behavior #5 (distinct users, same tab → distinct keys). Verified CloudAppBody sits inside the `<Suspense>` boundary (`CloudApp.tsx:55-61`) and currently takes no props — passing a prop through a Suspense child is fine, no boundary breakage. The design gap is closed; a null-session type/semantic residual remains (M-B).
+
+5. **T6 migration RED reasoning + orphan-cleanup (Codex H3 / M1)** — **FIXED.** Plan:210 now states the RED is sound because `0019` is genuinely absent, and explicitly reclassifies orphan-cleanup (behavior 1) as **not observable post-FK** → verified indirectly by "the ALTER ADD CONSTRAINT applies cleanly" + a migration comment. Step1 (plan:212) rewrites behavior-1's test as "constraint exists / migration applied," no longer implying a runnable orphan-insert. This is exactly what round-1 M1 asked for.
+
+6. **`setPlaylistTitleIfNull` returns `{updated}`, drops `listId` (Codex M1 / L2)** — **FIXED.** T3 signature (plan:109) is `setPlaylistTitleIfNull(p, title): Promise<{updated:boolean}>`, derives the key from `p.indexKey`, no `listId` param; impl uses `.select('id')`, `updated = (data?.length ?? 0) > 0` (plan:122). T4 counts only real persists: `if (u) updated++` (plan:153). Both the redundant-param and the count-no-ops findings are addressed. (RLS-correctness of `.update().select()` independently verified — see New-issue A: not a defect.)
+
+7. **T9 404 from pre-delete read, not delete rowcount (M2)** — **FIXED.** Plan:299 "404 source" note: 404 comes from `select('id, playlist_key').eq('id',id).maybeSingle()` under the RLS session client returning null, **not** the always-succeeding `.delete()` rowcount; the read also yields `playlist_key` for the blob Principal. Step3 (plan:303) implements exactly this. Verified the read needs no explicit `.eq('owner_id')` because `playlists_owner … for all using (owner_id=auth.uid())` (`0002_rls_policies.sql:4`) scopes it — a non-owner id returns null → 404.
+
+8. **Spec §B6 + T8 both say local `deletePlaylist` throws cloud-only** — **FIXED / consistent.** Spec `design.md:292` ("Local impl throws cloud-only") and T8 (plan:266,270) agree; matches the existing local pattern (`local-metadata-store.ts:45-49` throws for `resolvePlaylistId`/`listPlaylists`).
+
+### NEW findings (defects the fixes introduced or left)
+
+#### Medium
+
+**M-A — T9 route sketch omits the `bundle.jobQueue!` non-null guard; will not typecheck as written.**
+`StorageBundle.jobQueue` is optional (`resolve.ts:17`, `JobQueue | undefined`). T9 Step3 (plan:303) writes `await bundle.jobQueue.requestCancelPlaylist(id)` with **no** `!`. Under strict TS that is a TS18048 "possibly undefined." Round-1 H2's fix note explicitly said "T9 must handle `jobQueue` being optional (`bundle.jobQueue!`)"; the revision added the interface method (the substantive half) but dropped the guard note. The sibling route already does it right: `const queue = bundle.jobQueue!;` (`app/api/jobs/cancel/route.ts:24`). Fix: in T9 Step3, capture `const queue = bundle.jobQueue!` (cloud branch is guaranteed to have it) before calling `requestCancelPlaylist`. One-token gap, but it is the exact typecheck failure H2 was meant to close.
+
+**M-B — Null-session `userId` threading is type-unsafe and can reintroduce the forbidden global key.**
+`CloudAppProps.session` is `{ userId; email } | null` (`CloudApp.tsx:40`). The round-1 fix (plan:169) threads `session?.userId`, which is `string | undefined`, into a prop the plan describes as "required-in-cloud `userId: string`" (plan:167). Passing `string | undefined` to a required `string` prop is a typecheck error; a subagent papering over it with `session?.userId ?? ''` would key on `backfilledTitles:` (an origin-global key) — the precise bug spec §A2 M-b forbade. Fix: either narrow before render (`{session ? <CloudAppBody userId={session.userId}/> : …}`) or type the prop `userId: string | undefined` and no-op the backfill when it is absent (an unauthenticated cloud render 401s and redirects anyway, so no-op is safe). The plan must state which, so the key is never built from `undefined`/`''`.
+
+**M-C — T5 does not update the existing `PlaylistSidebar` tests that a required prop breaks.**
+`tests/components/playlist-sidebar.test.tsx` renders `<PlaylistSidebar />` / `<PlaylistSidebar onNewPlaylist={…} />` at 8 sites (lines 56–116), none passing `userId`. Making `userId` a **required** prop makes every one of those a typecheck failure, which T5 Step5's `npx tsc --noEmit` gate will trip. T5's Files list and steps don't mention touching that file. Fix: add `tests/components/playlist-sidebar.test.tsx` to T5's Files (update the render calls to pass a `userId`), or make the prop optional with a documented no-op fallback (ties into M-B). `cloud-app*.test.tsx` render `<CloudApp session={…}/>` with a non-null session, so those pass the threading at runtime — only the standalone sidebar test breaks.
+
+#### Low / nits (no action required to proceed)
+
+- **N1 —** `.is('playlist_title', null).select('id')` was checked for the "returning re-evaluates the filter and drops the row" trap: PostgREST applies the `is null` filter to choose rows to update and RETURNING returns those rows regardless of their new values, so `updated:true` is correctly reported. Not a defect — noted because the task asked.
+
+### New-issue checks that came back CLEAN
+
+- **A — `.update(...).select('id')` under the RLS session client returns the updated row to the owner?** Yes. `playlists_owner … for all` (`0002_rls_policies.sql:4`) covers SELECT in the same policy, and the update doesn't change `owner_id` (WITH CHECK still holds). Precedent: `resolvePlaylistId` already does `.upsert(...).select('id').single()` on the session client (`supabase-metadata-store.ts:186-189`). No defect.
+- **B — `bundle.jobQueue` undefined in DELETE route?** Real, captured as **M-A** (needs the `!` guard).
+- **C — required `userId` prop breaks existing tests?** Real, captured as **M-C**.
+- **D — any task referencing a type/interface a later task defines?** None. T9 (consumer) follows T6/T7/T8 (producers); T4 follows T1/T3; T5 follows T4; T10 follows T9; T2 follows T1. All producers precede consumers.
+
+### Convergence statement
+
+A full round-2 re-review found **no new Blocking and no new High**. All round-1 Blocking/High/Medium/Low are genuinely fixed (not reworded). The three residual Mediums (M-A/M-B/M-C) are mechanical, `tsc`-catchable, one-line fixes that do not move the goal or the architecture. Per the dev-process convergence rule this round **is** the gate. Recommend applying M-A/M-B/M-C as pre-execution tightenings (or letting the TDD gates catch them in-task), then proceeding to implementation.

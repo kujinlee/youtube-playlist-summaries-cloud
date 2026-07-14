@@ -120,9 +120,11 @@ New owner-scoped route **`POST /api/playlists/backfill-titles`** (cloud branch):
 **Conditional persist (review M-race, Codex M2 + Claude M1):** do **not** use the `setPlaylistMeta`
 upsert here — it unconditionally overwrites `playlist_title` (clobbering a title a concurrent
 ingest just wrote) and re-supplies `playlist_url` (which the backfill would have to re-read to
-satisfy the NOT NULL column). Instead add `MetadataStore.setPlaylistTitleIfNull(p, listId, title)`
-→ `update playlists set playlist_title = $title where owner_id = auth.uid() and playlist_key = $listId
-and playlist_title is null`. Owner-scoped, only fills nulls, touches no other column.
+satisfy the NOT NULL column). Instead add `MetadataStore.setPlaylistTitleIfNull(p, title):
+Promise<{updated: boolean}>` (the `playlist_key` comes from `p.indexKey`, so no separate `listId`
+param) → `update playlists set playlist_title = $title where owner_id = auth.uid() and
+playlist_key = $p.indexKey and playlist_title is null` with `.select('id')` so the caller can count
+only real persists. Owner-scoped, only fills nulls, touches no other column.
 
 **Trigger (decision D1 — default: auto, bounded):** `PlaylistSidebar`, after loading playlists,
 if **≥1** has a null `playlistTitle`, fires `backfillPlaylistTitles()` **once**, then re-fetches

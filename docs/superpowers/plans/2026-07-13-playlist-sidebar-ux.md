@@ -159,14 +159,14 @@
 ### Task 5: Sidebar auto-backfill trigger + client fn
 
 **Files:**
-- Modify: `lib/client/api.ts` (add `backfillPlaylistTitles`), `components/cloud/PlaylistSidebar.tsx`, `components/cloud/CloudApp.tsx` (thread `session.userId` → `CloudAppBody` → `PlaylistSidebar`)
-- Test: `tests/components/cloud/PlaylistSidebar.backfill.test.tsx` (new)
+- Modify: `lib/client/api.ts` (add `backfillPlaylistTitles`), `components/cloud/PlaylistSidebar.tsx`, `components/cloud/CloudApp.tsx` (thread `session?.userId` → `CloudAppBody` → `PlaylistSidebar`)
+- Test: `tests/components/cloud/PlaylistSidebar.backfill.test.tsx` (new); **update `tests/components/playlist-sidebar.test.tsx`** — it renders `<PlaylistSidebar />` at ~8 sites with no `userId`; add the new optional prop to those renders (review M-C, round 2 — keeps the T5 `tsc`/suite gate green).
 
 **Interfaces:**
 - Consumes: backfill route (T4). `CloudApp` already holds `session: { userId, email } | null` (`CloudApp.tsx:40,43`); `CloudAppBody()` currently takes no props and renders `<PlaylistSidebar onNewPlaylist=… />` (`:66,82`).
-- Produces: `backfillPlaylistTitles(): Promise<{updated:number; attempted:number}>`; `PlaylistSidebar` gains a required-in-cloud `userId: string` prop.
+- Produces: `backfillPlaylistTitles(): Promise<{updated:number; attempted:number}>`; `PlaylistSidebar` gains a **`userId: string | null`** prop (review M-B, round 2 — `session` is nullable and existing tests render `session={null}`; a required `string` would be a type error and `?? ''` would reintroduce the origin-global key §A2 forbids).
 
-**userId threading (review H1, Codex + Claude — `PlaylistSidebar` has no owner id today, and §A2 requires a per-user key):** `CloudApp` passes `session?.userId` into `CloudAppBody`, which passes it into `PlaylistSidebar`. The per-session `sessionStorage` key is `backfilledTitles:${userId}` so a same-tab account switch uses a distinct key.
+**userId threading (review H1, Codex + Claude — `PlaylistSidebar` has no owner id today, and §A2 requires a per-user key):** `CloudApp` passes `session?.userId ?? null` into `CloudAppBody`, which passes it into `PlaylistSidebar`. The per-session `sessionStorage` key is `backfilledTitles:${userId}`. **When `userId` is null (no session), the backfill effect no-ops** (can't form a per-user key, and an unauthenticated sidebar has nothing to backfill) — a documented, correct skip, not a fallback key.
 
 **Enumerated Behaviors**
 
@@ -178,10 +178,11 @@
 | 4 | Once per session, per user | remount with flag set | `sessionStorage['backfilledTitles:'+userId]` present ⇒ no call |
 | 5 | Distinct users, same tab | userId A then B | distinct keys → B still eligible |
 | 6 | StrictMode safe | double-invoke effect | fires once |
+| 7 | Null user no-op | `userId === null` | no backfill call (no per-user key; unauthenticated) |
 
 - [ ] **Step 1:** Write failing component tests. Mock `lib/client/api` (`listPlaylists`, `backfillPlaylistTitles`). Render sidebar with a `userId` prop + null-title fixture; assert one backfill call + refetch (b1); re-render with still-null refetch (b2); titled fixture (b3); pre-set `sessionStorage['backfilledTitles:'+userId]` (b4); two userIds → two keys (b5).
 - [ ] **Step 2:** Run `npx jest PlaylistSidebar.backfill` → FAIL.
-- [ ] **Step 3:** Add `backfillPlaylistTitles` to `lib/client/api.ts`. Thread `userId` through `CloudApp`→`CloudAppBody`→`PlaylistSidebar`. In the sidebar, add a `useRef(false)` one-shot guard + per-user `sessionStorage` key (`backfilledTitles:${userId}`); in the load effect, after fetching, if `!ref.current && !sessionStorage.getItem(key) && list.some(p=>!p.playlistTitle)` → set both guards, `await backfillPlaylistTitles()`, re-fetch list.
+- [ ] **Step 3:** Add `backfillPlaylistTitles` to `lib/client/api.ts`. Thread `userId` (`string|null`) through `CloudApp`→`CloudAppBody`→`PlaylistSidebar`; update the existing `playlist-sidebar.test.tsx` renders. In the sidebar, add a `useRef(false)` one-shot guard + per-user `sessionStorage` key (`backfilledTitles:${userId}`); in the load effect, after fetching, **if `userId` is null → skip**; else if `!ref.current && !sessionStorage.getItem(key) && list.some(p=>!p.playlistTitle)` → set both guards, `await backfillPlaylistTitles()`, re-fetch list.
 - [ ] **Step 4:** Run tests → PASS.
 - [ ] **Step 5:** `npm test && npx tsc --noEmit`; commit `feat(playlist-ux): sidebar auto-backfill titles once/session per user (BUG-6)`.
 
@@ -200,14 +201,14 @@
 
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
-| 1 | Orphan cleanup | pre-existing share_token with no matching playlist | deleted by the pre-ALTER cleanup so the FK can be added |
+| 1 | Orphan cleanup (defensive, not behavior-tested) | pre-existing share_token with no matching playlist | pre-ALTER cleanup delete runs so the FK can be added; verified only by clean migration apply |
 | 2 | Cascade on delete | delete a playlist that has a share_token | share_token row gone |
 | 3 | Cross-owner integrity | — | FK is `(playlist_id, owner_id)`; a token's owner must equal its playlist's owner |
 | 4 | Cancel all kinds | queued summary + queued dig for a playlist | both → `cancelled`; returns rowcount |
 | 5 | Cancel owner-guard | another owner calls for a playlist not theirs | 0 rows; nothing changed |
 | 6 | Terminal untouched | a `completed`/`failed` job | left unchanged |
 
-**RED validity (review H3-Codex / M1-Claude):** the RED step is sound because `0019` does not exist yet — the constraint and RPC are genuinely absent, so behaviors 2–6 fail for the right reason on the current local schema (no `supabase db reset` gymnastics needed; Claude confirmed). **Orphan-cleanup (behavior 1) is only observable pre-FK** (once the FK exists you can't insert an orphan to test cleanup), so it is verified indirectly: assert the migration APPLIES CLEANLY (the `ALTER ADD CONSTRAINT` succeeds) against the local schema — proving the cleanup delete ran / no orphans block it. It is a defensive one-shot for rows orphaned by pre-cascade playlist deletes; document that in the migration comment.
+**RED validity (review H3-Codex / M1-Claude):** the RED step is sound because `0019` does not exist yet — the constraint and RPC are genuinely absent, so behaviors 2–6 fail for the right reason on the current local schema (no `supabase db reset` gymnastics needed; Claude confirmed). **Orphan-cleanup (behavior 1) is a defensive one-shot that is NOT directly behavior-tested** (round-2 Medium — honest scoping): once the FK exists you cannot insert an orphan to exercise the cleanup, and a clean DB has no orphan to remove, so "migration applies cleanly" only proves *no orphan blocked the FK*, not that the delete removed one. It guards rows orphaned by pre-cascade playlist deletes (before this FK, deleting a playlist left its share_tokens); document that intent in the migration comment and accept it as untested defensive SQL rather than claiming false coverage.
 
 - [ ] **Step 1:** Write failing integration tests (real local Supabase, via `tests/integration/helpers/clients`): behaviors 2,3 in `share-tokens-cascade.test.ts`; 4,5,6 in `cancel-playlist-jobs.test.ts` (seed via `adminClient`, invoke RPC via the owner's `signInAs` session client). Behavior 1 = a test that the migration is already applied and the constraint exists (`information_schema` / a clean cascade), i.e. the ALTER did not fail.
 - [ ] **Step 2:** Run `npm run test:integration -- share-tokens-cascade cancel-playlist-jobs` → FAIL (constraint/RPC absent).
@@ -300,7 +301,7 @@
 
 - [ ] **Step 1:** Write failing tests: integration for 1,2,3,6 (real Supabase via `helpers/clients` — seed, DELETE, assert DB+blobs gone, non-owner isolation); unit for 4,5 (mock bundle so `blobStore.deletePrefix` rejects → still 200; assert the row read precedes the delete, and the Principal passed to `deletePrefix` has `indexKey === playlist_key`).
 - [ ] **Step 2:** `npx jest delete-playlist-route` (unit) → FAIL.
-- [ ] **Step 3:** Implement route (cloud branch): getUser→401; `select('id, playlist_key').eq('id', id).maybeSingle()` under the RLS client → **404 if no row**; capture `playlist_key`; `const principal = getPrincipalFromSession({ userId: user.id }, playlist_key)` (review B2); `try{ await bundle.jobQueue.requestCancelPlaylist(id) }catch{log}`; `await bundle.metadataStore.deletePlaylist(principal, id)`; `try{ await bundle.blobStore.deletePrefix(principal,'') }catch{log}`; return `{deleted:true}`. Add client `deletePlaylist` (DELETE; 404→resolve; 401→throw `UnauthorizedError`).
+- [ ] **Step 3:** Implement route (cloud branch): getUser→401; `select('id, playlist_key').eq('id', id).maybeSingle()` under the RLS client → **404 if no row**; capture `playlist_key`; `const principal = getPrincipalFromSession({ userId: user.id }, playlist_key)` (review B2). **`bundle.jobQueue` is optional on `StorageBundle` (review round-2: TS `strict` fails on a bare access)** — narrow it exactly as the sibling `app/api/jobs/cancel/route.ts:24` does: `bundle.jobQueue!` (the cloud branch guarantees it) or `const queue = bundle.jobQueue; if (!queue) return json({error:'unsupported'},500);`. Then `try{ await queue.requestCancelPlaylist(id) }catch{log}`; `await bundle.metadataStore.deletePlaylist(principal, id)`; `try{ await bundle.blobStore.deletePrefix(principal,'') }catch{log}`; return `{deleted:true}`. Add client `deletePlaylist` (DELETE; 404→resolve; 401→throw `UnauthorizedError`).
 - [ ] **Step 4:** Run unit → PASS; `npm run test:integration -- delete-playlist-route` → PASS.
 - [ ] **Step 5:** `npm test && npm run test:integration && npx tsc --noEmit`; commit `feat(playlist-ux): DELETE /api/playlists/[id] hard-delete (cancel→cascade→blobs)`.
 
