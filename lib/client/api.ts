@@ -47,6 +47,13 @@ export async function listPlaylists(): Promise<PlaylistSummary[]> {
   return data.playlists;
 }
 
+/** Bounded, owner-scoped backfill for playlists missing a real YouTube title (BUG-6).
+ *  Invoked by PlaylistSidebar's auto-backfill trigger — see app/api/playlists/backfill-titles. */
+export async function backfillPlaylistTitles(): Promise<{ updated: number; attempted: number }> {
+  const res = await fetch('/api/playlists/backfill-titles', { method: 'POST' });
+  return handle<{ updated: number; attempted: number }>(res);
+}
+
 export interface VideoListResult {
   videos: Video[];
   playlistUrl: string;

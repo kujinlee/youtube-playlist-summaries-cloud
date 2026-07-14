@@ -12,11 +12,21 @@
  *
  * Not wrapped in useScope()/ScopeProvider: that wiring lands in T15 alongside CloudApp's
  * full library view. This component only needs the (unscoped) playlist list + the URL.
+ *
+ * playlist-sidebar-ux T5 (BUG-6 backfill trigger): after the initial load, if the caller
+ * is signed in (`userId` non-null) and the loaded list contains at least one null title,
+ * fire the bounded backfill route once per session per user (sessionStorage key
+ * `backfilledTitles:${userId}`) and re-fetch. A `useRef` one-shot guard (NOT derived from
+ * `playlists` state) plus the sessionStorage flag — both set BEFORE the backfill call
+ * resolves — ensure this fires at most once even if the post-backfill refetch still has
+ * null rows, and survives React 18 StrictMode's double effect invocation. `userId === null`
+ * (no session) is a documented skip, not a fallback key — there is nothing to backfill for
+ * an unauthenticated sidebar and no per-user key can be formed.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { listPlaylists, UnauthorizedError } from '@/lib/client/api';
+import { backfillPlaylistTitles, listPlaylists, UnauthorizedError } from '@/lib/client/api';
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
 
 const activeLinkClass =
@@ -26,21 +36,48 @@ const inactiveLinkClass =
 
 interface PlaylistSidebarProps {
   onNewPlaylist?: () => void;
+  userId: string | null;
 }
 
-export default function PlaylistSidebar({ onNewPlaylist }: PlaylistSidebarProps = {}) {
+export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSidebarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activePlaylistId = searchParams.get('playlist');
 
   const [playlists, setPlaylists] = useState<PlaylistSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // One-shot guard for the auto-backfill trigger — deliberately NOT derived from `playlists`
+  // state (a state-derived guard would re-arm and loop if the post-backfill refetch still
+  // has null titles). Persists across StrictMode's double effect invocation because it's the
+  // same fiber's ref, not remounted.
+  const backfillFiredRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     listPlaylists()
-      .then((result) => {
-        if (!cancelled) setPlaylists(result);
+      .then(async (result) => {
+        if (cancelled) return;
+        setPlaylists(result);
+
+        if (userId === null) return; // no session ⇒ no per-user key, nothing to backfill
+        const sessionKey = `backfilledTitles:${userId}`;
+        const alreadyRan = backfillFiredRef.current || sessionStorage.getItem(sessionKey) !== null;
+        if (alreadyRan || !result.some((p) => !p.playlistTitle)) return;
+
+        // Set both guards before awaiting so a slow/failed call still counts as "ran this
+        // session" — matches the once-per-session contract even on backfill failure.
+        backfillFiredRef.current = true;
+        sessionStorage.setItem(sessionKey, '1');
+        try {
+          await backfillPlaylistTitles();
+          if (cancelled) return;
+          const refreshed = await listPlaylists();
+          if (!cancelled) setPlaylists(refreshed);
+        } catch {
+          // best-effort — keep the pre-backfill list on failure, matching the existing
+          // silent-ignore pattern used elsewhere in this component (see handleArchive
+          // callers under CloudApp).
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -54,7 +91,7 @@ export default function PlaylistSidebar({ onNewPlaylist }: PlaylistSidebarProps 
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [userId]);
 
   return (
     <nav

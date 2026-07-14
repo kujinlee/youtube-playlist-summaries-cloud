@@ -53,20 +53,20 @@ beforeEach(() => {
 
 it('renders playlist titles fetched via apiClient.listPlaylists', async () => {
   mockListPlaylists.mockResolvedValue(playlists);
-  render(<PlaylistSidebar />);
+  render(<PlaylistSidebar userId={null} />);
   expect(await screen.findByText('ML Talks')).toBeInTheDocument();
   expect(mockListPlaylists).toHaveBeenCalledTimes(1);
 });
 
 it('falls back to "Untitled playlist" when playlistTitle is null', async () => {
   mockListPlaylists.mockResolvedValue(playlists);
-  render(<PlaylistSidebar />);
+  render(<PlaylistSidebar userId={null} />);
   expect(await screen.findByText('Untitled playlist')).toBeInTheDocument();
 });
 
 it('a playlist link has href exactly "/?playlist=<uuid>" (spec §9 URL contract)', async () => {
   mockListPlaylists.mockResolvedValue(playlists);
-  render(<PlaylistSidebar />);
+  render(<PlaylistSidebar userId={null} />);
   const link = await screen.findByRole('link', { name: 'ML Talks' });
   expect(link).toHaveAttribute('href', '/?playlist=p1-uuid');
   const link2 = screen.getByRole('link', { name: 'Untitled playlist' });
@@ -76,7 +76,7 @@ it('a playlist link has href exactly "/?playlist=<uuid>" (spec §9 URL contract)
 it('marks the item matching ?playlist as the active item', async () => {
   setSearchParams('playlist=p2-uuid');
   mockListPlaylists.mockResolvedValue(playlists);
-  render(<PlaylistSidebar />);
+  render(<PlaylistSidebar userId={null} />);
   const activeLink = await screen.findByRole('link', { name: 'Untitled playlist' });
   expect(activeLink).toHaveAttribute('aria-current', 'page');
   const inactiveLink = screen.getByRole('link', { name: 'ML Talks' });
@@ -85,7 +85,7 @@ it('marks the item matching ?playlist as the active item', async () => {
 
 it('redirects to /login when listPlaylists rejects with UnauthorizedError, and shows no inline error', async () => {
   mockListPlaylists.mockRejectedValue(new UnauthorizedError('unauthorized'));
-  render(<PlaylistSidebar />);
+  render(<PlaylistSidebar userId={null} />);
 
   await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
   expect(screen.queryByText('unauthorized')).not.toBeInTheDocument();
@@ -94,14 +94,14 @@ it('redirects to /login when listPlaylists rejects with UnauthorizedError, and s
 
 it('shows an onboarding empty state when there are no playlists', async () => {
   mockListPlaylists.mockResolvedValue([]);
-  render(<PlaylistSidebar />);
+  render(<PlaylistSidebar userId={null} />);
   expect(await screen.findByText(/no playlists yet/i)).toBeInTheDocument();
 });
 
 it('"+ New playlist" is enabled and fires onNewPlaylist without a fetch', async () => {
   mockListPlaylists.mockResolvedValue(playlists);
   const onNewPlaylist = jest.fn();
-  render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} />);
+  render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} userId={null} />);
   await screen.findByText('ML Talks');
   const newButton = screen.getByRole('button', { name: /new playlist/i });
   expect(newButton).toBeEnabled();
@@ -113,7 +113,7 @@ it('"+ New playlist" is enabled and fires onNewPlaylist without a fetch', async 
 it('"+ New playlist" is enabled in the empty state', async () => {
   mockListPlaylists.mockResolvedValue([]);
   const onNewPlaylist = jest.fn();
-  render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} />);
+  render(<PlaylistSidebar onNewPlaylist={onNewPlaylist} userId={null} />);
   await screen.findByText(/no playlists yet/i);
   expect(screen.getByRole('button', { name: /new playlist/i })).toBeEnabled();
 });

@@ -57,13 +57,17 @@ export default function CloudApp({ session }: CloudAppProps) {
           <div className="px-6 py-12 text-center text-[var(--text-muted)]">Loading…</div>
         }
       >
-        <CloudAppBody />
+        <CloudAppBody userId={session?.userId ?? null} />
       </Suspense>
     </main>
   );
 }
 
-function CloudAppBody() {
+interface CloudAppBodyProps {
+  userId: string | null;
+}
+
+function CloudAppBody({ userId }: CloudAppBodyProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const playlistId = searchParams.get('playlist');
@@ -79,7 +83,7 @@ function CloudAppBody() {
 
   return (
     <div className="flex">
-      <PlaylistSidebar onNewPlaylist={() => setModalOpen(true)} />
+      <PlaylistSidebar onNewPlaylist={() => setModalOpen(true)} userId={userId} />
       {playlistId ? (
         <PlaylistLibrary playlistId={playlistId} summary={summary} setSummary={setSummary} />
       ) : (
