@@ -22,12 +22,20 @@
  * null rows, and survives React 18 StrictMode's double effect invocation. `userId === null`
  * (no session) is a documented skip, not a fallback key — there is nothing to backfill for
  * an unauthenticated sidebar and no per-user key can be formed.
+ *
+ * playlist-sidebar-ux T10 (full hard-delete): each row gets a trash button that is a
+ * SIBLING of the row's `<Link>` (never nested inside the `<a>` — invalid interactive
+ * nesting and can still navigate, spec §B7). Clicking it opens `DeletePlaylistDialog` for
+ * that row; `stopPropagation`/`preventDefault` on the button's own click for good measure.
+ * `onDeleted` refetches the list and, if the deleted playlist was the active one
+ * (`?playlist=` match), navigates to `/` (no `?playlist=` param).
  */
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { backfillPlaylistTitles, listPlaylists, UnauthorizedError } from '@/lib/client/api';
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
+import { DeletePlaylistDialog } from './DeletePlaylistDialog';
 
 const activeLinkClass =
   'block truncate rounded-r px-2 py-1.5 border-l-2 border-[var(--accent)] bg-[var(--surface-overlay)] text-[var(--text-primary)]';
@@ -46,6 +54,7 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
 
   const [playlists, setPlaylists] = useState<PlaylistSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<PlaylistSummary | null>(null);
   // One-shot guard for the auto-backfill trigger — deliberately NOT derived from `playlists`
   // state (a state-derived guard would re-arm and loop if the post-backfill refetch still
   // has null titles). Persists across StrictMode's double effect invocation because it's the
@@ -93,6 +102,23 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  // T10: called from DeletePlaylistDialog.onDeleted. Refetches the list and, if the
+  // deleted playlist was the active one, navigates to `/` (no `?playlist=` param) since
+  // its video pane would otherwise 404/empty against a now-gone playlist.
+  async function handleDeleted(deletedId: string) {
+    setDeleteTarget(null);
+    try {
+      const refreshed = await listPlaylists();
+      setPlaylists(refreshed);
+    } catch {
+      // best-effort refetch — matches the silent-ignore pattern used by the backfill path
+      // above; the row is gone server-side regardless of whether this refetch succeeds.
+    }
+    if (deletedId === activePlaylistId) {
+      router.push('/');
+    }
+  }
+
   return (
     <nav
       aria-label="Playlists"
@@ -119,15 +145,28 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
         <ul className="space-y-1">
           {playlists.map((p) => {
             const isActive = p.id === activePlaylistId;
+            const displayTitle = p.playlistTitle ?? 'Untitled playlist';
             return (
-              <li key={p.id}>
+              <li key={p.id} className="group relative">
                 <Link
                   href={`/?playlist=${p.id}`}
                   aria-current={isActive ? 'page' : undefined}
                   className={isActive ? activeLinkClass : inactiveLinkClass}
                 >
-                  {p.playlistTitle ?? 'Untitled playlist'}
+                  {displayTitle}
                 </Link>
+                <button
+                  type="button"
+                  aria-label={`Delete playlist ${displayTitle}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setDeleteTarget(p);
+                  }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 rounded px-1.5 py-1 text-[var(--text-muted)] opacity-0 hover:text-[var(--danger)] focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                >
+                  🗑
+                </button>
               </li>
             );
           })}
@@ -141,6 +180,15 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
       >
         + New playlist
       </button>
+
+      {deleteTarget && (
+        <DeletePlaylistDialog
+          playlistId={deleteTarget.id}
+          playlistTitle={deleteTarget.playlistTitle ?? 'Untitled playlist'}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={() => handleDeleted(deleteTarget.id)}
+        />
+      )}
     </nav>
   );
 }
