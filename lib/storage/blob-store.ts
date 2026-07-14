@@ -11,6 +11,10 @@ export interface BlobStore {
   delete(p: Principal, key: string): Promise<void>;
   putStaged(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<StagedRef>;
   promote(ref: StagedRef): Promise<void>;
+  /** Recursively delete every object under a logical prefix. Best-effort/idempotent —
+   *  an absent prefix is not an error. `prefix === ''` targets the whole playlist root
+   *  (`<owner>/<indexKey>/`), not above it. */
+  deletePrefix(p: Principal, prefix: string): Promise<void>;
 }
 
 /** A read-only view of a BlobStore — exactly the `get` method. The share serve path

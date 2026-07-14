@@ -18,6 +18,12 @@ function fakeStore(): BlobStore & { blobs: Map<string, Buffer> } {
     async get(p, key) { return blobs.get(k(p, key)) ?? null; },
     async exists(p, key) { return blobs.has(k(p, key)); },
     async delete(p, key) { blobs.delete(k(p, key)); },
+    async deletePrefix(p, prefix) {
+      const pfx = k(p, prefix).replace(/\/$/, '');
+      for (const key of [...blobs.keys()]) {
+        if (key === pfx || key.startsWith(`${pfx}/`)) blobs.delete(key);
+      }
+    },
     async putStaged(p, key, bytes): Promise<StagedRef> { const tempKey = `_staging/uuid/${key}`; blobs.set(k(p, tempKey), bytes); return { principal: p, tempKey, finalKey: key }; },
     async promote(ref) { const from = k(ref.principal, ref.tempKey); const to = k(ref.principal, ref.finalKey); const b = blobs.get(from)!; blobs.set(to, b); blobs.delete(from); },
   };
