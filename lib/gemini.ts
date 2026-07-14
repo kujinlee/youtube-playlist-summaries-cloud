@@ -181,14 +181,12 @@ const QUICK_VIEW_RESPONSE_SCHEMA: ResponseSchema = {
   required: ['tldr', 'takeaways'],
 };
 
-export const MAGAZINE_MAX_SECTIONS = 200; // cloud-only structural bound; generous — never rejects a real doc
-
 // `ResponseSchema` (= `Schema`) is a 6-way union, so a plain `ResponseSchema` annotation would make
 // `.properties.sections.maxItems` untypeable (not every union member has `.properties`, and the
 // generic `properties` index signature types every value as the union `Schema` again, which lacks
 // `.maxItems`). Pin the concrete shape here — literal values are unchanged, only the exported TS
-// type is narrowed — so both the cloud-only maxItems clone below and this test's shared-schema
-// assertion (`MAGAZINE_RESPONSE_SCHEMA.properties.sections.maxItems`) type-check under strict mode.
+// type is narrowed — so the test's shared-schema
+// assertion (`MAGAZINE_RESPONSE_SCHEMA.properties.sections.maxItems`) type-checks under strict mode.
 type MagazineResponseSchemaType = ObjectSchema & { properties: { sections: ArraySchema } };
 
 export const MAGAZINE_RESPONSE_SCHEMA: MagazineResponseSchemaType = {
@@ -507,17 +505,12 @@ export async function generateMagazineModel(
     throw new NonRetryableError('cloud magazine caps missing magazineInputTokens/magazineOutputTokens');
   }
   const client = new GoogleGenerativeAI(getApiKey());
-  // Cloud (caps present): clone the schema and add a GENEROUS maxItems (cost bound) — never mutate the
-  // shared const (H-1). Local (no caps): use the shared schema unchanged, exactly as pre-1F-a.
-  const responseSchema: ResponseSchema = caps
-    ? {
-        ...MAGAZINE_RESPONSE_SCHEMA,
-        properties: {
-          ...MAGAZINE_RESPONSE_SCHEMA.properties,
-          sections: { ...MAGAZINE_RESPONSE_SCHEMA.properties.sections, maxItems: MAGAZINE_MAX_SECTIONS },
-        },
-      }
-    : MAGAZINE_RESPONSE_SCHEMA;
+  // BUG-2 (local-validation-findings.md): cloud and local BOTH use the bare shared schema. A maxItems
+  // on the nested `sections` array explodes Gemini's structured-output constraint-"state" count → the
+  // live API rejects EVERY doc with `400 The specified schema produces a constraint that has too many
+  // states for serving`. Output cost stays bounded by magazineOutputTokens (withCaps below) and the
+  // section count is validated after parsing, so no schema-level array bound is needed.
+  const responseSchema: ResponseSchema = MAGAZINE_RESPONSE_SCHEMA;
   const generationConfig = withCaps(
     { responseMimeType: 'application/json', responseSchema },
     caps,
