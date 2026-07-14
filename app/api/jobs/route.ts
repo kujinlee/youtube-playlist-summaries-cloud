@@ -56,6 +56,7 @@ export async function POST(req: Request) {
     if (e instanceof PlaylistTooLargeError) return NextResponse.json({ error: 'playlist too large', limit: e.limit, found: e.found }, { status: 422 });
     if (e instanceof AllEnqueueFailedError) return NextResponse.json({ error: 'enqueue failed', playlistId: e.playlistId }, { status: 503 });
     if (e instanceof PlaylistFetchError) return NextResponse.json({ error: 'playlist fetch failed' }, { status: 502 });
+    logError('jobs:enqueue', e);   // unexpected (not the 422/503/502 above) — surface before the generic 500
     return NextResponse.json({ error: 'internal error' }, { status: 500 });   // resolve/misconfig/unexpected
   }
 }

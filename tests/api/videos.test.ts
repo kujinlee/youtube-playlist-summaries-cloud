@@ -365,5 +365,38 @@ describe('GET /api/videos', () => {
       const { videos } = await res.json();
       expect(videos.map((v: Video) => v.id)).toEqual(['vid3', 'vid1', 'slot']);
     });
+
+    // language / videoType / audience are optional metadata: a missing value must sort
+    // LAST like every other column (previously coalesced to ''/rank-0, which floated an
+    // incomplete row to the TOP for ascending — inconsistent with the fix's invariant).
+    it('language sort: incomplete row (no language) last, not first (asc)', async () => {
+      mockReadIndex.mockReturnValue(makeIndex([
+        { ...makeVideo('vid1', 3), language: 'ko' }, slot, { ...makeVideo('vid3', 3), language: 'en' },
+      ]));
+      const res = await get({ sortColumn: 'language', sortOrder: 'asc' });
+      expect(res.status).toBe(200);
+      const { videos } = await res.json();
+      expect(videos.map((v: Video) => v.id)).toEqual(['vid3', 'vid1', 'slot']);
+    });
+
+    it('videoType sort: incomplete row (no videoType) last (asc)', async () => {
+      mockReadIndex.mockReturnValue(makeIndex([
+        { ...makeVideo('vid1', 3), videoType: 'Framework' }, slot, { ...makeVideo('vid3', 3), videoType: 'Analysis' },
+      ]));
+      const res = await get({ sortColumn: 'videoType', sortOrder: 'asc' });
+      expect(res.status).toBe(200);
+      const { videos } = await res.json();
+      expect(videos.map((v: Video) => v.id)).toEqual(['vid3', 'vid1', 'slot']);
+    });
+
+    it('audience sort: incomplete row (no audience) last, not first (asc)', async () => {
+      mockReadIndex.mockReturnValue(makeIndex([
+        { ...makeVideo('vid1', 3), audience: 'Advanced' }, slot, { ...makeVideo('vid3', 3), audience: 'Beginner' },
+      ]));
+      const res = await get({ sortColumn: 'audience', sortOrder: 'asc' });
+      expect(res.status).toBe(200);
+      const { videos } = await res.json();
+      expect(videos.map((v: Video) => v.id)).toEqual(['vid3', 'vid1', 'slot']);
+    });
   });
 });

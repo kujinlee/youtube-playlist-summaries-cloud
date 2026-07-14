@@ -32,14 +32,17 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
       aVal = a.overallScore;
       bVal = b.overallScore;
     } else if (column === 'language') {
-      aVal = a.language ?? '';
-      bVal = b.language ?? '';
+      // Preserve undefined (don't coalesce to '') so an incomplete row sorts LAST via the
+      // shared nulls-last tail, not first — uniform with every other column.
+      aVal = a.language;
+      bVal = b.language;
     } else if (column === 'videoType') {
-      aVal = a.videoType ?? '';
-      bVal = b.videoType ?? '';
+      aVal = a.videoType;
+      bVal = b.videoType;
     } else if (column === 'audience') {
-      aVal = AUDIENCE_ORDER[a.audience ?? ''] ?? 0;
-      bVal = AUDIENCE_ORDER[b.audience ?? ''] ?? 0;
+      // Absent audience → undefined (sorts last); present-but-unrecognized → rank 0 (as before).
+      aVal = a.audience === undefined ? undefined : (AUDIENCE_ORDER[a.audience] ?? 0);
+      bVal = b.audience === undefined ? undefined : (AUDIENCE_ORDER[b.audience] ?? 0);
     } else if (column === 'serialNumber') {
       // Videos with no summary yet have no serial — always sort them last, regardless of direction.
       if (a.serialNumber === undefined && b.serialNumber === undefined) return 0;
@@ -81,9 +84,10 @@ function sortVideos(videos: Video[], column: SortColumn, order: SortOrder): Vide
     // Incomplete rows (a reserved slot whose summary hasn't landed, so this sort key
     // is absent) sort LAST regardless of direction — never dereference undefined and
     // 500 the whole list. Mirrors the nulls-last handling for channel/personalScore.
-    const aMissing = aVal === undefined || aVal === null;
-    const bMissing = bVal === undefined || bVal === null;
-    if (aMissing || bMissing) return aMissing === bMissing ? 0 : aMissing ? 1 : -1;
+    if (aVal == null || bVal == null) {   // == null catches undefined (and any jsonb null)
+      if (aVal == null && bVal == null) return 0;
+      return aVal == null ? 1 : -1;       // the missing one sorts last, both directions
+    }
     if (aVal < bVal) return order === 'asc' ? -1 : 1;
     if (aVal > bVal) return order === 'asc' ? 1 : -1;
     return 0;
