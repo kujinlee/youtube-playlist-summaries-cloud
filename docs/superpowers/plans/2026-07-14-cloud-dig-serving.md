@@ -32,7 +32,7 @@ Pure functions: parse one cloud dig blob into the existing `DugSection`, and rew
 
 **Files:**
 - Create: `lib/dig/cloud/parse-dig-section-blob.ts`
-- Test: `tests/dig/cloud/parse-dig-section-blob.test.ts`
+- Test: `tests/lib/dig/cloud/parse-dig-section-blob.test.ts` (**must** live under `tests/lib/**` — `jest.config` `testMatch` only runs `tests/lib`, `tests/api`, `tests/scripts`, `tests/components`; a file at `tests/dig/…` silently never runs)
 
 **Interfaces:**
 - Consumes: `DugSection` (`lib/dig/companion-doc.ts:30`): `{ sectionId:number; startSec:number; title:string; bodyMarkdown:string; generatedAt:string; genVersion:number; slides?:… }`. Blob format written by `lib/dig/cloud/write-dig-section-blob.ts:29-43` (frontmatter fields `videoId, sectionId, startSec, title, language, sourceVideoUrl, generatedAt, genVersion, slides: []`; ints unquoted, `language` unquoted, strings double-quoted with `\\`/`\"` escaping; body follows the closing `---`).
@@ -41,7 +41,7 @@ Pure functions: parse one cloud dig blob into the existing `DugSection`, and rew
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
-// tests/dig/cloud/parse-dig-section-blob.test.ts
+// tests/lib/dig/cloud/parse-dig-section-blob.test.ts
 import { parseCloudDigSectionBlob, slideTokensToCaptions } from '@/lib/dig/cloud/parse-dig-section-blob';
 
 const BLOB = `---
@@ -80,6 +80,14 @@ describe('parseCloudDigSectionBlob', () => {
     const bad = BLOB.replace('sectionId: 65', 'sectionId: not-a-number');
     expect(() => parseCloudDigSectionBlob(Buffer.from(bad, 'utf-8'))).toThrow();
   });
+
+  it('round-trips a title with a literal backslash before a quote (escape-order guard)', () => {
+    // writer (write-dig-section-blob.ts yamlScalar) escapes `\` → `\\` THEN `"` → `\"`.
+    // Source title: A \ "B"  → on disk: title: "A \\ \"B\""  → parser must invert in reverse order.
+    const wire = BLOB.replace('title: "The \\"Car Wreck\\" — part 1"', 'title: "A \\\\ \\"B\\""');
+    const d = parseCloudDigSectionBlob(Buffer.from(wire, 'utf-8'));
+    expect(d.title).toBe('A \\ "B"');
+  });
 });
 
 describe('slideTokensToCaptions', () => {
@@ -105,7 +113,7 @@ describe('slideTokensToCaptions', () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest parse-dig-section-blob`
-Expected: FAIL — "Cannot find module '@/lib/dig/cloud/parse-dig-section-blob'".
+Expected: the suite is **found and runs** (file is under `tests/lib/**`), then FAILs — "Cannot find module '@/lib/dig/cloud/parse-dig-section-blob'". (If jest prints "No tests found", the file is mis-located — fix the path before proceeding; a not-found suite is not a RED.)
 
 - [ ] **Step 3: Implement**
 
@@ -173,7 +181,7 @@ Run: `npx jest parse-dig-section-blob` → PASS.
 
 ```bash
 npx tsc --noEmit; echo "EXIT=$?"   # expect EXIT=0
-git add lib/dig/cloud/parse-dig-section-blob.ts tests/dig/cloud/parse-dig-section-blob.test.ts
+git add lib/dig/cloud/parse-dig-section-blob.ts tests/lib/dig/cloud/parse-dig-section-blob.test.ts
 git commit -m "feat(cloud-dig-serving): parse cloud dig blob → DugSection + slide-token captions"
 ```
 
@@ -187,7 +195,7 @@ Enumerate dug sections without a stored index (spec §3 Unit A note). Add a `lis
 - Modify: `lib/storage/blob-store.ts` (add `list` to the `BlobStore` interface)
 - Modify: `lib/storage/supabase/supabase-blob-store.ts` (implement via the existing `collectObjectPaths`)
 - Modify: `lib/storage/local/local-blob-store.ts` (implement via `fs`)
-- Test: `tests/storage/blob-store-list.test.ts`
+- Test: `tests/lib/storage/blob-store-list.test.ts` (under `tests/lib/**` so `testMatch` runs it)
 
 **Interfaces:**
 - Consumes: `Principal` (`{id, indexKey}`), `assertLogicalKey` (`lib/storage/blob-store.ts`), the private `collectObjectPaths(dirPath)` (`supabase-blob-store.ts:78`).
@@ -196,8 +204,9 @@ Enumerate dug sections without a stored index (spec §3 Unit A note). Add a `lis
 - [ ] **Step 1: Write the failing test (local store as the concrete impl)**
 
 ```ts
-// tests/storage/blob-store-list.test.ts
+// tests/lib/storage/blob-store-list.test.ts
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import fs from 'fs';
 import os from 'os';
@@ -224,11 +233,44 @@ describe('localBlobStore.list', () => {
     expect(await localBlobStore.list(p, 'dig/nope/')).toEqual([]);
   });
 });
+
+// The production path — the tenant-isolation seam (spec §11.2: cross-tenant enumeration is the
+// worst-case leak). Mock Supabase Storage `.list`; assert enumeration is scoped to THIS owner's
+// root and the returned keys are logical (owner root fully stripped, never leaked).
+describe('SupabaseBlobStore.list (owner-scoped)', () => {
+  function fakeClient(entriesByDir: Record<string, Array<{ name: string; id: string | null }>>) {
+    const list = jest.fn(async (dirPath: string) => ({ data: entriesByDir[dirPath] ?? [], error: null }));
+    return { client: { storage: { from: () => ({ list }) } }, list };
+  }
+
+  it('lists under the owner root, recurses folders, returns logical keys only', async () => {
+    const p = { id: 'owner1', indexKey: 'pl-key' } as Principal;
+    const root = 'owner1/pl-key/dig/base';
+    const { client, list } = fakeClient({
+      [root]: [{ name: '65.r9.md', id: 'f1' }, { name: 'nested', id: null }], // folder → recurse
+      [`${root}/nested`]: [{ name: '120.r9.md', id: 'f2' }],
+    });
+    const store = new SupabaseBlobStore(client as never, 'artifacts');
+    const keys = await store.list(p, 'dig/base/');
+    expect(keys.sort()).toEqual(['dig/base/65.r9.md', 'dig/base/nested/120.r9.md']); // owner root stripped
+    expect(list).toHaveBeenCalledWith('owner1/pl-key/dig/base', expect.anything()); // scoped to this owner
+    for (const k of keys) expect(k.startsWith('owner1/')).toBe(false); // no owner id leaks into a logical key
+  });
+
+  it('returns [] for an absent prefix (every dir empty)', async () => {
+    const p = { id: 'o', indexKey: 'k' } as Principal;
+    const { client } = fakeClient({});
+    const store = new SupabaseBlobStore(client as never, 'artifacts');
+    expect(await store.list(p, 'dig/nope/')).toEqual([]);
+  });
+});
 ```
+
+> Pagination (`collectObjectPaths`' 100/page offset loop) is already exercised by the existing `deletePrefix` supabase tests — `list` reuses the same private walker, so these tests target the new owner-root strip, not re-cover pagination.
 
 - [ ] **Step 2: Run — verify fail**
 
-Run: `npx jest blob-store-list` → FAIL ("list is not a function").
+Run: `npx jest blob-store-list` → the suite is found and runs, then FAILs ("list is not a function" for both local and supabase). If jest says "No tests found", the path is wrong — fix before proceeding.
 
 - [ ] **Step 3: Add to the interface**
 
@@ -284,7 +326,7 @@ Run: `npx jest blob-store-list` → FAIL ("list is not a function").
 npx jest blob-store-list                 # PASS
 npx jest storage                          # no regressions in storage tests
 npx tsc --noEmit; echo "EXIT=$?"          # EXIT=0
-git add lib/storage/blob-store.ts lib/storage/local/local-blob-store.ts lib/storage/supabase/supabase-blob-store.ts tests/storage/blob-store-list.test.ts
+git add lib/storage/blob-store.ts lib/storage/local/local-blob-store.ts lib/storage/supabase/supabase-blob-store.ts tests/lib/storage/blob-store-list.test.ts
 git commit -m "feat(cloud-dig-serving): BlobStore.list(prefix) → logical keys (local + supabase)"
 ```
 
@@ -296,7 +338,7 @@ Owner-assert + gate + `base` via `loadSummaryForServe` (no charge), parse summar
 
 **Files:**
 - Create: `lib/dig/cloud/load-dig-for-serve.ts`
-- Test: `tests/dig/cloud/load-dig-for-serve.test.ts`
+- Test: `tests/lib/dig/cloud/load-dig-for-serve.test.ts` (under `tests/lib/**`)
 
 **Interfaces:**
 - Consumes: `loadSummaryForServe` (`lib/html-doc/serve-summary-core.ts:34`) — returns `{ok:true, mdBytes, mdKey, base, title, principal, video, bundle}` or `{ok:false, status, error}`; `parseSummaryMarkdown` (`lib/html-doc/parse.ts:118`); `readModelEnvelope(principal, base, blobStore)` (`lib/html-doc/model-store.ts:50`); `DIG_GENERATOR_VERSION` (`@/lib/dig/generate`); T1 `parseCloudDigSectionBlob`/`slideTokensToCaptions`; T2 `blobStore.list`.
@@ -305,10 +347,13 @@ Owner-assert + gate + `base` via `loadSummaryForServe` (no charge), parse summar
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
-// tests/dig/cloud/load-dig-for-serve.test.ts
+// tests/lib/dig/cloud/load-dig-for-serve.test.ts
 import { loadDigForServe } from '@/lib/dig/cloud/load-dig-for-serve';
 import * as serveCore from '@/lib/html-doc/serve-summary-core';
+import * as serveDoc from '@/lib/html-doc/serve-doc';
 import * as modelStore from '@/lib/html-doc/model-store';
+import * as digGen from '@/lib/dig/generate';
+import * as gemini from '@/lib/gemini';
 import { DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 
 const V = DIG_GENERATOR_VERSION;
@@ -340,6 +385,13 @@ describe('loadDigForServe', () => {
     const bundle = fakeBundle({ [`dig/base/65.r${V}.md`]: digBlob(65) });
     mockLoadOk(bundle);
     jest.spyOn(modelStore, 'readModelEnvelope').mockResolvedValue(null);
+    // Money invariant — spy on EVERY charge-capable / generation entry point so the assertion is
+    // direct, not an indirect proxy through the fake bundle. resolveMagazineModel is the ONLY
+    // charging function (serve-doc.ts:52 rpc('reserve_serve_model')); the rest must also never run.
+    const resolveMag = jest.spyOn(serveDoc, 'resolveMagazineModel');
+    const resolveAndParse = jest.spyOn(serveCore, 'resolveAndParse');
+    const generateDig = jest.spyOn(digGen, 'generateDig');
+    const generateMag = jest.spyOn(gemini, 'generateMagazineModel');
     const rpc = jest.fn();
     const r = await loadDigForServe({ rpc } as never, { videoId: 'v', playlistId: 'pl', userId: 'u' });
     expect(r.ok).toBe(true);
@@ -350,7 +402,29 @@ describe('loadDigForServe', () => {
       expect(r.dug[0].bodyMarkdown).not.toContain('[[SLIDE');
       expect(r.language).toBe('en');
     }
-    expect(rpc).not.toHaveBeenCalled();                     // money invariant
+    expect(rpc).not.toHaveBeenCalled();                     // no RPC (the concrete charge signal)
+    expect(resolveMag).not.toHaveBeenCalled();              // the charging fn — never entered
+    expect(resolveAndParse).not.toHaveBeenCalled();
+    expect(generateDig).not.toHaveBeenCalled();
+    expect(generateMag).not.toHaveBeenCalled();
+  });
+
+  it('positive control: the money guard actually fires (a real reserve WOULD trip rpc)', async () => {
+    // Prove the guard is not vacuous: drive resolveMagazineModel directly with a bundle whose
+    // model blob is absent (cache miss) and confirm it reaches rpc('reserve_serve_model'). This is
+    // the exact call loadDigForServe must never make — if this control ever stops tripping rpc, the
+    // "not.toHaveBeenCalled()" assertions above are meaningless and must be re-derived.
+    // Return an UNHANDLED reserve status so resolveMagazineModel's switch hits `default: throw`
+    // (serve-doc.ts:73) immediately AFTER the rpc call and BEFORE any generation — guarantees no
+    // live Gemini in this control while still proving the reserve RPC was reached.
+    const rpc = jest.fn(async () => ({ data: '__unhandled_status__', error: null }));
+    const blob = { get: jest.fn(async () => null), put: jest.fn(async () => {}) };
+    await serveDoc.resolveMagazineModel({
+      supabaseClient: { rpc } as never, blobStore: blob as never,
+      principal: { id: 'o', indexKey: 'k' } as never, playlistId: 'pl', videoId: 'v', base: 'base',
+      parsed: { title: 'T', sections: [] } as never, language: 'en',
+    }).catch(() => {}); // the default-throw is expected; we only assert the reserve was attempted
+    expect(rpc).toHaveBeenCalledWith('reserve_serve_model', expect.anything());
   });
 
   it('404s when there are no current-version dig blobs', async () => {
@@ -451,7 +525,7 @@ Run: `npx jest load-dig-for-serve` → PASS (including the `rpc` never-called as
 
 ```bash
 npx tsc --noEmit; echo "EXIT=$?"   # EXIT=0
-git add lib/dig/cloud/load-dig-for-serve.ts tests/dig/cloud/load-dig-for-serve.test.ts
+git add lib/dig/cloud/load-dig-for-serve.ts tests/lib/dig/cloud/load-dig-for-serve.test.ts
 git commit -m "feat(cloud-dig-serving): loadDigForServe core — no-charge merge inputs, version-filtered, zero→404"
 ```
 
@@ -463,7 +537,9 @@ Add a static read-only mode and CSP nonce to the shared renderer; both default o
 
 **Files:**
 - Modify: `lib/html-doc/render-dig-deeper.ts` (args + partition + nonce threading; `SIZE_HEAD_SCRIPT`/`CAPTIONS_HEAD_SCRIPT` → functions taking `nonce`)
-- Test: `tests/html-doc/render-dig-deeper-readonly.test.ts`
+- Test: `tests/lib/html-doc/render-dig-deeper-readonly.test.ts` (under `tests/lib/**`; a mislocated file silently matches the *existing* `render-dig-deeper*` suite and passes green while the new assertions never run)
+
+**Marker discipline (critical — see review v1 B2/H1):** `DIG_DOC_CSS` emits every control's class name (`.dig-trigger`, `.dg-expand-all`, `#_dg-ea-dlg`, `.ask-ai`, `.dg-size-range`, `.dg-caps-toggle`) unconditionally in the `<style>` block, which `readOnly` keeps. So a whole-HTML `not.toContain('dig-trigger')` can NEVER pass a correct impl, and a `toContain('ask-ai')` is satisfied by CSS even if the control was wrongly dropped. **Every presence/absence assertion must target element/attribute markup, not the bare class token:** `class="dig-trigger"`, `id="_dg-ea-dlg"`, `data-type="summary"`, `dig-trigger[data-section]` (a navScript-only string), etc. This mirrors the existing suite's documented workaround (`render-dig-deeper.test.ts` asserts `not.toContain('class="dig-refresh"')`).
 
 **Interfaces:**
 - Consumes (already nonce-capable): `themeHeadScript(nonce?)`, `themeToggleScript(nonce?)`, `printListenerScript(nonce?)`, `nonceAttr(nonce?)` (`lib/html-doc/theme.ts`), `navScript(nonce?)` (`lib/html-doc/nav.ts:446`).
@@ -474,7 +550,7 @@ Add a static read-only mode and CSP nonce to the shared renderer; both default o
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
-// tests/html-doc/render-dig-deeper-readonly.test.ts
+// tests/lib/html-doc/render-dig-deeper-readonly.test.ts
 import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
 import type { ParsedSummary } from '@/lib/html-doc/types';
 import type { DugSection } from '@/lib/dig/companion-doc';
@@ -493,28 +569,44 @@ const dug: DugSection[] = [
 const base = { summary, envelope: null, dug, mdPath: 'base.md', videoId: 'v', language: 'en' as const };
 
 describe('renderDigDeeperDoc readOnly + nonce', () => {
-  it('default render is unchanged: keeps interactive controls, no nonce attrs', () => {
+  it('default render keeps interactive controls and emits no nonce', () => {
     const html = renderDigDeeperDoc(base);
-    expect(html).toContain('dig-trigger');       // Beta is un-dug → trigger present
-    expect(html).toContain('dg-expand-all');      // expand-all button present
-    expect(html).not.toContain('nonce=');         // no CSP nonce by default
+    expect(html).toContain('class="dig-trigger"');   // Beta is un-dug → trigger MARKUP present
+    expect(html).toContain('class="dg-expand-all"');  // expand-all button markup present
+    expect(html).toContain('dig-trigger[data-section]'); // navScript engine present
+    expect(html).not.toContain('nonce=');             // no CSP nonce by default
   });
 
-  it('readOnly omits every nav-coupled control and script', () => {
+  it('added params default to a no-op (guards behavior 24 — local output unchanged)', () => {
+    // Proves readOnly/nonce OFF is byte-for-byte identical to omitting them entirely, so the
+    // const→function + nonceAttr(undefined) threading cannot perturb the local path.
+    expect(renderDigDeeperDoc(base)).toBe(renderDigDeeperDoc({ ...base, readOnly: false, nonce: undefined }));
+  });
+
+  it('readOnly omits every nav-coupled control, dialog, and the navScript engine', () => {
     const html = renderDigDeeperDoc({ ...base, readOnly: true });
-    for (const marker of ['dig-trigger', 'dig-refresh', 'dig-toggle', 'dg-expand-all', '_dg-ea-dlg']) {
+    // element/attribute markers — NOT bare class tokens (those live in kept CSS)
+    for (const marker of [
+      'class="dig-trigger"', 'class="dig-refresh"', 'class="dig-toggle"',
+      'class="dg-expand-all"', 'id="_dg-ea-dlg"', 'data-type="summary"', // summary back-link
+      'dig-trigger[data-section]',  // navScript IIFE body (generation engine) — nav-only string
+    ]) {
       expect(html).not.toContain(marker);
     }
-    // renders the dug content statically
-    expect(html).toContain('deep alpha');
+    expect(html).toContain('deep alpha'); // dug content still rendered statically
   });
 
-  it('readOnly keeps self-contained interactivity', () => {
+  it('readOnly keeps self-contained controls AND their scripts', () => {
     const html = renderDigDeeperDoc({ ...base, readOnly: true });
-    expect(html).toContain('_dg-zoom');    // slide-zoom overlay
-    expect(html).toContain('ask-ai');       // Ask-AI anchors
-    expect(html).toContain('dg-size-range'); // size control
-    expect(html).toContain('dg-caps-toggle'); // captions control
+    // control markup (element-specific)
+    expect(html).toContain('id="_dg-zoom"');        // slide-zoom overlay
+    expect(html).toContain('class="ask-ai"');        // Ask-AI anchor
+    expect(html).toContain('class="dg-size-range"'); // size control
+    expect(html).toContain('class="dg-caps-toggle"');// captions control
+    // and the scripts that drive them (IIFE bodies — prove the <script> wasn't dropped)
+    expect(html).toContain("getElementById('_dg-zoom')");      // zoomScript
+    expect(html).toContain("querySelector('.dg-size-range')");  // sizeScript
+    expect(html).toContain("querySelector('.dg-caps-toggle')"); // captionsScript
   });
 
   it('with a nonce, every <script> and <style> carries it', () => {
@@ -522,14 +614,17 @@ describe('renderDigDeeperDoc readOnly + nonce', () => {
     const scripts = html.match(/<script[^>]*>/g) ?? [];
     const styles = html.match(/<style[^>]*>/g) ?? [];
     expect(scripts.length).toBeGreaterThan(0);
+    expect(styles.length).toBeGreaterThan(0);
     for (const tag of [...scripts, ...styles]) expect(tag).toContain('nonce="N0NCE"');
   });
 });
 ```
 
+> The `getElementById('_dg-zoom')` / `querySelector('.dg-size-range')` / `querySelector('.dg-caps-toggle')` strings are the exact IIFE bodies at `render-dig-deeper.ts:365,425,442` — verify they still read that way when implementing, and adjust the literal if the source differs (the point is a script-body marker, not the exact bytes).
+
 - [ ] **Step 2: Run — verify fail**
 
-Run: `npx jest render-dig-deeper-readonly` → FAIL (readOnly/nonce not honored; nonce not present).
+Run: `npx jest render-dig-deeper-readonly` → suite is found and runs, then FAILs (readOnly/nonce not honored; the readOnly-omit and nonce assertions fail). The no-op-equality test may pass already (params ignored today) — that is fine; it is a regression guard for the implementation step, not a RED signal.
 
 - [ ] **Step 3: Implement — args + partition + nonce**
 
@@ -584,13 +679,13 @@ Convert the two module-level head consts (`SIZE_HEAD_SCRIPT` at `render-dig-deep
 ```bash
 npx jest render-dig-deeper           # new readOnly tests + ALL existing render-dig-deeper tests PASS
 ```
-Expected: PASS. The existing tests exercise the default (no readOnly/nonce) path — they prove local output is unchanged (behavior 24).
+Expected: PASS. Behavior 24 (local unchanged) is guarded two ways: (a) the new no-op-equality test proves `readOnly:false/nonce:undefined` is byte-identical to omitting the params; (b) the existing comprehensive `render-dig-deeper*` suite (markup + CSS + script assertions) runs against the default path and catches gross regressions. This is not a full pre/post byte snapshot — if strict byte-identity vs the pre-slice output is later required, add a saved reference-render fixture; for this slice (a) + (b) is the gate.
 
 - [ ] **Step 5: tsc + commit**
 
 ```bash
 npx tsc --noEmit; echo "EXIT=$?"   # EXIT=0
-git add lib/html-doc/render-dig-deeper.ts tests/html-doc/render-dig-deeper-readonly.test.ts
+git add lib/html-doc/render-dig-deeper.ts tests/lib/html-doc/render-dig-deeper-readonly.test.ts
 git commit -m "feat(cloud-dig-serving): renderDigDeeperDoc readOnly static mode + CSP nonce (local byte-identical default)"
 ```
 
@@ -611,8 +706,13 @@ Wire the loader + renderer into `serveCloud`, under the summary CSP, html-only.
 
 ```ts
 // tests/api/html-dig-serve.test.ts
+// The cloud html route awaits cookies() from next/headers — MUST mock it or the route throws
+// before reaching the behavior (every existing cloud route test does this; see tests/api/dig-cloud-route.test.ts:13).
+jest.mock('next/headers', () => ({ cookies: jest.fn(async () => ({ getAll: () => [], set: () => {} })) }));
+
 import { GET } from '@/app/api/html/[id]/route';
 import * as loader from '@/lib/dig/cloud/load-dig-for-serve';
+import * as serveCore from '@/lib/html-doc/serve-summary-core';
 import * as supa from '@/lib/supabase/server';
 
 const OLD = process.env.STORAGE_BACKEND;
@@ -660,10 +760,17 @@ it('propagates loader 404 (no dig content)', async () => {
   expect(res.status).toBe(404);
 });
 
-it('still serves summary (regression)', async () => {
+it('still serves summary — reaches the summary branch, not the type gate (regression)', async () => {
   mockAuth({ id: 'u' });
+  // Mock the summary loader so the summary branch resolves deterministically. Without this the real
+  // resolveOwnedPlaylistKey runs against the bare auth mock (no `.from`) → TypeError → 500, and the
+  // assertion would pass for the WRONG reason. A 404 here proves control reached loadSummaryForServe
+  // (the summary branch), i.e. the type gate did NOT reject type=summary with a 400.
+  const loadSpy = jest.spyOn(serveCore, 'loadSummaryForServe').mockResolvedValue({ ok: false, status: 404, error: 'not found' } as never);
   const res = await GET(new Request(`http://x/api/html/v?playlist=${PL}&type=summary`), params);
-  expect([200, 404, 503]).toContain(res.status); // reaches the summary path, not the 400 type gate
+  expect(res.status).toBe(404);
+  expect(loadSpy).toHaveBeenCalled();          // summary branch entered
+  expect(res.status).not.toBe(400);            // not the unsupported-type gate
 });
 ```
 
@@ -727,15 +834,19 @@ Add a `supabase` branch to the dig-state route listing dug section ids.
 - Test: `tests/api/dig-state-cloud.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveOwnedPlaylistKey` (`lib/storage/serve-playlist.ts`), `getPrincipalFromSession`/`getStorageBundle` (`lib/storage/resolve.ts`), `assertVideoId` (`lib/index-store.ts`), T2 `blobStore.list`, `DIG_GENERATOR_VERSION`.
+- Consumes: `loadSummaryForServe` (`lib/html-doc/serve-summary-core.ts`) — reused wholesale for owner-assert **+ the same status gate as the html loader** (committed→503, !promoted→404, not-owner→404) + canonical `{base, principal, bundle}`; `assertVideoId` (`lib/index-store.ts`); `createServerSupabase`/`CookieStore` (`lib/supabase/server`), `cookies` (`next/headers`); T2 `blobStore.list`; `DIG_GENERATOR_VERSION`.
+
+**Design note (review v1 H2/H3/M1):** the cloud branch **reuses `loadSummaryForServe`** rather than hand-coding owner-assert + `readIndex` + `base = mdKey.replace(/\.md$/,'')`. This (a) applies the SAME gate as the html serve path — spec §3 Unit C's "owner-assert **+ gate**" — so dig-state 503s while the summary finalizes and 404s an unknown/unpromoted video instead of leaking `200 []`; (b) guarantees `base` agreement with T3 (both use `load.base`), eliminating the divergence risk; (c) avoids the duplicate `getStorageBundle` import and the un-imported `NextResponse` (keep the file's existing `new Response(...)` idiom). Cost: one extra owner-scoped mdBytes read per dig-state call — acceptable (no frontend polls this endpoint in this slice; the poller is the deferred frontend slice).
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
 // tests/api/dig-state-cloud.test.ts
+// Cloud branch awaits cookies() — mock next/headers (repo convention).
+jest.mock('next/headers', () => ({ cookies: jest.fn(async () => ({ getAll: () => [], set: () => {} })) }));
+
 import { GET } from '@/app/api/videos/[id]/dig-state/route';
-import * as serve from '@/lib/storage/serve-playlist';
-import * as resolve from '@/lib/storage/resolve';
+import * as serveCore from '@/lib/html-doc/serve-summary-core';
 import * as supa from '@/lib/supabase/server';
 import { DIG_GENERATOR_VERSION as V } from '@/lib/dig/generate';
 
@@ -749,18 +860,18 @@ const params = { params: Promise.resolve({ id: 'v' }) };
 function mockAuth(user: { id: string } | null) {
   jest.spyOn(supa, 'createServerSupabase').mockReturnValue({ auth: { getUser: async () => ({ data: { user } }) } } as never);
 }
-function mockOwned(base: string, keys: string[]) {
-  jest.spyOn(serve, 'resolveOwnedPlaylistKey').mockResolvedValue('k' as never);
-  jest.spyOn(resolve, 'getPrincipalFromSession').mockReturnValue({ id: 'o', indexKey: 'k' } as never);
-  jest.spyOn(resolve, 'getStorageBundle').mockReturnValue({
-    metadataStore: { readIndex: async () => ({ videos: [{ id: 'v', summaryMd: `${base}.md`, artifacts: { summaryMd: { key: `${base}.md`, status: 'promoted' } } }] }) },
-    blobStore: { list: async (_p: unknown, prefix: string) => keys.filter((k) => k.startsWith(prefix)) },
+// loadSummaryForServe is reused wholesale — mock its OK result (gate passed) with a fake bundle.
+function mockLoadOk(base: string, keys: string[]) {
+  jest.spyOn(serveCore, 'loadSummaryForServe').mockResolvedValue({
+    ok: true, base, mdBytes: Buffer.from('#'), mdKey: `${base}.md`, title: 'T',
+    principal: { id: 'o', indexKey: 'k' } as never, playlistId: PL, video: { id: 'v', language: 'en' } as never,
+    bundle: { blobStore: { list: async (_p: unknown, prefix: string) => keys.filter((k) => k.startsWith(prefix)) } } as never,
   } as never);
 }
 
-it('lists dug section ids ascending', async () => {
+it('lists dug section ids ascending, excluding stale versions', async () => {
   mockAuth({ id: 'u' });
-  mockOwned('base', [`dig/base/200.r${V}.md`, `dig/base/65.r${V}.md`, `dig/base/9.r${V - 1}.md`]);
+  mockLoadOk('base', [`dig/base/200.r${V}.md`, `dig/base/65.r${V}.md`, `dig/base/9.r${V - 1}.md`]);
   const res = await GET(new Request(`http://x/api/videos/v/dig-state?playlist=${PL}`), params);
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ sectionIds: [65, 200] }); // stale r{V-1} excluded, sorted asc
@@ -768,87 +879,96 @@ it('lists dug section ids ascending', async () => {
 
 it('returns {sectionIds:[]} when nothing is dug (200, not 404)', async () => {
   mockAuth({ id: 'u' });
-  mockOwned('base', []);
+  mockLoadOk('base', []);
   const res = await GET(new Request(`http://x/api/videos/v/dig-state?playlist=${PL}`), params);
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ sectionIds: [] });
 });
 
-it('404 for a non-owner', async () => {
+it('propagates the summary gate: 404 not-owner / unpromoted / unknown video', async () => {
   mockAuth({ id: 'u' });
-  jest.spyOn(serve, 'resolveOwnedPlaylistKey').mockResolvedValue(null as never);
+  jest.spyOn(serveCore, 'loadSummaryForServe').mockResolvedValue({ ok: false, status: 404, error: 'not found' } as never);
   const res = await GET(new Request(`http://x/api/videos/v/dig-state?playlist=${PL}`), params);
   expect(res.status).toBe(404);
 });
 
-it('401 for anon', async () => {
+it('propagates the summary gate: 503 while the summary is finalizing (committed)', async () => {
+  mockAuth({ id: 'u' });
+  jest.spyOn(serveCore, 'loadSummaryForServe').mockResolvedValue({ ok: false, status: 503, error: 'not ready, retry' } as never);
+  const res = await GET(new Request(`http://x/api/videos/v/dig-state?playlist=${PL}`), params);
+  expect(res.status).toBe(503);
+});
+
+it('401 for anon (before any loader call)', async () => {
   mockAuth(null);
+  const spy = jest.spyOn(serveCore, 'loadSummaryForServe');
   const res = await GET(new Request(`http://x/api/videos/v/dig-state?playlist=${PL}`), params);
   expect(res.status).toBe(401);
+  expect(spy).not.toHaveBeenCalled();
+});
+
+it('400 for a non-UUID playlist (before auth)', async () => {
+  mockAuth({ id: 'u' });
+  const res = await GET(new Request('http://x/api/videos/v/dig-state?playlist=not-a-uuid'), params);
+  expect(res.status).toBe(400);
 });
 ```
 
 - [ ] **Step 2: Run — verify fail**
 
-Run: `npx jest dig-state-cloud` → FAIL (route is local-only; supabase requests hit the `outputFolder` guard).
+Run: `npx jest dig-state-cloud` → the suite is found and runs, then FAILs (route is local-only; supabase requests hit the `outputFolder` guard → 400).
 
-- [ ] **Step 3: Implement — dispatch + cloud branch**
+- [ ] **Step 3: Implement — dispatch + cloud branch (reusing `loadSummaryForServe`)**
 
-At the top of `GET`, dispatch by backend; keep the existing local body as `serveLocal`:
+Rename the existing `GET` body to `serveLocal(request, videoId)` (verbatim — the `outputFolder`/`getPrincipal`/`readDugSectionIds` path is unchanged) and add a backend dispatch + a cloud branch that reuses `loadSummaryForServe` for the gate. Keep the file's existing `new Response(JSON.stringify(...))` idiom — do **not** import `NextResponse`, and do **not** re-import `getStorageBundle` (the existing relative import stays for `serveLocal`).
 
 ```ts
-// app/api/videos/[id]/dig-state/route.ts
+// app/api/videos/[id]/dig-state/route.ts — ADD these imports (existing imports stay for serveLocal):
 import { DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
-import { resolveOwnedPlaylistKey } from '@/lib/storage/serve-playlist';
-import { getPrincipalFromSession, getStorageBundle } from '@/lib/storage/resolve';
-// ...existing imports...
+import { loadSummaryForServe } from '@/lib/html-doc/serve-summary-core';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 export async function GET(request: Request, { params }: Params) {
   const { id: videoId } = await params;
   const backend = process.env.STORAGE_BACKEND ?? 'local';
   if (backend === 'supabase') return serveCloud(request, videoId);
-  return serveLocal(request, videoId); // existing body, unchanged
+  return serveLocal(request, videoId); // existing body, renamed, unchanged
 }
 
 async function serveCloud(request: Request, videoId: string): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const playlistId = searchParams.get('playlist');
-  if (!playlistId || !UUID_RE.test(playlistId)) return NextResponse.json({ error: 'invalid playlist' }, { status: 400 });
-  try { assertVideoId(videoId); } catch { return NextResponse.json({ error: 'invalid videoId' }, { status: 400 }); }
+  if (!playlistId || !UUID_RE.test(playlistId)) return json({ error: 'invalid playlist' }, 400);
+  try { assertVideoId(videoId); } catch { return json({ error: 'invalid videoId' }, 400); }
 
   const cookieStore = (await cookies()) as unknown as CookieStore;
   const supabase = createServerSupabase(cookieStore);
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'authentication required' }, { status: 401 });
+  if (!user) return json({ error: 'authentication required' }, 401);
 
-  const playlistKey = await resolveOwnedPlaylistKey(supabase, playlistId, user.id);
-  if (!playlistKey) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  // Reuse the html loader's owner-assert + status gate (committed→503, !promoted→404, not-owner→404)
+  // and canonical base — identical to loadDigForServe (T3), so both endpoints agree on dig/{base}/.
+  const load = await loadSummaryForServe(supabase, { videoId, playlistId, userId: user.id });
+  if (!load.ok) return json({ error: load.error }, load.status);
 
-  const principal = getPrincipalFromSession({ userId: user.id }, playlistKey);
-  const bundle = getStorageBundle({ supabaseClient: supabase });
-  const index = await bundle.metadataStore.readIndex(principal);
-  const video = index.videos.find((v) => v.id === videoId) as { summaryMd?: string; artifacts?: { summaryMd?: { key?: string } } } | undefined;
-  const mdKey = video?.artifacts?.summaryMd?.key ?? video?.summaryMd;
-  if (!mdKey) return NextResponse.json({ sectionIds: [] }, { status: 200 }); // no summary → nothing dug
-
-  const base = mdKey.replace(/\.md$/, '');
   const suffix = `.r${DIG_GENERATOR_VERSION}.md`;
-  const keys = await bundle.blobStore.list(principal, `dig/${base}/`);
+  const keys = await load.bundle.blobStore.list(load.principal, `dig/${load.base}/`);
   const sectionIds = keys
     .filter((k) => k.endsWith(suffix))                       // current version only (behavior 11)
     .map((k) => k.match(/\/(\d+)\.r\d+\.md$/))
     .filter((m): m is RegExpMatchArray => m !== null)
     .map((m) => parseInt(m[1], 10))
     .sort((a, b) => a - b);                                  // ascending by sectionId (== startSec)
-  return NextResponse.json({ sectionIds }, { status: 200 });
+  return json({ sectionIds }, 200);
 }
 ```
 
-> The `sectionIds` derivation filters to the current-version suffix, extracts the integer id, and sorts ascending (spec behavior 16/17/11). Confirm `assertVideoId`, `NextResponse`, and `Params` are already imported by the existing file; add only the new imports.
+> `sectionIds` filters to the current-version suffix, extracts the integer id, and sorts ascending (behaviors 16/17/11). `assertVideoId` and `Params` are already imported by the existing file; add only the four new imports above. A zero-length `keys` (promoted summary, nothing dug) yields `{ sectionIds: [] }` at 200 — behavior 17. An unknown/unpromoted/foreign video never reaches the list: `loadSummaryForServe` returns `!ok` and the gate status is propagated (404/503).
 
 - [ ] **Step 4: Run new tests + full dig-state suite (local regression) + tsc**
 
@@ -875,17 +995,21 @@ git commit -m "feat(cloud-dig-serving): cloud dig-state branch — list current-
 | 2 no charge | T3 (rpc-never-called), reinforced T5 |
 | 3 anon 401 / 4 not-owner 404 | T5 (401), T3 propagates 404 |
 | 5 no dig content 404 | T3, T5 |
-| 6 finalizing 503 / 7 unpromoted 404 / 8 corrupt 409 | T3 (propagated from `loadSummaryForServe`) |
+| 6 finalizing 503 / 7 unpromoted 404 / 8 corrupt 409 | T3 (serve) + T6 (dig-state) — both propagate from `loadSummaryForServe` |
 | 9 model cached / 10 model absent degrade | T3 (`readModelEnvelope` null path) |
 | 11 stale version ignored | T3 (serve), T6 (dig-state) |
 | 12 slide token → caption | T1, applied T3 |
 | 13 format=md → 400 / 14 outputFolder → 400 / 15 bad id | T5 |
-| 16 dig-state asc / 17 empty → [] / 18 not-owner 404 | T6 |
+| 16 dig-state asc / 17 empty → [] / 18 not-owner 404 | T6 (18 + finalizing/unpromoted via the reused gate) |
 | 19 malformed blob skipped | T1 (throws), T3 (catch/skip) |
 | 20 local untouched | T4 (default render), T5/T6 (backend dispatch) |
 | 21–24 readOnly omits/keeps/nonce/byte-identical | T4 |
 
 ---
+
+## Deferred / forward-looking notes
+
+- **CSP + future slide capture (review v1 L2):** `buildSummaryCsp` is `img-src 'none'` + `style-src 'nonce-…'` (no `unsafe-inline` for style *attributes*). Correct for THIS slice — slides become caption text (no `<img>`), and readOnly emits no inline `style="…"` (dialogs omitted, no `cropMap`). But the future **slide-capture** slice will emit data-URI `<img>` (blocked by `img-src 'none'`) and inline `style="…"` on `.dig-slide-crop` (a nonce does not whitelist style attributes). That slice must plan a CSP change or refactor crop styling to classes. Flagged here so it is not discovered at implementation time.
 
 ## Execution / Review
 
