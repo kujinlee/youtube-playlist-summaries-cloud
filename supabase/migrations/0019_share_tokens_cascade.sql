@@ -3,10 +3,15 @@
 --   (a) share_tokens.playlist_id had NO FK (0013) — deleting a playlist orphaned its share
 --       tokens. Add the same composite cascade FK already used for videos/jobs (0001/0009) so
 --       `DELETE playlists` cascades ALL DB state atomically (one transaction, no RPC).
---   (b) the existing playlist cancel path (app/api/jobs/cancel + SupabaseJobQueue.listByPlaylist)
---       filters job_kind='summary' and would miss `dig` jobs. Add a SECURITY DEFINER RPC that
---       cancels ALL non-terminal jobs (any kind) for a playlist, owner-guarded via auth.uid(),
---       mirroring the per-job request_cancel_job (0010).
+--   (b) the playlist HARD-DELETE flow (plan Task 9 / spec §B4) needs a CANCEL-FIRST step:
+--       before the cascade delete removes a playlist's rows, any of its non-terminal jobs (of
+--       ANY kind, including `dig`) must be cancelled so an in-flight worker doesn't keep writing
+--       to rows that are about to disappear underneath it. Add a SECURITY DEFINER RPC that does
+--       this, owner-guarded via auth.uid(), mirroring the per-job request_cancel_job (0010).
+--       This is SEPARATE from the pre-existing, unrelated app/api/jobs/cancel ingestion-cancel
+--       path (SupabaseJobQueue.listByPlaylist), which filters job_kind='summary' by design for
+--       its own (non-delete) use case — that path is OUT OF SCOPE here and is not retrofitted
+--       by this migration.
 
 -- Defensive one-shot: remove any pre-existing share_tokens rows orphaned by a playlist delete
 -- that happened BEFORE this cascade FK existed. Once the FK below is in place this delete can
@@ -31,11 +36,17 @@ create index if not exists share_tokens_playlist_id_idx on share_tokens (playlis
 -- Cancel ALL non-terminal jobs (any job_kind) for a playlist. Mirrors request_cancel_job (0010)
 -- but scoped to a whole playlist; owner-guarded via auth.uid() (no separate ownership check
 -- needed — the WHERE clause itself is the guard, same pattern as 0010).
+-- SECURITY DEFINER hardening: schema-qualify the bare table ref (`public.jobs`) and pin
+-- search_path to `public, pg_temp` (pg_temp last) — this closes the classic SECURITY DEFINER
+-- search_path hijack where a session-local temp object shadows an unqualified name earlier in
+-- the path. The `service_role` grant below is inert on its own: auth.uid() is null with no
+-- end-user JWT, so a bare service_role caller cancels 0 rows (owner_id = auth.uid() never
+-- matches) — it exists only for grant-symmetry with the session client, same as 0010.
 create or replace function request_cancel_playlist_jobs(p_playlist_id uuid) returns int
-  language plpgsql security definer set search_path = public as $$
+  language plpgsql security definer set search_path = public, pg_temp as $$
 declare n int;
 begin
-  update jobs
+  update public.jobs
      set cancel_requested = true,
          status = case when status = 'queued' then 'cancelled' else status end,
          updated_at = now()
