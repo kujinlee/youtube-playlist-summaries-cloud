@@ -66,8 +66,12 @@ export class SupabaseJobQueue implements JobQueue {
   }
 
   async complete(jobId: string, workerId: string, leaseToken: string, result: unknown): Promise<{ ok: boolean }> {
+    // p_result MUST be JSON-serializable-present: a handler that returns nothing gives
+    // result === undefined, and supabase-js sends params via JSON.stringify, which drops
+    // undefined-valued keys — dropping p_result makes PostgREST 404 the 4-arg complete_job
+    // (PGRST202). Coalesce to null so the param always reaches the RPC.
     const { data, error } = await this.client.rpc('complete_job', {
-      p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_result: result });
+      p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_result: result ?? null });
     if (error) throw error;
     return { ok: data === true };
   }

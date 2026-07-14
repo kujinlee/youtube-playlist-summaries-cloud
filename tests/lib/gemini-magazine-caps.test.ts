@@ -24,14 +24,18 @@ beforeEach(() => {
   mockCountTokens.mockResolvedValue({ totalTokens: 100 });
 });
 
-it('CLOUD call: the per-call schema clone carries a GENEROUS maxItems bound (cost bound, cloud-only)', async () => {
+it('CLOUD call: the schema carries NO maxItems bound (BUG-2 — a bound tripped Gemini serving limit)', async () => {
   const { generateMagazineModel } = await import('@/lib/gemini');
   await generateMagazineModel([{ title: 'A', prose: 'p' }], 'en', { caps });
   const cfg = mockGetGenerativeModel.mock.calls[0][0].generationConfig;
   const arr = cfg.responseSchema.properties.sections;
   expect(arr.minItems).toBe(1);
-  // Bound present but generous enough it can never reject a real doc (H-1: NOT the too-tight 20).
-  expect(arr.maxItems).toBeGreaterThanOrEqual(200);
+  // A maxItems on the OUTER sections array (which nests a bounded `bullets` array of required-field
+  // objects) explodes Gemini's structured-output constraint-"state" count → 400 "The specified schema
+  // produces a constraint that has too many states for serving" on EVERY doc. Output cost is already
+  // bounded by magazineOutputTokens and the section count is validated post-parse, so the schema must
+  // carry NO maxItems — cloud uses the same bare schema as local.
+  expect(arr.maxItems).toBeUndefined();
 });
 
 it('the SHARED MAGAZINE_RESPONSE_SCHEMA has NO maxItems (local domain unchanged — H-1)', async () => {

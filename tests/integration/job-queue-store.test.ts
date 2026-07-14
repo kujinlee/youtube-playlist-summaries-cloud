@@ -38,6 +38,28 @@ test('enqueue → claim(video) → complete round-trip through the store', async
   expect((await userQ.getStatus(enq.jobId))?.status).toBe('completed');
 });
 
+// BUG-1 regression: real handlers (e.g. the summary handler) return nothing → complete() is called
+// with an UNDEFINED result. Before the fix, supabase-js dropped `p_result: undefined` from the JSON
+// body, so PostgREST could not resolve the 4-arg complete_job(...) and threw PGRST202 — every job
+// failed at the finish line despite doing its work. This exercises the exact real path against live
+// PostgREST; the unit test (tests/lib/storage/supabase-job-queue-complete.test.ts) guards it in CI.
+test('complete with an UNDEFINED result (handler returned nothing) still succeeds', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const userQ = new SupabaseJobQueue(client);
+  const workerQ = new SupabaseJobQueue(adminClient());
+  const pl = await seedPlaylist(client, userId);
+  const vid = randomUUID();
+  const enqueuer = new SupabaseEnqueuer(adminClient());
+  const enq = await enqueuer.enqueue({ ownerId: userId, enqueueIp: null }, key(pl, vid), { n: 1, durationSeconds: 100 } as never);
+
+  const leased = await workerQ.claim('w1', 120, vid);
+  const done = await workerQ.complete(leased!.id, 'w1', leased!.leaseToken, undefined);
+
+  expect(done.ok).toBe(true);
+  expect((await userQ.getStatus(enq.jobId))?.status).toBe('completed');
+});
+
 test('claim returns null when the scoped queue is empty', async () => {
   const workerQ = new SupabaseJobQueue(adminClient());
   const leased = await workerQ.claim('w', 120, randomUUID()); // no job for this fresh video id
