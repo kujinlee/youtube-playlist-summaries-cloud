@@ -38,6 +38,11 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
     const load = await loadSummaryForServe(supabase, { videoId, playlistId, userId: user.id });
     if (!load.ok) return json({ error: load.error }, load.status);
 
+    // Filename-authoritative by design (spec §3 Unit C; whole-branch review M1): this is a cheap
+    // index — it reports a section dug on blob PRESENCE and does not open/parse the blob. The serve
+    // loader (load-dig-for-serve.ts) DOES parse and skips malformed/vanished blobs (behavior 19), so
+    // under blob corruption dig-state may over-report vs the rendered doc. Accepted: no money/isolation
+    // impact, zero per-poll reads; the (deferred) frontend validates against the serve response if needed.
     const suffix = `.r${DIG_GENERATOR_VERSION}.md`;
     const keys = await load.bundle.blobStore.list(load.principal, `dig/${load.base}/`);
     const sectionIds = keys
