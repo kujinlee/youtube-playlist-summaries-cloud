@@ -6,7 +6,16 @@
 //   2 — 500 when YOUTUBE_API_KEY is unset
 //   4 — null fetch result: row skipped (not updated), still counted in attempted
 //   5 — per-row error isolation: one throwing row doesn't stop the others; route still 200
-//   6 — row ceiling: at most 200 null-title rows are processed
+//   6 — no prefix starvation: ALL of the owner's null-title rows are processed per call (the
+//       once-per-session + per-user sidebar guard is the real bound on call frequency, not a
+//       row slice). A BACKFILL_SANITY_MAX defensive abuse ceiling only kicks in past 1000
+//       null-title rows in one owner — see behavior 6b.
+//   6b — sanity ceiling: past BACKFILL_SANITY_MAX null-title rows, processing is capped and a
+//       console.warn is emitted (abuse backstop, not the normal-case behavior).
+//   6c — no prefix starvation regression test: several early null-title rows are permanently
+//       unfillable (fetch → null) while a later row IS fillable; the later row must still get
+//       its title filled in the same call.
+//   8 — non-supabase backend ⇒ 501 (backend/config mistake, NOT "not found")
 // Behaviors 3 and 7 (real backfill + owner isolation) are covered by the integration test
 // (tests/integration/backfill-titles-route.test.ts) against real local Supabase/RLS.
 
@@ -95,18 +104,54 @@ it('isolates a per-row fetch error: other rows still processed, route still 200'
   );
 });
 
-it('caps processing at 200 null-title rows (runaway backstop)', async () => {
+it('behavior 6: processes ALL null-title rows in one call, not just the first 200 (no prefix starvation)', async () => {
   const rows = Array.from({ length: 250 }, (_, i) => makePlaylist({ id: `row-${i}`, playlistKey: `list-${i}` }));
   mockBundle.metadataStore.listPlaylists = jest.fn(async () => rows);
   const res = await post();
   expect(res.status).toBe(200);
   const body = await res.json();
-  expect(body).toEqual({ updated: 200, attempted: 200 });
-  expect(mockFetchPlaylistTitleOrNull).toHaveBeenCalledTimes(200);
-  expect(mockBundle.metadataStore.setPlaylistTitleIfNull).toHaveBeenCalledTimes(200);
+  expect(body).toEqual({ updated: 250, attempted: 250 });
+  expect(mockFetchPlaylistTitleOrNull).toHaveBeenCalledTimes(250);
+  expect(mockBundle.metadataStore.setPlaylistTitleIfNull).toHaveBeenCalledTimes(250);
 });
 
-it('filters out already-titled rows before the cap/backfill loop', async () => {
+it('behavior 6b: past the BACKFILL_SANITY_MAX abuse ceiling, processing is capped and a warning is logged', async () => {
+  const rows = Array.from({ length: 1250 }, (_, i) => makePlaylist({ id: `row-${i}`, playlistKey: `list-${i}` }));
+  mockBundle.metadataStore.listPlaylists = jest.fn(async () => rows);
+  const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const res = await post();
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body).toEqual({ updated: 1000, attempted: 1000 });
+  expect(mockFetchPlaylistTitleOrNull).toHaveBeenCalledTimes(1000);
+  expect(warnSpy).toHaveBeenCalledTimes(1);
+  warnSpy.mockRestore();
+});
+
+it('behavior 6c: no prefix starvation — a later fillable row is not starved behind early unfillable rows', async () => {
+  // First 5 null-title rows are permanently unfillable (deleted/private YouTube list ⇒ null).
+  // A 6th row, later in the list, IS fillable. With a naive slice(0, N) cap that only ever
+  // re-selects the first N rows, this row would never be attempted across sessions.
+  const unfillable = Array.from({ length: 5 }, (_, i) => makePlaylist({ id: `dead-${i}`, playlistKey: `dead-${i}` }));
+  const fillable = makePlaylist({ id: 'row-fillable', playlistKey: 'list-fillable' });
+  mockBundle.metadataStore.listPlaylists = jest.fn(async () => [...unfillable, fillable]);
+  mockFetchPlaylistTitleOrNull = jest.fn(async (playlistId: string) =>
+    playlistId === 'list-fillable' ? 'Fillable Title' : null,
+  );
+
+  const res = await post();
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body).toEqual({ updated: 1, attempted: 6 });
+  expect(mockFetchPlaylistTitleOrNull).toHaveBeenCalledWith('list-fillable', 'test-key');
+  expect(mockBundle.metadataStore.setPlaylistTitleIfNull).toHaveBeenCalledTimes(1);
+  expect(mockBundle.metadataStore.setPlaylistTitleIfNull).toHaveBeenCalledWith(
+    expect.objectContaining({ indexKey: 'list-fillable' }),
+    'Fillable Title',
+  );
+});
+
+it('filters out already-titled rows before the backfill loop', async () => {
   mockBundle.metadataStore.listPlaylists = jest.fn(async () => [
     makePlaylist({ id: 'row-1', playlistKey: 'listA', playlistTitle: 'Already Titled' }),
     makePlaylist({ id: 'row-2', playlistKey: 'listB', playlistTitle: null }),
@@ -117,4 +162,15 @@ it('filters out already-titled rows before the cap/backfill loop', async () => {
   expect(body).toEqual({ updated: 1, attempted: 1 });
   expect(mockFetchPlaylistTitleOrNull).toHaveBeenCalledTimes(1);
   expect(mockFetchPlaylistTitleOrNull).toHaveBeenCalledWith('listB', 'test-key');
+});
+
+it('behavior 8: non-supabase backend ⇒ 501 unsupported (before any auth/DB call)', async () => {
+  // review fix: a non-supabase backend is a backend/config mistake, NOT "not found" — 501
+  // (matching the delete route's fix), so a misconfiguration doesn't read as "nothing to do".
+  process.env.STORAGE_BACKEND = 'local';
+  const res = await post();
+  expect(res.status).toBe(501);
+  expect(await res.json()).toEqual({ error: 'unsupported' });
+  expect(mockGetUser).not.toHaveBeenCalled();
+  expect(mockBundle.metadataStore.listPlaylists).not.toHaveBeenCalled();
 });

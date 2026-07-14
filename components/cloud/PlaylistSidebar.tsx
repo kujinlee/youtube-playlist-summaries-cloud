@@ -63,6 +63,14 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
 
   useEffect(() => {
     let cancelled = false;
+    // review fix: reset the one-shot guard at the START of the effect (before any check) so an
+    // in-place account switch (userId A→B on the same mounted instance, no remount) gives B its
+    // own one-shot instead of inheriting A's already-fired ref. This runs on every [userId]
+    // change, including the initial mount, so it's a no-op the very first time (ref already
+    // starts false). It does NOT reopen the door within a session for the SAME userId: the ref
+    // and sessionStorage key are both re-set (see below) before this effect can run again for
+    // that userId, and the effect only re-runs when userId itself changes.
+    backfillFiredRef.current = false;
     listPlaylists()
       .then(async (result) => {
         if (cancelled) return;

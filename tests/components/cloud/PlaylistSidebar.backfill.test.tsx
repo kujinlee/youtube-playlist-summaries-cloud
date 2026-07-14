@@ -144,6 +144,33 @@ it('behavior 7: userId === null is a no-op (no per-user key, unauthenticated)', 
   expect(mockListPlaylists).toHaveBeenCalledTimes(1);
 });
 
+it('behavior 9: in-place account switch (userId A→B, same instance) resets the one-shot guard so B is eligible', async () => {
+  // review fix: backfillFiredRef must not be a permanent (component-lifetime) one-shot — it
+  // must be scoped per userId, so an in-place account switch (no remount) still lets the new
+  // user's auto-backfill fire.
+  mockListPlaylists.mockResolvedValue([untitled]);
+  mockBackfill.mockResolvedValue({ updated: 0, attempted: 1 });
+
+  const { rerender } = render(<PlaylistSidebar userId="user-a" />);
+  await waitFor(() => expect(mockBackfill).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(mockListPlaylists).toHaveBeenCalledTimes(2));
+
+  // Same instance (no unmount), same userId re-rendered — must NOT re-fire (sessionStorage
+  // flag for user-a is already set, matching behavior 4).
+  rerender(<PlaylistSidebar userId="user-a" />);
+  await new Promise((r) => setTimeout(r, 20));
+  expect(mockBackfill).toHaveBeenCalledTimes(1);
+
+  // In-place switch to a different user, same instance — B has no sessionStorage key and a
+  // null title, so B's backfill must be eligible to fire.
+  rerender(<PlaylistSidebar userId="user-b" />);
+  await waitFor(() => expect(mockBackfill).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(mockListPlaylists).toHaveBeenCalledTimes(4));
+
+  expect(sessionStorage.getItem('backfilledTitles:user-a')).not.toBeNull();
+  expect(sessionStorage.getItem('backfilledTitles:user-b')).not.toBeNull();
+});
+
 // Guard against accidental regressions to the pre-existing unauthorized redirect path.
 it('still redirects to /login when the initial listPlaylists rejects with UnauthorizedError', async () => {
   mockListPlaylists.mockRejectedValue(new UnauthorizedError('unauthorized'));
