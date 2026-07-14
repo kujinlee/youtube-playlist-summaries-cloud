@@ -83,7 +83,10 @@ it('B8/B16/B17/B20: owner gets 200 HTML with a coherent nonce CSP + private no-s
 
 it('B11: no session → 401', async () => { mockUser = null; expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(401); });
 it('B15: non-UUID playlist → 400 (before any DB call)', async () => { expect((await GET(req('playlist=not-a-uuid&type=summary'), params)).status).toBe(400); });
-it('B14: type != summary → 400 (cloud rejects dig-deeper)', async () => { expect((await GET(req(`playlist=${validPlaylist}&type=dig-deeper`), params)).status).toBe(400); });
+// B14 superseded by feat/cloud-dig-serving: cloud now accepts type=dig-deeper (see
+// tests/api/html-dig-serve.test.ts for full dig-deeper coverage). The type gate still rejects any
+// other unsupported/missing type — pinned here with a value that is neither summary nor dig-deeper.
+it('B14: type not summary/dig-deeper → 400', async () => { expect((await GET(req(`playlist=${validPlaylist}&type=bogus`), params)).status).toBe(400); });
 it('URL contract: cloud rejects outputFolder → 400', async () => { expect((await GET(req(`outputFolder=/x&type=summary`), params)).status).toBe(400); });
 it('B13: unknown video → 404', async () => { mockIndexVideos = []; expect((await GET(req(`playlist=${validPlaylist}&type=summary`), params)).status).toBe(404); });
 it('B12: summary committed (finalizing) → 503, not 404', async () => {
