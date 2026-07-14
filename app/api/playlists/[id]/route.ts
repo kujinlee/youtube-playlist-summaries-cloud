@@ -4,8 +4,12 @@
 // Orchestrates the pieces built in T6 (cancel RPC + cascade FK), T7 (BlobStore.deletePrefix),
 // and T8 (MetadataStore.deletePlaylist + JobQueue.requestCancelPlaylist):
 //
+//   0. non-supabase backend ⇒ 501 (backend/config mistake, NOT "not found" — never swallowed
+//      by the client's 404→resolve idempotency)
 //   1. auth (401 if no session)
-//   2. pre-delete read — this is where 404 comes from (NOT the delete rowcount); also
+//   1b. malformed (non-UUID) id ⇒ 404 (mirrors app/api/videos/[id]/archive/route.ts's UUID_RE
+//      guard) — before the pre-delete read, so a garbage id never reaches the DB
+//   2. pre-delete read — this is where the "real" 404 comes from (NOT the delete rowcount); also
 //      captures playlist_key BEFORE the DB delete, for the blob Principal (Global Constraints,
 //      spec §B5/D5)
 //   3. best-effort job cancel (all kinds) — a cancel-RPC failure must not block the delete
@@ -20,9 +24,17 @@ const json = (body: unknown, status: number) => new Response(JSON.stringify(body
 
 type Params = { params: Promise<{ id: string }> };
 
+// Mirrors app/api/videos/[id]/archive/route.ts's UUID_RE guard. A malformed id is never a real
+// row, so treat it as "not found" (404) instead of letting it fall through to the DB read and a
+// generic 500.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function DELETE(_request: Request, { params }: Params): Promise<Response> {
   const backend = process.env.STORAGE_BACKEND ?? 'local';
-  if (backend !== 'supabase') return json({ error: 'unsupported' }, 404); // local backend: no delete route
+  // review fix: 501 (not 404) — a non-supabase backend is a backend/config mistake that did NOT
+  // delete anything, so the client's 404→resolve idempotency (lib/client/api.ts deletePlaylist)
+  // must never swallow it as "already gone".
+  if (backend !== 'supabase') return json({ error: 'unsupported' }, 501);
 
   const { id } = await params;
 
@@ -30,6 +42,10 @@ export async function DELETE(_request: Request, { params }: Params): Promise<Res
   const supabase = createServerSupabase(cookieStore);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return json({ error: 'authentication required' }, 401);
+
+  // review fix: validate id as a UUID BEFORE the pre-delete read — a garbage id is "not found",
+  // not a DB-error-shaped 500.
+  if (!UUID_RE.test(id)) return json({ error: 'not found' }, 404);
 
   try {
     // Pre-delete read (404 source, NOT the delete rowcount — a delete on a foreign/missing id

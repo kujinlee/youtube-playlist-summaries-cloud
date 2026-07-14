@@ -119,6 +119,14 @@ describe('DELETE /api/playlists/[id] (cloud)', () => {
 
     const tokenId = await seedShareToken(userId, playlistId, videoId);
     await seedSummaryBlob(svc, userId, playlistKey, base, '# hello');
+    // review fix: ALSO seed a NESTED object under the playlist prefix (the shape dig section
+    // blobs actually take, per lib/dig/cloud/dig-blob-key.ts's digSectionKey — `dig/<base>/<id>.r<v>.md`)
+    // so the happy-path proves deletePrefix's recursive walk removes nested blobs too, not just
+    // flat ones directly under `${owner}/${playlistKey}/`.
+    const { error: nestedUploadErr } = await svc.storage.from(ARTIFACTS_BUCKET)
+      .upload(`${userId}/${playlistKey}/dig/${base}/0.r1.md`, Buffer.from('# nested dig section', 'utf-8'),
+              { contentType: 'text/markdown', upsert: true });
+    expect(nestedUploadErr).toBeNull();
 
     mockClient = client;
     const res = await del(playlistId);
@@ -136,6 +144,9 @@ describe('DELETE /api/playlists/[id] (cloud)', () => {
     expect(token.data).toHaveLength(0);
 
     // Blobs gone (service-role list under the owner/playlistKey prefix — proves deletePrefix ran).
+    // Storage `.list` is non-recursive but folder entries (id===null, e.g. a leftover `dig/`
+    // folder) still surface at this level — an empty listing here proves the NESTED dig blob
+    // above was also removed by deletePrefix's recursive walk, not just the flat summary blob.
     const { data: listing, error: listErr } = await svc.storage
       .from(ARTIFACTS_BUCKET).list(`${userId}/${playlistKey}`);
     expect(listErr).toBeNull();

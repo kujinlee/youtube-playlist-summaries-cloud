@@ -40,3 +40,11 @@ test('deletePlaylist maps other non-2xx → Error(body.error)', async () => {
   mockFetch(500, { error: 'internal error' });
   await expect(deletePlaylist(PLAYLIST_ID)).rejects.toThrow('internal error');
 });
+
+test('deletePlaylist maps 501 (unsupported backend) → throws, NOT swallowed like 404', async () => {
+  // review fix: the route now answers a non-supabase backend with 501 instead of 404, precisely
+  // so this idempotency shortcut (404 → resolve) never masks a backend/config mistake that did
+  // NOT delete anything.
+  mockFetch(501, { error: 'unsupported' });
+  await expect(deletePlaylist(PLAYLIST_ID)).rejects.toThrow('unsupported');
+});

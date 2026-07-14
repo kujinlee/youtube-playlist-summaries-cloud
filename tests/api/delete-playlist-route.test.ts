@@ -5,7 +5,7 @@
 //   4 — blob-cleanup failure ⇒ still 200 {deleted:true} (invisible orphans accepted, §D5)
 //   5 — the playlist row READ happens before the DB delete, and the Principal passed to
 //       blobStore.deletePrefix has indexKey === the captured playlist_key
-//   7 — cloud-only: local backend ⇒ 404/unsupported
+//   7 — cloud-only: local backend ⇒ 501/unsupported (a backend/config mistake, not "not found")
 // Behaviors 1 (401), 2 (404 not owned/missing), 3 (happy-path order against real DB/blobs),
 // and 6 (second delete ⇒ 404) are covered by the integration test
 // (tests/integration/delete-playlist-route.test.ts) against real local Supabase/RLS.
@@ -87,11 +87,14 @@ it('behavior 4: blob-cleanup failure still returns 200 {deleted:true}', async ()
   expect(mockBundle.metadataStore.deletePlaylist).toHaveBeenCalledTimes(1);
 });
 
-it('behavior 5: the row read happens before the DB delete, before blob cleanup', async () => {
+it('behavior 5: the row read happens before the DB delete, before blob cleanup, after cancel-first', async () => {
   const res = await del(PLAYLIST_ID);
   expect(res.status).toBe(200);
   expect(callOrder.indexOf('read')).toBeLessThan(callOrder.indexOf('delete'));
   expect(callOrder.indexOf('delete')).toBeLessThan(callOrder.indexOf('blob'));
+  // review fix: the named "cancel-first" step must actually run before the DB delete, not just
+  // be recorded in callOrder with its position unchecked.
+  expect(callOrder.indexOf('cancel')).toBeLessThan(callOrder.indexOf('delete'));
 });
 
 it('behavior 5: the Principal passed to deletePrefix has indexKey === the captured playlist_key', async () => {
@@ -110,11 +113,22 @@ it('behavior 5: the Principal passed to metadataStore.deletePlaylist also has in
   );
 });
 
-it('behavior 7: local backend ⇒ 404 unsupported (before any auth/DB call)', async () => {
+it('behavior 7: local backend ⇒ 501 unsupported (before any auth/DB call)', async () => {
+  // review fix: a non-supabase backend is a backend/config mistake, NOT "not found" — 501 so the
+  // client's 404→resolve idempotency (lib/client/api.ts deletePlaylist) never swallows it.
   process.env.STORAGE_BACKEND = 'local';
   const res = await del(PLAYLIST_ID);
-  expect(res.status).toBe(404);
+  expect(res.status).toBe(501);
+  expect(await res.json()).toEqual({ error: 'unsupported' });
   expect(mockGetUser).not.toHaveBeenCalled();
+});
+
+it('review fix: malformed (non-UUID) id ⇒ 404 before the pre-delete read, nothing deleted', async () => {
+  const res = await del('not-a-uuid');
+  expect(res.status).toBe(404);
+  expect(await res.json()).toEqual({ error: 'not found' });
+  expect(mockMaybeSingle).not.toHaveBeenCalled();
+  expect(mockBundle.metadataStore.deletePlaylist).not.toHaveBeenCalled();
 });
 
 it('cancel-first failure does not block the DB delete or the 200 response', async () => {
