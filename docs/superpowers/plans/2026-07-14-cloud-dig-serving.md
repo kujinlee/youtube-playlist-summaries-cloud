@@ -388,10 +388,14 @@ describe('loadDigForServe', () => {
     // Money invariant — spy on EVERY charge-capable / generation entry point so the assertion is
     // direct, not an indirect proxy through the fake bundle. resolveMagazineModel is the ONLY
     // charging function (serve-doc.ts:52 rpc('reserve_serve_model')); the rest must also never run.
-    const resolveMag = jest.spyOn(serveDoc, 'resolveMagazineModel');
-    const resolveAndParse = jest.spyOn(serveCore, 'resolveAndParse');
-    const generateDig = jest.spyOn(digGen, 'generateDig');
-    const generateMag = jest.spyOn(gemini, 'generateMagazineModel');
+    // FAIL-CLOSED (.mockRejectedValue): a bare jest.spyOn calls THROUGH — a regression that reached
+    // generateDig/generateMagazineModel would run the real generation (live Gemini) before the
+    // assertion fires, violating the "No live Gemini in any test" constraint. Rejecting makes any
+    // accidental call abort instantly with no real work.
+    const resolveMag = jest.spyOn(serveDoc, 'resolveMagazineModel').mockRejectedValue(new Error('money path reached'));
+    const resolveAndParse = jest.spyOn(serveCore, 'resolveAndParse').mockRejectedValue(new Error('money path reached'));
+    const generateDig = jest.spyOn(digGen, 'generateDig').mockRejectedValue(new Error('generation reached'));
+    const generateMag = jest.spyOn(gemini, 'generateMagazineModel').mockRejectedValue(new Error('generation reached'));
     const rpc = jest.fn();
     const r = await loadDigForServe({ rpc } as never, { videoId: 'v', playlistId: 'pl', userId: 'u' });
     expect(r.ok).toBe(true);
@@ -753,6 +757,12 @@ it('rejects format=md on dig with 400', async () => {
   expect(res.status).toBe(400);
 });
 
+it('rejects outputFolder on cloud dig with 400 — even empty (presence-based, behavior 14)', async () => {
+  mockAuth({ id: 'u' });
+  const res = await GET(new Request(url('&outputFolder=')), params); // empty value still present
+  expect(res.status).toBe(400);
+});
+
 it('propagates loader 404 (no dig content)', async () => {
   mockAuth({ id: 'u' });
   jest.spyOn(loader, 'loadDigForServe').mockResolvedValue({ ok: false, status: 404, error: 'not found' } as never);
@@ -813,6 +823,15 @@ if (type === 'dig-deeper') {
 Add imports at the top of the file: `import { loadDigForServe } from '@/lib/dig/cloud/load-dig-for-serve';` and `import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';`. `download` is the already-parsed `searchParams.get('download') === '1'`.
 
 > Placement: the `format=md` short-circuit for summary must stay AFTER this dig branch so `type=dig-deeper&format=md` is rejected here, never reaching the summary md path.
+
+**Also fix the shared `outputFolder` guard to presence-based (review v2 M — behavior 14).** `route.ts:27` currently rejects with `.get()` (truthy), so an empty `?outputFolder=` slips through; the sibling `pdf/[id]/route.ts:31` and `dig/[sectionId]/route.ts:34` both use `.has()` with an explicit "empty string must 400" comment. Change the shared guard so BOTH summary and dig reject presence:
+
+```ts
+// route.ts:27 — was: if (searchParams.get('outputFolder')) return json(...);
+if (searchParams.has('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
+```
+
+This aligns html with pdf/dig-POST and makes behavior 14 hold for `&outputFolder=` (empty). It touches the already-merged summary guard — run the full `npx jest html` suite to confirm no summary test relied on the old truthy behavior (none is expected; an empty `outputFolder` on cloud is a nonsensical request).
 
 - [ ] **Step 4: Run new tests + full html route suite + tsc + commit**
 
@@ -928,6 +947,7 @@ import { DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 import { loadSummaryForServe } from '@/lib/html-doc/serve-summary-core';
+import { logError } from '@/lib/dev-logger';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const json = (body: unknown, status = 200) =>
@@ -951,20 +971,25 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return json({ error: 'authentication required' }, 401);
 
-  // Reuse the html loader's owner-assert + status gate (committed→503, !promoted→404, not-owner→404)
-  // and canonical base — identical to loadDigForServe (T3), so both endpoints agree on dig/{base}/.
-  const load = await loadSummaryForServe(supabase, { videoId, playlistId, userId: user.id });
-  if (!load.ok) return json({ error: load.error }, load.status);
+  try {
+    // Reuse the html loader's owner-assert + status gate (committed→503, !promoted→404, not-owner→404)
+    // and canonical base — identical to loadDigForServe (T3), so both endpoints agree on dig/{base}/.
+    const load = await loadSummaryForServe(supabase, { videoId, playlistId, userId: user.id });
+    if (!load.ok) return json({ error: load.error }, load.status);
 
-  const suffix = `.r${DIG_GENERATOR_VERSION}.md`;
-  const keys = await load.bundle.blobStore.list(load.principal, `dig/${load.base}/`);
-  const sectionIds = keys
-    .filter((k) => k.endsWith(suffix))                       // current version only (behavior 11)
-    .map((k) => k.match(/\/(\d+)\.r\d+\.md$/))
-    .filter((m): m is RegExpMatchArray => m !== null)
-    .map((m) => parseInt(m[1], 10))
-    .sort((a, b) => a - b);                                  // ascending by sectionId (== startSec)
-  return json({ sectionIds }, 200);
+    const suffix = `.r${DIG_GENERATOR_VERSION}.md`;
+    const keys = await load.bundle.blobStore.list(load.principal, `dig/${load.base}/`);
+    const sectionIds = keys
+      .filter((k) => k.endsWith(suffix))                     // current version only (behavior 11)
+      .map((k) => k.match(/\/(\d+)\.r\d+\.md$/))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .map((m) => parseInt(m[1], 10))
+      .sort((a, b) => a - b);                                // ascending by sectionId (== startSec)
+    return json({ sectionIds }, 200);
+  } catch (err) {
+    logError('dig-state:cloud', err); // observability parity with the html route (PR #18 5xx sweep)
+    return json({ error: 'internal error' }, 500);
+  }
 }
 ```
 
