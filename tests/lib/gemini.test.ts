@@ -1,6 +1,7 @@
 import { generateSummary, extractQuickView, fixSummary, transcribeViaGemini } from '../../lib/gemini';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { TranscriptSegment } from '../../lib/transcript-timestamps';
+import { sectionStartsComplete } from '../../lib/summary-section-timestamps';
 
 const SEGS: TranscriptSegment[] = [
   { text: 'intro', offset: 0, duration: 5 },
@@ -328,7 +329,11 @@ describe('generateSummary — timestamps', () => {
 
     const result = await generateSummary(SEGS, 'en', 'vid123');
 
-    expect(result.summary).not.toMatch(/▶|\[\[TS:/);
+    // Layer 3 (ensureSectionTimestamps) now synthesizes a ▶ for every section post-loop, so the
+    // doc-wide "no ▶ at all" outcome no longer occurs — assert the stray token is stripped and the
+    // per-section guarantee holds instead.
+    expect(result.summary).not.toContain('[[TS:');
+    expect(sectionStartsComplete(result.summary)).toBe(true);
     expect(result.summary).toContain('## 1. A');
     expect(result.summary).toContain('body');
   });
@@ -358,8 +363,9 @@ describe('generateSummary — timestamp guard', () => {
     const result = await generateSummary(SEGS, 'en', 'vid123');
 
     expect(mockGenerateContent).toHaveBeenCalledTimes(2); // complete-but-no-▶ is capped at TIMESTAMP_MISS_CAP
-    expect(result.summary).not.toContain('▶');
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[timestamp-miss] vid123'));
+    // Layer 3 synthesizes section timestamps post-loop instead of returning a doc with none.
+    expect(sectionStartsComplete(result.summary)).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[summary-section-ts-synth]'));
     warn.mockRestore();
   });
 
@@ -370,7 +376,9 @@ describe('generateSummary — timestamp guard', () => {
     await generateSummary([], 'en', 'vid123');
 
     expect(mockGenerateContent).toHaveBeenCalledTimes(1);
-    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('[timestamp-miss]'));
+    // Renamed from [timestamp-miss] to [summary-section-ts-synth]; kept as a non-vacuous string so
+    // this assertion still actually exercises the "no segments → no synth warn" path (R2-L3).
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('[summary-section-ts-synth]'));
     warn.mockRestore();
   });
 });
@@ -477,7 +485,7 @@ describe('generateSummary — auto-retry (completeness)', () => {
     const r = await generateSummary(SEGS, 'en', 'vid1');
     expect(mockGenerateContent).toHaveBeenCalledTimes(2); // capped — not the full 4-attempt budget
     expect(r.summary).toContain('All done.');
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[timestamp-miss] vid1'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('[summary-section-ts-synth] vid1'));
     warn.mockRestore();
   });
 

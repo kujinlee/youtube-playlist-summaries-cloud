@@ -29,8 +29,6 @@ function lastConfig(): any {
   return calls[calls.length - 1][0].generationConfig;
 }
 
-const segments = [{ text: 'hello world', offset: 0, duration: 5 }];
-
 describe('responseSchema (controlled generation) is wired into every JSON call site', () => {
   it('generateMagazineModel constrains output to the magazine object schema', async () => {
     reply({ sections: [
@@ -54,12 +52,14 @@ describe('responseSchema (controlled generation) is wired into every JSON call s
 
   it('generateSummary constrains output to the summary object schema', async () => {
     const fixture = {
-      // Completeness-clean + a resolvable [[TS:0]] so the quality loop early-returns on attempt 1.
+      // Completeness-clean; no segments passed (timestamp behavior is irrelevant to this test — it
+      // asserts the responseSchema/generationConfig wiring), so the Conclusion section's missing
+      // [[TS:]] never triggers a re-roll — this single mockResolvedValueOnce is enough (Codex R2 High).
       summary: '## 1. X\n[[TS:0]]\n\nbody.\n\n## Conclusion\n\nAll done.',
       ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
     };
     reply(fixture);
-    await generateSummary(segments, 'en', 'vid123');
+    await generateSummary([], 'en', 'vid123');
 
     const cfg = lastConfig();
     expect(cfg.responseMimeType).toBe('application/json');
