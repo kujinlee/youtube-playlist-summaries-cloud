@@ -11,6 +11,8 @@ import { checkSummaryCompleteness } from './summary-completeness';
 import { TRANSCRIBE_RETRIES, GENERATE_JSON_RETRIES, MAX_SUMMARY_ATTEMPTS } from './gemini-cost';
 import type { CloudGeminiCaps } from './gemini-cost';
 import { NonRetryableError } from './job-queue/errors';
+import { sectionStartsComplete, ensureSectionTimestamps } from './summary-section-timestamps';
+import { parseSections } from './html-doc/parse';
 
 /**
  * Fail-closed flag for the cloud audio-fallback transcription path. While `false`, a cloud call
@@ -271,16 +273,6 @@ function computeOverallScore(r: GeminiSummaryResponse['ratings']): number {
   return (r.usefulness + r.depth + r.originality + r.recency + r.completeness) / 5;
 }
 
-/** True if the resolved text carries at least one ▶ timestamp line (all-or-nothing — see resolveTranscriptTokens). */
-function hasTimestamp(s: string): boolean {
-  return s.includes('▶');
-}
-
-/** Neutral observability warn for a generation that had segments but produced no ▶ (the miss may be deterministic). */
-function warnTimestampMiss(videoId: string, segmentCount: number, attempts: number): void {
-  console.warn(`[timestamp-miss] ${videoId}: ${segmentCount} segments but 0 timestamps after ${attempts} attempt(s)`);
-}
-
 // Max SUCCESSFUL parsed attempts for the summary quality loop (completeness + timestamp re-rolls
 // share this single budget). Each attempt may still use generateJson's inner retries for hard errors.
 // Imported from ./gemini-cost — single source, so the cost guard's SUMMARY_MAX_PASSES derivation
@@ -290,18 +282,14 @@ function warnTimestampMiss(videoId: string, segmentCount: number, attempts: numb
 // gets the full MAX_SUMMARY_ATTEMPTS.
 const TIMESTAMP_MISS_CAP = 2;
 
-/**
- * Rank a candidate summary — higher is better. Compared left→right: complete, #sections,
- * has-conclusion, has-timestamp, length. (resolveTranscriptTokens strips stray [[TS:i]], so the
- * spec's "no unresolved token" criterion always holds and is omitted.)
- */
+/** Rank a candidate — complete, #sections, has-conclusion, section-starts-unique-and-increasing, length. */
 function scoreSummary(r: GeminiSummaryResponse, hasSegments: boolean): number[] {
   const s = r.summary;
   return [
     checkSummaryCompleteness(s).complete ? 1 : 0,
     (s.match(/^## /gm) ?? []).length,
     /^##\s+(Conclusion|결론)/im.test(s) ? 1 : 0,
-    !hasSegments || hasTimestamp(s) ? 1 : 0,
+    !hasSegments || sectionStartsComplete(s) ? 1 : 0,   // per-section presence + uniqueness + monotonicity
     s.length,
   ];
 }
@@ -384,7 +372,19 @@ ${indexedTranscript}
       const sections = (chosen.summary.match(/^## /gm) ?? []).length;
       console.warn(`[summary-suspicious] ${videoId} attempts=${attemptsUsed}/${MAX_SUMMARY_ATTEMPTS} reason=${c.reason} confidence=${c.confidence} complete=false len=${chosen.summary.length} sections=${sections}`);
     }
-    if (hasSegments && !hasTimestamp(chosen.summary)) warnTimestampMiss(videoId, segments.length, attemptsUsed);
+    if (hasSegments && !sectionStartsComplete(chosen.summary)) {
+      const lastSeg = segments[segments.length - 1];
+      const videoDuration = Math.floor(lastSeg.offset + lastSeg.duration);
+      const firstStart = Math.floor(segments[0].offset);
+      let prev = -Infinity, bad = 0;
+      for (const s of parseSections(chosen.summary)) {
+        const tr = s.timeRange;
+        if (!tr || tr.startSec <= prev || tr.endSec <= tr.startSec) bad++;
+        else prev = tr.startSec;
+      }
+      chosen.summary = ensureSectionTimestamps(chosen.summary, videoId, { firstStart, videoDuration });
+      if (bad > 0) console.warn(`[summary-section-ts-synth] ${videoId}: normalized ${bad} section timestamp(s) after ${attemptsUsed} attempt(s)`);
+    }
     return chosen;
   } catch (err) {
     // Preserve AbortError identity unwrapped — the worker (Task 6) distinguishes an intentional
@@ -688,3 +688,5 @@ export async function transcribeViaGemini(
   const cause = lastErr instanceof Error ? lastErr.message : String(lastErr);
   throw new Error(`Gemini transcription failed for ${videoId}: ${cause}`, { cause: lastErr });
 }
+
+export const __test = { scoreSummary };

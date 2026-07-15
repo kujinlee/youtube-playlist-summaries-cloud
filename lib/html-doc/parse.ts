@@ -7,7 +7,7 @@ function frontmatterField(md: string, key: string): string | null {
 }
 
 /** True when a line opens or closes a fenced code block (``` or ~~~, with optional info string). */
-function isFenceLine(line: string): boolean {
+export function isFenceLine(line: string): boolean {
   return /^\s*(```|~~~)/.test(line);
 }
 
@@ -39,7 +39,7 @@ function extractTimeRange(proseLines: string[]): SectionTimeRange | null {
   return { startSec, endSec: Number.isNaN(endSec) ? startSec : endSec, label, url };
 }
 
-function parseSections(body: string): ParsedSection[] {
+export function parseSections(body: string): ParsedSection[] {
   // Fence-aware, line-based split on H2 headings. A `## ` line inside a fenced
   // code block must NOT start a new section; dash dividers inside a fence must be
   // preserved verbatim in prose. The first chunk (before any ##) is preamble — discarded.
