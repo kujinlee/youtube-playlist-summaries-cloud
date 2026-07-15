@@ -6,7 +6,7 @@ import { buildDocHtml } from '../../../../lib/html-doc/build-doc-html';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { loadSummaryForServe, resolveAndParse } from '@/lib/html-doc/serve-summary-core';
 import { renderMagazineHtml } from '@/lib/html-doc/render';
-import { generateNonce, buildSummaryCsp } from '@/lib/html-doc/csp';
+import { generateNonce, buildSummaryCsp, buildDigCsp } from '@/lib/html-doc/csp';
 import { fileResponse } from '@/lib/html-doc/file-response';
 import { loadDigForServe } from '@/lib/dig/cloud/load-dig-for-serve';
 import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
@@ -59,7 +59,7 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
         nonce, videoId, language: load.language, mdPath: `${load.base}.md`,
         cloud: { playlistId, isAnonymous: profile?.is_anonymous !== false },
       });
-      return fileResponse(html, { kind: 'html', download, base: load.base, title: load.title, cache: 'private, no-store', csp: buildSummaryCsp(nonce) });
+      return fileResponse(html, { kind: 'html', download, base: load.base, title: load.title, cache: 'private, no-store', csp: buildDigCsp(nonce) });
     } catch (err) {
       const e = err as { statusCode?: number; message?: string };
       if (e.statusCode === 400) return json({ error: e.message }, 400);

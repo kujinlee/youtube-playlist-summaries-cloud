@@ -108,6 +108,24 @@ it('renders the cloud dig doc INTERACTIVE (trigger + poll engine, no SSE)', asyn
   expect(html).toContain('<a class="dig-trigger" data-section="120">'); // un-dug section 2 is clickable
   expect(html).toContain('dig-state?playlist=');                        // cloud poll engine injected
   expect(html).not.toContain('EventSource');                            // not the local SSE script
+  // CSP must permit the poll engine's same-origin fetches, or the interactive doc is inert in a browser.
+  expect(res.headers.get('Content-Security-Policy')).toContain("connect-src 'self'");
+});
+
+it('zero-dug promoted video: serves 200 interactive (all sections un-dug triggers), NOT 404', async () => {
+  mockAuth({ id: 'u' }, false);
+  (loadDigForServe as jest.Mock).mockResolvedValue({
+    ok: true,
+    summary: { title: 'T', sections: [
+      { numeral: '1', title: 'A', prose: 'p', timeRange: { startSec: 65, endSec: 120, label: 'l', url: 'https://youtu.be/v?t=65s' } },
+    ] } as never,
+    envelope: null, dug: [] as never, base: 'base', title: 'T', language: 'en',
+  } as never);
+  const res = await GET(new Request(url()), params);
+  const html = await res.text();
+  expect(res.status).toBe(200);                                         // the "open to start digging" entry path
+  expect(html).toContain('<a class="dig-trigger" data-section="65">');  // the only section is an un-dug trigger
+  expect(res.headers.get('Content-Security-Policy')).toContain("connect-src 'self'");
 });
 
 it('anonymous user (profiles.is_anonymous=true): dig triggers are pre-disabled spans', async () => {

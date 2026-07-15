@@ -90,6 +90,8 @@ describe('cloud dig-deeper serve (integration, real DB) — interactive + no-cha
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Security-Policy')).toContain("script-src 'nonce-");
+    expect(res.headers.get('Content-Security-Policy')).toContain("connect-src 'self'"); // poll engine's fetches allowed
+
     expect(html).toContain('DUG-PROSE');           // dug section rendered
     expect(html).toContain('dig-state?playlist='); // cloud poll engine present (interactive)
     expect(html).not.toContain('EventSource');     // not the local SSE script
