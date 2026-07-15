@@ -1,6 +1,8 @@
 # Summary Section-Timestamp Guarantee — Implementation Plan (v4)
 
-> **v4 delta (round-3 re-review):** finalizer now **canonicalizes `endSec` doc-wide** (each section's `end` = next section's start, last = `max(duration, start+1)`), rewriting any line whose canonical form differs — fixing stale/overlapping ends after an insert/rewrite. `sectionStartsComplete` also checks `endSec > startSec`. Allocator does a **minimal bump** for a too-low known value (`[100,null,101]→[100,101,102]`). Test fixtures use real `timestampLine` labels. See `docs/reviews/plan-summary-section-timestamp-guarantee-v3-rereview.md`.
+> **v4 delta (round-3 re-review):** when the finalizer runs (doc not already `sectionStartsComplete`), it **canonicalizes `endSec` = next section's start** (last = `max(duration, start+1)`) for every section, rewriting any line whose canonical form differs — fixing a kept section's stale/overlapping end after a neighbor was inserted/rewritten. `sectionStartsComplete` also checks `endSec > startSec`. Allocator does a **minimal bump** for a too-low known value (`[100,null,101]→[100,101,102]`). Test fixtures use real `timestampLine` labels with the matching `videoId`. See `docs/reviews/plan-summary-section-timestamp-guarantee-v3-rereview.md`.
+>
+> **Scope note (round-4):** the guarantee is unique + strictly-increasing `startSec` and `endSec > startSec` per section. Contiguous `end == next start` is enforced for every section the finalizer touches, and holds for all real pipeline docs (`resolveTranscriptTokens` emits canonical ends). A doc that is *already* `sectionStartsComplete` but carries overlapping ends from an off-prompt **literal** `▶` line (the model is told to emit `[[TS]]` tokens, not `▶`) fast-returns unchanged — a cosmetic display overlap, never a dig-key collision. Out of scope.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -185,7 +187,12 @@ export function parseSections(body: string): ParsedSection[] {   // was: functio
 ```ts
 // append to tests/lib/summary-section-timestamps.test.ts
 import { timestampLine } from '@/lib/transcript-timestamps';
-const L = (start: number, end: number) => timestampLine(start, end, 'v'); // real canonical ▶ line (correct label)
+// videoId MUST match the id passed to ensureSectionTimestamps in the Task-2 tests ('vid'), so a
+// genuinely-unchanged section's existing line is byte-identical to its canonical form → the finalizer's
+// `lines[slot] === canonical → keep` branch is actually exercised (round-4 Low). A mismatched id would
+// silently rewrite every "kept" section (behaviorally identical since start/end are preserved, but the
+// keep branch would go uncovered).
+const L = (start: number, end: number) => timestampLine(start, end, 'vid'); // real canonical ▶ line (correct label + matching id)
 describe('sectionStartsComplete', () => {
   it('true only when every section has a ▶, starts strictly increasing + unique, AND end > start', () => {
     expect(sectionStartsComplete(['## 1. A', L(10, 30), 'a', '', '## Conclusion', L(30, 60), 'c'].join('\n'))).toBe(true);
