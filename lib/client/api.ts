@@ -218,6 +218,14 @@ export function pdfHref(playlistId: string, videoId: string): string {
   return `/api/pdf/${encodeURIComponent(videoId)}?${p.toString()}`;
 }
 
+/** Builds the serveCloud dig-deeper-doc URL (interactive per-section digging). Mirrors summaryHref/pdfHref. */
+export function digHref(playlistId: string, videoId: string): string {
+  const params = new URLSearchParams();
+  params.set('playlist', playlistId);
+  params.set('type', 'dig-deeper');
+  return `/api/html/${encodeURIComponent(videoId)}?${params.toString()}`;
+}
+
 export type ShareTtl = 7 | 30 | 'never';
 
 export interface CreateShareResult {
