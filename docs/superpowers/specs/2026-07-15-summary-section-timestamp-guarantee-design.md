@@ -204,3 +204,15 @@ This makes coverage total: the summary always ships with every section timestamp
 - Any change to dig inline-citation behavior (must stay byte-identical).
 - Summaries generated with no transcript segments (E7).
 - Per-section *accuracy* of model-provided timestamps beyond presence + ordering + uniqueness (we guarantee a valid, well-ordered `▶`, not that an approximate synthesized anchor is editorially perfect).
+
+---
+
+## Addendum — 2026-07-15: Layer 1 dropped (post-plan dual review)
+
+The Post-Plan dual adversarial review (Codex + Claude) unanimously recommended, and the user confirmed, **dropping Layer 1** (the opt-in "keep out-of-order tokens" change to `resolveTranscriptTokens`). Its only benefit was saving ≤2 re-rolls for the out-of-order-token case on a once-per-video cached path; against that it touched shared dig-critical code and applied fragile interpolation to 1–2s-apart segment offsets (the higher-probability collision surface). **Layers 2 + 3 alone deliver the identical guarantee**, so the change is now:
+
+- **§5 Layer 1 is REMOVED.** `resolveTranscriptTokens` is not modified; dig is byte-identical trivially.
+- **§9 Enumerated Behaviors #1–3 are SUPERSEDED** (they described keeping out-of-order heading tokens and a dig golden). The out-of-order case is now handled by Layer 3 synthesizing a replacement `▶` after the unchanged LIS drops the token. The invariant OUTCOME (every section has a unique, monotonic `▶`) is unchanged.
+- **Correction to §2 / §5:** existing `▶` starts are NOT "unique by construction." `resolveTranscriptTokens` keeps the LIS of float offsets but emits `Math.floor(offset)`, so two near-adjacent kept tokens can floor to the same integer → duplicate `startSec`. Therefore Layer 3 (`ensureSectionTimestamps`) is a **full-document normalizer**: it validates the entire start sequence for uniqueness + strict monotonicity and **rewrites** any offending existing `▶` line (not just inserts missing ones), running even when every section already has a `▶`. The Layer-2 score criterion likewise checks uniqueness + monotonicity, not mere presence.
+
+See `docs/reviews/plan-summary-section-timestamp-guarantee-v1-review.md` and `-v2-rereview.md` for the convergence trail.
