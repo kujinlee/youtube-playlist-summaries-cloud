@@ -71,7 +71,9 @@ it('rejects outputFolder on cloud dig with 400 — even empty (presence-based, b
   expect(res.status).toBe(400);
 });
 
-it('propagates loader 404 (no dig content)', async () => {
+it('propagates a loader 404 (e.g. video not found / not promoted) verbatim', async () => {
+  // NB: zero-dug is NOT a loader 404 anymore (serves 200 interactive) — this pins generic
+  // {ok:false,404} propagation from an upstream loadSummaryForServe failure.
   mockAuth({ id: 'u' });
   (loadDigForServe as jest.Mock).mockResolvedValue({ ok: false, status: 404, error: 'not found' } as never);
   const res = await GET(new Request(url()), params);
