@@ -50,9 +50,14 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
       const load = await loadDigForServe(supabase, { videoId, playlistId, userId: user.id });
       if (!load.ok) return json({ error: load.error }, load.status);
       const nonce = generateNonce();
+      // Authoritative anon status = profiles.is_anonymous, read fail-closed — the SAME source and
+      // semantics the cloud dig POST route uses (dig/[sectionId]/route.ts:47-61). Do NOT trust
+      // user.is_anonymous (not reliably populated here). A null/errored profile ⇒ treat as anonymous.
+      const { data: profile } = await supabase.from('profiles').select('is_anonymous').eq('id', user.id).single();
       const html = renderDigDeeperDoc({
         summary: load.summary, envelope: load.envelope, dug: load.dug,
-        readOnly: true, nonce, videoId, language: load.language, mdPath: `${load.base}.md`,
+        nonce, videoId, language: load.language, mdPath: `${load.base}.md`,
+        cloud: { playlistId, isAnonymous: profile?.is_anonymous !== false },
       });
       return fileResponse(html, { kind: 'html', download, base: load.base, title: load.title, cache: 'private, no-store', csp: buildSummaryCsp(nonce) });
     } catch (err) {
