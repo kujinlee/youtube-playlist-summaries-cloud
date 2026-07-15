@@ -446,3 +446,162 @@ const NAV_SCRIPT = `<script>
 export function navScript(nonce?: string): string {
   return nonce ? NAV_SCRIPT.replace('<script>', `<script nonce="${nonce}">`) : NAV_SCRIPT;
 }
+
+// ── Cloud dig-deeper: poll-based trigger engine ──────────────────────────────
+// Cloud dig runs on a separate worker (no in-process job registry), so there is
+// no SSE. The trigger POSTs (no body), then polls dig-state until the section's
+// blob appears, then re-fetches the page and swaps the section in place — the
+// same DOM-swap as the local SSE 'done' handler. DRIFT WARNING: DIG_CLOUD_SCRIPT
+// below duplicates these helpers in inline ES5 and must be kept in sync. The inline
+// string IS smoke-executed in jsdom (nav-cloud-dig-inline.test.ts), but that covers
+// only the ready/error/toggle paths — the poll-timer path is verified only via the
+// TS mirror, so keep the two in sync by hand.
+export interface CloudDigEnv {
+  fetch: typeof fetch;
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+  getPageHref: () => string;
+  doc: Document;
+}
+
+/** Cloud dig timing (see plan Global Constraints). */
+const CLOUD_DIG_TIMEOUT_MS = 180000;
+const CLOUD_DIG_POLL_START_MS = 2000;
+const CLOUD_DIG_POLL_STEP_MS = 2000;
+const CLOUD_DIG_POLL_MAX_MS = 10000;
+
+/** Set a trigger to the error state (message + data-state + drop href). */
+export function applyCloudDigError(el: HTMLElement, msg: string): void {
+  el.textContent = msg;
+  el.dataset.state = 'error';
+  el.removeAttribute('href');
+}
+
+/**
+ * Re-fetch the current page and replace the [data-start=sec] <section> in place.
+ * Throws if the re-fetched section is missing or NOT actually dug (data-dug!=="true").
+ * This guards against dig-state over-reporting (blob malformed/vanished): without the
+ * check, a swap would silently no-op and the trigger would stay stuck at ⏳ (H2).
+ */
+export async function swapDugSection(sec: number, env: CloudDigEnv): Promise<void> {
+  const res = await env.fetch(env.getPageHref());
+  const html = await res.text();
+  const fresh = new DOMParser().parseFromString(html, 'text/html').querySelector(`[data-start="${sec}"]`);
+  const cur = env.doc.querySelector(`[data-start="${sec}"]`);
+  if (!fresh || fresh.getAttribute('data-dug') !== 'true' || !cur || !cur.parentNode) {
+    throw new Error('dig section not present/dug after generation');
+  }
+  cur.parentNode.replaceChild(env.doc.adoptNode(fresh), cur);
+}
+
+/**
+ * Poll dig-state until `sec` is present, or the timeout ceiling elapses.
+ * The deadline is checked AFTER each sleep so no fetch fires past the ceiling (M1).
+ */
+export async function pollUntilDug(sec: number, videoId: string, playlist: string, env: CloudDigEnv): Promise<boolean> {
+  const deadline = env.now() + CLOUD_DIG_TIMEOUT_MS;
+  let delay = CLOUD_DIG_POLL_START_MS;
+  for (;;) {
+    await env.sleep(delay);
+    if (env.now() > deadline) return false;
+    let ids: number[] = [];
+    try {
+      const r = await env.fetch(`/api/videos/${videoId}/dig-state?playlist=${encodeURIComponent(playlist)}`);
+      if (r.ok) ids = ((await r.json()) as { sectionIds?: number[] }).sectionIds ?? [];
+    } catch { /* keep polling */ }
+    if (ids.includes(sec)) return true;
+    delay = Math.min(delay + CLOUD_DIG_POLL_STEP_MS, CLOUD_DIG_POLL_MAX_MS);
+  }
+}
+
+/** Full cloud dig flow for one trigger: POST → (ready | poll) → swap; maps errors to trigger text. */
+export async function startCloudDig(trigger: HTMLElement, videoId: string, playlist: string, env: CloudDigEnv): Promise<void> {
+  const sec = Number(trigger.dataset.section);
+  trigger.textContent = '⏳ generating…';   // spec §4/§7 loading copy (M2)
+  trigger.dataset.state = 'loading';
+  trigger.removeAttribute('href');
+  let resp: Response;
+  try {
+    resp = await env.fetch(`/api/videos/${videoId}/dig/${sec}?playlist=${encodeURIComponent(playlist)}`, { method: 'POST' });
+  } catch { applyCloudDigError(trigger, '⚠ retry'); return; }
+  if (resp.status === 403) { applyCloudDigError(trigger, '⚠ Create an account to dig deeper'); return; }
+  if (resp.status === 429 || resp.status === 503) { applyCloudDigError(trigger, '⚠ busy — try later'); return; }
+  if (!resp.ok) { applyCloudDigError(trigger, '⚠ retry'); return; }
+  let data: { status?: string } = {};
+  try { data = (await resp.json()) as { status?: string }; } catch { /* treat as enqueued */ }
+  if (data.status === 'ready') {
+    try { await swapDugSection(sec, env); } catch { applyCloudDigError(trigger, '⚠ retry'); }
+    return;
+  }
+  const done = await pollUntilDug(sec, videoId, playlist, env);
+  if (!done) { applyCloudDigError(trigger, '⚠ retry'); return; }
+  try { await swapDugSection(sec, env); } catch { applyCloudDigError(trigger, '⚠ retry'); }
+}
+
+// Inline ES5 mirror of the cloud dig helpers above (the browser can't import the module).
+// Selector uses `a.dig-trigger[data-section]` so the anonymous pre-disabled <span> is inert.
+const DIG_CLOUD_SCRIPT = `<script>
+(function(){
+  var _dg=document.querySelector('.dg');
+  if(!_dg)return;
+  var videoId=location.pathname.split('/')[3];
+  var playlist=new URLSearchParams(location.search).get('playlist');
+  if(!videoId||!playlist)return;
+  function _err(el,msg){el.textContent=msg;el.dataset.state='error';el.removeAttribute('href');}
+  function _swap(sec){
+    return fetch(location.href).then(function(res){return res.text();}).then(function(html){
+      var fd=new DOMParser().parseFromString(html,'text/html');
+      var fresh=fd.querySelector('[data-start="'+sec+'"]');
+      var cur=document.querySelector('[data-start="'+sec+'"]');
+      if(!fresh||fresh.getAttribute('data-dug')!=='true'||!cur||!cur.parentNode){throw new Error('not dug');}
+      cur.parentNode.replaceChild(document.adoptNode(fresh),cur);
+    });
+  }
+  function _poll(sec,trigger){
+    var deadline=Date.now()+180000;var delay=2000;
+    function tick(){
+      if(Date.now()>deadline){_err(trigger,'\\u26a0 retry');return;}
+      fetch('/api/videos/'+videoId+'/dig-state?playlist='+encodeURIComponent(playlist))
+        .then(function(r){return r.ok?r.json():{sectionIds:[]};})
+        .then(function(d){
+          var ids=(d&&d.sectionIds)||[];
+          if(ids.indexOf(sec)>=0){_swap(sec).catch(function(){_err(trigger,'\\u26a0 retry');});}
+          else{delay=Math.min(delay+2000,10000);setTimeout(tick,delay);}
+        })
+        .catch(function(){delay=Math.min(delay+2000,10000);setTimeout(tick,delay);});
+    }
+    setTimeout(tick,delay);
+  }
+  function _start(trigger){
+    var sec=+trigger.dataset.section;
+    trigger.textContent='\\u23f3 generating\\u2026';trigger.dataset.state='loading';trigger.removeAttribute('href');
+    fetch('/api/videos/'+videoId+'/dig/'+sec+'?playlist='+encodeURIComponent(playlist),{method:'POST'})
+      .then(function(r){
+        if(r.status===403){_err(trigger,'\\u26a0 Create an account to dig deeper');return null;}
+        if(r.status===429||r.status===503){_err(trigger,'\\u26a0 busy \\u2014 try later');return null;}
+        if(!r.ok){_err(trigger,'\\u26a0 retry');return null;}
+        return r.json().catch(function(){return {};});
+      })
+      .then(function(d){
+        if(d===null)return;
+        if(d&&d.status==='ready'){_swap(sec).catch(function(){_err(trigger,'\\u26a0 retry');});return;}
+        _poll(sec,trigger);
+      })
+      .catch(function(){_err(trigger,'\\u26a0 retry');});
+  }
+  _dg.addEventListener('click',function(e){
+    var tog=(e.target.closest?e.target.closest('.dig-toggle'):null);
+    if(tog){e.preventDefault();var s=tog.closest('section');if(s){s.classList.toggle('show-gist');tog.textContent=s.classList.contains('show-gist')?'show dig deeper \\u25b6':'show summary \\u2303';}return;}
+    var trig=(e.target.closest?e.target.closest('a.dig-trigger[data-section]'):null);
+    if(!trig)return;
+    e.preventDefault();
+    if(trig.dataset.state==='loading')return;
+    _start(trig);
+  });
+})();
+</script>`;
+
+/** Cloud dig-deeper inline engine (poll-based). Injected in place of navScript for the cloud interactive doc. */
+export function digCloudScript(nonce?: string): string {
+  return nonce ? DIG_CLOUD_SCRIPT.replace('<script>', `<script nonce="${nonce}">`) : DIG_CLOUD_SCRIPT;
+}
