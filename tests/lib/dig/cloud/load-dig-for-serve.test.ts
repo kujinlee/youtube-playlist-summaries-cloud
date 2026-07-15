@@ -97,12 +97,16 @@ describe('loadDigForServe', () => {
     expect(rpc).toHaveBeenCalledWith('reserve_serve_model', expect.anything());
   });
 
-  it('404s when there are no current-version dig blobs', async () => {
+  it('serves ok with an EMPTY dug set when there are no current-version dig blobs (interactive entry: open to start digging)', async () => {
+    // Only a stale-version blob exists → zero CURRENT-version digs. The interactive dig doc must
+    // still serve (all sections render an un-dug trigger) rather than 404 — the owner/status gate
+    // already passed in loadSummaryForServe. (Superseded the read-only viewer's old zero→404.)
     const bundle = fakeBundle({ [`dig/base/65.r${V - 1}.md`]: digBlob(65) }); // stale version only
     mockLoadOk(bundle);
     (modelStore.readModelEnvelope as jest.Mock).mockResolvedValue(null);
     const r = await loadDigForServe({ rpc: jest.fn() } as never, { videoId: 'v', playlistId: 'pl', userId: 'u' });
-    expect(r).toEqual({ ok: false, status: 404, error: 'not found' });
+    expect(r.ok).toBe(true);
+    if (r.ok) { expect(r.dug).toEqual([]); expect(r.base).toBe('base'); }
   });
 
   it('skips a malformed blob but still renders the rest', async () => {

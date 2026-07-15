@@ -6,7 +6,7 @@ import { buildDocHtml } from '../../../../lib/html-doc/build-doc-html';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';
 import { loadSummaryForServe, resolveAndParse } from '@/lib/html-doc/serve-summary-core';
 import { renderMagazineHtml } from '@/lib/html-doc/render';
-import { generateNonce, buildSummaryCsp } from '@/lib/html-doc/csp';
+import { generateNonce, buildSummaryCsp, buildDigCsp } from '@/lib/html-doc/csp';
 import { fileResponse } from '@/lib/html-doc/file-response';
 import { loadDigForServe } from '@/lib/dig/cloud/load-dig-for-serve';
 import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
@@ -50,11 +50,16 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
       const load = await loadDigForServe(supabase, { videoId, playlistId, userId: user.id });
       if (!load.ok) return json({ error: load.error }, load.status);
       const nonce = generateNonce();
+      // Authoritative anon status = profiles.is_anonymous, read fail-closed — the SAME source and
+      // semantics the cloud dig POST route uses (dig/[sectionId]/route.ts:47-61). Do NOT trust
+      // user.is_anonymous (not reliably populated here). A null/errored profile ⇒ treat as anonymous.
+      const { data: profile } = await supabase.from('profiles').select('is_anonymous').eq('id', user.id).single();
       const html = renderDigDeeperDoc({
         summary: load.summary, envelope: load.envelope, dug: load.dug,
-        readOnly: true, nonce, videoId, language: load.language, mdPath: `${load.base}.md`,
+        nonce, videoId, language: load.language, mdPath: `${load.base}.md`,
+        cloud: { playlistId, isAnonymous: profile?.is_anonymous !== false },
       });
-      return fileResponse(html, { kind: 'html', download, base: load.base, title: load.title, cache: 'private, no-store', csp: buildSummaryCsp(nonce) });
+      return fileResponse(html, { kind: 'html', download, base: load.base, title: load.title, cache: 'private, no-store', csp: buildDigCsp(nonce) });
     } catch (err) {
       const e = err as { statusCode?: number; message?: string };
       if (e.statusCode === 400) return json({ error: e.message }, 400);

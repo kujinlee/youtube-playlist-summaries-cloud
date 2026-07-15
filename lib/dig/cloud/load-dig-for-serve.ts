@@ -46,7 +46,11 @@ export async function loadDigForServe(
     }
   }
 
-  if (dug.length === 0) return { ok: false, status: 404, error: 'not found' };
-
+  // Zero current-version digs is NOT a 404 for the interactive frontend: the dig doc is the surface
+  // where a user opens (with every section un-dug) and triggers the first dig. The owner-assert +
+  // promoted-status gate already ran in loadSummaryForServe above, so serving the merged doc with an
+  // empty dug set (all sections render an un-dug `dig deeper ▶` trigger) is correct and safe. (The
+  // read-only viewer's original zero→404 is superseded by the frontend slice; loadDigForServe has no
+  // other caller. dig-state independently returns {sectionIds: []} for the same case.)
   return { ok: true, summary, envelope, dug, base: load.base, title: load.title, language: (load.video as { language: 'en' | 'ko' }).language };
 }

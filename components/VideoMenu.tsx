@@ -4,7 +4,7 @@ import type { Video } from '@/types';
 import AskGeminiMenuItem from './AskGeminiMenuItem';
 import { CURRENT_DOC_VERSION, isOlder } from '@/lib/doc-version';
 import { useScope } from '@/lib/client/scope';
-import { summaryHref, pdfHref } from '@/lib/client/api';
+import { summaryHref, pdfHref, digHref } from '@/lib/client/api';
 
 interface VideoMenuProps {
   video: Video;
@@ -116,6 +116,15 @@ export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArc
                 </button>
               ) : (
                 <span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>Share…</span>
+              )}
+            </li>
+            <li role="none">
+              {ready ? (
+                <a href={digHref(pid, video.id)} onClick={onClose} target="_blank" rel="noopener noreferrer" className={itemClass}>
+                  Dig deeper ↗
+                </a>
+              ) : (
+                <span aria-disabled="true" title="Finalizing…" className={mutedItemClass}>Dig deeper ↗</span>
               )}
             </li>
           </>

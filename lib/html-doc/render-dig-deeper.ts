@@ -8,7 +8,7 @@ import {
   nonceAttr,
   type Palette,
 } from './theme';
-import { digControl, navScript, NAV_CSS } from './nav';
+import { digControl, navScript, digCloudScript, NAV_CSS } from './nav';
 import type { ParsedSummary } from './types';
 import type { ModelEnvelope } from './model-store';
 import type { DugSection } from '../dig/companion-doc';
@@ -235,10 +235,11 @@ export function renderDigDeeperDoc(args: {
   cropMap?: Map<string, CropBox | null>;
   readOnly?: boolean;
   nonce?: string;
+  cloud?: { playlistId: string; isAnonymous: boolean };
 }): string {
   const {
     summary, envelope, dug, mdPath, videoId, language = 'en', cropMap = new Map<string, CropBox | null>(),
-    readOnly = false, nonce,
+    readOnly = false, nonce, cloud,
   } = args;
   const renderer = buildRenderer(mdPath, cropMap);
 
@@ -258,10 +259,10 @@ export function renderDigDeeperDoc(args: {
   const firstStartSec = sections.find((s) => s.startSec !== null)?.startSec ?? null;
 
   // ── Top bar ──────────────────────────────────────────────────────────────
-  const summaryLink = readOnly ? '' : (firstStartSec !== null
+  const summaryLink = (readOnly || cloud) ? '' : (firstStartSec !== null
     ? digControl('summary', firstStartSec)
     : `<a class="dig" data-type="summary">↑ summary</a>`);
-  const expandAllBtn = readOnly ? '' : `<button class="dg-expand-all">⤢ expand all</button>`;
+  const expandAllBtn = (readOnly || cloud) ? '' : `<button class="dg-expand-all">⤢ expand all</button>`;
   const wholeAsk = askAi(buildWholeVideoPrompt(videoUrl, language), '💬 Ask AI about this video');
   const sizeControl = `<span class="dg-size" role="group" aria-label="Slide image size">` +
     `<button class="dg-size-dec" type="button" aria-label="Smaller slides">−</button>` +
@@ -293,11 +294,13 @@ export function renderDigDeeperDoc(args: {
     if (!readOnly) {
       if (isDug) {
         control = ` <a class="dig-toggle">show summary ⌃</a>`;
-        if (ms.isStale && startSec !== null) {
+        if (ms.isStale && startSec !== null && !cloud) {
           control += ` <a class="dig-refresh" data-section="${startSec}">↻ outdated</a>`;
         }
       } else if (startSec !== null) {
-        control = ` <a class="dig-trigger" data-section="${startSec}">dig deeper ▶</a>`;
+        control = cloud?.isAnonymous
+          ? ` <span class="dig-trigger" aria-disabled="true" title="Create an account to dig deeper">dig deeper ▶</span>`
+          : ` <a class="dig-trigger" data-section="${startSec}">dig deeper ▶</a>`;
       }
     }
 
@@ -472,8 +475,8 @@ export function renderDigDeeperDoc(args: {
 })();</script>`;
 
   // readOnly omits the expand-all dialog markup and the navScript engine (both nav-coupled).
-  const dialogs = readOnly ? '' : expandAllDialogs;
-  const nav = readOnly ? '' : navScript(nonce);
+  const dialogs = (readOnly || cloud) ? '' : expandAllDialogs;
+  const nav = cloud ? digCloudScript(nonce) : (readOnly ? '' : navScript(nonce));
 
   return `<!DOCTYPE html>
 <html lang="en">
