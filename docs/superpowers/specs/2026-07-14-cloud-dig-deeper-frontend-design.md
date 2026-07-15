@@ -93,7 +93,7 @@ There is **no modal or overlay** in this slice (no confirm dialog per D2, no exp
 **Shared-code invariant (carried from PR #19):** with the cloud flag **off** (i.e. the local path and every existing caller), `render-dig-deeper.ts` and `nav.ts` output must remain **byte-identical** to today. The new mode is strictly additive and off by default.
 
 ### 7.2 Poll-based trigger handler
-The `navScript` trigger handler gets a **cloud branch** that reuses the existing DOM-swap logic and forks only the completion-wait (SSE → poll):
+A **separate** cloud script (`digCloudScript`), injected in place of `navScript` (not a branch inside `NAV_SCRIPT` — see the byte-identity note below), reuses the DOM-swap logic and forks only the completion-wait (SSE → poll):
 
 1. Click `dig deeper ▶` → set `⏳ generating…`, disable, `POST /api/videos/<videoId>/dig/<sectionId>?playlist=<uuid>` (no body).
 2. On `202 {status:'enqueued', jobId}` → **poll** `GET /dig-state?playlist=<uuid>` with 2s→10s backoff until `sectionId ∈ sectionIds`.
@@ -134,7 +134,7 @@ Poll failure mode: `dig-state` reports presence only, so an *explicitly failed* 
 | 2 | Menu shows enabled Dig-deeper when ready | cloud row, `summaryReady===true` | `<a href={digHref…} target="_blank">Dig deeper ↗</a>` |
 | 3 | Menu shows disabled Dig-deeper when not ready | cloud row, `summaryReady!==true` | `aria-disabled` span, "Finalizing…" tooltip, no href |
 | 4 | Menu hides Dig-deeper in local mode | local scope | item absent (`cloudMode` gate) |
-| 5 | Serve renders interactive (not readOnly) for cloud dig | `type=dig-deeper` cloud GET | `dig-trigger` markup present for un-dug sections; `navScript` injected; `playlist` + cloud flag embedded |
+| 5 | Serve renders interactive (not readOnly) for cloud dig | `type=dig-deeper` cloud GET | `dig-trigger` markup present for un-dug sections; `digCloudScript` (cloud poll engine) injected — **no** SSE `navScript` (`not.toContain('EventSource')`); playlist read from the URL |
 | 6 | Serve keeps local/off path byte-identical | any non-cloud caller of `renderDigDeeperDoc` | output byte-identical to pre-slice (readOnly + all existing callers unchanged) |
 | 7 | Anonymous user gets pre-disabled trigger | cloud dig GET, `isAnonymous` | trigger rendered `aria-disabled` + tooltip; no POST fires on click |
 | 8 | Trigger happy path | click `dig deeper ▶`, `202` then section appears | `⏳ generating…` → poll dig-state → re-fetch → section swapped to dug |
@@ -153,7 +153,7 @@ Poll failure mode: `dig-state` reports presence only, so an *explicitly failed* 
 - **`digHref`** — unit test (assert every param).
 - **`VideoMenu` cloud mode** — component test: enabled link when `summaryReady`, disabled span when not, absent in local scope (behaviors 2–4).
 - **Poll trigger handler** — jsdom tests against the `nav.ts` exported mirror helpers: mock `fetch` for `202`→poll→`done` swap, `200` immediate swap, `403`, `429/503`, timeout, retry (behaviors 8–14).
-- **Render mode** — `render-dig-deeper` tests: cloud flag on → triggers + navScript + playlist/mode markers present; cloud flag off → **byte-identical** to current output; anonymous → pre-disabled trigger (behaviors 5–7).
+- **Render mode** — `render-dig-deeper` tests: cloud flag on → triggers + `digCloudScript` (poll engine, no SSE) present; cloud flag off → **byte-identical** to current output (locked by a pre-change golden snapshot); anonymous → pre-disabled trigger (behaviors 5–7).
 - **Serve integration** — real local Supabase: open `type=dig-deeper` for a promoted video, assert the doc is interactive (trigger markup + nonced navScript + `playlist` embedded) and CSP is nonce-based. (This also finally gives the serve path a committed integration test, which PR #19 noted was missing.)
 - **No live Gemini / no charge** — the serve + poll paths must not touch generation or `reserve_serve_model`; assert `spend_ledger` unchanged across a serve (the money invariant from the serving slice still holds — viewing/opening the doc is free; only the POST trigger spends, and that's the already-built, already-tested backend).
 
@@ -169,7 +169,7 @@ Mock boundaries per project policy: mock Supabase auth/`createServerSupabase` at
 | `components/VideoMenu.tsx` | add cloud `Dig deeper ↗` item | no |
 | `app/api/html/[id]/route.ts` | cloud `dig-deeper` branch: interactive render (not `readOnly`), inject `playlist` + cloud flag, thread `isAnonymous` | no |
 | `lib/html-doc/render-dig-deeper.ts` | add cloud-interactive mode (additive; off = byte-identical); pre-disabled trigger for anonymous | **yes → mandatory dual re-review** |
-| `lib/html-doc/nav.ts` | add poll branch to trigger handler (SSE-vs-poll fork); reuse DOM-swap | **yes → mandatory dual re-review** |
+| `lib/html-doc/nav.ts` | add a **separate** `digCloudScript` + exported poll helpers (reuse DOM-swap logic); `NAV_SCRIPT` left untouched | **yes → mandatory dual re-review** |
 
 **Re-review trigger (dev-process):** the two `lib/html-doc/*` files are shared with the already-merged local path. Per the Iterative Re-Review policy this slice **requires** dual adversarial review to convergence, with explicit verification that (a) the off/local path is byte-identical, and (b) the money invariant is untouched (serving/opening never charges).
 

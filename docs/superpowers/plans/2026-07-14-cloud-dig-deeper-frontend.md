@@ -443,8 +443,10 @@ Append to `lib/html-doc/nav.ts` (after the existing exports, before `NAV_SCRIPT`
 // no SSE. The trigger POSTs (no body), then polls dig-state until the section's
 // blob appears, then re-fetches the page and swaps the section in place — the
 // same DOM-swap as the local SSE 'done' handler. DRIFT WARNING: DIG_CLOUD_SCRIPT
-// below duplicates these helpers in inline ES5 and must be kept in sync (the
-// inline string is not covered by jsdom tests).
+// below duplicates these helpers in inline ES5 and must be kept in sync. The inline
+// string IS smoke-executed in jsdom (nav-cloud-dig-inline.test.ts), but that covers
+// only the ready/error/toggle paths — the poll-timer path is verified only via the
+// TS mirror, so keep the two in sync by hand.
 export interface CloudDigEnv {
   fetch: typeof fetch;
   now: () => number;
@@ -804,7 +806,9 @@ Stop rendering the cloud dig doc read-only; render it interactive with the playl
 
 First widen the existing `mockAuth` helper in `tests/api/html-dig-serve.test.ts` so the client also stubs the profiles read (the current helper only stubs `auth.getUser`; once the route reads `.from`, every dig test — including the pre-existing ones — needs it or the route 500s). Replace the helper:
 ```ts
-// isAnon: profiles.is_anonymous value returned for the signed-in user (undefined ⇒ null row ⇒ fail-closed anon).
+// isAnon: profiles.is_anonymous value returned for a signed-in user. Undefined defaults to false
+// (registered) so pre-existing tests that call mockAuth({id:'u'}) keep working; the dedicated
+// null-row test below exercises the route's real fail-closed path separately.
 function mockAuth(user: { id: string } | null, isAnon?: boolean) {
   (createServerSupabase as jest.Mock).mockReturnValue({
     auth: { getUser: async () => ({ data: { user } }) },
