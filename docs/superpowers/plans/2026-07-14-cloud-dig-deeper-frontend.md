@@ -320,11 +320,112 @@ it('startCloudDig poll timeout → retry message', async () => {
   expect(t.dataset.state).toBe('error');
 });
 
+it('startCloudDig sets loading copy synchronously before the first await', () => {
+  const t = trigger(65);
+  const fetchMock = jest.fn(() => new Promise<Response>(() => {}));   // never resolves
+  void startCloudDig(t, 'vid9', PL, envWith(fetchMock));             // do NOT await
+  expect(t.textContent).toBe('⏳ generating…');                      // set before any await (M2)
+  expect(t.dataset.state).toBe('loading');
+});
+
+it('startCloudDig non-ok 404/409 → retry', async () => {
+  for (const status of [404, 409]) {
+    const t = trigger(65);
+    const fetchMock = jest.fn().mockResolvedValueOnce({ ok: false, status, json: async () => ({}) });
+    await startCloudDig(t, 'vid9', PL, envWith(fetchMock));
+    expect(t.textContent).toBe('⚠ retry');
+    expect(t.dataset.state).toBe('error');
+  }
+});
+
+it('startCloudDig POST network reject → retry (behavior 12)', async () => {
+  const t = trigger(65);
+  const fetchMock = jest.fn().mockRejectedValueOnce(new Error('net down'));
+  await startCloudDig(t, 'vid9', PL, envWith(fetchMock));
+  expect(t.textContent).toBe('⚠ retry');
+});
+
+it('startCloudDig over-report: dig-state says dug but re-fetch section is NOT dug → retry (H2)', async () => {
+  const t = trigger(65);
+  const fetchMock = jest.fn()
+    .mockResolvedValueOnce({ ok: true, status: 202, json: async () => ({ status: 'enqueued', jobId: 'j' }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ sectionIds: [65] }) })                 // poll claims dug
+    .mockResolvedValueOnce({ ok: true, text: async () => '<!doctype html><section data-start="65" data-dug="false"></section>' }); // but not dug
+  await startCloudDig(t, 'vid9', PL, envWith(fetchMock));
+  expect(t.textContent).toBe('⚠ retry');                            // swap threw → error, not stuck ⏳
+});
+
 it('digCloudScript stamps the nonce and is not the local NAV_SCRIPT', () => {
   const s = digCloudScript('abc');
   expect(s.startsWith('<script nonce="abc">')).toBe(true);
   expect(s).toContain('dig-state?playlist=');       // poll path
   expect(s).not.toContain('EventSource');           // never SSE in cloud
+});
+```
+
+- [ ] **Step 1b: Write the SHIPPED-inline-script execution test (H3/M4 — tests the string that actually ships)**
+
+The TS helpers above are the tested mirror, but the browser runs `DIG_CLOUD_SCRIPT`. This test **executes** that inline string in jsdom so a broken POST URL, missing status branch, or broken toggle in the shipped code is caught (behaviors 9, 14, 15). It avoids the poll-timer path (the TS helper tests cover polling) by using the `200 ready` and error branches, which need no timers.
+
+`tests/lib/html-doc/nav-cloud-dig-inline.test.ts`:
+```ts
+/**
+ * @jest-environment jsdom
+ * @jest-environment-options {"url": "http://h/api/html/vid9?playlist=11111111-1111-1111-1111-111111111111&type=dig-deeper"}
+ */
+import { digCloudScript } from '../../../lib/html-doc/nav';
+
+const PL = '11111111-1111-1111-1111-111111111111';
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+function boot(): void {
+  // Extract and run the IIFE body of the SHIPPED inline script (strip the <script> wrapper).
+  const body = digCloudScript().replace(/^<script>/, '').replace(/<\/script>$/, '');
+  // eslint-disable-next-line no-new-func
+  new Function(body)();
+}
+
+beforeEach(() => { (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(); });
+
+it('shipped inline: click un-dug trigger → POST (no body) → 200 ready → swap in place', async () => {
+  document.body.innerHTML =
+    '<div class="dg"><section data-start="65" data-dug="false"><h2>x <a class="dig-trigger" data-section="65">dig deeper ▶</a></h2></section></div>';
+  const fetchMock = (global as unknown as { fetch: jest.Mock }).fetch;
+  fetchMock
+    .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ status: 'ready', sectionId: 65 }) })
+    .mockResolvedValueOnce({ ok: true, text: async () => '<!doctype html><section data-start="65" data-dug="true"><p>DUG-INLINE</p></section>' });
+  boot();
+  (document.querySelector('.dig-trigger') as HTMLElement).click();
+  await flush(); await flush();
+  expect(fetchMock.mock.calls[0][0]).toBe('/api/videos/vid9/dig/65?playlist=' + encodeURIComponent(PL));
+  expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+  expect(fetchMock.mock.calls[0][1].body).toBeUndefined();     // no body
+  expect(document.body.textContent).toContain('DUG-INLINE');   // swapped
+});
+
+it('shipped inline: 429 → busy message, and a second click re-POSTs (behavior 14)', async () => {
+  document.body.innerHTML =
+    '<div class="dg"><section data-start="65" data-dug="false"><h2>x <a class="dig-trigger" data-section="65">dig deeper ▶</a></h2></section></div>';
+  const fetchMock = (global as unknown as { fetch: jest.Mock }).fetch;
+  fetchMock.mockResolvedValue({ ok: false, status: 429, json: async () => ({}) });
+  boot();
+  const trig = document.querySelector('.dig-trigger') as HTMLElement;
+  trig.click(); await flush();
+  expect(trig.textContent).toBe('⚠ busy — try later');
+  trig.click(); await flush();                                 // re-POST from error state
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it('shipped inline: click .dig-toggle flips show-gist and label (behavior 15, zero fetch)', () => {
+  document.body.innerHTML =
+    '<div class="dg"><section data-start="65" data-dug="true"><h2>x <a class="dig-toggle">show summary ⌃</a></h2></section></div>';
+  boot();
+  const toggle = document.querySelector('.dig-toggle') as HTMLElement;
+  const section = document.querySelector('section')!;
+  toggle.click();
+  expect(section.classList.contains('show-gist')).toBe(true);
+  expect(toggle.textContent).toBe('show dig deeper ▶');
+  expect((global as unknown as { fetch: jest.Mock }).fetch).not.toHaveBeenCalled();
 });
 ```
 
@@ -365,21 +466,33 @@ export function applyCloudDigError(el: HTMLElement, msg: string): void {
   el.removeAttribute('href');
 }
 
-/** Re-fetch the current page and replace the [data-start=sec] <section> in place. */
+/**
+ * Re-fetch the current page and replace the [data-start=sec] <section> in place.
+ * Throws if the re-fetched section is missing or NOT actually dug (data-dug!=="true").
+ * This guards against dig-state over-reporting (blob malformed/vanished): without the
+ * check, a swap would silently no-op and the trigger would stay stuck at ⏳ (H2).
+ */
 export async function swapDugSection(sec: number, env: CloudDigEnv): Promise<void> {
   const res = await env.fetch(env.getPageHref());
   const html = await res.text();
   const fresh = new DOMParser().parseFromString(html, 'text/html').querySelector(`[data-start="${sec}"]`);
   const cur = env.doc.querySelector(`[data-start="${sec}"]`);
-  if (fresh && cur && cur.parentNode) cur.parentNode.replaceChild(env.doc.adoptNode(fresh), cur);
+  if (!fresh || fresh.getAttribute('data-dug') !== 'true' || !cur || !cur.parentNode) {
+    throw new Error('dig section not present/dug after generation');
+  }
+  cur.parentNode.replaceChild(env.doc.adoptNode(fresh), cur);
 }
 
-/** Poll dig-state until `sec` is present, or the timeout ceiling elapses. */
+/**
+ * Poll dig-state until `sec` is present, or the timeout ceiling elapses.
+ * The deadline is checked AFTER each sleep so no fetch fires past the ceiling (M1).
+ */
 export async function pollUntilDug(sec: number, videoId: string, playlist: string, env: CloudDigEnv): Promise<boolean> {
   const deadline = env.now() + CLOUD_DIG_TIMEOUT_MS;
   let delay = CLOUD_DIG_POLL_START_MS;
-  while (env.now() <= deadline) {
+  for (;;) {
     await env.sleep(delay);
+    if (env.now() > deadline) return false;
     let ids: number[] = [];
     try {
       const r = await env.fetch(`/api/videos/${videoId}/dig-state?playlist=${encodeURIComponent(playlist)}`);
@@ -388,13 +501,12 @@ export async function pollUntilDug(sec: number, videoId: string, playlist: strin
     if (ids.includes(sec)) return true;
     delay = Math.min(delay + CLOUD_DIG_POLL_STEP_MS, CLOUD_DIG_POLL_MAX_MS);
   }
-  return false;
 }
 
 /** Full cloud dig flow for one trigger: POST → (ready | poll) → swap; maps errors to trigger text. */
 export async function startCloudDig(trigger: HTMLElement, videoId: string, playlist: string, env: CloudDigEnv): Promise<void> {
   const sec = Number(trigger.dataset.section);
-  trigger.textContent = '⏳';
+  trigger.textContent = '⏳ generating…';   // spec §4/§7 loading copy (M2)
   trigger.dataset.state = 'loading';
   trigger.removeAttribute('href');
   let resp: Response;
@@ -435,7 +547,8 @@ const DIG_CLOUD_SCRIPT = `<script>
       var fd=new DOMParser().parseFromString(html,'text/html');
       var fresh=fd.querySelector('[data-start="'+sec+'"]');
       var cur=document.querySelector('[data-start="'+sec+'"]');
-      if(fresh&&cur&&cur.parentNode){cur.parentNode.replaceChild(document.adoptNode(fresh),cur);}
+      if(!fresh||fresh.getAttribute('data-dug')!=='true'||!cur||!cur.parentNode){throw new Error('not dug');}
+      cur.parentNode.replaceChild(document.adoptNode(fresh),cur);
     });
   }
   function _poll(sec,trigger){
@@ -455,7 +568,7 @@ const DIG_CLOUD_SCRIPT = `<script>
   }
   function _start(trigger){
     var sec=+trigger.dataset.section;
-    trigger.textContent='\\u23f3';trigger.dataset.state='loading';trigger.removeAttribute('href');
+    trigger.textContent='\\u23f3 generating\\u2026';trigger.dataset.state='loading';trigger.removeAttribute('href');
     fetch('/api/videos/'+videoId+'/dig/'+sec+'?playlist='+encodeURIComponent(playlist),{method:'POST'})
       .then(function(r){
         if(r.status===403){_err(trigger,'\\u26a0 Create an account to dig deeper');return null;}
@@ -501,7 +614,7 @@ Expected: only **added** lines (all diff hunks are `+`); no `-` line inside the 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add lib/html-doc/nav.ts tests/lib/html-doc/nav-cloud-dig.test.ts
+git add lib/html-doc/nav.ts tests/lib/html-doc/nav-cloud-dig.test.ts tests/lib/html-doc/nav-cloud-dig-inline.test.ts
 git commit -m "feat(dig-fe): cloud poll-based dig engine in nav.ts (NAV_SCRIPT untouched)"
 ```
 
@@ -538,9 +651,17 @@ it('cloud registered: emits interactive triggers + cloud script, no expand-all /
   const html = renderDigDeeperDoc({ ...base, nonce: 'n1', cloud: { playlistId: 'p1', isAnonymous: false } });
   expect(html).toContain('<a class="dig-trigger" data-section="65">');   // clickable trigger
   expect(html).toContain('dig-state?playlist=');                          // cloud poll engine present
-  expect(html).not.toContain('dg-expand-all');                           // expand-all omitted (D4)
+  expect(html).not.toContain('class="dg-expand-all"');                   // expand-all BUTTON omitted (D4) — NOT the bare token (it lives in kept CSS)
+  expect(html).not.toContain('⤢ expand all');                            // expand-all label omitted
   expect(html).not.toContain('EventSource');                             // never SSE
   expect(html).not.toContain('data-type="summary"');                    // no summary back-link
+});
+
+it('cloud: a STALE dug section emits NO dig-refresh control (cloud has no force-refresh)', () => {
+  // Force a stale dug section: genVersion below current ⇒ mergeDigDoc marks it stale.
+  const staleDug = [{ sectionId: 65, startSec: 65, title: 'A', bodyMarkdown: 'b', generatedAt: 'g', genVersion: 1, slides: [] }] as never;
+  const html = renderDigDeeperDoc({ ...base, dug: staleDug, nonce: 'n1', cloud: { playlistId: 'p1', isAnonymous: false } });
+  expect(html).not.toContain('class="dig-refresh"');   // dead control avoided (H1/M1); local still renders it
 });
 
 it('cloud anonymous: trigger pre-disabled as a span (not a link)', () => {
@@ -557,10 +678,41 @@ it('off path is byte-identical to readOnly:false with no cloud arg', () => {
 });
 ```
 
+- [ ] **Step 1b: Capture a pre-change byte golden of the LOCAL render (M3 — true pre/post guard)**
+
+The equality test above only proves the new arg is a no-op relative to itself; it can't catch an unrelated byte change to the local output. Capture a golden from the **current, unedited** `render-dig-deeper.ts`, commit it, and the Step-3 change must keep matching it.
+
+`tests/lib/html-doc/render-dig-deeper.golden.test.ts`:
+```ts
+import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
+
+// One dug + one un-dug section, deterministic nonce → covers trigger, toggle, top-bar, scripts.
+const summary = {
+  title: 'T',
+  sections: [
+    { numeral: '1', title: 'A', prose: 'pa', timeRange: { startSec: 65, endSec: 120, label: 'l', url: 'https://youtu.be/v?t=65s' } },
+    { numeral: '2', title: 'B', prose: 'pb', timeRange: { startSec: 120, endSec: 200, label: 'l', url: 'https://youtu.be/v?t=120s' } },
+  ],
+} as never;
+const dug = [{ sectionId: 65, startSec: 65, title: 'A', bodyMarkdown: 'body', generatedAt: 'g', genVersion: 3, slides: [] }] as never;
+
+it('local dig doc output is byte-stable (golden)', () => {
+  const html = renderDigDeeperDoc({ summary, envelope: null, dug, mdPath: 'base.md', videoId: 'vid9', language: 'en', nonce: 'n1' });
+  expect(html).toMatchSnapshot();
+});
+```
+Run against the **unchanged** renderer to write the snapshot, then commit it:
+```bash
+npx jest render-dig-deeper.golden   # creates __snapshots__/render-dig-deeper.golden.test.ts.snap from current code
+git add tests/lib/html-doc/render-dig-deeper.golden.test.ts tests/lib/html-doc/__snapshots__/render-dig-deeper.golden.test.ts.snap
+git commit -m "test(dig-fe): byte golden of local dig render (pre-change baseline)"
+```
+The golden must be captured **before** the Step-3 edit; if you have already edited `render-dig-deeper.ts`, `git stash` it first.
+
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `npx jest render-dig-deeper.cloud`
-Expected: FAIL — `cloud` arg has no effect yet (interactive triggers/cloud script absent).
+Expected: FAIL — `cloud` arg has no effect yet (interactive triggers/cloud script absent). (`render-dig-deeper.golden` PASSES — it pins current output.)
 
 - [ ] **Step 3: Implement**
 
@@ -600,14 +752,20 @@ export function renderDigDeeperDoc(args: {
   const expandAllBtn = (readOnly || cloud) ? '' : `<button class="dg-expand-all">⤢ expand all</button>`;
 ```
 
-4. Per-section control — anonymous-aware trigger inside the existing `if (!readOnly)` block:
+4. Per-section control — inside the existing `if (!readOnly)` block, (a) suppress the stale `dig-refresh` control in cloud (the cloud script has no refresh handler and cloud only lists current-version digs, so a `↻ outdated` link would be dead), and (b) make the un-dug trigger anonymous-aware. Change the `if (isDug) { … } else if (startSec !== null) { … }` body to:
 ```ts
+      if (isDug) {
+        control = ` <a class="dig-toggle">show summary ⌃</a>`;
+        if (ms.isStale && startSec !== null && !cloud) {
+          control += ` <a class="dig-refresh" data-section="${startSec}">↻ outdated</a>`;
+        }
       } else if (startSec !== null) {
         control = cloud?.isAnonymous
           ? ` <span class="dig-trigger" aria-disabled="true" title="Create an account to dig deeper">dig deeper ▶</span>`
           : ` <a class="dig-trigger" data-section="${startSec}">dig deeper ▶</a>`;
       }
 ```
+(With `cloud` absent, `!cloud` is `true` and `cloud?.isAnonymous` is `undefined` → both branches are byte-identical to today.)
 
 5. Gate the dialogs + choose the script (change the two lines near the end):
 ```ts
@@ -618,7 +776,7 @@ export function renderDigDeeperDoc(args: {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npx jest render-dig-deeper`
-Expected: PASS — new cloud tests green AND all existing `render-dig-deeper*` tests (including `render-dig-deeper-readonly`) still green (proves off-path byte-identity).
+Expected: PASS — new cloud tests green; the **golden snapshot still matches** (proves the local output is byte-unchanged); AND all existing `render-dig-deeper*` tests (including `render-dig-deeper-readonly`) still green. If the golden snapshot fails, the change altered local output — fix the change, do **not** re-record the snapshot.
 
 - [ ] **Step 5: Commit**
 
@@ -638,14 +796,26 @@ Stop rendering the cloud dig doc read-only; render it interactive with the playl
 - Test: `tests/api/html-dig-serve.test.ts` (add interactive assertions; re-pin any obsolete read-only assertion)
 
 **Interfaces:**
-- Consumes: `renderDigDeeperDoc({ ..., cloud })` (Task 4); `user` from `supabase.auth.getUser()` (already in scope), `user.is_anonymous`.
+- Consumes: `renderDigDeeperDoc({ ..., cloud })` (Task 4); `user` from `supabase.auth.getUser()` and `profiles.is_anonymous` read via the same `supabase` client (both already available in the branch).
 
-- [ ] **Step 1: Write the failing test**
+**Critical — `isAnonymous` source (Blocking B1):** the serve route must resolve `isAnonymous` from **`profiles.is_anonymous`, fail-closed**, exactly as the cloud dig **POST** route does (`app/api/videos/[id]/dig/[sectionId]/route.ts:47-61`), whose in-code comment says: *"Do NOT trust `user.is_anonymous` — it is not guaranteed to be populated in this project's auth config. Fail CLOSED: only an explicit `is_anonymous===false` grants registered access."* Using `user.is_anonymous` would make the pre-disable silently never fire. Because the route now calls `supabase.from('profiles')`, the test `mockAuth` must be widened to stub `.from` (see Step 1).
 
-Add to `tests/api/html-dig-serve.test.ts` (the harness — `jest.mock('next/headers')`, `mockAuth`, `loadDigForServe` mock — is already in that file):
+- [ ] **Step 1: Widen `mockAuth`, then write the failing tests**
+
+First widen the existing `mockAuth` helper in `tests/api/html-dig-serve.test.ts` so the client also stubs the profiles read (the current helper only stubs `auth.getUser`; once the route reads `.from`, every dig test — including the pre-existing ones — needs it or the route 500s). Replace the helper:
+```ts
+// isAnon: profiles.is_anonymous value returned for the signed-in user (undefined ⇒ null row ⇒ fail-closed anon).
+function mockAuth(user: { id: string } | null, isAnon?: boolean) {
+  (createServerSupabase as jest.Mock).mockReturnValue({
+    auth: { getUser: async () => ({ data: { user } }) },
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: user ? { is_anonymous: isAnon ?? false } : null }) }) }) }),
+  });
+}
+```
+This is backward-compatible: the pre-existing tests call `mockAuth({ id: 'u' })` → `isAnon` undefined → `{ is_anonymous: false }` → registered (their assertions are unaffected). Then add:
 ```ts
 it('renders the cloud dig doc INTERACTIVE (trigger + poll engine, no SSE)', async () => {
-  mockAuth({ id: 'u' }); // is_anonymous undefined ⇒ treated as registered
+  mockAuth({ id: 'u' }, false); // registered
   (loadDigForServe as jest.Mock).mockResolvedValue({
     ok: true,
     summary: { title: 'T', sections: [
@@ -663,8 +833,8 @@ it('renders the cloud dig doc INTERACTIVE (trigger + poll engine, no SSE)', asyn
   expect(html).not.toContain('EventSource');                            // not the local SSE script
 });
 
-it('anonymous user: dig triggers are pre-disabled spans', async () => {
-  mockAuth({ id: 'u', is_anonymous: true } as never);
+it('anonymous user (profiles.is_anonymous=true): dig triggers are pre-disabled spans', async () => {
+  mockAuth({ id: 'u' }, true); // anonymous per profiles
   (loadDigForServe as jest.Mock).mockResolvedValue({
     ok: true,
     summary: { title: 'T', sections: [
@@ -676,8 +846,24 @@ it('anonymous user: dig triggers are pre-disabled spans', async () => {
   expect(html).toContain('aria-disabled="true" title="Create an account to dig deeper"');
   expect(html).not.toContain('<a class="dig-trigger" data-section="65">');
 });
+
+it('unresolved profile (null row) fails CLOSED → triggers pre-disabled', async () => {
+  // user present but profiles read returns null → treated as anonymous (fail-closed).
+  (createServerSupabase as jest.Mock).mockReturnValue({
+    auth: { getUser: async () => ({ data: { user: { id: 'u' } } }) },
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: null }) }) }) }),
+  });
+  (loadDigForServe as jest.Mock).mockResolvedValue({
+    ok: true,
+    summary: { title: 'T', sections: [
+      { numeral: '1', title: 'A', prose: 'p', timeRange: { startSec: 65, endSec: 120, label: 'l', url: 'https://youtu.be/v?t=65s' } },
+    ] } as never,
+    envelope: null, dug: [] as never, base: 'base', title: 'T', language: 'en',
+  } as never);
+  const html = await (await GET(new Request(url()), params)).text();
+  expect(html).toContain('aria-disabled="true" title="Create an account to dig deeper"'); // fail-closed
+});
 ```
-(`mockAuth` currently returns `{ data: { user } }` where `user` is the passed object; passing `is_anonymous` through it is sufficient. If `mockAuth`'s signature is too narrow for the extra field, widen its parameter type to `Record<string, unknown> | null` in the test file.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -686,8 +872,12 @@ Expected: FAIL on the two new tests — the branch still passes `readOnly: true`
 
 - [ ] **Step 3: Implement**
 
-In `app/api/html/[id]/route.ts`, in the `type === 'dig-deeper'` branch, replace the `renderDigDeeperDoc({...})` call (currently passing `readOnly: true`) with:
+In `app/api/html/[id]/route.ts`, in the `type === 'dig-deeper'` branch: first resolve `isAnonymous` from `profiles.is_anonymous` (fail-closed, mirroring the POST route), then replace the `renderDigDeeperDoc({...})` call (currently passing `readOnly: true`) so it passes `cloud` instead. Use the SAME `supabase` client the branch already created via `createServerSupabase` (the one it called `.auth.getUser()` on) and the `user` from that call:
 ```ts
+    // Authoritative anon status = profiles.is_anonymous, read fail-closed — the SAME source and
+    // semantics the cloud dig POST route uses (dig/[sectionId]/route.ts:47-61). Do NOT trust
+    // user.is_anonymous (not reliably populated here). A null/errored profile ⇒ treat as anonymous.
+    const { data: profile } = await supabase.from('profiles').select('is_anonymous').eq('id', user.id).single();
     const html = renderDigDeeperDoc({
       summary: load.summary,
       envelope: load.envelope,
@@ -696,10 +886,10 @@ In `app/api/html/[id]/route.ts`, in the `type === 'dig-deeper'` branch, replace 
       videoId,
       language: load.language,
       mdPath: `${load.base}.md`,
-      cloud: { playlistId, isAnonymous: (user as { is_anonymous?: boolean }).is_anonymous === true },
+      cloud: { playlistId, isAnonymous: profile?.is_anonymous !== false },
     });
 ```
-Remove the `readOnly: true` property. Everything else in the branch (the `format` guard, `loadDigForServe`, `fileResponse`, CSP, error mapping) is unchanged.
+Remove the `readOnly: true` property. Match the actual in-file names for the client (`supabase`) and user (`user`) if they differ. Everything else in the branch (the `format` guard, `loadDigForServe`, `fileResponse`, CSP, error mapping) is unchanged.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -745,6 +935,10 @@ it('serves an interactive cloud dig doc and charges nothing', async () => {
   const { playlistId } = await seedPlaylist(user);
   await seedPromotedVideo(user, playlistId, VIDEO_ID);       // summaryReady/promoted summary blob
   await seedSummaryBlob(user, playlistId, VIDEO_ID);         // if separate from seedPromotedVideo in the harness
+  // writeDigSectionBlob MUST write at the current DIG_GENERATOR_VERSION → key dig/{base}/65.r{V}.md,
+  // the version dig-state/route.ts filters on. If it writes an older version, loadDigForServe treats
+  // the section as un-dug (renders a trigger, not DUG-PROSE) and this test fails. Confirm the helper
+  // stamps DIG_GENERATOR_VERSION (that is how the generation writer produces it).
   await writeDigSectionBlob(user, playlistId, VIDEO_ID, 65, '# Dug\n\nDUG-PROSE');  // one current-version dig blob
 
   const before = await adminClient.from('spend_ledger').select('amount_cents');
@@ -754,6 +948,12 @@ it('serves an interactive cloud dig doc and charges nothing', async () => {
     { params: Promise.resolve({ id: VIDEO_ID }) },
   );
   const html = await res.text();
+  // Also poll dig-state (the interactive doc's progress mechanism) — it must be charge-free too (L1).
+  const { GET: digStateGET } = await import('@/app/api/videos/[id]/dig-state/route');
+  const stateRes = await digStateGET(
+    new Request(`http://x/api/videos/${VIDEO_ID}/dig-state?playlist=${playlistId}`),
+    { params: Promise.resolve({ id: VIDEO_ID }) },
+  );
   const after = await adminClient.from('spend_ledger').select('amount_cents');
 
   expect(res.status).toBe(200);
@@ -761,10 +961,12 @@ it('serves an interactive cloud dig doc and charges nothing', async () => {
   expect(html).toContain('DUG-PROSE');                       // dug section rendered
   expect(html).toContain('dig-state?playlist=');             // cloud poll engine present (interactive)
   expect(html).not.toContain('EventSource');                 // not the local SSE script
+  expect((await stateRes.json()).sectionIds).toContain(65);  // dig-state sees the dug section
   const sum = (rows: { amount_cents: number }[]) => rows.reduce((a, r) => a + r.amount_cents, 0);
-  expect(sum(after.data ?? [])).toBe(sum(before.data ?? [])); // opening the doc charged nothing
+  expect(sum(after.data ?? [])).toBe(sum(before.data ?? [])); // opening the doc AND polling charged nothing
 });
 ```
+(Adjust the `dig-state` GET's second-arg shape to match how the sibling integration tests invoke route handlers, if different.)
 
 - [ ] **Step 2: Run it**
 
@@ -793,7 +995,7 @@ After Task 6, before any push/merge (human gate):
 
 ## Self-Review
 
-**Spec coverage:** §3 D1 → Tasks 3–5 (interactive doc); D2 (no confirm) → Task 3 flow has no confirm; D3 (anon pre-disable + 403) → Tasks 4 (span) & 3/5 (403 message); D4 (no expand-all) → Task 4 gates `dg-expand-all` off + Task 3 script has no expand-all. §4 non-blocking → per-section trigger only, no overlay. §5 URL contracts → Tasks 1 (menu href), 3 (POST/poll/re-fetch). §6 states/dismissal → Task 3 error map + toggle. §7 mechanics → Tasks 3–5. §9 behaviors 1–15 → covered: 1 (T1), 2–4 (T2), 5–6 (T4), 7 (T4/T5), 8–9 (T3), 10–13 (T3), 14 (T3 retry = re-run startCloudDig from idle), 15 (T3 toggle test — add if desired). §10 testing → Tasks per-file + T6 integration. §11 files → all five + integration. **No gaps.**
+**Spec coverage:** §3 D1 → Tasks 3–5 (interactive doc); D2 (no confirm) → Task 3 flow has no confirm; D3 (anon pre-disable + 403) → Task 4 (span) + Task 5 (profiles fail-closed source, 3 tests incl. null-row) + Task 3 (403 message); D4 (no expand-all) → Task 4 gates the expand-all button off + Task 3 script has no expand-all. §4 non-blocking → per-section trigger only, no overlay. §5 URL contracts → Tasks 1 (menu href), 3 (POST/poll/re-fetch). §6 states/dismissal → Task 3 error map + toggle. §7 mechanics → Tasks 3–5. §9 behaviors 1–15 → covered: 1 (T1), 2–4 (T2), 5–6 (T4 incl. golden + stale-refresh), 7 (T4/T5), 8–9 (T3 helper + T3 inline execution), 10 (T3), 11 (T3 429/503), 12 (T3 404/409 + network-reject + over-report swap-throw), 13 (T3 timeout), 14 (T3 inline re-POST after 429), 15 (T3 inline toggle). §10 testing → Tasks per-file + T6 integration (serve + dig-state no-charge). §11 files → all five + integration. **No gaps.**
 
 **Placeholder scan:** every code step contains complete code; no TBD/"handle errors"/"similar to". Poll constants are exact. The one deliberate "adapt to sibling" is Task 6's harness import names — unavoidable (the integration harness names live in that suite) and bounded by "read a sibling file; do not invent helpers."
 

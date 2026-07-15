@@ -86,9 +86,9 @@ There is **no modal or overlay** in this slice (no confirm dialog per D2, no exp
 `app/api/html/[id]/route.ts` cloud `dig-deeper` branch stops passing `readOnly: true` and instead requests a **cloud-interactive** render:
 
 - The per-section `dig-trigger` markup (already present in `render-dig-deeper.ts`, gated by `!readOnly`) is emitted for un-dug sections.
-- The `navScript` engine is injected (nonced, as today).
-- Two new values are injected into the page so the in-doc JS can build authed cloud URLs and pick the poll path: the **`playlistId`** and a **`cloud` mode flag** (e.g. a `data-dig-mode="cloud"` / `data-playlist="<uuid>"` attribute on the doc root, or equivalent nonced JS constants).
-- **`isAnonymous`** is resolved at the serve route (same signal the POST path uses) and threaded into the render so anonymous users get the pre-disabled trigger (D3).
+- A **separate** nonced inline script (`digCloudScript`) is injected **in place of** the local `navScript` (see 7.2 for why a separate script rather than a branch inside `NAV_SCRIPT`).
+- The script derives what it needs from the page URL itself — `videoId` from the path, `playlistId` from the `?playlist=` query (already on the dig-doc URL) — so no extra data attributes are required. Its mere presence signals cloud mode (it is injected only in cloud renders).
+- **`isAnonymous`** is resolved at the serve route from **`profiles.is_anonymous`, fail-closed** — the SAME source and semantics the cloud dig POST route uses (`dig/[sectionId]/route.ts:47-61`); `user.is_anonymous` is explicitly not trusted in this project. It is threaded into the render so anonymous users get the pre-disabled trigger (D3).
 
 **Shared-code invariant (carried from PR #19):** with the cloud flag **off** (i.e. the local path and every existing caller), `render-dig-deeper.ts` and `nav.ts` output must remain **byte-identical** to today. The new mode is strictly additive and off by default.
 
@@ -103,7 +103,7 @@ The `navScript` trigger handler gets a **cloud branch** that reuses the existing
 
 Same-origin `fetch`/`POST` carry the Supabase auth cookie, so no token plumbing is needed in the doc.
 
-Keeping **one** `navScript` with an SSE-vs-poll branch (rather than a separate cloud script) keeps the DOM-swap logic shared and drift-free; only the wait forks.
+**Why a separate `digCloudScript`, not a branch inside `NAV_SCRIPT`:** `NAV_SCRIPT` is one shared inline-string constant used by the local path. Adding a cloud branch inside it would change the local output and **break the byte-identical-when-off invariant** (§7.1) — the load-bearing constraint carried from PR #19. So cloud gets a *separate* nonced script injected in place of `navScript`; `NAV_SCRIPT` is left untouched. The cost is some duplication of the DOM-swap logic; it is mitigated by (a) exported, jsdom-tested TS mirror helpers (`swapDugSection`/`pollUntilDug`/`startCloudDig`), (b) a test that **executes the shipped inline string** in jsdom, and (c) a `DRIFT WARNING` comment — the same pattern the repo already uses for `NAV_SCRIPT`.
 
 ### 7.3 Error map
 | Response / condition | Trigger UI | Wording note |
@@ -179,5 +179,5 @@ Mock boundaries per project policy: mock Supabase auth/`createServerSupabase` at
 
 - **Expand-all** batch dig (D4).
 - **Summary-doc deep-links** — the cloud summary doc staying read-only means no per-section `dig deeper` links there and no `?dig=N` auto-trigger; entry is the menu only.
-- **Force-refresh** of a *current-version* dug section — the cloud POST has no `force`; stale (older-version) sections already render as un-dug and re-dig normally, which covers the common case.
+- **Force-refresh** of a dug section — the cloud POST has no `force`, and `loadDigForServe` lists **only current-version** dig blobs, so a cloud dug section is always current: no `↻ outdated` / `dig-refresh` control is emitted in cloud (that affordance stays local-only, where the local generator can be behind). An older-version dig simply does not appear as dug in cloud, so its section renders an ordinary `dig deeper ▶` trigger and re-digs at the current version. The render explicitly suppresses `dig-refresh` when the `cloud` flag is set, so no dead control can appear even if a stale blob somehow surfaced.
 - **Precise job-failure signal** — polling the job-status API for explicit worker failure (vs. the timeout ceiling used here).
