@@ -56,3 +56,78 @@ export function sectionStartsComplete(markdown: string): boolean {
   }
   return true;
 }
+
+/** Per-section layout matching parseSections exactly: heading line index + the index of the section's
+ *  "timestamp slot" line (the first non-blank, non-`---` body line IF it starts with ▶ — well-formed or
+ *  not, mirroring parse.ts:extractTimeRange), else null. Same order/count as parseSections. */
+function sectionLayout(markdown: string): { headingLine: number; tsLine: number | null }[] {
+  const lines = markdown.split('\n');
+  const layout: { headingLine: number; tsLine: number | null }[] = [];
+  let inFence = false;
+  let cur: { headingLine: number; tsLine: number | null } | null = null;
+  let sawBody = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (isFenceLine(line)) { inFence = !inFence; if (cur) sawBody = true; continue; }
+    if (inFence) { if (cur) sawBody = true; continue; }
+    if (/^##\s+/.test(line)) { if (cur) layout.push(cur); cur = { headingLine: i, tsLine: null }; sawBody = false; continue; }
+    if (cur && !sawBody) {
+      if (/^-{3,}\s*$/.test(line)) continue;   // parse.ts drops pure-dash dividers before the first body line
+      if (line.trim() === '') continue;         // skip blanks
+      sawBody = true;
+      if (line.trimStart().startsWith('▶')) cur.tsLine = i; // the timestamp slot (parse.ts consumes it well-formed or not)
+    }
+  }
+  if (cur) layout.push(cur);
+  return layout;
+}
+
+/**
+ * Full-document normalizer (Layer 3). Guarantees every section has a ▶ whose startSec is unique and
+ * strictly increasing across the whole document. Keeps well-formed lines whose start is unchanged
+ * (byte-identical); REWRITES existing ▶ lines whose start must change (e.g. floor collisions) and
+ * INSERTS lines for sections with none. Returns input unchanged when already complete.
+ */
+export function ensureSectionTimestamps(
+  markdown: string,
+  videoId: string,
+  bounds: { firstStart: number; videoDuration: number },
+): string {
+  if (sectionStartsComplete(markdown)) return markdown;
+
+  const sections = parseSections(markdown);
+  if (sections.length === 0) return markdown;
+
+  const known = sections.map((s) => (s.timeRange ? s.timeRange.startSec : null));
+  const starts = allocateSectionStarts(known, bounds.firstStart, bounds.videoDuration);
+  // Belt-and-suspenders: allocateSectionStarts is proven strictly-increasing, so this never fires;
+  // it is a cheap guard against a future allocator regression. Do NOT write a test expecting it.
+  for (let i = 1; i < starts.length; i++) if (starts[i] <= starts[i - 1]) starts[i] = starts[i - 1] + 1;
+
+  const layout = sectionLayout(markdown); // same order/count as `sections`
+  const lines = markdown.split('\n');
+  const replace = new Map<number, string>();     // existing ▶ slot line → canonical line
+  const insertAfter = new Map<number, string>(); // heading line → inserted canonical line
+  // Canonicalize EVERY section's ▶ to timestampLine(start, end) where end = next section's start (or,
+  // for the last section, max(videoDuration, start+1) so end > start even in the pathological regime).
+  // A line already byte-identical to its canonical form is left untouched (idempotent no-op for good
+  // docs); any other — missing, colliding, malformed, OR merely stale-end after a neighbor moved — is
+  // rewritten/inserted. This is what fixes the "kept line keeps a stale/overlapping end" defect.
+  sections.forEach((s, idx) => {
+    const endSec = idx + 1 < sections.length
+      ? starts[idx + 1]
+      : Math.max(bounds.videoDuration, starts[idx] + 1);
+    const canonical = timestampLine(starts[idx], endSec, videoId);
+    const slot = layout[idx].tsLine;
+    if (slot !== null && lines[slot] === canonical) return;   // already canonical → keep byte-identical
+    if (slot !== null) replace.set(slot, canonical);          // rewrite (start and/or end changed, or malformed)
+    else insertAfter.set(layout[idx].headingLine, canonical); // no ▶ present → insert after heading
+  });
+
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    out.push(replace.has(i) ? (replace.get(i) as string) : lines[i]);
+    if (insertAfter.has(i)) out.push(insertAfter.get(i) as string);
+  }
+  return out.join('\n');
+}
