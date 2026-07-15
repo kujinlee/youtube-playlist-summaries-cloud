@@ -1,0 +1,473 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`local dig doc output is byte-stable (golden) 1`] = `
+"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="dig-deeper-doc v1">
+<meta name="source-md" content="base.md">
+<title>T</title>
+<script nonce="n1">(function(){try{var t=localStorage.getItem('html-doc-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}})();</script>
+<script nonce="n1">(function(){try{function s(raw){if(raw==null){return 100;}if(typeof raw==='string'&&raw.trim()===''){return 100;}var n=Number(raw);if(!Number.isFinite(n)){return 100;}n=Math.round(n/10)*10;return Math.min(150,Math.max(50,n));}var v=s(localStorage.getItem('digSlideScale'));document.documentElement.style.setProperty('--dig-slide-scale',v/100);}catch(e){}})();</script>
+<script nonce="n1">(function(){try{function c(raw){return raw==='off'?'off':'on';}if(c(localStorage.getItem('digCaptions'))==='off'){document.documentElement.classList.add('dg-hide-caps');}}catch(e){}})();</script>
+<style nonce="n1">
+:root{--page:#eef0f3;--card:#fbf9f6;--ink:#2a2622;--rule:#ece7df;--ghost:#f0e7d6;--gold:#b07700;--goldline:#e0a800;--li:#4a463f;--foot:#9a917f;--shadow:0 1px 3px rgba(0,0,0,.08);--link:#b07700;--h3:#5b463a;--h4:#6b5a4a;--codebg:#f1ebe0;--preborder:#e6ddcf;--quote:#8a8276;--meta:#8a8276}
+[data-theme="light"]{--page:#eef0f3;--card:#fbf9f6;--ink:#2a2622;--rule:#ece7df;--ghost:#f0e7d6;--gold:#b07700;--goldline:#e0a800;--li:#4a463f;--foot:#9a917f;--shadow:0 1px 3px rgba(0,0,0,.08);--link:#b07700;--h3:#5b463a;--h4:#6b5a4a;--codebg:#f1ebe0;--preborder:#e6ddcf;--quote:#8a8276;--meta:#8a8276}
+[data-theme="dark"]{--page:#1a1714;--card:#221d18;--ink:#e8e2d6;--rule:#332c24;--ghost:#2e2820;--gold:#e6b54d;--goldline:#e0a800;--li:#cfc8ba;--foot:#8a8174;--shadow:0 1px 3px rgba(0,0,0,.5);--link:#e6b54d;--h3:#d8cdb8;--h4:#c4b7a0;--codebg:#2a241c;--preborder:#332c24;--quote:#9a9082;--meta:#9a9082}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--page:#1a1714;--card:#221d18;--ink:#e8e2d6;--rule:#332c24;--ghost:#2e2820;--gold:#e6b54d;--goldline:#e0a800;--li:#cfc8ba;--foot:#8a8174;--shadow:0 1px 3px rgba(0,0,0,.5);--link:#e6b54d;--h3:#d8cdb8;--h4:#c4b7a0;--codebg:#2a241c;--preborder:#332c24;--quote:#9a9082;--meta:#9a9082}}
+html.theme-ready body,html.theme-ready #theme-toggle,html.theme-ready #print-btn{transition:background-color .2s,color .2s}
+#theme-toggle,#print-btn{position:fixed;top:1rem;width:2.4rem;height:2.4rem;border-radius:50%;border:1px solid rgba(128,128,128,.35);background:var(--card);color:var(--ink);font-size:1.1rem;line-height:1;cursor:pointer;box-shadow:var(--shadow);display:flex;align-items:center;justify-content:center;z-index:10}
+#theme-toggle{right:1rem}#print-btn{right:3.6rem}
+@media print{:root,:root:not([data-theme]),[data-theme="light"],[data-theme="dark"]{--page:#eef0f3;--card:#fbf9f6;--ink:#2a2622;--rule:#ece7df;--ghost:#f0e7d6;--gold:#b07700;--goldline:#e0a800;--li:#4a463f;--foot:#9a917f;--shadow:0 1px 3px rgba(0,0,0,.08);--link:#b07700;--h3:#5b463a;--h4:#6b5a4a;--codebg:#f1ebe0;--preborder:#e6ddcf;--quote:#8a8276;--meta:#8a8276}#theme-toggle,#print-btn{display:none}}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);line-height:1.7;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",'Apple SD Gothic Neo','Malgun Gothic',Helvetica,Arial,sans-serif}
+.dg{max-width:52rem;margin:0 auto;background:var(--card);padding:2.8rem 3rem 4rem;box-shadow:var(--shadow)}
+html.theme-ready .dg{transition:background-color .2s,color .2s}
+.dg h1{font-family:Georgia,'Nanum Myeongjo','Apple SD Gothic Neo','Times New Roman',serif;font-size:2rem;line-height:1.2;margin:0 0 .15em;color:var(--ink)}
+.dg h2{font-family:Georgia,'Nanum Myeongjo',serif;font-size:1.5rem;margin:2.2em 0 .35em;padding-top:1.5em;border-top:1px solid var(--rule);color:var(--ink)}
+.dg h2:first-of-type{border-top:0;padding-top:0;margin-top:.4em}
+.dg .lead{font-size:1.02rem;line-height:1.55;color:var(--gold);font-weight:400;margin:.3em 0 .9em;max-width:92%}
+.dg .ts{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.85rem;font-weight:400;text-decoration:none;white-space:nowrap}
+.dg .ts:hover{text-decoration:underline}
+.dg h3{font-size:1.15rem;margin:1.6em 0 .3em;color:var(--h3)}
+.dg .dug h3{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:1.12rem;font-weight:700;letter-spacing:.01em;margin:1.8em 0 .4em;color:var(--gold)}
+.dg h4{font-size:1.02rem;margin:1.2em 0 .3em;color:var(--h4)}
+.dg p{margin:.75em 0;color:var(--ink)}
+.dg a{color:var(--link)}
+.dg ul,.dg ol{padding-left:1.4em;margin:.5em 0}
+.dg li{margin:.4em 0;color:var(--li);line-height:1.65}
+.dg strong{color:var(--ink);font-weight:700}
+.dg blockquote{border-left:3px solid var(--goldline);margin:1.1em 0;padding:.2em 1.1em;color:var(--quote);font-style:italic}
+.dg code{font-family:'SF Mono',Menlo,Monaco,Consolas,monospace;font-size:.88em;background:var(--codebg);padding:.1em .35em;border-radius:4px}
+.dg pre{background:var(--codebg);border:1px solid var(--preborder);border-radius:8px;padding:1em 1.2em;overflow:auto;line-height:1.4}
+.dg pre code{background:none;padding:0;font-size:.85em;white-space:pre}
+.dg img{max-width:100%;height:auto;border-radius:6px;margin:.75em 0;display:block}
+.dg footer{margin-top:2.6em;padding-top:1.2em;border-top:1px solid var(--rule);color:var(--foot);font-size:.8rem}
+@media print{body{background:#fff}.dg{box-shadow:none}#theme-toggle{display:none}.dg-zoom{display:none!important}}
+.missing-slide{display:inline-block;color:var(--meta);font-style:italic;font-size:.85rem;padding:.15em .4em;border:1px dashed var(--rule);border-radius:4px}
+.dig{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}.dig:hover{text-decoration:underline}
+section{padding:2.4em 0;border-top:2px solid var(--rule)}
+section:first-of-type{border-top:0}
+.dig-slide-fig{margin:2em auto;max-width:100%}
+.dg img.dig-slide{display:block;margin:0 auto;max-width:100%;max-height:calc(300px * var(--dig-slide-scale, 1));border:1px solid var(--rule);cursor:zoom-in}
+.dg .dig-slide-crop{display:block;margin:0 auto;overflow:hidden;width:min(100%, calc(540px * var(--dig-slide-scale, 1)));border:1px solid var(--rule);border-radius:6px}
+.dg .dig-slide-crop>img.dig-slide{display:block;width:100%;height:100%;max-height:none;margin:0;border:0;border-radius:0;object-fit:cover;cursor:zoom-in}
+.dig-cap{margin:.5em auto 0;text-align:center;font-size:.8rem;color:var(--meta);line-height:1.4}
+.dg .dig-trigger,.dg .dig-toggle,.dg .dig-refresh{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
+.dg .dig-trigger:hover,.dg .dig-toggle:hover,.dg .dig-refresh:hover{text-decoration:underline}
+section[data-dug="true"] .gist{display:none}
+section[data-dug="true"] .dug{display:block}
+section[data-dug="true"].show-gist .gist{display:block}
+section[data-dug="true"].show-gist .dug{display:none}
+.dg-topbar{display:flex;flex-wrap:wrap;align-items:center;gap:1em;margin-bottom:1.6em;font-size:.85rem}
+.dg-expand-all{background:none;border:1px solid var(--rule);border-radius:4px;padding:.2em .6em;cursor:pointer;font-size:.85rem;color:var(--meta)}
+.dg-orphans{margin-top:3em;padding-top:1.5em;border-top:2px dashed var(--rule)}
+.dg-orphan-note{font-size:.82rem;color:var(--meta);font-style:italic}
+#_dg-ea-dlg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center}
+#_dg-ea-dlg[data-open]{display:flex}
+#_dg-ea-prog{display:none;position:fixed;left:0;right:0;bottom:0;z-index:9000}
+#_dg-ea-prog[data-open]{display:block}
+._dg-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.6em 1em;background:var(--card,#fff);border-top:1px solid var(--rule);padding:.7em 1.2em;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:.9rem;color:var(--ink);box-shadow:0 -2px 12px rgba(0,0,0,.12);max-height:40vh;overflow-y:auto}
+._dg-bar #_dg-ea-prog-msg{flex:1 1 12rem;min-width:0;margin:0}
+._dg-bar #_dg-ea-fail-msg{flex:1 1 100%;min-width:0;margin:0}
+._dg-bar button{flex:0 0 auto;padding:.3em .9em;border-radius:4px;font-size:.85rem;cursor:pointer;border:1px solid var(--rule)}
+._dg-box{background:var(--card,#fff);border-radius:8px;padding:1.6em 2em;max-width:28rem;width:90%;box-shadow:0 4px 24px rgba(0,0,0,.18);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+._dg-box p{margin:.4em 0 1.2em;font-size:.95rem;color:var(--ink)}
+._dg-box button{padding:.3em .9em;border-radius:4px;font-size:.88rem;cursor:pointer;border:1px solid var(--rule)}
+#_dg-ea-confirm{background:var(--link,#b07700);color:#fff;border-color:transparent;margin-right:.6em}
+#_dg-ea-cancel-dlg,#_dg-ea-cancel-prog{background:none;color:var(--meta)}
+.dg-zoom{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;flex-direction:column;align-items:center;justify-content:center;cursor:zoom-out}
+.dg-zoom[data-open]{display:flex}
+.dg-zoom img{max-width:95vw;max-height:95vh;object-fit:contain;border-radius:4px}
+.dg-zoom-close{position:fixed;top:1rem;right:1.2rem;font-size:1.6rem;line-height:1;color:#fff;background:none;border:none;cursor:pointer;z-index:9501}
+.dg-zoom-cap{display:none;color:#fff;font-size:.85rem;line-height:1.4;margin-top:1rem;max-width:95vw;text-align:center}
+.dg .ask-ai{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--meta);font-size:.8rem;font-weight:400;text-decoration:none;white-space:nowrap;cursor:pointer}
+.dg .ask-ai:hover{text-decoration:underline}
+#_dg-ai-toast{display:none;position:fixed;left:50%;bottom:1.4rem;transform:translateX(-50%);z-index:9600;background:var(--card,#222);color:var(--ink,#fff);border:1px solid var(--rule);border-radius:6px;padding:.5em .9em;font-size:.85rem;box-shadow:0 4px 18px rgba(0,0,0,.2)}
+#_dg-ai-toast[data-show]{display:block}
+.dg-size{display:inline-flex;align-items:center;gap:.3em;color:var(--meta);font-size:.85rem}
+.dg-size button{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.15em .45em}
+.dg-size-range{width:7rem;flex:0 0 auto}
+.dg-size-val{min-width:3.2em;text-align:center;flex:0 0 auto}
+.dg-caps-toggle{background:none;border:1px solid var(--rule);border-radius:4px;cursor:pointer;color:var(--meta);font-size:.85rem;line-height:1;padding:.2em .6em}
+.dg-hide-caps .dig-cap{display:none}
+/* print base-size is enforced by the element-level overrides above; the scale var is intentionally NOT reset via @media because the size script's inline style on documentElement outranks an @media :root rule */
+@media print{.dg-size{display:none!important}.dg-caps-toggle{display:none!important}.dg img.dig-slide{max-height:300px}.dg .dig-slide-crop{width:min(100%,540px)}}
+</style>
+</head>
+<body>
+<button id="theme-toggle" type="button" aria-label="Toggle light and dark theme" title="Toggle light/dark">🌙</button><button id="print-btn" type="button" aria-label="Print" title="Print">🖨️</button>
+<article class="dg">
+<div class="dg-topbar"> <a class="dig" data-type="summary" data-t="65">↑ summary</a> <button class="dg-expand-all">⤢ expand all</button> <a class="ask-ai" data-ai-prompt="Please review this video first; I'd like to ask questions about it: https://www.youtube.com/watch?v=vid9" data-ai-url="https://gemini.google.com/app?prompt=Please%20review%20this%20video%20first%3B%20I'd%20like%20to%20ask%20questions%20about%20it%3A%20https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dvid9&amp;autosubmit=false">💬 Ask AI about this video</a> <span class="dg-size" role="group" aria-label="Slide image size"><button class="dg-size-dec" type="button" aria-label="Smaller slides">−</button><input class="dg-size-range" type="range" min="50" max="150" step="10" value="100" aria-label="Slide image size percent"><button class="dg-size-inc" type="button" aria-label="Larger slides">+</button><button class="dg-size-val" type="button" aria-label="Reset slide image size to 100%">100%</button></span> <button class="dg-caps-toggle" type="button" aria-pressed="true" aria-label="Toggle slide captions">▣ captions</button></div>
+<section data-start="65" data-dug="true">
+<h2>1. A <a class="ts" href="https://www.youtube.com/watch?v=vid9&amp;t=65s" target="_blank" rel="noopener noreferrer">▶ (1:05)</a> <a class="dig-toggle">show summary ⌃</a> <a class="dig-refresh" data-section="65">↻ outdated</a> <a class="ask-ai" data-ai-prompt="Please review this section of the video (from 1:05 to 2:00), then I'd like to ask questions about it: https://www.youtube.com/watch?v=vid9&amp;t=65s" data-ai-url="https://gemini.google.com/app?prompt=Please%20review%20this%20section%20of%20the%20video%20(from%201%3A05%20to%202%3A00)%2C%20then%20I'd%20like%20to%20ask%20questions%20about%20it%3A%20https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dvid9%26t%3D65s&amp;autosubmit=false">💬 ask AI</a></h2><div class="dug"><p>body</p>
+</div>
+</section>
+<section data-start="120" data-dug="false">
+<h2>2. B <a class="ts" href="https://www.youtube.com/watch?v=vid9&amp;t=120s" target="_blank" rel="noopener noreferrer">▶ (2:00)</a> <a class="dig-trigger" data-section="120">dig deeper ▶</a> <a class="ask-ai" data-ai-prompt="Please review this section of the video (from 2:00 onward), then I'd like to ask questions about it: https://www.youtube.com/watch?v=vid9&amp;t=120s" data-ai-url="https://gemini.google.com/app?prompt=Please%20review%20this%20section%20of%20the%20video%20(from%202%3A00%20onward)%2C%20then%20I'd%20like%20to%20ask%20questions%20about%20it%3A%20https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Dvid9%26t%3D120s&amp;autosubmit=false">💬 ask AI</a></h2>
+</section>
+</article>
+
+<div id="_dg-ea-dlg" role="dialog" aria-modal="true" aria-labelledby="_dg-ea-msg">
+  <div class="_dg-box">
+    <p id="_dg-ea-msg"></p>
+    <button id="_dg-ea-confirm">Confirm</button>
+    <button id="_dg-ea-cancel-dlg">Cancel</button>
+  </div>
+</div>
+<div id="_dg-ea-prog" role="region" aria-label="Expand-all progress">
+  <div class="_dg-bar">
+    <span id="_dg-ea-prog-msg" role="status" aria-live="polite">Starting…</span>
+    <span id="_dg-ea-fail-msg" aria-live="polite" style="color:#c00;display:none"></span>
+    <button id="_dg-ea-cancel-prog">Cancel</button>
+  </div>
+</div>
+<div class="dg-zoom" id="_dg-zoom" role="dialog" aria-modal="true" aria-label="Enlarged slide">
+  <button class="dg-zoom-close" id="_dg-zoom-close" aria-label="Close">✕</button>
+  <div class="dg-zoom-cap" id="_dg-zoom-cap"></div>
+</div><div id="_dg-ai-toast" role="status"></div>
+<script nonce="n1">
+(function(){
+  // ── cross-doc nav (dig-deeper → summary) ─────────────────────────────────
+  document.querySelectorAll('a.dig').forEach(function(a){
+    if(!a.dataset.type)return;
+    var u=new URL(location.href);
+    u.searchParams.set('type',a.dataset.type);
+    u.hash='t='+a.dataset.t;
+    a.setAttribute('href',u.pathname+u.search+u.hash);
+  });
+  // ── scroll to #t= hash ────────────────────────────────────────────────────
+  var m=location.hash.match(/^#t=(\\d+)/);
+  if(m){
+    var sec=+m[1];
+    var starts=[].slice.call(document.querySelectorAll('[data-start]')).map(function(e){return +e.dataset.start;});
+    var t=Math.max.apply(null,starts.filter(function(s){return s<=sec;}).concat([-1]));
+    if(t>=0){var el=document.querySelector('[data-start="'+t+'"]'); if(el){el.scrollIntoView();}}
+  }
+  // ── dig-state machine (summary-side only) ────────────────────────────────
+  var parts=location.pathname.split('/');
+  var videoId=parts[3];
+  var _sp=new URLSearchParams(location.search);
+  var outputFolder=_sp.get('outputFolder');
+  if(!videoId||!outputFolder)return;
+  // ── dig-doc client (dig-deeper page only) ────────────────────────────────
+  // Correctness premise: the POST job calls upsertDugSection BEFORE emitting
+  // "done", so the re-GET of the current page reflects the new dug section.
+  if(_sp.get('type')==='dig-deeper'){
+    var _dg=document.querySelector('.dg');
+    if(_dg){
+      function _applyDigErr(el){el.textContent='\\u26a0 retry';el.dataset.state='error';el.removeAttribute('href');}
+      // Non-blocking progress bar means clicks are no longer physically blocked
+      // during an expand-all run (the old full-screen overlay masked them). Guard
+      // against concurrent generation: a second expand-all or a manual single dig
+      // is ignored while a batch is running. Reading aids (toggle) stay allowed.
+      var _eaRunning=false;
+      // ── Promise-based dig: single POST→SSE→swap core ─────────────────────
+      function _startDocDigAsync(trigger){
+        return new Promise(function(resolve,reject){
+          var startSec=+trigger.dataset.section;
+          trigger.textContent='\\u23f3';trigger.dataset.state='loading';trigger.removeAttribute('href');
+          fetch('/api/videos/'+videoId+'/dig/'+startSec,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({outputFolder:outputFolder})})
+            .then(function(r){if(!r.ok)throw new Error('POST '+r.status);return r.json();})
+            .then(function(d){
+              var es=new EventSource('/api/videos/'+videoId+'/dig/'+startSec+'/stream?jobId='+encodeURIComponent(d.jobId));
+              es.onmessage=function(ev){
+                try{var msg=JSON.parse(ev.data);
+                  if(msg.type==='done'){
+                    es.close();
+                    fetch(location.href)
+                      .then(function(res){return res.text();})
+                      .then(function(html){
+                        var dp=new DOMParser();
+                        var fd=dp.parseFromString(html,'text/html');
+                        var fresh=fd.querySelector('[data-start="'+startSec+'"]');
+                        var cur=document.querySelector('[data-start="'+startSec+'"]');
+                        if(fresh&&cur&&cur.parentNode){cur.parentNode.replaceChild(document.adoptNode(fresh),cur);}
+                        resolve();
+                      })
+                      .catch(function(err){_applyDigErr(trigger);reject(err);});
+                  }else if(msg.type==='error'){es.close();_applyDigErr(trigger);reject(new Error('stream error'));}
+                }catch(e){}
+              };
+              es.onerror=function(){es.close();_applyDigErr(trigger);reject(new Error('SSE error'));};
+            })
+            .catch(function(err){_applyDigErr(trigger);reject(err);});
+        });
+      }
+      // ── Single-click path: delegate to the async core ─────────────────────
+      function _startDocDig(trigger){_startDocDigAsync(trigger).catch(function(){});}
+      // ── ⤢ expand all — confirm → serialized loop ──────────────────────────
+      var _eaBtn=_dg.querySelector('.dg-expand-all');
+      if(_eaBtn){
+        var _eaDlg=document.getElementById('_dg-ea-dlg');
+        var _eaProg=document.getElementById('_dg-ea-prog');
+        var _eaMsg=document.getElementById('_dg-ea-msg');
+        var _eaProgMsg=document.getElementById('_dg-ea-prog-msg');
+        var _eaFailMsg=document.getElementById('_dg-ea-fail-msg');
+        var _eaCancelProg=document.getElementById('_dg-ea-cancel-prog');
+        function _eaClose(el){el.removeAttribute('data-open');}
+        function _eaOpen(el){el.setAttribute('data-open','');}
+        function _eaRunBatch(triggers,N){
+          _eaOpen(_eaProg);
+          _eaRunning=true;
+          var cancelled=false;
+          var failures=[];
+          var k=0;
+          _eaCancelProg.onclick=function(){cancelled=true;};
+          function _next(){
+            // Collect still-un-dug triggers (may have changed if DOM was swapped).
+            // Exclude error-state triggers — they already failed in this batch run.
+            var remaining=[].slice.call(document.querySelectorAll('.dig-trigger[data-section], .dig-refresh[data-section]'))
+              .filter(function(t){return t.dataset.state!=='error'&&t.dataset.state!=='loading';});
+            if(cancelled||remaining.length===0){
+              _eaRunning=false;
+              if(failures.length>0){
+                // Show failure summary in the progress overlay then auto-close.
+                _eaProgMsg.textContent='Done with '+failures.length+' failure(s).';
+                _eaFailMsg.textContent='Failed sections: '+failures.join(', ');
+                _eaFailMsg.style.display='';
+                setTimeout(function(){_eaClose(_eaProg);_eaFailMsg.style.display='none';},6000);
+              }else{
+                _eaClose(_eaProg);
+              }
+              return;
+            }
+            k++;
+            _eaProgMsg.textContent='Expanding \\u2014 section '+k+' of '+N+'\\u2026';
+            var trig=remaining[0];
+            _startDocDigAsync(trig)
+              .then(function(){_next();})
+              .catch(function(){failures.push(trig.dataset.section);_next();});
+          }
+          _next();
+        }
+        _eaBtn.addEventListener('click',function(){
+          if(_eaRunning)return;
+          var triggers=[].slice.call(document.querySelectorAll('.dig-trigger[data-section], .dig-refresh[data-section]'));
+          var N=triggers.length;
+          if(N===0)return;
+          var X=(N*0.05).toFixed(2);
+          var Y=Math.ceil(N*30/60);
+          _eaMsg.textContent='Expand '+N+' remaining sections? ~$'+X+', ~'+Y+' min (rough estimate)';
+          _eaOpen(_eaDlg);
+          var _escHandler=function(e){if(e.key==='Escape'){_eaClose(_eaDlg);document.removeEventListener('keydown',_escHandler);}};
+          document.addEventListener('keydown',_escHandler);
+          _eaDlg.onclick=function(e){if(e.target===_eaDlg){_eaClose(_eaDlg);document.removeEventListener('keydown',_escHandler);}};
+          document.getElementById('_dg-ea-confirm').onclick=function(){
+            document.removeEventListener('keydown',_escHandler);
+            _eaClose(_eaDlg);
+            _eaRunBatch(triggers,N);
+          };
+          document.getElementById('_dg-ea-cancel-dlg').onclick=function(){
+            _eaClose(_eaDlg);
+            document.removeEventListener('keydown',_escHandler);
+          };
+        });
+      }
+      _dg.addEventListener('click',function(e){
+        // Toggle (dug → show gist or dug) — zero fetch
+        var tog=(e.target.closest?e.target.closest('.dig-toggle'):null);
+        if(tog){e.preventDefault();var s=tog.closest('section');if(s){s.classList.toggle('show-gist');tog.textContent=s.classList.contains('show-gist')?'show dig deeper \\u25b6':'show summary \\u2303';}return;}
+        // Refresh (stale dug → re-dig in place) — must be before .dig-trigger check
+        var refresh=(e.target.closest?e.target.closest('.dig-refresh[data-section]'):null);
+        if(refresh){e.preventDefault();if(_eaRunning)return;_startDocDig(refresh);return;}
+        // Trigger (un-dug → expand in place)
+        var trig=(e.target.closest?e.target.closest('.dig-trigger[data-section]'):null);
+        if(!trig)return;
+        e.preventDefault();
+        if(_eaRunning)return;
+        var st=trig.dataset.state;
+        if(st==='loading')return;
+        _startDocDig(trig);
+      });
+      // ── ?dig=N auto-trigger ───────────────────────────────────────────────
+      // Strip ?dig from URL immediately (keep type, outputFolder, hash) so
+      // reload / back-forward never re-fires generation.
+      function _stripDigParam(){
+        var u2=new URL(location.href);
+        u2.searchParams.delete('dig');
+        history.replaceState(null,'',u2.pathname+u2.search+(u2.hash||''));
+      }
+      function _applyDigDocState(dugIds){
+        // Re-apply control visibility to reflect current dug state.
+        // (Used by pageshow to refresh a bfcache-restored page.)
+        dugIds.forEach(function(id){
+          var el=document.querySelector('[data-start="'+id+'"]');
+          if(el)el.setAttribute('data-dug','true');
+        });
+      }
+      function _handleDigParam(isPageshow){
+        var digN=isPageshow?null:_sp.get('dig');
+        var digSec=digN!==null&&digN!==''?+digN:null;
+        fetch('/api/videos/'+videoId+'/dig-state?outputFolder='+encodeURIComponent(outputFolder))
+          .then(function(r){return r.ok?r.json():Promise.resolve({sectionIds:[]});})
+          .then(function(data){
+            var dugIds=data.sectionIds||[];
+            if(isPageshow){
+              // bfcache restore: re-apply states only, no auto-trigger
+              _applyDigDocState(dugIds);
+              return;
+            }
+            if(digSec===null)return;
+            // Strip ?dig immediately regardless of dug state
+            _stripDigParam();
+            var trigger=document.querySelector('.dig-trigger[data-section="'+digSec+'"]');
+            if(!trigger)return; // invalid/unknown N — no-op
+            if(dugIds.indexOf(digSec)>=0){
+              // Already dug: scroll only, no POST
+              var sect=document.querySelector('[data-start="'+digSec+'"]');
+              if(sect)sect.scrollIntoView();
+            }else{
+              // Un-dug: trigger once then scroll after re-GET replaces section
+              _startDocDig(trigger);
+            }
+          })
+          .catch(function(){
+            if(!isPageshow)_stripDigParam();
+          });
+      }
+      _handleDigParam(false);
+      window.addEventListener('pageshow',function(ev){
+        if(ev.persisted)_handleDigParam(true);
+      });
+    }
+    return;
+  }
+  // ── summary-side nav links ────────────────────────────────────────────────
+  var controls=[].slice.call(document.querySelectorAll('a.dig[data-section]')).filter(function(a){return!a.dataset.type;});
+  if(!controls.length)return;
+  function viewHref(sec){
+    var p=new URLSearchParams();
+    p.set('outputFolder',outputFolder);
+    p.set('type','dig-deeper');
+    return '/api/html/'+videoId+'?'+p.toString()+'#t='+sec;
+  }
+  function digHref(sec){
+    var p=new URLSearchParams();
+    p.set('outputFolder',outputFolder);
+    p.set('type','dig-deeper');
+    p.set('dig',String(sec));
+    return '/api/html/'+videoId+'?'+p.toString()+'#t='+sec;
+  }
+  function applyDug(el,sec){
+    el.textContent='view detail \\u2193';
+    el.setAttribute('href',viewHref(sec));
+    el.removeAttribute('target');
+    el.removeAttribute('rel');
+    el.dataset.state='dug';
+  }
+  function applyIdle(el,sec){
+    el.textContent='dig deeper \\u25b6';
+    el.setAttribute('href',digHref(sec));
+    el.removeAttribute('target');
+    el.removeAttribute('rel');
+    el.dataset.state='idle';
+  }
+  function applyControls(dugIds){
+    controls.forEach(function(el){
+      var sec=+el.dataset.section;
+      if(dugIds.indexOf(sec)>=0){applyDug(el,sec);}else{applyIdle(el,sec);}
+    });
+  }
+  function fetchAndApply(){
+    fetch('/api/videos/'+videoId+'/dig-state?outputFolder='+encodeURIComponent(outputFolder))
+      .then(function(r){return r.ok?r.json():Promise.resolve({sectionIds:[]});})
+      .then(function(data){applyControls(data.sectionIds||[]);})
+      .catch(function(){applyControls([]);});
+  }
+  fetchAndApply();
+  window.addEventListener('pageshow',function(ev){
+    if(ev.persisted)fetchAndApply();
+  });
+})();
+</script><script nonce="n1">(function(){var root=document.documentElement,btn=document.getElementById('theme-toggle');if(!btn)return;function systemDark(){return!!(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)}function effective(){var a=root.getAttribute('data-theme');return a==='dark'||a==='light'?a:(systemDark()?'dark':'light')}function syncIcon(){btn.textContent=effective()==='dark'?'☀️':'🌙'}btn.addEventListener('click',function(){var next=effective()==='dark'?'light':'dark';root.setAttribute('data-theme',next);try{localStorage.setItem('html-doc-theme',next)}catch(e){}syncIcon()});syncIcon();requestAnimationFrame(function(){root.classList.add('theme-ready')})})();</script><script nonce="n1">(function(){var b=document.getElementById('print-btn');if(b)b.addEventListener('click',function(){window.print()})})();</script><script nonce="n1">(function(){
+  var ov=document.getElementById('_dg-zoom');
+  if(!ov)return;
+  var cap=document.getElementById('_dg-zoom-cap');
+  // img is inserted BEFORE the caption node so the overlay stacks img-over-caption (flex column).
+  var im=document.createElement('img');im.id='_dg-zoom-img';im.alt='';ov.insertBefore(im,cap);
+  // close() fully resets the caption; because any click while open closes first, opening a
+  // different slide is always a fresh open (consecutive-slide zoom = two clicks: close, then open).
+  function close(){ov.removeAttribute('data-open');im.removeAttribute('src');if(cap){cap.textContent='';cap.style.display='none';}}
+  document.addEventListener('click',function(e){
+    var t=e.target;
+    if(t&&t.classList&&t.classList.contains('dig-slide')){
+      im.src=t.getAttribute('src');im.alt=t.getAttribute('alt')||'';
+      if(cap){
+        var fig=t.closest?t.closest('.dig-slide-fig'):null;
+        var capEl=fig?fig.querySelector('.dig-cap'):null;
+        var txt=capEl?capEl.textContent:'';
+        cap.textContent=txt||'';
+        cap.style.display=(txt&&!document.documentElement.classList.contains('dg-hide-caps'))?'block':'none';
+      }
+      ov.setAttribute('data-open','');return;
+    }
+    if(ov.hasAttribute('data-open')){close();} // when open the overlay covers the viewport → any click (backdrop, image, or ✕) closes, matching the zoom-out cursor
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'&&ov.hasAttribute('data-open')){close();}
+  });
+})();</script><script nonce="n1">(function(){
+  var toast=document.getElementById('_dg-ai-toast');
+  function show(m){if(!toast)return;toast.textContent=m;toast.setAttribute('data-show','');setTimeout(function(){toast.removeAttribute('data-show');},2500);}
+  document.addEventListener('click',function(e){
+    var a=e.target&&e.target.closest?e.target.closest('.ask-ai'):null;
+    if(!a)return;
+    e.preventDefault();
+    var p=a.getAttribute('data-ai-prompt')||'',u=a.getAttribute('data-ai-url')||'';
+    if(u){
+      // Open Gemini as a resizable popup window on the right (uses the real
+      // gemini.google.com + the user's subscription — a top-level window, not an
+      // embeddable frame). No noopener: some browsers ignore the size/position
+      // features when it is set, and we want a usable handle. The opener back-ref
+      // is then severed best-effort (Gemini is trusted; this doc has no sensitive
+      // state). If the popup is blocked, the prompt is already on the clipboard.
+      var sw=screen.availWidth||1280,w=Math.max(420,Math.round(sw*0.42)),h=screen.availHeight||800;
+      var win=window.open(u,'_blank','popup=1,width='+w+',height='+h+',left='+(sw-w)+',top=0');
+      try{if(win)win.opener=null;}catch(_e){}
+    }
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(p).then(function(){show('✓ copied — paste (⌘V) into Gemini');},function(){show('Could not copy — select the link text and copy it');});
+    }else{show('Could not copy — select the link text and copy it');}
+  });
+})();</script><script nonce="n1">(function(){
+  var root=document.documentElement;
+  var range=document.querySelector('.dg-size-range');
+  var dec=document.querySelector('.dg-size-dec');
+  var inc=document.querySelector('.dg-size-inc');
+  var val=document.querySelector('.dg-size-val');
+  if(!range||!val)return;
+  function s(raw){if(raw==null){return 100;}if(typeof raw==='string'&&raw.trim()===''){return 100;}var n=Number(raw);if(!Number.isFinite(n)){return 100;}n=Math.round(n/10)*10;return Math.min(150,Math.max(50,n));}
+  function read(){try{return s(localStorage.getItem('digSlideScale'));}catch(e){return 100;}}
+  function apply(p,persist){p=s(p);root.style.setProperty('--dig-slide-scale',p/100);range.value=String(p);val.textContent=p+'%';if(persist){try{localStorage.setItem('digSlideScale',String(p));}catch(e){}}}
+  apply(read(),false);
+  range.addEventListener('input',function(){apply(range.value,true);});
+  if(dec)dec.addEventListener('click',function(){apply(Number(range.value)-10,true);});
+  if(inc)inc.addEventListener('click',function(){apply(Number(range.value)+10,true);});
+  val.addEventListener('click',function(){apply(100,true);});
+})();</script><script nonce="n1">(function(){
+  var root=document.documentElement;
+  var btn=document.querySelector('.dg-caps-toggle');
+  if(!btn)return;
+  function c(raw){return raw==='off'?'off':'on';}
+  function read(){try{return c(localStorage.getItem('digCaptions'));}catch(e){return 'on';}}
+  function apply(state,persist){
+    var on=state!=='off';
+    if(on){root.classList.remove('dg-hide-caps');}else{root.classList.add('dg-hide-caps');}
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    btn.textContent=(on?'▣':'▢')+' captions';
+    if(persist){try{localStorage.setItem('digCaptions',on?'on':'off');}catch(e){}}
+  }
+  // REQUIRED, not redundant: the pre-paint head script set ONLY the dg-hide-caps class.
+  // This initial apply() syncs aria-pressed + button text to the persisted state. Do not remove.
+  apply(read(),false);
+  // Toggle off the CURRENT visible state (the class), not a re-read, to avoid any read race.
+  btn.addEventListener('click',function(){apply(root.classList.contains('dg-hide-caps')?'on':'off',true);});
+})();</script>
+</body>
+</html>"
+`;
