@@ -48,6 +48,26 @@ export class LocalFsBlobStore implements BlobStore {
     assertLogicalKey(prefix);
     await fs.promises.rm(path.join(p.indexKey, prefix), { recursive: true, force: true });
   }
+
+  async list(p: Principal, prefix: string): Promise<string[]> {
+    assertLogicalKey(prefix);
+    const root = path.join(p.indexKey, prefix);
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(root, { recursive: true }) as string[];
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw e;
+    }
+    const out: string[] = [];
+    for (const rel of entries) {
+      const full = path.join(root, rel);
+      if ((await fs.promises.stat(full)).isFile()) {
+        out.push(path.posix.join(prefix.replace(/\/$/, ''), rel.split(path.sep).join('/')));
+      }
+    }
+    return out;
+  }
 }
 
 export const localBlobStore = new LocalFsBlobStore();

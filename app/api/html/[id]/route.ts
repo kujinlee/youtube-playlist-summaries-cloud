@@ -8,6 +8,8 @@ import { loadSummaryForServe, resolveAndParse } from '@/lib/html-doc/serve-summa
 import { renderMagazineHtml } from '@/lib/html-doc/render';
 import { generateNonce, buildSummaryCsp } from '@/lib/html-doc/csp';
 import { fileResponse } from '@/lib/html-doc/file-response';
+import { loadDigForServe } from '@/lib/dig/cloud/load-dig-for-serve';
+import { renderDigDeeperDoc } from '@/lib/html-doc/render-dig-deeper';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -23,10 +25,11 @@ export async function GET(request: Request, { params }: Params) {
 }
 
 async function serveCloud(request: Request, videoId: string, searchParams: URLSearchParams): Promise<Response> {
-  // URL contract: cloud requires `playlist`, rejects `outputFolder`; type must be `summary`.
-  if (searchParams.get('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
+  // URL contract: cloud requires `playlist`, rejects `outputFolder`; type must be `summary` or `dig-deeper`.
+  // Presence-based (behavior 14): an empty `?outputFolder=` still 400s, aligning html with pdf/dig-POST.
+  if (searchParams.has('outputFolder')) return json({ error: 'outputFolder not valid on this backend' }, 400);
   const type = searchParams.get('type');
-  if (type !== 'summary') return json({ error: 'unsupported or missing type' }, 400); // cloud dig-deeper deferred
+  if (type !== 'summary' && type !== 'dig-deeper') return json({ error: 'unsupported or missing type' }, 400);
   const formatValues = searchParams.getAll('format');
   const format = formatValues.length === 0 ? 'html' : formatValues[0];
   if (formatValues.length > 1 || (format !== 'html' && format !== 'md')) return json({ error: 'invalid format' }, 400);
@@ -39,6 +42,26 @@ async function serveCloud(request: Request, videoId: string, searchParams: URLSe
   const supabase = createServerSupabase(cookieStore);
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return json({ error: 'authentication required' }, 401);
+
+  if (type === 'dig-deeper') {
+    // Dig is html-only this slice (no single dig .md).
+    if (searchParams.getAll('format').some((f) => f !== 'html')) return json({ error: 'invalid format' }, 400);
+    try {
+      const load = await loadDigForServe(supabase, { videoId, playlistId, userId: user.id });
+      if (!load.ok) return json({ error: load.error }, load.status);
+      const nonce = generateNonce();
+      const html = renderDigDeeperDoc({
+        summary: load.summary, envelope: load.envelope, dug: load.dug,
+        readOnly: true, nonce, videoId, language: load.language, mdPath: `${load.base}.md`,
+      });
+      return fileResponse(html, { kind: 'html', download, base: load.base, title: load.title, cache: 'private, no-store', csp: buildSummaryCsp(nonce) });
+    } catch (err) {
+      const e = err as { statusCode?: number; message?: string };
+      if (e.statusCode === 400) return json({ error: e.message }, 400);
+      logError('html:dig-serve', err);
+      return json({ error: 'internal error' }, 500);
+    }
+  }
 
   try {
     const load = await loadSummaryForServe(supabase, { videoId, playlistId, userId: user.id });

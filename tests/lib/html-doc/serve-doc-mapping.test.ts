@@ -45,6 +45,7 @@ function fakeBlobStore(getQueue: Array<Buffer | null>): BlobStore & { getMock: j
     putStaged: jest.fn(async (p: Principal, key: string) => ({ principal: p, tempKey: key, finalKey: key })),
     promote: jest.fn(async () => {}),
     deletePrefix: jest.fn(async () => {}),
+    list: jest.fn(async () => []),
   };
 }
 

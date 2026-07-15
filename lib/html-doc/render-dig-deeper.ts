@@ -5,6 +5,7 @@ import type { RenderRuleRecord } from 'markdown-it/lib/renderer.mjs';
 import {
   themeStyleBlock, themeHeadScript, THEME_TOGGLE_BUTTON, themeToggleScript, printButton, printListenerScript,
   BASE_PALETTE_LIGHT_PRE, BASE_PALETTE_LIGHT_POST, BASE_PALETTE_DARK_PRE, BASE_PALETTE_DARK_POST,
+  nonceAttr,
   type Palette,
 } from './theme';
 import { digControl, navScript, NAV_CSS } from './nav';
@@ -198,18 +199,22 @@ section[data-dug="true"].show-gist .dug{display:none}
 export const DIG_SLIDE_SANITIZE_JS = "function s(raw){if(raw==null){return 100;}if(typeof raw==='string'&&raw.trim()===''){return 100;}var n=Number(raw);if(!Number.isFinite(n)){return 100;}n=Math.round(n/10)*10;return Math.min(150,Math.max(50,n));}";
 
 // Pre-paint: set --dig-slide-scale from sanitized localStorage BEFORE first paint (no FOUC).
-const SIZE_HEAD_SCRIPT = `<script>(function(){try{${DIG_SLIDE_SANITIZE_JS}` +
-  `var v=s(localStorage.getItem('digSlideScale'));` +
-  `document.documentElement.style.setProperty('--dig-slide-scale',v/100);` +
-  `}catch(e){}})();</script>`;
+function sizeHeadScript(nonce?: string): string {
+  return `<script${nonceAttr(nonce)}>(function(){try{${DIG_SLIDE_SANITIZE_JS}` +
+    `var v=s(localStorage.getItem('digSlideScale'));` +
+    `document.documentElement.style.setProperty('--dig-slide-scale',v/100);` +
+    `}catch(e){}})();</script>`;
+}
 
 // Shared captions sanitizer — used in both CAPTIONS_HEAD_SCRIPT (head) and captionsScript (body).
 export const DIG_CAPTIONS_SANITIZE_JS = "function c(raw){return raw==='off'?'off':'on';}";
 
 // Pre-paint: hide captions BEFORE first paint when stored 'off' (no FOUC). Default shown.
-const CAPTIONS_HEAD_SCRIPT = `<script>(function(){try{${DIG_CAPTIONS_SANITIZE_JS}` +
-  `if(c(localStorage.getItem('digCaptions'))==='off'){document.documentElement.classList.add('dg-hide-caps');}` +
-  `}catch(e){}})();</script>`;
+function captionsHeadScript(nonce?: string): string {
+  return `<script${nonceAttr(nonce)}>(function(){try{${DIG_CAPTIONS_SANITIZE_JS}` +
+    `if(c(localStorage.getItem('digCaptions'))==='off'){document.documentElement.classList.add('dg-hide-caps');}` +
+    `}catch(e){}})();</script>`;
+}
 
 /**
  * Render a dig-deeper doc using the structured merge result (Task 6).
@@ -228,8 +233,13 @@ export function renderDigDeeperDoc(args: {
   videoId: string;
   language?: 'en' | 'ko';
   cropMap?: Map<string, CropBox | null>;
+  readOnly?: boolean;
+  nonce?: string;
 }): string {
-  const { summary, envelope, dug, mdPath, videoId, language = 'en', cropMap = new Map<string, CropBox | null>() } = args;
+  const {
+    summary, envelope, dug, mdPath, videoId, language = 'en', cropMap = new Map<string, CropBox | null>(),
+    readOnly = false, nonce,
+  } = args;
   const renderer = buildRenderer(mdPath, cropMap);
 
   const { sections, orphans } = mergeDigDoc(summary, envelope, dug);
@@ -248,9 +258,10 @@ export function renderDigDeeperDoc(args: {
   const firstStartSec = sections.find((s) => s.startSec !== null)?.startSec ?? null;
 
   // ── Top bar ──────────────────────────────────────────────────────────────
-  const summaryLink = firstStartSec !== null
+  const summaryLink = readOnly ? '' : (firstStartSec !== null
     ? digControl('summary', firstStartSec)
-    : `<a class="dig" data-type="summary">↑ summary</a>`;
+    : `<a class="dig" data-type="summary">↑ summary</a>`);
+  const expandAllBtn = readOnly ? '' : `<button class="dg-expand-all">⤢ expand all</button>`;
   const wholeAsk = askAi(buildWholeVideoPrompt(videoUrl, language), '💬 Ask AI about this video');
   const sizeControl = `<span class="dg-size" role="group" aria-label="Slide image size">` +
     `<button class="dg-size-dec" type="button" aria-label="Smaller slides">−</button>` +
@@ -258,7 +269,7 @@ export function renderDigDeeperDoc(args: {
     `<button class="dg-size-inc" type="button" aria-label="Larger slides">+</button>` +
     `<button class="dg-size-val" type="button" aria-label="Reset slide image size to 100%">100%</button></span>`;
   const capsControl = `<button class="dg-caps-toggle" type="button" aria-pressed="true" aria-label="Toggle slide captions">▣ captions</button>`;
-  const topBar = `<div class="dg-topbar">${summaryLink} <button class="dg-expand-all">⤢ expand all</button> ${wholeAsk} ${sizeControl} ${capsControl}</div>`;
+  const topBar = `<div class="dg-topbar">${summaryLink} ${expandAllBtn} ${wholeAsk} ${sizeControl} ${capsControl}</div>`;
 
   // ── Sections ──────────────────────────────────────────────────────────────
   const sectionsHtml = sections.map((ms, i) => {
@@ -277,14 +288,17 @@ export function renderDigDeeperDoc(args: {
       ? ` <a class="ts" href="https://www.youtube.com/watch?v=${esc(videoId)}&amp;t=${startSec}s" target="_blank" rel="noopener noreferrer">▶ (${fmtClock(startSec)})</a>`
       : '';
     // control: un-dug (with startSec) → dig-trigger; dug → dig-toggle (+ dig-refresh if stale); no startSec → neither
+    // (readOnly omits these nav-coupled controls; Ask-AI below is self-contained and stays for both modes)
     let control = '';
-    if (isDug) {
-      control = ` <a class="dig-toggle">show summary ⌃</a>`;
-      if (ms.isStale && startSec !== null) {
-        control += ` <a class="dig-refresh" data-section="${startSec}">↻ outdated</a>`;
+    if (!readOnly) {
+      if (isDug) {
+        control = ` <a class="dig-toggle">show summary ⌃</a>`;
+        if (ms.isStale && startSec !== null) {
+          control += ` <a class="dig-refresh" data-section="${startSec}">↻ outdated</a>`;
+        }
+      } else if (startSec !== null) {
+        control = ` <a class="dig-trigger" data-section="${startSec}">dig deeper ▶</a>`;
       }
-    } else if (startSec !== null) {
-      control = ` <a class="dig-trigger" data-section="${startSec}">dig deeper ▶</a>`;
     }
 
     // Section Ask-AI (independent of dug state): end = the next section's start,
@@ -361,7 +375,7 @@ export function renderDigDeeperDoc(args: {
   // ES5-plain to match NAV_SCRIPT. Click delegation on document so dynamically
   // dug sections are covered. Esc no-ops unless the lightbox is open, so it
   // never interferes with the expand-all dialog's own Esc handler (nav.ts).
-  const zoomScript = `<script>(function(){
+  const zoomScript = `<script${nonceAttr(nonce)}>(function(){
   var ov=document.getElementById('_dg-zoom');
   if(!ov)return;
   var cap=document.getElementById('_dg-zoom-cap');
@@ -395,7 +409,7 @@ export function renderDigDeeperDoc(args: {
   // zoomScript's): isolated by closest('.ask-ai'), so they coexist by design.
   const aiToast = `<div id="_dg-ai-toast" role="status"></div>`;
 
-  const askAiScript = `<script>(function(){
+  const askAiScript = `<script${nonceAttr(nonce)}>(function(){
   var toast=document.getElementById('_dg-ai-toast');
   function show(m){if(!toast)return;toast.textContent=m;toast.setAttribute('data-show','');setTimeout(function(){toast.removeAttribute('data-show');},2500);}
   document.addEventListener('click',function(e){
@@ -420,7 +434,7 @@ export function renderDigDeeperDoc(args: {
   });
 })();</script>`;
 
-  const sizeScript = `<script>(function(){
+  const sizeScript = `<script${nonceAttr(nonce)}>(function(){
   var root=document.documentElement;
   var range=document.querySelector('.dg-size-range');
   var dec=document.querySelector('.dg-size-dec');
@@ -437,7 +451,7 @@ export function renderDigDeeperDoc(args: {
   val.addEventListener('click',function(){apply(100,true);});
 })();</script>`;
 
-  const captionsScript = `<script>(function(){
+  const captionsScript = `<script${nonceAttr(nonce)}>(function(){
   var root=document.documentElement;
   var btn=document.querySelector('.dg-caps-toggle');
   if(!btn)return;
@@ -457,6 +471,10 @@ export function renderDigDeeperDoc(args: {
   btn.addEventListener('click',function(){apply(root.classList.contains('dg-hide-caps')?'on':'off',true);});
 })();</script>`;
 
+  // readOnly omits the expand-all dialog markup and the navScript engine (both nav-coupled).
+  const dialogs = readOnly ? '' : expandAllDialogs;
+  const nav = readOnly ? '' : navScript(nonce);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -465,18 +483,18 @@ export function renderDigDeeperDoc(args: {
 <meta name="generator" content="dig-deeper-doc v1">
 <meta name="source-md" content="${esc(path.basename(mdPath))}">
 <title>${esc(title)}</title>
-${themeHeadScript()}
-${SIZE_HEAD_SCRIPT}
-${CAPTIONS_HEAD_SCRIPT}
-<style>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}${DIG_DOC_CSS}</style>
+${themeHeadScript(nonce)}
+${sizeHeadScript(nonce)}
+${captionsHeadScript(nonce)}
+<style${nonceAttr(nonce)}>${themeStyleBlock(LIGHT, DARK)}${STRUCTURAL_CSS}${NAV_CSS}${DIG_DOC_CSS}</style>
 </head>
 <body>
 ${THEME_TOGGLE_BUTTON}${printButton()}
 <article class="dg">
 ${bodyHtml}
 </article>
-${expandAllDialogs}${zoomOverlay}${aiToast}
-${navScript()}${themeToggleScript()}${printListenerScript()}${zoomScript}${askAiScript}${sizeScript}${captionsScript}
+${dialogs}${zoomOverlay}${aiToast}
+${nav}${themeToggleScript(nonce)}${printListenerScript(nonce)}${zoomScript}${askAiScript}${sizeScript}${captionsScript}
 </body>
 </html>`;
 }

@@ -26,6 +26,7 @@ function fakeStore(): BlobStore & { blobs: Map<string, Buffer> } {
     },
     async putStaged(p, key, bytes): Promise<StagedRef> { const tempKey = `_staging/uuid/${key}`; blobs.set(k(p, tempKey), bytes); return { principal: p, tempKey, finalKey: key }; },
     async promote(ref) { const from = k(ref.principal, ref.tempKey); const to = k(ref.principal, ref.finalKey); const b = blobs.get(from)!; blobs.set(to, b); blobs.delete(from); },
+    async list() { return []; },
   };
 }
 

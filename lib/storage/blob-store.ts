@@ -15,6 +15,8 @@ export interface BlobStore {
    *  an absent prefix is not an error. `prefix === ''` targets the whole playlist root
    *  (`<owner>/<indexKey>/`), not above it. */
   deletePrefix(p: Principal, prefix: string): Promise<void>;
+  /** List logical keys (relative to the owner root) under a prefix. Absent prefix → []. */
+  list(p: Principal, prefix: string): Promise<string[]>;
 }
 
 /** A read-only view of a BlobStore — exactly the `get` method. The share serve path
