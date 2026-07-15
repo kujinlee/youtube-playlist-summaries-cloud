@@ -1,4 +1,6 @@
-# Summary Section-Timestamp Guarantee — Implementation Plan (v3)
+# Summary Section-Timestamp Guarantee — Implementation Plan (v4)
+
+> **v4 delta (round-3 re-review):** finalizer now **canonicalizes `endSec` doc-wide** (each section's `end` = next section's start, last = `max(duration, start+1)`), rewriting any line whose canonical form differs — fixing stale/overlapping ends after an insert/rewrite. `sectionStartsComplete` also checks `endSec > startSec`. Allocator does a **minimal bump** for a too-low known value (`[100,null,101]→[100,101,102]`). Test fixtures use real `timestampLine` labels. See `docs/reviews/plan-summary-section-timestamp-guarantee-v3-rereview.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -145,8 +147,11 @@ export function allocateSectionStarts(
     let s: number;
     if (k !== null && k >= lower && k <= hi) {
       s = k;                                        // keep the model's real timestamp
+    } else if (k !== null && k < lower) {
+      s = lower;                                    // known value only too low (collision/non-monotonic) → minimal bump to prev+1
     } else {
-      let nextK: number | null = null;             // nearest following known start, for spacing
+      // missing, or known above the room ceiling: synthesize toward the next known anchor
+      let nextK: number | null = null;
       for (let j = i + 1; j < n; j++) if (known[j] !== null) { nextK = known[j]; break; }
       const ceil = nextK !== null && nextK - 1 < hi ? Math.max(lower, nextK - 1) : hi;
       const target = lower + Math.floor((ceil - lower) / 2);
@@ -179,13 +184,15 @@ export function parseSections(body: string): ParsedSection[] {   // was: functio
 
 ```ts
 // append to tests/lib/summary-section-timestamps.test.ts
-const TS = (a: number, b: number) => `▶ [0:00–0:00](https://www.youtube.com/watch?v=v&t=${a}s)`; // b unused label
+import { timestampLine } from '@/lib/transcript-timestamps';
+const L = (start: number, end: number) => timestampLine(start, end, 'v'); // real canonical ▶ line (correct label)
 describe('sectionStartsComplete', () => {
-  it('true only when every section has a ▶ AND starts are strictly increasing + unique', () => {
-    expect(sectionStartsComplete(['## 1. A', TS(10), 'a', '', '## Conclusion', TS(30), 'c'].join('\n'))).toBe(true);
-    expect(sectionStartsComplete(['## 1. A', TS(10), 'a', '', '## 2. B', 'b'].join('\n'))).toBe(false);        // missing
-    expect(sectionStartsComplete(['## 1. A', TS(10), 'a', '', '## 2. B', TS(10), 'b'].join('\n'))).toBe(false); // duplicate
-    expect(sectionStartsComplete(['## 1. A', TS(30), 'a', '', '## 2. B', TS(10), 'b'].join('\n'))).toBe(false); // out of order
+  it('true only when every section has a ▶, starts strictly increasing + unique, AND end > start', () => {
+    expect(sectionStartsComplete(['## 1. A', L(10, 30), 'a', '', '## Conclusion', L(30, 60), 'c'].join('\n'))).toBe(true);
+    expect(sectionStartsComplete(['## 1. A', L(10, 30), 'a', '', '## 2. B', 'b'].join('\n'))).toBe(false);          // missing
+    expect(sectionStartsComplete(['## 1. A', L(10, 30), 'a', '', '## 2. B', L(10, 30), 'b'].join('\n'))).toBe(false); // duplicate start
+    expect(sectionStartsComplete(['## 1. A', L(30, 60), 'a', '', '## 2. B', L(10, 30), 'b'].join('\n'))).toBe(false); // out of order
+    expect(sectionStartsComplete(['## 1. A', L(30, 30), 'a', '', '## 2. B', L(40, 60), 'b'].join('\n'))).toBe(false); // end <= start
   });
   it('malformed ▶ URL counts as missing (render-parser truth)', () => {
     expect(sectionStartsComplete(['## 1. A', '▶ [x](not-a-url?t=10s)', 'a'].join('\n'))).toBe(false);
@@ -195,8 +202,9 @@ describe('sectionStartsComplete', () => {
 
 ```ts
 // append to lib/summary-section-timestamps.ts
-/** True when the body has ≥1 section, EVERY section resolves a timestamp, and the starts are strictly
- *  increasing (hence unique). Uses the render parser's own truth (parseSections.timeRange). */
+/** True when the body has ≥1 section, EVERY section resolves a timestamp, the starts are strictly
+ *  increasing (hence unique), and every range is well-formed (end > start). Uses the render parser's
+ *  own truth (parseSections.timeRange), so it can never disagree with the renderer. */
 export function sectionStartsComplete(markdown: string): boolean {
   const sections = parseSections(markdown);
   if (sections.length === 0) return false;
@@ -204,6 +212,7 @@ export function sectionStartsComplete(markdown: string): boolean {
   for (const s of sections) {
     if (s.timeRange === null) return false;
     if (s.timeRange.startSec <= prev) return false;
+    if (s.timeRange.endSec <= s.timeRange.startSec) return false;
     prev = s.timeRange.startSec;
   }
   return true;
@@ -232,70 +241,81 @@ git commit -m "feat(summary-ts): allocateSectionStarts + sectionStartsComplete +
 
 **Interface produced:** `ensureSectionTimestamps(markdown: string, videoId: string, bounds: { firstStart: number; videoDuration: number }): string`
 
-**Behavior:** If `sectionStartsComplete(markdown)` → return unchanged (byte-identical fast path). Else: compute `known[]` from `parseSections`, run `allocateSectionStarts`, then for each section whose assigned start differs from its existing one (or that has no/malformed `▶` line) **rewrite or insert** its `▶` line (`end` = next section's assigned start, or `videoDuration` for the last). Existing well-formed lines whose start is unchanged are left byte-identical. The `▶`-line location per section is found with the SAME fence-aware, `---`-dropping, first-non-blank-body-line rule the render parser uses (so a malformed `▶` is *replaced*, never duplicated).
+**Behavior:** If `sectionStartsComplete(markdown)` → return unchanged (byte-identical fast path). Else: compute `known[]` from `parseSections`, run `allocateSectionStarts`, then **canonicalize every section's line** to `timestampLine(start, end)` where `end` = next section's assigned start (last = `max(videoDuration, start+1)`). A line already byte-identical to its canonical form is kept; every other — missing, colliding, malformed, or merely **stale-end after a neighbor moved** — is rewritten (or inserted if the section has no `▶`). This end-canonicalization is what prevents a kept section's range from overlapping a freshly-inserted neighbor. The `▶`-line location per section is found with the SAME fence-aware, `---`-dropping, first-non-blank-body-line rule the render parser uses (so a malformed `▶` is *replaced* in place, never duplicated).
 
 - [ ] **Step 1: Write the failing tests**
 
 ```ts
 // append to tests/lib/summary-section-timestamps.test.ts
 import { ensureSectionTimestamps } from '@/lib/summary-section-timestamps';
-import { parseSections } from '@/lib/html-doc/parse';
+// NOTE: `L` (= timestampLine(start,end,'v')), `parseSections`, and `timestampLine` are already imported/declared
+// earlier in this file (Task 1 Step 6 append). Do not redeclare them.
 
-const T = (n: number) => `▶ [0:00–0:00](https://www.youtube.com/watch?v=vid&t=${n}s)`;
 const startsOf = (md: string) => parseSections(md).map((s) => s.timeRange?.startSec ?? null);
 const B = { firstStart: 0, videoDuration: 1000 };
 const uniqueIncreasing = (md: string) => {
   const s = startsOf(md) as number[];
-  return s.every((v, i) => v !== null) && s.every((v, i) => i === 0 || v > s[i - 1]) && new Set(s).size === s.length;
+  return s.every((v) => v !== null) && s.every((v, i) => i === 0 || v > s[i - 1]) && new Set(s).size === s.length;
 };
+const endsWellFormed = (md: string) => parseSections(md).every((x) => x.timeRange!.endSec > x.timeRange!.startSec);
 
 describe('ensureSectionTimestamps', () => {
-  it('idempotent no-op when already complete (unique + increasing)', () => {
-    const md = ['## 1. A', T(10), 'a', '', '## Conclusion', T(30), 'c'].join('\n');
+  it('idempotent no-op when already complete + canonical (end = next start)', () => {
+    const md = ['## 1. A', L(10, 30), 'a', '', '## Conclusion', L(30, 1000), 'c'].join('\n');
     expect(ensureSectionTimestamps(md, 'vid', B)).toBe(md);
   });
 
-  it('missing middle → inserts a ▶ strictly between neighbors; full doc unique+increasing', () => {
-    const md = ['## 1. A', T(208), 'a', '', '## 2. B', 'b', '', '## 3. C', T(369), 'c'].join('\n');
+  it('missing middle → inserts ▶ strictly between neighbors AND updates the previous end (no overlap)', () => {
+    const md = ['## 1. A', L(208, 369), 'a', '', '## 2. B', 'b', '', '## 3. C', L(369, 1000), 'c'].join('\n');
     const out = ensureSectionTimestamps(md, 'vid', B);
     expect(uniqueIncreasing(out)).toBe(true);
-    const s = startsOf(out) as number[];
-    expect(s[0]).toBe(208); expect(s[2]).toBe(369); expect(s[1]).toBeGreaterThan(208); expect(s[1]).toBeLessThan(369);
-    expect(out).toContain(T(208));   // unchanged existing line preserved
+    expect(endsWellFormed(out)).toBe(true);
+    const p = parseSections(out);
+    expect(p[0].timeRange!.endSec).toBe(p[1].timeRange!.startSec);   // A's end canonicalized to B's start (was 369 → overlap)
+    expect(p[1].timeRange!.startSec).toBeGreaterThan(208);
+    expect(p[1].timeRange!.startSec).toBeLessThan(369);
+    expect(p[2].timeRange!.startSec).toBe(369);
   });
 
-  it('DUPLICATE existing ▶ (floor collision) → REWRITES the later line, no insert (R2-H1)', () => {
-    const md = ['## 1. A', T(100), 'a', '', '## 2. B', T(100), 'b', '', '## 3. C', T(400), 'c'].join('\n');
-    const out = ensureSectionTimestamps(md, 'vid', B);
-    expect(uniqueIncreasing(out)).toBe(true);          // no more duplicate 100
-    expect((out.match(/^▶/gm) ?? []).length).toBe(3);  // exactly one ▶ per section (rewrote, not added)
-  });
-
-  it('tight gap [100, missing, 101] → known 101 rewritten upward, all unique (R2-B1)', () => {
-    const md = ['## 1. A', T(100), 'a', '', '## 2. B', 'b', '', '## 3. C', T(101), 'c'].join('\n');
+  it('DUPLICATE existing ▶ (floor collision) → REWRITES the later line, all unique, one ▶ each (R2-H1)', () => {
+    const md = ['## 1. A', L(100, 200), 'a', '', '## 2. B', L(100, 300), 'b', '', '## 3. C', L(400, 1000), 'c'].join('\n');
     const out = ensureSectionTimestamps(md, 'vid', B);
     expect(uniqueIncreasing(out)).toBe(true);
+    expect(endsWellFormed(out)).toBe(true);
     expect((out.match(/^▶/gm) ?? []).length).toBe(3);
   });
 
-  it('malformed existing ▶ → REPLACED in place, not duplicated', () => {
-    const md = ['## 1. A', '▶ [x](not-a-url?t=10s)', 'a', '', '## Conclusion', T(300), 'c'].join('\n');
+  it('tight gap [100, missing, 101] → known 101 MINIMALLY bumped to 102, all unique (R2-B1 + Codex M1)', () => {
+    const md = ['## 1. A', L(100, 200), 'a', '', '## 2. B', 'b', '', '## 3. C', L(101, 1000), 'c'].join('\n');
     const out = ensureSectionTimestamps(md, 'vid', B);
-    expect(uniqueIncreasing(out)).toBe(true);
-    expect((out.match(/^▶/gm) ?? []).length).toBe(2);  // replaced the malformed one, not added a 2nd
+    expect(startsOf(out)).toEqual([100, 101, 102]); // minimal editorial drift, not a jump to mid-duration
   });
 
-  it('every inserted/rewritten section has endSec > startSec (R2-M2)', () => {
-    const md = ['## 1. A', T(208), 'a', '', '## 2. B', 'b', '', '## 3. C', T(369), 'c'].join('\n');
+  it('malformed existing ▶ → REPLACED in place, not duplicated', () => {
+    const md = ['## 1. A', '▶ [x](not-a-url?t=10s)', 'a', '', '## Conclusion', L(300, 1000), 'c'].join('\n');
     const out = ensureSectionTimestamps(md, 'vid', B);
-    for (const s of parseSections(out)) expect(s.timeRange!.endSec).toBeGreaterThan(s.timeRange!.startSec);
+    expect(uniqueIncreasing(out)).toBe(true);
+    expect(endsWellFormed(out)).toBe(true);
+    expect((out.match(/^▶/gm) ?? []).length).toBe(2);
+  });
+
+  it('every section has endSec > startSec after normalization (R2-M2)', () => {
+    const md = ['## 1. A', L(208, 369), 'a', '', '## 2. B', 'b', '', '## 3. C', L(369, 1000), 'c'].join('\n');
+    expect(endsWellFormed(ensureSectionTimestamps(md, 'vid', B))).toBe(true);
+  });
+
+  it('pathological videoDuration ≤ section count → still unique+increasing, last end > start (Codex M2/Claude L1)', () => {
+    const md = ['## 1. A', 'a', '', '## 2. B', 'b', '', '## 3. C', 'c'].join('\n');
+    const out = ensureSectionTimestamps(md, 'vid', { firstStart: 0, videoDuration: 2 });
+    expect(uniqueIncreasing(out)).toBe(true);
+    expect(endsWellFormed(out)).toBe(true);
   });
 
   it('--- divider before the ▶ is respected (render-parser parity)', () => {
-    const md = ['## 1. A', '', '---', '', T(10), 'a', '', '## Conclusion', 'c'].join('\n');
+    const md = ['## 1. A', '', '---', '', L(10, 1000), 'a', '', '## Conclusion', 'c'].join('\n');
     const out = ensureSectionTimestamps(md, 'vid', B);
     expect(uniqueIncreasing(out)).toBe(true);
-    expect(out).toContain(T(10)); // the pre-existing (post---) ▶ was recognized, not treated as missing
+    expect(endsWellFormed(out)).toBe(true);
   });
 });
 ```
@@ -353,27 +373,30 @@ export function ensureSectionTimestamps(
 
   const known = sections.map((s) => (s.timeRange ? s.timeRange.startSec : null));
   const starts = allocateSectionStarts(known, bounds.firstStart, bounds.videoDuration);
-  // defensive: allocator already guarantees strict increase; assert + warn if a pathological input slipped.
-  for (let i = 1; i < starts.length; i++) {
-    if (starts[i] <= starts[i - 1]) {
-      console.warn(`[summary-section-ts-degenerate] ${videoId}: non-increasing start at section ${i + 1}`);
-      starts[i] = starts[i - 1] + 1;
-    }
-  }
+  // Belt-and-suspenders: allocateSectionStarts is proven strictly-increasing, so this never fires;
+  // it is a cheap guard against a future allocator regression. Do NOT write a test expecting it.
+  for (let i = 1; i < starts.length; i++) if (starts[i] <= starts[i - 1]) starts[i] = starts[i - 1] + 1;
 
   const layout = sectionLayout(markdown); // same order/count as `sections`
-  const replace = new Map<number, string>();     // lineIndex → rewritten ▶ line
-  const insertAfter = new Map<number, string>(); // headingLineIndex → inserted ▶ line
+  const lines = markdown.split('\n');
+  const replace = new Map<number, string>();     // existing ▶ slot line → canonical line
+  const insertAfter = new Map<number, string>(); // heading line → inserted canonical line
+  // Canonicalize EVERY section's ▶ to timestampLine(start, end) where end = next section's start (or,
+  // for the last section, max(videoDuration, start+1) so end > start even in the pathological regime).
+  // A line already byte-identical to its canonical form is left untouched (idempotent no-op for good
+  // docs); any other — missing, colliding, malformed, OR merely stale-end after a neighbor moved — is
+  // rewritten/inserted. This is what fixes the "kept line keeps a stale/overlapping end" defect.
   sections.forEach((s, idx) => {
-    const unchanged = known[idx] !== null && known[idx] === starts[idx] && layout[idx].tsLine !== null;
-    if (unchanged) return; // well-formed, correct, keep byte-identical
-    const endSec = idx + 1 < sections.length ? starts[idx + 1] : bounds.videoDuration;
-    const line = timestampLine(starts[idx], endSec, videoId);
-    if (layout[idx].tsLine !== null) replace.set(layout[idx].tsLine as number, line); // replace existing slot
-    else insertAfter.set(layout[idx].headingLine, line);                              // insert (none present)
+    const endSec = idx + 1 < sections.length
+      ? starts[idx + 1]
+      : Math.max(bounds.videoDuration, starts[idx] + 1);
+    const canonical = timestampLine(starts[idx], endSec, videoId);
+    const slot = layout[idx].tsLine;
+    if (slot !== null && lines[slot] === canonical) return;   // already canonical → keep byte-identical
+    if (slot !== null) replace.set(slot, canonical);          // rewrite (start and/or end changed, or malformed)
+    else insertAfter.set(layout[idx].headingLine, canonical); // no ▶ present → insert after heading
   });
 
-  const lines = markdown.split('\n');
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     out.push(replace.has(i) ? (replace.get(i) as string) : lines[i]);
@@ -459,11 +482,14 @@ Post-loop (replace the `warnTimestampMiss` line 387), after the incompleteness w
       const lastSeg = segments[segments.length - 1];
       const videoDuration = Math.floor(lastSeg.offset + lastSeg.duration);
       const firstStart = Math.floor(segments[0].offset);
-      const parsed = parseSections(chosen.summary);
       let prev = -Infinity, bad = 0;
-      for (const s of parsed) { const v = s.timeRange?.startSec ?? null; if (v === null || v <= prev) bad++; else prev = v; }
+      for (const s of parseSections(chosen.summary)) {
+        const tr = s.timeRange;
+        if (tr === null || tr.startSec <= prev || tr.endSec <= tr.startSec) bad++;
+        else prev = tr.startSec;
+      }
       chosen.summary = ensureSectionTimestamps(chosen.summary, videoId, { firstStart, videoDuration });
-      console.warn(`[summary-section-ts-synth] ${videoId}: normalized ${bad} section start(s) after ${attemptsUsed} attempt(s)`);
+      if (bad > 0) console.warn(`[summary-section-ts-synth] ${videoId}: normalized ${bad} section timestamp(s) after ${attemptsUsed} attempt(s)`);
     }
     return chosen;
 ```
@@ -482,7 +508,7 @@ The new per-section criterion makes a fixture "incomplete" whenever a `##` secti
 4. `tests/lib/gemini.test.ts:473-480` (cap test, asserts `[timestamp-miss] vid1`). **New:** `[summary-section-ts-synth]`; keep the `toHaveBeenCalledTimes(2)` cap assertion.
 5. `tests/lib/gemini-response-schema.test.ts:~23,55` (single `mockResolvedValueOnce`, Conclusion lacks a `[[TS]]`). **New:** either give it two segments + a `[[TS:1]]` under Conclusion, or invoke with no segments if timestamp behavior is irrelevant to that test. (Codex R2 High.)
 
-Grep to confirm none missed: `grep -rn "timestamp-miss\|hasTimestamp\|not\.toContain('▶')\|not\.toMatch(/▶" tests/`.
+Grep to confirm none missed: `rg "generateSummary\(" tests` (audit EVERY caller) and `rg "timestamp-miss|hasTimestamp|not\.toContain\('▶'\)|not\.toMatch\(/▶" tests`. Round-3 review verified only `gemini-response-schema.test.ts:55` (single `mockResolvedValueOnce`) newly exhausts its queue among all callers; `gemini-caps.test.ts` already uses complete tokens and `gemini-signal.test.ts` aborts before a response — but re-confirm at implementation time.
 
 - [ ] **Step 6: Run gemini suite + type-check** (`npx jest gemini` then `npx tsc --noEmit`, verify exit 0). Fix any remaining fixture that runs out of queued responses.
 
@@ -575,6 +601,15 @@ git commit -m "test(summary-ts): end-to-end regression — unique/monotonic sect
 
 ---
 
+## v4 delta — resolves round-3 (v3 re-review)
+- **Codex R3-High (stale/overlapping `endSec`)** → finalizer canonicalizes every section's line to `end = next start` (last = `max(duration, start+1)`), rewriting stale/overlapping/`end==start` lines; `sectionStartsComplete` checks `end > start`.
+- **Codex R3-High #2 (test labels)** → fixtures use real `timestampLine` (`L`) so ends parse correctly.
+- **Codex R3-M1 (editorial drift)** → allocator minimal-bump for a too-low known value (`[100,null,101]→[100,101,102]`).
+- **Codex R3-M2 / Claude R3-L1 (pathological last end)** → `end = max(videoDuration, start+1)`.
+- **Claude R3-L2** → dropped the never-firing degenerate warn (kept the bump).
+- **Claude R3-L3/L4, Codex R3-L1** → warn guarded on `bad>0`; audit grep broadened to `rg "generateSummary\(" tests`.
+- Round 3 verified genuinely fixed: R2-B1/H1/M1 (allocator + finalizer rewrite) and `sectionLayout`↔`parseSections` parity (no drift, structural).
+
 ## Adversarial Review Requirement
 
-v3 after two converging rounds (v1: 4B+4H → drop Layer 1; v2: 2B+1H → full-doc normalizer). Per `docs/dev-process.md` Iterative Re-Review, **re-review v3** (Codex + Claude): (1) verify R2-B1/R2-H1/R2-M1 are genuinely fixed — the allocator never collides, the finalizer actually rewrites colliding/malformed existing lines, `sectionStartsComplete` catches floor-collisions; (2) hunt new defects — `sectionLayout` vs `parseSections` order/count parity (esp. malformed-`▶`, `---`, EOF, fence, heading-with-no-body), the `replace`/`insertAfter` rebuild, `endSec` correctness when adjacent sections are rewritten, and the fixture migration's completeness. Converge (no new Blocking/High) → notify → SDD.
+v4 after three converging rounds (v1: 4B+4H → drop Layer 1; v2: 2B+1H → full-doc normalizer; v3: 0B+1H → end canonicalization). Per `docs/dev-process.md` Iterative Re-Review, **re-review v4** (Codex + Claude), scoped to the delta: (1) verify the end-canonicalization is genuine — no stale/overlapping/`end==start` line survives, and a fully-good doc is still a byte-identical no-op (the `lines[slot] === canonical` compare holds against real `resolveTranscriptTokens` output); (2) the allocator minimal-bump keeps strict-increase+uniqueness; (3) hunt any new defect the canonicalization introduced (e.g. a kept section whose canonical end differs only because the model's literal `▶` used a nonstandard label → forced rewrite that's actually fine, or a byte-identity break on a good doc). Converge (no new Blocking/High) → notify → SDD.
