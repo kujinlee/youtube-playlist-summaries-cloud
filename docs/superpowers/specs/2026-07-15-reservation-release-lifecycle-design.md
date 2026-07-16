@@ -1,7 +1,7 @@
-# Reservation Release Lifecycle — Design Spec (v3)
+# Reservation Release Lifecycle — Design Spec (v4)
 
-**Date:** 2026-07-15 (v3: 2026-07-16)
-**Status:** Draft v3 (revised after round-2 dual adversarial review — see §13). Pending re-review (round 3) + user approval.
+**Date:** 2026-07-15 (v3: 2026-07-16; v4: 2026-07-16)
+**Status:** Draft v4 (revised after round-3 dual adversarial review — see §14). Pending re-review (round 4) + user approval.
 **Scope class:** Money path (irreversible spend fuse) → **iterative dual adversarial review to convergence** per `docs/dev-process.md`.
 **Trigger:** Must land before the Fly.io deploy / before any real traffic.
 
@@ -37,7 +37,11 @@ Consequence: a reservation for work that produced **nothing** (a failed/cancelle
 1. **Accounting depth = release-only, made SPEND-AWARE.** Release a reservation only when the work ended **without a successful billable call and without a kept artifact**. Do **not** write `actual_cents`; do **not** read Gemini `usageMetadata`. This is a stricter interpretation of the invariant forced by round-1 review (a bare "release on any failure" refunds real money when Gemini succeeded but the *save* step failed — see §12/F1). Fail-safe: over-counts real spend, never under-counts.
 2. **Scope = generation + serve.** Both reserve sites feed the same global fuse; both get a release path.
 3. **Serve crash residual = accepted (bounded, 6¢, per-owner).** Handle the common in-request serve failure. A hard process crash after reserve but before release — OR a slow generation that outlives the un-heartbeated 180s serve lease and gets reclaimed (§6, H5) — leaks `magazine_est_cents` (6¢) until midnight. Bounded (≤ `per_owner_serve_daily_cents`=60¢/owner/day), self-heals. No serve-lease-expiry sweep here.
-4. **Generation crash residual = accepted (documented; NOT bounded — 150¢, global).** A worker that dies mid-run **after `enqueue_job` reserved 150¢ but before any billable call** (SIGKILL during deploy, OOM during transcript fetch, container recycle) leaves an `active` job; the reaper terminalizes it and — per §5 — **never releases** (a running worker *may* have billed; releasing risks the §3 under-count). That 150¢ stays reserved on the **global** `spend_ledger` until UTC midnight. **This is the one self-DoS shape §1 does NOT fully close**: ~3 such crashes (e.g. a deploy crash-loop) lock the whole system's budget. **Decision (user-confirmed 2026-07-16): ACCEPT this residual for this slice.** Rationale: the release-only fix closes the *dominant* self-DoS surface — handler-level failures (Gemini outage, retry burst, bad input, at-capacity), which is what actually triggers the DoS at scale; a crash in the narrow reserve→first-billable window is rarer and operationally mitigable. **Operational mitigation (required at deploy):** graceful worker drain before rollout (let in-flight jobs finish / stop claiming new ones before SIGTERM) so a routine deploy does not strand reservations. The real fix — a persisted "billable-phase-entered" marker so the reaper can release active jobs that provably never billed — is folded into the deferred **settle** slice (below).
+4. **Accepted residuals = two narrow KEEP cases (documented).** With the §3.1 classification, the release-only fix **does** close the §1 headline self-DoS: a Gemini outage is a storm of class-A rejections (429/503/500/connection) → each **RELEASES** → the budget re-opens (§7 behaviors 3/3d). What remains KEPT-until-midnight is only:
+   - **(4a) Ambiguous class-B failures (150¢, global, but rare).** A genuine client-side **timeout** where Google *may* have metered before the socket dropped. KEPT for money-safety (§3.1 class B). This is the narrow "server completed, client didn't hear it" case — orders of magnitude rarer than an outage (which fails fast as a rejection, class A). Not a self-DoS surface in practice: a healthy Gemini rarely times out post-metering.
+   - **(4b) Worker crash before any terminal write (150¢, global, count-unbounded).** A worker that dies mid-run **after `enqueue_job` reserved 150¢ but before completing** (SIGKILL during deploy, OOM, container recycle) leaves an `active` job; the reaper terminalizes it and — per §5 — **never releases** (a running worker *may* have billed). ~3 such crashes (e.g. a deploy crash-loop) lock the budget until midnight. **Decision (user-confirmed 2026-07-16): ACCEPT** for this slice; a crash in the narrow reserve→terminal window is rare and operationally mitigable.
+
+   **Operational mitigation (required at deploy):** graceful worker drain before rollout (let in-flight jobs finish / stop claiming new ones before SIGTERM) so a routine deploy does not strand (4b) reservations. **The real fix** — a persisted "billable-phase-entered" marker so the reaper can release active jobs that provably never billed, and real-cost settle that measures the class-B/timeout actual — is folded into the deferred **settle** slice (below). Neither residual re-opens the §1 outage self-DoS, which §3.1 closes.
 
 **Deferred (documented, not built here):**
 - **Real-cost settle (`actual_cents` from `usageMetadata`).** *This is the transitional escape hatch:* once settle exists, the §2.1 spend-aware boolean and the §5 keep/release heuristic become redundant — you measure real spend instead of guessing. Everything tagged "transitional" below is resolved by settle. **The settle slice also closes the §2.4 generation crash residual** (a "billable-phase-entered" job marker lets the reaper release never-billed crashed jobs).
@@ -51,22 +55,44 @@ For each UTC day `d`:
 
 > `spend_ledger.reserved_cents[d]` = Σ estimates of reservations made on day `d` that are **still in-flight, OR converted to a kept artifact, OR terminated after a billable call may have spent money**.
 
-A reservation is **released** (credited back) **iff** it reaches a terminal state where **(a)** no artifact was kept **AND (b)** no billable call is known to have succeeded. Because `actual_cents` stays 0, the cap predicate `reserved_cents + actual_cents + est ≤ daily_cap_cents` keeps bounding real spend — conservatively, never below true spend.
+A reservation is **released** (credited back) **iff** it reaches a terminal state where **(a)** no artifact was kept **AND (b)** no billable Gemini call is *positively known to have possibly metered*. Because `actual_cents` stays 0, the cap predicate `reserved_cents + actual_cents + est ≤ daily_cap_cents` keeps bounding real spend — conservatively, never below true spend.
 
-**Release / keep decision, by situation:**
+### 3.1 Failure classification — release rejections, keep timeouts (v4 / B-2 decision)
 
-| Situation | Spent money? | Artifact kept? | Action |
+Round-3 caught that a *blanket* "any Gemini throw ⇒ KEEP" rule (v3) is money-safe but **defeats §1's founding goal**: a Gemini outage (a storm of 503/timeout throws) would KEEP every 150¢ reservation and self-DoS all users at ~$0 real spend — the exact problem this slice exists to fix. **User decision (2026-07-16): classify.** Release only failures we can **positively identify as not-metered**; keep everything else. Three classes:
+
+| Class | Examples | Metered? | Action |
 |---|---|---|---|
-| Handler succeeded (`complete_job`) | maybe | **yes** | **KEEP** |
-| Failure **before any billable Gemini call was sent** (bad input, pre-call `PermanentTranscriptError` / no transcript, at-capacity, duration-cap, idempotency skip, DNS/connect failure *pre-send*) | no | no | **RELEASE** |
-| Failure where **any billable Gemini call may have metered** — it returned then persist/promote threw, **OR** it threw transport/5xx/timeout (server may have metered before the client saw the error), **OR** the **transcription fallback** (`transcribeViaGemini`, itself billable) succeeded before a later step threw | **yes / unknown** | no | **KEEP** *(transitional — settle would release est and record real actual)* |
-| Cancel of a `queued` job (never ran) | no | no | **RELEASE** |
-| Cancel of an `active` (running) job | maybe | maybe | **KEEP** (the worker's own terminal write decides; the running job may have spent) |
-| Worker crash → reaper reclaims | maybe | maybe | **KEEP** (conservative; a running worker may have spent — §2.4 residual) |
-| Serve materialization threw (in-request) — `generateMagazineModel` **threw before returning** | Gemini didn't complete → no | no | **RELEASE** |
-| Serve materialized successfully | yes | yes (cached) | **KEEP** |
+| **A — Pre-send / positively-rejected** | bad input / payload validation; duration-cap; magazine caps-missing / input-cap `NonRetryableError` (`gemini.ts:60,85,505`); transcription fail-closed `NonRetryableError` (`gemini.ts:658`); **a Google API error carrying an HTTP status in the rejected set {429, 500, 502, 503}** (request refused before generation → 0 tokens → $0); connection-refused / DNS failure (never reached Google) | **no (provable)** | **RELEASE** |
+| **B — Ambiguous (may have metered)** | client-side **timeout** / `REQUEST_TIMEOUT_MS` fired / deadline-exceeded; an `AbortError` **not** originating from our lease-abort signal; HTTP 504 gateway-timeout; any error we cannot positively place in A | **unknown** | **KEEP** *(transitional — settle measures real actual)* |
+| **C — Post-return** | Gemini call returned, then parse / `finishReason` incomplete (`gemini.ts:236`) / section-count mismatch (`gemini.ts:547`) / persist / promote / write threw; **the billable transcription fallback (`transcribeViaGemini`) succeeded** before a later step threw | **yes** | **KEEP** |
 
-The one signal that distinguishes rows 2 vs 3 is **"could any billable Gemini call have metered?"** — a single boolean the worker already knows. **The safe direction is KEEP:** classify RELEASE (`false`) *only* when the failure provably occurred **before any bytes were sent to any billable Gemini call** (transcription fallback included). A throw *from inside* a Gemini call is **ambiguous** — Google meters on server-side completion, so a client-side timeout/504 can fire *after* metering — and therefore KEEPs. (See §5 for the worker-runner classification and the handler→runner marker; and note the serve row's RELEASE is on a *pre-return* throw of the single serve call, whereas generation may chain transcription→summary, so generation's KEEP net is wider.) No token counts, no cost math.
+**The safe default is KEEP** (class B/C). RELEASE (class A) fires *only* on a positive not-metered signal. This closes the outage self-DoS (outages are 429/503/500/connection storms — all class A) while never under-counting a genuine timeout-after-metering (class B). The premise "a rejected request bills nothing" is true for the {429,500,502,503}/connection classes — **it MUST be verified once against live Gemini before this classification is trusted in production** (§9, gated like `CLOUD_TRANSCRIBE_FALLBACK_VERIFIED`); until verified the flag defaults to *treat-all-Gemini-throws-as-KEEP* (v3 behavior — safe but leaves the outage DoS open, matching §2.4's documented residual).
+
+**The classifier (single testable helper, `classifyGeminiFailure(err, ourSignal)` → `'release' | 'keep'`).** Because `gemini.ts` wraps its throws as `new Error(msg, { cause: err })` (`:394,:441,:554`) and preserves `NonRetryableError`/`AbortError` identity (`:392,:551,:552`), the root discriminator is recoverable by walking the `.cause` chain:
+1. our lease-abort? `if (ourSignal?.aborted) → 'keep'` — an abort we initiated (SIGTERM/lease-loss) is not a Gemini verdict; the job requeues, reservation reused (never a release).
+2. class A pre-send markers: `err (or any .cause) instanceof NonRetryableError` → `'release'`; a Google API error whose `.status ∈ {429,500,502,503}` → `'release'`; a Node connection error (`code ∈ {ECONNREFUSED, ENOTFOUND, EAI_AGAIN}`) → `'release'`.
+3. everything else (timeouts, non-our AbortError, 400/504, post-return validation) → `'keep'`.
+
+The handler attaches `billableSucceeded: (classify === 'keep')` … i.e. it sets the release marker `p_billable_succeeded=false` **only** when `classify(err) === 'release'` (§5 M2). No token counts, no cost math.
+
+**Situational summary (both paths):**
+
+| Situation | Class | Action |
+|---|---|---|
+| Handler succeeded (`complete_job`) | — (artifact kept) | **KEEP** |
+| Bad input / duration-cap / caps `NonRetryableError` | A | **RELEASE** |
+| Gemini API rejected {429,500,502,503} / connection-refused / DNS | A | **RELEASE** |
+| Gemini **timeout** / non-lease `AbortError` / 504 | B | **KEEP** |
+| Gemini returned then parse/section-count/persist threw | C | **KEEP** |
+| Transcription fallback billed, then a later step threw | C | **KEEP** |
+| Cancel of a `queued` job (never ran) | — | **RELEASE** |
+| Cancel of an `active` job; worker crash → reaper | — | **KEEP** (may have spent — §2.4 residual) |
+| Serve `generateMagazineModel`: class A throw | A | **RELEASE** |
+| Serve `generateMagazineModel`: class B/C throw, or write threw | B/C | **KEEP** |
+| Serve materialized successfully | — (cached) | **KEEP** |
+
+(**At-capacity** is *not* in this table: an at-capacity `enqueue_job`/`reserve_serve_model` **rolls back its own reserve** (`0018:64`, `0014:85`) — there is no reservation to release, so it is a no-op, not a RELEASE — L-1.)
 
 ---
 
@@ -118,7 +144,32 @@ Fold a spend-aware release into the terminal RPCs. New migration `create or repl
 - Re-issue `revoke all … from public; grant execute … to service_role;` for the **new** 6-arg signature.
 - Update the adapter `SupabaseJobQueue.fail` (`supabase-job-queue.ts:85-90`) to pass `p_billable_succeeded` (threaded from the worker-runner's classification, §5 below). Because only one `fail_job` overload will exist after the drop, the named-arg call is unambiguous.
 
-**Default direction:** `p_billable_succeeded` defaults to **`true` = conservative KEEP** (`false` = "releasable-unless-told-otherwise" is WRONG) so an un-updated caller — or any unclassified error (M2) — never wrongly refunds. The worker-runner passes `false` only when it caught an error it can prove happened *before* any billable Gemini call was sent.
+**Default direction:** `p_billable_succeeded` defaults to **`true` = conservative KEEP** (`false` = "releasable-unless-told-otherwise" is WRONG) so an un-updated caller — or any unclassified error (M2) — never wrongly refunds. The worker-runner passes `false` only for a §3.1 class-A (positively not-metered) failure.
+
+**`fail_job` release body (SQL — M-3).** The recreated body is the existing function verbatim, but the initial `select … into` must additionally read `created_at` and `reserved_cents` (the current `SELECT` at `0008:148` reads neither), and after `v_new` is computed the release fires **only** on a genuine terminal fail with `p_billable_succeeded=false` — a retryable requeue (`v_new='queued'`) must **not** release (behavior 6). The whole thing stays inside the existing `status='active'` single-writer fence (`0008:149-151`), so it is exactly-once:
+```sql
+-- after: select attempts, max_attempts, cancel_requested, created_at, reserved_cents
+--        into v_attempts, v_max, v_cancel, v_created_at, v_reserved from jobs
+--        where id=p_job_id and locked_by=p_worker_id and lease_token=p_lease_token and status='active' for update;
+-- … (unchanged v_new computation: cancelled / failed / dead_letter / queued) …
+-- … (unchanged UPDATE jobs SET status=v_new, …) …
+if not p_billable_succeeded
+   and v_new in ('failed','dead_letter','cancelled')   -- NOT 'queued' (retry reuses the reservation)
+   and v_reserved > 0 then
+  update spend_ledger
+     set reserved_cents = reserved_cents - v_reserved, updated_at = now()
+   where day = (v_created_at at time zone 'utc')::date
+     and reserved_cents >= v_reserved;
+  if not found then
+    insert into ledger_audit(day, kind, expected_amt, note, at)
+      values ((v_created_at at time zone 'utc')::date, 'release_underflow', v_reserved,
+              'fail_job '||p_job_id::text, now());
+  end if;
+  update jobs set reserved_cents = 0 where id = p_job_id;   -- belt-and-suspenders (single-writer fence is primary, §4.3)
+end if;
+return v_new;
+```
+(The `v_new='queued'` exclusion is the load-bearing requeue guard; the `status='active'` fence already guarantees only one terminal writer reaches this.)
 
 | Transition | Function | Action |
 |---|---|---|
@@ -132,67 +183,85 @@ Fold a spend-aware release into the terminal RPCs. New migration `create or repl
 | playlist delete: `queued → cancelled` jobs | `request_cancel_playlist_jobs` (`0019:45`) | **RELEASE** before rows are deleted |
 | playlist delete: `active` jobs | `request_cancel_playlist_jobs` | **KEEP** (may have spent; reservation self-heals at midnight) |
 
-**Worker-runner + handler classification (fixes B1 + M2 — round-2). The safe default is KEEP; RELEASE only on a *proven* pre-send failure.**
+**Worker-runner + handler classification (fixes B1/B-2 + M2 + H-1). RELEASE only on a §3.1 class-A (positively not-metered) failure; KEEP everything else.**
 
-Pass `p_billable_succeeded=false` (RELEASE) **only** when the failure provably occurred **before any bytes were sent to any billable Gemini call** — transcription fallback included:
-- payload/validation errors, duration-cap rejection, idempotency skip, `PermanentTranscriptError` raised *before* any Gemini call, at-capacity, DNS/connection-refused *before send*.
+The runner classifies the caught error via the single helper `classifyGeminiFailure(err, ourSignal)` (§3.1) and passes `p_billable_succeeded = (classify(err) !== 'release')`. So `false` (RELEASE) fires only for class A: pre-send `NonRetryableError` (caps/input-cap/transcription-disabled/duration-cap), payload/validation, a Google API error with HTTP status ∈ {429,500,502,503}, or a connection/DNS error. Class B (timeouts, non-lease `AbortError`, 504) and class C (post-return parse/persist, or a successful billable transcription then a later throw) → `true` (KEEP).
 
-Pass `p_billable_succeeded=true` (KEEP) for **every throw originating from a billable Gemini call itself** — `transcribeViaGemini` (`lib/gemini.ts`, the caption-less transcription fallback, **itself billable**), `generateSummary`, `generateDig`, `generateMagazineModel` — **including transport/5xx/timeout**, and for any error after such a call returned. Rationale (B1): Google meters on server-side completion, so a client-side socket timeout / SDK deadline / intermediary 504 can fire *after* the model metered a full response — billing-identical to the "Gemini returned, save failed" case, which KEEPs. The old v2 rule ("Gemini threw → no charge → RELEASE") under-counted real spend and is removed. The old rule also keyed only on `generateSummary`/`generateMagazineModel`, missing the earlier billable **transcription** step entirely.
+**Why this is implementable (H-1) — the discriminator must survive to the runner.** Two code changes make the class-A signal reachable (round-3 found it currently is *not* — everything is flattened to a generic `Error`):
+1. **`resolveTranscriptSegments` (`transcript-source.ts:61-66`) must stop collapsing typed errors.** Today it re-wraps fallback-disabled `NonRetryableError`, pre-send connection errors, and post-metering timeouts all into one generic `Error('transcript unavailable …')`, erasing the class. Fix: preserve the original via `{ cause: err }` (or re-throw the typed error) so `classifyGeminiFailure` can walk `.cause` and see the `NonRetryableError` / Google-status / connection code. Without this, every caption-less failure KEEPs (a $0 leak) even when it is class A.
+2. **`classifyGeminiFailure` walks the `.cause` chain**, which `gemini.ts` already populates (`new Error(msg, { cause: err })` at `:394,:441,:554`; `NonRetryableError`/`AbortError` re-thrown by identity at `:392,:551,:552`). No change needed in `gemini.ts` beyond confirming the SDK surfaces `.status` on its fetch error (verify — §9).
 
-**Marker plumbing (M2) — specified end-to-end, not assumed.** Today `worker-runner.ts:53-66` catches a bare `e` and computes only `retryable`; there is no billable signal. Add a typed marker:
-- Each handler (`summary-handler.ts`, `dig-handler.ts`) attaches `billableSucceeded: false` to **every throw it raises on a proven pre-Gemini-send path** (the RELEASE list above). Any error that escapes from *inside* a billable Gemini call carries **no** `false` marker (the handler does not catch-and-reclassify Gemini throws).
-- The runner reads it: `const pre = (e as { billableSucceeded?: boolean }).billableSucceeded === false;` and calls `failJob(..., { p_billable_succeeded: !pre })`.
-- **Absent / unknown marker ⇒ `p_billable_succeeded=true` (KEEP).** So an unclassified or new error type KEEPs — a bounded 150¢ leak in the *safe* direction, never a wrong RELEASE. This makes the SQL default (`true`, below) and the runner default agree.
+**Marker plumbing (M2) — specified end-to-end.** Today `worker-runner.ts:53-66` catches a bare `e` and computes only `retryable`; no billable signal. The runner (not the handler) owns classification, since it has both the error and `ourSignal` (the lease `AbortSignal`):
+- Runner: `const release = classifyGeminiFailure(e, ctx.signal) === 'release';` then `failJob(..., { p_billable_succeeded: !release })`.
+- **Unknown / unrecognized error ⇒ `'keep'` ⇒ `p_billable_succeeded=true`.** An unclassified or new error type KEEPs — a bounded 150¢ leak in the *safe* direction, never a wrong RELEASE. This makes the SQL default (`true`) and the runner default agree.
+- Idempotency-skip is **not** a failure path — the handler `return`s and the runner calls `complete` (KEEP the completed artifact), so it never reaches this classifier (M-1). It is removed from the RELEASE set.
 
-**`request_cancel_job` gating (fixes B2; SQL corrected for H1 — round-2).** The function matches `status in ('queued','active')` and returns rowcount=1 for *both* a real `queued→cancelled` flip and an `active` flag-set. Release must key on the **genuine transition**, and must read the reservation amount **before** the update zeroes it. Postgres < 18 (Supabase is PG15/17) `UPDATE … RETURNING` returns the **post-update** row, so `RETURNING reserved_cents` after `set reserved_cents = 0` yields `0` — the v2 `<OLD reserved_cents>` placeholder was non-functional and would have released `0` (leak). Use an explicit **pre-read CTE** (which also `for update`-serializes against a concurrent `claim_next_job`):
+**`request_cancel_job` gating (fixes B2; H1 pre-read + H-3 audit + H-4 return — round-3).** Three constraints the single multi-CTE form couldn't satisfy together: (a) read OLD `reserved_cents` **before** zeroing (PG<18 `RETURNING` is post-update); (b) write a `ledger_audit` row on underflow (§4.2 — a plain CTE decrement just matches 0 rows, no `if not found`, so corruption is silently swallowed — H-3); (c) return **1 for both** a queued cancel *and* an active flag-set (the adapter + `cancel-job-rpc.test.ts:37` assert this — a CTE whose final statement is the ledger update would return 0 for an active cancel — H-4). Cleanest as **procedural plpgsql** (like `fail_job`), returning `int`:
 ```sql
-with pre as (                                  -- snapshot OLD values under a row lock
-  select id,
-         status         as old_status,
-         reserved_cents as old_amt,
-         (created_at at time zone 'utc')::date as reserve_day
+declare v_old_status text; v_old_amt int; v_day date;
+begin
+  -- (keep the existing owner/auth guard)
+  select status, reserved_cents, (created_at at time zone 'utc')::date   -- snapshot OLD under a row lock
+    into v_old_status, v_old_amt, v_day
     from jobs
    where id = p_job_id and owner_id = auth.uid() and status in ('queued','active')
-   for update),
-upd as (                                       -- flip; only a queued row becomes cancelled + zeroed
-  update jobs j
+   for update;                                       -- serializes vs claim_next_job's `for update skip locked`
+  if not found then return 0; end if;                -- nothing to cancel (terminal/foreign/missing)
+  update jobs
      set cancel_requested = true,
-         status         = case when pre.old_status = 'queued' then 'cancelled' else j.status end,
-         reserved_cents = case when pre.old_status = 'queued' then 0 else j.reserved_cents end,
+         status         = case when v_old_status = 'queued' then 'cancelled' else status end,
+         reserved_cents = case when v_old_status = 'queued' then 0 else reserved_cents end,
          updated_at     = now()
-    from pre
-   where j.id = pre.id
-   returning pre.old_status)
-update spend_ledger sl                          -- release ONLY genuine queued→cancelled rows, OLD amount, OLD day
-   set reserved_cents = sl.reserved_cents - pre.old_amt, updated_at = now()
-  from pre
- where pre.old_status = 'queued'
-   and sl.day = pre.reserve_day
-   and sl.reserved_cents >= pre.old_amt;         -- guarded decrement; underflow → ledger_audit (§4.2)
+   where id = p_job_id;
+  if v_old_status = 'queued' and v_old_amt > 0 then   -- RELEASE only a genuine queued→cancelled, OLD amt+day
+    update spend_ledger set reserved_cents = reserved_cents - v_old_amt, updated_at = now()
+     where day = v_day and reserved_cents >= v_old_amt;
+    if not found then                                 -- guarded-decrement underflow → audit, never silent clamp
+      insert into ledger_audit(day, kind, expected_amt, note, at)
+        values (v_day, 'release_underflow', v_old_amt, 'request_cancel_job '||p_job_id::text, now());
+    end if;
+  end if;
+  return 1;                                           -- cancellation WAS requested (queued OR active) — H-4
+end;
 ```
-`did_cancel := (pre.old_status = 'queued')` drives the function's return. An `active` flag-set (`old_status='active'`) sets only `cancel_requested` and never releases. A repeat cancel of an already-`cancelled`/terminal job matches no `pre` row → no-op (idempotent). The guarded-decrement underflow branch (§4.2) writes `ledger_audit` if the ledger row is missing/below amount.
+An `active` flag-set sets only `cancel_requested`, never releases, and still returns 1. A repeat cancel of a terminal job → `not found` → returns 0 (idempotent). Release fires once (the `status='active'`/`queued` snapshot under lock is the single-writer guard).
 
-**`request_cancel_playlist_jobs` (fixes Codex-B4; SQL written for H2 — round-2).** Same defect class as H1 (post-update `RETURNING`), **plus** it is inherently multi-row and multi-day: a playlist can hold many queued jobs enqueued across a UTC-midnight boundary, each with its own `reserved_cents` and `created_at` day. A single `where day = X` decrement would leak the other day's jobs. Snapshot pre-update amounts, aggregate by reserve-day, decrement each `spend_ledger` day row by its group sum — **inside this RPC, before the route's cascade delete removes the rows**:
+**`request_cancel_playlist_jobs` (fixes Codex-B4; H2 multi-day + H-2 active-flag + H-3 set-audit + H-4 return — round-3).** Inherently multi-row / multi-day (queued jobs span the UTC-midnight boundary, each with its own amount+day). Three round-3 corrections over v3: **(H-2)** the flag `cancel_requested=true` must still hit **active** jobs (the whole reason `0019` exists — an in-flight worker must stop writing to rows the cascade delete is about to remove); v3's queued-only `pre` silently dropped that → write-after-delete race. **(H-3)** the ledger underflow must audit *per day* (a single `if not found` can't fire when some days decrement and one doesn't). **(H-4)** the return must count **jobs flagged** (queued+active), not `spend_ledger` day-rows touched. One data-modifying-CTE statement satisfies all three (all `with` branches execute exactly once; `aud` reads `dec`'s RETURNING, not a table re-read):
 ```sql
-with pre as (                                    -- all queued jobs of the playlist, OLD amounts, under lock
-  select id, reserved_cents as old_amt, (created_at at time zone 'utc')::date as reserve_day
-    from jobs
-   where playlist_id = p_playlist_id and owner_id = auth.uid() and status = 'queued'
-   for update),
-upd as (
-  update jobs j
-     set cancel_requested = true, status = 'cancelled', reserved_cents = 0, updated_at = now()
-    from pre
-   where j.id = pre.id),
-per_day as (                                     -- multi-day: group OLD amounts by reserve-day
-  select reserve_day, sum(old_amt) as amt from pre group by reserve_day)
-update spend_ledger sl
-   set reserved_cents = sl.reserved_cents - per_day.amt, updated_at = now()
-  from per_day
- where sl.day = per_day.reserve_day
-   and sl.reserved_cents >= per_day.amt;          -- guarded per-day decrement; underflow → ledger_audit (§4.2)
+return (
+  with pre as (                                  -- ALL non-terminal jobs of the playlist, under lock
+    select id, status as old_status, reserved_cents as old_amt,
+           (created_at at time zone 'utc')::date as reserve_day
+      from jobs
+     where playlist_id = p_playlist_id and owner_id = auth.uid() and status in ('queued','active')
+     for update),
+  upd as (                                       -- H-2: flag ALL; flip+zero only the queued subset
+    update jobs j
+       set cancel_requested = true,
+           status         = case when pre.old_status='queued' then 'cancelled' else j.status end,
+           reserved_cents = case when pre.old_status='queued' then 0 else j.reserved_cents end,
+           updated_at     = now()
+      from pre where j.id = pre.id
+     returning j.id),
+  per_day as (                                   -- queued-only OLD amounts, grouped by reserve-day
+    select reserve_day, sum(old_amt) as amt
+      from pre where old_status='queued' and old_amt > 0
+     group by reserve_day),
+  dec as (                                       -- guarded per-day decrement; RETURNING days actually credited
+    update spend_ledger sl
+       set reserved_cents = sl.reserved_cents - per_day.amt, updated_at = now()
+      from per_day
+     where sl.day = per_day.reserve_day and sl.reserved_cents >= per_day.amt
+     returning sl.day),
+  aud as (                                       -- H-3 set-based audit: every per_day with no successful decrement
+    insert into ledger_audit(day, kind, expected_amt, note, at)
+    select pd.reserve_day, 'release_underflow', pd.amt,
+           'request_cancel_playlist_jobs '||p_playlist_id::text, now()
+      from per_day pd
+     where pd.reserve_day not in (select day from dec))
+  select count(*)::int from upd);                -- H-4: return = jobs flagged (queued + active)
 ```
-`active` jobs of the playlist keep their reservation (may have spent; §2.4 residual) — the existing function's active-handling is unchanged. Route order (`app/api/playlists/[id]/route.ts:65,73`) already cancels before delete — the release lives in this RPC so it runs while the rows still exist. (This is the multi-row/multi-day complexity round-1 F5 *relocated* from the reaper rather than eliminated — it is genuinely needed here and carries its own idempotency argument: a second call finds no `queued` `pre` rows → no-op.)
+`active` jobs keep their reservation (may have spent; §2.4) but ARE flagged. Route order (`app/api/playlists/[id]/route.ts:65,73`) cancels before delete — the release lives here so it runs while rows still exist. Idempotent: a second call finds no `queued`/`active` `pre` rows → `count=0`, no release. (This multi-row/multi-day complexity is round-1 F5 *relocated* from the reaper, not eliminated — genuinely needed here.)
 
 **Reaper (fixes round-1 H1/Codex-6 by removing the need for a multi-row release).** `sweep_expired_leases` **never releases** — a lease-expired job was `active` (running), so it may have spent. Its reservation is KEPT (over-count, safe) and self-heals at midnight. This is both correct (spend-aware) and simpler than a multi-row/multi-day release CTE. **Round-2 caveat (H3, now §2.4):** this KEEP leaves a **150¢ global, count-unbounded crash residual** for a worker that died *before* any billable call — an accepted, documented residual for this slice (see §2.4), mitigated operationally by graceful drain and closed properly by the deferred settle slice. It is *not* bounded like the 6¢ serve residual; do not conflate the two.
 
@@ -237,10 +306,15 @@ This residual is **bounded and safe** (folded into §2.3): releases ≤ reserves
 - `drop function reserve_serve_model(<existing arg signature>);` then recreate `returns table(status text, release_token uuid)` (or a composite type), body identical except it now also returns `v_token` on the `'reserved'` branch (and `null` token on `'ok'`/`'denied'`/`'at_capacity'` paths).
 - Re-issue grants `authenticated, anon` and restate `security definer` / `set search_path` verbatim.
 - `reserve_serve_model_meta`'s `regprocedure` probe keys on the **argument** signature (unchanged) → still resolves; no change needed there.
-- Update `serve-doc.ts:52-56` to destructure `{ status, release_token }` instead of a bare scalar.
+- **Caller read (M-2):** a `returns table(...)` function comes back through supabase-js `.rpc()` as a **row set (array)** — cf. how `claim_next_job`'s table return is read as `data[0]` (`supabase-job-queue.ts:60-61`). So `serve-doc.ts:52-56` must read `const { status, release_token } = data[0]` (or the fn returns a single composite scalar consumed via `.single()`). Destructuring `{ status }` directly off `data` yields `undefined` → the `switch` hits `default: throw` on **every** serve, stranding the reservation just made. Pick the array-`data[0]` shape (matches the `claim_next_job` precedent) and pin it.
+
 The token is **server-held**: it is never placed in any client-visible `ResolveResult`, so a browser client cannot obtain it (this is what makes the §6 un-charge defense hold).
 
-**Caller change (`lib/html-doc/serve-doc.ts`):** on the `'reserved'` branch, capture the returned token. `try` the materialize (`generateMagazineModel`, `serve-doc.ts:81`) + write. On success → `settle_serve_model(token, released:=false)` (keep). On throw → `settle_serve_model(token, released:=true)` (refund), then re-throw. Every WHERE keeps `owner_id = auth.uid()` (no cross-tenant release; L3).
+**Caller change (`lib/html-doc/serve-doc.ts`) — classification applied to serve (B-1, round-3).** On the `'reserved'` branch, capture the token. `try` the materialize (`generateMagazineModel`, `serve-doc.ts:81`) + write. Then:
+- **Success** → `settle_serve_model(token, released:=false)` (keep the charge; clear marker/token).
+- **Throw** → classify with the **same** `classifyGeminiFailure(err, ourSignal)` helper (§3.1). `'release'` (class A — pre-send `NonRetryableError` at `gemini.ts:505`/`:85`, or a Google API rejection {429,500,502,503}/connection error) → `settle_serve_model(token, released:=true)` (refund the 6¢). `'keep'` (class B/C — timeout, non-lease `AbortError`, 504, section-count/parse mismatch at `gemini.ts:547`, or the write step threw) → `settle_serve_model(token, released:=false)` (KEEP the charge; server may have metered) — this is the fix for the round-3 serve under-count. Then re-throw either way.
+
+v3's blanket "`released:=true` on any throw" was the pre-B1 rule and under-counted a metered-then-timed-out magazine call (6¢). Serve now KEEPs on class B/C exactly like generation. Every WHERE keeps `owner_id = auth.uid()` (no cross-tenant release; L3). A failed serve still burns `attempt_count` (§6) whether kept or released.
 
 ---
 
@@ -249,24 +323,28 @@ The token is **server-held**: it is never placed in any client-visible `ResolveR
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
 | 1 | Success keeps | handler returns; `complete_job` → `completed` | ledger + `jobs.reserved_cents` unchanged |
-| 2 | Pre-send fail releases | fail **before any Gemini bytes sent** (bad payload / pre-call no-transcript / capacity / duration-cap / idempotency skip); handler marks `billableSucceeded=false`; `fail_job(billable=false)` → `failed`/`dead_letter` | ledger `-= est` on reserve-day; `jobs.reserved_cents → 0` |
-| 3 | Gemini-threw KEEPS (B1) | `generateSummary`/`generateMagazineModel` throws transport/5xx/timeout (server **may have metered**); no `false` marker; `fail_job(billable=true)` | **no** release (KEEP) |
-| 3b | Transcription-billable then fail KEEPS (B1) | captions absent → `transcribeViaGemini` succeeds (billable) → later step throws; no `false` marker; `fail_job(billable=true)` | **no** release (KEEP) |
-| 3c | Unclassified error KEEPS (M2) | handler throws an error with **no** `billableSucceeded` marker; runner defaults `p_billable_succeeded=true` | **no** release (KEEP; bounded safe leak) |
-| 4 | Post-billing fail KEEPS | `generateSummary` returned, then persist/promote throws; `fail_job(billable=true)` → `dead_letter` | **no** release *(transitional)* |
+| 2 | Class-A pre-send fail releases | fail **before any Gemini bytes sent** (bad payload / caps `NonRetryableError` / duration-cap); `classify='release'`; `fail_job(billable=false)` → `failed`/`dead_letter` | ledger `-= est` on reserve-day; `jobs.reserved_cents → 0` |
+| 2b | Class-A Gemini REJECTION releases (B-2) | `generateSummary` throws a Google API error status ∈ {429,500,502,503} (or ECONNREFUSED/DNS); `classify='release'`; `fail_job(billable=false)` | **released** — this is the §1 outage case; budget re-opens |
+| 3 | Class-B Gemini TIMEOUT keeps (B1/B-2) | `generateSummary`/`generateMagazineModel` throws a client-side timeout / non-lease `AbortError` / 504 (server **may have metered**); `classify='keep'`; `fail_job(billable=true)` | **no** release (KEEP) |
+| 3b | Class-C transcription-billed then fail KEEPS (B1) | captions absent → `transcribeViaGemini` succeeds (billable) → later step throws; `classify='keep'`; `fail_job(billable=true)` | **no** release (KEEP) |
+| 3c | Unclassified error KEEPS (M2) | runner can't place the error in class A → default `'keep'`; `p_billable_succeeded=true` | **no** release (KEEP; bounded safe leak) |
+| 3d | Class-A reachable through transcript wrapper (H-1) | caption-less, `CLOUD_TRANSCRIBE_FALLBACK_VERIFIED=false` → transcription-disabled `NonRetryableError` survives `resolveTranscriptSegments` (not flattened) → `classify='release'` | **released** (not a $0 KEEP-leak) |
+| 4 | Class-C post-return fail KEEPS | `generateSummary` returned, then parse/section-count/persist throws; `classify='keep'` → `dead_letter` | **no** release *(transitional)* |
 | 5 | Cancel-mid-run keeps or releases correctly | `cancel_requested` + handler throws pre-billing | released only if `billable=false` |
 | 6 | Retry reuses one reservation | retryable fail, `attempts<max`; `fail_job` → `queued` | **no** release; next attempt does not re-reserve |
 | 7 | Reaper never releases | lease expires (any attempts); `sweep` → `queued`/`dead_letter`/`cancelled` | **no** release (KEEP) |
 | 8 | Cancel queued releases | `request_cancel_job`, genuine `queued→cancelled` | released; `jobs.reserved_cents → 0` |
-| 9 | Cancel ACTIVE keeps | `request_cancel_job` on an `active` job (flag-set, status stays `active`) | **no** release |
+| 9 | Cancel ACTIVE keeps + returns 1 (H-4) | `request_cancel_job` on an `active` job (flag-set, status stays `active`) | **no** release; function **returns 1** (`cancel-job-rpc.test.ts:37`), `cancel_requested=true` |
 | 10 | Cancel active, then success keeps | active cancel, handler already succeeded; `complete_job` → `cancelled` | **no** release (artifact exists) |
 | 11 | Double-cancel no double-release | cancel an active job twice | at most one release, and only if it ever genuinely flips `queued→cancelled` |
-| 12 | Playlist delete: queued released | `request_cancel_playlist_jobs` flips queued→cancelled before cascade delete | each cancelled job released; then rows deleted |
-| 13 | Playlist delete: active kept | active jobs on the deleted playlist | reservation kept (self-heals midnight); documented |
+| 12 | Playlist delete: queued released, multi-day | `request_cancel_playlist_jobs`, queued jobs on days X and Y, before cascade delete | day X and day Y ledger rows **each** `-= their group sum`; return = count of jobs flagged |
+| 13 | Playlist delete: active flagged + kept (H-2) | active jobs on the deleted playlist | reservation kept (§2.4); **but `cancel_requested=true` IS set** so the worker stops writing before cascade delete |
+| 13b | Playlist per-day underflow audits (H-3) | one of the multi-day `spend_ledger` rows is missing/below | that day's release no-ops **and writes a `ledger_audit` row**; other days still credit |
 | 14 | Midnight-span day-correct | job `created_at` day X, terminal day Y | release credits day **X** |
 | 15 | Guarded decrement audits | release when ledger row missing / below amount | no negative; `ledger_audit` row written; terminal still commits |
 | 16 | Cap re-opens after release | reserve to cap, a pre-billing failure releases | subsequent `enqueue_job`/`enqueue_preflight` admits again |
-| 17 | Serve fail releases both | `generateMagazineModel` throws → `settle_serve_model(token, released=true)` | `spend_ledger` and `serve_owner_budget` each `-= 6`; marker/token cleared; `attempt_count` unchanged |
+| 17 | Serve class-A fail releases both | `generateMagazineModel` throws class-A (caps `NonRetryableError` / Google {429,503} / connection); `classify='release'` → `settle_serve_model(token, released=true)` | `spend_ledger` and `serve_owner_budget` each `-= 6`; marker/token cleared; `attempt_count` unchanged |
+| 17b | Serve class-B/C fail KEEPS (B-1) | `generateMagazineModel` throws a timeout / section-count mismatch (`gemini.ts:547`), or the write step throws; `classify='keep'` → `settle_serve_model(token, released=false)` | **no** ledger change (server may have metered); marker/token cleared; `attempt_count` unchanged |
 | 18 | Serve success keeps | materialize+write succeed → `settle_serve_model(token, released=false)` | no ledger change; marker/token cleared |
 | 19 | Serve un-charge blocked | after a KEPT serve, call `settle_serve_model(token, released=true)` | no-op (marker/token already cleared) |
 | 20 | Serve double-refund blocked | call release settle twice for one failed attempt | second is a no-op |
@@ -274,7 +352,8 @@ The token is **server-held**: it is never placed in any client-visible `ResolveR
 | 22 | Serve K-bound survives releases | K failed serves, each released | `attempt_count` reaches `max_serve_attempts` → `'attempts_exhausted'` |
 | 23 | Retry-keep path reachable | force `max_attempts > 1` in the fixture | behaviors 6/7's KEEP-on-requeue actually fire (not vacuous) |
 | 24 | Serve lease-overlap = bounded leak, not double-refund (H5) | reserve token A; expire the 180s lease; second view reclaims (token B, `+6`); settle A | A's settle no-ops (token overwritten); B can still settle; net ≤ one release; ledger never goes negative; per-owner burn ≤ 60¢ |
-| 25 | Generation crash residual KEPT + documented (H3/§2.4) | `active` job (150¢ reserved, no billable call yet); worker killed; reaper terminalizes | **no** release (KEEP); 150¢ stays reserved till midnight — asserts the accepted §2.4 residual, not a bug |
+| 25 | Generation crash residual KEPT + documented (§2.4b) | `active` job (150¢ reserved, no billable call yet); worker killed; reaper terminalizes | **no** release (KEEP); 150¢ stays reserved till midnight — asserts the accepted §2.4b crash residual, not a bug |
+| 26 | Outage self-DoS is CLOSED (B-2) | N generations all hit Google 503 (class A) → all release | after N releases the ledger is back to baseline; a fresh `enqueue_job` admits — the §1 scenario no longer self-DoSes |
 
 ---
 
@@ -284,31 +363,36 @@ The token is **server-held**: it is never placed in any client-visible `ResolveR
 - **Missing ledger/budget row on release:** guarded decrement no-ops + audits; cannot happen on the normal path (reserve created the row).
 - **Concurrency:** release lives inside the terminal RPC's single-writer guard; reaper never releases (so it can't race a worker's release); serve release is token-gated and single-use.
 - **`p_billable_succeeded` default = `true` (KEEP):** an un-migrated / older caller — **and any unclassified error** (§5 M2) — never wrongly refunds; the unsafe direction (refund real spend) requires an explicit `false` on a proven pre-send failure.
-- **Gemini-originated throw is ambiguous (B1):** a client-side timeout/504 can fire after server-side metering → treated as KEEP. Only pre-send failures RELEASE. This covers the billable **transcription fallback** too, not just `generateSummary`/`generateMagazineModel`.
-- **Cancel OLD-value capture (H1/H2):** PG<18 `UPDATE … RETURNING` sees post-update values, so both cancel RPCs pre-read `reserved_cents` in a `for update` CTE *before* zeroing; playlist cancel aggregates by reserve-day for the multi-day case.
+- **Gemini failure classification (§3.1, B-2):** RELEASE only a positively not-metered class-A failure (pre-send `NonRetryableError`, Google API status ∈ {429,500,502,503}, connection/DNS); KEEP class B (timeout/non-lease-abort/504) and class C (post-return). Applies to **both** generation and serve. Unrecognized → KEEP (safe). Requires the transcript wrapper to preserve the typed cause (H-1) and one-time live verification (§9).
+- **Cancel OLD-value capture + audit + return (H1/H-3/H-4):** both cancel RPCs are procedural/`for update` pre-read of OLD `reserved_cents` *before* zeroing (PG<18 `RETURNING` is post-update); release gated on genuine `queued→cancelled`; underflow writes `ledger_audit` (per-day for playlist); the function return counts **jobs flagged** (queued+active), not ledger rows. Playlist still flags `cancel_requested` on active jobs (H-2).
 - **Serve lease overlap (H5):** a serve generation exceeding the un-heartbeated 180s lease can be reclaimed → a bounded 6¢ leak (releases ≤ reserves), folded into the §2.3 residual; never a double-refund or under-count.
-- **Generation crash residual (H3/§2.4):** 150¢ global, count-unbounded, accepted for this slice; mitigated by graceful drain; closed by the deferred settle slice.
+- **Accepted residuals (§2.4):** (4a) a rare class-B timeout-after-metering (150¢, KEEP for money-safety) and (4b) a worker crash before any terminal write (150¢ global, count-unbounded); both mitigated by graceful drain / closed by settle. Neither re-opens the §1 outage self-DoS (§3.1 closes it).
+- **At-capacity is a no-op, not a RELEASE (L-1):** `enqueue_job`/`reserve_serve_model` roll back their own reserve at capacity → nothing to credit back.
 
 ---
 
 ## 9. Testing Strategy
 
-Against **real PostgREST + Postgres** (not mocks — the BUG-1 lesson: a mocked money test missed a real PostgREST param-drop). Integration tests assert exact ledger/budget/job-column deltas for behaviors 1–23, plus the round-2 additions: the serve lease-overlap bounded-leak (24, force lease expiry mid-generation) and the generation crash residual (25, kill an active pre-billing job → reaper KEEPs). Include: a concurrency test (two claimants race a terminal write → exactly one release); the midnight-span test (back-dated `created_at`) **for both single and playlist cancel** (H2 multi-day); the serve un-charge/double-refund/wrong-day trio (17–21); the guarded-decrement audit path (15, asserting a `ledger_audit` row *and* that the terminal transition still commits — H4). A unit-level test asserts the worker-runner's error→`p_billable_succeeded` classification for **each** error class, explicitly including: a Gemini transport/timeout throw → `true` (KEEP, B1), a transcription-fallback-succeeded-then-fail → `true` (B1), a proven pre-send error → `false`, and an unmarked/unknown error → `true` (M2 default).
+Against **real PostgREST + Postgres** (not mocks — the BUG-1 lesson: a mocked money test missed a real PostgREST param-drop). Integration tests assert exact ledger/budget/job-column deltas for behaviors 1–26. Include: a concurrency test (two claimants race a terminal write → exactly one release); the midnight-span test (back-dated `created_at`) **for both single and playlist cancel** (multi-day, behavior 12); the cancel-return-contract assertions (behavior 9 active-cancel returns 1; playlist returns jobs-flagged count — H-4); the playlist active-flag test (behavior 13 — `cancel_requested=true` on the active job — H-2); the per-day audit path (behavior 13b — H-3); the serve un-charge/double-refund/wrong-day trio (19–21); the guarded-decrement audit path (15, asserting a `ledger_audit` row *and* that the terminal transition still commits — H4).
+
+**Classification unit tests (`classifyGeminiFailure`, §3.1 — B-2/H-1).** A unit suite asserts `'release'` vs `'keep'` for each class against realistic error shapes: a Google API error with `.status` ∈ {429,500,502,503} → `release`; `ECONNREFUSED`/`ENOTFOUND` → `release`; a pre-send `NonRetryableError` (incl. one surfaced *through* `resolveTranscriptSegments` — H-1, proving it is no longer flattened) → `release`; a client-side timeout / non-lease `AbortError` / 504 → `keep`; a section-count / parse post-return error → `keep`; our own lease-abort signal (`ourSignal.aborted`) → `keep` (requeue, not a verdict); an unrecognized error → `keep`.
+
+**Live verification gate (§3.1).** Before trusting class-A RELEASE in production, verify against **live Gemini** that (a) the SDK surfaces `.status` on its fetch error for 429/503, and (b) those statuses genuinely carry no token billing. Gate behind a flag (mirror `CLOUD_TRANSCRIBE_FALLBACK_VERIFIED`): until set, fall back to treat-all-Gemini-throws-as-KEEP (v3 behavior — safe; leaves only the §2.4-documented outage residual). The behavior-2b/3d RELEASE tests run against mocked SDK errors; the live check is a separate manual gate recorded in `docs/local-validation-findings.md`.
 
 ---
 
 ## 10. Out of Scope / Deferred
 
-- **Real-cost settle (`actual_cents`).** *Transitional resolver:* once built, it supersedes the §5 `p_billable_succeeded` heuristic and the §3 keep-on-post-billing-failure row — real cents replace the guess. Its own slice, when the cap constrains real traffic. **Also carries the "billable-phase-entered" job marker that lets the reaper release never-billed crashed jobs — closing the §2.4 generation crash residual.**
+- **Real-cost settle (`actual_cents`).** *Transitional resolver:* once built, it supersedes the §3.1 keep/release classification and the §3 keep-on-class-B/C rows — real cents replace the guess, so even the ambiguous class-B timeout resolves to its true cost. Its own slice, when the cap constrains real traffic. **Also carries the "billable-phase-entered" job marker that lets the reaper release never-billed crashed jobs — closing the §2.4b crash residual.**
 - **Serve-lease heartbeat / serve-lease-expiry sweep** (closes the accepted serve crash + lease-overlap residual, §2.3/H5).
 - **Backfill** of already-leaked reservations (fresh deploy starts clean; local dev resets manually).
-- **Operational (not code):** graceful worker drain before deploy — the required mitigation for the §2.4 residual until settle lands.
+- **Operational (not code):** graceful worker drain before deploy — the required mitigation for the §2.4b crash residual until settle lands.
 
 ---
 
 ## 11. Review Requirements
 
-Money path + concurrency + idempotency → **iterative dual adversarial review to convergence** (Codex + Claude, independent), re-reviewing the revised SQL each round until a round returns no new Blocking/High. Round-1 → v2, round-2 → v3 (both NOT CONVERGED; docs in `docs/reviews/reservation-release-spec-v{1,2}-*`). **Round-3 explicit targets** (verify the round-2 fixes are genuine + hunt defects they introduced): the corrected `p_billable_succeeded` taxonomy incl. transcription + timeout-after-metering (§3, §5, B1); the pre-read cancel CTEs actually reading OLD `reserved_cents` and the playlist multi-day aggregation (§5, H1/H2); `ledger_audit` RLS/grants + the "cannot abort the terminal write" claim (§4.2, H4); the serve lease-overlap residual being genuinely bounded/safe, not a double-refund (§6, H5); the `reserve_serve_model` return-type DROP+recreate not breaking the `regprocedure` probe or grants (§6, M1); the handler→runner marker plumbing defaulting to KEEP (§5, M2); and that the accepted §2.4 generation crash residual is correctly *documented*, not silently reintroduced elsewhere.
+Money path + concurrency + idempotency → **iterative dual adversarial review to convergence** (Codex + Claude, independent), re-reviewing the revised SQL each round until a round returns no new Blocking/High. Round-1 → v2, round-2 → v3, round-3 → v4 (all NOT CONVERGED; docs in `docs/reviews/reservation-release-spec-v{1,2,3}-*`). **Round-4 explicit targets** (verify the round-3 fixes are genuine + hunt defects they introduced): the §3.1 `classifyGeminiFailure` taxonomy being both **implementable** (the discriminator actually reaches the runner through `resolveTranscriptSegments` — H-1) and **complete** (no class-A error mis-KEPT, no class-B/C error mis-RELEASED); the serve leg applying the same classification (§6, B-1); the procedural `request_cancel_job` returning 1 for active-cancel + auditing underflow (§5, H-3/H-4); the playlist data-modifying-CTE flagging active jobs, aggregating per-day, set-auditing, and returning the jobs-flagged count (§5, H-2/H-3/H-4); the `fail_job` release body excluding the `queued` requeue (§5, M-3); the serve `data[0]` read (§6, M-2); and §1/§2.4/§5/§10 telling one consistent story about what the slice does and does not close.
 
 ---
 
@@ -350,3 +434,25 @@ Round-2 dual review (`docs/reviews/reservation-release-spec-v2-{codex,claude}.md
 **Verified-correct in round-2 (no new finding), carried forward:** serve un-charge / double-refund / wrong-day closure (round-1 F2 genuinely closed); generation exactly-once under concurrent claim-vs-cancel and reaper-vs-zombie; generation day-correctness; retry-never-re-reserves.
 
 **Scope note (v3):** the round-2 growth is all *correctness of the existing surface* (real SQL for sketched CTEs, RLS on the audit table, a corrected error taxonomy, an honestly-documented residual) — no new feature. The one goal-touching item (H3) was a human decision, not a silent expansion.
+
+---
+
+## 14. v4 Change Log (round-3 review responses)
+
+Round-3 dual review (`docs/reviews/reservation-release-spec-v3-{codex,claude}.md`) returned **NOT CONVERGED** — narrowing (findings were follow-ons of v3's own fixes). Both reviewers corroborated the serve-taxonomy Blocking; Claude additionally surfaced a **goal-affecting** contradiction. Resolutions:
+
+- **B-2 — v3's blanket "KEEP all Gemini throws" defeats §1's goal (Claude B-2) [Blocking, goal-affecting].** Conservative-KEEP means a Gemini outage still self-DoSes at ~$0 spend — the exact §1 problem — while §2.4 claimed it "closed". **User decision (2026-07-16): classify.** New **§3.1**: RELEASE only positively-not-metered class-A failures (pre-send `NonRetryableError`, Google API {429,500,502,503}, connection/DNS); KEEP class B (timeout/504/non-lease-abort) and class C (post-return). Single helper `classifyGeminiFailure(err, ourSignal)`. Closes the outage self-DoS; keeps the one ambiguous timeout money-safe. §1/§2.4/§5/§10 rewritten to one consistent story; §2.4 residual shrunk to (4a) rare class-B timeout + (4b) crash-window.
+- **B-1 / C3-B1 — serve leg still refunded on any throw (Codex C3-B1 / Claude B-1) [Blocking].** The B1 fix was generation-only. **Fix:** serve caller applies the same `classifyGeminiFailure` — `settle_serve_model(released=true)` only on class A, `released=false` (KEEP) on class B/C (§6).
+- **H-1 — the taxonomy was unreachable through the real error flow (Claude H-1) [High].** `resolveTranscriptSegments` flattened typed pre-send errors into a generic `Error`, so no class-A signal reached the runner → every caption-less failure KEPT at $0. **Fix:** the transcript wrapper must preserve `{ cause }`; `classifyGeminiFailure` walks the `.cause` chain `gemini.ts` already populates (§3.1, §5).
+- **H-2 — playlist CTE stopped flagging `cancel_requested` on active jobs (Claude H-2) [High].** v3's queued-only `pre` dropped the write-after-delete guard that is `0019`'s entire purpose. **Fix:** the data-modifying-CTE flags ALL non-terminal jobs, flips/zeroes only the queued subset (§5).
+- **H-3 — guarded-decrement audit not expressible in the single multi-CTE cancel form (Claude H-3) [High].** A CTE decrement just matches 0 rows on underflow — no audit. **Fix:** `request_cancel_job` → procedural plpgsql with `if not found then insert ledger_audit`; playlist → a set-based `aud` CTE auditing every `per_day` with no successful decrement (§5).
+- **H-4 — cancel `returns int` row_count read the ledger update, not the jobs mutation (Codex C3-M2 / Claude H-4) [High].** An active-cancel would return 0 (breaks `cancel-job-rpc.test.ts:37`); a 5-queued-1-day playlist would return 1 not 5. **Fix:** `request_cancel_job` returns 1 on any matched cancel; playlist returns `count(*) from upd` (jobs flagged) (§5).
+- **M-1 — idempotency-skip classified RELEASE but actually completes (Claude M-1) [Medium].** The handler `return`s → `complete_job` → KEEP. **Fix:** removed from the RELEASE set; §3/§5/§7 aligned.
+- **M-2 — `returns table` → `.rpc()` array, but §6 destructured an object (Codex C3-H1 / Claude M-2) [Medium/High].** **Fix:** read `data[0]` (matches the `claim_next_job` precedent) (§6).
+- **M-3 — `fail_job` release body was prose-only (Claude M-3) [Medium].** **Fix:** SQL given — reads `created_at`/`reserved_cents`, gates on `v_new in ('failed','dead_letter','cancelled')` (excludes the `queued` requeue — behavior 6) + `not p_billable_succeeded`, audits underflow (§5).
+- **L-1 — at-capacity listed as RELEASE but nothing is reserved (Claude L-1).** Clarified as a no-op (§3.1, §8).
+- **L-2 — `PermanentTranscriptError` path description inaccurate (Claude L-2).** Behavior 3b uses the realistic "transcription billed then threw" shape; the pre-call description is dropped.
+
+**Round-3 verified-closed (carried forward, no v4 change):** H4 (`ledger_audit` RLS/grants + "insert cannot raise") — genuinely airtight for the paths that insert; H5 (serve lease-overlap bounded residual) — no double-refund; M1 `regprocedure` probe survives the return-type change; the `fail_job` DROP+recreate analysis.
+
+**Scope note (v4):** the round-3 growth is the §3.1 classifier (a lib-layer helper + a transcript-wrapper fix) and correct SQL for the cancel/`fail_job` bodies. The one goal-touching item (B-2) was a human decision that *restored* the slice's original goal (release outages) with a money-safe carve-out (keep ambiguous timeouts) — a re-alignment, not an expansion.
