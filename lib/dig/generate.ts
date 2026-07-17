@@ -7,6 +7,8 @@
 
 import { buildIndexedTranscript } from '@/lib/transcript-timestamps';
 import type { SectionWindow } from '@/lib/dig/section-window';
+import { GeminiHttpError } from '@/lib/gemini-failure';
+import type { BillingLatch } from '@/lib/job-queue/billing-latch';
 
 /** Dig generation policy version. Bump when the slide/code policy changes so existing
  *  dug sections become stale and can be deliberately refreshed. */
@@ -118,6 +120,10 @@ export interface GenerateDigOpts {
    *  (local dig-section path), unchanged. */
   model?: string;
   signal?: AbortSignal;
+  /** Job-scoped billing latch (Task 7). Set to `true` the instant a 200 response body is
+   *  received (before json parse) — proof-of-meter for the release-vs-keep classifier. Absent on
+   *  the local dig-section path, which never reserves/releases a spend_ledger entry. */
+  billing?: BillingLatch;
 }
 
 function buildRequestBody(
@@ -266,11 +272,10 @@ export async function generateDig(
   }
 
   if (!res.ok) {
-    throw new Error(
-      `generateDig: Gemini REST returned HTTP ${res.status}`,
-    );
+    throw new GeminiHttpError(res.status, `generateDig: Gemini REST returned HTTP ${res.status}`);
   }
 
+  if (opts?.billing) opts.billing.metered = true;   // 200 body received = metered (before json parse)
   const data = (await res.json()) as GeminiRestResponse;
   return extractText(data);
 }

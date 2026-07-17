@@ -1,5 +1,7 @@
 import { buildDigPrompt, generateDig, DIG_GENERATOR_VERSION, DEEPDIVE_MODEL } from '@/lib/dig/generate';
 import type { SectionWindow } from '@/lib/dig/section-window';
+import { GeminiHttpError } from '@/lib/gemini-failure';
+import type { BillingLatch } from '@/lib/job-queue/billing-latch';
 
 const WIN: SectionWindow = {
   sectionId: 300,
@@ -111,6 +113,25 @@ test('non-200 throws after retry', async () => {
     .mockResolvedValue(new Response('nope', { status: 500 }));
 
   await expect(generateDig(WIN, VIDEO_ID, 'en')).rejects.toThrow();
+});
+
+test('throws a typed GeminiHttpError carrying the status on a non-ok response', async () => {
+  jest
+    .spyOn(global, 'fetch')
+    .mockResolvedValue(new Response('busy', { status: 503 }));
+
+  await expect(generateDig(WIN, VIDEO_ID, 'en')).rejects.toBeInstanceOf(GeminiHttpError);
+  await expect(generateDig(WIN, VIDEO_ID, 'en'))
+    .rejects.toMatchObject({ name: 'GeminiHttpError', status: 503 });
+});
+
+test('sets billing.metered=true once a 200 body is received', async () => {
+  jest.spyOn(global, 'fetch').mockResolvedValue(makeOkResponse('MD'));
+
+  const billing: BillingLatch = { metered: false };
+  await generateDig(WIN, VIDEO_ID, 'en', { model: 'm', billing });
+
+  expect(billing.metered).toBe(true);
 });
 
 // ── generateDig: retry once on 503, then succeeds ────────────────────────────
