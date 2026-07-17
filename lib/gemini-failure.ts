@@ -1,0 +1,67 @@
+import { GoogleGenerativeAIFetchError } from '@google/generative-ai';
+import { NonRetryableError } from '@/lib/job-queue/errors';
+
+/** HTTP status the release set covers: rate-limited / overloaded → refused pre-generation → $0. */
+const RELEASE_STATUSES = new Set([429, 503]);
+
+/** Typed error thrown by the hand-rolled dig REST helper so a dig outage is classifiable. */
+export class GeminiHttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message?: string) {
+    super(message ?? `Gemini HTTP ${status}`);
+    this.name = 'GeminiHttpError';
+    this.status = status;
+  }
+}
+
+/**
+ * Compile-time money gate. PRODUCTION honors this const — an env var cannot enable release of the
+ * still-unverified "429/503 bills nothing" premise (mirrors CLOUD_TRANSCRIBE_FALLBACK_VERIFIED at
+ * gemini.ts:25). Flip to `true` in code only after the §9 live verification.
+ */
+const RELEASE_VERIFIED = false;
+
+/** Whether class-A RELEASE is trusted here. Prod = the const; tests may open the gate via env. */
+export function releaseGateOpen(): boolean {
+  if (process.env.NODE_ENV === 'test') return process.env.CLOUD_GEMINI_RELEASE_VERIFIED === 'true';
+  return RELEASE_VERIFIED;
+}
+
+function* causeChain(err: unknown): Generator<unknown> {
+  let e: unknown = err;
+  const seen = new Set<unknown>();
+  while (e != null && !seen.has(e)) {
+    seen.add(e);
+    yield e;
+    e = (e as { cause?: unknown }).cause;
+  }
+}
+
+/**
+ * True iff a NonRetryableError sits anywhere in the cause chain. The runner uses this (NOT
+ * `err instanceof NonRetryableError`) so a WRAPPED pre-send error is still non-retryable — otherwise
+ * it classifies 'release' but requeues, and fail_job refuses to release a queued transition (H1).
+ */
+export function isNonRetryable(err: unknown): boolean {
+  for (const e of causeChain(err)) if (e instanceof NonRetryableError) return true;
+  return false;
+}
+
+/**
+ * Answers only "is this final failure a positively-not-metered rejection?" The separate job-scoped
+ * billing latch answers "did anything bill?" — the runner ANDs !latch.metered onto a 'release'.
+ *   1. our lease-abort → keep (SDK aborts have name==='Error'; only ourSignal can discriminate).
+ *   2. pre-send NonRetryableError, or a Google/dig status ∈ {429,503} → release.
+ *   3. everything else (timeout, non-lease abort, 500/502/504, stripped connection, post-return) → keep.
+ */
+export function classifyGeminiFailure(err: unknown, ourSignal?: AbortSignal): 'release' | 'keep' {
+  if (ourSignal?.aborted) return 'keep';
+  for (const e of causeChain(err)) {
+    if (e instanceof NonRetryableError) return 'release';
+    if (e instanceof GeminiHttpError && RELEASE_STATUSES.has(e.status)) return 'release';
+    if (e instanceof GoogleGenerativeAIFetchError && RELEASE_STATUSES.has((e as { status?: number }).status ?? -1)) {
+      return 'release';
+    }
+  }
+  return 'keep';
+}
