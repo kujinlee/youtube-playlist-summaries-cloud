@@ -99,10 +99,10 @@ grant execute on function fail_job(uuid,text,uuid,text,boolean,boolean,boolean) 
 -- (b) audit underflow, (c) return 1 for BOTH a queued cancel and an active flag-set (H-4).
 create or replace function request_cancel_job(p_job_id uuid) returns int
   language plpgsql security definer set search_path = public as $$
-declare v_old_status text; v_old_amt int; v_day date; v_ever_metered boolean;
+declare v_old_status text; v_old_amt int; v_day date; v_ever_metered boolean; v_attempts int;
 begin
-  select status, reserved_cents, (created_at at time zone 'utc')::date, ever_metered
-    into v_old_status, v_old_amt, v_day, v_ever_metered
+  select status, reserved_cents, (created_at at time zone 'utc')::date, ever_metered, attempts
+    into v_old_status, v_old_amt, v_day, v_ever_metered, v_attempts
     from jobs
    where id = p_job_id and owner_id = auth.uid() and status in ('queued','active')
    for update;                                       -- serialize vs claim_next_job's skip-locked claim
@@ -113,9 +113,11 @@ begin
          reserved_cents = case when v_old_status = 'queued' then 0 else reserved_cents end,
          updated_at     = now()
    where id = p_job_id;
-  -- RELEASE only a genuine queued→cancelled that never metered (Task 13/H1: a metered-then-
-  -- requeued job cancelled while still queued must KEEP — it already billed on a prior attempt).
-  if v_old_status = 'queued' and v_old_amt > 0 and not v_ever_metered then
+  -- RELEASE only a genuine queued→cancelled that was NEVER CLAIMED (attempts=0 ⟹ never metered, so
+  -- provably safe to release). A queued job with attempts>=1 is a reaper requeue of an attempt that
+  -- may have billed but whose in-memory latch was lost before fail_job could persist ever_metered
+  -- (whole-branch round-2 H-R2-1) → KEEP. attempts=0 subsumes not v_ever_metered; both kept defensively.
+  if v_old_status = 'queued' and v_old_amt > 0 and not v_ever_metered and v_attempts = 0 then
     update spend_ledger set reserved_cents = reserved_cents - v_old_amt, updated_at = now()
      where day = v_day and reserved_cents >= v_old_amt;
     if not found then
@@ -138,7 +140,7 @@ begin
   -- `return (with ... )` — that nests it as a scalar subquery). `... into v_n` keeps
   -- the CTE chain top-level while still capturing the H-4 count.
   with pre as (                                  -- ALL non-terminal jobs of the playlist, under lock
-    select id, status as old_status, reserved_cents as old_amt, ever_metered,
+    select id, status as old_status, reserved_cents as old_amt, ever_metered, attempts,
            (created_at at time zone 'utc')::date as reserve_day
       from public.jobs                           -- schema-qualified (0019 search_path-hijack hardening — L1)
      where playlist_id = p_playlist_id and owner_id = auth.uid() and status in ('queued','active')
@@ -151,12 +153,12 @@ begin
            updated_at     = now()
       from pre where j.id = pre.id
      returning j.id),
-  per_day as (                                   -- queued-only, NEVER-metered OLD amounts, grouped by
-                                                   -- reserve-day (Task 13/H1: a metered-then-requeued
-                                                   -- queued job is excluded from the release sum — `upd`
-                                                   -- above still flags/cancels it, only the release is vetoed)
+  per_day as (                                   -- queued-only, NEVER-CLAIMED (attempts=0) OLD amounts,
+                                                   -- grouped by reserve-day. attempts>=1 queued = reaper
+                                                   -- requeue that may have billed (round-2 H-R2-1) → excluded
+                                                   -- from release sum; `upd` still flags/cancels it, release vetoed.
     select reserve_day, sum(old_amt) as amt
-      from pre where old_status = 'queued' and old_amt > 0 and not ever_metered
+      from pre where old_status = 'queued' and old_amt > 0 and not ever_metered and attempts = 0
      group by reserve_day),
   dec as (                                       -- guarded per-day decrement; RETURNING credited days
     update spend_ledger sl

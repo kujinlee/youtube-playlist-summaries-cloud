@@ -234,6 +234,29 @@ describe('reservation-release: request_cancel_job (Task 3)', () => {
     expect(n).toBe(1);
     expect(await ledgerFor(yday)).toBe(0);                // credited YESTERDAY (created_at day)
   });
+
+  // ── Task 14 / H-R2-1: gate cancel-release on attempts=0 ────────────────────────────────────
+  // A queued job with attempts>=1 is only reachable via a reaper requeue after a lost lease
+  // (needs max_attempts>=2) — it may have billed on a prior attempt whose ever_metered persist
+  // never landed. attempts=0 provably means never-claimed, hence never-metered — safe to release.
+  it('B2/B3: a reaper-requeued queued job (attempts=1, ever_metered=false) cancel KEEPS the reservation', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t14-b2');
+    const jobId = await jobIdFor(u.user.id, 'vid-t14-b2');
+    // Synthesize the metered-lease-loss reaper-requeue state directly: the job was claimed and
+    // billed on a prior attempt, then lost its lease before fail_job could persist ever_metered.
+    await adminClient().from('jobs').update({ attempts: 1, status: 'queued', ever_metered: false }).eq('id', jobId);
+    const day = utcToday();
+    const before = await ledgerFor(day);
+
+    const { data: n } = await session.rpc('request_cancel_job', { p_job_id: jobId });
+    expect(n).toBe(1);
+    expect(await ledgerFor(day)).toBe(before);            // KEEP — attempts>=1 vetoes release (H-R2-1 fix)
+    const { data: job } = await adminClient().from('jobs').select('status, cancel_requested').eq('id', jobId).single();
+    expect(job).toEqual({ status: 'cancelled', cancel_requested: true });
+  });
 });
 
 describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
@@ -300,6 +323,28 @@ describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
       .like('note', `request_cancel_playlist_jobs ${playlistId}%`);
     expect(audit!.length).toBe(1);
     expect(audit![0].expected_amt).toBe(150);
+  });
+
+  // Task 14 / H-R2-1 (B4): an attempts>=1 queued job (reaper-requeued after a lost lease) is
+  // flagged/cancelled like any other, but excluded from the per-day release sum — only the
+  // never-claimed (attempts=0) sibling's reservation is released.
+  it('B4: excludes an attempts>=1 queued job from the release sum; only the attempts=0 sibling releases', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    for (const v of ['vid-t14-b4a', 'vid-t14-b4b']) await enqueueSummary(u.user.id, playlistId, v);
+    const requeuedJobId = await jobIdFor(u.user.id, 'vid-t14-b4b');
+    await adminClient().from('jobs').update({ attempts: 1, status: 'queued', ever_metered: false }).eq('id', requeuedJobId);
+    const day = utcToday();
+    const before = await ledgerFor(day);
+
+    const { data: n } = await session.rpc('request_cancel_playlist_jobs', { p_playlist_id: playlistId });
+    expect(n).toBe(2);                                    // both flagged
+    expect(await ledgerFor(day)).toBe(before - 150);       // only the attempts=0 job's 150 released
+
+    const { data: rows } = await adminClient().from('jobs').select('video_id, status')
+      .eq('playlist_id', playlistId).in('video_id', ['vid-t14-b4a', 'vid-t14-b4b']);
+    for (const r of rows!) expect(r.status).toBe('cancelled');   // both cancelled — release is vetoed, not the flag
   });
 });
 
