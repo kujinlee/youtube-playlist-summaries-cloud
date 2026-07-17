@@ -1,261 +1,216 @@
 # Stage 3 — Cloud Sync (local ↔ cloud reconciliation) — Design Spec
 
-**Status:** **v6 — CONVERGED** (dual adversarial review, 2026-07-17). Round 6: **Codex 0 Blocking/High/Medium**
-+ **opus CONVERGED (0 B/H/M)** — only cosmetic Low nits (`§7.6`→`§7 step 6`), fixed. Six-round convergence:
-R1 (3B+4H) → R2 (1B+5H) → R3 (2H) → R4 (1B+2H) → R5 (1H+2M) → **R6 (0 B/H/M)**. The loop caught real defects
-a single pass would have shipped: `docVersion`-primary data loss, model-JSON-as-source churn, the `isFresh`
-fix's fleet re-charge + share dark-serve, asymmetric backfill, delete-intent gaps. **Awaiting user approval →
-implementation plan (Phase 2).**
-Reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2,-r3,-r4,-r5,-r6}.md`.
+**Status:** Draft **v7** — reworked after a design refinement from the user: **generated content and human
+edits reconcile by opposite rules**, so v7 splits the per-video state into two classes instead of one
+"hashed source set" (dissolving the format-vs-recency tension that drove rounds 1–6). v6 had **converged**
+(dual review, 0 B/H/M) on the single-class model; v7 is a *model* change, so it re-enters review.
+Prior converged reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2..-r6}.md`.
 
 **Roadmap:** M2 of `docs/roadmap-to-launch.md`.
 
 **Goal:** Give the single author a **Cloud Sync** that reconciles their local research corpus with their own
-multi-tenant cloud account — per-video newer-wins — so the cloud portal mirrors local work for peer sharing
-and multi-device access, and a second device can hydrate from the cloud.
+multi-tenant cloud account — so the cloud portal mirrors local work for peer sharing and multi-device
+access, a second device can hydrate from the cloud, and reconciliation matches how the two kinds of content
+actually behave.
 
 ---
 
 ## 1. Scope
 
 **M2 decomposition:**
-- **M2a — THIS spec:** local↔cloud reconciliation of each video's **summary MD + user-authored text
-  metadata**, both directions, per-video **newer-wins** (timestamp-primary), honest **additive** create with
-  **baseline-aware** best-effort delete-suppression. Manual trigger.
-- **M2b — later slice (own spec):** deep-dive/dig (per-section blobs + `DIG_GENERATOR_VERSION` + slide
-  images), **cross-replica tombstone** delete propagation, background/auto-sync, true-conflict
-  loser-preservation, cross-replica conflict-log surfacing.
+- **M2a — THIS spec:** local↔cloud reconciliation of each video's **summary** (LLM-generated MD + model) and
+  **human edits** (rating/note/corrections), both directions, per the two-class rules (§5). Honest
+  **additive** create with **baseline-aware** delete-suppression. Manual trigger.
+- **M2b — later slice (own spec):** deep-dive/dig **+ slide images** via the cloud-tokens → local-capture →
+  sync-back pipeline (§13), cross-replica tombstone deletes, background/auto-sync, true-conflict
+  loser-preservation.
 
-**In scope (M2a) — the hashed source set is deliberately small:** summary **MD** + user-authored text
-(`title`, `personalNote`, `personalScore`, `corrections`) + playlist/video identity metadata; union
-hydration; a portable canonical change signal + non-destructive legacy backfill; Supabase-Auth login;
-per-playlist local manifest; a manual **Cloud Sync** command.
+**In scope (M2a):** summary MD + model-JSON companion; human fields (`corrections`, `personalNote`,
+`personalScore`); playlist/video identity; union hydration; the two-class change signals + non-destructive
+backfill; Supabase-Auth login; per-playlist manifest; manual **Cloud Sync**.
 
-**Out of scope (M2a — deferred, explicitly):**
-- **Model JSON as a *compared source*.** It rides along as an **opaque companion of the winning MD** (§4.2)
-  — never independently hash-compared or newer-wins-decided. Not a synced source in its own right.
-- **Deep-dive / dig + slide images** (M2b). Summaries embed no images.
-- **`archived`** and all membership/ordering fields (replica-local, §4.1).
-- **Cross-replica tombstones / delete propagation** (M2b). M2a is additive with best-effort suppression.
-- Background/auto-sync; true-conflict loser-preservation; HTML/PDF transfer.
+**Out of scope (M2a):** deep-dive/dig + slide images (M2b, §13); tombstone delete propagation; background
+sync; true-conflict loser-preservation; HTML/PDF transfer (regenerable cache).
 
 ---
 
 ## 2. Terminology
 
-| Term | Meaning | NOT to be confused with |
-|---|---|---|
-| **Cloud Sync** | This feature: reconcile local corpus ↔ cloud tenant. | The existing local **"Sync"** button = *refresh a playlist's video list from YouTube*. Distinct feature, distinct name. |
-| **Replica** | One copy of the corpus: a local install, or the cloud tenant. | — |
-| **Reconcile** (this spec) | Merge two **replicas** to agreement (newer-wins). | The pre-existing codebase sense = a DB↔blob/ledger consistency sweep. Prefer "sync-merge"/"reconcile **replicas**". |
-| **Change signal** | `(contentGeneratedAt, contentHash)` over the **hashed source set** — the portable per-video freshness + identity. | `docVersion` (a code/format version, not recency, §5.3); model JSON (a companion, §4.2). |
-| **Hashed source set** | summary MD + `title` + `personalNote` + `personalScore` + `corrections` (§4.1). The *only* inputs to `contentHash` and newer-wins. | Everything derived/charged/membership-driven (§4.1 exclusions). |
-| **Companion artifact** | A blob copied *with* the winning MD but never compared (model JSON, §4.2). | A hashed source. |
-| **Newer-wins** | On divergence, the replica whose hashed source set is more recently generated/edited replaces the older. | — |
+| Term | Meaning |
+|---|---|
+| **Cloud Sync** | This feature: reconcile local corpus ↔ cloud tenant. (NOT the local **"Sync"** button = refresh a playlist's videos from YouTube.) |
+| **Replica** | One copy of the corpus: a local install, or the cloud tenant. |
+| **Class A — generated** | LLM output: **summary MD** + **model JSON**. Non-deterministic; reconciled by **format**, not recency (§5.3). |
+| **Class B — human** | Author edits: **`corrections`, `personalNote`, `personalScore`**. Reconciled **per field, newer-wins, additive**; preserved across every format (§5.4). |
+| **`docVersion`** | Format/style version stamped *at generation* (`CURRENT_DOC_VERSION`, `lib/doc-version.ts`). `.major` = MD content-format; `.minor` = HTML render style. **A format signal, not a timestamp.** |
+| **Companion** | The model-JSON blob, copied *with* the winning MD but never independently compared (§4.2). |
 
 ---
 
-## 3. Identity (cross-replica keys) — *reviewed sound (rounds 1–2)*
+## 3. Identity (cross-replica keys) — *reviewed sound (rounds 1–6)*
 
-- **Playlist** = YouTube **list-id** = cloud `playlists.playlist_key` (`0001:13`, unique **per `owner_id`** `:17`);
-  `Principal.indexKey` abstracts local-path ↔ cloud playlist_key (`lib/storage/principal.ts:7`).
-- **Video** = YouTube **`video_id`** (`types/index.ts:30`).
-- **Owner** = authenticated `auth.uid()`. Composite FK `videos(playlist_id, owner_id)→playlists(id,owner_id)`
-  (`0001:31-32`) + forced RLS guarantee a video's owner == its playlist's owner; two owners sharing a
-  list-id are isolated by `auth.uid()`. No synthetic mapping table. Peers get access via share tokens, not sync.
+- **Playlist** = YouTube list-id = cloud `playlists.playlist_key` (`0001:13`, unique per `owner_id` `:17`);
+  `Principal.indexKey` abstracts local-path ↔ playlist_key (`lib/storage/principal.ts:7`).
+- **Video** = YouTube `video_id` (`types/index.ts:30`).
+- **Owner** = `auth.uid()`; composite FK `videos(playlist_id,owner_id)→playlists(id,owner_id)` (`0001:31-32`)
+  + forced RLS isolate tenants. No synthetic mapping. Peers get access via share tokens, not sync.
 
 ---
 
-## 4. What syncs (M2a)
+## 4. What syncs (M2a) — three classes
 
-### 4.1 Video field classification (the crux — round-2 BLK-1/H-D/H2)
-- **Hashed source (synced; in `contentHash`; restamps `contentGeneratedAt` on change):**
-  summary **MD** (section-timestamp `▶` markers ride *inline* in it), `title` (author-corrected),
-  `personalNote`, `personalScore`, `corrections`.
-- **Companion (copied with the winning MD, NOT hashed/compared — §4.2):** model JSON (`ModelEnvelope`).
-- **Replica-local / derived / membership-driven (NOT synced, NOT hashed):** `position`, `serialNumber`,
-  `playlistIndex`, `removedFromPlaylist`, **`archived`** (set by `reconcile_membership` `0007:60-71` from
-  *each replica's own* YouTube fetch → would flip-flop; round-2 H-D), `updatedAt`, `summaryReady`
-  (DB-computed, already stripped by `supabase-metadata-store.ts`).
-- **Regenerable cache (never synced):** HTML doc, PDF (deterministic re-render from MD + model).
+### 4.1 Per-video field classification
+- **Class A — generated (reconcile by format, §5.3):** summary **MD** (section-timestamp `▶` markers ride
+  inline in it); **model JSON** (`ModelEnvelope`), carried as a **companion** (§4.2), never a compared source.
+- **Class B — human (reconcile per-field, §5.4):** `corrections`, `personalNote`, `personalScore`. Author-
+  authored, format-independent, precious.
+- **Replica-local / fetched (NOT synced):** `title` (YouTube-fetched, no author-edit path — converges per
+  replica on its own fetch), `position`, `serialNumber`, `playlistIndex`, `removedFromPlaylist`, `archived`
+  (all membership/ordering, set by `reconcile_membership` `0007:60-71` from each replica's own fetch →
+  would flip-flop), `updatedAt`, `summaryReady` (DB-computed).
+- **Regenerable cache (never synced):** HTML, PDF (deterministic re-render from MD + model).
 
-### 4.2 Model JSON as a companion — handled ONLY at sync-transfer (round-2 BLK-1; round-3 H-1; round-4 BLK-1)
+### 4.2 Model JSON companion — sync-transfer only, serve path UNCHANGED (rounds 2–6)
 Model JSON is a **non-deterministic, `GENERATOR_VERSION`-axed, charged, self-healing cache** (Gemini
-transform; lazily regenerated + charged on the serve path — `lib/html-doc/model-store.ts`,
-`read-model.ts`). It **cannot** be a hash-compared source (identical MD would hash-diverge on the model and
-churn/overwrite). The round-3 hole was that after an MD is transferred, a **content-stale** model (older MD
-body, identical section titles + same `GENERATOR_VERSION`) could still serve, because the serve gate is
-body-blind. v5 closes this **without touching the serve path at all** — because changing the global
-freshness gate would (round-4 BLK-1) re-charge the whole existing model corpus on first serve **and**
-dark-serve every already-shared summary (the anonymous share route `app/s/[token]/route.ts` is
-generation-free — it returns not-ready and cannot self-heal). So the fix is scoped strictly to sync:
-
-1. **`ModelEnvelope` gains an OPTIONAL `sourceMdHash`** — an **MD-BODY-ONLY** canonical digest (round-5 M-1):
-   it reuses §5.2's MD normalization (LF, fixed trailing-newline, NFC) over the **summary MD bytes only**,
-   and **excludes** the annotation fields that `contentHash` also covers (`title`/`personalNote`/
-   `personalScore`/`corrections`). It is **not** `contentHash` — a `personalNote` edit that leaves the MD
-   unchanged must NOT invalidate the model. Set by the generation/regeneration writers **going forward**;
-   legacy envelopes lack it. The envelope schema is made **forward-tolerant** — `ModelEnvelopeSchema` is
-   relaxed from `.strict()` to ignore-unknown-keys (round-5 M-2) so an **old reader tolerates a new
-   `sourceMdHash`-bearing envelope** transferred from a newer replica (cross-replica version skew must not
-   make `readModelEnvelope` return null → notReady/re-charge). **The serve path (`isFresh`,
-   `readTitleStableModel`, the share route, the over-budget fallback) is UNCHANGED** → the **non-synced**
-   corpus keeps serving exactly as today; **no fleet re-charge** and **no share regression for non-synced
-   videos.**
-2. **At a sync MD-transfer only:** the receiver's model blob for that video is made consistent with the new
-   MD. Sync writes the sender's model as a **companion iff it can verify the model was built from the
-   winning MD** — the sender envelope's `sourceMdHash == mdHash(winning MD)`. Otherwise (mismatch, **or a
-   legacy sender model with no `sourceMdHash`**) sync **deletes the receiver's model blob** for that video.
-   The receiver then lazily regenerates on the **owner's** next authenticated serve — but a **shared
-   (anonymous)** view of that video returns not-ready until then, because the share route is generation-free
-   (round-5 H-1, **residual R7**): sync **counts these as `share_needs_owner_serve`** in its report (§7 step 6).
-
-Scope: **only a video whose MD is actually transferred by sync** has its receiver model touched. The entire
-non-synced corpus, its share links, and the over-budget fallback are untouched. A synced video's model regen
-is a bounded, legitimate charge (its content genuinely changed) on the existing lazy-regen path (R5).
-`sourceMdHash` is **sync-only provenance, never a serve gate**; the model is never a newer-wins participant.
+transform; lazily regenerated on serve — `lib/html-doc/model-store.ts`, `read-model.ts`). It is **never**
+hash-compared. Its freshness is handled **only at sync-transfer**, leaving the serve path (`isFresh`,
+`readTitleStableModel`, the share route, the over-budget fallback) **unchanged** — because a global gate
+change would re-charge the whole corpus and dark-serve every share (round-4 BLK-1).
+- `ModelEnvelope` gains an OPTIONAL **`sourceMdHash`** — an **MD-body-only** digest (§5.2), set going
+  forward; the schema is **forward-tolerant** (old readers ignore the new key). Legacy envelopes lack it.
+- On a Class-A MD-transfer: ship the sender's model as a companion **iff** `sourceMdHash == mdHash(winning
+  MD)`; else **delete the receiver's model blob** (→ lazy regen on the **owner's** next serve). A **shared
+  (anonymous)** view of that specific video is not-ready until the owner serves (the share route is
+  generation-free — residual **R7**); sync reports these as `share_needs_owner_serve` (§7 step 6).
 
 ---
 
-## 5. Conflict model (per video)
+## 5. Reconcile model — two independent per-video reconciles
 
-### 5.1 The change signal + stamping (round-2 H-C/H-E)
-**`contentGeneratedAt`** (ISO-8601 UTC) — **primary** freshness signal — is stamped on **every** write that
-mutates a **hashed-source** field, on both replicas. The complete writer enumeration — verified by grepping
-every cloud RPC/allowlist and the local index writer (round-2 H-E, round-3 H-2); each must add
-`contentGeneratedAt` and restamp when it mutates a hashed field:
-- summary generation — local (`lib/pipeline.ts`) and cloud **`persist_summary`** (its layer-3 allowlist,
-  `0009`) → writes MD/`title` → restamp;
-- cloud annotation edits — **`update_video_annotations`** (`0016`), allowlist *closed* to
-  (`personalScore`, `personalNote`, `archived`) — add `contentGeneratedAt`; restamp only when
-  `personalScore`/`personalNote` change (`archived` is not hashed);
-- **cloud `title`/`corrections` edits — `merge_video_data` via `updateVideoFields`**
-  (`lib/storage/supabase/supabase-metadata-store.ts:119-125`; the regenerate route writes `corrections`
-  here, `app/api/videos/[id]/regenerate/route.ts:55`). This is the **only** cloud writer of `title`/
-  `corrections` and neither allowlisted RPC covers them, so it MUST restamp `contentGeneratedAt` when it
-  mutates `title`/`corrections` (round-3 H-2);
-- local metadata edits (note/score/title/corrections) via the local index writer.
-Membership writers (`reconcile_membership`) touch only **non-hashed** fields (`archived`,
-`removedFromPlaylist`) → no restamp.
+Each video reconciles its **Class A** and **Class B** state **independently**: a format upgrade to the MD
+never touches the human fields, and a human-field edit never touches the MD. This is the core v7 change.
 
-**`contentHash`** — canonical digest over the **hashed source set only** (§5.2).
+### 5.1 Signals (per class)
+- **Class A:** `docVersion.major` (format — the decider), `mdHash` (the MD-body-only §5.2 digest = the
+  envelope's `sourceMdHash`; detects identical/equivalent), and `mdGeneratedAt` (UTC, stamped at MD
+  generation — a **tie-break only**, never a quality signal). `docVersion.minor` (HTML style) is **ignored**
+  — sync moves MD, not HTML; each app re-renders the MD in its own current style, so you're never stuck in
+  an old style and there is nothing to downgrade.
+- **Class B:** each field's value + a per-video `annotationsUpdatedAt` (UTC, stamped whenever a human field
+  changes) for the rare same-field tie.
+- **Stamping (every hashed/human-field SQL writer must restamp — rounds 2–4):** `mdGeneratedAt` on MD
+  generation (`persist_summary` layer-3 `0009`; local `pipeline.ts`); `annotationsUpdatedAt` on human-field
+  writes (`update_video_annotations` `0016`; `merge_video_data`/`updateVideoFields` for `corrections`; the
+  local index writer). Membership writers (`reconcile_membership`) touch only non-synced fields → no restamp.
 
-### 5.2 Canonical `contentHash` (round-1 B3 / round-2 confirmed)
-Computed from a **normalized in-memory shape** (never a backend's stored bytes — Postgres `jsonb` doesn't
-preserve key order/whitespace), by a **single shared impl** `lib/cloud-sync/content-hash.ts` called by both
-replicas: recursively sorted keys, canonical numbers, NFC Unicode, MD normalized to LF + fixed
-trailing-newline, absent/null collapsed. Digest = SHA-256 hex. §10 requires cross-backend golden fixtures
-(same logical content as a local file vs `jsonb` → equal hash). Inputs = §4.1 hashed source **only**.
-**Two distinct digests (do not conflate — round-5 M-1):** `contentHash` (this section, over the *whole*
-hashed source set, drives newer-wins) vs `sourceMdHash` (§4.2, the *MD-body-only* digest, drives the
-model-companion match). Both reuse this MD normalization; only their input scope differs.
+### 5.2 Canonical `mdHash` (rounds 1–3, 5)
+`mdHash` is an **MD-body-only** canonical digest — a shared impl (`lib/cloud-sync/content-hash.ts`) called
+by both replicas: MD bytes normalized to LF + fixed trailing-newline + NFC, SHA-256 hex. It is **not** over
+the human fields (they reconcile separately, §5.4), so a `personalNote` edit never invalidates the model
+(round-5 M-1). §10 requires cross-backend golden fixtures (local file vs Postgres `jsonb` → equal).
 
-### 5.3 Decision `resolve(L, C)` for a video on both sides (round-1 B1)
-1. `L.contentHash == C.contentHash` → **no-op** (skip).
-2. Else, **if a manifest baseline exists and exactly one side differs from it** → that side is the
-   unambiguous update → copy it (+ its companion model) to the other.
-3. Else (both differ from baseline, OR **no baseline** — round-2 H-C) → this is a **potential conflict**: do
-   **NOT** destructively overwrite based on backfilled/asymmetric timestamps. Resolve by newer
-   `contentGeneratedAt` **only if both timestamps are real (non-backfilled)**; otherwise **log a conflict and
-   skip the destructive write** (surface for the user), leaving both sides intact. Exact-timestamp tie with
-   real stamps → deterministic lexicographic `contentHash` tiebreak (replica-symmetric) + log.
-`docVersion` is **never** a recency input (`.minor` = render/cache axis, excluded; `.major` = a
-format-capability guard only — never *downgrade* a higher-major MD onto a lower-major renderer, skip+log).
+### 5.3 Class A reconcile (generated MD + model) — format-first
+Recency does **not** decide generated content: the LLM is non-deterministic and a newer generation is not
+"better." **Format (`docVersion.major`) decides; recency only breaks a same-format tie.**
 
-### 5.4 Backfill (legacy records) — non-destructive (round-2 H-C / Codex-r2 B1)
-Legacy records lack `contentGeneratedAt`. A one-time backfill computes `contentHash` and records a
-**provisional** `contentGeneratedAt` (local: `processedAt`; cloud: `updated_at`) **flagged as backfilled**.
-Because these seeds are non-comparable across replicas (cloud `updated_at` is bumped by non-content touches
-— `reconcile_membership`, serve merges), a backfilled timestamp **must never drive a destructive overwrite**:
-per §5.3 step 3, a divergence where either side's timestamp is backfilled resolves to **conflict → skip +
-log**, never overwrite. Once a real (post-feature) generation/edit restamps a side, its timestamp becomes
-authoritative. Equal hashes always skip (and seed the baseline) regardless of timestamps.
+| Situation | Action |
+|---|---|
+| Both present, `mdHash` equal | **skip** (identical) |
+| **`docVersion.major` differs** | **higher `major` wins** — copy its MD (+ companion §4.2) to the lower-format side (a format upgrade). Recency ignored. Never downgrade format. |
+| Same `major`, `mdHash` differs (equivalent LLM variants) | **unify** — the more recent `mdGeneratedAt` wins; copy it to the other so the prose **converges** (don't leave it diverged — a sync opportunity). Recency here is an intention-respecting tie-break, not a quality claim; it also avoids undoing a deliberate re-generation on either side. |
+| Present on only one side (never in this replica's baseline) | **copy** (hydrate a fresh device / publish new work) |
 
-### 5.5 Presence & deletes — additive + baseline-aware, honestly scoped (round-2 H-A/H-B)
-- **On only one side, never in this replica's baseline** → additive **create** on the other (hydration /
-  publish). Re-creation is a **pure metadata/doc copy**: it MUST NOT route through the metered enqueue
-  (`lib/job-queue/producer.ts`), consume `spend_ledger`, or resurrect derived cache.
-- **In this replica's manifest baseline but now ABSENT on the other side** → treated as a **remote delete**:
-  do **not** re-create it; record the removal locally. (Best-effort, using the baseline as the "seen
-  before" record — no cross-device tombstone.)
-- **In this replica's baseline but now ABSENT on THIS side (present on the other)** → *this replica*
-  deleted it (round-3 M-1). M2a does **not** propagate the delete (that is M2b tombstones): do **not**
-  re-create it locally (it stays deleted here), and do **not** delete it on the other replica (it remains
-  there). The entity simply diverges until M2b — a disclosed consequence of R2 (deletes don't propagate).
-- **No delete-intent marker mechanism** (round-2 H-A showed a local marker has no sound lifecycle and
-  suppresses legitimate re-adds). Deletion is inferred from baseline presence/absence, so a genuine
-  local re-add (new `contentGeneratedAt`) simply syncs as a create/update — nothing to "clear."
+No data-loss: the "losing" MD is an equivalent-or-older-format generation (nothing unique lost); human
+edits are Class B (preserved separately, §5.4). Clock skew is therefore **not load-bearing** for Class A —
+a wrong same-format tie just picks one equivalent variant.
 
-**Disclosed residual (R2):** delete detection is **baseline-scoped and does not propagate**. A device with
-**no baseline** for an entity (a *fresh* device, or after a lost/`§8`-tolerated manifest) cannot distinguish
-"deleted on the other side" from "never seen" → it **may re-create** (resurrect) a deleted entity. Full
-cross-replica delete-safety = **M2b tombstones**. This is the honest form of the user's "additive now,
-tombstones later."
+### 5.4 Class B reconcile (human fields) — per-field 3-way merge, newer-wins, additive
+Human ratings/corrections are precious and **carried across every format**. Reconciled **per field** against
+the manifest baseline (§8):
+
+- Field present on only one side → **copy** it (additive).
+- Field equal on both → no action.
+- Field differs: **3-way merge** — if only one side changed it vs the baseline → take that side's value; if
+  **both** changed it → the side with the newer `annotationsUpdatedAt` wins (+ log). No baseline (fresh
+  device) + differ → newer `annotationsUpdatedAt` wins (+ log).
+- Because independent fields merge cleanly (a note edit on one side + a score edit on the other both
+  survive), genuine conflict is rare and only ever same-field. A human field is **never** lost to a Class-A
+  format change (the two reconcile independently).
+
+### 5.5 Backfill (legacy records) — non-destructive (round-2 H-C)
+Legacy records lack `mdGeneratedAt`/`annotationsUpdatedAt`. A one-time backfill records **provisional**
+values (MD: `processedAt`; human: `updated_at`) flagged as backfilled, and a backfilled timestamp **never
+drives a destructive overwrite**: a same-format Class-A tie with a backfilled `mdGeneratedAt` just picks one
+equivalent variant (harmless); a Class-B same-field conflict with a backfilled `annotationsUpdatedAt`
+resolves to **conflict → skip + log**, never overwrite. Format (Class A) and 3-way field merge (Class B)
+carry the real decisions, so backfill is far less load-bearing than in the single-class model.
+
+### 5.6 Presence & deletes — additive + baseline-aware (rounds 2–4)
+- One-sided, never in this replica's baseline → additive **create** (a pure metadata/doc copy that **never**
+  routes through the metered enqueue `lib/job-queue/producer.ts`, never consumes `spend_ledger`, never
+  resurrects derived cache).
+- In this replica's baseline but **absent on the other side** → **remote delete**: do not re-create.
+- In this replica's baseline but **absent on this side** (this replica deleted it) → do not re-create
+  locally, do not delete on the other (no propagation — M2b tombstones).
+- **Residual R2:** a replica with **no baseline** (fresh device / lost manifest) can't tell "deleted
+  elsewhere" from "never seen" → may re-create (resurrect). Full delete-safety = M2b tombstones. No local
+  delete-intent marker (round-2 H-A showed it has no sound lifecycle).
 
 ---
 
-## 6. Auth (local → cloud) — *reviewed sound; hardened credential storage*
+## 6. Auth (local → cloud) — *reviewed sound; hardened storage*
 
-Local uses the **same Supabase Auth login** as the web app; all cloud I/O uses that user session → RLS-scoped
-to `auth.uid()`. **No service-role key on the local machine**; any server-mediated sync endpoint derives
-`owner_id` from the session and resolves playlists by `(auth.uid(), playlist_key)`, never from a
-client-supplied owner id. Credential storage: prefer **OS keychain**; file fallback only with mode **600** +
-parent-dir permission check + gitignore + **fail-closed** on broad perms. The refresh token is a long-lived
-full-tenant bearer credential (theft = full same-tenant read/write, no cross-tenant break) — documented
-blast radius; sign-out clears it. No session → refuse with a `cloud-sync login` hint.
+Local uses the **same Supabase Auth login** as the web app; all cloud I/O is under that user session →
+RLS-scoped to `auth.uid()`. **No service-role key on the local machine**; a server-mediated sync endpoint
+derives `owner_id` from the session, resolves playlists by `(auth.uid(), playlist_key)`, never from a
+client-supplied owner id. Refresh token → **OS keychain** preferred; file fallback mode 600 + parent-dir
+check + gitignore + fail-closed on broad perms; theft = full same-tenant access (no cross-tenant break);
+sign-out clears it. No session → refuse with a `cloud-sync login` hint.
 
 ---
 
-## 7. Sync run (flow) — *union enumeration + per-video atomicity (round-1 H5, H2/H3)*
+## 7. Sync run (flow)
 
-1. **Playlist set = UNION** of local-registry `playlist_key`s (§7.1) ∪
-   `SELECT playlist_key FROM playlists WHERE owner_id = auth.uid()`. One-sided playlists are created on the
-   other (subject to §5.5): cloud-only → hydrated into a deterministic local root; local-only → created on cloud.
-2. **Per playlist**, enumerate the **union** of `video_id`s via `MetadataStore`.
-3. **Per video**, compute the change signal (§5.1) each side; apply §5.3/§5.5.
-4. **Per-video atomic transfer**, aligned with the existing staged→committed→promoted protocol
-   (`lib/storage/supabase/consistency.ts`, `summary-handler.ts`): stage the winning **MD** (the hashed
-   source) under an idempotency key, verify, promote to the final key, **then** finalize the receiver
-   metadata (record + `contentGeneratedAt` + `contentHash`). The metadata must not advertise the new
-   `contentHash` until the MD is promoted; a crash leaves staged (not final) objects + an unadvanced
-   baseline; re-run finishes/rolls back. The **companion model** (§4.2) is written **best-effort, outside**
-   the MD's atomic commit (its writer is a plain upsert — `model-store.ts`; a lost/absent companion
-   self-heals via §4.2's invalidate + lazy-regen), so a companion failure never blocks the MD's baseline
-   advance and never leaves the metadata inconsistent (round-3 L-2).
-5. **Update the manifest (§8) strictly AFTER** the receiver's metadata commit is verified durable, recording
-   the **receiver-observed committed hash**. Never advance a baseline for a partial transfer.
-6. **Report** created / updated-local / updated-cloud / skipped-identical / **conflicts-logged (skipped)** /
-   removed / **`share_needs_owner_serve`** (transferred videos whose receiver model was deleted and that have
-   a live share token — their anonymous share returns not-ready until an owner serve regenerates, R7) /
-   errors. Per-video errors isolated; run is **idempotent + resumable** (single-run, no concurrency
-   — §10 L). HTML/PDF never transferred; receiver re-renders lazily from MD (+ regenerates model if the
-   companion drifted, §4.2).
+1. **Playlist set = UNION** of local-registry `playlist_key`s (§7.1) ∪ `SELECT playlist_key FROM playlists
+   WHERE owner_id = auth.uid()`. One-sided playlists created on the other (subject to §5.6). A fresh device
+   (empty local) thus pulls the full cloud corpus.
+2. **Per playlist**, enumerate the union of `video_id`s via `MetadataStore`.
+3. **Per video**, run the **Class A** reconcile (§5.3) and the **Class B** reconcile (§5.4) independently.
+4. **Class A MD transfer is per-video atomic**, aligned with the existing staged→committed→promoted protocol
+   (`consistency.ts`, `summary-handler.ts`): stage the winning MD under an idempotency key, verify, promote,
+   **then** finalize the receiver record (`mdGeneratedAt`, `mdHash`, `docVersion`). Metadata never advertises
+   the new `mdHash` until the MD is promoted; a crash leaves staged objects + an unadvanced baseline; re-run
+   heals. The **companion model** is best-effort, outside the MD's atomic commit (a lost companion self-heals
+   via §4.2). **Class B field writes** are small record updates applied after the merge (§5.4).
+5. **Update the manifest (§8) strictly AFTER** the receiver commit is verified durable (receiver-observed
+   `mdHash` + human field values). Never advance a baseline for a partial transfer.
+6. **Report**: created / updated-local / updated-cloud / skipped-identical / merged-fields / conflicts-logged
+   (skipped) / removed / **`share_needs_owner_serve`** (transferred videos whose receiver model was deleted
+   and that have a live share token — anonymous share is not-ready until an owner serve, R7) / errors.
+   Per-video errors isolated; the run is idempotent + resumable (single-run, no concurrency — §10).
 
-### 7.1 Local playlist discovery (round-2 M-A)
+### 7.1 Local playlist discovery (rounds 1–2)
 A **local playlist registry**: each local root persists its `playlist_key` (backfilled from `playlistUrl`
-for legacy roots that predate it) + title in `playlist-index.json`. Cloud Sync discovers local playlists by
-scanning the configured data root(s), de-duplicating by `playlist_key` (a valid root holds an index;
-`<root>/<dir>` and `<root>/<dir>/raw` shapes map to one key — never two). Cloud-only playlists hydrate into
-deterministic roots named by `playlist_key`.
+for legacy roots) + title in `playlist-index.json`. Cloud Sync scans the configured data root(s),
+de-duplicates by `playlist_key` (`<root>/<dir>` and `<root>/<dir>/raw` shapes map to one key), and hydrates
+cloud-only playlists into deterministic roots named by `playlist_key`.
 
 ---
 
 ## 8. Sync state — per-playlist local manifest
 
 One git-ignored file per playlist (`<data-root>/<playlist_key>/.cloud-sync-manifest.json`), recording per
-`video_id` the last-synced baseline: `contentGeneratedAt`, **receiver-observed `contentHash`**, `syncedAt`.
-Written **only after** §7 step 5's verified commit — never ahead of reality. It is the "seen before" record for
-§5.5 delete inference and the baseline for §5.3 conflict classification. Lost/corrupt manifest degrades to
-full hash comparison: correctness preserved (equal hash → skip; divergence with no baseline → §5.3 step 3
-conflict-skip, never a destructive overwrite), only delete-detection and conflict-classification weaken
-(disclosed R2).
+`video_id` the last-synced baseline: **Class A** (`docVersion`, `mdGeneratedAt`, receiver-observed `mdHash`)
+and **Class B** (the last-synced `corrections`/`personalNote`/`personalScore` values + `annotationsUpdatedAt`).
+Written **only after** §7 step 5's verified commit. It is the "seen-before" record for §5.6 delete inference,
+the Class-A tie baseline, and the Class-B 3-way-merge baseline. Lost/corrupt manifest degrades to a direct
+compare (equal → skip; divergence → conflict-skip, never a destructive overwrite); only delete-detection and
+3-way merge weaken (disclosed R2).
 
 ### 8.1 Conflict log
-Per-playlist git-ignored `<data-root>/<playlist_key>/.cloud-sync-conflicts.log` (JSON lines): `video_id`,
-timestamp, both sides' `(contentGeneratedAt, contentHash, backfilled?)`, and reason (true-conflict /
-backfilled-ambiguous / tiebreak). **De-duplicated** by `(video_id, hashL, hashC)` — a still-diverged legacy
-pair that conflict-skips on every run is logged **once**, not per run (round-3 L-1), so the log doesn't grow
-unbounded until the user resolves it. **Replica-local** (R3) — cross-replica surfacing is M2b.
+Per-playlist git-ignored `.cloud-sync-conflicts.log` (JSON lines): `video_id`, class, field (if Class B),
+both sides' signals + `backfilled?`, reason. **De-duplicated** by `(video_id, class, field, valueL, valueR)`
+so a stuck pair logs once, not per run (round-3 L-1). **Replica-local** (R3) — cross-replica surfacing is M2b.
 
 ---
 
@@ -266,92 +221,75 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
 ---
 
 ## 10. Testing
-- **Boundary:** mock cloud at the `MetadataStore`/`BlobStore` seam; integration exercises real local FS ↔
-  local-Supabase.
-- **Canonical hash:** cross-backend golden fixtures (file vs `jsonb` → equal); changing a replica-local field
-  (`position`/`archived`/`removedFromPlaylist`) does **not** change the hash; changing MD/`title`/
-  `personalNote`/`personalScore`/`corrections` **does**; **model JSON change does NOT** change the hash (§4.2).
-- **Newer-wins:** local-newer, cloud-newer, equal-skip, exact-tie→tiebreak; **B1 regression** — cloud
-  `docVersion 4.0`+old-stamp vs local `3.3`+new-stamp → local wins.
-- **Backfill non-destructive (round-2 H-C):** legacy divergence with a backfilled timestamp → **conflict,
-  skip, no overwrite** (the "local note added, cloud `updated_at` bumped by ingestion" case must NOT lose the
-  note); equal hash → skip; a real post-feature edit restamps and then wins.
-- **Restamp (round-2 H-E, round-3 H-2):** a cloud `personalNote` edit (`update_video_annotations`) **and** a
-  cloud `title`/`corrections` edit (`merge_video_data`/`updateVideoFields`) each restamp `contentGeneratedAt`;
-  a `reconcile_membership` `archived` flip does **not** (not hashed, no restamp).
-- **Companion model / content-stale (round-3 H-1, round-4 BLK-1, round-5 H-1/M-1/M-2):** after a **sync
-  MD-transfer**, the receiver never serves a model built from the *old* MD — a companion whose `sourceMdHash`
-  matches the winning MD is copied (no regen); a mismatched / legacy / absent one → the receiver's model blob
-  is deleted → lazy-regen on next **owner** serve. Assert: (1) a legacy model (no `sourceMdHash`) on a
-  **non-synced** video still serves as today (no re-charge) and its share link is unaffected; (2) a
-  **synced+shared** video whose model was deleted returns not-ready on the anonymous share route until an
-  owner serve, and is counted in `share_needs_owner_serve` (R7); (3) `sourceMdHash` is **MD-only** — a
-  `personalNote`/`personalScore`/`title` edit that leaves the MD unchanged does **not** change `sourceMdHash`
-  (no spurious model invalidation); (4) an **old-schema reader** (`.strict()`-era) does not reject a
-  `sourceMdHash`-bearing envelope (forward-tolerant, round-5 M-2).
-- **Union hydration:** empty local + non-empty cloud → full local hydration; local-only → created on cloud.
-- **Atomicity/resume:** failure between promote and commit → no record advertises a hash for a missing blob,
-  no baseline advance; re-run heals; two no-change runs → second all-skips.
-- **Delete (round-2 H-A/H-B):** baseline-present + other-side-absent → **not re-created** (remote delete
-  honored); fresh device (no baseline) + cloud-absent → additive-create allowed (**disclosed R2**); local
-  delete → re-add with new stamp → syncs again; re-creation never calls the metered enqueue / touches
-  `spend_ledger`.
-- **Auth/RLS:** no session → refusal; write lands only in caller's tenant (client `owner_id` rejected);
-  broad session-file perms → fail-closed.
-- **Render parity:** synced MD (+ regenerated or companion model) renders HTML/PDF without error.
+- Boundary: mock cloud at the `MetadataStore`/`BlobStore` seam; integration = real local FS ↔ local-Supabase.
+- **Class A (format-first):** higher-major wins over a newer-timestamp lower-major (the anti-`docVersion`-and
+  anti-recency regression); same-major-different-prose **unifies to the more recent** (both converge, no
+  churn on re-run); `mdHash` cross-backend golden fixtures (file vs `jsonb` → equal); a human-field edit does
+  **not** change `mdHash`.
+- **Class B (per-field merge):** a note edit on local + a score edit on cloud → **both survive** (3-way
+  merge); same-field-both-changed → newer `annotationsUpdatedAt` wins + logged; a field present on one side
+  only → copied (additive); human fields **survive a Class-A format upgrade** (reconcile independently).
+- **Companion/serve (rounds 3–5):** non-synced legacy model still serves as today (no re-charge, share
+  unaffected); a synced+shared video whose model was deleted → anon share not-ready until owner serve, counted
+  `share_needs_owner_serve`; old-schema reader tolerates a `sourceMdHash`-bearing envelope.
+- **Stamping (rounds 2–4):** every MD-writer restamps `mdGeneratedAt`; every human-field writer
+  (incl. `merge_video_data` for `corrections`) restamps `annotationsUpdatedAt`; membership writers do not.
+- **Union hydration / atomicity / deletes / auth:** empty-local→full-hydrate; promote-then-commit crash never
+  advertises a hash for a missing blob nor advances the baseline; baseline-present remote-delete not
+  re-created; re-creation never calls the metered enqueue; no-session refusal; client `owner_id` rejected.
 
 ---
 
-## 11. Accepted residuals / risks (v1)
-- **R1 — True-conflict / tiebreak overwrite.** Two real concurrent edits of one video's hashed source resolve
-  by newer-wins; loser overwritten but **logged** (§8.1). Loser-preservation is M2b.
-- **R2 — Baseline-less delete resurrection.** A replica with no baseline for an entity (fresh device / lost
-  manifest) cannot distinguish "deleted elsewhere" from "never seen" → may re-create it. Full delete-safety =
-  M2b tombstones. This is the honest "additive now, tombstones later."
+## 11. Accepted residuals (M2a)
+- **R1 — Class-B same-field concurrent edit:** newer `annotationsUpdatedAt` wins; loser logged (§8.1);
+  loser-preservation is M2b. (Class A has no analogous loss — its variants are equivalent.)
+- **R2 — Baseline-less delete resurrection:** a fresh device / lost manifest may re-create a deleted entity;
+  full delete-safety = M2b tombstones.
 - **R3 — Replica-local conflict log** (§8.1); cross-replica surfacing is M2b.
-- **R4 — Clock skew (load-bearing).** `contentGeneratedAt` primary → newer-wins leans on device clocks
-  (bounded for one author's NTP-synced devices; equal content never races via the hash; backfilled stamps
-  never overwrite, §5.4; exact ties are deterministic). A grossly-wrong clock can mis-order two *real* edits
-  — accepted v1; logical-clock is an M2b option.
-- **R5 — Companion model re-charge, scoped to synced videos only.** When sync transfers an MD and cannot
-  ship a verifiable-matching model companion (mismatch, or a legacy sender model without `sourceMdHash`), the
-  receiver regenerates the model on first serve (a small charge) via the existing lazy-upsert. This is bounded
-  to **videos whose content was actually synced** (their MD changed — regen is legitimate), never the whole
-  corpus; the serve path is unchanged, so no fleet-wide re-charge and no share-link regression for non-synced videos (round-4 BLK-1; the synced+shared case is R7).
-- **R6 — Cloud capture capability (to verify).** M2b's image backfill assumes cloud eventually generates its
-  own slides; unverified; does not affect M2a (no images in summary scope).
-- **R7 — Synced+shared video: anonymous share returns not-ready until an owner serve (round-5 H-1).** When
-  sync transfers an MD and deletes the receiver's now-stale model (no verifiable-matching companion — e.g. a
-  legacy model, or a title-preserving prose edit), a **live share token** for that exact video returns
-  not-ready to anonymous viewers until the **owner** next opens it (the share route is generation-free and
-  cannot self-heal; the owner may not visit cloud soon → the outage is owner-gated, not "shortly"). Serving
-  the *old* model would be stale, so not-ready is the correct trade; sync surfaces these as
-  `share_needs_owner_serve` (§7 step 6). **This is scoped to synced+shared videos only** — the non-synced corpus
-  and its shares are unaffected (§4.2). Triggering an owner-side regen from sync is weighed against the
-  generation-free/money invariants and **deferred** (an owner action, not a sync side-effect).
+- **R4 — Clock skew (now minor):** only a Class-A same-format tie-break and a Class-B same-field tie lean on
+  clocks; the former is harmless (equivalent variants), the latter rare + logged. Format and 3-way merge
+  carry the real decisions, so skew is far less load-bearing than in the old single-class model.
+- **R5 — Companion re-charge, scoped to synced videos:** a synced MD with no verifiable-matching companion →
+  receiver regenerates the model on next serve (existing lazy path); bounded to synced videos, never the fleet.
+- **R7 — Synced+shared video:** its anonymous share is not-ready until an owner serve (the share route is
+  generation-free); scoped to synced+shared videos only; reported as `share_needs_owner_serve`.
 
 ---
 
 ## 12. Resolved decisions
-1. **Deep-dive → M2b** (retired fields, per-section blobs, `DIG_GENERATOR_VERSION`, images).
-2. **Newer-signal = `contentGeneratedAt` primary; `docVersion` never a recency signal** (round-1 B1).
-3. **Model JSON = companion, not a compared source** (round-2 BLK-1) — copied with the winning MD; receiver
-   lazily regenerates on drift.
-4. **Hashed source set = summary MD + `title`/`personalNote`/`personalScore`/`corrections` only.** `archived`
-   + membership/ordering fields excluded (round-2 H-D).
-5. **Backfill is non-destructive** — a backfilled timestamp never drives an overwrite; ambiguous divergence =
-   conflict-skip (round-2 H-C).
-6. **Deletes: additive + baseline-aware best-effort suppression; no local marker; resurrection on a
-   baseline-less replica is a disclosed residual** (round-2 H-A/H-B); cross-replica tombstones = M2b.
-7. **Per-playlist manifest**; every allowlisted SQL writer restamps `contentGeneratedAt` (round-2 H-E),
-   **including `merge_video_data`** for `title`/`corrections` (round-3 H-2).
-8. **Model freshness is handled at sync-transfer only, NOT in the serve path** (round-3 H-1, round-4 BLK-1,
-   round-5 H-1/M-1/M-2): `ModelEnvelope.sourceMdHash` is optional sync-only provenance — an **MD-body-only**
-   digest (NOT `contentHash`, so an annotation edit never invalidates the model), on a **forward-tolerant**
-   envelope schema (old readers ignore the new key). On an MD-transfer sync ships a matching companion or
-   deletes the receiver's model (→ lazy owner-serve regen). `isFresh`/`readTitleStableModel`/the share
-   route/over-budget fallback are **unchanged** → no fleet re-charge, no dark share links for non-synced
-   videos. Residual: a **synced+shared** video's anonymous share is not-ready until an owner serve (R7,
-   reported as `share_needs_owner_serve`). Companion write is best-effort, outside the MD's atomic commit.
-9. **Every hashed-field SQL writer restamps**, including `merge_video_data` (title/corrections, round-3 H-2)
-   and any bulk merge path (`merge_video_data_bulk`) if it ever writes a hashed field (round-4 L-1).
+1. **Two-class model** (user, 2026-07-17): generated content (Class A) reconciles by **format**, human edits
+   (Class B) reconcile **per-field newer-wins** — opposite rules, reconciled independently. Dissolves the
+   format-vs-recency tension of v1–v6.
+2. **`docVersion` = format signal, never recency.** `.major` decides Class A (higher wins; never downgrade);
+   `.minor` (HTML style) ignored (each app re-renders in its own style). `mdGeneratedAt` breaks a same-format
+   tie only.
+3. **Class B = `corrections`/`personalNote`/`personalScore`** (human). **`title` is NOT Class B** —
+   YouTube-fetched, no author-edit path → replica-local.
+4. **Model JSON = companion** (sync-transfer scoped, MD-only `sourceMdHash`, forward-tolerant schema, R5/R7).
+5. **Deep-dive + images → M2b** (§13), with the cloud-tokens → local-capture → sync-back pipeline.
+6. **Deletes: additive + baseline-aware**; resurrection on a baseline-less replica = R2; tombstones = M2b.
+7. **Per-playlist manifest**; every MD/human-field SQL writer restamps its timestamp (incl. `merge_video_data`).
+
+---
+
+## 13. M2b forward-notes (deep-dive + slide images) — captured, not in scope
+
+Verified against code; recorded so M2b builds on a settled architecture:
+- **Cloud can NEVER capture real pixels server-side (ToS-permanent).** Any datacenter capture (`yt-dlp` *or*
+  headless-Chromium screenshotting) is the same YouTube-ToS violation (architecture §2.1, "Codex H9 legal
+  gate"); real pixels are obtainable **only on the user's device**. This **corrects the old R6 "cloud may
+  gain capture" assumption**: cloud will not.
+- **But cloud DOES produce the capture *tokens*.** Gemini's dig output emits **`[[SLIDE:startSec|endSec|
+  caption]]`** tokens (`lib/dig/generate.ts:79` — "FIRST M:SS = visual fully built; SECOND = it leaves"),
+  ToS-clean (Gemini watches Google's own video). A token is a **portable capture instruction** — clip window
+  + what it is.
+- **Local resolves tokens → pixels** (`lib/dig/slides.ts`: `yt-dlp --download-sections` + `ffmpeg`, anchored
+  on the reliable `end`, so Gemini's timestamp imprecision is already absorbed).
+- **The M2b pipeline** is therefore: **cloud generates dig text + slide tokens → sync to local → local
+  resolves tokens into real slides → sync the images back to cloud.** Cloud ends up with pixels it could
+  never capture itself; any local device with video access can re-resolve the tokens anytime.
+- **M2b reconcile shape:** dig MD (with tokens) reconciles like **Class A** (format/version, incl. a
+  `DIG_GENERATOR_VERSION` axis); the resolved **slide images** are a **local-authoritative asset layer**
+  (local is the only legal producer) — the "asset-bearing side wins" tie-break resolves to local; cloud→local
+  image transfer is really "local resolves cloud's tokens," and local→cloud carries the captured pixels.
+- Also deferred to M2b: cross-replica tombstone deletes, background/auto-sync, true-conflict loser-preservation.
