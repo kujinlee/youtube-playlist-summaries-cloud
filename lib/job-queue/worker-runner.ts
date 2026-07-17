@@ -1,7 +1,7 @@
 import type { JobQueue } from '@/lib/storage/job-queue';
 import type { HandlerCtx, JobHandler } from './handler-context';
 import type { BillingLatch } from '@/lib/job-queue/billing-latch';
-import { NonRetryableError } from './errors';
+import { classifyGeminiFailure, releaseGateOpen, isNonRetryable } from '@/lib/gemini-failure';
 
 export type { JobHandler } from './handler-context';
 
@@ -62,9 +62,16 @@ export async function runOnce(
     if (settled) return 'lost';
     settled = true;
     try {
+      // RELEASE only on a positively-not-metered class-A failure, gated by the live-verification flag.
+      const release = releaseGateOpen()
+        && classifyGeminiFailure(e, signal) === 'release'
+        && !billing.metered;
       const { ok, status } = await queue.fail(
         job.id, opts.workerId, job.leaseToken, e instanceof Error ? e.message : String(e),
-        { retryable: !(e instanceof NonRetryableError) });
+        // isNonRetryable walks the cause chain — a WRAPPED NonRetryableError is still non-retryable,
+        // so a pre-send class-A failure sets BOTH retryable=false and billableSucceeded=false (H1);
+        // otherwise it would requeue and fail_job would refuse to release a queued transition.
+        { retryable: !isNonRetryable(e), billableSucceeded: !release });
       if (!ok) return 'lost';
       return status === 'cancelled' ? 'cancelled' : 'failed';
     } catch {
