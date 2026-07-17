@@ -688,6 +688,23 @@ describe('reservation-release: ever_metered vetoes release (Task 13/H1)', () => 
     }
   });
 
+  it('T13-e: the CURRENT attempt`s p_metered vetoes release on the contradictory p_metered=true+billable=false call (defense-in-depth)', async () => {
+    // The worker never emits metered=true with billable=false (metered ⟹ billable=true), but a direct/buggy
+    // internal caller could. ever_metered is still false pre-read (first meter), so without the defensive
+    // `and not p_metered` this terminal fail would RELEASE = under-count. The predicate must KEEP.
+    const u = await newUser();
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId, leaseToken } = await enqueueAndLeaseVideo(u.user.id, playlistId, 'vid-t13e');
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    const { data: status } = await adminClient().rpc('fail_job', {
+      p_job_id: jobId, p_worker_id: 'w-t2', p_lease_token: leaseToken,
+      p_error: 'billed then failed', p_retryable: false, p_billable_succeeded: false, p_metered: true,
+    });
+    expect(status).toBe('failed');                               // terminal
+    expect(await ledgerFor(day)).toBe(before);                   // KEEP — current-attempt p_metered vetoes the release
+  });
+
   it('T13-c: playlist cancel excludes a metered-then-requeued job from the per-day release sum, but still flags both cancelled', async () => {
     const u = await newUser();
     const { client: session } = await signInAs(u.email, u.password);

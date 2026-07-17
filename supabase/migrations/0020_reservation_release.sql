@@ -73,6 +73,8 @@ begin
   -- behavior 6). Inside the status='active' single-writer fence → exactly-once.
   if not p_billable_succeeded
      and not v_ever_metered
+     and not p_metered                                   -- defend the CURRENT attempt's meter too (belt-and-suspenders
+                                                          -- vs a contradictory p_metered=true+billable=false call — pure KEEP, never releases)
      and v_new in ('failed','dead_letter','cancelled')
      and v_reserved > 0 then
     update spend_ledger
