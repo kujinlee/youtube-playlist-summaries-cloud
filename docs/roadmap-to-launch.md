@@ -56,7 +56,9 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
   propagation, background/auto-sync, true-conflict loser-preservation.
 
 - [~] **2.1 Brainstorm + spec** (M2a) — design user-approved; spec `…2026-07-17-stage3-cloud-sync-design.md`
-  **v6 CONVERGED** (dual adversarial review, 6 rounds: R1 3B4H → R6 0 B/H/M both reviewers; commit c30113f).
+  **v10 CONVERGED** (dual adversarial review; single-class v1–v6 converged, then user refined to the
+  **two-class model** v7–v10 which re-converged: opus 0 B/H/M + Codex 0 B/H; commit bbc5991). Model =
+  generated (format/corrections-currency) + human (per-field newer-wins), reconciled independently.
   grill-with-docs terminology done. **⏳ awaiting USER final approval of the written spec → then 2.2 plan.**
 - [ ] **2.2 Plan** (dual adversarial review to convergence).
 - [ ] **2.3 Implement** (subagent-driven-development) + whole-branch dual review to convergence.
