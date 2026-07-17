@@ -66,7 +66,13 @@ _Every task's requirements implicitly include this section. Values copied verbat
 Add to `tests/integration/reservation-release.test.ts`:
 
 ```ts
-import { adminClient, newUser, signInAs } from './helpers/clients';
+import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
+
+// R2-H2: this serial suite enqueues many 150¢ summary jobs and deliberately leaves KEEP/back-dated
+// reservations on today's ledger. Pin a generous daily_cap so cumulative reservations never trip
+// PJ002 daily_cap_exceeded. Cap-SPECIFIC tests (behavior 16 "cap re-opens", behavior 26) set their
+// OWN low daily_cap_cents inside the test and reset it after — see Task 12.
+beforeAll(async () => { await ensureGuardrailHeadroom(adminClient()); });
 
 describe('reservation-release: ledger_audit lockdown (Task 1)', () => {
   it('service_role can insert and read ledger_audit', async () => {
@@ -166,12 +172,13 @@ MSG
 
 **Files:**
 - Modify: `supabase/migrations/0020_reservation_release.sql` (append)
-- Modify: `lib/storage/supabase/supabase-job-queue.ts:85-92`
+- Modify: `lib/storage/job-queue.ts:35` (the `JobQueue` **interface** `fail` signature — R2-H1)
+- Modify: `lib/storage/supabase/supabase-job-queue.ts:85-92` (the `SupabaseJobQueue.fail` impl)
 - Test: `tests/integration/reservation-release.test.ts`
 
 **Interfaces:**
 - Consumes: `ledger_audit` (Task 1); existing `fail_job(uuid,text,uuid,text,boolean)` (`0008`), `spend_ledger`, `jobs.reserved_cents`/`jobs.created_at`.
-- Produces: `fail_job(p_job_id uuid, p_worker_id text, p_lease_token uuid, p_error text, p_retryable boolean, p_billable_succeeded boolean default true) returns text`; adapter `SupabaseJobQueue.fail(id, worker, token, err, { retryable, billableSucceeded? })` (default `billableSucceeded=true`).
+- Produces: `fail_job(p_job_id uuid, p_worker_id text, p_lease_token uuid, p_error text, p_retryable boolean, p_billable_succeeded boolean default true) returns text`; the `JobQueue` interface **and** `SupabaseJobQueue.fail(id, worker, token, err, { retryable, billableSucceeded? })` widened (default `billableSucceeded=true`).
 
 Behaviors covered (spec §7): 1 (success keeps — untouched), 2 (class-A releases), 3/4 (keep), 6 (requeue keeps), 14 (day-correct), 15 (guarded-decrement audit), 16 (cap re-opens).
 
@@ -359,9 +366,17 @@ revoke all on function fail_job(uuid,text,uuid,text,boolean,boolean) from public
 grant execute on function fail_job(uuid,text,uuid,text,boolean,boolean) to service_role;
 ```
 
-- [ ] **Step 4: Update the adapter to pass `p_billable_succeeded`**
+- [ ] **Step 4: Widen the `JobQueue` interface, then the adapter, to pass `p_billable_succeeded`**
 
-In `lib/storage/supabase/supabase-job-queue.ts`, replace the `fail` method (lines 85–92):
+First the **interface** (R2-H1) — `lib/storage/job-queue.ts:35`. Task 10 calls `queue.fail(..., { billableSucceeded })` where `queue` is typed as `JobQueue`, so the interface must carry the optional field or `tsc` rejects the extra property (invisible to the SWC-based jest gate):
+
+```ts
+  fail(jobId: string, workerId: string, leaseToken: string, error: string, opts: { retryable: boolean; billableSucceeded?: boolean }):
+    Promise<{ ok: boolean; status: JobStatus | null }>;
+```
+> `job-queue-store.test.ts:79` calls `.fail(..., { retryable: false })` — still valid (the new field is optional), no change needed there. Grep other `JobQueue` implementers: `SupabaseJobQueue` is the sole one.
+
+Then the impl — in `lib/storage/supabase/supabase-job-queue.ts`, replace the `fail` method (lines 85–92):
 
 ```ts
   async fail(
@@ -385,15 +400,16 @@ In `lib/storage/supabase/supabase-job-queue.ts`, replace the `fail` method (line
 ```bash
 npx supabase db reset && npm run test:integration -- reservation-release
 npm run test:integration -- cost-guardrails job-queue-worker   # existing fail_job coverage
+npx tsc --noEmit                                                # R2-H1: catches the JobQueue-interface widening
 ```
-Expected: new suite PASS; existing suites still green (note: `cost-guardrails.test.ts:201` asserted "never releases" under the *old* default — with `billableSucceeded` defaulting to true/KEEP, the un-updated call path still keeps, so it stays green; if that test calls `fail_job` positionally with 5 args, confirm it still resolves — the 6th arg is defaulted).
+Expected: new suite PASS; existing suites still green; `tsc` clean. Notes: `cost-guardrails.test.ts:201` asserted "never releases" under the *old* default — with `billableSucceeded` defaulting to true/KEEP, the un-updated call path still keeps, so it stays green; if that test calls `fail_job` positionally with 5 args, confirm it still resolves (the 6th arg is defaulted). `job-queue-store.test.ts:79` passes `{ retryable: false }` — still valid against the widened interface (optional field).
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/0020_reservation_release.sql lib/storage/supabase/supabase-job-queue.ts tests/integration/reservation-release.test.ts
+git add supabase/migrations/0020_reservation_release.sql lib/storage/job-queue.ts lib/storage/supabase/supabase-job-queue.ts tests/integration/reservation-release.test.ts
 git commit -F - <<'MSG'
-feat(reservation): fail_job spend-aware release (6-arg) + adapter
+feat(reservation): fail_job spend-aware release (6-arg) + JobQueue.fail widening
 
 DROP+recreate fail_job with p_billable_succeeded (default TRUE=KEEP). Releases the
 reserve-day ledger only on a genuine terminal fail (not requeue) that never billed;
@@ -1338,26 +1354,28 @@ The direct-`generateJson` latch tests (Step 1) prove only the set-point. The v5�
 Create `tests/integration/billing-latch-threading.test.ts` (or a component test under `tests/lib/ingestion/` if `summaryCore` can be driven without Postgres — prefer the lib-level driver so it's fast and deterministic):
 
 ```ts
-import { runSummaryCore } from '@/lib/ingestion/summary-core';   // adjust to the real exported entry
+import { summaryCore, type SummaryCoreDeps } from '@/lib/ingestion/summary-core';
 import type { BillingLatch } from '@/lib/job-queue/billing-latch';
 
 // A deps double whose generateSummary meters a body via the injected latch, THEN throws 503 —
 // exactly the outer-loop (3e2) / cross-call (3e3) shape. We assert the latch the CALLER passed flips.
 it('a metered-then-503 summary KEEPS: billing latch flips through summaryCore threading', async () => {
   const billing: BillingLatch = { metered: false };
-  const deps = {
-    resolveTranscriptSegments: async () => ({ segments: [{ offset: 0, duration: 1, text: 'x' }], source: 'captions' }),
-    generateSummary: async (_s: unknown, _l: unknown, _v: unknown, opts?: { billing?: BillingLatch }) => {
+  const deps: SummaryCoreDeps = {
+    resolveTranscriptSegments: (async () => ({ segments: [{ offset: 0, duration: 1, text: 'x' }], source: 'captions' })) as SummaryCoreDeps['resolveTranscriptSegments'],
+    generateSummary: (async (_s: unknown, _l: unknown, _v: unknown, opts?: { billing?: BillingLatch }) => {
       if (opts?.billing) opts.billing.metered = true;                 // stands in for the primitive set-point
       throw Object.assign(new Error('overloaded'), { name: 'GoogleGenerativeAIFetchError', status: 503 });
-    },
-    extractQuickView: async () => ({ tldr: '', takeaways: [] }),
+    }) as SummaryCoreDeps['generateSummary'],
+    extractQuickView: (async () => ({ tldr: '', takeaways: [] })) as SummaryCoreDeps['extractQuickView'],
   };
-  await expect(runSummaryCore(/* fixture args */, deps, { caps: SOME_CAPS, billing })).rejects.toBeTruthy();
+  const input = { videoId: 'v', title: 't', youtubeUrl: 'https://x', channel: 'c', durationSeconds: 60, baseName: 'v' };
+  // caps truthy → summaryCore takes the gsOpts branch and passes gsOpts (with billing) to generateSummary.
+  await expect(summaryCore(input, deps, { caps: SOME_CAPS, billing })).rejects.toBeTruthy();
   expect(billing.metered).toBe(true);   // FAILS if summaryCore drops billing into gsOpts (M6-1)
 });
 ```
-> Wire `runSummaryCore`'s real arg list from `lib/ingestion/summary-core.ts`. The assertion is on the **caller's** latch object — proving the reference survives field-by-field `gsOpts` construction. Add a companion assertion that the same holds via `rtsOpts` (transcription path) when `resolveTranscriptSegments` meters.
+> Real entry is `summaryCore(input, deps, opts)` (`summary-core.ts:54`) with `deps: SummaryCoreDeps`. The assertion is on the **caller's** latch object — proving the reference survives field-by-field `gsOpts` construction. Add a companion assertion that the same holds via `rtsOpts` (transcription path) when `resolveTranscriptSegments` meters. Confirm `SummaryCoreInput`'s exact fields from the file before finalizing `input`.
 
 - [ ] **Step 7: Run tests + type-check + regression**
 
@@ -1558,8 +1576,9 @@ Then change the final wrap (line ~59-63) so it preserves the typed Gemini error:
 
 ```bash
 npx jest transcript-source
+npx tsc --noEmit
 ```
-Expected: PASS. Update `transcript-source.test.ts:64` ("both-fail wrap with caption cause") to assert the **Gemini** cause now.
+Expected: PASS. The existing `transcript-source.test.ts:64` ("both-fail wrap") asserts only the error **message** (a regex), not `.cause` — so the cause change does **not** break it (L2). Optionally strengthen it to also assert `err.cause instanceof NonRetryableError` to lock in the H1 path; not required for green.
 
 - [ ] **Step 5: Commit**
 
@@ -1672,12 +1691,15 @@ Expected: FAIL — runner passes no `billableSucceeded`, so nothing releases.
 Add import: `import { classifyGeminiFailure, releaseGateOpen, isNonRetryable } from '@/lib/gemini-failure';`. (`BillingLatch` was already imported in Task 7.)
 > **Regression note:** `retryable` changes from `!(e instanceof NonRetryableError)` to `!isNonRetryable(e)`. For a *bare* `NonRetryableError` the result is identical; the only behavior change is that a *wrapped* one now correctly becomes non-retryable. Re-run `worker-runner-runtime.test.ts` (case "(c) a NonRetryableError fails the job non-retryably") to confirm no regression.
 
-- [ ] **Step 4: Run tests + full regression**
+- [ ] **Step 4: Fix the 3 existing exact-match `fail()` assertions, then run + regression**
+
+The runner now **always** passes `{ retryable, billableSucceeded }`, so three existing exact-object assertions in `worker-runner-runtime.test.ts` (lines **84, 124, 169** — the `NonRetryableError` case, the abort case, the wall-clock case) break on deep-equality. Update each from `{ retryable: X }` to `{ retryable: X, billableSucceeded: true }` (all three are KEEP paths — gate default is closed in a plain `npm test` run, and none is a class-A not-metered release). Grep confirmed no other exact-match `.fail(` assertions.
 
 ```bash
 npm run test:integration -- worker-runner-runtime reservation-release job-queue-runner worker-main
+npx tsc --noEmit
 ```
-Expected: PASS. Confirm the existing `NonRetryableError`-retryable behavior is unchanged (release gate is orthogonal to `retryable`).
+Expected: PASS after the 3 assertion updates; `tsc` clean. The `retryable` **value** is unchanged for every existing case (a bare `NonRetryableError` is still non-retryable; the only new behavior is a *wrapped* one becoming non-retryable) — so only the assertion *shape* changed, not runner behavior.
 
 - [ ] **Step 5: Commit**
 
@@ -1849,8 +1871,10 @@ it('behavior 26: N summary jobs all hitting 503 (not metered) release back to ba
 
 it('behavior 24: serve lease-overlap yields a bounded leak, never a double-refund', async () => {
   // reserve token A; expire the 180s lease (adminClient sets lease_expires_at in the past);
-  // second reserve → token B (+6); settle(A, released=true) → no-op (token overwritten);
-  // settle(B, released=true) → -6; net one release; ledger never negative.
+  // second reserve → token B. ASSERT tokenB !== tokenA explicitly (the reclaim overwrote release_token —
+  // the whole basis for A's settle being a no-op; don't leave it to a comment).
+  // Then: settle(A, released=true) → returns false (no-op, token overwritten);
+  // settle(B, released=true) → returns true, -6; net one release; ledger never negative.
 });
 ```
 
@@ -1922,3 +1946,12 @@ MSG
 - **Codex-L1 / Codex-L2 / Claude-L1 / Claude-L2 / Claude-L3:** serve-latch test mutates the passed latch; `ledger_audit` test no longer masks permission-denied; Task 4 keeps `public.jobs`; scalar-read fixes + `pdf-cloud` enumerated; dead `settleServeModel` adapter removed.
 
 Verified-correct and carried forward (both reviewers): all SQL bodies (`fail_job` DROP+recreate, cancel rewrites, playlist CTE, reserve/settle guarded decrements + audit), the classifier+latch design, `reserve_serve_model_meta` survives the return-type change, the audit-insert privilege on all paths, and 0020 append-order validity.
+
+**v2 → v3 (round-2 dual review, 2026-07-16).** `docs/reviews/plan-reservation-release-v2-{codex,claude}.md`. **Split:** Claude CONVERGED (0 new Blocking/High); Codex found 2 new High (both introduced by the round-1 fixes). All 11 round-1 fixes verified genuine by both. Addressed:
+- **Codex-R2-H1:** the `billableSucceeded` fix widened `SupabaseJobQueue.fail` but not the `JobQueue` **interface** (`lib/storage/job-queue.ts:35`) → `tsc` break at the Task 10 call site. Task 2 now widens the interface too; `tsc --noEmit` added to Task 2's gate.
+- **Codex-R2-H2:** the integration suite's many 150¢ enqueues + KEEP/back-dated reservations could trip `PJ002 daily_cap_exceeded` (default 500¢ cap). Added a top-level `beforeAll(ensureGuardrailHeadroom)`; cap-specific tests (16/26) set their own cap.
+- **Claude-R2-M1:** Task 10 broke 3 existing exact-match `fail()` assertions (`worker-runner-runtime.test.ts:84/124/169`) and the plan wrongly claimed "Expected: PASS." Now enumerated as a Task-10 fix (`{ retryable, billableSucceeded: true }`).
+- **Codex-R2-M1 / Claude-L1:** the threading test now uses the real `summaryCore(input, deps, {caps,billing})` + `SummaryCoreDeps` (was `runSummaryCore`).
+- **Claude-L2/L3:** corrected the imprecise `transcript-source.test.ts:64` note (asserts message, not cause); behavior-24 now asserts the token overwrite explicitly.
+
+Verified genuine and carried forward (both reviewers, round 2): the cause-walk retryability end-to-end (wrapped `NonRetryableError` → `retryable=false` → release), only two `HandlerCtx` literals exist, the M6-1 threading guard is non-vacuous, `NonRetryableError` cannot carry a `cause` (so `isNonRetryable` has no false-positive), `enqueueSummary` yields a leasable 150¢ job, and the prod gate stays closed.
