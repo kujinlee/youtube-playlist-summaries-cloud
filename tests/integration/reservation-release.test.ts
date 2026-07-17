@@ -15,17 +15,25 @@ async function jobIdFor(ownerId: string, videoId: string): Promise<string> {
 beforeAll(async () => { await ensureGuardrailHeadroom(adminClient()); });
 
 describe('reservation-release: ledger_audit lockdown (Task 1)', () => {
+  // T12 Part 2 (tracked follow-up flagged in Task 4): the original fixture hardcoded day
+  // '2026-07-16' — today's actual date under the server clock as of writing. Once "today"
+  // rolls past that date, it collides with "yesterday" as computed by the back-dated-job
+  // behavior tests elsewhere in this file (e.g. behavior 14, behavior 13b), which query/seed
+  // ledger_audit and spend_ledger rows scoped by day. A far-past FIXED date can never collide
+  // with any wall-clock-relative "today"/"yesterday" this suite computes.
+  const FIXED_DAY = '2020-01-01';
+
   it('service_role can insert and read ledger_audit', async () => {
     const svc = adminClient();
-    const day = '2026-07-16';
+    const day = FIXED_DAY;
     const { error: insErr } = await svc
       .from('ledger_audit')
-      .insert({ day, kind: 'release_underflow', expected_amt: 150, note: 't1' });
+      .insert({ day, kind: 'release_underflow', expected_amt: 150, note: 't1-lockdown' });
     expect(insErr).toBeNull();
     const { data, error } = await svc
       .from('ledger_audit')
       .select('kind, expected_amt')
-      .eq('note', 't1');
+      .eq('note', 't1-lockdown');
     expect(error).toBeNull();
     expect(data).toEqual([{ kind: 'release_underflow', expected_amt: 150 }]);
   });
@@ -40,7 +48,7 @@ describe('reservation-release: ledger_audit lockdown (Task 1)', () => {
     expect(read.error != null || (read.data ?? []).length === 0).toBe(true);
     const { error } = await session
       .from('ledger_audit')
-      .insert({ day: '2026-07-16', kind: 'x', expected_amt: 1 });
+      .insert({ day: FIXED_DAY, kind: 'x', expected_amt: 1 });
     expect(error).not.toBeNull();                 // no grant → 42501 permission denied
   });
 });
@@ -270,8 +278,10 @@ describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
     expect(await ledgerFor(yday)).toBe(10);                   // yesterday NOT driven negative
     // Scope by note (unique per playlistId) — not just day+kind — so this assertion can't
     // collide with an unrelated release_underflow row another fixture seeded for the same
-    // calendar day (e.g. Task 1's lockdown test hardcodes day '2026-07-16', which IS "yesterday"
-    // whenever these tests run on/after 2026-07-17 UTC).
+    // calendar day. (T12 Part 2: Task 1's lockdown test used to hardcode day '2026-07-16', which
+    // could collide with "yesterday" here under a future server clock; it now uses a fixed
+    // far-past day ('2020-01-01') that can never collide with any wall-clock-relative day this
+    // suite computes — this note-scoping remains defense-in-depth for other cross-run collisions.)
     const { data: audit } = await adminClient()
       .from('ledger_audit').select('expected_amt').eq('day', yday).eq('kind', 'release_underflow')
       .like('note', `request_cancel_playlist_jobs ${playlistId}%`);
@@ -353,5 +363,232 @@ describe('reservation-release: serve token + settle (Task 5)', () => {
       p_token: '00000000-0000-0000-0000-000000000000', p_released: true,
     });
     expect(data).toBe(false);
+  });
+});
+
+// ── Task 12: end-to-end behavior sweep (fills the gaps left by Tasks 1-11) ────────────────────
+describe('reservation-release: Task 12 — end-to-end behavior sweep', () => {
+  it('behavior 5: cancel-mid-run keeps or releases per the billable flag', async () => {
+    // Case 1: active job, cancel_requested=true; handler threw PRE-billing (class-A, not metered)
+    // → fail_job(billable_succeeded=false) → v_cancel → v_new='cancelled' → RELEASE.
+    const u1 = await newUser();
+    const { playlistId: pl1 } = await seedPlaylist(adminClient(), u1.user.id);
+    const { jobId: jobId1, leaseToken: lt1 } = await enqueueAndLease(u1.user.id, pl1, 'vid-t12-5a');
+    await adminClient().from('jobs').update({ cancel_requested: true }).eq('id', jobId1);
+    const day = utcToday();
+    const before1 = await ledgerFor(day);
+    const { data: status1 } = await adminClient().rpc('fail_job', {
+      p_job_id: jobId1, p_worker_id: 'w-t2', p_lease_token: lt1,
+      p_error: 'HTTP 503', p_retryable: false, p_billable_succeeded: false,
+    });
+    expect(status1).toBe('cancelled');
+    expect(await ledgerFor(day)).toBe(before1 - 150);              // pre-billing throw → RELEASE
+
+    // Case 2 (sibling): handler threw with billing.metered=true → fail_job(billable_succeeded=true)
+    // → cancelled but KEEP (money already spent before the throw).
+    const u2 = await newUser();
+    const { playlistId: pl2 } = await seedPlaylist(adminClient(), u2.user.id);
+    const { jobId: jobId2, leaseToken: lt2 } = await enqueueAndLease(u2.user.id, pl2, 'vid-t12-5b');
+    await adminClient().from('jobs').update({ cancel_requested: true }).eq('id', jobId2);
+    const before2 = await ledgerFor(day);
+    const { data: status2 } = await adminClient().rpc('fail_job', {
+      p_job_id: jobId2, p_worker_id: 'w-t2', p_lease_token: lt2,
+      p_error: 'partial spend before cancel', p_retryable: false, p_billable_succeeded: true,
+    });
+    expect(status2).toBe('cancelled');
+    expect(await ledgerFor(day)).toBe(before2);                    // metered → KEEP
+  });
+
+  it('behavior 7: the reaper never releases a lease-expired active job', async () => {
+    const u = await newUser();
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId } = await enqueueAndLease(u.user.id, playlistId, 'vid-t12-7');
+    // default summary max_attempts is 1 (guardrail_config default) — bump so the swept lease
+    // requeues (status='queued') instead of dead-lettering, matching the "reclaimable" shape
+    // this behavior is about (same pattern as job-queue-worker.test.ts's fencing tests).
+    await adminClient().from('jobs').update({ max_attempts: 3 }).eq('id', jobId);
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    await adminClient().from('jobs').update({
+      lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+    }).eq('id', jobId);
+    await adminClient().rpc('sweep_expired_leases');
+    const { data: job } = await adminClient().from('jobs').select('status').eq('id', jobId).single();
+    expect(job!.status).toBe('queued');                 // reclaimed for retry (max_attempts default > 1 here)
+    expect(await ledgerFor(day)).toBe(before);           // reaper touches jobs, never spend_ledger — KEEP
+  });
+
+  it('behavior 10: cancel active then success KEEPS (artifact exists)', async () => {
+    const u = await newUser();
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId, leaseToken } = await enqueueAndLease(u.user.id, playlistId, 'vid-t12-10');
+    await adminClient().from('jobs').update({ cancel_requested: true }).eq('id', jobId);
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    const { data: ok } = await adminClient().rpc('complete_job', {
+      p_job_id: jobId, p_worker_id: 'w-t2', p_lease_token: leaseToken, p_result: { done: true },
+    });
+    expect(ok).toBe(true);
+    const { data: job } = await adminClient().from('jobs').select('status').eq('id', jobId).single();
+    expect(job!.status).toBe('cancelled');               // cancel-after-success
+    expect(await ledgerFor(day)).toBe(before);            // complete_job never releases — KEEP (artifact kept)
+  });
+
+  it('behavior 22: serve K-bound survives releases — a released serve still burns an attempt', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const svc = adminClient();
+    const { playlistId } = await seedPlaylist(svc, u.user.id);
+    await seedPromotedVideo(svc, { ownerId: u.user.id, playlistId, videoId: 'vid-t12-22' });
+    // Pin the serve config this behavior's K depends on — idempotent with migration defaults, but
+    // guards against another integration file having mutated the shared guardrail_config singleton
+    // when the full suite runs (this file does not otherwise touch these three columns).
+    await svc.from('guardrail_config').update({
+      magazine_est_cents: 6, max_serve_attempts: 5, lease_ttl_seconds: 180,
+    }).eq('id', true);
+    const docKey = `${playlistId}/vid-t12-22`;
+    const day = utcToday();
+
+    const K = 5;
+    for (let i = 0; i < K; i++) {
+      const { data: rows } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t12-22' });
+      expect(rows![0].status).toBe('reserved');
+      const token = rows![0].release_token as string;
+      const { data: ok } = await session.rpc('settle_serve_model', { p_token: token, p_released: true });
+      expect(ok).toBe(true);
+      // settle does NOT touch lease_expires_at — expire it manually so the NEXT reserve can claim
+      // another attempt (attempt_count only increments when the prior lease has expired).
+      await svc.from('serve_model_charge').update({
+        lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+      }).eq('owner_id', u.user.id).eq('doc_key', docKey).eq('day', day);
+    }
+    const { data: exhausted } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t12-22' });
+    expect(exhausted![0].status).toBe('attempts_exhausted');   // K released attempts still burned the K-bound
+  });
+
+  it('behavior 23: retry-keep path is reachable — one enqueue reserves once, even across a KEEP retry', async () => {
+    // Task 2's "retryable requeue... does NOT release" test already exercises fail_job's KEEP branch.
+    // This extends it to prove the KEEP is not vacuous: the requeued job is re-claimable and the
+    // re-claim itself does NOT add a second reservation (claim_next_job never touches spend_ledger).
+    const u = await newUser();
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId, leaseToken } = await enqueueAndLease(u.user.id, playlistId, 'vid-t12-23');
+    await adminClient().from('jobs').update({ max_attempts: 3 }).eq('id', jobId);
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    const { data: status1 } = await adminClient().rpc('fail_job', {
+      p_job_id: jobId, p_worker_id: 'w-t2', p_lease_token: leaseToken,
+      p_error: 'timeout', p_retryable: true, p_billable_succeeded: true,
+    });
+    expect(status1).toBe('queued');
+    expect(await ledgerFor(day)).toBe(before);                 // KEEP on requeue (behaviors 6/7)
+
+    // fail_job's backoff sets run_after in the future — force it claimable now, then re-claim.
+    await adminClient().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', jobId);
+    const claimed = await adminClient().rpc('claim_next_job', {
+      p_worker_id: 'w-t2', p_lease_seconds: 120, p_video_id: 'vid-t12-23',
+    });
+    const job2 = claimed.data![0];
+    expect(job2.id).toBe(jobId);                               // same job — no second reservation created
+    expect(await ledgerFor(day)).toBe(before);                  // one enqueue, one reservation — still unchanged
+  });
+
+  it('behavior 24: serve lease-overlap yields a bounded leak, never a double-refund', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const svc = adminClient();
+    const { playlistId } = await seedPlaylist(svc, u.user.id);
+    await seedPromotedVideo(svc, { ownerId: u.user.id, playlistId, videoId: 'vid-t12-24' });
+    const docKey = `${playlistId}/vid-t12-24`;
+    const day = utcToday();
+    const ledgerBefore = await ledgerFor(day);
+
+    const { data: rowsA } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t12-24' });
+    expect(rowsA![0].status).toBe('reserved');
+    const tokenA = rowsA![0].release_token as string;
+
+    // Expire A's 180s lease (adminClient sets lease_expires_at into the past) — simulates a
+    // stuck/lost caller. The doc is now reclaimable while A's call is still (unknowingly) in flight.
+    await svc.from('serve_model_charge').update({
+      lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+    }).eq('owner_id', u.user.id).eq('doc_key', docKey).eq('day', day);
+
+    const { data: rowsB } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t12-24' });
+    expect(rowsB![0].status).toBe('reserved');
+    const tokenB = rowsB![0].release_token as string;
+    // The reclaim OVERWRITES release_token (SET, not append) — this is the whole basis for A's
+    // settle below being a no-op. Assert it explicitly rather than leaving it to a comment.
+    expect(tokenB).not.toBe(tokenA);
+
+    expect(await ledgerFor(day)).toBe(ledgerBefore + 12);        // both reserves charged +6 each (bounded double-count)
+
+    const settleA = await session.rpc('settle_serve_model', { p_token: tokenA, p_released: true });
+    expect(settleA.data).toBe(false);                            // no-op: token overwritten by B's reclaim
+    expect(await ledgerFor(day)).toBe(ledgerBefore + 12);        // unchanged by the no-op
+
+    const settleB = await session.rpc('settle_serve_model', { p_token: tokenB, p_released: true });
+    expect(settleB.data).toBe(true);
+    expect(await ledgerFor(day)).toBe(ledgerBefore + 6);          // net ONE release (-6): bounded leak, never negative/double-refunded
+  });
+
+  it('behavior 25: a crashed active job stays reserved (accepted §2.4b residual)', async () => {
+    const u = await newUser();
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId } = await enqueueAndLease(u.user.id, playlistId, 'vid-t12-25');
+    await adminClient().from('jobs').update({ max_attempts: 1 }).eq('id', jobId);  // next sweep dead-letters
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    // Simulate a worker crash: no fail_job/complete_job RPC is ever called — only the lease expires.
+    await adminClient().from('jobs').update({
+      lease_expires_at: new Date(Date.now() - 1000).toISOString(),
+    }).eq('id', jobId);
+    await adminClient().rpc('sweep_expired_leases');
+    const { data: job } = await adminClient().from('jobs').select('status, reserved_cents').eq('id', jobId).single();
+    expect(job!.status).toBe('dead_letter');              // reaper terminalizes the crash path
+    expect(job!.reserved_cents).toBe(150);                 // jobs.reserved_cents untouched (never zeroed)
+    expect(await ledgerFor(day)).toBe(before);              // spend_ledger unchanged — accepted §2.4b residual (KEPT forever, no reaper release)
+  });
+
+  // behavior 16 ("cap re-opens") has no dedicated test: the suite-wide ensureGuardrailHeadroom
+  // pins daily_cap_cents=1_000_000, which makes any cap-adjacent assertion vacuous unless the
+  // test sets its own reachable cap — behavior 26 below does exactly that and asserts re-opening.
+  it('behavior 26: N summary jobs all hitting 503 (not metered) release back to baseline; cap re-opens', async () => {
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';  // documents the live-gate; prod default is OFF — see docs/reservation-release-live-gate.md
+    const svc = adminClient();
+    const day = utcToday();
+    // Deterministic baseline: this file's shared "today" spend_ledger row accumulates residue
+    // (billable KEEPs) from every earlier test in this suite — zero it so the low cap below has
+    // exact, reachable teeth (3 x 150c = 450c) rather than an unpredictable pre-existing amount.
+    await svc.from('spend_ledger').update({ reserved_cents: 0 }).eq('day', day);
+    await svc.from('guardrail_config').update({ daily_cap_cents: 450 }).eq('id', true);  // fits exactly 3x150c
+    try {
+      const u = await newUser();
+      const { playlistId } = await seedPlaylist(svc, u.user.id);
+      const vids = ['vid-t12-26a', 'vid-t12-26b', 'vid-t12-26c'];
+      for (const v of vids) await enqueueSummary(u.user.id, playlistId, v);
+      expect(await ledgerFor(day)).toBe(450);                   // 3 reservations exactly fill the cap
+
+      // a 4th enqueue → PJ002 (cap full); the whole guardrail transaction rolls back, no partial job
+      await expect(enqueueSummary(u.user.id, playlistId, 'vid-t12-26d')).rejects.toMatchObject({ code: 'PJ002' });
+
+      // run each of the 3 through a 503-throwing handler outcome (class-A, not metered, gate on) → RELEASE
+      for (const v of vids) {
+        const jobId = await jobIdFor(u.user.id, v);
+        const claimed = await svc.rpc('claim_next_job', { p_worker_id: 'w-t12-26', p_lease_seconds: 120, p_video_id: v });
+        const job = claimed.data![0];
+        const { data: status } = await svc.rpc('fail_job', {
+          p_job_id: jobId, p_worker_id: 'w-t12-26', p_lease_token: job.lease_token,
+          p_error: 'HTTP 503', p_retryable: false, p_billable_succeeded: false,
+        });
+        expect(status).toBe('failed');
+      }
+      expect(await ledgerFor(day)).toBe(0);                     // all 3 released — back to baseline
+
+      // cap re-opened: a fresh enqueue now ADMITS again — the §1 outage self-DoS is closed
+      await expect(enqueueSummary(u.user.id, playlistId, 'vid-t12-26e')).resolves.toBeUndefined();
+      expect(await ledgerFor(day)).toBe(150);
+    } finally {
+      await ensureGuardrailHeadroom(svc);   // restore headroom for any test that might run after this one
+    }
   });
 });
