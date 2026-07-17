@@ -161,9 +161,10 @@ the user's session. HTML/PDF are **not** transferred; the receiving side (re)ren
 
 ## 8. Sync state — local manifest
 
-A local **sync manifest** (git-ignored JSON under the data root, e.g. `.cloud-sync-manifest.json`) records,
-per `(playlist_key, video_id)`, the **last-synced baseline**: `docVersion`, `contentGeneratedAt`,
-`contentHash`, `syncedAt`. Purposes:
+A local **sync manifest**, **one file per playlist** (git-ignored JSON, e.g.
+`<data-root>/<playlist_key>/.cloud-sync-manifest.json` — per-playlist for isolation and to avoid a single
+global file becoming a contention/corruption point), records per `video_id` the **last-synced baseline**:
+`docVersion`, `contentGeneratedAt`, `contentHash`, `syncedAt`. Purposes:
 
 - **Incremental:** a video whose current hash equals its baseline on the side being read has not changed;
   combined with §5.1, unchanged videos are cheap to skip.
@@ -219,12 +220,10 @@ and safe (the author decides when replicas reconcile). Background/auto-sync is M
 
 ---
 
-## 12. Open items for the review gate
+## 12. Resolved decisions (user, 2026-07-17)
 
-1. **§4 image scope:** v1 defers images in *both* directions. The author earlier noted local→cloud image
-   *push* as desirable — confirm deferring it to M2b (cleaner engine) vs. including local→cloud image push
-   in M2a.
-2. **R2:** confirm the "cloud will gain capture capability" assumption, or treat cloud→local backfill as the
-   permanent home for images.
-3. **Manifest scope:** one global manifest vs. per-playlist manifest files (leaning per-playlist for
-   isolation) — a plan-level detail, flagged for completeness.
+1. **Image scope — CONFIRMED deferred (both directions) in M2a.** Keeps v1 a clean metadata/doc reconcile
+   engine; local→cloud image *push* is the first item of M2b, alongside cloud→local backfill.
+2. **R2 (cloud capture capability) — carried as a flagged assumption.** Does not block M2a (which moves no
+   images either way); revisited when M2b is scoped.
+3. **Manifest granularity — per-playlist** (§8), for isolation.
