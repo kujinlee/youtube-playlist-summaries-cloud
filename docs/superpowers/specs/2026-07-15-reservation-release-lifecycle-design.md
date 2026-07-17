@@ -1,7 +1,7 @@
 # Reservation Release Lifecycle — Design Spec (v7)
 
 **Date:** 2026-07-15 (v3–v7: 2026-07-16)
-**Status:** v7 — **CONVERGED** at round-7 dual adversarial review (both Codex + Claude clean, 0 Blocking/High; see §17). **Pending user spec-approval (Phase-1 human gate)** before Phase-2 plan-writing.
+**Status:** v7 — **CONVERGED** at round-7 dual adversarial review (both Codex + Claude clean, 0 Blocking/High; see §17). **✅ USER-APPROVED (2026-07-16)** — Phase-1 human gate satisfied. Phase-2 plan: `docs/superpowers/plans/2026-07-16-reservation-release-lifecycle.md`.
 **Scope class:** Money path (irreversible spend fuse) → **iterative dual adversarial review to convergence** per `docs/dev-process.md`.
 **Trigger:** Must land before the Fly.io deploy / before any real traffic.
 
