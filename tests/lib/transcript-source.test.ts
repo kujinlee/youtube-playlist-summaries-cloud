@@ -6,6 +6,8 @@ import { PermanentTranscriptError } from '../../lib/transcript-source-errors';
 import * as youtube from '../../lib/youtube';
 import * as gemini from '../../lib/gemini';
 import type { TranscriptSegment } from '../../lib/transcript-timestamps';
+import { classifyGeminiFailure } from '@/lib/gemini-failure';
+import { NonRetryableError } from '@/lib/job-queue/errors';
 
 const mockFetchCaptions = jest.mocked(youtube.fetchTranscriptSegments);
 const mockTranscribe = jest.mocked(gemini.transcribeViaGemini);
@@ -61,13 +63,15 @@ it('forwards caps (in opts) to the transcribeViaGemini fallback', async () => {
   expect(mockTranscribe).toHaveBeenCalledWith(VIDEO_URL, 'vid1', 600, undefined, undefined, { caps });
 });
 
-it('throws with videoId + captured caption cause when both sources fail', async () => {
+it('throws with videoId + typed Gemini cause when both sources fail', async () => {
   mockFetchCaptions.mockRejectedValueOnce(new Error('Transcript is disabled on this video'));
-  mockTranscribe.mockRejectedValueOnce(new Error('Gemini fetch blocked'));
+  const geminiErr = new NonRetryableError('Gemini fetch blocked');
+  mockTranscribe.mockRejectedValueOnce(geminiErr);
 
-  await expect(resolveTranscriptSegments('vid1', VIDEO_URL, 600)).rejects.toThrow(
-    /transcript unavailable via captions and video for vid1/,
-  );
+  const thrown = await resolveTranscriptSegments('vid1', VIDEO_URL, 600).then(() => null, (e) => e);
+  expect((thrown as Error).message).toMatch(/transcript unavailable via captions and video for vid1/);
+  // Locks in the H1 fix: the wrap preserves the typed Gemini error, not the caption error.
+  expect((thrown as Error).cause).toBe(geminiErr);
 });
 
 it('throws PermanentTranscriptError when captions and Gemini both deterministically return zero segments', async () => {
@@ -112,4 +116,22 @@ it('re-throws an AbortError from the Gemini fallback UNWRAPPED (preserves identi
   // would misclassify a deliberate shutdown/lost-lease abort as a genuine transcript failure.
   expect((caught as { name?: string })?.name).toBe('AbortError');
   expect((caught as Error).message).not.toMatch(/transcript unavailable/);
+});
+
+it('preserves the typed Gemini NonRetryableError even when the caption fetch also threw', async () => {
+  // fetchTranscriptSegments rejects (no captions) AND transcribeViaGemini throws NonRetryableError
+  // (fail-closed transcribe). The classifier must still see class-A through the wrapped error.
+  const SOME_CAPS = {
+    transcribeInputTokens: 300000,
+    transcribeOutputTokens: 32768,
+    transcriptInputBytes: 40960,
+    summaryOutputTokens: 8192,
+  };
+  mockFetchCaptions.mockRejectedValueOnce(new Error('Transcript is disabled on this video'));
+  mockTranscribe.mockRejectedValueOnce(new NonRetryableError('countTokens preflight disabled: fail-closed'));
+
+  const thrown = await resolveTranscriptSegments('vid', 'https://x', 60, { caps: SOME_CAPS })
+    .then(() => null, (e) => e);
+  expect(thrown).toBeTruthy();
+  expect(classifyGeminiFailure(thrown)).toBe('release');   // NonRetryableError survived via cause chain
 });
