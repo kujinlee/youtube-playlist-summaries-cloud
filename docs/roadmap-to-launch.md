@@ -44,16 +44,26 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
 ---
 
 ## M2 — Sync (unify local + cloud, Stage 3) 🔗
-The original two-project vision: local and cloud coexist, **newer-wins** reconciliation. Full workflow
-(each its own gate): Phase 1 spec (human gate) → Phase 2 plan (dual review to convergence) → Phase 3
-implement via SDD + whole-branch review → merge.
+The original two-project vision: local and cloud coexist, **newer-wins** reconciliation. Branch
+`feat/stage3-cloud-sync` (off the M1 branch; rebase onto master once M1 merges).
 
-- [ ] **2.1 Brainstorm + spec** Stage 3 sync (`docs/design-spec` section; human-approved).
+**Decomposed (design approved 2026-07-17):**
+- **M2a — this slice:** local→cloud push + cloud→local pull of **metadata + docs**, per-video newer-wins
+  (`docVersion` → portable `contentGeneratedAt` → `contentHash`), **additive** deletes, Supabase-Auth login,
+  local per-playlist sync manifest, manual **Cloud Sync** trigger. Spec:
+  `docs/superpowers/specs/2026-07-17-stage3-cloud-sync-design.md`.
+- **M2b — later slice (own spec):** image/slide-asset backfill (both directions), tombstone delete
+  propagation, background/auto-sync, true-conflict loser-preservation.
+
+- [~] **2.1 Brainstorm + spec** (M2a) — design **user-approved**; spec written; **in Phase-1 review gates**
+  (grill-with-docs terminology done → "Cloud Sync" vs "Sync" + "reconcile" overload noted; dual adversarial
+  review Codex+opus in progress). → then human approval.
 - [ ] **2.2 Plan** (dual adversarial review to convergence).
 - [ ] **2.3 Implement** (subagent-driven-development) + whole-branch dual review to convergence.
 - [ ] **2.4 Merge.**
 
-**M2 done = one library, works local-offline and cloud, auto-reconciled.**
+**M2a done = second device hydrates from cloud + local research publishes to the shared portal (minus
+slide images); M2 done = full bidirectional incl. images.**
 
 ---
 

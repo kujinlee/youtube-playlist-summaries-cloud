@@ -46,6 +46,7 @@ local work for peer sharing and multi-device access, and a second device can hyd
 | **Reconcile unit** | One **video** (all its source-of-truth artifacts move together). | — |
 | **Source of truth vs derived cache** | Per the cloud-publishing architecture §4: MD/model-JSON/slides/index are source; HTML/PDF are regenerable cache. | — |
 | **Newer-wins** | On divergence, the replica whose video content is newer replaces the older. | — |
+| **Reconcile** (this spec) | Merge two **replicas** to agreement (newer-wins). | The pre-existing codebase sense — a **DB↔blob / ledger consistency sweep** that repairs orphaned blobs or `reserved_cents` (architecture §4 M3; `local-validation-findings`). Same word, different domain; in Cloud Sync code prefer "**sync-merge**"/"reconcile **replicas**" to keep the two senses distinct. |
 
 ---
 
