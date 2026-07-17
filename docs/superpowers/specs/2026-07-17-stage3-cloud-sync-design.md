@@ -1,14 +1,16 @@
 # Stage 3 — Cloud Sync (local ↔ cloud reconciliation) — Design Spec
 
-**Status:** Draft **v4** — revised after dual adversarial review round 3 (Codex CONVERGED; opus found 2
-fix-introduced High). v4 closes: **H-1** — the model companion could serve *content-stale* prose (the serve
-gate was body-blind); v4 adds `sourceMdHash` to `ModelEnvelope`, makes `isFresh` content-aware, and
-invalidates a non-matching companion (§4.2). **H-2** — the restamp enumeration missed `merge_video_data`,
-the only cloud writer of `title`/`corrections` (§5.1). Plus M-1 (the local-delete §5.5 transition), L-1
-(conflict-log dedup), L-2 (companion is best-effort, outside the MD atomic commit).
-(v3 had closed round-2: model→companion, non-destructive backfill, baseline-aware deletes, `archived` out of
-hash, restamp enumeration, `corrections`.) Pending: dual re-review round 4 to convergence → user approval → plan.
-Reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2,-r3}.md`.
+**Status:** Draft **v5** — revised after dual adversarial review round 4 (both NOT CONVERGED; both faulted
+v4's change to the global serve gate). v4 had made `isFresh` content-aware to close round-3 H-1 — but that
+would **re-charge the whole existing model corpus** on first serve and **dark-serve every already-shared
+summary** (the anonymous share route can't regenerate). v5 fixes this by scoping model freshness **entirely
+to sync-transfer** (§4.2): `sourceMdHash` is optional sync-only provenance, the **serve path is unchanged**,
+and a sync MD-transfer either ships a verifiable-matching companion or deletes the receiver's stale model
+(→ existing lazy-regen). Also: bulk-writer restamp note (round-4 L-1); `sourceMdHash` uses the shared §5.2 hash.
+(v3/v4 closed round-2/round-3 findings: model→companion, non-destructive backfill, baseline-aware deletes,
+`archived` out of hash, full restamp enumeration incl. `merge_video_data`, `corrections`, local-delete
+transition, conflict-log dedup.) Pending: dual re-review round 5 → user approval → plan.
+Reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2,-r3,-r4}.md`.
 
 **Roadmap:** M2 of `docs/roadmap-to-launch.md`.
 
@@ -81,27 +83,33 @@ per-playlist local manifest; a manual **Cloud Sync** command.
   (DB-computed, already stripped by `supabase-metadata-store.ts`).
 - **Regenerable cache (never synced):** HTML doc, PDF (deterministic re-render from MD + model).
 
-### 4.2 Model JSON as a companion (round-2 BLK-1; round-3 H-1)
+### 4.2 Model JSON as a companion — handled ONLY at sync-transfer (round-2 BLK-1; round-3 H-1; round-4 BLK-1)
 Model JSON is a **non-deterministic, `GENERATOR_VERSION`-axed, charged, self-healing cache** (Gemini
 transform; lazily regenerated + charged on the serve path — `lib/html-doc/model-store.ts`,
-`read-model.ts`). It therefore **cannot** be a hash-compared source (identical MD would hash-diverge on the
-model and churn/overwrite). Instead, when a video's **MD** wins newer-wins and is transferred, the model is
-handled as a companion — but **safely**, not "opaquely":
+`read-model.ts`). It **cannot** be a hash-compared source (identical MD would hash-diverge on the model and
+churn/overwrite). The round-3 hole was that after an MD is transferred, a **content-stale** model (older MD
+body, identical section titles + same `GENERATOR_VERSION`) could still serve, because the serve gate is
+body-blind. v5 closes this **without touching the serve path at all** — because changing the global
+freshness gate would (round-4 BLK-1) re-charge the whole existing model corpus on first serve **and**
+dark-serve every already-shared summary (the anonymous share route `app/s/[token]/route.ts` is
+generation-free — it returns not-ready and cannot self-heal). So the fix is scoped strictly to sync:
 
-**Content-aware freshness (required — closes round-3 H-1).** Today's serve freshness gate
-(`isFresh`, `lib/html-doc/read-model.ts:21-25`) checks only section titles + `GENERATOR_VERSION`, **not the
-MD body** — so a model built from an *older MD body with identical headings and the same version* would
-serve silently after an MD change. M2a therefore:
-1. **Extends `ModelEnvelope` with `sourceMdHash`** — the canonical §5.2-style hash of the MD the model was
-   built from — and **extends `isFresh` to also require `sourceMdHash == hash(current MD)`.** A
-   content-stale model can then never serve.
-2. **On MD transfer:** ship the sender's model blob as a companion **only if** its `sourceMdHash` matches
-   the winning MD (i.e. it was built from exactly that MD). Otherwise **invalidate/delete the receiver's
-   model blob** for that video, so the receiver's next serve lazily regenerates from the new MD (the
-   existing self-heal, now correctly triggered). Either way the receiver never renders stale prose.
+1. **`ModelEnvelope` gains an OPTIONAL `sourceMdHash`** — the shared §5.2 canonical hash of the MD the model
+   was built from — set by the generation/regeneration writers **going forward**. Legacy envelopes lack it.
+   **The serve path (`isFresh`, `readTitleStableModel`, the share route, the over-budget fallback) is
+   UNCHANGED** → the existing corpus and every share link keep serving exactly as today; **no fleet
+   re-charge, no share regression.**
+2. **At a sync MD-transfer only:** the receiver's model blob for that video is made consistent with the new
+   MD. Sync writes the sender's model as a **companion iff it can verify the model was built from the
+   winning MD** — the sender envelope's `sourceMdHash == hash(winning MD)`. Otherwise (mismatch, **or a
+   legacy sender model with no `sourceMdHash`**) sync **deletes the receiver's model blob** for that video,
+   so the receiver's next serve lazily regenerates from the new MD (the existing self-heal).
 
-The companion copy is thus a **best-effort re-charge avoidance** (common case: matching model ships → no
-regen), with correctness guaranteed by (1)+(2), not by the copy. The model is never a newer-wins participant.
+Scope: **only a video whose MD is actually transferred by sync** has its receiver model touched. Everything
+else — the whole non-synced corpus, all share links, the over-budget fallback — is untouched. A synced
+video's model regen is a bounded, legitimate charge (its content genuinely changed), on the receiver's
+existing lazy-regen path (disclosed R5). `sourceMdHash` is **sync-only provenance, never a serve gate**; the
+model is never a newer-wins participant.
 
 ---
 
@@ -262,10 +270,11 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
 - **Restamp (round-2 H-E, round-3 H-2):** a cloud `personalNote` edit (`update_video_annotations`) **and** a
   cloud `title`/`corrections` edit (`merge_video_data`/`updateVideoFields`) each restamp `contentGeneratedAt`;
   a `reconcile_membership` `archived` flip does **not** (not hashed, no restamp).
-- **Companion model / content-stale gate (round-3 H-1):** after an MD wins and transfers, the receiver never
-  serves a model built from the *old* MD — `isFresh` rejects a model whose `sourceMdHash` ≠ the current MD
-  (even with identical section titles + same `GENERATOR_VERSION`); a matching companion serves without regen,
-  a non-matching/absent one is invalidated and lazily regenerated. `GENERATOR_VERSION` drift also regenerates.
+- **Companion model / content-stale (round-3 H-1, round-4 BLK-1):** after a **sync MD-transfer**, the receiver
+  never serves a model built from the *old* MD — a companion whose `sourceMdHash` matches the winning MD is
+  copied (no regen); a mismatched / legacy / absent one → the receiver's model blob is deleted → lazy-regen on
+  next serve. **Serve-path untouched:** a legacy corpus model (no `sourceMdHash`) whose video is **not** synced
+  still serves exactly as today (no re-charge), and share links (`app/s/[token]`) are unaffected — assert both.
 - **Union hydration:** empty local + non-empty cloud → full local hydration; local-only → created on cloud.
 - **Atomicity/resume:** failure between promote and commit → no record advertises a hash for a missing blob,
   no baseline advance; re-run heals; two no-change runs → second all-skips.
@@ -290,9 +299,11 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
   (bounded for one author's NTP-synced devices; equal content never races via the hash; backfilled stamps
   never overwrite, §5.4; exact ties are deterministic). A grossly-wrong clock can mis-order two *real* edits
   — accepted v1; logical-clock is an M2b option.
-- **R5 — Companion model re-charge on drift.** If a synced MD's companion model is `GENERATOR_VERSION`-stale,
-  the receiver regenerates it on first serve (a small charge) via the existing lazy-upsert — not new
-  behavior, and avoided in the common (non-drift) case by copying the companion.
+- **R5 — Companion model re-charge, scoped to synced videos only.** When sync transfers an MD and cannot
+  ship a verifiable-matching model companion (mismatch, or a legacy sender model without `sourceMdHash`), the
+  receiver regenerates the model on first serve (a small charge) via the existing lazy-upsert. This is bounded
+  to **videos whose content was actually synced** (their MD changed — regen is legitimate), never the whole
+  corpus; the serve path is unchanged, so no fleet-wide re-charge and no share-link regression (round-4 BLK-1).
 - **R6 — Cloud capture capability (to verify).** M2b's image backfill assumes cloud eventually generates its
   own slides; unverified; does not affect M2a (no images in summary scope).
 
@@ -311,6 +322,10 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
    baseline-less replica is a disclosed residual** (round-2 H-A/H-B); cross-replica tombstones = M2b.
 7. **Per-playlist manifest**; every allowlisted SQL writer restamps `contentGeneratedAt` (round-2 H-E),
    **including `merge_video_data`** for `title`/`corrections` (round-3 H-2).
-8. **Model companion is content-safe, not opaque** (round-3 H-1): `ModelEnvelope.sourceMdHash` + a
-   content-aware `isFresh` + invalidate-on-mismatch guarantee a content-stale model never serves; the
-   companion copy is a best-effort re-charge avoidance, outside the MD's atomic commit.
+8. **Model freshness is handled at sync-transfer only, NOT in the serve path** (round-3 H-1, round-4 BLK-1):
+   `ModelEnvelope.sourceMdHash` is optional sync-only provenance (shared §5.2 hash); on an MD-transfer sync
+   ships a matching companion or deletes the receiver's model (→ lazy-regen). `isFresh`/`readTitleStableModel`/
+   the share route/over-budget fallback are **unchanged** → no fleet re-charge, no dark share links. Companion
+   write is best-effort, outside the MD's atomic commit.
+9. **Every hashed-field SQL writer restamps**, including `merge_video_data` (title/corrections, round-3 H-2)
+   and any bulk merge path (`merge_video_data_bulk`) if it ever writes a hashed field (round-4 L-1).
