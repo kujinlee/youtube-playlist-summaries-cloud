@@ -73,3 +73,34 @@ begin
 end $$;
 revoke all on function fail_job(uuid,text,uuid,text,boolean,boolean) from public;
 grant execute on function fail_job(uuid,text,uuid,text,boolean,boolean) to service_role;
+
+-- ── Task 3: request_cancel_job — procedural, releases a genuine queued cancel ─
+-- Same signature (uuid → int) so create-or-replace preserves grants. Procedural because we
+-- must (a) pre-read OLD reserved_cents before zeroing (PG<18 RETURNING is post-update),
+-- (b) audit underflow, (c) return 1 for BOTH a queued cancel and an active flag-set (H-4).
+create or replace function request_cancel_job(p_job_id uuid) returns int
+  language plpgsql security definer set search_path = public as $$
+declare v_old_status text; v_old_amt int; v_day date;
+begin
+  select status, reserved_cents, (created_at at time zone 'utc')::date
+    into v_old_status, v_old_amt, v_day
+    from jobs
+   where id = p_job_id and owner_id = auth.uid() and status in ('queued','active')
+   for update;                                       -- serialize vs claim_next_job's skip-locked claim
+  if not found then return 0; end if;                -- terminal / foreign / missing
+  update jobs
+     set cancel_requested = true,
+         status         = case when v_old_status = 'queued' then 'cancelled' else status end,
+         reserved_cents = case when v_old_status = 'queued' then 0 else reserved_cents end,
+         updated_at     = now()
+   where id = p_job_id;
+  if v_old_status = 'queued' and v_old_amt > 0 then   -- RELEASE only a genuine queued→cancelled
+    update spend_ledger set reserved_cents = reserved_cents - v_old_amt, updated_at = now()
+     where day = v_day and reserved_cents >= v_old_amt;
+    if not found then
+      insert into ledger_audit(day, kind, expected_amt, note, at)
+        values (v_day, 'release_underflow', v_old_amt, 'request_cancel_job '||p_job_id::text, now());
+    end if;
+  end if;
+  return 1;                                           -- cancellation requested (queued OR active) — H-4
+end $$;

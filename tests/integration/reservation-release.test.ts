@@ -1,6 +1,13 @@
 import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
 import { seedPlaylist } from './helpers/seed';
 
+// Task 3 helper — resolve a seeded job's id from owner+video (mirrors cancel-job-rpc.test.ts's
+// pattern of looking up the job row rather than threading ids through enqueueSummary's void return).
+async function jobIdFor(ownerId: string, videoId: string): Promise<string> {
+  const { data } = await adminClient().from('jobs').select('id').eq('owner_id', ownerId).eq('video_id', videoId).single();
+  return data!.id as string;
+}
+
 // R2-H2: this serial suite enqueues many 150¢ summary jobs and deliberately leaves KEEP/back-dated
 // reservations on today's ledger. Pin a generous daily_cap so cumulative reservations never trip
 // PJ002 daily_cap_exceeded. Cap-SPECIFIC tests (behavior 16 "cap re-opens", behavior 26) set their
@@ -145,6 +152,65 @@ describe('reservation-release: fail_job (Task 2)', () => {
       p_job_id: jobId, p_worker_id: 'w-t2', p_lease_token: leaseToken,
       p_error: 'HTTP 503', p_retryable: false, p_billable_succeeded: false,
     });
+    expect(await ledgerFor(yday)).toBe(0);                // credited YESTERDAY (created_at day)
+  });
+});
+
+describe('reservation-release: request_cancel_job (Task 3)', () => {
+  it('cancel of a queued job RELEASES and returns 1', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3');
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    const { data: n } = await session.rpc('request_cancel_job', { p_job_id: await jobIdFor(u.user.id, 'vid-t3') });
+    expect(n).toBe(1);
+    expect(await ledgerFor(day)).toBe(before - 150);
+  });
+
+  it('cancel of an ACTIVE job KEEPS the reservation and still returns 1', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3b');
+    const jobId = await jobIdFor(u.user.id, 'vid-t3b');
+    await adminClient().from('jobs').update({ status: 'active' }).eq('id', jobId);
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    const { data: n } = await session.rpc('request_cancel_job', { p_job_id: jobId });
+    expect(n).toBe(1);                                    // H-4: active cancel returns 1
+    expect(await ledgerFor(day)).toBe(before);            // KEEP
+    const { data: job } = await adminClient().from('jobs').select('status, cancel_requested').eq('id', jobId).single();
+    expect(job).toEqual({ status: 'active', cancel_requested: true });
+  });
+
+  it('double-cancel of a queued job releases at most once', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3c');
+    const jobId = await jobIdFor(u.user.id, 'vid-t3c');
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    const first = await session.rpc('request_cancel_job', { p_job_id: jobId });
+    const second = await session.rpc('request_cancel_job', { p_job_id: jobId });
+    expect(first.data).toBe(1);
+    expect(second.data).toBe(0);                          // already terminal → no-op
+    expect(await ledgerFor(day)).toBe(before - 150);      // released exactly once
+  });
+
+  it('behavior 14: a queued cancel credits the reservation`s created_at day, not today', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3d');
+    const jobId = await jobIdFor(u.user.id, 'vid-t3d');
+    const yday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+    await adminClient().from('jobs').update({ created_at: `${yday}T12:00:00Z` }).eq('id', jobId);
+    await adminClient().from('spend_ledger').upsert({ day: yday, reserved_cents: 150 });
+    const { data: n } = await session.rpc('request_cancel_job', { p_job_id: jobId });
+    expect(n).toBe(1);
     expect(await ledgerFor(yday)).toBe(0);                // credited YESTERDAY (created_at day)
   });
 });
