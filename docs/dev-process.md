@@ -32,12 +32,34 @@ Never rely on context summary alone — it is a compressed snapshot and can be s
 
 ---
 
+## Roadmap & Task List — Always Maintained
+
+There is **always** a current, coherent answer to "what's left to the goal, and what's next" — kept in three layers that must stay in sync. This holds whether work is proceeding autonomously (AFK) or through chat; the roadmap is updated **proactively, without being asked**.
+
+| Layer | File / tool | Scope | Horizon |
+|---|---|---|---|
+| **Roadmap** | `docs/roadmap-to-launch.md` | Milestones → steps to the **final goal** (the running app), with gating deps + status checkboxes | Whole project; survives compaction |
+| **Task list** | `TaskCreate`/`TaskUpdate` | The live, actionable near-term steps (one per roadmap step in flight) | Current milestone |
+| **SDD ledger** | `.superpowers/sdd/progress.md` | Per-task execution record **within** a single slice | Current slice |
+
+**Coherence rules:**
+- A roadmap step is not done until its checkbox is ticked **and** its task list entry is `completed`. Never mark one without the other.
+- When you **discover** a new step (a review finding that becomes work, a blocker, a follow-up), add it to the roadmap **and** the task list in the same turn — a discovery that lives only in chat is lost at the next `/compact`.
+- At a **milestone/slice boundary** (merge, convergence, deploy): update the roadmap status line, tick the step, close the task, and record the outcome in memory.
+- **Session start (extends Session Resume):** reconcile all three against git ground truth (`git log`, merged PRs, files on disk) before acting — the roadmap's checkboxes are a claim, `git` is the truth. If they disagree, fix the roadmap.
+- The roadmap is the **compaction-proof source**; the task list can always be rebuilt from it. If no roadmap exists for a multi-milestone effort, **create one before starting work** (like the Post-Plan Gate for plans).
+
+**When to (re)build the roadmap:** any time the work spans more than one slice/merge to reach the goal, or the user asks "what's next / what's left." A single self-contained slice does not need its own roadmap — the SDD ledger suffices.
+
+---
+
 ## Reference Docs (Read On Demand)
 
 These files are not @-included — read them when the trigger condition is met.
 
 | Doc | Read when |
 |---|---|
+| `docs/roadmap-to-launch.md` | "What's left / what's next" to the final app; session start (reconcile vs git); any milestone/step boundary — keep it current (see Roadmap & Task List) |
 | `docs/implementation-plan.md` | Session resume (find next uncommitted task); start of each task |
 | `docs/design-spec.md` | Phase 4 verification checklist; any spec ambiguity during implementation |
 | `docs/available-skills.md` | Unsure which skill to use or how to invoke it; after installing or updating plugins. Say **"sync docs"** or run `/sync-docs` (`sync-docs` skill) to regenerate. |
