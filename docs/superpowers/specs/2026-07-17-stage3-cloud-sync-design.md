@@ -1,17 +1,12 @@
 # Stage 3 — Cloud Sync (local ↔ cloud reconciliation) — Design Spec
 
-**Status:** Draft **v6** — revised after dual adversarial review round 5 (both NOT CONVERGED, but down to
-text/spec-level fixes; opus regression-scanned all 5 rounds CLEAN). Round 5 confirmed v5 closed the round-4
-serve-path/money issue for the non-synced corpus, and left three text fixes, all now applied: **H-1** — the
-"no share regression" claim was too broad; v6 narrows it to the non-synced corpus and discloses **R7** (a
-*synced+shared* video's anonymous share is not-ready until an owner serve; reported as
-`share_needs_owner_serve`). **M-1** — `sourceMdHash` is now defined as an **MD-body-only** digest (not the
-whole-source `contentHash`), so an annotation edit never spuriously invalidates the model. **M-2** — the
-`ModelEnvelope` schema is made **forward-tolerant** so cross-version transfer doesn't reject the new key.
-**L-1** — dangling `§7.5` ref fixed. (v2–v5 closed all prior Blocking/High: signal design, canonical hash,
-backfill, deletes, restamp enumeration, dig deferral, atomicity, serve-path scoping.)
-Pending: dual re-review round 6 → user approval → plan.
-Reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2,-r3,-r4,-r5}.md`.
+**Status:** **v6 — CONVERGED** (dual adversarial review, 2026-07-17). Round 6: **Codex 0 Blocking/High/Medium**
++ **opus CONVERGED (0 B/H/M)** — only cosmetic Low nits (`§7.6`→`§7 step 6`), fixed. Six-round convergence:
+R1 (3B+4H) → R2 (1B+5H) → R3 (2H) → R4 (1B+2H) → R5 (1H+2M) → **R6 (0 B/H/M)**. The loop caught real defects
+a single pass would have shipped: `docVersion`-primary data loss, model-JSON-as-source churn, the `isFresh`
+fix's fleet re-charge + share dark-serve, asymmetric backfill, delete-intent gaps. **Awaiting user approval →
+implementation plan (Phase 2).**
+Reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2,-r3,-r4,-r5,-r6}.md`.
 
 **Roadmap:** M2 of `docs/roadmap-to-launch.md`.
 
@@ -113,7 +108,7 @@ generation-free — it returns not-ready and cannot self-heal). So the fix is sc
    legacy sender model with no `sourceMdHash`**) sync **deletes the receiver's model blob** for that video.
    The receiver then lazily regenerates on the **owner's** next authenticated serve — but a **shared
    (anonymous)** view of that video returns not-ready until then, because the share route is generation-free
-   (round-5 H-1, **residual R7**): sync **counts these as `share_needs_owner_serve`** in its report (§7.6).
+   (round-5 H-1, **residual R7**): sync **counts these as `share_needs_owner_serve`** in its report (§7 step 6).
 
 Scope: **only a video whose MD is actually transferred by sync** has its receiver model touched. The entire
 non-synced corpus, its share links, and the over-budget fallback are untouched. A synced video's model regen
@@ -322,7 +317,7 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
   ship a verifiable-matching model companion (mismatch, or a legacy sender model without `sourceMdHash`), the
   receiver regenerates the model on first serve (a small charge) via the existing lazy-upsert. This is bounded
   to **videos whose content was actually synced** (their MD changed — regen is legitimate), never the whole
-  corpus; the serve path is unchanged, so no fleet-wide re-charge and no share-link regression (round-4 BLK-1).
+  corpus; the serve path is unchanged, so no fleet-wide re-charge and no share-link regression for non-synced videos (round-4 BLK-1; the synced+shared case is R7).
 - **R6 — Cloud capture capability (to verify).** M2b's image backfill assumes cloud eventually generates its
   own slides; unverified; does not affect M2a (no images in summary scope).
 - **R7 — Synced+shared video: anonymous share returns not-ready until an owner serve (round-5 H-1).** When
@@ -331,7 +326,7 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
   not-ready to anonymous viewers until the **owner** next opens it (the share route is generation-free and
   cannot self-heal; the owner may not visit cloud soon → the outage is owner-gated, not "shortly"). Serving
   the *old* model would be stale, so not-ready is the correct trade; sync surfaces these as
-  `share_needs_owner_serve` (§7.6). **This is scoped to synced+shared videos only** — the non-synced corpus
+  `share_needs_owner_serve` (§7 step 6). **This is scoped to synced+shared videos only** — the non-synced corpus
   and its shares are unaffected (§4.2). Triggering an owner-side regen from sync is weighed against the
   generation-free/money invariants and **deferred** (an owner action, not a sync side-effect).
 
