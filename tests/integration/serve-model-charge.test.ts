@@ -29,8 +29,8 @@ it('first call reserves and charges magazine_est_cents once', async () => {
   const u = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
   const { client } = await signInAs(u.email, u.password);
-  const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  expect(status).toBe('reserved');
+  const { data: rows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(rows![0].status).toBe('reserved');
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led![0].reserved_cents).toBe(6);
 });
@@ -40,8 +40,8 @@ it('a live lease returns in_flight without a second charge (single-flight)', asy
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
   const { client } = await signInAs(u.email, u.password);
   await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  expect(status).toBe('in_flight');
+  const { data: rows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(rows![0].status).toBe('in_flight');
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led![0].reserved_cents).toBe(6); // still one charge
 });
@@ -52,12 +52,12 @@ it('reclaims an expired lease, re-charges, and stops at K with attempts_exhauste
   const { client } = await signInAs(u.email, u.password);
   const docKey = `${playlistId}/${videoId}`;
   for (let i = 1; i <= 5; i++) {
-    const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-    expect(status).toBe('reserved');
+    const { data: rows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+    expect(rows![0].status).toBe('reserved');
     await svc.from('serve_model_charge').update({ lease_expires_at: '2000-01-01T00:00:00Z' }).eq('doc_key', docKey); // expire the lease
   }
-  const { data: exhausted } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  expect(exhausted).toBe('attempts_exhausted');
+  const { data: exhaustedRows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(exhaustedRows![0].status).toBe('attempts_exhausted');
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led![0].reserved_cents).toBe(30); // exactly K charges
 });
@@ -67,8 +67,8 @@ it('returns at_capacity and leaves NO fresh lease when the daily cap is exhauste
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
   await svc.from('guardrail_config').update({ daily_cap_cents: 3 }).eq('id', true); // below magazine_est_cents=6
   const { client } = await signInAs(u.email, u.password);
-  const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  expect(status).toBe('at_capacity');
+  const { data: reserveRows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(reserveRows![0].status).toBe('at_capacity');
   const { data: rows } = await svc.from('serve_model_charge').select('*'); // claim rolled back → no marker
   expect(rows).toEqual([]);
 });
@@ -92,8 +92,8 @@ it('at_capacity on a RECLAIM restores the prior expired marker row unchanged (no
   expect(before!.attempt_count).toBe(1);
   await svc.from('guardrail_config').update({ daily_cap_cents: 3 }).eq('id', true); // below magazine_est_cents=6
   const { client } = await signInAs(u.email, u.password);
-  const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  expect(status).toBe('at_capacity');
+  const { data: reserveRows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(reserveRows![0].status).toBe('at_capacity');
   // B7c: the savepoint must roll back the RECLAIM (increment + fresh lease) back to the prior
   // expired row exactly — not brick it, not leave it incremented, not convert it into a fresh
   // live lease. Compare against the true pre-call snapshot (not a literal string) to avoid any
@@ -110,14 +110,14 @@ it('denies a foreign or unpromoted doc via direct RPC (no charge, no leak)', asy
   const attacker = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(owner.user.id);
   const { client } = await signInAs(attacker.email, attacker.password);
-  const { data: foreign } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  expect(foreign).toBe('denied');
+  const { data: foreignRows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(foreignRows![0].status).toBe('denied');
   // owned but only 'committed' (not promoted) — seeded via the shared helper with status:'committed':
   const { playlistId: pl2 } = await seedPlaylist(svc, owner.user.id);
   const { videoId: vCommitted } = await seedPromotedVideo(svc, { ownerId: owner.user.id, playlistId: pl2, status: 'committed' });
   const { client: oc } = await signInAs(owner.email, owner.password);
-  const { data: unpromoted } = await oc.rpc('reserve_serve_model', { p_playlist_id: pl2, p_video_id: vCommitted });
-  expect(unpromoted).toBe('denied');
+  const { data: unpromotedRows } = await oc.rpc('reserve_serve_model', { p_playlist_id: pl2, p_video_id: vCommitted });
+  expect(unpromotedRows![0].status).toBe('denied');
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led ?? []).toEqual([]); // nothing charged
 });
@@ -135,8 +135,8 @@ it('a session client CANNOT select/insert/update/delete serve_model_charge direc
   const u = await newUser();
   const { playlistId, videoId } = await seedPromotedDoc(u.user.id);
   const { client } = await signInAs(u.email, u.password);
-  const { data: setupStatus } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }); // create a row (as owner)
-  expect(setupStatus).toBe('reserved'); // guard against a false-green: prove setup actually created the row
+  const { data: setupRows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }); // create a row (as owner)
+  expect(setupRows![0].status).toBe('reserved'); // guard against a false-green: prove setup actually created the row
   const docKey = `${playlistId}/${videoId}`;
   // Snapshot the TRUE row via the service client (bypasses RLS) so we can prove it is byte-for-byte
   // unchanged after the denied writes — not merely that a row still exists (F3: the old
@@ -180,9 +180,9 @@ it('a session client CANNOT select/insert/update/delete serve_model_charge direc
 it('an anon session CAN execute reserve_serve_model (owner derived from its anon auth.uid())', async () => {
   const { client, userId } = await anonSession();                      // anon is a full Owner (helpers/clients returns userId)
   const { playlistId, videoId } = await seedPromotedDoc(userId);
-  const { data: status, error } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  const { data: rows, error } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
   expect(error).toBeNull();
-  expect(status).toBe('reserved');                                     // execute granted to anon
+  expect(rows![0].status).toBe('reserved');                                     // execute granted to anon
 });
 
 it('a caller cannot charge ANOTHER owner (owner is auth.uid(), never a param)', async () => {
@@ -191,8 +191,8 @@ it('a caller cannot charge ANOTHER owner (owner is auth.uid(), never a param)', 
   const { playlistId, videoId } = await seedPromotedDoc(owner.user.id);
   const { client } = await signInAs(attacker.email, attacker.password);
   // The RPC has no owner param; the attacker's auth.uid() ≠ owner → ownership check fails → denied, no charge.
-  const { data: status } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
-  expect(status).toBe('denied');
+  const { data: rows } = await client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId });
+  expect(rows![0].status).toBe('denied');
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led ?? []).toEqual([]);
 });
@@ -207,7 +207,7 @@ it('same-doc concurrent miss: exactly ONE reserved, ONE in_flight, ONE charge (s
     client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
     client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
   ]);
-  expect([a.data, b.data].sort()).toEqual(['in_flight', 'reserved']); // one winner, one single-flight guard
+  expect([a.data![0].status, b.data![0].status].sort()).toEqual(['in_flight', 'reserved']); // one winner, one single-flight guard
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led![0].reserved_cents).toBe(6);                             // exactly one charge
 });
@@ -229,7 +229,7 @@ it('CONCURRENT expired-lease reclaim at K-1: exactly one reclaim wins (reserved)
     client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
     client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId }),
   ]);
-  expect([a.data, b.data].sort()).toEqual(['in_flight', 'reserved']); // one reclaim, one single-flight guard
+  expect([a.data![0].status, b.data![0].status].sort()).toEqual(['in_flight', 'reserved']); // one reclaim, one single-flight guard
   const { data: row } = await svc.from('serve_model_charge').select('attempt_count').eq('doc_key', docKey).single();
   expect(row!.attempt_count).toBe(5);                                 // only the K-th reclaim incremented it
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
@@ -247,12 +247,12 @@ it('two DIFFERENT docs with only one magazine_est_cents of cap left: one reserve
     client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: v1 }),
     client.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: v2 }),
   ]);
-  expect([a.data, b.data].sort()).toEqual(['at_capacity', 'reserved']); // cap serializes; one wins, one refused
+  expect([a.data![0].status, b.data![0].status].sort()).toEqual(['at_capacity', 'reserved']); // cap serializes; one wins, one refused
   const { data: led } = await svc.from('spend_ledger').select('reserved_cents');
   expect(led![0].reserved_cents).toBe(6);                              // the cap is a hard ceiling
   // F11: assert WHICH doc won and that the marker table holds EXACTLY one row (the loser's at_capacity
   // claim rolled back → no marker). `a` is v1's result, `b` is v2's.
-  const winner = a.data === 'reserved' ? v1 : v2;
+  const winner = a.data![0].status === 'reserved' ? v1 : v2;
   const { data: markers } = await svc.from('serve_model_charge').select('doc_key');
   expect(markers).toEqual([{ doc_key: `${playlistId}/${winner}` }]);   // one row, for the winner only
 });

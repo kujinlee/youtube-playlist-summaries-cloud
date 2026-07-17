@@ -127,8 +127,8 @@ describe('summaryCore', () => {
     expect(gsArgs[1]).toBe('en');
     expect(gsArgs[2]).toBe('vid');
     expect(gsArgs[3]).toEqual({ caps });
-    // extractQuickView receives caps as its 2nd positional arg
-    expect(extractQuickView).toHaveBeenCalledWith(expect.any(String), caps);
+    // extractQuickView receives caps as its 2nd positional arg, billing (undefined here) as its 3rd
+    expect(extractQuickView).toHaveBeenCalledWith(expect.any(String), caps, undefined);
   });
 
   it('without caps: no truncation, no caps forwarded (local pipeline unchanged)', async () => {

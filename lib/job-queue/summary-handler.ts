@@ -115,7 +115,7 @@ export function makeSummaryHandler(serviceClient: SupabaseClient): JobHandler {
           }) as typeof generateSummary,
           extractQuickView,
         },
-        { signal: ctx.signal, caps: CLOUD_CAPS },
+        { signal: ctx.signal, caps: CLOUD_CAPS, billing: ctx.billing },
       );
     } catch (e) {
       // A permanently-unavailable transcript (captions AND Gemini both returned zero segments) is

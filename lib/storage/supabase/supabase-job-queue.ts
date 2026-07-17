@@ -83,10 +83,20 @@ export class SupabaseJobQueue implements JobQueue {
   }
 
   async fail(
-    jobId: string, workerId: string, leaseToken: string, err: string, opts: { retryable: boolean },
+    jobId: string, workerId: string, leaseToken: string, err: string,
+    opts: { retryable: boolean; billableSucceeded?: boolean; metered?: boolean },
   ): Promise<{ ok: boolean; status: JobStatus | null }> {
     const { data, error } = await this.client.rpc('fail_job', {
-      p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_error: err, p_retryable: opts.retryable });
+      p_job_id: jobId, p_worker_id: workerId, p_lease_token: leaseToken, p_error: err,
+      p_retryable: opts.retryable,
+      // Default TRUE = KEEP. Only an explicit false (a proven class-A not-metered failure,
+      // decided by the worker-runner in Task 10) releases the reservation.
+      p_billable_succeeded: opts.billableSucceeded ?? true,
+      // Task 13/H1: THIS attempt's billing latch — fail_job OR-persists it into jobs.ever_metered
+      // so a metered-then-requeued job's later release paths (fail_job at exhaustion, or a cancel
+      // while queued) are durably vetoed, even though the in-memory latch resets every runOnce.
+      p_metered: opts.metered ?? false,
+    });
     if (error) throw error;
     return { ok: data !== null, status: data };
   }

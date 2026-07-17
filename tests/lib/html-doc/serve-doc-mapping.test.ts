@@ -24,9 +24,13 @@ const parsed = (): ParsedSummary => ({
   sections: [{ numeral: '1', title: 'Intro', prose: 'body', timeRange: null }], sourceMd: 'v.md',
 });
 
-/** Fake session client: only `.rpc()` is used by resolveMagazineModel. */
+/** Fake session client: only `.rpc()` is used by resolveMagazineModel. `reserve_serve_model` is a
+ *  `returns table(status, release_token)` RPC, so supabase-js `.rpc()` yields a row ARRAY — the caller
+ *  reads `data[0].status` (Task 5). Wrap the scripted status in the single-row shape. */
 function fakeSupabase(rpcData: string): SupabaseClient {
-  return { rpc: jest.fn(async () => ({ data: rpcData, error: null })) } as unknown as SupabaseClient;
+  return {
+    rpc: jest.fn(async () => ({ data: [{ status: rpcData, release_token: null }], error: null })),
+  } as unknown as SupabaseClient;
 }
 
 /** Fake BlobStore whose `.get()` answers come from a per-call queue (index 0 = the initial

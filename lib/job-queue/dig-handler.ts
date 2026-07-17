@@ -68,7 +68,8 @@ export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
     let segments;
     try {
       ({ segments } = await resolveTranscriptSegments(
-        job.videoId, video.youtubeUrl, video.durationSeconds, { signal: ctx.signal, caps: CLOUD_CAPS },
+        job.videoId, video.youtubeUrl, video.durationSeconds,
+        { signal: ctx.signal, caps: CLOUD_CAPS, billing: ctx.billing },
       ));
     } catch (e) {
       // A permanent no-transcript is provably non-retryable — map it so the runner fails immediately
@@ -107,6 +108,7 @@ export function makeDigHandler(serviceClient: SupabaseClient): JobHandler {
         mediaResolution: 'LOW',
         thinkingBudget: MAX_DIG_THINKING_TOKENS,
         signal: ctx.signal,
+        billing: ctx.billing,
       },
     );
     const withTs = resolveTranscriptTokens(raw, cappedSegments, job.videoId, video.durationSeconds);

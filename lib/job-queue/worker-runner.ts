@@ -1,6 +1,7 @@
 import type { JobQueue } from '@/lib/storage/job-queue';
 import type { HandlerCtx, JobHandler } from './handler-context';
-import { NonRetryableError } from './errors';
+import type { BillingLatch } from '@/lib/job-queue/billing-latch';
+import { classifyGeminiFailure, releaseGateOpen, isNonRetryable } from '@/lib/gemini-failure';
 
 export type { JobHandler } from './handler-context';
 
@@ -31,12 +32,14 @@ export async function runOnce(
     [wallClock.signal, leaseLost.signal, opts.shutdownSignal].filter((s): s is AbortSignal => Boolean(s)),
   );
 
+  const billing: BillingLatch = { metered: false };
   const ctx: HandlerCtx = {
     isCancelled: async () => (await queue.getStatus(job.id))?.cancelRequested ?? false,
     signal,
     // Phase writes are ADVISORY (progress hints only) — swallow a transient failure so it can
     // never fail an otherwise-succeeding job. Second .then handler consumes any rejection.
     setPhase: (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {}, () => {}),
+    billing,
   };
 
   const wct = setTimeout(() => wallClock.abort(), opts.wallClockMs ?? 600_000);
@@ -59,9 +62,18 @@ export async function runOnce(
     if (settled) return 'lost';
     settled = true;
     try {
+      // RELEASE only on a positively-not-metered class-A failure, gated by the live-verification flag.
+      const release = releaseGateOpen()
+        && classifyGeminiFailure(e, signal) === 'release'
+        && !billing.metered;
       const { ok, status } = await queue.fail(
         job.id, opts.workerId, job.leaseToken, e instanceof Error ? e.message : String(e),
-        { retryable: !(e instanceof NonRetryableError) });
+        // isNonRetryable walks the cause chain — a WRAPPED NonRetryableError is still non-retryable,
+        // so a pre-send class-A failure sets BOTH retryable=false and billableSucceeded=false (H1);
+        // otherwise it would requeue and fail_job would refuse to release a queued transition.
+        // metered is reported on EVERY fail — terminal AND requeue — so a metered attempt-1 that
+        // requeues persists jobs.ever_metered durably before attempt-2 ever runs (Task 13/H1).
+        { retryable: !isNonRetryable(e), billableSucceeded: !release, metered: billing.metered });
       if (!ok) return 'lost';
       return status === 'cancelled' ? 'cancelled' : 'failed';
     } catch {

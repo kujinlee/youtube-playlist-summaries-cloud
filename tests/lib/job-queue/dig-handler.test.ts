@@ -24,7 +24,11 @@ const blobStore = {
   promote: jest.fn(async (ref: any) => { put.set(ref.finalKey, put.get(ref.tempKey)!); }),
 };
 const principal = { id: 'owner1', indexKey: 'PLk' };
-const ctx = { isCancelled: async () => false, signal: new AbortController().signal, setPhase: jest.fn(async () => {}) };
+// T12 Part 3: a real (not `as any`-only) billing latch object so Task 8's `billing: ctx.billing`
+// threading at both dig-handler call sites (resolveTranscriptSegments + generateDig) can be
+// asserted behaviorally, not just tsc-checked. Identity matters — the SAME object must reach
+// both calls, since worker-runner.ts mutates ctx.billing.metered in place to record spend.
+const ctx = { isCancelled: async () => false, signal: new AbortController().signal, setPhase: jest.fn(async () => {}), billing: { metered: false } };
 const job = { id: 'j1', ownerId: 'owner1', playlistId: 'pl-uuid', videoId: 'vid1', sectionId: 132, kind: 'dig', version: `dig-${DIG_GENERATOR_VERSION}`, payload: { durationSeconds: 600 }, attempts: 0, leaseToken: 'lt' };
 
 // Real summary-section format: a `▶ [M:SS–M:SS](url?t=<sec>s)` line (en-dash range, trailing `s`).
@@ -66,6 +70,21 @@ it('generates the section dig and writes the per-section blob with tokens preser
   expect(ctx.setPhase).toHaveBeenCalledWith('transcribing');
   expect(ctx.setPhase).toHaveBeenCalledWith('summarizing');
   expect(ctx.setPhase).toHaveBeenCalledWith('writing');
+  // T12 Part 3: Task 8's billing-latch threading, asserted behaviorally at both call sites —
+  // the SAME ctx.billing object (not a copy) must reach resolveTranscriptSegments and generateDig
+  // so a metered Gemini call inside either one is visible to the worker-runner's release decision.
+  expect(resolveTranscriptSegments as jest.Mock).toHaveBeenCalledWith(
+    expect.anything(), expect.anything(), expect.anything(),
+    expect.objectContaining({ billing: ctx.billing }),
+  );
+  expect(generateDig as jest.Mock).toHaveBeenCalledWith(
+    expect.anything(), expect.anything(), expect.anything(),
+    expect.objectContaining({ billing: ctx.billing }),
+  );
+  // objectContaining above matches structurally; assert STRICT reference identity so a spread/copy
+  // of the latch (which would break metered-propagation to the runner's release decision) fails here.
+  expect((resolveTranscriptSegments as jest.Mock).mock.calls[0][3].billing).toBe(ctx.billing);
+  expect((generateDig as jest.Mock).mock.calls[0][3].billing).toBe(ctx.billing);
 });
 
 it('caps the dig transcript window to MAX_TRANSCRIPT_INPUT_BYTES before generateDig (money invariant)', async () => {
