@@ -28,9 +28,12 @@ export function releaseGateOpen(): boolean {
 ## The two facts that must be verified against LIVE Gemini before flipping the gate
 
 `classifyGeminiFailure()` (`lib/gemini-failure.ts`) treats a Gemini failure as `'release'` (safe to
-give the reservation back) only when the error is a `GoogleGenerativeAIFetchError` (or the hand-rolled
-`GeminiHttpError`) whose `.status` is in `{429, 503}`. Before setting `RELEASE_VERIFIED = true` in
-prod, both of these must be confirmed against the **live** Gemini API (not mocks):
+give the reservation back) in two cases: (a) a pre-send `NonRetryableError` anywhere in the error's
+cause chain (a $0 failure that never reached Gemini — e.g. fail-closed transcribe/preflight), or
+(b) a `GoogleGenerativeAIFetchError` (or the hand-rolled `GeminiHttpError`) whose `.status` is in
+`{429, 503}`. Case (a) needs no live verification (it is a local pre-send guard); it is case (b) — the
+live-outage path — whose two premises must be confirmed against the **live** Gemini API (not mocks)
+before setting `RELEASE_VERIFIED = true` in prod:
 
 1. **An overloaded/rate-limited call surfaces as `GoogleGenerativeAIFetchError` with `.status ∈ {429, 503}`.**
    Confirm the SDK actually throws this typed error (not a generic `Error`, a timeout, or a different

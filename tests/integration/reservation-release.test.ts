@@ -499,6 +499,9 @@ describe('reservation-release: Task 12 — end-to-end behavior sweep', () => {
     const svc = adminClient();
     const { playlistId } = await seedPlaylist(svc, u.user.id);
     await seedPromotedVideo(svc, { ownerId: u.user.id, playlistId, videoId: 'vid-t12-24' });
+    // Pin the per-serve cost this behavior's +12/+6 deltas depend on — idempotent with the migration
+    // default, but guards against another integration file having mutated the shared singleton.
+    await svc.from('guardrail_config').update({ magazine_est_cents: 6 }).eq('id', true);
     const docKey = `${playlistId}/vid-t12-24`;
     const day = utcToday();
     const ledgerBefore = await ledgerFor(day);
@@ -553,7 +556,9 @@ describe('reservation-release: Task 12 — end-to-end behavior sweep', () => {
   // pins daily_cap_cents=1_000_000, which makes any cap-adjacent assertion vacuous unless the
   // test sets its own reachable cap — behavior 26 below does exactly that and asserts re-opening.
   it('behavior 26: N summary jobs all hitting 503 (not metered) release back to baseline; cap re-opens', async () => {
-    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';  // documents the live-gate; prod default is OFF — see docs/reservation-release-live-gate.md
+    // NOTE: this test drives fail_job DIRECTLY with p_billable_succeeded=false, so the SQL releases
+    // regardless of releaseGateOpen() (which lives only in worker-runner.ts and is not exercised here).
+    // No CLOUD_GEMINI_RELEASE_VERIFIED env set — it would be inert and leak into the serial process.
     const svc = adminClient();
     const day = utcToday();
     // Deterministic baseline: this file's shared "today" spend_ledger row accumulates residue
@@ -571,7 +576,8 @@ describe('reservation-release: Task 12 — end-to-end behavior sweep', () => {
       // a 4th enqueue → PJ002 (cap full); the whole guardrail transaction rolls back, no partial job
       await expect(enqueueSummary(u.user.id, playlistId, 'vid-t12-26d')).rejects.toMatchObject({ code: 'PJ002' });
 
-      // run each of the 3 through a 503-throwing handler outcome (class-A, not metered, gate on) → RELEASE
+      // run each of the 3 through a 503-throwing handler outcome (class-A, not metered; the release is
+      // simulated by calling fail_job with p_billable_succeeded=false, the runner's gated decision) → RELEASE
       for (const v of vids) {
         const jobId = await jobIdFor(u.user.id, v);
         const claimed = await svc.rpc('claim_next_job', { p_worker_id: 'w-t12-26', p_lease_seconds: 120, p_video_id: v });

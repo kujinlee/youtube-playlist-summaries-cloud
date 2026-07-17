@@ -81,6 +81,10 @@ it('generates the section dig and writes the per-section blob with tokens preser
     expect.anything(), expect.anything(), expect.anything(),
     expect.objectContaining({ billing: ctx.billing }),
   );
+  // objectContaining above matches structurally; assert STRICT reference identity so a spread/copy
+  // of the latch (which would break metered-propagation to the runner's release decision) fails here.
+  expect((resolveTranscriptSegments as jest.Mock).mock.calls[0][3].billing).toBe(ctx.billing);
+  expect((generateDig as jest.Mock).mock.calls[0][3].billing).toBe(ctx.billing);
 });
 
 it('caps the dig transcript window to MAX_TRANSCRIPT_INPUT_BYTES before generateDig (money invariant)', async () => {
