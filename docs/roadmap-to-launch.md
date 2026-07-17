@@ -55,9 +55,9 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
 - **M2b — later slice (own spec):** image/slide-asset backfill (both directions), tombstone delete
   propagation, background/auto-sync, true-conflict loser-preservation.
 
-- [~] **2.1 Brainstorm + spec** (M2a) — design **user-approved**; spec written; **in Phase-1 review gates**
-  (grill-with-docs terminology done → "Cloud Sync" vs "Sync" + "reconcile" overload noted; dual adversarial
-  review Codex+opus in progress). → then human approval.
+- [~] **2.1 Brainstorm + spec** (M2a) — design user-approved; spec `…2026-07-17-stage3-cloud-sync-design.md`
+  **v6 CONVERGED** (dual adversarial review, 6 rounds: R1 3B4H → R6 0 B/H/M both reviewers; commit c30113f).
+  grill-with-docs terminology done. **⏳ awaiting USER final approval of the written spec → then 2.2 plan.**
 - [ ] **2.2 Plan** (dual adversarial review to convergence).
 - [ ] **2.3 Implement** (subagent-driven-development) + whole-branch dual review to convergence.
 - [ ] **2.4 Merge.**
