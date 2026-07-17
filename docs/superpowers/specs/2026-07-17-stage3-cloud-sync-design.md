@@ -1,14 +1,12 @@
 # Stage 3 — Cloud Sync (local ↔ cloud reconciliation) — Design Spec
 
-**Status:** Draft **v9** — the **two-class model** is reviewer-confirmed sound; v9 fixes v8's two
-*fix-introduced* defects (both simplifications): **carry the sender's companion scalars verbatim with the
-winning MD** instead of re-deriving them (v8 Blocking B-1 — `reconstructVideo` can't recover ratings/tldr/
-takeaways/tags and would corrupt them); **keep `archived` in the annotation allowlist** (only ADD
-`corrections`) so the manual Archive button isn't silently broken (v8 H-1). Plus: `mdHash`-equal must still
-flag `needs_regen` for identical *stale* MDs (v8 Codex-H1); "changed" = `(value, ts)` so a same-value re-add
-isn't lost + a clear stamps its timestamp (v8 M-1); the atomic finalize writes the **complete** Class-A tuple
-+ carried scalars and the manifest verifies the whole tuple (v8 M-2/L-1). (v7/v8 already closed: per-field
-timestamps, source-timestamp, clear-aware merge, corrections-currency, required-migrations §5.7.)
+**Status:** **v10 — CONVERGED** (dual adversarial review, 2026-07-17). Final round: **opus CONVERGED (0 B/H/M)**
++ **Codex 0 Blocking/0 High** (2 Medium dispositioned: the §12.3 recompute contradiction FIXED; the
+carried-scalar-staleness Medium dispositioned as accepted **R9** per opus's deeper trace showing carry-verbatim
+is MD-consistent/safe). v10 also adds the `archived_not_synced` disclosure (R10) and softens over-absolute
+wording. The **two-class model** (generated=format/corrections-currency; human=per-field newer-wins) is
+reviewer-confirmed sound across v7→v10: v7 (Blockings) → v8 (1B+1H) → v9 (both 0 B/H) → **v10 CONVERGED**.
+Required code preconditions ship with M2a (§5.7). **Awaiting user approval → implementation plan (Phase 2).**
 Reviews: `.superpowers/sdd/cloud-sync-spec-*.md`.
 
 **Roadmap:** M2 of `docs/roadmap-to-launch.md`.
@@ -75,7 +73,11 @@ sync; true-conflict loser-preservation; HTML/PDF transfer (regenerable cache).
   recover them (the MD frontmatter stores only the *average* `score`, so the 5 real `ratings` would be
   fabricated as flat copies; `tldr`/`takeaways`/`tags` live in the MD-body quick-ref callout it never parses;
   the `MagazineModel` companion carries only `{sections}`). The sender already holds correct values for its
-  MD, so carrying them is a pure, uncharged copy that never drifts. They are part of the atomic Class-A
+  MD, so carrying them is a pure, uncharged copy that stays consistent under normal operation (a mid-write
+  crash on the *sender* — MD-then-index in two steps — can leave the sender's own record transiently
+  inconsistent; a pre-existing local durability gap, not sync-introduced, self-healed on its next
+  regenerate/backfill; and an orphan-recovered record carries lower-fidelity but MD-derived scalars,
+  restored to full by a regen — residual R9). They are part of the atomic Class-A
   record write (§7 step 4), never synced independently of their MD.
 - **Class B — independent human annotations (per-field 3-way merge, §5.4):** `personalNote`, `personalScore`.
 - **`corrections` — human field AND the MD's generation input (special):** reconciled as a human field (§5.4,
@@ -260,8 +262,9 @@ sign-out clears it. No session → refuse with a `cloud-sync login` hint.
    human field `(value, annotationsEditedAt)` pairs. Never advance a baseline for a partial transfer.
 6. **Report**: created / updated-local / updated-cloud / skipped-identical / merged-fields / conflicts-logged
    (skipped) / removed / **`share_needs_owner_serve`** (R7) / **`needs_regen`** (no MD reflects the current
-   corrections at the top format — author should regenerate, §5.3/R8) / errors. Per-video errors isolated;
-   the run is idempotent + resumable (single-run, no concurrency — §10).
+   corrections at the top format — author should regenerate, §5.3/R8) / **`archived_not_synced`** (manual
+   archive stays per-replica, R10) / errors. Per-video errors isolated; the run is idempotent + resumable
+   (single-run, no concurrency — §10).
 
 ### 7.1 Local playlist discovery (rounds 1–2)
 A **local playlist registry**: each local root persists its `playlist_key` (backfilled from `playlistUrl`
@@ -341,6 +344,15 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
   available MD (corrections-current if any, else the highest format) but flags `needs_regen` — the summary is
   the best that exists until the author regenerates on a top-format replica (which re-applies the surviving
   `corrections`). Sync never fabricates a corrected MD; nothing is lost (the instruction survives, §5.4).
+- **R9 — Orphan-recovered scalars are lower-fidelity (round-v9).** A record rebuilt by `recoverOrphanedVideos`
+  (`reconstructVideo`, MD survived but the index was lost) carries flattened `ratings` + absent `tldr`/
+  `takeaways`/`tags` — the best derivable from the MD alone. If such a record wins Class A, sync carries those
+  lower-fidelity scalars (MD-consistent, not corrupt); a regenerate restores full fidelity. Rare + recoverable
+  → accepted for M2a; a `scalarsSourceMdHash` provenance guard is a possible M2b hardening.
+- **R10 — `archived` not synced (round-v9).** Manual Archive/Unarchive stays **per-replica** in M2a (a manual
+  archive on one side does not propagate), because `archived` is entangled with membership-archive
+  (`reconcile_membership`). Reported as `archived_not_synced` (§7 step 6) so a post-sync archive difference
+  isn't read as a sync failure. Cleanly splitting manual-archive (syncable) from membership-archive is M2b.
 
 ---
 
@@ -354,8 +366,9 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
 3. **Class B (independent per-field merge) = `personalNote`/`personalScore`; `corrections` is special** — a
    human field (preserved, per-field newer-wins) that is ALSO the MD's generation input, so it drives §5.3
    corrections-currency (a stale MD never overwrites a corrected one). **`title` is NOT Class B** (YouTube-
-   fetched, no author-edit path → replica-local). MD-derived scalars (`tldr`/`videoType`/…) are Class-A-derived
-   (recomputed from the winning MD on transfer, never independently synced).
+   fetched, no author-edit path → replica-local). Companion scalars (`ratings`/`tldr`/`videoType`/…) are
+   **carried verbatim with the winning MD, NOT recomputed on transfer** (`reconstructVideo` can't recover
+   them — round-v8 B-1); never independently synced.
 4. **Model JSON = companion** (sync-transfer scoped, MD-only `sourceMdHash`, forward-tolerant schema, R5/R7).
 5. **Deep-dive + images → M2b** (§13), with the cloud-tokens → local-capture → sync-back pipeline.
 6. **Deletes: additive + baseline-aware**; resurrection on a baseline-less replica = R2; tombstones = M2b.
@@ -383,4 +396,8 @@ Verified against code; recorded so M2b builds on a settled architecture:
   `DIG_GENERATOR_VERSION` axis); the resolved **slide images** are a **local-authoritative asset layer**
   (local is the only legal producer) — the "asset-bearing side wins" tie-break resolves to local; cloud→local
   image transfer is really "local resolves cloud's tokens," and local→cloud carries the captured pixels.
-- Also deferred to M2b: cross-replica tombstone deletes, background/auto-sync, true-conflict loser-preservation.
+- Also deferred to M2b: cross-replica tombstone deletes, background/auto-sync, true-conflict loser-preservation;
+  a clean **manual-archive vs membership-archive** split (so manual archive can sync, R10); and a
+  **`scalarsSourceMdHash` provenance guard** if direct scalar editing is ever added (today no path edits a
+  companion scalar independently of its MD, so the `mdHash`-equal skip safely implies matching scalars — if
+  M2b adds scalar editing, revisit that skip; round-v9 forward-note).
