@@ -149,3 +149,127 @@ begin
   select count(*)::int into v_n from upd;          -- H-4: jobs flagged (queued + active)
   return v_n;
 end $$;
+
+-- ── Task 5: serve token + settle ─────────────────────────────────────────────
+alter table serve_model_charge add column reserved_cents int not null default 0 check (reserved_cents >= 0);
+alter table serve_model_charge add column release_token uuid;   -- current in-flight reservation's one-time secret
+
+-- reserve_serve_model: return type changes (text → table) → DROP+recreate+re-grant.
+-- Body identical to 0014 except it now also mints a release_token on the 'reserved' branch.
+drop function reserve_serve_model(uuid, text);
+
+create function reserve_serve_model(p_playlist_id uuid, p_video_id text)
+  returns table(status text, release_token uuid)
+  language plpgsql security definer set search_path = public as $$
+declare
+  v_owner uuid := auth.uid();
+  v_cfg guardrail_config;
+  v_doc_key text;
+  v_day date;
+  v_promoted boolean;
+  v_claimed int;
+  v_existing int;
+  v_lease_live boolean;
+  v_result text;
+  v_token uuid;                                    -- null unless we reserve
+begin
+  if v_owner is null then raise exception 'reserve_serve_model: unauthenticated'; end if;
+
+  select (v.data->'artifacts'->'summaryMd'->>'status') = 'promoted'
+    into v_promoted
+    from videos v join playlists p on p.id = v.playlist_id
+    where v.playlist_id = p_playlist_id and v.video_id = p_video_id and p.owner_id = v_owner;
+  if v_promoted is distinct from true then
+    return query select 'denied'::text, null::uuid; return;
+  end if;
+
+  select * into v_cfg from guardrail_config where id = true;
+  v_doc_key := p_playlist_id::text || '/' || p_video_id;
+  v_day := (now() at time zone 'utc')::date;
+
+  begin
+    insert into serve_model_charge (owner_id, doc_key, day, lease_expires_at, attempt_count)
+      values (v_owner, v_doc_key, v_day, now() + make_interval(secs => v_cfg.lease_ttl_seconds), 1)
+    on conflict (owner_id, doc_key, day) do update
+      set lease_expires_at = now() + make_interval(secs => v_cfg.lease_ttl_seconds),
+          attempt_count = serve_model_charge.attempt_count + 1
+      where serve_model_charge.lease_expires_at < now()
+        and serve_model_charge.attempt_count < v_cfg.max_serve_attempts;
+    get diagnostics v_claimed = row_count;
+
+    if v_claimed = 0 then
+      select attempt_count, lease_expires_at > now()
+        into v_existing, v_lease_live
+        from serve_model_charge
+        where owner_id = v_owner and doc_key = v_doc_key and day = v_day;
+      v_result := case
+                    when v_lease_live then 'in_flight'
+                    when v_existing >= v_cfg.max_serve_attempts then 'attempts_exhausted'
+                    else 'in_flight'
+                  end;
+    else
+      insert into serve_owner_budget (owner_id, day) values (v_owner, v_day) on conflict do nothing;
+      update serve_owner_budget set spent_cents = spent_cents + v_cfg.magazine_est_cents
+        where owner_id = v_owner and day = v_day
+          and spent_cents + v_cfg.magazine_est_cents <= v_cfg.per_owner_serve_daily_cents;
+      if not found then raise exception 'serve_owner_over_budget' using errcode = 'PJ005'; end if;
+
+      insert into spend_ledger (day) values (v_day) on conflict do nothing;
+      update spend_ledger set reserved_cents = reserved_cents + v_cfg.magazine_est_cents, updated_at = now()
+        where day = v_day
+          and reserved_cents + actual_cents + v_cfg.magazine_est_cents <= v_cfg.daily_cap_cents;
+      if not found then raise exception 'serve_at_capacity' using errcode = 'PJ004'; end if;
+
+      -- Mint the one-time release token for THIS live attempt (SET, not +=; single live attempt).
+      v_token := gen_random_uuid();
+      update serve_model_charge
+         set reserved_cents = v_cfg.magazine_est_cents, release_token = v_token
+       where owner_id = v_owner and doc_key = v_doc_key and day = v_day;
+      v_result := 'reserved';
+    end if;
+  exception
+    when sqlstate 'PJ005' then v_result := 'owner_over_budget'; v_token := null;
+    when sqlstate 'PJ004' then v_result := 'at_capacity';       v_token := null;
+  end;
+
+  return query select v_result, v_token;
+end $$;
+revoke all on function reserve_serve_model(uuid, text) from public;
+grant execute on function reserve_serve_model(uuid, text) to authenticated, anon;
+
+-- settle_serve_model: match the in-flight attempt by owner+token, clear it one-shot; on
+-- released=true also guarded-decrement serve_owner_budget + spend_ledger by magazine_est_cents.
+create function settle_serve_model(p_token uuid, p_released boolean)
+  returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  v_owner uuid := auth.uid();
+  v_cfg guardrail_config;
+  v_day date;
+begin
+  if v_owner is null then raise exception 'settle_serve_model: unauthenticated'; end if;
+  select * into v_cfg from guardrail_config where id = true;
+  update serve_model_charge
+     set reserved_cents = 0, release_token = null
+   where owner_id = v_owner and release_token = p_token and reserved_cents >= v_cfg.magazine_est_cents
+   returning day into v_day;
+  if not found then return false; end if;          -- stale/duplicate/forged token → no-op (idempotent)
+  if p_released then
+    update serve_owner_budget set spent_cents = spent_cents - v_cfg.magazine_est_cents
+     where owner_id = v_owner and day = v_day and spent_cents >= v_cfg.magazine_est_cents;
+    if not found then
+      insert into ledger_audit(day, kind, expected_amt, note, at)
+        values (v_day, 'release_underflow', v_cfg.magazine_est_cents,
+                'settle_serve_model owner_budget '||p_token::text, now());
+    end if;
+    update spend_ledger set reserved_cents = reserved_cents - v_cfg.magazine_est_cents, updated_at = now()
+     where day = v_day and reserved_cents >= v_cfg.magazine_est_cents;
+    if not found then
+      insert into ledger_audit(day, kind, expected_amt, note, at)
+        values (v_day, 'release_underflow', v_cfg.magazine_est_cents,
+                'settle_serve_model spend_ledger '||p_token::text, now());
+    end if;
+  end if;
+  return true;
+end $$;
+revoke all on function settle_serve_model(uuid, boolean) from public;
+grant execute on function settle_serve_model(uuid, boolean) to authenticated, anon;

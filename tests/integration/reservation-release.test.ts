@@ -1,5 +1,5 @@
 import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
-import { seedPlaylist } from './helpers/seed';
+import { seedPlaylist, seedPromotedVideo } from './helpers/seed';
 
 // Task 3 helper — resolve a seeded job's id from owner+video (mirrors cancel-job-rpc.test.ts's
 // pattern of looking up the job row rather than threading ids through enqueueSummary's void return).
@@ -277,5 +277,81 @@ describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
       .like('note', `request_cancel_playlist_jobs ${playlistId}%`);
     expect(audit!.length).toBe(1);
     expect(audit![0].expected_amt).toBe(150);
+  });
+});
+
+async function ownerBudget(ownerId: string, day: string): Promise<number> {
+  const { data } = await adminClient().from('serve_owner_budget')
+    .select('spent_cents').eq('owner_id', ownerId).eq('day', day).maybeSingle();
+  return data?.spent_cents ?? 0;
+}
+
+describe('reservation-release: serve token + settle (Task 5)', () => {
+  it('reserve returns a token; release settle refunds both ledgers; token cleared', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await seedPromotedVideo(adminClient(), { ownerId: u.user.id, playlistId, videoId: 'vid-t5' });
+    const day = utcToday();
+    // NOTE: spend_ledger is a single row PER DAY shared by every test in this file (Tasks 1-4 leave
+    // billable/KEEP residue on today's row); serve_owner_budget is keyed per-owner-per-day, so a
+    // freshly-created owner's row is genuinely isolated — asserted absolutely. spend_ledger uses a
+    // before/after delta, matching the convention the rest of this file already uses for the same reason.
+    const ledgerBefore = await ledgerFor(day);
+
+    const { data: rows } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t5' });
+    expect(rows![0].status).toBe('reserved');
+    const token = rows![0].release_token as string;
+    expect(token).toMatch(/[0-9a-f-]{36}/);
+    expect(await ledgerFor(day)).toBe(ledgerBefore + 6);
+    expect(await ownerBudget(u.user.id, day)).toBe(6);
+
+    const { data: ok } = await session.rpc('settle_serve_model', { p_token: token, p_released: true });
+    expect(ok).toBe(true);
+    expect(await ledgerFor(day)).toBe(ledgerBefore);            // spend_ledger -=6 (back to baseline)
+    expect(await ownerBudget(u.user.id, day)).toBe(0);         // serve_owner_budget -=6
+  });
+
+  it('success settle (released=false) KEEPS the charge but clears the token → un-charge is a no-op', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await seedPromotedVideo(adminClient(), { ownerId: u.user.id, playlistId, videoId: 'vid-t5b' });
+    const day = utcToday();
+    const ledgerBefore = await ledgerFor(day);
+    const { data: rows } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t5b' });
+    const token = rows![0].release_token as string;
+
+    await session.rpc('settle_serve_model', { p_token: token, p_released: false });   // success → keep
+    expect(await ledgerFor(day)).toBe(ledgerBefore + 6);
+    // behavior 19: a later un-charge with the same token is a no-op (token cleared)
+    const { data: again } = await session.rpc('settle_serve_model', { p_token: token, p_released: true });
+    expect(again).toBe(false);
+    expect(await ledgerFor(day)).toBe(ledgerBefore + 6);        // unchanged
+  });
+
+  it('double release settle is a no-op the second time', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await seedPromotedVideo(adminClient(), { ownerId: u.user.id, playlistId, videoId: 'vid-t5c' });
+    const day = utcToday();
+    const ledgerBefore = await ledgerFor(day);
+    const { data: rows } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t5c' });
+    const token = rows![0].release_token as string;
+    const first = await session.rpc('settle_serve_model', { p_token: token, p_released: true });
+    const second = await session.rpc('settle_serve_model', { p_token: token, p_released: true });
+    expect(first.data).toBe(true);
+    expect(second.data).toBe(false);
+    expect(await ledgerFor(day)).toBe(ledgerBefore);            // released exactly once (back to baseline)
+  });
+
+  it('a forged/unknown token settles nothing', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { data } = await session.rpc('settle_serve_model', {
+      p_token: '00000000-0000-0000-0000-000000000000', p_released: true,
+    });
+    expect(data).toBe(false);
   });
 });

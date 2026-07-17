@@ -49,10 +49,11 @@ export async function resolveMagazineModel(args: {
   if (fresh.status === 'ok') return { status: 'ok', model: fresh.model }; // B1 — no Gemini, no reserve
 
   // Absent / drifted / stale-version → materialize under the reserve RPC.
-  const { data: reserveStatus, error } = await supabaseClient.rpc('reserve_serve_model', {
+  const { data, error } = await supabaseClient.rpc('reserve_serve_model', {
     p_playlist_id: playlistId, p_video_id: videoId,
   });
   if (error) throw error;
+  const reserveStatus = (data as Array<{ status: string }> | null)?.[0]?.status;   // table-return → data[0]
   switch (reserveStatus) {
     case 'denied': return { status: 'denied' };
     case 'in_flight': {
