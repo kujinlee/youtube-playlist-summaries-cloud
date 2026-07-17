@@ -47,6 +47,7 @@ const mockCtx: HandlerCtx = {
   isCancelled: async () => false,
   signal: new AbortController().signal,
   setPhase: async () => {},
+  billing: { metered: false },
 };
 
 const GEMINI_SUMMARY_RESPONSE = {

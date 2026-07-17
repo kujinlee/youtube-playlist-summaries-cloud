@@ -13,6 +13,7 @@ import type { CloudGeminiCaps } from './gemini-cost';
 import { NonRetryableError } from './job-queue/errors';
 import { sectionStartsComplete, ensureSectionTimestamps } from './summary-section-timestamps';
 import { parseSections } from './html-doc/parse';
+import type { BillingLatch } from './job-queue/billing-latch';
 
 /**
  * Fail-closed flag for the cloud audio-fallback transcription path. While `false`, a cloud call
@@ -249,13 +250,14 @@ export async function generateJson<T>(
   label: string,
   retries = GENERATE_JSON_RETRIES,
   baseDelayMs = 400,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; billing?: BillingLatch },
 ): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (opts?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
     try {
       const result = await model.generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS, signal: opts?.signal });
+      if (opts?.billing) opts.billing.metered = true;   // body received = Google billed → latch (before parse)
       assertNotTruncated(result);
       return schema.parse(JSON.parse(result.response.text()));
     } catch (err) {
@@ -302,7 +304,7 @@ export async function generateSummary(
   segments: TranscriptSegment[],
   language: 'en' | 'ko',
   videoId: string,
-  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps },
+  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps; billing?: BillingLatch },
 ): Promise<GeminiSummaryResponse> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
@@ -409,6 +411,7 @@ const QuickViewSchema = z.object({
 export async function extractQuickView(
   summaryMarkdown: string,
   caps?: CloudGeminiCaps,
+  billing?: BillingLatch,
 ): Promise<{ tldr: string; takeaways: string[] }> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
@@ -431,7 +434,8 @@ ${summaryMarkdown}
 </summary>`;
 
   try {
-    const parsed = await generateJson(model, prompt, QuickViewSchema, 'quick-view');
+    const parsed = await generateJson(model, prompt, QuickViewSchema, 'quick-view', undefined, undefined,
+      billing ? { billing } : undefined);
     return {
       tldr: trimToWords(parsed.tldr, 25),
       takeaways: parsed.takeaways.map((t) => trimToWords(t, 20)),
@@ -495,7 +499,7 @@ ${mdContent}
 export async function generateMagazineModel(
   sections: Array<{ title: string; prose: string }>,
   language: 'en' | 'ko',
-  opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal },
+  opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal; billing?: BillingLatch },
 ): Promise<MagazineModel> {
   const caps = opts?.caps;
   // Fail closed on a cloud caps object missing either magazine field (F1): otherwise the output cap
@@ -619,7 +623,7 @@ export async function transcribeViaGemini(
   durationSeconds: number,
   retries = TRANSCRIBE_RETRIES,
   baseDelayMs = 400,
-  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps },
+  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps; billing?: BillingLatch },
 ): Promise<TranscriptSegment[]> {
   const caps = opts?.caps;
   const client = new GoogleGenerativeAI(getApiKey());
@@ -667,6 +671,7 @@ export async function transcribeViaGemini(
     if (opts?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
     try {
       const result = await model.generateContent(request, { timeout: REQUEST_TIMEOUT_MS, signal: opts?.signal });
+      if (opts?.billing) opts.billing.metered = true;   // metered → latch before parse/coverage checks
       assertNotTruncated(result);
       const parsed = GeminiTranscriptSchema.parse(JSON.parse(result.response.text()));
       const segments = mapGeminiTranscriptSegments(parsed.segments);

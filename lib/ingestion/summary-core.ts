@@ -3,6 +3,7 @@ import type { resolveTranscriptSegments as ResolveTranscriptSegmentsFn } from '.
 import type { generateSummary as GenerateSummaryFn, extractQuickView as ExtractQuickViewFn } from '../gemini';
 import { truncateSegmentsToByteCap } from '../transcript-timestamps';
 import type { CloudGeminiCaps } from '../gemini-cost';
+import type { BillingLatch } from '../job-queue/billing-latch';
 import { checkSummaryCompleteness } from '../summary-completeness';
 import { padDividers } from '../markdown-dividers';
 import { formatDuration } from '../format-duration';
@@ -54,19 +55,20 @@ export interface SummaryCoreResult {
 export async function summaryCore(
   input: SummaryCoreInput,
   deps: SummaryCoreDeps,
-  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps },
+  opts?: { signal?: AbortSignal; caps?: CloudGeminiCaps; billing?: BillingLatch },
 ): Promise<SummaryCoreResult> {
   // baseName is accepted in the input shape (callers use it to key the persisted file) but is
   // not needed to build the markdown content itself, so it is intentionally not destructured here.
   const { videoId, title, youtubeUrl, channel, durationSeconds } = input;
   const caps = opts?.caps;
-  // signal/caps threaded only when present — an explicit `undefined` opts arg is a DIFFERENT call
-  // signature than omitting it (callers/tests assert exact arg lists), so build the opts object
-  // conditionally. When both are absent, omit the 4th arg entirely → local pipeline byte-identical.
-  const rtsOpts: { signal?: AbortSignal; caps?: CloudGeminiCaps } = {};
+  // signal/caps/billing threaded only when present — an explicit `undefined` opts arg is a DIFFERENT
+  // call signature than omitting it (callers/tests assert exact arg lists), so build the opts object
+  // conditionally. When all are absent, omit the 4th arg entirely → local pipeline byte-identical.
+  const rtsOpts: { signal?: AbortSignal; caps?: CloudGeminiCaps; billing?: BillingLatch } = {};
   if (opts?.signal) rtsOpts.signal = opts.signal;
   if (caps) rtsOpts.caps = caps;
-  const { segments: rawSegments } = (opts?.signal || caps)
+  if (opts?.billing) rtsOpts.billing = opts.billing;
+  const { segments: rawSegments } = (opts?.signal || caps || opts?.billing)
     ? await deps.resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds, rtsOpts)
     : await deps.resolveTranscriptSegments(videoId, youtubeUrl, durationSeconds);
   // Cloud byte-cap truncation: drop whole trailing segments until the RENDERED indexed transcript
@@ -77,10 +79,11 @@ export async function summaryCore(
   const segments = caps ? truncateSegmentsToByteCap(rawSegments, caps.transcriptInputBytes) : rawSegments;
   const transcript = segments.map((s) => s.text).join(' '); // plain text for language detection only
   const language = detectLanguage(transcript);
-  const gsOpts: { signal?: AbortSignal; caps?: CloudGeminiCaps } = {};
+  const gsOpts: { signal?: AbortSignal; caps?: CloudGeminiCaps; billing?: BillingLatch } = {};
   if (opts?.signal) gsOpts.signal = opts.signal;
   if (caps) gsOpts.caps = caps;
-  const { summary: rawSummary, ratings, overallScore, videoType, audience, tags, tldr, takeaways } = (opts?.signal || caps)
+  if (opts?.billing) gsOpts.billing = opts.billing;
+  const { summary: rawSummary, ratings, overallScore, videoType, audience, tags, tldr, takeaways } = (opts?.signal || caps || opts?.billing)
     ? await deps.generateSummary(segments, language, videoId, gsOpts)
     : await deps.generateSummary(segments, language, videoId);
   const summary = padDividers(rawSummary);
@@ -120,7 +123,9 @@ export async function summaryCore(
     // generateSummary omitted tldr/takeaways → derive them from the full md so the Quick
     // Reference callout is never silently skipped (same primitive the backfill route uses).
     try {
-      const qv = caps ? await deps.extractQuickView(baseContent, caps) : await deps.extractQuickView(baseContent);
+      const qv = caps
+        ? await deps.extractQuickView(baseContent, caps, opts?.billing)
+        : await deps.extractQuickView(baseContent, undefined, opts?.billing);
       outTldr = qv.tldr;
       outTakeaways = qv.takeaways;
       mdContent = insertQuickViewCallout(baseContent, qv.tldr, qv.takeaways, tags ?? []);

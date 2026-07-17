@@ -1,5 +1,6 @@
 import type { JobQueue } from '@/lib/storage/job-queue';
 import type { HandlerCtx, JobHandler } from './handler-context';
+import type { BillingLatch } from '@/lib/job-queue/billing-latch';
 import { NonRetryableError } from './errors';
 
 export type { JobHandler } from './handler-context';
@@ -31,12 +32,14 @@ export async function runOnce(
     [wallClock.signal, leaseLost.signal, opts.shutdownSignal].filter((s): s is AbortSignal => Boolean(s)),
   );
 
+  const billing: BillingLatch = { metered: false };
   const ctx: HandlerCtx = {
     isCancelled: async () => (await queue.getStatus(job.id))?.cancelRequested ?? false,
     signal,
     // Phase writes are ADVISORY (progress hints only) — swallow a transient failure so it can
     // never fail an otherwise-succeeding job. Second .then handler consumes any rejection.
     setPhase: (p) => queue.setProgressPhase(job.id, opts.workerId, job.leaseToken, p).then(() => {}, () => {}),
+    billing,
   };
 
   const wct = setTimeout(() => wallClock.abort(), opts.wallClockMs ?? 600_000);
