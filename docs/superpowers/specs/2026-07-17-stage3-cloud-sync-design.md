@@ -1,13 +1,14 @@
 # Stage 3 — Cloud Sync (local ↔ cloud reconciliation) — Design Spec
 
-**Status:** Draft **v3** — revised after dual adversarial review round 2 (both NOT CONVERGED). v3 (a) drops
-model JSON from the hashed source set (it is a non-deterministic, charged, regenerable cache — round-2
-BLK-1), (b) makes first-sync backfill non-destructive (round-2 H-C), (c) replaces the insufficient
-delete-intent marker with baseline-aware best-effort suppression + a disclosed resurrection residual
-(round-2 H-A/H-B), (d) removes membership-driven `archived` from the hash (H-D), (e) enumerates every
-allowlisted SQL writer for restamping (H-E), (f) adds `corrections` to synced user metadata (round-2 M1).
-Pending: dual re-review round 3 to convergence → user approval → plan.
-Reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2}.md`.
+**Status:** Draft **v4** — revised after dual adversarial review round 3 (Codex CONVERGED; opus found 2
+fix-introduced High). v4 closes: **H-1** — the model companion could serve *content-stale* prose (the serve
+gate was body-blind); v4 adds `sourceMdHash` to `ModelEnvelope`, makes `isFresh` content-aware, and
+invalidates a non-matching companion (§4.2). **H-2** — the restamp enumeration missed `merge_video_data`,
+the only cloud writer of `title`/`corrections` (§5.1). Plus M-1 (the local-delete §5.5 transition), L-1
+(conflict-log dedup), L-2 (companion is best-effort, outside the MD atomic commit).
+(v3 had closed round-2: model→companion, non-destructive backfill, baseline-aware deletes, `archived` out of
+hash, restamp enumeration, `corrections`.) Pending: dual re-review round 4 to convergence → user approval → plan.
+Reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2,-r3}.md`.
 
 **Roadmap:** M2 of `docs/roadmap-to-launch.md`.
 
@@ -80,15 +81,27 @@ per-playlist local manifest; a manual **Cloud Sync** command.
   (DB-computed, already stripped by `supabase-metadata-store.ts`).
 - **Regenerable cache (never synced):** HTML doc, PDF (deterministic re-render from MD + model).
 
-### 4.2 Model JSON as a companion (round-2 BLK-1)
+### 4.2 Model JSON as a companion (round-2 BLK-1; round-3 H-1)
 Model JSON is a **non-deterministic, `GENERATOR_VERSION`-axed, charged, self-healing cache** (Gemini
 transform; lazily regenerated + charged on the serve path — `lib/html-doc/model-store.ts`,
 `read-model.ts`). It therefore **cannot** be a hash-compared source (identical MD would hash-diverge on the
-model and churn/overwrite). Instead: when a video's **MD** wins newer-wins and is transferred, that MD's
-model JSON blob is **copied alongside it verbatim** (opaque companion), so the receiver need not re-charge
-to view it. If the companion is stale vs its MD (`GENERATOR_VERSION` drift), the receiver's **existing lazy
-upsert** regenerates it on first serve — no correctness dependency on the companion. The model is never a
-newer-wins participant.
+model and churn/overwrite). Instead, when a video's **MD** wins newer-wins and is transferred, the model is
+handled as a companion — but **safely**, not "opaquely":
+
+**Content-aware freshness (required — closes round-3 H-1).** Today's serve freshness gate
+(`isFresh`, `lib/html-doc/read-model.ts:21-25`) checks only section titles + `GENERATOR_VERSION`, **not the
+MD body** — so a model built from an *older MD body with identical headings and the same version* would
+serve silently after an MD change. M2a therefore:
+1. **Extends `ModelEnvelope` with `sourceMdHash`** — the canonical §5.2-style hash of the MD the model was
+   built from — and **extends `isFresh` to also require `sourceMdHash == hash(current MD)`.** A
+   content-stale model can then never serve.
+2. **On MD transfer:** ship the sender's model blob as a companion **only if** its `sourceMdHash` matches
+   the winning MD (i.e. it was built from exactly that MD). Otherwise **invalidate/delete the receiver's
+   model blob** for that video, so the receiver's next serve lazily regenerates from the new MD (the
+   existing self-heal, now correctly triggered). Either way the receiver never renders stale prose.
+
+The companion copy is thus a **best-effort re-charge avoidance** (common case: matching model ships → no
+regen), with correctness guaranteed by (1)+(2), not by the copy. The model is never a newer-wins participant.
 
 ---
 
@@ -96,15 +109,22 @@ newer-wins participant.
 
 ### 5.1 The change signal + stamping (round-2 H-C/H-E)
 **`contentGeneratedAt`** (ISO-8601 UTC) — **primary** freshness signal — is stamped on **every** write that
-mutates a **hashed-source** field, on both replicas. The complete writer enumeration (each must add
-`contentGeneratedAt`):
-- summary generation — local (`lib/pipeline.ts`) and cloud `persist_summary` (its layer-3 allowlist, `0009`);
-- cloud annotation edits — **`update_video_annotations`** (`0016`), whose allowlist is *closed*
-  (`personalScore`, `personalNote`, `archived`) and would otherwise silently drop the field (round-2 H-E) —
-  add `contentGeneratedAt`, and (since `archived` is not hashed) restamp only when `personalScore`/
-  `personalNote` change;
+mutates a **hashed-source** field, on both replicas. The complete writer enumeration — verified by grepping
+every cloud RPC/allowlist and the local index writer (round-2 H-E, round-3 H-2); each must add
+`contentGeneratedAt` and restamp when it mutates a hashed field:
+- summary generation — local (`lib/pipeline.ts`) and cloud **`persist_summary`** (its layer-3 allowlist,
+  `0009`) → writes MD/`title` → restamp;
+- cloud annotation edits — **`update_video_annotations`** (`0016`), allowlist *closed* to
+  (`personalScore`, `personalNote`, `archived`) — add `contentGeneratedAt`; restamp only when
+  `personalScore`/`personalNote` change (`archived` is not hashed);
+- **cloud `title`/`corrections` edits — `merge_video_data` via `updateVideoFields`**
+  (`lib/storage/supabase/supabase-metadata-store.ts:119-125`; the regenerate route writes `corrections`
+  here, `app/api/videos/[id]/regenerate/route.ts:55`). This is the **only** cloud writer of `title`/
+  `corrections` and neither allowlisted RPC covers them, so it MUST restamp `contentGeneratedAt` when it
+  mutates `title`/`corrections` (round-3 H-2);
 - local metadata edits (note/score/title/corrections) via the local index writer.
-Membership writers (`reconcile_membership`) touch only **non-hashed** fields → no restamp.
+Membership writers (`reconcile_membership`) touch only **non-hashed** fields (`archived`,
+`removedFromPlaylist`) → no restamp.
 
 **`contentHash`** — canonical digest over the **hashed source set only** (§5.2).
 
@@ -143,6 +163,10 @@ authoritative. Equal hashes always skip (and seed the baseline) regardless of ti
 - **In this replica's manifest baseline but now ABSENT on the other side** → treated as a **remote delete**:
   do **not** re-create it; record the removal locally. (Best-effort, using the baseline as the "seen
   before" record — no cross-device tombstone.)
+- **In this replica's baseline but now ABSENT on THIS side (present on the other)** → *this replica*
+  deleted it (round-3 M-1). M2a does **not** propagate the delete (that is M2b tombstones): do **not**
+  re-create it locally (it stays deleted here), and do **not** delete it on the other replica (it remains
+  there). The entity simply diverges until M2b — a disclosed consequence of R2 (deletes don't propagate).
 - **No delete-intent marker mechanism** (round-2 H-A showed a local marker has no sound lifecycle and
   suppresses legitimate re-adds). Deletion is inferred from baseline presence/absence, so a genuine
   local re-add (new `contentGeneratedAt`) simply syncs as a create/update — nothing to "clear."
@@ -175,11 +199,14 @@ blast radius; sign-out clears it. No session → refuse with a `cloud-sync login
 2. **Per playlist**, enumerate the **union** of `video_id`s via `MetadataStore`.
 3. **Per video**, compute the change signal (§5.1) each side; apply §5.3/§5.5.
 4. **Per-video atomic transfer**, aligned with the existing staged→committed→promoted protocol
-   (`lib/storage/supabase/consistency.ts`, `summary-handler.ts`): stage source blob(s) — the winning **MD**
-   **and its companion model** (§4.2) — under an idempotency key, verify, **promote all** to final keys,
-   **then** finalize the receiver metadata (record + `contentGeneratedAt` + `contentHash`). The metadata must
-   not advertise the new `contentHash` until every blob is promoted; a crash leaves staged (not final)
-   objects + an unadvanced baseline; re-run finishes/rolls back.
+   (`lib/storage/supabase/consistency.ts`, `summary-handler.ts`): stage the winning **MD** (the hashed
+   source) under an idempotency key, verify, promote to the final key, **then** finalize the receiver
+   metadata (record + `contentGeneratedAt` + `contentHash`). The metadata must not advertise the new
+   `contentHash` until the MD is promoted; a crash leaves staged (not final) objects + an unadvanced
+   baseline; re-run finishes/rolls back. The **companion model** (§4.2) is written **best-effort, outside**
+   the MD's atomic commit (its writer is a plain upsert — `model-store.ts`; a lost/absent companion
+   self-heals via §4.2's invalidate + lazy-regen), so a companion failure never blocks the MD's baseline
+   advance and never leaves the metadata inconsistent (round-3 L-2).
 5. **Update the manifest (§8) strictly AFTER** the receiver's metadata commit is verified durable, recording
    the **receiver-observed committed hash**. Never advance a baseline for a partial transfer.
 6. **Report** created / updated-local / updated-cloud / skipped-identical / **conflicts-logged (skipped)** /
@@ -209,7 +236,9 @@ conflict-skip, never a destructive overwrite), only delete-detection and conflic
 ### 8.1 Conflict log
 Per-playlist git-ignored `<data-root>/<playlist_key>/.cloud-sync-conflicts.log` (JSON lines): `video_id`,
 timestamp, both sides' `(contentGeneratedAt, contentHash, backfilled?)`, and reason (true-conflict /
-backfilled-ambiguous / tiebreak). **Replica-local** (R3) — cross-replica surfacing is M2b.
+backfilled-ambiguous / tiebreak). **De-duplicated** by `(video_id, hashL, hashC)` — a still-diverged legacy
+pair that conflict-skips on every run is logged **once**, not per run (round-3 L-1), so the log doesn't grow
+unbounded until the user resolves it. **Replica-local** (R3) — cross-replica surfacing is M2b.
 
 ---
 
@@ -230,10 +259,13 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
 - **Backfill non-destructive (round-2 H-C):** legacy divergence with a backfilled timestamp → **conflict,
   skip, no overwrite** (the "local note added, cloud `updated_at` bumped by ingestion" case must NOT lose the
   note); equal hash → skip; a real post-feature edit restamps and then wins.
-- **Restamp (round-2 H-E):** a cloud `personalNote` edit via `update_video_annotations` restamps
-  `contentGeneratedAt`; a `reconcile_membership` `archived` flip does **not** (not hashed, no restamp).
-- **Companion model (§4.2):** winning MD carries its model blob; a `GENERATOR_VERSION`-drifted companion
-  triggers lazy regenerate on serve, not a sync conflict.
+- **Restamp (round-2 H-E, round-3 H-2):** a cloud `personalNote` edit (`update_video_annotations`) **and** a
+  cloud `title`/`corrections` edit (`merge_video_data`/`updateVideoFields`) each restamp `contentGeneratedAt`;
+  a `reconcile_membership` `archived` flip does **not** (not hashed, no restamp).
+- **Companion model / content-stale gate (round-3 H-1):** after an MD wins and transfers, the receiver never
+  serves a model built from the *old* MD — `isFresh` rejects a model whose `sourceMdHash` ≠ the current MD
+  (even with identical section titles + same `GENERATOR_VERSION`); a matching companion serves without regen,
+  a non-matching/absent one is invalidated and lazily regenerated. `GENERATOR_VERSION` drift also regenerates.
 - **Union hydration:** empty local + non-empty cloud → full local hydration; local-only → created on cloud.
 - **Atomicity/resume:** failure between promote and commit → no record advertises a hash for a missing blob,
   no baseline advance; re-run heals; two no-change runs → second all-skips.
@@ -277,4 +309,8 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
    conflict-skip (round-2 H-C).
 6. **Deletes: additive + baseline-aware best-effort suppression; no local marker; resurrection on a
    baseline-less replica is a disclosed residual** (round-2 H-A/H-B); cross-replica tombstones = M2b.
-7. **Per-playlist manifest**; every allowlisted SQL writer restamps `contentGeneratedAt` (round-2 H-E).
+7. **Per-playlist manifest**; every allowlisted SQL writer restamps `contentGeneratedAt` (round-2 H-E),
+   **including `merge_video_data`** for `title`/`corrections` (round-3 H-2).
+8. **Model companion is content-safe, not opaque** (round-3 H-1): `ModelEnvelope.sourceMdHash` + a
+   content-aware `isFresh` + invalidate-on-mismatch guarantee a content-stale model never serves; the
+   companion copy is a best-effort re-charge avoidance, outside the MD's atomic commit.
