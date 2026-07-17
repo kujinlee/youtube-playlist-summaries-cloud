@@ -1,5 +1,7 @@
 # Reservation Release Lifecycle Implementation Plan
 
+> **Status:** ✅ **CONVERGED (v5)** — round-4 dual adversarial review both clean (0 Blocking / 0 High; see Plan Review Log). Phase-2 gate satisfied. Ready for implementation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make `spend_ledger` reservations *release* when generation/serve work ends without a kept artifact and without a billable Gemini call, so a Gemini outage or retry burst stops self-DoSing every user's daily budget.
@@ -982,7 +984,7 @@ npx tsc --noEmit
 Expected: PASS. The return-type change breaks every scalar read — the `.rpc()` result is now an array. Fix all in this task:
 - `serve-doc.ts` — done in Step 4 (minimal `data[0]`).
 - `serve-model-charge.test.ts` / `serve-owner-budget.test.ts` read the RPC directly: update each `reserveStatus`/`data`-as-scalar to `data[0].status` (grep both files for `reserve_serve_model` — ~10+ sites incl. `serve-model-charge.test.ts` lines 32/42/43/55/59/70/95/113/119/138 and the `serve-owner-budget.test.ts` equivalents; L2).
-- `serve-model-charge.test.ts:125` "no release RPC exists" is now false — update/remove it.
+- `serve-model-charge.test.ts:125` — **read it before touching.** If it asserts the absence of a specifically-named RPC (e.g. `release_serve_model`, a name this plan does NOT create — we add `settle_serve_model`), it stays green untouched; only update it if it broadly asserts "no release/settle RPC is callable." Do not blindly delete a still-valid test.
 - `pdf-cloud.test.ts`: its `rpcSpy.mock.calls.filter(c => c[0] === 'reserve_serve_model')` counts (lines ~331/343/363) still hold (reserve called the same number of times); the reserved branch does NOT yet emit `settle_serve_model` here (that's Task 11), so no spy-count change at this task. With the Step-4 read fix, the money-mutation test (`:355`) passes.
 
 - [ ] **Step 6: Commit**
@@ -1668,7 +1670,8 @@ describe('worker-runner release decision (Task 10)', () => {
     const failSpy = jest.fn(async () => ({ ok: true, status: 'failed' as const }));
     // Use the file's existing mock-queue builder (a full jest.Mocked<JobQueue>, e.g. `makeQueue(job)`
     // at worker-runner-runtime.test.ts:22) and override .fail with the spy — there is no fail-injection
-    // constructor option (R3-L1). e.g.:  const queue = makeQueue(job); queue.fail = failSpy;
+    // constructor option (R3-L1). `makeJob()`/`makeQueue` are the file's existing helpers.
+    const job = makeJob();
     const queue = makeQueue(job); queue.fail = failSpy;
     const handler = async (_job: unknown, ctx: { billing: { metered: boolean } }) => {
       if (opts.meterFirst) ctx.billing.metered = true;
@@ -1805,7 +1808,7 @@ it('serve metered-then-503 keeps (latch overrides)', async () => {
 ```bash
 npm run test:integration -- serve-doc-materialize
 ```
-Expected: FAIL — current `serve-doc.ts` reads `reserveStatus` as a scalar (now `undefined` → `default: throw`), and there is no settle call.
+Expected: FAIL — after Task 5 the scalar read is already fixed (`data[0].status`), so the failure is specifically the **new** behavior: no `release_token` is captured, no `billing` latch is threaded, and no `settle_serve_model` is called on success/throw (the new tests assert the ledger deltas + settle calls, which don't happen yet).
 
 - [ ] **Step 3: Implement the serve-doc changes**
 
@@ -1931,6 +1934,29 @@ it('behavior 24: serve lease-overlap yields a bounded leak, never a double-refun
   // Then: settle(A, released=true) → returns false (no-op, token overwritten);
   // settle(B, released=true) → returns true, -6; net one release; ledger never negative.
 });
+
+it('behavior 5: cancel-mid-run keeps or releases per the billable flag', async () => {
+  // active job with cancel_requested=true; handler throws PRE-billing (billing.metered=false, class-A);
+  // runner → fail_job(billable=false) → v_cancel → v_new='cancelled' → RELEASE. Then a sibling case:
+  // handler threw with billing.metered=true → fail_job(billable=true) → cancelled but KEEP.
+});
+
+it('behavior 10: cancel active then success KEEPS (artifact exists)', async () => {
+  // active job, cancel_requested=true, handler SUCCEEDS → complete_job → status='cancelled' (cancel-after-
+  // success) but complete_job never releases → ledger unchanged (KEEP; the artifact was kept).
+});
+
+it('behavior 22: serve K-bound survives releases', async () => {
+  // K failed serves for one (owner,doc,day), each settled released=true; attempt_count still increments
+  // per reserve (settle does NOT touch attempt_count) → reaches max_serve_attempts → reserve returns
+  // 'attempts_exhausted'. Asserts a released serve still burns an attempt (no infinite free retry).
+});
+
+it('behavior 23: retry-keep path is reachable (not vacuous)', async () => {
+  // bump a job's max_attempts>1; a retryable fail (billable=true) → fail_job v_new='queued' → KEEP, and
+  // the NEXT claim does not re-reserve (one enqueue = one reservation). Confirms behaviors 6/7 KEEP-on-
+  // requeue actually fire. (Task 2's retry-requeue test with max_attempts:3 already exercises this shape.)
+});
 ```
 
 - [ ] **Step 2: Run the full behavior suite**
@@ -2020,3 +2046,7 @@ Verified genuine and carried forward (both reviewers, round 2): the cause-walk r
 - **Claude-R3-L2:** behavior-13b (per-day underflow audit) test body written; behavior 16 covered by the behavior-26 low-cap block.
 
 Verified genuine (both reviewers, round 3): the `JobQueue`-interface widening breaks no mock (all are `jest.fn() as unknown as jest.Mocked<JobQueue>`); the 3 exact-match `fail()` assertions are precisely lines 84/124/169; `summaryCore`/`SummaryCoreInput` shapes match; `ensureGuardrailHeadroom` pins the cap as claimed. **Three rounds, zero SQL/design defects — every finding has been test-scaffolding or interface mechanics.**
+
+**v4 → v5 — ✅ CONVERGED (round-4 dual review, 2026-07-16).** `docs/reviews/plan-reservation-release-v4-{codex,claude}.md`. **Both reviewers CONVERGED: 0 Blocking, 0 High.** Codex: 1 Medium (Task-12 behaviors 5/10/22/23 need bodies) + 2 Low; Claude: 0 Medium + 2 Low, verdict *"This is the gate round — proceed to implementation."* All 5 round-3 fixes verified genuine by both; both holistic money passes re-confirmed **no under-count / over-release / SQL compile error / red-commit sequence**. Addressed the round-4 items (test-completeness/prose only, no design change): wrote fold-in bodies for behaviors 5/10/22/23 (Task 12); added `const job = makeJob()` to the Task-10 mock; corrected the stale Task-11 expected-fail prose; softened the `serve-model-charge.test.ts:125` note.
+
+**This satisfies the Phase-2 convergence gate (`docs/dev-process.md`): a full re-review round with no new Blocking/High from both reviewers.** Convergence trail: v1(1H/2H) → v2(2H/0H) → v3(1H/1H) → v4(**0H/0H**). Every finding across four rounds was test-scaffolding or interface mechanics; the money SQL/classifier/latch design has been stable and verified-closed since v1. Ready for implementation via `superpowers:subagent-driven-development`.
