@@ -92,7 +92,7 @@ describe('reservation-release: ledger_audit lockdown (Task 1)', () => {
 
   it('a session client (authenticated) cannot read or write ledger_audit', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
+    const { client: session } = await signInAs(u.email, u.password);
     const read = await session.from('ledger_audit').select('*');
     // authenticated has NEITHER grant NOR policy → PostgREST returns permission-denied (42501).
     // Accept either an error OR zero rows — both prove the row is not exposed. (Do NOT swallow the
@@ -180,7 +180,7 @@ MSG
 - Consumes: `ledger_audit` (Task 1); existing `fail_job(uuid,text,uuid,text,boolean)` (`0008`), `spend_ledger`, `jobs.reserved_cents`/`jobs.created_at`.
 - Produces: `fail_job(p_job_id uuid, p_worker_id text, p_lease_token uuid, p_error text, p_retryable boolean, p_billable_succeeded boolean default true) returns text`; the `JobQueue` interface **and** `SupabaseJobQueue.fail(id, worker, token, err, { retryable, billableSucceeded? })` widened (default `billableSucceeded=true`).
 
-Behaviors covered (spec §7): 1 (success keeps — untouched), 2 (class-A releases), 3/4 (keep), 6 (requeue keeps), 14 (day-correct), 15 (guarded-decrement audit), 16 (cap re-opens).
+Behaviors covered (spec §7): 1 (success keeps — untouched), 2 (class-A releases), 3/4 (keep), 6 (requeue keeps), 14 (day-correct), 15 (guarded-decrement audit). (Behavior **16 "cap re-opens"** needs a *reachable* cap, which the suite-wide headroom precludes — it is tested in Task 12's behavior-26 block with a local low cap. R3-M1.)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -220,8 +220,8 @@ function utcToday(): string { return new Date().toISOString().slice(0, 10); }
 describe('reservation-release: fail_job (Task 2)', () => {
   it('class-A not-metered terminal fail RELEASES on the reserve-day', async () => {
     const u = await newUser();
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    const { jobId, leaseToken } = await enqueueAndLease(u.id, playlistId);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId, leaseToken } = await enqueueAndLease(u.user.id, playlistId);
     const day = utcToday();
     const before = await ledgerFor(day);
 
@@ -237,8 +237,8 @@ describe('reservation-release: fail_job (Task 2)', () => {
 
   it('billable (default) terminal fail KEEPS the reservation', async () => {
     const u = await newUser();
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    const { jobId, leaseToken } = await enqueueAndLease(u.id, playlistId, 'vid-t2b');
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId, leaseToken } = await enqueueAndLease(u.user.id, playlistId, 'vid-t2b');
     const day = utcToday();
     const before = await ledgerFor(day);
     const { data: status } = await adminClient().rpc('fail_job', {
@@ -252,9 +252,9 @@ describe('reservation-release: fail_job (Task 2)', () => {
   it('retryable requeue (v_new=queued) does NOT release even when billable=false', async () => {
     // requires max_attempts > 1 for this job kind; ensureGuardrailHeadroom/seed sets summary attempts.
     const u = await newUser();
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
     // bump this job's max_attempts so a retryable fail requeues instead of dead-lettering
-    const { jobId, leaseToken } = await enqueueAndLease(u.id, playlistId, 'vid-t2c');
+    const { jobId, leaseToken } = await enqueueAndLease(u.user.id, playlistId, 'vid-t2c');
     await adminClient().from('jobs').update({ max_attempts: 3 }).eq('id', jobId);
     const day = utcToday();
     const before = await ledgerFor(day);
@@ -268,8 +268,8 @@ describe('reservation-release: fail_job (Task 2)', () => {
 
   it('guarded-decrement underflow writes a ledger_audit row and still terminalizes', async () => {
     const u = await newUser();
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    const { jobId, leaseToken } = await enqueueAndLease(u.id, playlistId, 'vid-t2d');
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId, leaseToken } = await enqueueAndLease(u.user.id, playlistId, 'vid-t2d');
     const day = utcToday();
     // Corrupt the ledger so it is below the reservation → release must audit, not go negative.
     await adminClient().from('spend_ledger').update({ reserved_cents: 10 }).eq('day', day);
@@ -287,8 +287,8 @@ describe('reservation-release: fail_job (Task 2)', () => {
 
   it('behavior 14: release credits the reservation`s created_at UTC day, not today', async () => {
     const u = await newUser();
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    const { jobId, leaseToken } = await enqueueAndLease(u.id, playlistId, 'vid-t2e');
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    const { jobId, leaseToken } = await enqueueAndLease(u.user.id, playlistId, 'vid-t2e');
     const yday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
     // back-date the job to yesterday and seed yesterday's ledger row with the reservation
     await adminClient().from('jobs').update({ created_at: `${yday}T12:00:00Z` }).eq('id', jobId);
@@ -442,22 +442,22 @@ Append to `tests/integration/reservation-release.test.ts`. Cancel runs as the **
 describe('reservation-release: request_cancel_job (Task 3)', () => {
   it('cancel of a queued job RELEASES and returns 1', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await enqueueSummary(u.id, playlistId, 'vid-t3');
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3');
     const day = utcToday();
     const before = await ledgerFor(day);
-    const { data: n } = await session.rpc('request_cancel_job', { p_job_id: await jobIdFor(u.id, 'vid-t3') });
+    const { data: n } = await session.rpc('request_cancel_job', { p_job_id: await jobIdFor(u.user.id, 'vid-t3') });
     expect(n).toBe(1);
     expect(await ledgerFor(day)).toBe(before - 150);
   });
 
   it('cancel of an ACTIVE job KEEPS the reservation and still returns 1', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await enqueueSummary(u.id, playlistId, 'vid-t3b');
-    const jobId = await jobIdFor(u.id, 'vid-t3b');
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3b');
+    const jobId = await jobIdFor(u.user.id, 'vid-t3b');
     await adminClient().from('jobs').update({ status: 'active' }).eq('id', jobId);
     const day = utcToday();
     const before = await ledgerFor(day);
@@ -470,10 +470,10 @@ describe('reservation-release: request_cancel_job (Task 3)', () => {
 
   it('double-cancel of a queued job releases at most once', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await enqueueSummary(u.id, playlistId, 'vid-t3c');
-    const jobId = await jobIdFor(u.id, 'vid-t3c');
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3c');
+    const jobId = await jobIdFor(u.user.id, 'vid-t3c');
     const day = utcToday();
     const before = await ledgerFor(day);
     const first = await session.rpc('request_cancel_job', { p_job_id: jobId });
@@ -485,10 +485,10 @@ describe('reservation-release: request_cancel_job (Task 3)', () => {
 
   it('behavior 14: a queued cancel credits the reservation`s created_at day, not today', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await enqueueSummary(u.id, playlistId, 'vid-t3d');
-    const jobId = await jobIdFor(u.id, 'vid-t3d');
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t3d');
+    const jobId = await jobIdFor(u.user.id, 'vid-t3d');
     const yday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
     await adminClient().from('jobs').update({ created_at: `${yday}T12:00:00Z` }).eq('id', jobId);
     await adminClient().from('spend_ledger').upsert({ day: yday, reserved_cents: 150 });
@@ -591,13 +591,13 @@ Append to `tests/integration/reservation-release.test.ts`. Back-date one job's `
 describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
   it('releases queued reservations grouped per reserve-day and returns jobs-flagged count', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
     // two queued summary jobs, one back-dated to "yesterday"
-    for (const v of ['vid-t4a', 'vid-t4b']) await enqueueSummary(u.id, playlistId, v);
+    for (const v of ['vid-t4a', 'vid-t4b']) await enqueueSummary(u.user.id, playlistId, v);
     const today = utcToday();
     const yday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
-    const jb = await jobIdFor(u.id, 'vid-t4b');
+    const jb = await jobIdFor(u.user.id, 'vid-t4b');
     await adminClient().from('jobs').update({ created_at: `${yday}T12:00:00Z` }).eq('id', jb);
     // seed yesterday's ledger row so it has headroom to be decremented
     await adminClient().from('spend_ledger').upsert({ day: yday, reserved_cents: 150 });
@@ -611,10 +611,10 @@ describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
 
   it('an ACTIVE job on the playlist is flagged (cancel_requested) but its reservation is KEPT', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await enqueueSummary(u.id, playlistId, 'vid-t4c');
-    const jobId = await jobIdFor(u.id, 'vid-t4c');
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t4c');
+    const jobId = await jobIdFor(u.user.id, 'vid-t4c');
     await adminClient().from('jobs').update({ status: 'active' }).eq('id', jobId);
     const day = utcToday();
     const before = await ledgerFor(day);
@@ -623,6 +623,28 @@ describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
     expect(await ledgerFor(day)).toBe(before);            // KEEP (active may have spent)
     const { data: job } = await adminClient().from('jobs').select('status, cancel_requested').eq('id', jobId).single();
     expect(job).toEqual({ status: 'active', cancel_requested: true });  // H-2: still flagged
+  });
+
+  it('behavior 13b: a multi-day cancel audits the underflow day and still credits the others (H-3)', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    for (const v of ['vid-t4d', 'vid-t4e']) await enqueueSummary(u.user.id, playlistId, v);
+    const today = utcToday();
+    const yday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+    const je = await jobIdFor(u.user.id, 'vid-t4e');
+    await adminClient().from('jobs').update({ created_at: `${yday}T12:00:00Z` }).eq('id', je);
+    // seed yesterday's ledger BELOW the 150¢ group sum → its guarded decrement underflows → audit
+    await adminClient().from('spend_ledger').upsert({ day: yday, reserved_cents: 10 });
+    const todayBefore = await ledgerFor(today);
+    const { data: n } = await session.rpc('request_cancel_playlist_jobs', { p_playlist_id: playlistId });
+    expect(n).toBe(2);
+    expect(await ledgerFor(today)).toBe(todayBefore - 150);   // today credited normally
+    expect(await ledgerFor(yday)).toBe(10);                   // yesterday NOT driven negative
+    const { data: audit } = await adminClient()
+      .from('ledger_audit').select('expected_amt').eq('day', yday).eq('kind', 'release_underflow');
+    expect(audit!.length).toBe(1);
+    expect(audit![0].expected_amt).toBe(150);
   });
 });
 ```
@@ -709,6 +731,7 @@ MSG
 
 **Files:**
 - Modify: `supabase/migrations/0020_reservation_release.sql` (append)
+- Modify: `lib/html-doc/serve-doc.ts:52` (MINIMAL scalar→`data[0]` read so the serve path stays green after the return-type change — token/settle/billing added in Task 11 — R3-H1)
 - Test: `tests/integration/reservation-release.test.ts` (calls `settle_serve_model` via `session.rpc(...)` directly — no adapter; serve-doc also calls it directly in Task 11, so no `SupabaseJobQueue` method is added — L3)
 
 **Interfaces:**
@@ -736,9 +759,9 @@ async function ownerBudget(ownerId: string, day: string): Promise<number> {
 describe('reservation-release: serve token + settle (Task 5)', () => {
   it('reserve returns a token; release settle refunds both ledgers; token cleared', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await seedPromotedVideo(adminClient(), { ownerId: u.id, playlistId, videoId: 'vid-t5' });
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await seedPromotedVideo(adminClient(), { ownerId: u.user.id, playlistId, videoId: 'vid-t5' });
     const day = utcToday();
 
     const { data: rows } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t5' });
@@ -746,19 +769,19 @@ describe('reservation-release: serve token + settle (Task 5)', () => {
     const token = rows![0].release_token as string;
     expect(token).toMatch(/[0-9a-f-]{36}/);
     expect(await ledgerFor(day)).toBe(6);
-    expect(await ownerBudget(u.id, day)).toBe(6);
+    expect(await ownerBudget(u.user.id, day)).toBe(6);
 
     const { data: ok } = await session.rpc('settle_serve_model', { p_token: token, p_released: true });
     expect(ok).toBe(true);
     expect(await ledgerFor(day)).toBe(0);                 // spend_ledger -=6
-    expect(await ownerBudget(u.id, day)).toBe(0);         // serve_owner_budget -=6
+    expect(await ownerBudget(u.user.id, day)).toBe(0);         // serve_owner_budget -=6
   });
 
   it('success settle (released=false) KEEPS the charge but clears the token → un-charge is a no-op', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await seedPromotedVideo(adminClient(), { ownerId: u.id, playlistId, videoId: 'vid-t5b' });
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await seedPromotedVideo(adminClient(), { ownerId: u.user.id, playlistId, videoId: 'vid-t5b' });
     const day = utcToday();
     const { data: rows } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t5b' });
     const token = rows![0].release_token as string;
@@ -773,9 +796,9 @@ describe('reservation-release: serve token + settle (Task 5)', () => {
 
   it('double release settle is a no-op the second time', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
-    const { playlistId } = await seedPlaylist(adminClient(), u.id);
-    await seedPromotedVideo(adminClient(), { ownerId: u.id, playlistId, videoId: 'vid-t5c' });
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await seedPromotedVideo(adminClient(), { ownerId: u.user.id, playlistId, videoId: 'vid-t5c' });
     const day = utcToday();
     const { data: rows } = await session.rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: 'vid-t5c' });
     const token = rows![0].release_token as string;
@@ -788,7 +811,7 @@ describe('reservation-release: serve token + settle (Task 5)', () => {
 
   it('a forged/unknown token settles nothing', async () => {
     const u = await newUser();
-    const session = await signInAs(u);
+    const { client: session } = await signInAs(u.email, u.password);
     const { data } = await session.rpc('settle_serve_model', {
       p_token: '00000000-0000-0000-0000-000000000000', p_released: true,
     });
@@ -932,20 +955,40 @@ revoke all on function settle_serve_model(uuid, boolean) from public;
 grant execute on function settle_serve_model(uuid, boolean) to authenticated, anon;
 ```
 
-- [ ] **Step 4: Run tests + regression (fix every scalar read of `reserve_serve_model`)**
+- [ ] **Step 4: Keep the serve path green — minimal `data[0]` read in `serve-doc.ts` (R3-H1)**
+
+The return-type change makes `reserve_serve_model` `.rpc()` return an **array**, so the real caller `resolveMagazineModel` (`serve-doc.ts:52`) — whose scalar `const { data: reserveStatus } = rpc(...); switch(reserveStatus)` now hits `default: throw` on every serve — must be updated **here**, or `pdf-cloud`/serve suites go red at this task's commit (they drive the real `resolveMagazineModel`). Make the **minimal** change only — read `data[0].status`; do NOT add token/billing/settle yet (that is Task 11):
+
+```ts
+  const { data, error } = await supabaseClient.rpc('reserve_serve_model', {
+    p_playlist_id: playlistId, p_video_id: videoId,
+  });
+  if (error) throw error;
+  const reserveStatus = (data as Array<{ status: string }> | null)?.[0]?.status;   // table-return → data[0]
+  switch (reserveStatus) {
+    // …unchanged cases…
+    case 'reserved': break;
+    default: throw new Error(`reserve_serve_model: unexpected status ${String(reserveStatus)}`);
+  }
+```
+> Serve behavior is byte-identical (the reserved branch still materializes + writes). Task 11 later captures `release_token`, threads the latch, and settles — building on this read.
+
+- [ ] **Step 5: Run tests + regression (fix every scalar read of `reserve_serve_model`)**
 
 ```bash
 npx supabase db reset && npm run test:integration -- reservation-release serve-model-charge serve-owner-budget pdf-cloud
+npx tsc --noEmit
 ```
-Expected: new suite PASS. The return-type change (`text` → `table`) breaks **every** existing scalar read — the supabase-js `.rpc()` result is now an array. Fix all of them in this task so the suites are green:
-- `serve-doc.ts` scalar read is fixed in **Task 11** (not here) — but `serve-model-charge.test.ts` and `serve-owner-budget.test.ts` read the RPC directly: update each `reserveStatus`/`data`-as-scalar to `data[0].status` (grep both files for `reserve_serve_model` — ~10+ sites incl. `serve-model-charge.test.ts` lines 32/42/43/55/59/70/95/113/119/138 and the `serve-owner-budget.test.ts` equivalents; L2).
-- `serve-model-charge.test.ts:125` "no release RPC exists" is now false — a release RPC exists; update/remove that assertion.
-- `pdf-cloud.test.ts` traverses the serve path: its `rpcSpy.mock.calls.filter(c => c[0] === 'reserve_serve_model')` count assertions (lines ~331/343/363) still hold (reserve is called the same number of times), but the reserved branch now ALSO emits a `settle_serve_model` call — confirm no spy asserts "exactly N total rpc calls" that this breaks; adjust if so (L2).
+Expected: PASS. The return-type change breaks every scalar read — the `.rpc()` result is now an array. Fix all in this task:
+- `serve-doc.ts` — done in Step 4 (minimal `data[0]`).
+- `serve-model-charge.test.ts` / `serve-owner-budget.test.ts` read the RPC directly: update each `reserveStatus`/`data`-as-scalar to `data[0].status` (grep both files for `reserve_serve_model` — ~10+ sites incl. `serve-model-charge.test.ts` lines 32/42/43/55/59/70/95/113/119/138 and the `serve-owner-budget.test.ts` equivalents; L2).
+- `serve-model-charge.test.ts:125` "no release RPC exists" is now false — update/remove it.
+- `pdf-cloud.test.ts`: its `rpcSpy.mock.calls.filter(c => c[0] === 'reserve_serve_model')` counts (lines ~331/343/363) still hold (reserve called the same number of times); the reserved branch does NOT yet emit `settle_serve_model` here (that's Task 11), so no spy-count change at this task. With the Step-4 read fix, the money-mutation test (`:355`) passes.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/0020_reservation_release.sql tests/integration/
+git add supabase/migrations/0020_reservation_release.sql lib/html-doc/serve-doc.ts tests/integration/
 git commit -F - <<'MSG'
 feat(reservation): serve per-attempt token + settle_serve_model
 
@@ -1623,7 +1666,10 @@ describe('worker-runner release decision (Task 10)', () => {
   async function failArgsFor(err: unknown, opts: { meterFirst?: boolean; gate?: string } = {}) {
     process.env.CLOUD_GEMINI_RELEASE_VERIFIED = opts.gate ?? 'true';
     const failSpy = jest.fn(async () => ({ ok: true, status: 'failed' as const }));
-    const queue = makeStubQueue({ fail: failSpy });                 // per worker-runner-runtime.test.ts
+    // Use the file's existing mock-queue builder (a full jest.Mocked<JobQueue>, e.g. `makeQueue(job)`
+    // at worker-runner-runtime.test.ts:22) and override .fail with the spy — there is no fail-injection
+    // constructor option (R3-L1). e.g.:  const queue = makeQueue(job); queue.fail = failSpy;
+    const queue = makeQueue(job); queue.fail = failSpy;
     const handler = async (_job: unknown, ctx: { billing: { metered: boolean } }) => {
       if (opts.meterFirst) ctx.billing.metered = true;
       throw err;
@@ -1763,7 +1809,7 @@ Expected: FAIL — current `serve-doc.ts` reads `reserveStatus` as a scalar (now
 
 - [ ] **Step 3: Implement the serve-doc changes**
 
-In `resolveMagazineModel`, read the table return as `data[0]` and capture the token:
+Task 5 already changed the read to `data[0].status` (minimal, keeps serve green). Here, **extend** that read to also capture `release_token`, and add the latch + settle. The read becomes:
 
 ```ts
   const { data, error } = await supabaseClient.rpc('reserve_serve_model', {
@@ -1865,8 +1911,17 @@ it('behavior 25: a crashed active job stays reserved (accepted §2.4b residual)'
 
 it('behavior 26: N summary jobs all hitting 503 (not metered) release back to baseline', async () => {
   process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
-  // enqueue N, run each through a 503-throwing handler, assert spend_ledger returns to baseline
-  // and a fresh enqueue_job admits again (cap re-opened) — the §1 outage self-DoS is closed.
+  // R3-M1: the suite-wide beforeAll pins daily_cap=1_000_000, which makes "cap re-opened" vacuous.
+  // Set a REACHABLE cap locally so the assertion has teeth, and restore in finally.
+  const svc = adminClient();
+  await svc.from('guardrail_config').update({ daily_cap_cents: 450 }).eq('id', true);  // fits exactly 3×150¢
+  try {
+    // reserve 3 summaries to the cap; a 4th enqueue → PJ002 (cap full); run each of the 3 through a
+    // 503-throwing handler (class-A, not metered, gate on) → all release → ledger back to baseline;
+    // then a fresh enqueue_job ADMITS again (cap re-opened) — the §1 outage self-DoS is closed.
+  } finally {
+    await ensureGuardrailHeadroom(svc);   // restore headroom for later tests in the serial file
+  }
 });
 
 it('behavior 24: serve lease-overlap yields a bounded leak, never a double-refund', async () => {
@@ -1926,6 +1981,7 @@ MSG
 
 - **Migration dev loop:** `0020` is edited across Tasks 1–5; after each edit run `npx supabase db reset` (re-applies all migrations + reseeds) before `npm run test:integration`. Never split `0020` into multiple files — one migration, appended in task order (`ledger_audit` first).
 - **Type-check gate (every TS-touching task):** jest runs via `next/jest` (SWC) and does **not** type-check, and there is no `tsc`/`typecheck` npm script — so a broken type (e.g. a missing required field on a struct literal) passes `npx jest` while `next build` is red. Run `npx tsc --noEmit` at the end of Tasks 6–11, not just Task 7. This is the root cause of Claude-H1; treat it as a standing gate.
+- **Integration test helper API (use these EXACT signatures — `tests/integration/helpers/`):** `newUser()` → `{ user: { id }, email, password }` (owner id is `u.user.id`); `signInAs(email, password)` → `{ client, userId }` (destructure `const { client: session } = await signInAs(u.email, u.password)`); `anonSession()` → `{ client, userId }`; `seedPlaylist(svc, ownerId)` → `{ playlistId, playlistKey }`; `seedPromotedVideo(svc, { ownerId, playlistId, videoId })`; `ensureGuardrailHeadroom(svc)` pins `daily_cap_cents=1_000_000` etc. The plan snippets follow this; mirror `cancel-job-rpc.test.ts` if unsure (R3-H1).
 - **Per AGENTS.md,** `@google/generative-ai` is a modified build — read `node_modules/@google/generative-ai` for the exact `GoogleGenerativeAIFetchError` constructor/`.status` shape before finalizing the T6 test helper. (Confirmed by the review: ctor `(message, status, statusText, errorDetails)` sets `.status`; exported at package root.)
 - **Existing-test breakage is expected and in-scope** where a signature/return-type changed (T2 adapter, T5 serve reads + "no release RPC" assertion, T7 opts arg-lists, T8 dig non-200, T9 transcript cause). Fix them in the task that causes the break so each task ends green.
 - **Dual adversarial review of THIS plan** (Codex + Claude, to convergence) is the Phase-2 gate before any implementation subagent is dispatched (Conditional AFK: convergence = gate, notify + proceed).
@@ -1955,3 +2011,12 @@ Verified-correct and carried forward (both reviewers): all SQL bodies (`fail_job
 - **Claude-L2/L3:** corrected the imprecise `transcript-source.test.ts:64` note (asserts message, not cause); behavior-24 now asserts the token overwrite explicitly.
 
 Verified genuine and carried forward (both reviewers, round 2): the cause-walk retryability end-to-end (wrapped `NonRetryableError` → `retryable=false` → release), only two `HandlerCtx` literals exist, the M6-1 threading guard is non-vacuous, `NonRetryableError` cannot carry a `cause` (so `isNonRetryable` has no false-positive), `enqueueSummary` yields a leasable 150¢ job, and the prod gate stays closed.
+
+**v3 → v4 (round-3 dual review, 2026-07-16).** `docs/reviews/plan-reservation-release-v3-{codex,claude}.md`. **Split again, different Highs each:** both NOT CONVERGED (0 Blocking). All 5 round-2 fixes verified genuine by both; **Claude's holistic money pass re-confirmed zero SQL/over-release defects** across all of `0020`. Addressed:
+- **Claude-R3-H1 (new):** the Task-5 return-type change breaks `serve-doc.ts`'s scalar read, but the fix was deferred to Task 11 — and Task 5's runlist drives `pdf-cloud` through the real `resolveMagazineModel` → `switch(array)` → throw → Task 5 commits a RED serve path. Fixed by folding the **minimal** `data[0].status` read into Task 5 (Step 4); Task 11 now *extends* it with token/latch/settle.
+- **Codex-R3-H1 / Claude-R3-M1 (test helper API):** all snippets used `signInAs(u)` / `u.id`; real API is `signInAs(email,password) → { client, userId }` and `newUser() → { user:{id} }`. Fixed globally (`signInAs(u.email, u.password)`, `u.user.id`); executor-notes helper-API block added.
+- **Codex-R3-M1:** behavior-26 "cap re-opens" was vacuous under the 1M headroom → now sets `daily_cap_cents=450` in try/finally; behavior 16 re-pointed to it.
+- **Claude-R3-L1:** Task 10 mock uses the real `makeQueue(job)` + `.fail = spy` (no `makeStubQueue`).
+- **Claude-R3-L2:** behavior-13b (per-day underflow audit) test body written; behavior 16 covered by the behavior-26 low-cap block.
+
+Verified genuine (both reviewers, round 3): the `JobQueue`-interface widening breaks no mock (all are `jest.fn() as unknown as jest.Mocked<JobQueue>`); the 3 exact-match `fail()` assertions are precisely lines 84/124/169; `summaryCore`/`SummaryCoreInput` shapes match; `ensureGuardrailHeadroom` pins the cap as claimed. **Three rounds, zero SQL/design defects — every finding has been test-scaffolding or interface mechanics.**
