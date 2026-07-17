@@ -7,6 +7,8 @@ import { writeModelEnvelope } from './model-store';
 import { readFreshMagazineModel, readTitleStableModel } from './read-model';
 import { generateMagazineModel } from '@/lib/gemini';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
+import { classifyGeminiFailure, releaseGateOpen } from '@/lib/gemini-failure';
+import type { BillingLatch } from '@/lib/job-queue/billing-latch';
 import {
   MAX_TRANSCRIBE_INPUT_TOKENS, MAX_TRANSCRIBE_OUTPUT_TOKENS, MAX_TRANSCRIPT_INPUT_BYTES,
   MAX_SUMMARY_OUTPUT_TOKENS, MAX_MAGAZINE_INPUT_TOKENS, MAX_MAGAZINE_OUTPUT_TOKENS,
@@ -53,7 +55,9 @@ export async function resolveMagazineModel(args: {
     p_playlist_id: playlistId, p_video_id: videoId,
   });
   if (error) throw error;
-  const reserveStatus = (data as Array<{ status: string }> | null)?.[0]?.status;   // table-return → data[0]
+  const row = (data as Array<{ status: string; release_token: string | null }> | null)?.[0];   // table-return → data[0]
+  const reserveStatus = row?.status;
+  const releaseToken = row?.release_token ?? null;
   switch (reserveStatus) {
     case 'denied': return { status: 'denied' };
     case 'in_flight': {
@@ -78,18 +82,33 @@ export async function resolveMagazineModel(args: {
   // The model uses writeModelEnvelope (plain `put` → `upload(upsert:true)`), NOT staged→promote: a
   // regenerated model on drift / version-bump must OVERWRITE the stale blob so the doc self-heals
   // (create-if-absent promote could never replace it → re-reserve + re-charge every view until K, then 503).
-  // On failure/abort do NOTHING (no release RPC): the lease expires and the next view reclaims (≤ K).
-  const model = await generateMagazineModel(
-    parsed.sections.map((s) => ({ title: s.title, prose: s.prose })),
-    language,
-    { caps: SERVE_CAPS, signal },
-  );
-  await writeModelEnvelope(principal, base, {
-    sourceMd: parsed.sourceMd ?? `${base}.md`,
-    generatedAt: new Date().toISOString(),
-    sourceSections: titles,
-    generatorVersion: GENERATOR_VERSION,
-    model,
-  }, blobStore);
-  return { status: 'ok', model };
+  // On a terminal outcome (success or throw) we settle the reservation via settle_serve_model: success
+  // keeps the charge (released=false) and clears the per-attempt token; a throw refunds ONLY a
+  // positively-not-metered class-A failure under an open gate — same rule as the generation worker-runner
+  // (Task 10). Anything else (metered, non-class-A, gate closed) keeps the charge — over-count is safe,
+  // under-count is the bug.
+  const billing: BillingLatch = { metered: false };
+  try {
+    const model = await generateMagazineModel(
+      parsed.sections.map((s) => ({ title: s.title, prose: s.prose })),
+      language,
+      { caps: SERVE_CAPS, signal, billing },
+    );
+    await writeModelEnvelope(principal, base, {
+      sourceMd: parsed.sourceMd ?? `${base}.md`,
+      generatedAt: new Date().toISOString(),
+      sourceSections: titles,
+      generatorVersion: GENERATOR_VERSION,
+      model,
+    }, blobStore);
+    if (releaseToken) await supabaseClient.rpc('settle_serve_model', { p_token: releaseToken, p_released: false });
+    return { status: 'ok', model };
+  } catch (err) {
+    // Same rule as generation: refund only a positively-not-metered class-A failure.
+    const released = releaseGateOpen()
+      && classifyGeminiFailure(err, signal) === 'release'
+      && !billing.metered;
+    if (releaseToken) await supabaseClient.rpc('settle_serve_model', { p_token: releaseToken, p_released: released });
+    throw err;
+  }
 }

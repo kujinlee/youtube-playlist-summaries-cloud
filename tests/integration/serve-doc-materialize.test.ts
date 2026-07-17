@@ -1,3 +1,4 @@
+import { GoogleGenerativeAIFetchError } from '@google/generative-ai';
 import { adminClient, newUser, signInAs } from './helpers/clients';
 import { seedPlaylist, seedPromotedVideo } from './helpers/seed';
 import { resolveMagazineModel } from '@/lib/html-doc/serve-doc';
@@ -263,4 +264,99 @@ it('P13: stale served over budget; recovers to fresh (no stale) once under budge
   expect(fresh.status).toBe('ok');
   expect((fresh as { stale?: boolean }).stale).toBeUndefined(); // re-materialized to current version, not stale
   if (fresh.status === 'ok') expect(fresh.model.sections[0].lead).toBe('L'); // freshly-generated (mock), not the stale 'old' model
+});
+
+// ── Task 11: serve-side settle_serve_model on the 'reserved' branch (mirrors worker-runner Task 10's
+// release rule). beforeEach fully clears spend_ledger/serve_owner_budget/serve_model_charge, so any
+// row this block reads for "today" starts absent; a bare reserve leaves reserved_cents/spent_cents at
+// 6 (magazine_est_cents), and a correct settle then applies the -6 correction back to 0 (throw+release)
+// or leaves it at 6 but clears the per-attempt token (success / metered-keep).
+describe('Task 11: settle_serve_model on serve materialize (release rule)', () => {
+  const prevGate = process.env.CLOUD_GEMINI_RELEASE_VERIFIED;
+  afterEach(() => { process.env.CLOUD_GEMINI_RELEASE_VERIFIED = prevGate; });
+
+  it('serve class-A throw refunds both ledgers (gate on, not metered)', async () => {
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+    const { client } = await signInAs(u.email, u.password);
+    const principal = { id: u.user.id, indexKey: playlist_key };
+    const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+    const day = utcDay();
+    (generateMagazineModel as jest.Mock).mockImplementationOnce(async () => {
+      throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+    });
+
+    await expect(resolveMagazineModel({
+      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en',
+    })).rejects.toThrow();
+
+    expect(generateMagazineModel).toHaveBeenCalledTimes(1); // proves the reserve+attempt actually ran
+    const after = await snapshot(u.user.id);
+    // The reserve put both counters at +6 (magazine_est_cents); a correct release settle applies the
+    // -6 correction, landing back at 0. Left un-settled (the bug this task fixes), both would read 6.
+    expect(after.ob.find((r) => r.day === day)?.spent_cents ?? 0).toBe(0);
+    expect(after.led.find((r) => r.day === day)?.reserved_cents ?? 0).toBe(0);
+    // serve_model_charge's per-attempt token/reservation is cleared one-shot by settle_serve_model.
+    const charge = after.smc.find((r) => r.doc_key === `${playlistId}/${videoId}`);
+    expect(charge?.reserved_cents).toBe(0);
+    expect(charge?.release_token).toBeNull();
+    expect(charge?.attempt_count).toBe(1);
+  });
+
+  it('serve success keeps the charge and clears the token', async () => {
+    const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+    const { client } = await signInAs(u.email, u.password);
+    const principal = { id: u.user.id, indexKey: playlist_key };
+    const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+    const day = utcDay();
+
+    const res = await resolveMagazineModel({
+      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en',
+    });
+
+    expect(res.status).toBe('ok');
+    expect(generateMagazineModel).toHaveBeenCalledTimes(1);
+    const after = await snapshot(u.user.id);
+    // Kept — no refund on success: both counters stay at the reserved 6.
+    expect(after.ob.find((r) => r.day === day)?.spent_cents ?? 0).toBe(6);
+    expect(after.led.find((r) => r.day === day)?.reserved_cents ?? 0).toBe(6);
+    // The per-attempt token/reservation is still cleared one-shot (settle(token, released=false)).
+    const charge = after.smc.find((r) => r.doc_key === `${playlistId}/${videoId}`);
+    expect(charge?.reserved_cents).toBe(0);
+    expect(charge?.release_token).toBeNull();
+  });
+
+  it('serve metered-then-503 keeps (latch overrides)', async () => {
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true'; // gate open — only the latch should prevent release
+    const u = await newUser(); const { playlistId, playlist_key, videoId } = await seed(u.user.id);
+    const { client } = await signInAs(u.email, u.password);
+    const principal = { id: u.user.id, indexKey: playlist_key };
+    const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
+    const day = utcDay();
+
+    // Do NOT just throw — mutate the billing latch OBJECT serve-doc handed to generateMagazineModel,
+    // then throw. This only passes if serve-doc reads the SAME object it constructed and passed in
+    // (object identity), not a copy or a fresh latch per call.
+    let capturedBilling: { metered: boolean } | undefined;
+    (generateMagazineModel as jest.Mock).mockImplementationOnce(
+      async (_sections: unknown, _lang: unknown, opts: { billing?: { metered: boolean } }) => {
+        capturedBilling = opts.billing;
+        if (opts.billing) opts.billing.metered = true;
+        throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+      },
+    );
+
+    await expect(resolveMagazineModel({
+      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en',
+    })).rejects.toThrow();
+
+    expect(capturedBilling?.metered).toBe(true); // the mutation stuck on the object serve-doc passed
+    const after = await snapshot(u.user.id);
+    // KEEP — the latch overrides the class-A classification, so settle(token, released=false).
+    expect(after.ob.find((r) => r.day === day)?.spent_cents ?? 0).toBe(6);
+    expect(after.led.find((r) => r.day === day)?.reserved_cents ?? 0).toBe(6);
+    const charge = after.smc.find((r) => r.doc_key === `${playlistId}/${videoId}`);
+    expect(charge?.reserved_cents).toBe(0);
+    expect(charge?.release_token).toBeNull();
+  });
 });
