@@ -214,3 +214,68 @@ describe('reservation-release: request_cancel_job (Task 3)', () => {
     expect(await ledgerFor(yday)).toBe(0);                // credited YESTERDAY (created_at day)
   });
 });
+
+describe('reservation-release: request_cancel_playlist_jobs (Task 4)', () => {
+  it('releases queued reservations grouped per reserve-day and returns jobs-flagged count', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    // two queued summary jobs, one back-dated to "yesterday"
+    for (const v of ['vid-t4a', 'vid-t4b']) await enqueueSummary(u.user.id, playlistId, v);
+    const today = utcToday();
+    const yday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+    const jb = await jobIdFor(u.user.id, 'vid-t4b');
+    await adminClient().from('jobs').update({ created_at: `${yday}T12:00:00Z` }).eq('id', jb);
+    // seed yesterday's ledger row so it has headroom to be decremented
+    await adminClient().from('spend_ledger').upsert({ day: yday, reserved_cents: 150 });
+    const todayBefore = await ledgerFor(today);
+
+    const { data: n } = await session.rpc('request_cancel_playlist_jobs', { p_playlist_id: playlistId });
+    expect(n).toBe(2);                                    // jobs flagged, not ledger rows
+    expect(await ledgerFor(today)).toBe(todayBefore - 150);
+    expect(await ledgerFor(yday)).toBe(0);                // yesterday's 150 released
+  });
+
+  it('an ACTIVE job on the playlist is flagged (cancel_requested) but its reservation is KEPT', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    await enqueueSummary(u.user.id, playlistId, 'vid-t4c');
+    const jobId = await jobIdFor(u.user.id, 'vid-t4c');
+    await adminClient().from('jobs').update({ status: 'active' }).eq('id', jobId);
+    const day = utcToday();
+    const before = await ledgerFor(day);
+    const { data: n } = await session.rpc('request_cancel_playlist_jobs', { p_playlist_id: playlistId });
+    expect(n).toBe(1);
+    expect(await ledgerFor(day)).toBe(before);            // KEEP (active may have spent)
+    const { data: job } = await adminClient().from('jobs').select('status, cancel_requested').eq('id', jobId).single();
+    expect(job).toEqual({ status: 'active', cancel_requested: true });  // H-2: still flagged
+  });
+
+  it('behavior 13b: a multi-day cancel audits the underflow day and still credits the others (H-3)', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+    for (const v of ['vid-t4d', 'vid-t4e']) await enqueueSummary(u.user.id, playlistId, v);
+    const today = utcToday();
+    const yday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10);
+    const je = await jobIdFor(u.user.id, 'vid-t4e');
+    await adminClient().from('jobs').update({ created_at: `${yday}T12:00:00Z` }).eq('id', je);
+    // seed yesterday's ledger BELOW the 150¢ group sum → its guarded decrement underflows → audit
+    await adminClient().from('spend_ledger').upsert({ day: yday, reserved_cents: 10 });
+    const todayBefore = await ledgerFor(today);
+    const { data: n } = await session.rpc('request_cancel_playlist_jobs', { p_playlist_id: playlistId });
+    expect(n).toBe(2);
+    expect(await ledgerFor(today)).toBe(todayBefore - 150);   // today credited normally
+    expect(await ledgerFor(yday)).toBe(10);                   // yesterday NOT driven negative
+    // Scope by note (unique per playlistId) — not just day+kind — so this assertion can't
+    // collide with an unrelated release_underflow row another fixture seeded for the same
+    // calendar day (e.g. Task 1's lockdown test hardcodes day '2026-07-16', which IS "yesterday"
+    // whenever these tests run on/after 2026-07-17 UTC).
+    const { data: audit } = await adminClient()
+      .from('ledger_audit').select('expected_amt').eq('day', yday).eq('kind', 'release_underflow')
+      .like('note', `request_cancel_playlist_jobs ${playlistId}%`);
+    expect(audit!.length).toBe(1);
+    expect(audit![0].expected_amt).toBe(150);
+  });
+});

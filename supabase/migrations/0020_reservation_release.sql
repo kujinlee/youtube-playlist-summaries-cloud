@@ -104,3 +104,48 @@ begin
   end if;
   return 1;                                           -- cancellation requested (queued OR active) — H-4
 end $$;
+
+-- ── Task 4: request_cancel_playlist_jobs — set-based multi-day release ────────
+-- Same signature → create-or-replace (grants + search_path=public,pg_temp preserved).
+-- One data-modifying CTE: flag ALL non-terminal jobs (H-2), release only the queued subset
+-- grouped per reserve-day (H-3 per-day audit), return jobs-flagged count (H-4).
+create or replace function request_cancel_playlist_jobs(p_playlist_id uuid) returns int
+  language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_n int;
+begin
+  -- Note: a data-modifying WITH must be the top-level statement (Postgres forbids
+  -- `return (with ... )` — that nests it as a scalar subquery). `... into v_n` keeps
+  -- the CTE chain top-level while still capturing the H-4 count.
+  with pre as (                                  -- ALL non-terminal jobs of the playlist, under lock
+    select id, status as old_status, reserved_cents as old_amt,
+           (created_at at time zone 'utc')::date as reserve_day
+      from public.jobs                           -- schema-qualified (0019 search_path-hijack hardening — L1)
+     where playlist_id = p_playlist_id and owner_id = auth.uid() and status in ('queued','active')
+     for update),
+  upd as (                                       -- H-2: flag ALL; flip+zero only the queued subset
+    update public.jobs j
+       set cancel_requested = true,
+           status         = case when pre.old_status = 'queued' then 'cancelled' else j.status end,
+           reserved_cents = case when pre.old_status = 'queued' then 0 else j.reserved_cents end,
+           updated_at     = now()
+      from pre where j.id = pre.id
+     returning j.id),
+  per_day as (                                   -- queued-only OLD amounts, grouped by reserve-day
+    select reserve_day, sum(old_amt) as amt
+      from pre where old_status = 'queued' and old_amt > 0
+     group by reserve_day),
+  dec as (                                       -- guarded per-day decrement; RETURNING credited days
+    update spend_ledger sl
+       set reserved_cents = sl.reserved_cents - per_day.amt, updated_at = now()
+      from per_day
+     where sl.day = per_day.reserve_day and sl.reserved_cents >= per_day.amt
+     returning sl.day),
+  aud as (                                       -- H-3: audit every per_day with no successful decrement
+    insert into ledger_audit(day, kind, expected_amt, note, at)
+    select pd.reserve_day, 'release_underflow', pd.amt,
+           'request_cancel_playlist_jobs '||p_playlist_id::text, now()
+      from per_day pd
+     where pd.reserve_day not in (select day from dec))
+  select count(*)::int into v_n from upd;          -- H-4: jobs flagged (queued + active)
+  return v_n;
+end $$;
