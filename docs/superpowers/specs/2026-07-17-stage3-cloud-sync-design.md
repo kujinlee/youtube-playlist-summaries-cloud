@@ -1,10 +1,14 @@
 # Stage 3 — Cloud Sync (local ↔ cloud reconciliation) — Design Spec
 
-**Status:** Draft **v7** — reworked after a design refinement from the user: **generated content and human
-edits reconcile by opposite rules**, so v7 splits the per-video state into two classes instead of one
-"hashed source set" (dissolving the format-vs-recency tension that drove rounds 1–6). v6 had **converged**
-(dual review, 0 B/H/M) on the single-class model; v7 is a *model* change, so it re-enters review.
-Prior converged reviews: `.superpowers/sdd/cloud-sync-spec-{codex,claude}{,-r2..-r6}.md`.
+**Status:** Draft **v8** — the **two-class model** (v7) reviewed as "directionally better / sound" by both
+reviewers; v8 fixes the Class-B mechanics + the `corrections`↔MD coupling they surfaced: **per-field**
+`annotationsEditedAt` (v7 Blocking B1 — a per-video stamp lost the newer edit); sync carries the **source**
+timestamp not `now()` (H1); **clear-aware** per-field merge (H-2, no resurrection); `corrections`-currency so
+a stale MD never overwrites a corrected one + `needs_regen` (Codex-H1/opus-M2); **derived scalars re-derived
+on transfer** (opus-M1); explicit **required migrations §5.7** (schema fields, `ModelEnvelope` forward-
+tolerance, annotation allowlist, conditional restamp — H-4/M-1/M-2); token cosmetic (L2). v6 had CONVERGED
+on the single-class model; v7/v8 are the two-class rework, re-entering review.
+Reviews: `.superpowers/sdd/cloud-sync-spec-*.md`.
 
 **Roadmap:** M2 of `docs/roadmap-to-launch.md`.
 
@@ -60,14 +64,23 @@ sync; true-conflict loser-preservation; HTML/PDF transfer (regenerable cache).
 ## 4. What syncs (M2a) — three classes
 
 ### 4.1 Per-video field classification
-- **Class A — generated (reconcile by format, §5.3):** summary **MD** (section-timestamp `▶` markers ride
-  inline in it); **model JSON** (`ModelEnvelope`), carried as a **companion** (§4.2), never a compared source.
-- **Class B — human (reconcile per-field, §5.4):** `corrections`, `personalNote`, `personalScore`. Author-
-  authored, format-independent, precious.
-- **Replica-local / fetched (NOT synced):** `title` (YouTube-fetched, no author-edit path — converges per
-  replica on its own fetch), `position`, `serialNumber`, `playlistIndex`, `removedFromPlaylist`, `archived`
-  (all membership/ordering, set by `reconcile_membership` `0007:60-71` from each replica's own fetch →
-  would flip-flop), `updatedAt`, `summaryReady` (DB-computed).
+- **Class A — generated (reconcile by corrections-currency + format, §5.3):** summary **MD** (section-timestamp
+  `▶` markers ride inline in it); **model JSON** (`ModelEnvelope`), carried as a **companion** (§4.2), never a
+  compared source.
+- **Class A-derived scalars (never synced independently; recomputed from the winning MD on every Class-A
+  transfer):** `ratings`, `overallScore`, `videoType`, `audience`, `tags`, `tldr`, `takeaways` —
+  `reconstructVideo` (`lib/pipeline.ts:72-125`) derives these deterministically from the MD, and the
+  `MagazineModel` companion carries only `{sections}`, so a Class-A transfer must re-derive them (uncharged)
+  or they drift from the transferred prose (round-v7 opus-M1).
+- **Class B — independent human annotations (per-field 3-way merge, §5.4):** `personalNote`, `personalScore`.
+- **`corrections` — human field AND the MD's generation input (special):** reconciled as a human field (§5.4,
+  newer-wins, preserved) AND tracked as the MD's **corrections-currency** — because `corrections` is *applied
+  into* the MD via `fixSummary`/regenerate (`app/api/videos/[id]/regenerate/route.ts:51-71`), the MD records
+  `mdCorrectionsHash` and §5.3 never lets a stale MD overwrite a corrected one.
+- **Replica-local / fetched (NOT synced):** `title` (YouTube-fetched, no author-edit path), `position`,
+  `serialNumber`, `playlistIndex`, `removedFromPlaylist`, `archived` (all membership/ordering, set by
+  `reconcile_membership` `0007:60-71` from each replica's own fetch → would flip-flop), `updatedAt`,
+  `summaryReady` (DB-computed).
 - **Regenerable cache (never synced):** HTML, PDF (deterministic re-render from MD + model).
 
 ### 4.2 Model JSON companion — sync-transfer only, serve path UNCHANGED (rounds 2–6)
@@ -92,16 +105,23 @@ never touches the human fields, and a human-field edit never touches the MD. Thi
 
 ### 5.1 Signals (per class)
 - **Class A:** `docVersion.major` (format — the decider), `mdHash` (the MD-body-only §5.2 digest = the
-  envelope's `sourceMdHash`; detects identical/equivalent), and `mdGeneratedAt` (UTC, stamped at MD
-  generation — a **tie-break only**, never a quality signal). `docVersion.minor` (HTML style) is **ignored**
-  — sync moves MD, not HTML; each app re-renders the MD in its own current style, so you're never stuck in
-  an old style and there is nothing to downgrade.
-- **Class B:** each field's value + a per-video `annotationsUpdatedAt` (UTC, stamped whenever a human field
-  changes) for the rare same-field tie.
-- **Stamping (every hashed/human-field SQL writer must restamp — rounds 2–4):** `mdGeneratedAt` on MD
-  generation (`persist_summary` layer-3 `0009`; local `pipeline.ts`); `annotationsUpdatedAt` on human-field
-  writes (`update_video_annotations` `0016`; `merge_video_data`/`updateVideoFields` for `corrections`; the
-  local index writer). Membership writers (`reconcile_membership`) touch only non-synced fields → no restamp.
+  envelope's `sourceMdHash`), `mdGeneratedAt` (UTC, a **tie-break only**, never a quality signal), and
+  **`mdCorrectionsHash`** — the §5.2 hash of the `corrections` value this MD was generated/fixed from, for
+  corrections-currency (§5.3). `docVersion.minor` (HTML style) is **ignored** — sync moves MD, not HTML;
+  each app re-renders the MD in its own current style, so nothing is "stuck" in an old style.
+- **Class B / `corrections`:** each field's value + a **PER-FIELD** timestamp,
+  `annotationsEditedAt.{personalNote, personalScore, corrections}` — a same-field tie compares *that field's*
+  real edit time (round-v7 Blocking B1: a single per-video timestamp is contaminated by unrelated field edits
+  and would pick the older edit).
+- **Stamping:** `mdGeneratedAt` + `mdCorrectionsHash` on MD generation (`persist_summary` `0009`; local
+  `pipeline.ts`). Each human-field write stamps **only that field's** `annotationsEditedAt`
+  (`update_video_annotations` `0016`; `merge_video_data`/`updateVideoFields` for `corrections` — **conditional
+  on a Class-B key being present**, so a generic MD-finalize / artifact / membership write never bumps a human
+  timestamp, round-v7 L-1; the local index writer). Membership writers → no restamp.
+- **Sync-path writes carry the SOURCE timestamp, NOT `now()` (round-v7 H1):** when sync applies a winning
+  human value to the receiver, it sets that field's `annotationsEditedAt` to the **source's** value — the
+  writers accept an explicit timestamp on the sync path (distinct from the user-edit path, which stamps
+  `now()`) — so the baseline records true authorship and later ties compare real edit times.
 
 ### 5.2 Canonical `mdHash` (rounds 1–3, 5)
 `mdHash` is an **MD-body-only** canonical digest — a shared impl (`lib/cloud-sync/content-hash.ts`) called
@@ -109,40 +129,52 @@ by both replicas: MD bytes normalized to LF + fixed trailing-newline + NFC, SHA-
 the human fields (they reconcile separately, §5.4), so a `personalNote` edit never invalidates the model
 (round-5 M-1). §10 requires cross-backend golden fixtures (local file vs Postgres `jsonb` → equal).
 
-### 5.3 Class A reconcile (generated MD + model) — format-first
-Recency does **not** decide generated content: the LLM is non-deterministic and a newer generation is not
-"better." **Format (`docVersion.major`) decides; recency only breaks a same-format tie.**
+### 5.3 Class A reconcile (generated MD + model) — corrections-currency FIRST, then format
+Recency does **not** decide generated content (the LLM is non-deterministic; a newer generation is not
+"better"). But `corrections` is *applied into* the MD, so a **corrected** MD is not an equivalent variant of
+an uncorrected one (round-v7 Codex-H1). `corrections` is reconciled **first** (§5.4); an MD is
+**corrections-current** iff `mdCorrectionsHash == hash(reconciled corrections)`. Priority: **corrections-
+current > format > recency-tiebreak.**
 
 | Situation | Action |
 |---|---|
 | Both present, `mdHash` equal | **skip** (identical) |
-| **`docVersion.major` differs** | **higher `major` wins** — copy its MD (+ companion §4.2) to the lower-format side (a format upgrade). Recency ignored. Never downgrade format. |
-| Same `major`, `mdHash` differs (equivalent LLM variants) | **unify** — the more recent `mdGeneratedAt` wins; copy it to the other so the prose **converges** (don't leave it diverged — a sync opportunity). Recency here is an intention-respecting tie-break, not a quality claim; it also avoids undoing a deliberate re-generation on either side. |
-| Present on only one side (never in this replica's baseline) | **copy** (hydrate a fresh device / publish new work) |
+| One MD corrections-current, the other corrections-stale | **corrections-current wins** — never overwrite a corrected MD with a stale higher-format one. Copy it (+ companion §4.2). |
+| Both corrections-current (or both equally stale), `docVersion.major` differs | **higher `major` wins** (format upgrade; never downgrade) |
+| Both corrections-current, same `major`, `mdHash` differs (equivalent LLM variants) | **unify** — newer `mdGeneratedAt` wins; copy so the prose **converges** (intention-respecting tie-break, not a quality claim; avoids undoing a deliberate re-generation) |
+| **Neither** MD reflects the reconciled corrections (both stale) | keep the higher-major MD but **flag `needs_regen`** (report it, §7 step 6) — the author regenerates to apply the corrections at the current format; sync **never fabricates** a corrected MD (residual **R8**) |
+| Present on only one side (never in this replica's baseline) | **copy** (hydrate / publish) |
 
-No data-loss: the "losing" MD is an equivalent-or-older-format generation (nothing unique lost); human
-edits are Class B (preserved separately, §5.4). Clock skew is therefore **not load-bearing** for Class A —
-a wrong same-format tie just picks one equivalent variant.
+**On every Class-A MD transfer, re-derive the Class-A-derived scalars** (§4.1: `ratings`, `overallScore`,
+`videoType`, `audience`, `tags`, `tldr`, `takeaways`) from the winning MD via `reconstructVideo`
+(deterministic, uncharged) so they never disagree with the transferred prose (round-v7 opus-M1). No
+data-loss: a losing MD is corrections-stale-or-equivalent, the `corrections` instruction survives (§5.4) and
+re-applies on regen. Clock skew stays non-load-bearing (a same-format tie just picks one equivalent variant).
 
-### 5.4 Class B reconcile (human fields) — per-field 3-way merge, newer-wins, additive
-Human ratings/corrections are precious and **carried across every format**. Reconciled **per field** against
-the manifest baseline (§8):
+### 5.4 Class B / `corrections` reconcile — per-field 3-way merge, clear-aware (runs BEFORE §5.3)
+Human fields (`personalNote`, `personalScore`, `corrections`) are precious and **carried across every
+format**. Each reconciles **independently** against the manifest baseline (§8). **Absence is a value** (a
+*clear*), not "never had" (round-v7 H-2):
 
-- Field present on only one side → **copy** it (additive).
-- Field equal on both → no action.
-- Field differs: **3-way merge** — if only one side changed it vs the baseline → take that side's value; if
-  **both** changed it → the side with the newer `annotationsUpdatedAt` wins (+ log). No baseline (fresh
-  device) + differ → newer `annotationsUpdatedAt` wins (+ log).
-- Because independent fields merge cleanly (a note edit on one side + a score edit on the other both
-  survive), genuine conflict is rare and only ever same-field. A human field is **never** lost to a Class-A
-  format change (the two reconcile independently).
+| Per-field state vs baseline | Action |
+|---|---|
+| L == C | no action |
+| Only one side changed vs baseline (incl. a **clear** = baseline-present→absent) | take the changed side — **propagate the edit or the clear** |
+| **Both** changed vs baseline (different values, incl. one cleared) | newer **per-field `annotationsEditedAt`** wins + log (R1) |
+| No baseline (fresh device) + differ | newer per-field `annotationsEditedAt` wins + log |
+| Present one side, absent other, **no baseline** | copy (additive hydration) |
+
+Independent fields merge cleanly — a note edit on one side + a score edit on the other **both survive**; a
+cleared field is **not** resurrected (with a baseline, present-vs-absent is a real change → the clear
+propagates). A human field is **never** lost to a Class-A format change (they reconcile independently).
+`corrections` reconciles here too and, because it feeds §5.3's corrections-currency, is reconciled **first**.
 
 ### 5.5 Backfill (legacy records) — non-destructive (round-2 H-C)
-Legacy records lack `mdGeneratedAt`/`annotationsUpdatedAt`. A one-time backfill records **provisional**
-values (MD: `processedAt`; human: `updated_at`) flagged as backfilled, and a backfilled timestamp **never
-drives a destructive overwrite**: a same-format Class-A tie with a backfilled `mdGeneratedAt` just picks one
-equivalent variant (harmless); a Class-B same-field conflict with a backfilled `annotationsUpdatedAt`
-resolves to **conflict → skip + log**, never overwrite. Format (Class A) and 3-way field merge (Class B)
+Legacy records lack `mdGeneratedAt`/`mdCorrectionsHash`/`annotationsEditedAt`. A one-time backfill records
+**provisional** values (MD: `processedAt`; human: `updated_at`) flagged as backfilled, and a backfilled
+timestamp **never drives a destructive overwrite**: a same-format Class-A tie with a backfilled
+`mdGeneratedAt` just picks one equivalent variant (harmless); a Class-B same-field conflict with a backfilled
+per-field `annotationsEditedAt` resolves to **conflict → skip + log**, never overwrite. Format (Class A) and 3-way field merge (Class B)
 carry the real decisions, so backfill is far less load-bearing than in the single-class model.
 
 ### 5.6 Presence & deletes — additive + baseline-aware (rounds 2–4)
@@ -155,6 +187,22 @@ carry the real decisions, so backfill is far less load-bearing than in the singl
 - **Residual R2:** a replica with **no baseline** (fresh device / lost manifest) can't tell "deleted
   elsewhere" from "never seen" → may re-create (resurrect). Full delete-safety = M2b tombstones. No local
   delete-intent marker (round-2 H-A showed it has no sound lifecycle).
+
+### 5.7 Required schema / migration changes (NOT optional — the reconcile depends on them)
+The reconcile signals are new; these ship **with** M2a (round-v7 H-4/M-1/M-2 flagged that the code
+preconditions aren't yet true):
+- **`VideoSchema` +** `mdGeneratedAt?`, `mdCorrectionsHash?`, and per-field `annotationsEditedAt?: {personalNote?,
+  personalScore?, corrections?}` (datetimes). One-time backfill per §5.5.
+- **`ModelEnvelopeSchema`:** add `sourceMdHash?: string` **and drop `.strict()`** (→ ignore unknown keys) so a
+  new-writer envelope doesn't make an old reader's `readModelEnvelope` return null → notReady/re-charge
+  (round-5 M-2, still `.strict()` in `model-store.ts:22`).
+- **`update_video_annotations` (`0016`) allowlist → `{personalScore, personalNote, corrections}`** — add
+  `corrections` (Class B, currently dropped), remove `archived` (now replica-local). Each write restamps
+  **only the changed field's** `annotationsEditedAt`.
+- **`merge_video_data` restamp is CONDITIONAL** on a Class-B key in the patch (it is a blind generic merge also
+  used for MD-finalize / artifact / membership writes — round-v7 L-1).
+- **Writers accept an explicit timestamp on the sync path** (vs `now()` on the user-edit path — round-v7 H1).
+- **`persist_summary` / local `pipeline.ts`** stamp `mdGeneratedAt` + `mdCorrectionsHash` on generation.
 
 ---
 
@@ -185,9 +233,9 @@ sign-out clears it. No session → refuse with a `cloud-sync login` hint.
 5. **Update the manifest (§8) strictly AFTER** the receiver commit is verified durable (receiver-observed
    `mdHash` + human field values). Never advance a baseline for a partial transfer.
 6. **Report**: created / updated-local / updated-cloud / skipped-identical / merged-fields / conflicts-logged
-   (skipped) / removed / **`share_needs_owner_serve`** (transferred videos whose receiver model was deleted
-   and that have a live share token — anonymous share is not-ready until an owner serve, R7) / errors.
-   Per-video errors isolated; the run is idempotent + resumable (single-run, no concurrency — §10).
+   (skipped) / removed / **`share_needs_owner_serve`** (R7) / **`needs_regen`** (no MD reflects the current
+   corrections at the top format — author should regenerate, §5.3/R8) / errors. Per-video errors isolated;
+   the run is idempotent + resumable (single-run, no concurrency — §10).
 
 ### 7.1 Local playlist discovery (rounds 1–2)
 A **local playlist registry**: each local root persists its `playlist_key` (backfilled from `playlistUrl`
@@ -200,8 +248,9 @@ cloud-only playlists into deterministic roots named by `playlist_key`.
 ## 8. Sync state — per-playlist local manifest
 
 One git-ignored file per playlist (`<data-root>/<playlist_key>/.cloud-sync-manifest.json`), recording per
-`video_id` the last-synced baseline: **Class A** (`docVersion`, `mdGeneratedAt`, receiver-observed `mdHash`)
-and **Class B** (the last-synced `corrections`/`personalNote`/`personalScore` values + `annotationsUpdatedAt`).
+`video_id` the last-synced baseline: **Class A** (`docVersion`, `mdGeneratedAt`, `mdCorrectionsHash`,
+receiver-observed `mdHash`) and **Class B** (the last-synced `corrections`/`personalNote`/`personalScore`
+values + their **per-field** `annotationsEditedAt`).
 Written **only after** §7 step 5's verified commit. It is the "seen-before" record for §5.6 delete inference,
 the Class-A tie baseline, and the Class-B 3-way-merge baseline. Lost/corrupt manifest degrades to a direct
 compare (equal → skip; divergence → conflict-skip, never a destructive overwrite); only delete-detection and
@@ -222,18 +271,22 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
 
 ## 10. Testing
 - Boundary: mock cloud at the `MetadataStore`/`BlobStore` seam; integration = real local FS ↔ local-Supabase.
-- **Class A (format-first):** higher-major wins over a newer-timestamp lower-major (the anti-`docVersion`-and
-  anti-recency regression); same-major-different-prose **unifies to the more recent** (both converge, no
-  churn on re-run); `mdHash` cross-backend golden fixtures (file vs `jsonb` → equal); a human-field edit does
-  **not** change `mdHash`.
-- **Class B (per-field merge):** a note edit on local + a score edit on cloud → **both survive** (3-way
-  merge); same-field-both-changed → newer `annotationsUpdatedAt` wins + logged; a field present on one side
-  only → copied (additive); human fields **survive a Class-A format upgrade** (reconcile independently).
+- **Class A (corrections-currency + format):** higher-major wins over a newer-timestamp lower-major
+  (anti-recency); **a stale higher-major MD does NOT overwrite a corrections-current lower-major MD**
+  (round-v7 Codex-H1); neither-current → `needs_regen` flag, no fabrication (R8); same-major-different-prose
+  unifies to the more recent (both converge, no churn); **derived scalars (`tldr`/`videoType`/`overallScore`
+  …) are re-derived from the winning MD on transfer** (round-v7 opus-M1); `mdHash` cross-backend fixtures;
+  a human-field edit does **not** change `mdHash`.
+- **Class B (per-field merge):** a note edit on local + a score edit on cloud → **both survive**; a
+  **cleared** field is **not** resurrected (baseline-aware clear propagates, round-v7 H-2); same-field-both-
+  changed → newer **per-field** `annotationsEditedAt` wins (the B1 regression: an unrelated later field edit
+  must NOT flip a same-field tie); sync-applied write carries the **source's** timestamp, not `now()` (H1).
 - **Companion/serve (rounds 3–5):** non-synced legacy model still serves as today (no re-charge, share
-  unaffected); a synced+shared video whose model was deleted → anon share not-ready until owner serve, counted
-  `share_needs_owner_serve`; old-schema reader tolerates a `sourceMdHash`-bearing envelope.
-- **Stamping (rounds 2–4):** every MD-writer restamps `mdGeneratedAt`; every human-field writer
-  (incl. `merge_video_data` for `corrections`) restamps `annotationsUpdatedAt`; membership writers do not.
+  unaffected); synced+shared model-deleted → anon share not-ready until owner serve, counted; old-schema
+  reader (`.strict()` dropped) tolerates a `sourceMdHash`-bearing envelope.
+- **Stamping:** every MD-writer stamps `mdGeneratedAt`+`mdCorrectionsHash`; a human-field writer restamps
+  **only the changed field's** `annotationsEditedAt` and **only when a Class-B key is present** (a bare
+  `merge_video_data` MD-finalize does NOT bump it — round-v7 L-1); membership writers do not.
 - **Union hydration / atomicity / deletes / auth:** empty-local→full-hydrate; promote-then-commit crash never
   advertises a hash for a missing blob nor advances the baseline; baseline-present remote-delete not
   re-created; re-creation never calls the metered enqueue; no-session refusal; client `owner_id` rejected.
@@ -241,8 +294,8 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
 ---
 
 ## 11. Accepted residuals (M2a)
-- **R1 — Class-B same-field concurrent edit:** newer `annotationsUpdatedAt` wins; loser logged (§8.1);
-  loser-preservation is M2b. (Class A has no analogous loss — its variants are equivalent.)
+- **R1 — Class-B same-field concurrent edit:** newer **per-field** `annotationsEditedAt` wins; loser logged
+  (§8.1); loser-preservation is M2b. (Class A has no analogous loss — its variants are equivalent.)
 - **R2 — Baseline-less delete resurrection:** a fresh device / lost manifest may re-create a deleted entity;
   full delete-safety = M2b tombstones.
 - **R3 — Replica-local conflict log** (§8.1); cross-replica surfacing is M2b.
@@ -253,6 +306,11 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
   receiver regenerates the model on next serve (existing lazy path); bounded to synced videos, never the fleet.
 - **R7 — Synced+shared video:** its anonymous share is not-ready until an owner serve (the share route is
   generation-free); scoped to synced+shared videos only; reported as `share_needs_owner_serve`.
+- **R8 — `needs_regen` (corrections/format skew):** if no replica has an MD reflecting the current
+  `corrections` at the top format (e.g. corrections applied on an older-code replica), sync keeps the best
+  available MD (corrections-current if any, else the highest format) but flags `needs_regen` — the summary is
+  the best that exists until the author regenerates on a top-format replica (which re-applies the surviving
+  `corrections`). Sync never fabricates a corrected MD; nothing is lost (the instruction survives, §5.4).
 
 ---
 
@@ -263,8 +321,11 @@ Sync"** button) over the union of playlists (all) or one. Background/auto-sync i
 2. **`docVersion` = format signal, never recency.** `.major` decides Class A (higher wins; never downgrade);
    `.minor` (HTML style) ignored (each app re-renders in its own style). `mdGeneratedAt` breaks a same-format
    tie only.
-3. **Class B = `corrections`/`personalNote`/`personalScore`** (human). **`title` is NOT Class B** —
-   YouTube-fetched, no author-edit path → replica-local.
+3. **Class B (independent per-field merge) = `personalNote`/`personalScore`; `corrections` is special** — a
+   human field (preserved, per-field newer-wins) that is ALSO the MD's generation input, so it drives §5.3
+   corrections-currency (a stale MD never overwrites a corrected one). **`title` is NOT Class B** (YouTube-
+   fetched, no author-edit path → replica-local). MD-derived scalars (`tldr`/`videoType`/…) are Class-A-derived
+   (recomputed from the winning MD on transfer, never independently synced).
 4. **Model JSON = companion** (sync-transfer scoped, MD-only `sourceMdHash`, forward-tolerant schema, R5/R7).
 5. **Deep-dive + images → M2b** (§13), with the cloud-tokens → local-capture → sync-back pipeline.
 6. **Deletes: additive + baseline-aware**; resurrection on a baseline-less replica = R2; tombstones = M2b.
@@ -279,7 +340,7 @@ Verified against code; recorded so M2b builds on a settled architecture:
   headless-Chromium screenshotting) is the same YouTube-ToS violation (architecture §2.1, "Codex H9 legal
   gate"); real pixels are obtainable **only on the user's device**. This **corrects the old R6 "cloud may
   gain capture" assumption**: cloud will not.
-- **But cloud DOES produce the capture *tokens*.** Gemini's dig output emits **`[[SLIDE:startSec|endSec|
+- **But cloud DOES produce the capture *tokens*.** Gemini's dig output emits **`[[SLIDE:M:SS|M:SS|
   caption]]`** tokens (`lib/dig/generate.ts:79` — "FIRST M:SS = visual fully built; SECOND = it leaves"),
   ToS-clean (Gemini watches Google's own video). A token is a **portable capture instruction** — clip window
   + what it is.
