@@ -21,6 +21,16 @@ alter table ledger_audit enable row level security;
 alter table ledger_audit force  row level security;   -- no policies → no session-client access at all
 grant select, insert on ledger_audit to service_role;  -- the ONLY grant; mirrors spend_ledger
 
+-- ── Task 13 / H1: durable per-JOB "ever billed" flag ─────────────────────────
+-- The worker's billing latch (worker-runner.ts's `billing.metered`) is per-ATTEMPT — it resets
+-- every runOnce — but the reservation (jobs.reserved_cents) is per-JOB, reused across retries.
+-- Without a durable flag, a job that meters real spend on attempt-1 then hits a retryable
+-- failure and requeues FORGETS it billed; a later release path (fail_job at exhaustion, or a
+-- cancel of the requeued job) would refund the reservation anyway — an UNDER-COUNT, the one
+-- direction this whole reserve→release slice exists to prevent. `not null default false` so
+-- every existing/never-metered job keeps its current release behavior unchanged.
+alter table jobs add column ever_metered boolean not null default false;
+
 -- ── Task 2: fail_job — DROP+recreate 6-arg with spend-aware release ──────────
 -- Adding p_billable_succeeded changes the arg count (5→6). A bare create-or-replace would
 -- leave the 5-arg overload alongside → the adapter's named-arg call resolves ambiguously
@@ -29,15 +39,16 @@ drop function fail_job(uuid,text,uuid,text,boolean);
 
 create function fail_job(
     p_job_id uuid, p_worker_id text, p_lease_token uuid, p_error text,
-    p_retryable boolean, p_billable_succeeded boolean default true)   -- default TRUE = conservative KEEP
+    p_retryable boolean, p_billable_succeeded boolean default true,  -- default TRUE = conservative KEEP
+    p_metered boolean default false)   -- Task 13/H1: THIS attempt's billing latch, OR-persisted below
   returns text language plpgsql security invoker set search_path = public as $$
 declare
   v_attempts int; v_max int; v_cancel boolean; v_new text; v_backoff bigint;
-  v_created_at timestamptz; v_reserved int;
+  v_created_at timestamptz; v_reserved int; v_ever_metered boolean;
 begin
   if auth.role() <> 'service_role' then raise exception 'workers only'; end if;
-  select attempts, max_attempts, cancel_requested, created_at, reserved_cents
-    into v_attempts, v_max, v_cancel, v_created_at, v_reserved
+  select attempts, max_attempts, cancel_requested, created_at, reserved_cents, ever_metered
+    into v_attempts, v_max, v_cancel, v_created_at, v_reserved, v_ever_metered
     from jobs
     where id = p_job_id and locked_by = p_worker_id and lease_token = p_lease_token and status = 'active'
     for update;
@@ -50,12 +61,18 @@ begin
   v_backoff := (10 * power(4, least(greatest(v_attempts - 1, 0), 15)))::bigint;
   update jobs set status = v_new, error = p_error,
        run_after = case when v_new = 'queued' then now() + make_interval(secs => v_backoff) else run_after end,
-       locked_by = null, lease_token = null, lease_expires_at = null, updated_at = now()
+       locked_by = null, lease_token = null, lease_expires_at = null, updated_at = now(),
+       -- Task 13/H1: persist metering EVEN on the KEEP-requeue path — a metered attempt-1 that
+       -- retries must not let attempt-2 (or a cancel while queued) forget it already billed.
+       ever_metered = jobs.ever_metered or p_metered
   where id = p_job_id and locked_by = p_worker_id and lease_token = p_lease_token and status = 'active';
 
-  -- Spend-aware release: only a genuine terminal fail that never billed. NOT 'queued' (retry
-  -- reuses the reservation — behavior 6). Inside the status='active' single-writer fence → exactly-once.
+  -- Spend-aware release: only a genuine terminal fail that never billed on THIS attempt (via
+  -- p_billable_succeeded) AND never billed on ANY prior attempt (v_ever_metered — the PRE-update,
+  -- durable JOB-scoped signal; Task 13/H1). NOT 'queued' (retry reuses the reservation —
+  -- behavior 6). Inside the status='active' single-writer fence → exactly-once.
   if not p_billable_succeeded
+     and not v_ever_metered
      and v_new in ('failed','dead_letter','cancelled')
      and v_reserved > 0 then
     update spend_ledger
@@ -71,8 +88,8 @@ begin
   end if;
   return v_new;
 end $$;
-revoke all on function fail_job(uuid,text,uuid,text,boolean,boolean) from public;
-grant execute on function fail_job(uuid,text,uuid,text,boolean,boolean) to service_role;
+revoke all on function fail_job(uuid,text,uuid,text,boolean,boolean,boolean) from public;
+grant execute on function fail_job(uuid,text,uuid,text,boolean,boolean,boolean) to service_role;
 
 -- ── Task 3: request_cancel_job — procedural, releases a genuine queued cancel ─
 -- Same signature (uuid → int) so create-or-replace preserves grants. Procedural because we
@@ -80,10 +97,10 @@ grant execute on function fail_job(uuid,text,uuid,text,boolean,boolean) to servi
 -- (b) audit underflow, (c) return 1 for BOTH a queued cancel and an active flag-set (H-4).
 create or replace function request_cancel_job(p_job_id uuid) returns int
   language plpgsql security definer set search_path = public as $$
-declare v_old_status text; v_old_amt int; v_day date;
+declare v_old_status text; v_old_amt int; v_day date; v_ever_metered boolean;
 begin
-  select status, reserved_cents, (created_at at time zone 'utc')::date
-    into v_old_status, v_old_amt, v_day
+  select status, reserved_cents, (created_at at time zone 'utc')::date, ever_metered
+    into v_old_status, v_old_amt, v_day, v_ever_metered
     from jobs
    where id = p_job_id and owner_id = auth.uid() and status in ('queued','active')
    for update;                                       -- serialize vs claim_next_job's skip-locked claim
@@ -94,7 +111,9 @@ begin
          reserved_cents = case when v_old_status = 'queued' then 0 else reserved_cents end,
          updated_at     = now()
    where id = p_job_id;
-  if v_old_status = 'queued' and v_old_amt > 0 then   -- RELEASE only a genuine queued→cancelled
+  -- RELEASE only a genuine queued→cancelled that never metered (Task 13/H1: a metered-then-
+  -- requeued job cancelled while still queued must KEEP — it already billed on a prior attempt).
+  if v_old_status = 'queued' and v_old_amt > 0 and not v_ever_metered then
     update spend_ledger set reserved_cents = reserved_cents - v_old_amt, updated_at = now()
      where day = v_day and reserved_cents >= v_old_amt;
     if not found then
@@ -117,7 +136,7 @@ begin
   -- `return (with ... )` — that nests it as a scalar subquery). `... into v_n` keeps
   -- the CTE chain top-level while still capturing the H-4 count.
   with pre as (                                  -- ALL non-terminal jobs of the playlist, under lock
-    select id, status as old_status, reserved_cents as old_amt,
+    select id, status as old_status, reserved_cents as old_amt, ever_metered,
            (created_at at time zone 'utc')::date as reserve_day
       from public.jobs                           -- schema-qualified (0019 search_path-hijack hardening — L1)
      where playlist_id = p_playlist_id and owner_id = auth.uid() and status in ('queued','active')
@@ -130,9 +149,12 @@ begin
            updated_at     = now()
       from pre where j.id = pre.id
      returning j.id),
-  per_day as (                                   -- queued-only OLD amounts, grouped by reserve-day
+  per_day as (                                   -- queued-only, NEVER-metered OLD amounts, grouped by
+                                                   -- reserve-day (Task 13/H1: a metered-then-requeued
+                                                   -- queued job is excluded from the release sum — `upd`
+                                                   -- above still flags/cancels it, only the release is vetoed)
     select reserve_day, sum(old_amt) as amt
-      from pre where old_status = 'queued' and old_amt > 0
+      from pre where old_status = 'queued' and old_amt > 0 and not ever_metered
      group by reserve_day),
   dec as (                                       -- guarded per-day decrement; RETURNING credited days
     update spend_ledger sl

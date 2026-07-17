@@ -32,7 +32,7 @@ export interface JobQueue {
   claim(workerId: string, leaseSeconds: number, videoId?: string | null): Promise<LeasedJob | null>;
   heartbeat(jobId: string, workerId: string, leaseToken: string, leaseSeconds: number): Promise<{ ok: boolean }>;
   complete(jobId: string, workerId: string, leaseToken: string, result: unknown): Promise<{ ok: boolean }>;
-  fail(jobId: string, workerId: string, leaseToken: string, error: string, opts: { retryable: boolean; billableSucceeded?: boolean }):
+  fail(jobId: string, workerId: string, leaseToken: string, error: string, opts: { retryable: boolean; billableSucceeded?: boolean; metered?: boolean }):
     Promise<{ ok: boolean; status: JobStatus | null }>;
   sweepExpired(): Promise<number>;
   setProgressPhase(jobId: string, workerId: string, leaseToken: string, phase: ProgressPhase): Promise<{ ok: boolean }>;

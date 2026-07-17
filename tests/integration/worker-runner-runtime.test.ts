@@ -82,7 +82,7 @@ test('(c) a NonRetryableError fails the job non-retryably', async () => {
 
   expect(outcome).toBe('failed');
   expect(queue.fail).toHaveBeenCalledTimes(1);
-  expect(queue.fail).toHaveBeenCalledWith(job.id, 'w1', job.leaseToken, 'bad input', { retryable: false, billableSucceeded: true });
+  expect(queue.fail).toHaveBeenCalledWith(job.id, 'w1', job.leaseToken, 'bad input', { retryable: false, billableSucceeded: true, metered: false });
   expect(queue.complete).not.toHaveBeenCalled();
 });
 
@@ -122,7 +122,7 @@ test('(e) a rejecting heartbeat is treated as lease loss — no unhandled reject
 
     expect(outcome).toBe('failed'); // caught as a throw ⇒ retryable fail
     expect(queue.fail).toHaveBeenCalledTimes(1);
-    expect(queue.fail).toHaveBeenCalledWith(job.id, 'w1', job.leaseToken, 'aborted', { retryable: true, billableSucceeded: true });
+    expect(queue.fail).toHaveBeenCalledWith(job.id, 'w1', job.leaseToken, 'aborted', { retryable: true, billableSucceeded: true, metered: false });
     await Promise.resolve(); // flush any queued unhandledRejection events
     expect(unhandled).toHaveLength(0);
   } finally {
@@ -167,7 +167,7 @@ test('(g) wall-clock exceeded aborts and fails the job retryably', async () => {
 
   expect(outcome).toBe('failed');
   expect(queue.fail).toHaveBeenCalledTimes(1);
-  expect(queue.fail).toHaveBeenCalledWith(job.id, 'w1', job.leaseToken, 'wall clock exceeded', { retryable: true, billableSucceeded: true });
+  expect(queue.fail).toHaveBeenCalledWith(job.id, 'w1', job.leaseToken, 'wall clock exceeded', { retryable: true, billableSucceeded: true, metered: false });
   // wall-clock fires long before the lease's own heartbeat interval (40s) ever ticks.
   expect(queue.heartbeat).not.toHaveBeenCalled();
 });
@@ -214,7 +214,7 @@ describe('worker-runner release decision (Task 10)', () => {
 
   it('class-A not-metered {503} → billableSucceeded=false (RELEASE), retryable=true', async () => {
     const [, , , , optsArg] = await failArgsFor(new GoogleGenerativeAIFetchError('x', 503, 'x'));
-    expect(optsArg).toEqual({ retryable: true, billableSucceeded: false });
+    expect(optsArg).toEqual({ retryable: true, billableSucceeded: false, metered: false });
   });
 
   it('metered-then-{503} → billableSucceeded=true (KEEP), latch overrides class-A', async () => {
@@ -230,6 +230,38 @@ describe('worker-runner release decision (Task 10)', () => {
   it('WRAPPED NonRetryableError → retryable=false AND billableSucceeded=false (H1)', async () => {
     const wrapped = new Error('transcript unavailable', { cause: new NonRetryableError('disabled') });
     const [, , , , optsArg] = await failArgsFor(wrapped);
-    expect(optsArg).toEqual({ retryable: false, billableSucceeded: false });   // isNonRetryable walked the chain
+    expect(optsArg).toEqual({ retryable: false, billableSucceeded: false, metered: false });   // isNonRetryable walked the chain
+  });
+});
+
+// T13-d (Task 13/H1): every queue.fail() call — terminal AND requeue — must report THIS attempt's
+// billing latch, so fail_job can durably OR-persist it into jobs.ever_metered before the next
+// attempt runs. Extends the Task 10 spy assertions above (which already cover the {retryable,
+// billableSucceeded} shape) with a dedicated check of the `metered` field in isolation.
+describe('worker-runner ever_metered wiring (Task 13/H1)', () => {
+  const prev = process.env.CLOUD_GEMINI_RELEASE_VERIFIED;
+  afterEach(() => { process.env.CLOUD_GEMINI_RELEASE_VERIFIED = prev; });
+
+  async function failArgsFor(err: unknown, opts: { meterFirst?: boolean } = {}) {
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    const failSpy = jest.fn(async (..._args: Parameters<JobQueue['fail']>) => ({ ok: true, status: 'failed' as const }));
+    const job = makeJob();
+    const queue = makeQueue(job); queue.fail = failSpy;
+    const handler = async (_job: unknown, ctx: { billing: { metered: boolean } }) => {
+      if (opts.meterFirst) ctx.billing.metered = true;
+      throw err;
+    };
+    await runOnce(queue, handler as JobHandler, { workerId: 'w' });
+    return failSpy.mock.calls[0];
+  }
+
+  it('a metered-then-throw handler reports metered:true on queue.fail (durable across retries)', async () => {
+    const [, , , , optsArg] = await failArgsFor(new Error('boom'), { meterFirst: true });
+    expect(optsArg.metered).toBe(true);
+  });
+
+  it('a not-metered throw reports metered:false on queue.fail', async () => {
+    const [, , , , optsArg] = await failArgsFor(new Error('boom'));
+    expect(optsArg.metered).toBe(false);
   });
 });

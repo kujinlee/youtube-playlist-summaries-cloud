@@ -71,7 +71,9 @@ export async function runOnce(
         // isNonRetryable walks the cause chain — a WRAPPED NonRetryableError is still non-retryable,
         // so a pre-send class-A failure sets BOTH retryable=false and billableSucceeded=false (H1);
         // otherwise it would requeue and fail_job would refuse to release a queued transition.
-        { retryable: !isNonRetryable(e), billableSucceeded: !release });
+        // metered is reported on EVERY fail — terminal AND requeue — so a metered attempt-1 that
+        // requeues persists jobs.ever_metered durably before attempt-2 ever runs (Task 13/H1).
+        { retryable: !isNonRetryable(e), billableSucceeded: !release, metered: billing.metered });
       if (!ok) return 'lost';
       return status === 'cancelled' ? 'cancelled' : 'failed';
     } catch {

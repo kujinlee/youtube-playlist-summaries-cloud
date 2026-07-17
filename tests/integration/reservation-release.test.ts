@@ -74,6 +74,19 @@ async function enqueueAndLease(ownerId: string, playlistId: string, videoId = 'v
   return { jobId: job.id as string, leaseToken: job.lease_token as string };
 }
 
+// Same as enqueueAndLease but scopes the claim to THIS videoId. Task 13's tests requeue a job
+// (status stays 'queued' with a short backoff) and this suite has no per-row cleanup between
+// tests — a later, unrelated enqueueAndLease(..., p_video_id: null) elsewhere in a long full-file
+// run could otherwise race-claim that leftover requeued job instead of the one it just enqueued.
+async function enqueueAndLeaseVideo(ownerId: string, playlistId: string, videoId: string) {
+  await enqueueSummary(ownerId, playlistId, videoId);
+  const claimed = await adminClient().rpc('claim_next_job', {
+    p_worker_id: 'w-t2', p_lease_seconds: 120, p_video_id: videoId,   // 'w-t2': matches this file's fail_job calls
+  });
+  const job = claimed.data![0];
+  return { jobId: job.id as string, leaseToken: job.lease_token as string };
+}
+
 async function ledgerFor(day: string): Promise<number> {
   const { data } = await adminClient().from('spend_ledger').select('reserved_cents').eq('day', day).maybeSingle();
   return data?.reserved_cents ?? 0;
@@ -596,5 +609,110 @@ describe('reservation-release: Task 12 — end-to-end behavior sweep', () => {
     } finally {
       await ensureGuardrailHeadroom(svc);   // restore headroom for any test that might run after this one
     }
+  });
+});
+
+// ── Task 13 / H1: durable jobs.ever_metered vetoes release across retries ──────────────────────
+// The billing latch is per-ATTEMPT (worker-runner.ts's `billing.metered` resets every runOnce);
+// the reservation is per-JOB. Without a durable flag, a job that meters real spend on attempt-1
+// then requeues on a retryable failure FORGETS it billed — a later release path would refund the
+// reservation anyway (UNDER-COUNT, the cardinal bug this whole slice exists to prevent).
+describe('reservation-release: ever_metered vetoes release (Task 13/H1)', () => {
+  it('T13-a: a metered-then-requeued queued job is cancelled but KEEPS its reservation; a never-metered sibling still RELEASES (regression)', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+
+    // attempt-1 meters real spend, then hits a retryable failure → requeues, persists ever_metered.
+    const { jobId: meteredJobId, leaseToken: meteredLease } = await enqueueAndLeaseVideo(u.user.id, playlistId, 'vid-t13a-metered');
+    await adminClient().from('jobs').update({ max_attempts: 3 }).eq('id', meteredJobId);
+    const { data: status1 } = await adminClient().rpc('fail_job', {
+      p_job_id: meteredJobId, p_worker_id: 'w-t2', p_lease_token: meteredLease,
+      p_error: 'timeout after billing', p_retryable: true, p_billable_succeeded: true, p_metered: true,
+    });
+    expect(status1).toBe('queued');
+    const { data: meteredJob } = await adminClient().from('jobs').select('status, ever_metered').eq('id', meteredJobId).single();
+    expect(meteredJob).toEqual({ status: 'queued', ever_metered: true });
+
+    // never-metered sibling — the flag's default keeps its cancel behavior UNCHANGED.
+    await enqueueSummary(u.user.id, playlistId, 'vid-t13a-plain');
+    const plainJobId = await jobIdFor(u.user.id, 'vid-t13a-plain');
+
+    const day = utcToday();
+    const before = await ledgerFor(day);
+
+    const { data: nMetered } = await session.rpc('request_cancel_job', { p_job_id: meteredJobId });
+    expect(nMetered).toBe(1);                                    // cancels...
+    expect(await ledgerFor(day)).toBe(before);                   // ...but KEEPS — Task 13/H1 fix (the live bug)
+    const { data: cancelledMetered } = await adminClient().from('jobs').select('status').eq('id', meteredJobId).single();
+    expect(cancelledMetered!.status).toBe('cancelled');
+
+    const { data: nPlain } = await session.rpc('request_cancel_job', { p_job_id: plainJobId });
+    expect(nPlain).toBe(1);
+    expect(await ledgerFor(day)).toBe(before - 150);             // never-metered sibling still RELEASES (regression)
+  });
+
+  it('T13-b: ever_metered vetoes a terminal fail-at-exhaustion release that would otherwise RELEASE', async () => {
+    const prevGate = process.env.CLOUD_GEMINI_RELEASE_VERIFIED;
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    try {
+      const u = await newUser();
+      const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+      const { jobId, leaseToken: lease1 } = await enqueueAndLeaseVideo(u.user.id, playlistId, 'vid-t13b');
+      await adminClient().from('jobs').update({ max_attempts: 2 }).eq('id', jobId);
+
+      // attempt-1: meters real spend, then hits a retryable failure → requeues, persists ever_metered.
+      const { data: status1 } = await adminClient().rpc('fail_job', {
+        p_job_id: jobId, p_worker_id: 'w-t2', p_lease_token: lease1,
+        p_error: 'timeout after billing', p_retryable: true, p_billable_succeeded: true, p_metered: true,
+      });
+      expect(status1).toBe('queued');
+      const { data: afterAttempt1 } = await adminClient().from('jobs').select('ever_metered').eq('id', jobId).single();
+      expect(afterAttempt1!.ever_metered).toBe(true);
+
+      // attempt-2: reclaim, then a clean class-A terminal fail at exhaustion — would normally RELEASE.
+      await adminClient().from('jobs').update({ run_after: new Date().toISOString() }).eq('id', jobId);
+      const claimed = await adminClient().rpc('claim_next_job', { p_worker_id: 'w-t2', p_lease_seconds: 120, p_video_id: 'vid-t13b' });
+      const lease2 = claimed.data![0].lease_token as string;
+
+      const day = utcToday();
+      const before = await ledgerFor(day);
+      const { data: status2 } = await adminClient().rpc('fail_job', {
+        p_job_id: jobId, p_worker_id: 'w-t2', p_lease_token: lease2,
+        p_error: 'HTTP 503', p_retryable: true, p_billable_succeeded: false,
+      });
+      expect(status2).toBe('dead_letter');                        // exhausted (attempts=max_attempts=2)
+      expect(await ledgerFor(day)).toBe(before);                  // KEEP — ever_metered vetoes the release
+    } finally {
+      process.env.CLOUD_GEMINI_RELEASE_VERIFIED = prevGate;
+    }
+  });
+
+  it('T13-c: playlist cancel excludes a metered-then-requeued job from the per-day release sum, but still flags both cancelled', async () => {
+    const u = await newUser();
+    const { client: session } = await signInAs(u.email, u.password);
+    const { playlistId } = await seedPlaylist(adminClient(), u.user.id);
+
+    const { jobId: meteredJobId, leaseToken: meteredLease } = await enqueueAndLeaseVideo(u.user.id, playlistId, 'vid-t13c-metered');
+    await adminClient().from('jobs').update({ max_attempts: 3 }).eq('id', meteredJobId);
+    await adminClient().rpc('fail_job', {
+      p_job_id: meteredJobId, p_worker_id: 'w-t2', p_lease_token: meteredLease,
+      p_error: 'timeout after billing', p_retryable: true, p_billable_succeeded: true, p_metered: true,
+    });
+    const { data: meteredJob } = await adminClient().from('jobs').select('status, ever_metered').eq('id', meteredJobId).single();
+    expect(meteredJob).toEqual({ status: 'queued', ever_metered: true });
+
+    await enqueueSummary(u.user.id, playlistId, 'vid-t13c-plain');
+
+    const day = utcToday();
+    const before = await ledgerFor(day);
+
+    const { data: n } = await session.rpc('request_cancel_playlist_jobs', { p_playlist_id: playlistId });
+    expect(n).toBe(2);                                            // both jobs flagged/cancelled
+    expect(await ledgerFor(day)).toBe(before - 150);              // only the never-metered job's reservation released
+
+    const { data: rows } = await adminClient().from('jobs').select('video_id, status')
+      .eq('playlist_id', playlistId).in('video_id', ['vid-t13c-metered', 'vid-t13c-plain']);
+    for (const r of rows!) expect(r.status).toBe('cancelled');
   });
 });
