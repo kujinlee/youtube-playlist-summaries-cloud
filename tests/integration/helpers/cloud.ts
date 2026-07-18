@@ -33,7 +33,11 @@ export interface Ctx {
   seedCloudVideo(video: Record<string, unknown>): Promise<unknown>;
   /** TODO(Task 14): reads the sync manifest written by a completed sync run. */
   readManifest(): Promise<unknown>;
-  /** TODO(Task 4/12): sums spend_ledger for this owner (money-safety assertions). */
+  /** Sum of reserved_cents + actual_cents across spend_ledger (money-safety assertions).
+   *  NOTE: spend_ledger is GLOBAL — one row per UTC day, NO owner_id column (0011:
+   *  "global, one row per UTC day"). So this is a whole-table total, not a per-owner
+   *  filter; money-safety tests assert via before/after DELTA, never per-owner identity.
+   *  Reads via the service-role admin client because spend_ledger grants NO client access. */
   spendLedgerTotal(): Promise<number>;
 }
 
@@ -92,7 +96,16 @@ export async function makeOwnerContext(): Promise<Ctx> {
       throw new Error('not implemented until Task 14');
     },
     async spendLedgerTotal(): Promise<number> {
-      throw new Error('not implemented until Task 4');
+      // service-role: spend_ledger grants NO client access (0011). Whole-table total
+      // (reserved + actual) — the table is global/day-keyed with no owner_id, so callers
+      // assert money-safety via a before/after delta, not a per-owner figure.
+      const { adminClient } = await import('./clients');
+      const { data, error } = await adminClient()
+        .from('spend_ledger').select('reserved_cents,actual_cents');
+      if (error) throw error;
+      return (data ?? []).reduce(
+        (sum, r) => sum + (r.reserved_cents ?? 0) + (r.actual_cents ?? 0), 0,
+      );
     },
   };
 }
