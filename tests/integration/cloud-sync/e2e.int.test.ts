@@ -384,4 +384,92 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     expect(r2.removed).toBe(0); // the just-created local root is not mis-read as a delete
     expect(await localVideoRecord(ctx)).not.toBeNull();
   });
+
+  // ── WB-B1 — an UNRESOLVED corrections no-write conflict must NOT drive a destructive Class-A copy.
+  //    Both sides changed corrections (backfilled, no per-field ts) → Class B logs+skips. The buggy
+  //    path fed local's corrections value into reconciledCorrectionsHash → local looked
+  //    corrections-current, cloud stale → copyToCloud OVERWROTE cloud's (different-correction) MD body.
+  //    After the fix: no copy, needsRegen flagged, both corrections + both bodies preserved, twice.
+  it('WB-B1: a backfilled corrections conflict does NOT copy MD; both bodies + corrections preserved (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocal = '# LocalCorrA\n\nMD generated for correction A\n';
+    const bodyCloud = '# CloudCorrB\n\nMD generated for correction B\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocal, corrections: 'A', mdCorrectionsHash: mdHash('A'), // no annotationsEditedAt → backfilled
+      docVersion: { major: 1, minor: 0 },
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloud, corrections: 'B', mdCorrectionsHash: mdHash('B'), // no annotationsEditedAt → backfilled
+      docVersion: { major: 1, minor: 0 },
+    });
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.updatedCloud).toBe(0);            // no Class-A copy in either direction
+    expect(r1.updatedLocal).toBe(0);
+    expect(r1.needsRegen).toBeGreaterThanOrEqual(1);
+    expect(r1.conflictsLogged).toBeGreaterThanOrEqual(1);
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+
+    // Both MD blobs untouched — each still equals its own pre-sync body, and the two DIFFER.
+    const l1 = (await localBlobBytes(ctx, key(ctx)))!.toString('utf8');
+    const c1 = (await cloudBlobBytes(ctx, key(ctx)))!.toString('utf8');
+    expect(l1).toBe(bodyLocal);
+    expect(c1).toBe(bodyCloud);
+    expect(l1).not.toBe(c1);
+    // Both corrections preserved (neither overwritten).
+    expect((await localVideoRecord(ctx))?.corrections).toBe('A');
+    expect((await cloudVideoRecord(ctx))?.corrections).toBe('B');
+
+    // Second run — the baseline was NOT falsely advanced, so still no copy.
+    const r2 = await runSync(ctx.syncDeps());
+    expect(r2.updatedCloud).toBe(0);
+    expect(r2.updatedLocal).toBe(0);
+    expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyLocal);
+    expect((await cloudBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloud);
+  });
+
+  // ── WB-H1 — an additive create must never advertise a promoted summary whose blob was not copied.
+  //    Cloud advertises summaryMd (artifacts.summaryMd = promoted) but its MD blob is ABSENT →
+  //    readMdBody returns null. The buggy path preserved the promoted artifact and upserted a
+  //    promoted-but-blobless row + advanced the baseline. After the fix: per-video throw, no promoted
+  //    receiver row, baseline NOT advanced (a re-run heals once the body is readable).
+  it('WB-H1: additive create with a promoted summaryMd but no blob throws; no promoted row, no baseline', async () => {
+    const ctx = await makeOwnerContext();
+    // summaryMd key set + artifacts.summaryMd promoted, but NO mdBody → seedSummaryBlob is skipped.
+    await seedCloudVideo(ctx, { /* mdBody omitted → blob absent */ });
+
+    const report = await runSync(ctx.syncDeps());
+
+    expect(report.errors.some((e) => e.videoId === ctx.videoId)).toBe(true);
+    // The local receiver must not advertise a promoted summaryMd (bare slot at most; no blob copied).
+    const local = await localVideoRecord(ctx);
+    expect(artifactsOf(local)?.summaryMd?.status).not.toBe('promoted');
+    // Baseline not advanced — the throw aborted before writeVideoBaseline.
+    expect((await ctx.readManifest()).videos[ctx.videoId]).toBeUndefined();
+  });
+
+  // ── WB-H2 — a two-sided transfer must invalidate the loser's stale rendered-HTML cache. copyToLocal
+  //    wins (cloud higher-major, both corrections-current) and overwrites local's MD body; local's
+  //    pre-existing summaryHtml (rendered from the OLD body) must be nulled so the serve path re-renders.
+  it('WB-H2: a copyToLocal transfer nulls the local loser stale summaryHtml and copies the winner body', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocalOld = '# LocalOld\n\nlower-major stale-format body\n';
+    const bodyCloudWin = '# CloudWin\n\nhigher-major winner body\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocalOld, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+      summaryHtml: '<html>STALE rendered from the old local body</html>',
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloudWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+
+    const report = await runSync(ctx.syncDeps());
+    expect(report.updatedLocal).toBeGreaterThanOrEqual(1);
+
+    const local = await localVideoRecord(ctx);
+    expect(local?.summaryHtml == null).toBe(true);                                  // stale cache invalidated
+    expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloudWin); // winner body copied
+  });
 });

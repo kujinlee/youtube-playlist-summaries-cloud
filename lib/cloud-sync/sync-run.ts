@@ -150,7 +150,14 @@ async function copyAdditiveVideo(
   const slot = await ensureReceiverSlot(to, toP, playlistMeta, video);
 
   let wroteBlob = false;
-  if (video.summaryMd && mdBody != null) {
+  if (video.summaryMd) {
+    // WB-H1 — a video advertising a summaryMd whose blob body is unreadable (null: storage drift /
+    // corruption / RLS miss) is an anomaly. THROW (per-video, caught by the caller) so the baseline is
+    // NOT advanced — a re-run heals once the body is readable. Advertising promoted with no blob would
+    // strand the receiver with a servable-looking row backed by nothing.
+    if (mdBody == null) {
+      throw new Error(`additive: summaryMd present but MD body unreadable for ${video.id}`);
+    }
     // stage → verify (readable + hashes) → promote — never advertise promoted before durable.
     const ref = await toBlob.putStaged(toP, video.summaryMd, Buffer.from(mdBody, 'utf8'), 'text/markdown');
     const staged = await toBlob.get(toP, ref.tempKey);
@@ -168,14 +175,29 @@ async function copyAdditiveVideo(
   }
   if (wroteBlob) {
     sanitized.artifacts = { summaryMd: { key: video.summaryMd, status: 'promoted' } };
+  } else if (sanitized.artifacts && typeof sanitized.artifacts === 'object') {
+    // WB-H1 belt-and-suspenders — no blob written → the receiver must NOT advertise a summaryMd
+    // artifact. A summary-less video (row 13, summaryMd == null) legitimately reaches here and must NOT
+    // throw and must NOT advertise promoted; strip any residual summaryMd pointer.
+    delete sanitized.artifacts.summaryMd;
   }
   await to.upsertVideo(toP, sanitized as Video);
 
   // round-4 H1 — the baseline is written by the caller ONLY after this confirms the row landed
   // (an update against an absent row silently no-ops; never advance a baseline for that).
   const after = await to.readIndex(toP);
-  if (!after.videos.some((v) => v.id === video.id)) {
+  const rec = after.videos.find((v) => v.id === video.id);
+  if (!rec) {
     throw new Error(`additive create did not persist receiver row for ${video.id}`);
+  }
+  // WB-H1 (upgrades the deferred T12-M2) — when a blob was written, verify the receiver record
+  // actually advertises the PROMOTED summaryMd at the right key (not merely that the row exists), so a
+  // silently-dropped artifacts field payload is caught BEFORE the caller advances the baseline.
+  if (wroteBlob) {
+    const art = (rec as any).artifacts?.summaryMd;
+    if (art?.status !== 'promoted' || art?.key !== video.summaryMd) {
+      throw new Error(`additive create did not advertise promoted summaryMd for ${video.id}`);
+    }
   }
 }
 
@@ -283,6 +305,15 @@ async function transferClassA(
     tags: wv.tags,
     tldr: wv.tldr,
     takeaways: wv.takeaways,
+    // WB-H2 — invalidate the loser's stale regenerable cache. Overwriting the loser's MD body without
+    // clearing these leaves summaryHtml/digDeeper* pointing at HTML rendered from the PRE-SYNC body;
+    // the serve path (buildDocHtml/ensureHtmlDoc) checks generator-version, NOT MD-body freshness, so a
+    // same-format prose change (the recency-tiebreak case) would serve stale HTML indefinitely (§5.1
+    // "sync moves MD, not HTML"). merge_video_data stores JSON null / local shallow-merge overrides →
+    // readIndex reads falsy → forces re-render. Matches sanitizeAdditiveVideo, which already nulls these.
+    summaryHtml: null,
+    digDeeperHtml: null,
+    digDeeperMd: null,
     // Deep-merged (cloud merge_video_data / local index write). No Class-B key here → no spurious
     // annotationsEditedAt stamp (F2). Never advertise promoted before the blob is durable (above).
     artifacts: { summaryMd: { key, status: 'promoted' } },
@@ -316,10 +347,9 @@ async function companionTransfer(
  *  per field: advance to the resolved (value, editedAt) EXCEPT a no-write conflict
  *  (winner==='equal' && conflict), which carries the PREVIOUS baseline unchanged (round-3 H2:
  *  recording the winner there would be a false agreement → next-run silent overwrite). */
-function buildBaseline(
-  winnerSignals: ClassASignals, winnerMdHash: string | null,
+function buildClassBBaseline(
   merges: Record<HumanField, FieldMerge>, previousBaseline: VideoBaseline | undefined,
-): VideoBaseline {
+): VideoBaseline['classB'] {
   const classB = {} as VideoBaseline['classB'];
   for (const f of FIELDS) {
     const m = merges[f];
@@ -329,6 +359,13 @@ function buildBaseline(
       classB[f] = { value: m.value, editedAt: m.editedAt };
     }
   }
+  return classB;
+}
+
+function buildBaseline(
+  winnerSignals: ClassASignals, winnerMdHash: string | null,
+  merges: Record<HumanField, FieldMerge>, previousBaseline: VideoBaseline | undefined,
+): VideoBaseline {
   return {
     classA: {
       docVersionMajor: winnerSignals.docVersionMajor,
@@ -336,7 +373,24 @@ function buildBaseline(
       mdCorrectionsHash: winnerSignals.mdCorrectionsHash,
       mdHash: winnerMdHash,
     },
-    classB,
+    classB: buildClassBBaseline(merges, previousBaseline),
+  };
+}
+
+/** WB-B1 — the manifest baseline for a corrections NO-WRITE conflict (§5.5). No Class-A copy ran, so
+ *  Class A must NOT advance to a winner (that would record a false agreement → next-run silent
+ *  overwrite around an unresolved conflict). Preserve the PREVIOUS Class-A baseline so the next run
+ *  re-evaluates the currency-based transfer from the live signals. On a first sync (no previous
+ *  baseline) record an HONEST unresolved placeholder (mdHash null → "no agreed MD"); Class-A baseline
+ *  is write-only (never read by reconcileClassA), so next run re-derives from the actual bodies
+ *  regardless. Class B carries the preserved conflict (buildClassBBaseline). */
+function buildCorrectionsUnresolvedBaseline(
+  merges: Record<HumanField, FieldMerge>, previousBaseline: VideoBaseline | undefined,
+): VideoBaseline {
+  return {
+    classA: previousBaseline?.classA
+      ?? { docVersionMajor: 0, mdGeneratedAt: null, mdCorrectionsHash: null, mdHash: null },
+    classB: buildClassBBaseline(merges, previousBaseline),
   };
 }
 
@@ -405,6 +459,22 @@ export async function runSync(
         report.mergedFields += applied.merged;
         report.conflictsLogged += applied.conflicts;
         const reconciledCorrectionsHash = mdHash(String(merges.corrections.value ?? ''));
+
+        // ── WB-B1 — corrections is an UNRESOLVED no-write conflict (both sides changed, ≥1 backfilled →
+        //    Class B logs+skips, §5.5). Its value is NOT a settled winner, so it must NOT drive a
+        //    currency-based Class-A transfer: reconcileClassA would read one side as corrections-current
+        //    and copy its MD body over the loser's (different-correction) body — DESTROYING the loser's
+        //    corrected MD and recording a false agreement (sticky: the copied bodies then match forever).
+        //    Skip the Class-A copy entirely, flag for regen, and write a baseline that does NOT advance
+        //    Class A (so the next run re-evaluates once the human resolves corrections). The video stays
+        //    "seen" for delete-inference (baseline present).
+        const correctionsUnresolved = merges.corrections.winner === 'equal' && merges.corrections.conflict;
+        if (correctionsUnresolved) {
+          report.needsRegen += 1;
+          if (lv.archived !== cv.archived) report.archivedNotSynced += 1; // R10 — do NOT sync archived
+          await writeVideoBaseline(dataRoot, key, id, buildCorrectionsUnresolvedBaseline(merges, base));
+          continue;
+        }
 
         // ── Class A (needs the MD bodies for hashing — Behavior #1).
         const la = deriveClassASignals(lv, await readMdBody(deps.localBlob, localP, lv));
