@@ -1,3 +1,4 @@
+import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
 import type { ModelEnvelope } from '@/lib/html-doc/model-store';
 
 /** H1 (round 4) — the result of reading ONE side's model, as a TRI-state.
@@ -50,6 +51,20 @@ export type CompanionAction =
  *  definitively stale — its backing body no longer exists — with no ambiguity involved. So the
  *  sender read now decides only whether a REPLACEMENT can be shipped, and everything else is keyed
  *  to the receiver. Deleting a provably-stale model is not a money loss; deleting a matching one is.
+ *
+ *  L-R6-1 (round 6) — the ship branch could DOWNGRADE. When BOTH envelopes match winnerMdHash the
+ *  bodies are identical, so the only remaining difference is generatorVersion — and shipping the
+ *  sender's blind overwrites a receiver model isFresh() accepts (lib/html-doc/read-model.ts) with one
+ *  it rejects. The share flips from rendering to a 503 (app/s/[token]/route.ts) and the only recovery
+ *  is an owner re-serve, which reserves and charges (lib/html-doc/serve-doc.ts) — the same
+ *  user-re-spend class as H1 and H-R5-1, so it is guarded rather than tolerated.
+ *  Reachability is not exotic: it needs GENERATOR_VERSION skew between the local checkout and the
+ *  deployed cloud image (routine whenever the deploy lags the checkout) AND the loser already holding
+ *  a model built from the winner's exact body — which is the normal state after any prior sync, since
+ *  reconcile-class-a.ts falls through to a transfer on equal mdHash when currency or format disagree.
+ *  So when both match, prefer the FRESHER by generatorVersion, and never write when the receiver is
+ *  already current. (The report flag stays false on every both-match path: a version-skewed receiver
+ *  was already not-fresh BEFORE this run, which is L-R6-2, deliberately out of scope here.)
  */
 export function decideCompanion(args: {
   winnerMdHash: string;
@@ -58,19 +73,33 @@ export function decideCompanion(args: {
 }): CompanionAction {
   const { winnerMdHash, senderModel, receiverModel } = args;
 
-  // 1. The sender holds a model built from the winning MD → ship it (it supersedes whatever the
+  const senderMatch = senderModel.kind === 'envelope'
+    && senderModel.envelope.sourceMdHash === winnerMdHash ? senderModel.envelope : null;
+  const receiverMatch = receiverModel.kind === 'envelope'
+    && receiverModel.envelope.sourceMdHash === winnerMdHash ? receiverModel.envelope : null;
+
+  // 1. BOTH sides hold a model built from the winning MD (L-R6-1). Same body, so generatorVersion is
+  //    the whole difference: ship ONLY when it is a genuine upgrade, never a downgrade, and never a
+  //    write that changes nothing.
+  if (senderMatch && receiverMatch) {
+    if (receiverMatch.generatorVersion === GENERATOR_VERSION) {
+      return { kind: 'noop', shareNeedsOwnerServe: false }; // receiver already fresh — do not write
+    }
+    if (senderMatch.generatorVersion === GENERATOR_VERSION) {
+      return { kind: 'ship', envelope: senderMatch }; // a real upgrade
+    }
+    return { kind: 'noop', shareNeedsOwnerServe: false }; // neither is current — both need a re-serve
+  }
+
+  // 2. Only the sender holds a model built from the winning MD → ship it (it supersedes whatever the
   //    receiver has, so the receiver's own state does not matter here).
-  if (senderModel.kind === 'envelope' && senderModel.envelope.sourceMdHash === winnerMdHash) {
-    return { kind: 'ship', envelope: senderModel.envelope };
-  }
+  if (senderMatch) return { kind: 'ship', envelope: senderMatch };
 
-  // 2. Nothing shippable, but the receiver already holds a model built from the WINNING MD — it is
+  // 3. Nothing shippable, but the receiver already holds a model built from the WINNING MD — it is
   //    still valid. Do not destroy a paid artifact, and the share renders, so report nothing.
-  if (receiverModel.kind === 'envelope' && receiverModel.envelope.sourceMdHash === winnerMdHash) {
-    return { kind: 'noop', shareNeedsOwnerServe: false };
-  }
+  if (receiverMatch) return { kind: 'noop', shareNeedsOwnerServe: false };
 
-  // 3. The receiver's model is not known-good. The two axes now diverge, and DELIBERATELY:
+  // 4. The receiver's model is not known-good. The two axes now diverge, and DELIBERATELY:
   //
   //  - DELETE the blob only on PROOF. A receiver envelope whose sourceMdHash is present and differs
   //    is definitively stale — its backing body no longer exists — and needs no sender read to

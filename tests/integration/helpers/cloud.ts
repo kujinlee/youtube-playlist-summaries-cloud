@@ -61,9 +61,10 @@ export interface Ctx {
     playlistId: string, videoId: string, video: Record<string, unknown>, status: string,
   ): Promise<void>;
   /** Build the SyncDeps for a runSync() call. failCloudPromote wraps the cloud blob store so its
-   *  promote() throws AFTER staging (crash-safety fault injection). Cloud stores use the USER
-   *  session client (RLS-scoped) — never service-role — the money/RLS invariant. */
-  syncDeps(opts?: { failCloudPromote?: boolean }): SyncDeps;
+   *  promote() throws AFTER staging (crash-safety fault injection). failCloudModelPut makes only the
+   *  companion `models/*` put throw, leaving the Class-A staged→promote path intact (M-R6-1). Cloud
+   *  stores use the USER session client (RLS-scoped) — never service-role — the money/RLS invariant. */
+  syncDeps(opts?: { failCloudPromote?: boolean; failCloudModelPut?: boolean }): SyncDeps;
   /** Read the sync manifest runSync wrote for this ctx's playlist. */
   readManifest(): Promise<{ version: 1; videos: Record<string, unknown> }>;
   /** Sum of reserved_cents + actual_cents across spend_ledger (money-safety assertions).
@@ -125,10 +126,11 @@ export async function makeOwnerContext(): Promise<Ctx> {
       if (error) throw error;
     },
 
-    syncDeps(opts: { failCloudPromote?: boolean } = {}): SyncDeps {
+    syncDeps(opts: { failCloudPromote?: boolean; failCloudModelPut?: boolean } = {}): SyncDeps {
       const cloud = new SupabaseMetadataStore(userClient);
       let cloudBlob: BlobStore = new SupabaseBlobStore(userClient, ARTIFACTS_BUCKET);
       if (opts.failCloudPromote) cloudBlob = new FailPromoteBlobStore(cloudBlob);
+      if (opts.failCloudModelPut) cloudBlob = new FailModelPutBlobStore(cloudBlob);
       return {
         local: localMetadataStore,
         cloud,
@@ -169,6 +171,27 @@ class FailPromoteBlobStore implements BlobStore {
   delete(p: Principal, key: string) { return this.inner.delete(p, key); }
   putStaged(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.putStaged(p, key, bytes, ct); }
   async promote(_ref: StagedRef): Promise<void> { throw new Error('injected cloud promote failure'); }
+  deletePrefix(p: Principal, prefix: string) { return this.inner.deletePrefix(p, prefix); }
+  list(p: Principal, prefix: string) { return this.inner.list(p, prefix); }
+}
+
+/** M-R6-1 — wraps a BlobStore so ONLY the companion model put (`models/*.json`) throws. The Class-A
+ *  staged→promote path is untouched, so the transfer still commits durably and the fault isolates
+ *  exactly the companion ship write: the run must report the share as unready rather than leave the
+ *  receiver's pre-sync model advertised as fresh with no re-run that ever retries the ship. */
+class FailModelPutBlobStore implements BlobStore {
+  constructor(private inner: BlobStore) {}
+  /** Delegated — the sync path reads this to decide whether "no bytes" is a semantic fact. */
+  get provesAbsence(): boolean | undefined { return this.inner.provesAbsence; }
+  put(p: Principal, key: string, bytes: Buffer, ct: string) {
+    if (key.startsWith('models/')) throw new Error('injected companion model put failure');
+    return this.inner.put(p, key, bytes, ct);
+  }
+  get(p: Principal, key: string) { return this.inner.get(p, key); }
+  exists(p: Principal, key: string) { return this.inner.exists(p, key); }
+  delete(p: Principal, key: string) { return this.inner.delete(p, key); }
+  putStaged(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.putStaged(p, key, bytes, ct); }
+  promote(ref: StagedRef) { return this.inner.promote(ref); }
   deletePrefix(p: Principal, prefix: string) { return this.inner.deletePrefix(p, prefix); }
   list(p: Principal, prefix: string) { return this.inner.list(p, prefix); }
 }

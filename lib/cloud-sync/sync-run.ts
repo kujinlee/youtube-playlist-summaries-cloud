@@ -377,10 +377,14 @@ async function transferClassA(
 
 /** Behavior #5 — ship the winner's summary MODEL to the loser iff it was generated from the winning
  *  MD; otherwise delete the loser's model (best-effort, OUTSIDE the atomic commit) and flag that the
- *  owner must re-serve — but ONLY when that model proves itself stale (H-R5-1). */
+ *  owner must re-serve — but ONLY when that model proves itself stale (H-R5-1).
+ *
+ *  Every companion write is BEST-EFFORT and never throws (M-R6-1): the caller must still advance the
+ *  baseline, because transferClassA has already committed the winner body durably. A returned `error`
+ *  is surfaced in report.errors by the caller without aborting the per-video flow. */
 async function companionTransfer(
   winner: Side, loser: Side, winnerMdHash: string, winnerVideo: Video,
-): Promise<{ shareNeedsOwnerServe: boolean }> {
+): Promise<{ shareNeedsOwnerServe: boolean; error?: string }> {
   if (!winnerVideo.summaryMd) return { shareNeedsOwnerServe: false };
   const base = winnerVideo.summaryMd.replace(/\.md$/, '');
   // H-R5-1 (round 5) — read BOTH sides. The sender read says whether a replacement can be shipped;
@@ -390,8 +394,19 @@ async function companionTransfer(
   ]);
   const decision = decideCompanion({ winnerMdHash, senderModel, receiverModel });
   if (decision.kind === 'ship') {
-    await writeModelEnvelope(loser.p, base, decision.envelope, loser.blob);
-    return { shareNeedsOwnerServe: false };
+    // M-R6-1 — a throw here would be STICKY, not merely noisy: the Class-A body already landed, so the
+    // next run's reconcileClassA returns 'skip' and the companion step (gated on !== 'skip') never
+    // runs again. The receiver would keep a model built from the PRE-SYNC body — and if its section
+    // titles and generatorVersion still match, the serve path's drift guard cannot see it, so it is
+    // served as fresh forever (the prose-only-change case behind H-R5-1). Swallow the failure the way
+    // the delete below already does and report the share as unready, so the staleness is at least
+    // visible; the error is returned so it still surfaces in report.errors.
+    try {
+      await writeModelEnvelope(loser.p, base, decision.envelope, loser.blob);
+      return { shareNeedsOwnerServe: false };
+    } catch (e: any) {
+      return { shareNeedsOwnerServe: true, error: `companion model ship failed: ${e?.message ?? String(e)}` };
+    }
   }
   // H1 (round 4) / H-R5-1 (round 5) — nothing shippable and the receiver's model is not PROVABLY
   // stale: leave the blob alone. The report flag is decided separately (§10 row 7 counts a share
@@ -624,6 +639,9 @@ export async function runSync(
         if (decision.action !== 'skip' && winnerMdHash && winnerSide && loserSide) {
           const c = await companionTransfer(winnerSide, loserSide, winnerMdHash, winnerVideo);
           if (c.shareNeedsOwnerServe) report.shareNeedsOwnerServe += 1;
+          // M-R6-1 — companion failures are reported, never thrown: the Class-A commit above is
+          // durable, so the baseline below MUST still advance (re-running would not retry the ship).
+          if (c.error) report.errors.push({ videoId: id, message: c.error });
         }
         if (lv.archived !== cv.archived) report.archivedNotSynced += 1; // R10 — do NOT sync archived
 

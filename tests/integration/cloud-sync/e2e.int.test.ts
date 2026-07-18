@@ -19,6 +19,7 @@ import {
 import { adminClient } from '@/tests/integration/helpers/clients';
 import { runSync } from '@/lib/cloud-sync/sync-run';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
+import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
 import { getAuthedClient, NoSessionError, type TokenStore } from '@/lib/cloud-sync/auth';
 import type { VideoBaseline } from '@/lib/cloud-sync/types';
 
@@ -40,7 +41,7 @@ const H_NO_CORRECTIONS = mdHash('');
 /** The companion model blob key for this ctx's summary (models/<base>.json, base = summaryMd sans .md). */
 const modelKey = (ctx: Ctx) => `models/${ctx.videoId}.json`;
 /** A schema-valid ModelEnvelope (ModelEnvelopeSchema) whose sourceMdHash is caller-supplied. */
-const modelEnvelope = (sourceMdHash: string) => ({
+const modelEnvelope = (sourceMdHash: string, generatorVersion?: string) => ({
   sourceMd: 'seed.md', generatedAt: '2026-01-01T00:00:00.000Z', sourceSections: ['A'],
   model: {
     sections: [{
@@ -49,6 +50,7 @@ const modelEnvelope = (sourceMdHash: string) => ({
     }],
   },
   sourceMdHash,
+  ...(generatorVersion ? { generatorVersion } : {}),
 });
 /** Read the cloud playlist row's title (admin client — assertion only, not a code path). */
 async function cloudPlaylistTitle(ctx: Ctx): Promise<string | null> {
@@ -242,7 +244,9 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
       mdBody: '# Loser7\n\nformat-1\n', docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
     });
 
-    const report = await runSync(ctx.syncDeps()); // winner (local) has no model envelope → deleteReceiverModel
+    // L-R6-3 — neither side holds a model envelope, and the Supabase receiver cannot prove its own
+    // absence, so this takes the `noop + shareNeedsOwnerServe: true` path (H-R5-1), NOT a delete.
+    const report = await runSync(ctx.syncDeps());
     expect(report.shareNeedsOwnerServe).toBeGreaterThanOrEqual(1);
   });
 
@@ -779,6 +783,83 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     const r2 = await runSync(ctx.syncDeps());
     expect(r2.shareNeedsOwnerServe).toBe(0);
     expect(await cloudBlobBytes(ctx, modelKey(ctx))).not.toBeNull();
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+  });
+
+  // ── L-R6-1 (round 6) — the ship branch must never DOWNGRADE the receiver. Both sides hold a model
+  //    built from the WINNING body, but the sender's was built by an older checkout (GENERATOR_VERSION
+  //    skew between the local tree and the deployed cloud image). Shipping it blind would replace a
+  //    model isFresh() accepts with one it rejects, flipping the share to a 503 whose only recovery is
+  //    a PAID owner re-serve.
+  it('L-R6-1: a ship never overwrites a receiver model that is already generation-fresh', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocalWin = '# LocalWin\n\nhigher-major local body\n';
+    const bodyCloudOld = '# CloudOld\n\nlower-major cloud body\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocalWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloudOld, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    // Both envelopes were built from the winning body; only the SENDER's generation is behind.
+    await ctx.localBlob.put(
+      ctx.localPrincipal, modelKey(ctx),
+      Buffer.from(`${JSON.stringify(modelEnvelope(bodyHash(bodyLocalWin), 'magazine-skim v1'))}\n`, 'utf8'),
+      'application/json',
+    );
+    await putCloudBlob(
+      ctx, modelKey(ctx),
+      Buffer.from(`${JSON.stringify(modelEnvelope(bodyHash(bodyLocalWin), GENERATOR_VERSION))}\n`, 'utf8'),
+      'application/json',
+    );
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.updatedCloud).toBeGreaterThanOrEqual(1);          // the Class-A transfer still ran
+    const kept = await cloudBlobBytes(ctx, modelKey(ctx));
+    expect(kept).not.toBeNull();
+    const keptEnvelope = JSON.parse(kept!.toString('utf8'));
+    expect(keptEnvelope.generatorVersion).toBe(GENERATOR_VERSION); // NOT downgraded to v1
+    expect(keptEnvelope.sourceMdHash).toBe(bodyHash(bodyLocalWin));
+    expect(r1.shareNeedsOwnerServe).toBe(0);                     // the share still renders
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+  });
+
+  // ── M-R6-1 (round 6) — a failed companion ship must not be sticky-silent. transferClassA has
+  //    already committed the winner body durably, so the next run's reconcile returns 'skip' and the
+  //    ship is never retried; the receiver keeps a model built from the PRE-SYNC body. Swallow the
+  //    write failure, keep the baseline advancing (the Class-A commit DID land), and report the share
+  //    as unready so the staleness is visible instead of being served as fresh forever.
+  it('M-R6-1: a failed companion ship reports the share unready, still advances the baseline', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocalWin = '# LocalWin\n\nhigher-major local body\n';
+    const bodyCloudOld = '# CloudOld\n\nlower-major cloud body\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocalWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloudOld, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    // Sender (local) holds a shippable model built from the winning body → decideCompanion → ship.
+    await ctx.localBlob.put(
+      ctx.localPrincipal, modelKey(ctx),
+      Buffer.from(`${JSON.stringify(modelEnvelope(bodyHash(bodyLocalWin), GENERATOR_VERSION))}\n`, 'utf8'),
+      'application/json',
+    );
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const r1 = await runSync(ctx.syncDeps({ failCloudModelPut: true }));
+
+    // The Class-A commit landed durably despite the companion failure.
+    expect(r1.updatedCloud).toBeGreaterThanOrEqual(1);
+    expect((await cloudBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyLocalWin);
+    // Baseline advanced — the transfer is durable, so re-running must not redo it.
+    const m1 = await ctx.readManifest();
+    expect((m1.videos[ctx.videoId] as VideoBaseline).classA.mdHash).toBe(bodyHash(bodyLocalWin));
+    // The share is reported unready rather than left silently stale.
+    expect(r1.shareNeedsOwnerServe).toBe(1);
+    expect(r1.errors.some((e) => e.videoId === ctx.videoId)).toBe(true); // failure stays visible
     expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
   });
 
