@@ -125,6 +125,49 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ---
 
+## Honest-blob-read slice (`BlobRead`) — own spec + merge gate
+
+**Why it exists:** Stage 3 cloud-sync produced 1 Blocking + 3 High that were all one shape — a value
+meaning *absent* is also what a *failure* produces. `SupabaseBlobStore.get` is `if (error) return null`
+(swallows 404, 5xx, timeout, RLS) while `LocalFsBlobStore.get` nulls only on ENOENT. The branch fixed
+its own call sites with the `BlobStore.provesAbsence` flag — a side-channel callers must remember to
+consult. The durable fix is to make the type honest so the compiler enforces it at every call site:
+
+```ts
+type BlobRead =
+  | { ok: true;  bytes: Buffer }
+  | { ok: false; reason: 'absent' }
+  | { ok: false; reason: 'unreadable'; cause: unknown };
+```
+
+**⚠️ Not just cleanup — there is a live MONEY-PATH instance outside cloud-sync** (found 2026-07-18 by
+reading, **not** empirically verified): `lib/html-doc/serve-doc.ts:56` — `readFreshMagazineModel` →
+`readModelEnvelope` → `blobStore.get`. A transient Supabase Storage error returns `null`, which the
+serve path reads as *"no model"*, so it falls through to `reserve_serve_model` (`:60`) and
+`generateMagazineModel` (`:95`) — **regenerating and re-charging for a model that already exists**.
+Pre-existing (predates this branch, has been live-equivalent through every prior merge) and *bounded*
+by the existing attempt caps, per-owner budget and single-flight lease — so it is not a runaway — but
+each occurrence is a genuine double-charge, and a storage blip is exactly what happens under load or
+mid-deploy. **Verify this empirically before or during M1.4 smoke test** (inject a storage 5xx and
+confirm whether a paid regeneration fires).
+
+**Scope:** `lib/storage/blob-store.ts` + both impls; then every caller — `serve-doc.ts`,
+`serve-summary-core.ts`, `read-model.ts`, `model-store.ts`, `rerender.ts`, `generate.ts`,
+`build-doc-html.ts`, `dig-handler.ts`, `load-dig-for-serve.ts`, `app/api/pdf/[id]/route.ts`. Each
+caller must state which `reason` it means; `unreadable` must never trigger a spend or a delete. Retire
+`provesAbsence` once the type carries the information.
+
+**Second, smaller item in the same slice:** delete the `setPlaylistMeta` footgun — omitting the
+optional title writes `playlist_title: meta.playlistTitle ?? null`, i.e. **erases** it (this was H3).
+Split into `setPlaylistUrl` + the never-clobber `setPlaylistTitleIfNull`, which *already existed* and
+was simply not called — proof that offering a safe alternative is not enough while the unsafe one is
+callable.
+
+**Sequencing:** after M2a merges (touches merged serving/sharing/dig read paths, so it must not ride
+along on the sync branch). Needs its own spec + review + human merge gate like any other slice.
+
+---
+
 ## Parking Lot — post-launch hardening (does NOT block launch)
 - **Real-cost settle slice** (spec §10): replace the keep/release *heuristic* with real `actual_cents`
   from `usageMetadata`; closes the §2.4a/b/**4c** residuals + the crash residual (billable-phase marker).
