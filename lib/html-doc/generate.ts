@@ -4,6 +4,7 @@ import { generateMagazineModel } from '../gemini';
 import { parseSummaryMarkdown } from './parse';
 import { renderMagazineHtml, GENERATOR_VERSION } from './render';
 import { writeModelEnvelope } from './model-store';
+import { mdHash } from '@/lib/cloud-sync/content-hash';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import type { ProgressEvent } from '../../types';
 
@@ -52,6 +53,10 @@ export async function runHtmlDoc(
     sourceSections: parsed.sections.map((s) => s.title),
     generatorVersion: GENERATOR_VERSION,
     model,
+    // Stage 3 (§4.2): hash the MD BODY (`md`, line ~33), NOT `sourceMd`/`video.summaryMd`
+    // (the blob key/filename) — decideCompanion (Task 8) compares against mdHash(body); a
+    // filename-hash would never match and every synced companion would be deleted.
+    sourceMdHash: mdHash(md),
   }, resolvedBlob);
 
   onProgress({ type: 'step', videoId, step: 'Rendering HTML…', current: 3, total: 3 });

@@ -7,6 +7,23 @@ import type { PlaylistIndex, Video } from '../types';
 const INDEX_FILE = 'playlist-index.json';
 const VIDEO_ID_RE = /^[A-Za-z0-9_-]{1,20}$/;
 
+// Stage 3 Cloud Sync (§5.1/§5.7): Class-B ("human-edited") annotation fields — a set or a
+// clear of any of these stamps `annotationsEditedAt.<field>` (user path → now(), sync path
+// → the caller-supplied source timestamp). Shared by LocalFsMetadataStore's
+// updateVideoAnnotations and updateVideoFields so both write paths stamp identically.
+export const CLASS_B_ANNOTATION_KEYS = ['personalNote', 'personalScore', 'corrections'] as const;
+export type ClassBAnnotationKey = (typeof CLASS_B_ANNOTATION_KEYS)[number];
+
+/** Class-B keys present as OWN properties of `fields` (set to a value OR explicitly
+ *  cleared via `undefined`) — i.e. the keys that must stamp annotationsEditedAt. A key
+ *  that is simply absent from `fields` (e.g. a bare `{ summaryHtml: null }` write) is not
+ *  "changed" and must not trigger a stamp. */
+export function classBKeysIn(fields: Partial<Video>): ClassBAnnotationKey[] {
+  return Object.keys(fields).filter((k): k is ClassBAnnotationKey =>
+    (CLASS_B_ANNOTATION_KEYS as readonly string[]).includes(k),
+  );
+}
+
 // Fields retired by the PDF-generation removal (summaryPdf/deepDivePdf) and the
 // deep-dive removal (deepDiveMd/deepDiveHtml/deepDiveVersion). Index files written
 // before those efforts still carry these keys; strip them on read so the API never

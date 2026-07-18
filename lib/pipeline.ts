@@ -14,6 +14,7 @@ import { CURRENT_DOC_VERSION } from './doc-version';
 import { runHtmlDoc } from './html-doc/generate';
 import { formatDuration } from './format-duration';
 import { summaryCore } from './ingestion/summary-core';
+import { mdHash } from './cloud-sync/content-hash';
 
 const VALID_VIDEO_TYPES: VideoType[] = ['Tutorial', 'Analysis', 'Case Study', 'Framework', 'Demo', 'Interview'];
 const VALID_AUDIENCES: Audience[] = ['Beginner', 'Intermediate', 'Advanced'];
@@ -264,6 +265,11 @@ export async function runIngestion(
         summaryMd: `${baseName}.md`,
         processedAt: new Date().toISOString(),
         docVersion: CURRENT_DOC_VERSION,
+        // Stage 3 (§5.1): a first-generation MD reflects EMPTY corrections — mdHash('')
+        // is deterministic and matches the compare path (Task 7 compares against
+        // mdHash(reconciledCorrections), which is mdHash('') when no corrections exist).
+        mdGeneratedAt: new Date().toISOString(),
+        mdCorrectionsHash: mdHash(''),
         playlistIndex: playlistPos,
         ...(videoType !== undefined && { videoType }),
         ...(audience !== undefined && { audience }),
