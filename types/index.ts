@@ -83,6 +83,17 @@ export const VideoSchema = z.object({
   // Optional → the local path never sets it (same back-compat pattern as updatedAt). Gates the
   // cloud View/Download/Share menu items; the serving route enforces the same predicate server-side.
   summaryReady: z.boolean().optional(),
+  // Stage 3 Cloud Sync (§5.1): generated-MD signals — stamped on (re)generation.
+  mdGeneratedAt: z.string().datetime({ offset: true }).optional(),
+  mdCorrectionsHash: z.string().optional(),
+  // Per-field human-edit timestamps (§5.1). A clear stamps the timestamp while removing the value.
+  annotationsEditedAt: z
+    .object({
+      personalNote: z.string().datetime({ offset: true }).optional(),
+      personalScore: z.string().datetime({ offset: true }).optional(),
+      corrections: z.string().datetime({ offset: true }).optional(),
+    })
+    .optional(),
 });
 export type Video = z.infer<typeof VideoSchema>;
 

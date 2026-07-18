@@ -18,8 +18,11 @@ export const ModelEnvelopeSchema = z
     sourceSections: z.array(z.string()),
     generatorVersion: z.string().min(1).optional(),
     model: MagazineModelSchema,
-  })
-  .strict();
+    // Stage 3 (§4.2): MD-body-only digest of the MD this model was generated from.
+    sourceMdHash: z.string().optional(),
+  });
+  // NOTE: .strict() intentionally removed — a new-writer envelope with sourceMdHash
+  // must not make an old reader's readModelEnvelope return null (§5.7 round-5 M-2).
 
 export type ModelEnvelope = z.infer<typeof ModelEnvelopeSchema>;
 
