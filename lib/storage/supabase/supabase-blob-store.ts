@@ -22,7 +22,13 @@ export class SupabaseBlobStore implements BlobStore {
 
   async get(p: Principal, key: string): Promise<Buffer | null> {
     const { data, error } = await this.b().download(this.objectKey(p, key));
-    if (error) return null;   // 404 → null
+    // Swallows EVERY failure, not just 404: network, 5xx, timeout and RLS denial all return null,
+    // so a null here does NOT prove the object is absent. Callers that treat "no bytes" as a
+    // semantic fact (e.g. "this replica holds no MD") must corroborate it against the record that
+    // advertises the key — see the B1 guard in lib/cloud-sync/sync-run.ts. Behavior is deliberately
+    // left as-is: shared with already-merged read paths where absent-vs-unreadable is immaterial.
+    // Note the LOCAL blob store differs — it returns null only on ENOENT and throws otherwise.
+    if (error) return null;
     return Buffer.from(await data.arrayBuffer());
   }
 

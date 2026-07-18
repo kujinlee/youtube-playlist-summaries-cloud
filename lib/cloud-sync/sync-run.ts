@@ -491,6 +491,25 @@ export async function runSync(
         const la = deriveClassASignals(lv, await readMdBody(deps.localBlob, localP, lv));
         const ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
 
+        // ── B1 (round 3) — the two-sided counterpart of copyAdditiveVideo's WB-H1/H-R2-1 guard (:160).
+        //    readMdBody returns null for TWO different situations: the record advertises no summaryMd,
+        //    or it advertises one whose bytes could not be READ. The backends disagree on which errors
+        //    are which: local get throws on anything but ENOENT, but the Supabase get is `if (error)
+        //    return null` — it swallows EVERY failure (network, 5xx, timeout, RLS denial), so on the
+        //    cloud side an ordinary transient download error is indistinguishable from "no MD".
+        //    deriveClassASignals maps a null body to mdHash: null, and reconcileClassA reads
+        //    mdHash == null as "this side HAS NO MD" (:21-23) — and those presence branches return
+        //    BEFORE the corrections-currency and never-downgrade-format ladder (:38-46). So an
+        //    unreadable body made the other replica's body get copied over it (destroying it) and
+        //    recorded a full-agreement baseline; run 2 then saw identical bodies and skipped, making
+        //    the loss permanent and recoverable only by paid regeneration.
+        //    Throwing per-video is caught below, surfaces in report.errors, and advances NO baseline,
+        //    so the run heals by itself once the body is readable. With this guard reconcileClassA's
+        //    !lHas/!cHas branches mean what they claim: the side genuinely advertises no summaryMd —
+        //    which is exactly M-R2-2's "purely additive hydration", so its intent is preserved.
+        if (lv.summaryMd && la.mdHash == null) throw new Error(`local MD body unreadable for ${id}`);
+        if (cv.summaryMd && ca.mdHash == null) throw new Error(`cloud MD body unreadable for ${id}`);
+
         //    M-R2-2 — the skip is narrowed to the genuinely DESTRUCTIVE case: BOTH sides actually hold
         //    an MD body. When one side has none, the Class-A copy is purely ADDITIVE hydration —
         //    nothing can be destroyed and no false agreement about competing bodies is possible — so

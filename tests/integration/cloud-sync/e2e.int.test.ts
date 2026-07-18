@@ -550,4 +550,80 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     expect(local?.corrections).toBe('A');
     expect((await cloudVideoRecord(ctx))?.corrections).toBe('B');
   });
+
+  // ── B1 (round 3) — `mdHash == null` conflates "this side advertises NO MD" with "this side's MD
+  //    body could not be READ". The Supabase blob store returns null on EVERY error (network, 5xx,
+  //    timeout, RLS denial), not only 404, so an ordinary transient download failure is
+  //    indistinguishable from a summary-less video. reconcileClassA's presence branches (!lHas/!cHas)
+  //    fire BEFORE the corrections-currency and never-downgrade-format ladder, so the unreadable side
+  //    is treated as the empty side and the OTHER replica's body is copied over it — destroying it and
+  //    laundering the result into a full-agreement baseline. Both manifestations below must instead
+  //    surface a per-video error, preserve every byte, and advance NO baseline (so the run heals once
+  //    the body is readable). Each asserts across TWO runs: round 2's postmortem was that a
+  //    single-run assertion passed while the laundering bug was live.
+  it('B1/P1: an UNREADABLE cloud MD body under a corrections conflict does not overwrite the local body; error surfaced, no baseline (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocal = '# LocalCorrA\n\nMD generated for correction A\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocal, corrections: 'A', mdCorrectionsHash: mdHash('A'), // backfilled (no per-field ts)
+      docVersion: { major: 1, minor: 0 },
+    });
+    // Cloud ADVERTISES a promoted summaryMd but its blob is absent → readMdBody returns null, which
+    // the buggy path read as "cloud has no MD" ⇒ the corrections guard did not fire ⇒ copyToCloud.
+    await seedCloudVideo(ctx, {
+      /* mdBody omitted → blob unreadable */
+      corrections: 'B', mdCorrectionsHash: mdHash('B'), docVersion: { major: 1, minor: 0 },
+    });
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    for (const _run of [1, 2]) {
+      const report = await runSync(ctx.syncDeps());
+
+      // The failure is SURFACED, not silent (the buggy path reported errors: []).
+      expect(report.errors.some((e) => e.videoId === ctx.videoId)).toBe(true);
+      expect(report.updatedCloud).toBe(0);
+      expect(report.updatedLocal).toBe(0);
+      // Local body byte-preserved; cloud body still absent (nothing was written over the gap).
+      expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyLocal);
+      expect(await cloudBlobBytes(ctx, key(ctx))).toBeNull();
+      // Both corrections preserved.
+      expect((await localVideoRecord(ctx))?.corrections).toBe('A');
+      expect((await cloudVideoRecord(ctx))?.corrections).toBe('B');
+      // No baseline on either run — run 2 must not launder the unreadable side into an agreement.
+      expect((await ctx.readManifest()).videos[ctx.videoId]).toBeUndefined();
+      expect(await ctx.spendLedgerTotal()).toBe(spendBefore); // no sync path ever charges
+    }
+  });
+
+  it('B1/P2: an UNREADABLE cloud MD body does not downgrade the cloud format or overwrite bodies; error surfaced, no baseline (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocal = '# LocalOld\n\nlower-major local body\n';
+    // No corrections anywhere — this manifestation is NOT conflict-gated: the !cHas early return in
+    // reconcileClassA precedes the never-downgrade-format rule, so a transient download error let a
+    // major-1 body overwrite a major-9 one and recorded major 1 as the agreed baseline. Run 2 then saw
+    // identical bodies ⇒ skip ⇒ permanent, recoverable only by full (paid) regeneration.
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocal, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    await seedCloudVideo(ctx, {
+      /* mdBody omitted → blob unreadable */
+      docVersion: { major: 9, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    for (const _run of [1, 2]) {
+      const report = await runSync(ctx.syncDeps());
+
+      expect(report.errors.some((e) => e.videoId === ctx.videoId)).toBe(true);
+      expect(report.updatedCloud).toBe(0);
+      expect(report.updatedLocal).toBe(0);
+      expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyLocal);
+      expect(await cloudBlobBytes(ctx, key(ctx))).toBeNull();
+      // Format NOT downgraded on either side (the buggy path wrote cloud major 9 → 1).
+      expect((await cloudVideoRecord(ctx))?.docVersion?.major).toBe(9);
+      expect((await localVideoRecord(ctx))?.docVersion?.major).toBe(1);
+      expect((await ctx.readManifest()).videos[ctx.videoId]).toBeUndefined();
+      expect(await ctx.spendLedgerTotal()).toBe(spendBefore); // no sync path ever charges
+    }
+  });
 });
