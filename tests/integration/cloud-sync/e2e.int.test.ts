@@ -14,7 +14,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import {
   makeOwnerContext, prepareSyncCtx, seedCloudVideo, seedLocalVideoFull, seedManifestBaseline,
-  cloudVideoRecord, localVideoRecord, cloudBlobBytes, localBlobBytes, type Ctx,
+  cloudVideoRecord, localVideoRecord, cloudBlobBytes, localBlobBytes, putCloudBlob, type Ctx,
 } from '@/tests/integration/helpers/cloud';
 import { adminClient } from '@/tests/integration/helpers/clients';
 import { runSync } from '@/lib/cloud-sync/sync-run';
@@ -657,10 +657,58 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
   //    does not throw, so the baseline advanced, run 2 saw equal hashes and returned 'skip', and
   //    companionTransfer never ran again.
   //    Here the cloud sender genuinely has no model, which on the Supabase backend is EXACTLY the
-  //    unreadable case at the byte level — absence is unprovable, so the local model must survive.
-  //    (Row 7 covers the mirror direction, where the LOCAL sender's ENOENT does prove absence and
-  //    the delete is still correct.)
-  it('H1: an unprovable cloud model read leaves the local model intact and flags no owner-serve (2 runs)', async () => {
+  //    unreadable case at the byte level — absence is unprovable.
+  //
+  //    H-R5-1 (round 5) — round 4 keyed the WHOLE decision to that sender read, which was wrong in
+  //    both directions, so the three rows below replace the single round-4 row. The sender read now
+  //    decides only whether a REPLACEMENT can be shipped; the receiver's own sourceMdHash decides
+  //    its fate, and it decides it exactly (we hold winnerMdHash). Rows (i) and (ii) share the
+  //    identical unprovable-cloud-sender setup and differ ONLY in the receiver's sourceMdHash,
+  //    which is the whole point: the sender read is not the thing that answers the question.
+  //    (Row 7 covers the mirror direction, where the LOCAL sender's ENOENT proves absence.)
+
+  // (i) The round-4 defect: `unknown` → noop KEPT a model whose backing body was just overwritten.
+  //     Nothing catches it downstream — the serve path's drift guard compares section TITLES and
+  //     generatorVersion, never sourceMdHash, so a prose-only change (headings identical, which is
+  //     exactly the recency-tiebreak case) renders stale Gemini prose as current forever, and
+  //     dig-deeper never regenerates. Its staleness needs no sender read to establish.
+  it('H-R5-1(i): an unprovable sender read still DELETES a provably-stale receiver model (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    // Same section titles, different prose — the drift guard cannot see the difference.
+    const bodyLocalOld = '# Shared Title\n\nthe OLD prose the local model was built from\n';
+    const bodyCloudWin = '# Shared Title\n\nthe NEW prose that wins on format major\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocalOld, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloudWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    // Receiver (local) model was built from the OLD body; sender (cloud) holds no model at all.
+    await ctx.localBlob.put(
+      ctx.localPrincipal, modelKey(ctx),
+      Buffer.from(`${JSON.stringify(modelEnvelope(bodyHash(bodyLocalOld)))}\n`, 'utf8'), 'application/json',
+    );
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.updatedLocal).toBeGreaterThanOrEqual(1);            // the Class-A transfer ran
+    expect(await localBlobBytes(ctx, modelKey(ctx))).toBeNull();  // provably stale → deleted
+    expect(r1.shareNeedsOwnerServe).toBe(1);                      // owner must re-serve the share
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);       // the delete itself never charges
+
+    // Run 2 — hashes now agree → reconcileClassA 'skip' → companionTransfer never runs again. The
+    // stickiness that would have made a WRONG decision permanent must not resurrect the model.
+    const r2 = await runSync(ctx.syncDeps());
+    expect(r2.shareNeedsOwnerServe).toBe(0);
+    expect(await localBlobBytes(ctx, modelKey(ctx))).toBeNull();
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+  });
+
+  // (ii) The round-4 money bug, preserved: the receiver's model was built from the very body that
+  //      just won, so it is still valid. An unprovable sender read must not cost the owner a paid
+  //      Gemini magazine transform to rebuild what it already has.
+  it('H-R5-1(ii): an unprovable sender read PRESERVES a receiver model that matches the winner (2 runs)', async () => {
     const ctx = await makeOwnerContext();
     const bodyLocalOld = '# LocalOld\n\nlower-major local body\n';
     const bodyCloudWin = '# CloudWin\n\nhigher-major winner body\n';
@@ -670,8 +718,8 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     await seedCloudVideo(ctx, {
       mdBody: bodyCloudWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
     });
-    // The local (receiver) replica holds a model; the cloud (sender/winner) holds none.
-    const envelope = modelEnvelope(bodyHash(bodyLocalOld));
+    // Receiver (local) model already matches the WINNING cloud body; sender (cloud) holds no model.
+    const envelope = modelEnvelope(bodyHash(bodyCloudWin));
     await ctx.localBlob.put(
       ctx.localPrincipal, modelKey(ctx),
       Buffer.from(`${JSON.stringify(envelope)}\n`, 'utf8'), 'application/json',
@@ -680,16 +728,57 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
 
     const r1 = await runSync(ctx.syncDeps());
 
-    expect(r1.updatedLocal).toBeGreaterThanOrEqual(1);          // the Class-A transfer still ran
-    expect(r1.shareNeedsOwnerServe).toBe(0);                    // no false "share is stale" signal
-    expect(await localBlobBytes(ctx, modelKey(ctx))).not.toBeNull(); // receiver model NOT deleted
+    expect(r1.updatedLocal).toBeGreaterThanOrEqual(1);
+    const kept = await localBlobBytes(ctx, modelKey(ctx));
+    expect(kept).not.toBeNull();                                     // paid artifact survives
+    expect(JSON.parse(kept!.toString('utf8')).sourceMdHash).toBe(bodyHash(bodyCloudWin));
+    expect(r1.shareNeedsOwnerServe).toBe(0);                         // no false "share is stale"
     expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
 
-    // Run 2 — hashes now agree so reconcileClassA returns 'skip' and companionTransfer never runs
-    // again. That is precisely what made the deletion permanent, so the model must STILL be there.
     const r2 = await runSync(ctx.syncDeps());
     expect(r2.shareNeedsOwnerServe).toBe(0);
     expect(await localBlobBytes(ctx, modelKey(ctx))).not.toBeNull();
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+  });
+
+  // (iii) The other half of round 4's conflation, on the backend that CAN prove absence. A local
+  //       sender null also covers corrupt/schema-invalid (readModelEnvelope parses and validates),
+  //       which round 4 mapped to `none` → delete. But "the sender's envelope is garbage" says
+  //       nothing about the receiver's, and here the cloud receiver's matches the winning body
+  //       exactly. Deleting it would burn reserve_serve_model → spend_ledger to rebuild.
+  it('H-R5-1(iii): a CORRUPT local sender envelope preserves a matching cloud receiver model (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocalWin = '# LocalWin\n\nhigher-major local body\n';
+    const bodyCloudOld = '# CloudOld\n\nlower-major cloud body\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocalWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloudOld, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    // Sender (local) envelope is unparseable → readModelEnvelope null on a provesAbsence backend.
+    await ctx.localBlob.put(
+      ctx.localPrincipal, modelKey(ctx), Buffer.from('{not json at all', 'utf8'), 'application/json',
+    );
+    // Receiver (cloud) model matches the WINNING local body → still valid, must survive.
+    await putCloudBlob(
+      ctx, modelKey(ctx),
+      Buffer.from(`${JSON.stringify(modelEnvelope(bodyHash(bodyLocalWin)))}\n`, 'utf8'), 'application/json',
+    );
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.updatedCloud).toBeGreaterThanOrEqual(1);
+    const kept = await cloudBlobBytes(ctx, modelKey(ctx));
+    expect(kept).not.toBeNull();
+    expect(JSON.parse(kept!.toString('utf8')).sourceMdHash).toBe(bodyHash(bodyLocalWin));
+    expect(r1.shareNeedsOwnerServe).toBe(0);
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+
+    const r2 = await runSync(ctx.syncDeps());
+    expect(r2.shareNeedsOwnerServe).toBe(0);
+    expect(await cloudBlobBytes(ctx, modelKey(ctx))).not.toBeNull();
     expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
   });
 
@@ -767,5 +856,64 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     // Run 2 — ensureReceiverSlot's setPlaylistMeta fires on every run, so once is not enough.
     await runSync(ctx.syncDeps());
     expect(await cloudPlaylistTitle(ctx)).toBe(title);
+  });
+
+  // ── L-R5-2 (round 5) — H3 stopped a sync CLEARING the cloud title, but not OVERWRITING it.
+  //    playlistMetaFor preferred `lp?.playlistTitle`, so a local playlist-index.json title — whatever
+  //    was captured when that folder was last summarized — clobbered the cloud row's on every
+  //    additive local→cloud create. Titles carry no LWW timestamp, so precedence is fixed: the cloud
+  //    row wins, because it is the one the ingest and backfill-titles paths keep current from the
+  //    live YouTube API. Recurs on every sync and recovery needs backfill-titles + an API key.
+  it('L-R5-2: a stale local playlist title does NOT overwrite a fresher cloud title (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    await prepareSyncCtx(ctx);
+    const cloudTitle = 'Deep Learning Lectures (2026 edition)';
+    const staleLocalTitle = 'Deep Learning Lectures';
+    const { data: pl, error } = await adminClient().from('playlists').insert({
+      owner_id: ctx.userId,
+      playlist_key: ctx.playlistKey,
+      playlist_url: `https://www.youtube.com/playlist?list=${ctx.playlistKey}`,
+      playlist_title: cloudTitle,
+    }).select('id').single();
+    if (error) throw error;
+    ctx.playlistId = (pl as { id: string }).id;
+    await seedLocalVideoFull(ctx, { mdBody: '# LocalOnly\n\njust summarized locally\n' });
+    // The local index carries an OLD title for the same playlist (renamed on YouTube since).
+    await ctx.local.setPlaylistMeta(ctx.localPrincipal, {
+      playlistUrl: `https://www.youtube.com/playlist?list=${ctx.playlistKey}`,
+      playlistTitle: staleLocalTitle,
+    });
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.created).toBeGreaterThanOrEqual(1);              // the additive publish ran
+    expect(await cloudPlaylistTitle(ctx)).toBe(cloudTitle);    // cloud title NOT overwritten
+    await runSync(ctx.syncDeps());
+    expect(await cloudPlaylistTitle(ctx)).toBe(cloudTitle);
+  });
+
+  // The other half of the precedence: with no cloud title, the local one still FILLS it, so
+  // preferring the cloud never costs a playlist its only title.
+  it('L-R5-2: a local title still fills a cloud playlist that has none', async () => {
+    const ctx = await makeOwnerContext();
+    await prepareSyncCtx(ctx);
+    const localTitle = 'Locally Named Playlist';
+    const { data: pl, error } = await adminClient().from('playlists').insert({
+      owner_id: ctx.userId,
+      playlist_key: ctx.playlistKey,
+      playlist_url: `https://www.youtube.com/playlist?list=${ctx.playlistKey}`,
+    }).select('id').single();
+    if (error) throw error;
+    ctx.playlistId = (pl as { id: string }).id;
+    await seedLocalVideoFull(ctx, { mdBody: '# LocalOnly\n\njust summarized locally\n' });
+    await ctx.local.setPlaylistMeta(ctx.localPrincipal, {
+      playlistUrl: `https://www.youtube.com/playlist?list=${ctx.playlistKey}`,
+      playlistTitle: localTitle,
+    });
+    expect(await cloudPlaylistTitle(ctx)).toBeNull(); // fixture precondition
+
+    await runSync(ctx.syncDeps());
+
+    expect(await cloudPlaylistTitle(ctx)).toBe(localTitle);
   });
 });

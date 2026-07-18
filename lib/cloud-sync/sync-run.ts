@@ -26,7 +26,7 @@ import type { Video } from '@/types';
 import { deriveClassASignals, deriveHumanSnapshot } from './backfill';
 import { reconcileHuman, type FieldMerge } from './reconcile-class-b';
 import { reconcileClassA } from './reconcile-class-a';
-import { decideCompanion, type SenderModelRead } from './companion';
+import { decideCompanion, type ModelRead } from './companion';
 import {
   readManifest, writeVideoBaseline, appendConflict, resetConflictDedup,
 } from './manifest';
@@ -97,15 +97,22 @@ async function ensureHydrationRoot(dataRoot: string): Promise<void> {
  *  for every playlist present in both replicas. ensureReceiverSlot then handed that title-less meta
  *  to setPlaylistMeta, whose Supabase impl upserts `playlist_title: meta.playlistTitle ?? null` —
  *  wiping the cloud row's title on every sync carrying any local-only video. URL still prefers the
- *  local entry (it is the replica whose folder we are actually syncing); the title falls back to
- *  the other side so a replica that has one always supplies it. */
+ *  local entry (it is the replica whose folder we are actually syncing).
+ *
+ *  L-R5-2 (round 5) — the TITLE prefers the CLOUD entry. Titles have no LWW timestamp, so this is a
+ *  fixed precedence, not a merge; the cloud row is the one the ingest and backfill-titles paths
+ *  maintain (both write it from the live YouTube API), whereas a local playlist-index.json title is
+ *  whatever was captured when that folder was last summarized and can be arbitrarily old. Preferring
+ *  local meant a stale local title overwrote a fresher cloud one on every additive local→cloud
+ *  create. Each side still falls back to the other, so a replica that has the only title supplies
+ *  it — a sync can fill a title or refresh it from the cloud, never clear it. */
 function playlistMetaFor(
   key: string, localPlaylists: LocalPlaylist[], cloudSummaries: PlaylistSummary[],
 ): { playlistUrl: string; playlistTitle?: string } {
   const lp = localPlaylists.find((l) => l.playlistKey === key);
   const cp = cloudSummaries.find((c) => c.playlistKey === key);
   const playlistUrl = lp?.playlistUrl ?? cp?.playlistUrl ?? '';
-  const playlistTitle = lp?.playlistTitle ?? cp?.playlistTitle ?? undefined;
+  const playlistTitle = cp?.playlistTitle ?? lp?.playlistTitle ?? undefined;
   return { playlistUrl, ...(playlistTitle ? { playlistTitle } : {}) };
 }
 
@@ -141,20 +148,28 @@ async function ensureReceiverSlot(
   to: MetadataStore, toP: Principal,
   playlistMeta: { playlistUrl: string; playlistTitle?: string }, video: Video,
 ): Promise<{ position: number; serialNumber: number } | null> {
-  // H3 (round 4) — read BEFORE the write, and carry the receiver's OWN title forward when the meta
-  // supplies none, so a sync can only ever FILL a title, never clear one. The upsert always writes
+  // H3 (round 4) — a sync must never CLEAR the receiver's playlist title. The upsert always writes
   // the playlist_title column (`meta.playlistTitle ?? null`), so simply omitting the title here
-  // would still NULL it — the never-clobber primitive setPlaylistTitleIfNull cannot undo that,
-  // because on this path there is no title left to restore it from. readIndex is safe before the
-  // row exists (both impls return the empty-index sentinel for an absent playlist), and
-  // setPlaylistMeta only touches the playlists row, so this same snapshot is still authoritative
-  // for the video-exists check below — no second round trip.
-  const idx = await to.readIndex(toP);
-  const playlistTitle = playlistMeta.playlistTitle ?? idx.playlistTitle;
+  // would NULL it, and the never-clobber primitive setPlaylistTitleIfNull cannot undo that.
+  // The fix lives in the two layers that feed this call: LocalPlaylist now carries playlistTitle
+  // (registry.ts), and playlistMetaFor MERGES both registries instead of returning the first hit —
+  // so whenever either replica knows the title, `playlistMeta.playlistTitle` carries it here.
+  //
+  // Round 5 — a third layer used to sit here: readIndex BEFORE the write, then
+  // `playlistMeta.playlistTitle ?? idx.playlistTitle` to carry the receiver's own title forward.
+  // It was REMOVED as unreachable, not as cleanup: both reviewers independently failed to construct
+  // an input where playlistMetaFor yields no title but the receiver row has one (zero-video cloud
+  // playlists still appear in listPlaylists with their title; local playlists are discovered from
+  // playlist-index.json, the same file readIndex reads; opts.playlistKey is filtered through the
+  // union), and deleting it failed ZERO tests under mutation. Do not re-add it without an input
+  // that reaches it — dead defense-in-depth reads as load-bearing and hides which layer actually
+  // holds. setPlaylistMeta runs first again: it only touches the playlists row (never the video
+  // set), and on the local backend it creates the index file that readIndex then reads.
   await to.setPlaylistMeta(toP, {
     playlistUrl: playlistMeta.playlistUrl,
-    ...(playlistTitle ? { playlistTitle } : {}),
+    ...(playlistMeta.playlistTitle ? { playlistTitle: playlistMeta.playlistTitle } : {}),
   });
+  const idx = await to.readIndex(toP);
   if (idx.videos.some((v) => v.id === video.id)) return null;
   return to.claimVideoSlot(toP, video.id);
 }
@@ -361,21 +376,27 @@ async function transferClassA(
 }
 
 /** Behavior #5 — ship the winner's summary MODEL to the loser iff it was generated from the winning
- *  MD; otherwise delete the loser's stale model (best-effort, OUTSIDE the atomic commit) and flag
- *  that the owner must re-serve to regenerate the share model. */
+ *  MD; otherwise delete the loser's model (best-effort, OUTSIDE the atomic commit) and flag that the
+ *  owner must re-serve — but ONLY when that model proves itself stale (H-R5-1). */
 async function companionTransfer(
   winner: Side, loser: Side, winnerMdHash: string, winnerVideo: Video,
 ): Promise<{ shareNeedsOwnerServe: boolean }> {
   if (!winnerVideo.summaryMd) return { shareNeedsOwnerServe: false };
   const base = winnerVideo.summaryMd.replace(/\.md$/, '');
-  const decision = decideCompanion({ winnerMdHash, senderModel: await readSenderModel(winner, base) });
+  // H-R5-1 (round 5) — read BOTH sides. The sender read says whether a replacement can be shipped;
+  // only the RECEIVER's own envelope can prove the receiver's model stale (see decideCompanion).
+  const [senderModel, receiverModel] = await Promise.all([
+    readModelSide(winner, base), readModelSide(loser, base),
+  ]);
+  const decision = decideCompanion({ winnerMdHash, senderModel, receiverModel });
   if (decision.kind === 'ship') {
     await writeModelEnvelope(loser.p, base, decision.envelope, loser.blob);
     return { shareNeedsOwnerServe: false };
   }
-  // H1 (round 4) — the sender read could not prove anything: leave the receiver's model alone and
-  // do NOT report shareNeedsOwnerServe (nothing is known to be stale about the share).
-  if (decision.kind === 'noop') return { shareNeedsOwnerServe: false };
+  // H1 (round 4) / H-R5-1 (round 5) — nothing shippable and the receiver's model is not PROVABLY
+  // stale: leave the blob alone. The report flag is decided separately (§10 row 7 counts a share
+  // with no model even though there is nothing to delete).
+  if (decision.kind === 'noop') return { shareNeedsOwnerServe: decision.shareNeedsOwnerServe };
   // deleteReceiverModel — best-effort; a missing model blob is not an error.
   try { await loser.blob.delete(loser.p, `models/${base}.json`); } catch { /* best-effort */ }
   return { shareNeedsOwnerServe: true };
@@ -385,14 +406,16 @@ async function companionTransfer(
  *  A null means absent, corrupt, or unreadable; only a backend that can prove absence
  *  (BlobStore.provesAbsence — the local FS store, whose get is ENOENT-only) lets us tell those
  *  apart. On such a backend a null is definitive either way: the model is genuinely missing, or its
- *  bytes were read and rejected — both mean the sender has nothing shippable, so the receiver's now
- *  stale model is correctly dropped. On the Supabase backend the same null may be a transient 5xx /
- *  timeout / RLS denial, so it proves nothing and must not drive a destructive delete. A backend
- *  that does not declare the capability is treated as unable to prove absence. */
-async function readSenderModel(sender: Side, base: string): Promise<SenderModelRead> {
-  const envelope = await readModelEnvelope(sender.p, base, sender.blob);
+ *  bytes were read and rejected — both mean that side has nothing usable. On the Supabase backend
+ *  the same null may be a transient 5xx / timeout / RLS denial, so it proves nothing and must not
+ *  drive a destructive delete. A backend that does not declare the capability is treated as unable
+ *  to prove absence.
+ *  H-R5-1 (round 5) — used for the RECEIVER too (hence the neutral name): a receiver `unknown` must
+ *  not be read as "no model", and a receiver `none` leaves nothing to delete. */
+async function readModelSide(side: Side, base: string): Promise<ModelRead> {
+  const envelope = await readModelEnvelope(side.p, base, side.blob);
   if (envelope) return { kind: 'envelope', envelope };
-  return sender.blob.provesAbsence ? { kind: 'none' } : { kind: 'unknown' };
+  return side.blob.provesAbsence ? { kind: 'none' } : { kind: 'unknown' };
 }
 
 /** The manifest baseline written AFTER a verified reconcile — the AGREED post-reconcile state, not a

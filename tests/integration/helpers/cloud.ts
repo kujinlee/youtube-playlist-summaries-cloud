@@ -446,6 +446,10 @@ export async function localVideoRecord(ctx: Ctx): Promise<Video | null> {
 export async function cloudBlobBytes(ctx: Ctx, key: string): Promise<Buffer | null> {
   return new SupabaseBlobStore(ctx.userClient, ARTIFACTS_BUCKET).get(ctx.cloudPrincipal, key);
 }
+/** Write a blob body onto the cloud replica (RLS-scoped user session) — fixture seeding only. */
+export async function putCloudBlob(ctx: Ctx, key: string, body: Buffer, contentType: string): Promise<void> {
+  await new SupabaseBlobStore(ctx.userClient, ARTIFACTS_BUCKET).put(ctx.cloudPrincipal, key, body, contentType);
+}
 /** Read a blob body off the local FS replica. */
 export async function localBlobBytes(ctx: Ctx, key: string): Promise<Buffer | null> {
   return ctx.localBlob.get(ctx.localPrincipal, key);

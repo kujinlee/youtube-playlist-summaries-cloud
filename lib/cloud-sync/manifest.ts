@@ -17,7 +17,16 @@ export async function readManifest(dataRoot: string, playlistKey: string): Promi
     const raw = await fs.readFile(manifestPath(dataRoot, playlistKey), 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed && parsed.version === 1 && parsed.videos) return parsed as Manifest;
-  } catch { /* missing or corrupt → degrade (§8) */ }
+  } catch {
+    // DELIBERATE, and spec-sanctioned — §8 specifies degrade-on-corrupt for the manifest.
+    // L-R5-3 (round 5, ACCEPTED not fixed): this catch also swallows an UNREADABLE manifest
+    // (EACCES/EIO) as an absent one, and with no baseline sync-run reads a one-sided video as a new
+    // additive create rather than a delete — so a video deleted on one replica can be copied back.
+    // That is the SAFE direction (resurrect, never delete) and the manifest is a derived cache that
+    // rebuilds itself on the next run; failing closed here would strand every video in the playlist.
+    // Reviewers: this is the same `catch → default` shape as B1/H1/H2, but unlike those it is the
+    // intended §8 behavior — please do not re-file it.
+  }
   return { version: 1, videos: {} };
 }
 
