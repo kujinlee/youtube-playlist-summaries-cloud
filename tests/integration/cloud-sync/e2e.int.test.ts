@@ -13,9 +13,10 @@ import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import {
-  makeOwnerContext, seedCloudVideo, seedLocalVideoFull, seedManifestBaseline,
+  makeOwnerContext, prepareSyncCtx, seedCloudVideo, seedLocalVideoFull, seedManifestBaseline,
   cloudVideoRecord, localVideoRecord, cloudBlobBytes, localBlobBytes, type Ctx,
 } from '@/tests/integration/helpers/cloud';
+import { adminClient } from '@/tests/integration/helpers/clients';
 import { runSync } from '@/lib/cloud-sync/sync-run';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
 import { getAuthedClient, NoSessionError, type TokenStore } from '@/lib/cloud-sync/auth';
@@ -36,6 +37,26 @@ const bodyHash = (b: string) => mdHash(b);
 /** mdCorrectionsHash value that makes a side "corrections-current" when NO corrections exist:
  *  reconciledCorrectionsHash === mdHash(String(undefined ?? '')) === mdHash(''). */
 const H_NO_CORRECTIONS = mdHash('');
+/** The companion model blob key for this ctx's summary (models/<base>.json, base = summaryMd sans .md). */
+const modelKey = (ctx: Ctx) => `models/${ctx.videoId}.json`;
+/** A schema-valid ModelEnvelope (ModelEnvelopeSchema) whose sourceMdHash is caller-supplied. */
+const modelEnvelope = (sourceMdHash: string) => ({
+  sourceMd: 'seed.md', generatedAt: '2026-01-01T00:00:00.000Z', sourceSections: ['A'],
+  model: {
+    sections: [{
+      lead: 'lead',
+      bullets: [{ label: 'a', text: 'b' }, { label: 'c', text: 'd' }, { label: 'e', text: 'f' }],
+    }],
+  },
+  sourceMdHash,
+});
+/** Read the cloud playlist row's title (admin client — assertion only, not a code path). */
+async function cloudPlaylistTitle(ctx: Ctx): Promise<string | null> {
+  const { data, error } = await adminClient()
+    .from('playlists').select('playlist_title').eq('playlist_key', ctx.playlistKey).single();
+  if (error) throw error;
+  return (data as { playlist_title: string | null }).playlist_title;
+}
 
 /** A syntactically-complete baseline whose classA/classB are inert for the assertion under test. */
 function baseline(classB: VideoBaseline['classB']): VideoBaseline {
@@ -625,5 +646,126 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
       expect((await ctx.readManifest()).videos[ctx.videoId]).toBeUndefined();
       expect(await ctx.spendLedgerTotal()).toBe(spendBefore); // no sync path ever charges
     }
+  });
+
+  // ── H1 (round 4) — the B1 conflation one module over, driving a DELETE. companionTransfer read
+  //    the SENDER's model envelope and mapped null to deleteReceiverModel. On a copyToLocal transfer
+  //    the sender is the CLOUD, whose blob get swallows every failure into null, so a transient
+  //    download error is indistinguishable from "the sender has no model" — and the RECEIVER's
+  //    (local) model was deleted for it. That is a money bug, not a cache nit: the only way back is
+  //    runHtmlDoc → generateMagazineModel, a PAID Gemini transform. It was also sticky — the delete
+  //    does not throw, so the baseline advanced, run 2 saw equal hashes and returned 'skip', and
+  //    companionTransfer never ran again.
+  //    Here the cloud sender genuinely has no model, which on the Supabase backend is EXACTLY the
+  //    unreadable case at the byte level — absence is unprovable, so the local model must survive.
+  //    (Row 7 covers the mirror direction, where the LOCAL sender's ENOENT does prove absence and
+  //    the delete is still correct.)
+  it('H1: an unprovable cloud model read leaves the local model intact and flags no owner-serve (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocalOld = '# LocalOld\n\nlower-major local body\n';
+    const bodyCloudWin = '# CloudWin\n\nhigher-major winner body\n';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocalOld, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloudWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    // The local (receiver) replica holds a model; the cloud (sender/winner) holds none.
+    const envelope = modelEnvelope(bodyHash(bodyLocalOld));
+    await ctx.localBlob.put(
+      ctx.localPrincipal, modelKey(ctx),
+      Buffer.from(`${JSON.stringify(envelope)}\n`, 'utf8'), 'application/json',
+    );
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.updatedLocal).toBeGreaterThanOrEqual(1);          // the Class-A transfer still ran
+    expect(r1.shareNeedsOwnerServe).toBe(0);                    // no false "share is stale" signal
+    expect(await localBlobBytes(ctx, modelKey(ctx))).not.toBeNull(); // receiver model NOT deleted
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+
+    // Run 2 — hashes now agree so reconcileClassA returns 'skip' and companionTransfer never runs
+    // again. That is precisely what made the deletion permanent, so the model must STILL be there.
+    const r2 = await runSync(ctx.syncDeps());
+    expect(r2.shareNeedsOwnerServe).toBe(0);
+    expect(await localBlobBytes(ctx, modelKey(ctx))).not.toBeNull();
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);
+  });
+
+  // ── H2 (round 4) — the B1 guard was over-broad on the LOCAL side. B1 exists because the Supabase
+  //    backend cannot tell absent from unreadable; the local backend CAN (LocalFsBlobStore.get
+  //    returns null ONLY on ENOENT and rethrows every other errno), so a local record advertising a
+  //    summaryMd whose body reads back null PROVES the file is gone — a user who moved the .md by
+  //    hand, or a generation that crashed between the index write and the blob write.
+  //    Before the guard this healed for free (!lHas → copyToLocal → the dangling pointer is
+  //    repaired, purely additive). The guard made it throw on EVERY run, forever, never advancing a
+  //    baseline, with no exit but hand-editing playlist-index.json or paying to regenerate content
+  //    sitting intact in the cloud. Fail-closed must be scoped to the backend that needs it.
+  it('H2: a genuinely-absent local MD blob is hydrated from the cloud, not stranded (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyCloud = '# CloudHasIt\n\nthe body the local record lost\n';
+    // Local ADVERTISES summaryMd (+ a promoted artifact) but mdBody is omitted → the blob is
+    // genuinely absent on a backend that proves absence.
+    await seedLocalVideoFull(ctx, {
+      docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloud, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.errors).toEqual([]);                       // no permanent per-run failure
+    expect(r1.updatedLocal).toBeGreaterThanOrEqual(1);   // additive hydration ran
+    expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloud);
+    const local = await localVideoRecord(ctx);
+    expect(local?.summaryMd).toBe(key(ctx));
+    expect(artifactsOf(local)?.summaryMd?.status).toBe('promoted');
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore); // healed without any regeneration
+
+    // Run 2 — the dangling pointer is repaired, so the sides simply agree.
+    const r2 = await runSync(ctx.syncDeps());
+    expect(r2.errors).toEqual([]);
+    expect(r2.updatedLocal).toBe(0);
+    expect(r2.skippedIdentical).toBeGreaterThanOrEqual(1);
+    expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloud);
+  });
+
+  // ── H3 (round 4) — a local-only video wiped the cloud playlist's title on every sync.
+  //    playlistMetaFor checked the local registry FIRST and returned { playlistUrl } with no title
+  //    (LocalPlaylist never carried one), the cloud-registry branch that does carry a title being
+  //    unreachable whenever the playlist also exists locally. ensureReceiverSlot then called
+  //    setPlaylistMeta unconditionally, and the Supabase upsert writes
+  //    `playlist_title: meta.playlistTitle ?? null` — an explicit NULL. Recurs on every sync that
+  //    carries any local-only video (the ordinary case); recovery needs the backfill-titles route
+  //    plus a YouTube API key.
+  it('H3: an additive publish of a local-only video preserves the cloud playlist title (2 runs)', async () => {
+    const ctx = await makeOwnerContext();
+    await prepareSyncCtx(ctx);
+    const title = 'Deep Learning Lectures';
+    // Cloud playlist row carries a title (as lib/job-queue/producer.ts sets it at enqueue) and holds
+    // NO videos; the local replica has a title-less index with one video → additive publish to cloud.
+    const { data: pl, error } = await adminClient().from('playlists').insert({
+      owner_id: ctx.userId,
+      playlist_key: ctx.playlistKey,
+      playlist_url: `https://www.youtube.com/playlist?list=${ctx.playlistKey}`,
+      playlist_title: title,
+    }).select('id').single();
+    if (error) throw error;
+    ctx.playlistId = (pl as { id: string }).id;
+    await seedLocalVideoFull(ctx, { mdBody: '# LocalOnly\n\njust summarized locally\n' });
+    expect(await cloudPlaylistTitle(ctx)).toBe(title); // fixture precondition
+
+    const r1 = await runSync(ctx.syncDeps());
+
+    expect(r1.created).toBeGreaterThanOrEqual(1);        // the additive publish ran
+    expect(await cloudVideoRecord(ctx)).not.toBeNull();
+    expect(await cloudPlaylistTitle(ctx)).toBe(title);   // title NOT cleared
+
+    // Run 2 — ensureReceiverSlot's setPlaylistMeta fires on every run, so once is not enough.
+    await runSync(ctx.syncDeps());
+    expect(await cloudPlaylistTitle(ctx)).toBe(title);
   });
 });

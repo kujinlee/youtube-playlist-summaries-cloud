@@ -3,7 +3,13 @@ import path from 'path';
 import { localMetadataStore } from '@/lib/storage/local/local-metadata-store';
 import { localPrincipal } from '@/lib/storage/principal';
 
-export interface LocalPlaylist { playlistKey: string; dataRoot: string; playlistUrl: string; }
+/** H3 (round 4) — `playlistTitle` is carried because playlistMetaFor resolves the local registry
+ *  first; without it, a playlist present in BOTH replicas always produced a title-less meta, which
+ *  the cloud setPlaylistMeta upsert writes as an explicit NULL. Optional: a local index legitimately
+ *  may have no title (it is only set by the ingest/backfill paths). */
+export interface LocalPlaylist {
+  playlistKey: string; dataRoot: string; playlistUrl: string; playlistTitle?: string;
+}
 
 export function playlistKeyFromUrl(url: string): string | null {
   if (!url) return null;
@@ -26,7 +32,12 @@ export async function discoverLocalPlaylists(dataRoots: string[]): Promise<Local
       const idx = await localMetadataStore.readIndex(localPrincipal(dataRoot));
       const key = playlistKeyFromUrl(idx.playlistUrl);
       if (!key) continue;
-      if (!byKey.has(key)) byKey.set(key, { playlistKey: key, dataRoot, playlistUrl: idx.playlistUrl });
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          playlistKey: key, dataRoot, playlistUrl: idx.playlistUrl,
+          ...(idx.playlistTitle ? { playlistTitle: idx.playlistTitle } : {}),
+        });
+      }
     }
   }
   return [...byKey.values()];

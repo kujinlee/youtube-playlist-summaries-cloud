@@ -61,8 +61,36 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
   (dual adversarial review, **6 rounds**, Codex + Claude independent; round 6 both 0 B/H/M; trend
   Blocking 4→0→0→0→0→0, High 3→5→2→1→1→0; commit 16ffb99). 14 TDD tasks. Reviews saved
   `docs/reviews/plan-cloud-sync-m2a-{codex,claude}-r{1..6}.md`.
-- [ ] **2.3 Implement** (subagent-driven-development) + whole-branch dual review to convergence. **← NEXT**
+- [x] **2.3 Implement** (subagent-driven-development) — all 14 TDD tasks committed, each per-task
+  dual-reviewed clean. 2421 unit / 245 suites; cloud-sync integration 4 suites.
+- [ ] **2.3b Whole-branch dual review to convergence** — **← IN PROGRESS, not yet converged.**
+  Reviews `docs/reviews/whole-branch-cloud-sync{,-v2,-v3,-v4}-rereview-{codex,claude}.md`.
+  | Round | Findings | Fixed in |
+  |---|---|---|
+  | R1 | 1 Blocking + 2 High (WB-B1/H1/H2) | `32a164c` |
+  | R2 | 2 High + 3 Med (H-R2-2 was a *regression from the R1 fix*) | `1f54c60` |
+  | R3 | **1 Blocking** (B1) — Codex said CONVERGED, Claude caught it | `3bc8cc7` |
+  | R4 | 3 High (H2 a *regression from the B1 fix*; H1/H3 pre-existing) | in progress |
+  Trend Blocking 1→0→1→0, High 2→2→0→3. **Not converging monotonically** — each round's
+  sharper prompt surfaces pre-existing defects the earlier rounds walked past. Root cause of
+  B1/R4-H1/R4-H3 is one shared shape: *a value meaning "absent" is also what a failure produces*
+  (`SupabaseBlobStore.get` swallows every error; `playlist_title ?? null`).
 - [ ] **2.4 Merge** *(human gate)*.
+
+**M2a deferred findings** (recorded, none blocking merge on their own — decide at the 2.4 gate):
+- **Claude-R2-M1** — `transferClassA` leaves stale non-`summaryMd` artifact pointers on the loser
+  (`sync-run.ts` artifacts deep-merge). Latent until a second artifact kind is populated.
+- **Codex-R2-Med** — absent (`undefined`) companion scalars are not explicitly cleared on transfer,
+  so a winner lacking `tldr`/`takeaways`/`tags` leaves the loser's stale values in place.
+- **Claude-R3-M1** — `build-doc-html` derives `base` from `digDeeperMd` in preference to `summaryMd`,
+  so when replica keys diverge (`serialNumber` is replica-local) the dig-deeper view serves the
+  pre-sync summary. Stale-but-coherent; fix lives outside sync.
+- **Pre-existing, unrelated:** `tests/integration/reservation-release.test.ts` fails identically on a
+  clean tree (local Supabase state pollution — leftover `ledger_audit` rows + stale queued job).
+  Needs a DB reset or per-test isolation; not caused by this branch.
+- **Tooling:** `scripts/codex-frontier-model.py` returned `gpt-5.6-sol`, which the pinned Codex CLI
+  (0.142.5) cannot run (HTTP 400) — it ranks by `priority` without filtering on client-version
+  support, so the adversarial gate can silently no-op. Pin/filter needed.
 
 **M2a done = second device hydrates from cloud + local research publishes to the shared portal (minus
 slide images); M2 done = full bidirectional incl. images.**

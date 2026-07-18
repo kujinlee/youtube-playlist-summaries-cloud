@@ -26,7 +26,7 @@ import type { Video } from '@/types';
 import { deriveClassASignals, deriveHumanSnapshot } from './backfill';
 import { reconcileHuman, type FieldMerge } from './reconcile-class-b';
 import { reconcileClassA } from './reconcile-class-a';
-import { decideCompanion } from './companion';
+import { decideCompanion, type SenderModelRead } from './companion';
 import {
   readManifest, writeVideoBaseline, appendConflict, resetConflictDedup,
 } from './manifest';
@@ -89,15 +89,24 @@ async function ensureHydrationRoot(dataRoot: string): Promise<void> {
   await fs.mkdir(dataRoot, { recursive: true });
 }
 
-/** Resolve the playlist url/title for `key` from whichever registry holds it. */
+/** Resolve the playlist url/title for `key` from whichever registry holds it.
+ *
+ *  H3 (round 4) — this MERGES the two registries rather than returning the first hit. It used to
+ *  return the local entry's `{ playlistUrl }` alone whenever the playlist existed locally, and
+ *  LocalPlaylist carried no title at all, so the cloud branch that does carry one was unreachable
+ *  for every playlist present in both replicas. ensureReceiverSlot then handed that title-less meta
+ *  to setPlaylistMeta, whose Supabase impl upserts `playlist_title: meta.playlistTitle ?? null` —
+ *  wiping the cloud row's title on every sync carrying any local-only video. URL still prefers the
+ *  local entry (it is the replica whose folder we are actually syncing); the title falls back to
+ *  the other side so a replica that has one always supplies it. */
 function playlistMetaFor(
   key: string, localPlaylists: LocalPlaylist[], cloudSummaries: PlaylistSummary[],
 ): { playlistUrl: string; playlistTitle?: string } {
   const lp = localPlaylists.find((l) => l.playlistKey === key);
-  if (lp) return { playlistUrl: lp.playlistUrl };
   const cp = cloudSummaries.find((c) => c.playlistKey === key);
-  if (cp) return { playlistUrl: cp.playlistUrl, ...(cp.playlistTitle ? { playlistTitle: cp.playlistTitle } : {}) };
-  return { playlistUrl: '' };
+  const playlistUrl = lp?.playlistUrl ?? cp?.playlistUrl ?? '';
+  const playlistTitle = lp?.playlistTitle ?? cp?.playlistTitle ?? undefined;
+  return { playlistUrl, ...(playlistTitle ? { playlistTitle } : {}) };
 }
 
 /** Behavior #3 (money-safe) — strip regenerable cache + out-of-scope pointers so the receiver never
@@ -132,8 +141,20 @@ async function ensureReceiverSlot(
   to: MetadataStore, toP: Principal,
   playlistMeta: { playlistUrl: string; playlistTitle?: string }, video: Video,
 ): Promise<{ position: number; serialNumber: number } | null> {
-  await to.setPlaylistMeta(toP, playlistMeta);
+  // H3 (round 4) — read BEFORE the write, and carry the receiver's OWN title forward when the meta
+  // supplies none, so a sync can only ever FILL a title, never clear one. The upsert always writes
+  // the playlist_title column (`meta.playlistTitle ?? null`), so simply omitting the title here
+  // would still NULL it — the never-clobber primitive setPlaylistTitleIfNull cannot undo that,
+  // because on this path there is no title left to restore it from. readIndex is safe before the
+  // row exists (both impls return the empty-index sentinel for an absent playlist), and
+  // setPlaylistMeta only touches the playlists row, so this same snapshot is still authoritative
+  // for the video-exists check below — no second round trip.
   const idx = await to.readIndex(toP);
+  const playlistTitle = playlistMeta.playlistTitle ?? idx.playlistTitle;
+  await to.setPlaylistMeta(toP, {
+    playlistUrl: playlistMeta.playlistUrl,
+    ...(playlistTitle ? { playlistTitle } : {}),
+  });
   if (idx.videos.some((v) => v.id === video.id)) return null;
   return to.claimVideoSlot(toP, video.id);
 }
@@ -347,15 +368,31 @@ async function companionTransfer(
 ): Promise<{ shareNeedsOwnerServe: boolean }> {
   if (!winnerVideo.summaryMd) return { shareNeedsOwnerServe: false };
   const base = winnerVideo.summaryMd.replace(/\.md$/, '');
-  const senderEnvelope = await readModelEnvelope(winner.p, base, winner.blob);
-  const decision = decideCompanion({ winnerMdHash, senderEnvelope });
+  const decision = decideCompanion({ winnerMdHash, senderModel: await readSenderModel(winner, base) });
   if (decision.kind === 'ship') {
     await writeModelEnvelope(loser.p, base, decision.envelope, loser.blob);
     return { shareNeedsOwnerServe: false };
   }
+  // H1 (round 4) — the sender read could not prove anything: leave the receiver's model alone and
+  // do NOT report shareNeedsOwnerServe (nothing is known to be stale about the share).
+  if (decision.kind === 'noop') return { shareNeedsOwnerServe: false };
   // deleteReceiverModel — best-effort; a missing model blob is not an error.
   try { await loser.blob.delete(loser.p, `models/${base}.json`); } catch { /* best-effort */ }
   return { shareNeedsOwnerServe: true };
+}
+
+/** H1 (round 4) — resolve `readModelEnvelope`'s single null into the tri-state decideCompanion needs.
+ *  A null means absent, corrupt, or unreadable; only a backend that can prove absence
+ *  (BlobStore.provesAbsence — the local FS store, whose get is ENOENT-only) lets us tell those
+ *  apart. On such a backend a null is definitive either way: the model is genuinely missing, or its
+ *  bytes were read and rejected — both mean the sender has nothing shippable, so the receiver's now
+ *  stale model is correctly dropped. On the Supabase backend the same null may be a transient 5xx /
+ *  timeout / RLS denial, so it proves nothing and must not drive a destructive delete. A backend
+ *  that does not declare the capability is treated as unable to prove absence. */
+async function readSenderModel(sender: Side, base: string): Promise<SenderModelRead> {
+  const envelope = await readModelEnvelope(sender.p, base, sender.blob);
+  if (envelope) return { kind: 'envelope', envelope };
+  return sender.blob.provesAbsence ? { kind: 'none' } : { kind: 'unknown' };
 }
 
 /** The manifest baseline written AFTER a verified reconcile — the AGREED post-reconcile state, not a
@@ -507,8 +544,22 @@ export async function runSync(
         //    so the run heals by itself once the body is readable. With this guard reconcileClassA's
         //    !lHas/!cHas branches mean what they claim: the side genuinely advertises no summaryMd —
         //    which is exactly M-R2-2's "purely additive hydration", so its intent is preserved.
-        if (lv.summaryMd && la.mdHash == null) throw new Error(`local MD body unreadable for ${id}`);
-        if (cv.summaryMd && ca.mdHash == null) throw new Error(`cloud MD body unreadable for ${id}`);
+        //    H2 (round 4) — the guard is scoped to the backend that actually needs it. It exists
+        //    ONLY because one backend cannot tell absent from unreadable, so only that backend
+        //    should pay for it (BlobStore.provesAbsence). On the local FS store a null body IS
+        //    proof the file is gone — the user moved or deleted the .md by hand, or a generation
+        //    crashed between the index write and the blob write — and that case heals for free:
+        //    !lHas → copyToLocal writes the cloud's intact body over the dangling pointer, purely
+        //    additive, nothing to destroy. Throwing there stranded the video on EVERY run forever,
+        //    never advancing a baseline, with no exit but hand-editing playlist-index.json or
+        //    paying to regenerate content sitting intact in the cloud — re-introducing exactly the
+        //    stranding M-R2-2 removed. The cloud side stays fail-closed, unchanged.
+        if (lv.summaryMd && la.mdHash == null && !deps.localBlob.provesAbsence) {
+          throw new Error(`local MD body unreadable for ${id}`);
+        }
+        if (cv.summaryMd && ca.mdHash == null && !deps.cloudBlob.provesAbsence) {
+          throw new Error(`cloud MD body unreadable for ${id}`);
+        }
 
         //    M-R2-2 — the skip is narrowed to the genuinely DESTRUCTIVE case: BOTH sides actually hold
         //    an MD body. When one side has none, the Class-A copy is purely ADDITIVE hydration —

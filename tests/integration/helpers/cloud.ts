@@ -160,6 +160,9 @@ export async function makeOwnerContext(): Promise<Ctx> {
  *  a partially-transferred blob whose promote never lands must NOT advance the manifest baseline. */
 class FailPromoteBlobStore implements BlobStore {
   constructor(private inner: BlobStore) {}
+  /** Forward the wrapped backend's absence-proving capability — the sync path reads it to decide
+   *  whether "no bytes" may be treated as a semantic fact (B1/H1/H2 guards). */
+  get provesAbsence(): boolean | undefined { return this.inner.provesAbsence; }
   put(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.put(p, key, bytes, ct); }
   get(p: Principal, key: string) { return this.inner.get(p, key); }
   exists(p: Principal, key: string) { return this.inner.exists(p, key); }

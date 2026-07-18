@@ -5,6 +5,10 @@ import { assertLogicalKey } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
 export class SupabaseBlobStore implements BlobStore {
+  /** `get` swallows EVERY download failure into null (see the note on it below) and `exists` is
+   *  defined in terms of `get`, so this backend can never prove an object is absent. */
+  readonly provesAbsence = false;
+
   constructor(private client: SupabaseClient, private bucket: string) {}
 
   /** Server-side owner prefix — never a client absolute path. */
