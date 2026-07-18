@@ -23,8 +23,9 @@ import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
-import { readManifest as readManifestFile } from '@/lib/cloud-sync/manifest';
+import { readManifest as readManifestFile, writeVideoBaseline } from '@/lib/cloud-sync/manifest';
 import type { SyncDeps } from '@/lib/cloud-sync/sync-run';
+import type { VideoBaseline } from '@/lib/cloud-sync/types';
 import type { Video } from '@/types';
 
 export interface SeedLocalPlaylistOpts {
@@ -275,4 +276,174 @@ export async function seedVideo(
   }
 
   return { playlistId, videoId, playlistKey };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 14 (§10 end-to-end) harness extensions. Two-sided + full-field seeding so
+// the e2e scenarios can drive the divergent-MD Class-A COPY path (transferClassA
+// + companionTransfer), not just the additive hydrate path (copyAdditiveVideo).
+// seedCloudVideo/seedLocalVideoFull each write the MD BODY to their replica's
+// blob and set video.summaryMd to the KEY they wrote.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SeedFields {
+  videoId?: string;
+  position?: number;
+  title?: string;
+  archived?: boolean;
+  /** Blob KEY (video.summaryMd). Default `${videoId}.md`. `null` = summary-less video (no blob). */
+  summaryMd?: string | null;
+  /** MD BODY written to the blob at the summaryMd key. Omit to skip the blob write. */
+  mdBody?: string;
+  ratings?: Record<string, number>;
+  overallScore?: number;
+  tldr?: string;
+  takeaways?: string[];
+  tags?: string[];
+  videoType?: string;
+  audience?: string;
+  docVersion?: { major: number; minor: number };
+  mdGeneratedAt?: string;
+  mdCorrectionsHash?: string;
+  processedAt?: string;
+  personalNote?: string;
+  personalScore?: number;
+  corrections?: string;
+  annotationsEditedAt?: Record<string, string>;
+  status?: 'promoted' | 'committed';
+  /** Regenerable-cache pointers (must NOT be copied by an additive create — §5.6). */
+  summaryHtml?: string;
+  digDeeperHtml?: string;
+  /** Extra artifacts.* pointers MERGED alongside summaryMd (e.g. a summaryPdf that must be dropped). */
+  extraArtifacts?: Record<string, unknown>;
+  /** Extra top-level data keys merged last. */
+  raw?: Record<string, unknown>;
+}
+
+const FLAT_RATINGS = { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 };
+
+/** Assigns the shared sync fixture identity (key, videoId, temp root, principals) exactly once,
+ *  so seedCloudVideo + seedLocalVideoFull compose onto the SAME playlist/video (two-sided). */
+export async function prepareSyncCtx(ctx: Ctx): Promise<void> {
+  if (ctx.playlistKey) return;
+  const key = `k-${randomUUID()}`;
+  // VIDEO_ID_RE caps local video ids at 20 chars of [A-Za-z0-9_-]; a full uuid is too long.
+  const videoId = `v${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  ctx.playlistKey = key;
+  ctx.videoId = videoId;
+  ctx.tempDataRoot = await fs.mkdtemp(path.join(os.homedir(), '.cs-syncrun-'));
+  ctx.playlistDataRoot = path.join(ctx.tempDataRoot, key);
+  ctx.localPrincipal = localPrincipal(ctx.playlistDataRoot);
+  ctx.cloudPrincipal = { id: ctx.userId, indexKey: key };
+}
+
+/** Build the `videos.data` jsonb / local Video record from the requested fields. Shape mirrors the
+ *  worker's promoted-video shape (seed.ts) but with full control over the Class-A/companion signals. */
+function buildVideoData(videoId: string, f: SeedFields): Record<string, unknown> {
+  const summaryMd = f.summaryMd === undefined ? `${videoId}.md` : f.summaryMd;
+  const base = summaryMd ? summaryMd.replace(/\.md$/, '') : null;
+  return {
+    id: videoId,
+    title: f.title ?? videoId,
+    youtubeUrl: `https://youtu.be/${videoId}`,
+    language: 'en',
+    durationSeconds: 600,
+    archived: f.archived ?? false,
+    ratings: f.ratings ?? FLAT_RATINGS,
+    overallScore: f.overallScore ?? 4,
+    summaryMd,
+    processedAt: f.processedAt ?? '2026-01-01T00:00:00.000Z',
+    serialNumber: f.position ?? 1,
+    ...(f.docVersion ? { docVersion: f.docVersion } : {}),
+    ...(f.mdGeneratedAt ? { mdGeneratedAt: f.mdGeneratedAt } : {}),
+    ...(f.mdCorrectionsHash ? { mdCorrectionsHash: f.mdCorrectionsHash } : {}),
+    ...(f.videoType ? { videoType: f.videoType } : {}),
+    ...(f.audience ? { audience: f.audience } : {}),
+    ...(f.tags ? { tags: f.tags } : {}),
+    ...(f.tldr ? { tldr: f.tldr } : {}),
+    ...(f.takeaways ? { takeaways: f.takeaways } : {}),
+    ...(f.personalNote !== undefined ? { personalNote: f.personalNote } : {}),
+    ...(f.personalScore !== undefined ? { personalScore: f.personalScore } : {}),
+    ...(f.corrections !== undefined ? { corrections: f.corrections } : {}),
+    ...(f.annotationsEditedAt ? { annotationsEditedAt: f.annotationsEditedAt } : {}),
+    ...(f.summaryHtml !== undefined ? { summaryHtml: f.summaryHtml } : {}),
+    ...(f.digDeeperHtml !== undefined ? { digDeeperHtml: f.digDeeperHtml } : {}),
+    ...(base || f.extraArtifacts
+      ? {
+          artifacts: {
+            ...(base ? { summaryMd: { key: `${base}.md`, status: f.status ?? 'promoted' } } : {}),
+            ...(f.extraArtifacts ?? {}),
+          },
+        }
+      : {}),
+    ...(f.raw ?? {}),
+  };
+}
+
+/** Seed the CLOUD side (playlist row created on first call) with a full-field video + MD blob. */
+export async function seedCloudVideo(ctx: Ctx, f: SeedFields = {}): Promise<void> {
+  await prepareSyncCtx(ctx);
+  const { adminClient } = await import('./clients');
+  const svc = adminClient();
+  if (!ctx.playlistId) {
+    const url = `https://www.youtube.com/playlist?list=${ctx.playlistKey}`;
+    const { data: pl, error } = await svc.from('playlists')
+      .insert({ owner_id: ctx.userId, playlist_key: ctx.playlistKey, playlist_url: url })
+      .select('id').single();
+    if (error) throw error;
+    ctx.playlistId = pl!.id as string;
+  }
+  const videoId = f.videoId ?? ctx.videoId;
+  const data = buildVideoData(videoId, f);
+  const { error: vErr } = await svc.from('videos').insert({
+    playlist_id: ctx.playlistId, owner_id: ctx.userId, video_id: videoId,
+    position: f.position ?? 1, data,
+  });
+  if (vErr) throw vErr;
+  const summaryMd = data.summaryMd as string | null;
+  if (summaryMd && f.mdBody != null) {
+    await seedSummaryBlob(svc, ctx.userId, ctx.playlistKey, summaryMd.replace(/\.md$/, ''), f.mdBody);
+  }
+}
+
+/** Seed the LOCAL side (FS replica) with a full-field video + MD blob (mirrors seedLocalVideo but
+ *  with full Class-A/companion control). Idempotently creates the local playlist dir + index. */
+export async function seedLocalVideoFull(ctx: Ctx, f: SeedFields = {}): Promise<void> {
+  await prepareSyncCtx(ctx);
+  const lp = ctx.localPrincipal;
+  const videoId = f.videoId ?? ctx.videoId;
+  await fs.mkdir(ctx.playlistDataRoot, { recursive: true });
+  await ctx.local.setPlaylistMeta(lp, { playlistUrl: `https://www.youtube.com/playlist?list=${ctx.playlistKey}` });
+  await ctx.local.claimVideoSlot(lp, videoId);
+  const data = buildVideoData(videoId, f);
+  await ctx.local.upsertVideo(lp, data as unknown as Video);
+  const summaryMd = data.summaryMd as string | null;
+  if (summaryMd && f.mdBody != null) {
+    await ctx.localBlob.put(lp, summaryMd, Buffer.from(f.mdBody, 'utf8'), 'text/markdown');
+  }
+}
+
+/** Seed a manifest baseline for ctx.videoId (drives baseline-aware Class-B + baseline-present
+ *  delete scenarios). Writes to the SAME manifest path runSync + ctx.readManifest resolve. */
+export async function seedManifestBaseline(ctx: Ctx, baseline: VideoBaseline): Promise<void> {
+  await writeVideoBaseline(ctx.playlistDataRoot, ctx.playlistKey, ctx.videoId, baseline);
+}
+
+/** Read ctx.videoId's record from the cloud replica (RLS-scoped user session — never service-role). */
+export async function cloudVideoRecord(ctx: Ctx): Promise<Video | null> {
+  const idx = await new SupabaseMetadataStore(ctx.userClient).readIndex(ctx.cloudPrincipal);
+  return idx.videos.find((v) => v.id === ctx.videoId) ?? null;
+}
+/** Read ctx.videoId's record from the local FS replica. */
+export async function localVideoRecord(ctx: Ctx): Promise<Video | null> {
+  const idx = await ctx.local.readIndex(ctx.localPrincipal);
+  return idx.videos.find((v) => v.id === ctx.videoId) ?? null;
+}
+/** Read a blob body off the cloud replica (RLS-scoped user session). */
+export async function cloudBlobBytes(ctx: Ctx, key: string): Promise<Buffer | null> {
+  return new SupabaseBlobStore(ctx.userClient, ARTIFACTS_BUCKET).get(ctx.cloudPrincipal, key);
+}
+/** Read a blob body off the local FS replica. */
+export async function localBlobBytes(ctx: Ctx, key: string): Promise<Buffer | null> {
+  return ctx.localBlob.get(ctx.localPrincipal, key);
 }

@@ -259,7 +259,16 @@ async function transferClassA(
   if (!staged || mdHash(staged.toString('utf8')) !== h) {
     throw new Error(`transferClassA: staged MD verify failed for ${videoId}`);
   }
-  await loser.blob.promote(ref);
+  // A two-sided Class-A transfer must OVERWRITE the loser's existing (divergent) blob at `key`.
+  // promote() is NOT uniform across backends here: local rename overwrites, but SupabaseBlobStore
+  // .promote() is create-if-absent (it idempotently SKIPS the move when the final already exists,
+  // to tolerate concurrent same-key promoters) — so on the cloud winner-copy path the loser's stale
+  // body would survive. Commit the VERIFIED staged bytes to the final key with an atomic upsert
+  // (BlobStore.put, overwrite on both backends), THEN drop the staging temp. Durable-before-finalize
+  // is preserved: put returns only once the winner body is the live object, and updateVideoFields
+  // (below) advertises promoted only after this resolves.
+  await loser.blob.put(loser.p, key, staged, 'text/markdown');
+  await loser.blob.delete(loser.p, ref.tempKey).catch(() => { /* best-effort temp cleanup */ });
 
   const wv: any = winnerVideo;
   const completeTuple: any = {
