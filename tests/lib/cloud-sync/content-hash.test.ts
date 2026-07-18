@@ -9,8 +9,9 @@ describe('canonicalizeMd', () => {
     expect(canonicalizeMd('body')).toBe('body\n');
   });
   it('applies Unicode NFC', () => {
-    // "é" as combining sequence (U+0065 U+0301) → precomposed (U+00E9)
-    expect(canonicalizeMd('é')).toBe('é\n');
+    const nfd = '\u0065\u0301'; // decomposed: "e" + combining acute (U+0301)
+    expect(nfd.length).toBe(2); // guard: literal really is decomposed in source
+    expect(canonicalizeMd(nfd)).toBe('\u00E9\n'); // precomposed U+00E9 + trailing newline
   });
 });
 
