@@ -92,9 +92,6 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
 - **Claude-R3-M1** — `build-doc-html` derives `base` from `digDeeperMd` in preference to `summaryMd`,
   so when replica keys diverge (`serialNumber` is replica-local) the dig-deeper view serves the
   pre-sync summary. Stale-but-coherent; fix lives outside sync.
-- **Pre-existing, unrelated:** `tests/integration/reservation-release.test.ts` fails identically on a
-  clean tree (local Supabase state pollution — leftover `ledger_audit` rows + stale queued job).
-  Needs a DB reset or per-test isolation; not caused by this branch.
 - **M-R7-1** — the companion freshness guard judges a CLOUD receiver against the LOCAL
   `GENERATOR_VERSION`. Correct for `copyToLocal` (local constant IS the receiver's); inert for
   `copyToCloud` under deploy/checkout skew, where the sender may still be shipped and 503 a
@@ -106,9 +103,6 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
 - **L-R6-2** — `noop + shareNeedsOwnerServe: false` under-reports a matching-hash but
   version-skewed receiver model. Same family as M-R7-1: the sync run cannot fully reason about a
   remote serving environment's freshness. Condition predates the sync.
-- **Tooling:** `scripts/codex-frontier-model.py` returned `gpt-5.6-sol`, which the pinned Codex CLI
-  (0.142.5) cannot run (HTTP 400) — it ranks by `priority` without filtering on client-version
-  support, so the adversarial gate can silently no-op. Pin/filter needed.
 
 **M2a done = second device hydrates from cloud + local research publishes to the shared portal (minus
 slide images); M2 done = full bidirectional incl. images.**
@@ -122,6 +116,25 @@ slide images); M2 done = full bidirectional incl. images.**
 - [ ] **3.3 Final acceptance sign-off.**
 
 **M3 done = verified the whole journey works in production.**
+
+---
+
+## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
+
+Filed separately on purpose: these were previously buried in the M2a deferred list, which becomes
+historical the moment M2a merges. They are neither M2a findings nor blocked by it.
+
+- **`tests/integration/reservation-release.test.ts` fails on a clean tree.** Local Supabase state
+  pollution — leftover `ledger_audit` rows and a stale queued job — so the money-path suite is red
+  independently of any branch (verify by stashing before blaming one). Needs a DB reset between runs
+  or per-test isolation. **Cost of leaving it:** a permanently red suite trains everyone to ignore
+  red, which is how a real money-path regression gets waved through.
+- **`scripts/codex-frontier-model.py` can select an unrunnable model.** It ranks by `priority`
+  without filtering on what the pinned Codex CLI supports; on 2026-07-18 it returned `gpt-5.6-sol`
+  → HTTP 400 → a review file containing only an error, with **exit code 0**. The adversarial gate
+  can therefore silently no-op. Filter by client-version support, and/or fail loudly on an empty
+  review. Interim workaround: `codex exec -m gpt-5.5`, and always read the output FILE (see the
+  FAIL OPEN note in `docs/plugins.md`).
 
 ---
 

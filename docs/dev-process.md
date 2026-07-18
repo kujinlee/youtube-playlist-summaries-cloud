@@ -311,6 +311,22 @@ parameter when the defect was in the envelope read one line above). Reachability
 reviewers most often err, because they need knowledge of the deployed system's steady state, not just
 the code path.
 
+**Gate design — a converged artifact becomes an unexamined premise (added 2026-07-18).** Sequential
+gates exist so later stages need not re-litigate earlier ones; that efficiency *is* the blind spot.
+Once `docs/implementation-plan.md` converged, every downstream gate asked "does the code match the
+plan?" and none asked "is the plan's type honest?" — so one wrong line propagated through 14 tasks and
+survived into whole-branch round 3. **Counter:** each gate re-derives exactly **one** inherited
+assumption from scratch, chosen because that gate has information the earlier one could not have had.
+Concretely: per-task review inherits the interface, so it re-derives *what actually produces each
+variant of the types this task consumes* — a question the plan author could not answer, because the
+producing file did not exist yet. One question, not a re-review.
+
+**Where review effort belongs.** In Stage 3 cloud-sync, 14 per-task dual reviews returned clean and the
+whole-branch gate then found ~11 significant defects — every one of them in the *composition* between
+modules that were each locally correct. Per-task review is structurally blind to that class. Weight
+accordingly: keep per-task review light for tasks that are internally simple, and spend the saved
+budget on whole-branch rounds, which is where the defect density actually is.
+
 **Convergence measures the prompt, not only the code.** A round that finds nothing may mean the surface
 is exhausted *or* that the prompt was weak — the stopping rule silently assumes reviewer capability is
 constant. Carry a standing list of root-cause **shapes** already seen into each round's prompt and ask
