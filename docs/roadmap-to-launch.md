@@ -55,14 +55,14 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
 - **M2b — later slice (own spec):** image/slide-asset backfill (both directions), tombstone delete
   propagation, background/auto-sync, true-conflict loser-preservation.
 
-- [~] **2.1 Brainstorm + spec** (M2a) — design user-approved; spec `…2026-07-17-stage3-cloud-sync-design.md`
-  **v10 CONVERGED** (dual adversarial review; single-class v1–v6 converged, then user refined to the
-  **two-class model** v7–v10 which re-converged: opus 0 B/H/M + Codex 0 B/H; commit bbc5991). Model =
-  generated (format/corrections-currency) + human (per-field newer-wins), reconciled independently.
-  grill-with-docs terminology done. **⏳ awaiting USER final approval of the written spec → then 2.2 plan.**
-- [ ] **2.2 Plan** (dual adversarial review to convergence).
-- [ ] **2.3 Implement** (subagent-driven-development) + whole-branch dual review to convergence.
-- [ ] **2.4 Merge.**
+- [x] **2.1 Brainstorm + spec** (M2a) — design user-approved; spec `…2026-07-17-stage3-cloud-sync-design.md`
+  **v10 CONVERGED** (two-class model; commit bbc5991). **User-approved 2026-07-17.**
+- [x] **2.2 Plan** — `docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md` **v6 CONVERGED**
+  (dual adversarial review, **6 rounds**, Codex + Claude independent; round 6 both 0 B/H/M; trend
+  Blocking 4→0→0→0→0→0, High 3→5→2→1→1→0; commit 16ffb99). 14 TDD tasks. Reviews saved
+  `docs/reviews/plan-cloud-sync-m2a-{codex,claude}-r{1..6}.md`.
+- [ ] **2.3 Implement** (subagent-driven-development) + whole-branch dual review to convergence. **← NEXT**
+- [ ] **2.4 Merge** *(human gate)*.
 
 **M2a done = second device hydrates from cloud + local research publishes to the shared portal (minus
 slide images); M2 done = full bidirectional incl. images.**
