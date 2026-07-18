@@ -256,6 +256,20 @@ npm test -- --watch   # hit p to filter by file, t to filter by test name
 
 **Rule:** targeted test green → full `npm test` once → commit. Never skip the full suite before committing, but never wait for it during iteration.
 
+**Known-red suites: quarantine or fix, never normalise (added 2026-07-18).** A suite that is
+permanently red makes "run the full suite — confirm no regressions" unfalsifiable: once some red is
+expected, all red becomes negotiable, and that is how a real money-path regression gets waved through.
+So whenever a suite is red for a reason **not** caused by the current work:
+1. **Prove it** — stash the working changes and re-run. Same failure on a clean tree ⇒ pre-existing.
+2. **Record it** in `docs/roadmap-to-launch.md` → *Dev-infrastructure debt*, with the proof.
+3. **Name it in the commit** that ships alongside it — "suite X red on a clean tree, unrelated".
+4. The full-suite step is only satisfiable while the set of known-red suites is **explicitly named**.
+   If you cannot name why each red suite is red, the gate is not met.
+
+Currently known-red: `tests/integration/reservation-release.test.ts` — see *Dev-infrastructure debt*
+in the roadmap for the live list and the proof. **The list is meant to be empty.** A second entry
+appearing is the signal to stop adding features and fix the harness.
+
 ### E2E quality rules
 
 Violating any rule below means the E2E step is not done.

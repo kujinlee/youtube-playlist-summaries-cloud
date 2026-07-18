@@ -124,12 +124,28 @@ slide images); M2 done = full bidirectional incl. images.**
 Filed separately on purpose: these were previously buried in the M2a deferred list, which becomes
 historical the moment M2a merges. They are neither M2a findings nor blocked by it.
 
-- **`tests/integration/reservation-release.test.ts` fails on a clean tree.** Local Supabase state
+**Every item carries a TRIGGER — the event that will actually surface it.** A debt list without
+triggers is a wish list: nothing in the workflow reads a prose section, so items rot there
+indefinitely (the Parking Lot below is the standing evidence). A trigger ties the item to something
+that fires anyway, so it resurfaces without anyone remembering it exists.
+
+- [ ] **`tests/integration/reservation-release.test.ts` fails on a clean tree.**
+  **TRIGGER: every task.** `docs/dev-process.md` → *Known-red suites* now makes the "full suite green"
+  gate satisfiable only while every red suite is explicitly named — so this item is re-read at the
+  commit step of every single task until it is fixed, and a *second* entry appearing is the signal to
+  stop feature work and fix the harness. Local Supabase state
   pollution — leftover `ledger_audit` rows and a stale queued job — so the money-path suite is red
   independently of any branch (verify by stashing before blaming one). Needs a DB reset between runs
   or per-test isolation. **Cost of leaving it:** a permanently red suite trains everyone to ignore
   red, which is how a real money-path regression gets waved through.
-- **`scripts/codex-frontier-model.py` can select an unrunnable model.** It ranks by `priority`
+- [ ] **`scripts/codex-frontier-model.py` can select an unrunnable model.**
+  **TRIGGER: every adversarial review.** Mitigation is already enforced in `docs/plugins.md` (FAIL
+  OPEN — read the output FILE, never the exit code), so the gate cannot silently no-op today. What
+  remains is the permanent fix. Note the picker *cannot* be made smarter from the cache alone: it
+  already filters `visibility == "list"` and `supported_in_api`, and the cache carries no
+  minimum-client-version field. So the fix belongs at the point of use — a dispatch wrapper that
+  detects the HTTP 400 / findings-free output and retries with the next candidate by priority,
+  exiting non-zero if no candidate produces a real review. It ranks by `priority`
   without filtering on what the pinned Codex CLI supports; on 2026-07-18 it returned `gpt-5.6-sol`
   → HTTP 400 → a review file containing only an error, with **exit code 0**. The adversarial gate
   can therefore silently no-op. Filter by client-version support, and/or fail loudly on an empty
@@ -182,6 +198,10 @@ along on the sync branch). Needs its own spec + review + human merge gate like a
 ---
 
 ## Parking Lot — post-launch hardening (does NOT block launch)
+
+*Same rule as Dev-infrastructure debt: each item needs a **trigger**, or it rots here. Items without
+one are honest wishes, not plans — mark them so rather than pretending they are scheduled.*
+
 - **Real-cost settle slice** (spec §10): replace the keep/release *heuristic* with real `actual_cents`
   from `usageMetadata`; closes the §2.4a/b/**4c** residuals + the crash residual (billable-phase marker).
   Natural sequel to the reservation slice.
