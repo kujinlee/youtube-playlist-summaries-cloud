@@ -10,7 +10,7 @@ The **spec is the human gate.** Design, terminology, and goal decisions are sett
 
 Pull the human back in only for an **unexpected situation** — something the automated loop cannot resolve on its own:
 - a genuine ambiguity or fork the spec did not settle (a real decision, not a mechanical choice with an obvious default);
-- an adversarial-review round that **cannot reach convergence** — a Blocking/High that resists fixing, or fixes that keep surfacing new Blocking/High;
+- an adversarial-review round that **cannot reach convergence** — a Blocking/High that resists fixing, or fixes that keep surfacing new Blocking/High. **Resolution of the apparent conflict with "Iterative Re-Review" (added 2026-07-18):** that section says to *keep going* on a new Blocking/High; this section says to *pull the human in*. Both fire at the same trigger, so the rule is: **notify and continue.** Stop and wait only if (a) the human replies, (b) the next action is outward-facing or irreversible, or (c) the fix is not clearly specified — i.e. you would be guessing at intent. Continuing while a notification is outstanding is correct; going silent is not;
 - a **blocker**: missing access/credentials, an external dependency down, a gate that will not go green;
 - anything that would **move the goal** (change the spec) rather than approach it;
 - an **outward-facing or hard-to-reverse action** — push, merge, deploy, delete, spend. These stay human gates regardless (see Phase 5).
@@ -155,6 +155,7 @@ At the start of every implementation task, create the following items with `Task
 [ ] Implement (GREEN)
 [ ] Run tests — confirm all pass
 [ ] Run full suite — confirm no regressions
+[ ] Mutation-check every new guard: remove it → tests MUST go red → restore (see below)
 [ ] Claude code review (superpowers:requesting-code-review)
 [ ] Write docs/reviews/task-N-<name>-review.md
 [ ] Codex adversarial review (codex:rescue)
@@ -174,8 +175,40 @@ At the start of every implementation task, create the following items with `Task
 - **URL-generating components:** One row per link, Expected = exact href with every query param named (e.g. `/api/pdf/[id]?outputFolder=…&type=summary`). A row that names the route but omits params is incomplete.
 - **Modal/overlay/status-bar components:** One row per dismissal mechanism (backdrop click, Escape, close button, auto-close on done). Zero dismissal rows = incomplete.
 - **Optional-prop rendering:** One row for the null/absent state and one for the non-null/present state of each nullable prop. Happy-path-only = incomplete.
+- **Cross-module nullable/union values** *(added 2026-07-18, Stage 3 cloud-sync)*: for every `T | null`,
+  `T | undefined`, or union crossing a module boundary, one row naming **what produces each variant**
+  and **whether the consumer can tell them apart**. A `null` that means *absent* to the reader but is
+  also what a *failure* produces in the writer is the defect; the table is where that becomes visible,
+  because the producer usually lives in a different file than the type you are writing.
 
-If a task touches URL-generating components, overlays, or optional props and the behaviors table has zero rows in the relevant category, the Enumerate step is not done.
+  | Value | Variants | Produced by | Consumer can distinguish? |
+  |---|---|---|---|
+  | `blob.get` | `Buffer` / `null` | Supabase `download` | **No** — `if (error) return null` swallows 404, 5xx, timeout, RLS |
+  | `blob.get` | `Buffer` / `null` | local FS read | Yes — null only on ENOENT, rethrows otherwise |
+
+  If any row answers **No**, the fix is to make the type honest (a discriminated result
+  `{ok:true,…} | {ok:false, reason:'absent'|'unreadable'}`), not to remember to check a side-channel
+  flag. Same row applies to **error paths**: name, per boundary, which faults abort (and leave no
+  durable trace) versus which are swallowed and reported. Specifying that per-function instead of
+  per-boundary is how one function got a fault rule and its neighbour silently didn't.
+
+If a task touches URL-generating components, overlays, optional props, or a nullable/union value
+crossing a module boundary, and the behaviors table has zero rows in the relevant category, the
+Enumerate step is not done.
+
+**Why this category exists:** in Stage 3 cloud-sync, one plan line —
+`decideCompanion(args: { senderEnvelope: ModelEnvelope | null })`, "else delete the receiver's model" —
+passed 6 rounds of plan review, 14 per-task TDD reviews, and 2 whole-branch rounds before a Blocking
+was found in round 3. It was faithfully implemented; the *type* was wrong. Four separate
+Blocking/High findings were the same shape.
+
+**Mutation-check step (added 2026-07-18):** for each guard/branch the task adds to *prevent* a defect,
+delete it, re-run the covering tests, confirm they go **red**, restore. A test that passes in both the
+buggy and the fixed world is documentation, not a guard — and you cannot tell which you have by reading
+it. This is the one check here that needs no judgement, memory, or expertise, which is why it is a
+checklist line and not advice. **Commit the fix first**, then mutate: `git checkout` to undo a mutation
+also reverts an uncommitted fix. In Stage 3 cloud-sync this found a defence layer with **zero** coverage
+that 40 passing integration tests concealed, and a single-run test that passed while its bug was live.
 
 **Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
 
@@ -258,6 +291,32 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 2. Address all Blocking/High (present Medium for a decision).
 3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
 4. Repeat from 2.
+
+**At fix time, list the consumers (added 2026-07-18).** Before writing a fix that changes what a piece
+of state *means*, name every reader of that state — including the same code running in a **different
+process or environment**. All three self-inflicted follow-on defects in Stage 3 cloud-sync came from
+reasoning about the module being edited and not its readers: a guard correct for one storage backend
+and wrong for the other; a sync-path decision correct there and wrong at the serve path; a constant
+compared against itself across two processes that compile different values. `grep` for the field name
+is usually the whole exercise.
+
+**Reviewer disagreement is the signal (added 2026-07-18).** When the two reviewers split, that is the
+round's most valuable output — never resolve it by majority, seniority, or by trusting a CONVERGED
+verdict. Adjudicate by reading the code and tracing the disputed value yourself, then **record the
+adjudication in the review doc**; an uncorrected wrong verdict in `docs/reviews/` gets cited later as
+fact. In Stage 3 cloud-sync the reviewers split 3 times and the reviewer *reporting a finding* was
+right all 3 — twice while the other returned CONVERGED over a live Blocking. Losing verdicts were not
+lazy; they were plausible reasoning about the *adjacent* thing (clearing a function by its hash
+parameter when the defect was in the envelope read one line above). Reachability arguments are where
+reviewers most often err, because they need knowledge of the deployed system's steady state, not just
+the code path.
+
+**Convergence measures the prompt, not only the code.** A round that finds nothing may mean the surface
+is exhausted *or* that the prompt was weak — the stopping rule silently assumes reviewer capability is
+constant. Carry a standing list of root-cause **shapes** already seen into each round's prompt and ask
+for *siblings by shape*, not another read-through. Current list: absent vs failed-to-read; acting on a
+reading that cannot prove what it claims; same constant, different process; a durable commit followed
+by a non-durable follow-up behind a gate that assumes convergence; a test that passes in both worlds.
 
 **Stop (diminishing returns) when** a full re-review round returns **no new Blocking or High** — only Low/nits, or findings already known-and-accepted (recorded as deferred with an owner). That round is the gate; then get human approval. Do **not** stop merely because you are tired of reviewing or the artifact "feels done."
 
