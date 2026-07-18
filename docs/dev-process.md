@@ -62,6 +62,7 @@ These files are not @-included — read them when the trigger condition is met.
 | `docs/roadmap-to-launch.md` | "What's left / what's next" to the final app; session start (reconcile vs git); any milestone/step boundary — keep it current (see Roadmap & Task List) |
 | `docs/implementation-plan.md` | Session resume (find next uncommitted task); start of each task |
 | `docs/design-spec.md` | Phase 4 verification checklist; any spec ambiguity during implementation |
+| `docs/process-rationale.md` | A rule here looks arbitrary, expensive or wrong; you are about to skip or "simplify" one; a review finding resembles something the process claims to prevent |
 | `docs/available-skills.md` | Unsure which skill to use or how to invoke it; after installing or updating plugins. Say **"sync docs"** or run `/sync-docs` (`sync-docs` skill) to regenerate. |
 
 ---
@@ -175,40 +176,21 @@ At the start of every implementation task, create the following items with `Task
 - **URL-generating components:** One row per link, Expected = exact href with every query param named (e.g. `/api/pdf/[id]?outputFolder=…&type=summary`). A row that names the route but omits params is incomplete.
 - **Modal/overlay/status-bar components:** One row per dismissal mechanism (backdrop click, Escape, close button, auto-close on done). Zero dismissal rows = incomplete.
 - **Optional-prop rendering:** One row for the null/absent state and one for the non-null/present state of each nullable prop. Happy-path-only = incomplete.
-- **Cross-module nullable/union values** *(added 2026-07-18, Stage 3 cloud-sync)*: for every `T | null`,
-  `T | undefined`, or union crossing a module boundary, one row naming **what produces each variant**
-  and **whether the consumer can tell them apart**. A `null` that means *absent* to the reader but is
-  also what a *failure* produces in the writer is the defect; the table is where that becomes visible,
-  because the producer usually lives in a different file than the type you are writing.
-
-  | Value | Variants | Produced by | Consumer can distinguish? |
-  |---|---|---|---|
-  | `blob.get` | `Buffer` / `null` | Supabase `download` | **No** — `if (error) return null` swallows 404, 5xx, timeout, RLS |
-  | `blob.get` | `Buffer` / `null` | local FS read | Yes — null only on ENOENT, rethrows otherwise |
-
-  If any row answers **No**, the fix is to make the type honest (a discriminated result
-  `{ok:true,…} | {ok:false, reason:'absent'|'unreadable'}`), not to remember to check a side-channel
-  flag. Same row applies to **error paths**: name, per boundary, which faults abort (and leave no
-  durable trace) versus which are swallowed and reported. Specifying that per-function instead of
-  per-boundary is how one function got a fault rule and its neighbour silently didn't.
+- **Cross-module nullable/union values:** for every `T | null` / union crossing a module boundary, one
+  row: `Value | Variants | Produced by | Consumer can distinguish?`. If any row answers **No**, make the
+  type honest (`{ok:true,…} | {ok:false, reason:'absent'|'unreadable'}`) — do not add a side-channel
+  flag. Same row names, per boundary, which faults abort versus which are swallowed and reported.
 
 If a task touches URL-generating components, overlays, optional props, or a nullable/union value
 crossing a module boundary, and the behaviors table has zero rows in the relevant category, the
 Enumerate step is not done.
 
-**Why this category exists:** in Stage 3 cloud-sync, one plan line —
-`decideCompanion(args: { senderEnvelope: ModelEnvelope | null })`, "else delete the receiver's model" —
-passed 6 rounds of plan review, 14 per-task TDD reviews, and 2 whole-branch rounds before a Blocking
-was found in round 3. It was faithfully implemented; the *type* was wrong. Four separate
-Blocking/High findings were the same shape.
+*(Why: 4 Blocking/High from one `| null` that passed 6 plan rounds — `docs/process-rationale.md`.)*
 
-**Mutation-check step (added 2026-07-18):** for each guard/branch the task adds to *prevent* a defect,
-delete it, re-run the covering tests, confirm they go **red**, restore. A test that passes in both the
-buggy and the fixed world is documentation, not a guard — and you cannot tell which you have by reading
-it. This is the one check here that needs no judgement, memory, or expertise, which is why it is a
-checklist line and not advice. **Commit the fix first**, then mutate: `git checkout` to undo a mutation
-also reverts an uncommitted fix. In Stage 3 cloud-sync this found a defence layer with **zero** coverage
-that 40 passing integration tests concealed, and a single-run test that passed while its bug was live.
+**Mutation-check step:** for each guard the task adds, delete it → re-run the covering tests → they
+MUST go red → restore. A test that passes in both the buggy and fixed world is documentation, not a
+guard. **Commit the fix before mutating** (`git checkout` also reverts an uncommitted fix).
+*(Why: found a defence layer with zero coverage behind 40 green tests — `docs/process-rationale.md`.)*
 
 **Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
 
@@ -256,10 +238,8 @@ npm test -- --watch   # hit p to filter by file, t to filter by test name
 
 **Rule:** targeted test green → full `npm test` once → commit. Never skip the full suite before committing, but never wait for it during iteration.
 
-**Known-red suites: quarantine or fix, never normalise (added 2026-07-18).** A suite that is
-permanently red makes "run the full suite — confirm no regressions" unfalsifiable: once some red is
-expected, all red becomes negotiable, and that is how a real money-path regression gets waved through.
-So whenever a suite is red for a reason **not** caused by the current work:
+**Known-red suites: quarantine or fix, never normalise.** A permanently-red suite makes "confirm no
+regressions" unfalsifiable. Whenever a suite is red for a reason **not** caused by the current work:
 1. **Prove it** — stash the working changes and re-run. Same failure on a clean tree ⇒ pre-existing.
 2. **Record it** in `docs/roadmap-to-launch.md` → *Dev-infrastructure debt*, with the proof.
 3. **Name it in the commit** that ships alongside it — "suite X red on a clean tree, unrelated".
@@ -306,47 +286,19 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
 4. Repeat from 2.
 
-**At fix time, list the consumers (added 2026-07-18).** Before writing a fix that changes what a piece
-of state *means*, name every reader of that state — including the same code running in a **different
-process or environment**. All three self-inflicted follow-on defects in Stage 3 cloud-sync came from
-reasoning about the module being edited and not its readers: a guard correct for one storage backend
-and wrong for the other; a sync-path decision correct there and wrong at the serve path; a constant
-compared against itself across two processes that compile different values. `grep` for the field name
-is usually the whole exercise.
+**Four rules for the loop** — evidence for each in `docs/process-rationale.md`:
+- **At fix time, list the consumers.** Before a fix that changes what state *means*, name every reader
+  — including the same code in a **different process**. `grep` for the field name is usually the job.
+- **Reviewer disagreement is the signal.** Never resolve a split by majority or by trusting a CONVERGED
+  verdict. Adjudicate by reading the code, and **record the adjudication in the review doc**.
+- **Each gate re-derives ONE inherited assumption** — chosen because this gate has information the
+  earlier one lacked (per-task review re-derives what produces each variant of the types it consumes).
+  One question, not a re-review.
+- **Convergence measures the prompt too.** Carry a standing list of root-cause *shapes* into each
+  round's prompt and ask for siblings by shape, not another read-through. List: rationale doc.
 
-**Reviewer disagreement is the signal (added 2026-07-18).** When the two reviewers split, that is the
-round's most valuable output — never resolve it by majority, seniority, or by trusting a CONVERGED
-verdict. Adjudicate by reading the code and tracing the disputed value yourself, then **record the
-adjudication in the review doc**; an uncorrected wrong verdict in `docs/reviews/` gets cited later as
-fact. In Stage 3 cloud-sync the reviewers split 3 times and the reviewer *reporting a finding* was
-right all 3 — twice while the other returned CONVERGED over a live Blocking. Losing verdicts were not
-lazy; they were plausible reasoning about the *adjacent* thing (clearing a function by its hash
-parameter when the defect was in the envelope read one line above). Reachability arguments are where
-reviewers most often err, because they need knowledge of the deployed system's steady state, not just
-the code path.
-
-**Gate design — a converged artifact becomes an unexamined premise (added 2026-07-18).** Sequential
-gates exist so later stages need not re-litigate earlier ones; that efficiency *is* the blind spot.
-Once `docs/implementation-plan.md` converged, every downstream gate asked "does the code match the
-plan?" and none asked "is the plan's type honest?" — so one wrong line propagated through 14 tasks and
-survived into whole-branch round 3. **Counter:** each gate re-derives exactly **one** inherited
-assumption from scratch, chosen because that gate has information the earlier one could not have had.
-Concretely: per-task review inherits the interface, so it re-derives *what actually produces each
-variant of the types this task consumes* — a question the plan author could not answer, because the
-producing file did not exist yet. One question, not a re-review.
-
-**Where review effort belongs.** In Stage 3 cloud-sync, 14 per-task dual reviews returned clean and the
-whole-branch gate then found ~11 significant defects — every one of them in the *composition* between
-modules that were each locally correct. Per-task review is structurally blind to that class. Weight
-accordingly: keep per-task review light for tasks that are internally simple, and spend the saved
-budget on whole-branch rounds, which is where the defect density actually is.
-
-**Convergence measures the prompt, not only the code.** A round that finds nothing may mean the surface
-is exhausted *or* that the prompt was weak — the stopping rule silently assumes reviewer capability is
-constant. Carry a standing list of root-cause **shapes** already seen into each round's prompt and ask
-for *siblings by shape*, not another read-through. Current list: absent vs failed-to-read; acting on a
-reading that cannot prove what it claims; same constant, different process; a durable commit followed
-by a non-durable follow-up behind a gate that assumes convergence; a test that passes in both worlds.
+**Where review effort belongs:** per-task review is structurally blind to composition defects. Keep it
+light for internally-simple tasks; spend the budget on whole-branch rounds.
 
 **Stop (diminishing returns) when** a full re-review round returns **no new Blocking or High** — only Low/nits, or findings already known-and-accepted (recorded as deferred with an owner). That round is the gate; then get human approval. Do **not** stop merely because you are tired of reviewing or the artifact "feels done."
 
@@ -354,7 +306,7 @@ by a non-durable follow-up behind a gate that assumes convergence; a test that p
 
 **Save every round** to `docs/reviews/` with a version/round suffix (e.g. `-v2-rereview.md`) so the convergence trail is auditable.
 
-**Empirical basis (Stage 1E-b, 2026-07-07):** the spec's first dual review found 3 Blocking + 3 High; the fixes' *re-review* found **2 new Blocking + 4 High the first round and the fixes both missed** (metadata keyed by non-owner-unique `playlist_key`, `upsertVideo` erasing artifact status, a false "abort stops billing" premise). A single round would have shipped those into the plan and the code. Re-review until convergence is cheap next to shipping a cross-tenant write or a silent double-charge.
+*(Empirical basis — Stage 1E-b and Stage 3 cloud-sync: `docs/process-rationale.md`.)*
 
 ---
 
@@ -378,7 +330,3 @@ Two sequential sub-projects. Sub-project 2 does not begin until Sub-project 1 is
 | API route level | E2E tests mock here, not at the lib boundary |
 
 ---
-
-## Project-Specific: Adversarial Review Precedent
-
-The Codex review of `docs/design-spec.md` and `docs/implementation-plan.md` (between Tasks 2 and 3) caught five significant gaps: SSE job identity, path traversal risk, deep-dive transcript fallback underspecification, output folder ambiguity, and Obsidian vault URI semantics. These were architectural decisions that would have affected Tasks 3–10 if left vague.
