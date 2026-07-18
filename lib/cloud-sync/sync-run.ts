@@ -147,17 +147,24 @@ async function copyAdditiveVideo(
   playlistMeta: { playlistUrl: string; playlistTitle?: string },
   video: Video, mdBody: string | null,
 ): Promise<void> {
+  // WB-H1 — a video advertising a summaryMd whose blob body is unreadable (null: storage drift /
+  // corruption / RLS miss) is an anomaly. THROW (per-video, caught by the caller) so the baseline is
+  // NOT advanced — a re-run heals once the body is readable. Advertising promoted with no blob would
+  // strand the receiver with a servable-looking row backed by nothing.
+  // H-R2-1 (round 2) — this guard MUST run BEFORE ensureReceiverSlot, not after. Claiming the slot
+  // first left a BARE receiver row behind on the throw; the next run then saw a TWO-SIDED video whose
+  // sides both derive mdHash === null (bare row has no body, source body still unreadable), so
+  // reconcileClassA returned 'skip' (!lHas && !cHas) and runSync wrote a manifest baseline —
+  // laundering the corruption into a false "seen and agreed no-MD" state. Validating first means no
+  // partial state is ever created, so there is nothing to roll back.
+  if (video.summaryMd && mdBody == null) {
+    throw new Error(`additive: summaryMd present but MD body unreadable for ${video.id}`);
+  }
+
   const slot = await ensureReceiverSlot(to, toP, playlistMeta, video);
 
   let wroteBlob = false;
-  if (video.summaryMd) {
-    // WB-H1 — a video advertising a summaryMd whose blob body is unreadable (null: storage drift /
-    // corruption / RLS miss) is an anomaly. THROW (per-video, caught by the caller) so the baseline is
-    // NOT advanced — a re-run heals once the body is readable. Advertising promoted with no blob would
-    // strand the receiver with a servable-looking row backed by nothing.
-    if (mdBody == null) {
-      throw new Error(`additive: summaryMd present but MD body unreadable for ${video.id}`);
-    }
+  if (video.summaryMd && mdBody != null) {
     // stage → verify (readable + hashes) → promote — never advertise promoted before durable.
     const ref = await toBlob.putStaged(toP, video.summaryMd, Buffer.from(mdBody, 'utf8'), 'text/markdown');
     const staged = await toBlob.get(toP, ref.tempKey);
@@ -310,10 +317,19 @@ async function transferClassA(
     // the serve path (buildDocHtml/ensureHtmlDoc) checks generator-version, NOT MD-body freshness, so a
     // same-format prose change (the recency-tiebreak case) would serve stale HTML indefinitely (§5.1
     // "sync moves MD, not HTML"). merge_video_data stores JSON null / local shallow-merge overrides →
-    // readIndex reads falsy → forces re-render. Matches sanitizeAdditiveVideo, which already nulls these.
+    // readIndex reads falsy → forces re-render.
+    //
+    // H-R2-2 (round 2) — ONLY the two HTML caches are cleared here. Do NOT add `digDeeperMd: null`
+    // back: digDeeperMd is not a render cache, it is the filename pointer to a PAID Gemini-generated
+    // dig-deeper markdown file (lib/dig/generate.ts, written by lib/dig/dig-section.ts). Nulling it
+    // orphans that file and darkens the dig-state route, VideoMenu, build-doc-html and pdf-path;
+    // recovery costs fresh Gemini spend for content already paid for (and dig is out of scope for
+    // M2a). digDeeperHtml re-renders for free FROM the preserved digDeeperMd.
+    // The round-1 premise "matches sanitizeAdditiveVideo, which already nulls these" was the flaw:
+    // sanitizeAdditiveVideo shapes a record for a receiver with NO existing row (nothing to destroy),
+    // whereas transferClassA PATCHES a row that already holds its own state.
     summaryHtml: null,
     digDeeperHtml: null,
-    digDeeperMd: null,
     // Deep-merged (cloud merge_video_data / local index write). No Class-B key here → no spurious
     // annotationsEditedAt stamp (F2). Never advertise promoted before the blob is durable (above).
     artifacts: { summaryMd: { key, status: 'promoted' } },
@@ -468,17 +484,28 @@ export async function runSync(
         //    Skip the Class-A copy entirely, flag for regen, and write a baseline that does NOT advance
         //    Class A (so the next run re-evaluates once the human resolves corrections). The video stays
         //    "seen" for delete-inference (baseline present).
+        //
+        //    Class-A signals are derived HERE (before the guard) because the guard needs them; the
+        //    derivation is PURE (it only reads the record + the MD body), so hoisting it changes no
+        //    behavior. Bodies are needed for hashing regardless — Behavior #1.
+        const la = deriveClassASignals(lv, await readMdBody(deps.localBlob, localP, lv));
+        const ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
+
+        //    M-R2-2 — the skip is narrowed to the genuinely DESTRUCTIVE case: BOTH sides actually hold
+        //    an MD body. When one side has none, the Class-A copy is purely ADDITIVE hydration —
+        //    nothing can be destroyed and no false agreement about competing bodies is possible — so
+        //    skipping would strand the video with no MD forever (safe-but-stuck until a human edits
+        //    corrections). The corrections conflict is still logged by Class B and still flags
+        //    needsRegen via reconcileClassA (the hydrated MD is corrections-stale).
         const correctionsUnresolved = merges.corrections.winner === 'equal' && merges.corrections.conflict;
-        if (correctionsUnresolved) {
+        if (correctionsUnresolved && la.mdHash != null && ca.mdHash != null) {
           report.needsRegen += 1;
           if (lv.archived !== cv.archived) report.archivedNotSynced += 1; // R10 — do NOT sync archived
           await writeVideoBaseline(dataRoot, key, id, buildCorrectionsUnresolvedBaseline(merges, base));
           continue;
         }
 
-        // ── Class A (needs the MD bodies for hashing — Behavior #1).
-        const la = deriveClassASignals(lv, await readMdBody(deps.localBlob, localP, lv));
-        const ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
+        // ── Class A (la/ca derived above the WB-B1 guard, which needs them — Behavior #1).
         const decision = reconcileClassA({ local: la, cloud: ca, reconciledCorrectionsHash });
         if (decision.needsRegen) report.needsRegen += 1;
 

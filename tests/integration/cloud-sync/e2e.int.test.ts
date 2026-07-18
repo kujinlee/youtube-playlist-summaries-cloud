@@ -435,7 +435,12 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
   //    readMdBody returns null. The buggy path preserved the promoted artifact and upserted a
   //    promoted-but-blobless row + advanced the baseline. After the fix: per-video throw, no promoted
   //    receiver row, baseline NOT advanced (a re-run heals once the body is readable).
-  it('WB-H1: additive create with a promoted summaryMd but no blob throws; no promoted row, no baseline', async () => {
+  //    H-R2-1 (round 2) upgrades this to TWO runs: the throw must happen BEFORE ensureReceiverSlot,
+  //    otherwise run 1 leaves a BARE receiver row, run 2 sees a two-sided video whose BOTH sides derive
+  //    mdHash === null, reconcileClassA returns 'skip' (!lHas && !cHas) and runSync WRITES A BASELINE —
+  //    laundering the corruption into a false "seen and agreed no-MD" state. The single-run assertions
+  //    below all passed while that bug was live; the run-2 baseline assertion is the real guard.
+  it('WB-H1/H-R2-1: additive create with a promoted summaryMd but no blob throws before claiming a receiver slot; no row, no baseline (2 runs)', async () => {
     const ctx = await makeOwnerContext();
     // summaryMd key set + artifacts.summaryMd promoted, but NO mdBody → seedSummaryBlob is skipped.
     await seedCloudVideo(ctx, { /* mdBody omitted → blob absent */ });
@@ -443,10 +448,18 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     const report = await runSync(ctx.syncDeps());
 
     expect(report.errors.some((e) => e.videoId === ctx.videoId)).toBe(true);
-    // The local receiver must not advertise a promoted summaryMd (bare slot at most; no blob copied).
-    const local = await localVideoRecord(ctx);
-    expect(artifactsOf(local)?.summaryMd?.status).not.toBe('promoted');
+    // No partial state at all: the guard runs before ensureReceiverSlot, so there is no receiver row.
+    expect(await localVideoRecord(ctx)).toBeNull();
+    expect(artifactsOf(await localVideoRecord(ctx))?.summaryMd?.status).not.toBe('promoted');
     // Baseline not advanced — the throw aborted before writeVideoBaseline.
+    expect((await ctx.readManifest()).videos[ctx.videoId]).toBeUndefined();
+
+    // Run 2 — still one-sided, so it must report the SAME error and still write no baseline. With a
+    // bare row present it would instead take the two-sided path and silently record agreement.
+    const r2 = await runSync(ctx.syncDeps());
+    expect(r2.errors.some((e) => e.videoId === ctx.videoId)).toBe(true);
+    expect(await localVideoRecord(ctx)).toBeNull();
+    expect(artifactsOf(await localVideoRecord(ctx))?.summaryMd?.status).not.toBe('promoted');
     expect((await ctx.readManifest()).videos[ctx.videoId]).toBeUndefined();
   });
 
@@ -471,5 +484,70 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     const local = await localVideoRecord(ctx);
     expect(local?.summaryHtml == null).toBe(true);                                  // stale cache invalidated
     expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloudWin); // winner body copied
+  });
+
+  // ── H-R2-2 — the WB-H2 cache invalidation must NOT extend to digDeeperMd. digDeeperMd is NOT a
+  //    regenerable render cache: it is the filename pointer to a PAID Gemini-generated dig-deeper
+  //    markdown file (lib/dig/generate.ts). Nulling it on an ordinary Class-A transfer orphans the file
+  //    on disk and makes the dig-state route / VideoMenu / build-doc-html / pdf-path all go dark —
+  //    recovery costs fresh Gemini spend for content already paid for. summaryHtml/digDeeperHtml stay
+  //    nulled (free re-renders; digDeeperHtml re-renders FROM the preserved digDeeperMd).
+  it('H-R2-2: a copyToLocal transfer preserves the loser PAID digDeeperMd while still nulling the HTML caches', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyLocalOld = '# LocalOld\n\nlower-major stale-format body\n';
+    const bodyCloudWin = '# CloudWin\n\nhigher-major winner body\n';
+    const digKey = 'paid-dig-deeper.md';
+    await seedLocalVideoFull(ctx, {
+      mdBody: bodyLocalOld, docVersion: { major: 1, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+      summaryHtml: '<html>STALE rendered from the old local body</html>',
+      digDeeperHtml: '<html>STALE dig render</html>',
+      raw: { digDeeperMd: digKey },
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloudWin, docVersion: { major: 2, minor: 0 }, mdCorrectionsHash: H_NO_CORRECTIONS,
+    });
+
+    const report = await runSync(ctx.syncDeps());
+    expect(report.updatedLocal).toBeGreaterThanOrEqual(1);
+
+    const local = await localVideoRecord(ctx);
+    expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloudWin); // winner body landed
+    expect(local?.summaryHtml == null).toBe(true);      // WB-H2 still holds
+    expect(local?.digDeeperHtml == null).toBe(true);    // WB-H2 still holds
+    expect((local as { digDeeperMd?: string } | null)?.digDeeperMd).toBe(digKey); // PAID pointer preserved
+  });
+
+  // ── M-R2-2 — the WB-B1 skip must be narrowed to the genuinely DESTRUCTIVE case (both sides hold an
+  //    MD body). When the loser has NO MD at all, hydrating it is purely additive — nothing can be
+  //    destroyed — so a backfilled corrections conflict must not strand the video with no MD forever
+  //    (safe-but-stuck until a human edits corrections). The conflict is still logged + needsRegen.
+  it('M-R2-2: a corrections conflict still hydrates a one-sided MD (purely additive, nothing destroyed)', async () => {
+    const ctx = await makeOwnerContext();
+    const bodyCloud = '# CloudOnly\n\nthe only MD body that exists\n';
+    await seedLocalVideoFull(ctx, {
+      summaryMd: null, // local row exists but holds NO MD → nothing to destroy
+      corrections: 'A', mdCorrectionsHash: mdHash('A'), // no annotationsEditedAt → backfilled
+      docVersion: { major: 1, minor: 0 },
+    });
+    await seedCloudVideo(ctx, {
+      mdBody: bodyCloud, corrections: 'B', mdCorrectionsHash: mdHash('B'), // backfilled
+      docVersion: { major: 1, minor: 0 },
+    });
+    const spendBefore = await ctx.spendLedgerTotal();
+
+    const report = await runSync(ctx.syncDeps());
+
+    expect(report.updatedLocal).toBeGreaterThanOrEqual(1);           // hydration ran
+    expect(report.conflictsLogged).toBeGreaterThanOrEqual(1);        // corrections conflict still logged
+    expect(report.needsRegen).toBeGreaterThanOrEqual(1);             // MD is corrections-stale
+    expect(await ctx.spendLedgerTotal()).toBe(spendBefore);          // sync copy never charges
+
+    // The cloud body is now on local, advertised promoted; both corrections still preserved.
+    expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloud);
+    const local = await localVideoRecord(ctx);
+    expect(local?.summaryMd).toBe(key(ctx));
+    expect(artifactsOf(local)?.summaryMd?.status).toBe('promoted');
+    expect(local?.corrections).toBe('A');
+    expect((await cloudVideoRecord(ctx))?.corrections).toBe('B');
   });
 });
