@@ -63,16 +63,23 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
   `docs/reviews/plan-cloud-sync-m2a-{codex,claude}-r{1..6}.md`.
 - [x] **2.3 Implement** (subagent-driven-development) — all 14 TDD tasks committed, each per-task
   dual-reviewed clean. 2421 unit / 245 suites; cloud-sync integration 4 suites.
-- [ ] **2.3b Whole-branch dual review to convergence** — **← IN PROGRESS, not yet converged.**
-  Reviews `docs/reviews/whole-branch-cloud-sync{,-v2,-v3,-v4}-rereview-{codex,claude}.md`.
+- [x] **2.3b Whole-branch dual review to convergence** — **CONVERGED at round 7** (both reviewers,
+  independent; round 7 was a focused pass on the round-6 delta). Final: `15c32bd` + doc correction.
+  Reviews `docs/reviews/whole-branch-cloud-sync{,-v2,-v3,-v4,-v5,-v6}-rereview-{codex,claude}.md` +
+  `whole-branch-cloud-sync-v7-focused-{codex,claude}.md`.
   | Round | Findings | Fixed in |
   |---|---|---|
   | R1 | 1 Blocking + 2 High (WB-B1/H1/H2) | `32a164c` |
   | R2 | 2 High + 3 Med (H-R2-2 was a *regression from the R1 fix*) | `1f54c60` |
   | R3 | **1 Blocking** (B1) — Codex said CONVERGED, Claude caught it | `3bc8cc7` |
-  | R4 | 3 High (H2 a *regression from the B1 fix*; H1/H3 pre-existing) | in progress |
-  Trend Blocking 1→0→1→0, High 2→2→0→3. **Not converging monotonically** — each round's
-  sharper prompt surfaces pre-existing defects the earlier rounds walked past. Root cause of
+  | R4 | 3 High (H2 a *regression from the B1 fix*; H1/H3 pre-existing) | `66fe6e5` |
+  | R5 | 1 High — found independently by BOTH reviewers — + dead-code removal + 1 Low | `12c850d` |
+  | R6 | 1 defect filed High (Codex) / Low (Claude), adjudicated → fixed; 1 Medium | `15c32bd` |
+  | R7 | focused pass on the R6 delta — **both reviewers CONVERGED**, 0 Blocking/High | — |
+  Trend Blocking 1→0→1→0→0→0→0, High 2→2→0→3→1→1→0. Rounds 1–4 did not converge monotonically —
+  each sharper prompt surfaced pre-existing defects earlier rounds walked past — then R5–R7
+  converged: R5's single High was found by both reviewers independently, R6's sole defect was a
+  severity dispute over a known issue, R7 found nothing. Root cause of
   B1/R4-H1/R4-H3 is one shared shape: *a value meaning "absent" is also what a failure produces*
   (`SupabaseBlobStore.get` swallows every error; `playlist_title ?? null`).
 - [ ] **2.4 Merge** *(human gate)*.
@@ -88,6 +95,17 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
 - **Pre-existing, unrelated:** `tests/integration/reservation-release.test.ts` fails identically on a
   clean tree (local Supabase state pollution — leftover `ledger_audit` rows + stale queued job).
   Needs a DB reset or per-test isolation; not caused by this branch.
+- **M-R7-1** — the companion freshness guard judges a CLOUD receiver against the LOCAL
+  `GENERATOR_VERSION`. Correct for `copyToLocal` (local constant IS the receiver's); inert for
+  `copyToCloud` under deploy/checkout skew, where the sender may still be shipped and 503 a
+  rendering share. NOT a regression (the pre-guard code shipped unconditionally). Closing it needs
+  the cloud to expose its effective `GENERATOR_VERSION` (no endpoint today, not carried in any synced
+  artifact). Worth evaluating in that slice: the simpler rule *never overwrite a receiver matching the
+  winner hash* may strictly dominate, since a sender envelope fresh by the sender's constant is not
+  necessarily fresh by the receiver's.
+- **L-R6-2** — `noop + shareNeedsOwnerServe: false` under-reports a matching-hash but
+  version-skewed receiver model. Same family as M-R7-1: the sync run cannot fully reason about a
+  remote serving environment's freshness. Condition predates the sync.
 - **Tooling:** `scripts/codex-frontier-model.py` returned `gpt-5.6-sol`, which the pinned Codex CLI
   (0.142.5) cannot run (HTTP 400) — it ranks by `priority` without filtering on client-version
   support, so the adversarial gate can silently no-op. Pin/filter needed.

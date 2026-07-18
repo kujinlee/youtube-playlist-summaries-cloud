@@ -62,9 +62,29 @@ export type CompanionAction =
  *  deployed cloud image (routine whenever the deploy lags the checkout) AND the loser already holding
  *  a model built from the winner's exact body — which is the normal state after any prior sync, since
  *  reconcile-class-a.ts falls through to a transfer on equal mdHash when currency or format disagree.
- *  So when both match, prefer the FRESHER by generatorVersion, and never write when the receiver is
- *  already current. (The report flag stays false on every both-match path: a version-skewed receiver
- *  was already not-fresh BEFORE this run, which is L-R6-2, deliberately out of scope here.)
+ *  So when both match, prefer the FRESHER by generatorVersion. (The report flag stays false on every
+ *  both-match path: a version-skewed receiver was already not-fresh BEFORE this run, which is
+ *  L-R6-2, deliberately out of scope here.)
+ *
+ *  M-R7-1 (round 7) — SCOPE OF THAT GUARANTEE, stated precisely, because an earlier draft of this
+ *  comment overclaimed it as "never write when the receiver is already current". GENERATOR_VERSION is
+ *  a constant compiled into each image, and freshness is evaluated by isFresh() in the RECEIVER's
+ *  serving environment — but this code runs in the sync CLI, i.e. the LOCAL checkout. The two agree
+ *  only when the deploy is in step with the checkout, which is precisely NOT the case in the skew
+ *  scenario above. So:
+ *   - copyToLocal (receiver = local FS): the local constant IS the receiver's, so the guard holds and
+ *     a fresh local model is never overwritten.
+ *   - copyToCloud (receiver = Supabase): the receiver's envelope carries the DEPLOYED image's version,
+ *     which fails `=== GENERATOR_VERSION` here even when the cloud's own isFresh() would accept it —
+ *     so the receiver-current arm does not fire and the sender may still be shipped, 503-ing a share
+ *     that was rendering. That is NOT a regression (the pre-guard code shipped unconditionally too),
+ *     but this guard covers only ~half the case space.
+ *  Closing it needs the receiver's effective GENERATOR_VERSION, which the cloud does not expose today
+ *  (no version endpoint, not carried in any synced artifact). Worth noting for that future slice: the
+ *  "real upgrade" arm below may never be a genuine upgrade under skew — a sender envelope fresh by the
+ *  SENDER's constant is not necessarily fresh by the receiver's — so the simpler rule "never overwrite
+ *  a receiver that matches the winner hash" may strictly dominate. Deliberately not changed here: it is
+ *  a behavior change and belongs in its own slice with its own review, not in a confirmation pass.
  */
 export function decideCompanion(args: {
   winnerMdHash: string;
