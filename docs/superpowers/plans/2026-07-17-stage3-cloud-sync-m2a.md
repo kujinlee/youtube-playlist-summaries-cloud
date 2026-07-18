@@ -670,6 +670,19 @@ describe('local per-field annotation stamping', () => {
     const rec = (await localMetadataStore.readIndex(p)).videos.find((x) => x.id === 'a')!;
     expect(rec.annotationsEditedAt).toBeUndefined();
   });
+
+  // The sync loser-write path for corrections goes through updateVideoAnnotations — its allowlist
+  // must include 'corrections' or the value is silently dropped (round-2 N3).
+  it('updateVideoAnnotations allowlists corrections and stamps it with the source ts', async () => {
+    const root = await tmpRoot();
+    const p = localPrincipal(root);
+    await localMetadataStore.setPlaylistMeta(p, { playlistUrl: 'https://www.youtube.com/playlist?list=PL1' });
+    await localMetadataStore.upsertVideo(p, v('a'));
+    await localMetadataStore.updateVideoAnnotations(p, 'a', { corrections: 'fix' }, [], { editedAt: '2022-01-01T00:00:00.000Z' });
+    const rec = (await localMetadataStore.readIndex(p)).videos.find((x) => x.id === 'a')!;
+    expect(rec.corrections).toBe('fix');
+    expect(rec.annotationsEditedAt?.corrections).toBe('2022-01-01T00:00:00.000Z');
+  });
 });
 ```
 
@@ -721,17 +734,23 @@ A first-generation MD has no corrections applied, so `mdCorrectionsHash = mdHash
 **(b) Regenerate/fix stamp (Blocking — §5.3 depends on it)** — `app/api/videos/[id]/regenerate/route.ts` is the ONLY path that *applies* corrections into the MD (`fixSummary`, line ~60), yet today it never stamps the currency signals. After it writes the corrected MD (`fs.promises.writeFile(mdPath, updatedContent)`, ~line 68) and calls `store.updateVideoFields(principal, videoId, { tldr, takeaways, summaryHtml: null })` (~line 71), **extend that same `updateVideoFields` call** to also stamp:
 
 ```ts
+// The corrections THIS regenerated MD now reflects = the value stored AFTER the conditional
+// update above: param provided non-empty → trimmedCorrections; param === '' → '' (cleared);
+// param ABSENT → the UNCHANGED stored value (a bare regenerate keeps prior corrections baked in).
+// Stamping mdHash('') on a bare regenerate would mis-mark a still-corrected MD as stale (round-2 N5).
+const effectiveCorrections =
+  corrections === undefined ? (video.corrections ?? '') : (trimmedCorrections ?? '');
 await store.updateVideoFields(principal, videoId, {
   tldr, takeaways, summaryHtml: null,
   mdGeneratedAt: new Date().toISOString(),
-  mdCorrectionsHash: mdHash(trimmedCorrections ?? ''),  // digest of the corrections THIS MD was fixed from
+  mdCorrectionsHash: mdHash(effectiveCorrections),
 });
 ```
-(For the empty-corrections clear branch at `route.ts:56-57`, `trimmedCorrections` is `undefined` → `mdHash('')`.) Without this, a corrected MD is judged **corrections-stale forever** and a stale higher-format uncorrected MD from the other replica can overwrite it — the exact hazard §5.3 exists to prevent. Note: `updateVideoFields` here writes MD-currency fields, NOT a Class-B field, so it must **not** bump `annotationsEditedAt` (the separate earlier `updateVideoFields({ corrections })` at line 55 is the Class-B write that stamps `annotationsEditedAt.corrections`).
+Without this, a corrected MD is judged **corrections-stale forever** and a stale higher-format uncorrected MD from the other replica can overwrite it — the exact hazard §5.3 exists to prevent. Note: `updateVideoFields` here writes MD-currency fields, NOT a Class-B field, so it must **not** bump `annotationsEditedAt` (the separate earlier `updateVideoFields({ corrections })` at line 55 is the Class-B write that stamps `annotationsEditedAt.corrections`). Confirm whether `fixSummary` re-applies stored corrections on a bare regenerate; if a future change makes a bare regenerate DROP prior corrections, revisit `effectiveCorrections`.
 
-**(c) Model-envelope `sourceMdHash` stamp (High — else every companion is deleted)** — every writer of a `ModelEnvelope` must set `sourceMdHash: mdHash(sourceMdBody)` so `decideCompanion` (Task 8) recognizes a valid companion instead of treating it as legacy and deleting it (→ needless re-charge on serve). Add it wherever `writeModelEnvelope` is called with a freshly built envelope — primarily `lib/html-doc/generate.ts` (~line 49-55, which already has the source MD in scope as `sourceMd`) and any serve-time model generation. Set `sourceMdHash: mdHash(sourceMd)` in the envelope object.
+**(c) Model-envelope `sourceMdHash` stamp (High — else every companion is deleted)** — every writer of a `ModelEnvelope` must set `sourceMdHash = mdHash(MD-BODY)` so `decideCompanion` (Task 8) recognizes a valid companion instead of treating it as legacy and deleting it (→ needless re-charge on serve). **CRITICAL — hash the BODY, not the key:** in `lib/html-doc/generate.ts` the MD **body** is the local variable `md` (line 33: `const md = mdBytes.toString('utf-8')`), whereas `sourceMd` / `video.summaryMd` (lines 36, 50) is the blob **key/filename**. Set `sourceMdHash: mdHash(md)` — NOT `mdHash(sourceMd)`, which would hash `"001_title.md"` and reintroduce Blocking ① in the companion path (`decideCompanion` compares against `mdHash(body)`, so a filename-hash never matches → every synced companion deleted). Apply the same at every other `writeModelEnvelope` site (read the body bytes there and hash those).
 
-**(d) Class-B stamping in the store layer.** Local: `index-store.ts`/`local-metadata-store.ts` `updateVideoAnnotations` AND `updateVideoFields` stamp per-field `annotationsEditedAt` when a Class-B key (`personalNote`/`personalScore`/`corrections`) is set or cleared (user path → `now()`, sync path → `opts.editedAt`), and NOT for a non-Class-B field write. Cloud: `supabase-metadata-store.ts.updateVideoAnnotations` passes `corrections` in `p_set`/`p_clear` and forwards `p_edited_at: opts?.editedAt`; `updateVideoFields` (→ `merge_video_data`) forwards `p_edited_at` when present.
+**(d) Class-B stamping in the store layer.** Local: in `local-metadata-store.ts`, **widen the `updateVideoAnnotations` allowlist Set from `{personalScore, personalNote, archived}` to `{personalScore, personalNote, archived, corrections}`** (round-2 N3 — `applyClassBWinners` writes `corrections` to a local loser through `updateVideoAnnotations`; without this the allowlist silently drops it). Both `updateVideoAnnotations` AND `updateVideoFields` (in `index-store.ts`/`local-metadata-store.ts`) stamp per-field `annotationsEditedAt` when a Class-B key (`personalNote`/`personalScore`/`corrections`) is set or cleared (user path → `now()`, sync path → `opts.editedAt`), and NOT for a non-Class-B field write. Cloud: `supabase-metadata-store.ts.updateVideoAnnotations` passes `corrections` in `p_set`/`p_clear` and forwards `p_edited_at: opts?.editedAt`; `updateVideoFields` (→ `merge_video_data`) forwards `p_edited_at` when present.
 
 - [ ] **Step 4: Run local test to verify pass**
 
@@ -757,12 +776,13 @@ it('a regenerated MD is stamped corrections-current', async () => {
 ```ts
 // tests/lib/cloud-sync/model-writer-hash.test.ts
 import { mdHash } from '@/lib/cloud-sync/content-hash';
-import { writeModelEnvelope, readModelEnvelope } from '@/lib/html-doc/model-store';
-it('a freshly written model envelope carries sourceMdHash = mdHash(sourceMd)', async () => {
-  // build an envelope via the real generation path (or writeModelEnvelope with sourceMd),
-  // read it back, assert:
-  const env = /* read back */;
-  expect(env!.sourceMdHash).toBe(mdHash(env!.sourceMd));
+import { readModelEnvelope } from '@/lib/html-doc/model-store';
+it('a freshly written model envelope carries sourceMdHash = mdHash(MD BODY)', async () => {
+  const BODY = '# Section A\n\n- point one\n- point two\n'; // the MD body fed to generation
+  // Run the real generation path with a summaryMd key whose blob holds BODY, then read the envelope:
+  const env = /* readModelEnvelope(principal, base) */;
+  expect(env!.sourceMdHash).toBe(mdHash(BODY));            // hashes the BODY
+  expect(env!.sourceMdHash).not.toBe(mdHash(env!.sourceMd)); // NOT the filename/key (guards N1)
 });
 ```
 
@@ -952,8 +972,12 @@ describe('reconcileField (§5.4)', () => {
   it('L == C → no action', () => {
     expect(reconcileField(F('x', 't1'), F('x', 't1'), B('x', 't1'))).toMatchObject({ winner: 'equal', value: 'x', conflict: false });
   });
-  it('equal values but different timestamps → no conflict (M5)', () => {
-    expect(reconcileField(F('note', 't3'), F('note', 't2'), B('old', 't1'))).toMatchObject({ winner: 'equal', value: 'note', conflict: false });
+  it('equal values, equal timestamps → equal, no write', () => {
+    expect(reconcileField(F('note', 't2'), F('note', 't2'), B('old', 't1'))).toMatchObject({ winner: 'equal', value: 'note', conflict: false });
+  });
+  it('equal values, different timestamps → converge to newer ts, no conflict (M5 + round-2 H1)', () => {
+    expect(reconcileField(F('note', 't3'), F('note', 't2'), B('old', 't1'))).toMatchObject({ winner: 'local', value: 'note', editedAt: 't3', conflict: false });
+    expect(reconcileField(F('note', 't2'), F('note', 't3'), B('old', 't1'))).toMatchObject({ winner: 'cloud', value: 'note', editedAt: 't3', conflict: false });
   });
   it('only local changed vs baseline → take local', () => {
     expect(reconcileField(F('new', 't2'), F('old', 't1'), B('old', 't1'))).toMatchObject({ winner: 'local', value: 'new', conflict: false });
@@ -1019,11 +1043,17 @@ function newer(a: string | undefined, b: string | undefined): boolean {
 }
 
 export function reconcileField(local: FieldState, cloud: FieldState, baseline: Baseline): FieldMerge {
-  // Equal VALUES agree (§5.4 row 1 "L == C → no action") even if their timestamps differ —
-  // never flag a conflict for a field both sides hold identically. Keep the newer editedAt (M5).
+  // Equal VALUES never conflict (§5.4 row 1). But if their per-field timestamps differ, CONVERGE:
+  // return the newer-timestamp side as a NON-conflicting winner so the older side's editedAt is
+  // written forward and both replicas end identical — returning 'equal' here would skip the write
+  // and leave baseline/live timestamp drift (round-2 H1). Truly-equal pair → 'equal' (no write).
   if (local.value === cloud.value) {
-    const editedAt = newer(local.editedAt, cloud.editedAt) ? local.editedAt : cloud.editedAt;
-    return { winner: 'equal', value: local.value, editedAt, conflict: false };
+    if (local.editedAt === cloud.editedAt) {
+      return { winner: 'equal', value: local.value, editedAt: local.editedAt, conflict: false };
+    }
+    return newer(local.editedAt, cloud.editedAt)
+      ? { winner: 'local', value: local.value, editedAt: local.editedAt, conflict: false }
+      : { winner: 'cloud', value: cloud.value, editedAt: cloud.editedAt, conflict: false };
   }
   const lChanged = changed(local, baseline);
   const cChanged = changed(cloud, baseline);
@@ -1528,6 +1558,15 @@ it('refuses to read when the parent directory is group/other-writable (High ⑥)
   const store = makeFileTokenStore(path.join(sub, 'token'));
   await expect(store.read()).rejects.toThrow(/group\/other-writable|not owned/i);
 });
+
+it('refuses to WRITE into a pre-existing group/other-writable parent — no chmod laundering (round-2 H2)', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cs-tok-'));
+  const sub = path.join(dir, 'store');
+  await fs.mkdir(sub, { mode: 0o777 });
+  await fs.chmod(sub, 0o777);
+  const store = makeFileTokenStore(path.join(sub, 'token'));
+  await expect(store.write('abc')).rejects.toThrow(/group\/other-writable|not owned/i);
+});
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1593,9 +1632,17 @@ export function makeFileTokenStore(file: string): TokenStore {
     },
     async write(token: string) {
       const dir = path.dirname(file);
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-      await fs.chmod(dir, 0o700);          // tighten even if the dir pre-existed
-      await assertSafeParent(file);        // fail closed if a foreign/broad ancestor remains
+      // Check an EXISTING parent BEFORE touching it — a chmod-then-check would launder a
+      // pre-existing group/world-writable or foreign-owned dir (round-2 H2). Only self-heal
+      // a dir we create ourselves.
+      let exists = true;
+      try { await assertSafeParent(file); }
+      catch (e: any) { if (e?.code === 'ENOENT') exists = false; else throw; } // unsafe existing → throw
+      if (!exists) {
+        await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+        await fs.chmod(dir, 0o700);
+        await assertSafeParent(file); // verify the just-created dir is safe
+      }
       await fs.writeFile(file, token, { mode: 0o600 });
       await fs.chmod(file, 0o600);
     },
@@ -1787,7 +1834,7 @@ git commit -m "feat(cloud-sync): local playlist discovery + key derivation + uni
 | # | Behavior | Trigger | Expected |
 |---|---|---|---|
 | 1 | Read MD body for hashing | any video with `summaryMd` | `readMdBody(store, blob, p, video)` = `blob.get(p, video.summaryMd)` decoded UTF-8; `null` if `summaryMd` null |
-| 2 | Class B before Class A | every video | `reconcileHuman` runs, its winners applied, `reconciledCorrectionsHash` computed, THEN `reconcileClassA` |
+| 2 | Class B before Class A | every **two-sided** video (both present) | `reconcileHuman` runs, its winners applied, `reconciledCorrectionsHash` computed, THEN `reconcileClassA`. One-sided videos are resolved by the presence branch (#3/#7/#8) and never reach this. |
 | 3 | Additive create (money-safe) | video present one side, not in baseline | copy metadata + MD blob via `BlobStore.put`; **never** call the metered producer/enqueuer; `report.created++` |
 | 4 | Class-A copy transfer | `reconcileClassA` → `copyTo*` | `transferClassA`: stage winner MD → verify → promote → finalize receiver record (complete tuple + carried scalars) in one update; then `writeVideoBaseline` |
 | 5 | Companion ship/delete | after a Class-A copy | `decideCompanion`: ship envelope (`cloudBlob/localBlob.put` model) OR delete receiver model blob + `report.shareNeedsOwnerServe++` |
@@ -1899,7 +1946,8 @@ Then implement these helpers (contracts — the implementer writes the bodies ag
 - **`enumerateVideoIds(local, cloud, localP, cloudP): Promise<string[]>`** — union of `video_id`s from `local.readIndex(localP)` and `cloud.readIndex(cloudP)`.
 - **`hydrationRoot(dataRoots, key): string`** — for a cloud-only playlist, a deterministic local root named by `key` (`path.join(dataRoots[0], key)`).
 - **`applyClassBWinners(deps, side, principal, videoId, merges): Promise<number>`** — for each `HumanField` whose `FieldMerge.winner` targets `side` (the loser side gets the write), call `store.updateVideoAnnotations(principal, videoId, set, clear, { editedAt: merge.editedAt })` — set when `value !== undefined`, clear when `undefined`; **carry the source timestamp** (`merge.editedAt`), never `now()`. Returns count of fields written (→ `report.mergedFields`). Log `conflict:true` merges via `appendConflict` (→ `report.conflictsLogged`).
-- **`copyAdditiveVideo(deps, from, to, fromP, toP, video, mdBody): Promise<void>`** (Behavior #3, money-safe) — write the video record to the receiver via `to.upsertVideo(toP, video)` (metadata) and `to.<blob>.put(toP, video.summaryMd, Buffer.from(mdBody))` for the MD. **Never** import or call `lib/job-queue/producer.ts` or any enqueue; **never** write `summaryHtml`/PDF (regenerable cache — §5.6). Carries the companion scalars because it copies the whole `Video`.
+- **`sanitizeAdditiveVideo(video: Video): Video`** (Behavior #3, money-safe — round-2 H3) — returns a copy of the record with **all regenerable-cache and out-of-scope pointers cleared** so the receiver never advertises artifacts whose blobs were not copied: set `summaryHtml`, `digDeeperHtml`, `digDeeperMd` to `null`/absent, and drop every `artifacts.*` entry EXCEPT `artifacts.summaryMd` (dig/PDF/HTML artifact pointers). Keep identity, Class-A scalars (`ratings`/`overallScore`/`videoType`/`audience`/`tags`/`tldr`/`takeaways`), `summaryMd` (the MD key), the md signals, and human fields.
+- **`copyAdditiveVideo(deps, from, to, fromP, toP, video, mdBody): Promise<void>`** (Behavior #3, money-safe) — write `to.upsertVideo(toP, sanitizeAdditiveVideo(video))` (metadata, cache pointers cleared) and `to.<blob>.put(toP, video.summaryMd, Buffer.from(mdBody))` for the MD body ONLY. **Never** import or call `lib/job-queue/producer.ts` or any enqueue; **never** copy `summaryHtml`/dig/PDF blobs (regenerable cache — §5.6). The T14 additive-cache test asserts the receiver *record* has `summaryHtml`/`digDeeperHtml` null/absent, not merely that blobs were skipped.
 - **`transferClassA(deps, winnerSide, loserSide, ...): Promise<{ mdHash: string; verified: boolean }>`** (Behaviors #4, #10, #11) — the atomic path:
   1. read the winner MD body; compute `mdHash(body)`.
   2. **stage** the MD to the loser's blob under an idempotency key, reusing the existing staged→committed→promoted protocol in `lib/storage/supabase/consistency.ts` (cloud loser) or the local blob's atomic put (local loser). Name the exact functions used.
@@ -1907,7 +1955,7 @@ Then implement these helpers (contracts — the implementer writes the bodies ag
   4. **promote**, then **finalize** the receiver `Video` record in ONE update carrying the complete tuple: `summaryMd` (key) + artifact status, `docVersion`, `mdGeneratedAt`, `mdCorrectionsHash`, and all 7 carried companion scalars (`ratings`,`overallScore`,`videoType`,`audience`,`tags`,`tldr`,`takeaways`) copied verbatim from the winner's `Video`. For the cloud loser this is `persist_summary` (which now stamps the md signals — Task 3); for local it is the index write.
   5. return `{ mdHash, verified }`. On any fault, throw — the caller records the error and does NOT advance the baseline.
 - **`companionTransfer(deps, winnerSide, loserSide, winnerMdHash, video): Promise<{ shareNeedsOwnerServe: boolean }>`** (Behavior #5) — read the winner's `ModelEnvelope` (`readModelEnvelope`), call `decideCompanion({ winnerMdHash, senderEnvelope })`; on `ship` write the envelope to the loser's blob; on `deleteReceiverModel` delete the loser's model blob (best-effort, OUTSIDE the atomic commit) and return `shareNeedsOwnerServe:true`.
-- **`buildBaseline(winnerSignals: ClassASignals, winnerMdHash, mergedHuman): VideoBaseline`** — the manifest baseline written by `writeVideoBaseline` AFTER the transfer verifies (Behavior #10). `mdHash` lives here (manifest), NOT on the `Video` record (Low finding).
+- **`buildBaseline(currentClassA: ClassASignals, currentMdHash: string | null, mergedHuman): VideoBaseline`** — the manifest baseline written by `writeVideoBaseline` AFTER reconcile (Behavior #10). It records the **agreed post-reconcile state**, NOT a "winner" (round-2 N4): for a `copyTo*` transfer, pass the winner's signals + the verified `mdHash` (both sides are now equal); for `skip` (both already equal), pass the shared current signals + their common `mdHash`; for a Class-B-only change with no Class-A transfer, the Class-A part carries the unchanged agreed signals. A baseline is advanced for **every reconciled two-sided video — including `skip`** — so §5.6 delete-inference has a 'seen-before' record next run. `mdHash` lives here (manifest), NOT on the `Video` record (Low finding).
 
 `runSync` orchestration:
 
@@ -1934,31 +1982,51 @@ export async function runSync(deps: SyncDeps, opts: { playlistKey?: string } = {
         const cv = await readVideo(deps.cloud, cloudP, id);
         const base = manifest.videos[id];
 
-        // Presence / deletes (Behaviors #3,#7,#8) — handle one-sided-with-baseline as delete, else additive.
-        // ... (see presence rules §5.6; increments report.created / report.removed) ...
+        // PRESENCE / DELETES (§5.6, Behaviors #3,#7,#8) — resolve one-sided videos and CONTINUE
+        // BEFORE any lv!/cv! dereference (round-2 N2 — a one-sided video must never reach the
+        // two-sided reconcile, whose deriveHumanSnapshot(null) would NPE).
+        if (!lv || !cv) {
+          const present = (lv ?? cv)!;             // the side that has it
+          const presentIsLocal = lv != null;
+          if (base) {
+            report.removed++;                      // in baseline + absent other side → deleted there; do NOT re-create (no propagation — M2b)
+          } else {                                 // no baseline + present one side → additive create (money-safe)
+            const [from, fromP, fromBlob, to, toP] = presentIsLocal
+              ? [deps.local, localP, deps.localBlob, deps.cloud, cloudP]
+              : [deps.cloud, cloudP, deps.cloudBlob, deps.local, localP];
+            const body = await readMdBody(fromBlob, fromP, present);
+            await copyAdditiveVideo(deps, from, to, fromP, toP, present, body ?? '');
+            report.created++;
+            await writeVideoBaseline(dataRoot, key, id, buildBaseline(
+              deriveClassASignals(present, body), body ? mdHash(body) : null, deriveHumanSnapshot(present)));
+          }
+          continue;
+        }
 
+        // Both present — reconcile (Behavior #2 applies to TWO-SIDED videos only).
         // 1) Class B FIRST
-        const merges = reconcileHuman(deriveHumanSnapshot(lv!), deriveHumanSnapshot(cv!), base?.classB ?? EMPTY_CLASSB);
-        report.mergedFields += await applyClassBWinners(/* to loser sides */);
+        const merges = reconcileHuman(deriveHumanSnapshot(lv), deriveHumanSnapshot(cv), base?.classB ?? EMPTY_CLASSB);
+        report.mergedFields += await applyClassBWinners(/* write each winner to its loser side, source ts */);
         const reconciledCorrectionsHash = mdHash(String(merges.corrections.value ?? ''));
 
         // 2) Class A (needs MD bodies for hashing — Behavior #1)
-        const la = deriveClassASignals(lv!, await readMdBody(deps.localBlob, localP, lv!));
-        const ca = deriveClassASignals(cv!, await readMdBody(deps.cloudBlob, cloudP, cv!));
+        const la = deriveClassASignals(lv, await readMdBody(deps.localBlob, localP, lv));
+        const ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
         const decision = reconcileClassA({ local: la, cloud: ca, reconciledCorrectionsHash });
         if (decision.needsRegen) report.needsRegen++;
         let winnerMdHash: string | null = null;
-        if (decision.action === 'copyToCloud') { winnerMdHash = (await transferClassA(/* winner=local, loser=cloud */)).mdHash; report.updatedCloud++; }
-        else if (decision.action === 'copyToLocal') { winnerMdHash = (await transferClassA(/* winner=cloud, loser=local */)).mdHash; report.updatedLocal++; }
-        else report.skippedIdentical++;
+        let winnerSignals: ClassASignals = la;
+        if (decision.action === 'copyToCloud') { winnerMdHash = (await transferClassA(/* winner=local→cloud */)).mdHash; winnerSignals = la; report.updatedCloud++; }
+        else if (decision.action === 'copyToLocal') { winnerMdHash = (await transferClassA(/* winner=cloud→local */)).mdHash; winnerSignals = ca; report.updatedLocal++; }
+        else { report.skippedIdentical++; winnerMdHash = la.mdHash; winnerSignals = la; } // skip: sides already agree
 
-        if (winnerMdHash) {
-          if ((await companionTransfer(/* ... */)).shareNeedsOwnerServe) report.shareNeedsOwnerServe++;
+        if (decision.action !== 'skip' && winnerMdHash) {
+          if ((await companionTransfer(/* winner→loser */)).shareNeedsOwnerServe) report.shareNeedsOwnerServe++;
         }
-        if ((lv?.archived ?? false) !== (cv?.archived ?? false)) report.archivedNotSynced++;
+        if (lv.archived !== cv.archived) report.archivedNotSynced++;
 
-        // 3) Manifest AFTER verified commit (Behavior #10)
-        await writeVideoBaseline(dataRoot, key, id, buildBaseline(/* winner signals, winnerMdHash, merges */));
+        // 3) Manifest AFTER verified commit (Behavior #10) — advances even on skip (N4)
+        await writeVideoBaseline(dataRoot, key, id, buildBaseline(winnerSignals, winnerMdHash, merges));
       } catch (e: any) {
         report.errors.push({ videoId: id, message: e?.message ?? String(e) }); // Behaviors #11,#13
       }
@@ -2187,6 +2255,14 @@ Dual adversarial review (Codex + independent Claude) of the v1 plan — both **N
 - **High:** ⑤ `sourceMdHash` never written → T4 stamps model writers. ⑥ token store parent-dir fail-closed → T10 `assertSafeParent`. ⑦ T12 placeholder → concrete helper contracts + Enumerated Behaviors table + RLS-under-authenticated note + required Codex behaviors review.
 - **Medium:** persist_summary guard preserved (T3 shows a diff, not a divergent body); `check:confinement` extended to `scripts/`/`lib/cloud-sync/` (T10); harness helpers fully specified incl. fault-injection (T3); T4 tests the production `updateVideoFields` path; Class-B equal-value/diff-ts no longer conflicts (T6); `archived`-only write no empty `{}` (T3).
 - **Low:** `mdHash` is manifest-baseline-only, not persisted on the record (T12/Global Constraints); one-sided hydrate of a stale MD flags `needsRegen` (T7); conflict dedup key includes `playlistKey` (T9); additive-excludes-cache test added (T14 row 11).
+
+## Round-2 review dispositions (2026-07-17)
+
+Round-2 dual re-review (Codex + Claude, verify-fixes + hunt-fix-introduced): both **NOT CONVERGED** — 0 Blocking, but the round-1 fixes introduced new defects (expected for a large rework). Round-1 Blockings all verified genuinely closed. Reviews: `docs/reviews/plan-cloud-sync-m2a-{codex,claude}-r2.md`. Addressed in this revision:
+
+- **High:** N1 — `sourceMdHash` fix hashed the filename (`sourceMd`) not the body → use `mdHash(md)` (`generate.ts:33`), test asserts against BODY (T4c). H1 — Class-B value-equality returned `'equal'` and skipped the write → converge to newer-timestamp winner, `conflict:false` (T6). H2 — token `write()` chmod'd the parent before checking → check existing parent first, only self-heal a created dir (T10). H3 — additive create upserted cache pointers → `sanitizeAdditiveVideo` clears `summaryHtml`/`digDeeperHtml`/dig+PDF artifacts (T12). N2 — one-sided presence branch was `// ...` before `lv!/cv!` (NPE) → explicit `if (!lv||!cv){…continue}` before the two-sided reconcile (T12).
+- **Medium:** N3 — local `updateVideoAnnotations` allowlist widened to include `corrections` + test (T4d). N4 — `buildBaseline` takes the agreed post-reconcile signals and advances even on `skip` (T12). N5 — bare regenerate stamps `mdHash(effectiveCorrections)` (stored value when the param is absent), not `mdHash('')` (T4b).
+- **Low (accepted/documented):** N6 — `persist_summary` grant under `authenticated` is flagged as a must-verify-early gate in T12's RLS note (accepted). N7 — equal-`mdHash` + one-current + different-major downgrade is a degenerate/unreachable state (noted). N8 — `merge_video_data_bulk` is intentionally NOT given the conditional restamp (a membership/non-Class-B path sync never uses); documented as an intentional exclusion.
 
 ---
 
