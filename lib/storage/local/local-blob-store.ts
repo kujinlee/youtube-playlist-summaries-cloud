@@ -5,6 +5,10 @@ import type { Principal } from '@/lib/storage/principal';
 
 /** Byte-for-byte the current -data layout: physical path = join(indexKey, key). */
 export class LocalFsBlobStore implements BlobStore {
+  /** get/exists below return null/false ONLY on ENOENT and rethrow every other errno, so a null
+   *  here genuinely means the object is not there. */
+  readonly provesAbsence = true;
+
   private abs(p: Principal, key: string): string { assertLogicalKey(key); return path.join(p.indexKey, key); }
 
   // contentType unused locally but required by the BlobStore interface (cloud impls will use it)

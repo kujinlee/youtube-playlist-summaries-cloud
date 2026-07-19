@@ -4,6 +4,7 @@ import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary, MagazineModel } from './types';
 import { GENERATOR_VERSION } from './constants';
 import { writeModelEnvelope } from './model-store';
+import { mdHash } from '@/lib/cloud-sync/content-hash';
 import { readFreshMagazineModel, readTitleStableModel } from './read-model';
 import { generateMagazineModel } from '@/lib/gemini';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
@@ -42,9 +43,14 @@ export async function resolveMagazineModel(args: {
   base: string;
   parsed: ParsedSummary;
   language: 'en' | 'ko';
+  /** Stage 3 (§4.2): the MD BODY this model is generated from (NOT the blob key) — hashed
+   *  into the envelope's sourceMdHash on a fresh materialize. Optional for back-compat with
+   *  callers that pre-date this signal (sourceMdHash is an optional envelope field); the
+   *  real production caller (serve-summary-core.ts) always supplies it. */
+  mdBody?: string;
   signal?: AbortSignal;
 }): Promise<ResolveResult> {
-  const { supabaseClient, blobStore, principal, playlistId, videoId, base, parsed, language, signal } = args;
+  const { supabaseClient, blobStore, principal, playlistId, videoId, base, parsed, language, mdBody, signal } = args;
   const titles = parsed.sections.map((s) => s.title);
 
   const fresh = await readFreshMagazineModel({ blobStore, principal, base, titles });
@@ -100,6 +106,8 @@ export async function resolveMagazineModel(args: {
       sourceSections: titles,
       generatorVersion: GENERATOR_VERSION,
       model,
+      // Hash the MD BODY, not the key — see the `mdBody` param doc above (§4.2).
+      ...(mdBody !== undefined ? { sourceMdHash: mdHash(mdBody) } : {}),
     }, blobStore);
     if (releaseToken) await supabaseClient.rpc('settle_serve_model', { p_token: releaseToken, p_released: false });
     return { status: 'ok', model };

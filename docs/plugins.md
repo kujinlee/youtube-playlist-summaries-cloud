@@ -107,6 +107,21 @@ in the review doc** so the Codex-specific pass can be re-attempted before merge 
 One quick check (frontier model sync via `scripts/codex-frontier-model.py --write-config`, a single
 re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies the gate for proceeding.
 
+**The gate can FAIL OPEN — verify it actually ran (added 2026-07-18).** Two failure modes are *not*
+covered by the fallback rule above, because in both the command exits **0**:
+
+1. **Wrong model slug → HTTP 400, empty review.** `scripts/codex-frontier-model.py` ranks by
+   `priority` without filtering on what the pinned CLI supports. On 2026-07-18 it returned
+   `gpt-5.6-sol`, which CLI 0.142.5 rejects with *"requires a newer version of Codex"* — the run
+   produced a review file containing only an error, and `exit=0`. **Always read the output FILE, not
+   the exit code.** A review doc with no findings section is a failed run, not a clean review. Working
+   fallback: `codex exec -m gpt-5.5`. Fix the script to filter by client-version support.
+2. **A confident but wrong CONVERGED.** The fallback rule handles an *absent* reviewer; nothing handles
+   a reviewer that completes successfully and clears a live defect. In Stage 3 cloud-sync this happened
+   **twice** — see "Reviewer disagreement is the signal" in `docs/dev-process.md`. Never treat a single
+   CONVERGED as proof; ask what that reviewer would have had to check to find the class of bug you most
+   fear, and prefer the reviewer that reports a finding until you have traced the code yourself.
+
 **Bounded wait — never passively wait on a background review.** When a Codex review is dispatched in
 the background, do NOT report "waiting on Codex" across turns or trust the completion ping (it can be
 bogus). Within ~2–3 minutes, **read the actual Codex task output file** (`.../tasks/<bgId>.output`).

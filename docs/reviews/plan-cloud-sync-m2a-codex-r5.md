@@ -1,0 +1,30 @@
+# Round-5 Adversarial Re-Review: Stage 3 Cloud Sync M2a
+
+Re-reviewed v5 against the round-4 findings, the v10 spec, and the real metadata/index store source. The round-4 additive publish defect is fixed for the cloud receiver path. One source-backed hydrate-side defect remains in the same additive-create hardening: cloud-only playlists can fail before the receiver local playlist exists.
+
+## Round-4 Closure Audit
+
+- **Codex H1 - additive publish never created the receiver cloud row: CLOSED.** v5 now requires `ensureReceiverSlot` before `upsertVideo` (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1955-1957`). This matches the real cloud store: `setPlaylistMeta` upserts the playlist row on `(owner_id, playlist_key)` (`lib/storage/supabase/supabase-metadata-store.ts:65-82`), `claimVideoSlot` creates the `videos` row (`lib/storage/supabase/supabase-metadata-store.ts:88-99`; `supabase/migrations/0007_storage_and_rpcs.sql:35-39`), and `upsertVideo` is only an update against that pre-created row (`lib/storage/supabase/supabase-metadata-store.ts:105-112`). `copyAdditiveVideo` then verifies `readIndex` contains the video before the caller increments `report.created` or writes the baseline (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1960`, `2017-2020`), which prevents the false-baseline -> next-run-delete failure.
+- **Codex M1 - promoted before blob durable: CLOSED.** `copyAdditiveVideo` now writes and verifies the MD blob in step 2 and only sets `artifacts.summaryMd.status = 'promoted'` in step 3 after that verification (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1958-1959`). A failed blob put/verify throws before metadata advertises promoted status or baseline advances.
+- **Claude L4 - promoted-status direction agnostic: CLOSED.** v5 says the promoted artifact status is set direction-agnostically and is inert locally but required for cloud `summaryReady` (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1959`, `1964`). That is consistent with the real cloud derivation from `artifacts.summaryMd.status === 'promoted'` (`lib/storage/supabase/supabase-metadata-store.ts:49-54`).
+- **Claude L5 - keep `annotationsEditedAt` and drop sender ordering: CLOSED.** `sanitizeAdditiveVideo` explicitly keeps human fields and `annotationsEditedAt`, while dropping sender-local `position`, `serialNumber`, `playlistIndex`, and `removedFromPlaylist` (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1953`). `copyAdditiveVideo` then applies the receiver-claimed `position`/`serialNumber` when a slot was created (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1957-1959`). That is consistent with §4.1 replica-local ordering.
+
+## New Findings
+
+### High H1 - Task 12 cloud-only hydrate reads/writes a local playlist before the local root exists
+
+Failure scenario: a fresh device has a cloud-only playlist. `unionPlaylistKeys` includes the cloud key, and `runSync` chooses `dataRoot = hydrationRoot(deps.dataRoots, key)` for it (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1982-1990`). The plan defines `hydrationRoot` as only `path.join(dataRoots[0], key)` (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1951`). Before the additive branch can call `ensureReceiverSlot`, `enumerateVideoIds(deps.local, deps.cloud, localP, cloudP)` reads the local index (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1994`, `1950`). In the real local store, `LocalFsMetadataStore.readIndex` delegates to `indexStore.readIndex` (`lib/storage/local/local-metadata-store.ts:10-11`), and `indexStore.readIndex` throws `Output folder does not exist` when the directory itself is missing (`lib/index-store.ts:72-77`). So cloud-only hydrate can fail before it enumerates cloud videos or reaches `ensureReceiverSlot`.
+
+Even if enumeration were reordered, the receiver creation helper is still not implementable for a fresh local root as written: local `setPlaylistMeta` calls `indexStore.readIndex` before `writeIndex` (`lib/storage/local/local-metadata-store.ts:13-20`), so it also throws when the hydrate directory has not been created. The local blob store would create parent directories for the MD file (`lib/storage/local/local-blob-store.ts:10-14`), but metadata creation happens first in `copyAdditiveVideo`, so that does not rescue the path.
+
+Fix: make the hydrate local root an explicit creation step before any local metadata read. For example, define `ensureHydrationRoot(dataRoot)` to `mkdir -p` the chosen local root and write an empty `playlist-index.json` with the cloud playlist URL/title before `enumerateVideoIds`, or change the local metadata store contract used by sync so `setPlaylistMeta` can create a missing root/index instead of first requiring `readIndex` to succeed. Then add a T14 regression for a fresh local `dataRoots[0]` plus one cloud playlist: sync should create `<dataRoots[0]>/<playlist_key>/playlist-index.json`, copy the video metadata/MD, write the manifest, and a re-run should not treat the video as deleted.
+
+### Low L1 - `claimVideoSlot` idempotency wording is inaccurate but non-gating
+
+The plan says cloud `claim_video_slot` is "NOT idempotent" and must be guarded (`docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md:1955`). The actual SQL uses `on conflict (playlist_id, video_id) do nothing` and comments it as an idempotent claim (`supabase/migrations/0007_storage_and_rpcs.sql:35-39`). The guard is still the right implementation shape because an unguarded repeat returns freshly computed position/serial values that may not describe the existing row. This is a documentation precision issue, not a blocking defect.
+
+## Implementability Judgment
+
+The v5 plan closes the round-4 cloud publish row-creation and promoted-durability defects, and the money path remains clean. However, the cloud-only hydrate path is still not implementable end-to-end against the real local store because it reads and creates local metadata through APIs that require the playlist directory to already exist. That breaks a spec-required fresh-device pull of a cloud corpus.
+
+**NOT CONVERGED**

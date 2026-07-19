@@ -98,7 +98,8 @@ export async function resolveAndParse(
   load: OkLoad,
   signal?: AbortSignal,
 ): Promise<ResolveAndParseResult> {
-  const parsed = parseSummaryMarkdown(load.mdBytes.toString('utf-8'));
+  const mdBody = load.mdBytes.toString('utf-8');
+  const parsed = parseSummaryMarkdown(mdBody);
   parsed.sourceMd = load.mdKey;
 
   const resolved = await resolveMagazineModel({
@@ -110,6 +111,7 @@ export async function resolveAndParse(
     base: load.base,
     parsed,
     language: load.video.language, // Video.language is already the 'en'|'ko' enum (types/index.ts:51)
+    mdBody, // Stage 3 (§4.2): hashed into sourceMdHash on a fresh materialize, not the key.
     signal,
   });
 

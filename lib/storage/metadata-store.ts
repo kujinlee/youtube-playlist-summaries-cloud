@@ -48,8 +48,9 @@ export interface MetadataStore {
   updateVideoAnnotations(
     p: Principal,
     videoId: string,
-    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
-    clear: ('personalScore' | 'personalNote')[],
+    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived' | 'corrections'>>,
+    clear: ('personalScore' | 'personalNote' | 'corrections')[],
+    opts?: { editedAt?: string },
   ): Promise<{ found: boolean }>;
   /** Cloud-only: hard-delete a playlist row owned by the caller (Task 8). RLS already
    *  scopes this to `owner_id = auth.uid()`; the explicit owner_id predicate in the

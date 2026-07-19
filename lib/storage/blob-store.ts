@@ -5,6 +5,17 @@ export type BlobStatus = 'pending' | 'committed' | 'promoted' | 'repair_needed';
 export interface StagedRef { principal: Principal; tempKey: string; finalKey: string; }
 
 export interface BlobStore {
+  /** True iff a `null` from `get` (or `false` from `exists`) PROVES the object does not exist —
+   *  i.e. the backend distinguishes "absent" from "could not be read". The local FS store returns
+   *  null only on ENOENT and rethrows every other errno, so it proves absence; the Supabase store
+   *  swallows network/5xx/timeout/RLS failures into the same null, so it cannot.
+   *
+   *  Read it before treating "no bytes" as a semantic fact ("this replica holds no MD", "this
+   *  sender has no model"): on a backend that cannot prove absence, acting on that reading
+   *  destroys data on a transient blip (see the B1 and H1 guards in lib/cloud-sync/sync-run.ts).
+   *  Optional, and absent means FALSE — an unknown backend is assumed unable to prove absence, so
+   *  callers stay fail-closed by default. */
+  readonly provesAbsence?: boolean;
   put(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<void>;
   get(p: Principal, key: string): Promise<Buffer | null>;
   exists(p: Principal, key: string): Promise<boolean>;

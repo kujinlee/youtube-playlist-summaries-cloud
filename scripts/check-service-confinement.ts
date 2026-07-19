@@ -65,6 +65,15 @@ export function collectEntrypoints(): string[] {
     ...walk(path.join(ROOT, 'app')),
     ...walk(path.join(ROOT, 'pages')),
     ...walk(path.join(ROOT, 'worker')),
+    // Task 10 (§6): the local cloud-sync CLI is a user-facing entrypoint whose whole point is to
+    // hold NO service-role key. `scripts/` was previously unwalked, so a stray service-role import
+    // there (or transitively via lib/cloud-sync/*) would pass undetected — making that guarantee
+    // vacuous. Walk lib/cloud-sync/ directly (it exists now) and every scripts/*.ts file — `walk()`
+    // only ever returns files that already exist on disk, so this naturally tolerates
+    // `scripts/cloud-sync.ts` not existing yet (it lands in Task 13) without hardcoding its path or
+    // crashing `npm run check:confinement` today; it auto-covers the file once it's created.
+    ...walk(path.join(ROOT, 'lib/cloud-sync')),
+    ...walk(path.join(ROOT, 'scripts')),
   ];
   const mw = path.join(ROOT, 'middleware.ts');
   if (fs.existsSync(mw)) entries.push(mw);

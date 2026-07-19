@@ -30,8 +30,36 @@ export class LocalFsMetadataStore implements MetadataStore {
   async upsertVideo(p: Principal, video: Video): Promise<void> {
     indexStore.upsertVideo(p.indexKey, video);
   }
-  async updateVideoFields(p: Principal, id: string, fields: Partial<Video>): Promise<void> {
-    indexStore.updateVideoFields(p.indexKey, id, fields);
+  // Stage 3 (§5.1/§5.7): the PRODUCTION Class-B write path (review + regenerate routes call
+  // this, not updateVideoAnnotations — see the allowlist-parity note below). When `fields`
+  // carries a Class-B key (set or explicit clear via `undefined`), stamp
+  // `annotationsEditedAt.<field>` — user path (no opts) → now(), sync path (opts.editedAt)
+  // → the caller-supplied source timestamp. A non-Class-B write (e.g. MD-finalize /
+  // `{ summaryHtml: null }` / mdGeneratedAt/mdCorrectionsHash from the regenerate route) must
+  // NOT bump annotationsEditedAt — those are separate, non-human-edit signals.
+  async updateVideoFields(
+    p: Principal,
+    id: string,
+    fields: Partial<Video>,
+    opts?: { editedAt?: string },
+  ): Promise<void> {
+    // NOTE: filters inline against the CLASS_B_ANNOTATION_KEYS constant (not
+    // indexStore.classBKeysIn) — callers that `jest.mock('lib/index-store')` (auto-mock,
+    // no factory) replace every FUNCTION export with a bare jest.fn(), but a plain array
+    // constant survives untouched, so this stays correct under that mocking pattern too.
+    const changed = Object.keys(fields).filter((k): k is indexStore.ClassBAnnotationKey =>
+      (indexStore.CLASS_B_ANNOTATION_KEYS as readonly string[]).includes(k),
+    );
+    let toWrite: Partial<Video> = fields;
+    if (changed.length > 0) {
+      const idx = indexStore.readIndex(p.indexKey);
+      const existing = idx.videos.find((v) => v.id === id);
+      const editedAt = opts?.editedAt ?? new Date().toISOString();
+      const at: Partial<Record<indexStore.ClassBAnnotationKey, string>> = { ...(existing?.annotationsEditedAt ?? {}) };
+      for (const k of changed) at[k] = editedAt;
+      toWrite = { ...fields, annotationsEditedAt: at };
+    }
+    indexStore.updateVideoFields(p.indexKey, id, toWrite);
   }
   async bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void> {
     for (const { videoId, fields } of patches) indexStore.updateVideoFields(p.indexKey, videoId, fields);
@@ -64,22 +92,46 @@ export class LocalFsMetadataStore implements MetadataStore {
   // in-process (the cloud impl enforces it server-side, in SQL); `undefined` values are
   // dropped by JSON.stringify on write, matching updateVideoFields' existing clear-by-
   // undefined convention (see app/api/videos/[id]/review/route.ts serveLocal).
+  //
+  // Stage 3 (§5.1/§5.7, round-2 N3): this IS the sync loser-write path for a Class-B field
+  // (e.g. corrections) — the allowlist widened to include 'corrections' (was silently
+  // dropped), and a set/clear of any Class-B key stamps annotationsEditedAt: user path (no
+  // opts) → now(), sync path (opts.editedAt) → the caller-supplied source timestamp.
   async updateVideoAnnotations(
     p: Principal,
     videoId: string,
-    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
-    clear: ('personalScore' | 'personalNote')[],
+    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived' | 'corrections'>>,
+    clear: ('personalScore' | 'personalNote' | 'corrections')[],
+    opts?: { editedAt?: string },
   ): Promise<{ found: boolean }> {
     const idx = indexStore.readIndex(p.indexKey);
-    if (!idx.videos.some((v) => v.id === videoId)) return { found: false };
+    const existing = idx.videos.find((v) => v.id === videoId);
+    if (!existing) return { found: false };
 
-    const allow = new Set(['personalScore', 'personalNote', 'archived']);
+    const allow = new Set(['personalScore', 'personalNote', 'archived', 'corrections']);
     const fields: Partial<Video> = {};
+    const changed: indexStore.ClassBAnnotationKey[] = [];
     for (const [k, v] of Object.entries(set)) {
-      if (allow.has(k)) (fields as Record<string, unknown>)[k] = v;
+      if (allow.has(k)) {
+        (fields as Record<string, unknown>)[k] = v;
+        if ((indexStore.CLASS_B_ANNOTATION_KEYS as readonly string[]).includes(k)) {
+          changed.push(k as indexStore.ClassBAnnotationKey);
+        }
+      }
     }
     for (const k of clear) {
-      if (allow.has(k)) (fields as Record<string, unknown>)[k] = undefined;
+      if (allow.has(k)) {
+        (fields as Record<string, unknown>)[k] = undefined;
+        if ((indexStore.CLASS_B_ANNOTATION_KEYS as readonly string[]).includes(k)) {
+          changed.push(k as indexStore.ClassBAnnotationKey);
+        }
+      }
+    }
+    if (changed.length > 0) {
+      const editedAt = opts?.editedAt ?? new Date().toISOString();
+      const at: Partial<Record<indexStore.ClassBAnnotationKey, string>> = { ...(existing.annotationsEditedAt ?? {}) };
+      for (const k of changed) at[k] = editedAt;
+      fields.annotationsEditedAt = at;
     }
     indexStore.updateVideoFields(p.indexKey, videoId, fields);
     return { found: true };

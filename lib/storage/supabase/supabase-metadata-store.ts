@@ -115,17 +115,23 @@ export class SupabaseMetadataStore implements MetadataStore {
   // ---------------------------------------------------------------------------
   // updateVideoFields: server-side artifacts-aware jsonb merge (avoids read-
   // modify-write races; deep-merges the `artifacts` sub-object).
+  // Stage 3 (§5.1/§5.7): merge_video_data (0021) stamps annotationsEditedAt server-side
+  // when p_fields carries a Class-B key (personalNote/personalScore/corrections) — this
+  // just needs to forward the caller's sync-path timestamp (opts.editedAt) as p_edited_at
+  // when present; the RPC defaults to now() for the user-edit path when omitted.
   // ---------------------------------------------------------------------------
   async updateVideoFields(
     p: Principal,
     videoId: string,
     fields: Partial<Video>,
+    opts?: { editedAt?: string },
   ): Promise<void> {
     const id = await this.requirePlaylistId(p);
     const { error } = await this.client.rpc('merge_video_data', {
       p_playlist_id: id,
       p_video_id: videoId,
       p_fields: stripComputed(fields),
+      ...(opts?.editedAt ? { p_edited_at: opts.editedAt } : {}),
     });
     if (error) throw error;
   }
@@ -240,17 +246,22 @@ export class SupabaseMetadataStore implements MetadataStore {
 
   // ---------------------------------------------------------------------------
   // updateVideoAnnotations: distinct write path from updateVideoFields/merge_video_data
-  // (unchanged). The allowlist ({personalScore, personalNote, archived}) and the
-  // owner_id = auth.uid() guard are enforced IN SQL by update_video_annotations — this
+  // (unchanged). The allowlist ({personalScore, personalNote, corrections, archived}) and
+  // the owner_id = auth.uid() guard are enforced IN SQL by update_video_annotations — this
   // is the sole caller-facing surface for personal-annotation writes; no p_owner is
   // ever sent. The RPC returns an integer row-count; > 0 means the row existed and was
   // updated under the caller's ownership.
+  // Stage 3 (§5.1/§5.7): 'corrections' is now allowlisted server-side (0021), and the RPC
+  // stamps annotationsEditedAt per Class-B field touched. `opts.editedAt` forwards the
+  // sync-path source timestamp as p_edited_at; omitted on the user-edit path so the RPC's
+  // `default now()` applies.
   // ---------------------------------------------------------------------------
   async updateVideoAnnotations(
     p: Principal,
     videoId: string,
-    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived'>>,
-    clear: ('personalScore' | 'personalNote')[],
+    set: Partial<Pick<Video, 'personalScore' | 'personalNote' | 'archived' | 'corrections'>>,
+    clear: ('personalScore' | 'personalNote' | 'corrections')[],
+    opts?: { editedAt?: string },
   ): Promise<{ found: boolean }> {
     const id = await this.requirePlaylistId(p);
     const { data, error } = await this.client.rpc('update_video_annotations', {
@@ -258,6 +269,7 @@ export class SupabaseMetadataStore implements MetadataStore {
       p_video_id: videoId,
       p_set: set,
       p_clear: clear,
+      ...(opts?.editedAt ? { p_edited_at: opts.editedAt } : {}),
     });
     if (error) throw error;
     return { found: (data ?? 0) > 0 };

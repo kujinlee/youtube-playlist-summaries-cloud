@@ -6,6 +6,7 @@ import { getPrincipal, getStorageBundle } from '../../../../../lib/storage/resol
 import { fixSummary, extractQuickView } from '../../../../../lib/gemini';
 import { stripQuickViewCallout, insertQuickViewCallout } from '../../../../../lib/pipeline';
 import { logError, errorSummary } from '../../../../../lib/dev-logger';
+import { mdHash } from '../../../../../lib/cloud-sync/content-hash';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -67,8 +68,25 @@ export async function POST(request: Request, { params }: Params) {
 
     await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
 
-    // Update index with refreshed quick-view data; clear stale HTML cache
-    await store.updateVideoFields(principal, videoId, { tldr, takeaways, summaryHtml: null });
+    // Stage 3 (§5.1/§5.7, former-Blocking §5.3): stamp this regenerated MD as
+    // corrections-current. The corrections THIS MD now reflects mirrors the conditional
+    // update above: param non-empty → trimmedCorrections; param === '' → cleared to '';
+    // param absent/whitespace-only (neither branch fires) → the UNCHANGED stored value —
+    // a bare regenerate keeps prior corrections baked in, so stamping mdHash('') there
+    // would wrongly mark a still-corrected MD as stale.
+    const effectiveCorrections = trimmedCorrections
+      ? trimmedCorrections
+      : corrections === '' ? '' : (video.corrections ?? '');
+
+    // Update index with refreshed quick-view data; clear stale HTML cache. NOTE: this write
+    // carries MD-currency fields, not a Class-B key, so it must NOT bump annotationsEditedAt
+    // (the earlier updateVideoFields({ corrections }) call above is the Class-B write that
+    // stamps annotationsEditedAt.corrections).
+    await store.updateVideoFields(principal, videoId, {
+      tldr, takeaways, summaryHtml: null,
+      mdGeneratedAt: new Date().toISOString(),
+      mdCorrectionsHash: mdHash(effectiveCorrections),
+    });
 
     return NextResponse.json({
       tldr,
