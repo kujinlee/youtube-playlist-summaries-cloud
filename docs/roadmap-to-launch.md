@@ -4,7 +4,7 @@ The path from "all capabilities merged" to "a running, unified product." Created
 reservation-release money-path slice merged (PR #22). This is the **milestone** roadmap (not the
 per-feature dev backlog — that's `docs/backlog.md`, which covers local-app style enhancements).
 
-**Where we are:** every cloud capability is built and merged — auth, playlist ingest, summary +
+**Where we are:** every cloud capability is built and merged — including **M2a cloud sync (PR #23, 2026-07-19)** — — auth, playlist ingest, summary +
 deep-dive generation, serving, downloads, sharing, cost guardrails, and the spend_ledger reserve→release
 money path. What remains is turning that into a deployed, verified, unified app.
 
@@ -103,9 +103,9 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
   severity dispute over a known issue, R7 found nothing. Root cause of
   B1/R4-H1/R4-H3 is one shared shape: *a value meaning "absent" is also what a failure produces*
   (`SupabaseBlobStore.get` swallows every error; `playlist_title ?? null`).
-- [ ] **2.4 Merge** *(human gate)*.
+- [x] **2.4 Merge** — ✅ **MERGED to master 2026-07-19, PR #23, merge commit `d2bf143`** (52 commits, 86 files). Branch deleted.
 
-**M2a deferred findings** (recorded, none blocking merge on their own — decide at the 2.4 gate):
+**M2a deferred findings** (carried past the 2.4 gate deliberately — none blocking; revisit alongside the honest-blob-read slice):
 - **Claude-R2-M1** — `transferClassA` leaves stale non-`summaryMd` artifact pointers on the loser
   (`sync-run.ts` artifacts deep-merge). Latent until a second artifact kind is populated.
 - **Codex-R2-Med** — absent (`undefined`) companion scalars are not explicitly cleared on transfer,
