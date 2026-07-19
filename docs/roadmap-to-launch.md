@@ -38,6 +38,27 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   keys, any OAuth); storage buckets; apply migrations 0001–0020 to prod.
 - [ ] **1.4 Deploy + smoke test**. Deploy app + worker; smoke-test the live container end-to-end (sign in
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
+  **Cloud-sync verification (M2a) folds in here** — all 46 cloud-sync integration tests run against the
+  LOCAL Supabase stack (`supabase/config.toml`: TLS disabled, pooler disabled, no network), so transient
+  storage failures essentially never occur there. That is precisely the root-cause class M2a was built to
+  survive, so it is untested by construction until a hosted project exists. Run these against real
+  Supabase, in this order:
+  - [ ] **Round-trip.** Local-only video → sync → present in cloud; cloud-only video → sync → hydrated
+    locally with a readable MD body. Confirm blob paths are `<ownerId>/<playlistKey>/<key>` under a real
+    user JWT — the Task 12 review caught a literal `{ id: 'cloud' }` principal that Storage RLS rejects.
+  - [ ] **B1 guard, live.** Make a cloud MD blob unreadable mid-sync (revoke the Storage policy briefly,
+    or point at a key the policy denies) and confirm: the error surfaces in `report.errors`, the other
+    replica's bytes are byte-preserved, `docVersion` is not downgraded, and **no manifest baseline is
+    written** — then re-run and confirm it heals. This is the check local cannot produce.
+  - [ ] **serve-doc money finding (unverified inference).** Inject a Storage 5xx on the model read during
+    a serve (`lib/html-doc/serve-doc.ts:56`) and watch `spend_ledger`: does a paid regeneration fire for a
+    model that already exists? If yes, this is a live double-charge and the honest-blob-read slice becomes
+    pre-launch, not post-launch.
+  - [ ] **M-R7-1 skew.** Deploy an image whose `GENERATOR_VERSION` differs from the local checkout, run a
+    `copyToCloud` transfer where both sides hold a model for the same body, and check whether a rendering
+    share starts returning 503.
+  - [ ] **No service-role on the sync path** in the deployed config (`scripts/check-service-confinement.ts`
+    passes against the real environment, not just local).
 
 **M1 done = a real URL a user can log into and use.**
 
