@@ -38,6 +38,7 @@ function makeMockBlob(opts: { tempExists?: boolean } = {}) {
   const blob: BlobStore = {
     async put() {},
     async get() { return null; },
+    async tryGet() { return { ok: false as const, reason: 'absent' as const }; },
     async exists(_p, key) {
       order.push(`exists(${key})`);
       // Return true for the temp key to simulate successful staging

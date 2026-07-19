@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BlobStore, StagedRef } from '@/lib/storage/blob-store';
+import type { BlobRead, BlobStore, StagedRef } from '@/lib/storage/blob-store';
 import { assertLogicalKey } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
@@ -34,6 +34,26 @@ export class SupabaseBlobStore implements BlobStore {
     // Note the LOCAL blob store differs — it returns null only on ENOENT and throws otherwise.
     if (error) return null;
     return Buffer.from(await data.arrayBuffer());
+  }
+
+  /** The honest read. Supabase reports a missing object as a StorageApiError carrying
+   *  `statusCode: "404"` (verified against the live stack:
+   *  `{message:"Object not found", name:"StorageApiError", status:400, statusCode:"404"}`), so a 404
+   *  IS provable absence. Everything else — 5xx, timeout, RLS denial, a thrown network error — is
+   *  `unreadable`, and callers must not read it as "the object does not exist". */
+  async tryGet(p: Principal, key: string): Promise<BlobRead> {
+    try {
+      const { data, error } = await this.b().download(this.objectKey(p, key));
+      if (error) {
+        const code = String((error as { statusCode?: string | number }).statusCode ?? '');
+        if (code === '404') return { ok: false, reason: 'absent' };
+        return { ok: false, reason: 'unreadable', cause: error };
+      }
+      return { ok: true, bytes: Buffer.from(await data.arrayBuffer()) };
+    } catch (e) {
+      // download() throws rather than returning `error` on a transport failure — also unprovable.
+      return { ok: false, reason: 'unreadable', cause: e };
+    }
   }
 
   async exists(p: Principal, key: string): Promise<boolean> {

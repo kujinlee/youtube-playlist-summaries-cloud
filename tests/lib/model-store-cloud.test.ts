@@ -16,6 +16,11 @@ function fakeStore(): BlobStore & { blobs: Map<string, Buffer> } {
     blobs,
     async put(p, key, bytes) { blobs.set(k(p, key), bytes); },
     async get(p, key) { return blobs.get(k(p, key)) ?? null; },
+    // In-memory map: a miss IS provable absence, so tryGet mirrors get exactly.
+    async tryGet(p, key) {
+      const b = blobs.get(k(p, key));
+      return b ? { ok: true as const, bytes: b } : { ok: false as const, reason: 'absent' as const };
+    },
     async exists(p, key) { return blobs.has(k(p, key)); },
     async delete(p, key) { blobs.delete(k(p, key)); },
     async deletePrefix(p, prefix) {

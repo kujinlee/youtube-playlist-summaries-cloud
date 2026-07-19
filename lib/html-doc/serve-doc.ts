@@ -3,7 +3,7 @@ import type { BlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary, MagazineModel } from './types';
 import { GENERATOR_VERSION } from './constants';
-import { writeModelEnvelope } from './model-store';
+import { writeModelEnvelope, MODEL_KEY } from './model-store';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
 import { readFreshMagazineModel, readTitleStableModel } from './read-model';
 import { generateMagazineModel } from '@/lib/gemini';
@@ -55,6 +55,20 @@ export async function resolveMagazineModel(args: {
 
   const fresh = await readFreshMagazineModel({ blobStore, principal, base, titles });
   if (fresh.status === 'ok') return { status: 'ok', model: fresh.model }; // B1 — no Gemini, no reserve
+
+  // ── MONEY GUARD — never spend on an UNPROVABLE read.
+  // `readFreshMagazineModel` returns not_ready for three different situations: the model is absent,
+  // it is present but drifted/stale-version, or **it could not be read**. The first two justify
+  // regenerating; the third does not — the model may be sitting in the bucket, already paid for.
+  // `blobStore.get` collapses every Storage failure (5xx, timeout, RLS denial, transport error) into
+  // the same `null` as a genuine 404, so without this probe a transient blip re-reserves and
+  // re-generates: measured 6¢ → 12¢ with attempt_count 1 → 2 in
+  // tests/integration/serve-model-unreadable.test.ts.
+  // `tryGet` distinguishes them (Supabase reports a missing object with statusCode "404"). On
+  // `unreadable` we return `busy` — the same transient, retryable status the single-flight branch
+  // uses — instead of paying. Absent and drifted still fall through and materialize as before.
+  const probe = await blobStore.tryGet(principal, MODEL_KEY(base));
+  if (!probe.ok && probe.reason === 'unreadable') return { status: 'busy' };
 
   // Absent / drifted / stale-version → materialize under the reserve RPC.
   const { data, error } = await supabaseClient.rpc('reserve_serve_model', {
