@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { adminClient, newUser, signInAs, ensureGuardrailHeadroom } from './helpers/clients';
 import { seedPlaylist, seedPromotedVideo } from './helpers/seed';
 
@@ -14,6 +15,38 @@ async function jobIdFor(ownerId: string, videoId: string): Promise<string> {
 // OWN low daily_cap_cents inside the test and reset it after — see Task 12.
 beforeAll(async () => { await ensureGuardrailHeadroom(adminClient()); });
 
+// This suite asserts on the three GLOBAL, day-keyed tables — `spend_ledger` (one row per UTC day,
+// no owner_id), `ledger_audit` (no owner_id), and `jobs` (claimed by video_id, not by owner) — so a
+// fresh `newUser()` per test does NOT isolate it the way it isolates cancel-job-rpc/job-queue-store.
+// Without a wipe the suite POISONS ITSELF: each run leaves rows that make the next run red, even on
+// an otherwise untouched tree. Proven by double-run on a freshly reset DB — run 1 32/32 green, run 2
+// 3 failures, no code change in between. The three failure modes were:
+//   1. Task 1's `note: 't1-lockdown'` marker row accumulated one row per run (12 were present),
+//      breaking its exact-equality `toEqual([oneRow])` on an unscoped `.eq('note', …)` query.
+//   2. Task 2's underflow test counts `release_underflow` rows by `day`+`kind` only, so every prior
+//      run today — and every other suite's fail_job underflow — inflated the expected count of 1.
+//   3. Behavior 23 claims by `p_video_id: 'vid-t12-23'`, a FIXED literal, so `claim_next_job` handed
+//      back a leftover queued job from an earlier run instead of the one the test had just enqueued.
+// The wipe is the convention every other money-path suite already uses (cost-guardrails.test.ts:39,
+// serve-model-charge, serve-owner-budget, serve-doc-materialize, serve-model-unreadable). This suite
+// was the sole one asserting on these tables with only a `beforeAll` config guard, which resets
+// guardrail_config but deletes no rows.
+// Config is deliberately NOT reset here — `ensureGuardrailHeadroom` above pins a generous daily_cap
+// for the whole file, and the two cap-specific tests (behavior 16, behavior 26) manage their own.
+//
+// `ledger_audit` is deliberately NOT wiped: migration 0020:22 grants service_role only
+// `select, insert` — no DELETE — because it is a money-path audit log and Task 1 below exists to
+// prove that lockdown holds. A delete here does not error loudly, it just silently affects zero
+// rows, so the wipe would be a lie in the code. The append-only property under test is exactly why
+// this suite cannot clean up after itself, so its two `ledger_audit` assertions are instead SCOPED
+// to a per-run discriminator (a fresh uuid note, and the `'fail_job '||job_id` note the RPC writes)
+// and are therefore indifferent to how many rows earlier runs left behind.
+beforeEach(async () => {
+  const svc = adminClient();
+  await svc.from('jobs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  await svc.from('spend_ledger').delete().neq('day', '1900-01-01');
+});
+
 describe('reservation-release: ledger_audit lockdown (Task 1)', () => {
   // T12 Part 2 (tracked follow-up flagged in Task 4): the original fixture hardcoded day
   // '2026-07-16' — today's actual date under the server clock as of writing. Once "today"
@@ -26,14 +59,18 @@ describe('reservation-release: ledger_audit lockdown (Task 1)', () => {
   it('service_role can insert and read ledger_audit', async () => {
     const svc = adminClient();
     const day = FIXED_DAY;
+    // Unique per run: service_role has no DELETE on ledger_audit (0020:22), so the marker row this
+    // test writes is PERMANENT. A fixed note plus an exact-equality assert therefore fails on every
+    // run after the first — it silently asserts "no run before this one ever wrote this note".
+    const note = `t1-lockdown ${randomUUID()}`;
     const { error: insErr } = await svc
       .from('ledger_audit')
-      .insert({ day, kind: 'release_underflow', expected_amt: 150, note: 't1-lockdown' });
+      .insert({ day, kind: 'release_underflow', expected_amt: 150, note });
     expect(insErr).toBeNull();
     const { data, error } = await svc
       .from('ledger_audit')
       .select('kind, expected_amt')
-      .eq('note', 't1-lockdown');
+      .eq('note', note);
     expect(error).toBeNull();
     expect(data).toEqual([{ kind: 'release_underflow', expected_amt: 150 }]);
   });
@@ -155,8 +192,13 @@ describe('reservation-release: fail_job (Task 2)', () => {
     });
     expect(status).toBe('failed');                        // terminal write still committed
     expect(await ledgerFor(day)).toBe(10);                // not driven negative
+    // Scope to THIS job's audit row. Filtering on day+kind alone counts every release_underflow
+    // written today — by earlier runs (ledger_audit is append-only for service_role, 0020:22) and by
+    // other suites' fail_job/request_cancel_* calls. The RPC stamps `'fail_job '||p_job_id`
+    // (0020:85-87), so the job id is an exact per-run discriminator that needs nothing new.
     const { data: audit } = await adminClient()
-      .from('ledger_audit').select('kind, expected_amt').eq('day', day).eq('kind', 'release_underflow');
+      .from('ledger_audit').select('kind, expected_amt')
+      .eq('kind', 'release_underflow').eq('note', `fail_job ${jobId}`);
     expect(audit!.length).toBe(1);
     expect(audit![0].expected_amt).toBe(150);
   });
