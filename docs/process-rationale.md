@@ -176,6 +176,57 @@ auth, hang) but not one that completes and is *wrong*. Both failure modes exit 0
 
 ---
 
+## Turn a finding into an assertion before deferring it
+
+**Incident — the serve-path double-charge (2026-07-19).** The Stage 3 review found by *reading* that
+`lib/html-doc/serve-doc.ts` could treat an unreadable model read as "absent" and pay to regenerate a
+model already in the bucket. It was written into `docs/roadmap-to-launch.md` as an **unverified
+inference** and scheduled for a deploy-time check at M1.4. Recording it felt like closure. It was
+actually a bet that a manual check would happen later, against a failure mode — a transient storage
+error — that is hard to reproduce on demand and whose first natural evidence is a user billing complaint.
+
+It took one test file to settle, using scaffolding the repo already had: fault-injecting blob-store
+wrappers (`tests/integration/helpers/cloud.ts`) and `spendLedgerTotal()`. The `null` a transient error
+produces is byte-identical to a 404's, so simulating it was exact rather than approximate.
+
+```
+before: [DIAG] status=ok   gemini_calls=1  spend 6→12  attempt_count=2
+after:  [DIAG] status=busy gemini_calls=0  spend 6→6   attempt_count=1
+```
+
+A real double-charge, fixed and regression-guarded the same day (PR #24). **Two supporting details:**
+
+- The naive version of that test would have PASSED. `reserve_serve_model` has its own single-flight
+  guard, so a spurious reserve while the lease is live no-ops and never charges — a second protection
+  masking the first. The existing B1 test's author had hit this and left a comment; copying their
+  forced-lease-expiry made the bug visible. When a test of a money path passes, check whether some
+  *other* guard is absorbing the effect.
+- The error shape was determined by **probing the live stack**, not by reading vendor types (the
+  installed `@supabase/storage-js` ships only a UMD bundle). A missing object returns
+  `{message:"Object not found", name:"StorageApiError", status:400, statusCode:"404"}` — so 404 is
+  provable absence and everything else is not. Ten seconds of probing beat inference from docs.
+
+**The rule's boundary:** this does not mean never defer. It means the deferral decision should be made
+*after* asking "can I assert this?", not instead of asking.
+
+---
+
+## Required beats optional; casts opt out
+
+**Incident.** The same defect class got two remedies. Stage 3 added `BlobStore.provesAbsence` as an
+**optional** member — it fixed the sync call sites and did not propagate, so the identical bug stayed
+live in serving code outside the reviewed scope. PR #24 added `BlobStore.tryGet` as a **required**
+member, and one `tsc` run listed all 7 implementers exhaustively. Optional members let callers keep
+inheriting the ambiguous original; required members force each one to answer.
+
+**The boundary of that enforcement:** one test double was cast `as never`, so tsc could not flag its
+missing `tryGet`. The new guard threw inside a `.catch(() => {})` and silently skipped the reserve that
+double exists as a *positive control* to prove. The full unit suite caught it; the compiler could not.
+A cast opts out of exactly the enforcement you are relying on, so compiler and behavioural tests cover
+different holes and neither subsumes the other.
+
+---
+
 ## Debt needs a trigger, not a list
 
 **Incident.** The Parking Lot in `docs/roadmap-to-launch.md` held four sensible items with no

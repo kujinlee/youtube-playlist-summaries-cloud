@@ -179,7 +179,8 @@ At the start of every implementation task, create the following items with `Task
 - **Cross-module nullable/union values:** for every `T | null` / union crossing a module boundary, one
   row: `Value | Variants | Produced by | Consumer can distinguish?`. If any row answers **No**, make the
   type honest (`{ok:true,…} | {ok:false, reason:'absent'|'unreadable'}`) — do not add a side-channel
-  flag. Same row names, per boundary, which faults abort versus which are swallowed and reported.
+  flag. Make the new member **required, not optional**: an optional one does not propagate, and callers
+  keep silently inheriting the ambiguous original. Same row names, per boundary, which faults abort versus which are swallowed and reported.
 
 If a task touches URL-generating components, overlays, optional props, or a nullable/union value
 crossing a module boundary, and the behaviors table has zero rows in the relevant category, the
@@ -189,7 +190,9 @@ Enumerate step is not done.
 
 **Mutation-check step:** for each guard the task adds, delete it → re-run the covering tests → they
 MUST go red → restore. A test that passes in both the buggy and fixed world is documentation, not a
-guard. **Commit the fix before mutating** (`git checkout` also reverts an uncommitted fix).
+guard. **Commit the fix before mutating** (`git checkout` also reverts an uncommitted fix). Note
+`as any` / `as never` on a test double opts OUT of compiler enforcement — tsc cannot flag a missing
+member behind a cast, so behavioural tests are the only net there.
 *(Why: found a defence layer with zero coverage behind 40 green tests — `docs/process-rationale.md`.)*
 
 **Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
@@ -299,6 +302,15 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 
 **Where review effort belongs:** per-task review is structurally blind to composition defects. Keep it
 light for internally-simple tasks; spend the budget on whole-branch rounds.
+
+**Before deferring a finding, try to turn it into an assertion.** "Unverified — check at deploy" is a
+bet that a manual check happens later. If the claim can be expressed as a test using scaffolding that
+already exists, write it NOW: it is usually minutes, it either promotes the finding to a fixed bug or
+retires it, and either way it leaves a regression guard. Applies hardest to money and data-loss paths,
+where the alternative first evidence is a production incident. Determine external behaviour by probing
+the live system, not by reading vendor types.
+*(Why: a suspected double-charge sat as a roadmap line for a day; one test measured it at 6¢→12¢ —
+`docs/process-rationale.md`.)*
 
 **Stop (diminishing returns) when** a full re-review round returns **no new Blocking or High** — only Low/nits, or findings already known-and-accepted (recorded as deferred with an owner). That round is the gate; then get human approval. Do **not** stop merely because you are tired of reviewing or the artifact "feels done."
 
