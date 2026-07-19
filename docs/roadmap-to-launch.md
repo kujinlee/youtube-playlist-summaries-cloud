@@ -148,6 +148,8 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
+**STATUS 2026-07-19: both items CLOSED — this list is now empty, which is its intended state.**
+
 Filed separately on purpose: these were previously buried in the M2a deferred list, which becomes
 historical the moment M2a merges. They are neither M2a findings nor blocked by it.
 
@@ -183,7 +185,26 @@ that fires anyway, so it resurfaces without anyone remembering it exists.
   DB → 32/32 each; **full integration ×2 back-to-back → 65 suites / 468 tests each**; unit 245/2450;
   `tsc` clean. The full integration suite is now **idempotent across runs**, which also confirms this
   was the only self-poisoning file.
-- [ ] **`scripts/codex-frontier-model.py` can select an unrunnable model.**
+- [x] **`scripts/codex-frontier-model.py` can select an unrunnable model.** ✅ **FIXED 2026-07-19**
+  — `scripts/codex-review.py`, converged over **5 adversarial rounds** (reviews
+  `docs/reviews/codex-dispatch-wrapper-codex{,-v2..v5}.md`; round 5: 0 Blocking/High/Medium).
+  The picker is unchanged and unchangeable — re-verified that the cache carries no
+  minimum-client-version field across every key of all 7 models — so the fix lives at the point of
+  use: the wrapper walks all candidates (`gpt-5.6-sol → -terra → -luna → gpt-5.5` today) and exits
+  **non-zero** if none produces a review, so the caller learns the gate did not run.
+  **Success is decided solely by whether `codex exec -o/--output-last-message` wrote a substantive
+  final-message file** — not the exit code, not stdout.
+  Three things worth remembering, each found by a review round rather than by reasoning:
+  - **The documented exit-0 claim was wrong.** A direct `codex exec` on a rejected model exits **1**;
+    the exit-0 report comes from the plugin's background-task path. `docs/plugins.md` is corrected.
+  - **The first design was unwinnable and was abandoned, not patched.** Parsing stdout cannot work:
+    `codex exec` multiplexes banner, echoed prompt, tool transcript, and reply onto one stream, so a
+    review that *quoted* an error was indistinguishable from a run that *hit* one, and every regex
+    fix grew a mirror bug on another channel (one extracted "review" reached 308 KB of transcript).
+  - **`ABORT` was deleted rather than fixed.** Rounds 3 and 4 found the same false-abort through two
+    different matchers; removing the early-exit branch removed the class, at the cost of a few
+    fast-failing attempts. stdout can now influence what the wrapper *says*, never what it *does*.
+  Original description of the defect, kept for context:
   **TRIGGER: every adversarial review.** Mitigation is already enforced in `docs/plugins.md` (FAIL
   OPEN — read the output FILE, never the exit code), so the gate cannot silently no-op today. What
   remains is the permanent fix. Note the picker *cannot* be made smarter from the cache alone: it
@@ -283,8 +304,10 @@ Then M1.4 (deploy + smoke test + the 5 cloud-sync checks above) and M3 follow.
    binds `0.0.0.0`; the bundled worker boots on Node 22 and drains cleanly on SIGTERM in ~1 s;
    2450 unit tests + tsc green. Note `fly.toml`'s process commands changed to direct `node`
    invocations, since neither the `next` CLI nor `ts-node` exists in the runtime image any more.
-3. **Codex dispatch wrapper** — see *Dev-infrastructure debt*; stops the review gate failing open.
-   **Now the sole remaining dev-infrastructure debt item.**
+3. ~~Codex dispatch wrapper~~ ✅ **DONE 2026-07-19** — `scripts/codex-review.py`, converged over 5
+   adversarial rounds. Use it for every Codex review: `python3 scripts/codex-review.py --out
+   docs/reviews/<name>-codex.md "<prompt>"`. Exit 1 means the gate did not run → fall back to Claude.
+   **The dev-infrastructure debt list is now EMPTY.**
 4. **Full honest-blob-read slice** — the remaining ~10 `blob.get` callers, retiring `provesAbsence`.
    Own spec + review + merge gate. The billable path is already closed (PR #24), so this is no longer
    urgent. *(Note: the `ledger_audit` wipe that silently affected zero rows during the fix above is

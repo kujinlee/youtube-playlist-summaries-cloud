@@ -107,15 +107,32 @@ in the review doc** so the Codex-specific pass can be re-attempted before merge 
 One quick check (frontier model sync via `scripts/codex-frontier-model.py --write-config`, a single
 re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies the gate for proceeding.
 
-**The gate can FAIL OPEN — verify it actually ran (added 2026-07-18).** Two failure modes are *not*
-covered by the fallback rule above, because in both the command exits **0**:
+**USE `scripts/codex-review.py` — it makes failure-mode 1 below impossible (added 2026-07-19).**
 
-1. **Wrong model slug → HTTP 400, empty review.** `scripts/codex-frontier-model.py` ranks by
-   `priority` without filtering on what the pinned CLI supports. On 2026-07-18 it returned
-   `gpt-5.6-sol`, which CLI 0.142.5 rejects with *"requires a newer version of Codex"* — the run
-   produced a review file containing only an error, and `exit=0`. **Always read the output FILE, not
-   the exit code.** A review doc with no findings section is a failed run, not a clean review. Working
-   fallback: `codex exec -m gpt-5.5`. Fix the script to filter by client-version support.
+```bash
+python3 scripts/codex-review.py --out docs/reviews/task-N-<name>-codex.md "<review prompt>"
+#   exit 0 = a real review was written    exit 1 = the gate did NOT run → fall back to Claude
+```
+
+It walks every candidate model in priority order, and decides success **solely** by whether
+`codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,
+never stdout text. Run `--self-test` (15 cases) after touching it. Prefer it over raw `codex exec`
+for anything that must actually produce a review; `scripts/codex-frontier-model.py` alone cannot
+guarantee a runnable model and says so in its docstring.
+
+**The gate can FAIL OPEN — verify it actually ran (added 2026-07-18).**
+
+1. **Wrong model slug → HTTP 400, empty review. ✅ SOLVED by the wrapper above.**
+   `scripts/codex-frontier-model.py` ranks by `priority` without filtering on what the pinned CLI
+   supports — it cannot, as the cache has no minimum-client-version field (re-verified 2026-07-19
+   across every key of all 7 cached models). It still returns `gpt-5.6-sol`, which CLI 0.142.5
+   rejects with *"requires a newer version of Codex"*. The wrapper now falls through
+   `gpt-5.6-sol → -terra → -luna → gpt-5.5` automatically.
+   **Correction to what this doc previously claimed:** it said such runs exit **0**. Measured
+   2026-07-19 — a direct `codex exec` exits **1**. The exit-0 report comes from the plugin's
+   background-task path, not the CLI. Because the two disagree, trust *neither* as proof of success:
+   **read the output FILE.** A review doc with no findings section is a failed run, not a clean
+   review. (Manual fallback if you bypass the wrapper: `codex exec -m gpt-5.5`.)
 2. **A confident but wrong CONVERGED.** The fallback rule handles an *absent* reviewer; nothing handles
    a reviewer that completes successfully and clears a live defect. In Stage 3 cloud-sync this happened
    **twice** — see "Reviewer disagreement is the signal" in `docs/dev-process.md`. Never treat a single
