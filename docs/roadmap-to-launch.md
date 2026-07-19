@@ -153,15 +153,33 @@ triggers is a wish list: nothing in the workflow reads a prose section, so items
 indefinitely (the Parking Lot below is the standing evidence). A trigger ties the item to something
 that fires anyway, so it resurfaces without anyone remembering it exists.
 
-- [ ] **`tests/integration/reservation-release.test.ts` fails on a clean tree.**
-  **TRIGGER: every task.** `docs/dev-process.md` → *Known-red suites* now makes the "full suite green"
-  gate satisfiable only while every red suite is explicitly named — so this item is re-read at the
-  commit step of every single task until it is fixed, and a *second* entry appearing is the signal to
-  stop feature work and fix the harness. Local Supabase state
-  pollution — leftover `ledger_audit` rows and a stale queued job — so the money-path suite is red
-  independently of any branch (verify by stashing before blaming one). Needs a DB reset between runs
-  or per-test isolation. **Cost of leaving it:** a permanently red suite trains everyone to ignore
-  red, which is how a real money-path regression gets waved through.
+- [x] **`tests/integration/reservation-release.test.ts` fails on a clean tree.** ✅ **FIXED 2026-07-19**
+  (branch `fix/reservation-release-self-poisoning`, commit `c8be696`).
+  **The recorded root cause was wrong, and the wrong diagnosis is why it sat unfixed.** This entry
+  used to read "local Supabase state pollution — leftover rows from other suites … needs a DB reset
+  between runs", which framed it as an *infrastructure* chore nobody owned. In fact the suite
+  **poisons itself**: it writes rows it never cleans up, then asserts on them with globally-scoped
+  queries. Proven by double-run on a freshly reset DB with no code change between — run 1 32/32
+  green, run 2 three failures. That makes it a *test-correctness bug in one file*, which is a small
+  permanent fix rather than an ops burden. Two mechanisms, two different fixes:
+  - `spend_ledger` / `jobs`: it was the only money-path suite asserting on these global day-keyed
+    tables **without** a `beforeEach` wipe (it had only `beforeAll(ensureGuardrailHeadroom)`, a
+    config guard that deletes no rows). Added the wipe every other money suite already uses. Also
+    fixes behavior 23, which claims by a **fixed literal** `p_video_id` and so received a leftover
+    queued job from an earlier run.
+  - `ledger_audit`: **cannot be wiped, and must not be.** Migration `0020:22` grants service_role
+    only `select, insert` — it is a money-path audit log and Task 1 exists to prove that lockdown.
+    A delete there does not error, it silently affects zero rows. *The append-only property under
+    test is exactly why the suite cannot clean up after itself.* Both assertions were instead
+    **scoped** to a per-run discriminator (a fresh uuid note; the `'fail_job '||job_id` note the RPC
+    already stamps), making them indifferent to accumulated rows.
+  **Why it survived review:** it passes on every *first* run, including CI on a fresh container.
+  Red-only-on-a-second-run looks environmental from inside CI and looks like someone else's mess
+  from the developer's chair — neither vantage point sees the accumulation.
+  **Verified** (no DB reset between any of these): suite ×3 consecutive on a deliberately polluted
+  DB → 32/32 each; **full integration ×2 back-to-back → 65 suites / 468 tests each**; unit 245/2450;
+  `tsc` clean. The full integration suite is now **idempotent across runs**, which also confirms this
+  was the only self-poisoning file.
 - [ ] **`scripts/codex-frontier-model.py` can select an unrunnable model.**
   **TRIGGER: every adversarial review.** Mitigation is already enforced in `docs/plugins.md` (FAIL
   OPEN — read the output FILE, never the exit code), so the gate cannot silently no-op today. What
@@ -244,15 +262,17 @@ Update the checkboxes as steps land.
 Then M1.4 (deploy + smoke test + the 5 cloud-sync checks above) and M3 follow.
 
 **Unblocked — can be picked up now, in recommended order:**
-1. **Fix the red `reservation-release` suite** *(recommended first)* — see *Dev-infrastructure debt*.
-   It is the only open item that actively DEGRADES everything else: a permanently-red money-path suite
-   makes "full suite green" unfalsifiable, and every future change inherits the weakened gate.
+1. ~~Fix the red `reservation-release` suite~~ ✅ **DONE 2026-07-19** (`c8be696`, branch
+   `fix/reservation-release-self-poisoning` — **unmerged, awaiting the human push/PR gate**).
+   "Full suite green" is a falsifiable gate again and the known-red list is empty.
 2. **Shrink the deploy image** (3.44 GB — prune dev deps, compile the worker to JS). On M1.4's critical
    path; you feel it on every deploy. See the M1.2 notes.
 3. **Codex dispatch wrapper** — see *Dev-infrastructure debt*; stops the review gate failing open.
+   **Now the sole remaining dev-infrastructure debt item.**
 4. **Full honest-blob-read slice** — the remaining ~10 `blob.get` callers, retiring `provesAbsence`.
    Own spec + review + merge gate. The billable path is already closed (PR #24), so this is no longer
-   urgent.
+   urgent. *(Note: the `ledger_audit` wipe that silently affected zero rows during the fix above is
+   the same swallow-the-error shape this slice exists to fix — it is not confined to `BlobStore`.)*
 5. **Locally-fixable M2a deferred findings** — most notably Claude-R3-M1 (`build-doc-html` derives
    `base` from `digDeeperMd`, so a diverged replica key makes the dig view serve the pre-sync summary).
 

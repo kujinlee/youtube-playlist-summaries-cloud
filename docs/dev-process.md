@@ -249,9 +249,12 @@ regressions" unfalsifiable. Whenever a suite is red for a reason **not** caused 
 4. The full-suite step is only satisfiable while the set of known-red suites is **explicitly named**.
    If you cannot name why each red suite is red, the gate is not met.
 
-Currently known-red: `tests/integration/reservation-release.test.ts` — see *Dev-infrastructure debt*
-in the roadmap for the live list and the proof. **The list is meant to be empty.** A second entry
-appearing is the signal to stop adding features and fix the harness.
+Currently known-red: **none** — the list is empty as of 2026-07-19 (`reservation-release` fixed in
+`c8be696`; the full integration suite is idempotent across back-to-back runs). See
+*Dev-infrastructure debt* in the roadmap for the live list and the proof. **The list is meant to be
+empty.** An entry appearing is the signal to stop adding features and fix the harness — and a green
+suite that is only green on its FIRST run counts as red, so verify by running it twice without a DB
+reset, not once.
 
 ### E2E quality rules
 
