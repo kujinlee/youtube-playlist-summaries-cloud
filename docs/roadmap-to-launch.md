@@ -232,4 +232,29 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
 
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
-three. Current: **M1 starting.** Update the checkboxes as steps land.
+three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** Current: **M1 — waiting on credentials.**
+Update the checkboxes as steps land.
+
+### ▶ NEXT ACTIONS (as of 2026-07-19 — read this first on a fresh session)
+
+**Blocked on the human (credentials only, no engineering left):**
+1. **M1.1** — run `npm run verify:gemini-release` with a live Gemini key + billing dashboard open.
+2. **M1.3** — provision the prod Supabase project, secrets, buckets; apply migrations **0001–0021**.
+
+Then M1.4 (deploy + smoke test + the 5 cloud-sync checks above) and M3 follow.
+
+**Unblocked — can be picked up now, in recommended order:**
+1. **Fix the red `reservation-release` suite** *(recommended first)* — see *Dev-infrastructure debt*.
+   It is the only open item that actively DEGRADES everything else: a permanently-red money-path suite
+   makes "full suite green" unfalsifiable, and every future change inherits the weakened gate.
+2. **Shrink the deploy image** (3.44 GB — prune dev deps, compile the worker to JS). On M1.4's critical
+   path; you feel it on every deploy. See the M1.2 notes.
+3. **Codex dispatch wrapper** — see *Dev-infrastructure debt*; stops the review gate failing open.
+4. **Full honest-blob-read slice** — the remaining ~10 `blob.get` callers, retiring `provesAbsence`.
+   Own spec + review + merge gate. The billable path is already closed (PR #24), so this is no longer
+   urgent.
+5. **Locally-fixable M2a deferred findings** — most notably Claude-R3-M1 (`build-doc-html` derives
+   `base` from `digDeeperMd`, so a diverged replica key makes the dig view serve the pre-sync summary).
+
+**Loose end:** `docs/local-validation-findings.md` and `supabase/config.toml` have uncommitted local
+modifications predating 2026-07-18; never reviewed, deliberately excluded from PRs #23/#24.
