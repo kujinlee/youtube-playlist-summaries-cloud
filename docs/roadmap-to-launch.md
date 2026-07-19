@@ -4,7 +4,7 @@ The path from "all capabilities merged" to "a running, unified product." Created
 reservation-release money-path slice merged (PR #22). This is the **milestone** roadmap (not the
 per-feature dev backlog — that's `docs/backlog.md`, which covers local-app style enhancements).
 
-**Where we are:** every cloud capability is built and merged — including **M2a cloud sync (PR #23, 2026-07-19)** — — auth, playlist ingest, summary +
+**Where we are:** every cloud capability is built and merged — including **M2a cloud sync (PR #23, 2026-07-19)** — auth, playlist ingest, summary +
 deep-dive generation, serving, downloads, sharing, cost guardrails, and the spend_ledger reserve→release
 money path. What remains is turning that into a deployed, verified, unified app.
 
@@ -35,7 +35,7 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   (build machine needs >4 GB; the Fly remote builder does). Follow-up: 3.44 GB image (dev deps + Chromium)
   → compile worker to JS + prune dev deps later. *Actual `fly deploy` is 1.3/1.4 (needs your accounts).*
 - [ ] **1.3 Provision prod infra**. Prod Supabase project; secrets (Gemini key, Supabase URL/anon/service
-  keys, any OAuth); storage buckets; apply migrations 0001–0020 to prod.
+  keys, any OAuth); storage buckets; apply migrations **0001–0021** to prod (0021 is the cloud-sync signals migration from PR #23 — it drops-then-recreates `merge_video_data`/`persist_summary`/`update_video_annotations`, so grants must survive; verify the RPCs are callable under an authenticated user JWT after applying).
 - [ ] **1.4 Deploy + smoke test**. Deploy app + worker; smoke-test the live container end-to-end (sign in
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
   **Cloud-sync verification (M2a) folds in here** — all 46 cloud-sync integration tests run against the
