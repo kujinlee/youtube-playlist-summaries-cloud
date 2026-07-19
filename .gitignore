@@ -67,3 +67,8 @@ next-env.d.ts
 .codex-tasks/
 scratchpad/
 dist/
+
+# Python bytecode. scripts/codex-review.py imports scripts/codex-frontier-model.py, so a
+# __pycache__/ appears under scripts/ on every review dispatch (PR #27).
+__pycache__/
+*.pyc
