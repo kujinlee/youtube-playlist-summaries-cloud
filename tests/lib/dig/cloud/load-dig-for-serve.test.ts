@@ -84,7 +84,16 @@ describe('loadDigForServe', () => {
     // (serve-doc.ts:73) immediately AFTER the rpc call and BEFORE any generation — guarantees no
     // live Gemini in this control while still proving the reserve RPC was reached.
     const rpc = jest.fn(async () => ({ data: '__unhandled_status__', error: null }));
-    const blob = { get: jest.fn(async () => null), put: jest.fn(async () => {}) };
+    // tryGet must be present and report PROVABLE absence: resolveMagazineModel's money guard probes
+    // it before reserving and returns `busy` on an unreadable read. This control models a genuine
+    // cache MISS, so `absent` is the honest answer and the reserve is still reached. (The `as never`
+    // cast below is why tsc could not flag the missing method — worth remembering when adding
+    // BlobStore members.)
+    const blob = {
+      get: jest.fn(async () => null),
+      tryGet: jest.fn(async () => ({ ok: false as const, reason: 'absent' as const })),
+      put: jest.fn(async () => {}),
+    };
     // Bypass the file-level jest.mock('@/lib/html-doc/serve-doc') to get the REAL implementation —
     // this control exists specifically to prove what the real function does.
     const { resolveMagazineModel: realResolveMagazineModel } =

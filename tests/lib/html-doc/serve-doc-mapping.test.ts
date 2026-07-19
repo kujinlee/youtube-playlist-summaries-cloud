@@ -43,6 +43,12 @@ function fakeBlobStore(getQueue: Array<Buffer | null>): BlobStore & { getMock: j
   return {
     getMock, putMock,
     get: getMock,
+    // The money guard probes tryGet before reserving. These are RESERVE-STATUS MAPPING tests, so the
+    // fake reports provable absence: the guard is a no-op here and every case still reaches the RPC
+    // exactly as before. Deliberately NOT delegating to getMock — that would consume a scripted call
+    // and shift every subsequent answer. Unreadable behaviour is covered in
+    // tests/integration/serve-model-unreadable.test.ts.
+    tryGet: jest.fn(async () => ({ ok: false as const, reason: 'absent' as const })),
     put: putMock,
     exists: jest.fn(async () => false),
     delete: jest.fn(async () => {}),

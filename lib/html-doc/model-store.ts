@@ -26,7 +26,9 @@ export const ModelEnvelopeSchema = z
 
 export type ModelEnvelope = z.infer<typeof ModelEnvelopeSchema>;
 
-const MODEL_KEY = (base: string) => `models/${base}.json`;
+/** Exported so the serve path's money guard probes the SAME key this module reads/writes — a second
+ *  hand-written copy of the key format would silently drift. */
+export const MODEL_KEY = (base: string) => `models/${base}.json`;
 
 function serialize(envelope: ModelEnvelope): Buffer {
   ModelEnvelopeSchema.parse(envelope); // fail loud on an invalid model

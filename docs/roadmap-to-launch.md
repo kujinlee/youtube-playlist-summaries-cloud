@@ -50,10 +50,13 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
     or point at a key the policy denies) and confirm: the error surfaces in `report.errors`, the other
     replica's bytes are byte-preserved, `docVersion` is not downgraded, and **no manifest baseline is
     written** — then re-run and confirm it heals. This is the check local cannot produce.
-  - [ ] **serve-doc money finding (unverified inference).** Inject a Storage 5xx on the model read during
-    a serve (`lib/html-doc/serve-doc.ts:56`) and watch `spend_ledger`: does a paid regeneration fire for a
-    model that already exists? If yes, this is a live double-charge and the honest-blob-read slice becomes
-    pre-launch, not post-launch.
+  - [x] **serve-doc money finding — CONFIRMED and FIXED before launch (2026-07-19).** No prod infra was
+    needed: the repo already had fault-injecting blob-store wrappers and `spend_ledger` assertions, and
+    the `null` a transient error produces is byte-identical to a 404's. Measured before the fix
+    `spend 6→12, gemini_calls=1, attempt_count=2` — a real double-charge for a model already in the
+    bucket; after, `status=busy, spend 6→6, gemini_calls=0`. Regression test:
+    `tests/integration/serve-model-unreadable.test.ts`. **Still worth re-running against hosted
+    Supabase at deploy** to confirm a real 5xx (not a simulated one) carries a non-404 `statusCode`.
   - [ ] **M-R7-1 skew.** Deploy an image whose `GENERATOR_VERSION` differs from the local checkout, run a
     `copyToCloud` transfer where both sides hold a model for the same body, and check whether a rendering
     share starts returning 503.
@@ -190,16 +193,11 @@ type BlobRead =
   | { ok: false; reason: 'unreadable'; cause: unknown };
 ```
 
-**⚠️ Not just cleanup — there is a live MONEY-PATH instance outside cloud-sync** (found 2026-07-18 by
-reading, **not** empirically verified): `lib/html-doc/serve-doc.ts:56` — `readFreshMagazineModel` →
-`readModelEnvelope` → `blobStore.get`. A transient Supabase Storage error returns `null`, which the
-serve path reads as *"no model"*, so it falls through to `reserve_serve_model` (`:60`) and
-`generateMagazineModel` (`:95`) — **regenerating and re-charging for a model that already exists**.
-Pre-existing (predates this branch, has been live-equivalent through every prior merge) and *bounded*
-by the existing attempt caps, per-owner budget and single-flight lease — so it is not a runaway — but
-each occurrence is a genuine double-charge, and a storage blip is exactly what happens under load or
-mid-deploy. **Verify this empirically before or during M1.4 smoke test** (inject a storage 5xx and
-confirm whether a paid regeneration fires).
+**The money-path instance it was named for is now FIXED** (`fix/serve-model-unreadable-no-recharge`,
+2026-07-19): `resolveMagazineModel` probes the new `BlobStore.tryGet` before `reserve_serve_model` and
+returns `busy` on an unreadable read instead of paying. Confirmed empirically first — 6¢ → 12¢ with a
+simulated transient failure — so this is no longer an inference. That closes the **billable** path only;
+the rest of the slice below still stands, and `provesAbsence` cannot retire until it lands.
 
 **Scope:** `lib/storage/blob-store.ts` + both impls; then every caller — `serve-doc.ts`,
 `serve-summary-core.ts`, `read-model.ts`, `model-store.ts`, `rerender.ts`, `generate.ts`,

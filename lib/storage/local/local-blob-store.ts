@@ -1,5 +1,5 @@
 import fs from 'fs'; import path from 'path'; import crypto from 'crypto';
-import type { BlobStore, StagedRef } from '@/lib/storage/blob-store';
+import type { BlobRead, BlobStore, StagedRef } from '@/lib/storage/blob-store';
 import { assertLogicalKey } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
@@ -22,6 +22,15 @@ export class LocalFsBlobStore implements BlobStore {
   async get(p: Principal, key: string): Promise<Buffer | null> {
     try { return fs.readFileSync(this.abs(p, key)); }
     catch (e: any) { if (e.code === 'ENOENT') return null; throw e; }
+  }
+
+  /** ENOENT is proof of absence; every other errno (EACCES, EIO, …) means we could not read it. */
+  async tryGet(p: Principal, key: string): Promise<BlobRead> {
+    try { return { ok: true, bytes: fs.readFileSync(this.abs(p, key)) }; }
+    catch (e: any) {
+      if (e?.code === 'ENOENT') return { ok: false, reason: 'absent' };
+      return { ok: false, reason: 'unreadable', cause: e };
+    }
   }
 
   async exists(p: Principal, key: string): Promise<boolean> {

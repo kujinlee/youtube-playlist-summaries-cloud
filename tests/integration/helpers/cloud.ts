@@ -167,6 +167,7 @@ class FailPromoteBlobStore implements BlobStore {
   get provesAbsence(): boolean | undefined { return this.inner.provesAbsence; }
   put(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.put(p, key, bytes, ct); }
   get(p: Principal, key: string) { return this.inner.get(p, key); }
+  tryGet(p: Principal, key: string) { return this.inner.tryGet(p, key); }
   exists(p: Principal, key: string) { return this.inner.exists(p, key); }
   delete(p: Principal, key: string) { return this.inner.delete(p, key); }
   putStaged(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.putStaged(p, key, bytes, ct); }
@@ -188,6 +189,7 @@ class FailModelPutBlobStore implements BlobStore {
     return this.inner.put(p, key, bytes, ct);
   }
   get(p: Principal, key: string) { return this.inner.get(p, key); }
+  tryGet(p: Principal, key: string) { return this.inner.tryGet(p, key); }
   exists(p: Principal, key: string) { return this.inner.exists(p, key); }
   delete(p: Principal, key: string) { return this.inner.delete(p, key); }
   putStaged(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.putStaged(p, key, bytes, ct); }
