@@ -1,4 +1,8 @@
-import { google } from 'googleapis';
+// `@googleapis/youtube`, NOT the `googleapis` umbrella package. Both expose the identical
+// youtube v3 client, but `googleapis` bundles every Google API surface — 194 MB of node_modules
+// for the one call we make below — while this single-API package is 1.8 MB. That 192 MB rode into
+// the deploy image on every build. See docs/roadmap-to-launch.md → M1.2 image-size follow-up.
+import { youtube } from '@googleapis/youtube';
 import { YoutubeTranscript } from 'youtube-transcript';
 import type { VideoMeta } from '../types';
 import type { TranscriptSegment } from './transcript-timestamps';
@@ -30,7 +34,7 @@ export async function fetchPlaylistVideos(
   const playlistId = extractPlaylistId(playlistUrl);
   const maxItems = opts?.maxItems ?? Infinity;
 
-  const yt = google.youtube({ version: 'v3', auth: apiKey });
+  const yt = youtube({ version: 'v3', auth: apiKey });
 
   const videoIds: string[] = [];
   const addedDates: Record<string, string | undefined> = {};
@@ -112,7 +116,7 @@ export function detectLanguage(transcript: string): 'en' | 'ko' {
 }
 
 export async function fetchPlaylistTitleOrNull(playlistId: string, apiKey: string): Promise<string | null> {
-  const yt = google.youtube({ version: 'v3', auth: apiKey });
+  const yt = youtube({ version: 'v3', auth: apiKey });
   const res = await yt.playlists.list({ part: ['snippet'], id: [playlistId] });
   return res.data.items?.[0]?.snippet?.title ?? null;
 }
@@ -156,7 +160,7 @@ export function parseChannelHandle(input: string): { handle?: string; channelId?
 
 export async function resolveChannelId(input: string, apiKey: string): Promise<{ channelId: string; channelTitle: string }> {
   const parsed = parseChannelHandle(input);
-  const yt = google.youtube({ version: 'v3', auth: apiKey });
+  const yt = youtube({ version: 'v3', auth: apiKey });
   const pick = (item?: { id?: string | null; snippet?: { title?: string | null } | null }) => {
     if (!item?.id) throw new ChannelNotFoundError(`channel not found: ${input}`);
     return { channelId: item.id, channelTitle: item.snippet?.title ?? item.id };
@@ -167,7 +171,7 @@ export async function resolveChannelId(input: string, apiKey: string): Promise<{
 }
 
 export async function fetchChannelPlaylists(channelId: string, apiKey: string): Promise<{ id: string; title: string; itemCount?: number; thumbnailUrl?: string }[]> {
-  const yt = google.youtube({ version: 'v3', auth: apiKey });
+  const yt = youtube({ version: 'v3', auth: apiKey });
   const res = await yt.playlists.list({ part: ['snippet', 'contentDetails'], channelId, maxResults: 50 });
   return (res.data.items ?? []).filter((i) => i.id).map((i) => ({
     id: i.id as string,

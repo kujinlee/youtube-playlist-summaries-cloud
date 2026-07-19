@@ -19,13 +19,14 @@
     "check:confinement": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ts-node scripts/check-service-confinement.ts",
     "worker": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ts-node -r tsconfig-paths/register worker/main.ts",
     "verify:gemini-release": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ts-node -r tsconfig-paths/register scripts/verify-gemini-release.ts",
-    "cloud-sync": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ts-node -r tsconfig-paths/register scripts/cloud-sync.ts"
+    "cloud-sync": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ts-node -r tsconfig-paths/register scripts/cloud-sync.ts",
+    "build:worker": "node scripts/build-worker.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@googleapis/youtube": "^33.0.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.109.0",
-    "googleapis": "^171.4.0",
     "markdown-it": "^14.2.0",
     "next": "16.2.6",
     "playwright": "^1.60.0",
@@ -46,6 +47,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.1",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
     "tailwindcss": "^4",

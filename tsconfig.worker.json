@@ -1,0 +1,10 @@
+// esbuild-only tsconfig for the worker bundle. The root tsconfig.json uses
+// "moduleResolution": "bundler" and has no baseUrl, which esbuild needs in order to resolve the
+// "@/*" path alias while bundling. Kept separate so the Next/tsc build is untouched.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./*"] }
+  }
+}

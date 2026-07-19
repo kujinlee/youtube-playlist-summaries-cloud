@@ -33,7 +33,10 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   pinned per the supabase-js native-WebSocket finding. tsc clean. **Build finding:** `next build`'s
   static-generation phase OOMs at default heap → fixed with a build-layer `NODE_OPTIONS=--max-old-space-size=4096`
   (build machine needs >4 GB; the Fly remote builder does). Follow-up: 3.44 GB image (dev deps + Chromium)
-  → compile worker to JS + prune dev deps later. *Actual `fly deploy` is 1.3/1.4 (needs your accounts).*
+  → compile worker to JS + prune dev deps later. **→ Done 2026-07-19 on branch `chore/shrink-deploy-image`
+  (multi-stage + standalone + bundled worker), but the resulting SIZE is still unmeasured — `docker build`
+  could not run in that session. See "Shrink the deploy image" under NEXT ACTIONS.**
+  *Actual `fly deploy` is 1.3/1.4 (needs your accounts).*
 - [ ] **1.3 Provision prod infra**. Prod Supabase project; secrets (Gemini key, Supabase URL/anon/service
   keys, any OAuth); storage buckets; apply migrations **0001–0021** to prod (0021 is the cloud-sync signals migration from PR #23 — it drops-then-recreates `merge_video_data`/`persist_summary`/`update_video_annotations`, so grants must survive; verify the RPCs are callable under an authenticated user JWT after applying).
 - [ ] **1.4 Deploy + smoke test**. Deploy app + worker; smoke-test the live container end-to-end (sign in
@@ -262,11 +265,24 @@ Update the checkboxes as steps land.
 Then M1.4 (deploy + smoke test + the 5 cloud-sync checks above) and M3 follow.
 
 **Unblocked — can be picked up now, in recommended order:**
-1. ~~Fix the red `reservation-release` suite~~ ✅ **DONE 2026-07-19** (`c8be696`, branch
-   `fix/reservation-release-self-poisoning` — **unmerged, awaiting the human push/PR gate**).
-   "Full suite green" is a falsifiable gate again and the known-red list is empty.
-2. **Shrink the deploy image** (3.44 GB — prune dev deps, compile the worker to JS). On M1.4's critical
-   path; you feel it on every deploy. See the M1.2 notes.
+1. ~~Fix the red `reservation-release` suite~~ ✅ **MERGED to master 2026-07-19** (PR #25, merge commit `bbc82c9`).
+   Root cause was a self-poisoning suite, not the "state pollution from other suites" this
+   roadmap previously recorded — see *Dev-infrastructure debt*. "Full suite green" is a
+   falsifiable gate again and the known-red list is empty.
+2. **Shrink the deploy image** — ⚠️ **CODE DONE 2026-07-19, SIZE UNMEASURED** (branch
+   `chore/shrink-deploy-image`, unmerged). Multi-stage Dockerfile: builder does
+   `npm ci` + `next build` (`output: 'standalone'`) + an esbuild worker bundle; the runtime layer
+   carries only those two artifacts + Chromium, dropping the full 684 MB `node_modules`, npm's
+   cache, TypeScript/`ts-node`, and the whole-repo `COPY . .`. Also swapped the `googleapis`
+   umbrella (194 MB, used for a single `youtube.v3` call) for `@googleapis/youtube` (1.8 MB).
+   **`docker build` could not run** — Docker Desktop registry pulls hang on this machine and no base
+   image was cached — so the resulting size is an ESTIMATE, not a measurement. Measured pieces:
+   `node_modules` 684 → 492 MB; `.next/standalone` 78 MB (vs 492 MB full install); worker bundle
+   2.4 MB. **The first `docker build` on a machine with registry access, or `fly deploy` itself,
+   is the confirmation step — fold it into 1.4.** Verified without a build: standalone `server.js`
+   binds `0.0.0.0`; the bundled worker boots on Node 22 and drains cleanly on SIGTERM in ~1 s;
+   2450 unit tests + tsc green. Note `fly.toml`'s process commands changed to direct `node`
+   invocations, since neither the `next` CLI nor `ts-node` exists in the runtime image any more.
 3. **Codex dispatch wrapper** — see *Dev-infrastructure debt*; stops the review gate failing open.
    **Now the sole remaining dev-infrastructure debt item.**
 4. **Full honest-blob-read slice** — the remaining ~10 `blob.get` callers, retiring `provesAbsence`.

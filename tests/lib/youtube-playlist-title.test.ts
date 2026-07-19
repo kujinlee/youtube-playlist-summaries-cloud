@@ -1,15 +1,15 @@
 import { fetchPlaylistTitle, fetchPlaylistTitleOrNull } from '@/lib/youtube';
-import { google } from 'googleapis';
+import { youtube } from '@googleapis/youtube';
 
-jest.mock('googleapis', () => ({
-  google: { youtube: jest.fn() },
+jest.mock('@googleapis/youtube', () => ({
+  youtube: jest.fn(),
 }));
 
 const mockPlaylistsList = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (google.youtube as jest.Mock).mockReturnValue({
+  (youtube as jest.Mock).mockReturnValue({
     playlists: { list: mockPlaylistsList },
   });
 });

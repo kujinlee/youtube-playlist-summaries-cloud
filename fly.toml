@@ -11,9 +11,13 @@ primary_region = "sea"
   dockerfile = "Dockerfile"
 
 # Two commands off the same image. Default CMD (web) is overridden per group here.
+# These invoke node DIRECTLY, not npm scripts: the runtime stage of the multi-stage Dockerfile
+# (2026-07-19) ships only Next's standalone output plus a bundled worker, so neither `next start`
+# nor `ts-node` exists in the image any more. `server.js` is the standalone server Next emits;
+# `worker.js` is the esbuild bundle of worker/main.ts.
 [processes]
-  web = "npm run start"
-  worker = "npm run worker"
+  web = "node server.js"
+  worker = "node worker.js"
 
 # HTTP only for the web group; the worker is a headless job loop (no ports).
 [http_service]
