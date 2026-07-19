@@ -6,9 +6,12 @@ repo (`docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md
 worker.
 
 ## Artifacts in this repo (M1.2 — done)
-- `Dockerfile` — Node 22 (worker needs it), installs Playwright Chromium + deps, `next build`.
-- `fly.toml` — `web` (`next start`) + `worker` (`npm run worker`) process groups, HTTP on web only,
-  `kill_timeout=120s` for graceful worker drain.
+- `Dockerfile` — **multi-stage** (2026-07-19). Builder: Node 22, full `npm ci`, `next build`
+  (`output: 'standalone'`), `npm run build:worker` (esbuild → one CJS file). Runtime: Node 22 +
+  Playwright Chromium, carrying **only** the standalone server and the worker bundle.
+- `fly.toml` — `web` (`node server.js`) + `worker` (`node worker.js`) process groups, HTTP on web
+  only, `kill_timeout=120s` for graceful worker drain. **These are direct `node` invocations, not
+  npm scripts** — the runtime image contains neither the `next` CLI nor `ts-node`.
 - `.dockerignore`.
 
 ## Prerequisites (M1.3 — human-gated, needs your accounts)
@@ -62,8 +65,25 @@ M1.4 in the roadmap.
 - **Build memory:** `next build`'s static-generation phase OOMs at Node's default heap for this app's
   route set. The `Dockerfile` scopes `NODE_OPTIONS=--max-old-space-size=4096` to the build layer; the
   build machine needs **>4 GB RAM** (the Fly remote builder qualifies; a local `docker build` needs a
-  Docker VM ≥ ~5 GB). Validated locally 2026-07-17 (image builds, 3.44 GB).
-- Image size: the worker runs via `ts-node` so the image keeps dev deps + Chromium (3.44 GB). Compiling
-  the worker to JS and pruning dev deps is a post-launch optimization.
+  Docker VM ≥ ~5 GB). Validated locally 2026-07-17 (image builds, 3.44 GB single-stage).
+- **Image size — reworked 2026-07-19, size NOT yet measured.** ⚠️ The multi-stage rewrite is
+  committed and every part that can be checked without a container build has been (see below), but
+  `docker build` could not run in that session: Docker Desktop's registry pulls hang on this machine
+  (`node:22-bookworm-slim` never resolves, plain `docker pull` included), and no base image was
+  cached. **The first `fly deploy` — or any `docker build` on a machine with working registry
+  access — is what confirms the number.** Treat the expected size as an estimate until then.
+  What the rewrite removes from the runtime layer, all of which the old image carried:
+  the full 684 MB `node_modules` incl. dev deps; npm's cache in `/root/.npm`; TypeScript + `ts-node`;
+  and the whole-repo `COPY . .`. What it keeps: `.next/standalone` (**measured: 78 MB**, vs 492 MB
+  for the full install), `.next/static` + `public` (1.5 MB), the worker bundle (**measured: 2.4 MB**),
+  Chromium + its apt libs, and the Node base.
+  Separately and independently measured: swapping the `googleapis` umbrella package for
+  `@googleapis/youtube` took `node_modules` from **684 MB → 492 MB**.
+- **Verified without a build:** standalone emits `server.js` binding `0.0.0.0` by default (so Fly
+  needs no `HOSTNAME`); file tracing does include `playwright`/`playwright-core`, but only a 12 KB
+  runtime stub — **not** `cli.js` — which is why the Dockerfile overlays the full packages before
+  running `playwright install --with-deps`; and the bundled worker boots on Node 22 against local
+  Supabase and exits cleanly on SIGTERM in ~1 s (graceful drain preserved). It still fails fast on
+  Node 20 with the native-WebSocket error, so the Node 22 pin remains load-bearing.
 - Local dev parity: running the worker locally needs env injected explicitly (e.g. `dotenv -e .env.local --
   npm run worker`) — the container gets env from Fly secrets, so this only affects local runs.

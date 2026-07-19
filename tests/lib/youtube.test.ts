@@ -1,9 +1,9 @@
 import { detectLanguage, fetchPlaylistTitle, fetchPlaylistVideos, fetchTranscript, fetchTranscriptSegments } from '../../lib/youtube';
-import { google } from 'googleapis';
+import { youtube } from '@googleapis/youtube';
 import { YoutubeTranscript } from 'youtube-transcript';
 
-jest.mock('googleapis', () => ({
-  google: { youtube: jest.fn() },
+jest.mock('@googleapis/youtube', () => ({
+  youtube: jest.fn(),
 }));
 
 jest.mock('youtube-transcript', () => ({
@@ -16,7 +16,7 @@ const mockPlaylistsList = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (google.youtube as jest.Mock).mockReturnValue({
+  (youtube as jest.Mock).mockReturnValue({
     playlistItems: { list: mockPlaylistItemsList },
     videos: { list: mockVideosList },
     playlists: { list: mockPlaylistsList },

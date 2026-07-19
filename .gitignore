@@ -66,3 +66,4 @@ next-env.d.ts
 # Agent working detritus (codex task output, session scratch)
 .codex-tasks/
 scratchpad/
+dist/

@@ -1,7 +1,7 @@
 const channelsList = jest.fn();
 const playlistsList = jest.fn();
-jest.mock('googleapis', () => ({
-  google: { youtube: () => ({ channels: { list: channelsList }, playlists: { list: playlistsList } }) },
+jest.mock('@googleapis/youtube', () => ({
+  youtube: () => ({ channels: { list: channelsList }, playlists: { list: playlistsList } }),
 }));
 import { parseChannelHandle, resolveChannelId, fetchChannelPlaylists, buildPlaylistUrl, ChannelNotFoundError } from '../../lib/youtube';
 
