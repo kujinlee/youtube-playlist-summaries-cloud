@@ -15,17 +15,28 @@ money path. What remains is turning that into a deployed, verified, unified app.
 ## M1 — Deploy (the app goes live) 🚀
 Turn merged code into a running app a real user can reach. Highest-leverage milestone.
 
-- [ ] **1.1 Live-Gemini verification** *(human-gated: needs a live Gemini key + billing dashboard)*.
-  Procedure in `docs/reservation-release-live-gate.md`. Verify the two facts: (a) an overloaded/
-  rate-limited call throws `GoogleGenerativeAIFetchError` with `.status ∈ {429,503}`, and (b) those
-  statuses bill $0. If both hold, flip `RELEASE_VERIFIED = true` in `lib/gemini-failure.ts` and re-run
-  `npm run test:integration -- reservation-release`. Same live session also confirms the Stage 1D
-  transcript fallback (`CLOUD_TRANSCRIBE_FALLBACK_VERIFIED`, `lib/gemini.ts`). Record evidence in
-  `docs/local-validation-findings.md`. *Until flipped, release is fail-closed to KEEP — safe but leaves
-  the outage residual, so this is what makes the deploy actually solve the self-DoS.*
-  → **Harness ready (2026-07-17):** `npm run verify:gemini-release` (`scripts/verify-gemini-release.ts`)
-  drives the REAL classifier against live 429/503s and prints the billing-dashboard window to check.
-  Just needs you to run it with a live key. *Verification itself still pending — this step stays open.*
+- [x] **1.1 Live-Gemini verification** ✅ **DONE 2026-07-19 — `RELEASE_VERIFIED = true`.**
+  Full evidence: `docs/reservation-release-live-gate.md` → *Verification record*. Three live runs via
+  `npm run verify:gemini-release` against Tier 1 `gemini-2.5-flash`.
+  - **Fact 1 MEASURED, decisive:** 3,193 live rejections, every one a typed
+    `GoogleGenerativeAIFetchError status=429`, every one routed to `'release'` by the REAL
+    classifier. Zero misclassifications. (A statusless `GoogleGenerativeAIError` was correctly
+    kept — the conservative direction.)
+  - **Fact 2 BOUNDED, not proven zero:** a controlled pair held successes at ~1,004 while raising
+    rejections 197 → 2,996; input tokens moved only 2,013 → 2,714. "Billed like successes" predicted
+    8,008 → **excluded by 3×**. Residual bound **≤0.25 input tokens/rejection (~$0.000000075)** vs a
+    150¢ reservation. Exact zero is not measurable — the console reported 63K vs 118K output tokens
+    for identical success counts.
+  - **503 INFERRED, never observed** — a burst can only provoke 429. `RELEASE_STATUSES` still covers
+    both; narrowing to `{429}` was considered and rejected because 503 is Gemini's *classic outage*
+    response, i.e. the very case this gate exists to fix.
+  - **User decision:** accept "bills nothing *material* relative to the reservation" rather than
+    "exactly zero" — exact precision is short-lived against vendor pricing that changes. Durable
+    answer = periodic recalibration, filed in the Parking Lot.
+  - Regression: reservation-release 32/32 **twice with no DB reset**, full integration 65 suites /
+    468 tests, 2450 unit, tsc clean.
+  - ⚠️ **Still closed:** `CLOUD_TRANSCRIBE_FALLBACK_VERIFIED` (`lib/gemini.ts`) — a *different*
+    premise (worst-case audio-fallback transcription cost), NOT verified by this session.
 - [x] **1.2 Deploy config** *(written + `docker build`-validated 2026-07-17; image builds, 3.44 GB)*.
   `Dockerfile` (Node 22 + Playwright Chromium + `next build`), `.dockerignore`, `fly.toml` (web + worker
   process groups, HTTP on web only, `kill_timeout=120s`), runbook `docs/deploy.md`. Worker **graceful
@@ -267,6 +278,14 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
   from `usageMetadata`; closes the §2.4a/b/**4c** residuals + the crash residual (billable-phase marker).
   Natural sequel to the reservation slice.
 - **Serve-lease heartbeat / expiry sweep** (spec §10, §2.3/H5): closes the bounded 6¢ serve residual.
+- **Periodic cost recalibration** *(user proposal, 2026-07-19)* — the cost constants in this repo
+  (`summary_est_cents`, `dig_est_cents`, and the per-token reasoning behind the M1.1 gate) are
+  snapshots of vendor pricing that changes. Rather than re-deriving exact figures by hand, add a
+  job that periodically re-measures actual cost-per-operation from `usageMetadata` and current
+  published pricing, and flags drift beyond a threshold. **Trigger:** any future "is this cost
+  number still right?" question — including the next live-gate style verification, which should
+  read the recalibrated number instead of re-litigating token arithmetic. Rationale: small factors
+  should be ignored, not chased; what matters is catching an order-of-magnitude change.
 - **Committed integration test** for the cloud dig **serve** path (currently uncovered).
 - **Deploy verification** of cloud summary-PDF (needs a live container — folds into 1.4/3.1).
 
@@ -274,14 +293,16 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
 
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
-three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** Current: **M1 — waiting on credentials.**
+three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
+Current: **M1 — 1.3 prod infra is the only remaining human-gated blocker; then 1.4 deploy.**
 Update the checkboxes as steps land.
 
 ### ▶ NEXT ACTIONS (as of 2026-07-19 — read this first on a fresh session)
 
 **Blocked on the human (credentials only, no engineering left):**
-1. **M1.1** — run `npm run verify:gemini-release` with a live Gemini key + billing dashboard open.
+1. ~~M1.1~~ ✅ **DONE 2026-07-19** — gate verified and opened (`RELEASE_VERIFIED = true`).
 2. **M1.3** — provision the prod Supabase project, secrets, buckets; apply migrations **0001–0021**.
+   **This is now the single remaining blocker to a deploy.**
 
 Then M1.4 (deploy + smoke test + the 5 cloud-sync checks above) and M3 follow.
 
