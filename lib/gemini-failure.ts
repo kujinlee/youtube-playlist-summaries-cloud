@@ -16,10 +16,29 @@ export class GeminiHttpError extends Error {
 
 /**
  * Compile-time money gate. PRODUCTION honors this const — an env var cannot enable release of the
- * still-unverified "429/503 bills nothing" premise (mirrors CLOUD_TRANSCRIBE_FALLBACK_VERIFIED at
- * gemini.ts:25). Flip to `true` in code only after the §9 live verification.
+ * "429/503 bills nothing" premise (mirrors CLOUD_TRANSCRIBE_FALLBACK_VERIFIED at gemini.ts:25).
+ *
+ * OPENED 2026-07-19 after live verification against the real Gemini API (M1.1).
+ * Evidence in docs/reservation-release-live-gate.md → "Verification record". In short:
+ *
+ *   MEASURED  — 3,192 live rejections across two bursts, every one a typed
+ *               GoogleGenerativeAIFetchError with .status === 429, and every one routed to
+ *               'release' by classifyGeminiFailure() itself. Zero misclassifications.
+ *   BOUNDED   — a rejected call bills <= 0.25 input tokens (~$0.000000075), measured by holding
+ *               successes constant at ~1,004 while raising rejections 197 -> 2,996: input tokens
+ *               moved 2,013 -> 2,714. The "rejections are billed like successes" hypothesis
+ *               predicted 8,008 and is excluded by 3x. NOT proven to be exactly zero — the
+ *               console's own accounting varies (identical success counts reported 63K vs 118K
+ *               output tokens), so exact zero is not measurable with that instrument.
+ *   INFERRED  — 503 was never observed. It is admission control like 429, so the same reasoning
+ *               applies, but this half has no measurement behind it.
+ *
+ * The decision this gates is whether to return a 150c reservation. A bound seven orders of
+ * magnitude below that is immaterial, and chasing an exact zero would be false precision against
+ * vendor pricing that changes anyway — see the periodic cost-recalibration item in
+ * docs/roadmap-to-launch.md (Parking Lot), which is the durable answer to price drift.
  */
-const RELEASE_VERIFIED = false;
+const RELEASE_VERIFIED = true;
 
 /** Whether class-A RELEASE is trusted here. Prod = the const; tests may open the gate via env. */
 export function releaseGateOpen(): boolean {

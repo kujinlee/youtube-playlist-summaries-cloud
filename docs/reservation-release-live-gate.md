@@ -61,6 +61,50 @@ billable KEEP until the two facts above are verified live. This intentionally le
 residual documented (a real Gemini outage over-reserves rather than releasing) rather than risk an
 unverified early release that could zero out a reservation for a call that actually billed.
 
+## Verification record — 2026-07-19 ✅ GATE OPENED
+
+`RELEASE_VERIFIED = true` as of 2026-07-19. Harness: `npm run verify:gemini-release`
+(`scripts/verify-gemini-release.ts`), live key, `gemini-2.5-flash`, Tier 1 (1,000 RPM — confirmed
+empirically: exactly 1,003 of a 1,200 burst succeeded). Three runs:
+
+| Run | Attempts | Successes | Rejections | Input tokens |
+|---|---|---|---|---|
+| 1 (control, 16:00) | 61 | 61 | 0 | 128 |
+| 2 (16:05) | 1,201 | 1,004 | 197 | 2,013 |
+| 3 (16:59) | 4,001 | 1,005 | **2,996** | 2,714 |
+
+**Fact (1) — MEASURED, decisive.** All 3,193 rejections across runs 2–3 arrived as
+`GoogleGenerativeAIFetchError` with `.status === 429`, and `classifyGeminiFailure()` — the real
+classifier, not a mock — routed **every one** to `'release'`. Zero misclassifications. One unrelated
+`GoogleGenerativeAIError` with no `.status` appeared in run 2 and was correctly classified `'keep'`,
+which is the conservative direction.
+
+**Fact (2) — BOUNDED, not proven zero.** Runs 2 and 3 are a controlled pair: successes held constant
+(1,004 → 1,005) while rejections rose 15× (197 → 2,996). Input tokens moved only 2,013 → 2,714.
+- "Rejections billed like successes" predicts `8 + 4000×2 = 8,008` → **excluded by 3×**.
+- Residual: 701 extra tokens over 2,799 extra rejections = **≤ 0.25 input tokens per rejection**
+  (~$0.000000075), versus the **150¢** reservation at stake. Seven orders of magnitude.
+- Exact zero is **not measurable with this instrument**: the same console reported 63K vs 118K
+  output tokens for identical success counts (thinking-token variance), so a 35% wobble on input is
+  inside its noise. `"ping"` was calibrated at exactly 2 input tokens from run 2
+  (`8 + 1003×2 = 2,014` vs 2,013 observed).
+
+**503 — INFERRED, never observed.** A burst can only provoke 429 (rate limiting); 503 (capacity
+overload) cannot be summoned on demand. `RELEASE_STATUSES` still covers both, on the reasoning that
+both are admission-control rejections before generation. Deliberate, and deliberately recorded as
+the weaker half. Narrowing to `{429}` was considered and rejected: 503 is Gemini's *classic outage*
+response, so excluding it would leave unfixed the exact scenario this gate exists to fix.
+
+**Decision framing (user, 2026-07-19).** The premise was accepted as "bills nothing *material*
+relative to the reservation" rather than "bills exactly zero" — precision beyond that is false
+precision against vendor pricing that changes anyway. The durable answer to price drift is periodic
+recalibration, filed in `docs/roadmap-to-launch.md` → Parking Lot.
+
+**Still closed:** `CLOUD_TRANSCRIBE_FALLBACK_VERIFIED` (`lib/gemini.ts`) — a *different* premise
+(worst-case cost of audio-fallback transcription) that this session did **not** verify.
+
+---
+
 ## To flip the gate on
 
 1. Run live Gemini traffic that reproduces a genuine 429/503 (e.g. a burst well past your quota, or a
