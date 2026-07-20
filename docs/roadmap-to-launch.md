@@ -278,6 +278,15 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
   from `usageMetadata`; closes the §2.4a/b/**4c** residuals + the crash residual (billable-phase marker).
   Natural sequel to the reservation slice.
 - **Serve-lease heartbeat / expiry sweep** (spec §10, §2.3/H5): closes the bounded 6¢ serve residual.
+- **Migrate off legacy JWT API keys.** Prod was provisioned on Supabase's *legacy* `anon` /
+  `service_role` JWT keys, deliberately: every test in this repo ran against that format, and a lot
+  of behaviour is pinned to exact role grants (`0007` storage → `service_role`; `0020` grants only
+  `select, insert` on `ledger_audit`; `reservation-release.test.ts` asserts `authenticated` gets
+  `42501`). Supabase now steers toward publishable/secret keys and both legacy entries in the
+  dashboard say "Prefer using … instead", so this is a real migration, just not one to do on the
+  first deploy. **TRIGGER:** any Supabase notice about legacy-key removal, or any work touching the
+  auth/role layer. Whoever does it must re-run the RLS isolation + money suites against the new key
+  format, not assume equivalence.
 - **Periodic cost recalibration** *(user proposal, 2026-07-19)* — the cost constants in this repo
   (`summary_est_cents`, `dig_est_cents`, and the per-token reasoning behind the M1.1 gate) are
   snapshots of vendor pricing that changes. Rather than re-deriving exact figures by hand, add a

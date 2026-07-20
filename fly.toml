@@ -5,7 +5,12 @@
 #   app            → your Fly app name (`fly apps create <name>`)
 #   primary_region → your region (`fly platform regions`)
 app = "REPLACE-WITH-FLY-APP-NAME"
-primary_region = "sea"
+# iad (Ashburn, VA) — chosen to sit next to the prod Supabase project, which is in AWS us-east-1.
+# This is a latency decision, not a preference: the worker issues many small round trips per job
+# (claim_next_job, lease heartbeats every leaseSeconds/3, spend_ledger reserve/release, complete),
+# so a cross-continent hop of ~60-70ms compounds per job. Keep this region in the same locality as
+# the Supabase project; if that project ever moves, move this with it.
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
