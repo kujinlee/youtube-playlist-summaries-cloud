@@ -48,7 +48,7 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   (multi-stage + standalone + bundled worker), but the resulting SIZE is still unmeasured — `docker build`
   could not run in that session. See "Shrink the deploy image" under NEXT ACTIONS.**
   *Actual `fly deploy` is 1.3/1.4 (needs your accounts).*
-- [ ] **1.3 Provision prod infra** — *DB done 2026-07-20; only Google OAuth config remains.*
+- [x] **1.3 Provision prod infra** — ✅ **DONE 2026-07-21.**
   Prod Supabase project `uykwcybxqgewmbltroxf` (AWS `us-east-1`; **legacy JWT keys**, not
   publishable/secret — see Parking Lot). Secrets go into `fly secrets` at 1.4, not a file.
   - [x] **Migrations 0001–0021 applied + verified** (`supabase db push`; `migration list` shows
@@ -65,8 +65,13 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
     money-path guard test was already written to accept either a permission error OR zero rows, so it
     holds identically under prod's RLS-denial and local's missing-grant. **Anyone re-running the
     grant check and panicking: check RLS, not grants.**
-  - [ ] **Google OAuth** — the only remaining 1.3 item. App is Google-OAuth-only; until configured,
-    nobody can sign in. Needs the Fly app name first (for the redirect allow-list).
+  - [x] **Google OAuth configured 2026-07-21.** Client `yps-supabase`
+    (`373870827220-ej77r0ako1q1h4ktvtm459idiu3eak6u`), redirect URI
+    `https://uykwcybxqgewmbltroxf.supabase.co/auth/v1/callback`; Supabase Google provider enabled,
+    Site URL + `/**` redirect set to `https://youtube-playlist-summaries.fly.dev`. **Nonce checks
+    ON** in prod (local keeps them off). Real sign-in only testable once deployed (1.4).
+  - Fly app **`youtube-playlist-summaries`** reserved (`fly apps create`); `fly.toml` app name + iad
+    region set (PR #30).
 - [ ] **1.4 Deploy + smoke test**. Deploy app + worker; smoke-test the live container end-to-end (sign in
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
   **Cloud-sync verification (M2a) folds in here** — all 46 cloud-sync integration tests run against the
