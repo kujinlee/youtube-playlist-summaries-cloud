@@ -48,8 +48,30 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   (multi-stage + standalone + bundled worker), but the resulting SIZE is still unmeasured — `docker build`
   could not run in that session. See "Shrink the deploy image" under NEXT ACTIONS.**
   *Actual `fly deploy` is 1.3/1.4 (needs your accounts).*
-- [ ] **1.3 Provision prod infra**. Prod Supabase project; secrets (Gemini key, Supabase URL/anon/service
-  keys, any OAuth); storage buckets; apply migrations **0001–0021** to prod (0021 is the cloud-sync signals migration from PR #23 — it drops-then-recreates `merge_video_data`/`persist_summary`/`update_video_annotations`, so grants must survive; verify the RPCs are callable under an authenticated user JWT after applying).
+- [x] **1.3 Provision prod infra** — ✅ **DONE 2026-07-21.**
+  Prod Supabase project `uykwcybxqgewmbltroxf` (AWS `us-east-1`; **legacy JWT keys**, not
+  publishable/secret — see Parking Lot). Secrets go into `fly secrets` at 1.4, not a file.
+  - [x] **Migrations 0001–0021 applied + verified** (`supabase db push`; `migration list` shows
+    local==remote through 0021). Post-apply checks all passed: the three RPCs `0021` recreates
+    (`merge_video_data`/`persist_summary`/`update_video_annotations`) are callable under an
+    authenticated JWT (grants survived the drop-recreate); `artifacts` bucket is private with both
+    `storage.objects` policies; `exec_sql` is `anon=false authenticated=false service_role=true`.
+  - [x] **RLS verified on every table** (`rls_on=true, rls_forced=true` for all 12). This mattered
+    because **hosted Supabase auto-grants full DELETE/INSERT/UPDATE on public tables to
+    `anon`/`authenticated`** — its standard permissive-grant model — which local `supabase start`
+    does NOT do. So the prod grant list looks alarming (`ledger_audit` shows anon/authenticated with
+    full privileges) but RLS is the real gate: `ledger_audit`/`spend_ledger` are `rls_forced` with
+    `policies=0`, so session clients are denied while `service_role` writes via `BYPASSRLS`. The
+    money-path guard test was already written to accept either a permission error OR zero rows, so it
+    holds identically under prod's RLS-denial and local's missing-grant. **Anyone re-running the
+    grant check and panicking: check RLS, not grants.**
+  - [x] **Google OAuth configured 2026-07-21.** Client `yps-supabase`
+    (`373870827220-ej77r0ako1q1h4ktvtm459idiu3eak6u`), redirect URI
+    `https://uykwcybxqgewmbltroxf.supabase.co/auth/v1/callback`; Supabase Google provider enabled,
+    Site URL + `/**` redirect set to `https://youtube-playlist-summaries.fly.dev`. **Nonce checks
+    ON** in prod (local keeps them off). Real sign-in only testable once deployed (1.4).
+  - Fly app **`youtube-playlist-summaries`** reserved (`fly apps create`); `fly.toml` app name + iad
+    region set (PR #30).
 - [ ] **1.4 Deploy + smoke test**. Deploy app + worker; smoke-test the live container end-to-end (sign in
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
   **Cloud-sync verification (M2a) folds in here** — all 46 cloud-sync integration tests run against the
@@ -159,7 +181,20 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS 2026-07-19: both items CLOSED — this list is now empty, which is its intended state.**
+**STATUS: one open item (added 2026-07-20). The two 2026-07-19 items are CLOSED.**
+
+- [ ] **`exec_sql(sql text)` is a test-only helper that ships to production.**
+  **TRIGGER: before the app is reachable by anyone but the owner (i.e. before M1.4 opens sign-ups).**
+  Migration `0004` creates a `security definer` function that executes arbitrary interpolated SQL,
+  granted to `service_role` only and correctly denied to anon/authenticated (verified in prod:
+  `anon=false authenticated=false service_role=true`). It has **zero production callers** — only 8
+  integration test files use it. Residual risk: anyone holding the `service_role` key can run
+  arbitrary SQL as the function owner, including statement injection past the wrapper
+  (`select 1) t; drop …; --`) — an *escalation* beyond service_role's already-broad access, on a
+  money-handling DB. Accepted for now (user, 2026-07-20 — option (c)): no deploy, no users, no data
+  yet, and the exposure requires an already-compromised service_role key. **The fix** is a `0022`
+  that drops `exec_sql`, plus moving its creation into integration-test setup so it never exists in
+  prod. Touches 8 test files' setup, so it wants its own PR + review, not a mid-deploy rush.
 
 Filed separately on purpose: these were previously buried in the M2a deferred list, which becomes
 historical the moment M2a merges. They are neither M2a findings nor blocked by it.
@@ -278,6 +313,27 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
   from `usageMetadata`; closes the §2.4a/b/**4c** residuals + the crash residual (billable-phase marker).
   Natural sequel to the reservation slice.
 - **Serve-lease heartbeat / expiry sweep** (spec §10, §2.3/H5): closes the bounded 6¢ serve residual.
+- **Migrate off legacy JWT API keys.** Prod was provisioned on Supabase's *legacy* `anon` /
+  `service_role` JWT keys, deliberately: every test in this repo ran against that format, and a lot
+  of behaviour is pinned to exact role grants (`0007` storage → `service_role`; `0020` grants only
+  `select, insert` on `ledger_audit`; `reservation-release.test.ts` asserts `authenticated` gets
+  `42501`). Supabase now steers toward publishable/secret keys and both legacy entries in the
+  dashboard say "Prefer using … instead", so this is a real migration, just not one to do on the
+  first deploy. **TRIGGER:** any Supabase notice about legacy-key removal, or any work touching the
+  auth/role layer. Whoever does it must re-run the RLS isolation + money suites against the new key
+  format, not assume equivalence.
+- **Subscription / billing tier** *(user vision, 2026-07-21)* — the app already ships a free tier
+  with limits (`quota_allowance` per anon/authenticated, `guardrail_config` daily cap + max_free_users).
+  The missing piece is a **credit-card subscription that lifts those limits** — no billing layer maps
+  a paying user to a raised allowance. **TRIGGER:** when free-tier limits become the thing users hit
+  and ask to pay past. Design note: this is a raise-the-allowance feature on top of existing
+  guardrails, not a new limits system. See the access-tiers memory.
+- **Open public signup safely** *(2026-07-21)* — `Allow new users to sign up` should stay OFF after
+  the M1.4 smoke test (bootstrapping: sign in once to create the owner account, then lock). Before
+  ever opening it publicly, **verify the PROD `guardrail_config` defaults** (`daily_cap_cents`,
+  `max_free_users`) — those, not the signup toggle, are what cap a stranger's spend. They came from
+  migration defaults and may be generous. **TRIGGER:** any decision to let people other than the
+  owner sign in. Pairs with the `exec_sql` debt item under the same "before sign-ups open" trigger.
 - **Periodic cost recalibration** *(user proposal, 2026-07-19)* — the cost constants in this repo
   (`summary_est_cents`, `dig_est_cents`, and the per-token reasoning behind the M1.1 gate) are
   snapshots of vendor pricing that changes. Rather than re-deriving exact figures by hand, add a

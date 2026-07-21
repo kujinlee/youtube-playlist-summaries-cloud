@@ -21,11 +21,31 @@ worker.
 
 ## Step 1 — Supabase (prod)
 1. Create the project; note the **Project URL**, **anon key**, **service_role key**.
-2. Apply migrations `0001`–`0020` to prod (e.g. `supabase link` + `supabase db push`, or run the SQL in
-   `supabase/migrations/` in order via the SQL editor / psql).
-3. Create the storage bucket **`artifacts`** (the code uses `ARTIFACTS_BUCKET='artifacts'`,
-   `lib/supabase/storage-env.ts`).
-4. Configure Auth (providers / redirect URLs) to match the deployed web origin.
+   **Use the "Legacy anon, service_role API keys" tab, not the newer publishable/secret keys.**
+   Every test in this repo (2450 unit, 468 integration, incl. the money path and RLS isolation) ran
+   against JWT-format keys, and a lot of behaviour is pinned to exact role grants — `0007` grants
+   storage to `service_role`, `0020` grants *only* `select, insert` on `ledger_audit`, and
+   `reservation-release.test.ts` asserts an `authenticated` client gets `42501`. Do **not** click
+   *"Disable JWT-based API keys"*. See the key-migration item in the roadmap Parking Lot.
+2. Apply migrations `0001`–**`0021`** to prod: `supabase login` → `supabase link --project-ref <ref>`
+   → **`supabase db push --dry-run`** (read it) → `supabase db push`.
+   `0021` drops-then-recreates `merge_video_data` / `persist_summary` / `update_video_annotations`,
+   so **verify those RPCs are callable under an authenticated user JWT afterwards** — grants must
+   survive the recreate.
+   ⚠️ **Never run `supabase db reset` while linked to prod** — it drops everything. `db push` is the
+   additive one.
+3. ~~Create the storage bucket~~ — **not a manual step.** Migration `0007` creates the private
+   `artifacts` bucket *and* both `storage.objects` policies (`artifacts_owner_rw` keyed on
+   `split_part(name,'/',1) = auth.uid()`, and `artifacts_service_all`). Just verify they exist after
+   the push.
+4. Configure Auth to match the deployed web origin. **This app is Google-OAuth-only** — there is no
+   email/password path (`app/login/page.tsx` calls `signInWithOAuth({provider:'google'})`), so
+   nobody can log in until Google is configured. You need: a Google Cloud OAuth client whose
+   authorized redirect URI is `https://<ref>.supabase.co/auth/v1/callback`, its client ID + secret
+   pasted into Supabase → Authentication → Providers → Google, and the Site URL / redirect
+   allow-list set to the deployed app origin.
+5. **Keep the Supabase region and `fly.toml`'s `primary_region` in the same locality.** The worker
+   makes many small round trips per job, so a cross-continent split costs ~60–70ms on each.
 
 ## Step 2 — Fly app + secrets
 ```bash
@@ -46,8 +66,10 @@ Optional model / tuning overrides (have sane defaults if unset): `GEMINI_SUMMARY
 `GEMINI_DEEPDIVE_MODEL`, `GEMINI_TRANSCRIBE_MODEL`, `PDF_MAX_CONCURRENCY`, `PREGEN_SUMMARY_HTML`.
 
 > **Do NOT set `CLOUD_GEMINI_RELEASE_VERIFIED` in prod** — it is inert there by design. Class-A release is
-> a compile-time gate (`RELEASE_VERIFIED` in `lib/gemini-failure.ts`), flipped only after the live-Gemini
-> check (M1.1, `docs/reservation-release-live-gate.md`). Until flipped, failures fail-closed to KEEP (safe).
+> a compile-time gate (`RELEASE_VERIFIED` in `lib/gemini-failure.ts`), not an env var.
+> **Status: the gate is now OPEN** (`= true`, PR #29, 2026-07-19) after the live-Gemini verification —
+> so a class-A failure RELEASES its reservation rather than keeping it. Evidence, including which
+> parts are measured vs bounded vs inferred, is in `docs/reservation-release-live-gate.md`.
 
 ## Step 3 — Deploy (M1.4)
 ```bash
