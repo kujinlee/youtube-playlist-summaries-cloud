@@ -317,6 +317,18 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
   first deploy. **TRIGGER:** any Supabase notice about legacy-key removal, or any work touching the
   auth/role layer. Whoever does it must re-run the RLS isolation + money suites against the new key
   format, not assume equivalence.
+- **Subscription / billing tier** *(user vision, 2026-07-21)* — the app already ships a free tier
+  with limits (`quota_allowance` per anon/authenticated, `guardrail_config` daily cap + max_free_users).
+  The missing piece is a **credit-card subscription that lifts those limits** — no billing layer maps
+  a paying user to a raised allowance. **TRIGGER:** when free-tier limits become the thing users hit
+  and ask to pay past. Design note: this is a raise-the-allowance feature on top of existing
+  guardrails, not a new limits system. See the access-tiers memory.
+- **Open public signup safely** *(2026-07-21)* — `Allow new users to sign up` should stay OFF after
+  the M1.4 smoke test (bootstrapping: sign in once to create the owner account, then lock). Before
+  ever opening it publicly, **verify the PROD `guardrail_config` defaults** (`daily_cap_cents`,
+  `max_free_users`) — those, not the signup toggle, are what cap a stranger's spend. They came from
+  migration defaults and may be generous. **TRIGGER:** any decision to let people other than the
+  owner sign in. Pairs with the `exec_sql` debt item under the same "before sign-ups open" trigger.
 - **Periodic cost recalibration** *(user proposal, 2026-07-19)* — the cost constants in this repo
   (`summary_est_cents`, `dig_est_cents`, and the per-token reasoning behind the M1.1 gate) are
   snapshots of vendor pricing that changes. Rather than re-deriving exact figures by hand, add a
