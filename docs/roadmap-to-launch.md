@@ -48,8 +48,25 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   (multi-stage + standalone + bundled worker), but the resulting SIZE is still unmeasured — `docker build`
   could not run in that session. See "Shrink the deploy image" under NEXT ACTIONS.**
   *Actual `fly deploy` is 1.3/1.4 (needs your accounts).*
-- [ ] **1.3 Provision prod infra**. Prod Supabase project; secrets (Gemini key, Supabase URL/anon/service
-  keys, any OAuth); storage buckets; apply migrations **0001–0021** to prod (0021 is the cloud-sync signals migration from PR #23 — it drops-then-recreates `merge_video_data`/`persist_summary`/`update_video_annotations`, so grants must survive; verify the RPCs are callable under an authenticated user JWT after applying).
+- [ ] **1.3 Provision prod infra** — *DB done 2026-07-20; only Google OAuth config remains.*
+  Prod Supabase project `uykwcybxqgewmbltroxf` (AWS `us-east-1`; **legacy JWT keys**, not
+  publishable/secret — see Parking Lot). Secrets go into `fly secrets` at 1.4, not a file.
+  - [x] **Migrations 0001–0021 applied + verified** (`supabase db push`; `migration list` shows
+    local==remote through 0021). Post-apply checks all passed: the three RPCs `0021` recreates
+    (`merge_video_data`/`persist_summary`/`update_video_annotations`) are callable under an
+    authenticated JWT (grants survived the drop-recreate); `artifacts` bucket is private with both
+    `storage.objects` policies; `exec_sql` is `anon=false authenticated=false service_role=true`.
+  - [x] **RLS verified on every table** (`rls_on=true, rls_forced=true` for all 12). This mattered
+    because **hosted Supabase auto-grants full DELETE/INSERT/UPDATE on public tables to
+    `anon`/`authenticated`** — its standard permissive-grant model — which local `supabase start`
+    does NOT do. So the prod grant list looks alarming (`ledger_audit` shows anon/authenticated with
+    full privileges) but RLS is the real gate: `ledger_audit`/`spend_ledger` are `rls_forced` with
+    `policies=0`, so session clients are denied while `service_role` writes via `BYPASSRLS`. The
+    money-path guard test was already written to accept either a permission error OR zero rows, so it
+    holds identically under prod's RLS-denial and local's missing-grant. **Anyone re-running the
+    grant check and panicking: check RLS, not grants.**
+  - [ ] **Google OAuth** — the only remaining 1.3 item. App is Google-OAuth-only; until configured,
+    nobody can sign in. Needs the Fly app name first (for the redirect allow-list).
 - [ ] **1.4 Deploy + smoke test**. Deploy app + worker; smoke-test the live container end-to-end (sign in
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
   **Cloud-sync verification (M2a) folds in here** — all 46 cloud-sync integration tests run against the
@@ -159,7 +176,20 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS 2026-07-19: both items CLOSED — this list is now empty, which is its intended state.**
+**STATUS: one open item (added 2026-07-20). The two 2026-07-19 items are CLOSED.**
+
+- [ ] **`exec_sql(sql text)` is a test-only helper that ships to production.**
+  **TRIGGER: before the app is reachable by anyone but the owner (i.e. before M1.4 opens sign-ups).**
+  Migration `0004` creates a `security definer` function that executes arbitrary interpolated SQL,
+  granted to `service_role` only and correctly denied to anon/authenticated (verified in prod:
+  `anon=false authenticated=false service_role=true`). It has **zero production callers** — only 8
+  integration test files use it. Residual risk: anyone holding the `service_role` key can run
+  arbitrary SQL as the function owner, including statement injection past the wrapper
+  (`select 1) t; drop …; --`) — an *escalation* beyond service_role's already-broad access, on a
+  money-handling DB. Accepted for now (user, 2026-07-20 — option (c)): no deploy, no users, no data
+  yet, and the exposure requires an already-compromised service_role key. **The fix** is a `0022`
+  that drops `exec_sql`, plus moving its creation into integration-test setup so it never exists in
+  prod. Touches 8 test files' setup, so it wants its own PR + review, not a mid-deploy rush.
 
 Filed separately on purpose: these were previously buried in the M2a deferred list, which becomes
 historical the moment M2a merges. They are neither M2a findings nor blocked by it.
