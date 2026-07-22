@@ -321,7 +321,12 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
 
 - **Real-cost settle slice** (spec §10): replace the keep/release *heuristic* with real `actual_cents`
   from `usageMetadata`; closes the §2.4a/b/**4c** residuals + the crash residual (billable-phase marker).
-  Natural sequel to the reservation slice.
+  Natural sequel to the reservation slice. **MEASURED MOTIVATION (2026-07-22):** actual per-video cost
+  on flash ≈ **8¢** (summary ~6.5¢ + dig ~1.5¢, from `lib/gemini-cost.ts`), but each job RESERVES 150¢
+  — ~37× over. So the daily cap governs reservations, not spend: at $5 it fits ~3 videos though real
+  spend allows ~60. Settling to actual is what lets the cap track real money. Do NOT fix this by
+  lowering the 150¢ reservation — it is a proven worst-case bound (a 30-min all-retries video ≈ $1.15).
+  See the [[cost-per-video-analysis]] memory.
 - **Serve-lease heartbeat / expiry sweep** (spec §10, §2.3/H5): closes the bounded 6¢ serve residual.
 - **Migrate off legacy JWT API keys.** Prod was provisioned on Supabase's *legacy* `anon` /
   `service_role` JWT keys, deliberately: every test in this repo ran against that format, and a lot
@@ -352,6 +357,10 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
   number still right?" question — including the next live-gate style verification, which should
   read the recalibrated number instead of re-litigating token arithmetic. Rationale: small factors
   should be ignored, not chased; what matters is catching an order-of-magnitude change.
+  **First pass done 2026-07-22:** confirmed the 150¢ reservation is ~37× the ~8¢ real flash cost, and
+  that dev billing ($15.18 June) is Pro-dominated dev digs prod never makes. Recurring half still open:
+  the `PRICE_*_PER_1M_CENTS` constants in `lib/gemini-cost.ts` are dated (gemini-2.5-flash, 2026-07) and
+  want periodic refresh against live pricing.
 - **Committed integration test** for the cloud dig **serve** path (currently uncovered).
 - **Deploy verification** of cloud summary-PDF (needs a live container — folds into 1.4/3.1).
 
