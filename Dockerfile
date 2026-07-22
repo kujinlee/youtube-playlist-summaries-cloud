@@ -24,6 +24,27 @@ RUN npm ci
 
 COPY . .
 
+# NEXT_PUBLIC_* are INLINED into the browser bundle at `next build` time — they are NOT read from the
+# environment at runtime. `fly secrets` are runtime-only (injected into the running machine, absent
+# during this build), so without these build args the client Supabase client compiles with an
+# undefined URL and every sign-in throws "Missing required env var: NEXT_PUBLIC_SUPABASE_URL" in the
+# browser. (Server-side code is unaffected — it reads process.env at runtime, where the secrets
+# exist.) The values arrive from fly.toml [build.args].
+#
+# These two values are PUBLIC: the anon key ships to every browser and is gated by RLS, so committing
+# them in fly.toml is safe and standard. The service_role key is NEVER a build arg — it stays a
+# runtime-only fly secret and never touches the client bundle.
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+# Fail the BUILD loudly if the public config is missing, rather than shipping a bundle that only
+# breaks in a user's browser. This turns the 2026-07-22 first-deploy failure into a build error.
+# `${VAR:?msg}` aborts the shell (non-zero) with the message when VAR is unset OR empty.
+RUN : "${NEXT_PUBLIC_SUPABASE_URL:?build arg required — set fly.toml [build.args]}" \
+ && : "${NEXT_PUBLIC_SUPABASE_ANON_KEY:?build arg required — set fly.toml [build.args]}"
+
 # `next build` emits .next/standalone — a self-contained server carrying ONLY the node_modules files
 # @vercel/nft traces as reachable (78 MB, vs 492 MB for the full install). Enabled by
 # `output: 'standalone'` in next.config.ts.

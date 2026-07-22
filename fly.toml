@@ -15,6 +15,15 @@ primary_region = "iad"
 [build]
   dockerfile = "Dockerfile"
 
+# NEXT_PUBLIC_* are inlined into the browser bundle at `next build` time, so they must be present
+# during the Docker build — `fly secrets` are runtime-only and are absent then. Fly passes these
+# [build.args] to the build automatically on every `fly deploy`. Both values are PUBLIC (the anon
+# key ships to every browser and is gated by RLS), so committing them here is safe and standard.
+# The service_role key is deliberately NOT here — it stays a runtime-only `fly secrets` value.
+[build.args]
+  NEXT_PUBLIC_SUPABASE_URL = "https://uykwcybxqgewmbltroxf.supabase.co"
+  NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV5a3djeWJ4cWdld21ibHRyb3hmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ1NjcwNDksImV4cCI6MjEwMDE0MzA0OX0.i_JGRLmROGUgJmt1q8ShLkNzfE7FDSN5a8i1vsz5SCw"
+
 # Two commands off the same image. Default CMD (web) is overridden per group here.
 # These invoke node DIRECTLY, not npm scripts: the runtime stage of the multi-stage Dockerfile
 # (2026-07-19) ships only Next's standalone output plus a bundled worker, so neither `next start`
