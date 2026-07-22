@@ -72,7 +72,17 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
     ON** in prod (local keeps them off). Real sign-in only testable once deployed (1.4).
   - Fly app **`youtube-playlist-summaries`** reserved (`fly apps create`); `fly.toml` app name + iad
     region set (PR #30).
-- [ ] **1.4 Deploy + smoke test**. Deploy app + worker; smoke-test the live container end-to-end (sign in
+- [~] **1.4 Deploy + smoke test** — **CORE DONE 2026-07-22; APP LIVE at
+  https://youtube-playlist-summaries.fly.dev.** Deployed (Fly iad, image 471 MB, web+worker).
+  Core journey VERIFIED live: OAuth sign-in → add playlist (`/api/jobs` → durable queue) → worker →
+  Gemini → stored → **rendered summary with section timestamps**. Guardrail correctly capped spend
+  (prod `daily_cap_cents`=500¢: 3 of 9 queued, 6 blocked — working as designed). Owner signup locked
+  OFF after account creation. **3 cloud-run blockers found + fixed (PR #31, all build-time-vs-runtime):**
+  NEXT_PUBLIC absent at build (→ [build.args] + fail-build guard); OAuth callback → 0.0.0.0:3000
+  (→ x-forwarded-host); root page baked static-LocalApp at build (→ force-dynamic).
+  **Still to do in 1.4:** (a) download + share paths — not yet exercised; (b) raise prod
+  `daily_cap_cents` if the owner wants full playlists; (c) the 5 cloud-sync checks below.
+  Original checklist retained:
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
   **Cloud-sync verification (M2a) folds in here** — all 46 cloud-sync integration tests run against the
   LOCAL Supabase stack (`supabase/config.toml`: TLS disabled, pooler disabled, no network), so transient
