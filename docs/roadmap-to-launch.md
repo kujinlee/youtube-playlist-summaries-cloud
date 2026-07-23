@@ -76,11 +76,13 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   https://youtube-playlist-summaries.fly.dev.** Deployed (Fly iad, image 471 MB, web+worker).
   Core journey VERIFIED live: OAuth sign-in → add playlist (`/api/jobs` → durable queue) → worker →
   Gemini → stored → **rendered summary with section timestamps**. Guardrail correctly capped spend
-  (prod `daily_cap_cents`=500¢: 3 of 9 queued, 6 blocked — working as designed). Owner signup locked
+  (prod `daily_cap_cents` was 500¢ at deploy: 3 of 9 queued, 6 blocked — working as designed; **later
+  raised to 5000¢, verified live 2026-07-23** so full playlists flow). Owner signup locked
   OFF after account creation. **3 cloud-run blockers found + fixed (PR #31, all build-time-vs-runtime):**
   NEXT_PUBLIC absent at build (→ [build.args] + fail-build guard); OAuth callback → 0.0.0.0:3000
   (→ x-forwarded-host); root page baked static-LocalApp at build (→ force-dynamic).
-  **Still to do in 1.4:** (a) download + share paths — not yet exercised; (b) raise prod
+  **Still to do in 1.4 → actionable checklist: [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md)**
+  (a) download + share paths — not yet exercised; (b) raise prod
   `daily_cap_cents` if the owner wants full playlists; (c) the 5 cloud-sync checks below.
   Original checklist retained:
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
@@ -191,7 +193,17 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS: one open item (added 2026-07-20). The two 2026-07-19 items are CLOSED.**
+**STATUS: one open item (`exec_sql`, 2026-07-20). `middleware-2a` red suite FIXED 2026-07-23. The two
+2026-07-19 items are CLOSED.**
+
+- [x] **`middleware-2a.test.ts` — 2 OAuth-callback tests were RED on `master`.** ✅ **FIXED 2026-07-23.**
+  Was pre-existing since `1c96e62` (PR #31 OAuth `x-forwarded-host` fix): `publicOrigin` reads
+  `request.headers.get('x-forwarded-host')`, but the test's `callbackReq()` mock built a request with
+  no `headers` (hidden by an `as never` cast) → `Cannot read properties of undefined (reading 'get')`.
+  Test-only (real OAuth was verified live in M1.4). Fix: `callbackReq()` now supplies a real `Headers`
+  (with optional entries), **plus** a new regression test covering the behind-a-proxy branch — the exact
+  `0.0.0.0:3000` incident PR #31 fixed, which previously had ZERO coverage (mutation-checked: it goes red
+  if `publicOrigin` ignores `x-forwarded-host`). Full integration suite now **469 pass / 0 fail**, tsc clean.
 
 - [ ] **`exec_sql(sql text)` is a test-only helper that ships to production.**
   **TRIGGER: before the app is reachable by anyone but the owner (i.e. before M1.4 opens sign-ups).**
@@ -202,7 +214,8 @@ slide images); M2 done = full bidirectional incl. images.**
   arbitrary SQL as the function owner, including statement injection past the wrapper
   (`select 1) t; drop …; --`) — an *escalation* beyond service_role's already-broad access, on a
   money-handling DB. Accepted for now (user, 2026-07-20 — option (c)): no deploy, no users, no data
-  yet, and the exposure requires an already-compromised service_role key. **The fix** is a `0022`
+  yet, and the exposure requires an already-compromised service_role key. **The fix** is a new migration
+  (`0022` is now taken by `dig_max_attempts` → use `0023`+)
   that drops `exec_sql`, plus moving its creation into integration-test setup so it never exists in
   prod. Touches 8 test files' setup, so it wants its own PR + review, not a mid-deploy rush.
 
@@ -327,6 +340,13 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
   spend allows ~60. Settling to actual is what lets the cap track real money. Do NOT fix this by
   lowering the 150¢ reservation — it is a proven worst-case bound (a 30-min all-retries video ≈ $1.15).
   See the [[cost-per-video-analysis]] memory.
+  - **Also revisit `summary_max_attempts` here (found 2026-07-23).** It's pinned at 1 because
+    cap-soundness requires `summary_est_cents ≥ ceil(worst) × attempts`, and with worst=115¢ /
+    est=150¢ there's only room for 1 attempt — bumping to 2 today would force est→230¢ (a 53% larger
+    reservation, ~33→~21 jobs/day at the 5000¢ cap). Once settling recalibrates est to *actual* cost,
+    `2 × small` is cheap, so summary gets its transient-failure retry for free. **`dig_max_attempts`
+    was already raised 1→2 in migration `0022`** — dig worst=23¢ vs est=150¢ had ample headroom
+    (150 ≥ 23×2), so it needed no est change. This entry = do the same for summary after settle.
 - **Serve-lease heartbeat / expiry sweep** (spec §10, §2.3/H5): closes the bounded 6¢ serve residual.
 - **Migrate off legacy JWT API keys.** Prod was provisioned on Supabase's *legacy* `anon` /
   `service_role` JWT keys, deliberately: every test in this repo ran against that format, and a lot

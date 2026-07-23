@@ -37,7 +37,12 @@ import { NextRequest } from 'next/server';
 import { GET as callbackGET } from '@/app/auth/callback/route';
 
 const req = (path: string) => new NextRequest(new Request(`http://localhost${path}`));
-const callbackReq = (url: string) => ({ nextUrl: new URL(url), url } as never);
+// A real `Headers` is required: publicOrigin() reads request.headers.get('x-forwarded-host').
+// (The prior mock omitted headers; `as never` hid it from tsc → the 2 callback tests threw at
+// runtime once PR #31 added the forwarded-host lookup.) Optional entries let a test exercise the
+// behind-a-proxy branch.
+const callbackReq = (url: string, headers: Record<string, string> = {}) =>
+  ({ nextUrl: new URL(url), url, headers: new Headers(headers) } as never);
 
 const priorBackend = process.env.STORAGE_BACKEND;
 
@@ -174,5 +179,19 @@ describe('OAuth callback — default next target (app/auth/callback/route.ts)', 
     const res = await callbackGET(callbackReq('http://localhost/auth/callback?code=abc'));
     expect(new URL(res.headers.get('location') as string).pathname).toBe('/');
     expect(res.headers.get('location')).not.toContain('/library');
+  });
+
+  // Regression for the 2026-07-22 live incident (PR #31): behind Fly's proxy, request.url's host is
+  // the internal bind address (0.0.0.0:3000); the redirect must be built from x-forwarded-host, not
+  // the request origin. This branch of publicOrigin() previously had NO coverage.
+  it('builds the redirect from x-forwarded-host behind a proxy, not the internal request origin', async () => {
+    mockExchange.mockResolvedValue({ error: null });
+    const res = await callbackGET(callbackReq(
+      'http://0.0.0.0:3000/auth/callback?code=abc&next=/library',
+      { 'x-forwarded-host': 'app.fly.dev', 'x-forwarded-proto': 'https' },
+    ));
+    const loc = new URL(res.headers.get('location') as string);
+    expect(loc.origin).toBe('https://app.fly.dev'); // NOT http://0.0.0.0:3000
+    expect(loc.pathname).toBe('/library');
   });
 });
