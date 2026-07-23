@@ -193,18 +193,17 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS: TWO open items — `exec_sql` (2026-07-20) + `middleware-2a` red suite (2026-07-23). The two
+**STATUS: one open item (`exec_sql`, 2026-07-20). `middleware-2a` red suite FIXED 2026-07-23. The two
 2026-07-19 items are CLOSED.**
 
-- [ ] **`middleware-2a.test.ts` — 2 OAuth-callback tests RED on `master`.**
-  **TRIGGER: any work on the auth/OAuth-callback layer, or the next "full integration suite green" gate.**
-  Proven pre-existing 2026-07-23 (stashed all working changes, re-ran on a clean tree → identical 2
-  failures / 14 pass). Cause: `1c96e62` (PR #31 OAuth `x-forwarded-host` fix) made `publicOrigin` read
-  `request.headers.get('x-forwarded-host')`, but the test's `callbackReq()` mock builds a request with
-  no `headers`, so it throws `Cannot read properties of undefined (reading 'get')`. **Test-only** — real
-  OAuth was verified live in M1.4, so this is an outdated test mock, not a live bug. Fix: give
-  `callbackReq()` a real `Headers`, or guard `publicOrigin` against a missing `.headers`. Small, own PR.
-  Until fixed, "full integration suite green" means **466/468 with these 2 explicitly named**.
+- [x] **`middleware-2a.test.ts` — 2 OAuth-callback tests were RED on `master`.** ✅ **FIXED 2026-07-23.**
+  Was pre-existing since `1c96e62` (PR #31 OAuth `x-forwarded-host` fix): `publicOrigin` reads
+  `request.headers.get('x-forwarded-host')`, but the test's `callbackReq()` mock built a request with
+  no `headers` (hidden by an `as never` cast) → `Cannot read properties of undefined (reading 'get')`.
+  Test-only (real OAuth was verified live in M1.4). Fix: `callbackReq()` now supplies a real `Headers`
+  (with optional entries), **plus** a new regression test covering the behind-a-proxy branch — the exact
+  `0.0.0.0:3000` incident PR #31 fixed, which previously had ZERO coverage (mutation-checked: it goes red
+  if `publicOrigin` ignores `x-forwarded-host`). Full integration suite now **469 pass / 0 fail**, tsc clean.
 
 - [ ] **`exec_sql(sql text)` is a test-only helper that ships to production.**
   **TRIGGER: before the app is reachable by anyone but the owner (i.e. before M1.4 opens sign-ups).**
