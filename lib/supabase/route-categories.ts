@@ -1,6 +1,6 @@
 export type RouteCategory = 'public' | 'anon-allowed' | 'authenticated';
 
-const PUBLIC_EXACT = ['/', '/about', '/login'];
+const PUBLIC_EXACT = ['/', '/about', '/login', '/dev-login'];
 /** OAuth callback + auth-error must be reachable pre-session — classify any /auth/* as public.
  *  `/s/<token>` share links are public by design: the route (app/s/[token]/route.ts) authorizes
  *  ENTIRELY via the share token (getShareServeContext on a service client) and never reads the

@@ -109,6 +109,13 @@ describe('middleware — cloud mode (STORAGE_BACKEND=supabase)', () => {
     expect(res.headers.get('location')).toBeNull();
   });
 
+  it('unauth /dev-login passes through — no redirect (public route)', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
+    const res = await middleware(req('/dev-login'));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
+  });
+
   it('authed /login redirects to /', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', is_anonymous: false } } });
     const res = await middleware(req('/login'));

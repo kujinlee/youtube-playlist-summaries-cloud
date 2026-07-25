@@ -2,9 +2,13 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { isLocalSupabaseUrl } from '@/lib/supabase/is-local-url';
 
 export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
+  // Client-side, cosmetic discovery link. The real gate is server-side (/dev-login → 404 in
+  // prod); if this ever showed in prod it would merely point at a 404.
+  const showDevLink = isLocalSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
 
   async function handleSignIn() {
     setError(null);
@@ -34,6 +38,11 @@ export default function LoginPage() {
           <p role="alert" className="mt-4 text-sm text-red-400">
             {error}
           </p>
+        )}
+        {showDevLink && (
+          <a href="/dev-login" className="mt-6 inline-block text-xs text-zinc-500 underline hover:text-zinc-300">
+            Local dev sign-in
+          </a>
         )}
       </div>
     </div>

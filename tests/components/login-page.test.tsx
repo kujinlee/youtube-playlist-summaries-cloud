@@ -9,9 +9,27 @@ jest.mock('../../lib/supabase/client', () => ({
 }));
 
 describe('LoginPage', () => {
+  const priorUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   beforeEach(() => {
     signInWithOAuth.mockReset();
     signInWithOAuth.mockResolvedValue({ error: null });
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL; // deterministic default: dev link hidden
+  });
+  afterEach(() => {
+    if (priorUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = priorUrl;
+  });
+
+  it('shows a "Local dev sign-in" link to /dev-login when the Supabase URL is local', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:54321';
+    render(<LoginPage />);
+    expect(screen.getByRole('link', { name: /dev sign-in/i })).toHaveAttribute('href', '/dev-login');
+  });
+
+  it('hides the dev link when the Supabase URL is prod-like', () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://uykwcybxqgewmbltroxf.supabase.co';
+    render(<LoginPage />);
+    expect(screen.queryByRole('link', { name: /dev sign-in/i })).toBeNull();
   });
 
   it('renders "Continue with Google"', () => {
