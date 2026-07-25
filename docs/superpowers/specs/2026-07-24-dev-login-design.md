@@ -30,10 +30,33 @@ absent in production.
 - No change to the production login flow (Google OAuth stays exactly as-is).
 - Not a replacement for real auth — purely a dev/testing convenience.
 
-## 3. The gate — `isLocalSupabaseUrl` (the security core)
+## 3. The gate — server-only, runtime, fail-closed *(revised after round-1 review)*
 
-The entire security of this feature collapses to one **pure function**, evaluated
-**server-side**, **fail-closed**:
+> **Round-1 review changed this section.** The original gate read the **literal**
+> `process.env.NEXT_PUBLIC_SUPABASE_URL`. Two adversarial reviewers split on whether that
+> literal is build-time-inlined (frozen) or request-time — see
+> `docs/reviews/plan-dev-login-round1-adjudication.md`. Rather than depend on that subtle
+> Next.js semantics, the gate now uses a **server-only flag** that is safe under either
+> reading.
+
+The gate is two required conditions, both evaluated **server-side at request time**,
+**fail-closed**:
+
+```
+dev-login enabled  ⇔  process.env.DEV_LOGIN_ENABLED === 'true'          // primary, server-only
+                       AND isLocalSupabaseUrl(getSupabaseEnv().url)      // defense-in-depth, runtime
+```
+
+**Primary signal — `DEV_LOGIN_ENABLED` (server-only, fail-closed).**
+- **Not** a `NEXT_PUBLIC_*` var → never inlined into any bundle → read from runtime
+  `process.env` on the server, unambiguously. (Resolves the reviewers' inlining split: the
+  build-freeze question simply does not apply to a non-public var.)
+- **Fail-closed:** absent / anything other than the exact string `'true'` → disabled. A
+  runtime **flag that defaults closed** cannot fail *open* on a mis-set env — opening it in
+  prod requires *deliberately* setting `DEV_LOGIN_ENABLED=true`, which no deploy does.
+- **Set only in local `.env.local`.** Prod (fly secrets / build args) never sets it.
+
+**Defense-in-depth — `isLocalSupabaseUrl` on the RUNTIME url:**
 
 ```ts
 // lib/supabase/is-local-url.ts
@@ -48,27 +71,49 @@ export function isLocalSupabaseUrl(url: string | undefined | null): boolean {
 }
 ```
 
-**Signal choice — the Supabase URL host, and only that.** Enable dev-login **iff** the
-host of `NEXT_PUBLIC_SUPABASE_URL` is `localhost` or `127.0.0.1`.
+Read the URL via the **computed-key runtime path** (`getSupabaseEnv()` in
+`lib/supabase/env.ts`, which uses `process.env[name]` — a runtime read), **not** the inlined
+literal. Even if `DEV_LOGIN_ENABLED=true` ever leaked to prod, the hosted `…supabase.co`
+URL still closes this second condition.
+
+**Request-time evaluation.** The route sets `export const dynamic = 'force-dynamic'` so the
+gate is evaluated per request and never prerendered with a frozen decision. In prod the flag
+is absent → 404 regardless.
 
 - **Why not `NODE_ENV`:** a local `next build && next start` runs with
   `NODE_ENV=production` while still pointed at the local DB — a `NODE_ENV !== 'production'`
-  gate would wrongly disable dev-login for local prod-builds. Hosted prod always uses the
-  `…supabase.co` URL, so the URL host is the signal that actually correlates with "pointed
-  at local data." One correct signal beats two that conflict.
-- **Fail-closed:** every non-local / absent / malformed input returns `false` → 404. A bug
-  fails toward "no dev-login," never toward "exposed in prod."
+  gate would wrongly disable dev-login there. The flag + runtime-URL pair is correct in that
+  case (flag set locally, URL local) and closed in hosted prod (flag absent).
 
 ## 4. Route: `/dev-login` (server-gated)
 
 A dedicated route whose **server component** is the gate:
 
 ```
+// app/dev-login/page.tsx
+export const dynamic = 'force-dynamic';   // evaluate the gate per request, never prerender
+
 GET /dev-login
-  server component (app/dev-login/page.tsx):
-    if (!isLocalSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL)) notFound();  // 404 in prod
-    return <DevLoginForm />;                                                    // local only
+  server component:
+    if (!devLoginEnabled()) notFound();   // 404 unless flag set AND runtime URL local
+    return <DevLoginForm />;              // local only
 ```
+
+where the gate lives in a small server helper (single decision point, §3):
+
+```ts
+// lib/supabase/dev-login.ts  (server-only)
+import { isLocalSupabaseUrl } from '@/lib/supabase/is-local-url';
+
+export function devLoginEnabled(): boolean {
+  if (process.env.DEV_LOGIN_ENABLED !== 'true') return false;         // fail-closed primary
+  return isLocalSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);    // runtime computed-key read
+}
+```
+
+> Note: `process.env.NEXT_PUBLIC_SUPABASE_URL` here is a **runtime** read because it is only
+> reached when `DEV_LOGIN_ENABLED==='true'` (never set in prod), and the route is
+> `force-dynamic`. The primary safety is the flag; the URL is defense-in-depth.
 
 - The gate runs on the **server**, which the browser cannot influence. In production the
   page returns **404** and the form is never produced — "absent," not merely "hidden."
@@ -92,10 +137,18 @@ Mirrors the existing Google button's client pattern (`app/login/page.tsx`):
 
 - Fields: `email`, `password`.
 - On submit: `createClient().auth.signInWithPassword({ email, password })` on the browser
-  client — which **auto-writes the session cookie** (same mechanism `signInWithOAuth`
-  relies on). No bespoke cookie handling.
-- Success → redirect to `/`.
+  client. The `@supabase/ssr` browser client writes the session cookie **client-side** via
+  its cookie adapter. (Note — this differs from `signInWithOAuth`, which does *not* write a
+  cookie directly: it redirects to Google and the cookie is written **server-side** by
+  `app/auth/callback/route.ts` via `exchangeCodeForSession`. Do not describe the two as the
+  same mechanism.)
+- Success → **hard navigation** `window.location.assign('/')` (not `router.replace`). A full
+  page load guarantees the middleware/server read the freshly-written cookie on the next
+  request — matching the full round-trip the OAuth callback flow gets. (M1: a soft RSC nav
+  might not surface the just-set cookie to middleware.)
 - Error → render `error.message` inline (`role="alert"`), same as the Google button.
+- A `pending`/disabled state on the submit button prevents double-submit while the request
+  is in flight.
 - Visual: minimal, consistent with the existing login page styling; clearly labelled
   "Local dev sign-in" so it is never mistaken for the real login.
 
@@ -111,58 +164,108 @@ Add a small "Local dev sign-in" link on `/login`, rendered only when
 
 ## 7. Testing (TDD — guard tests written first)
 
+All suites that read `NEXT_PUBLIC_SUPABASE_URL` / `DEV_LOGIN_ENABLED` must **set/delete
+those vars in `beforeEach`** (not merely restore in `afterEach`), so no test depends on
+ambient env (M3 — `next/jest` leaves `NEXT_PUBLIC_SUPABASE_URL` unset under `NODE_ENV=test`).
+
 | # | Test | Asserts | Layer |
 |---|------|---------|-------|
-| 1 | **Prod gate (critical)** | prod-like `NEXT_PUBLIC_SUPABASE_URL` (e.g. `https://x.supabase.co`) → `/dev-login` server component calls `notFound()` (404). **Mutation-checked:** delete the gate line → this test MUST go red. | route/server |
-| 2 | Local gate | `http://127.0.0.1:54321` → server component renders `DevLoginForm` (no 404). | route/server |
-| 3 | `isLocalSupabaseUrl` table | `localhost`, `127.0.0.1` (any scheme/port) → `true`; `x.supabase.co`, `''`, `undefined`, `null`, `'not a url'` → `false`. | unit |
+| 1 | **Prod gate — flag absent (critical)** | `DEV_LOGIN_ENABLED` unset → `/dev-login` calls `notFound()` (404), *regardless of URL*. This is the production state (prod never sets the flag). **Mutation-checked:** delete the flag check → red. | route/server |
+| 1b | **Prod gate — flag set but URL non-local (defense-in-depth)** | `DEV_LOGIN_ENABLED='true'` + `NEXT_PUBLIC_SUPABASE_URL='https://x.supabase.co'` → `notFound()` (404). **Mutation-checked:** delete the URL check → red. | route/server |
+| 2 | Local gate | `DEV_LOGIN_ENABLED='true'` + `http://127.0.0.1:54321` → renders `DevLoginForm` (no 404). | route/server |
+| 3 | `isLocalSupabaseUrl` table | `localhost`, `127.0.0.1` (any scheme/port) → `true`; `x.supabase.co`, `127.0.0.1.evil.com`, `''`, `undefined`, `null`, `'not a url'` → `false`. | unit |
+| 3b | `devLoginEnabled()` table | flag unset → `false`; flag `'true'`+local URL → `true`; flag `'true'`+prod URL → `false`; flag `'1'`/`'yes'` (not exact `'true'`) → `false`. | unit |
 | 4 | Form submit | entering email+password and submitting calls `signInWithPassword({ email, password })` with the entered values (mocked client). | component |
-| 5 | Form error | `signInWithPassword` returns an error → message shown in `role="alert"`. | component |
+| 5 | Form error | `signInWithPassword` returns an error → message shown in `role="alert"`; no navigation. | component |
 | 6 | `/login` link | link present when URL local; absent when URL prod-like. | component |
-| 7 | Middleware classification | `classifyRoute('/dev-login')` → `'public'`; an unauthenticated request to `/dev-login` is NOT redirected to `/login`. **Mutation-checked:** remove `/dev-login` from `PUBLIC_EXACT` → this test MUST go red. | unit + middleware |
+| 7 | Middleware classification | `classifyRoute('/dev-login')` → `'public'`; `classifyRoute('/dev-login-secrets')` → `'authenticated'`; unauth `/dev-login` NOT redirected. **Mutation-checked:** remove `/dev-login` from `PUBLIC_EXACT` → red. | unit + middleware |
+| 8 | **Deploy assertion (H2)** | a repo-level check that the production build/deploy config does **not** set `DEV_LOGIN_ENABLED` (grep `fly.toml`/`Dockerfile`/CI for a truthy value → must be absent). Turns "trust the deploy" into a regression guard. | repo/CI |
 
-Test #1 is the invariant guard — it is the one that must survive mutation (remove gate →
-red) per `docs/dev-process.md`.
+Tests #1 and #1b are the invariant guards; both must survive mutation. Test #8 guards the
+one real prod-leak path (a deploy that sets the flag).
 
 ## 8. Files touched
 
 | File | Change |
 |------|--------|
 | `lib/supabase/is-local-url.ts` | **new** — `isLocalSupabaseUrl` pure helper |
-| `app/dev-login/page.tsx` | **new** — server-gated route (`notFound()` unless local) |
-| `components/DevLoginForm.tsx` (or co-located) | **new** — client form calling `signInWithPassword` |
+| `lib/supabase/dev-login.ts` | **new** — `devLoginEnabled()` server gate (flag + runtime URL) |
+| `app/dev-login/page.tsx` | **new** — server-gated route (`force-dynamic`; `notFound()` unless `devLoginEnabled()`) |
+| `components/DevLoginForm.tsx` | **new** — client form calling `signInWithPassword`, hard-nav on success |
 | `app/login/page.tsx` | **edit** — conditional "Local dev sign-in" link |
-| `lib/supabase/route-categories.ts` | **edit** — add `/dev-login` to `PUBLIC_EXACT` (else middleware redirects unauth users to `/login` before the gate runs) |
-| `lib/supabase/__tests__/is-local-url.test.ts` | **new** — unit table (test #3) |
-| route + component tests | **new** — tests #1, #2, #4, #5, #6 |
+| `lib/supabase/route-categories.ts` | **edit** — add `/dev-login` to `PUBLIC_EXACT` |
+| `.env.local` (gitignored) + `.env.example` | **edit** — add `DEV_LOGIN_ENABLED=true` locally; document it (never set in prod) |
+| tests | **new/edit** — §7 tests #1–#8 |
 
-No migration. No change to production auth. No new env vars (reuses
-`NEXT_PUBLIC_SUPABASE_URL`).
+- **New env var:** `DEV_LOGIN_ENABLED` (server-only; set only in local `.env.local`).
+- **No migration. No change to production auth *code*.** Layer-1 (prod Supabase Auth
+  provider config) is a **console/verification** action, not a code change — see §11.
 
-## 9. Security rationale / threat model
+## 9. Security rationale / threat model *(rewritten after round-1 review — B1)*
 
-- **Threat:** an email/password login surface appearing in production would be an
-  additional, un-OAuth'd way in.
-- **Mitigation:** the surface is **server-gated** on a local-only signal, fail-closed, so
-  in production the route 404s and the form is never produced. "Absent" beats "hidden."
-- **Single decision point:** the gate is one pure, side-effect-free function evaluated on
-  the server — exhaustively unit-tested and mutation-tested (test #1, #3).
-- **Blast radius if the gate failed open:** an attacker would still need valid credentials
-  for a user that exists in the **production** Supabase; the test user
-  (`sync-test@example.com`) exists only in the local DB. But we do not rely on that — the
-  gate is the control.
-- **Residual:** the `DevLoginForm` client component's JS chunk may exist in the build
-  output, but with `/dev-login` returning 404 in prod there is no page that loads it. The
-  server gate — not chunk absence — is the guarantee.
+**Key correction from review:** the UI gate is **not** the control that makes
+email/password auth "impossible to *use*" in production. `signInWithPassword` posts
+**directly** to the Supabase Auth endpoint (`/auth/v1/token?grant_type=password`) using the
+anon key + Supabase URL that **already ship in every production bundle**
+(`lib/supabase/client.ts`, `fly.toml`). Whether `/dev-login` 404s has **zero** effect on
+that endpoint's reachability. So there are two distinct layers, and they must not be
+conflated:
+
+- **Layer 1 — the authorization control (what actually enforces "impossible to use"):** the
+  **production Supabase project's Auth configuration** — email/password sign-in **disabled**
+  (or: the email provider off / no password-capable users). This is what stops a direct API
+  call to the prod Auth endpoint from succeeding, *independent of this feature*. This feature
+  does not create the direct-API exposure (it exists for any Supabase project with the email
+  provider on), but shipping it without this being true would be false security. **§11 adds a
+  verification task.**
+- **Layer 2 — the UI gate (discoverability / defense-in-depth, what this feature adds):** the
+  `/dev-login` route is **absent in prod** — `devLoginEnabled()` is `false` because
+  `DEV_LOGIN_ENABLED` is never set there → `notFound()`. This keeps a login *form* from being
+  discoverable/served in prod. It is a convenience-and-hygiene control, **not** the
+  authorization boundary.
+
+**Gate properties (Layer 2):**
+- **Single server-side decision point** — `devLoginEnabled()`, fail-closed, unit- and
+  mutation-tested (§7 tests #1, #3, #8).
+- **Fail-closed under both build- and run-time semantics** — the primary signal is a
+  server-only flag that defaults closed; it cannot be build-inlined (not `NEXT_PUBLIC_*`) nor
+  fail open on a mis-set runtime env (only the exact string `'true'` opens it).
+- **Layered** — independent of middleware and of `STORAGE_BACKEND`; even if prod ran with
+  those in unexpected states, the flag-absent gate still 404s.
+- **Residual:** the `DevLoginForm` client chunk may exist in the build output, but with
+  `/dev-login` 404ing there is no page that loads it — and Layer 1, not chunk absence, is the
+  real boundary.
 
 ## 10. Resolved decisions
 
 1. **Server-gated dedicated route** (not client-gated form on `/login`) — absent > hidden.
-2. **Gate on Supabase URL host only** (not `NODE_ENV`) — correct for local prod-builds.
-3. **Fail-closed** — absent/malformed/non-local → 404.
-4. **Reuse the browser client's `signInWithPassword` + auto-cookie** — no new auth plumbing.
+2. **Gate = server-only `DEV_LOGIN_ENABLED` flag AND runtime local-URL check** (revised from
+   "URL host only"; not `NODE_ENV`). Sidesteps the `NEXT_PUBLIC_*` build-inlining question —
+   a non-public flag can't be inlined, and defaults closed so it can't fail open. `force-dynamic`
+   evaluates it per request.
+3. **Fail-closed** — flag absent / not exactly `'true'` / URL non-local/malformed → 404.
+4. **`signInWithPassword` writes the cookie client-side; hard-nav (`window.location.assign('/')`)
+   on success** — a full round-trip so middleware sees the fresh cookie (corrected from the
+   earlier "same as OAuth" claim).
 5. **Conditional link on `/login`** for discoverability — safe (worst case links to a 404).
-6. **No rate-limit / user-management / reset** — YAGNI for a local-only affordance.
+6. **No rate-limit / user-management / reset**; `pending` state to prevent double-submit — YAGNI.
 7. **`/dev-login` added to `PUBLIC_EXACT`** so the middleware doesn't redirect logged-out
-   devs to `/login` before the gate runs — safe because the server gate still 404s it in
-   prod (public + 404 = 404).
+   devs to `/login` before the gate runs — safe because the server gate still 404s in prod.
+8. **The UI gate is defense-in-depth, not the authorization boundary** — the real control for
+   "impossible to use in prod" is the prod Supabase Auth provider config (§9, §11).
+
+## 11. Layer-1 verification — production Supabase Auth config (B1)
+
+The authorization boundary is **not** in this codebase; it is the production Supabase
+project's Auth settings. Before this feature is considered done:
+
+- **Verify** the production project (`uykwcybxqgewmbltroxf`) has **email/password sign-in
+  disabled** (Auth → Providers → Email: signups off / password grant not usable), or that no
+  password-capable users exist. `signInWithPassword` against prod must fail regardless of any
+  UI.
+- This is a **read/verify** against prod (a human-gated check; changing the setting is an
+  outward-facing prod action). Record the observed state in the task's review notes.
+- Rationale: the direct Auth API is reachable with the public anon key that already ships in
+  prod, independent of `/dev-login`. If email/password is already disabled in prod, the
+  invariant's "impossible to *use*" clause holds; the UI gate then only prevents shipping a
+  discoverable form.
