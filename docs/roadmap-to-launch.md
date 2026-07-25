@@ -127,6 +127,25 @@ The original two-project vision: local and cloud coexist, **newer-wins** reconci
 - **M2b — later slice (own spec):** image/slide-asset backfill (both directions), tombstone delete
   propagation, background/auto-sync, true-conflict loser-preservation.
 
+  **M2b acceptance test (defined 2026-07-24, from a hands-on walk-through):** the concrete "done"
+  scenario for the cloud-text → local-assets vision —
+  1. **Cloud generates a dig-deeper** (against real or local Supabase). Per `dig-handler.ts:115` it is a
+     *text-only slice*: `[[SLIDE:…]]` tokens are preserved **unresolved** (no images) — this is expected.
+  2. **Sync carries the dig-deeper doc** cloud→local. **← the M2a gap this slice closes.** Today
+     `sync-run.ts:128` copies **only the `summaryMd` blob** ("Keep ONLY artifacts.summaryMd"); the
+     `digDeeperMd` blob (the "second artifact kind", deferred finding Claude-R2-M1) does NOT transfer.
+     M2b must sync `digDeeperMd` (and other artifact blobs) between replicas, healing the pointer/blob
+     split.
+  3. **Local backfills slide assets** — resolve `[[SLIDE:…]]` → cropped video frames via ffmpeg
+     (`lib/dig/slide-crop.ts`, `slides.ts`). Requires the **source video fetched locally** (backlog #8
+     "downloadable video + ffmpeg"). This is the "images" step — they are **slide crops**, not
+     AI-generated infographics.
+  4. **Assets sync back** local→cloud so the cloud doc gains the images too (backfill *both directions*).
+  **Done = a dig-deeper generated text-only on the cloud, synced to local, enriched with slide images
+  locally, and those images propagated back to cloud.** The pieces exist in isolation (cloud dig-gen ✅,
+  slide-crop code ✅); M2b is the connective tissue — dig-doc blob sync + orchestrated local video-fetch
+  → ffmpeg backfill + asset sync-back.
+
 - [x] **2.1 Brainstorm + spec** (M2a) — design user-approved; spec `…2026-07-17-stage3-cloud-sync-design.md`
   **v10 CONVERGED** (two-class model; commit bbc5991). **User-approved 2026-07-17.**
 - [x] **2.2 Plan** — `docs/superpowers/plans/2026-07-17-stage3-cloud-sync-m2a.md` **v6 CONVERGED**
@@ -332,6 +351,15 @@ along on the sync branch). Needs its own spec + review + human merge gate like a
 *Same rule as Dev-infrastructure debt: each item needs a **trigger**, or it rots here. Items without
 one are honest wishes, not plans — mark them so rather than pretending they are scheduled.*
 
+- **Cloud dev/staging Supabase project** *(user proposal, 2026-07-24)* — today the only hosted Supabase
+  is **prod** (`uykwcybxqgewmbltroxf`); there is **no cloud environment to develop/test against without
+  touching prod**. Local Docker Supabase (#2) covers most dev/test, but the *hosted-infra* dimension
+  (pooler/TLS/network, real Storage RLS + legacy-key grants, transient failures) can currently only be
+  exercised against prod — which is exactly why the M1.4 **B1–B5** checks were framed against prod.
+  **Fix:** stand up a **separate staging Supabase project** (or use Supabase branching), apply the same
+  migrations `0001–00NN`, and point the B-group + any future hosted-sync testing at *staging*. **TRIGGER:**
+  before running any hosted-infra sync/acceptance test (B-group, M2b, M3) — run it against staging, not
+  prod. Rule of thumb: **prod is never a development target.**
 - **Real-cost settle slice** (spec §10): replace the keep/release *heuristic* with real `actual_cents`
   from `usageMetadata`; closes the §2.4a/b/**4c** residuals + the crash residual (billable-phase marker).
   Natural sequel to the reservation slice. **MEASURED MOTIVATION (2026-07-22):** actual per-video cost
