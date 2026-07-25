@@ -71,10 +71,14 @@ export function isLocalSupabaseUrl(url: string | undefined | null): boolean {
 }
 ```
 
-Read the URL via the **computed-key runtime path** (`getSupabaseEnv()` in
-`lib/supabase/env.ts`, which uses `process.env[name]` — a runtime read), **not** the inlined
-literal. Even if `DEV_LOGIN_ENABLED=true` ever leaked to prod, the hosted `…supabase.co`
-URL still closes this second condition.
+Read the URL via **computed-key access** `process.env['NEXT_PUBLIC_SUPABASE_URL']` — a
+genuine **runtime** read (Next's DefinePlugin only substitutes the *literal*
+`process.env.NEXT_PUBLIC_SUPABASE_URL`; bracket access is not inlined). Do **NOT** use
+`getSupabaseEnv()` here — its `required()` **throws** on a missing var, which would break
+fail-closed (throw instead of 404); computed-key access returns `undefined` →
+`isLocalSupabaseUrl(undefined)` → `false`, the correct fail-closed result. Even if
+`DEV_LOGIN_ENABLED=true` ever leaked to prod, the runtime URL there is the hosted
+`…supabase.co` value (or unset) → this second condition closes the gate anyway.
 
 **Request-time evaluation.** The route sets `export const dynamic = 'force-dynamic'` so the
 gate is evaluated per request and never prerendered with a frozen decision. In prod the flag
@@ -106,14 +110,16 @@ where the gate lives in a small server helper (single decision point, §3):
 import { isLocalSupabaseUrl } from '@/lib/supabase/is-local-url';
 
 export function devLoginEnabled(): boolean {
-  if (process.env.DEV_LOGIN_ENABLED !== 'true') return false;         // fail-closed primary
-  return isLocalSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);    // runtime computed-key read
+  if (process.env.DEV_LOGIN_ENABLED !== 'true') return false;            // fail-closed primary (runtime)
+  return isLocalSupabaseUrl(process.env['NEXT_PUBLIC_SUPABASE_URL']);    // computed-key → genuine runtime read
 }
 ```
 
-> Note: `process.env.NEXT_PUBLIC_SUPABASE_URL` here is a **runtime** read because it is only
-> reached when `DEV_LOGIN_ENABLED==='true'` (never set in prod), and the route is
-> `force-dynamic`. The primary safety is the flag; the URL is defense-in-depth.
+> Note: `DEV_LOGIN_ENABLED` (server-only, not `NEXT_PUBLIC_*`) is a true runtime read and the
+> primary gate — absent in prod → `false` short-circuits before the URL is consulted. The URL
+> uses **bracket access** so it too is a runtime read (the *literal* form would be
+> build-inlined). `getSupabaseEnv()` is deliberately NOT used — it throws on a missing var,
+> which would fail-open-to-500 instead of fail-closed-to-404.
 
 - The gate runs on the **server**, which the browser cannot influence. In production the
   page returns **404** and the form is never produced — "absent," not merely "hidden."
@@ -182,7 +188,11 @@ ambient env (M3 — `next/jest` leaves `NEXT_PUBLIC_SUPABASE_URL` unset under `N
 | 8 | **Deploy assertion (H2)** | a repo-level check that the production build/deploy config does **not** set `DEV_LOGIN_ENABLED` (grep `fly.toml`/`Dockerfile`/CI for a truthy value → must be absent). Turns "trust the deploy" into a regression guard. | repo/CI |
 
 Tests #1 and #1b are the invariant guards; both must survive mutation. Test #8 guards the
-one real prod-leak path (a deploy that sets the flag).
+**in-repo config paths** for the flag (fly.toml / Dockerfile / CI) — it does **not** catch a
+runtime `fly secrets set DEV_LOGIN_ENABLED=true` (a secret in no repo file). That runtime
+path is caught by (a) the URL defense-in-depth in the gate and (b) a **required post-deploy
+smoke check** (`curl <prod>/dev-login` → 404) in `docs/deploy.md` — the guard at the layer
+that actually regresses.
 
 ## 8. Files touched
 
