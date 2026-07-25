@@ -83,6 +83,21 @@ On the live URL: sign in → add a playlist → generate a summary → view it �
 Watch `fly logs` for the worker claiming/among completing the job. Fix any cloud-run blockers, then tick
 M1.4 in the roadmap.
 
+**Dev-login gate (#13) — required post-deploy check.** The `/dev-login` email/password form is a
+**local-only** affordance gated on the server-only flag `DEV_LOGIN_ENABLED`. This flag must **NEVER**
+be set in production — not in `fly.toml`, `Dockerfile`, CI, or `fly secrets`. The in-repo config paths
+are guarded by `tests/lib/dev-login-flag-absent.test.ts`; the runtime path (`fly secrets`) is guarded
+by this post-deploy assertion — run it after every deploy:
+
+```bash
+# /dev-login MUST be 404 in prod (dev-login gate closed).
+test "$(curl -sS -o /dev/null -w '%{http_code}' https://<prod-host>/dev-login)" = "404" \
+  && echo "OK: /dev-login is 404 in prod" || echo "FAIL: /dev-login is reachable in prod — unset DEV_LOGIN_ENABLED"
+```
+
+(The real authorization boundary is the prod Supabase Auth config — email/password sign-in disabled —
+not this UI gate; see the #13 spec §9/§11.)
+
 ## Known follow-ups (not blockers)
 - **Build memory:** `next build`'s static-generation phase OOMs at Node's default heap for this app's
   route set. The `Dockerfile` scopes `NODE_OPTIONS=--max-old-space-size=4096` to the build layer; the
