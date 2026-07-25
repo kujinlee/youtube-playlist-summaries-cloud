@@ -6,7 +6,7 @@ jest.mock('next/navigation', () => ({ notFound: () => notFound() }));
 // stub the client form so this node-env test has no browser deps
 jest.mock('@/components/DevLoginForm', () => ({ DevLoginForm: () => null }));
 
-import DevLoginPage from '@/app/dev-login/page';
+import DevLoginPage, { dynamic } from '@/app/dev-login/page';
 
 const prior = { flag: process.env.DEV_LOGIN_ENABLED, url: process.env.NEXT_PUBLIC_SUPABASE_URL };
 function setEnv(flag: string | undefined, url: string | undefined) {
@@ -17,6 +17,10 @@ beforeEach(() => { jest.clearAllMocks(); setEnv(undefined, undefined); }); // ga
 afterEach(() => setEnv(prior.flag, prior.url));
 
 describe('GET /dev-login gate', () => {
+  it('is force-dynamic (gate evaluated per request, never prerendered with a frozen decision)', () => {
+    expect(dynamic).toBe('force-dynamic');
+  });
+
   it('404s when the flag is unset (production state), even with a local URL', async () => {
     setEnv(undefined, 'http://127.0.0.1:54321');
     await expect(DevLoginPage()).rejects.toThrow('NEXT_NOT_FOUND');

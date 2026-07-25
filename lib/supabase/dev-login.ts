@@ -4,6 +4,7 @@
 //      in local .env.local; never in prod.
 //   2. the runtime Supabase URL is local — defense-in-depth (closes the gate even if the
 //      flag ever leaked to a prod runtime).
+import 'server-only'; // mechanically forbid importing this gate from client code (build-time error)
 import { isLocalSupabaseUrl } from '@/lib/supabase/is-local-url';
 
 export function devLoginEnabled(): boolean {
