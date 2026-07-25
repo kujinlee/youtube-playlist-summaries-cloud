@@ -5,6 +5,11 @@ describe('route categories', () => {
     expect(classifyRoute('/')).toBe('public');
     expect(classifyRoute('/about')).toBe('public');
   });
+  it('/dev-login is public (must be reachable pre-session; server gate 404s it in prod)', () => {
+    expect(classifyRoute('/dev-login')).toBe('public');
+    // a sibling that merely starts with the string is NOT swept in
+    expect(classifyRoute('/dev-login-secrets')).toBe('authenticated');
+  });
   it('/auth/* paths are public so OAuth callback and auth-error are reachable pre-session', () => {
     expect(classifyRoute('/auth')).toBe('public');
     expect(classifyRoute('/auth/callback')).toBe('public');
