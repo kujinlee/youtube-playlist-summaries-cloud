@@ -248,6 +248,39 @@ export async function createShare(
   return handle<CreateShareResult>(res);
 }
 
+/** Upper bound on how long a share-mint pre-warm blocks the dialog. A first-time warm generates the
+ *  model server-side (a Gemini call, usually a few seconds); this caps the wait so a stalled request
+ *  can never freeze the dialog in "Working…" with close disabled. On timeout we abort and resolve
+ *  `false` → the link is revealed anyway and heals on the owner's next view. Generous vs. a normal
+ *  flash magazine call, well under the server-side serve lease. */
+const WARM_MODEL_TIMEOUT_MS = 15_000;
+
+/** Best-effort warm of the owner's rendered "magazine" model so a freshly-minted share link serves
+ *  immediately instead of returning 503 "not ready" (backlog #14). Hits the SAME owner-charged serve
+ *  path a normal HTML view uses (`summaryHref`): a FRESH model is read without charging; an absent/stale
+ *  model is generated, bounded by `reserve_serve_model` (per owner/doc/day lease + K attempt cap) —
+ *  i.e. the same spend cap a normal owner *view* already incurs, no new or double charge.
+ *  Advisory: never throws and never redirects, and is bounded by `WARM_MODEL_TIMEOUT_MS` — if warming
+ *  fails (serve budget exhausted, transient 5xx, expired session, or a stall) the share link still heals
+ *  on the owner's next view, so the caller reveals the link regardless. Returns whether the warm
+ *  succeeded, for the caller / tests. NOTE: unlike the other helpers this deliberately does NOT go
+ *  through `handle()` (which throws on non-2xx / redirects on 401) — warming must stay side-effect-free
+ *  on failure; a `console.warn` is the only trace, so a prod "share still 503s" regression is diagnosable. */
+export async function warmSummaryModel(playlistId: string, videoId: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WARM_MODEL_TIMEOUT_MS);
+  try {
+    const res = await fetch(summaryHref(playlistId, videoId), { signal: controller.signal });
+    if (!res.ok) console.warn(`[share-warm] model warm returned ${res.status}; the link may show "not ready" until the owner next views the doc`);
+    return res.ok;
+  } catch {
+    console.warn('[share-warm] model warm failed (timeout or network); the link may show "not ready" until the owner next views the doc');
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function revokeShare(shareId: string): Promise<{ revoked: boolean }> {
   const res = await fetch(`/api/share/${encodeURIComponent(shareId)}/revoke`, { method: 'POST' });
   return handle<{ revoked: boolean }>(res);

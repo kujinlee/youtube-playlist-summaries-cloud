@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { createShare, revokeShare, UnauthorizedError, type CreateShareResult, type ShareTtl } from '@/lib/client/api';
+import { createShare, revokeShare, warmSummaryModel, UnauthorizedError, type CreateShareResult, type ShareTtl } from '@/lib/client/api';
 
 interface ShareDialogProps {
   playlistId: string;
@@ -59,6 +59,11 @@ export default function ShareDialog({ playlistId, videoId, videoTitle, onClose }
     setError(null);
     try {
       const result = await createShare(playlistId, videoId, ttl);
+      // Pre-warm the owner's rendered model so the link serves immediately instead of 503 "not ready"
+      // (backlog #14). Best-effort and awaited BEFORE revealing the link, so the user can never copy a
+      // not-yet-ready link; a failed warm still reveals it (heals on the owner's next view). Button
+      // stays "Working…" during the warm.
+      await warmSummaryModel(playlistId, videoId);
       setShare(result);
     } catch (err) {
       if (err instanceof UnauthorizedError) { router.replace('/login'); return; }
