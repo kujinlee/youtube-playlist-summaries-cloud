@@ -81,8 +81,15 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   OFF after account creation. **3 cloud-run blockers found + fixed (PR #31, all build-time-vs-runtime):**
   NEXT_PUBLIC absent at build (→ [build.args] + fail-build guard); OAuth callback → 0.0.0.0:3000
   (→ x-forwarded-host); root page baked static-LocalApp at build (→ force-dynamic).
+  **Redeploy 2026-07-29 (release v5):** shipped the share pre-warm fix (backlog #14, PR #37) —
+  share-before-view no longer 503s. Post-deploy checks green: image 471 MB, `/dev-login`→404 (gate
+  closed), `/login`→200. **Download verified working (user, 2026-07-28).** **Share-before-view
+  VERIFIED working live against v5 (user, 2026-07-29)** — the link served once the owner minted it
+  with the new code. Caveat surfaced: a tab open *across* the deploy runs stale JS and needed a hard
+  refresh → filed backlog #16 (app-wide "new version available" banner); #15 removes the
+  share-specific instance.
   **Still to do in 1.4 → actionable checklist: [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md)**
-  (a) download + share paths — not yet exercised; (b) raise prod
+  (a) ~~download~~ ✅ ~~share-before-view~~ ✅ (live, v5); (b) raise prod
   `daily_cap_cents` if the owner wants full playlists; (c) the 5 cloud-sync checks below.
   Original checklist retained:
   → add playlist → generate summary → view → download → share); fix any cloud-run blockers.
