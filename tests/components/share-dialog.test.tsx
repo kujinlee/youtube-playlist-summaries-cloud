@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react';
 import ShareDialog from '@/components/cloud/ShareDialog';
-import { createShare, revokeShare, UnauthorizedError, type CreateShareResult } from '@/lib/client/api';
+import { createShare, revokeShare, warmSummaryModel, UnauthorizedError, type CreateShareResult } from '@/lib/client/api';
 
 // NOTE: this codebase's `lib/client/api` module compiles named exports as non-configurable
 // getters (Next's SWC ESM->CJS transform), so `jest.spyOn(realModule, 'fn')` throws
@@ -16,18 +16,22 @@ jest.mock('@/lib/client/api', () => {
   return {
     createShare: jest.fn(),
     revokeShare: jest.fn(),
+    warmSummaryModel: jest.fn(),
     UnauthorizedError,
   };
 });
 
 const createShareMock = createShare as jest.MockedFunction<typeof createShare>;
 const revokeShareMock = revokeShare as jest.MockedFunction<typeof revokeShare>;
+const warmSummaryModelMock = warmSummaryModel as jest.MockedFunction<typeof warmSummaryModel>;
 
 const baseProps = { playlistId: 'p1', videoId: 'v1', videoTitle: 'How Transformers Work', onClose: jest.fn() };
 
 beforeEach(() => {
   createShareMock.mockReset();
   revokeShareMock.mockReset();
+  warmSummaryModelMock.mockReset();
+  warmSummaryModelMock.mockResolvedValue(true); // default: warm succeeds (best-effort, non-blocking to reveal)
   replace.mockReset();
   baseProps.onClose = jest.fn();
 });
@@ -48,6 +52,53 @@ test('create success: URL populated, Copy + Revoke enabled, stays open', async (
   expect(screen.getByRole('button', { name: /copy/i })).toBeEnabled();
   expect(screen.getByRole('button', { name: /revoke/i })).toBeEnabled();
   expect(baseProps.onClose).not.toHaveBeenCalled();
+});
+
+// backlog #14: minting a share pre-warms the owner's rendered model (via the owner-charged serve
+// path) so the link serves immediately instead of 503. The link is revealed only AFTER the warm
+// settles, so a user can never copy a not-yet-ready link.
+test('S1: create pre-warms the model and reveals the link only AFTER warming settles', async () => {
+  createShareMock.mockResolvedValue({ id: 's1', token: 'tok', url: '/s/tok', expiresAt: null });
+  let resolveWarm!: (v: boolean) => void;
+  warmSummaryModelMock.mockReturnValue(new Promise((r) => { resolveWarm = r; }));
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  // createShare has resolved but warm is still pending → link must NOT be revealed yet.
+  await waitFor(() => expect(warmSummaryModelMock).toHaveBeenCalledWith('p1', 'v1'));
+  expect(screen.queryByDisplayValue(/\/s\/tok$/)).not.toBeInTheDocument();
+  await act(async () => { resolveWarm(true); });
+  expect(screen.getByDisplayValue(/\/s\/tok$/)).toBeInTheDocument();
+});
+
+test('S2: a failed warm still reveals the link (best-effort — heals on next owner view), no error', async () => {
+  createShareMock.mockResolvedValue({ id: 's1', token: 'tok', url: '/s/tok', expiresAt: null });
+  warmSummaryModelMock.mockResolvedValue(false);
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => expect(screen.getByDisplayValue(/\/s\/tok$/)).toBeInTheDocument());
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('S3: a failed create does NOT warm the model', async () => {
+  createShareMock.mockRejectedValue(new Error('bad request'));
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+  expect(warmSummaryModelMock).not.toHaveBeenCalled();
+});
+
+test('S4: backdrop + Escape are inert while the CREATE+warm phase is in flight', async () => {
+  createShareMock.mockResolvedValue({ id: 's1', token: 't', url: '/s/t', expiresAt: null });
+  let resolveWarm!: (v: boolean) => void;
+  warmSummaryModelMock.mockReturnValue(new Promise((r) => { resolveWarm = r; }));
+  render(<ShareDialog {...baseProps} />);
+  fireEvent.click(screen.getByRole('button', { name: /create link/i }));
+  // createShare resolved, warm still pending → dialog is busy; close paths must be inert.
+  await waitFor(() => expect(warmSummaryModelMock).toHaveBeenCalled());
+  fireEvent.click(screen.getByTestId('share-dialog-backdrop'));
+  fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+  expect(baseProps.onClose).not.toHaveBeenCalled();
+  await act(async () => { resolveWarm(true); });
 });
 
 test('TTL Never → createShare called with "never"', async () => {
@@ -79,7 +130,7 @@ test('copy success → clipboard write + "Copied" live region', async () => {
   Object.assign(navigator, { clipboard: { writeText } });
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /copy/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /copy/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /copy/i }));
   await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/s/tok')));
   await waitFor(() => expect(screen.getByText(/copied/i)).toBeInTheDocument());
@@ -91,7 +142,7 @@ test('copy failure → falls back to selecting URL text, no throw', async () => 
   Object.assign(navigator, { clipboard: { writeText } });
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /copy/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /copy/i })).toBeEnabled());
   const input = screen.getByDisplayValue(/\/s\/tok$/) as HTMLInputElement;
   const select = jest.spyOn(input, 'select');
   fireEvent.click(screen.getByRole('button', { name: /copy/i }));
@@ -103,7 +154,7 @@ test('revoke success → clears held share, back to "No link yet"', async () => 
   revokeShareMock.mockResolvedValue({ revoked: true });
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /revoke/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /revoke/i }));
   await waitFor(() => expect(revokeShareMock).toHaveBeenCalledWith('s1'));
   await waitFor(() => expect(screen.queryByDisplayValue(/\/s\/tok$/)).not.toBeInTheDocument());
@@ -114,7 +165,7 @@ test('revoke 401 → router.replace(/login)', async () => {
   revokeShareMock.mockRejectedValue(new UnauthorizedError('unauthorized'));
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /revoke/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /revoke/i }));
   await waitFor(() => expect(replace).toHaveBeenCalledWith('/login'));
 });
@@ -124,7 +175,7 @@ test('revoke error → inline role=alert, stays open', async () => {
   revokeShareMock.mockRejectedValue(new Error('revoke failed'));
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /revoke/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /revoke/i }));
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/revoke failed/i));
   expect(baseProps.onClose).not.toHaveBeenCalled();
@@ -189,7 +240,7 @@ test('rapid double-click Revoke fires revokeShare exactly once', async () => {
   revokeShareMock.mockReturnValue(new Promise((r) => { resolve = r; }));
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /revoke/i })).toBeEnabled());
   const rb = screen.getByRole('button', { name: /revoke/i });
   fireEvent.click(rb);
   fireEvent.click(rb);
@@ -203,7 +254,7 @@ test('backdrop + Escape are inert while REVOKE is in flight', async () => {
   revokeShareMock.mockReturnValue(new Promise((r) => { resolve = r; }));
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /revoke/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /revoke/i }));   // revoke pending
   fireEvent.click(screen.getByTestId('share-dialog-backdrop'));
   fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
@@ -236,7 +287,7 @@ test('revoke no-op ({revoked:false}) still clears the held share (acceptable for
   revokeShareMock.mockResolvedValue({ revoked: false });  // already-revoked / non-owned
   render(<ShareDialog {...baseProps} />);
   fireEvent.click(screen.getByRole('button', { name: /create link/i }));
-  await waitFor(() => screen.getByRole('button', { name: /revoke/i }));
+  await waitFor(() => expect(screen.getByRole('button', { name: /revoke/i })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: /revoke/i }));
   await waitFor(() => expect(screen.queryByDisplayValue(/\/s\/tok$/)).not.toBeInTheDocument());
 });
