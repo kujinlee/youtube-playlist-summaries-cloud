@@ -235,6 +235,9 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 - [x] **`scripts/check-docs.py`** — ADR index drift, dangling ADR refs, broken living-doc links;
   advisory list of spec decisions never promoted. Code→ADR references went 0 → 2.
 - [ ] **Triage the 19 spec docs** holding decision markers with no ADR (the advisory list).
+- [x] **Branch-rule enforcement** — `.claude/hooks/block-default-branch-push.sh` (PR #39). Denies a
+  push to the default branch; allows it when no remote exists. 15 verified cases + proved live.
+  The first mechanism here that *constrains* rather than reminds.
 - [ ] **Backlog #18(b) — give `grill-with-docs` a trigger.** The rule for promoting decisions was
   never missing; the skill that applies it went dormant. **This is the open root cause.**
 - [x] **README coverage** — CI, ADRs, roadmap/backlog links and the maintenance scripts (done by hand
@@ -476,9 +479,8 @@ this block still named M1.3 as "the single remaining blocker" nine days after it
 contradicted the checkboxes directly above it. Reconcile this block against `git log` and the
 merged-PR list every time, per *Session Resume*.
 
-**Blocked on the human:**
-1. **Merge PR #38** — architecture review (Phase 6), `InMemoryBlobStore` (finding #3), CI, ADR-0005.
-   CI green. Merging is a human gate.
+**Blocked on the human:** nothing. PR #38 (`04984af`) and PR #39 (`622e793`) are both merged;
+`master` is green.
 
 **Unblocked — engineering, in recommended order:**
 1. **D2 — no reaper for `serve_model_charge`** (money path, fails silently). Nothing cron-shaped
@@ -493,34 +495,29 @@ merged-PR list every time, per *Session Resume*.
 4. **Backlog #18(b)** — give `grill-with-docs` a trigger. It is the documentation-integrity skill
    (ships `ADR-FORMAT.md` + `CONTEXT-FORMAT.md`, captures decisions *as they crystallise*) and has
    been dormant since 2026-07-12. Its dormancy is why ADR-0005 sat unpromoted for four weeks.
-5. **Hooks** (proposed 2026-07-30, not built): a `PreToolUse` guard blocking `git push` to master,
-   and a `PreCompact`/`SessionEnd` snapshot of mechanical session state. Note the honest limit —
-   a `PreCompact` command hook cannot capture decisions from context, so it is not a substitute
-   for (4).
+5. **`PreCompact`/`SessionEnd` snapshot** of mechanical session state (branch, unpushed commits,
+   dirty files, open tasks). Designed 2026-07-30, **not built**. Honest limit: a `PreCompact`
+   *command* hook cannot read the conversation (`prompt`/`agent` hook types are tool-events only),
+   so it captures mechanical state — **not decisions**, and is no substitute for (4).
+   *(The push guard from this pair IS built — PR #39, `.claude/hooks/block-default-branch-push.sh`.)*
+6. **Two unbuilt checks** for `scripts/check-docs.py` — README coverage, and roadmap
+   internal-consistency. Both recorded under *Process & documentation integrity* above.
 
 **Unblocked — can be picked up now, in recommended order:**
 1. ~~Fix the red `reservation-release` suite~~ ✅ **MERGED to master 2026-07-19** (PR #25, merge commit `bbc82c9`).
    Root cause was a self-poisoning suite, not the "state pollution from other suites" this
    roadmap previously recorded — see *Dev-infrastructure debt*. "Full suite green" is a
    falsifiable gate again and the known-red list is empty.
-2. **Shrink the deploy image** — ⚠️ **CODE DONE 2026-07-19, SIZE UNMEASURED** (branch
-   `chore/shrink-deploy-image`, unmerged). Multi-stage Dockerfile: builder does
-   `npm ci` + `next build` (`output: 'standalone'`) + an esbuild worker bundle; the runtime layer
-   carries only those two artifacts + Chromium, dropping the full 684 MB `node_modules`, npm's
-   cache, TypeScript/`ts-node`, and the whole-repo `COPY . .`. Also swapped the `googleapis`
-   umbrella (194 MB, used for a single `youtube.v3` call) for `@googleapis/youtube` (1.8 MB).
-   **`docker build` could not run** — Docker Desktop registry pulls hang on this machine and no base
-   image was cached — so the resulting size is an ESTIMATE, not a measurement. Measured pieces:
-   `node_modules` 684 → 492 MB; `.next/standalone` 78 MB (vs 492 MB full install); worker bundle
-   2.4 MB. **The first `docker build` on a machine with registry access, or `fly deploy` itself,
-   is the confirmation step — fold it into 1.4.** Verified without a build: standalone `server.js`
-   binds `0.0.0.0`; the bundled worker boots on Node 22 and drains cleanly on SIGTERM in ~1 s;
-   2450 unit tests + tsc green. Note `fly.toml`'s process commands changed to direct `node`
-   invocations, since neither the `next` CLI nor `ts-node` exists in the runtime image any more.
+2. ~~Shrink the deploy image~~ ✅ **MERGED 2026-07-19 (PR #26).** The multi-stage Dockerfile is on
+   `master` (`FROM node:22-bookworm-slim AS builder`) and the app has since deployed and served
+   traffic, so `fly deploy` supplied the confirmation the local `docker build` could not.
+   *(This entry read "CODE DONE, SIZE UNMEASURED, branch unmerged" for 11 days after that branch
+   was merged and deleted.)*
 3. ~~Codex dispatch wrapper~~ ✅ **DONE 2026-07-19** — `scripts/codex-review.py`, converged over 5
    adversarial rounds. Use it for every Codex review: `python3 scripts/codex-review.py --out
    docs/reviews/<name>-codex.md "<prompt>"`. Exit 1 means the gate did not run → fall back to Claude.
-   **The dev-infrastructure debt list is now EMPTY.**
+   *(This line claimed the dev-infrastructure debt list was EMPTY. It is not — see that
+   section: `exec_sql` is open, added 2026-07-20, one day after this line was written.)*
 4. **Full honest-blob-read slice** — the remaining ~10 `blob.get` callers, retiring `provesAbsence`.
    Own spec + review + merge gate. The billable path is already closed (PR #24), so this is no longer
    urgent. *(Note: the `ledger_audit` wipe that silently affected zero rows during the fix above is
@@ -528,5 +525,6 @@ merged-PR list every time, per *Session Resume*.
 5. **Locally-fixable M2a deferred findings** — most notably Claude-R3-M1 (`build-doc-html` derives
    `base` from `digDeeperMd`, so a diverged replica key makes the dig view serve the pre-sync summary).
 
-**Loose end:** `docs/local-validation-findings.md` and `supabase/config.toml` have uncommitted local
-modifications predating 2026-07-18; never reviewed, deliberately excluded from PRs #23/#24.
+**Loose end:** ~~uncommitted local modifications to `docs/local-validation-findings.md` and
+`supabase/config.toml`~~ — **stale, verified 2026-07-30:** `git status` reports no modifications
+to either file.

@@ -61,24 +61,40 @@ fi
 
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 
-# Strip the leading `git push` and its flags to inspect the refspec arguments.
-args="$(printf '%s' "$cmd" | sed -E 's/.*git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push[[:space:]]*//')"
-refspecs="$(printf '%s' "$args" | tr ' ' '\n' | grep -v '^-' | grep -v '^$' || true)"
-# Drop the remote name (first non-flag token) to leave only refspecs.
-positional_count="$(printf '%s' "$refspecs" | grep -c . || true)"
+# Isolate ONLY the push invocation(s) before parsing refspecs.
+#
+# REGRESSION (found in live use, 2026-07-30): an earlier version ran the strip
+# over the WHOLE command with `sed`, which is line-oriented — so in a multi-line
+# command only the `git push` line was stripped and every other line survived
+# into the refspec list. A commit message containing the word "master" was then
+# read as a refspec, and the hook blocked a legitimate feature-branch push.
+#
+# `grep -o` is per-line and `[^;&|]*` stops at a command separator, so only the
+# real push invocation and its own arguments are ever inspected.
+push_cmds="$(printf '%s' "$cmd" \
+  | grep -oE 'git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push([[:space:]]+[^;&|]*)?' || true)"
+[ -n "$push_cmds" ] || allow
 
 targets_default=0
-if [ "$positional_count" -ge 2 ]; then
-  # `git push <remote> <refspec>...` — check the refspec's DESTINATION (after ':').
-  for r in $(printf '%s' "$refspecs" | tail -n +2); do
-    dest="${r##*:}"                      # HEAD:master -> master ; master -> master
-    dest="${dest#refs/heads/}"
-    [ "$dest" = "$default_branch" ] && targets_default=1
-  done
-else
-  # `git push` or `git push <remote>` — pushes the CURRENT branch.
-  [ "$current_branch" = "$default_branch" ] && targets_default=1
-fi
+while IFS= read -r one; do
+  [ -n "$one" ] || continue
+  args="$(printf '%s' "$one" | sed -E 's/^git[[:space:]]+(-[^[:space:]]+[[:space:]]+)*push[[:space:]]*//')"
+  toks="$(printf '%s' "$args" | tr ' \t' '\n\n' | grep -v '^-' | grep -v '^$' || true)"
+  n="$(printf '%s\n' "$toks" | grep -c . || true)"
+  if [ "$n" -ge 2 ]; then
+    # `git push <remote> <refspec>...` — check each refspec's DESTINATION (after ':').
+    for r in $(printf '%s\n' "$toks" | tail -n +2); do
+      dest="${r##*:}"                    # HEAD:master -> master ; master -> master
+      dest="${dest#refs/heads/}"
+      [ "$dest" = "$default_branch" ] && targets_default=1
+    done
+  else
+    # `git push` or `git push <remote>` — pushes the CURRENT branch.
+    [ "$current_branch" = "$default_branch" ] && targets_default=1
+  fi
+done <<EOF
+$push_cmds
+EOF
 
 [ "$targets_default" -eq 1 ] || allow
 
