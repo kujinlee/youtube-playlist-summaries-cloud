@@ -132,6 +132,8 @@ These files are not @-included — read them when the trigger condition is met.
    module to `master`. A rule with a judgment call in the middle is a rule that erodes.
    Batching gives the relief without reintroducing the judgment call.
 
+   - **Enforced, not just written:** `.claude/hooks/block-default-branch-push.sh` (PreToolUse on
+     `git push`) denies a push to the default branch. Escape hatch: `ALLOW_DEFAULT_BRANCH_PUSH=1`.
    - Merging stays a **human gate** (see Human-in-the-Loop Policy). Open the PR, notify,
      do not merge.
    - Use the branch even when the work is already committed on `master` locally: create
