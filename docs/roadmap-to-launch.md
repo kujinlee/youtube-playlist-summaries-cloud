@@ -237,7 +237,26 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 - [ ] **Triage the 19 spec docs** holding decision markers with no ADR (the advisory list).
 - [ ] **Backlog #18(b) — give `grill-with-docs` a trigger.** The rule for promoting decisions was
   never missing; the skill that applies it went dormant. **This is the open root cause.**
-- [ ] **README coverage** — CI, ADRs, and the new scripts. Retrospectively fixable, low severity.
+- [x] **README coverage** — CI, ADRs, roadmap/backlog links and the maintenance scripts (done by hand
+  2026-07-30). **The check that keeps it true is NOT built** — see the open item below.
+- [ ] **README-coverage check** in `scripts/check-docs.py`: every `scripts/*.py|*.sh` and every
+  `.github/workflows/*.yml` must be mentioned in `README.md`. Fixing the content by hand does not
+  stop it drifting again; only the check does.
+- [ ] **Roadmap internal-consistency check** — *replaces a rejected proposal.* The original idea was
+  "fail if `master` moved N commits since the roadmap changed." **That would not have worked:** when
+  measured on 2026-07-30 the roadmap *was* being edited regularly (PR #32 on 07-22, all M1 checkboxes
+  current) — the rot was a **summary block inside an actively-maintained file**, still naming M1.3 as
+  "the single remaining blocker" nine days after its own checkbox was ticked two screens above. A
+  recency check reads green throughout. Build the consistency check instead: flag when a step named
+  as blocking in *NEXT ACTIONS* has a `[x]` checkbox elsewhere in the file. Lesson: **staleness lives
+  inside frequently-edited files; recency is the wrong signal.**
+- [ ] **Shrink `docs/dev-process.md`** — it is always loaded via `CLAUDE.md`, and grew **347 → 412
+  lines during a single session (2026-07-30)** — the same session that diagnosed *dilution* (rules
+  present but unapplied) as its failure mode. `docs/process-rationale.md` already exists for
+  evidence, yet 3 inline `**Why:**` narratives remain in the process doc. Move them; leave the
+  operative rules scannable. **Guiding principle: every hard-won lesson should become a check, a
+  checklist item, or a hook — prose is the fallback, not the default.** Of six mechanisms proposed
+  on 2026-07-30, five went unbuilt and the only thing added was prose.
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
