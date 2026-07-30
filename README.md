@@ -231,6 +231,9 @@ This project is built with Claude Code using a gate-based workflow (brainstorm �
 | [`docs/available-skills.md`](docs/available-skills.md) | All Claude Code skills, agents, and commands available in this project — invoke strings, trigger type (`auto + /slash`, `/command`, `agent`), and descriptions |
 | [`docs/dev-process.md`](docs/dev-process.md) | Phase-by-phase development workflow and per-task checklist |
 | [`docs/plugins.md`](docs/plugins.md) | Required plugins, skill conflict resolution, and cleanup guidance |
+| [`docs/adr/`](docs/adr/README.md) | Architecture Decision Records — decisions a future reader would otherwise reverse by accident (e.g. why there is no `ffmpeg` in the Docker image) |
+| [`docs/roadmap-to-launch.md`](docs/roadmap-to-launch.md) | Milestones and next actions; reconciled against `git log`, not trusted as-is |
+| [`docs/backlog.md`](docs/backlog.md) | Triaged enhancement backlog |
 | [`docs/architecture.html`](https://kujinlee.github.io/youtube-playlist-summaries-cloud/architecture.html) | Standalone architecture diagram (rendered) — richer version of the Mermaid diagram above, with a light/dark toggle. Source: [`docs/architecture.html`](docs/architecture.html) |
 
 To regenerate the skills reference after installing or updating plugins, say **"sync docs"** or run `/sync-docs` — the `sync-docs` skill handles it. Or run directly:
@@ -238,3 +241,19 @@ To regenerate the skills reference after installing or updating plugins, say **"
 ```bash
 python3 scripts/regen-skills-doc.py
 ```
+
+### CI
+
+Every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml) on Node 22 (matching the
+Dockerfile): `tsc --noEmit`, the unit/component suite, the `service_role` confinement guard, and the
+documentation-integrity check. Integration tests need a live Supabase stack and E2E needs Playwright
+browsers, so both stay local — run them before asking for a merge.
+
+### Maintenance scripts
+
+| Script | Purpose |
+|---|---|
+| `python3 scripts/check-docs.py` | Documentation integrity — ADR index drift, dangling ADR references, broken links |
+| `python3 scripts/skill-usage-audit.py` | Which installed Claude Code skills are actually used, across all sessions |
+| `./scripts/publish-arch-page.sh` | Publish `docs/architecture.html` to GitHub Pages |
+| `python3 scripts/regen-skills-doc.py` | Regenerate `docs/available-skills.md` |

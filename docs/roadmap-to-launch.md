@@ -217,6 +217,28 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ---
 
+## Process & documentation integrity (added 2026-07-30, PR #38)
+
+Not a feature slice — this is the machinery that stops hard-won lessons from decaying.
+
+- [x] **Phase 6 — per-milestone architecture review** adopted in `docs/dev-process.md`. First run:
+  `docs/reviews/architecture-review-2026-07-30.md` — 7 composition findings + 4 verified defects
+  (one on the money path). Per-task review is structurally blind to these.
+- [x] **Finding #3 — `InMemoryBlobStore`.** The storage seam is now the test surface; the adapter
+  models BOTH shipped `promote()` semantics because they genuinely disagree.
+- [x] **CI** (`.github/workflows/ci.yml`) — `tsc`, the unit suite, the `service_role` confinement
+  guard, and documentation integrity, on Node 22. Free (public repo). First run exposed that
+  `npm test` was never hermetic: it silently required `ffmpeg`.
+- [x] **Branch + PR is the standard path**, keyed on blast radius, not size.
+- [x] **ADR-0005** — the hosted product never downloads YouTube video (ToS). Recorded because the
+  decision lived only in a Draft spec and was misread by the very review that reads `docs/adr/`.
+- [x] **`scripts/check-docs.py`** — ADR index drift, dangling ADR refs, broken living-doc links;
+  advisory list of spec decisions never promoted. Code→ADR references went 0 → 2.
+- [ ] **Triage the 19 spec docs** holding decision markers with no ADR (the advisory list).
+- [ ] **Backlog #18(b) — give `grill-with-docs` a trigger.** The rule for promoting decisions was
+  never missing; the skill that applies it went dormant. **This is the open root cause.**
+- [ ] **README coverage** — CI, ADRs, and the new scripts. Retrospectively fixable, low severity.
+
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
 **STATUS: one open item (`exec_sql`, 2026-07-20). `middleware-2a` red suite FIXED 2026-07-23. The two
@@ -424,17 +446,38 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
-Current: **M1 — 1.3 prod infra is the only remaining human-gated blocker; then 1.4 deploy.**
+Current: **M1 core is DONE — the app is LIVE.** 1.1 ✅ 1.2 ✅ 1.3 ✅ (2026-07-21), 1.4 core ✅
+(2026-07-22, PR #32); 1.4 finish-up items remain in [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md).
 Update the checkboxes as steps land.
 
-### ▶ NEXT ACTIONS (as of 2026-07-19 — read this first on a fresh session)
+### ▶ NEXT ACTIONS (as of 2026-07-30 — read this first on a fresh session)
 
-**Blocked on the human (credentials only, no engineering left):**
-1. ~~M1.1~~ ✅ **DONE 2026-07-19** — gate verified and opened (`RELEASE_VERIFIED = true`).
-2. **M1.3** — provision the prod Supabase project, secrets, buckets; apply migrations **0001–0021**.
-   **This is now the single remaining blocker to a deploy.**
+**The deploy blockers are GONE.** M1.1–M1.3 are done and the app is live; the previous version of
+this block still named M1.3 as "the single remaining blocker" nine days after it shipped — it
+contradicted the checkboxes directly above it. Reconcile this block against `git log` and the
+merged-PR list every time, per *Session Resume*.
 
-Then M1.4 (deploy + smoke test + the 5 cloud-sync checks above) and M3 follow.
+**Blocked on the human:**
+1. **Merge PR #38** — architecture review (Phase 6), `InMemoryBlobStore` (finding #3), CI, ADR-0005.
+   CI green. Merging is a human gate.
+
+**Unblocked — engineering, in recommended order:**
+1. **D2 — no reaper for `serve_model_charge`** (money path, fails silently). Nothing cron-shaped
+   exists in the migrations and `sweep_expired_leases` never touches `reserved_cents`, so a process
+   death between reserve and settle appears to strand the reservation permanently.
+   See `docs/reviews/architecture-review-2026-07-30.md` → *Defects*.
+2. **Architecture-review findings #1, #2, #4–#7** — same document. #2 (route the five artifact
+   writers through `writeArtifact`) is the natural next one; the new `InMemoryBlobStore` makes it
+   testable.
+3. **D1, D3, D4** — cloud dug-section ordering, the YAML newline that silently drops a paid dig
+   section, and the write-only dig generator meta.
+4. **Backlog #18(b)** — give `grill-with-docs` a trigger. It is the documentation-integrity skill
+   (ships `ADR-FORMAT.md` + `CONTEXT-FORMAT.md`, captures decisions *as they crystallise*) and has
+   been dormant since 2026-07-12. Its dormancy is why ADR-0005 sat unpromoted for four weeks.
+5. **Hooks** (proposed 2026-07-30, not built): a `PreToolUse` guard blocking `git push` to master,
+   and a `PreCompact`/`SessionEnd` snapshot of mechanical session state. Note the honest limit —
+   a `PreCompact` command hook cannot capture decisions from context, so it is not a substitute
+   for (4).
 
 **Unblocked — can be picked up now, in recommended order:**
 1. ~~Fix the red `reservation-release` suite~~ ✅ **MERGED to master 2026-07-19** (PR #25, merge commit `bbc82c9`).
