@@ -106,6 +106,23 @@ These files are not @-included — read them when the trigger condition is met.
    - Full code review → commit → push → PR
    - Tool: `finishing-a-development-branch`
 
+   **Branch + PR is the standard path — for EVERY change, including docs (set 2026-07-30).**
+   Work on a `feat/…`, `fix/…` or `chore/…` branch, push the branch, open a PR, and let the
+   human merge. This holds regardless of how small or "docs-only" the change looks — a docs
+   commit straight to `master` is still an unreviewed push to the default branch, and the
+   habit is what erodes, not the individual commit.
+
+   - **Committing directly to `master` is the exception, allowed only when there is no
+     remote** (`git remote` is empty — a local-only repo, where a PR is impossible).
+   - Merging stays a **human gate** (see Human-in-the-Loop Policy). Open the PR, notify,
+     do not merge.
+   - Use the branch even when the work is already committed on `master` locally: create
+     the branch at `HEAD`, `git reset --hard origin/master`, and push the branch. Nothing
+     is lost as long as the commits are not yet pushed.
+   - **`gh` footgun:** this repo has two remotes (`origin` = `…-cloud`, `upstream` =
+     `…-official-plugins`), and PR numbers collide across them. Always pass
+     `--repo kujinlee/youtube-playlist-summaries-cloud` on any `gh pr` command.
+
 6. **Architecture Review** (per **milestone**, not per task — added 2026-07-30)
    - Trigger: a milestone/slice boundary, or any time "should these two files be one module?" comes up twice.
    - Tool: `improve-codebase-architecture`. Read `CONTEXT.md` + `docs/adr/` first — ADRs record decisions the review must **not** re-litigate; mark a candidate that contradicts one rather than silently proposing it.
