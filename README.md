@@ -26,6 +26,107 @@ A Next.js web app that ingests a YouTube playlist, generates AI summaries and mu
 | Progress streaming | Server-Sent Events (SSE) |
 | Testing | Jest + Testing Library + Playwright |
 
+## Architecture
+
+The **same Next.js app** runs in one of two interchangeable modes, chosen by the
+`STORAGE_BACKEND` env var. Your **browser is the single front-end** for both — you just point
+it at a different runtime:
+
+- **Local mode** (`STORAGE_BACKEND=local`, the default) — the app runs **on your own
+  machine** and stores summaries as **markdown files** (Obsidian-ready). Generation runs
+  inline; there is no job queue. Browser → `localhost:3000`.
+- **Cloud mode** (`STORAGE_BACKEND=supabase`) — the app runs on **Fly.io** and stores
+  everything in **Supabase**. Work is split across a `web` process and a background `worker`.
+  Browser → the Fly URL.
+
+So your local machine is **not** a separate front-end — it plays the **same role Fly plays**,
+just backed by the filesystem instead of Supabase. **Cloud Sync** is a CLI on your machine
+that bridges the two stores (local files ↔ Supabase, newer-wins).
+
+```mermaid
+flowchart TB
+  BROWSER["User's Browser<br/>the front-end — same Next.js UI for both modes"]
+
+  subgraph MACHINE["User's Local Machine"]
+    direction TB
+    LOCALAPP["Local runtime · Next.js<br/>STORAGE_BACKEND=local<br/>inline generation (no queue)"]
+    FILES[("Local markdown files<br/>Obsidian vault")]
+    SYNC["Cloud Sync CLI<br/>newer-wins · additive"]
+  end
+
+  subgraph FLY["Fly.io — cloud runtime · one image, two process groups · iad"]
+    direction LR
+    WEB["web · server.js<br/>STORAGE_BACKEND=supabase<br/>serves HTTP · renders HTML"]
+    WORKER["worker · worker.js<br/>no HTTP · job queue · +Chromium"]
+  end
+
+  subgraph SUPA["Supabase — prod · AWS us-east-1"]
+    direction LR
+    AUTH["Auth<br/>OAuth → JWT"]
+    PG["Postgres<br/>jobs queue · spend_ledger<br/>RLS enforced"]
+    STORE["Storage<br/>artifacts bucket"]
+  end
+
+  EXT["External APIs<br/>Gemini · YouTube"]
+
+  BROWSER -->|"localhost:3000"| LOCALAPP
+  BROWSER -->|"https · Fly URL · cookie"| WEB
+  LOCALAPP <--> FILES
+  LOCALAPP -.->|"generates"| EXT
+  WEB -->|"JWT · RLS-scoped"| SUPA
+  WORKER -->|"service_role · bypasses RLS"| SUPA
+  WORKER -.->|"generates"| EXT
+  WEB -.->|"renders (serve-time)"| EXT
+  SYNC <--> FILES
+  SYNC <-->|"direct — NOT via Fly"| SUPA
+
+  classDef client stroke:#2563eb,stroke-width:2px;
+  classDef fly stroke:#7c3aed,stroke-width:2px;
+  classDef supa stroke:#0e9f6e,stroke-width:2px;
+  classDef local stroke:#c2740a,stroke-width:2px;
+  classDef ext stroke:#64748b,stroke-width:2px;
+
+  class BROWSER client;
+  class MACHINE,LOCALAPP,FILES,SYNC local;
+  class FLY,WEB,WORKER fly;
+  class SUPA,AUTH,PG,STORE supa;
+  class EXT ext;
+
+  linkStyle 0 stroke:#2563eb,stroke-width:2px;
+  linkStyle 1 stroke:#2563eb,stroke-width:2px;
+  linkStyle 2 stroke:#c2740a,stroke-width:2px;
+  linkStyle 3 stroke:#64748b,stroke-width:1.5px;
+  linkStyle 4 stroke:#2563eb,stroke-width:2px;
+  linkStyle 5 stroke:#7c3aed,stroke-width:2.5px;
+  linkStyle 6 stroke:#64748b,stroke-width:1.5px;
+  linkStyle 7 stroke:#64748b,stroke-width:1.5px;
+  linkStyle 8 stroke:#c2740a,stroke-width:2px;
+  linkStyle 9 stroke:#c2740a,stroke-width:2.5px;
+```
+
+📐 **[Open the full rendered diagram →](https://kujinlee.github.io/youtube-playlist-summaries-cloud/architecture.html)** — larger, hand-laid-out version with a light/dark toggle.
+
+**How to read it** — node border color marks the real system; line color marks the channel:
+
+| Channel | Meaning |
+|---|---|
+| 🔵 **Browser → runtime** | The same UI, pointed at `localhost` (local) or the Fly URL (cloud, JWT + RLS) |
+| 🟠 **Local / Sync** | Local runtime ↔ its files; Sync bridges files ↔ Supabase, **not via Fly**; newer-wins |
+| 🟣 **`service_role`** | Worker path — bypasses RLS (writes for any user + the money ledger) |
+| ⚪ **External calls** (dashed) | Whichever runtime is generating → Gemini &amp; YouTube |
+
+Two seams carry the design:
+- **Local vs cloud is one `STORAGE_BACKEND` switch** over one codebase — the same routes and
+  UI resolve either the filesystem stores or the Supabase stores (`lib/storage/resolve.ts`).
+- The **Postgres job queue exists only in cloud mode**: it decouples `web` (enqueues and
+  returns instantly) from `worker` (claims jobs with a lease + spend reservation), so cloud
+  generation survives a web restart. **Cloud Sync** is the only bridge between the two stores.
+
+> There are actually **three environments**: the plain **local files** the local runtime uses,
+> a **local Docker Supabase** for dev/testing cloud mode, and **prod Supabase** (shown above).
+> The diagram's cloud side is the prod path; the local Docker one is the same shape pointed at
+> `localhost`.
+
 ## Prerequisites
 
 - Node.js 18+
@@ -130,6 +231,7 @@ This project is built with Claude Code using a gate-based workflow (brainstorm �
 | [`docs/available-skills.md`](docs/available-skills.md) | All Claude Code skills, agents, and commands available in this project — invoke strings, trigger type (`auto + /slash`, `/command`, `agent`), and descriptions |
 | [`docs/dev-process.md`](docs/dev-process.md) | Phase-by-phase development workflow and per-task checklist |
 | [`docs/plugins.md`](docs/plugins.md) | Required plugins, skill conflict resolution, and cleanup guidance |
+| [`docs/architecture.html`](https://kujinlee.github.io/youtube-playlist-summaries-cloud/architecture.html) | Standalone architecture diagram (rendered) — richer version of the Mermaid diagram above, with a light/dark toggle. Source: [`docs/architecture.html`](docs/architecture.html) |
 
 To regenerate the skills reference after installing or updating plugins, say **"sync docs"** or run `/sync-docs` — the `sync-docs` skill handles it. Or run directly:
 

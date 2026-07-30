@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloud Architecture — YouTube Playlist Summaries</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #16202c;
+    --muted: #5b6673;
+    --line: #c7cfda;
+    --client: #2563eb;
+    --fly: #7c3aed;
+    --supa: #0e9f6e;
+    --local: #c2740a;
+    --ext: #64748b;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f141b; --surface: #182029; --surface-2: #1f2937; --ink: #e7edf4;
+      --muted: #97a3b2; --line: #33404f; --client: #6aa1ff; --fly: #ac8bf5;
+      --supa: #3ecf8e; --local: #e6a23c; --ext: #94a3b8;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7f9; --surface: #ffffff; --surface-2: #eef1f5; --ink: #16202c;
+    --muted: #5b6673; --line: #c7cfda; --client: #2563eb; --fly: #7c3aed;
+    --supa: #0e9f6e; --local: #c2740a; --ext: #64748b;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f141b; --surface: #182029; --surface-2: #1f2937; --ink: #e7edf4;
+    --muted: #97a3b2; --line: #33404f; --client: #6aa1ff; --fly: #ac8bf5;
+    --supa: #3ecf8e; --local: #e6a23c; --ext: #94a3b8;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  header.page { margin-bottom: 26px; }
+  .eyebrow { font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 650; margin: 0 0 8px; }
+  h1 { font-size: clamp(24px, 4vw, 34px); line-height: 1.12; margin: 0 0 10px;
+    letter-spacing: -.02em; text-wrap: balance; font-weight: 750; }
+  .lede { margin: 0; max-width: 66ch; color: var(--muted); font-size: 15.5px; }
+  .lede b { color: var(--ink); font-weight: 650; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .tag { font-size: 12px; padding: 4px 10px; border-radius: 999px;
+    background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); }
+  .tag b { font-weight: 650; }
+
+  .diagram-card { background: var(--surface); border: 1px solid var(--line);
+    border-radius: 16px; box-shadow: var(--shadow); padding: 8px; margin: 8px 0 22px; }
+  .scroll { overflow-x: auto; }
+  svg.diagram { display: block; width: 100%; min-width: 820px; height: auto; }
+
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  svg .t-title { font-weight: 700; font-size: 15px; fill: var(--ink); }
+  svg .t-zone  { font-weight: 750; font-size: 13px; }
+  svg .t-sub   { font-size: 11.5px; fill: var(--muted); }
+  svg .t-mono  { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  svg .flabel  { font-size: 11px; font-weight: 650; paint-order: stroke;
+    stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+  svg .flabel-sm { font-size: 10px; }
+
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 10px 22px; margin: 0 0 34px; padding: 16px 18px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 14px; }
+  .legend h2 { grid-column: 1 / -1; margin: 0 0 2px; font-size: 12px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); font-weight: 650; }
+  .leg { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+  .swatch { flex: none; width: 26px; height: 0; margin-top: 8px; border-radius: 2px; }
+  .swatch.solid { border-top: 3px solid currentColor; }
+  .swatch.dash  { border-top: 3px dashed currentColor; }
+  .leg .k { font-weight: 650; }
+  .leg .v { color: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 18px 16px; border-left: 4px solid var(--accent, var(--line)); }
+  .card .num { font-size: 12px; font-weight: 700; color: var(--accent, var(--ink)); letter-spacing: .04em; }
+  .card h3 { margin: 4px 0 8px; font-size: 16.5px; letter-spacing: -.01em; }
+  .card p { margin: 0 0 8px; font-size: 13.6px; color: var(--ink); }
+  .card p:last-child { margin-bottom: 0; }
+  .card .q { color: var(--muted); }
+  .card code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .86em;
+    background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+  .c-client { --accent: var(--client); }
+  .c-runtime{ --accent: var(--fly); }
+  .c-ext    { --accent: var(--ext); }
+  .c-supa   { --accent: var(--supa); }
+  .c-local  { --accent: var(--local); }
+
+  .note { margin-top: 20px; padding: 16px 18px; border-radius: 12px; background: var(--surface-2);
+    border: 1px solid var(--line); font-size: 13.6px; color: var(--ink); }
+  .note b { font-weight: 700; }
+  .env { display: inline-block; font-weight: 650; }
+
+  footer.page { margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--muted); }
+
+  .theme-toggle { position: fixed; top: 14px; right: 16px; z-index: 20;
+    display: inline-flex; align-items: center; gap: 7px; font: inherit;
+    font-size: 12.5px; font-weight: 650; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 13px; cursor: pointer; box-shadow: var(--shadow); }
+  .theme-toggle:hover { background: var(--surface-2); }
+  .theme-toggle .icon { font-size: 13px; line-height: 1; }
+  @media print { .theme-toggle { display: none; } }
+</style>
+<script>
+  /* Applied before first paint so a stored choice never flashes the wrong theme. */
+  (function () {
+    try {
+      var t = localStorage.getItem('arch-theme');
+      if (t) document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<button class="theme-toggle" type="button" id="themeToggle">
+  <span class="icon" aria-hidden="true">🌙</span><span class="label">Dark</span>
+</button>
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">System architecture</p>
+    <h1>YouTube Playlist Summaries — one app, two runtimes</h1>
+    <p class="lede">The <b>same Next.js app</b> runs in two interchangeable modes, chosen by
+      <span class="mono">STORAGE_BACKEND</span>. Your <b>browser is the single front-end</b> for
+      both — point it at your own machine (<b>local mode</b>, filesystem) or at Fly
+      (<b>cloud mode</b>, Supabase). Both runtimes call out to Gemini &amp; YouTube; the local
+      machine is a <b>runtime peer of Fly</b>, not a separate front-end. <b>Cloud Sync</b>
+      bridges the two stores.</p>
+    <div class="meta">
+      <span class="tag"><b>Local mode</b> · <span class="mono">STORAGE_BACKEND=local</span> · files</span>
+      <span class="tag"><b>Cloud mode</b> · Fly.io iad · Supabase (AWS us-east-1)</span>
+    </div>
+  </header>
+
+  <div class="diagram-card">
+    <div class="scroll">
+      <svg class="diagram" viewBox="0 0 1000 830" role="img"
+           aria-label="One Next.js app in two runtimes: a local runtime on the user's machine (filesystem) and a cloud runtime on Fly (Supabase). The browser is the shared front-end; both runtimes call Gemini and YouTube; Cloud Sync bridges local files and Supabase.">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5"
+                  markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+          </marker>
+        </defs>
+
+        <!-- ===== CONNECTORS ===== -->
+        <!-- Local runtime -> External APIs : generates (inline) -->
+        <path d="M235,368 C 250,250 285,175 340,124" fill="none" stroke="var(--ext)"
+              stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+        <text class="flabel" fill="var(--ext)" x="196" y="250">generates</text>
+        <text class="flabel flabel-sm" fill="var(--muted)" x="196" y="264">(inline, local)</text>
+
+        <!-- Fly -> External APIs : generates + renders -->
+        <path d="M762,330 C 742,235 700,170 648,124" fill="none" stroke="var(--ext)"
+              stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+        <text class="flabel" fill="var(--ext)" x="712" y="242">generates ·</text>
+        <text class="flabel" fill="var(--ext)" x="712" y="257">renders</text>
+
+        <!-- Browser -> Local runtime : localhost -->
+        <path d="M430,268 L 268,368" fill="none" stroke="var(--client)" stroke-width="2.2"
+              marker-end="url(#arrow)"/>
+        <text class="flabel t-mono" fill="var(--client)" x="286" y="316">localhost:3000</text>
+
+        <!-- Browser -> Fly web : https + cookie -->
+        <path d="M576,268 L 662,392" fill="none" stroke="var(--client)" stroke-width="2.2"
+              marker-end="url(#arrow)"/>
+        <text class="flabel" fill="var(--client)" x="588" y="320">https · cookie</text>
+
+        <!-- Local runtime <-> Local files -->
+        <path d="M160,466 L 160,494" fill="none" stroke="var(--local)" stroke-width="2.2"
+              marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+        <!-- Sync <-> Local files -->
+        <path d="M160,566 L 160,594" fill="none" stroke="var(--local)" stroke-width="2.2"
+              marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+
+        <!-- Fly web -> Supabase : JWT -->
+        <path d="M650,520 L 650,596" fill="none" stroke="var(--client)" stroke-width="2.2"
+              marker-end="url(#arrow)"/>
+        <text class="flabel" fill="var(--client)" x="600" y="562">JWT</text>
+        <text class="flabel flabel-sm" fill="var(--muted)" x="592" y="576">RLS-scoped</text>
+
+        <!-- Fly worker -> Supabase : service_role -->
+        <path d="M852,520 L 852,596" fill="none" stroke="var(--fly)" stroke-width="2.8"
+              marker-end="url(#arrow)"/>
+        <text class="flabel t-mono" fill="var(--fly)" x="792" y="560">service_role</text>
+        <text class="flabel flabel-sm" fill="var(--muted)" x="820" y="574">bypasses RLS</text>
+
+        <!-- Sync <-> Supabase : direct bridge (NOT via Fly) -->
+        <path d="M436,632 C 490,632 500,660 540,662" fill="none" stroke="var(--local)"
+              stroke-width="2.6" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+        <text class="flabel" fill="var(--local)" x="452" y="612">direct —</text>
+        <text class="flabel" fill="var(--local)" x="452" y="626">not via Fly</text>
+
+        <!-- ===== NODES ===== -->
+        <!-- External APIs band -->
+        <g>
+          <rect x="280" y="24" width="440" height="98" rx="14"
+                fill="var(--surface)" stroke="var(--ext)" stroke-width="2"/>
+          <text class="t-zone" fill="var(--ext)" x="300" y="48">External APIs</text>
+          <text class="t-sub" x="404" y="48">called by whichever runtime is generating</text>
+          <rect x="300" y="60" width="192" height="48" rx="9"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="316" y="82">Google Gemini</text>
+          <text class="t-sub" x="316" y="100">summaries · digs · transcription</text>
+          <rect x="508" y="60" width="192" height="48" rx="9"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="524" y="82">YouTube</text>
+          <text class="t-sub" x="524" y="100">playlist metadata · video</text>
+        </g>
+
+        <!-- Browser -->
+        <g>
+          <rect x="350" y="180" width="300" height="88" rx="13"
+                fill="var(--surface)" stroke="var(--client)" stroke-width="2"/>
+          <text class="t-zone" fill="var(--client)" x="370" y="208">User's Browser</text>
+          <text class="t-sub" x="370" y="230">the front-end — same Next.js UI</text>
+          <text class="t-sub" x="370" y="248">for both modes</text>
+          <text class="t-sub t-mono" x="370" y="262" fill="var(--muted)">sb-…-auth-token (cloud)</text>
+        </g>
+
+        <!-- Local Machine (local runtime) -->
+        <g>
+          <rect x="40" y="336" width="416" height="360" rx="14"
+                fill="var(--surface)" stroke="var(--local)" stroke-width="2"/>
+          <text class="t-zone" fill="var(--local)" x="60" y="362">User's Local Machine</text>
+          <text class="t-sub" x="196" y="362">— local mode runtime</text>
+
+          <rect x="64" y="374" width="372" height="92" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="80" y="400">Local runtime · Next.js</text>
+          <text class="t-sub t-mono" x="80" y="420">STORAGE_BACKEND=local</text>
+          <text class="t-sub" x="80" y="438">serves localhost · inline generation</text>
+          <text class="t-sub" x="80" y="455">no job queue</text>
+
+          <rect x="64" y="494" width="220" height="72" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="80" y="520">Local markdown files</text>
+          <text class="t-sub" x="80" y="540">Obsidian vault</text>
+          <text class="t-sub" x="80" y="557">the local store</text>
+
+          <rect x="64" y="594" width="372" height="80" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="80" y="620">Cloud Sync CLI</text>
+          <text class="t-sub" x="80" y="640">bridges files ↔ Supabase</text>
+          <text class="t-sub" x="80" y="658">newer-wins · additive</text>
+        </g>
+
+        <!-- Fly.io (cloud runtime) -->
+        <g>
+          <rect x="540" y="336" width="420" height="184" rx="14"
+                fill="var(--surface)" stroke="var(--fly)" stroke-width="2"/>
+          <text class="t-zone" fill="var(--fly)" x="560" y="362">Fly.io</text>
+          <text class="t-sub" x="600" y="362">— cloud mode runtime · one image, two process groups · iad</text>
+
+          <rect x="564" y="380" width="180" height="128" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="580" y="406">web</text>
+          <text class="t-sub t-mono" x="580" y="425">server.js</text>
+          <text class="t-sub t-mono" x="580" y="443">BACKEND=supabase</text>
+          <text class="t-sub" x="580" y="461">serves HTTP</text>
+          <text class="t-sub" x="580" y="478">renders HTML</text>
+
+          <rect x="760" y="380" width="180" height="128" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="776" y="406">worker</text>
+          <text class="t-sub t-mono" x="776" y="425">worker.js</text>
+          <text class="t-sub" x="776" y="443">no HTTP · job queue</text>
+          <text class="t-sub" x="776" y="461">Gemini gen · PDF</text>
+          <text class="t-sub" x="776" y="478">+ Chromium</text>
+        </g>
+
+        <!-- Supabase -->
+        <g>
+          <rect x="540" y="596" width="420" height="200" rx="14"
+                fill="var(--surface)" stroke="var(--supa)" stroke-width="2"/>
+          <text class="t-zone" fill="var(--supa)" x="560" y="622">Supabase</text>
+          <text class="t-sub" x="632" y="622">prod · AWS us-east-1 · the cloud store</text>
+
+          <rect x="564" y="638" width="118" height="140" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="578" y="664">Auth</text>
+          <text class="t-sub" x="578" y="684">Google</text>
+          <text class="t-sub" x="578" y="700">OAuth</text>
+          <text class="t-sub" x="578" y="716">→ JWTs</text>
+
+          <rect x="694" y="638" width="150" height="140" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="708" y="664">Postgres</text>
+          <text class="t-sub" x="708" y="684">videos · playlists</text>
+          <text class="t-sub t-mono" x="708" y="702">jobs queue</text>
+          <text class="t-sub t-mono" x="708" y="718">spend_ledger</text>
+          <text class="t-sub" x="708" y="736">RLS enforced</text>
+
+          <rect x="856" y="638" width="88" height="140" rx="10"
+                fill="var(--surface-2)" stroke="var(--line)"/>
+          <text class="t-title" x="870" y="664">Storage</text>
+          <text class="t-sub" x="870" y="684">artifacts</text>
+          <text class="t-sub" x="870" y="700">bucket</text>
+          <text class="t-sub" x="870" y="716">MD · model</text>
+          <text class="t-sub" x="870" y="732">· PDF</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h2>How to read it — node color = system · line color = channel</h2>
+    <div class="leg" style="color:var(--client)"><span class="swatch solid"></span>
+      <span><span class="k">Browser → runtime</span> <span class="v">— same UI, pointed at
+        localhost (local) or the Fly URL (cloud; JWT, RLS-scoped)</span></span></div>
+    <div class="leg" style="color:var(--ext)"><span class="swatch dash"></span>
+      <span><span class="k">External calls</span> <span class="v">— <b>both</b> runtimes call
+        Gemini &amp; YouTube (local inline; Fly worker generates, web renders)</span></span></div>
+    <div class="leg" style="color:var(--local)"><span class="swatch solid"></span>
+      <span><span class="k">Local store &amp; Sync</span> <span class="v">— local runtime ↔ its
+        files; Sync bridges files ↔ Supabase, <b>not via Fly</b></span></span></div>
+    <div class="leg" style="color:var(--fly)"><span class="swatch solid"></span>
+      <span><span class="k mono">service_role</span> <span class="v">— worker path, bypasses
+        RLS (writes for any user + money ledger)</span></span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card c-client">
+      <div class="num">01 · BROWSER</div>
+      <h3>The single front-end</h3>
+      <p>One UI serves both modes — you just point it at a different runtime:
+        <code>localhost:3000</code> for local, the Fly URL for cloud.</p>
+      <p class="q">Only the cloud path carries a Supabase session cookie
+        (<code>sb-…-auth-token</code>) → JWT. Local mode needs no auth; it's your own machine.</p>
+    </div>
+
+    <div class="card c-runtime">
+      <div class="num">02 · TWO RUNTIMES, ONE CODEBASE</div>
+      <h3>Switched by <code>STORAGE_BACKEND</code></h3>
+      <p><b>Local</b> (<code>=local</code>, default) — runs on your machine, stores to the
+        filesystem, generates <b>inline</b> (no queue).</p>
+      <p><b>Cloud</b> (<code>=supabase</code>) — runs on <b>Fly.io</b> as <code>web</code> +
+        <code>worker</code>, stores to Supabase, generation goes through a job queue.</p>
+      <p class="q">The same routes resolve either the filesystem stores or the Supabase stores
+        (<code>lib/storage/resolve.ts</code>). So your machine plays the <b>same role Fly
+        plays</b> — a runtime, not a front-end.</p>
+    </div>
+
+    <div class="card c-ext">
+      <div class="num">EXTERNAL · APIs</div>
+      <h3>Both runtimes call out</h3>
+      <p><b>Gemini</b> and <b>YouTube</b> are reached by <b>whichever runtime is generating</b>
+        — the local runtime does it inline on your machine; on Fly the <code>worker</code>
+        generates and <code>web</code> renders at serve time.</p>
+      <p class="q">This is the edge the earlier diagram missed: local generation is a direct
+        call from your machine to Gemini/YouTube — it does not route through Fly or Supabase.</p>
+    </div>
+
+    <div class="card c-supa">
+      <div class="num">03 · SUPABASE</div>
+      <h3>The cloud store (source of truth for cloud mode)</h3>
+      <p><b>Auth</b> issues JWTs; <b>Postgres</b> holds metadata, the jobs queue, and the money
+        tables (<code>spend_ledger</code>) with RLS enforced; <b>Storage</b> holds the blobs.</p>
+      <p class="q">Two credentials cross in: <b>web/browser</b> uses your JWT (RLS-scoped);
+        <b>worker</b> uses <code>service_role</code> (bypasses RLS).</p>
+    </div>
+
+    <div class="card c-local">
+      <div class="num">04 · CLOUD SYNC</div>
+      <h3>The bridge between the two stores</h3>
+      <p>A CLI on your machine that reconciles <b>local files ↔ Supabase</b> directly —
+        <b>newer-wins</b>, <b>additive</b> (adds propagate both ways; deletes don't, yet).</p>
+      <p class="q">Sync is the <b>only</b> path between the two worlds, and it does <b>not</b>
+        go through Fly — it talks straight to Supabase's DB + Storage.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Three environments, not two.</b>
+    <span class="env" style="color:var(--local)">① local files</span> (the local runtime's
+    store),
+    <span class="env" style="color:var(--supa)">② a local Docker Supabase</span> for
+    dev/testing cloud mode, and
+    <span class="env" style="color:var(--supa)">③ prod Supabase</span> (shown above). The
+    diagram's cloud side is the prod path; the local Docker one is the same shape pointed at
+    <span class="mono">localhost</span>.
+  </div>
+
+  <footer class="page">
+    Corrected model — the local machine is a runtime peer of Fly and calls Gemini/YouTube
+    directly in local mode. Node colors map to systems; line colors map to channel.
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById('themeToggle');
+    var icon = btn.querySelector('.icon');
+    var label = btn.querySelector('.label');
+
+    function apply(theme) {
+      root.dataset.theme = theme;
+      var dark = theme === 'dark';
+      icon.textContent = dark ? '☀️' : '🌙';
+      label.textContent = dark ? 'Light' : 'Dark';
+      btn.setAttribute('aria-label', 'Switch to ' + (dark ? 'light' : 'dark') + ' mode');
+    }
+
+    /* No stored choice yet -> start from whatever the OS says, then let the click win. */
+    var systemDark = window.matchMedia
+      && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    apply(root.dataset.theme || (systemDark ? 'dark' : 'light'));
+
+    btn.addEventListener('click', function () {
+      var next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      apply(next);
+      try { localStorage.setItem('arch-theme', next); } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>
