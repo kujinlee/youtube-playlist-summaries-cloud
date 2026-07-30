@@ -37,6 +37,13 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # tests/lib/dig/slide-crop.integration.test.ts shells out to real ffmpeg/ffprobe
+      # (lib/dig/slide-crop.ts) and has no skip-gate, so `npm test` is not hermetic —
+      # it passes on a dev Mac with ffmpeg installed and fails anywhere else. Installing
+      # it here FIXES the suite rather than normalising a known-red test into a skip.
+      - name: Install ffmpeg (required by the slide-crop tests)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Install dependencies
         run: npm ci
 
