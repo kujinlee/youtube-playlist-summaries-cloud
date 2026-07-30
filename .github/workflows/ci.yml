@@ -55,3 +55,8 @@ jobs:
 
       - name: service_role confinement guard
         run: npm run check:confinement
+
+      # ADR index drift, dangling ADR references, broken living-doc links.
+      # Also prints an advisory list of spec decisions never promoted to an ADR.
+      - name: Documentation integrity
+        run: python3 scripts/check-docs.py

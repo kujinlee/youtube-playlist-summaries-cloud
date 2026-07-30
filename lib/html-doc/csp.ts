@@ -33,6 +33,9 @@ export function buildDigCsp(nonce: string): string {
     "default-src 'none'",
     `script-src 'nonce-${nonce}'`,
     `style-src 'nonce-${nonce}'`,
+    // 'none' although the dig renderer CAN emit data: images — the cloud dig path
+    // never carries assets, because server-side slide capture is a ToS no-go
+    // (docs/adr/0005). Revisit only if on-device capture starts feeding pixels here.
     "img-src 'none'",
     "connect-src 'self'",   // the dig poll engine fetches same-origin /api/... and location.href
     "base-uri 'none'",

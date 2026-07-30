@@ -155,6 +155,17 @@ These files are not @-included — read them when the trigger condition is met.
    - Save to `docs/reviews/architecture-review-<date>.md`. Findings that become work go to `docs/backlog.md` **and** the roadmap in the same turn (Roadmap & Task List coherence rule).
    - **Why this is not per-task:** per-task review is structurally blind to composition defects — it only ever sees one change, and every change can be individually correct while the structure they add up to degrades. Findings here are about *relationships between files*, which accrete over many merges.
 
+   - **Ask "what did we decide this milestone that isn't written down?"** This is the only
+     defense against the one failure no tool can see: a decision made in conversation and
+     never recorded anywhere. `scripts/check-docs.py` can find an unpromoted decision in a
+     *spec*; nothing can find one that exists only in someone's memory. Promotion criteria
+     are already written — [`.claude/skills/grill-with-docs/ADR-FORMAT.md`](../.claude/skills/grill-with-docs/ADR-FORMAT.md)
+     → *"When to offer an ADR"*. Do not invent new ones.
+   - **Anchor every ADR where the question arises.** A one-line comment at the code that
+     looks wrong without it. ADR-0005 was missed for four weeks because nothing in the
+     `Dockerfile` said ffmpeg's absence was deliberate — correctness was never the problem,
+     **reachability** was.
+
    **Two rules learned from the first run (2026-07-30, `docs/reviews/architecture-review-2026-07-30.md`):**
    - **Verify in both directions.** That run corrected claims on both sides — including one where the *coordinator's* grep was wrong and the agent was right (a line-wrapped expression a single-line pattern missed). A failed grep is not a disproof.
    - **"Zero callers" does not always mean delete.** The run found a module implementing the correct commit→promote protocol with zero production callers and 8 tests. The right reading was that the *callers* were wrong, not the module. Apply the deletion test by asking where complexity would reappear, not by counting references.
