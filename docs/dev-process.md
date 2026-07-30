@@ -106,6 +106,70 @@ These files are not @-included — read them when the trigger condition is met.
    - Full code review → commit → push → PR
    - Tool: `finishing-a-development-branch`
 
+   **Branch + PR is the standard path (set 2026-07-30).** Work on a `feat/…`, `fix/…` or
+   `chore/…` branch, push it, open a PR, and let the human merge.
+
+   **The axis is blast radius, not size.** A one-line change can be the most dangerous
+   thing in the repo — a missing `sort()` silently reorders paid content (defect D1), and a
+   one-line predicate change moves money. "It's small" is never the reason to skip the branch.
+
+   | Change | Path |
+   |---|---|
+   | `lib/` `app/` `components/` `worker/` `supabase/` `scripts/` `tests/`, or any config | **Branch + PR, always.** No size exemption. |
+   | Docs | Branch + PR, **batched** — see below |
+   | Repo has no remote (`git remote` empty — a PR is impossible) | Direct commit |
+
+   **Batch to kill the friction — the fix is fewer PRs, not more direct pushes.**
+   - **Backlog/roadmap status updates ride in the SAME PR as the work they describe.** This
+     removes most "tiny docs commit" cases outright, and it is better anyway: the status
+     tick and the change it claims land together instead of drifting apart.
+   - Standalone doc edits accumulate — a typo fix rides on whatever branch is open, or
+     waits for the next one. It does not need its own PR.
+
+   **Why docs stay on the branch path.** The boundary between "just docs" and "code" is
+   slippery in practice. On 2026-07-30 the coordinator reasoned "docs commits have
+   precedent here" and then, in the same batch, committed a new `lib/storage/testing/`
+   module to `master`. A rule with a judgment call in the middle is a rule that erodes.
+   Batching gives the relief without reintroducing the judgment call.
+
+   - Merging stays a **human gate** (see Human-in-the-Loop Policy). Open the PR, notify,
+     do not merge.
+   - Use the branch even when the work is already committed on `master` locally: create
+     the branch at `HEAD`, `git reset --hard origin/master`, and push the branch. Nothing
+     is lost as long as the commits are not yet pushed.
+   - **`gh` footgun:** this repo has two remotes (`origin` = `…-cloud`, `upstream` =
+     `…-official-plugins`), and PR numbers collide across them. Always pass
+     `--repo kujinlee/youtube-playlist-summaries-cloud` on any `gh pr` command. Write PR
+     bodies to a file and use `--body-file`; a `--body "$(cat <<'EOF' …)"` heredoc breaks
+     on apostrophes and backticks.
+   - **CI runs on every PR** (`.github/workflows/ci.yml`): `tsc --noEmit`, the unit suite,
+     and the `service_role` confinement guard, on Node 22 to match the Dockerfile. That is
+     what makes the PR a gate rather than a checkpoint someone has to read. Integration
+     (`test:integration`, needs a live Supabase stack) and `test:e2e` are **not** in CI yet
+     — still run those locally before asking for a merge.
+
+6. **Architecture Review** (per **milestone**, not per task — added 2026-07-30)
+   - Trigger: a milestone/slice boundary, or any time "should these two files be one module?" comes up twice.
+   - Tool: `improve-codebase-architecture`. Read `CONTEXT.md` + `docs/adr/` first — ADRs record decisions the review must **not** re-litigate; mark a candidate that contradicts one rather than silently proposing it.
+   - Dispatch parallel `Explore` agents per area (rendering / storage / money path worked well), then **verify every load-bearing claim by hand before writing it down**. Agent output is a **lead, not a finding**.
+   - Save to `docs/reviews/architecture-review-<date>.md`. Findings that become work go to `docs/backlog.md` **and** the roadmap in the same turn (Roadmap & Task List coherence rule).
+   - **Why this is not per-task:** per-task review is structurally blind to composition defects — it only ever sees one change, and every change can be individually correct while the structure they add up to degrades. Findings here are about *relationships between files*, which accrete over many merges.
+
+   - **Ask "what did we decide this milestone that isn't written down?"** This is the only
+     defense against the one failure no tool can see: a decision made in conversation and
+     never recorded anywhere. `scripts/check-docs.py` can find an unpromoted decision in a
+     *spec*; nothing can find one that exists only in someone's memory. Promotion criteria
+     are already written — [`.claude/skills/grill-with-docs/ADR-FORMAT.md`](../.claude/skills/grill-with-docs/ADR-FORMAT.md)
+     → *"When to offer an ADR"*. Do not invent new ones.
+   - **Anchor every ADR where the question arises.** A one-line comment at the code that
+     looks wrong without it. ADR-0005 was missed for four weeks because nothing in the
+     `Dockerfile` said ffmpeg's absence was deliberate — correctness was never the problem,
+     **reachability** was.
+
+   **Two rules learned from the first run (2026-07-30, `docs/reviews/architecture-review-2026-07-30.md`):**
+   - **Verify in both directions.** That run corrected claims on both sides — including one where the *coordinator's* grep was wrong and the agent was right (a line-wrapped expression a single-line pattern missed). A failed grep is not a disproof.
+   - **"Zero callers" does not always mean delete.** The run found a module implementing the correct commit→promote protocol with zero production callers and 8 tests. The right reading was that the *callers* were wrong, not the module. Apply the deletion test by asking where complexity would reappear, not by counting references.
+
 ---
 
 ## Tools
@@ -121,6 +185,7 @@ These files are not @-included — read them when the trigger condition is met.
 | `TaskCreate` / `TaskUpdate` | 3 — per-task checklist (create at task start, mark each step done) |
 | `superpowers:verification-before-completion` | 4 — evidence collection |
 | `superpowers:finishing-a-development-branch` | 5 — commit + PR |
+| `improve-codebase-architecture` | 6 — per-milestone architecture review (composition defects) |
 
 ---
 

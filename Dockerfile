@@ -83,6 +83,11 @@ COPY --from=builder /app/dist/worker.js ./worker.js
 # of sync on every playwright upgrade.
 COPY --from=builder /app/node_modules/playwright ./node_modules/playwright
 COPY --from=builder /app/node_modules/playwright-core ./node_modules/playwright-core
+# Chromium is installed for PDF export ONLY. There is deliberately NO ffmpeg/yt-dlp:
+# the hosted product never downloads YouTube video (Terms of Service) — see
+# docs/adr/0005-hosted-never-downloads-youtube-video.md. Server-side frame capture is
+# forbidden by ANY tool, including screenshotting the player with this very Chromium.
+# Do not add ffmpeg here to "fix" cloud slide capture; that reopens a legal decision.
 RUN node node_modules/playwright/cli.js install --with-deps chromium \
     && rm -rf /root/.npm /var/lib/apt/lists/*
 

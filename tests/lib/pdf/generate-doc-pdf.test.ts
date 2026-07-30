@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { localPrincipal } from '@/lib/storage/principal';
-import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { InMemoryBlobStore } from '@/lib/storage/testing/in-memory-blob-store';
 
 // Mock the chromium driver so no real browser launches in unit tests.
 jest.mock('playwright', () => {
@@ -56,18 +56,19 @@ describe('generateDocPdf', () => {
   });
 
   it('calls blobStore.put with the exact key and pdf bytes', async () => {
-    const fakePut = jest.fn(async (_p: unknown, _k: unknown, _b: unknown, _c: unknown) => {});
-    const fakeBlobStore = { put: fakePut } as unknown as typeof localBlobStore;
+    const store = new InMemoryBlobStore();
+    const putSpy = jest.spyOn(store, 'put');
     const principal = localPrincipal(dir);
-    await generateDocPdf('<html></html>', principal, 'pdfs/y.pdf', { blobStore: fakeBlobStore });
-    expect(fakePut).toHaveBeenCalledWith(
+    await generateDocPdf('<html></html>', principal, 'pdfs/y.pdf', { blobStore: store });
+    expect(putSpy).toHaveBeenCalledWith(
       principal,
       'pdfs/y.pdf',
       expect.any(Buffer),
       'application/pdf',
     );
-    const buf = fakePut.mock.calls[0]?.[2] as Buffer | undefined;
-    expect(buf?.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    // Stronger than inspecting the mock's args: the bytes actually landed in the store.
+    const stored = await store.get(principal, 'pdfs/y.pdf');
+    expect(stored?.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
   it('emulates print media, prints background, and closes page+context+browser', async () => {
@@ -92,14 +93,18 @@ describe('generateDocPdf', () => {
 
   describe('returnBuffer / typed error / container args (Task 5)', () => {
     const principal = localPrincipal('/tmp/unused-for-blobstore-tests');
-    const put = jest.fn(async () => {});
-    const blobStore = { put } as unknown as { put: jest.Mock };
+    let blobStore: InMemoryBlobStore;
+    let put: jest.SpyInstance;
 
-    beforeEach(() => { put.mockReset(); delete process.env.STORAGE_BACKEND; });
+    beforeEach(() => {
+      blobStore = new InMemoryBlobStore();
+      put = jest.spyOn(blobStore, 'put');
+      delete process.env.STORAGE_BACKEND;
+    });
 
     it('returnBuffer returns the same bytes it writes', async () => {
       const buf = await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
-        blobStore: blobStore as unknown as typeof localBlobStore,
+        blobStore,
         returnBuffer: true,
       });
       expect(Buffer.isBuffer(buf)).toBe(true);
@@ -109,7 +114,7 @@ describe('generateDocPdf', () => {
 
     it('default (no returnBuffer) preserves void behavior', async () => {
       const result = await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
-        blobStore: blobStore as unknown as typeof localBlobStore,
+        blobStore,
       });
       expect(result).toBeUndefined();
       expect(put).toHaveBeenCalledTimes(1);
@@ -118,7 +123,7 @@ describe('generateDocPdf', () => {
     it('launch failure throws PdfRendererUnavailable(503), not a plain Error', async () => {
       __mock.chromium.launch.mockRejectedValueOnce(new Error('no binary'));
       const err = await generateDocPdf('<h></h>', principal, 'pdfs/x.pdf', {
-        blobStore: blobStore as unknown as typeof localBlobStore,
+        blobStore,
       }).catch((e) => e);
       expect(err).toBeInstanceOf(PdfRendererUnavailable);
       expect((err as PdfRendererUnavailable).statusCode).toBe(503);
@@ -141,7 +146,7 @@ describe('generateDocPdf', () => {
         close: jest.fn(),
       }));
       const err = await generateDocPdf('<h></h>', principal, 'pdfs/x.pdf', {
-        blobStore: blobStore as unknown as typeof localBlobStore,
+        blobStore,
         timeoutMs: 20,
       }).catch((e) => e);
       expect(err).toBeInstanceOf(PdfRendererUnavailable);
@@ -150,7 +155,7 @@ describe('generateDocPdf', () => {
 
     it('launches without container sandbox args when STORAGE_BACKEND is not supabase', async () => {
       await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
-        blobStore: blobStore as unknown as typeof localBlobStore,
+        blobStore,
       });
       const [opts] = __mock.chromium.launch.mock.calls.at(-1) as [{ args?: string[] }];
       expect(opts.args).toBeUndefined();
@@ -159,7 +164,7 @@ describe('generateDocPdf', () => {
     it('launches with --no-sandbox/--disable-dev-shm-usage args when STORAGE_BACKEND=supabase', async () => {
       process.env.STORAGE_BACKEND = 'supabase';
       await generateDocPdf('<html></html>', principal, 'pdfs/x.pdf', {
-        blobStore: blobStore as unknown as typeof localBlobStore,
+        blobStore,
       });
       const [opts] = __mock.chromium.launch.mock.calls.at(-1) as [{ args?: string[]; timeout?: number }];
       expect(opts.args).toEqual(['--no-sandbox', '--disable-dev-shm-usage']);
