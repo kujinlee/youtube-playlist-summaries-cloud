@@ -106,6 +106,17 @@ These files are not @-included — read them when the trigger condition is met.
    - Full code review → commit → push → PR
    - Tool: `finishing-a-development-branch`
 
+6. **Architecture Review** (per **milestone**, not per task — added 2026-07-30)
+   - Trigger: a milestone/slice boundary, or any time "should these two files be one module?" comes up twice.
+   - Tool: `improve-codebase-architecture`. Read `CONTEXT.md` + `docs/adr/` first — ADRs record decisions the review must **not** re-litigate; mark a candidate that contradicts one rather than silently proposing it.
+   - Dispatch parallel `Explore` agents per area (rendering / storage / money path worked well), then **verify every load-bearing claim by hand before writing it down**. Agent output is a **lead, not a finding**.
+   - Save to `docs/reviews/architecture-review-<date>.md`. Findings that become work go to `docs/backlog.md` **and** the roadmap in the same turn (Roadmap & Task List coherence rule).
+   - **Why this is not per-task:** per-task review is structurally blind to composition defects — it only ever sees one change, and every change can be individually correct while the structure they add up to degrades. Findings here are about *relationships between files*, which accrete over many merges.
+
+   **Two rules learned from the first run (2026-07-30, `docs/reviews/architecture-review-2026-07-30.md`):**
+   - **Verify in both directions.** That run corrected claims on both sides — including one where the *coordinator's* grep was wrong and the agent was right (a line-wrapped expression a single-line pattern missed). A failed grep is not a disproof.
+   - **"Zero callers" does not always mean delete.** The run found a module implementing the correct commit→promote protocol with zero production callers and 8 tests. The right reading was that the *callers* were wrong, not the module. Apply the deletion test by asking where complexity would reappear, not by counting references.
+
 ---
 
 ## Tools
@@ -121,6 +132,7 @@ These files are not @-included — read them when the trigger condition is met.
 | `TaskCreate` / `TaskUpdate` | 3 — per-task checklist (create at task start, mark each step done) |
 | `superpowers:verification-before-completion` | 4 — evidence collection |
 | `superpowers:finishing-a-development-branch` | 5 — commit + PR |
+| `improve-codebase-architecture` | 6 — per-milestone architecture review (composition defects) |
 
 ---
 
