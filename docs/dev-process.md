@@ -106,14 +106,32 @@ These files are not @-included — read them when the trigger condition is met.
    - Full code review → commit → push → PR
    - Tool: `finishing-a-development-branch`
 
-   **Branch + PR is the standard path — for EVERY change, including docs (set 2026-07-30).**
-   Work on a `feat/…`, `fix/…` or `chore/…` branch, push the branch, open a PR, and let the
-   human merge. This holds regardless of how small or "docs-only" the change looks — a docs
-   commit straight to `master` is still an unreviewed push to the default branch, and the
-   habit is what erodes, not the individual commit.
+   **Branch + PR is the standard path (set 2026-07-30).** Work on a `feat/…`, `fix/…` or
+   `chore/…` branch, push it, open a PR, and let the human merge.
 
-   - **Committing directly to `master` is the exception, allowed only when there is no
-     remote** (`git remote` is empty — a local-only repo, where a PR is impossible).
+   **The axis is blast radius, not size.** A one-line change can be the most dangerous
+   thing in the repo — a missing `sort()` silently reorders paid content (defect D1), and a
+   one-line predicate change moves money. "It's small" is never the reason to skip the branch.
+
+   | Change | Path |
+   |---|---|
+   | `lib/` `app/` `components/` `worker/` `supabase/` `scripts/` `tests/`, or any config | **Branch + PR, always.** No size exemption. |
+   | Docs | Branch + PR, **batched** — see below |
+   | Repo has no remote (`git remote` empty — a PR is impossible) | Direct commit |
+
+   **Batch to kill the friction — the fix is fewer PRs, not more direct pushes.**
+   - **Backlog/roadmap status updates ride in the SAME PR as the work they describe.** This
+     removes most "tiny docs commit" cases outright, and it is better anyway: the status
+     tick and the change it claims land together instead of drifting apart.
+   - Standalone doc edits accumulate — a typo fix rides on whatever branch is open, or
+     waits for the next one. It does not need its own PR.
+
+   **Why docs stay on the branch path.** The boundary between "just docs" and "code" is
+   slippery in practice. On 2026-07-30 the coordinator reasoned "docs commits have
+   precedent here" and then, in the same batch, committed a new `lib/storage/testing/`
+   module to `master`. A rule with a judgment call in the middle is a rule that erodes.
+   Batching gives the relief without reintroducing the judgment call.
+
    - Merging stays a **human gate** (see Human-in-the-Loop Policy). Open the PR, notify,
      do not merge.
    - Use the branch even when the work is already committed on `master` locally: create
@@ -121,7 +139,14 @@ These files are not @-included — read them when the trigger condition is met.
      is lost as long as the commits are not yet pushed.
    - **`gh` footgun:** this repo has two remotes (`origin` = `…-cloud`, `upstream` =
      `…-official-plugins`), and PR numbers collide across them. Always pass
-     `--repo kujinlee/youtube-playlist-summaries-cloud` on any `gh pr` command.
+     `--repo kujinlee/youtube-playlist-summaries-cloud` on any `gh pr` command. Write PR
+     bodies to a file and use `--body-file`; a `--body "$(cat <<'EOF' …)"` heredoc breaks
+     on apostrophes and backticks.
+   - **CI runs on every PR** (`.github/workflows/ci.yml`): `tsc --noEmit`, the unit suite,
+     and the `service_role` confinement guard, on Node 22 to match the Dockerfile. That is
+     what makes the PR a gate rather than a checkpoint someone has to read. Integration
+     (`test:integration`, needs a live Supabase stack) and `test:e2e` are **not** in CI yet
+     — still run those locally before asking for a merge.
 
 6. **Architecture Review** (per **milestone**, not per task — added 2026-07-30)
    - Trigger: a milestone/slice boundary, or any time "should these two files be one module?" comes up twice.
