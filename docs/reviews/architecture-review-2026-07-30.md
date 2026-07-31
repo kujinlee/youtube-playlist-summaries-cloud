@@ -469,6 +469,52 @@ Not architecture — actual bugs the friction produced. Each verified.
 | D2 | **No reaper for `serve_model_charge`.** Nothing cron-shaped exists in the migrations, and `sweep_expired_leases` never mentions `reserved_cents` (0 occurrences in its body). A process death between reserve and settle appears to strand the reservation permanently. | grep + function body |
 | D3 | **A newline in a section title corrupts cloud dig frontmatter.** The two YAML escapers are asymmetric — the local one escapes `\n`, the cloud one doesn't. The parse failure is swallowed by a `catch`, silently dropping a section the user paid for. | both escapers read |
 | D4 | **`<meta name="generator" content="dig-deeper-doc v1">` is write-only.** Exactly one occurrence in the tree — nothing reads it. The dig-deeper doc has no cache-version story while the summary doc has two. | grep: 1 hit |
+| D5 | **A style-only (MINOR) doc-version bump re-summarizes the whole playlist on cloud.** The documented rule (`lib/doc-version.ts:4`) is *MAJOR ⇒ re-summarize, MINOR ⇒ re-render*, and `needsResummarize()` encodes it — with **one caller, the local path** (`ensure.ts:41`). The cloud skip compares the flattened `docVersionKey()` string `"major.minor"` (`summary-handler.ts:89`), so a minor bump fails the equality and runs a full Gemini summarize per video. Local costs **0** API calls for the same bump; cloud serve also costs 0. Only cloud *ingest* pays — and per W1 the result is then discarded by `promote()`. | code read + no cloud plan/spec mentions major vs minor |
+| D6 | **The magazine model's drift guard is a title proxy; the exact signal exists and is unused.** `isFresh()` = `sameTitles(...) && generatorVersion` (`read-model.ts:20-25`) — `docVersion` is absent and `sourceMdHash` is never consulted, though it is written into every fresh envelope (`generate.ts:59`, `serve-doc.ts:124`). A prose-only MD change with stable titles is therefore served as fresh **forever**. Already documented, in the wrong module: `companion.ts:43-45`. `fixSummary`'s prompt *pins headings on purpose*, so this is the designed shape of a corrections regenerate, not a coincidence. | `tests/lib/html-doc/section-identity-after-resummarize.test.ts` (5 passing) + companion.ts comment |
+| D7 | **Section identity is answered three ways; two of them are the title string.** Magazine model ↔ section = positional + exact title; dig ↔ section step 1 = numeric `startSec`; step 2 = exact title fallback (`dig-merge.ts:10-12`). `startSec` is minted by `ensureSectionTimestamps` **inside** `generateSummary` (`gemini.ts:387`), unique only *within* a generation and carried solely in the MD's `▶` line — nothing anchors it across regenerations. So a re-summarize breaks step 1 always, and when it also rewords a heading, **paid dug content orphans off its section**. A single retitled heading also nulls the gists of *every* section (`sameTitles` is all-or-nothing). | same test file — orphaning and all-or-nothing both asserted |
+
+### Reference: when the magazine model changes (established while proving D5–D7)
+
+The **magazine model** (CONTEXT.md:45) is the per-section `{lead, bullets}` structure the
+rendered HTML is built from — produced by a capped Gemini call, cached as `models/<base>.json`,
+**lazily materialized on view**, never pre-produced by the worker.
+
+**Every event that writes or invalidates it:**
+
+| # | Event | Path |
+|---|---|---|
+| 1 | absent → first materialization on view | cloud `serve-doc.ts` (under `reserve_serve_model`); local `runHtmlDoc` |
+| 2 | **drift** — MD section titles ≠ `envelope.sourceSections` | both, on view |
+| 3 | **`GENERATOR_VERSION`** mismatch (`'magazine-skim v2'`) | cloud `isFresh`; local HTML-cache check `build-doc-html.ts:56` |
+| 4 | explicit delete on re-summarize | local only — `ensure.ts:51` |
+| 5 | `summaryHtml: null` → next view runs `runHtmlDoc`, which regenerates **unconditionally** | local corrections route |
+| 6 | sync ships a replacement envelope, or deletes a provably-stale one | `companion.ts`, keyed on **`sourceMdHash`** |
+
+**Never invalidated by:** a `docVersion` bump (major or minor — `docVersion` is not in the
+freshness test), or an MD body change that leaves section titles intact.
+
+**Does a regenerated MD require a regenerated model? YES — always.** The model is derived from
+each section's *prose*, so any MD body change makes it stale by definition. The correct
+predicate is "the MD body changed" — exactly what `sourceMdHash` measures. The implemented
+predicate is "the titles changed", which is a proxy that fails precisely when a regeneration
+deliberately preserves headings. Rows 4, 5 and 6 above exist because three different authors
+each noticed their path needed more than the proxy and fixed it locally; the **cloud summary
+handler is the one MD writer that adds no compensating step** and relies on the proxy alone.
+
+### Evidence for finding #2: a SECOND local workaround of the promote divergence
+
+The review claimed the pattern "a fix applied at one call site instead of at the seam" from one
+instance (`sync-run.ts:329`). There are **two**. `serve-doc.ts:100-103`:
+
+> The model uses `writeModelEnvelope` (plain `put` → `upload(upsert:true)`), **NOT** staged→promote:
+> a regenerated model on drift / version-bump must OVERWRITE the stale blob so the doc self-heals
+> (create-if-absent promote could never replace it → re-reserve + re-charge every view until K, then 503).
+
+A second author independently hit the divergence, reasoned it through correctly, and worked
+around it in a comment at their own call site. The measurable pattern: **the writers that
+avoided the bug are exactly the ones that stopped calling `promote()`** — both switched to
+`put`/upsert. The three still calling it are the three that assume uniformity. The interface is
+teaching every careful caller to abandon it, which is the argument for fixing it at the seam.
 
 ### ⚠️ UPDATE 2026-07-30 — finding #2 is a CONFIRMED DEFECT, not just friction
 

@@ -263,8 +263,21 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS: one open item (`exec_sql`, 2026-07-20). `middleware-2a` red suite FIXED 2026-07-23. The two
-2026-07-19 items are CLOSED.**
+**STATUS: two open items (`exec_sql` 2026-07-20; an UNIDENTIFIED unit-suite flake 2026-07-30).
+`middleware-2a` red suite FIXED 2026-07-23. The two 2026-07-19 items are CLOSED.**
+
+- [ ] ⚠️ **One unit test failed once, then passed 4× in a row — identity UNKNOWN (2026-07-30).**
+  Observed while gating the D5–D7 batch: `npm test -- --ci` reported `1 failed, 251 passed / 1 failed,
+  2516 passed` on the first run, then **4 consecutive fully-green runs** (252 suites / 2517 tests).
+  **The failing test's name was not captured** — the run was piped to `tail`, which discarded the
+  failure block, and it has not reproduced since. That is a process error worth naming: *always
+  capture the full log when a suite may fail.*
+  **Why this is recorded rather than waved off:** `docs/dev-process.md` makes the full-suite step
+  satisfiable only while every red suite is **explicitly named**. This one cannot be named, so the
+  gate is met on the 4 green runs but the debt is real — an intermittent failure is exactly what
+  makes "confirm no regressions" unfalsifiable later.
+  **Trigger:** the next time any unit run goes red, capture `> /tmp/run.log 2>&1` in full and grep
+  for `✕`/`●` before doing anything else. If it recurs and names itself, promote to a real entry.
 
 - [x] **`middleware-2a.test.ts` — 2 OAuth-callback tests were RED on `master`.** ✅ **FIXED 2026-07-23.**
   Was pre-existing since `1c96e62` (PR #31 OAuth `x-forwarded-host` fix): `publicOrigin` reads
@@ -533,6 +546,30 @@ merged-PR list every time, per *Session Resume*.
      discarded, untraced) in `docs/reviews/architecture-review-2026-07-30.md`.
 3. **D1, D3, D4** — cloud dug-section ordering, the YAML newline that silently drops a paid dig
    section, and the write-only dig generator meta.
+4. **D5, D6, D7 — filed 2026-07-30**, all found while tracing #2. See
+   `docs/reviews/architecture-review-2026-07-30.md` → *Defects*.
+   - **D5** — a **style-only (MINOR) doc-version bump re-summarizes the whole playlist on
+     cloud**. `needsResummarize()` encodes the documented MAJOR/MINOR rule and has exactly one
+     caller (the local path); the cloud skip compares the flattened `"major.minor"` string. Local
+     and cloud-serve cost **0** Gemini calls for the same bump; cloud ingest pays in full, and
+     W1 then discards the result. Fix: cloud calls `needsResummarize`; stop flattening the job
+     version.
+   - **D6** — the **magazine model's drift guard is a title proxy**. `isFresh()` checks titles +
+     `GENERATOR_VERSION` and never `sourceMdHash`, which *is* written into every envelope. A
+     prose-only MD change with stable titles is served as fresh forever — and `fixSummary` pins
+     headings **on purpose**, so that is the designed shape of a corrections regenerate, not a
+     coincidence. Already documented in the wrong module (`companion.ts:43-45`). Fix: read
+     `sourceMdHash` in `isFresh`.
+   - **D7** — **section identity is answered three ways, two of them the title string.** Model ↔
+     section is positional+title; dig ↔ section is `startSec` with a title fallback. `startSec` is
+     minted inside `generateSummary` and lives only in the MD's `▶` line, so it is unique within a
+     generation but **not stable across** one. A re-summarize always breaks the numeric match, and
+     if it also rewords a heading, **paid dug content orphans**. One retitled heading also nulls
+     every section's gist. Fix direction: a **stable, persisted `sectionId`** minted once and
+     carried through regenerations — the concept the codebase keeps approximating.
+   - Proof for D6/D7: `tests/lib/html-doc/section-identity-after-resummarize.test.ts` (5 passing
+     characterization tests — they encode current behaviour, so they are a regression baseline for
+     any stable-sectionId work).
 4. **Backlog #18(b)** — give `grill-with-docs` a trigger. It is the documentation-integrity skill
    (ships `ADR-FORMAT.md` + `CONTEXT-FORMAT.md`, captures decisions *as they crystallise*) and has
    been dormant since 2026-07-12. Its dormancy is why ADR-0005 sat unpromoted for four weeks.
