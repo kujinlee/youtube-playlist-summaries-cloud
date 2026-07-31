@@ -629,6 +629,26 @@ Fix direction: route W1/W2 through `writeArtifact` (this finding), or make `prom
 uniform across adapters. Do not fix it a second time at a single call site — that is what
 `sync-run.ts:322` already did, and it is why the other writers never learned.
 
+### ⚠️ UPDATE 2026-07-30 — finding #2 is a CONFIRMED DEFECT, not just friction
+
+`tests/lib/dig/write-dig-section-blob-promote.test.ts` drives the real
+`writeDigSectionBlob` against `InMemoryBlobStore` in both promote semantics:
+
+- local (`overwrite`) → re-dug section serves **REGENERATED** content ✅
+- Supabase (`create-if-absent`) → re-dug section serves **ORIGINAL** content ❌
+
+`digSectionKey(base, sectionId)` is deterministic, so re-digging a section at the same
+`DIG_GENERATOR_VERSION` writes the SAME key. The final already exists, Supabase `promote()`
+skips the move, and the stale body survives. W2 is also the one writer that stamps **no
+metadata at all**, so nothing records that the newer content was discarded.
+
+Severity depends on whether the dig path can re-dig an already-dug section at the same
+version — **not yet traced.** The writer-level defect is proven; the reachability is not.
+
+Fix direction: route W1/W2 through `writeArtifact` (this finding), or make `promote()`
+uniform across adapters. Do not fix it a second time at a single call site — that is what
+`sync-run.ts:322` already did, and it is why the other writers never learned.
+
 **D2 is the one to look at first** — it's on the money path, and unlike the others
 it fails silently in production rather than in a document.
 
