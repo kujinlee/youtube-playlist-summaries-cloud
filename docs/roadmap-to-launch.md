@@ -508,14 +508,18 @@ merged-PR list every time, per *Session Resume*.
      The dig key embeds `.r{V}` so a bump can't collide; the summary key has no version at all
      (`baseName = padSerial(serial) + slugify(title)`, and `reserve_video_slot` returns the
      **existing** serial for a known video — `0009…sql:88`), so it is stable for the life of the
-     video. Path, all designed behaviour: `CURRENT_DOC_VERSION` bump → new `jobs_idem_active`
-     slot → re-ingest enqueues **every** video (all dedupes are version-scoped) → the skip at
-     `summary-handler.ts:85-91` doesn't fire on a version mismatch → full charged summarize →
-     `promote()` onto the occupied key → Supabase **skips** → old body survives while
-     `persistSummary(..., 'promoted')` stamps the NEW docVersion. **Unlike the dig case the two
-     bodies are SUPPOSED to differ.** Net: after a doc-version bump the cloud DB asserts a
-     version its blob does not contain, across a whole playlist, silently, at full Gemini cost.
-     Local unaffected. **W3 (`sync-run.ts:210`) still untraced.**
+     video. Path, all designed behaviour: `CURRENT_DOC_VERSION` bump + deploy → **a user
+     re-submits the same playlist URL** to `POST /api/jobs` (the ONLY cloud summary-job trigger;
+     `videos/[id]/regenerate` is local-only and enqueues nothing) → new `jobs_idem_active` slot
+     → jobs for **every** video in that playlist → the skip at `summary-handler.ts:85-91`
+     doesn't fire on a version mismatch → full charged summarize → `promote()` onto the occupied
+     key → Supabase **skips** → old body survives while `persistSummary(..., 'promoted')` stamps
+     the NEW docVersion. **Unlike the dig case the two bodies are SUPPOSED to differ.** Local
+     unaffected. **Not automatic on deploy** — it needs the re-submit (corrected 2026-07-30).
+     **Viewing a stale doc is NOT a trigger:** a bump makes the *rendered HTML* stale
+     (`eligibility.ts:12`) and that re-renders from the existing markdown without running the
+     handler. ⚠️ **But if lazy per-video regeneration-on-view is ever built, this defect starts
+     firing on view** — fix #2 before building it. **W3 (`sync-run.ts:210`) still untraced.**
    - **W2 (dig) reachability TRACED 2026-07-30 → severity LOW.** The writer-level
      divergence is proven (`tests/lib/dig/write-dig-section-blob-promote.test.ts`, RED **on purpose**
      — it is the bug report; branch `test/promote-divergence-finding-2`, unmerged). But the

@@ -504,19 +504,37 @@ key has no version anywhere: `baseName = padSerial(serial) + slugify(title)`
 for a known video (`0009…sql:88` — `if v_serial is not null then return v_serial`), so the key
 is **stable for the life of the video**.
 
-**The reachable path is a designed re-run, not a crash path:**
+**The reachable path is a designed re-run, not a crash path** *(corrected 2026-07-30 — an
+earlier revision of this section wrongly implied it fires automatically on deploy; it does not.
+It needs an explicit user action)*:
 
-1. `CURRENT_DOC_VERSION` bumps (now `3.3`, so it has moved before) → new `jobs_idem_active` slot
-2. re-ingesting the playlist enqueues **every** video — `enqueuePlaylist` skips only unusable
-   video metadata; all dedupes are version-scoped
-3. the idempotency skip at `summary-handler.ts:85-91` does **not** fire on a version mismatch
-4. full charged Gemini summarize runs
-5. `promote()` lands on the occupied key → Supabase **skips the move** → old body survives
-6. `persistSummary(..., 'promoted')` stamps the **new** docVersion regardless
+1. `CURRENT_DOC_VERSION` bumps (now `3.3`, so it has moved before) and is deployed
+2. **a user re-submits the same playlist URL** to `POST /api/jobs`. This is the ONLY production
+   trigger for a cloud summary job — verified: `enqueuePlaylist` is the sole caller of
+   `enqueuer.enqueue` for `kind: 'summary'`, and `app/api/videos/[id]/regenerate` is a
+   **local-only** route (`fs.readFile` + `outputFolder`) that enqueues nothing
+3. the new version opens a new `jobs_idem_active` slot, so jobs are created for **every** video
+   in that playlist — at the *same* version they would have joined the completed rows instead
+4. the idempotency skip at `summary-handler.ts:85-91` does **not** fire on a version mismatch
+5. full charged Gemini summarize runs
+6. `promote()` lands on the occupied key → Supabase **skips the move** → old body survives
+7. `persistSummary(..., 'promoted')` stamps the **new** docVersion regardless
 
 Unlike the dig case, **the two bodies are supposed to differ** — that is what a doc-version bump
-is *for*. End state on cloud: the database asserts a version its blob does not contain, across
-an entire playlist, silently, at full Gemini cost. Local is unaffected.
+is *for*. End state on cloud: the database asserts a version its blob does not contain, for
+every already-summarized video in that playlist, silently, at full Gemini cost. Local is
+unaffected.
+
+**What is NOT a trigger:** viewing a stale doc. A version bump makes the *rendered HTML* stale
+(`summaryNeedsWork`, `lib/html-doc/eligibility.ts:12`) and that re-renders from the **existing
+markdown** — it never runs `summary-handler` and never touches the summary blob. Only the
+rendered-HTML cache is lazily refreshed today, not the markdown.
+
+> ⚠️ **Design constraint for any future lazy per-video regeneration.** If "re-generate the
+> summary when the user opens a stale doc" is ever built, this defect stops needing an explicit
+> re-submit and starts firing **on view** — silently, per video, at Gemini cost, with the DB
+> claiming the new version each time. Fix finding #2 **before** building lazy regeneration, or
+> the feature ships a data-correctness bug on day one.
 
 The 4th test in that file passes and is the silent half: the handler reports
 `['committed','promoted']` at the current docVersion no matter what the blob ended up holding.
