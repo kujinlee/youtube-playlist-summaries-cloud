@@ -114,9 +114,13 @@ production code outside `lib/storage/` calls `promote()` directly.
   divergence is undocumented in the interface — that is the actual defect.
 - `tests/lib/dig/write-dig-section-blob-promote.test.ts` (currently RED **on purpose** on branch
   `test/promote-divergence-finding-2`) goes **green** under both promote semantics.
-- **W1 (summary) is traced but unproven** — see the review's scope note. Before this finding is
-  closed, the W1 equivalent of that test must exist and pass: a `CURRENT_DOC_VERSION` bump must
-  not leave the cloud DB asserting a version its blob does not contain.
+- **W1 (summary) is a CONFIRMED DEFECT** (2026-07-30) —
+  `tests/lib/job-queue/summary-handler-promote-divergence.test.ts`, RED on purpose on the same
+  branch. It must go **green under both promote semantics**: a `CURRENT_DOC_VERSION` bump must
+  not leave the cloud DB asserting a version its blob does not contain. This is what makes
+  finding #2 a **bug fix rather than a refactor** — see the review doc for the full path.
+- **W3 (`sync-run.ts:210`) is still untraced.** Trace it before closing, or the finding's own
+  thesis ("a fix at one call site leaves everyone else holding the bug") repeats a third time.
 - The 8 tests currently guarding `writeArtifact` are guarding **production** afterwards.
 
 **How the fix can be faked**

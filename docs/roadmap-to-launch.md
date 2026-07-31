@@ -501,17 +501,21 @@ merged-PR list every time, per *Session Resume*.
      LOW on that one sample. Live `promote()` callers still assuming uniformity:
      `summary-handler.ts:178` (W1), `write-dig-section-blob.ts:50` (W2, traced),
      `sync-run.ts:210` (W3). W1 and W3 are **untraced**.
-   - **W1 (summary) is the suspected WORSE case — traced, not yet proven.** The dig key embeds the
-     generator version (`.r{V}`), so a version bump yields a fresh key and cannot collide. The
-     summary key does **not**: `baseName = padSerial(serial) + slugify(title)` is stable for the
-     life of the video (`summary-handler.ts:96,172`). So a `CURRENT_DOC_VERSION` bump (now `3.3`,
-     so it has moved before) opens a new `jobs_idem_active` slot → the guard at
-     `summary-handler.ts:85-91` sees a version mismatch and proceeds → full charged summarize →
-     `promote()` into the existing key → Supabase **skips** → old body survives, while
-     `persistSummary(..., 'promoted')` stamps the NEW docVersion. Cloud DB would then assert a
-     version the blob does not contain, and unlike the dig case the two bodies are *supposed* to
-     differ. **Next action: write the W1 equivalent of
-     `tests/lib/dig/write-dig-section-blob-promote.test.ts` to confirm or retire this.**
+   - ⚠️ **W1 (summary) CONFIRMED DEFECT 2026-07-30 → finding #2 is a BUG FIX, not a refactor.**
+     Proven by `tests/lib/job-queue/summary-handler-promote-divergence.test.ts` (drives the REAL
+     `makeSummaryHandler`; RED **on purpose**, branch `test/promote-divergence-finding-2`):
+     local `overwrite` → REGENERATED body ✅, Supabase `create-if-absent` → **ORIGINAL body** ❌.
+     The dig key embeds `.r{V}` so a bump can't collide; the summary key has no version at all
+     (`baseName = padSerial(serial) + slugify(title)`, and `reserve_video_slot` returns the
+     **existing** serial for a known video — `0009…sql:88`), so it is stable for the life of the
+     video. Path, all designed behaviour: `CURRENT_DOC_VERSION` bump → new `jobs_idem_active`
+     slot → re-ingest enqueues **every** video (all dedupes are version-scoped) → the skip at
+     `summary-handler.ts:85-91` doesn't fire on a version mismatch → full charged summarize →
+     `promote()` onto the occupied key → Supabase **skips** → old body survives while
+     `persistSummary(..., 'promoted')` stamps the NEW docVersion. **Unlike the dig case the two
+     bodies are SUPPOSED to differ.** Net: after a doc-version bump the cloud DB asserts a
+     version its blob does not contain, across a whole playlist, silently, at full Gemini cost.
+     Local unaffected. **W3 (`sync-run.ts:210`) still untraced.**
    - **W2 (dig) reachability TRACED 2026-07-30 → severity LOW.** The writer-level
      divergence is proven (`tests/lib/dig/write-dig-section-blob-promote.test.ts`, RED **on purpose**
      — it is the bug report; branch `test/promote-divergence-finding-2`, unmerged). But the
