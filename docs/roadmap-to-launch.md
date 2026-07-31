@@ -490,6 +490,39 @@ merged-PR list every time, per *Session Resume*.
 2. **Architecture-review findings #1, #2, #4–#7** — same document. #2 (route the five artifact
    writers through `writeArtifact`) is the natural next one; the new `InMemoryBlobStore` makes it
    testable.
+   - **Acceptance criteria are defined and measurable:**
+     [`docs/reviews/architecture-findings-acceptance.md`](reviews/architecture-findings-acceptance.md).
+     Current state any time via `python3 scripts/check-arch-findings.py` (**2/18 criteria met** as
+     of 2026-07-30 — the 2 are finding #3). It runs in CI as a **ratchet**: it fails the build if
+     any metric gets *worse* than its 2026-07-30 baseline, which is the only thing that would
+     notice a 13th route file copy-pasting the `STORAGE_BACKEND` fork.
+   - **SCOPE CORRECTION 2026-07-30.** Finding #2 covers FIVE writers. The trace below graded only
+     **W2 (the dig writer)** and an earlier revision of this line wrongly labelled the whole finding
+     LOW on that one sample. Live `promote()` callers still assuming uniformity:
+     `summary-handler.ts:178` (W1), `write-dig-section-blob.ts:50` (W2, traced),
+     `sync-run.ts:210` (W3). W1 and W3 are **untraced**.
+   - **W1 (summary) is the suspected WORSE case — traced, not yet proven.** The dig key embeds the
+     generator version (`.r{V}`), so a version bump yields a fresh key and cannot collide. The
+     summary key does **not**: `baseName = padSerial(serial) + slugify(title)` is stable for the
+     life of the video (`summary-handler.ts:96,172`). So a `CURRENT_DOC_VERSION` bump (now `3.3`,
+     so it has moved before) opens a new `jobs_idem_active` slot → the guard at
+     `summary-handler.ts:85-91` sees a version mismatch and proceeds → full charged summarize →
+     `promote()` into the existing key → Supabase **skips** → old body survives, while
+     `persistSummary(..., 'promoted')` stamps the NEW docVersion. Cloud DB would then assert a
+     version the blob does not contain, and unlike the dig case the two bodies are *supposed* to
+     differ. **Next action: write the W1 equivalent of
+     `tests/lib/dig/write-dig-section-blob-promote.test.ts` to confirm or retire this.**
+   - **W2 (dig) reachability TRACED 2026-07-30 → severity LOW.** The writer-level
+     divergence is proven (`tests/lib/dig/write-dig-section-blob-promote.test.ts`, RED **on purpose**
+     — it is the bug report; branch `test/promote-divergence-finding-2`, unmerged). But the
+     user-initiated re-dig is blocked by the trigger's blob dedupe (`enqueue-dig-core.ts:39`),
+     concurrent triggers by `jobs_idem_active`, and a version bump can't collide at all because
+     `.r{V}` is *in* the key. The only open route is same-job re-execution after `complete()` fails
+     (`worker-runner.ts:59` → `sweep`, `0008_jobs_queue.sql:173`), where **both bodies are valid
+     digs** — the user sees the first generation, not wrong content. Keep the fix (divergence +
+     silent discard are real), but it is not urgent. Full trace + the one bad conjunction
+     (terminally-`failed` job outside the idem index + an `exists()` false-negative → paid,
+     discarded, untraced) in `docs/reviews/architecture-review-2026-07-30.md`.
 3. **D1, D3, D4** — cloud dug-section ordering, the YAML newline that silently drops a paid dig
    section, and the write-only dig generator meta.
 4. **Backlog #18(b)** — give `grill-with-docs` a trigger. It is the documentation-integrity skill

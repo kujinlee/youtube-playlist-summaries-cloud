@@ -10,6 +10,12 @@ not verify, it was dropped or corrected — noted inline.
 **Nothing here is a proposal yet.** This document explains *what was found and why
 it costs you something*. Designing the fix comes after you pick one.
 
+> **What "fixed" means for each finding:**
+> [`architecture-findings-acceptance.md`](architecture-findings-acceptance.md) — per-finding
+> invariant, mechanical criteria, and the specific ways each fix can go green without working.
+> Measure current state any time with `python3 scripts/check-arch-findings.py`; it also runs in
+> CI as a **ratchet**, so these numbers can no longer quietly grow.
+
 ---
 
 ## First: the five words this review uses
@@ -463,6 +469,75 @@ Not architecture — actual bugs the friction produced. Each verified.
 | D2 | **No reaper for `serve_model_charge`.** Nothing cron-shaped exists in the migrations, and `sweep_expired_leases` never mentions `reserved_cents` (0 occurrences in its body). A process death between reserve and settle appears to strand the reservation permanently. | grep + function body |
 | D3 | **A newline in a section title corrupts cloud dig frontmatter.** The two YAML escapers are asymmetric — the local one escapes `\n`, the cloud one doesn't. The parse failure is swallowed by a `catch`, silently dropping a section the user paid for. | both escapers read |
 | D4 | **`<meta name="generator" content="dig-deeper-doc v1">` is write-only.** Exactly one occurrence in the tree — nothing reads it. The dig-deeper doc has no cache-version story while the summary doc has two. | grep: 1 hit |
+
+### ⚠️ UPDATE 2026-07-30 — finding #2 is a CONFIRMED DEFECT, not just friction
+
+`tests/lib/dig/write-dig-section-blob-promote.test.ts` drives the real
+`writeDigSectionBlob` against `InMemoryBlobStore` in both promote semantics:
+
+- local (`overwrite`) → re-dug section serves **REGENERATED** content ✅
+- Supabase (`create-if-absent`) → re-dug section serves **ORIGINAL** content ❌
+
+`digSectionKey(base, sectionId)` is deterministic, so re-digging a section at the same
+`DIG_GENERATOR_VERSION` writes the SAME key. The final already exists, Supabase `promote()`
+skips the move, and the stale body survives. W2 is also the one writer that stamps **no
+metadata at all**, so nothing records that the newer content was discarded.
+
+#### Scope of the trace below — W2 ONLY
+
+This finding names FIVE writers. The trace that follows covers **W2, the dig writer**, and
+nothing else. Live `promote()` callers still assuming uniformity: `summary-handler.ts:178`
+(W1), `write-dig-section-blob.ts:50` (W2), `sync-run.ts:210` (W3). **W1 and W3 are untraced.**
+
+**W1 is the suspected worse case.** W2 is protected by an accident of key design — the dig key
+embeds the generator version (`.r{V}`), so a bump yields a fresh key and cannot collide. The
+summary key does not: `baseName = padSerial(serial) + slugify(title)` (`summary-handler.ts:96`)
+is stable for the life of the video. A `CURRENT_DOC_VERSION` bump (now `3.3`) opens a new
+`jobs_idem_active` slot, the guard at `summary-handler.ts:85-91` sees the version mismatch and
+proceeds, a full charged summarize runs, and `promote()` lands on the existing key — skipped on
+Supabase — while `persistSummary(..., 'promoted')` stamps the NEW docVersion anyway. The cloud
+DB would assert a version its blob does not contain, and unlike the dig case **the two bodies
+are supposed to differ.** Traced, NOT proven — needs the W1 equivalent of the dig test.
+
+#### W2 (dig) reachability — TRACED 2026-07-30. Reachable, but narrow; severity is LOW.
+
+The writer-level defect is real. The path to it is much narrower than the test implies,
+because three plausible routes turn out to be blocked:
+
+| Route | Blocked by |
+|---|---|
+| User re-clicks "dig" | `lib/dig/cloud/enqueue-dig-core.ts:39` — blob-existence dedupe → `ready`, no enqueue, no charge |
+| Two concurrent triggers | `jobs_idem_active` (`0009…sql:11`) covers `queued/active/completed` — the second joins |
+| `DIG_GENERATOR_VERSION` bump | the version is **in the key** (`dig-blob-key.ts:22`, `.r{V}`) → fresh key, never a collision |
+
+The one route that IS open — same-job re-execution:
+
+1. handler generates → `writeDigSectionBlob` promotes → final key occupied (`dig-handler.ts:119`)
+2. `queue.complete()` runs **after** that write (`worker-runner.ts:56` → `:59`); `!ok`/throw
+   leaves the row `active`
+3. `sweep` requeues expired-lease active jobs with **no backoff** (`0008_jobs_queue.sql:173-182`)
+4. handler re-runs, regenerates (charged), promotes into the occupied key → local overwrites,
+   Supabase discards the new body silently
+
+**Why severity is LOW:** on every reachable path both bodies are legitimate digs of the same
+section at the same generator version. The user is shown the *first* successful generation
+instead of the *last* — not wrong content. This is a **divergence + a silence**, not data loss.
+
+**The one bad conjunction worth keeping on file:** blob written → `complete()` throws →
+`fail()` marks the job terminally `failed` (NOT in `jobs_idem_active`, which excludes
+`failed`/`cancelled`) → a later `exists()` false-negative → fresh job, fresh Gemini charge,
+output discarded with no trace. Note `SupabaseBlobStore.exists` is `get() !== null` and `get`
+swallows every failure (the adapter self-declares `provesAbsence = false`), so the false
+negative is a transient blip, not an exotic case. Rare, but each link is independently real.
+
+**Composition note:** the blob check and the idem index are a two-layer defence that nobody
+designed — neither file mentions the other, and the index's exclusion of `failed`/`cancelled`
+is precisely where the blob check is weakest. This is the class of defect per-task review
+cannot see, which is why Phase 6 exists.
+
+Fix direction: route W1/W2 through `writeArtifact` (this finding), or make `promote()`
+uniform across adapters. Do not fix it a second time at a single call site — that is what
+`sync-run.ts:322` already did, and it is why the other writers never learned.
 
 **D2 is the one to look at first** — it's on the money path, and unlike the others
 it fails silently in production rather than in a document.
