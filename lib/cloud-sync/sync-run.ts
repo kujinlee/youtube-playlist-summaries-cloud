@@ -137,7 +137,12 @@ function sanitizeAdditiveVideo(video: Video): Video {
   // `summaryMd` — the key that spells the same serial out — is what made the receiver row disagree
   // with its own filename and orphaned the sender's paid dig blobs. It is also a column the user
   // sorts by (app/api/videos/route.ts), which `playlistIndex` is not.
-  delete v.playlistIndex;
+  // A2 — `playlistIndex` is KEPT too, but for a different reason than serialNumber: it is the
+  // video's position in the YOUTUBE playlist, re-derived from the API on every ingest
+  // (pipeline.ts:322-334). It was deleted here and then re-invented as `slot.position + 1` — a
+  // storage row ordinal from the OTHER replica, which is not a playlist position and bears no
+  // relationship to one. Carrying the sender's value (or its absence) is strictly better: worst
+  // case it is stale and the next ingest corrects it, whereas the ordinal was never right.
   delete v.removedFromPlaylist;
   // DB-computed read-only fields must never round-trip into a write.
   delete v.updatedAt;
@@ -251,10 +256,11 @@ async function copyAdditiveVideo(
   }
 
   const sanitized: any = sanitizeAdditiveVideo(video);
-  if (slot) {
-    sanitized.serialNumber = slot.serialNumber;
-    sanitized.playlistIndex = slot.position + 1;
-  }
+  // The claim's `position` is deliberately NOT read here. It is cloud-only storage bookkeeping
+  // (0001_core_schema.sql:27, "array order in PlaylistIndex.videos") that exists so the Supabase
+  // adapter can satisfy the array-shaped readIndex contract; nothing consumes the order it keeps,
+  // because the videos API always re-sorts. Deriving a user-visible field from it was the A2 bug.
+  if (slot) sanitized.serialNumber = slot.serialNumber;
   if (wroteBlob) {
     sanitized.artifacts = { summaryMd: { key: video.summaryMd, status: 'promoted' } };
   } else if (sanitized.artifacts && typeof sanitized.artifacts === 'object') {

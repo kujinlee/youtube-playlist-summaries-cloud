@@ -240,3 +240,44 @@ describe('additive sync — serial coherence', () => {
     expect(cloudIdx.videos.find((v) => v.id === 'vidlegacy01')!.serialNumber).toBe(5);
   });
 });
+
+/**
+ * `playlistIndex` — behaviors table rows 17, 18, 18b.
+ *
+ * It is the video's current position in the YOUTUBE PLAYLIST, re-derived from the API on every
+ * ingest (`pipeline.ts:322-334`). Additive sync overwrote it with `slot.position + 1` — a storage
+ * row ordinal from a different replica, which is not a playlist position and has no relationship to
+ * one. `position` is cloud-only bookkeeping (`0001_core_schema.sql:27`, "array order in
+ * PlaylistIndex.videos"); nothing reads the order it maintains, since the videos API always re-sorts.
+ */
+describe('additive sync — playlistIndex', () => {
+  // Rows 17 + 18b. The receiver's slot.position here is 0, so a value of 1 would prove the row
+  // ordinal was used; 12 proves the sender's playlist position survived.
+  it('carries the sender\'s value instead of deriving one from the receiver\'s row ordinal', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    const v = { ...video('vidlocal001', 3, 'alpha'), playlistIndex: 12 } as Video;
+    await seed(path.join(localRoot, KEY), [v]);
+    await seed(path.join(cloudRoot, KEY), []);
+
+    const report = await runSync(makeDeps(localRoot, cloudRoot));
+
+    expect(report.errors).toEqual([]);
+    const cloudIdx = await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY });
+    expect(cloudIdx.videos.find((x) => x.id === 'vidlocal001')!.playlistIndex).toBe(12);
+  });
+
+  // Row 18. Absent stays absent — inventing a position from a row ordinal is worse than having none,
+  // because the next ingest re-derives the real one anyway.
+  it('leaves it absent when the sender has none', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    await seed(path.join(localRoot, KEY), [video('vidlocal001', 3, 'alpha')]);
+    await seed(path.join(cloudRoot, KEY), []);
+
+    await runSync(makeDeps(localRoot, cloudRoot));
+
+    const cloudIdx = await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY });
+    expect(cloudIdx.videos.find((x) => x.id === 'vidlocal001')!.playlistIndex).toBeUndefined();
+  });
+});
