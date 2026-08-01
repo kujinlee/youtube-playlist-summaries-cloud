@@ -41,11 +41,22 @@ const OWNER = 'owner-uuid-1';
 // { id: ownerId, indexKey: playlistKey }; the local adapters expect indexKey to be a filesystem
 // root, so map it to <cloudRoot>/<playlistKey>.
 // ---------------------------------------------------------------------------
-function cloudMeta(cloudRoot: string, opts: { ignoreDesiredSerial?: boolean } = {}): MetadataStore {
+function cloudMeta(
+  cloudRoot: string,
+  opts: { ignoreDesiredSerial?: boolean; beforeReadIndex?: () => Promise<void> } = {},
+): MetadataStore {
   const inner = new LocalFsMetadataStore();
   const remap = (p: Principal) => localPrincipal(path.join(cloudRoot, p.indexKey));
   return new Proxy(inner, {
     get(target, prop: string) {
+      // Lets a test simulate ANOTHER client writing the cloud mid-run — the only way to reach the
+      // concurrent-change path, since a single-threaded run can never observe itself racing.
+      if (prop === 'readIndex' && opts.beforeReadIndex) {
+        return async (p: Principal) => {
+          await opts.beforeReadIndex!();
+          return inner.readIndex(remap(p));
+        };
+      }
       // A backend that ACCEPTS the desired serial and quietly allocates its own anyway. No real
       // adapter can be asked to behave this way, and that is the point: the post-claim check exists
       // for exactly this failure, and without a dishonest store nothing exercises it.
@@ -123,7 +134,10 @@ async function seed(dir: string, videos: Video[]) {
   }
 }
 
-function makeDeps(localRoot: string, cloudRoot: string, opts: { ignoreDesiredSerial?: boolean } = {}) {
+function makeDeps(
+  localRoot: string, cloudRoot: string,
+  opts: { ignoreDesiredSerial?: boolean; beforeReadIndex?: () => Promise<void> } = {},
+) {
   return {
     local: meta, cloud: cloudMeta(cloudRoot, opts),
     localBlob: blobs, cloudBlob: cloudBlobs(cloudRoot),
@@ -375,6 +389,43 @@ describe('two-sided sync — diverged base is repaired, dig content stays reacha
     const cloudVideos = (await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY })).videos;
     const serials = cloudVideos.map((v) => v.serialNumber).filter((n) => n != null);
     expect(new Set(serials).size).toBe(serials.length);   // no two cloud rows share a serial
+  });
+
+  // CODEX ROUND-4 High #1, and MUTATION-DRIVEN: deleting either the snapshot refresh or the
+  // `occupancyTrusted` gate left every test green, because nothing simulated another client writing
+  // the cloud mid-run — which a single-threaded run can never observe by itself.
+  //
+  // `noteCloudRow` fires only on a successful relocation, so a DETECTED concurrent change — the one
+  // moment we have hard proof the cloud moved under us — updated nothing. A later video then read
+  // occupancy from a view already known to be wrong.
+  it('does not relocate onto a serial another writer took mid-run', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    // A: two-sided, local 3 / cloud 7 → wants to relocate cloud A onto 3.
+    // B: two-sided, local 5 / cloud 9 → wants to relocate cloud B onto 5.
+    await seed(path.join(localRoot, KEY), [
+      video('vidaaaaaaaa1', 3, 'alpha'), video('vidbbbbbbbb1', 5, 'bravo'),
+    ]);
+    await seed(path.join(cloudRoot, KEY), [
+      video('vidaaaaaaaa1', 7, 'alpha'), video('vidbbbbbbbb1', 9, 'bravo'),
+    ]);
+
+    // Fire once, as soon as A's copy phase has produced its destination blob: another client moves
+    // cloud A onto serial 5 — the serial B is about to be relocated onto.
+    let fired = false;
+    const beforeReadIndex = async () => {
+      if (fired || !fs.existsSync(path.join(cloudRoot, KEY, '003_alpha.md'))) return;
+      fired = true;
+      const cp = localPrincipal(path.join(cloudRoot, KEY));
+      await meta.updateVideoFields(cp, 'vidaaaaaaaa1',
+        { serialNumber: 5, summaryMd: '005_alpha.md' } as Partial<Video>);
+    };
+
+    await runSync(makeDeps(localRoot, cloudRoot, { beforeReadIndex }));
+
+    const cloudVideos = (await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY })).videos;
+    const serials = cloudVideos.map((v) => v.serialNumber).filter((n) => n != null);
+    expect(new Set(serials).size).toBe(serials.length);
   });
 
   it('reports a collision and leaves both videos untouched', async () => {
