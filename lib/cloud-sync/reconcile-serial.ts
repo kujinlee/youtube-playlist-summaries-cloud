@@ -47,6 +47,8 @@ export type SerialReconcileResult =
   | { ok: true; action: 'relocated'; from: string; to: string; copied: number; cleanupFailures: number }
   | { ok: false; reason: 'target-occupied'; want: number; heldBy: string }
   | { ok: false; reason: 'copy-failed'; key: string; detail: CopyResult }
+  | { ok: false; reason: 'unmappable-key'; key: string }
+  | { ok: false; reason: 'unsupported-artifacts'; kinds: string[] }
   | { ok: false; reason: 'metadata-failed'; cause: unknown };
 
 /** `<base>` from a `<base>.md` key. */
@@ -72,15 +74,25 @@ async function paidKeysUnder(
   return [...new Set(keys)];
 }
 
-/** Map an old-base key to the same key under the new base. Only the `<serial>_<slug>` segment moves;
- *  the directory, the extension and any `-dig-deeper`/`.r<V>` suffix are preserved. */
-function remap(key: string, oldBase: string, newBase: string): string {
+/** Map an old-base key to the same key under the new base, or `null` if the key is not a shape this
+ *  module knows how to move.
+ *
+ *  FAILS CLOSED on an unrecognised shape rather than guessing. The first version ended in a generic
+ *  `key.replace(oldBase, newBase)`, which rewrites only the FIRST occurrence wherever it happens to
+ *  sit: a key like `x/<oldBase>/<oldBase>-dig-deeper.md` would have its directory rewritten and its
+ *  basename left carrying the old base, producing a row that points at a file that does not exist
+ *  while cleanup deletes the one that does. Every shape below is enumerated deliberately; a new
+ *  base-addressed artifact must be added here, and until it is, the reconciliation refuses to move
+ *  the record at all. (Codex branch review, Medium #1.) */
+function remap(key: string, oldBase: string, newBase: string): string | null {
   if (key === `${oldBase}.md`) return `${newBase}.md`;
-  if (key.startsWith(`dig/${oldBase}/`)) return `dig/${newBase}/${key.slice(`dig/${oldBase}/`.length)}`;
   if (key === MODEL_KEY(oldBase)) return MODEL_KEY(newBase);
-  // Anything else base-addressed (digDeeperMd = `<base>-dig-deeper.md`) keeps its directory and its
-  // suffix; only the serial-and-slug prefix is replaced.
-  return key.replace(oldBase, newBase);
+  const digPrefix = `dig/${oldBase}/`;
+  if (key.startsWith(digPrefix)) return `dig/${newBase}/${key.slice(digPrefix.length)}`;
+  // A bare basename carrying the base as its prefix — `digDeeperMd` is `<base>-dig-deeper.md`
+  // (lib/dig/dig-section.ts:84), with no directory component.
+  if (!key.includes('/') && key.startsWith(oldBase)) return newBase + key.slice(oldBase.length);
+  return null;
 }
 
 /** The bases the two replicas derive for one video, and whether they disagree.
@@ -145,6 +157,9 @@ export async function reconcileCloudBase(args: {
   let copied = 0;
   for (const from of sources) {
     const to = remap(from, oldBase, newBase);
+    if (to == null) {
+      return { ok: false, reason: 'unmappable-key', key: from };
+    }
     const res = await cloud.blob.copy(cloud.p, from, to);
     if (res.ok) { if (!res.already) copied += 1; continue; }
     // A derived artifact that genuinely does not exist is nothing to copy — most videos have no
@@ -166,7 +181,29 @@ export async function reconcileCloudBase(args: {
     digDeeperHtml: null,
   };
   const digDeeperMd = (cloudVideo as { digDeeperMd?: string | null }).digDeeperMd;
-  if (digDeeperMd) patch.digDeeperMd = remap(digDeeperMd, oldBase, newBase);
+  if (digDeeperMd) {
+    const to = remap(digDeeperMd, oldBase, newBase);
+    if (to == null) return { ok: false, reason: 'unmappable-key', key: digDeeperMd };
+    patch.digDeeperMd = to;
+  }
+
+  // REFUSE if the record carries any artifact kind other than `summaryMd`. The cloud artifact write
+  // is an additive jsonb merge (merge_video_data, 0007:89-93), so a subkey this patch omits keeps its
+  // old-base value while cleanup deletes the blob underneath it — and remapping the POINTER without
+  // also copying the BLOB is no better, since `paidKeysUnder` only knows the MD, the model, the digs
+  // and digDeeperMd. Refusing is the smallest correct behaviour: it cannot half-move anything, and
+  // the day this becomes reachable it fails loudly at exactly the code that must be extended.
+  //   It is unreachable today, in both directions: `writeArtifact` is the only writer of the other
+  // kinds and has zero production callers (architecture finding #2), and every sync write shapes
+  // artifacts down to `{ summaryMd }` (sanitizeAdditiveVideo, transferClassA).
+  // (Codex branch review High #1 — severity adjudicated down after verifying the writers, and the
+  // suggested pointer-remap replaced with a refusal for the reason above.)
+  const artifacts = (cloudVideo as { artifacts?: Record<string, unknown> }).artifacts;
+  const unsupported = Object.keys(artifacts ?? {}).filter((k) => k !== 'summaryMd');
+  if (unsupported.length > 0) {
+    return { ok: false, reason: 'unsupported-artifacts', kinds: unsupported };
+  }
+
   try {
     await cloud.store.updateVideoFields(cloud.p, cloudVideo.id, patch as Partial<Video>);
   } catch (cause) {
@@ -179,7 +216,8 @@ export async function reconcileCloudBase(args: {
   // points there, so a failure leaves leftovers, not loss. It must never undo durable work.
   let cleanupFailures = 0;
   for (const from of sources) {
-    if (remap(from, oldBase, newBase) === from) continue;
+    const to = remap(from, oldBase, newBase);
+    if (to == null || to === from) continue;   // null is unreachable — the copy loop already refused
     try { await cloud.blob.delete(cloud.p, from); } catch { cleanupFailures += 1; }
   }
 

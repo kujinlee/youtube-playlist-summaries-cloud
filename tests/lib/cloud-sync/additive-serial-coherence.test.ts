@@ -220,6 +220,31 @@ describe('additive sync — serial coherence', () => {
     expect(manifest.videos['vidlocal001']).toBeUndefined();
   });
 
+  // Found by the branch adversarial pass. The collision check compared SERIALS, but the thing that
+  // actually collides is the KEY. A legacy receiver row carrying `003_alpha.md` with no
+  // serialNumber at all (exactly what `backfillOrder` exists to repair) passed the serial check,
+  // and the additive create then wrote the sender's body straight over it — destroying a summary on
+  // the local FS adapter, where promote is a rename that overwrites.
+  it('aborts when a receiver video already holds the sender\'s KEY without holding its serial', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    fs.mkdirSync(path.join(localRoot, KEY), { recursive: true });
+    const lp = localPrincipal(path.join(localRoot, KEY));
+    await meta.setPlaylistMeta(lp, { playlistUrl: PLAYLIST_URL });
+    // Legacy shape: an MD key, but no serialNumber.
+    await meta.upsertVideo(lp, {
+      id: 'vidlegacy01', title: 'alpha', youtubeUrl: 'https://youtu.be/vidlegacy01',
+      archived: false, summaryMd: '003_alpha.md', processedAt: '2026-07-01T00:00:00.000Z',
+    } as unknown as Video);
+    await blobs.put(lp, '003_alpha.md', Buffer.from('LEGACY LOCAL BODY'), 'text/markdown');
+    await seed(path.join(cloudRoot, KEY), [video('vidcloud001', 3, 'alpha')]);
+
+    const report = await runSync(makeDeps(localRoot, cloudRoot));
+
+    expect(report.errors.map((e) => e.videoId)).toContain('vidcloud001');
+    expect(fs.readFileSync(path.join(localRoot, KEY, '003_alpha.md'), 'utf8')).toBe('LEGACY LOCAL BODY');
+  });
+
   // Row 11. A legacy row with no serial must not become an error — the receiver allocates, exactly
   // as it does today, and there is no key/row disagreement to create because there is no key.
   it('allocates a serial when the sender has none', async () => {
@@ -310,6 +335,46 @@ describe('two-sided sync — diverged base is repaired, dig content stays reacha
     expect(localRow.summaryMd).toBe('003_alpha.md');
     expect(fs.readFileSync(path.join(localRoot, KEY, '003_alpha.md'), 'utf8')).toContain('CLOUD BODY');
     expect(fs.existsSync(path.join(localRoot, KEY, '007_alpha.md'))).toBe(false);
+  });
+
+  // CODEX BRANCH REVIEW, High #2 — CONFIRMED, and it falsifies a safety claim the code itself made.
+  // The comment on `cloudSnapshot` argued that a serial taken during this run is caught downstream by
+  // the copy phase's fail-closed `destination-exists`. That only holds when the two videos share a
+  // KEY. Same serial with a different slug produces different keys, nothing collides, and the run
+  // ends with two cloud rows at the same serialNumber — the exact incoherence this slice removes.
+  //
+  // Reachable without any pre-existing corruption: a local video with NO serial (legacy, the shape
+  // backfillOrder repairs) is created on cloud, where the allocator hands it `max + 1` — which can be
+  // the very serial a later two-sided video is about to be relocated onto.
+  it('sees serials claimed earlier in the same run, not only the pre-loop snapshot', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    const lp = localPrincipal(path.join(localRoot, KEY));
+    fs.mkdirSync(path.join(localRoot, KEY), { recursive: true });
+    await meta.setPlaylistMeta(lp, { playlistUrl: PLAYLIST_URL });
+    // A: local-only, NO serial → cloud will allocate max+1 = 3.
+    await meta.upsertVideo(lp, {
+      id: 'vidnoserial1', title: 'alpha', youtubeUrl: 'https://youtu.be/vidnoserial1',
+      archived: false, summaryMd: 'alpha.md', processedAt: '2026-07-01T00:00:00.000Z',
+    } as unknown as Video);
+    await blobs.put(lp, 'alpha.md', Buffer.from('A BODY'), 'text/markdown');
+    // B: two-sided, local serial 3 / cloud serial 2 → A3 wants to move cloud B onto serial 3.
+    await meta.claimVideoSlot(lp, 'vidshared001', 3);
+    await meta.upsertVideo(lp, video('vidshared001', 3, 'beta'));
+    await blobs.put(lp, '003_beta.md', Buffer.from('# beta\n'), 'text/markdown');
+
+    // Cloud's max serial is 2, so A — processed first, since local ids are enumerated first — is
+    // allocated 3: the serial B is about to be relocated onto. Their KEYS never collide
+    // (`alpha.md` vs `003_beta.md`), which is precisely why the copy phase cannot catch this.
+    await seed(path.join(cloudRoot, KEY), [
+      video('vidcloud0001', 1, 'one'), video('vidshared001', 2, 'beta'),
+    ]);
+
+    await runSync(makeDeps(localRoot, cloudRoot));
+
+    const cloudVideos = (await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY })).videos;
+    const serials = cloudVideos.map((v) => v.serialNumber).filter((n) => n != null);
+    expect(new Set(serials).size).toBe(serials.length);   // no two cloud rows share a serial
   });
 
   it('reports a collision and leaves both videos untouched', async () => {

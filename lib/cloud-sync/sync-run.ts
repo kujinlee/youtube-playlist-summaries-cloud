@@ -190,11 +190,19 @@ async function ensureReceiverSlot(
   // first means no partial state is created and there is nothing to roll back — the same reasoning
   // as the H-R2-1 fix below, which learned that a bare receiver row left behind on a throw gets
   // laundered into a false "seen and agreed" baseline on the next run.
-  if (video.serialNumber != null) {
-    const holder = idx.videos.find((v) => v.serialNumber === video.serialNumber);
+  //   The check is on the KEY as well as the serial, because the key is what actually collides.
+  // A legacy receiver row carrying `003_alpha.md` with NO serialNumber — exactly the shape
+  // `backfillOrder` exists to repair — passes a serial-only check, and the blob write below then
+  // puts the sender's body straight over it: on the local FS adapter promote is a rename, which
+  // overwrites, so a summary is destroyed. (Found by the branch adversarial pass.)
+  if (video.serialNumber != null || video.summaryMd) {
+    const holder = idx.videos.find((v) =>
+      (video.serialNumber != null && v.serialNumber === video.serialNumber) ||
+      (video.summaryMd != null && v.summaryMd === video.summaryMd));
     if (holder) {
       throw new Error(
-        `serial collision: ${video.id} needs serial ${video.serialNumber}, already held by ${holder.id}`,
+        `serial collision: ${video.id} needs serial ${video.serialNumber} / key ${video.summaryMd}, ` +
+        `already held by ${holder.id}`,
       );
     }
   }
@@ -558,14 +566,25 @@ export async function runSync(
     const cloudSide: Side = { store: deps.cloud, p: cloudP, blob: deps.cloudBlob };
     const playlistMeta = playlistMetaFor(key, localPlaylists, cloudSummaries);
     const manifest = await readManifest(dataRoot, key);
-    // A3 — ONE cloud snapshot per playlist, taken before the video loop and reused for every
-    // occupancy check. Deliberately not re-read per video: a swap (A wants B's serial while B wants
-    // A's) is only detectable against a consistent view. Re-reading would let A move first and B
-    // then see a world A had just changed, converting "both abort" into a half-repair no single move
-    // can finish. It goes stale as the loop creates rows, which is safe in the only direction that
-    // matters: a serial this run has just taken is caught by the copy phase's fail-closed
-    // `destination-exists` instead of by a named collision.
+    // A3 occupancy view: ONE cloud read per playlist, then MAINTAINED as this run mutates cloud.
+    //
+    // It is not re-read per video, because a swap (A wants B's serial while B wants A's) is only
+    // detectable against a consistent view: re-reading would let A move first and B then see a world
+    // A had just changed, converting "both abort" into a half-repair no single move can finish.
+    //
+    // But a pure snapshot is WRONG, and the first version of this comment claimed otherwise — it
+    // argued that a serial taken during this run is caught downstream by the copy phase's fail-closed
+    // `destination-exists`. That only holds when the two videos share a KEY. Same serial with a
+    // different slug produces different keys, nothing collides, and the run ends with two cloud rows
+    // at one serialNumber. Reachable without pre-existing corruption: a local video with no serial is
+    // created on cloud at `max + 1`, which can be the serial a later two-sided video is relocated
+    // onto. So every cloud row this run creates or moves is folded back in below.
+    // (Codex branch review, High #2.)
     const cloudSnapshot = (await deps.cloud.readIndex(cloudP)).videos;
+    const noteCloudRow = (v: Video) => {
+      const i = cloudSnapshot.findIndex((x) => x.id === v.id);
+      if (i === -1) cloudSnapshot.push(v); else cloudSnapshot[i] = v;
+    };
 
     for (const id of await enumerateVideoIds(deps.local, deps.cloud, localP, cloudP)) {
       try {
@@ -585,6 +604,11 @@ export async function runSync(
             const to: Side = presentIsLocal ? cloudSide : localSide;
             const body = await readMdBody(from.blob, from.p, present);
             await copyAdditiveVideo(to.store, to.p, to.blob, playlistMeta, present, body);
+            // A cloud row created here occupies a serial that A3 must see later in this same run.
+            if (presentIsLocal) {
+              const created = await readVideo(deps.cloud, cloudP, id);
+              if (created) noteCloudRow(created);
+            }
             report.created += 1; // reached only after the receiver row is confirmed
             await writeVideoBaseline(dataRoot, key, id, baselineFromOneSided(
               deriveClassASignals(present, body), body ? mdHash(body) : null,
@@ -697,6 +721,7 @@ export async function runSync(
           // The record in hand is stale: its summaryMd and serialNumber just changed. Re-read before
           // Class A, which uses cv.summaryMd as the key it writes onto the loser.
           cv = (await readVideo(deps.cloud, cloudP, id))!;
+          noteCloudRow(cv);   // it now holds the NEW serial, and released the old one
           ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
         }
 

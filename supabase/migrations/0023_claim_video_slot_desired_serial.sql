@@ -21,13 +21,22 @@
 --    the insert. This adopts it, and short-circuits an existing row before touching anything.
 --
 -- Why DROP and not CREATE OR REPLACE: Postgres identifies a function by its full argument-type
--- signature, so adding a defaulted parameter CREATES A SECOND FUNCTION. Every existing 2-arg call
--- would then match both candidates and fail with "function is not unique". Privileges do not
--- survive the drop, so the revoke/grant is re-issued below.
+-- signature, so adding a parameter CREATES A SECOND FUNCTION. Privileges do not survive the drop,
+-- so the revoke/grant is re-issued below.
+--
+-- Why the 2-arg form is then RE-CREATED as an explicit wrapper rather than gained for free from a
+-- DEFAULT: a rolling deploy runs old and new app instances at the same time. Migrations are applied
+-- before the new image is fully rolled out, so for the length of that window old instances are still
+-- calling `claim_video_slot(uuid, text)`. Dropping it outright turns every ingest and every sync on
+-- those instances into a "function does not exist" error. A DEFAULT does not solve this: it would
+-- make the 2-arg CALL resolvable, but the 2-arg SIGNATURE would not exist, and PostgREST resolves
+-- an RPC by the named arguments in the request body — a call sending only p_playlist_id/p_video_id
+-- does not match a 3-arg signature. Two distinct signatures, neither defaulted, is unambiguous in
+-- both directions: a 2-arg call matches only the wrapper, a 3-arg call matches only the real one.
 
 drop function if exists claim_video_slot(uuid, text);
 
-create function claim_video_slot(p_playlist_id uuid, p_video_id text, p_desired_serial int default null)
+create function claim_video_slot(p_playlist_id uuid, p_video_id text, p_desired_serial int)
   returns table("position" int, serial_number int)
   language plpgsql security invoker set search_path = public as $$
 declare v_pos int; v_serial int;
@@ -90,3 +99,13 @@ begin
 end $$;
 revoke all on function claim_video_slot(uuid, text, int) from public;
 grant execute on function claim_video_slot(uuid, text, int) to authenticated, service_role;
+
+-- Back-compat wrapper for in-flight old app instances during a rolling deploy (see the header).
+-- "No preference" is exactly what the old 2-arg call meant, so this is behaviour-preserving.
+create function claim_video_slot(p_playlist_id uuid, p_video_id text)
+  returns table("position" int, serial_number int)
+  language sql security invoker set search_path = public as $$
+  select * from claim_video_slot(p_playlist_id, p_video_id, null::int);
+$$;
+revoke all on function claim_video_slot(uuid, text) from public;
+grant execute on function claim_video_slot(uuid, text) to authenticated, service_role;
