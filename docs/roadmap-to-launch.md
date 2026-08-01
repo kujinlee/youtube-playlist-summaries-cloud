@@ -385,9 +385,20 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
       full **base**, not only the serial (the slug diverges on its own), and does NOT reuse
       `serial-migrate.ts`, which solves backfill rather than relocation and never touches digs.
 - [x] **A5** regression guard: derive the base from the row after a sync, and the paid dig is there
-- [ ] **A-review** — round 1: 3 Codex + 2 coordinator findings. Round 2: 1 High, 1 Medium, 1 Low
-      from Codex + 2 coordinator. Round 3 dispatched. **Convergence = a full round with no new
-      Blocking/High.** Every fix is mutation-checked.
+- [ ] **A-review** — 4 rounds done, **not converged**; round 5 is the next step.
+      R1: 3 Codex (2H/1M) + 2 coordinator. R2: 1H/1M/1L Codex + 2 coordinator. R3: 1H/1M/1L.
+      R4: 1H/2M. Zero Blocking in any round. **Convergence = a full round with no new
+      Blocking/High.** Every fix is mutation-checked, and 4 separate mutations found guards that
+      no test covered — each became a test.
+      Reviews: `docs/reviews/task-A-serial-coherence-branch{,-v2,-v3,-v4}-rereview-codex.md`,
+      each with a coordinator adjudication section (2 findings were downgraded on evidence, 1
+      suggested fix was replaced with a stricter one, 1 suggestion was declined with reasons).
+      **Known gap, named not hidden:** the relocation metadata write is not a compare-and-swap, so
+      two concurrent syncs of one playlist can interleave. Adjudicated **pre-existing** —
+      `transferClassA` (`sync-run.ts:427`) and `copyAdditiveVideo` (`:281`) have the identical
+      unconditional-write exposure, independently verified by Codex in round 4. The window was
+      narrowed; the real fix is a conditional relocation RPC covering **every** sync write.
+      **Needs a decision before filing.**
 - [ ] **A6** delete the vestigial `position` column — separable, deliberately last
 - [ ] **PR + merge** (human gate)
 
