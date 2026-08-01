@@ -286,6 +286,50 @@ describe('reconcileCloudBase', () => {
     expect((await rowOf(cloud, 'vid00000001')).summaryMd).toBe('007_alpha.md');
   });
 
+  // `remap` matches `digDeeperMd` EXACTLY, not by prefix. With `oldBase = '003_a'` a
+  // `startsWith(oldBase)` test also matches `003_ab-dig-deeper.md` — a different video's paid
+  // artifact, or this one's stale pointer from an earlier base — and would rewrite it into a path
+  // pointing at nothing while cleanup deleted the real file. One base being a prefix of another is
+  // ordinary, since slugs are free text.
+  it('refuses a digDeeperMd pointer that is not exactly this base\'s', async () => {
+    const cloudVideo = { ...vid('vid00000001', 3, 'a'), digDeeperMd: '003_ab-dig-deeper.md' } as Video;
+    const cloud = await cloudReplica([cloudVideo], {
+      '003_a.md': 'MD BODY', '003_ab-dig-deeper.md': 'A DIFFERENT VIDEO\'S DIG',
+    });
+
+    const res = await reconcileCloudBase({
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 9, 'a'), cloudVideo,
+    });
+
+    expect(res).toEqual({ ok: false, reason: 'unmappable-key', key: '003_ab-dig-deeper.md' });
+    expect(await read(cloud, '003_ab-dig-deeper.md')).toBe('A DIFFERENT VIDEO\'S DIG');
+    expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(3);
+  });
+
+  // Round-1 High #1's replacement: refuse rather than half-move. `paidKeysUnder` knows the MD, the
+  // model, the digs and digDeeperMd — nothing else — so advancing a `slide`/`pdf` POINTER would
+  // publish a key with no blob behind it. Unreachable today (writeArtifact has zero callers), which
+  // is exactly why it must fail loudly the day it is not.
+  it('refuses a record carrying an artifact kind it cannot move', async () => {
+    const cloudVideo = {
+      ...vid('vid00000001', 7, 'alpha'),
+      artifacts: {
+        summaryMd: { key: '007_alpha.md', status: 'promoted' },
+        slide: { key: 'slides/007_alpha/1.png', status: 'promoted' },
+      },
+    } as unknown as Video;
+    const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
+
+    const res = await reconcileCloudBase({
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(res).toEqual({ ok: false, reason: 'unsupported-artifacts', kinds: ['slide'] });
+    expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
+  });
+
   // Row 24b — cleanup is best-effort. Every blob already exists at the new base and the row already
   // points there, so a delete failure is leftovers, not loss, and must NOT undo the relocation.
   it('reports cleanup failures without failing the relocation', async () => {

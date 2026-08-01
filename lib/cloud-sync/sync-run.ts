@@ -738,6 +738,12 @@ export async function runSync(
         if (decision.action === 'copyToCloud') {
           winnerSide = localSide; loserSide = cloudSide; winnerVideo = lv; winnerSignals = la;
           winnerMdHash = (await transferClassA(localSide, cloudSide, lv, id)).mdHash;
+          // This rewrote the cloud row's summaryMd to the winner's key. Reconciliation normally
+          // makes that a no-op (the bases already agree), but it returns 'agreed' without moving
+          // anything when there is nothing to reconcile TO — a local row with no serial, or a cloud
+          // row with no MD — and the key can still change on those paths. Keep the occupancy view
+          // honest rather than relying on that staying true.
+          noteCloudRow((await readVideo(deps.cloud, cloudP, id))!);
           report.updatedCloud += 1;
         } else if (decision.action === 'copyToLocal') {
           winnerSide = cloudSide; loserSide = localSide; winnerVideo = cv; winnerSignals = ca;

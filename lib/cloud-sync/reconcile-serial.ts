@@ -89,9 +89,12 @@ function remap(key: string, oldBase: string, newBase: string): string | null {
   if (key === MODEL_KEY(oldBase)) return MODEL_KEY(newBase);
   const digPrefix = `dig/${oldBase}/`;
   if (key.startsWith(digPrefix)) return `dig/${newBase}/${key.slice(digPrefix.length)}`;
-  // A bare basename carrying the base as its prefix — `digDeeperMd` is `<base>-dig-deeper.md`
-  // (lib/dig/dig-section.ts:84), with no directory component.
-  if (!key.includes('/') && key.startsWith(oldBase)) return newBase + key.slice(oldBase.length);
+  // `digDeeperMd`, matched EXACTLY rather than by prefix. A `startsWith(oldBase)` test looks
+  // equivalent and is not: with `oldBase = '003_a'` it also matches `003_ab-dig-deeper.md`, which is
+  // a DIFFERENT video's artifact (or this one's stale pointer from an earlier base), and would
+  // rewrite it into `003_newb-dig-deeper.md` — a path pointing at nothing, while cleanup deletes the
+  // real file. One base being a prefix of another is ordinary: slugs are free text.
+  if (key === `${oldBase}-dig-deeper.md`) return `${newBase}-dig-deeper.md`;
   return null;
 }
 
