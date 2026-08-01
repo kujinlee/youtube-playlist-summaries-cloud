@@ -256,6 +256,36 @@ describe('reconcileCloudBase', () => {
     expect(await read(cloud, 'dig/003_alpha/120.r3.md')).toBe('DIG ONE');
   });
 
+  // Row 26, THE ORDERING INVARIANT — and this test exists because a mutation found it uncovered.
+  // Moving the cleanup ahead of the metadata write failed NOTHING: every other test either has a
+  // metadata write that succeeds (so the order is invisible) or never reaches this far. That order
+  // is the most safety-critical line in the module: delete first, then fail to advance the row, and
+  // the blobs are gone while the row still points at them. Copy-first exists precisely so that
+  // window does not exist.
+  it('leaves every source intact when the metadata write fails', async () => {
+    const cloudVideo = vid('vid00000001', 7, 'alpha');
+    const cloud = await cloudReplica([cloudVideo], {
+      '007_alpha.md': 'MD BODY', 'dig/007_alpha/120.r3.md': 'DIG ONE',
+    });
+    const failing = {
+      ...cloud,
+      store: Object.assign(Object.create(store), {
+        updateVideoFields: async () => { throw new Error('metadata write failed'); },
+      }),
+    };
+
+    const res = await reconcileCloudBase({
+      cloud: failing as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(res).toMatchObject({ ok: false, reason: 'metadata-failed' });
+    expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
+    expect(await read(cloud, 'dig/007_alpha/120.r3.md')).toBe('DIG ONE');
+    // The row never moved, so it still points at blobs that are still there.
+    expect((await rowOf(cloud, 'vid00000001')).summaryMd).toBe('007_alpha.md');
+  });
+
   // Row 24b — cleanup is best-effort. Every blob already exists at the new base and the row already
   // points there, so a delete failure is leftovers, not loss, and must NOT undo the relocation.
   it('reports cleanup failures without failing the relocation', async () => {

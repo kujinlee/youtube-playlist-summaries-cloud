@@ -287,6 +287,31 @@ describe('two-sided sync — diverged base is repaired, dig content stays reacha
     expect(fs.existsSync(path.join(cloudRoot, KEY, 'models', '007_alpha.json'))).toBe(false);
   });
 
+  // ALSO MUTATION-DRIVEN. Re-reading the cloud record after a relocation failed nothing, because
+  // every other two-sided test has identical bodies on both sides — Class A skips, and the stale
+  // record is never used for a write. Here the CLOUD wins the recency tiebreak, so transferClassA
+  // writes `cv.summaryMd` onto local. A stale `cv` writes the OLD key, re-diverging local onto
+  // `007_alpha.md` the moment the cloud was repaired: the bug, reintroduced by its own fix.
+  it('uses the relocated key when the cloud wins the Class-A transfer', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    const stale = { ...video('vidshared001', 3, 'alpha'), mdGeneratedAt: '2026-07-01T00:00:00.000Z' } as Video;
+    const fresh = { ...video('vidshared001', 7, 'alpha'), mdGeneratedAt: '2026-07-20T00:00:00.000Z' } as Video;
+    await seed(path.join(localRoot, KEY), [stale]);
+    await seed(path.join(cloudRoot, KEY), [fresh]);
+    // Different bodies, so Class A must pick a winner rather than skipping.
+    fs.writeFileSync(path.join(cloudRoot, KEY, '007_alpha.md'), '# alpha\nCLOUD BODY\n');
+
+    const report = await runSync(makeDeps(localRoot, cloudRoot));
+
+    expect(report.errors).toEqual([]);
+    const localRow = (await meta.readIndex(localPrincipal(path.join(localRoot, KEY))))
+      .videos.find((v) => v.id === 'vidshared001')!;
+    expect(localRow.summaryMd).toBe('003_alpha.md');
+    expect(fs.readFileSync(path.join(localRoot, KEY, '003_alpha.md'), 'utf8')).toContain('CLOUD BODY');
+    expect(fs.existsSync(path.join(localRoot, KEY, '007_alpha.md'))).toBe(false);
+  });
+
   it('reports a collision and leaves both videos untouched', async () => {
     const localRoot = tmpRoot('local');
     const cloudRoot = tmpRoot('cloud');
@@ -299,7 +324,13 @@ describe('two-sided sync — diverged base is repaired, dig content stays reacha
 
     const report = await runSync(makeDeps(localRoot, cloudRoot));
 
-    expect(report.errors.map((e) => e.message).join(' ')).toMatch(/serial collision/i);
+    // Asserted PER VIDEO, because a mutation caught this: with the two-sided refusal swallowed
+    // entirely, a loose `report.errors.map(...).join(' ')` match still passed — satisfied by the
+    // OTHER video's additive collision (vidother0001 hydrating to local, where the target serial is
+    // taken). The test looked like it pinned the two-sided path and pinned nothing.
+    const forShared = report.errors.filter((e) => e.videoId === 'vidshared001');
+    expect(forShared).toHaveLength(1);
+    expect(forShared[0].message).toMatch(/serial collision/i);
     const cloudIdx = await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY });
     expect(cloudIdx.videos.find((v) => v.id === 'vidshared001')!.serialNumber).toBe(7);
     // Aborting is what protects the content: the dig is still where the row says it is.
