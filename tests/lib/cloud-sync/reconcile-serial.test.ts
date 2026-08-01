@@ -381,6 +381,78 @@ describe('reconcileCloudBase', () => {
     expect(await read(cloud, '003_alpha.md')).toBeNull();   // nothing was copied
   });
 
+  // CODEX ROUND-3 Medium #1. `dig-section.ts:83` builds the dig-deeper name from
+  // `path.basename(summaryMdName)`, so a video whose `summaryMd` is `raw/275_x.md` carries a BARE
+  // `275_x-dig-deeper.md`. Comparing whole keys refuses that pair and strands the video where the
+  // old code could move it. The `raw/` layout is real and supported.
+  it('moves a bare digDeeperMd belonging to a directory-qualified summary', async () => {
+    const cloudVideo = {
+      id: 'vid00000001', serialNumber: 7, title: 'alpha', youtubeUrl: 'https://youtu.be/vid00000001',
+      archived: false, summaryMd: 'raw/007_alpha.md', digDeeperMd: '007_alpha-dig-deeper.md',
+      processedAt: '2026-07-01T00:00:00.000Z',
+      artifacts: { summaryMd: { key: 'raw/007_alpha.md', status: 'promoted' } },
+    } as unknown as Video;
+    const cloud = await cloudReplica([cloudVideo], {
+      'raw/007_alpha.md': 'MD BODY', '007_alpha-dig-deeper.md': 'PAID DIG DEEPER',
+    });
+    const localVideo = { ...cloudVideo, serialNumber: 3, summaryMd: 'raw/003_alpha.md' } as Video;
+
+    const res = await reconcileCloudBase({
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, localVideo, cloudVideo,
+    });
+
+    expect(res).toMatchObject({ ok: true, action: 'relocated' });
+    expect(await read(cloud, '003_alpha-dig-deeper.md')).toBe('PAID DIG DEEPER');
+    expect((await rowOf(cloud, 'vid00000001') as any).digDeeperMd).toBe('003_alpha-dig-deeper.md');
+  });
+
+  // CODEX ROUND-3 High #1, the narrowing half. The record in hand was read before a long copy phase;
+  // re-reading immediately before the write shrinks the race with a concurrent sync of the same
+  // playlist from the whole copy phase down to the gap between two statements.
+  it('refuses when the row changed underneath during the copy phase', async () => {
+    const cloudVideo = vid('vid00000001', 7, 'alpha');
+    const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
+    // Another client moved the row to a different base while we were copying.
+    await store.updateVideoFields(cloud.p, 'vid00000001', { summaryMd: '004_alpha.md' } as Partial<Video>);
+
+    const res = await reconcileCloudBase({
+      cloud, cloudIndex: [cloudVideo],
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(res).toMatchObject({ ok: false, reason: 'metadata-unverified', found: '004_alpha.md' });
+    expect((await rowOf(cloud, 'vid00000001')).summaryMd).toBe('004_alpha.md'); // not clobbered
+  });
+
+  // CODEX ROUND-3 Low #1. A failed verification READ is not a failed write: the row may well have
+  // moved. "Nothing happened" and "something happened and we cannot see what" must not collapse —
+  // the absent-vs-unreadable rule, applied to metadata instead of blobs.
+  it('reports verification-unreadable when the read-back itself fails', async () => {
+    const cloudVideo = vid('vid00000001', 7, 'alpha');
+    const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
+    let reads = 0;
+    const flaky = {
+      ...cloud,
+      store: Object.assign(Object.create(store), {
+        readIndex: async (p: any) => {
+          reads += 1;
+          if (reads > 1) throw new Error('transient read failure');  // the post-write read
+          return store.readIndex(p);
+        },
+        updateVideoFields: async (p: any, i: string, f: any) => store.updateVideoFields(p, i, f),
+      }),
+    };
+
+    const res = await reconcileCloudBase({
+      cloud: flaky as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(res).toMatchObject({ ok: false, reason: 'verification-unreadable' });
+    // Cleanup is skipped, so nothing paid was destroyed under the uncertainty.
+    expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
+  });
+
   // Row 24b — cleanup is best-effort. Every blob already exists at the new base and the row already
   // points there, so a delete failure is leftovers, not loss, and must NOT undo the relocation.
   it('reports cleanup failures without failing the relocation', async () => {

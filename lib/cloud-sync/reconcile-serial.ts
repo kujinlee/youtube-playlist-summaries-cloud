@@ -30,6 +30,7 @@ import type { BlobStore, CopyResult } from '@/lib/storage/blob-store';
 import type { MetadataStore } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { Video } from '@/types';
+import path from 'path';
 import { applySerial } from '@/lib/serial-filename';
 import { MODEL_KEY } from '@/lib/html-doc/model-store';
 
@@ -50,7 +51,8 @@ export type SerialReconcileResult =
   | { ok: false; reason: 'unmappable-key'; key: string }
   | { ok: false; reason: 'unsupported-artifacts'; kinds: string[] }
   | { ok: false; reason: 'metadata-failed'; cause: unknown }
-  | { ok: false; reason: 'metadata-unverified'; found: string | null };
+  | { ok: false; reason: 'metadata-unverified'; found: string | null }
+  | { ok: false; reason: 'verification-unreadable'; cause: unknown };
 
 /** `<base>` from a `<base>.md` key. */
 function baseOf(summaryMd: string): string {
@@ -90,12 +92,23 @@ function remap(key: string, oldBase: string, newBase: string): string | null {
   if (key === MODEL_KEY(oldBase)) return MODEL_KEY(newBase);
   const digPrefix = `dig/${oldBase}/`;
   if (key.startsWith(digPrefix)) return `dig/${newBase}/${key.slice(digPrefix.length)}`;
-  // `digDeeperMd`, matched EXACTLY rather than by prefix. A `startsWith(oldBase)` test looks
-  // equivalent and is not: with `oldBase = '003_a'` it also matches `003_ab-dig-deeper.md`, which is
-  // a DIFFERENT video's artifact (or this one's stale pointer from an earlier base), and would
-  // rewrite it into `003_newb-dig-deeper.md` — a path pointing at nothing, while cleanup deletes the
-  // real file. One base being a prefix of another is ordinary: slugs are free text.
-  if (key === `${oldBase}-dig-deeper.md`) return `${newBase}-dig-deeper.md`;
+  // `digDeeperMd`, matched on the BASENAME and never by prefix.
+  //
+  //  - Not by prefix: with `oldBase = '003_a'`, `startsWith` also matches `003_ab-dig-deeper.md`,
+  //    which is a DIFFERENT video's artifact, and would rewrite it to a path pointing at nothing
+  //    while cleanup deleted the real file. One base being a prefix of another is ordinary — slugs
+  //    are free text.
+  //  - But not on the whole key either: `dig-section.ts:83` builds the name from
+  //    `path.basename(summaryMdName)`, so a video whose `summaryMd` is `raw/275_x.md` gets a BARE
+  //    `275_x-dig-deeper.md`. Comparing whole keys refuses that pair and strands the video where the
+  //    old code could move it. The `raw/` layout is real and supported (tests/lib/pdf/pdf-path.test.ts,
+  //    and buildDocHtml derives `relDir` from exactly these fields).
+  // (Codex round-3 re-review, Medium #1.)
+  if (path.posix.basename(key) === `${path.posix.basename(oldBase)}-dig-deeper.md`) {
+    const dir = path.posix.dirname(key);
+    const moved = `${path.posix.basename(newBase)}-dig-deeper.md`;
+    return dir === '.' ? moved : `${dir}/${moved}`;
+  }
   return null;
 }
 
@@ -208,6 +221,20 @@ export async function reconcileCloudBase(args: {
     patch.digDeeperMd = to;
   }
 
+  // NARROW THE WINDOW before writing. The copy phase above is long (N blob round-trips), and the
+  // record in hand was read before it. Re-reading immediately before the write shrinks the race with
+  // a concurrent sync of the same playlist from the whole copy phase to the gap between these two
+  // statements. It is NOT a compare-and-swap — see `metadata-unverified` below and the round-3
+  // adjudication for what remains and why it is not unique to this function.
+  try {
+    const fresh = (await cloud.store.readIndex(cloud.p)).videos.find((v) => v.id === cloudVideo.id);
+    if (fresh?.summaryMd !== cloudVideo.summaryMd) {
+      return { ok: false, reason: 'metadata-unverified', found: fresh?.summaryMd ?? null };
+    }
+  } catch (cause) {
+    return { ok: false, reason: 'metadata-failed', cause };
+  }
+
   try {
     await cloud.store.updateVideoFields(cloud.p, cloudVideo.id, patch as Partial<Video>);
   } catch (cause) {
@@ -224,7 +251,18 @@ export async function reconcileCloudBase(args: {
   // at. This is the same silent-zero-row hazard already documented for additive creates
   // (sync-run.ts, round-4 H1); the fix is the same shape: read it back and prove it.
   // (Codex round-2 re-review, High #1.)
-  const after = (await cloud.store.readIndex(cloud.p)).videos.find((v) => v.id === cloudVideo.id);
+  //   The verification READ can itself fail, and that is a different situation from a failed write:
+  // the row may well have moved, so the old-base blobs may already be unreferenced. Returning a
+  // typed `verification-unreadable` rather than throwing lets the caller distinguish "nothing
+  // happened" from "something happened and we cannot see what" — the absent-vs-unreadable rule
+  // applied to metadata instead of blobs. Cleanup is skipped either way; a later run re-reads and
+  // finishes it. (Codex round-3 re-review, Low #1.)
+  let after;
+  try {
+    after = (await cloud.store.readIndex(cloud.p)).videos.find((v) => v.id === cloudVideo.id);
+  } catch (cause) {
+    return { ok: false, reason: 'verification-unreadable', cause };
+  }
   if (after?.summaryMd !== `${newBase}.md`) {
     return { ok: false, reason: 'metadata-unverified', found: after?.summaryMd ?? null };
   }

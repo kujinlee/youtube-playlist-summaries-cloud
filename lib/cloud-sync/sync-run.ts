@@ -743,7 +743,8 @@ export async function runSync(
           // anything when there is nothing to reconcile TO — a local row with no serial, or a cloud
           // row with no MD — and the key can still change on those paths. Keep the occupancy view
           // honest rather than relying on that staying true.
-          noteCloudRow((await readVideo(deps.cloud, cloudP, id))!);
+          const afterTransfer = await readVideo(deps.cloud, cloudP, id);
+          if (afterTransfer) noteCloudRow(afterTransfer);
           report.updatedCloud += 1;
         } else if (decision.action === 'copyToLocal') {
           winnerSide = cloudSide; loserSide = localSide; winnerVideo = cv; winnerSignals = ca;

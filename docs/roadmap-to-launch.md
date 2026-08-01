@@ -359,6 +359,42 @@ that fires anyway, so it resurfaces without anyone remembering it exists.
 
 ---
 
+## Serial coherence in cloud-sync — branch `fix/serial-coherence-sync` (2026-07-31)
+
+**Why it exists:** tracing architecture-review finding #2 surfaced a **live data-loss bug**. `base` =
+`<serial>_<slug>` addresses every derived blob (`models/<base>.json`,
+`dig/<base>/<sectionId>.r<V>.md`) and dig content is **paid Gemini output**. Sync recomputed
+`serialNumber` on the receiver while copying the sender's `summaryMd` KEY verbatim, so rows said
+`serialNumber: 9` beside a file named `003_alpha.md` and the paid blobs were silently orphaned — no
+error, no report, no cleanup. Divergence was routine, not hypothetical: both replicas allocate
+`max + 1` in their own ingestion order and no migration constrains uniqueness.
+
+**Status: implemented, dual review in progress (round 3 dispatched). NOT merged. No PR yet.**
+
+- [x] **A0** behaviors table (33 rows) + Codex review of the table
+- [x] **A4** `copy` at the `BlobStore` seam — ONE shared `copyBlob`, all three adapters delegate.
+      Deviation from plan: `copy`, not `rename` — Supabase `move()` is copy+delete and non-atomic,
+      and nothing is atomic across N objects, so a destructive rename bakes an unrecoverable
+      ordering into the seam.
+- [x] **A1** receiver adopts the sender's serial (`claimVideoSlot(p, id, desiredSerial?)`, migration
+      0023); a collision **aborts and reports** that video. Fixed two phantom-serial bugs on the way,
+      one per adapter — both returned a COMPUTED serial rather than the persisted one.
+- [x] **A2** stop overwriting `playlistIndex` with a storage row ordinal
+- [x] **A3** `lib/cloud-sync/reconcile-serial.ts` — repair an already-diverged base before
+      `transferClassA` writes the winner's key onto the loser. Deviation from plan: reconciles the
+      full **base**, not only the serial (the slug diverges on its own), and does NOT reuse
+      `serial-migrate.ts`, which solves backfill rather than relocation and never touches digs.
+- [x] **A5** regression guard: derive the base from the row after a sync, and the paid dig is there
+- [ ] **A-review** — round 1: 3 Codex + 2 coordinator findings. Round 2: 1 High, 1 Medium, 1 Low
+      from Codex + 2 coordinator. Round 3 dispatched. **Convergence = a full round with no new
+      Blocking/High.** Every fix is mutation-checked.
+- [ ] **A6** delete the vestigial `position` column — separable, deliberately last
+- [ ] **PR + merge** (human gate)
+
+**Sequenced behind A** (each needs its own spec + merge gate): **B** stable section identity,
+**C** authority + divergence detection, **D** cloud rebuild parity. See
+`docs/superpowers/plans/2026-07-31-serial-coherence-sync.md` and `~/.claude/plans/`.
+
 ## Honest-blob-read slice (`BlobRead`) — own spec + merge gate
 
 **Why it exists:** Stage 3 cloud-sync produced 1 Blocking + 3 High that were all one shape — a value
