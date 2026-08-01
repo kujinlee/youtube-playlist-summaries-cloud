@@ -1,5 +1,6 @@
 import { ModelEnvelopeSchema, readModelEnvelope, writeModelEnvelope } from '@/lib/html-doc/model-store';
 import type { BlobStore, StagedRef } from '@/lib/storage/blob-store';
+import { copyBlob } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
 const P: Principal = { id: 'owner-1', indexKey: 'pk-1' };
@@ -23,6 +24,7 @@ function fakeStore(): BlobStore & { blobs: Map<string, Buffer> } {
     },
     async exists(p, key) { return blobs.has(k(p, key)); },
     async delete(p, key) { blobs.delete(k(p, key)); },
+    async copy(p, from, to) { return copyBlob(this, p, from, to); },
     async deletePrefix(p, prefix) {
       const pfx = k(p, prefix).replace(/\/$/, '');
       for (const key of [...blobs.keys()]) {

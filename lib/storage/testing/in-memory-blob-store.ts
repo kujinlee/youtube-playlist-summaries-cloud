@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import type { BlobRead, BlobStore, StagedRef } from '@/lib/storage/blob-store';
-import { assertLogicalKey } from '@/lib/storage/blob-store';
+import type { BlobRead, BlobStore, CopyResult, StagedRef } from '@/lib/storage/blob-store';
+import { assertLogicalKey, copyBlob } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
 /**
@@ -130,6 +130,12 @@ export class InMemoryBlobStore implements BlobStore {
 
   async delete(p: Principal, key: string): Promise<void> {
     this.blobs.delete(this.physical(p, key));
+  }
+
+  /** Delegates to the shared `copyBlob`, exactly as the two real adapters do — so a divergence
+   *  between this double and production is impossible by construction, not by discipline. */
+  async copy(p: Principal, from: string, to: string): Promise<CopyResult> {
+    return copyBlob(this, p, from, to);
   }
 
   async putStaged(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<StagedRef> {

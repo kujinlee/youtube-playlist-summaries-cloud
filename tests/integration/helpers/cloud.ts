@@ -17,7 +17,8 @@ import { seedPlaylist, seedPromotedVideo, seedSummaryBlob } from './seed';
 import type { Principal } from '@/lib/storage/principal';
 import { localPrincipal } from '@/lib/storage/principal';
 import type { MetadataStore } from '@/lib/storage/metadata-store';
-import type { BlobStore, StagedRef } from '@/lib/storage/blob-store';
+import type { BlobStore, CopyResult, StagedRef } from '@/lib/storage/blob-store';
+import { copyBlob } from '@/lib/storage/blob-store';
 import { localMetadataStore } from '@/lib/storage/local/local-metadata-store';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
@@ -174,6 +175,9 @@ class FailPromoteBlobStore implements BlobStore {
   async promote(_ref: StagedRef): Promise<void> { throw new Error('injected cloud promote failure'); }
   deletePrefix(p: Principal, prefix: string) { return this.inner.deletePrefix(p, prefix); }
   list(p: Principal, prefix: string) { return this.inner.list(p, prefix); }
+  /** `copyBlob(this, …)` — routed through the DECORATOR, not `inner`, so any injected fault on
+   *  this wrapper's primitives is observed by `copy` exactly as it would be in production. */
+  copy(p: Principal, from: string, to: string): Promise<CopyResult> { return copyBlob(this, p, from, to); }
 }
 
 /** M-R6-1 — wraps a BlobStore so ONLY the companion model put (`models/*.json`) throws. The Class-A
@@ -196,6 +200,8 @@ class FailModelPutBlobStore implements BlobStore {
   promote(ref: StagedRef) { return this.inner.promote(ref); }
   deletePrefix(p: Principal, prefix: string) { return this.inner.deletePrefix(p, prefix); }
   list(p: Principal, prefix: string) { return this.inner.list(p, prefix); }
+  /** Routed through the decorator so the `models/` put fault also applies to a copy. */
+  copy(p: Principal, from: string, to: string): Promise<CopyResult> { return copyBlob(this, p, from, to); }
 }
 
 /** Seeds the fixture for a sync-run test and populates ctx's sync state. Default: a CLOUD playlist
