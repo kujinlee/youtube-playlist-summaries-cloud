@@ -41,11 +41,17 @@ const OWNER = 'owner-uuid-1';
 // { id: ownerId, indexKey: playlistKey }; the local adapters expect indexKey to be a filesystem
 // root, so map it to <cloudRoot>/<playlistKey>.
 // ---------------------------------------------------------------------------
-function cloudMeta(cloudRoot: string): MetadataStore {
+function cloudMeta(cloudRoot: string, opts: { ignoreDesiredSerial?: boolean } = {}): MetadataStore {
   const inner = new LocalFsMetadataStore();
   const remap = (p: Principal) => localPrincipal(path.join(cloudRoot, p.indexKey));
   return new Proxy(inner, {
     get(target, prop: string) {
+      // A backend that ACCEPTS the desired serial and quietly allocates its own anyway. No real
+      // adapter can be asked to behave this way, and that is the point: the post-claim check exists
+      // for exactly this failure, and without a dishonest store nothing exercises it.
+      if (prop === 'claimVideoSlot' && opts.ignoreDesiredSerial) {
+        return (p: Principal, videoId: string) => inner.claimVideoSlot(remap(p), videoId);
+      }
       // listPlaylists takes an ownerId, not a Principal — the local adapter throws, so answer it here.
       if (prop === 'listPlaylists') {
         return async (): Promise<PlaylistSummary[]> => {
@@ -117,9 +123,9 @@ async function seed(dir: string, videos: Video[]) {
   }
 }
 
-function makeDeps(localRoot: string, cloudRoot: string) {
+function makeDeps(localRoot: string, cloudRoot: string, opts: { ignoreDesiredSerial?: boolean } = {}) {
   return {
-    local: meta, cloud: cloudMeta(cloudRoot),
+    local: meta, cloud: cloudMeta(cloudRoot, opts),
     localBlob: blobs, cloudBlob: cloudBlobs(cloudRoot),
     dataRoots: [localRoot], ownerId: OWNER,
   };
@@ -186,6 +192,30 @@ describe('additive sync — serial coherence', () => {
     expect(fs.existsSync(path.join(cloudRoot, KEY, '003_alpha.md'))).toBe(false);
     expect(cloudIdx.videos.find((v) => v.id === 'vidcloud001')!.serialNumber).toBe(3); // untouched
 
+    const manifest = await readManifest(path.join(localRoot, KEY), KEY);
+    expect(manifest.videos['vidlocal001']).toBeUndefined();
+  });
+
+  // Rows 9a/16, the post-claim half — THIS TEST EXISTS BECAUSE A MUTATION FOUND THE GAP. Deleting
+  // the post-claim mismatch check left all 2548 tests green: the pre-claim check catches every
+  // collision a correct adapter can produce, so nothing exercised an adapter that fails to adopt for
+  // any OTHER reason. That is the case worth guarding — a receiver that returns a serial it did not
+  // persist (the phantom `claim_video_slot` used to return), or a deployment whose RPC quietly
+  // ignores the argument. The pre-claim check cannot see any of those; only comparing against what
+  // came BACK can. Aborting here still precedes the blob write, so nothing is orphaned.
+  it('aborts when the receiver does not adopt the requested serial, whatever the reason', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    await seed(path.join(localRoot, KEY), [video('vidlocal001', 3, 'alpha')]);
+    await seed(path.join(cloudRoot, KEY), []);   // cloud playlist exists, holds no videos
+
+    const report = await runSync(makeDeps(localRoot, cloudRoot, { ignoreDesiredSerial: true }));
+
+    expect(report.errors.map((e) => e.videoId)).toContain('vidlocal001');
+    expect(report.errors[0].message).toMatch(/serial not adopted/i);
+    expect(report.created).toBe(0);
+    // The blob write comes after this check, so the receiver holds no MD at the sender's key.
+    expect(fs.existsSync(path.join(cloudRoot, KEY, '003_alpha.md'))).toBe(false);
     const manifest = await readManifest(path.join(localRoot, KEY), KEY);
     expect(manifest.videos['vidlocal001']).toBeUndefined();
   });
