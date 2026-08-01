@@ -27,6 +27,7 @@
 // Supabase `move()` is copy+delete and non-atomic, and no rename is atomic across N objects.
 
 import type { BlobStore, CopyResult } from '@/lib/storage/blob-store';
+import { assertLogicalKey } from '@/lib/storage/blob-store';
 import type { MetadataStore } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { Video } from '@/types';
@@ -49,6 +50,7 @@ export type SerialReconcileResult =
   | { ok: false; reason: 'target-occupied'; want: number; heldBy: string }
   | { ok: false; reason: 'copy-failed'; key: string; detail: CopyResult }
   | { ok: false; reason: 'unmappable-key'; key: string }
+  | { ok: false; reason: 'ambiguous-mapping'; to: string }
   | { ok: false; reason: 'unsupported-artifacts'; kinds: string[] }
   | { ok: false; reason: 'metadata-failed'; cause: unknown }
   | { ok: false; reason: 'metadata-unverified'; found: string | null }
@@ -188,12 +190,33 @@ export async function reconcileCloudBase(args: {
 
   // ── Copy phase. Sources are retained throughout, so every failure here is recoverable by re-running.
   const sources = await paidKeysUnder(cloud.blob, cloud.p, cloudVideo, oldBase);
-  let copied = 0;
+
+  // PLAN THE WHOLE RELOCATION BEFORE COPYING ANYTHING. Validating inside the copy loop meant a key
+  // that only fails on inspection — a `..` traversal that `assertLogicalKey` rejects, or two sources
+  // landing on ONE destination — was discovered after earlier blobs had already been written, leaving
+  // duplicates at the new base that every re-run recreated. Deciding up front keeps the refusal a
+  // genuine no-move. (Codex round-4 re-review, Medium #1 + Medium #2.)
+  const plan: { from: string; to: string }[] = [];
+  const destinations = new Set<string>();
   for (const from of sources) {
     const to = remap(from, oldBase, newBase);
-    if (to == null) {
+    if (to == null) return { ok: false, reason: 'unmappable-key', key: from };
+    try {
+      assertLogicalKey(from);
+      assertLogicalKey(to);
+    } catch {
       return { ok: false, reason: 'unmappable-key', key: from };
     }
+    // Two distinct sources mapping to one destination is unresolvable here: whichever is copied
+    // second sees `destination-exists` on bytes the FIRST one just wrote, and the relocation cannot
+    // be resumed without a human deciding which is which.
+    if (destinations.has(to)) return { ok: false, reason: 'ambiguous-mapping', to };
+    destinations.add(to);
+    plan.push({ from, to });
+  }
+
+  let copied = 0;
+  for (const { from, to } of plan) {
     const res = await cloud.blob.copy(cloud.p, from, to);
     if (res.ok) { if (!res.already) copied += 1; continue; }
     // A derived artifact that genuinely does not exist is nothing to copy — most videos have no
@@ -270,9 +293,8 @@ export async function reconcileCloudBase(args: {
   // ── Cleanup phase. Best-effort by definition: every blob now exists at the new base AND the row
   // points there, so a failure leaves leftovers, not loss. It must never undo durable work.
   let cleanupFailures = 0;
-  for (const from of sources) {
-    const to = remap(from, oldBase, newBase);
-    if (to == null || to === from) continue;   // null is unreachable — the copy loop already refused
+  for (const { from, to } of plan) {
+    if (to === from) continue;
     try { await cloud.blob.delete(cloud.p, from); } catch { cleanupFailures += 1; }
   }
 

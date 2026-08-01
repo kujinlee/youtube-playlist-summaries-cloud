@@ -585,6 +585,22 @@ export async function runSync(
       const i = cloudSnapshot.findIndex((x) => x.id === v.id);
       if (i === -1) cloudSnapshot.push(v); else cloudSnapshot[i] = v;
     };
+    // Once ANOTHER writer is known to have moved a row under us, the "one consistent view" premise
+    // the snapshot rests on is void: it may now claim a serial is free that someone else just took,
+    // and a later video would relocate onto it. Refresh, and if even that read fails, stop
+    // reconciling for the rest of this playlist rather than deciding occupancy from a view we know
+    // is wrong. Aborting the whole playlist is not needed — every OTHER step is safe, and skipping
+    // reconciliation only defers repairs to the next run. (Codex round-4 re-review, High #1.)
+    let occupancyTrusted = true;
+    const refreshCloudSnapshot = async () => {
+      try {
+        const fresh = (await deps.cloud.readIndex(cloudP)).videos;
+        cloudSnapshot.length = 0;
+        cloudSnapshot.push(...fresh);
+      } catch {
+        occupancyTrusted = false;
+      }
+    };
 
     for (const id of await enumerateVideoIds(deps.local, deps.cloud, localP, cloudP)) {
       try {
@@ -705,10 +721,21 @@ export async function runSync(
         //    below, surfaced in report.errors, and NO baseline is advanced, so the run heals itself
         //    once the collision is resolved. Nothing has been written at this point, so there is
         //    nothing to roll back.
-        const rec = await reconcileCloudBase({
-          cloud: cloudSide, cloudIndex: cloudSnapshot, localVideo: lv, cloudVideo: cv,
-        });
+        const rec = occupancyTrusted
+          ? await reconcileCloudBase({
+              cloud: cloudSide, cloudIndex: cloudSnapshot, localVideo: lv, cloudVideo: cv,
+            })
+          : { ok: true as const, action: 'agreed' as const };
+        if (!occupancyTrusted && describeDivergence(lv, cv).diverged) {
+          report.errors.push({ videoId: id, message:
+            'base divergence not reconciled: the cloud occupancy view could not be refreshed after a concurrent change' });
+        }
         if (!rec.ok) {
+          // These two mean the cloud moved underneath this run. Everything downstream that reads the
+          // snapshot is now deciding from a view we KNOW is wrong.
+          if (rec.reason === 'metadata-unverified' || rec.reason === 'verification-unreadable') {
+            await refreshCloudSnapshot();
+          }
           throw new Error(rec.reason === 'target-occupied'
             ? `serial collision: ${id} needs serial ${rec.want} on cloud, already held by ${rec.heldBy}`
             : `base reconciliation failed for ${id}: ${rec.reason}${'key' in rec ? ` at ${rec.key}` : ''}`);

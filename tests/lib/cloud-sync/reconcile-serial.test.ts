@@ -453,6 +453,47 @@ describe('reconcileCloudBase', () => {
     expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
   });
 
+  // CODEX ROUND-4 Medium #1. A key that only fails on inspection must be caught BEFORE anything is
+  // written, or the "fail-closed no-move" leaves duplicates at the new base that every re-run
+  // recreates. `..` is rejected by `assertLogicalKey` deep inside `copyBlob`, which THROWS past the
+  // typed result — after the MD has already been copied.
+  it('refuses a traversal key before copying anything', async () => {
+    const cloudVideo = {
+      ...vid('vid00000001', 7, 'alpha'), digDeeperMd: '../007_alpha-dig-deeper.md',
+    } as Video;
+    const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
+
+    const res = await reconcileCloudBase({
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(res).toMatchObject({ ok: false, reason: 'unmappable-key' });
+    expect(await read(cloud, '003_alpha.md')).toBeNull();   // nothing was written
+  });
+
+  // CODEX ROUND-4 Medium #2. Two distinct sources landing on ONE destination is unresolvable here:
+  // whichever is copied second sees `destination-exists` on bytes the FIRST one just wrote, and the
+  // relocation cannot be resumed without a human deciding which is which.
+  it('refuses when two sources would collide on one destination', async () => {
+    const cloudVideo = {
+      ...vid('vid00000001', 7, 'alpha'), digDeeperMd: 'dig/003_alpha/007_alpha-dig-deeper.md',
+    } as Video;
+    const cloud = await cloudReplica([cloudVideo], {
+      '007_alpha.md': 'MD BODY',
+      'dig/003_alpha/007_alpha-dig-deeper.md': 'ONE',
+      'dig/007_alpha/003_alpha-dig-deeper.md': 'TWO',
+    });
+
+    const res = await reconcileCloudBase({
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(res).toMatchObject({ ok: false, reason: 'ambiguous-mapping' });
+    expect(await read(cloud, '003_alpha.md')).toBeNull();
+  });
+
   // Row 24b — cleanup is best-effort. Every blob already exists at the new base and the row already
   // points there, so a delete failure is leftovers, not loss, and must NOT undo the relocation.
   it('reports cleanup failures without failing the relocation', async () => {
