@@ -23,6 +23,7 @@ import { InMemoryBlobStore } from '@/lib/storage/testing/in-memory-blob-store';
 import { LocalFsBlobStore } from '@/lib/storage/local/local-blob-store';
 import { localPrincipal } from '@/lib/storage/principal';
 import type { BlobStore } from '@/lib/storage/blob-store';
+import { copyBlob } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
 interface Adapter {
@@ -188,5 +189,55 @@ describe('BlobStore.copy contract — fault paths (InMemoryBlobStore)', () => {
     const res = await store.copy(p, 'a.md', 'b.md');
 
     expect(res).toMatchObject({ ok: false, reason: 'failed', phase: 'write' });
+  });
+});
+
+// Row 8b — verify-after-write.
+//
+// THESE TESTS EXIST BECAUSE A MUTATION FOUND THE GAP. Deleting the verify step left all 17
+// other tests GREEN: every adapter's `put` is honest, so nothing exercised a write that
+// "succeeds" and does not land. That is precisely the silent-failure shape this slice is about,
+// and the caller is about to point metadata at the destination and then DELETE the source — so
+// an unproven copy is a data-loss bug, not a cosmetic one.
+//
+// `copyBlob` is called directly with a hand-built pair of primitives, because the failure being
+// modelled is a dishonest backend, which no real adapter can be asked to simulate.
+describe('copyBlob — verify-after-write (mutation-driven)', () => {
+  const p = localPrincipal('/idx-a');
+  const src = Buffer.from('BODY');
+
+  it('reports failed:verify when the write silently does not land', async () => {
+    const store = {
+      async tryGet(_p: Principal, key: string) {
+        return key === 'a.md'
+          ? { ok: true as const, bytes: src }
+          : { ok: false as const, reason: 'absent' as const };   // destination never appears
+      },
+      async put() { /* accepted, and silently dropped — a lying backend */ },
+    };
+
+    const res = await copyBlob(store, p, 'a.md', 'b.md');
+
+    expect(res).toMatchObject({ ok: false, reason: 'failed', phase: 'verify' });
+  });
+
+  // Stateful on purpose: the destination must read as ABSENT at the precheck (or this trips
+  // `destination-exists` and never reaches the write) and as CORRUPT afterwards. That ordering
+  // is the whole point — a partial/corrupt write is only observable after the fact.
+  it('reports failed:verify when the destination lands with the WRONG bytes', async () => {
+    let written = false;
+    const store = {
+      async tryGet(_p: Principal, key: string) {
+        if (key === 'a.md') return { ok: true as const, bytes: src };
+        return written
+          ? { ok: true as const, bytes: Buffer.from('TRUNCA') }   // partial write
+          : { ok: false as const, reason: 'absent' as const };
+      },
+      async put() { written = true; },
+    };
+
+    const res = await copyBlob(store, p, 'a.md', 'b.md');
+
+    expect(res).toMatchObject({ ok: false, reason: 'failed', phase: 'verify' });
   });
 });
