@@ -330,6 +330,57 @@ describe('reconcileCloudBase', () => {
     expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
   });
 
+  // CODEX ROUND-2 High #1. The cloud `updateVideoFields` is `merge_video_data` (0021:79) — a bare
+  // `UPDATE ... WHERE playlist_id = .. AND video_id = ..` returning void. Zero rows affected raises
+  // NOTHING, and the adapter only inspects `error`. So a row deleted or replaced by another client
+  // between the read and the write leaves the metadata untouched, the call "succeeds", and the
+  // cleanup then deletes paid blobs the surviving row still points at. Reading it back is the only
+  // proof — the same shape as the round-4 H1 guard on additive creates.
+  it('does not clean up when the metadata write silently affected zero rows', async () => {
+    const cloudVideo = vid('vid00000001', 7, 'alpha');
+    const cloud = await cloudReplica([cloudVideo], {
+      '007_alpha.md': 'MD BODY', 'dig/007_alpha/120.r3.md': 'PAID DIG',
+    });
+    const silent = {
+      ...cloud,
+      store: Object.assign(Object.create(store), {
+        // Resolves cleanly and writes nothing — exactly what a zero-row UPDATE looks like.
+        updateVideoFields: async () => { /* no-op */ },
+        readIndex: (p: any) => store.readIndex(p),
+      }),
+    };
+
+    const res = await reconcileCloudBase({
+      cloud: silent as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(res).toMatchObject({ ok: false, reason: 'metadata-unverified', found: '007_alpha.md' });
+    // The paid blobs the surviving row points at are still there.
+    expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
+    expect(await read(cloud, 'dig/007_alpha/120.r3.md')).toBe('PAID DIG');
+  });
+
+  // CODEX ROUND-2 Medium #1 — the refusal must precede every copy, or a "fail-closed no-move" still
+  // leaves duplicate blobs at the new base on every run.
+  it('refuses an unmovable artifact kind BEFORE copying anything', async () => {
+    const cloudVideo = {
+      ...vid('vid00000001', 7, 'alpha'),
+      artifacts: {
+        summaryMd: { key: '007_alpha.md', status: 'promoted' },
+        slide: { key: 'slides/007_alpha/1.png', status: 'promoted' },
+      },
+    } as unknown as Video;
+    const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
+
+    await reconcileCloudBase({
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
+    });
+
+    expect(await read(cloud, '003_alpha.md')).toBeNull();   // nothing was copied
+  });
+
   // Row 24b — cleanup is best-effort. Every blob already exists at the new base and the row already
   // points there, so a delete failure is leftovers, not loss, and must NOT undo the relocation.
   it('reports cleanup failures without failing the relocation', async () => {

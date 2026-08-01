@@ -49,7 +49,8 @@ export type SerialReconcileResult =
   | { ok: false; reason: 'copy-failed'; key: string; detail: CopyResult }
   | { ok: false; reason: 'unmappable-key'; key: string }
   | { ok: false; reason: 'unsupported-artifacts'; kinds: string[] }
-  | { ok: false; reason: 'metadata-failed'; cause: unknown };
+  | { ok: false; reason: 'metadata-failed'; cause: unknown }
+  | { ok: false; reason: 'metadata-unverified'; found: string | null };
 
 /** `<base>` from a `<base>.md` key. */
 function baseOf(summaryMd: string): string {
@@ -155,6 +156,23 @@ export async function reconcileCloudBase(args: {
     return { ok: false, reason: 'target-occupied', want: localVideo.serialNumber, heldBy: holder.id };
   }
 
+  // REFUSE if the record carries any artifact kind other than `summaryMd`. The cloud artifact write
+  // is an additive jsonb merge (merge_video_data, 0007:89-93), so a subkey this patch omits keeps its
+  // old-base value while cleanup deletes the blob underneath it — and remapping the POINTER without
+  // also copying the BLOB is no better, since `paidKeysUnder` only knows the MD, the model, the digs
+  // and digDeeperMd. Refusing is the smallest correct behaviour: it cannot half-move anything, and
+  // the day this becomes reachable it fails loudly at exactly the code that must be extended.
+  //   It is unreachable today, in both directions: `writeArtifact` is the only writer of the other
+  // kinds and has zero production callers (architecture finding #2), and every sync write shapes
+  // artifacts down to `{ summaryMd }` (sanitizeAdditiveVideo, transferClassA).
+  // (Codex branch review High #1 — severity adjudicated down after verifying the writers, and the
+  // suggested pointer-remap replaced with a refusal for the reason above.)
+  const artifacts = (cloudVideo as { artifacts?: Record<string, unknown> }).artifacts;
+  const unsupported = Object.keys(artifacts ?? {}).filter((k) => k !== 'summaryMd');
+  if (unsupported.length > 0) {
+    return { ok: false, reason: 'unsupported-artifacts', kinds: unsupported };
+  }
+
   // ── Copy phase. Sources are retained throughout, so every failure here is recoverable by re-running.
   const sources = await paidKeysUnder(cloud.blob, cloud.p, cloudVideo, oldBase);
   let copied = 0;
@@ -190,29 +208,25 @@ export async function reconcileCloudBase(args: {
     patch.digDeeperMd = to;
   }
 
-  // REFUSE if the record carries any artifact kind other than `summaryMd`. The cloud artifact write
-  // is an additive jsonb merge (merge_video_data, 0007:89-93), so a subkey this patch omits keeps its
-  // old-base value while cleanup deletes the blob underneath it — and remapping the POINTER without
-  // also copying the BLOB is no better, since `paidKeysUnder` only knows the MD, the model, the digs
-  // and digDeeperMd. Refusing is the smallest correct behaviour: it cannot half-move anything, and
-  // the day this becomes reachable it fails loudly at exactly the code that must be extended.
-  //   It is unreachable today, in both directions: `writeArtifact` is the only writer of the other
-  // kinds and has zero production callers (architecture finding #2), and every sync write shapes
-  // artifacts down to `{ summaryMd }` (sanitizeAdditiveVideo, transferClassA).
-  // (Codex branch review High #1 — severity adjudicated down after verifying the writers, and the
-  // suggested pointer-remap replaced with a refusal for the reason above.)
-  const artifacts = (cloudVideo as { artifacts?: Record<string, unknown> }).artifacts;
-  const unsupported = Object.keys(artifacts ?? {}).filter((k) => k !== 'summaryMd');
-  if (unsupported.length > 0) {
-    return { ok: false, reason: 'unsupported-artifacts', kinds: unsupported };
-  }
-
   try {
     await cloud.store.updateVideoFields(cloud.p, cloudVideo.id, patch as Partial<Video>);
   } catch (cause) {
     // The copies are durable and harmless — the row still points at the old base, which is still
     // intact. A re-run resumes via the identical-bytes path rather than deadlocking.
     return { ok: false, reason: 'metadata-failed', cause };
+  }
+
+  // VERIFY THE WRITE LANDED before deleting anything. The cloud `updateVideoFields` is
+  // `merge_video_data` (0021:79), a bare `UPDATE ... WHERE playlist_id = .. AND video_id = ..`
+  // returning void: zero rows affected raises NOTHING and the adapter only inspects `error`. So a
+  // row deleted or replaced by another client between the read and this write leaves the metadata
+  // untouched — and the cleanup below would then delete paid blobs the surviving row still points
+  // at. This is the same silent-zero-row hazard already documented for additive creates
+  // (sync-run.ts, round-4 H1); the fix is the same shape: read it back and prove it.
+  // (Codex round-2 re-review, High #1.)
+  const after = (await cloud.store.readIndex(cloud.p)).videos.find((v) => v.id === cloudVideo.id);
+  if (after?.summaryMd !== `${newBase}.md`) {
+    return { ok: false, reason: 'metadata-unverified', found: after?.summaryMd ?? null };
   }
 
   // ── Cleanup phase. Best-effort by definition: every blob now exists at the new base AND the row
