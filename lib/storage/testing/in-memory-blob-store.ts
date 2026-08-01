@@ -45,6 +45,7 @@ export class InMemoryBlobStore implements BlobStore {
   private readonly blobs = new Map<string, StoredBlob>();
   private readonly readFaults = new Map<string, unknown>();
   private readonly writeFaults = new Map<string, unknown>();
+  private readonly deleteFaults = new Map<string, unknown>();
   private promoteFault: unknown | undefined;
 
   constructor(opts: InMemoryBlobStoreOptions = {}) {
@@ -65,6 +66,12 @@ export class InMemoryBlobStore implements BlobStore {
     this.writeFaults.set(key, cause);
   }
 
+  /** Make `delete` of `key` throw. Cleanup after a relocation is best-effort, so a caller has to
+   *  be able to prove it SURVIVES a delete failure rather than undoing durable work. */
+  failDeletes(key: string, cause: unknown = new Error('blob delete failed')): void {
+    this.deleteFaults.set(key, cause);
+  }
+
   /** Make the next and subsequent `promote` calls throw. */
   failPromote(cause: unknown = new Error('promote failed')): void {
     this.promoteFault = cause;
@@ -74,6 +81,7 @@ export class InMemoryBlobStore implements BlobStore {
   clearFaults(): void {
     this.readFaults.clear();
     this.writeFaults.clear();
+    this.deleteFaults.clear();
     this.promoteFault = undefined;
   }
 
@@ -129,6 +137,7 @@ export class InMemoryBlobStore implements BlobStore {
   }
 
   async delete(p: Principal, key: string): Promise<void> {
+    if (this.deleteFaults.has(key)) throw this.deleteFaults.get(key);
     this.blobs.delete(this.physical(p, key));
   }
 

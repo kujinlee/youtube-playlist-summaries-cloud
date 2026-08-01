@@ -31,6 +31,7 @@ import {
   readManifest, writeVideoBaseline, appendConflict, resetConflictDedup,
 } from './manifest';
 import { discoverLocalPlaylists, unionPlaylistKeys, type LocalPlaylist } from './registry';
+import { reconcileCloudBase, describeDivergence } from './reconcile-serial';
 import { mdHash } from './content-hash';
 import { readModelEnvelope, writeModelEnvelope } from '@/lib/html-doc/model-store';
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
@@ -557,11 +558,19 @@ export async function runSync(
     const cloudSide: Side = { store: deps.cloud, p: cloudP, blob: deps.cloudBlob };
     const playlistMeta = playlistMetaFor(key, localPlaylists, cloudSummaries);
     const manifest = await readManifest(dataRoot, key);
+    // A3 — ONE cloud snapshot per playlist, taken before the video loop and reused for every
+    // occupancy check. Deliberately not re-read per video: a swap (A wants B's serial while B wants
+    // A's) is only detectable against a consistent view. Re-reading would let A move first and B
+    // then see a world A had just changed, converting "both abort" into a half-repair no single move
+    // can finish. It goes stale as the loop creates rows, which is safe in the only direction that
+    // matters: a serial this run has just taken is caught by the copy phase's fail-closed
+    // `destination-exists` instead of by a named collision.
+    const cloudSnapshot = (await deps.cloud.readIndex(cloudP)).videos;
 
     for (const id of await enumerateVideoIds(deps.local, deps.cloud, localP, cloudP)) {
       try {
         const lv = await readVideo(deps.local, localP, id);
-        const cv = await readVideo(deps.cloud, cloudP, id);
+        let cv = await readVideo(deps.cloud, cloudP, id);
         const base = manifest.videos[id];
 
         // ── Presence / deletes (§5.6, Behaviors #3/#7/#8) — resolve one-sided videos and CONTINUE
@@ -609,7 +618,7 @@ export async function runSync(
         //    derivation is PURE (it only reads the record + the MD body), so hoisting it changes no
         //    behavior. Bodies are needed for hashing regardless — Behavior #1.
         const la = deriveClassASignals(lv, await readMdBody(deps.localBlob, localP, lv));
-        const ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
+        let ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
 
         // ── B1 (round 3) — the two-sided counterpart of copyAdditiveVideo's WB-H1/H-R2-1 guard (:160).
         //    readMdBody returns null for TWO different situations: the record advertises no summaryMd,
@@ -652,10 +661,43 @@ export async function runSync(
         //    needsRegen via reconcileClassA (the hydrated MD is corrections-stale).
         const correctionsUnresolved = merges.corrections.winner === 'equal' && merges.corrections.conflict;
         if (correctionsUnresolved && la.mdHash != null && ca.mdHash != null) {
+          // Row 21c — this path performs no transfer, so a divergence left unrepaired here orphans
+          // nothing and it is safe to wait for the human to resolve corrections. What is NOT safe is
+          // hiding it: a data-loss condition must not become invisible behind an unrelated conflict.
+          const d = describeDivergence(lv, cv);
+          if (d.diverged) {
+            report.errors.push({ videoId: id, message:
+              `base divergence not reconciled (corrections conflict unresolved): cloud ${d.from} vs local ${d.to}` });
+          }
           report.needsRegen += 1;
           if (lv.archived !== cv.archived) report.archivedNotSynced += 1; // R10 — do NOT sync archived
           await writeVideoBaseline(dataRoot, key, id, buildCorrectionsUnresolvedBaseline(merges, base));
           continue;
+        }
+
+        // ── A3 — repair a diverged `base` BEFORE the Class-A transfer, which writes the winner's
+        //    summaryMd key onto the loser without touching its serialNumber and would otherwise
+        //    strand this video's dig and model blobs at the old base. A refusal throws: caught
+        //    below, surfaced in report.errors, and NO baseline is advanced, so the run heals itself
+        //    once the collision is resolved. Nothing has been written at this point, so there is
+        //    nothing to roll back.
+        const rec = await reconcileCloudBase({
+          cloud: cloudSide, cloudIndex: cloudSnapshot, localVideo: lv, cloudVideo: cv,
+        });
+        if (!rec.ok) {
+          throw new Error(rec.reason === 'target-occupied'
+            ? `serial collision: ${id} needs serial ${rec.want} on cloud, already held by ${rec.heldBy}`
+            : `base reconciliation failed for ${id}: ${rec.reason}${'key' in rec ? ` at ${rec.key}` : ''}`);
+        }
+        if (rec.action === 'relocated') {
+          if (rec.cleanupFailures > 0) {
+            report.errors.push({ videoId: id, message:
+              `base relocated ${rec.from} -> ${rec.to}; ${rec.cleanupFailures} old-base blob(s) left behind` });
+          }
+          // The record in hand is stale: its summaryMd and serialNumber just changed. Re-read before
+          // Class A, which uses cv.summaryMd as the key it writes onto the loser.
+          cv = (await readVideo(deps.cloud, cloudP, id))!;
+          ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
         }
 
         // ── Class A (la/ca derived above the WB-B1 guard, which needs them — Behavior #1).

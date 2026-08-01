@@ -242,6 +242,72 @@ describe('additive sync — serial coherence', () => {
 });
 
 /**
+ * The end-to-end regression guard (A5). Rows 20, 21 and 23 through the REAL orchestrator.
+ *
+ * This is the assertion the whole slice exists for: after a sync, a video's dig content is still
+ * reachable from the row that claims to own it. Before A3, a two-sided video whose replicas held
+ * different serials had its cloud row re-pointed at the winner's base by `transferClassA` while its
+ * own `dig/<oldBase>/*` stayed where it was — reachable by nothing, and costing real Gemini spend to
+ * recreate.
+ */
+describe('two-sided sync — diverged base is repaired, dig content stays reachable', () => {
+  async function digAt(root: string, base: string, sectionId: number, body: string) {
+    const dir = path.join(root, KEY, 'dig', base);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sectionId}.r3.md`), body);
+  }
+
+  it('relocates the cloud replica onto local\'s base, digs and model included', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    // Same video, same body, DIFFERENT serials — the divergence every earlier sync could create.
+    await seed(path.join(localRoot, KEY), [video('vidshared001', 3, 'alpha')]);
+    await seed(path.join(cloudRoot, KEY), [video('vidshared001', 7, 'alpha')]);
+    await digAt(cloudRoot, '007_alpha', 120, 'PAID DIG CONTENT');
+    fs.mkdirSync(path.join(cloudRoot, KEY, 'models'), { recursive: true });
+    fs.writeFileSync(path.join(cloudRoot, KEY, 'models', '007_alpha.json'), '{"model":1}');
+
+    const report = await runSync(makeDeps(localRoot, cloudRoot));
+
+    expect(report.errors).toEqual([]);
+    const row = (await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY }))
+      .videos.find((v) => v.id === 'vidshared001')!;
+    expect(row.serialNumber).toBe(3);
+    expect(row.summaryMd).toBe('003_alpha.md');
+
+    // The point of the whole slice: derive the base from the row and the paid content is THERE.
+    const base = row.summaryMd!.replace(/\.md$/, '');
+    expect(fs.readFileSync(path.join(cloudRoot, KEY, 'dig', base, '120.r3.md'), 'utf8'))
+      .toBe('PAID DIG CONTENT');
+    expect(fs.existsSync(path.join(cloudRoot, KEY, 'models', `${base}.json`))).toBe(true);
+    // Cleanup removes the OBJECTS. The now-empty `dig/007_alpha/` directory can survive on the local
+    // FS adapter (delete is an unlink) and has no analogue on Supabase, where keys are flat.
+    expect(fs.existsSync(path.join(cloudRoot, KEY, 'dig', '007_alpha', '120.r3.md'))).toBe(false);
+    expect(fs.existsSync(path.join(cloudRoot, KEY, '007_alpha.md'))).toBe(false);
+    expect(fs.existsSync(path.join(cloudRoot, KEY, 'models', '007_alpha.json'))).toBe(false);
+  });
+
+  it('reports a collision and leaves both videos untouched', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    await seed(path.join(localRoot, KEY), [video('vidshared001', 3, 'alpha')]);
+    await seed(path.join(cloudRoot, KEY), [
+      video('vidshared001', 7, 'alpha'),
+      video('vidother0001', 3, 'clash'),
+    ]);
+    await digAt(cloudRoot, '007_alpha', 120, 'PAID DIG CONTENT');
+
+    const report = await runSync(makeDeps(localRoot, cloudRoot));
+
+    expect(report.errors.map((e) => e.message).join(' ')).toMatch(/serial collision/i);
+    const cloudIdx = await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY });
+    expect(cloudIdx.videos.find((v) => v.id === 'vidshared001')!.serialNumber).toBe(7);
+    // Aborting is what protects the content: the dig is still where the row says it is.
+    expect(fs.existsSync(path.join(cloudRoot, KEY, 'dig', '007_alpha', '120.r3.md'))).toBe(true);
+  });
+});
+
+/**
  * `playlistIndex` — behaviors table rows 17, 18, 18b.
  *
  * It is the video's current position in the YOUTUBE PLAYLIST, re-derived from the API on every
