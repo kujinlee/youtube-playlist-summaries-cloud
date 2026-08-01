@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MetadataStore, PlaylistSummary } from '@/lib/storage/metadata-store';
+import { assertDesiredSerial } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 import { emptyPlaylistIndex } from '@/lib/storage/empty-index';
@@ -88,11 +89,18 @@ export class SupabaseMetadataStore implements MetadataStore {
   async claimVideoSlot(
     p: Principal,
     videoId: string,
+    desiredSerial?: number,
   ): Promise<{ position: number; serialNumber: number }> {
+    // Validate BEFORE the playlist lookup — a bad argument must not cost a round-trip, and must
+    // never reach the RPC, where a NULL and a 0 mean different things.
+    if (desiredSerial !== undefined) assertDesiredSerial(desiredSerial);
     const id = await this.requirePlaylistId(p);
     const { data, error } = await this.client.rpc('claim_video_slot', {
       p_playlist_id: id,
       p_video_id: videoId,
+      // Explicit null, not omission: "no preference". The RPC resolves adoption vs allocation under
+      // its playlist row-lock, so two racing claims for one serial cannot both win (row 14).
+      p_desired_serial: desiredSerial ?? null,
     });
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : data;

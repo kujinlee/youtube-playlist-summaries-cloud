@@ -129,8 +129,14 @@ function sanitizeAdditiveVideo(video: Video): Video {
   if (v.artifacts && typeof v.artifacts === 'object') {
     v.artifacts = v.artifacts.summaryMd ? { summaryMd: v.artifacts.summaryMd } : {};
   }
-  // Replica-local ordering is NOT synced (§4.1) — the receiver's claim supplies its own.
-  delete v.serialNumber;
+  // A1 — `serialNumber` is KEPT. It was deleted here as "replica-local ordering" (spec §4.1), but
+  // it is neither replica-local nor ordering: it is a write-once file locator
+  // (docs/superpowers/plans/2026-06-25-serial-number-filename-prefix.md — "never recompute for a
+  // video that already has one") embedded in `base` = `<serial>_<slug>`, the address of
+  // `models/<base>.json` and every `dig/<base>/<sectionId>.r<V>.md`. Deleting it here while KEEPING
+  // `summaryMd` — the key that spells the same serial out — is what made the receiver row disagree
+  // with its own filename and orphaned the sender's paid dig blobs. It is also a column the user
+  // sorts by (app/api/videos/route.ts), which `playlistIndex` is not.
   delete v.playlistIndex;
   delete v.removedFromPlaylist;
   // DB-computed read-only fields must never round-trip into a write.
@@ -171,7 +177,22 @@ async function ensureReceiverSlot(
   });
   const idx = await to.readIndex(toP);
   if (idx.videos.some((v) => v.id === video.id)) return null;
-  return to.claimVideoSlot(toP, video.id);
+
+  // A1 (row 10) — refuse BEFORE claiming, not after. The serial is not negotiable here: the sender's
+  // `summaryMd` key already spells it out, and every derived blob is addressed by it, so a receiver
+  // that accepts a different number publishes a row pointing at blobs that do not exist. Checking
+  // first means no partial state is created and there is nothing to roll back — the same reasoning
+  // as the H-R2-1 fix below, which learned that a bare receiver row left behind on a throw gets
+  // laundered into a false "seen and agreed" baseline on the next run.
+  if (video.serialNumber != null) {
+    const holder = idx.videos.find((v) => v.serialNumber === video.serialNumber);
+    if (holder) {
+      throw new Error(
+        `serial collision: ${video.id} needs serial ${video.serialNumber}, already held by ${holder.id}`,
+      );
+    }
+  }
+  return to.claimVideoSlot(toP, video.id, video.serialNumber ?? undefined);
 }
 
 /** Behavior #3 (money-safe) — additive create of a one-sided video onto the receiver. Order:
@@ -198,6 +219,24 @@ async function copyAdditiveVideo(
   }
 
   const slot = await ensureReceiverSlot(to, toP, playlistMeta, video);
+
+  // A1 (rows 9a/9b/16) — the claim returns what was PERSISTED, never what we asked for, so this is
+  // the check that the receiver actually reproduced the sender's serial. It runs before the blob
+  // write: aborting here means no blob is copied and no baseline advances, so nothing is orphaned
+  // and a re-run heals once the collision is resolved.
+  //   slot === null means the receiver row already existed (a stale index read — unreachable in a
+  // single-run sync, which is why the pre-check above is the primary guard). We allocated nothing
+  // there, so the record's own serial is the only thing to verify against.
+  if (video.serialNumber != null) {
+    const receiverSerial = slot
+      ? slot.serialNumber
+      : (await to.readIndex(toP)).videos.find((v) => v.id === video.id)?.serialNumber ?? null;
+    if (receiverSerial !== video.serialNumber) {
+      throw new Error(
+        `serial not adopted for ${video.id}: sender ${video.serialNumber}, receiver ${receiverSerial}`,
+      );
+    }
+  }
 
   let wroteBlob = false;
   if (video.summaryMd && mdBody != null) {

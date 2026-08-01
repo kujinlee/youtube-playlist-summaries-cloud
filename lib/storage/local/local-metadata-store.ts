@@ -1,4 +1,5 @@
 import type { MetadataStore, PlaylistSummary } from '@/lib/storage/metadata-store';
+import { assertDesiredSerial } from '@/lib/storage/metadata-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { PlaylistIndex, Video } from '@/types';
 import * as indexStore from '@/lib/index-store';
@@ -19,10 +20,36 @@ export class LocalFsMetadataStore implements MetadataStore {
       ...(meta.playlistTitle ? { playlistTitle: meta.playlistTitle } : {}),
     });
   }
-  async claimVideoSlot(p: Principal, videoId: string): Promise<{ position: number; serialNumber: number }> {
+  async claimVideoSlot(
+    p: Principal, videoId: string, desiredSerial?: number,
+  ): Promise<{ position: number; serialNumber: number }> {
+    if (desiredSerial !== undefined) assertDesiredSerial(desiredSerial);
     const idx = indexStore.readIndex(p.indexKey);
+
+    // An EXISTING row's persisted values win, and nothing is rewritten. Reclaiming used to fall
+    // through to the reservation write below — and indexStore.upsertVideo is a FULL REPLACEMENT, so
+    // the `{id, serialNumber}` stub overwrote title, summaryMd, ratings, corrections: total loss of
+    // the record, plus a serial that disagreed with the surviving blob names. Unreachable from
+    // today's callers (both pre-check membership), which is exactly why it went unnoticed — the
+    // guard belonged in the primitive.
+    const existingAt = idx.videos.findIndex((v) => v.id === videoId);
+    if (existingAt !== -1) {
+      const existing = idx.videos[existingAt];
+      if (existing.serialNumber != null) return { position: existingAt, serialNumber: existing.serialNumber };
+      // Legacy row with no serial (pre-dates the serial prefix; see backfillOrder). Fill it by
+      // MERGE — never by replacement — so the rest of the record survives.
+      const serialNumber = nextSerial(idx.videos);
+      indexStore.updateVideoFields(p.indexKey, videoId, { serialNumber });
+      return { position: existingAt, serialNumber };
+    }
+
     const position = idx.videos.length;
-    const serialNumber = nextSerial(idx.videos);
+    // Adopt the desired serial only when no sibling holds it; on collision allocate from the
+    // high-water mark and let the CALLER see the mismatch and decide (it aborts the video).
+    const taken = new Set(idx.videos.map((v) => v.serialNumber).filter((n): n is number => n != null));
+    const serialNumber = desiredSerial !== undefined && !taken.has(desiredSerial)
+      ? desiredSerial
+      : nextSerial(idx.videos);
     // reserve the slot with a minimal valid Video; real data arrives via upsertVideo
     indexStore.upsertVideo(p.indexKey, { id: videoId, serialNumber } as Video);
     return { position, serialNumber };
