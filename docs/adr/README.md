@@ -26,6 +26,7 @@ verifies that every ADR reference in the codebase resolves.
 | [0003](0003-cloud-pdf-serve-side-not-a-job.md) | Cloud summary PDF is a serve-side cached blob, not a durable Job | "Why isn't the PDF a Job like everything else, and why does it skip commit→promote staging?" — it is a derived-cache blob, not source-of-truth generative work |
 | [0004](0004-cost-caps-are-tunable-soft-targets.md) | Cost caps are tunable soft targets, enforced today as a hard ceiling | "Can I change this cap?" — yes; the CI guard test is a deliberate posture, not a law |
 | [0005](0005-hosted-never-downloads-youtube-video.md) | The hosted product never downloads YouTube video | "Why is there no ffmpeg in the Dockerfile?" — Terms of Service, not packaging. Server-side capture is forbidden **by any tool**, including the Chromium already in the image |
+| [0006](0006-stable-blob-addressing.md) | **PROPOSED** — blob addresses derive from immutable identity, not display attributes | "Why isn't the summary at `003_alpha.md` any more?" — a serial/slug address is mutable, and every change orphaned paid Gemini artifacts. Supersedes 0002's cost-based rejection of video-level sharing |
 
 ## Adding one
 
