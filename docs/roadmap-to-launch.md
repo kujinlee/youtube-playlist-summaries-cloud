@@ -393,12 +393,26 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
       Reviews: `docs/reviews/task-A-serial-coherence-branch{,-v2,-v3,-v4}-rereview-codex.md`,
       each with a coordinator adjudication section (2 findings were downgraded on evidence, 1
       suggested fix was replaced with a stricter one, 1 suggestion was declined with reasons).
-      **Known gap, named not hidden:** the relocation metadata write is not a compare-and-swap, so
-      two concurrent syncs of one playlist can interleave. Adjudicated **pre-existing** —
-      `transferClassA` (`sync-run.ts:427`) and `copyAdditiveVideo` (`:281`) have the identical
-      unconditional-write exposure, independently verified by Codex in round 4. The window was
-      narrowed; the real fix is a conditional relocation RPC covering **every** sync write.
-      **Needs a decision before filing.**
+      **Known gap, named not hidden — sync has no mutual exclusion against the WORKER.** Every sync
+      metadata write is unconditional (no compare-and-swap), so a concurrent writer's change can be
+      lost or overwritten.
+      **The primary trigger is not a second sync.** `runSync` has exactly one caller —
+      `scripts/cloud-sync.ts` (`npm run cloud-sync`), a manual CLI with no lock — so two *syncs*
+      colliding needs two machines on one cloud account, deliberately, with the overlap landing
+      inside one video's copy phase. Thin on its own. The reachable collision is
+      **`lib/job-queue/summary-handler.ts:156-157`**, which writes *both* `serialNumber` and
+      `summaryMd` when a summary job completes: one sync + an ordinary cloud ingest or re-summarize
+      running in the worker, no second device and no deliberate action.
+      *(Corrected 2026-08-02 — the original entry named two concurrent syncs as the trigger and
+      undersold reachability.)*
+      Adjudicated **pre-existing and not A3-specific**: `transferClassA` (`sync-run.ts:427`) and
+      `copyAdditiveVideo` (`:281`) carry the identical exposure against the same rows, independently
+      verified by Codex in round 4. A3's pre-write freshness re-read covers the common direction
+      (worker writes during A3's copy phase ⇒ refuse, delete nothing); the reverse order and the
+      lost-update case remain. No path destroys blobs — A3 deletes only after a verified write — but
+      a row can end pointing where neither writer intended.
+      **Fix must cover the whole sync write path, not A3 alone. Under discussion (2026-08-02):
+      queue-based serialization vs conditional writes. Needs a decision before filing.**
 - [ ] **A6** delete the vestigial `position` column — separable, deliberately last
 - [ ] **PR + merge** (human gate)
 
