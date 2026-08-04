@@ -38,9 +38,24 @@ Symptoms this produced, all already diagnosed:
 | Symptom | Where |
 |---|---|
 | Cloud-sync silently orphaned paid dig/model blobs on serial divergence | `fix/serial-coherence-sync` (4 review rounds) |
-| A re-summarize orphans every dig, because section `startSec` values are re-minted | **CITATION WAS WRONG** — `tests/lib/html-doc/section-identity-after-resummarize.test.ts` **does not exist** (checked 2026-08-03; no test matching `section-identity`/`resummariz` exists anywhere). The *claim* is plausible but is now **unverified** and must be proven — ideally by writing that test — before it is used as evidence for anything. |
+| A re-summarize orphans a dig **when the heading is reworded too** — see the corrected wording below | `tests/lib/html-doc/section-identity-after-resummarize.test.ts` (5 characterization tests, all passing) |
 | The same video in two playlists is summarized and **charged twice** | ADR-0002, accepted as a cost |
 | Superseded blobs accumulate forever with no way to identify them | no GC exists anywhere (§8) |
+
+> **Correction, 2026-08-04 — the second row was overstated twice, in opposite directions.**
+> An earlier draft claimed a re-summarize orphans *every* dig. A later edit then declared the cited
+> test non-existent and downgraded the claim to unverified — checked against `master`, where the file
+> genuinely was not, because it sat unmerged on PR #41. Both are now wrong: the test exists
+> (merged `2ea5b0d`) and the truth is narrower than the original claim.
+>
+> **A changed `startSec` alone does NOT orphan a dig.** `mergeDigDoc` matches in two steps —
+> `sectionId === startSec`, then an exact **title** fallback — and the fallback rescues it
+> (test: *"startSec changed, titles unchanged → step 1 FAILS, rescued only by the TITLE fallback"*).
+> Orphaning needs **both** to move (test: *"startSec AND title changed → dug content ORPHANS off its
+> section"*), which a re-summarize is free to do since nothing constrains the heading.
+>
+> That makes the section **title** a load-bearing identity anchor today — the thing standing between
+> `startSec` churn and mass orphaning. §4.2 treats it as the third identity dimension.
 
 The `fix/serial-coherence-sync` branch fixes the first symptom correctly. It is nonetheless **the last
 fix under the wrong model**: it makes moving a mutable address safe, rather than removing the need to
@@ -224,6 +239,39 @@ identifies a unit of paid work?* Answer it once, in the ADR that supersedes 0002
 **Still open:** whether `generationId` joins `jobs_idem_active`, or `section_id` becomes
 generation-qualified, or the dedupe window stops including `completed`. Each has a different blast
 radius on the 1D spend-reservation FK, which anchors to this identity.
+
+### 4.2.1 A THIRD identity dimension — the section title (added 2026-08-04)
+
+The split above named two dimensions. There are **three**, and the missing one is the only anchor
+that is not a number:
+
+| Where identity is decided | Anchored on | File |
+|---|---|---|
+| Blob address (`dig/<base>/<sectionId>…`) | `startSec` | `dig-blob-key.ts`, `enqueue-dig-core.ts:34` |
+| Job dedupe (`jobs_idem_active`) | `section_id` | `0009:11-13` |
+| **Dig→section attach, step-2 fallback** | **exact title string** | `dig-merge.ts:81` |
+| **Magazine-model gist trust** | **exact title array, positional** | `sameTitles`, `read-model.ts:12` |
+
+Two of the four are the section **title** — a string the LLM rewrites freely on every re-summarize,
+with nothing constraining it. The characterization tests pin what that costs today:
+
+- a single reworded heading **drops the magazine gists for every section**, not just the edited one —
+  `sameTitles` is positional and all-or-nothing;
+- titles held constant while the prose changes serves **stale gists as fresh** (that one is
+  deliberate: `fixSummary`'s prompt pins headings precisely so this holds).
+
+**Does generation-scoping dissolve this one? Yes — but only because §6 exists.** Within a generation,
+a dig and its summary come from the same run, so `sectionId` matches exactly and the title fallback
+is never reached. Titles stop being identity and go back to being text.
+
+The fallback exists *only* to survive drift between a dig and a summary produced at different times —
+and that is exactly the cross-generation case §6 governs. So §6's **span-overlap rule is not optional
+decoration: it is the replacement for title matching.** Weaken or drop it and the design has no
+cross-generation attach rule at all, which is strictly worse than today, because today at least the
+title fallback catches the common case.
+
+The same argument retires `sameTitles`: a model envelope stored under its generation is matched by
+`generationId`, not by comparing heading strings.
 
 ---
 
@@ -510,7 +558,13 @@ implementation.
    dimension**, and its partial index covers `completed`, so a finished dig suppresses the same
    `startSec` in a later generation. **The remainder is now folded into question 6**, which is the
    same question wearing a different hat: what tuple identifies a unit of paid work?
-3. **Overlap threshold**, and the section-merge ambiguity (§6).
+   **Amended 2026-08-04 (§4.2.1): there are THREE dimensions, not two.** The third is the section
+   **title**, used as an identity anchor in `mergeDigDoc`'s step-2 fallback and in `sameTitles`. It
+   *does* dissolve under generation-scoping — but only because §6's span-overlap rule replaces it,
+   which promotes question 3 from a tuning detail to a **prerequisite**.
+3. **Overlap threshold**, and the section-merge ambiguity (§6). **Not optional** — §4.2.1 shows this
+   rule is the replacement for title matching, so the design has no cross-generation attach rule
+   without it.
 4. **Retention policy and GC trigger** (§8).
 5. **Offline local generation** — the upload-then-publish path (§7).
 6. **Cross-playlist dedup: in or out?** (§12) — determines whether `jobs` and the 1D reservation are
