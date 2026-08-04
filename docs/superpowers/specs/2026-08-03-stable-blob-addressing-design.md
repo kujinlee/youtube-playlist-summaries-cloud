@@ -5,7 +5,15 @@
 before it becomes a plan. **Supersedes part of [ADR-0002](../../adr/0002-playlist-in-job-identity.md)
 — see §12.**
 
-**Roadmap:** not yet filed. Sequenced *behind* the merge of `fix/serial-coherence-sync`.
+**Roadmap:** not yet filed. Sequenced *behind* the merge of `fix/serial-coherence-sync` —
+✅ **that precondition is now met** (PR #42, squash `f8703bc`, 2026-08-03).
+
+**It now also closes a filed defect.** `docs/backlog.md` **#17** (fence the worker persist) was filed
+open when #42 merged: a stale worker persist landing after an A3 relocation orphans paid dig blobs,
+and only fencing closes it. §5.1 and §9 argue this design removes that class outright rather than
+fencing it — the manifest collapses the race to one small row, and no relocation exists to race with.
+**If that argument survives review, #17 should be solved here rather than fenced separately.** Weigh
+it against the delay: #17 is live today.
 
 **Goal:** make the blob-orphaning bug class **impossible** rather than guarded-against, by deriving
 every blob address from values that never change, and moving the "which copy counts" decision into a
@@ -30,7 +38,7 @@ Symptoms this produced, all already diagnosed:
 | Symptom | Where |
 |---|---|
 | Cloud-sync silently orphaned paid dig/model blobs on serial divergence | `fix/serial-coherence-sync` (4 review rounds) |
-| A re-summarize orphans every dig, because section `startSec` values are re-minted | `tests/lib/html-doc/section-identity-after-resummarize.test.ts` |
+| A re-summarize orphans every dig, because section `startSec` values are re-minted | **CITATION WAS WRONG** — `tests/lib/html-doc/section-identity-after-resummarize.test.ts` **does not exist** (checked 2026-08-03; no test matching `section-identity`/`resummariz` exists anywhere). The *claim* is plausible but is now **unverified** and must be proven — ideally by writing that test — before it is used as evidence for anything. |
 | The same video in two playlists is summarized and **charged twice** | ADR-0002, accepted as a cost |
 | Superseded blobs accumulate forever with no way to identify them | no GC exists anywhere (§8) |
 
@@ -152,16 +160,45 @@ Three candidates, listed with their consequences:
 unique — it consumed money), content hash for free re-renders (HTML/PDF, where dedup is pure win and
 the pattern already exists).
 
-### 4.2 Section ids — a claim this spec must test
+### 4.2 Section ids — TESTED 2026-08-03: **half true**, and the other half merges into §12
 
-Generation-scoping may **dissolve** the stable-section-identity problem rather than depend on it.
+The claim was that generation-scoping **dissolves** the stable-section-identity problem rather than
+depending on it. Tested against live code. The verdict splits cleanly, and the split matters.
 
-A dig lives under the generation whose summary it was dug from. `startSec` values are already unique
-and strictly increasing *within* one generation (`allocateSectionStarts`). Because a dig never crosses
-a generation, `sectionId` never needs to be stable *across* generations.
+**The addressing half — CONFIRMED.**
+- `sectionId` *is* `startSec`, literally: `section-window.ts:58` returns
+  `{ sectionId: startSec, startSec, endSec, … }`.
+- `allocateSectionStarts` (`lib/summary-section-timestamps.ts:12`) guarantees **unique and strictly
+  increasing** values within one allocation — every `out[i] >= prev + 1`, including under
+  pathological input (fewer seconds than sections).
 
-**This must be verified, not assumed.** If it holds, the previously-planned "B slice" shrinks
-substantially. If it does not, this spec depends on it and the sequencing changes.
+So within a generation, section ids are already unique and ordered. A dig scoped to its own
+generation never needs an id that is stable *across* generations. **For blob addressing, the problem
+does dissolve.**
+
+**The job-identity half — DOES NOT DISSOLVE.** `section_id` is not only a blob coordinate; it is part
+of the job dedupe key:
+
+```
+jobs_idem_active on jobs (owner_id, playlist_id, video_id, section_id, job_kind, job_version)
+  where status in ('queued','active','completed')          -- 0009:11-13
+```
+
+**There is no generation dimension here.** Two generations whose sections happen to share a
+`startSec` — likely, since `allocateSectionStarts` *keeps* a model-supplied timestamp when it fits —
+are one job. Because the partial index includes `completed`, a finished dig for section 120 in
+generation *abc* **suppresses** a dig for section 120 in generation *def*. Generation-scoping the
+address does not touch that; it makes it *more* visible, because the two digs would now be
+legitimately distinct artifacts that the queue still refuses to distinguish.
+
+**Consequence for sequencing — two open questions collapse into one.** The residue of the old "B
+slice" is not a separate stable-section-identity project; it is the **job-identity re-keying already
+identified as the largest risk in §12** (open question 6). Both are the same question: *what tuple
+identifies a unit of paid work?* Answer it once, in the ADR that supersedes 0002.
+
+**Still open:** whether `generationId` joins `jobs_idem_active`, or `section_id` becomes
+generation-qualified, or the dedupe window stops including `completed`. Each has a different blast
+radius on the 1D spend-reservation FK, which anchors to this identity.
 
 ---
 
@@ -387,7 +424,13 @@ implementation.
 ## 14. Open questions — must be closed before a plan
 
 1. **`generationId` form** — uuid, timestamp, or content hash, per artifact class (§4.1).
-2. **Does generation-scoping dissolve stable section identity?** (§4.2) — changes sequencing materially.
+2. ~~**Does generation-scoping dissolve stable section identity?**~~ — **ANSWERED 2026-08-03 (§4.2):
+   half. It dissolves the *addressing* half (confirmed: `sectionId == startSec`, and
+   `allocateSectionStarts` is unique + strictly increasing within a generation). It does **not**
+   dissolve the *job-identity* half — `jobs_idem_active` includes `section_id` with **no generation
+   dimension**, and its partial index covers `completed`, so a finished dig suppresses the same
+   `startSec` in a later generation. **The remainder is now folded into question 6**, which is the
+   same question wearing a different hat: what tuple identifies a unit of paid work?
 3. **Overlap threshold**, and the section-merge ambiguity (§6).
 4. **Retention policy and GC trigger** (§8).
 5. **Offline local generation** — the upload-then-publish path (§7).
