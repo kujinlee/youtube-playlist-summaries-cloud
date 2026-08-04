@@ -442,7 +442,12 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
       `docs/reviews/task-A-serial-coherence-branch-v5-rereview-review.md`): it suggests widening
       A3's pre-write freshness check to compare `serialNumber`, but the worker has written nothing
       at that moment — the write lands strictly after. Only fencing closes it, which is the decision
-      above. **This is why the branch is NOT converged.**
+      above.
+      **DECIDED 2026-08-03 (human): merge the serial-coherence branch now, fence as its own slice.**
+      Rationale: the gap predates the branch, and the branch is strictly better than the status quo
+      even with it open — it removes the divergence that was being written on *every* sync. Filed as
+      `docs/backlog.md` **#17** (needs its own design-spec → plan → SDD; must cover the whole sync
+      write path, not A3).
 - [x] **A7 — integration suite restored to green against 0023** (2026-08-03). Two failures, both
       real, both invisible until the migration was actually applied to the local DB
       (`npx supabase migration up` — it was NOT applied, so the suite had been passing against the
