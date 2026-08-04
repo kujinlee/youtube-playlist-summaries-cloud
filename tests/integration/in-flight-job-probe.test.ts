@@ -171,6 +171,37 @@ describe('supabaseInFlightJobProbe against a live jobs table', () => {
     expect(res.ok).toBe(false);
   });
 
+  // The owner predicate on the playlist lookup had ZERO coverage when first added: every other test
+  // here uses a user JWT, where RLS already narrows playlists to the caller, so removing the
+  // predicate left all 8 tests green. A guard that passes in both the buggy and the fixed world is
+  // documentation, not a guard — so this exercises the one caller shape where it is load-bearing.
+  //
+  // `playlist_key` is unique only per OWNER (0001:17). Handed a service-role client, which sees
+  // every tenant, a key-only lookup matches two rows; `maybeSingle()` then fails, or — worse, on a
+  // single cross-tenant match — binds another tenant's playlist id and counts THEIR jobs.
+  it('resolves the right tenant when the client can see every playlist (service role)', async () => {
+    const a = await newUser();
+    const b = await newUser();
+    const { userId: aId } = await signInAs(a.email, a.password);
+    const { userId: bId } = await signInAs(b.email, b.password);
+
+    // The same playlist_key under two different owners — permitted by unique(owner_id, playlist_key).
+    const sharedKey = `k-${randomUUID()}`;
+    const plA = await seedPlaylist(svc, aId, sharedKey);
+    await seedPlaylist(svc, bId, sharedKey);
+
+    const videoId = `v${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    await insertJob({ ownerId: aId, playlistId: plA, videoId, status: 'queued' });
+
+    // Scoped to A, the service-role probe must find A's pending job...
+    await expect(supabaseInFlightJobProbe(svc, aId)(sharedKey, videoId))
+      .resolves.toEqual({ ok: true, inFlight: true });
+    // ...and scoped to B it must answer about B's playlist, which has no such job — not error out on
+    // an ambiguous match, and not report A's job as B's.
+    await expect(supabaseInFlightJobProbe(svc, bId)(sharedKey, videoId))
+      .resolves.toEqual({ ok: true, inFlight: false });
+  });
+
   it("cannot see another owner's job (RLS scopes the probe)", async () => {
     const a = await newUser();
     const b = await newUser();

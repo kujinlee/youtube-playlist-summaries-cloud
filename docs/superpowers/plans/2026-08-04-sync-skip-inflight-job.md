@@ -68,6 +68,9 @@ baseline advanced → next run heals" path. Nothing new is needed in `sync-run`'
 | 12 | Every job kind blocks | `job_kind` = `summary` **or** `dig` | both pin `base` before a long Gemini call; do not filter by kind |
 | 13 | Scoped to this playlist | a job for the same `video_id` under a **different** `playlist_id` | does **not** block — `base` is per-playlist, so that job writes a different address |
 | 14 | One probe call per video | diverged video | probe called exactly once, not once per blob |
+| 15 | A **recently swept** job still blocks | `sweep_expired_leases` set `dead_letter`/`cancelled` on an expired ACTIVE job, `updated_at` within 10 min | **blocks** — the worker that claimed it may still be inside its Gemini call holding the pinned `base`. (Codex Blocking #1) |
+| 16 | The swept block **expires** | same row, `updated_at` older than `wallClockMs` (600 000 ms, `worker-runner.ts:45`) | does **not** block — otherwise one `dead_letter` row stalls that video's repair forever |
+| 17 | Playlist lookup is owner-scoped | a service-role client, same `playlist_key` under two owners | resolves the requested owner's playlist; never binds another tenant's id (`unique(owner_id, playlist_key)`, 0001:17) |
 
 ## Files
 
