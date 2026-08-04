@@ -343,24 +343,31 @@ describe('SupabaseMetadataStore integration', () => {
   });
 
   // 10. claimVideoSlot idempotent re-claim (ON CONFLICT DO NOTHING)
-  test('claimVideoSlot idempotent re-claim: returns next-slot values; exactly one row persists', async () => {
-    // Observed behavior (documented here per T8/T9 flag):
-    // The RPC computes v_pos/v_serial from MAX(position)/MAX(serialNumber) BEFORE the
-    // ON CONFLICT check. When the same videoId is re-claimed, the INSERT is skipped but
-    // the RPC still returns the "next available" slot values (position 1, serialNumber 2),
-    // not the original values (position 0, serialNumber 1). Only one row exists in the DB.
+  test('claimVideoSlot idempotent re-claim: returns the PERSISTED values; exactly one row persists', async () => {
+    // Regression guard for the phantom serial fixed by 0023 (the FIX half of that migration).
+    //
+    // This test previously asserted the OPPOSITE — {position: 1, serialNumber: 2} — because that is
+    // what the pre-0023 body did: it computed v_pos/v_serial from MAX(...) BEFORE the ON CONFLICT
+    // check, and on a re-claim the INSERT no-oped while the function still returned the values it
+    // had computed. The caller got a serial that was never stored anywhere.
+    //
+    // That is not a cosmetic wrong number. `base` — the address of every derived blob
+    // (models/<base>.json, dig/<base>/<sectionId>.r<V>.md) — is `<serial>_<slug>`, so a caller
+    // that believes it holds serial 2 while the row says 1 addresses blobs that do not exist.
+    // It was also load-bearing for A1: the receiver compares the RETURNED serial against the one
+    // it asked for to detect a collision, and a phantom makes that comparison a lie.
+    //
+    // The behavior is now: an existing row short-circuits and its stored values win (0023:55-72).
     const store = await storeForNewUser();
     await store.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
 
     const first = await store.claimVideoSlot(P, 'vidAAAAAAAA');
     expect(first).toEqual({ position: 0, serialNumber: 1 });
 
-    // re-claim the same videoId — ON CONFLICT DO NOTHING suppresses the INSERT
+    // re-claim the same videoId — ON CONFLICT DO NOTHING suppresses the INSERT, and the re-select
+    // afterwards returns what is ACTUALLY stored rather than the pre-computed next-slot values.
     const reClaim = await store.claimVideoSlot(P, 'vidAAAAAAAA');
-    // v_pos and v_serial are computed from MAX before the conflict fires:
-    //   MAX(position) = 0  → v_pos = 1
-    //   MAX(serialNumber from data) = 1 → v_serial = 2
-    expect(reClaim).toEqual({ position: 1, serialNumber: 2 });
+    expect(reClaim).toEqual(first);
 
     // only the original reservation row exists — no duplicate inserted
     const idx = await store.readIndex(P);
