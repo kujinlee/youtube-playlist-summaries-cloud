@@ -448,10 +448,14 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
 - [ ] **A6 — RE-SCOPED 2026-08-03: `position` is NOT vestigial.** The premise was wrong. The
       *return-value field* of `claimVideoSlot` has zero consumers after A2, but the **column** is
       load-bearing: `supabase-metadata-store.ts:43` orders every `readIndex` by it. Splits into:
-      - **A6a** (safe, small) drop `position` from the `claimVideoSlot` **return type** across the
-        interface + both adapters. Payoff is defect-prevention, not tidiness: A2's bug was literally
-        `playlistIndex = slot.position + 1`, and removing the field makes that unwriteable. No SQL.
-        Blocked on nothing; costs a re-review round.
+      - [x] **A6a DONE** (`93631da`) — `position` dropped from the `claimVideoSlot` return type
+        across the interface + both adapters. Payoff is defect-prevention, not tidiness: A2's bug was
+        literally `playlistIndex = slot.position + 1`, and removing the field makes that unwriteable.
+        Proven by the compiler — the only remaining use failed `TS2339` on removal. No SQL. Test
+        assertions were **moved to where the guarantee is observable**, not dropped: the concurrency
+        test now reads the `position` COLUMN and asserts `0..N-1`, because position is protected by
+        `videos_playlist_position_uniq` while `serialNumber` lives in jsonb with no constraint —
+        the row-lock is the only thing preventing a duplicate serial.
       - **A6b** (defer — own slice) drop the column + `videos_playlist_position_uniq` + the dead
         `reorder_videos` (0005, zero production callers). Needs a replacement `ORDER BY`, and the
         obvious candidate is a trap: `serialNumber` lives in the `data` jsonb, so
