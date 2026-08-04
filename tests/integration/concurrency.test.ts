@@ -25,11 +25,19 @@ test('concurrent claimVideoSlot on one playlist yields distinct positions + seri
   // serialize them so no two slots share a position or serialNumber.
   const slots = await Promise.all(ids.map((id) => s.claimVideoSlot(P, id)));
 
-  const positions = slots.map((x) => x.position).sort((a, b) => a - b);
   const serials = slots.map((x) => x.serialNumber).sort((a, b) => a - b);
-
-  expect(new Set(positions).size).toBe(N);  // no duplicate positions
   expect(new Set(serials).size).toBe(N);    // no duplicate serials
+
+  // A6a — `position` is no longer returned by claimVideoSlot, so read the COLUMN to keep asserting
+  // it. Deliberately not dropped: serial uniqueness and position uniqueness fail for different
+  // reasons. `position` is protected by videos_playlist_position_uniq (0001:38), but serialNumber
+  // lives in the `data` jsonb with NO constraint behind it — the row-lock is the only thing
+  // preventing a duplicate, which is exactly what this test exists to prove.
+  const { data: rows, error } = await client
+    .from('videos').select('position').order('position', { ascending: true });
+  expect(error).toBeNull();
+  const positions = (rows ?? []).map((r) => r.position as number);
+  expect(positions).toEqual(Array.from({ length: N }, (_, i) => i));  // 0..N-1, no gaps or dupes
 
   // All N reservation rows must be persisted
   const idx = await s.readIndex(P);

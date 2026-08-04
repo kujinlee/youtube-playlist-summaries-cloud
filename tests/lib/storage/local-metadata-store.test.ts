@@ -19,13 +19,17 @@ test('readIndex on an empty folder returns the empty index shape', async () => {
   await expect(store.readIndex(p)).resolves.toEqual({ playlistUrl: '', outputFolder: p.indexKey, videos: [] });
 });
 
-test('claimVideoSlot appends position (0-based) and serialNumber (1-based)', async () => {
+test('claimVideoSlot appends serialNumber (1-based) and preserves array order', async () => {
   const p = localPrincipal(tmp());
   await store.setPlaylistMeta(p, { playlistUrl: 'https://youtube.com/playlist?list=X' });
   const a = await store.claimVideoSlot(p, 'vid00000001');
   const b = await store.claimVideoSlot(p, 'vid00000002');
-  expect(a).toEqual({ position: 0, serialNumber: 1 });
-  expect(b).toEqual({ position: 1, serialNumber: 2 });
+  // A6a — the return is the serial ONLY; the row ordinal is no longer surfaced. Ordering is still
+  // a real guarantee, so assert it where it actually lives: the persisted array.
+  expect(a).toEqual({ serialNumber: 1 });
+  expect(b).toEqual({ serialNumber: 2 });
+  expect((await store.readIndex(p)).videos.map((v) => v.id))
+    .toEqual(['vid00000001', 'vid00000002']);
 });
 
 test('bulkUpdateVideoFields merges fields, preserves array order', async () => {

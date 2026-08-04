@@ -16,7 +16,10 @@ export function delayedStore(inner: MetadataStore): MetadataStore {
   return {
     readIndex: (p) => wrap(() => inner.readIndex(p)),
     setPlaylistMeta: (p, m) => wrap(() => inner.setPlaylistMeta(p, m)),
-    claimVideoSlot: (p, v) => wrap(() => inner.claimVideoSlot(p, v)),
+    // `desiredSerial` MUST be forwarded. Dropping it silently downgrades every wrapped claim to
+    // "no preference", so the store allocates max+1 instead of adopting the sender's serial — the
+    // wrapper would manufacture exactly the serial mismatch it is meant to be transparent to.
+    claimVideoSlot: (p, v, desiredSerial) => wrap(() => inner.claimVideoSlot(p, v, desiredSerial)),
     upsertVideo: (p, v) => wrap(() => inner.upsertVideo(p, v)),
     updateVideoFields: (p, i, f) => wrap(() => inner.updateVideoFields(p, i, f)),
     bulkUpdateVideoFields: (p, x) => wrap(() => inner.bulkUpdateVideoFields(p, x)),

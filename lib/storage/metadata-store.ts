@@ -16,7 +16,32 @@ export interface PlaylistSummary {
 export interface MetadataStore {
   readIndex(p: Principal): Promise<PlaylistIndex>;
   setPlaylistMeta(p: Principal, meta: { playlistUrl: string; playlistTitle?: string }): Promise<void>;
-  claimVideoSlot(p: Principal, videoId: string): Promise<{ position: number; serialNumber: number }>;
+  /** Reserve this principal's slot for `videoId`, returning the **persisted** serial.
+   *
+   *  A6a — this used to also return the replica-local `position` (the storage row ordinal). Nothing
+   *  consumed it, and its one historical use was a defect: `sanitizeAdditiveVideo` set
+   *  `playlistIndex = slot.position + 1`, stamping a video's position in the YOUTUBE playlist from
+   *  the OTHER replica's insertion ordinal — two unrelated numbers that happened to share a type.
+   *  Removing it from the interface is what makes that unwriteable; a comment would not. The column
+   *  still exists and still orders `readIndex` — it is simply not the caller's business.
+   *
+   *  `desiredSerial` asks the receiver to reproduce a specific serial. It exists because `base`
+   *  — the address of every derived blob (`models/<base>.json`, `dig/<base>/<sectionId>.r<V>.md`)
+   *  — is `<serial>_<slug>`. Cloud-sync copies the sender's `summaryMd` KEY verbatim, so a receiver
+   *  that allocates its own serial produces a row saying `serialNumber: 7` beside a file named
+   *  `003_alpha.md`, silently orphaning every blob under `dig/003_alpha/`.
+   *
+   *  **Omitting it is meaningful and is not the same as passing a value:** "no preference, allocate
+   *  `max + 1`" — the legacy-sender case, and every ingestion call site.
+   *
+   *  **The result is the truth, never a wish.** A desired serial that another video in this
+   *  playlist already holds is NOT adopted: the returned serial is a freshly allocated one, and the
+   *  caller compares it against what it asked for to detect the collision. Implementations must
+   *  therefore return what is actually STORED — an implementation that returns a value it computed
+   *  before an idempotent insert makes that comparison a lie. */
+  claimVideoSlot(
+    p: Principal, videoId: string, desiredSerial?: number,
+  ): Promise<{ serialNumber: number }>;
   upsertVideo(p: Principal, video: Video): Promise<void>;
   updateVideoFields(p: Principal, id: string, fields: Partial<Video>): Promise<void>;
   bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void>;
@@ -60,4 +85,20 @@ export interface MetadataStore {
    *  throws nothing — the caller's own data is untouched either way. Local impl
    *  throws — the delete UI is cloud-only (spec §B6). */
   deletePlaylist(p: Principal, playlistId: string): Promise<void>;
+}
+
+/** Validate a caller-supplied `desiredSerial` before ANY I/O.
+ *
+ *  Rejects rather than silently falling back, and lives here — beside the interface — so both
+ *  adapters share one definition of "valid" (the finding-#2 rule: the seam owns the semantics, the
+ *  adapters supply primitives). A caller that computed a nonsense serial has a bug; quietly
+ *  allocating a different one hands it a receiver row whose `base` disagrees with its `summaryMd`
+ *  key, which is the exact incoherence this parameter exists to remove. */
+export function assertDesiredSerial(n: number): void {
+  if (!Number.isInteger(n) || n <= 0) {
+    throw Object.assign(
+      new Error(`invalid desired serial: ${n} (must be a positive integer)`),
+      { statusCode: 400 },
+    );
+  }
 }

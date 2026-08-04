@@ -125,6 +125,16 @@ These files are not @-included — read them when the trigger condition is met.
      tick and the change it claims land together instead of drifting apart.
    - Standalone doc edits accumulate — a typo fix rides on whatever branch is open, or
      waits for the next one. It does not need its own PR.
+   - **Write the merge tick BEFORE opening the PR, and do not chase the squash SHA.** This is
+     the one status update the rule above cannot cover on its own: a merge tick seems to need
+     information that only exists *after* the merge, so it gets deferred — and then wants a
+     PR of its own to land. It does not. The PR number exists as soon as the PR is created,
+     so `✅ MERGED (PR #NN)` can be written **in that same PR**, along with every other tick
+     (review rounds converged, tasks done). Only the squash SHA is genuinely unavailable
+     beforehand, and it is decoration — a PR number is what anyone actually searches for.
+     If you want the SHA recorded, let it ride the next branch that opens; do not open one
+     for it. *(Happened twice before this was written: PR #40 and PR #43, both post-merge
+     reconciles that should have been folded into the PR they described.)*
 
    **Why docs stay on the branch path.** The boundary between "just docs" and "code" is
    slippery in practice. On 2026-07-30 the coordinator reasoned "docs commits have

@@ -31,6 +31,7 @@ import {
   readManifest, writeVideoBaseline, appendConflict, resetConflictDedup,
 } from './manifest';
 import { discoverLocalPlaylists, unionPlaylistKeys, type LocalPlaylist } from './registry';
+import { reconcileCloudBase, describeDivergence, type InFlightJobProbe } from './reconcile-serial';
 import { mdHash } from './content-hash';
 import { readModelEnvelope, writeModelEnvelope } from '@/lib/html-doc/model-store';
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
@@ -40,6 +41,11 @@ export interface SyncDeps {
   local: MetadataStore; cloud: MetadataStore;
   localBlob: BlobStore; cloudBlob: BlobStore;
   dataRoots: string[]; ownerId: string;
+  /** Backlog #17 — "does a job that will write this video's blobs still exist?" A3 refuses to
+   *  relocate while one does, because the job pinned its `base` minutes ago and its persist would
+   *  land on top of the relocation. REQUIRED so no caller can silently inherit the unguarded path;
+   *  a replica with no job queue supplies `noInFlightJobs` (lib/cloud-sync/in-flight-job.ts). */
+  inFlightJob: InFlightJobProbe;
 }
 
 export interface SyncReport {
@@ -129,9 +135,20 @@ function sanitizeAdditiveVideo(video: Video): Video {
   if (v.artifacts && typeof v.artifacts === 'object') {
     v.artifacts = v.artifacts.summaryMd ? { summaryMd: v.artifacts.summaryMd } : {};
   }
-  // Replica-local ordering is NOT synced (§4.1) — the receiver's claim supplies its own.
-  delete v.serialNumber;
-  delete v.playlistIndex;
+  // A1 — `serialNumber` is KEPT. It was deleted here as "replica-local ordering" (spec §4.1), but
+  // it is neither replica-local nor ordering: it is a write-once file locator
+  // (docs/superpowers/plans/2026-06-25-serial-number-filename-prefix.md — "never recompute for a
+  // video that already has one") embedded in `base` = `<serial>_<slug>`, the address of
+  // `models/<base>.json` and every `dig/<base>/<sectionId>.r<V>.md`. Deleting it here while KEEPING
+  // `summaryMd` — the key that spells the same serial out — is what made the receiver row disagree
+  // with its own filename and orphaned the sender's paid dig blobs. It is also a column the user
+  // sorts by (app/api/videos/route.ts), which `playlistIndex` is not.
+  // A2 — `playlistIndex` is KEPT too, but for a different reason than serialNumber: it is the
+  // video's position in the YOUTUBE playlist, re-derived from the API on every ingest
+  // (pipeline.ts:322-334). It was deleted here and then re-invented as `slot.position + 1` — a
+  // storage row ordinal from the OTHER replica, which is not a playlist position and bears no
+  // relationship to one. Carrying the sender's value (or its absence) is strictly better: worst
+  // case it is stale and the next ingest corrects it, whereas the ordinal was never right.
   delete v.removedFromPlaylist;
   // DB-computed read-only fields must never round-trip into a write.
   delete v.updatedAt;
@@ -142,12 +159,12 @@ function sanitizeAdditiveVideo(video: Video): Video {
 /** round-4 H1 — create the receiver playlist + reservation row BEFORE any receiver write. The cloud
  *  upsertVideo/updateVideoFields are bare UPDATEs of a row pre-created by claimVideoSlot: they
  *  silently affect 0 rows (no throw) on an absent row, so an additive create must claim the slot
- *  first. Returns the claimed replica-local {position, serialNumber}, or null if the row already
+ *  first. Returns the claimed replica-local {serialNumber}, or null if the row already
  *  existed (guarded by the readIndex-absence check; single-run so the check is authoritative). */
 async function ensureReceiverSlot(
   to: MetadataStore, toP: Principal,
   playlistMeta: { playlistUrl: string; playlistTitle?: string }, video: Video,
-): Promise<{ position: number; serialNumber: number } | null> {
+): Promise<{ serialNumber: number } | null> {
   // H3 (round 4) — a sync must never CLEAR the receiver's playlist title. The upsert always writes
   // the playlist_title column (`meta.playlistTitle ?? null`), so simply omitting the title here
   // would NULL it, and the never-clobber primitive setPlaylistTitleIfNull cannot undo that.
@@ -171,7 +188,30 @@ async function ensureReceiverSlot(
   });
   const idx = await to.readIndex(toP);
   if (idx.videos.some((v) => v.id === video.id)) return null;
-  return to.claimVideoSlot(toP, video.id);
+
+  // A1 (row 10) — refuse BEFORE claiming, not after. The serial is not negotiable here: the sender's
+  // `summaryMd` key already spells it out, and every derived blob is addressed by it, so a receiver
+  // that accepts a different number publishes a row pointing at blobs that do not exist. Checking
+  // first means no partial state is created and there is nothing to roll back — the same reasoning
+  // as the H-R2-1 fix below, which learned that a bare receiver row left behind on a throw gets
+  // laundered into a false "seen and agreed" baseline on the next run.
+  //   The check is on the KEY as well as the serial, because the key is what actually collides.
+  // A legacy receiver row carrying `003_alpha.md` with NO serialNumber — exactly the shape
+  // `backfillOrder` exists to repair — passes a serial-only check, and the blob write below then
+  // puts the sender's body straight over it: on the local FS adapter promote is a rename, which
+  // overwrites, so a summary is destroyed. (Found by the branch adversarial pass.)
+  if (video.serialNumber != null || video.summaryMd) {
+    const holder = idx.videos.find((v) =>
+      (video.serialNumber != null && v.serialNumber === video.serialNumber) ||
+      (video.summaryMd != null && v.summaryMd === video.summaryMd));
+    if (holder) {
+      throw new Error(
+        `serial collision: ${video.id} needs serial ${video.serialNumber} / key ${video.summaryMd}, ` +
+        `already held by ${holder.id}`,
+      );
+    }
+  }
+  return to.claimVideoSlot(toP, video.id, video.serialNumber ?? undefined);
 }
 
 /** Behavior #3 (money-safe) — additive create of a one-sided video onto the receiver. Order:
@@ -199,6 +239,24 @@ async function copyAdditiveVideo(
 
   const slot = await ensureReceiverSlot(to, toP, playlistMeta, video);
 
+  // A1 (rows 9a/9b/16) — the claim returns what was PERSISTED, never what we asked for, so this is
+  // the check that the receiver actually reproduced the sender's serial. It runs before the blob
+  // write: aborting here means no blob is copied and no baseline advances, so nothing is orphaned
+  // and a re-run heals once the collision is resolved.
+  //   slot === null means the receiver row already existed (a stale index read — unreachable in a
+  // single-run sync, which is why the pre-check above is the primary guard). We allocated nothing
+  // there, so the record's own serial is the only thing to verify against.
+  if (video.serialNumber != null) {
+    const receiverSerial = slot
+      ? slot.serialNumber
+      : (await to.readIndex(toP)).videos.find((v) => v.id === video.id)?.serialNumber ?? null;
+    if (receiverSerial !== video.serialNumber) {
+      throw new Error(
+        `serial not adopted for ${video.id}: sender ${video.serialNumber}, receiver ${receiverSerial}`,
+      );
+    }
+  }
+
   let wroteBlob = false;
   if (video.summaryMd && mdBody != null) {
     // stage → verify (readable + hashes) → promote — never advertise promoted before durable.
@@ -212,10 +270,11 @@ async function copyAdditiveVideo(
   }
 
   const sanitized: any = sanitizeAdditiveVideo(video);
-  if (slot) {
-    sanitized.serialNumber = slot.serialNumber;
-    sanitized.playlistIndex = slot.position + 1;
-  }
+  // The claim's `position` is deliberately NOT read here. It is cloud-only storage bookkeeping
+  // (0001_core_schema.sql:27, "array order in PlaylistIndex.videos") that exists so the Supabase
+  // adapter can satisfy the array-shaped readIndex contract; nothing consumes the order it keeps,
+  // because the videos API always re-sorts. Deriving a user-visible field from it was the A2 bug.
+  if (slot) sanitized.serialNumber = slot.serialNumber;
   if (wroteBlob) {
     sanitized.artifacts = { summaryMd: { key: video.summaryMd, status: 'promoted' } };
   } else if (sanitized.artifacts && typeof sanitized.artifacts === 'object') {
@@ -512,11 +571,46 @@ export async function runSync(
     const cloudSide: Side = { store: deps.cloud, p: cloudP, blob: deps.cloudBlob };
     const playlistMeta = playlistMetaFor(key, localPlaylists, cloudSummaries);
     const manifest = await readManifest(dataRoot, key);
+    // A3 occupancy view: ONE cloud read per playlist, then MAINTAINED as this run mutates cloud.
+    //
+    // It is not re-read per video, because a swap (A wants B's serial while B wants A's) is only
+    // detectable against a consistent view: re-reading would let A move first and B then see a world
+    // A had just changed, converting "both abort" into a half-repair no single move can finish.
+    //
+    // But a pure snapshot is WRONG, and the first version of this comment claimed otherwise — it
+    // argued that a serial taken during this run is caught downstream by the copy phase's fail-closed
+    // `destination-exists`. That only holds when the two videos share a KEY. Same serial with a
+    // different slug produces different keys, nothing collides, and the run ends with two cloud rows
+    // at one serialNumber. Reachable without pre-existing corruption: a local video with no serial is
+    // created on cloud at `max + 1`, which can be the serial a later two-sided video is relocated
+    // onto. So every cloud row this run creates or moves is folded back in below.
+    // (Codex branch review, High #2.)
+    const cloudSnapshot = (await deps.cloud.readIndex(cloudP)).videos;
+    const noteCloudRow = (v: Video) => {
+      const i = cloudSnapshot.findIndex((x) => x.id === v.id);
+      if (i === -1) cloudSnapshot.push(v); else cloudSnapshot[i] = v;
+    };
+    // Once ANOTHER writer is known to have moved a row under us, the "one consistent view" premise
+    // the snapshot rests on is void: it may now claim a serial is free that someone else just took,
+    // and a later video would relocate onto it. Refresh, and if even that read fails, stop
+    // reconciling for the rest of this playlist rather than deciding occupancy from a view we know
+    // is wrong. Aborting the whole playlist is not needed — every OTHER step is safe, and skipping
+    // reconciliation only defers repairs to the next run. (Codex round-4 re-review, High #1.)
+    let occupancyTrusted = true;
+    const refreshCloudSnapshot = async () => {
+      try {
+        const fresh = (await deps.cloud.readIndex(cloudP)).videos;
+        cloudSnapshot.length = 0;
+        cloudSnapshot.push(...fresh);
+      } catch {
+        occupancyTrusted = false;
+      }
+    };
 
     for (const id of await enumerateVideoIds(deps.local, deps.cloud, localP, cloudP)) {
       try {
         const lv = await readVideo(deps.local, localP, id);
-        const cv = await readVideo(deps.cloud, cloudP, id);
+        let cv = await readVideo(deps.cloud, cloudP, id);
         const base = manifest.videos[id];
 
         // ── Presence / deletes (§5.6, Behaviors #3/#7/#8) — resolve one-sided videos and CONTINUE
@@ -531,6 +625,11 @@ export async function runSync(
             const to: Side = presentIsLocal ? cloudSide : localSide;
             const body = await readMdBody(from.blob, from.p, present);
             await copyAdditiveVideo(to.store, to.p, to.blob, playlistMeta, present, body);
+            // A cloud row created here occupies a serial that A3 must see later in this same run.
+            if (presentIsLocal) {
+              const created = await readVideo(deps.cloud, cloudP, id);
+              if (created) noteCloudRow(created);
+            }
             report.created += 1; // reached only after the receiver row is confirmed
             await writeVideoBaseline(dataRoot, key, id, baselineFromOneSided(
               deriveClassASignals(present, body), body ? mdHash(body) : null,
@@ -564,7 +663,7 @@ export async function runSync(
         //    derivation is PURE (it only reads the record + the MD body), so hoisting it changes no
         //    behavior. Bodies are needed for hashing regardless — Behavior #1.
         const la = deriveClassASignals(lv, await readMdBody(deps.localBlob, localP, lv));
-        const ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
+        let ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
 
         // ── B1 (round 3) — the two-sided counterpart of copyAdditiveVideo's WB-H1/H-R2-1 guard (:160).
         //    readMdBody returns null for TWO different situations: the record advertises no summaryMd,
@@ -607,10 +706,65 @@ export async function runSync(
         //    needsRegen via reconcileClassA (the hydrated MD is corrections-stale).
         const correctionsUnresolved = merges.corrections.winner === 'equal' && merges.corrections.conflict;
         if (correctionsUnresolved && la.mdHash != null && ca.mdHash != null) {
+          // Row 21c — this path performs no transfer, so a divergence left unrepaired here orphans
+          // nothing and it is safe to wait for the human to resolve corrections. What is NOT safe is
+          // hiding it: a data-loss condition must not become invisible behind an unrelated conflict.
+          const d = describeDivergence(lv, cv);
+          if (d.diverged) {
+            report.errors.push({ videoId: id, message:
+              `base divergence not reconciled (corrections conflict unresolved): cloud ${d.from} vs local ${d.to}` });
+          }
           report.needsRegen += 1;
           if (lv.archived !== cv.archived) report.archivedNotSynced += 1; // R10 — do NOT sync archived
           await writeVideoBaseline(dataRoot, key, id, buildCorrectionsUnresolvedBaseline(merges, base));
           continue;
+        }
+
+        // ── A3 — repair a diverged `base` BEFORE the Class-A transfer, which writes the winner's
+        //    summaryMd key onto the loser without touching its serialNumber and would otherwise
+        //    strand this video's dig and model blobs at the old base. A refusal throws: caught
+        //    below, surfaced in report.errors, and NO baseline is advanced, so the run heals itself
+        //    once the collision is resolved. Nothing has been written at this point, so there is
+        //    nothing to roll back.
+        const rec = occupancyTrusted
+          ? await reconcileCloudBase({
+              cloud: cloudSide, cloudIndex: cloudSnapshot, localVideo: lv, cloudVideo: cv,
+              inFlightJob: deps.inFlightJob,
+            })
+          : { ok: true as const, action: 'agreed' as const };
+        if (!occupancyTrusted && describeDivergence(lv, cv).diverged) {
+          report.errors.push({ videoId: id, message:
+            'base divergence not reconciled: the cloud occupancy view could not be refreshed after a concurrent change' });
+        }
+        if (!rec.ok) {
+          // These two mean the cloud moved underneath this run. Everything downstream that reads the
+          // snapshot is now deciding from a view we KNOW is wrong.
+          if (rec.reason === 'metadata-unverified' || rec.reason === 'verification-unreadable') {
+            await refreshCloudSnapshot();
+          }
+          // Backlog #17 — a deferral, not a fault. The video is diverged AND a job is mid-flight
+          // holding a base it pinned before this run; relocating now would be undone by that job's
+          // persist. Say so in the user's words, because the action is "re-run once it finishes",
+          // not "something is broken".
+          if (rec.reason === 'job-in-flight') {
+            throw new Error(
+              `base reconciliation deferred for ${id}: a summary/dig job is still in flight for this ` +
+              `video, and relocating now would be overwritten by its persist. Re-run the sync once it completes.`);
+          }
+          throw new Error(rec.reason === 'target-occupied'
+            ? `serial collision: ${id} needs serial ${rec.want} on cloud, already held by ${rec.heldBy}`
+            : `base reconciliation failed for ${id}: ${rec.reason}${'key' in rec ? ` at ${rec.key}` : ''}`);
+        }
+        if (rec.action === 'relocated') {
+          if (rec.cleanupFailures > 0) {
+            report.errors.push({ videoId: id, message:
+              `base relocated ${rec.from} -> ${rec.to}; ${rec.cleanupFailures} old-base blob(s) left behind` });
+          }
+          // The record in hand is stale: its summaryMd and serialNumber just changed. Re-read before
+          // Class A, which uses cv.summaryMd as the key it writes onto the loser.
+          cv = (await readVideo(deps.cloud, cloudP, id))!;
+          noteCloudRow(cv);   // it now holds the NEW serial, and released the old one
+          ca = deriveClassASignals(cv, await readMdBody(deps.cloudBlob, cloudP, cv));
         }
 
         // ── Class A (la/ca derived above the WB-B1 guard, which needs them — Behavior #1).
@@ -626,6 +780,13 @@ export async function runSync(
         if (decision.action === 'copyToCloud') {
           winnerSide = localSide; loserSide = cloudSide; winnerVideo = lv; winnerSignals = la;
           winnerMdHash = (await transferClassA(localSide, cloudSide, lv, id)).mdHash;
+          // This rewrote the cloud row's summaryMd to the winner's key. Reconciliation normally
+          // makes that a no-op (the bases already agree), but it returns 'agreed' without moving
+          // anything when there is nothing to reconcile TO — a local row with no serial, or a cloud
+          // row with no MD — and the key can still change on those paths. Keep the occupancy view
+          // honest rather than relying on that staying true.
+          const afterTransfer = await readVideo(deps.cloud, cloudP, id);
+          if (afterTransfer) noteCloudRow(afterTransfer);
           report.updatedCloud += 1;
         } else if (decision.action === 'copyToLocal') {
           winnerSide = cloudSide; loserSide = localSide; winnerVideo = cv; winnerSignals = ca;

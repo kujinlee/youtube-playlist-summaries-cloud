@@ -56,6 +56,10 @@ function fakeBlobStore(getQueue: Array<Buffer | null>): BlobStore & { getMock: j
     promote: jest.fn(async () => {}),
     deletePrefix: jest.fn(async () => {}),
     list: jest.fn(async () => []),
+    // Unused by these reserve-status mapping tests. A plain stub for the same reason tryGet above
+    // is one: delegating to copyBlob would consume scripted `get` answers and shift every
+    // subsequent case. The copy contract is covered in tests/lib/storage/blob-store-copy.contract.test.ts.
+    copy: jest.fn(async () => ({ ok: true as const, already: false })),
   };
 }
 

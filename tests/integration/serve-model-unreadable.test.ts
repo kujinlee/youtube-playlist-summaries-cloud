@@ -22,6 +22,7 @@ import { resolveMagazineModel } from '@/lib/html-doc/serve-doc';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import type { BlobRead, BlobStore } from '@/lib/storage/blob-store';
+import { copyBlob } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary } from '@/lib/html-doc/types';
 
@@ -61,6 +62,9 @@ class UnreadableModelBlobStore implements BlobStore {
   promote(ref: Parameters<BlobStore['promote']>[0]) { return this.inner.promote(ref); }
   deletePrefix(p: Principal, prefix: string) { return this.inner.deletePrefix(p, prefix); }
   list(p: Principal, prefix: string) { return this.inner.list(p, prefix); }
+  /** Routed through the decorator, so a copy involving a model key correctly reports
+   *  `*-unreadable` rather than inheriting the `get`-returns-null lie this class simulates. */
+  copy(p: Principal, from: string, to: string) { return copyBlob(this, p, from, to); }
 }
 
 beforeEach(async () => {
