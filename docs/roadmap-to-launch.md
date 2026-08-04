@@ -263,8 +263,23 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS: one open item (`exec_sql`, 2026-07-20). `middleware-2a` red suite FIXED 2026-07-23. The two
-2026-07-19 items are CLOSED.**
+**STATUS: two open items (`exec_sql` 2026-07-20; integration-vs-migrations 2026-08-03).
+`middleware-2a` red suite FIXED 2026-07-23. The two 2026-07-19 items are CLOSED.**
+
+- [ ] **`npm run test:integration` does not apply pending migrations — the gate fails OPEN.**
+  **Found 2026-08-03 on `fix/serial-coherence-sync`.** The branch adds `0023`, but the local DB still
+  had only the pre-0023 schema, so the whole integration suite had been running against the OLD
+  `claim_video_slot` and reporting green. Applying it by hand (`npx supabase migration up`) turned up
+  **two real failures immediately** — one test pinning the very phantom-serial bug 0023 fixes, one
+  stale key assertion (see A7 in the serial-coherence slice).
+  This is the dangerous shape: not a red suite someone learns to ignore, but a **green** one that is
+  not testing the code under review. A migration is exactly when the suite matters most, and exactly
+  when it silently stops applying.
+  **Fix:** run `supabase migration up` (or a `db reset`) in the integration global-setup
+  (`tests/integration/setup.ts`), so the schema under test always matches the branch. Cheap; the only
+  question is reset-vs-up given suite runtime (~170 s) and the idempotency requirement.
+  **Until then:** apply migrations by hand before trusting a green integration run on any branch that
+  adds one.
 
 - [x] **`middleware-2a.test.ts` — 2 OAuth-callback tests were RED on `master`.** ✅ **FIXED 2026-07-23.**
   Was pre-existing since `1c96e62` (PR #31 OAuth `x-forwarded-host` fix): `publicOrigin` reads
@@ -413,7 +428,36 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
       a row can end pointing where neither writer intended.
       **Fix must cover the whole sync write path, not A3 alone. Under discussion (2026-08-02):
       queue-based serialization vs conditional writes. Needs a decision before filing.**
-- [ ] **A6** delete the vestigial `position` column — separable, deliberately last
+- [x] **A7 — integration suite restored to green against 0023** (2026-08-03). Two failures, both
+      real, both invisible until the migration was actually applied to the local DB
+      (`npx supabase migration up` — it was NOT applied, so the suite had been passing against the
+      pre-0023 schema).
+      1. `tests/integration/metadata-store.test.ts` test 10 asserted the **phantom serial as the
+         contract**: a re-claim returning `{position: 1, serialNumber: 2}`, values computed from
+         `MAX(...)` before the `ON CONFLICT` check and never stored. 0023 fixed that; the test was
+         pinning the bug the branch removes. Now guards the fix.
+      2. `tests/integration/cloud-sync/e2e.int.test.ts` **M-R2-2** hard-coded the pre-A3 key.
+         Proven branch-caused (passes on `master`, fails on the branch, same `-t` filter, same DB)
+         and then proven **correct**: on master that fixture ended `serialNumber 1` beside
+         `<videoId>.md` — a row whose serial and filename disagree, the exact orphaning condition.
+         On the branch both replicas end at `001_<videoId>.md` with `report.errors` empty.
+         Re-asserted as an invariant (replicas agree; the key encodes the row's serial).
+      **Process gap this exposed:** `npm run test:integration` does not apply pending migrations, so
+      a new migration silently leaves the suite testing the old schema — a gate that fails OPEN.
+      Recorded under *Dev-infrastructure debt*.
+- [ ] **A6 — RE-SCOPED 2026-08-03: `position` is NOT vestigial.** The premise was wrong. The
+      *return-value field* of `claimVideoSlot` has zero consumers after A2, but the **column** is
+      load-bearing: `supabase-metadata-store.ts:43` orders every `readIndex` by it. Splits into:
+      - **A6a** (safe, small) drop `position` from the `claimVideoSlot` **return type** across the
+        interface + both adapters. Payoff is defect-prevention, not tidiness: A2's bug was literally
+        `playlistIndex = slot.position + 1`, and removing the field makes that unwriteable. No SQL.
+        Blocked on nothing; costs a re-review round.
+      - **A6b** (defer — own slice) drop the column + `videos_playlist_position_uniq` + the dead
+        `reorder_videos` (0005, zero production callers). Needs a replacement `ORDER BY`, and the
+        obvious candidate is a trap: `serialNumber` lives in the `data` jsonb, so
+        `.order('data->>serialNumber')` sorts as TEXT (`"10"` before `"2"`) without a generated
+        column. Would also be the **third** `claim_video_slot` signature change (0007 → 0023 → this)
+        and would change the shape of 0023's rolling-deploy wrapper. Likely dissolved by ADR-0006.
 - [ ] **PR + merge** (human gate)
 
 **Sequenced behind A** (each needs its own spec + merge gate): **B** stable section identity,
