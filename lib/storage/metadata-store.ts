@@ -16,7 +16,14 @@ export interface PlaylistSummary {
 export interface MetadataStore {
   readIndex(p: Principal): Promise<PlaylistIndex>;
   setPlaylistMeta(p: Principal, meta: { playlistUrl: string; playlistTitle?: string }): Promise<void>;
-  /** Reserve this principal's slot for `videoId`, returning the **persisted** position + serial.
+  /** Reserve this principal's slot for `videoId`, returning the **persisted** serial.
+   *
+   *  A6a — this used to also return the replica-local `position` (the storage row ordinal). Nothing
+   *  consumed it, and its one historical use was a defect: `sanitizeAdditiveVideo` set
+   *  `playlistIndex = slot.position + 1`, stamping a video's position in the YOUTUBE playlist from
+   *  the OTHER replica's insertion ordinal — two unrelated numbers that happened to share a type.
+   *  Removing it from the interface is what makes that unwriteable; a comment would not. The column
+   *  still exists and still orders `readIndex` — it is simply not the caller's business.
    *
    *  `desiredSerial` asks the receiver to reproduce a specific serial. It exists because `base`
    *  — the address of every derived blob (`models/<base>.json`, `dig/<base>/<sectionId>.r<V>.md`)
@@ -34,7 +41,7 @@ export interface MetadataStore {
    *  before an idempotent insert makes that comparison a lie. */
   claimVideoSlot(
     p: Principal, videoId: string, desiredSerial?: number,
-  ): Promise<{ position: number; serialNumber: number }>;
+  ): Promise<{ serialNumber: number }>;
   upsertVideo(p: Principal, video: Video): Promise<void>;
   updateVideoFields(p: Principal, id: string, fields: Partial<Video>): Promise<void>;
   bulkUpdateVideoFields(p: Principal, patches: { videoId: string; fields: Partial<Video> }[]): Promise<void>;

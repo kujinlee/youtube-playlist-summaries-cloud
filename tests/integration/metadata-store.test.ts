@@ -68,15 +68,17 @@ describe('SupabaseMetadataStore integration', () => {
   });
 
   // 3. claimVideoSlot allocates sequential slots; upsertVideo fills row; readIndex round-trips
-  test('claimVideoSlot allocates position+serial sequentially; readIndex returns videos in order', async () => {
+  test('claimVideoSlot allocates serials sequentially; readIndex returns videos in order', async () => {
     const store = await storeForNewUser();
     await store.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
 
+    // A6a — `position` is no longer returned to callers. The COLUMN still exists and still drives
+    // the readIndex ordering asserted at the end of this test, which is where it is observable.
     const slotA = await store.claimVideoSlot(P, 'vidAAAAAAAA');
-    expect(slotA).toEqual({ position: 0, serialNumber: 1 });
+    expect(slotA).toEqual({ serialNumber: 1 });
 
     const slotB = await store.claimVideoSlot(P, 'vidBBBBBBBB');
-    expect(slotB).toEqual({ position: 1, serialNumber: 2 });
+    expect(slotB).toEqual({ serialNumber: 2 });
 
     await store.upsertVideo(P, makeVideo('vidAAAAAAAA', 1) as any);
     await store.upsertVideo(P, makeVideo('vidBBBBBBBB', 2) as any);
@@ -362,7 +364,7 @@ describe('SupabaseMetadataStore integration', () => {
     await store.setPlaylistMeta(P, { playlistUrl: 'https://youtube.com/playlist?list=listX' });
 
     const first = await store.claimVideoSlot(P, 'vidAAAAAAAA');
-    expect(first).toEqual({ position: 0, serialNumber: 1 });
+    expect(first).toEqual({ serialNumber: 1 });
 
     // re-claim the same videoId — ON CONFLICT DO NOTHING suppresses the INSERT, and the re-select
     // afterwards returns what is ACTUALLY stored rather than the pre-computed next-slot values.

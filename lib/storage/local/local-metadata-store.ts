@@ -22,7 +22,7 @@ export class LocalFsMetadataStore implements MetadataStore {
   }
   async claimVideoSlot(
     p: Principal, videoId: string, desiredSerial?: number,
-  ): Promise<{ position: number; serialNumber: number }> {
+  ): Promise<{ serialNumber: number }> {
     if (desiredSerial !== undefined) assertDesiredSerial(desiredSerial);
     const idx = indexStore.readIndex(p.indexKey);
 
@@ -32,18 +32,16 @@ export class LocalFsMetadataStore implements MetadataStore {
     // the record, plus a serial that disagreed with the surviving blob names. Unreachable from
     // today's callers (both pre-check membership), which is exactly why it went unnoticed — the
     // guard belonged in the primitive.
-    const existingAt = idx.videos.findIndex((v) => v.id === videoId);
-    if (existingAt !== -1) {
-      const existing = idx.videos[existingAt];
-      if (existing.serialNumber != null) return { position: existingAt, serialNumber: existing.serialNumber };
+    const existing = idx.videos.find((v) => v.id === videoId);
+    if (existing) {
+      if (existing.serialNumber != null) return { serialNumber: existing.serialNumber };
       // Legacy row with no serial (pre-dates the serial prefix; see backfillOrder). Fill it by
       // MERGE — never by replacement — so the rest of the record survives.
       const serialNumber = nextSerial(idx.videos);
       indexStore.updateVideoFields(p.indexKey, videoId, { serialNumber });
-      return { position: existingAt, serialNumber };
+      return { serialNumber };
     }
 
-    const position = idx.videos.length;
     // Adopt the desired serial only when no sibling holds it; on collision allocate from the
     // high-water mark and let the CALLER see the mismatch and decide (it aborts the video).
     const taken = new Set(idx.videos.map((v) => v.serialNumber).filter((n): n is number => n != null));
@@ -52,7 +50,7 @@ export class LocalFsMetadataStore implements MetadataStore {
       : nextSerial(idx.videos);
     // reserve the slot with a minimal valid Video; real data arrives via upsertVideo
     indexStore.upsertVideo(p.indexKey, { id: videoId, serialNumber } as Video);
-    return { position, serialNumber };
+    return { serialNumber };
   }
   async upsertVideo(p: Principal, video: Video): Promise<void> {
     indexStore.upsertVideo(p.indexKey, video);

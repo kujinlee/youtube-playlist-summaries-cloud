@@ -84,13 +84,15 @@ export class SupabaseMetadataStore implements MetadataStore {
   }
 
   // ---------------------------------------------------------------------------
-  // claimVideoSlot: RPC appends a reservation row and returns position + serial.
+  // claimVideoSlot: RPC appends a reservation row and returns the persisted serial.
+  // The RPC still returns `position` alongside it (the column orders readIndex); A6a stops
+  // surfacing it to callers, none of whom had a use for a foreign replica's row ordinal.
   // ---------------------------------------------------------------------------
   async claimVideoSlot(
     p: Principal,
     videoId: string,
     desiredSerial?: number,
-  ): Promise<{ position: number; serialNumber: number }> {
+  ): Promise<{ serialNumber: number }> {
     // Validate BEFORE the playlist lookup — a bad argument must not cost a round-trip, and must
     // never reach the RPC, where a NULL and a 0 mean different things.
     if (desiredSerial !== undefined) assertDesiredSerial(desiredSerial);
@@ -104,7 +106,7 @@ export class SupabaseMetadataStore implements MetadataStore {
     });
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : data;
-    return { position: row.position, serialNumber: row.serial_number };
+    return { serialNumber: row.serial_number };
   }
 
   // ---------------------------------------------------------------------------

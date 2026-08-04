@@ -154,12 +154,12 @@ function sanitizeAdditiveVideo(video: Video): Video {
 /** round-4 H1 — create the receiver playlist + reservation row BEFORE any receiver write. The cloud
  *  upsertVideo/updateVideoFields are bare UPDATEs of a row pre-created by claimVideoSlot: they
  *  silently affect 0 rows (no throw) on an absent row, so an additive create must claim the slot
- *  first. Returns the claimed replica-local {position, serialNumber}, or null if the row already
+ *  first. Returns the claimed replica-local {serialNumber}, or null if the row already
  *  existed (guarded by the readIndex-absence check; single-run so the check is authoritative). */
 async function ensureReceiverSlot(
   to: MetadataStore, toP: Principal,
   playlistMeta: { playlistUrl: string; playlistTitle?: string }, video: Video,
-): Promise<{ position: number; serialNumber: number } | null> {
+): Promise<{ serialNumber: number } | null> {
   // H3 (round 4) — a sync must never CLEAR the receiver's playlist title. The upsert always writes
   // the playlist_title column (`meta.playlistTitle ?? null`), so simply omitting the title here
   // would NULL it, and the never-clobber primitive setPlaylistTitleIfNull cannot undo that.
