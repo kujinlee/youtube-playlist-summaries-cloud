@@ -24,8 +24,24 @@ import path from 'path';
 import { LocalFsMetadataStore } from '@/lib/storage/local/local-metadata-store';
 import { InMemoryBlobStore } from '@/lib/storage/testing/in-memory-blob-store';
 import { localPrincipal } from '@/lib/storage/principal';
-import { reconcileCloudBase } from '@/lib/cloud-sync/reconcile-serial';
+import { reconcileCloudBase, type InFlightJobProbe } from '@/lib/cloud-sync/reconcile-serial';
 import type { Video } from '@/types';
+
+/** Backlog #17 guard — probes used by the whole file. `noJobs` is the neutral default: it asserts
+ *  nothing and keeps every pre-guard test meaning exactly what it meant before. */
+const noJobs: InFlightJobProbe = async () => ({ ok: true, inFlight: false });
+const jobInFlight: InFlightJobProbe = async () => ({ ok: true, inFlight: true });
+const probeUnreadable: InFlightJobProbe = async () => ({ ok: false, cause: new Error('rls denied') });
+const probeThrows: InFlightJobProbe = async () => { throw new Error('network down'); };
+/** Counts calls so a test can prove the probe was NOT consulted (rows 1-2) or consulted once (14). */
+function countingProbe(inner: InFlightJobProbe = noJobs) {
+  const calls: Array<{ playlistKey: string; videoId: string }> = [];
+  const probe: InFlightJobProbe = async (playlistKey, videoId) => {
+    calls.push({ playlistKey, videoId });
+    return inner(playlistKey, videoId);
+  };
+  return { probe, calls };
+}
 
 const roots: string[] = [];
 function tmp() {
@@ -76,7 +92,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([vid('vid00000001', 3, 'alpha')], { '003_alpha.md': 'BODY' });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo: vid('vid00000001', 3, 'alpha'),
     });
 
@@ -94,7 +110,7 @@ describe('reconcileCloudBase', () => {
     });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -118,7 +134,7 @@ describe('reconcileCloudBase', () => {
     });
 
     await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -133,7 +149,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([cloudVideo], { '003_old-title.md': 'MD BODY' });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'new-title'), cloudVideo,
     });
 
@@ -152,7 +168,7 @@ describe('reconcileCloudBase', () => {
     );
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -173,9 +189,11 @@ describe('reconcileCloudBase', () => {
 
     const resA = await reconcileCloudBase({
       cloud, cloudIndex, localVideo: vid('vid0000000A', 3, 'alpha'), cloudVideo: a,
+      inFlightJob: noJobs,
     });
     const resB = await reconcileCloudBase({
       cloud, cloudIndex, localVideo: vid('vid0000000B', 7, 'bravo'), cloudVideo: b,
+      inFlightJob: noJobs,
     });
 
     expect(resA).toMatchObject({ ok: false, reason: 'target-occupied' });
@@ -190,7 +208,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -207,7 +225,7 @@ describe('reconcileCloudBase', () => {
     cloud.blob.failWrites('dig/003_alpha/120.r3.md');
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -228,7 +246,7 @@ describe('reconcileCloudBase', () => {
     });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -248,7 +266,7 @@ describe('reconcileCloudBase', () => {
     });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -275,7 +293,7 @@ describe('reconcileCloudBase', () => {
     };
 
     const res = await reconcileCloudBase({
-      cloud: failing as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud: failing as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -298,7 +316,7 @@ describe('reconcileCloudBase', () => {
     });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 9, 'a'), cloudVideo,
     });
 
@@ -322,7 +340,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -351,7 +369,7 @@ describe('reconcileCloudBase', () => {
     };
 
     const res = await reconcileCloudBase({
-      cloud: silent as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud: silent as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -374,7 +392,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
 
     await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -398,7 +416,7 @@ describe('reconcileCloudBase', () => {
     const localVideo = { ...cloudVideo, serialNumber: 3, summaryMd: 'raw/003_alpha.md' } as Video;
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, localVideo, cloudVideo,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, localVideo, cloudVideo, inFlightJob: noJobs,
     });
 
     expect(res).toMatchObject({ ok: true, action: 'relocated' });
@@ -416,7 +434,7 @@ describe('reconcileCloudBase', () => {
     await store.updateVideoFields(cloud.p, 'vid00000001', { summaryMd: '004_alpha.md' } as Partial<Video>);
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: [cloudVideo],
+      cloud, cloudIndex: [cloudVideo], inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -444,7 +462,7 @@ describe('reconcileCloudBase', () => {
     };
 
     const res = await reconcileCloudBase({
-      cloud: flaky as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud: flaky as typeof cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -464,7 +482,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -486,7 +504,7 @@ describe('reconcileCloudBase', () => {
     });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -502,7 +520,7 @@ describe('reconcileCloudBase', () => {
     cloud.blob.failDeletes('007_alpha.md');
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -521,7 +539,7 @@ describe('reconcileCloudBase', () => {
     cloud.blob.failReads('models/007_alpha.json');
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -537,7 +555,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -551,7 +569,7 @@ describe('reconcileCloudBase', () => {
     const cloud = await cloudReplica([cloudVideo], {});   // no blobs at all
 
     const res = await reconcileCloudBase({
-      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+      cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
       localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo,
     });
 
@@ -588,7 +606,7 @@ describe('reconcileCloudBase', () => {
       });
 
       const res = await reconcileCloudBase({
-        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
         localVideo: stub('vid00000001', 3), cloudVideo,
       });
 
@@ -609,7 +627,7 @@ describe('reconcileCloudBase', () => {
       const cloud = await cloudReplica([cloudVideo], { '003_alpha.md': 'MD BODY' });
 
       const res = await reconcileCloudBase({
-        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
         localVideo: stub('vid00000001', 3), cloudVideo,
       });
 
@@ -625,7 +643,7 @@ describe('reconcileCloudBase', () => {
       const noSerial = { ...stub('vid00000001', 7), serialNumber: null } as unknown as Video;
 
       const res = await reconcileCloudBase({
-        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
         localVideo: noSerial, cloudVideo,
       });
 
@@ -644,7 +662,7 @@ describe('reconcileCloudBase', () => {
       });
 
       const res = await reconcileCloudBase({
-        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
         localVideo: stub('vid00000001', 3), cloudVideo,
       });
 
@@ -653,6 +671,140 @@ describe('reconcileCloudBase', () => {
       expect(res).toMatchObject({ ok: false, reason: 'target-occupied', want: 3, heldBy: 'vid00000002' });
       expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
       expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Backlog #17 guard — rows 1-7 and 14 of
+  // docs/superpowers/plans/2026-08-04-sync-skip-inflight-job.md
+  //
+  // A summary job pins `baseName` from its reserved serial (summary-handler.ts:95-96) and then spends
+  // MINUTES in transcript + Gemini before persisting (:156). A relocation inside that window is
+  // overwritten by the stale persist, which wins on the key (persist_summary resolves it as
+  // coalesce(payload, existing) — 0021:135) while serialNumber is restored from the row. The row then
+  // points at 007_alpha.md while the paid digs sit at dig/003_alpha/, and A3's cleanup already deleted
+  // dig/007_alpha/*. Refusing to relocate while a job is in flight closes that window.
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('refuses to relocate while a job is in flight (backlog #17)', () => {
+    /** A diverged pair with real paid blobs at the old base. */
+    async function divergedFixture() {
+      const cloudVideo = vid('vid00000001', 7, 'alpha');
+      const cloud = await cloudReplica([cloudVideo], {
+        '007_alpha.md': 'MD BODY',
+        'models/007_alpha.json': '{"model":1}',
+        'dig/007_alpha/120.r3.md': 'PAID DIG',
+      });
+      return { cloud, cloudVideo, localVideo: vid('vid00000001', 3, 'alpha') };
+    }
+
+    // Row 4 — the whole point. Nothing may be copied, deleted, or re-pointed.
+    it('refuses, and touches nothing at all, when a job is in flight', async () => {
+      const { cloud, cloudVideo, localVideo } = await divergedFixture();
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo, cloudVideo, inFlightJob: jobInFlight,
+      });
+
+      expect(res).toMatchObject({ ok: false, reason: 'job-in-flight' });
+      // old base intact — nothing deleted
+      expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
+      expect(await read(cloud, 'dig/007_alpha/120.r3.md')).toBe('PAID DIG');
+      // Row 7 — and nothing was written at the new base either: the guard runs BEFORE the copy phase.
+      expect(await read(cloud, '003_alpha.md')).toBeNull();
+      expect(await read(cloud, 'dig/003_alpha/120.r3.md')).toBeNull();
+      // metadata untouched
+      const row = await rowOf(cloud, 'vid00000001');
+      expect(row.serialNumber).toBe(7);
+      expect(row.summaryMd).toBe('007_alpha.md');
+    });
+
+    // Row 5 — absent vs unreadable. "Could not read the job table" must NEVER read as "no jobs".
+    it('fails CLOSED when the probe cannot read the job table', async () => {
+      const { cloud, cloudVideo, localVideo } = await divergedFixture();
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo, cloudVideo, inFlightJob: probeUnreadable,
+      });
+
+      expect(res).toMatchObject({ ok: false, reason: 'job-probe-unreadable' });
+      expect(await read(cloud, '003_alpha.md')).toBeNull();
+      expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
+    });
+
+    // Row 6 — a throwing probe is the same situation as a reporting one, and must not escape:
+    // an exception here would abort the whole sync run instead of this one video.
+    it('treats a THROWING probe as unreadable rather than letting it escape', async () => {
+      const { cloud, cloudVideo, localVideo } = await divergedFixture();
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo, cloudVideo, inFlightJob: probeThrows,
+      });
+
+      expect(res).toMatchObject({ ok: false, reason: 'job-probe-unreadable' });
+      expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
+    });
+
+    // Row 3 — the guard must not change the happy path.
+    it('relocates normally when no job is in flight', async () => {
+      const { cloud, cloudVideo, localVideo } = await divergedFixture();
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo, cloudVideo, inFlightJob: noJobs,
+      });
+
+      expect(res).toMatchObject({ ok: true, action: 'relocated', from: '007_alpha', to: '003_alpha' });
+      expect(await read(cloud, 'dig/003_alpha/120.r3.md')).toBe('PAID DIG');
+    });
+
+    // Row 1 — no divergence means no relocation, so the probe is a wasted round-trip. Sync walks
+    // every video on every run and the overwhelming majority are already in agreement.
+    it('does NOT consult the probe when the bases already agree', async () => {
+      const cloudVideo = vid('vid00000001', 3, 'alpha');
+      const cloud = await cloudReplica([cloudVideo], { '003_alpha.md': 'MD BODY' });
+      const { probe, calls } = countingProbe();
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo: vid('vid00000001', 3, 'alpha'), cloudVideo, inFlightJob: probe,
+      });
+
+      expect(res).toMatchObject({ ok: true, action: 'agreed' });
+      expect(calls).toEqual([]);
+    });
+
+    // Row 2 — same, for the earlier "nothing to reconcile toward" return.
+    it('does NOT consult the probe when local carries no serial', async () => {
+      const cloudVideo = vid('vid00000001', 7, 'alpha');
+      const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
+      const noSerial = { ...vid('vid00000001', 7, 'alpha'), serialNumber: null } as unknown as Video;
+      const { probe, calls } = countingProbe();
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo: noSerial, cloudVideo, inFlightJob: probe,
+      });
+
+      expect(res).toMatchObject({ ok: true, action: 'agreed' });
+      expect(calls).toEqual([]);
+    });
+
+    // Row 14 — one query per relocation candidate, not one per blob.
+    it('consults the probe exactly once, with this video id', async () => {
+      const { cloud, cloudVideo, localVideo } = await divergedFixture();
+      const { probe, calls } = countingProbe();
+
+      await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo, cloudVideo, inFlightJob: probe,
+      });
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].videoId).toBe('vid00000001');
+      expect(calls[0].playlistKey).toBe(cloud.p.indexKey);   // scoped to THIS playlist (row 13)
     });
   });
 });
