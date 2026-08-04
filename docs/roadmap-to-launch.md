@@ -266,7 +266,12 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 **STATUS: two open items (`exec_sql` 2026-07-20; integration-vs-migrations 2026-08-03).
 `middleware-2a` red suite FIXED 2026-07-23. The two 2026-07-19 items are CLOSED.**
 
-- [ ] **`npm run test:integration` does not apply pending migrations — the gate fails OPEN.**
+- [x] **`npm run test:integration` does not apply pending migrations — the gate fails OPEN.** ✅ **FIXED 2026-08-04.**
+  `tests/integration/global-setup.ts` runs `supabase migration up` once per suite (jest `globalSetup`, not
+  `setupFiles`, which fires per test file). A no-op costs ~4.6 s against a ~160 s suite. If anything WAS
+  pending it warns loudly, because that means every earlier run on that machine tested the wrong schema.
+  If migrations cannot be applied it **refuses to run** rather than reporting a green suite that proves
+  nothing — verified by mutation (0 tests execute). Original entry below for the record.
   **Found 2026-08-03 on `fix/serial-coherence-sync`.** The branch adds `0023`, but the local DB still
   had only the pre-0023 schema, so the whole integration suite had been running against the OLD
   `claim_video_slot` and reporting green. Applying it by hand (`npx supabase migration up`) turned up
