@@ -31,7 +31,7 @@ import {
   readManifest, writeVideoBaseline, appendConflict, resetConflictDedup,
 } from './manifest';
 import { discoverLocalPlaylists, unionPlaylistKeys, type LocalPlaylist } from './registry';
-import { reconcileCloudBase, describeDivergence } from './reconcile-serial';
+import { reconcileCloudBase, describeDivergence, type InFlightJobProbe } from './reconcile-serial';
 import { mdHash } from './content-hash';
 import { readModelEnvelope, writeModelEnvelope } from '@/lib/html-doc/model-store';
 import type { PlaylistSummary } from '@/lib/storage/metadata-store';
@@ -41,6 +41,11 @@ export interface SyncDeps {
   local: MetadataStore; cloud: MetadataStore;
   localBlob: BlobStore; cloudBlob: BlobStore;
   dataRoots: string[]; ownerId: string;
+  /** Backlog #17 — "does a job that will write this video's blobs still exist?" A3 refuses to
+   *  relocate while one does, because the job pinned its `base` minutes ago and its persist would
+   *  land on top of the relocation. REQUIRED so no caller can silently inherit the unguarded path;
+   *  a replica with no job queue supplies `noInFlightJobs` (lib/cloud-sync/in-flight-job.ts). */
+  inFlightJob: InFlightJobProbe;
 }
 
 export interface SyncReport {
@@ -724,6 +729,7 @@ export async function runSync(
         const rec = occupancyTrusted
           ? await reconcileCloudBase({
               cloud: cloudSide, cloudIndex: cloudSnapshot, localVideo: lv, cloudVideo: cv,
+              inFlightJob: deps.inFlightJob,
             })
           : { ok: true as const, action: 'agreed' as const };
         if (!occupancyTrusted && describeDivergence(lv, cv).diverged) {
@@ -735,6 +741,15 @@ export async function runSync(
           // snapshot is now deciding from a view we KNOW is wrong.
           if (rec.reason === 'metadata-unverified' || rec.reason === 'verification-unreadable') {
             await refreshCloudSnapshot();
+          }
+          // Backlog #17 — a deferral, not a fault. The video is diverged AND a job is mid-flight
+          // holding a base it pinned before this run; relocating now would be undone by that job's
+          // persist. Say so in the user's words, because the action is "re-run once it finishes",
+          // not "something is broken".
+          if (rec.reason === 'job-in-flight') {
+            throw new Error(
+              `base reconciliation deferred for ${id}: a summary/dig job is still in flight for this ` +
+              `video, and relocating now would be overwritten by its persist. Re-run the sync once it completes.`);
           }
           throw new Error(rec.reason === 'target-occupied'
             ? `serial collision: ${id} needs serial ${rec.want} on cloud, already held by ${rec.heldBy}`

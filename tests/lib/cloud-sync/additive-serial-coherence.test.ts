@@ -29,6 +29,8 @@ import type { Principal } from '@/lib/storage/principal';
 import type { MetadataStore, PlaylistSummary } from '@/lib/storage/metadata-store';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import { runSync } from '@/lib/cloud-sync/sync-run';
+import { noInFlightJobs } from '@/lib/cloud-sync/in-flight-job';
+import type { InFlightJobProbe } from '@/lib/cloud-sync/reconcile-serial';
 import { readManifest } from '@/lib/cloud-sync/manifest';
 import type { Video } from '@/types';
 
@@ -136,12 +138,20 @@ async function seed(dir: string, videos: Video[]) {
 
 function makeDeps(
   localRoot: string, cloudRoot: string,
-  opts: { ignoreDesiredSerial?: boolean; beforeReadIndex?: () => Promise<void> } = {},
+  opts: {
+    ignoreDesiredSerial?: boolean;
+    beforeReadIndex?: () => Promise<void>;
+    /** Backlog #17 — override the job probe to exercise the relocation guard through runSync. */
+    inFlightJob?: InFlightJobProbe;
+  } = {},
 ) {
   return {
     local: meta, cloud: cloudMeta(cloudRoot, opts),
     localBlob: blobs, cloudBlob: cloudBlobs(cloudRoot),
     dataRoots: [localRoot], ownerId: OWNER,
+    // Both replicas here are local FS stores with no job queue behind them, so "nothing is pending"
+    // is the truthful answer — not a stub that silences the dependency.
+    inFlightJob: opts.inFlightJob ?? noInFlightJobs,
   };
 }
 
@@ -324,6 +334,56 @@ describe('two-sided sync — diverged base is repaired, dig content stays reacha
     expect(fs.existsSync(path.join(cloudRoot, KEY, 'dig', '007_alpha', '120.r3.md'))).toBe(false);
     expect(fs.existsSync(path.join(cloudRoot, KEY, '007_alpha.md'))).toBe(false);
     expect(fs.existsSync(path.join(cloudRoot, KEY, 'models', '007_alpha.json'))).toBe(false);
+  });
+
+  // ── Backlog #17 rows 8-9 — the guard seen through runSync, not just through reconcileCloudBase.
+  it('defers the whole video, changing nothing, while a job is in flight', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    await seed(path.join(localRoot, KEY), [video('vidshared001', 3, 'alpha')]);
+    await seed(path.join(cloudRoot, KEY), [video('vidshared001', 7, 'alpha')]);
+    await digAt(cloudRoot, '007_alpha', 120, 'PAID DIG CONTENT');
+
+    const jobInFlight: InFlightJobProbe = async () => ({ ok: true, inFlight: true });
+    const report = await runSync(makeDeps(localRoot, cloudRoot, { inFlightJob: jobInFlight }));
+
+    // Row 8 — surfaced against THIS video, in words that say what to do about it.
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0].videoId).toBe('vidshared001');
+    expect(report.errors[0].message).toMatch(/in flight/i);
+
+    // Nothing moved: the cloud row still holds its own base, and the paid dig is still under it.
+    const row = (await cloudMeta(cloudRoot).readIndex({ id: OWNER, indexKey: KEY }))
+      .videos.find((v) => v.id === 'vidshared001')!;
+    expect(row.serialNumber).toBe(7);
+    expect(row.summaryMd).toBe('007_alpha.md');
+    expect(fs.readFileSync(path.join(cloudRoot, KEY, 'dig', '007_alpha', '120.r3.md'), 'utf8'))
+      .toBe('PAID DIG CONTENT');
+    expect(fs.existsSync(path.join(cloudRoot, KEY, '003_alpha.md'))).toBe(false);
+
+    // And NO baseline was advanced, so the next run re-evaluates from scratch rather than recording
+    // this deferral as agreement — the property that makes "re-run later" actually heal.
+    expect((await readManifest(localRoot, KEY)).videos['vidshared001']).toBeUndefined();
+  });
+
+  it('defers only the blocked video — a clean one still syncs in the same run', async () => {
+    const localRoot = tmpRoot('local');
+    const cloudRoot = tmpRoot('cloud');
+    await seed(path.join(localRoot, KEY), [video('vidshared001', 3, 'alpha')]);
+    await seed(path.join(cloudRoot, KEY), [
+      video('vidshared001', 7, 'alpha'),   // diverged → would relocate
+      video('vidcloud002', 9, 'bravo'),    // one-sided → additive hydrate to local
+    ]);
+
+    // Only the diverged video has a job pending.
+    const probe: InFlightJobProbe = async (_k, videoId) =>
+      ({ ok: true, inFlight: videoId === 'vidshared001' });
+    const report = await runSync(makeDeps(localRoot, cloudRoot, { inFlightJob: probe }));
+
+    expect(report.errors.map((e) => e.videoId)).toEqual(['vidshared001']);
+    // Row 9 — the unblocked video completed normally.
+    const localIdx = await meta.readIndex(localPrincipal(path.join(localRoot, KEY)));
+    expect(localIdx.videos.map((v) => v.id).sort()).toContain('vidcloud002');
   });
 
   // ALSO MUTATION-DRIVEN. Re-reading the cloud record after a relocation failed nothing, because

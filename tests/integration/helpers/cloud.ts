@@ -23,6 +23,7 @@ import { localMetadataStore } from '@/lib/storage/local/local-metadata-store';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
+import { supabaseInFlightJobProbe } from '@/lib/cloud-sync/in-flight-job';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import { readManifest as readManifestFile, writeVideoBaseline } from '@/lib/cloud-sync/manifest';
 import type { SyncDeps } from '@/lib/cloud-sync/sync-run';
@@ -137,6 +138,9 @@ export async function makeOwnerContext(): Promise<Ctx> {
         cloud,
         localBlob: localBlobStore,
         cloudBlob,
+        // The REAL probe, not a stub: integration is where the actual `jobs` query gets exercised
+        // (status filtering, playlist scoping, kind-agnosticism).
+        inFlightJob: supabaseInFlightJobProbe(userClient),
         dataRoots: [ctx.tempDataRoot],
         ownerId: userId, // MUST be auth.uid() — the RLS/storage-path owner segment
       };

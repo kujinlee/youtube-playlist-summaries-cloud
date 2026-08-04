@@ -41,6 +41,28 @@ export interface CloudReplica {
   blob: BlobStore;
 }
 
+/** Backlog #17 guard — "is a job that will write this video's blobs still pending?"
+ *
+ *  A summary job pins `baseName` from the serial it reserved (`summary-handler.ts:95-96`) and then
+ *  spends MINUTES in transcript + Gemini before persisting (`:156`). `dig-handler.ts:51-57` pins
+ *  `base` the same way. A relocation inside that window is silently undone by the stale persist,
+ *  which wins on the key — `persist_summary` resolves it as
+ *  `coalesce(p_video->>'summaryMd', v.data->>'summaryMd')` (0021:135) while `serialNumber` is
+ *  restored from the row. The row then advertises `007_alpha.md` beside serial 3, and the paid digs
+ *  copied to `dig/003_alpha/` are unreachable because cleanup already removed `dig/007_alpha/*`.
+ *
+ *  **A union, not a boolean.** "No job is pending" and "the job table could not be read" are
+ *  different facts, and collapsing them is the exact shape that produced 1 Blocking + 3 Highs in
+ *  Stage 3: a value meaning ABSENT is also what a FAILURE produces. An unreadable probe must refuse,
+ *  never proceed.
+ *
+ *  **Not a lease fence.** The worker's lease stays valid throughout and this function never touches
+ *  the job; what goes stale is the SERIAL. Fencing on `lease_token` would not detect this at all. */
+export type InFlightJobProbe = (playlistKey: string, videoId: string) => Promise<
+  | { ok: true; inFlight: boolean }
+  | { ok: false; cause: unknown }
+>;
+
 /** The honest outcome of a reconciliation. Granular for the same reason `CopyResult` is: the caller
  *  must be able to tell "nothing to do" from "refused" from "tried and failed", and a refusal must
  *  name what it collided with so the report tells the user something actionable. */
@@ -48,6 +70,8 @@ export type SerialReconcileResult =
   | { ok: true; action: 'agreed' }
   | { ok: true; action: 'relocated'; from: string; to: string; copied: number; cleanupFailures: number }
   | { ok: false; reason: 'target-occupied'; want: number; heldBy: string }
+  | { ok: false; reason: 'job-in-flight'; videoId: string }
+  | { ok: false; reason: 'job-probe-unreadable'; cause: unknown }
   | { ok: false; reason: 'copy-failed'; key: string; detail: CopyResult }
   | { ok: false; reason: 'unmappable-key'; key: string }
   | { ok: false; reason: 'ambiguous-mapping'; to: string }
@@ -144,8 +168,11 @@ export async function reconcileCloudBase(args: {
   cloudIndex: Video[];
   localVideo: Video;
   cloudVideo: Video;
+  /** Backlog #17. REQUIRED, deliberately: an optional probe does not propagate, and every caller
+   *  that forgot it would silently inherit the unguarded behaviour. */
+  inFlightJob: InFlightJobProbe;
 }): Promise<SerialReconcileResult> {
-  const { cloud, cloudIndex, localVideo, cloudVideo } = args;
+  const { cloud, cloudIndex, localVideo, cloudVideo, inFlightJob } = args;
 
   // Nothing to reconcile TO. A legacy row with no serial, or a cloud row with no MD, has no base to
   // move and no authority to move toward — leave it for the Class-A transfer, which is additive.
@@ -187,6 +214,36 @@ export async function reconcileCloudBase(args: {
   if (unsupported.length > 0) {
     return { ok: false, reason: 'unsupported-artifacts', kinds: unsupported };
   }
+
+  // ── Backlog #17 — REFUSE while a job that will write this video is still pending.
+  //
+  // Placed here deliberately: after every in-memory refusal above (which cost nothing and would
+  // refuse anyway) and BEFORE the copy phase, so a refusal never leaves a half-moved base. It is
+  // also after the two early returns, so the overwhelmingly common case — a video whose replicas
+  // already agree — never pays for this round-trip at all.
+  //
+  // Refusing is the whole mitigation. The window it closes is the MINUTES a job spends in Gemini
+  // holding a `base` it computed before this run started; nothing here can shorten that window, so
+  // the only safe move is to leave the video diverged and repair it on a later run when the job has
+  // landed. That is already a supported outcome — the caller surfaces it per video and advances no
+  // baseline, so the next sync re-evaluates from scratch.
+  //
+  // A residual millisecond window remains (a job enqueued between this check and the metadata
+  // write). Closing it needs a compare-and-swap on the serial in `persist_summary` — backlog #17's
+  // durable fix, deliberately out of scope here.
+  let probe: Awaited<ReturnType<InFlightJobProbe>>;
+  try {
+    // Scoped to THIS playlist: `base` is per-playlist (the serial is allocated per playlist), so a
+    // job for the same video under a different playlist writes a different address and cannot
+    // collide with this relocation.
+    probe = await inFlightJob(cloud.p.indexKey, cloudVideo.id);
+  } catch (cause) {
+    // A throwing probe is the same situation as one reporting failure, and must NOT escape: an
+    // exception here would abort the entire sync run instead of this one video.
+    return { ok: false, reason: 'job-probe-unreadable', cause };
+  }
+  if (!probe.ok) return { ok: false, reason: 'job-probe-unreadable', cause: probe.cause };
+  if (probe.inFlight) return { ok: false, reason: 'job-in-flight', videoId: cloudVideo.id };
 
   // ── Copy phase. Sources are retained throughout, so every failure here is recoverable by re-running.
   const sources = await paidKeysUnder(cloud.blob, cloud.p, cloudVideo, oldBase);

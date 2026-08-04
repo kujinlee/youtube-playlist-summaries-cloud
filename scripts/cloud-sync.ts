@@ -15,6 +15,7 @@
 // CLOUD_SYNC_DATA_ROOTS override (colon-separated) is supported for scripting/testing convenience.
 import { getAuthedClient, signIn, signOut, NoSessionError } from '@/lib/cloud-sync/auth';
 import { runSync, type SyncDeps } from '@/lib/cloud-sync/sync-run';
+import { supabaseInFlightJobProbe } from '@/lib/cloud-sync/in-flight-job';
 import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
@@ -64,6 +65,8 @@ export async function main(argv: string[]): Promise<number> {
     localBlob: localBlobStore,
     cloudBlob: new SupabaseBlobStore(client, ARTIFACTS_BUCKET),
     dataRoots, ownerId,
+    // Backlog #17 — refuse to relocate a base while a job that will write it is still pending.
+    inFlightJob: supabaseInFlightJobProbe(client),
   };
   const report = await runSync(deps, args.playlistKey ? { playlistKey: args.playlistKey } : {});
   console.log(JSON.stringify(report, null, 2));
