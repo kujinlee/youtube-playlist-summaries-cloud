@@ -51,10 +51,24 @@ it — a bug class we fixed three separate times without removing its cause.
   already exists — `LocalFsBlobStore` ignores `Principal.id` entirely, so the two layouts were never
   really the same.
 
-- **`tenantId` is named now and equals `auth.uid()`.** No team support is implied or built. The name
-  exists so that a future workspace is an RLS predicate change rather than a re-keying of every stored
-  object. Real team support would additionally require converting every `owner_id = auth.uid()` policy
-  to a membership lookup and deciding who pays under the per-owner cost guardrails.
+- **`tenantId` is named now and equals `auth.uid()`. No team support is implied or built**, and teams
+  are not on the roadmap (decided 2026-08-04).
+
+  **The name buys less than it appears to, and the honest scope matters more than the name.** It makes
+  exactly one future transition free — a solo owner's *own* workspace gaining members, where the
+  tenant keeps its id. It does **nothing** for the common case, a project joining an *existing* team,
+  or for any ownership transfer: those still move every object. The reason is structural — while the
+  tenant is a path segment, changing tenant changes every address.
+
+  This is the one place the design knowingly violates its own rule: **ownership is mutable, and it is
+  in the address.** Accepted because no ownership-transfer feature exists, so the value is immutable
+  in practice.
+
+  **If teams ever ship, do not conclude that every object must be re-keyed.** `storage.objects`
+  carries an `owner_id` column, so authorization can move off the path entirely — transfer then
+  becomes one `UPDATE` with no bytes moved, and addresses stay immutable. Preconditions and the
+  measured evidence (including that `owner_id` is currently populated on only 390 of 973 objects,
+  because `service_role` writes leave it NULL) are in §11.2 of the spec.
 
 - **Cross-generation reuse must be validated, not assumed.** A dig belongs to the generation whose
   section spans produced it; attaching it to a different generation's summary requires a span-overlap

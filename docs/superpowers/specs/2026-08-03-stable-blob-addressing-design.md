@@ -58,7 +58,7 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 
 | Term | Definition |
 |---|---|
-| **Tenant** | The isolation boundary that owns blobs. **Today `tenantId == auth.uid()`** — one user, one tenant. Named separately so a future team/workspace becomes an RLS predicate change, not a re-keying of every object. |
+| **Tenant** | The isolation boundary that owns blobs. **Today `tenantId == auth.uid()`** — one user, one tenant. Named separately for conceptual clarity, not as a teams feature: see §11.1 for what the name does and does not buy (it makes one narrow transition free, **not** the general case). |
 | **Generation** | One production run of a paid artifact — a summarize run, or a dig run. Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
 | **Manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. |
@@ -87,6 +87,24 @@ bucket-level size or MIME restriction is set in any migration. Object path is
 `bucket_id = 'artifacts' and split_part(name,'/',1) = auth.uid()::text` (`0007:12-17`). **The first
 path segment must equal the caller's uid.** Nothing else is checked — not the playlist segment, not
 the extension, not the size.
+
+**Two properties of that predicate are load-bearing and must survive any rewrite** (measured
+2026-08-04 against the local stack):
+
+- **It compares text to text.** `split_part` returns whatever text is before the first slash, for any
+  name. Casting that segment — `split_part(name,'/',1)::uuid` — raises
+  `invalid input syntax for type uuid` on a **single** malformed object name, and inside a policy an
+  error does not deny one row, it **fails the whole query for everyone**. Casting the *uid* instead
+  (`= auth.uid()::text`) keeps the predicate total. This looks like a style detail and is not.
+- **It fails closed on every degenerate input.** A leading slash or an empty name yields `''`, which
+  matches no uid; a NULL name, or an unsigned caller whose `auth.uid()` is NULL, yields NULL, and RLS
+  requires TRUE. Anonymous isolation therefore needs no separate rule (`0007:9-12` says exactly this).
+
+**The tenant does not have to live in the path.** `storage.objects` also exposes `owner uuid`,
+`owner_id text` and `user_metadata jsonb` — any of which a policy can read. This matters only as a
+future escape hatch (§11), not for this design, and it is **not usable as-is**: `owner_id` is
+populated on **390 of 973** objects in the local stack, because `service_role` writes leave it NULL.
+Where it is set it equals path segment 1 in **390/390** cases, so it is backfillable.
 
 **Blob inventory.** Nine kinds. The paid/free split is already written down and load-bearing at
 `reconcile-serial.ts:64-80` and `sync-run.ts:120-124`:
@@ -131,8 +149,15 @@ re-asserts the owner at every hop. It **never creates a second owner**.
 Four properties, each load-bearing:
 
 **`<tenantId>` stays first** — the RLS predicate requires it. Today it is literally `auth.uid()`, so
-the bytes are unchanged from the current layout and **the predicate needs no edit**. Naming it
-`tenantId` is free forward-compatibility (§11).
+the bytes are unchanged from the current layout and **the predicate needs no edit**.
+
+> **The one deliberate exception to this spec's own thesis — named, not hidden.** Everything else in
+> this template is immutable, but **ownership is not**: content can change hands. So `<tenantId>` is
+> a mutable value in the address, which is the very mistake §1 exists to eliminate, one level up.
+> Accepted because **teams are not planned** (user decision, 2026-08-04) and no ownership-transfer
+> feature exists, so the value is immutable *in practice*. The consequence, spelled out: **if content
+> ever moves between tenants, its blobs must move with it.** §11 says what to do instead if that day
+> comes — the answer is not "re-key everything."
 
 **`<videoId>` replaces `<playlistKey>`** — this is what un-couples the address from the playlist, and
 what makes cross-playlist sharing *possible* (§12). It is also what removes `serial` and `slug` from
@@ -364,16 +389,70 @@ clobber-safe).
 
 ## 11. Tenancy and teams
 
-`tenantId == auth.uid()` today. The segment is *named* for a future that does not exist yet, because
-naming it is free now and re-keying every object later is not.
+`tenantId == auth.uid()` today. **Teams are exploration only** — not on the roadmap (user decision,
+2026-08-04). Nothing here is built; this section exists so a future reader inherits the facts instead
+of the guesses.
 
-What real team support would additionally require — **explicitly out of scope, recorded so it is not
-discovered late:**
+### 11.1 What naming it `tenantId` actually buys — corrected
 
-- **Every RLS predicate converts** from a string comparison to a membership lookup —
-  `split_part(name,'/',1) in (select team_id from team_members where user_id = auth.uid())` — on
+An earlier draft of this section claimed the name makes *"teams later a predicate change instead of a
+migration of every object key."* **That claim was too broad and is withdrawn.** It holds for exactly
+one transition:
+
+| Transition | Blobs move? |
+|---|---|
+| A solo owner's **own** workspace gains members (tenant `A` keeps its id, members are added) | **No** |
+| A solo project joins an **existing** team that already has its own `team_id` | **Yes — every object**, `A/…` → `T/…` |
+| Any ownership transfer between existing tenants | **Yes — every object** |
+
+The second row is the common case, and the naming does nothing for it. The reason is structural, not
+fixable by naming: **as long as the tenant is a path segment, changing tenant means changing every
+address.**
+
+So the name buys conceptual clarity and one narrow case. It is still worth keeping — it costs zero
+bytes and zero policy edits — but it is not the general forward-compatibility it was sold as.
+
+### 11.2 If teams ever ship, the answer is NOT to re-key every object
+
+Recorded because the natural reading of §4 — "the tenant is in the path" — leads to
+*"teams would mean copying everything, too expensive"*, and that conclusion is **false**.
+
+`storage.objects` carries `owner_id text` (also `owner uuid`, `user_metadata jsonb`). A policy can key
+on that **column** instead of on `split_part(name,…)`, which decouples authorization from the path
+entirely. Then ownership transfer is an `UPDATE` of one column and **no bytes move**, while the
+addresses stay immutable — fully consistent with this spec's thesis.
+
+Preconditions, measured 2026-08-04:
+
+- **Backfill is required.** `owner_id` is set on only **390 of 973** objects locally, because
+  `service_role` writes leave it NULL. Where set, it equals path segment 1 in **390/390** cases, so
+  the backfill is `set owner_id = split_part(name,'/',1)` — but every writer must populate it
+  thereafter.
+- **The predicate shape is a non-issue.** With a tenant *column*, `IN (subquery)` and correlated
+  `EXISTS` plan **identically** — same semi-join, same 45 buffers. Choose on readability.
+- **Cost is a non-issue.** Realistic name-anchored access measured **0.118 ms** (download one object)
+  and **0.234 ms** (list one prefix). A 175 ms parallel seq scan appears only for an unanchored query
+  the app never issues.
+- **Recursion is the real trap.** `team_members` needs its own policy, and the obvious one queries
+  `team_members`, which recurses infinitely (`infinite recursion detected in policy`). The fix is a
+  `security definer` helper — which then becomes *the* security boundary for the whole app, replacing
+  a string equality that cannot be wrong with a function that must be audited.
+- **Precedent already exists.** `lib/share/serve.ts:32` reads owner blobs via `serviceClient` because
+  the equality predicate cannot express "this anonymous visitor may read owner A's object." The
+  product already outgrew storage RLS on one path.
+
+### 11.3 What real team support would additionally require
+
+**Explicitly out of scope, recorded so it is not discovered late:**
+
+- **Every RLS predicate converts** from a string comparison to a membership lookup, on
   `storage.objects` *and* on `profiles`, `playlists`, `videos`, `jobs`, `usage_counters`. This changes
-  isolation from "by construction" to "by a table that must be correct," and runs per access.
+  isolation from "by construction" to "by a table that must be correct."
+  On our own tables that is clean, because they have an owner column to join on:
+  `exists (select 1 from team_members tm where tm.tenant_id = t.owner_id and tm.user_id = auth.uid())`.
+  For `storage.objects` prefer the `owner_id` column route in §11.2. If the path form is used instead,
+  it must keep the comparison in **text** — `split_part(name,'/',1) in (select tenant_id::text …)`,
+  casting the *tenant id*, never the segment (§3).
 - **Who pays.** `spend_ledger`, `quota_allowance` and `serve_owner_budget` are per-owner, and the
   entire cost-guardrail system (1D, ADR-0004) keys on that identity.
 - **Write-sharing is a different problem from read-sharing.** `share_tokens` already solves the latter
