@@ -428,6 +428,21 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
       a row can end pointing where neither writer intended.
       **Fix must cover the whole sync write path, not A3 alone. Under discussion (2026-08-02):
       queue-based serialization vs conditional writes. Needs a decision before filing.**
+      **Round 5 (2026-08-03) sharpened the CONSEQUENCE — same root cause, worse outcome.** Codex
+      produced a concrete interleaving, confirmed by reading the code: `summary-handler.ts:95-96`
+      pins `baseName` from the serial it reserved, then spends MINUTES in transcription + Gemini
+      before persisting at `:156`. `persist_summary` resolves the key as
+      `coalesce(p_video->>'summaryMd', v.data->>'summaryMd')` (`0021:135`) — the **payload wins** —
+      while `serialNumber` is restored from the existing row by step (2). So a stale worker persist
+      landing after A3 leaves `serialNumber 3` beside `summaryMd 007_alpha.md`, with the paid digs
+      at `dig/003_alpha/` and `dig/007_alpha/*` already deleted by A3's cleanup: **the dig content
+      is orphaned**, not merely mis-pointed. Because A3 *moves and then deletes*, a lost update on
+      this path costs paid content rather than a wrong pointer.
+      **Codex's proposed fix does not work and was rejected with reasons** (see
+      `docs/reviews/task-A-serial-coherence-branch-v5-rereview-review.md`): it suggests widening
+      A3's pre-write freshness check to compare `serialNumber`, but the worker has written nothing
+      at that moment — the write lands strictly after. Only fencing closes it, which is the decision
+      above. **This is why the branch is NOT converged.**
 - [x] **A7 — integration suite restored to green against 0023** (2026-08-03). Two failures, both
       real, both invisible until the migration was actually applied to the local DB
       (`npx supabase migration up` — it was NOT applied, so the suite had been passing against the
