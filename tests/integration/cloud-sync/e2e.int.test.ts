@@ -19,6 +19,7 @@ import {
 import { adminClient } from '@/tests/integration/helpers/clients';
 import { runSync } from '@/lib/cloud-sync/sync-run';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
+import { applySerial } from '@/lib/serial-filename';
 import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
 import { getAuthedClient, NoSessionError, type TokenStore } from '@/lib/cloud-sync/auth';
 import type { VideoBaseline } from '@/lib/cloud-sync/types';
@@ -568,12 +569,31 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
     expect(await ctx.spendLedgerTotal()).toBe(spendBefore);          // sync copy never charges
 
     // The cloud body is now on local, advertised promoted; both corrections still preserved.
-    expect((await localBlobBytes(ctx, key(ctx)))!.toString('utf8')).toBe(bodyCloud);
+    //
+    // A3 — the key is the SERIAL-PREFIXED one, not the bare `key(ctx)` this asserted before the
+    // serial-coherence slice. This fixture is the one shape in this file where local carries a
+    // serialNumber but NO summaryMd, so reconcileCloudBase synthesizes local's intended base as
+    // applySerial(cloudKey, localSerial) (reconcile-serial.ts:126-131) and relocates the cloud
+    // base to it BEFORE the additive hydration. That is the point of A3, not a side effect:
+    // without it this fixture ended with local row serialNumber 1 beside a file named
+    // `<videoId>.md` carrying no serial at all — the row/filename disagreement that orphans every
+    // derived blob, since `base` addresses models/<base>.json and dig/<base>/<sectionId>.r<V>.md.
+    //
+    // Asserted as an INVARIANT rather than a literal: whatever base the run settles on, both
+    // replicas must advertise the SAME key, that key must encode the row's own serial, and the
+    // bytes must actually be there. A literal would have to be re-guessed every time the naming
+    // changes; the invariant is what the slice actually promises.
     const local = await localVideoRecord(ctx);
-    expect(local?.summaryMd).toBe(key(ctx));
+    const cloud = await cloudVideoRecord(ctx);
+    const hydratedKey = applySerial(key(ctx), local!.serialNumber!);
+    expect(local?.summaryMd).toBe(hydratedKey);
+    expect(cloud?.summaryMd).toBe(hydratedKey);                  // replicas agree on the base
+    expect(cloud?.serialNumber).toBe(local?.serialNumber);       // ...and on the serial it encodes
+    expect((await localBlobBytes(ctx, hydratedKey))!.toString('utf8')).toBe(bodyCloud);
     expect(artifactsOf(local)?.summaryMd?.status).toBe('promoted');
     expect(local?.corrections).toBe('A');
-    expect((await cloudVideoRecord(ctx))?.corrections).toBe('B');
+    expect(cloud?.corrections).toBe('B');
+    expect(report.errors).toEqual([]);                           // the relocation refused nothing
   });
 
   // ── B1 (round 3) — `mdHash == null` conflates "this side advertises NO MD" with "this side's MD
