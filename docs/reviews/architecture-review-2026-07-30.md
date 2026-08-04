@@ -10,6 +10,12 @@ not verify, it was dropped or corrected — noted inline.
 **Nothing here is a proposal yet.** This document explains *what was found and why
 it costs you something*. Designing the fix comes after you pick one.
 
+> **What "fixed" means for each finding:**
+> [`architecture-findings-acceptance.md`](architecture-findings-acceptance.md) — per-finding
+> invariant, mechanical criteria, and the specific ways each fix can go green without working.
+> Measure current state any time with `python3 scripts/check-arch-findings.py`; it also runs in
+> CI as a **ratchet**, so these numbers can no longer quietly grow.
+
 ---
 
 ## First: the five words this review uses
@@ -463,6 +469,165 @@ Not architecture — actual bugs the friction produced. Each verified.
 | D2 | **No reaper for `serve_model_charge`.** Nothing cron-shaped exists in the migrations, and `sweep_expired_leases` never mentions `reserved_cents` (0 occurrences in its body). A process death between reserve and settle appears to strand the reservation permanently. | grep + function body |
 | D3 | **A newline in a section title corrupts cloud dig frontmatter.** The two YAML escapers are asymmetric — the local one escapes `\n`, the cloud one doesn't. The parse failure is swallowed by a `catch`, silently dropping a section the user paid for. | both escapers read |
 | D4 | **`<meta name="generator" content="dig-deeper-doc v1">` is write-only.** Exactly one occurrence in the tree — nothing reads it. The dig-deeper doc has no cache-version story while the summary doc has two. | grep: 1 hit |
+| D5 | **A style-only (MINOR) doc-version bump re-summarizes the whole playlist on cloud.** The documented rule (`lib/doc-version.ts:4`) is *MAJOR ⇒ re-summarize, MINOR ⇒ re-render*, and `needsResummarize()` encodes it — with **one caller, the local path** (`ensure.ts:41`). The cloud skip compares the flattened `docVersionKey()` string `"major.minor"` (`summary-handler.ts:89`), so a minor bump fails the equality and runs a full Gemini summarize per video. Local costs **0** API calls for the same bump; cloud serve also costs 0. Only cloud *ingest* pays — and per W1 the result is then discarded by `promote()`. | code read + no cloud plan/spec mentions major vs minor |
+| D6 | **The magazine model's drift guard is a title proxy; the exact signal exists and is unused.** `isFresh()` = `sameTitles(...) && generatorVersion` (`read-model.ts:20-25`) — `docVersion` is absent and `sourceMdHash` is never consulted, though it is written into every fresh envelope (`generate.ts:59`, `serve-doc.ts:124`). A prose-only MD change with stable titles is therefore served as fresh **forever**. Already documented, in the wrong module: `companion.ts:43-45`. `fixSummary`'s prompt *pins headings on purpose*, so this is the designed shape of a corrections regenerate, not a coincidence. | `tests/lib/html-doc/section-identity-after-resummarize.test.ts` (5 passing) + companion.ts comment |
+| D7 | **Section identity is answered three ways; two of them are the title string.** Magazine model ↔ section = positional + exact title; dig ↔ section step 1 = numeric `startSec`; step 2 = exact title fallback (`dig-merge.ts:10-12`). `startSec` is minted by `ensureSectionTimestamps` **inside** `generateSummary` (`gemini.ts:387`), unique only *within* a generation and carried solely in the MD's `▶` line — nothing anchors it across regenerations. So a re-summarize breaks step 1 always, and when it also rewords a heading, **paid dug content orphans off its section**. A single retitled heading also nulls the gists of *every* section (`sameTitles` is all-or-nothing). | same test file — orphaning and all-or-nothing both asserted |
+
+### Reference: when the magazine model changes (established while proving D5–D7)
+
+The **magazine model** (CONTEXT.md:45) is the per-section `{lead, bullets}` structure the
+rendered HTML is built from — produced by a capped Gemini call, cached as `models/<base>.json`,
+**lazily materialized on view**, never pre-produced by the worker.
+
+**Every event that writes or invalidates it:**
+
+| # | Event | Path |
+|---|---|---|
+| 1 | absent → first materialization on view | cloud `serve-doc.ts` (under `reserve_serve_model`); local `runHtmlDoc` |
+| 2 | **drift** — MD section titles ≠ `envelope.sourceSections` | both, on view |
+| 3 | **`GENERATOR_VERSION`** mismatch (`'magazine-skim v2'`) | cloud `isFresh`; local HTML-cache check `build-doc-html.ts:56` |
+| 4 | explicit delete on re-summarize | local only — `ensure.ts:51` |
+| 5 | `summaryHtml: null` → next view runs `runHtmlDoc`, which regenerates **unconditionally** | local corrections route |
+| 6 | sync ships a replacement envelope, or deletes a provably-stale one | `companion.ts`, keyed on **`sourceMdHash`** |
+
+**Never invalidated by:** a `docVersion` bump (major or minor — `docVersion` is not in the
+freshness test), or an MD body change that leaves section titles intact.
+
+**Does a regenerated MD require a regenerated model? YES — always.** The model is derived from
+each section's *prose*, so any MD body change makes it stale by definition. The correct
+predicate is "the MD body changed" — exactly what `sourceMdHash` measures. The implemented
+predicate is "the titles changed", which is a proxy that fails precisely when a regeneration
+deliberately preserves headings. Rows 4, 5 and 6 above exist because three different authors
+each noticed their path needed more than the proxy and fixed it locally; the **cloud summary
+handler is the one MD writer that adds no compensating step** and relies on the proxy alone.
+
+### Evidence for finding #2: a SECOND local workaround of the promote divergence
+
+The review claimed the pattern "a fix applied at one call site instead of at the seam" from one
+instance (`sync-run.ts:329`). There are **two**. `serve-doc.ts:100-103`:
+
+> The model uses `writeModelEnvelope` (plain `put` → `upload(upsert:true)`), **NOT** staged→promote:
+> a regenerated model on drift / version-bump must OVERWRITE the stale blob so the doc self-heals
+> (create-if-absent promote could never replace it → re-reserve + re-charge every view until K, then 503).
+
+A second author independently hit the divergence, reasoned it through correctly, and worked
+around it in a comment at their own call site. The measurable pattern: **the writers that
+avoided the bug are exactly the ones that stopped calling `promote()`** — both switched to
+`put`/upsert. The three still calling it are the three that assume uniformity. The interface is
+teaching every careful caller to abandon it, which is the argument for fixing it at the seam.
+
+### ⚠️ UPDATE 2026-07-30 — finding #2 is a CONFIRMED DEFECT, not just friction
+
+`tests/lib/dig/write-dig-section-blob-promote.test.ts` drives the real
+`writeDigSectionBlob` against `InMemoryBlobStore` in both promote semantics:
+
+- local (`overwrite`) → re-dug section serves **REGENERATED** content ✅
+- Supabase (`create-if-absent`) → re-dug section serves **ORIGINAL** content ❌
+
+`digSectionKey(base, sectionId)` is deterministic, so re-digging a section at the same
+`DIG_GENERATOR_VERSION` writes the SAME key. The final already exists, Supabase `promote()`
+skips the move, and the stale body survives. W2 is also the one writer that stamps **no
+metadata at all**, so nothing records that the newer content was discarded.
+
+#### Scope of the trace below — W2 ONLY
+
+This finding names FIVE writers. The trace that follows covers **W2, the dig writer**, and
+nothing else. Live `promote()` callers still assuming uniformity: `summary-handler.ts:178`
+(W1), `write-dig-section-blob.ts:50` (W2), `sync-run.ts:210` (W3). **W1 and W3 are untraced.**
+
+### ⚠️ W1 (summary) — CONFIRMED DEFECT 2026-07-30. Finding #2 is a BUG FIX, not a refactor.
+
+`tests/lib/job-queue/summary-handler-promote-divergence.test.ts` drives the **real**
+`makeSummaryHandler` (real key derivation, real write sequence) against `InMemoryBlobStore`:
+
+- local (`overwrite`) → re-summarized video serves **REGENERATED** body ✅
+- Supabase (`create-if-absent`) → serves **ORIGINAL** body ❌
+
+**Why W1 is worse than W2.** W2 is protected by an accident of key design — the dig key embeds
+the generator version (`.r{V}`), so a bump yields a fresh key and cannot collide. The summary
+key has no version anywhere: `baseName = padSerial(serial) + slugify(title)`
+(`summary-handler.ts:96`), and `reserve_video_slot` deliberately returns the **existing** serial
+for a known video (`0009…sql:88` — `if v_serial is not null then return v_serial`), so the key
+is **stable for the life of the video**.
+
+**The reachable path is a designed re-run, not a crash path** *(corrected 2026-07-30 — an
+earlier revision of this section wrongly implied it fires automatically on deploy; it does not.
+It needs an explicit user action)*:
+
+1. `CURRENT_DOC_VERSION` bumps (now `3.3`, so it has moved before) and is deployed
+2. **a user re-submits the same playlist URL** to `POST /api/jobs`. This is the ONLY production
+   trigger for a cloud summary job — verified: `enqueuePlaylist` is the sole caller of
+   `enqueuer.enqueue` for `kind: 'summary'`, and `app/api/videos/[id]/regenerate` is a
+   **local-only** route (`fs.readFile` + `outputFolder`) that enqueues nothing
+3. the new version opens a new `jobs_idem_active` slot, so jobs are created for **every** video
+   in that playlist — at the *same* version they would have joined the completed rows instead
+4. the idempotency skip at `summary-handler.ts:85-91` does **not** fire on a version mismatch
+5. full charged Gemini summarize runs
+6. `promote()` lands on the occupied key → Supabase **skips the move** → old body survives
+7. `persistSummary(..., 'promoted')` stamps the **new** docVersion regardless
+
+Unlike the dig case, **the two bodies are supposed to differ** — that is what a doc-version bump
+is *for*. End state on cloud: the database asserts a version its blob does not contain, for
+every already-summarized video in that playlist, silently, at full Gemini cost. Local is
+unaffected.
+
+**What is NOT a trigger:** viewing a stale doc. A version bump makes the *rendered HTML* stale
+(`summaryNeedsWork`, `lib/html-doc/eligibility.ts:12`) and that re-renders from the **existing
+markdown** — it never runs `summary-handler` and never touches the summary blob. Only the
+rendered-HTML cache is lazily refreshed today, not the markdown.
+
+> ⚠️ **Design constraint for any future lazy per-video regeneration.** If "re-generate the
+> summary when the user opens a stale doc" is ever built, this defect stops needing an explicit
+> re-submit and starts firing **on view** — silently, per video, at Gemini cost, with the DB
+> claiming the new version each time. Fix finding #2 **before** building lazy regeneration, or
+> the feature ships a data-correctness bug on day one.
+
+The 4th test in that file passes and is the silent half: the handler reports
+`['committed','promoted']` at the current docVersion no matter what the blob ended up holding.
+
+**W3 (`sync-run.ts:210`) remains untraced.**
+
+#### Scope note retained: the trace below covers W2 only
+
+#### W2 (dig) reachability — TRACED 2026-07-30. Reachable, but narrow; severity is LOW.
+
+The writer-level defect is real. The path to it is much narrower than the test implies,
+because three plausible routes turn out to be blocked:
+
+| Route | Blocked by |
+|---|---|
+| User re-clicks "dig" | `lib/dig/cloud/enqueue-dig-core.ts:39` — blob-existence dedupe → `ready`, no enqueue, no charge |
+| Two concurrent triggers | `jobs_idem_active` (`0009…sql:11`) covers `queued/active/completed` — the second joins |
+| `DIG_GENERATOR_VERSION` bump | the version is **in the key** (`dig-blob-key.ts:22`, `.r{V}`) → fresh key, never a collision |
+
+The one route that IS open — same-job re-execution:
+
+1. handler generates → `writeDigSectionBlob` promotes → final key occupied (`dig-handler.ts:119`)
+2. `queue.complete()` runs **after** that write (`worker-runner.ts:56` → `:59`); `!ok`/throw
+   leaves the row `active`
+3. `sweep` requeues expired-lease active jobs with **no backoff** (`0008_jobs_queue.sql:173-182`)
+4. handler re-runs, regenerates (charged), promotes into the occupied key → local overwrites,
+   Supabase discards the new body silently
+
+**Why severity is LOW:** on every reachable path both bodies are legitimate digs of the same
+section at the same generator version. The user is shown the *first* successful generation
+instead of the *last* — not wrong content. This is a **divergence + a silence**, not data loss.
+
+**The one bad conjunction worth keeping on file:** blob written → `complete()` throws →
+`fail()` marks the job terminally `failed` (NOT in `jobs_idem_active`, which excludes
+`failed`/`cancelled`) → a later `exists()` false-negative → fresh job, fresh Gemini charge,
+output discarded with no trace. Note `SupabaseBlobStore.exists` is `get() !== null` and `get`
+swallows every failure (the adapter self-declares `provesAbsence = false`), so the false
+negative is a transient blip, not an exotic case. Rare, but each link is independently real.
+
+**Composition note:** the blob check and the idem index are a two-layer defence that nobody
+designed — neither file mentions the other, and the index's exclusion of `failed`/`cancelled`
+is precisely where the blob check is weakest. This is the class of defect per-task review
+cannot see, which is why Phase 6 exists.
+
+Fix direction: route W1/W2 through `writeArtifact` (this finding), or make `promote()`
+uniform across adapters. Do not fix it a second time at a single call site — that is what
+`sync-run.ts:322` already did, and it is why the other writers never learned.
 
 **D2 is the one to look at first** — it's on the money path, and unlike the others
 it fails silently in production rather than in a document.

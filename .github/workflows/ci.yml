@@ -60,3 +60,12 @@ jobs:
       # Also prints an advisory list of spec decisions never promoted to an ADR.
       - name: Documentation integrity
         run: python3 scripts/check-docs.py
+
+      # Ratchet on the 2026-07-30 architecture-review findings. Reports progress toward
+      # each target; FAILS only when a metric gets worse than its baseline.
+      #
+      # This is the only thing that would notice finding #1 growing from 12 forked route
+      # files to 15 — no test fails and no type breaks when a 13th route copy-pastes the
+      # STORAGE_BACKEND branch. Criteria: docs/reviews/architecture-findings-acceptance.md
+      - name: Architecture findings ratchet
+        run: python3 scripts/check-arch-findings.py

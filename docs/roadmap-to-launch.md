@@ -263,8 +263,9 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS: two open items (`exec_sql` 2026-07-20; integration-vs-migrations 2026-08-03).
-`middleware-2a` red suite FIXED 2026-07-23. The two 2026-07-19 items are CLOSED.**
+**STATUS: two open items (`exec_sql` 2026-07-20; an UNIDENTIFIED unit-suite flake 2026-07-30).**
+`middleware-2a` red suite FIXED 2026-07-23 · integration-vs-migrations FIXED 2026-08-04 (PR #46) ·
+the two 2026-07-19 items are CLOSED.
 
 - [x] **`npm run test:integration` does not apply pending migrations — the gate fails OPEN.** ✅ **FIXED 2026-08-04.**
   `tests/integration/global-setup.ts` runs `supabase migration up` once per suite (jest `globalSetup`, not
@@ -285,6 +286,19 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
   question is reset-vs-up given suite runtime (~170 s) and the idempotency requirement.
   **Until then:** apply migrations by hand before trusting a green integration run on any branch that
   adds one.
+
+- [ ] ⚠️ **One unit test failed once, then passed 4× in a row — identity UNKNOWN (2026-07-30).**
+  Observed while gating the D5–D7 batch: `npm test -- --ci` reported `1 failed, 251 passed / 1 failed,
+  2516 passed` on the first run, then **4 consecutive fully-green runs** (252 suites / 2517 tests).
+  **The failing test's name was not captured** — the run was piped to `tail`, which discarded the
+  failure block, and it has not reproduced since. That is a process error worth naming: *always
+  capture the full log when a suite may fail.*
+  **Why this is recorded rather than waved off:** `docs/dev-process.md` makes the full-suite step
+  satisfiable only while every red suite is **explicitly named**. This one cannot be named, so the
+  gate is met on the 4 green runs but the debt is real — an intermittent failure is exactly what
+  makes "confirm no regressions" unfalsifiable later.
+  **Trigger:** the next time any unit run goes red, capture `> /tmp/run.log 2>&1` in full and grep
+  for `✕`/`●` before doing anything else. If it recurs and names itself, promote to a real entry.
 
 - [x] **`middleware-2a.test.ts` — 2 OAuth-callback tests were RED on `master`.** ✅ **FIXED 2026-07-23.**
   Was pre-existing since `1c96e62` (PR #31 OAuth `x-forwarded-host` fix): `publicOrigin` reads
@@ -631,8 +645,73 @@ merged-PR list every time, per *Session Resume*.
 2. **Architecture-review findings #1, #2, #4–#7** — same document. #2 (route the five artifact
    writers through `writeArtifact`) is the natural next one; the new `InMemoryBlobStore` makes it
    testable.
+   - **Acceptance criteria are defined and measurable:**
+     [`docs/reviews/architecture-findings-acceptance.md`](reviews/architecture-findings-acceptance.md).
+     Current state any time via `python3 scripts/check-arch-findings.py` (**2/18 criteria met** as
+     of 2026-07-30 — the 2 are finding #3). It runs in CI as a **ratchet**: it fails the build if
+     any metric gets *worse* than its 2026-07-30 baseline, which is the only thing that would
+     notice a 13th route file copy-pasting the `STORAGE_BACKEND` fork.
+   - **SCOPE CORRECTION 2026-07-30.** Finding #2 covers FIVE writers. The trace below graded only
+     **W2 (the dig writer)** and an earlier revision of this line wrongly labelled the whole finding
+     LOW on that one sample. Live `promote()` callers still assuming uniformity:
+     `summary-handler.ts:178` (W1), `write-dig-section-blob.ts:50` (W2, traced),
+     `sync-run.ts:210` (W3). W1 and W3 are **untraced**.
+   - ⚠️ **W1 (summary) CONFIRMED DEFECT 2026-07-30 → finding #2 is a BUG FIX, not a refactor.**
+     Proven by `tests/lib/job-queue/summary-handler-promote-divergence.test.ts` (drives the REAL
+     `makeSummaryHandler`; RED **on purpose**, branch `test/promote-divergence-finding-2`):
+     local `overwrite` → REGENERATED body ✅, Supabase `create-if-absent` → **ORIGINAL body** ❌.
+     The dig key embeds `.r{V}` so a bump can't collide; the summary key has no version at all
+     (`baseName = padSerial(serial) + slugify(title)`, and `reserve_video_slot` returns the
+     **existing** serial for a known video — `0009…sql:88`), so it is stable for the life of the
+     video. Path, all designed behaviour: `CURRENT_DOC_VERSION` bump + deploy → **a user
+     re-submits the same playlist URL** to `POST /api/jobs` (the ONLY cloud summary-job trigger;
+     `videos/[id]/regenerate` is local-only and enqueues nothing) → new `jobs_idem_active` slot
+     → jobs for **every** video in that playlist → the skip at `summary-handler.ts:85-91`
+     doesn't fire on a version mismatch → full charged summarize → `promote()` onto the occupied
+     key → Supabase **skips** → old body survives while `persistSummary(..., 'promoted')` stamps
+     the NEW docVersion. **Unlike the dig case the two bodies are SUPPOSED to differ.** Local
+     unaffected. **Not automatic on deploy** — it needs the re-submit (corrected 2026-07-30).
+     **Viewing a stale doc is NOT a trigger:** a bump makes the *rendered HTML* stale
+     (`eligibility.ts:12`) and that re-renders from the existing markdown without running the
+     handler. ⚠️ **But if lazy per-video regeneration-on-view is ever built, this defect starts
+     firing on view** — fix #2 before building it. **W3 (`sync-run.ts:210`) still untraced.**
+   - **W2 (dig) reachability TRACED 2026-07-30 → severity LOW.** The writer-level
+     divergence is proven (`tests/lib/dig/write-dig-section-blob-promote.test.ts`, RED **on purpose**
+     — it is the bug report; branch `test/promote-divergence-finding-2`, unmerged). But the
+     user-initiated re-dig is blocked by the trigger's blob dedupe (`enqueue-dig-core.ts:39`),
+     concurrent triggers by `jobs_idem_active`, and a version bump can't collide at all because
+     `.r{V}` is *in* the key. The only open route is same-job re-execution after `complete()` fails
+     (`worker-runner.ts:59` → `sweep`, `0008_jobs_queue.sql:173`), where **both bodies are valid
+     digs** — the user sees the first generation, not wrong content. Keep the fix (divergence +
+     silent discard are real), but it is not urgent. Full trace + the one bad conjunction
+     (terminally-`failed` job outside the idem index + an `exists()` false-negative → paid,
+     discarded, untraced) in `docs/reviews/architecture-review-2026-07-30.md`.
 3. **D1, D3, D4** — cloud dug-section ordering, the YAML newline that silently drops a paid dig
    section, and the write-only dig generator meta.
+4. **D5, D6, D7 — filed 2026-07-30**, all found while tracing #2. See
+   `docs/reviews/architecture-review-2026-07-30.md` → *Defects*.
+   - **D5** — a **style-only (MINOR) doc-version bump re-summarizes the whole playlist on
+     cloud**. `needsResummarize()` encodes the documented MAJOR/MINOR rule and has exactly one
+     caller (the local path); the cloud skip compares the flattened `"major.minor"` string. Local
+     and cloud-serve cost **0** Gemini calls for the same bump; cloud ingest pays in full, and
+     W1 then discards the result. Fix: cloud calls `needsResummarize`; stop flattening the job
+     version.
+   - **D6** — the **magazine model's drift guard is a title proxy**. `isFresh()` checks titles +
+     `GENERATOR_VERSION` and never `sourceMdHash`, which *is* written into every envelope. A
+     prose-only MD change with stable titles is served as fresh forever — and `fixSummary` pins
+     headings **on purpose**, so that is the designed shape of a corrections regenerate, not a
+     coincidence. Already documented in the wrong module (`companion.ts:43-45`). Fix: read
+     `sourceMdHash` in `isFresh`.
+   - **D7** — **section identity is answered three ways, two of them the title string.** Model ↔
+     section is positional+title; dig ↔ section is `startSec` with a title fallback. `startSec` is
+     minted inside `generateSummary` and lives only in the MD's `▶` line, so it is unique within a
+     generation but **not stable across** one. A re-summarize always breaks the numeric match, and
+     if it also rewords a heading, **paid dug content orphans**. One retitled heading also nulls
+     every section's gist. Fix direction: a **stable, persisted `sectionId`** minted once and
+     carried through regenerations — the concept the codebase keeps approximating.
+   - Proof for D6/D7: `tests/lib/html-doc/section-identity-after-resummarize.test.ts` (5 passing
+     characterization tests — they encode current behaviour, so they are a regression baseline for
+     any stable-sectionId work).
 4. **Backlog #18(b)** — give `grill-with-docs` a trigger. It is the documentation-integrity skill
    (ships `ADR-FORMAT.md` + `CONTEXT-FORMAT.md`, captures decisions *as they crystallise*) and has
    been dormant since 2026-07-12. Its dormancy is why ADR-0005 sat unpromoted for four weeks.
