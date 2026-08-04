@@ -84,8 +84,19 @@ sync; true-conflict loser-preservation; HTML/PDF transfer (regenerable cache).
   newer-wins, preserved) AND tracked as the MD's **corrections-currency** — because `corrections` is *applied
   into* the MD via `fixSummary`/regenerate (`app/api/videos/[id]/regenerate/route.ts:51-71`), the MD records
   `mdCorrectionsHash` and §5.3 never lets a stale MD overwrite a corrected one.
+- **`serialNumber` — SYNCED (corrected 2026-07-31, A1 of the serial-coherence slice).** It was
+  classified below as replica-local ordering. That was wrong on all three counts: it is not ordering
+  (display order comes from the sort the user picks, `app/api/videos/route.ts`, where `serialNumber`
+  is itself one of the columns and `playlistIndex` is not), it is not replica-local (it is embedded
+  in `base` = `<serial>_<slug>`, the address of `models/<base>.json` and every
+  `dig/<base>/<sectionId>.r<V>.md`), and it is **write-once** by its own design doc
+  (`2026-06-25-serial-number-filename-prefix.md`: *"never recompute for a video that already has
+  one"*). Dropping it while copying the sender's `summaryMd` key verbatim made the receiver row
+  disagree with its own filename and silently orphaned the sender's paid dig blobs. The receiver now
+  asks for the sender's serial (`claimVideoSlot(p, id, desiredSerial)`); if another video there
+  already holds it, that video is **aborted and reported**, never renumbered.
 - **Replica-local / fetched (NOT synced, but still locally writable):** `title` (YouTube-fetched, no
-  author-edit path), `position`, `serialNumber`, `playlistIndex`, `removedFromPlaylist`, `updatedAt`,
+  author-edit path), `position`, `playlistIndex`, `removedFromPlaylist`, `updatedAt`,
   `summaryReady`. **`archived` is replica-local in M2a but stays fully writable** — it has *two* semantics
   (membership-archive via `reconcile_membership` `0007:60-71`, and a *manual* Archive toggle written via
   `update_video_annotations`, `app/api/videos/[id]/archive/route.ts`); because the two are entangled on one

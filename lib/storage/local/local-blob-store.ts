@@ -1,6 +1,6 @@
 import fs from 'fs'; import path from 'path'; import crypto from 'crypto';
-import type { BlobRead, BlobStore, StagedRef } from '@/lib/storage/blob-store';
-import { assertLogicalKey } from '@/lib/storage/blob-store';
+import type { BlobRead, BlobStore, CopyResult, StagedRef } from '@/lib/storage/blob-store';
+import { assertLogicalKey, copyBlob } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
 /** Byte-for-byte the current -data layout: physical path = join(indexKey, key). */
@@ -40,6 +40,12 @@ export class LocalFsBlobStore implements BlobStore {
 
   async delete(p: Principal, key: string): Promise<void> {
     try { fs.unlinkSync(this.abs(p, key)); } catch (e: any) { if (e.code !== 'ENOENT') throw e; }
+  }
+
+  /** Delegates to the shared `copyBlob` — the ordering and classification must be identical on
+   *  every backend. See the note on `BlobStore.copy`. */
+  async copy(p: Principal, from: string, to: string): Promise<CopyResult> {
+    return copyBlob(this, p, from, to);
   }
 
   async putStaged(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<StagedRef> {

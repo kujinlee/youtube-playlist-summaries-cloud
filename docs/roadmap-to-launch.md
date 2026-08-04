@@ -263,8 +263,23 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 
 ## Dev-infrastructure debt (NOT tied to any feature slice — survives every merge)
 
-**STATUS: one open item (`exec_sql`, 2026-07-20). `middleware-2a` red suite FIXED 2026-07-23. The two
-2026-07-19 items are CLOSED.**
+**STATUS: two open items (`exec_sql` 2026-07-20; integration-vs-migrations 2026-08-03).
+`middleware-2a` red suite FIXED 2026-07-23. The two 2026-07-19 items are CLOSED.**
+
+- [ ] **`npm run test:integration` does not apply pending migrations — the gate fails OPEN.**
+  **Found 2026-08-03 on `fix/serial-coherence-sync`.** The branch adds `0023`, but the local DB still
+  had only the pre-0023 schema, so the whole integration suite had been running against the OLD
+  `claim_video_slot` and reporting green. Applying it by hand (`npx supabase migration up`) turned up
+  **two real failures immediately** — one test pinning the very phantom-serial bug 0023 fixes, one
+  stale key assertion (see A7 in the serial-coherence slice).
+  This is the dangerous shape: not a red suite someone learns to ignore, but a **green** one that is
+  not testing the code under review. A migration is exactly when the suite matters most, and exactly
+  when it silently stops applying.
+  **Fix:** run `supabase migration up` (or a `db reset`) in the integration global-setup
+  (`tests/integration/setup.ts`), so the schema under test always matches the branch. Cheap; the only
+  question is reset-vs-up given suite runtime (~170 s) and the idempotency requirement.
+  **Until then:** apply migrations by hand before trusting a green integration run on any branch that
+  adds one.
 
 - [x] **`middleware-2a.test.ts` — 2 OAuth-callback tests were RED on `master`.** ✅ **FIXED 2026-07-23.**
   Was pre-existing since `1c96e62` (PR #31 OAuth `x-forwarded-host` fix): `publicOrigin` reads
@@ -358,6 +373,120 @@ that fires anyway, so it resurfaces without anyone remembering it exists.
   FAIL OPEN note in `docs/plugins.md`).
 
 ---
+
+## Serial coherence in cloud-sync — branch `fix/serial-coherence-sync` (2026-07-31)
+
+**Why it exists:** tracing architecture-review finding #2 surfaced a **live data-loss bug**. `base` =
+`<serial>_<slug>` addresses every derived blob (`models/<base>.json`,
+`dig/<base>/<sectionId>.r<V>.md`) and dig content is **paid Gemini output**. Sync recomputed
+`serialNumber` on the receiver while copying the sender's `summaryMd` KEY verbatim, so rows said
+`serialNumber: 9` beside a file named `003_alpha.md` and the paid blobs were silently orphaned — no
+error, no report, no cleanup. Divergence was routine, not hypothetical: both replicas allocate
+`max + 1` in their own ingestion order and no migration constrains uniqueness.
+
+**Status: implemented, dual review in progress (round 3 dispatched). NOT merged. No PR yet.**
+
+- [x] **A0** behaviors table (33 rows) + Codex review of the table
+- [x] **A4** `copy` at the `BlobStore` seam — ONE shared `copyBlob`, all three adapters delegate.
+      Deviation from plan: `copy`, not `rename` — Supabase `move()` is copy+delete and non-atomic,
+      and nothing is atomic across N objects, so a destructive rename bakes an unrecoverable
+      ordering into the seam.
+- [x] **A1** receiver adopts the sender's serial (`claimVideoSlot(p, id, desiredSerial?)`, migration
+      0023); a collision **aborts and reports** that video. Fixed two phantom-serial bugs on the way,
+      one per adapter — both returned a COMPUTED serial rather than the persisted one.
+- [x] **A2** stop overwriting `playlistIndex` with a storage row ordinal
+- [x] **A3** `lib/cloud-sync/reconcile-serial.ts` — repair an already-diverged base before
+      `transferClassA` writes the winner's key onto the loser. Deviation from plan: reconciles the
+      full **base**, not only the serial (the slug diverges on its own), and does NOT reuse
+      `serial-migrate.ts`, which solves backfill rather than relocation and never touches digs.
+- [x] **A5** regression guard: derive the base from the row after a sync, and the paid dig is there
+- [ ] **A-review** — 4 rounds done, **not converged**; round 5 is the next step.
+      R1: 3 Codex (2H/1M) + 2 coordinator. R2: 1H/1M/1L Codex + 2 coordinator. R3: 1H/1M/1L.
+      R4: 1H/2M. Zero Blocking in any round. **Convergence = a full round with no new
+      Blocking/High.** Every fix is mutation-checked, and 4 separate mutations found guards that
+      no test covered — each became a test.
+      Reviews: `docs/reviews/task-A-serial-coherence-branch{,-v2,-v3,-v4}-rereview-codex.md`,
+      each with a coordinator adjudication section (2 findings were downgraded on evidence, 1
+      suggested fix was replaced with a stricter one, 1 suggestion was declined with reasons).
+      **Known gap, named not hidden — sync has no mutual exclusion against the WORKER.** Every sync
+      metadata write is unconditional (no compare-and-swap), so a concurrent writer's change can be
+      lost or overwritten.
+      **The primary trigger is not a second sync.** `runSync` has exactly one caller —
+      `scripts/cloud-sync.ts` (`npm run cloud-sync`), a manual CLI with no lock — so two *syncs*
+      colliding needs two machines on one cloud account, deliberately, with the overlap landing
+      inside one video's copy phase. Thin on its own. The reachable collision is
+      **`lib/job-queue/summary-handler.ts:156-157`**, which writes *both* `serialNumber` and
+      `summaryMd` when a summary job completes: one sync + an ordinary cloud ingest or re-summarize
+      running in the worker, no second device and no deliberate action.
+      *(Corrected 2026-08-02 — the original entry named two concurrent syncs as the trigger and
+      undersold reachability.)*
+      Adjudicated **pre-existing and not A3-specific**: `transferClassA` (`sync-run.ts:427`) and
+      `copyAdditiveVideo` (`:281`) carry the identical exposure against the same rows, independently
+      verified by Codex in round 4. A3's pre-write freshness re-read covers the common direction
+      (worker writes during A3's copy phase ⇒ refuse, delete nothing); the reverse order and the
+      lost-update case remain. No path destroys blobs — A3 deletes only after a verified write — but
+      a row can end pointing where neither writer intended.
+      **Fix must cover the whole sync write path, not A3 alone. Under discussion (2026-08-02):
+      queue-based serialization vs conditional writes. Needs a decision before filing.**
+      **Round 5 (2026-08-03) sharpened the CONSEQUENCE — same root cause, worse outcome.** Codex
+      produced a concrete interleaving, confirmed by reading the code: `summary-handler.ts:95-96`
+      pins `baseName` from the serial it reserved, then spends MINUTES in transcription + Gemini
+      before persisting at `:156`. `persist_summary` resolves the key as
+      `coalesce(p_video->>'summaryMd', v.data->>'summaryMd')` (`0021:135`) — the **payload wins** —
+      while `serialNumber` is restored from the existing row by step (2). So a stale worker persist
+      landing after A3 leaves `serialNumber 3` beside `summaryMd 007_alpha.md`, with the paid digs
+      at `dig/003_alpha/` and `dig/007_alpha/*` already deleted by A3's cleanup: **the dig content
+      is orphaned**, not merely mis-pointed. Because A3 *moves and then deletes*, a lost update on
+      this path costs paid content rather than a wrong pointer.
+      **Codex's proposed fix does not work and was rejected with reasons** (see
+      `docs/reviews/task-A-serial-coherence-branch-v5-rereview-review.md`): it suggests widening
+      A3's pre-write freshness check to compare `serialNumber`, but the worker has written nothing
+      at that moment — the write lands strictly after. Only fencing closes it, which is the decision
+      above.
+      **DECIDED 2026-08-03 (human): merge the serial-coherence branch now, fence as its own slice.**
+      Rationale: the gap predates the branch, and the branch is strictly better than the status quo
+      even with it open — it removes the divergence that was being written on *every* sync. Filed as
+      `docs/backlog.md` **#17** (needs its own design-spec → plan → SDD; must cover the whole sync
+      write path, not A3).
+- [x] **A7 — integration suite restored to green against 0023** (2026-08-03). Two failures, both
+      real, both invisible until the migration was actually applied to the local DB
+      (`npx supabase migration up` — it was NOT applied, so the suite had been passing against the
+      pre-0023 schema).
+      1. `tests/integration/metadata-store.test.ts` test 10 asserted the **phantom serial as the
+         contract**: a re-claim returning `{position: 1, serialNumber: 2}`, values computed from
+         `MAX(...)` before the `ON CONFLICT` check and never stored. 0023 fixed that; the test was
+         pinning the bug the branch removes. Now guards the fix.
+      2. `tests/integration/cloud-sync/e2e.int.test.ts` **M-R2-2** hard-coded the pre-A3 key.
+         Proven branch-caused (passes on `master`, fails on the branch, same `-t` filter, same DB)
+         and then proven **correct**: on master that fixture ended `serialNumber 1` beside
+         `<videoId>.md` — a row whose serial and filename disagree, the exact orphaning condition.
+         On the branch both replicas end at `001_<videoId>.md` with `report.errors` empty.
+         Re-asserted as an invariant (replicas agree; the key encodes the row's serial).
+      **Process gap this exposed:** `npm run test:integration` does not apply pending migrations, so
+      a new migration silently leaves the suite testing the old schema — a gate that fails OPEN.
+      Recorded under *Dev-infrastructure debt*.
+- [ ] **A6 — RE-SCOPED 2026-08-03: `position` is NOT vestigial.** The premise was wrong. The
+      *return-value field* of `claimVideoSlot` has zero consumers after A2, but the **column** is
+      load-bearing: `supabase-metadata-store.ts:43` orders every `readIndex` by it. Splits into:
+      - [x] **A6a DONE** (`93631da`) — `position` dropped from the `claimVideoSlot` return type
+        across the interface + both adapters. Payoff is defect-prevention, not tidiness: A2's bug was
+        literally `playlistIndex = slot.position + 1`, and removing the field makes that unwriteable.
+        Proven by the compiler — the only remaining use failed `TS2339` on removal. No SQL. Test
+        assertions were **moved to where the guarantee is observable**, not dropped: the concurrency
+        test now reads the `position` COLUMN and asserts `0..N-1`, because position is protected by
+        `videos_playlist_position_uniq` while `serialNumber` lives in jsonb with no constraint —
+        the row-lock is the only thing preventing a duplicate serial.
+      - **A6b** (defer — own slice) drop the column + `videos_playlist_position_uniq` + the dead
+        `reorder_videos` (0005, zero production callers). Needs a replacement `ORDER BY`, and the
+        obvious candidate is a trap: `serialNumber` lives in the `data` jsonb, so
+        `.order('data->>serialNumber')` sorts as TEXT (`"10"` before `"2"`) without a generated
+        column. Would also be the **third** `claim_video_slot` signature change (0007 → 0023 → this)
+        and would change the shape of 0023's rolling-deploy wrapper. Likely dissolved by ADR-0006.
+- [ ] **PR + merge** (human gate)
+
+**Sequenced behind A** (each needs its own spec + merge gate): **B** stable section identity,
+**C** authority + divergence detection, **D** cloud rebuild parity. See
+`docs/superpowers/plans/2026-07-31-serial-coherence-sync.md` and `~/.claude/plans/`.
 
 ## Honest-blob-read slice (`BlobRead`) — own spec + merge gate
 

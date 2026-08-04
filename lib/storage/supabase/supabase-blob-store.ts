@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BlobRead, BlobStore, StagedRef } from '@/lib/storage/blob-store';
-import { assertLogicalKey } from '@/lib/storage/blob-store';
+import type { BlobRead, BlobStore, CopyResult, StagedRef } from '@/lib/storage/blob-store';
+import { assertLogicalKey, copyBlob } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 
 export class SupabaseBlobStore implements BlobStore {
@@ -63,6 +63,21 @@ export class SupabaseBlobStore implements BlobStore {
   async delete(p: Principal, key: string): Promise<void> {
     const { error } = await this.b().remove([this.objectKey(p, key)]);
     if (error) throw error;
+  }
+
+  /** Delegates to the shared `copyBlob`.
+   *
+   *  Deliberately NOT built on this bucket's `copy`/`move`: those cannot classify the outcome.
+   *  `exists()` here is `get() !== null` and `get()` swallows every download failure — 5xx,
+   *  timeout, RLS denial — into the same `null` as a genuine 404, so a preflight built on them
+   *  would report `source-absent` for a transient blip and let the caller delete a paid artifact.
+   *  `copyBlob` reads exclusively through `tryGet`, which is the honest probe on this backend.
+   *
+   *  Note also that `promote()` above treats "destination already present" as SUCCESS, which is
+   *  the exact opposite of `copy`'s fail-closed rule. Both are correct for their own job; the
+   *  point is that the difference is now written down instead of being discovered later. */
+  async copy(p: Principal, from: string, to: string): Promise<CopyResult> {
+    return copyBlob(this, p, from, to);
   }
 
   async putStaged(p: Principal, key: string, bytes: Buffer, contentType: string): Promise<StagedRef> {

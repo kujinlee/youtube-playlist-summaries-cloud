@@ -240,14 +240,17 @@ describe('setPlaylistMeta', () => {
 // claimVideoSlot
 // ---------------------------------------------------------------------------
 describe('claimVideoSlot', () => {
-  test('calls claim_video_slot RPC with playlist_id and video_id, returns position+serialNumber', async () => {
+  test('calls claim_video_slot RPC with playlist_id and video_id, returns serialNumber only', async () => {
     const client = buildMockClient({
       playlistRow: { id: 'pl-id', playlist_url: 'https://yt.be/list' },
+      // The RPC row still carries `position` — A6a drops it from the ADAPTER's return, not from the
+      // function. Keeping it in the fixture is what makes the assertion below meaningful: it proves
+      // the adapter discards it rather than the fixture simply lacking it.
       rpcResults: { claim_video_slot: [{ position: 2, serial_number: 3 }] },
     });
     const store = new SupabaseMetadataStore(client as any);
     const result = await store.claimVideoSlot(p, 'vid1');
-    expect(result).toEqual({ position: 2, serialNumber: 3 });
+    expect(result).toEqual({ serialNumber: 3 });
     const rpc = client.rpcCalls.find((c) => c.name === 'claim_video_slot');
     expect(rpc).toBeDefined();
     expect((rpc!.args as any).p_playlist_id).toBe('pl-id');
