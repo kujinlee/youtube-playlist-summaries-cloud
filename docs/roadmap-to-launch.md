@@ -374,7 +374,7 @@ that fires anyway, so it resurfaces without anyone remembering it exists.
 
 ---
 
-## Serial coherence in cloud-sync — branch `fix/serial-coherence-sync` (2026-07-31)
+## Serial coherence in cloud-sync — ✅ MERGED (PR #42, `f8703bc`, 2026-08-03)
 
 **Why it exists:** tracing architecture-review finding #2 surfaced a **live data-loss bug**. `base` =
 `<serial>_<slug>` addresses every derived blob (`models/<base>.json`,
@@ -400,7 +400,11 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
       full **base**, not only the serial (the slug diverges on its own), and does NOT reuse
       `serial-migrate.ts`, which solves backfill rather than relocation and never touches digs.
 - [x] **A5** regression guard: derive the base from the row after a sync, and the paid dig is there
-- [ ] **A-review** — 4 rounds done, **not converged**; round 5 is the next step.
+- [x] **A-review** — **5 rounds done.** Round 5 found (a) a relocation branch with ZERO unit
+      coverage, caught by mutation — replacing `describeDivergence`'s no-local-MD fallback with
+      "never diverged" left all 2582 unit tests GREEN; 4 tests added, mutant now kills 2; and
+      (b) one High, **deferred by explicit decision** to `docs/backlog.md` #17 (fence the worker
+      persist). Trail: `docs/reviews/task-A-serial-coherence-branch{,-v2,-v3,-v4,-v5}-*.md`.
       R1: 3 Codex (2H/1M) + 2 coordinator. R2: 1H/1M/1L Codex + 2 coordinator. R3: 1H/1M/1L.
       R4: 1H/2M. Zero Blocking in any round. **Convergence = a full round with no new
       Blocking/High.** Every fix is mutation-checked, and 4 separate mutations found guards that
@@ -482,7 +486,10 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
         `.order('data->>serialNumber')` sorts as TEXT (`"10"` before `"2"`) without a generated
         column. Would also be the **third** `claim_video_slot` signature change (0007 → 0023 → this)
         and would change the shape of 0023's rolling-deploy wrapper. Likely dissolved by ADR-0006.
-- [ ] **PR + merge** (human gate)
+- [x] **PR + merge** — ✅ **MERGED to master** (PR #42, squash `f8703bc`, 2026-08-03). CI green,
+      branch deleted. Merged with backlog #17 knowingly open: the worker-vs-sync gap predates this
+      branch, and the branch is strictly better than the status quo — it stops divergence being
+      written on every sync.
 
 **Sequenced behind A** (each needs its own spec + merge gate): **B** stable section identity,
 **C** authority + divergence detection, **D** cloud rebuild parity. See
