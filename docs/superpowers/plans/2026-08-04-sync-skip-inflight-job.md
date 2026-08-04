@@ -1,8 +1,12 @@
 # A3 refuses to relocate a video with an in-flight job (backlog #17, partial)
 
 **Scope: the cheap guard, not the full fence.** Closes the *wide* window in the worker-vs-sync race —
-the minutes a job spends in transcription + Gemini — and leaves a millisecond one. Backlog #17 stays
-open for the durable fix.
+the minutes a job spends in transcription + Gemini. **It does not eliminate the race.** Measured, not
+assumed: the copy phase between the probe and the metadata write is N sequential blob round-trips
+(MD + model + one per dig), so a job enqueued and claimed inside that span still reads the
+pre-relocation serial. The exposure shrinks from *minutes* to *the duration of one relocation's copy
+phase*. Backlog #17 stays open for the durable fix (a compare-and-swap on the serial in
+`persist_summary`).
 
 ## Why
 
@@ -33,7 +37,7 @@ bypassed by a future caller.
 that produced 1 Blocking and 3 Highs in Stage 3:
 
 ```ts
-export type InFlightJobProbe = (videoId: string) => Promise<
+export type InFlightJobProbe = (playlistKey: string, videoId: string) => Promise<
   | { ok: true; inFlight: boolean }
   | { ok: false; cause: unknown }
 >;
@@ -59,8 +63,8 @@ baseline advanced → next run heals" path. Nothing new is needed in `sync-run`'
 | 7 | Probe runs before ANY write | diverged + in-flight | no blob is copied and no metadata written before the refusal — assert via a fault-injecting blob store that would record a `put` |
 | 8 | Refusal surfaces per video | `runSync` with an in-flight job on a diverged video | `report.errors` names that `videoId`; **no baseline advanced**; that video's Class-A transfer does **not** run |
 | 9 | Other videos still sync | one video blocked, another clean | the clean video completes normally in the same run |
-| 10 | Only future writers block | job `status` in `queued`/`active` | `completed`, `failed`, `cancelled` do **not** block — they will never write again |
-| 11 | Expired lease still blocks | `status='active'`, `lease_expires_at` in the past | **blocks** — the reaper may reclaim and retry, which writes |
+| 10 | Only future writers block | job `status` in `queued`/`active` | The CHECK domain is `queued, active, completed, failed, dead_letter, cancelled` — all six enumerated. `completed`/`dead_letter`/`cancelled` never run again; `failed` is transient (`fail_job` sets `queued` with backoff while attempts remain, 0008:154-159), so a retryable job is caught as `queued` |
+| 11 | Expired lease still blocks | `status='active'`, `lease_expires_at` in the past | **blocks** — the reaper flips it back to `queued` (0009:68-74) and the retry writes |
 | 12 | Every job kind blocks | `job_kind` = `summary` **or** `dig` | both pin `base` before a long Gemini call; do not filter by kind |
 | 13 | Scoped to this playlist | a job for the same `video_id` under a **different** `playlist_id` | does **not** block — `base` is per-playlist, so that job writes a different address |
 | 14 | One probe call per video | diverged video | probe called exactly once, not once per blob |

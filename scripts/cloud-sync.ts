@@ -66,7 +66,7 @@ export async function main(argv: string[]): Promise<number> {
     cloudBlob: new SupabaseBlobStore(client, ARTIFACTS_BUCKET),
     dataRoots, ownerId,
     // Backlog #17 — refuse to relocate a base while a job that will write it is still pending.
-    inFlightJob: supabaseInFlightJobProbe(client),
+    inFlightJob: supabaseInFlightJobProbe(client, ownerId),
   };
   const report = await runSync(deps, args.playlistKey ? { playlistKey: args.playlistKey } : {});
   console.log(JSON.stringify(report, null, 2));

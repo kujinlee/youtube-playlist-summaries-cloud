@@ -140,7 +140,7 @@ export async function makeOwnerContext(): Promise<Ctx> {
         cloudBlob,
         // The REAL probe, not a stub: integration is where the actual `jobs` query gets exercised
         // (status filtering, playlist scoping, kind-agnosticism).
-        inFlightJob: supabaseInFlightJobProbe(userClient),
+        inFlightJob: supabaseInFlightJobProbe(userClient, ctx.userId),
         dataRoots: [ctx.tempDataRoot],
         ownerId: userId, // MUST be auth.uid() — the RLS/storage-path owner segment
       };

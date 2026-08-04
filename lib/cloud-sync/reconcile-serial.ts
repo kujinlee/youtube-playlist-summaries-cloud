@@ -228,8 +228,13 @@ export async function reconcileCloudBase(args: {
   // landed. That is already a supported outcome — the caller surfaces it per video and advances no
   // baseline, so the next sync re-evaluates from scratch.
   //
-  // A residual millisecond window remains (a job enqueued between this check and the metadata
-  // write). Closing it needs a compare-and-swap on the serial in `persist_summary` — backlog #17's
+  // WHAT THIS DOES NOT CLOSE, measured rather than assumed. The residual window is NOT
+  // "milliseconds": the copy phase below is a loop of N sequential blob round-trips (MD + model +
+  // one per dig), and the metadata write happens only after all of them. A job enqueued and claimed
+  // inside that span still reads the pre-relocation serial. So the guard shrinks the exposure from
+  // "the whole minutes-long Gemini run of an already-active job" to "the duration of this
+  // relocation's copy phase" — a large reduction, not an elimination.
+  // Closing it properly needs a compare-and-swap on the serial in `persist_summary` — backlog #17's
   // durable fix, deliberately out of scope here.
   let probe: Awaited<ReturnType<InFlightJobProbe>>;
   try {
