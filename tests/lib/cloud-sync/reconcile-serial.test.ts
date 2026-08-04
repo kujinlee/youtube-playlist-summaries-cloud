@@ -558,4 +558,101 @@ describe('reconcileCloudBase', () => {
     expect(res).toMatchObject({ ok: false, reason: 'copy-failed', key: '003_alpha.md' });
     expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
   });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Round 5 — `localVideo.summaryMd == null`: the fallback at reconcile-serial.ts:130.
+  //
+  // Found by mutation during the round-5 review, NOT by a failing test. Replacing the fallback with
+  // `baseOf(cloudVideo.summaryMd)` — i.e. "never diverged when local has no MD" — left ALL 2582 unit
+  // tests green. The only thing covering it was one integration test (M-R2-2), and that test had
+  // been asserting the PRE-A3 key, so it was passing on master for the wrong reason.
+  //
+  // This is the branch that decides where PAID dig blobs get relocated to, driven by a local row
+  // that advertises no MD of its own. It is reachable in production: `claimVideoSlot` reserves a
+  // stub `{id, serialNumber}` before generation (local-metadata-store.ts), so a crash between the
+  // claim and the summary write leaves exactly this shape — a serial with no MD behind it.
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('local advertises a serial but NO summaryMd', () => {
+    /** A local row holding a serial with no MD — a claimVideoSlot stub, or an MD deleted by hand. */
+    const stub = (id: string, serial: number): Video => ({
+      id, serialNumber: serial, title: 'alpha', youtubeUrl: `https://youtu.be/${id}`,
+      archived: false, summaryMd: null, processedAt: '2026-07-01T00:00:00.000Z',
+    } as unknown as Video);
+
+    it('renumbers the cloud base to local\'s serial, carrying the paid dig blobs with it', async () => {
+      const cloudVideo = vid('vid00000001', 7, 'alpha');
+      const cloud = await cloudReplica([cloudVideo], {
+        '007_alpha.md': 'MD BODY',
+        'models/007_alpha.json': '{"model":1}',
+        'dig/007_alpha/120.r3.md': 'DIG ONE',
+      });
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo: stub('vid00000001', 3), cloudVideo,
+      });
+
+      // Local has no base of its own, so the target is SYNTHESIZED from local's serial + cloud's
+      // slug: applySerial('007_alpha.md', 3) -> '003_alpha'. The mutant returned 'agreed' here.
+      expect(res).toMatchObject({ ok: true, action: 'relocated', from: '007_alpha', to: '003_alpha' });
+      expect(await read(cloud, '003_alpha.md')).toBe('MD BODY');
+      expect(await read(cloud, 'dig/003_alpha/120.r3.md')).toBe('DIG ONE');   // paid content followed
+      expect(await read(cloud, 'models/003_alpha.json')).toBe('{"model":1}');
+
+      const row = await rowOf(cloud, 'vid00000001');
+      expect(row.serialNumber).toBe(3);
+      expect(row.summaryMd).toBe('003_alpha.md');
+    });
+
+    it('does nothing when the cloud base already encodes local\'s serial', async () => {
+      const cloudVideo = vid('vid00000001', 3, 'alpha');
+      const cloud = await cloudReplica([cloudVideo], { '003_alpha.md': 'MD BODY' });
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo: stub('vid00000001', 3), cloudVideo,
+      });
+
+      // applySerial is idempotent, so the synthesized target equals the current base. This is the
+      // case the mutant made indistinguishable from the one above.
+      expect(res).toMatchObject({ ok: true, action: 'agreed' });
+      expect(await read(cloud, '003_alpha.md')).toBe('MD BODY');
+    });
+
+    it('leaves everything alone when local has no serial either', async () => {
+      const cloudVideo = vid('vid00000001', 7, 'alpha');
+      const cloud = await cloudReplica([cloudVideo], { '007_alpha.md': 'MD BODY' });
+      const noSerial = { ...stub('vid00000001', 7), serialNumber: null } as unknown as Video;
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo: noSerial, cloudVideo,
+      });
+
+      // Nothing to reconcile TO — there is no authority to move toward, so the Class-A transfer
+      // (which is additive) handles it. Renumbering on a guess would move paid blobs for nothing.
+      expect(res).toMatchObject({ ok: true, action: 'agreed' });
+      expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
+      expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
+    });
+
+    it('still refuses when another cloud video already holds the target serial', async () => {
+      const cloudVideo = vid('vid00000001', 7, 'alpha');
+      const other = vid('vid00000002', 3, 'beta');
+      const cloud = await cloudReplica([cloudVideo, other], {
+        '007_alpha.md': 'MD BODY', '003_beta.md': 'OTHER BODY',
+      });
+
+      const res = await reconcileCloudBase({
+        cloud, cloudIndex: (await store.readIndex(cloud.p)).videos,
+        localVideo: stub('vid00000001', 3), cloudVideo,
+      });
+
+      // The occupancy guard must apply to the synthesized target too — otherwise the no-MD path is
+      // a hole straight through it, and two cloud rows end up claiming serial 3.
+      expect(res).toMatchObject({ ok: false, reason: 'target-occupied', want: 3, heldBy: 'vid00000002' });
+      expect(await read(cloud, '007_alpha.md')).toBe('MD BODY');
+      expect((await rowOf(cloud, 'vid00000001')).serialNumber).toBe(7);
+    });
+  });
 });
