@@ -5,7 +5,15 @@
 before it becomes a plan. **Supersedes part of [ADR-0002](../../adr/0002-playlist-in-job-identity.md)
 — see §12.**
 
-**Roadmap:** not yet filed. Sequenced *behind* the merge of `fix/serial-coherence-sync`.
+**Roadmap:** not yet filed. Sequenced *behind* the merge of `fix/serial-coherence-sync` —
+✅ **that precondition is now met** (PR #42, squash `f8703bc`, 2026-08-03).
+
+**It now also closes a filed defect.** `docs/backlog.md` **#17** (fence the worker persist) was filed
+open when #42 merged: a stale worker persist landing after an A3 relocation orphans paid dig blobs,
+and only fencing closes it. §5.1 and §9 argue this design removes that class outright rather than
+fencing it — the manifest collapses the race to one small row, and no relocation exists to race with.
+**If that argument survives review, #17 should be solved here rather than fenced separately.** Weigh
+it against the delay: #17 is live today.
 
 **Goal:** make the blob-orphaning bug class **impossible** rather than guarded-against, by deriving
 every blob address from values that never change, and moving the "which copy counts" decision into a
@@ -30,7 +38,7 @@ Symptoms this produced, all already diagnosed:
 | Symptom | Where |
 |---|---|
 | Cloud-sync silently orphaned paid dig/model blobs on serial divergence | `fix/serial-coherence-sync` (4 review rounds) |
-| A re-summarize orphans every dig, because section `startSec` values are re-minted | `tests/lib/html-doc/section-identity-after-resummarize.test.ts` |
+| A re-summarize orphans every dig, because section `startSec` values are re-minted | **CITATION WAS WRONG** — `tests/lib/html-doc/section-identity-after-resummarize.test.ts` **does not exist** (checked 2026-08-03; no test matching `section-identity`/`resummariz` exists anywhere). The *claim* is plausible but is now **unverified** and must be proven — ideally by writing that test — before it is used as evidence for anything. |
 | The same video in two playlists is summarized and **charged twice** | ADR-0002, accepted as a cost |
 | Superseded blobs accumulate forever with no way to identify them | no GC exists anywhere (§8) |
 
@@ -50,7 +58,7 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 
 | Term | Definition |
 |---|---|
-| **Tenant** | The isolation boundary that owns blobs. **Today `tenantId == auth.uid()`** — one user, one tenant. Named separately so a future team/workspace becomes an RLS predicate change, not a re-keying of every object. |
+| **Tenant** | The isolation boundary that owns blobs. **Today `tenantId == auth.uid()`** — one user, one tenant. Named separately for conceptual clarity, not as a teams feature: see §11.1 for what the name does and does not buy (it makes one narrow transition free, **not** the general case). |
 | **Generation** | One production run of a paid artifact — a summarize run, or a dig run. Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
 | **Manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. |
@@ -79,6 +87,24 @@ bucket-level size or MIME restriction is set in any migration. Object path is
 `bucket_id = 'artifacts' and split_part(name,'/',1) = auth.uid()::text` (`0007:12-17`). **The first
 path segment must equal the caller's uid.** Nothing else is checked — not the playlist segment, not
 the extension, not the size.
+
+**Two properties of that predicate are load-bearing and must survive any rewrite** (measured
+2026-08-04 against the local stack):
+
+- **It compares text to text.** `split_part` returns whatever text is before the first slash, for any
+  name. Casting that segment — `split_part(name,'/',1)::uuid` — raises
+  `invalid input syntax for type uuid` on a **single** malformed object name, and inside a policy an
+  error does not deny one row, it **fails the whole query for everyone**. Casting the *uid* instead
+  (`= auth.uid()::text`) keeps the predicate total. This looks like a style detail and is not.
+- **It fails closed on every degenerate input.** A leading slash or an empty name yields `''`, which
+  matches no uid; a NULL name, or an unsigned caller whose `auth.uid()` is NULL, yields NULL, and RLS
+  requires TRUE. Anonymous isolation therefore needs no separate rule (`0007:9-12` says exactly this).
+
+**The tenant does not have to live in the path.** `storage.objects` also exposes `owner uuid`,
+`owner_id text` and `user_metadata jsonb` — any of which a policy can read. This matters only as a
+future escape hatch (§11), not for this design, and it is **not usable as-is**: `owner_id` is
+populated on **390 of 973** objects in the local stack, because `service_role` writes leave it NULL.
+Where it is set it equals path segment 1 in **390/390** cases, so it is backfillable.
 
 **Blob inventory.** Nine kinds. The paid/free split is already written down and load-bearing at
 `reconcile-serial.ts:64-80` and `sync-run.ts:120-124`:
@@ -123,8 +149,15 @@ re-asserts the owner at every hop. It **never creates a second owner**.
 Four properties, each load-bearing:
 
 **`<tenantId>` stays first** — the RLS predicate requires it. Today it is literally `auth.uid()`, so
-the bytes are unchanged from the current layout and **the predicate needs no edit**. Naming it
-`tenantId` is free forward-compatibility (§11).
+the bytes are unchanged from the current layout and **the predicate needs no edit**.
+
+> **The one deliberate exception to this spec's own thesis — named, not hidden.** Everything else in
+> this template is immutable, but **ownership is not**: content can change hands. So `<tenantId>` is
+> a mutable value in the address, which is the very mistake §1 exists to eliminate, one level up.
+> Accepted because **teams are not planned** (user decision, 2026-08-04) and no ownership-transfer
+> feature exists, so the value is immutable *in practice*. The consequence, spelled out: **if content
+> ever moves between tenants, its blobs must move with it.** §11 says what to do instead if that day
+> comes — the answer is not "re-key everything."
 
 **`<videoId>` replaces `<playlistKey>`** — this is what un-couples the address from the playlist, and
 what makes cross-playlist sharing *possible* (§12). It is also what removes `serial` and `slug` from
@@ -152,16 +185,45 @@ Three candidates, listed with their consequences:
 unique — it consumed money), content hash for free re-renders (HTML/PDF, where dedup is pure win and
 the pattern already exists).
 
-### 4.2 Section ids — a claim this spec must test
+### 4.2 Section ids — TESTED 2026-08-03: **half true**, and the other half merges into §12
 
-Generation-scoping may **dissolve** the stable-section-identity problem rather than depend on it.
+The claim was that generation-scoping **dissolves** the stable-section-identity problem rather than
+depending on it. Tested against live code. The verdict splits cleanly, and the split matters.
 
-A dig lives under the generation whose summary it was dug from. `startSec` values are already unique
-and strictly increasing *within* one generation (`allocateSectionStarts`). Because a dig never crosses
-a generation, `sectionId` never needs to be stable *across* generations.
+**The addressing half — CONFIRMED.**
+- `sectionId` *is* `startSec`, literally: `section-window.ts:58` returns
+  `{ sectionId: startSec, startSec, endSec, … }`.
+- `allocateSectionStarts` (`lib/summary-section-timestamps.ts:12`) guarantees **unique and strictly
+  increasing** values within one allocation — every `out[i] >= prev + 1`, including under
+  pathological input (fewer seconds than sections).
 
-**This must be verified, not assumed.** If it holds, the previously-planned "B slice" shrinks
-substantially. If it does not, this spec depends on it and the sequencing changes.
+So within a generation, section ids are already unique and ordered. A dig scoped to its own
+generation never needs an id that is stable *across* generations. **For blob addressing, the problem
+does dissolve.**
+
+**The job-identity half — DOES NOT DISSOLVE.** `section_id` is not only a blob coordinate; it is part
+of the job dedupe key:
+
+```
+jobs_idem_active on jobs (owner_id, playlist_id, video_id, section_id, job_kind, job_version)
+  where status in ('queued','active','completed')          -- 0009:11-13
+```
+
+**There is no generation dimension here.** Two generations whose sections happen to share a
+`startSec` — likely, since `allocateSectionStarts` *keeps* a model-supplied timestamp when it fits —
+are one job. Because the partial index includes `completed`, a finished dig for section 120 in
+generation *abc* **suppresses** a dig for section 120 in generation *def*. Generation-scoping the
+address does not touch that; it makes it *more* visible, because the two digs would now be
+legitimately distinct artifacts that the queue still refuses to distinguish.
+
+**Consequence for sequencing — two open questions collapse into one.** The residue of the old "B
+slice" is not a separate stable-section-identity project; it is the **job-identity re-keying already
+identified as the largest risk in §12** (open question 6). Both are the same question: *what tuple
+identifies a unit of paid work?* Answer it once, in the ADR that supersedes 0002.
+
+**Still open:** whether `generationId` joins `jobs_idem_active`, or `section_id` becomes
+generation-qualified, or the dedupe window stops including `completed`. Each has a different blast
+radius on the 1D spend-reservation FK, which anchors to this identity.
 
 ---
 
@@ -327,16 +389,70 @@ clobber-safe).
 
 ## 11. Tenancy and teams
 
-`tenantId == auth.uid()` today. The segment is *named* for a future that does not exist yet, because
-naming it is free now and re-keying every object later is not.
+`tenantId == auth.uid()` today. **Teams are exploration only** — not on the roadmap (user decision,
+2026-08-04). Nothing here is built; this section exists so a future reader inherits the facts instead
+of the guesses.
 
-What real team support would additionally require — **explicitly out of scope, recorded so it is not
-discovered late:**
+### 11.1 What naming it `tenantId` actually buys — corrected
 
-- **Every RLS predicate converts** from a string comparison to a membership lookup —
-  `split_part(name,'/',1) in (select team_id from team_members where user_id = auth.uid())` — on
+An earlier draft of this section claimed the name makes *"teams later a predicate change instead of a
+migration of every object key."* **That claim was too broad and is withdrawn.** It holds for exactly
+one transition:
+
+| Transition | Blobs move? |
+|---|---|
+| A solo owner's **own** workspace gains members (tenant `A` keeps its id, members are added) | **No** |
+| A solo project joins an **existing** team that already has its own `team_id` | **Yes — every object**, `A/…` → `T/…` |
+| Any ownership transfer between existing tenants | **Yes — every object** |
+
+The second row is the common case, and the naming does nothing for it. The reason is structural, not
+fixable by naming: **as long as the tenant is a path segment, changing tenant means changing every
+address.**
+
+So the name buys conceptual clarity and one narrow case. It is still worth keeping — it costs zero
+bytes and zero policy edits — but it is not the general forward-compatibility it was sold as.
+
+### 11.2 If teams ever ship, the answer is NOT to re-key every object
+
+Recorded because the natural reading of §4 — "the tenant is in the path" — leads to
+*"teams would mean copying everything, too expensive"*, and that conclusion is **false**.
+
+`storage.objects` carries `owner_id text` (also `owner uuid`, `user_metadata jsonb`). A policy can key
+on that **column** instead of on `split_part(name,…)`, which decouples authorization from the path
+entirely. Then ownership transfer is an `UPDATE` of one column and **no bytes move**, while the
+addresses stay immutable — fully consistent with this spec's thesis.
+
+Preconditions, measured 2026-08-04:
+
+- **Backfill is required.** `owner_id` is set on only **390 of 973** objects locally, because
+  `service_role` writes leave it NULL. Where set, it equals path segment 1 in **390/390** cases, so
+  the backfill is `set owner_id = split_part(name,'/',1)` — but every writer must populate it
+  thereafter.
+- **The predicate shape is a non-issue.** With a tenant *column*, `IN (subquery)` and correlated
+  `EXISTS` plan **identically** — same semi-join, same 45 buffers. Choose on readability.
+- **Cost is a non-issue.** Realistic name-anchored access measured **0.118 ms** (download one object)
+  and **0.234 ms** (list one prefix). A 175 ms parallel seq scan appears only for an unanchored query
+  the app never issues.
+- **Recursion is the real trap.** `team_members` needs its own policy, and the obvious one queries
+  `team_members`, which recurses infinitely (`infinite recursion detected in policy`). The fix is a
+  `security definer` helper — which then becomes *the* security boundary for the whole app, replacing
+  a string equality that cannot be wrong with a function that must be audited.
+- **Precedent already exists.** `lib/share/serve.ts:32` reads owner blobs via `serviceClient` because
+  the equality predicate cannot express "this anonymous visitor may read owner A's object." The
+  product already outgrew storage RLS on one path.
+
+### 11.3 What real team support would additionally require
+
+**Explicitly out of scope, recorded so it is not discovered late:**
+
+- **Every RLS predicate converts** from a string comparison to a membership lookup, on
   `storage.objects` *and* on `profiles`, `playlists`, `videos`, `jobs`, `usage_counters`. This changes
-  isolation from "by construction" to "by a table that must be correct," and runs per access.
+  isolation from "by construction" to "by a table that must be correct."
+  On our own tables that is clean, because they have an owner column to join on:
+  `exists (select 1 from team_members tm where tm.tenant_id = t.owner_id and tm.user_id = auth.uid())`.
+  For `storage.objects` prefer the `owner_id` column route in §11.2. If the path form is used instead,
+  it must keep the comparison in **text** — `split_part(name,'/',1) in (select tenant_id::text …)`,
+  casting the *tenant id*, never the segment (§3).
 - **Who pays.** `spend_ledger`, `quota_allowance` and `serve_owner_budget` are per-owner, and the
   entire cost-guardrail system (1D, ADR-0004) keys on that identity.
 - **Write-sharing is a different problem from read-sharing.** `share_tokens` already solves the latter
@@ -387,7 +503,13 @@ implementation.
 ## 14. Open questions — must be closed before a plan
 
 1. **`generationId` form** — uuid, timestamp, or content hash, per artifact class (§4.1).
-2. **Does generation-scoping dissolve stable section identity?** (§4.2) — changes sequencing materially.
+2. ~~**Does generation-scoping dissolve stable section identity?**~~ — **ANSWERED 2026-08-03 (§4.2):
+   half. It dissolves the *addressing* half (confirmed: `sectionId == startSec`, and
+   `allocateSectionStarts` is unique + strictly increasing within a generation). It does **not**
+   dissolve the *job-identity* half — `jobs_idem_active` includes `section_id` with **no generation
+   dimension**, and its partial index covers `completed`, so a finished dig suppresses the same
+   `startSec` in a later generation. **The remainder is now folded into question 6**, which is the
+   same question wearing a different hat: what tuple identifies a unit of paid work?
 3. **Overlap threshold**, and the section-merge ambiguity (§6).
 4. **Retention policy and GC trigger** (§8).
 5. **Offline local generation** — the upload-then-publish path (§7).
