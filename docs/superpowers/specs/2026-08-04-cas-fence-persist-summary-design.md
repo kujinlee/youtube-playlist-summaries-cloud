@@ -1,12 +1,14 @@
 # Conditional Write on `persist_summary` — Design Spec
 
-**Status:** v2 — revised after round 1 of dual adversarial review (**not converged**; round 2 pending)
-**Backlog:** #17 (durable fix; partial mitigation shipped 2026-08-04 as PR #45)
-**Task:** #19
-**Round 1 reviews:** [`spec-conditional-write-codex-r1.md`](../../reviews/spec-conditional-write-codex-r1.md) ·
-[`spec-conditional-write-claude-r1.md`](../../reviews/spec-conditional-write-claude-r1.md) ·
-[`spec-conditional-write-live-probe.md`](../../reviews/spec-conditional-write-live-probe.md)
-**Feeds:** [`2026-08-03-stable-blob-addressing-design.md`](2026-08-03-stable-blob-addressing-design.md) §5.1.
+**Status:** v3 — revised after review round 2 (**not converged**; round 3 pending)
+**Backlog:** #17 (durable fix; partial mitigation shipped as PR #45) · **Task:** #19
+**Review trail:** round 1 [codex](../../reviews/spec-conditional-write-codex-r1.md) ·
+[claude](../../reviews/spec-conditional-write-claude-r1.md) ·
+[live probe](../../reviews/spec-conditional-write-live-probe.md) — round 2
+[codex](../../reviews/spec-conditional-write-codex-r2.md) ·
+[claude](../../reviews/spec-conditional-write-claude-r2.md) ·
+[coordinator](../../reviews/spec-conditional-write-coordinator-r2.md)
+**Feeds:** [stable blob addressing](2026-08-03-stable-blob-addressing-design.md) §5.1.
 
 ---
 
@@ -19,517 +21,429 @@ generating it. Sync can move that address in the meantime. Nobody checks, so the
 the old address and the row ends up half-right — pointing at one place while its paid dig files sit in
 another.
 
-**The fix is one sentence: don't write unless the address you read is still the address.**
+**The fix: don't write unless the address you read is still the address.** That is a **conditional
+write** (compare-and-swap), the same rule as `git push` refusing a non-fast-forward.
 
-That is a **conditional write** (compare-and-swap, "CAS"), and it is the same rule as `git push`
-refusing a non-fast-forward: *if the thing moved since you looked, your write is stale — go re-read and
-try again.* It costs two extra conditions on an `UPDATE`. The conditions together are the **address
-guard**.
-
-> **Terminology — this is NOT lease fencing.** "Fencing" is already taken in this codebase
-> (`0008_jobs_queue.sql:94`, `0009:55`) and means the standard thing: a lease-token check that stops a
-> stale lease-holder from acting. That mechanism **cannot** solve this problem, because the worker's
-> lease never expires here — it stays valid the whole time, and what goes stale is the *address*, which
-> no lease knows about. Backlog #17 is titled "fence the worker persist"; the title names the wrong
-> mechanism and is kept only because it is referenced from commits, memory and the roadmap.
+> **Not lease fencing.** "Fencing" is taken in this codebase (`0008_jobs_queue.sql:94`, `0009:55`) for
+> the lease-token check. That cannot solve this: the worker's lease stays valid throughout; what goes
+> stale is the address, which no lease knows about. Backlog #17's title names the wrong mechanism and
+> is kept only because commits and memory reference it.
 
 ### Sources and the sink
 
-| | | |
+**Sources** move an address (A3 relocation, `copyAdditiveVideo`, whatever comes next). The **sink** is
+where a stale summary write lands: `persist_summary`. Several sources, one sink — so guard the sink.
+One guard is automatically right about sources nobody has written yet.
+
+> **Scope of that claim.** True for the **summary** write only. The **dig** write has the same exposure
+> and a *different* sink — a blob write with no row to attach a condition to (`dig-handler.ts:119-125`).
+> Filed as **backlog #21**. Do not read "one sink" as "digs are covered."
+
+### Precisely what is guarded — the two halves are NOT symmetric
+
+`base = pad(serialNumber) + '_' + slugify(title)`. Both halves are compared, but they mean different
+things, and conflating them produced the worst defect of round 2 (B-N1):
+
+| Half | Who can change it | What the guard detects |
 |---|---|---|
-| **Sources** | The places that **move** an address | A3 relocation, `copyAdditiveVideo`, whatever gets added next |
-| **Sink** | The one place a stale **summary** write lands | `persist_summary` |
+| `serialNumber` | **Not the worker** — row-wins; the whitelist at `0021:120-132` omits it | **any** change |
+| `summaryMd` | **The worker, as its whole purpose** — payload-wins at `0021:133` | only a change **the worker did not make** |
 
-There are several sources and there will be more. For the summary write there is exactly one sink.
+So: *the serial is guarded against any change; the key is guarded only against a change this worker did
+not make.* That is exactly the property needed to catch a concurrent relocation, and it is why the
+expected key **is not constant across the write sequence** (§6).
 
-**So guard the sink, not the sources.** Guarding sources means N guards that must each be written, each
-be correct, and each be remembered by whoever adds source N+1. Guarding the sink means one guard that
-is automatically right about sources nobody has thought of yet.
+Round 1 (H5) proved the slug half is a genuine race: `describeDivergence` compares **full bases**
+(`reconcile-serial.ts:150-155`; the comment at `:181-182` says *"serial **and** slug"*), so A3 relocates
+on slug-only divergence with the serial unchanged. A serial-only guard passes straight through that.
 
-> **Scope of the one-sink claim (round 1, Claude M4 / Codex H3).** This holds for the **summary** write
-> only. The **dig** write has the same exposure and a *different* sink — it is a blob write with no row
-> to attach a condition to (`dig-handler.ts:119-125`), so nothing here protects it. Filed as
-> **backlog #21**; see §9. Do not read "one sink" as "digs are covered."
-
-### What the guard compares
-
-`base = pad(serialNumber) + '_' + slugify(title)`. **Both halves can move, and both are guarded** — the
-serial directly, the slug via the `summaryMd` key that carries it.
-
-Round 1 (Claude H5) proved the slug half is a genuine race, not a bookkeeping detail:
-`describeDivergence` compares **full bases**, not serials (`reconcile-serial.ts:150-155`), and the
-comment at `:181-182` says so outright — *"Prefer local's ACTUAL base (serial **and** slug)."* So A3
-relocates on a slug-only divergence with the serial **unchanged**. A serial-only guard passes straight
-through that interleaving while the paid digs are moved and the old prefix deleted. An earlier draft of
-this spec asserted the slug half "is not a race"; that was **false**, and correcting it is why the guard
-has two conjuncts rather than one.
-
-**What remains unguarded** is the *non-concurrent* slug case — a re-summarize after a title change with
-no sync involved — because there is no second writer to detect. That is **backlog #20**.
+**Unguarded, deliberately:** a re-summarize that moves the key *itself* after a title change, with no
+sync involved — there is no second writer to detect. That is **backlog #20**.
 
 ---
 
 ## 1. The problem
 
-The interleaving was confirmed in round 5 of `fix/serial-coherence-sync` (2026-08-03):
+Confirmed in round 5 of `fix/serial-coherence-sync`:
 
 | Step | Actor | Effect |
 |---|---|---|
 | 1 | worker | `reserveVideoSlot` → serial `7`; pins `baseName = 007_alpha` (`summary-handler.ts:95-96`) |
 | 2 | worker | transcription + Gemini — **minutes** |
-| 3 | sync | A3 relocates: serial `7` → `3`, copies paid digs to `dig/003_alpha/`, deletes `dig/007_alpha/*` |
-| 4 | worker | `persistSummary(…, video, 'committed')` (`summary-handler.ts:177`) |
-| 5 | — | row = `serialNumber 3` **beside** `summaryMd 007_alpha.md`; digs stranded at `dig/003_alpha/` |
+| 3 | sync | A3 relocates `7 → 3`; copies paid digs to `dig/003_alpha/`, deletes `dig/007_alpha/*` |
+| 4 | worker | `persistSummary(…, 'committed')` (`:177`) |
+| 5 | — | row = `serialNumber 3` beside `summaryMd 007_alpha.md`; digs stranded |
 
-Step 5 is not cosmetic. `serialNumber` is what every subsequent reader derives the base from, so the
-paid digs at `dig/003_alpha/` are unreachable from a row advertising `007_alpha.md`. Recovering them
-costs fresh Gemini spend for content already paid for.
-
-**The slug-only variant of the same table** (round 1, H5): step 3 becomes *"local's title changed;
-`describeDivergence` → `from='007_alpha'`, `to='007_beta'`; digs copied to `dig/007_beta/`, old prefix
-deleted; **`serialNumber` stays `7`**"*. Identical damage, identical mechanism, and invisible to a
-serial-only guard.
+**Slug-only variant:** step 3 becomes *"title changed; `from='007_alpha'`, `to='007_beta'`; digs moved;
+**serial stays 7**"* — identical damage, invisible to a serial-only guard.
 
 ### 1.1 Why the row ends up incoherent
 
-**The address has two halves, and they come from two different places.** One is trusted to the row, the
-other to the job — so when they disagree, nothing notices.
-
-`persist_summary` (`0021_cloud_sync_signals.sql:99-153`) sources them from **different writers**, and
-the asymmetry is deliberate on both sides:
-
-- **`serialNumber` comes from the row.** The whitelist at layer (3) (`:120-132`) does not list it, so
-  layer (2) — `|| (v.data - 'artifacts')` — restores the row's own value. This is by design: it is what
-  stops a stale job payload reverting operational state a concurrent writer changed.
-- **`summaryMd` comes from the payload.** Line `:133` resolves
-  `coalesce(p_video->>'summaryMd', v.data->>'summaryMd')` — **payload wins**. Also by design: writing
-  that key is the entire purpose of the job.
-
-Neither rule is wrong alone. The defect is that nothing asserts the payload's key and the row's serial
+The address's two halves come from different writers, deliberately on both sides: `serialNumber` is
+restored from the row by layer (2) (so a stale payload cannot revert concurrent state), while
+`summaryMd` is `coalesce(p_video->>'summaryMd', v.data->>'summaryMd')` at `0021:133` — payload wins,
+because writing that key is the job's purpose. Neither rule is wrong alone. Nothing asserts they
 describe the *same* base.
 
-### 1.2 What the shipped mitigation does and does not close
+### 1.2 What PR #45 does not close
 
-PR #45 (`reconcile-serial.ts:239-251`) makes A3 refuse to relocate while a job for that video is
-pending or recently swept. That closes the **wide** window — the minutes at step 2.
-
-It does not close the residual one. The refusal is checked once, before the copy phase, and that copy
-phase is a loop of N sequential blob round-trips (the loop is `reconcile-serial.ts:281-290`; the
-comment describing it is `:231-236`). A job enqueued and claimed inside that span reads the
-pre-relocation address and is invisible to a probe that already ran. The comment at `:236` states the
-honest scope: *"a large reduction, not an elimination."*
-
-Widening the freshness check cannot fix the residual: **when A3 checks, the worker has written
-nothing.** Its write lands strictly afterwards. Only making that write conditional closes it.
+PR #45 (`reconcile-serial.ts:239-251`) makes A3 refuse to relocate while a job is pending — closing the
+**wide** window. The residual remains: the refusal is checked once, before a copy phase that is N
+sequential blob round-trips (loop at `:281-290`), so a job claimed inside that span reads the
+pre-relocation address and is invisible to a probe that already ran (`:236` — *"a large reduction, not
+an elimination"*). Widening the check cannot help: **when A3 checks, the worker has written nothing.**
 
 ---
 
 ## 2. Scope
 
-**In scope:** a worker summary persist landing against a row whose **address** — `serialNumber` or the
-`summaryMd` key carrying the slug — changed after the worker read it.
+**In:** a worker summary persist landing against a row whose address changed after the worker read it.
 
-**Out of scope, each filed with a number** (see §9): the `transferClassA` content race (**#19**), the
-non-concurrent title-change orphaning (**#20**), and the dig-write exposure (**#21**).
+**Out, each numbered** (§9): `transferClassA` content race (**#19**), non-concurrent title-change
+orphaning (**#20**), dig-write exposure (**#21**).
 
-**Why this scope is smaller than backlog #17 assumed — guard the sink, not the sources.** That entry
-says the fix "must cover the whole sync write path," listing `transferClassA` and `copyAdditiveVideo`
-alongside A3. That is **half right**.
-
-For the address race it is wrong, and the sizing follows from §0: those are all *sources*. Guarding
-`persist_summary` guards the *sink*, the one place a stale summary write can land. One guard covers
-every source at once, including sources not written yet.
-
-For the content race it is right — but only because `transferClassA` is not a source in this sense: it
-never moves the address, it replaces the *content* at an unchanged one (`sync-run.ts:397-432`, whose
-`completeTuple` contains no `serialNumber`). Nothing at the sink can see that, which is precisely why it
-is a different problem and a different spec.
+Backlog #17 says the fix "must cover the whole sync write path." That is **half right**: those are all
+*sources*, and guarding the sink covers them at once. It is right about `transferClassA` only because
+that is not a source at all — it replaces *content* at an unchanged address (`sync-run.ts:397-432`,
+whose `completeTuple` has no `serialNumber`), which nothing at the sink can see.
 
 ---
 
 ## 3. Verified ground truth
 
-Every claim was read from the code on 2026-08-04 and re-verified by two independent reviewers in round
-1. Citations marked ✎ were **wrong in v1** and are corrected here.
+Read from code and re-verified by two independent reviewers across two rounds. ✎ = corrected after v1.
 
 | # | Fact | Evidence |
 |---|---|---|
-| G1 | `serialNumber` is **maintained by convention at every writer, not enforced by the schema** — there is no CHECK, no NOT NULL, no trigger. `reserve_video_slot` maintains it and raises `(invariant)` on an existing row that lacks it, and that raise is what keeps the worker path safe — but `SupabaseMetadataStore.upsertVideo` replaces `data` **wholesale** (`supabase-metadata-store.ts:113-121`), so a `Video` without the (optional) field erases the key | `0009:79-96`, insert `:95`, raise `:90`; `types/index.ts:67`; live probe: **154 of 2902 rows have no `serialNumber`**, 22 of them carrying a `summaryMd` |
+| G1 | `serialNumber` is **maintained by convention, not enforced** — no CHECK, no NOT NULL, no trigger. `reserve_video_slot` maintains it and raises on an existing row lacking it; `upsertVideo` replaces `data` **wholesale** so an absent optional field erases it | `0009:79-96`; `supabase-metadata-store.ts:113-121`; live probe: **154 of 2902 rows lack it**, 22 with a `summaryMd` ✎ |
 | G2 | A bare reserved row has **no `summaryMd`** — only `id` and `serialNumber` | `0009:95` |
-| G3 | `summaryMd` is payload-wins; `serialNumber` is row-wins | `0021:133` vs whitelist `:120-132` ✎ |
-| G4 | Zero affected rows currently raises exactly one error: `persist_summary: no video row for %/%` | `0021:152` |
-| G5 | The MD body does **not** embed its own base — `summaryCore` accepts `baseName` and deliberately never destructures it | `lib/ingestion/summary-core.ts:60-62` |
-| G6 | The worker write sequence is stage → persist(committed) → promote → persist(promoted) | `summary-handler.ts:172-179` |
-| G7 | `persistSummary` has exactly one **production** caller — but ~19 **test** call sites invoke the RPC by name and all break on an arity change (§4) | `worker-persistence.ts:18-27`; `summary-handler.ts:177,179`; `tests/integration/worker-persistence-rpcs.test.ts` (16 sites), `helpers/cloud.ts:118-125`, `worker-storage-bundle.test.ts:87` |
+| G3 | `summaryMd` payload-wins; `serialNumber` row-wins | `0021:133` vs `:120-132` ✎ |
+| G4 | Zero affected rows today raises one error, classified **retryable** by the runner | `0021:152`; `worker-runner.ts:76` |
+| G5 | The MD body does not embed its base — `summaryCore` accepts `baseName` and never destructures it | `summary-core.ts:60-62` |
+| G6 | Write sequence: stage → persist(committed) → promote → persist(promoted) | `summary-handler.ts:172-179` |
+| G7 | One **production** caller; **18** named-arg RPC sites total break on an arity change | `worker-persistence.ts:22`; `worker-persistence-rpcs.test.ts` (16), `helpers/cloud.ts:118` ✎ |
 | G8 | `transferClassA` never writes `serialNumber` | `sync-run.ts:397-432` |
-| **G9** | **`describeDivergence` compares FULL BASES, not serials** — so A3 relocates on slug-only divergence with the serial unchanged | `reconcile-serial.ts:150-155`; comment `:181-182` ✎ *new in v2* |
-| **G10** | Every writer of `data->serialNumber` writes a JSON **number** (14 sites enumerated, SQL and TS); **0 of 2748** populated rows store a string | `0007:37`, `0009:95`, `0023:67,:89`, `types/index.ts:67`; live probe |
-| **G11** | `jobs.max_attempts` defaults to **5**; a retryable throw after Gemini has metered keeps the reservation and requeues | `0008_jobs_queue.sql:14`; `worker-runner.ts:66-76` |
-
-**G5 is load-bearing** for §6: because the bytes are base-independent, a re-address changes only the
-destination key, never requiring regeneration.
-
-**G2 is load-bearing** for §4: it is why the `summaryMd` conjunct must use `is not distinct from`
-rather than `=`.
-
-**G9 is load-bearing** for §0 and §4: it is the reason the guard is not serial-only.
+| G9 | `describeDivergence` compares **full bases**, so A3 relocates on slug-only divergence | `reconcile-serial.ts:150-155`, comment `:181-182` |
+| G10 | Every writer of `data->serialNumber` writes a JSON **number**; **0 of 2748** store a string | 14 sites; live probe |
+| G11 | `jobs.max_attempts` defaults to **5**; a retryable throw after metering keeps the reservation and requeues | `0008:14`; `worker-runner.ts:66-76` |
+| **G12** | **`SupabaseBlobStore.promote` is create-if-absent**: if the destination exists it **deletes the staged bytes** and returns void. `LocalBlobStore` renames (overwrites). `transferClassA` already hit this and uses `blob.put()` instead | `supabase-blob-store.ts:90-97`; `local-blob-store.ts:58-62`; precedent + comment `sync-run.ts:386-395` ✎ *new in v3* |
+| **G13** | **`'committed'` is not bookkeeping** — the serve path returns **503 "not ready"** for it, and the UI derives `summaryReady` from `'promoted'`. It publishes the key while declaring the artifact unservable | `serve-summary-core.ts:50`; `supabase-metadata-store.ts:54-55` ✎ *new in v3* |
+| **G14** | **PostgREST resolves overloads by named arguments** — measured live with both signatures present: 5-key body → 5-arg, 7-key → 7-arg, **no PGRST203**. A key omitted from the body → **PGRST202/404**, so `undefined` (which `JSON.stringify` drops) is *not* `null` | measured 2026-08-04 by coordinator and reviewer independently ✎ *new in v3* |
+| **G15** | **`create or replace` cannot change parameter names** — *"cannot change name of input parameter"* (measured). A positional-only replacement aborts the migration; a name-less recreate is unroutable by PostgREST | measured; `0023:27-35` ✎ *new in v3* |
 
 ---
 
 ## 4. The conditional write
 
-**Two extra parameters in, two extra conditions on the `UPDATE`.** The worker says which address it
-believes it holds; the write happens only if the row still agrees about **both halves**.
+Two required parameters; the classifier in §5 does the work.
 
 ```sql
 create function persist_summary(
   p_owner_id uuid, p_playlist_id uuid, p_video_id text,
   p_video jsonb, p_artifact_status text,
-  p_expected_serial int,                     -- required, no default
-  p_expected_summary_md text                 -- required; NULL is MEANINGFUL (bare row, G2)
+  p_expected_serial int,             -- required AND non-null (checked)
+  p_expected_summary_md text,        -- required; NULL is MEANINGFUL (bare row, G2)
+  p_artifact_is_new boolean default false   -- see §6: suppresses promoted-inheritance on re-address
 ) …
-begin
-  -- B1 (round 1): "required" in SQL means "must be supplied", NOT "must be non-NULL".
-  -- to_jsonb(null::int) IS NULL, so a NULL serial would make the predicate NULL -> 0 rows ->
-  -- misclassified as address-moved -> retried -> re-billed. Mirror claim_video_slot (0023:46-48).
   if p_expected_serial is null then
     raise exception 'persist_summary: p_expected_serial is required' using errcode = '22004';
   end if;
-  -- NOTE: p_expected_summary_md has NO such check — NULL is the legitimate bare-row value.
-
-  update videos v set …
-   where v.playlist_id = p_playlist_id
-     and v.video_id    = p_video_id
-     and v.owner_id    = p_owner_id
-     and v.data->'serialNumber' = to_jsonb(p_expected_serial)          -- serial half
-     and v.data->>'summaryMd' is not distinct from p_expected_summary_md;  -- slug half
 ```
 
-**Why `is not distinct from` for the second conjunct.** By G2 a bare reserved row has no `summaryMd`,
-so the first-summary case compares NULL to NULL. Plain `=` yields NULL there and would reject **every
-first-time write** — fail-closed, silent, and misclassified as a race. `is not distinct from` is the
-null-safe equality and makes both cases one predicate. This is the shape v1 wrongly concluded was
-impossible: §7 rejected keying on the *base string* because a bare row has no base to compare, which is
-true — but comparing the **key including its absence** is well-defined.
+**Required is not non-null, and required is not present.** Two distinct traps, both measured:
+"required" in PostgreSQL means *supplied*, not *non-NULL* — hence the explicit raise, mirroring
+`0023:46-48`. And in PostgREST, supplied means **the key is present in the request body** (G14) —
+`JSON.stringify` drops `undefined` keys, so the TS wrapper **must coerce**:
 
-**Why jsonb equality rather than a cast, honestly stated.** v1 argued `(v.data->>'serialNumber')::int`
-"would raise on a malformed row" and called the jsonb form *"total."* Round 1 (Claude M1) showed that
-rationale is wrong twice over: the same unguarded cast already exists at `0009:86` — inside
-`reserve_video_slot`, the *first* call the §6 loop makes — so a serial malformed enough to raise raises
-before this guard is consulted. And the jsonb form makes the **predicate** total, not the **operation**:
-its real difference is that it is **silent** where the cast is loud. That is the correct reason to
-choose it — *the predicate must distinguish "different" from "unreadable" instead of conflating them
-into a raise* — and it is exactly why §5's `jsonb_typeof` branch must accompany it.
+```ts
+p_expected_summary_md: expectedSummaryMd ?? null
+```
 
-**Required, not defaulted.** A defaulted parameter would leave every existing call site silently
-unguarded — the failure the last slice's rule was written against.
+Without it the bare-row case (where `existing?.summaryMd` is `undefined`) sends a 6-key body and gets
+**PGRST202/404 after Gemini has been billed**. `tsc` will not catch it: `readVideo` returns
+`data.data as Video` — an unchecked cast — so the type claims `string | null` while the runtime value is
+`undefined`.
 
-**Deploy safety — the 5-arg signature must survive, and must raise** (round 1, Claude H1). `fly.toml:32-34`
-runs `web` and `worker` as two process groups from one image, and migrations apply **before** the
-rollout completes, so old workers keep calling the 5-arg form for the length of the window. A `DEFAULT`
-does not help: `0023:27-35` documents that **PostgREST resolves an RPC by the named arguments in the
-request body**, and `0021:5-12` documents the sibling PGRST203 footgun. Dropping the old signature
-outright means every in-flight persist from an old worker fails **after Gemini has been billed**, then
-requeues and re-bills.
+**Why jsonb equality rather than a cast.** Not because the cast "would raise" — the same unguarded cast
+already runs first inside `reserve_video_slot` (`0009:86`). The honest reason: the predicate must
+distinguish *different* from *unreadable* instead of collapsing both into a raise. That is why §5 has an
+explicit `jsonb_typeof` branch.
 
-The resolution that satisfies both deploy safety and "no unguarded path": **keep the 5-arg signature and
-make its body `raise`.**
+**Deploy safety — the 5-arg signature survives as a raising stub, with its parameter NAMES preserved**
+(G15). `fly.toml:32-34` runs `web` and `worker` from one image and migrations apply before rollout
+completes, so old workers keep calling the 5-arg form.
 
 ```sql
-create or replace function persist_summary(uuid, uuid, text, jsonb, text) returns void … as $$
+-- Names MUST match 0021:99 exactly; `create or replace` cannot rename parameters (G15),
+-- and a name-less function is unroutable by PostgREST (G14).
+create or replace function persist_summary(
+  p_owner_id uuid, p_playlist_id uuid, p_video_id text, p_video jsonb, p_artifact_status text
+) returns void language plpgsql as $$
 begin
-  raise exception 'persist_summary: caller must pass p_expected_serial/p_expected_summary_md'
+  raise exception 'persist_summary: caller must supply p_expected_serial/p_expected_summary_md'
     using errcode = '0A000';
 end $$;
 ```
 
-Old callers get a clean, classifiable error rather than a schema-cache miss, and no unguarded write can
-ever land. Remove the stub in a later migration once no old image can be running.
-
-**Grants do not survive a drop** (round 1, Claude H2). `0023:24-25` states the rule; the default for a
-newly created function is EXECUTE to PUBLIC, so **omitting the grants fails open and silently** — every
-legitimate caller still works, no test goes red. The migration must re-issue, mirroring `0021:154-155`:
+`create or replace` **preserves** the existing grants (`0021:154-155`), so the stub needs none. The new
+7-arg signature does: grants do **not** survive a create, and the default is EXECUTE-to-PUBLIC, so
+omitting them **fails open silently** — every legitimate caller still works and nothing goes red.
 
 ```sql
-revoke all on function persist_summary(uuid,uuid,text,jsonb,text,int,text) from public;
-grant execute on function persist_summary(uuid,uuid,text,jsonb,text,int,text) to authenticated, service_role;
+revoke all on function persist_summary(uuid,uuid,text,jsonb,text,int,text,boolean) from public;
+grant execute on function persist_summary(uuid,uuid,text,jsonb,text,int,text,boolean) to authenticated, service_role;
 ```
-
-Impact is contained rather than critical — the function is `security invoker` and raises
-`'not authorized'` at `0021:103` — but it is a hardening regression and a break from the pattern every
-other migration follows.
 
 ---
 
-## 5. Failure taxonomy — three outcomes, decided in one statement
+## 5. Classification — three outcomes, one statement, named codes
 
-**"I wrote nothing" has several possible reasons, and they need opposite responses.** Round 1 found v1's
-two-way split both **incomplete** and **racy**: incomplete because the predicate is not-true for four
-distinct states, and racy because v1 proposed re-probing *row existence* in a second statement, which
-observes later state than the failed `UPDATE` did.
+Zero affected rows means four different things, and v1's two-way split routed two of them into the
+bucket that spends money: `reserve_video_slot` then raises plainly (`0009:86`, `:90`), the runner
+classifies retryable, and with `max_attempts` = 5 (G11) that is **five Gemini runs ≈ 40¢ ending in
+`dead_letter`**, where today the same row succeeds for 8¢.
 
-Measured states that yield zero rows:
-
-| State | v1 classification | Correct |
-|---|---|---|
-| Row absent | fatal | **fatal** |
-| Serial or key differs | retryable | **retryable** |
-| `serialNumber` key absent from `data` (G1: 154 live rows) | *retryable* ❌ | **fatal** |
-| Stored serial is not a JSON number | *retryable* ❌ | **fatal** |
-
-The two ❌ rows are the expensive ones. Both route into retry, where `reserve_video_slot` raises
-(`0009:86` cast, `:90` invariant) — a plain raise, not a `NonRetryableError`, so `worker-runner.ts:69-76`
-requeues. With `max_attempts` = 5 (G11) that is **five full Gemini runs ≈ 40¢ ending in `dead_letter`
-with no summary**, where today the same row succeeds on attempt 1 for 8¢. *The guard would make the money
-outcome five times worse for that input, and it would look like the guard working.*
-
-**The classification must therefore be decided by the same statement that observes the state**, inside
-the function, under the row lock — the TOCTOU argument §4 already makes about the predicate, applied one
-level up:
+Classification is therefore decided **inside the function, in the same statement that observes the
+state, under the row lock** — v1's separate re-probe observed later state than the failed `UPDATE`:
 
 ```sql
 select v.data->'serialNumber', v.data->>'summaryMd'
   into v_actual_serial, v_actual_md
   from videos v
  where v.playlist_id = … and v.video_id = … and v.owner_id = …
-   for update;                                    -- one snapshot, held for the decision
+   for update;                                   -- one snapshot, held for the decision
 
-if not found then                                   raise … 'row-gone'         (FATAL)
+if not found then                                  raise … errcode 'PS001'  -- row-gone       FATAL
 elsif v_actual_serial is null
-   or jsonb_typeof(v_actual_serial) <> 'number' then raise … 'serial-unusable' (FATAL)
+   or jsonb_typeof(v_actual_serial) <> 'number' then raise … errcode 'PS002' -- serial-unusable FATAL
 elsif v_actual_serial <> to_jsonb(p_expected_serial)
    or v_actual_md is distinct from p_expected_summary_md then
-                                                    raise … 'address-moved'    (RETRYABLE)
+                                                   raise … errcode 'PS003'  -- address-moved  RETRYABLE
 end if;
--- … then the guarded UPDATE, which cannot now fail for any of the above reasons
 ```
 
-**The caller must map the two fatal codes to `NonRetryableError`.** Otherwise §5's "distinguishable by
-the caller" is satisfied on paper while the caller still burns `max_attempts`. Distinct SQLSTATEs (or a
-structured `detail`) are part of the contract, not diagnostics.
+**The contract is the code, not the message.** Three distinct `errcode`s; the observed address rides in
+`detail` as `{"serialNumber":…, "summaryMd":…}` (JSON, so the worker parses rather than scrapes).
+`supabase-js` surfaces these as `error.code` and `error.details`. Matching on message text is
+forbidden — it is what naming the codes exists to prevent.
 
-**Returning the observed address is preferable to a re-read** (round 1, Claude M5). Because the function
-already has both values in hand, it should surface them in the error. The worker then needs **no
-re-read at all** on the recovery path — one fewer round-trip, no extra lock, and the classification is
-decided where the state was seen.
+**The caller maps `PS001`/`PS002` to `NonRetryableError`.** Otherwise "distinguishable by the caller" is
+satisfied on paper while the caller still burns `max_attempts`.
+
+**Behaviour change to record** (L-N2): a zero-row persist is retryable today (G4); `row-gone` becomes
+fatal. That is the right direction — a cascade-deleted playlist never returns — but it is a live change
+to an existing error path.
+
+**No deadlock, no RLS change** — measured both rounds. No transaction anywhere takes `videos → playlists`
+(`persist_summary` takes no `playlists` lock; `0021:104` is a bare `perform 1`), so there is no cycle.
+`videos` has one forced `FOR ALL` policy, so `FOR UPDATE` applies the same `USING` the `UPDATE` already
+did; `service_role` bypasses RLS and the worker uses it.
 
 ---
 
-## 6. Recovery — bounded re-address
+## 6. The write sequence
 
-**Rejected doesn't mean wasted.** The summary is already generated and already paid for; only its
-destination was wrong. So the worker re-files it under the new address instead of generating it again —
-one blob round-trip versus roughly 8¢ of Gemini.
-
-That works only because the MD bytes are base-independent (G5): the file does not contain its own name,
-so the same bytes are valid under any address.
+Round 2 found **three** Blockings here — every one of them in the recovery path, none in the predicate.
+The sequence below is specified in full because prose invited each of them.
 
 ```
 attempt (bounded, N = 3):
-  if ctx.signal.aborted -> throw AbortError          # EVERY attempt, not just the first (H4)
+  if ctx.signal.aborted -> throw AbortError                    # EVERY attempt (H4)
 
-  serial, currentMd := observed address              # from the rejection's payload (§5), no re-read
-  baseName          := pad(serial) + '_' + slug(title)
-
-  REBUILD the payload:                               # B2 — NOT reused from the first attempt
-      video.serialNumber := serial
-      video.summaryMd    := baseName + '.md'
-
-  ref := putStaged(baseName + '.md'); verify staged
-
-  if this is a RE-ADDRESS attempt (not the first):
-      promote(ref)                                   # bytes land BEFORE metadata — see below
-      persistSummary(..., expected := (serial, currentMd), 'promoted')
+  # ── the address: ADOPT, never re-derive from stale inputs (C1) ──────────────
+  if observedSummaryMd is not null:                            # from PS003's detail, or the :84 read
+      baseName := baseOf(observedSummaryMd)                    # '003_alpha' or '007_beta'
   else:
-      persistSummary(..., expected := (serial, currentMd), 'committed')
-      promote(ref)
-      persistSummary(..., expected := (serial, currentMd), 'promoted')
+      baseName := pad(observedSerial) + '_' + slug(payload.title)   # first summary only (G2)
+  key := baseName + '.md'
 
-  address-moved -> discard temp; next attempt
-  row-gone / serial-unusable -> NonRetryableError
+  REBUILD the payload every attempt (B2):
+      video.serialNumber := observedSerial
+      video.summaryMd    := key
+
+  ref := putStaged(key); verify staged bytes
+
+  # ── publish: committed -> durable -> promoted, ALWAYS (H-N3) ────────────────
+  persistSummary(..., expected := (observedSerial, observedSummaryMd),
+                 status := 'committed', artifactIsNew := isReAddress)
+  publish(ref, key)                                            # see "durability" below (B-N2/G12)
+  persistSummary(..., expected := (observedSerial, key),        # ← NOTE: `key`, not observedSummaryMd
+                 status := 'promoted')
+
+  on PS003 -> discard temp; observed := PS003.detail; next attempt
+  on PS001 / PS002 -> NonRetryableError
 ```
 
-**The payload is rebuilt every attempt — this is the fix for a defect the v1 pseudocode invited**
-(round 1, Claude B2). `summary-handler.ts:149-164` builds the `Video` literal **once**, carrying
-`serialNumber: serial` (`:156`) and `summaryMd: \`${baseName}.md\`` (`:157`). v1's loop recomputed
-`serial` and `baseName` but never mentioned `video`. An implementer following it literally would, on
-attempt 2, pass `expected := 3` (matching, guard **passes**) while the payload still carried
-`summaryMd: '007_alpha.md'` — and `0021:133` is payload-wins. The row would land as `serialNumber 3`
-beside `summaryMd 007_alpha.md`: **byte-for-byte the incoherence in §1 step 5, produced by the fix, with
-the guard green.**
+**The expected key changes mid-sequence, and that is the whole of B-N1.** The `'committed'` persist is
+the write that *sets* `summaryMd` (payload-wins, `0021:133`). Passing the same expected value to the
+`'promoted'` persist means comparing the pre-write value against the post-write row — which fails for
+**every first-time summary** (bare row: `NULL` expected vs `'007_alpha.md'` actual → rejected) and every
+title-changed re-summarize. It fails *silently*, classified as `address-moved`, so the dominant path
+would quietly run the recovery loop, the `'committed'` record would never be written, and `address-moved`
+would carry no information. The second persist must expect **the key the first one just wrote**. This is
+the asymmetry §0 names: the serial the worker cannot move, the key it moves by design.
 
-**Re-address attempts promote before persisting metadata** (round 1, Codex B2 / Claude M3). The
-monotonic-status rule at `0021:142-149` preserves `'promoted'` against a `'committed'` write **when the
-key is unchanged**, and its comment (`:138-141`) states the assumption: *"A different key is a genuinely
-new artifact."* A re-address makes the key the **same** as one A3 already wrote as `promoted`
-(`reconcile-serial.ts:296`), so an intermediate `'committed'` write would be silently upgraded to
-`'promoted'` while the bytes are still staged — beside Class-A scalars (`ratings`, `tldr`, `docVersion`)
-freshly updated from the new payload. Not writing that intermediate record avoids it: the bytes are
-durable first, then the metadata is advertised, which is strictly the safer ordering. **This is a
-deliberate departure from G6's sequence and must be reviewed as such in round 2.**
+**Durability must overwrite, and `promote` does not** (G12). On a re-address the destination **always**
+exists, because A3's copy phase writes `${newBase}.md` before advancing metadata (`:281-290`, `:293-296`)
+— and `promote` then **deletes the staged new bytes and returns void**. The row would advertise
+`promoted` over A3's *old* body with the fresh Gemini output discarded, silently, with pointer-level
+assertions passing. `publish(ref, key)` therefore means what `transferClassA` already does for this
+exact reason (`sync-run.ts:386-395`): `put` the verified staged bytes to the final key (atomic upsert,
+overwrites on **both** backends), then drop the temp. Never `promote` on a path where the destination
+may exist.
 
-**Abort is re-checked every attempt.** `summary-handler.ts:170` checks `ctx.signal.aborted` exactly once,
-and its comment says why: *"don't start the irreversible blob/persist sequence"* if the lease was lost.
-The loop re-enters that sequence up to three more times. A lost lease means `sweep_expired_leases`
-(`0009:63-77`) requeues the job and a second worker starts Gemini concurrently — a double charge caused
-by the fix for a stale write. The loop must also fit the wall-clock budget: the lease is 120 s
-(`worker-runner.ts:25,28`), heartbeat ≈ 40 s (`:48-52`), hard abort at `wallClockMs` = 600 000 (`:45`).
+**`'committed'` is retained** — round 2 answered v2's open question against it. It is not bookkeeping:
+the serve path returns **503 "not ready"** for `committed` (G13). That 503 *is* what makes the ordering
+safe — the only window in which the row can point at unpromoted bytes is a window in which readers are
+told to wait. Dropping it (v2's proposal) replaced a **visible, non-serving** crash window with a
+**silent** one: die between publish and the final persist and the serve path returns **200** with the
+new body beside A3-era scalars, and the idempotency skip at `summary-handler.ts:86-92` can freeze that
+state permanently.
 
-**N = 3 is bounded by PR #45, not by taste** (round 1, Claude M5 supplies the justification v1 lacked).
-While the job is `active`, `supabaseInFlightJobProbe` reports `inFlight` and A3 **refuses** to relocate
-(`in-flight-job.ts:21,:116`), so a second relocation cannot occur *during* the loop. Attempt 2 therefore
-faces a stable address in every interleaving we can construct; N = 3 is one spare. Exhausting the bound
-throws retryable — the situation is transient — and each exhaustion is logged with both addresses,
-because repeated exhaustion means something is relocating in a loop, which is a different bug.
+**Promoted-inheritance is fixed narrowly instead** (round 1 M3 / C-B2). The key-scoped rule at
+`0021:142-149` preserves `'promoted'` against a `'committed'` write **when the key is unchanged**,
+assuming — per its own comment at `:138-141` — that *"a different key is a genuinely new artifact."* A
+re-address makes the key the same while the artifact is new, falsifying that. `p_artifact_is_new`
+(passed true only on a re-address, where the worker has *just been told* the address moved) suppresses
+the preservation, so the row correctly reads `committed` → 503 → until publish lands. Briefly
+downgrading a servable A3 copy is the honest cost, and it is the same 503 the normal path already uses.
 
-**Cleanup, corrected.** A leaked *staging* object is inert and swept by existing staging cleanup. But
-the second branch leaks differently: once `promote(ref)` has run, `<oldBase>.md` is a **promoted,
-permanent** object that no staging sweep collects, and A3's cleanup will not catch it either — 
-`reconcile-serial.ts:358-361` deletes only the plan computed from `paidKeysUnder` **before** the copy
-phase, so a blob promoted after that enumeration is never in the plan. Small (storage, not loss), but
-v1's sentence was factually wrong about the branch that actually leaks.
+**N = 3 is a choice, not a derivation.** v2 justified it from PR #45's probe — but §1.2 refutes exactly
+that reasoning for the first relocation, and an A3 run past its probe completes regardless. The honest
+statement: three attempts, chosen because each costs one blob round-trip while exhaustion costs a
+requeue and a fresh ~8¢ Gemini run. Exhaustion throws retryable and logs both addresses; repeated
+exhaustion means something is relocating in a loop, which is a different bug.
+
+**Cleanup.** A leaked staging object is inert and swept. The `publish`-then-rejected branch leaks
+differently: `<oldBase>.md` is a permanent object no staging sweep collects, and A3's cleanup will not
+either — `reconcile-serial.ts:358-361` deletes only the plan computed **before** the copy phase.
+
+**`baseOf` should be shared.** It is module-private at `reconcile-serial.ts:84-86` and duplicated inline
+at `dig-handler.ts:57`. This slice adds a third caller; extract it.
 
 ---
 
 ## 7. Migration to stable blob addressing
 
-**The question: stable blob addressing is coming soon — can we build the guard the way that design wants
-it, so the migration is free?**
-
-**The answer: closer than v1 thought, and the throwaway is one line.**
-
-The stable-blob-addressing design (§5.1) publishes through a manifest row with the conditional write
-`update video_artifacts … where blob_key = <what I read>` — a guard on the **address string**. v1
-concluded that shape was unavailable today because a bare reserved row carries no `summaryMd` (G2), so
-there would be nothing on the left-hand side.
-
-That reasoning was half wrong, and round 1's H5 forced the correction: comparing the key **including its
-absence** (`is not distinct from`) is well-defined, and it is now the second conjunct. So this guard
-already compares an address, exactly as the manifest CAS will — it simply compares a *derived* address
-stored on the video row rather than an *authoritative* one stored in a manifest.
+The manifest CAS is `update video_artifacts … where blob_key = <what I read>` — a guard on the address
+string. v1 wrongly concluded that shape was unavailable today; comparing the key **including its
+absence** is well-defined, and is now the second conjunct. So this guard already compares an address —
+a *derived* one on the video row rather than an *authoritative* one in a manifest.
 
 | Piece | At migration |
 |---|---|
-| Bounded re-address loop (§6) | unchanged |
-| Three-way failure taxonomy decided in one statement (§5) | unchanged |
-| Null-safe address comparison | unchanged — the manifest's `blob_key` is `not null`, so it simplifies |
-| Test corpus — interleavings, mutation checks | retargeted, cases intact |
-| Deploy-safe raising stub, grants discipline | unchanged as rules |
-| **The two `where` conjuncts** | **replaced by one** — `blob_key = <what I read>` |
+| Adopt-the-observed-address recovery, publish semantics, abort checks | unchanged |
+| Classifier structure | **narrows** to two outcomes — a `not null` `blob_key` has no `serial-unusable` state |
+| Test corpus | retargeted, cases intact |
+| Deploy stub, grants, named-errcode discipline | unchanged as rules |
+| The two comparisons | **replaced by one** |
 
-**This slice is also the first evidence for §5.1's central claim.** That section asserts a conditional
-write on one small row is *"trivially sufficient"* — and **nothing in this codebase performs a
-conditional publish today**, so the claim is untested. Round 1 already dented it: two Blockings arose
-not from the predicate but from everything *around* it — NULL semantics, payload rebuild, status
-inheritance, deploy windows. That is worth knowing before the manifest design leans on the word
-"trivially."
+**This slice is the first evidence for §5.1's claim** that a conditional write is *"trivially
+sufficient."* Two rounds have now produced **six Blockings, none in the predicate** — all in NULL
+semantics, payload rebuild, publish semantics, status inheritance and the deploy window. The write is
+trivial; the protocol around it is not. The manifest design should not lean on that word.
 
 ---
 
 ## 8. Testing
 
-The gate is not "the guard exists" but "the guard fires on the interleavings that motivated it, and the
-recovery leaves a coherent row."
+Round 2 showed v2's list was satisfiable while the defect shipped: it asserted **pointers** where the
+loss was in **bytes**, and mandated mutating a construct that is unreachable as a guard.
 
-**Required — both races, end to end (integration).**
-1. *Serial race:* reserve a slot, relocate the serial, persist with the stale address.
-2. *Slug race (G9):* reserve a slot, relocate with the **serial unchanged and only the slug moved**,
-   persist with the stale address. This one passes trivially against a serial-only guard, so it is the
-   test that proves the second conjunct.
+**Races, end to end.** (a) serial moved; (b) **slug moved with the serial unchanged** — the test that
+proves the second comparison, and which passes trivially against a serial-only guard. Both assert row
+coherence **and** that paid dig keys under the new base are reachable.
 
-Both assert the row is coherent **and** the paid dig keys under the new base are still reachable.
-Asserting only that the RPC raised would pass in a world where the digs are still stranded.
+**Bytes, not pointers.** After a successful re-address, `get(<newBase>.md)` **equals the newly generated
+MD**. Every re-address test runs with `promoteSemantics: 'create-if-absent'`
+(`in-memory-blob-store.ts:52` defaults to `'overwrite'`, the *local* behaviour — the non-production one)
+or against real Supabase. Also assert the pointers (`data->>'summaryMd'` and
+`artifacts.summaryMd.key`), which remain necessary but insufficient.
 
-**Required — positive assertions after a successful re-address** (B2). Not "the row is not incoherent"
-but: `data->>'summaryMd'` **equals** `<newBase>.md` **and**
-`data->'artifacts'->'summaryMd'->>'key'` **equals** `<newBase>.md`. v1's wording was satisfiable by a
-test that only checked the RPC raised.
+**The normal path never enters the loop.** A plain first-time summary completes with **one**
+`'committed'` persist, **one** publish, **one** `'promoted'` persist, and **zero** `address-moved`
+rejections. This is the test that catches B-N1; every race test passes without it.
 
-**Required — one test per §5 outcome**, asserting the caller can *distinguish* them, and that both fatal
-codes map to `NonRetryableError` rather than requeueing.
+**Mutation checks target the classifier, not the `where`.** After §5 the `UPDATE`'s conjuncts are
+unreachable as guards — deleting both leaves every test green. Mutate each `elsif` branch instead. And
+because A3 always moves **both** halves (`reconcile-serial.ts:293-295`), the serial branch needs a
+**serial-only** move constructed directly in the fixture (modelling `claim_video_slot:65-68`, not A3);
+otherwise deleting the serial check leaves the race tests green. **Commit before mutating** — `git
+checkout` has reverted uncommitted work three times here.
 
-**Required — the `serialNumber`-absent row** (G1: 154 live rows). Assert a clean non-retryable failure,
-**not** a retry storm. This is the state that would otherwise cost 40¢.
+**Per-outcome, by code.** One test per `PS001`/`PS002`/`PS003`, asserting the caller distinguishes them
+by `error.code` and that the two fatal codes map to `NonRetryableError`.
 
-**Required — NULL `p_expected_serial`** raises rather than silently matching zero rows.
+**Wrapper-level nullability.** The bare-row case exercised **through the TS wrapper**, not a raw
+`admin.rpc` with a hand-written `null` — that is the only way the `?? null` coercion is under test.
 
-**Required — the re-address loop terminates.** A relocation on every attempt exhausts the bound and
-throws retryable, without spinning.
+**Grants.** After migration, `has_function_privilege('anon', 'persist_summary(uuid,uuid,text,jsonb,text,int,text,boolean)', 'EXECUTE')` is **false**. Without this the H2 fix has no covering test and its failure mode is silence.
 
-**Required — mutation checks, one per conjunct.** Delete the serial conjunct → the serial-race test MUST
-go red. Delete the `summaryMd` conjunct → the **slug**-race test MUST go red. Restore. Per the standing
-rule, **commit the fix before mutating** — `git checkout` has reverted uncommitted work three times on
-this project. A guard that passes in both worlds is not a guard, and with two conjuncts it is possible
-for one to be dead while the suite stays green.
+**Also required:** the `serialNumber`-absent row yields a clean non-retryable failure, not a retry storm
+(154 live rows); NULL `p_expected_serial` raises; abort honoured on **every** attempt; the loop
+terminates under repeated relocation; both signatures live simultaneously with the 5-arg stub raising;
+all 18 named-arg call sites updated in the same commit.
 
-**Required — the money claim, stated honestly** (round 1, L1). Assert Gemini runs exactly once across a
-successful re-address, **and** assert the exhaustion path. The honest bound: `jobs.reserved_cents` is
-per-job and reused across retries (`0020_reservation_release.sql`), so there is **no second
-reservation** — but there can be up to `max_attempts` **real** Gemini charges against one reservation,
-i.e. the ledger **under-counts actual spend** on this path. That is the claim to assert, not "no double
-charge."
+**Money, stated honestly.** Gemini runs exactly once across a successful re-address, **and** the
+exhaustion path is asserted: `jobs.reserved_cents` is per-job and reused across retries (`0020`), so
+there is no second *reservation* — but up to `max_attempts` real charges land against one, i.e. the
+ledger **under-counts actual spend**. That is the claim to assert, not "no double charge."
 
-**Required — the arity migration.** All ~19 named-argument call sites (G7) updated in the same commit,
-plus one test that the 5-arg stub raises rather than writing.
+**Not covered, and named as such:** the crash window between publish and the `'promoted'` persist, and
+the wall-clock interaction between the loop and the 120 s lease. Both are structural arguments, not
+measurements.
 
 ---
 
-## 9. Out of scope — each with a number
+## 9. Out of scope
 
 | # | What | Why separate |
 |---|---|---|
-| **19** | `transferClassA` content race | Replaces content at an **unchanged** address; invisible to an address guard. Loses a sync decision, not paid blobs, and self-heals next run |
-| **20** | Non-concurrent title-change orphaning | No second writer and no window, so nothing to compare against. This spec closes its **concurrent** half (§0) |
-| **21** | Dig-write exposure | Same damage, **different sink**: a blob write with no row to attach a condition to (`dig-handler.ts:119-125`). Needs a different mechanism |
+| **19** | `transferClassA` content race | Replaces content at an **unchanged** address; invisible to an address guard. Loses a sync decision, not paid blobs; self-heals next run |
+| **20** | Non-concurrent title-change orphaning | No second writer, so nothing to compare against. The **concurrent** half is closed here |
+| **21** | Dig-write exposure | Same damage, **different sink** — a blob write with no row to condition on |
 
-Also out of scope: any change to A3's in-flight probe (PR #45 and this guard are complementary — the
-probe narrows the window, the guard closes what remains); the local pipeline (`persist_summary` is a
-Supabase RPC and local has no concurrent sync writer); `videos.position` (A6b); the manifest itself.
+Also out: A3's in-flight probe (complementary — probe narrows, guard closes); the local pipeline
+(`persist_summary` is a Supabase RPC); `videos.position` (A6b); the manifest.
 
 ---
 
 ## 10. Open questions
 
-Round 1 **closed three** of v1's questions; they are recorded here rather than deleted, because the
-answers are load-bearing.
+**Closed across rounds 1–2, with the answers kept:** `reserveVideoSlot` in a retry loop is safe (no
+deadlock — re-verified twice) and is no longer used there; the positional-caller question was the wrong
+question (all 18 sites call by **name**); `docVersion` is out of scope (`summary-handler.ts:73-77`, and
+it is not part of `base`); PostgREST overload resolution is unambiguous (**measured**, G14); and
+promote-before-metadata is **not** safe — `'committed'` carries the 503 window (G13), so the ordering
+stays and inheritance is fixed narrowly instead.
 
-| v1 question | Status |
-|---|---|
-| Is `reserveVideoSlot` safe inside the retry loop? | **CLOSED — yes, and it is no longer used there.** Both reviewers independently disproved the deadlock concern: each PostgREST RPC is its own transaction so the `for update` at `0009:84` is acquired and released within one call, and A3's metadata write (`merge_video_data`, `0021:71-72`) takes no such lock. §5 removes the re-read anyway |
-| Does anything call `persistSummary` positionally? | **CLOSED — wrong question.** Nothing does; ~19 sites call **by name**, and PostgREST resolves by name, so all break at runtime invisibly to `tsc` (G7) |
-| Should the guard cover `docVersion`? | **CLOSED — no.** A version mismatch is already handled non-retryably at `summary-handler.ts:73-77`, and `docVersion` is not part of `base`, so a relocation cannot strand blobs through it |
+Open for round 3:
 
-Genuinely open for round 2:
-
-1. **Is promote-before-metadata on re-address (§6) the right resolution of the status-inheritance
-   problem?** It departs from G6's established ordering. The alternative — teaching the monotonic rule to
-   distinguish "same key, different artifact" — needs an artifact identity the row does not carry today,
-   which is precisely what the manifest introduces. Confirm the departure is safe rather than merely
-   convenient.
-2. **Should `serial-unusable` self-heal instead of failing?** 154 live rows are in that state. A fatal
-   error is correct for *this* write, but it leaves the row permanently unsummarizable. Repair may belong
-   to a separate migration rather than to the worker.
-3. **Does PostgREST return PGRST202 (not PGRST203) for a 5-key body against a 6-arg signature?** §4's
-   deploy argument rests on documented behaviour from `0023:27-35`, not on a measurement — the local edge
-   runtime was stopped. One live probe before implementation.
+1. **Is `p_artifact_is_new` the right shape for suppressing promoted-inheritance?** It is a caller
+   assertion about a fact the row cannot verify. The alternative is an artifact identity the row does not
+   carry — which is what the manifest introduces. Confirm the boolean is safe against a *lying* or
+   buggy caller, since the whole point of the monotonic rule was to defend against a stale one.
+2. **Should `serial-unusable` self-heal rather than fail?** 154 live rows are in that state; a fatal
+   error is right for this write but leaves them permanently unsummarizable. Repair may belong to a
+   separate migration.
+3. **Does the 503 downgrade on re-address have a user-visible cost worth bounding?** A servable A3 copy
+   becomes 503 for the duration of one publish. Probably negligible; not measured.
 
 ---
 
 ## 11. Verification
 
-- `python3 scripts/check-docs.py` from the repo root (it resolves paths from `__file__`) — **run,
-  passing**.
-- `grill-with-docs` terminology pass — **run 2026-08-04**. Outcome: the mechanism was renamed from
-  "fence" to **conditional write** / **address guard**, because "fencing" was already taken for lease
-  fencing (`0008_jobs_queue.sql:94`); and `CONTEXT.md` gained an **Addressing** section defining *base*,
-  *serial number*, *slug*, *conditional write* and *lease fencing*, none of which were defined despite
-  being load-bearing across two specs.
-- Dual adversarial review to convergence — **round 1 complete, NOT converged** (2 Blocking + 2 High +
-  1 Medium from Codex; 2 Blocking + 5 High + 6 Medium + 3 Low from Claude). Round 2 is mandatory: the
-  standing rule is that any round returning a Blocking earns another, and the fixes above are themselves
-  new unreviewed design.
-- Standing root-cause shapes to carry into round 2, all of which **hit** in round 1:
-  *absent-vs-failed conflation* (the predicate had four false-cases and a two-case taxonomy);
-  *a guard with no covering test* (no assertion on the payload key after re-address);
-  *a value read in one process and written in another* (the abort signal);
-  *an optional member that does not propagate* ("required" in SQL does not mean non-NULL).
+- `scripts/check-docs.py` — run from the repo root, **passing**.
+- `grill-with-docs` — **run**. Forced the rename from "fence" (taken for lease fencing) to **conditional
+  write**, and added an **Addressing** section to `CONTEXT.md` defining *base*, *serial number*, *slug*,
+  *conditional write* and *lease fencing* — none previously defined despite being load-bearing in two specs.
+- Dual adversarial review — **rounds 1 and 2 complete, NOT converged.** Round 3 mandatory: round 2
+  returned three Blockings from one reviewer, two from the other and one from the coordinator, and v3's
+  fixes are themselves new unreviewed design.
+- **Standing root-cause shapes** — carry into round 3; every one hit in round 2, inside v2's own fixes:
+  *a guard with no covering test* (assertions checked pointers, loss was in bytes); *an optional member
+  that does not propagate* (`undefined` is not `NULL`); *absent-vs-failed conflation* (a self-inflicted
+  key change reported as "someone else moved it"); *a test double that opts out of real behaviour*
+  (`promoteSemantics` defaults to the non-production adapter).
+- **Round-3 specific shape, new:** *the guard is easy; what the caller does with a rejection is where
+  this slice keeps breaking.* Six Blockings, zero in the predicate.
