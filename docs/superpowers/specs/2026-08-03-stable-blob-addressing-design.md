@@ -74,7 +74,8 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 | Term | Definition |
 |---|---|
 | **Tenant** | The isolation boundary that owns blobs. **Today `tenantId == auth.uid()`** — one user, one tenant. Named separately for conceptual clarity, not as a teams feature: see §11.1 for what the name does and does not buy (it makes one narrow transition free, **not** the general case). |
-| **Generation** | One production run of a paid artifact — a summarize run, or a dig run. Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
+| **Generation** | One production run of a paid artifact — a summarize run, or a dig run — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
+| **Card** | The summary-owned scalars one summarize run produces alongside the body: `tldr`, `ratings`, `overallScore`, `takeaways`, `videoType`, `audience`, `language`, `tags`, `processedAt`, `docVersion`, `mdGeneratedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
 | **Manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. |
 | **Authoritative** | The blob a slot currently resolves to. A property of the manifest, never of the blob itself. |
@@ -365,11 +366,13 @@ Under this design:
   re-run repairs it. This is what makes "compensate after the cycle" — the user's instinct — actually
   sound: compensation only works if the cycle never destroys anything.
 
-> **Scope of this section — read before concluding the concurrency problem is solved.** Everything
-> above is about **blobs**. The per-video **scalars** (`tldr`, `ratings`, `docVersion`, …) still live
-> in one overwritten slot on `videos.data`, so *"the new run's scalars beside an older generation's
-> body"* remains expressible. That is a real, observed failure — it is what froze a row permanently in
-> the conditional-write slice — and this design does not currently close it. **§14 question 8.**
+> **Scope of this section — ⟳ RESOLVED 2026-08-05, keep reading to §5.2.** Everything above is about
+> **blobs**. The per-video **scalars** (`tldr`, `ratings`, `docVersion`, …) used to live in one
+> overwritten slot on `videos.data`, so *"the new run's scalars beside an older generation's body"*
+> was expressible — a real, observed failure, and what froze a row permanently in the conditional-write
+> slice. **§5.2 closes it** (Q8, decided): the card is an attribute of the generation, so card and body
+> are inseparable by construction. This box stays because the *reasoning* is still needed — §5.1 alone
+> does not solve the concurrency problem, and a reader who stops here will believe it does.
 >
 > **"Trivially sufficient" is also now contradicted by evidence.** The conditional-write slice was
 > built first specifically to test that claim (its §7). Five adversarial review rounds produced
@@ -379,7 +382,70 @@ Under this design:
 > The claim should be narrowed to what was actually demonstrated: *the conditional write is simple;
 > the publish protocol around it is not.* Trail: `docs/reviews/spec-conditional-write-*.md`.
 
-### 5.2 Sync becomes a manifest reconciliation
+### 5.2 The card joins the generation — **DECIDED 2026-08-05 (user), closes Q8**
+
+A summary is **two** things produced by one Gemini run: a **body** (the blob) and a **card** — the
+summary-owned scalars `tldr`, `ratings`, `overallScore`, `takeaways`, `videoType`, `audience`,
+`language`, `tags`, `processedAt`, `docVersion`, `mdGeneratedAt`, `mdCorrectionsHash`
+(`0021:120-132`). §5.1 generation-scoped the body and left the card in one overwritten slot, which is
+what kept *"run #2's card beside run #1's body"* expressible.
+
+**Decision: the card is an attribute of the generation, not of the video.** One run produces one
+generation carrying both; a reader that resolves a generation gets a card and a body that provably
+came from the same run.
+
+**The card must stay queryable without fetching a blob.** Frontmatter inside `summary.md` is
+therefore rejected: the playlist list renders ratings and scores for every video, and the quick-view
+route serves `tldr`. Neither can afford N blob reads. So the card lives in the database, on a
+generation record:
+
+```
+video_generations
+  tenant_id     uuid  not null
+  video_id      text  not null
+  generation_id text  not null
+  kind          text  not null          -- 'summary' | 'dig' — what run produced it
+  card          jsonb                   -- the summary card; NULL for a dig generation
+  created_at    timestamptz not null default now()
+  primary key (tenant_id, video_id, generation_id)
+```
+
+`video_artifacts.generation_id` references it. Resolving *the current card* is then the same join as
+resolving *the current body* — `video_artifacts` where `slot = 'summary'`, then its generation — so
+the two cannot disagree. Same RLS pattern as §5.
+
+**What this costs, measured 2026-08-05 rather than estimated.** 21 files read card fields off a video
+(`lib/html-doc`, `lib/cloud-sync`, `app/api` ×3 each; the rest single files, including 6 components).
+**That number overstates the work**, and the reason matters:
+
+> Those 21 are almost all reading a `Video` **object the storage layer assembled**, not querying
+> columns. Assembly moves; the read model's shape does not. So the change concentrates in the storage
+> and persistence layer, and most of the 21 do not change at all.
+>
+> **But this is exactly where to be careful, because "the shape is unchanged" is also how the current
+> bug hides.** Keeping the shape is acceptable *only because* assembly now resolves card and body from
+> **one** generation — coherence enforced once, at assembly, instead of asked for at 21 call sites and
+> checked at none. If assembly ever reads the card from one place and the body key from another, the
+> defect returns with every reader still looking correct. That invariant belongs in a test, not a
+> comment.
+
+**Two things this closes beyond the incoherence itself.**
+
+1. **The idempotency skip gains something truthful to key on.** `summary-handler.ts:86-92` compares a
+   stored `docVersion` against the job's. Today that `docVersion` can describe a body it did not come
+   from — which is how a row froze permanently in the conditional-write slice (B-R4-1). Against a
+   generation, the comparison means what it says.
+2. **`persist_summary`'s field-merge whitelist stops being load-bearing.** The three-layer jsonb merge
+   at `0021:116-133` exists to avoid dropping summary fields on a status-only persist. With the card
+   written once as part of an immutable generation record, there is no partial-update semantics to get
+   right — the merge disappears rather than being fixed. That whitelist and its "absent → preserved"
+   rule accounted for several of the conditional-write slice's Blocking findings.
+
+**Terminology consequence — feeds the `CONTEXT.md` pass (§15).** *Generation* no longer means "a run
+that produced a body." It means **a run that produced a body and its card, which are inseparable.**
+Write that definition, not §2's current one.
+
+### 5.3 Sync becomes a manifest reconciliation
 
 Sync stops moving bytes. It compares two manifests and produces one. Nothing is copied, nothing is
 deleted, no address changes. Per-video, the result is a set of slot decisions.
@@ -567,9 +633,16 @@ on the **Class-A block**, which is `{ docVersionMajor, mdGeneratedAt, mdCorrecti
 given is *"different generations ⇒ no blob collision."* Generation-scoping the **body** does nothing
 about two writers racing on the **card**. So the row claims a fix for a race it does not touch.
 
-> This is §14 question 8 in concrete form, and it is why that question is a **prerequisite** and not
-> a detail. The row should not be repaired until Q8 is answered; whichever answer is chosen dictates
-> what this row can honestly say.
+> This is §14 question 8 in concrete form, and it is why that question was a **prerequisite** and not
+> a detail.
+>
+> **⟳ REPAIRED 2026-08-05 — Q8 is closed (§5.2: the card joins the generation), so the row can now say
+> something honest.** Corrected reading: the worker and sync each produce a **whole generation** —
+> card and body together, neither overwriting anything. Both publish by conditionally updating one
+> manifest row; the loser retries. The scenario's actual failure, *a card describing a body it did not
+> come from*, is **no longer expressible**, because resolving a generation yields both or neither.
+> The row's original wording accidentally described this outcome while the design could not deliver
+> it; it can now.
 >
 > **New measurement, 2026-08-05, and it constrains Q8's option B.** If the card stays on the row, a
 > reader needs some way to ask *"does this card describe this body?"* — and **today there is no
@@ -753,7 +826,7 @@ implementation.
    *Not current ⇒ delete, except paid, which is retained **90 days** past the moment it stopped being
    current.* Trigger: scheduled sweep. A duration rather than a generation count, because a count
    evicts by activity and bursts of activity are when mistakes happen. This was one of the three
-   **prerequisites**; closing it leaves Q3 and Q8.
+   **prerequisites**. With Q8 also closed the same day, **Q3 is the only prerequisite left.**
 
    Four constraints outlive the decision, all recorded in §8:
    - the paid/free split must be readable from the **key alone** (an orphan has no manifest entry);
@@ -774,8 +847,16 @@ implementation.
 7. **Do the two seam-bypassing writers get fixed or scoped out?** `companion-doc.ts:448` writes
    dig-deeper markdown with raw `fs`; `slides.ts:221-230` prunes assets with `fs.readdirSync`/
    `unlinkSync`. Both touch blobs the manifest must track.
-8. **Do the Class-A scalars become generation-scoped, or stay on the row?** — **added 2026-08-05,
-   surfaced by the conditional-write slice** (`2026-08-04-cas-fence-persist-summary-design.md`, five
+8. ~~**Do the Class-A scalars become generation-scoped, or stay on the row?**~~ — **CLOSED 2026-08-05
+   (user decision): the card joins the generation. Design in §5.2.** The deciding evidence was the
+   measurement below — the "cheap" option was not cheap, so both options cost a schema change, and
+   only one makes the incoherence *impossible* rather than merely *detectable*. That mattered because
+   the readers that currently do not check (`deriveClassASignals`, the quick-view route) are exactly
+   the ones that would keep not checking. Knock-on effects: §5.1's scope box retired, §9 row 1
+   repaired, and §2's definition of *Generation* must change (a run produces a body **and its card**,
+   inseparably). Original question retained below for the reasoning trail.
+
+   **Was: added 2026-08-05, surfaced by the conditional-write slice** (`2026-08-04-cas-fence-persist-summary-design.md`, five
    review rounds).
 
    A summary is **two** things: a **body** (the blob) and a **card** (`tldr`, `ratings`,
