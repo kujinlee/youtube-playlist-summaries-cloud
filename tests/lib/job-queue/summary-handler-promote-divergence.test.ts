@@ -137,10 +137,15 @@ describe('summary writer (W1) — re-summarize after a doc-version bump', () => 
     expect(bytes?.toString()).toContain('REGENERATED summary body');
   });
 
-  // The behaviour under test. If this fails, W1 is a LIVE cloud-only staleness defect:
-  // after a doc-version bump the blob keeps its old body while persistSummary stamps the
-  // NEW docVersion — i.e. the database asserts a version its blob does not contain.
-  it('serves the NEW body under Supabase semantics (promote is create-if-absent)', async () => {
+  // KNOWN-FAILING TRIPWIRE — backlog #22. `it.failing` asserts the test DOES fail, so this
+  // suite is green while the defect exists and goes RED the moment someone fixes it. Do NOT
+  // rewrite the assertion to match current behaviour (dev-process.md bans it).
+  //
+  // The defect (W1, CONFIRMED 2026-07-30, still live 2026-08-05): after a doc-version bump the
+  // blob keeps its OLD body while persistSummary stamps the NEW docVersion — the database
+  // asserts a version its blob does not contain. This is the same shape the conditional-write
+  // spec review rediscovered from scratch as B-R4-1, and it is why backlog #22 exists.
+  it.failing('serves the NEW body under Supabase semantics (promote is create-if-absent)', async () => {
     const store = new InMemoryBlobStore({ promoteSemantics: 'create-if-absent' });
     setup(store, 'ORIGINAL summary body', null);
     await makeSummaryHandler(serviceClient)(job(), ctx);

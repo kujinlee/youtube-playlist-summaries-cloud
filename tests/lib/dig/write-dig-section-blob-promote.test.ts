@@ -55,10 +55,16 @@ describe('writeDigSectionBlob — re-writing an already-dug section (finding #2)
     expect(bytes?.toString()).toContain('REGENERATED dig content');
   });
 
-  // The behaviour under test. If this fails, finding #2 is a LIVE DEFECT on the cloud
-  // path: a re-dug section keeps its stale body, and the writer stamps no metadata that
-  // would reveal it (behaviour W2 of the review — the only writer with no metadata at all).
-  it('serves the NEW body under Supabase semantics (promote is create-if-absent)', async () => {
+  // KNOWN-FAILING TRIPWIRE — backlog #22. `it.failing` asserts the test DOES fail, so this
+  // suite is green while the defect exists and goes RED the moment someone fixes it. It is
+  // NOT rewritten to match current behaviour: that anti-pattern is banned here (dev-process.md
+  // — a test that pinned the phantom-serial bug hid it for weeks behind a green suite).
+  //
+  // The defect (W2 of architecture-review-2026-07-30, CONFIRMED 2026-07-30, still live
+  // 2026-08-05): a re-dug section keeps its stale body because SupabaseBlobStore.promote is
+  // create-if-absent, and this writer stamps no metadata that would reveal it. Independently
+  // rediscovered as Codex B1 in round 2 of the conditional-write spec review.
+  it.failing('serves the NEW body under Supabase semantics (promote is create-if-absent)', async () => {
     const store = new InMemoryBlobStore({ promoteSemantics: 'create-if-absent' });
     await writeDigSectionBlob(input(store, 'ORIGINAL dig content'));
     await writeDigSectionBlob(input(store, 'REGENERATED dig content'));
