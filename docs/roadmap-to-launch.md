@@ -638,6 +638,13 @@ merged-PR list every time, per *Session Resume*.
 `master` is green.
 
 **Unblocked — engineering, in recommended order:**
+0. **Finding #2 — CONFIRMED DEFECT (2026-07-30).** A re-dug section silently keeps its OLD body
+   on the cloud path: `writeDigSectionBlob` calls `promote()`, which is create-if-absent on
+   Supabase, so the regenerated content is discarded — and that writer stamps no metadata, so
+   nothing records it. Proven by `tests/lib/dig/write-dig-section-blob-promote.test.ts`
+   (currently RED **on purpose** — it is the bug report; branch `test/promote-divergence-finding-2`,
+   not merged). **Reachability not yet traced:** does the dig path allow re-digging an already-dug
+   section at the same `DIG_GENERATOR_VERSION`? Answer that first — it sets severity vs D2.
 1. **D2 — no reaper for `serve_model_charge`** (money path, fails silently). Nothing cron-shaped
    exists in the migrations and `sweep_expired_leases` never touches `reserved_cents`, so a process
    death between reserve and settle appears to strand the reservation permanently.
