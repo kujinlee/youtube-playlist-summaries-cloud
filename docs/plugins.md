@@ -110,9 +110,25 @@ re-run) is fine; beyond that, fall back. The Claude adversarial review satisfies
 **USE `scripts/codex-review.py` — it makes failure-mode 1 below impossible (added 2026-07-19).**
 
 ```bash
-python3 scripts/codex-review.py --out docs/reviews/task-N-<name>-codex.md "<review prompt>"
+# PREFERRED — always for a real review prompt. See the backtick footgun below.
+python3 scripts/codex-review.py --prompt-file <path> --out docs/reviews/task-N-<name>-codex.md
 #   exit 0 = a real review was written    exit 1 = the gate did NOT run → fall back to Claude
 ```
+
+**Pass the prompt in a FILE, not as a shell argument (added 2026-08-04).** A review prompt is full of
+identifiers, and any **backtick** inside a double-quoted bash string is **command substitution** — the
+shell silently rewrites the prompt before Codex ever sees it. Measured 2026-08-04: a round-3 prompt
+containing `` `key` `` produced `bash: key: command not found`, the prompt arrived mangled, and no
+review was written. `--prompt-file` avoids the shell entirely.
+
+This is the **same root cause** as the `gh --body-file` rule in `docs/dev-process.md` Phase 5, and it
+is not a `gh` problem — it applies to **every** double-quoted bash string, including
+`git commit -m "$(cat <<'EOF' …)"`, which broke on an apostrophe in the same session. The general rule:
+**anything longer than a line goes in a file** (`--prompt-file`, `--body-file`, `git commit -F`).
+
+The wrapper behaved correctly here and that is the point: it refused to write a review file rather than
+writing an empty one, so the mangled run failed **loud**. A caller checking only the exit code of a raw
+`codex exec` would have recorded a completed gate.
 
 It walks every candidate model in priority order, and decides success **solely** by whether
 `codex exec -o/--output-last-message` wrote a substantive final-message file — never the exit code,

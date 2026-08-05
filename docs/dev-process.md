@@ -149,11 +149,23 @@ These files are not @-included — read them when the trigger condition is met.
    - Use the branch even when the work is already committed on `master` locally: create
      the branch at `HEAD`, `git reset --hard origin/master`, and push the branch. Nothing
      is lost as long as the commits are not yet pushed.
-   - **`gh` footgun:** this repo has two remotes (`origin` = `…-cloud`, `upstream` =
-     `…-official-plugins`), and PR numbers collide across them. Always pass
-     `--repo kujinlee/youtube-playlist-summaries-cloud` on any `gh pr` command. Write PR
-     bodies to a file and use `--body-file`; a `--body "$(cat <<'EOF' …)"` heredoc breaks
-     on apostrophes and backticks.
+   - **`gh` two-remotes footgun — RESOLVED 2026-08-04.** This repo used to carry a second
+     remote (`upstream` = `…-official-plugins`, the frozen predecessor repo) whose PR
+     numbers collided with `origin`'s, so a bare `gh pr` could silently act on the wrong
+     repo — a mutating `gh pr edit 2` once overwrote the other repo's PR body. The remote
+     was removed (`git remote remove upstream`); `gh pr` with no `--repo` now resolves
+     unambiguously, verified. Passing `--repo kujinlee/youtube-playlist-summaries-cloud`
+     remains harmless and is still the safe habit for mutating commands.
+     *(`official-plugins` itself is unchanged: the OLD repo, superseded, **do not edit it**.
+     "Local" means local mode of `-cloud`.)*
+   - **Anything longer than a line goes in a FILE, never a shell argument.** Write PR bodies
+     to a file and use `--body-file`; commit messages with `git commit -F`; Codex review
+     prompts with `scripts/codex-review.py --prompt-file`. A `"$(cat <<'EOF' …)"` heredoc
+     breaks on apostrophes, and **any backtick inside a double-quoted bash string is command
+     substitution** — the shell rewrites the text before the tool sees it. Both failure modes
+     hit in one session on 2026-08-04: a commit message broke on an apostrophe, and a review
+     prompt containing `` `key` `` was mangled into `bash: key: command not found`, silently
+     skipping the adversarial-review gate. See `docs/plugins.md` → Code Review.
    - **CI runs on every PR** (`.github/workflows/ci.yml`): `tsc --noEmit`, the unit suite,
      and the `service_role` confinement guard, on Node 22 to match the Dockerfile. That is
      what makes the PR a gate rather than a checkpoint someone has to read. Integration
