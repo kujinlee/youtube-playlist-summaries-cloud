@@ -86,12 +86,31 @@ Existing terms kept unchanged: `base`, `serialNumber`, `slug`, `principal`, `ind
 
 ## 3. What exists today (verified ground truth)
 
-Load-bearing facts, each verified in-session on 2026-08-03. **Re-verify before approval.**
+Load-bearing facts, each verified in-session on 2026-08-03, and **re-verified against live code on
+2026-08-05** (§15's re-verify gate). **13 survived; 3 needed correction, all marked ⟳ below.**
+
+> **What the drift was, and why it is worth a sentence.** Every correction has one cause: two PRs
+> merged *after* the original verification — #45 (the in-flight-job guard) and #38 (`copy` at the
+> BlobStore seam) — inserted code **above** the cited lines. Not one cited *fact* was wrong; three
+> cited *locations* were. That is the failure mode a line-number citation has and a symbol name does
+> not, so the corrections below cite the **function**, with the line range as a hint.
 
 **Storage.** Supabase Storage, bucket `artifacts`, **private** (`0007_storage_and_rpcs.sql:4`). No
 bucket-level size or MIME restriction is set in any migration. Object path is
-`<ownerId>/<playlistKey>/<key>` (`supabase-blob-store.ts:17`). Only five operations are used —
-`upload`, `download`, `remove`, `move`, `list`.
+`<ownerId>/<playlistKey>/<key>` (`supabase-blob-store.ts:17`, `objectKey`). Only five **Storage API**
+operations are used — `upload`, `download`, `remove`, `move`, `list`.
+
+> **⟳ Corrected 2026-08-05 — the *seam* has six operations, the *API* still has five, and the gap is
+> evidence for this design.** `BlobStore` gained `copy()` (PR #38), and it is deliberately **not**
+> built on the bucket's native `copy`/`move`: `SupabaseBlobStore.copy` delegates to the shared
+> `copyBlob`, which reads through `tryGet` so the outcome can be classified
+> (`supabase-blob-store.ts:68-81`, `blob-store.ts:34-45`). The seam's own doc comment gives the
+> reason — *"a multi-blob relocation must be copy → verify → update metadata → delete sources"*, and a
+> destructive rename "would bake an unrecoverable ordering into the seam."
+>
+> **Read that as a finding, not a footnote.** The codebase has already concluded, independently and
+> under review, that **relocating a blob address is not a safe primitive**. This spec's §1 says the
+> same thing one level up: stop needing to relocate at all.
 
 > **Answering "do we need S3?" — no.** Supabase Storage *is* S3-compatible object storage. The
 > `<playlistKey>` segment is **our convention, not a platform constraint**: object stores have a flat
@@ -99,7 +118,8 @@ bucket-level size or MIME restriction is set in any migration. Object path is
 > no infrastructure, no vendor migration.
 
 **The one hard constraint.** Storage RLS is
-`bucket_id = 'artifacts' and split_part(name,'/',1) = auth.uid()::text` (`0007:12-17`). **The first
+`bucket_id = 'artifacts' and split_part(name,'/',1) = auth.uid()::text`
+(`0007:13-16`, policy `artifacts_owner_rw` — ⟳ was cited as `12-17`). **The first
 path segment must equal the caller's uid.** Nothing else is checked — not the playlist segment, not
 the extension, not the size.
 
@@ -121,8 +141,10 @@ future escape hatch (§11), not for this design, and it is **not usable as-is**:
 populated on **390 of 973** objects in the local stack, because `service_role` writes leave it NULL.
 Where it is set it equals path segment 1 in **390/390** cases, so it is backfillable.
 
-**Blob inventory.** Nine kinds. The paid/free split is already written down and load-bearing at
-`reconcile-serial.ts:64-80` and `sync-run.ts:120-124`:
+**Blob inventory.** Nine kinds — every key shape below re-confirmed by grep on 2026-08-05. The
+paid/free split is already written down and load-bearing at **`reconcile-serial.ts:paidKeysUnder`**
+(≈88-103) and **`sync-run.ts` behavior #3, "money-safe"** (≈125-128) — ⟳ these were cited as
+`reconcile-serial.ts:64-80` and `sync-run.ts:120-124`, which PR #45 pushed down:
 
 | Kind | Key today | Paid? |
 |---|---|---|
@@ -642,6 +664,27 @@ This spec is verified by review, not by tests. Before it becomes a plan:
   are all new and must land in `CONTEXT.md`.
 - Dual adversarial review (Codex + Claude, independent) **to convergence** — mandatory here: this
   touches schema, identity, and the money path.
-- **Re-verify every fact in §3 against live code.** They were verified on 2026-08-03 and are
-  load-bearing; a stale premise invalidates the design.
+- ~~**Re-verify every fact in §3 against live code.**~~ — **DONE 2026-08-05.** 16 facts checked
+  against `master` @ `7e142f6`; **13 survived verbatim, 3 citations corrected** (marked ⟳ in §3), and
+  **zero facts were found false**. Verified this round, each by reading the cited code:
+
+  | Fact | Result |
+  |---|---|
+  | Bucket `artifacts` private, no size/MIME limit | ✅ `0007:4` |
+  | RLS predicate, text-to-text, fails closed on NULL/empty | ✅ ⟳ line range `13-16` |
+  | Object path `<ownerId>/<playlistKey>/<key>` | ✅ `objectKey`, line 17 |
+  | Five Storage API operations | ✅ ⟳ seam now has a 6th, `copy`, not built on the API's |
+  | Nine blob kinds, all key shapes | ✅ all nine grep-confirmed |
+  | Paid/free split location | ✅ ⟳ moved to `paidKeysUnder` / behavior #3 |
+  | Slide assets keyed on `videoId`, not `base` | ✅ `slides.ts:185` |
+  | PDF key carries a content hash | ✅ `pdf-render-version.ts:22` |
+  | Model envelope overwrites in place | ✅ `model-store.ts:51` — a bare `put`, no versioning |
+  | Version constants compared to compile-time values | ✅ `docVersion 3.3`, `DIG_GENERATOR_VERSION 9`, `PDF_RENDER_VERSION 1` |
+  | **Zero** team/workspace/org concept in `lib/` + migrations | ✅ grep empty |
+  | `share_tokens` never creates a second owner | ✅ `0013` (+`0017`, `0019` cascade — no owner change) |
+  | Exactly one row per `(playlist_id, video_id)` | ✅ `0001:30`, the primary key |
+  | `jobs_idem_active` carries `playlist_id` (ADR-0002; §14 Q6 depends on it) | ✅ `0009:11-13` |
+
+  **The one methodological lesson, worth keeping past this spec:** all three corrections were stale
+  *line numbers*, none were stale *facts*. Cite the symbol; let the line number be a hint.
 - Walk each row of §9 explicitly during review rather than accepting the table as written.
