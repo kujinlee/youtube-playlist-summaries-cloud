@@ -200,6 +200,32 @@ the bytes are unchanged from the current layout and **the predicate needs no edi
 what makes cross-playlist sharing *possible* (§12). It is also what removes `serial` and `slug` from
 the address entirely.
 
+> **⚠ Consequence found 2026-08-05, and it is bigger than it looks: this breaks `Principal.indexKey`,
+> and with it playlist hard-delete.**
+>
+> Every Supabase blob operation composes its root as `${p.id}/${p.indexKey}/…` — `objectKey` (`:15-18`),
+> `list` (`:122-125`), and `deletePrefix` (`:110-113`). `indexKey` **is** the playlist segment. Remove
+> the segment and that composition addresses nothing.
+>
+> The sharpest instance is **playlist hard-delete**, which is a *prefix sweep*:
+> `DELETE /api/playlists/[id]` calls `blobStore.deletePrefix(principal, '')` (`route.ts:79`) and
+> relies entirely on the playlist being a path component to scope the blast radius. Under the new
+> template both obvious ports are wrong:
+>
+> - keep `${p.id}/${p.indexKey}/` → matches **nothing**; every blob survives the delete, and the route
+>   already swallows blob-cleanup failures as *"invisible orphans accepted"* (`route.ts:80-82`), so it
+>   fails **silently** and returns 200;
+> - simplify to `${p.id}/` → deletes **the entire tenant**, every playlist the user owns.
+>
+> **So deletion must become manifest-driven enumeration, not a prefix sweep** — which is coherent with
+> the rest of the design (the manifest is the only thing that knows what a video owns once the path
+> stops encoding it), but it is *new work this spec has not costed*, it sits on the delete path, and
+> one of its failure modes is silent. Treat as a first-class task at plan time, not a migration detail.
+>
+> **Where this bites twice:** §8's rule that an explicit delete outranks retention depends on delete
+> actually collecting the blobs. If delete degrades to a silent no-op, the 90-day window silently
+> becomes forever, for content a user asked to destroy.
+
 **`<generationId>` makes every write create rather than overwrite.** No blob is ever modified in
 place, so no writer can destroy another's work, and no reader can observe a half-written artifact.
 
@@ -437,14 +463,48 @@ Design:
   collected. This is the classic GC race; a minimum age (hours, not minutes) is the standard defense.
 - **Retention — DECIDED 2026-08-05 (user).** One rule, and it fits in a sentence:
 
-  > **If a blob is not current, delete it — except a paid blob, which is retained for potential
-  > recovery.**
+  > **If a blob is not current, delete it — except a paid blob, which is retained for 90 days so it
+  > can be recovered.**
 
   So *free* blobs (`htmls/…`, `pdfs/…`) live exactly as long as they are the authoritative copy of
-  their slot. *Paid* blobs (`<base>.md` / `summary.md`, `models/…`, `dig/…`, dig-deeper) are **never
-  collected**, superseded or not. Nothing that is current is ever a candidate, whatever its kind.
+  their slot. *Paid* blobs (`<base>.md` / `summary.md`, `models/…`, `dig/…`, dig-deeper) survive
+  **90 days past the moment they stopped being current**, then are collected. Nothing that is current
+  is ever a candidate, whatever its kind.
 
-  **Three consequences, each load-bearing.**
+  **Why 90 days, and why a duration rather than a count** (decided 2026-08-05 after the first draft
+  said "retained indefinitely", which was a word rather than a decision):
+
+  - **The recovery scenarios are clocks, not counters.** Both are *someone noticed something went
+    wrong*, which elapsed time measures and regeneration count does not.
+  - **A count evicts by activity, and bursts of activity are when mistakes happen.** "Keep the last 2
+    generations" would let a video regenerated three times in one afternoon evict the good copy from
+    *before* the bad run — exactly the copy the rule exists to protect.
+  - **90 rather than 30, because the two scenarios have very different clocks.** "This regeneration is
+    worse than the old one" is noticed in days. "A bug silently orphaned paid content" is not: the
+    promote-divergence defect (backlog #22) went **five weeks** between being confirmed and being
+    rediscovered from scratch.
+  - **Cost is not the constraint.** Paid artifacts are *text* — summary markdown, dig markdown, model
+    JSON. The bulky artifacts are slide assets, which §4 keeps **outside** generations entirely, so
+    they are untouched by this rule. Three months of superseded text per video is not a storage
+    conversation.
+
+  **Retention is a CEILING, never a floor — an explicit delete outranks it.** This is a correctness
+  rule, not a tuning knob, and it is the one part of §8 that needs a test rather than a note. The app
+  already has full hard-delete for playlists (`DELETE /api/playlists/[id]`, cascading videos, jobs and
+  share tokens via the 0019 FKs). When a user deletes, the superseded paid generations must be
+  collected **immediately**, not in 90 days — otherwise "delete" does not delete, and the retention
+  window becomes a window during which the system knowingly keeps content someone explicitly asked it
+  to destroy. The 90 days bound how long an *unreferenced* paid blob may linger **on its own**; they
+  never license retaining anything past an explicit delete.
+
+  > **This rule has a live dependency, not just a test.** Delete only outranks retention if delete
+  > still works — and §4 shows it does **not** survive the new path template unchanged: today's
+  > hard-delete is a prefix sweep over `${p.id}/${p.indexKey}/`, and `indexKey` is the playlist
+  > segment this design removes. Its worst failure mode is silent (the route accepts blob-cleanup
+  > failures and returns 200), which would turn the 90-day ceiling into *forever* without anything
+  > reporting it. **Assert the collection, do not assume it.**
+
+  **Three further consequences, each load-bearing.**
 
   1. **The paid/free split must be derivable from the KEY ALONE.** An orphan has no manifest entry —
      that is what makes it an orphan — so the sweeper cannot ask the manifest whether a candidate was
@@ -690,11 +750,23 @@ implementation.
    rule is the replacement for title matching, so the design has no cross-generation attach rule
    without it.
 4. ~~**Retention policy and GC trigger** (§8).~~ — **CLOSED 2026-08-05 (user decision, §8).**
-   *Not current ⇒ delete, except paid, which is retained for recovery.* Trigger: scheduled sweep.
-   This was one of the three **prerequisites**; it is now closed, leaving Q3 and Q8.
-   The decision carries three constraints that outlive it — the paid/free split must be readable from
-   the **key alone** (orphans have no manifest entry), the grace period is checked **before** the kind,
-   and the free-blob serve paths must be *asserted* not assumed. All three are in §8.
+   *Not current ⇒ delete, except paid, which is retained **90 days** past the moment it stopped being
+   current.* Trigger: scheduled sweep. A duration rather than a generation count, because a count
+   evicts by activity and bursts of activity are when mistakes happen. This was one of the three
+   **prerequisites**; closing it leaves Q3 and Q8.
+
+   Four constraints outlive the decision, all recorded in §8:
+   - the paid/free split must be readable from the **key alone** (an orphan has no manifest entry);
+   - the grace period is checked **before** the kind;
+   - the free-blob serve paths must be *asserted*, not assumed;
+   - **an explicit delete outranks retention** — a correctness rule, and one that depends on the
+     §4 finding below, since today's hard-delete does not survive the new path template.
+
+   **⚠ Surfaced while closing this question — a NEW item, not a sub-question of Q4** (§4): removing
+   `<playlistKey>` from the path breaks `Principal.indexKey`, which every `objectKey`, `list` and
+   `deletePrefix` composes its root from. Playlist hard-delete is a prefix sweep over exactly that
+   root, so it must become **manifest-driven enumeration**. Uncosted work, on the delete path, with a
+   silent failure mode. Q4's answer is not blocked on it; the *plan* is.
 5. **Offline local generation** — the upload-then-publish path (§7).
 6. **Cross-playlist dedup: in or out?** (§12) — determines whether `jobs` and the 1D reservation are
    touched. The spec is coherent either way; the saving only materializes if `playlist_id` leaves the
