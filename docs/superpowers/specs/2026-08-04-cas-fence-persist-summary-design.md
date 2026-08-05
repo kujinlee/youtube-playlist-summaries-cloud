@@ -8,6 +8,41 @@
 
 ---
 
+## 0. The idea in plain terms
+
+**A worker writes to an address that someone else moved while it wasn't looking.**
+
+The worker decides *where* a summary will be stored at the start of the job, then spends minutes
+generating it. Sync can move that address in the meantime. Nobody checks, so the late write lands at
+the old address and the row ends up half-right — pointing at one place while its paid dig files sit
+in another.
+
+**The fix is one sentence: don't write unless the address you read is still the address.**
+
+That is what "CAS" (compare-and-swap) means here, and it is the same rule as `git push` refusing a
+non-fast-forward: *if the thing moved since you looked, your write is stale — go re-read and try
+again.* It costs one extra condition on an `UPDATE`.
+
+### Sources and the sink
+
+The most useful way to hold this design is **sources versus the sink**.
+
+| | | |
+|---|---|---|
+| **Sources** | The places that **move** an address | A3 relocation, `copyAdditiveVideo`, whatever gets added next |
+| **Sink** | The one place a stale write **lands** | `persist_summary` |
+
+There are several sources and there will be more. There is exactly one sink.
+
+**So guard the sink, not the sources.** Guarding sources means N guards that must each be written,
+each be correct, and each be remembered by whoever adds source N+1. Guarding the sink means one guard
+that is automatically right about sources nobody has thought of yet.
+
+This is the correction to backlog #17, which assumed the fix had to be applied along the whole sync
+write path. It doesn't — and that single insight is most of why this slice is small.
+
+---
+
 ## 1. The problem
 
 A worker generating a summary pins its blob address **minutes before** it writes. If sync relocates
@@ -32,8 +67,11 @@ Gemini spend for content already paid for.
 
 ### 1.1 Why the row ends up incoherent
 
-`persist_summary` (`0021_cloud_sync_signals.sql:99-153`) sources the two halves of the address from
-**different writers**, and that asymmetry is deliberate on both sides:
+**The address has two halves, and they come from two different places.** One is trusted to the row,
+the other to the job — so when they disagree, nothing notices.
+
+`persist_summary` (`0021_cloud_sync_signals.sql:99-153`) sources them from **different writers**, and
+the asymmetry is deliberate on both sides:
 
 - **`serialNumber` comes from the row.** The whitelist at layer (3) (`:121-134`) does not list it, so
   layer (2) — `|| (v.data - 'artifacts')` — restores the row's own value. This is by design: it is what
@@ -76,10 +114,19 @@ The two are separated deliberately. The serial race destroys **paid blobs**; the
 **sync decision** that self-heals on the next run, because both sides still hold readable MD. Bundling
 a fuzzy lower-stakes problem into a tight high-stakes one is how a slice stops converging.
 
-Backlog #17's claim that the fix "must cover the whole sync write path" is **half right**, and the
-correction matters for sizing: a CAS on `persist_summary` fences the worker against *every* relocator
-at once — A3, `copyAdditiveVideo`, anything added later — because it guards the single point where the
-stale write lands, not each place a relocation originates.
+**Why this scope is smaller than backlog #17 assumed — guard the sink, not the sources.** That entry
+says the fix "must cover the whole sync write path," listing `transferClassA` and `copyAdditiveVideo`
+alongside A3. That is **half right**.
+
+For the serial race it is wrong, and the sizing follows directly from §0: those are all *sources* —
+places an address gets moved. Fencing `persist_summary` guards the *sink*, the one place a stale write
+can actually land. One guard covers every source at once, including sources not written yet. Chasing
+the sources instead would mean three guards today and a standing obligation on everyone who adds a
+fourth.
+
+For the content race it is right — but only because `transferClassA` is not a source at all in this
+sense: it never moves the address, it replaces the *content* at an unchanged one. Nothing at the sink
+can see that, which is precisely why it is a different problem and a different spec.
 
 ---
 
@@ -109,8 +156,11 @@ destination key only, never a regeneration.
 
 ## 4. The fence
 
-`persist_summary` gains a required parameter naming the serial the worker read, and the `update`
-gains one conjunct:
+**One extra parameter in, one extra condition on the `UPDATE`.** The worker says which address it
+believes it holds; the write happens only if the row still agrees.
+
+`persist_summary` gains a required parameter naming the serial the worker read, and the `update` gains
+one conjunct:
 
 ```sql
 create function persist_summary(
@@ -146,8 +196,11 @@ check.
 
 ## 5. Failure taxonomy — two outcomes, not one
 
-Today zero affected rows means exactly one thing (G4). Under the fence it means **two**, and they
-require opposite handling:
+**"I wrote nothing" now has two possible reasons, and they need opposite responses.** One means *try
+again* (the address moved). The other means *stop* (the row is gone). If the code can't tell them
+apart, it will retry forever on the fatal one or give up on the recoverable one.
+
+Today zero affected rows means exactly one thing (G4). Under the fence it means **two**:
 
 | Zero rows because | Meaning | Handling |
 |---|---|---|
@@ -166,8 +219,12 @@ worker branches on them, so the discrimination is part of the contract, not diag
 
 ## 6. Recovery — bounded re-address
 
-Because the MD bytes are base-independent (G5), a lost CAS does not invalidate the paid Gemini output.
-The worker re-addresses instead of re-generating:
+**Rejected doesn't mean wasted.** The summary is already written and already paid for; only its
+destination was wrong. So the worker re-files it under the new address instead of generating it again
+— the difference between one blob round-trip and roughly 8¢ of Gemini.
+
+That works only because the MD bytes are base-independent (G5): the file does not contain its own
+name, so the same bytes are valid under any address.
 
 ```
 attempt (bounded, N = 3):
@@ -184,10 +241,10 @@ attempt (bounded, N = 3):
       └─ ok             → done
 ```
 
-**Why not simply fail the job.** A retry re-runs transcription and Gemini at roughly 8¢ per
-occurrence, for a race the worker can resolve locally in one round-trip. The idempotency skip at
-`summary-handler.ts:86-92` would not prevent it: it keys on `artifacts.summaryMd.status === 'promoted'`,
-which is false precisely because the write was rejected.
+**The existing idempotency skip does not rescue the simpler design.** It is tempting to think failing
+the job is free because the retry would notice the work is already done — it would not. The skip at
+`summary-handler.ts:86-92` keys on `artifacts.summaryMd.status === 'promoted'`, which is false
+precisely *because* the write was rejected. So "just fail it" really does pay Gemini twice.
 
 **Both persists are fenced, not just the first.** The serial can move in the gap between them. Fencing
 only the `committed` write would leave a promoted blob at the old base with the row believing
@@ -206,10 +263,15 @@ cleanup; failing the job to guarantee cleanup would trade a harmless orphan for 
 
 ## 7. Migration to stable blob addressing
 
+**The question: stable blob addressing is coming soon — can we build the fence the way that design
+wants it, so the migration is free?**
+
+**The answer: not yet — the thing it wants to compare doesn't exist yet.** But almost nothing is
+wasted, because the throwaway part is one line.
+
 The stable-blob-addressing design (§5.1) publishes through a manifest row and fences with
-`update video_artifacts … where blob_key = <what I read>`. That is a fence on the **address string**,
-not on a serial — so the obvious question is whether to key this fence on the base now and migrate for
-free.
+`update video_artifacts … where blob_key = <what I read>` — a fence on the **address string**, not on
+a serial. So keying this fence on the address now looks like the free migration.
 
 **It cannot be done today, and G2 is the reason.** A bare reserved row carries no `summaryMd`. On a
 first-time ingest there is no prior address to compare against, so a base-keyed fence would have
