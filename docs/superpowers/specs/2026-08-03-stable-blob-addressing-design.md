@@ -418,6 +418,15 @@ Design:
   regenerate for nothing.
 - **Trigger — OPEN.** Worker job, scheduled sweep, or on-demand.
 
+> **Judgment recorded 2026-08-05 — these are ordinary costs, not a mark against the design.**
+> Mark-and-sweep with a grace period is a standard, well-understood pattern, and the two OPEN items
+> above are normal design work rather than risks. Noted because a review of the conditional-write
+> slice framed them as a *cost* of adopting the manifest; that framing was over-weighted. The
+> accurate reading is §8's own opening: the need already exists and is currently **unmet and
+> unmeetable** — superseded dig blobs and old-base blobs accumulate today with nothing able to
+> identify them. The manifest raises the accumulation rate and, for the first time, makes collection
+> possible. Do not re-open this as an objection; close the two OPEN items as design work.
+
 ---
 
 ## 9. Concurrency scenarios — re-derived against this design
