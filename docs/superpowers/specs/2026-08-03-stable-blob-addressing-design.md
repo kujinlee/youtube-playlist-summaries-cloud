@@ -317,6 +317,20 @@ Under this design:
   re-run repairs it. This is what makes "compensate after the cycle" — the user's instinct — actually
   sound: compensation only works if the cycle never destroys anything.
 
+> **Scope of this section — read before concluding the concurrency problem is solved.** Everything
+> above is about **blobs**. The per-video **scalars** (`tldr`, `ratings`, `docVersion`, …) still live
+> in one overwritten slot on `videos.data`, so *"the new run's scalars beside an older generation's
+> body"* remains expressible. That is a real, observed failure — it is what froze a row permanently in
+> the conditional-write slice — and this design does not currently close it. **§14 question 8.**
+>
+> **"Trivially sufficient" is also now contradicted by evidence.** The conditional-write slice was
+> built first specifically to test that claim (its §7). Five adversarial review rounds produced
+> **26 Blocking findings, none of them in the predicate** — every one was in the protocol around it:
+> NULL semantics, payload rebuild, publish semantics, status inheritance, deploy mechanics, address
+> adoption, field-omission semantics. The conditional write itself was correct from the first draft.
+> The claim should be narrowed to what was actually demonstrated: *the conditional write is simple;
+> the publish protocol around it is not.* Trail: `docs/reviews/spec-conditional-write-*.md`.
+
 ### 5.2 Sync becomes a manifest reconciliation
 
 Sync stops moving bytes. It compares two manifests and produces one. Nothing is copied, nothing is
@@ -573,6 +587,41 @@ implementation.
 7. **Do the two seam-bypassing writers get fixed or scoped out?** `companion-doc.ts:448` writes
    dig-deeper markdown with raw `fs`; `slides.ts:221-230` prunes assets with `fs.readdirSync`/
    `unlinkSync`. Both touch blobs the manifest must track.
+8. **Do the Class-A scalars become generation-scoped, or stay on the row?** — **added 2026-08-05,
+   surfaced by the conditional-write slice** (`2026-08-04-cas-fence-persist-summary-design.md`, five
+   review rounds).
+
+   A summary is **two** things: a **body** (the blob) and a **card** (`tldr`, `ratings`,
+   `overallScore`, `takeaways`, `videoType`, `audience`, `docVersion`, `mdGeneratedAt`,
+   `mdCorrectionsHash` — the summary-owned whitelist at `0021_cloud_sync_signals.sql:120-132`). Both
+   are produced by one Gemini run.
+
+   **This design generation-scopes the body and says nothing about the card.** Blobs become immutable
+   per generation and never collide (§5.1); the card keeps living in one slot on `videos.data` and is
+   still overwritten in place. So **"run #2's card beside run #1's body" remains expressible** — a
+   catalogue entry updated to the second edition while the shelf still holds the first. Every field
+   reads consistent; the body isn't the one described.
+
+   That is not hypothetical. It is the exact state behind the conditional-write slice's B-R4-1: new
+   `tldr` and `docVersion` on the row, old bytes at the key, and **nothing able to tell they came from
+   different runs** — which then satisfied the idempotency skip (`summary-handler.ts:86-92`) and froze
+   the row permanently. A reader of §5.1 would reasonably conclude this design fixes that. **It does
+   not.**
+
+   Two defensible answers, and the spec must pick one:
+   - **Card joins the generation** — card and body always travel together; the incoherence is gone by
+     construction, and the idempotency skip gains a truthful thing to key on. Costs a schema decision
+     about where the card lives and how a reader resolves it.
+   - **Card stays on the row** — cheaper, no migration of scalar storage, but then the spec must state
+     what a reader does when the card is **newer** than the authoritative body, and which readers are
+     allowed to observe that split (`deriveClassASignals` in `backfill.ts` reads `docVersionMajor`
+     independently of body hash; the quick-view route serves `tldr` without checking body coherence).
+
+   **Not choosing is the one unacceptable option**, because §5.1's *"this answers the concurrency
+   problem"* currently implies coverage the design does not provide.
+
+   Related: this question also decides whether §5.1's claim that a conditional write is *"trivially
+   sufficient"* survives — see §15.
 
 ---
 
