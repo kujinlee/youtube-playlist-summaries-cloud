@@ -86,12 +86,31 @@ Existing terms kept unchanged: `base`, `serialNumber`, `slug`, `principal`, `ind
 
 ## 3. What exists today (verified ground truth)
 
-Load-bearing facts, each verified in-session on 2026-08-03. **Re-verify before approval.**
+Load-bearing facts, each verified in-session on 2026-08-03, and **re-verified against live code on
+2026-08-05** (§15's re-verify gate). **13 survived; 3 needed correction, all marked ⟳ below.**
+
+> **What the drift was, and why it is worth a sentence.** Every correction has one cause: two PRs
+> merged *after* the original verification — #45 (the in-flight-job guard) and #38 (`copy` at the
+> BlobStore seam) — inserted code **above** the cited lines. Not one cited *fact* was wrong; three
+> cited *locations* were. That is the failure mode a line-number citation has and a symbol name does
+> not, so the corrections below cite the **function**, with the line range as a hint.
 
 **Storage.** Supabase Storage, bucket `artifacts`, **private** (`0007_storage_and_rpcs.sql:4`). No
 bucket-level size or MIME restriction is set in any migration. Object path is
-`<ownerId>/<playlistKey>/<key>` (`supabase-blob-store.ts:17`). Only five operations are used —
-`upload`, `download`, `remove`, `move`, `list`.
+`<ownerId>/<playlistKey>/<key>` (`supabase-blob-store.ts:17`, `objectKey`). Only five **Storage API**
+operations are used — `upload`, `download`, `remove`, `move`, `list`.
+
+> **⟳ Corrected 2026-08-05 — the *seam* has six operations, the *API* still has five, and the gap is
+> evidence for this design.** `BlobStore` gained `copy()` (PR #38), and it is deliberately **not**
+> built on the bucket's native `copy`/`move`: `SupabaseBlobStore.copy` delegates to the shared
+> `copyBlob`, which reads through `tryGet` so the outcome can be classified
+> (`supabase-blob-store.ts:68-81`, `blob-store.ts:34-45`). The seam's own doc comment gives the
+> reason — *"a multi-blob relocation must be copy → verify → update metadata → delete sources"*, and a
+> destructive rename "would bake an unrecoverable ordering into the seam."
+>
+> **Read that as a finding, not a footnote.** The codebase has already concluded, independently and
+> under review, that **relocating a blob address is not a safe primitive**. This spec's §1 says the
+> same thing one level up: stop needing to relocate at all.
 
 > **Answering "do we need S3?" — no.** Supabase Storage *is* S3-compatible object storage. The
 > `<playlistKey>` segment is **our convention, not a platform constraint**: object stores have a flat
@@ -99,7 +118,8 @@ bucket-level size or MIME restriction is set in any migration. Object path is
 > no infrastructure, no vendor migration.
 
 **The one hard constraint.** Storage RLS is
-`bucket_id = 'artifacts' and split_part(name,'/',1) = auth.uid()::text` (`0007:12-17`). **The first
+`bucket_id = 'artifacts' and split_part(name,'/',1) = auth.uid()::text`
+(`0007:13-16`, policy `artifacts_owner_rw` — ⟳ was cited as `12-17`). **The first
 path segment must equal the caller's uid.** Nothing else is checked — not the playlist segment, not
 the extension, not the size.
 
@@ -121,8 +141,10 @@ future escape hatch (§11), not for this design, and it is **not usable as-is**:
 populated on **390 of 973** objects in the local stack, because `service_role` writes leave it NULL.
 Where it is set it equals path segment 1 in **390/390** cases, so it is backfillable.
 
-**Blob inventory.** Nine kinds. The paid/free split is already written down and load-bearing at
-`reconcile-serial.ts:64-80` and `sync-run.ts:120-124`:
+**Blob inventory.** Nine kinds — every key shape below re-confirmed by grep on 2026-08-05. The
+paid/free split is already written down and load-bearing at **`reconcile-serial.ts:paidKeysUnder`**
+(≈88-103) and **`sync-run.ts` behavior #3, "money-safe"** (≈125-128) — ⟳ these were cited as
+`reconcile-serial.ts:64-80` and `sync-run.ts:120-124`, which PR #45 pushed down:
 
 | Kind | Key today | Paid? |
 |---|---|---|
@@ -441,6 +463,52 @@ traced on 2026-08-02/03; each must be re-checked at review.
 | Two syncs (two machines, one account) | Unconditional writes interleave | One manifest row, conditional write, loser re-runs |
 | Two teammates generate for one video | n/a (no teams) | Two generations, both retained; manifest picks one; neither is destroyed |
 
+### 9.1 Walk of each row — DONE 2026-08-05
+
+§15 requires walking each row rather than accepting the table. Done. **Row 2 survives; rows 1, 3 and
+4 do not, and row 1 is the serious one.**
+
+**⚠ Row 1 — the scenario and the answer are about different things.** The scenario names a collision
+on the **Class-A block**, which is `{ docVersionMajor, mdGeneratedAt, mdCorrectionsHash, mdHash }`
+(`lib/cloud-sync/types.ts:32`) — **row scalars that describe the body, not the body**. The answer
+given is *"different generations ⇒ no blob collision."* Generation-scoping the **body** does nothing
+about two writers racing on the **card**. So the row claims a fix for a race it does not touch.
+
+> This is §14 question 8 in concrete form, and it is why that question is a **prerequisite** and not
+> a detail. The row should not be repaired until Q8 is answered; whichever answer is chosen dictates
+> what this row can honestly say.
+>
+> **New measurement, 2026-08-05, and it constrains Q8's option B.** If the card stays on the row, a
+> reader needs some way to ask *"does this card describe this body?"* — and **today there is no
+> mechanism at all**. `mdHash` looks like one and is not: it is derived at read time from a body the
+> caller passes in (`backfill.ts:11`, `deriveClassASignals(video, mdBody)`) and **is never persisted**
+> — grep for `mdHash` across all 21 migrations returns **zero**. The durable whitelist
+> (`0021:120-132`) stores `mdCorrectionsHash`, which hashes the **corrections**, not the body. So
+> **option B is not "cheaper, no migration"** as §14 currently frames it: it requires *adding* a
+> persisted body hash before the question it must answer is even expressible.
+
+**✅ Row 2 — survives, with one qualification.** "No relocation exists" is true of *base* relocation,
+which is the whole point of §4. Two relocations do survive and should be named rather than left to
+contradict the row: the §10 migration is itself a one-time relocation, and §4's tenancy box admits
+that an ownership change would move every object.
+
+**⚠ Row 3 — inherits a claim this spec has already had to retract.** "One manifest row, conditional
+write, loser re-runs" rests on the conditional write being sufficient. The five-round review of
+`2026-08-04-cas-fence-persist-summary-design.md` established the opposite, and §5.1 already carries
+the correction: the *write* is trivial, the **publish protocol around it is not**. Row 3 must point at
+§5's publish protocol, not at the conditional write alone.
+
+**⚠ Row 4 — describes a feature the spec has since disclaimed.** "Two teammates generate for one
+video" sells team concurrency. §11.1 (added 2026-08-04, on the user's decision) says teams are **not
+planned** and that naming the tenant buys exactly one narrow transition. Either drop the row or
+re-label it explicitly hypothetical — as written it is the strongest team claim left in the document,
+sitting in a table a reviewer reads as commitments.
+
+**The pattern across three of four rows:** each was written on 2026-08-02/03 and each was invalidated
+by a *later section of this same spec* — Q8, §5.1's correction, and §11.1 respectively. Nothing
+external changed. That is what makes walking the table a real gate rather than a formality: a spec
+edited section-by-section grows internal contradictions, and only a deliberate cross-read finds them.
+
 ---
 
 ## 10. Migration
@@ -621,10 +689,18 @@ implementation.
    - **Card joins the generation** — card and body always travel together; the incoherence is gone by
      construction, and the idempotency skip gains a truthful thing to key on. Costs a schema decision
      about where the card lives and how a reader resolves it.
-   - **Card stays on the row** — cheaper, no migration of scalar storage, but then the spec must state
-     what a reader does when the card is **newer** than the authoritative body, and which readers are
-     allowed to observe that split (`deriveClassASignals` in `backfill.ts` reads `docVersionMajor`
-     independently of body hash; the quick-view route serves `tldr` without checking body coherence).
+   - **Card stays on the row** — ~~cheaper, no migration of scalar storage~~, but then the spec must
+     state what a reader does when the card is **newer** than the authoritative body, and which
+     readers are allowed to observe that split (`deriveClassASignals` in `backfill.ts` reads
+     `docVersionMajor` independently of body hash; the quick-view route serves `tldr` without checking
+     body coherence).
+
+     > **⟳ Measured 2026-08-05 (§9.1) — this option is NOT the cheap one.** Answering *"does this card
+     > describe this body?"* needs a persisted hash of the body, and **none exists**: `mdHash` is
+     > derived at read time from a body the caller supplies (`backfill.ts:11`) and appears in **zero**
+     > of the 21 migrations. The durable whitelist (`0021:120-132`) stores `mdCorrectionsHash` — the
+     > **corrections** hash, not the body's. So option B needs a schema addition before its own
+     > question is expressible, which removes the main reason to prefer it.
 
    **Not choosing is the one unacceptable option**, because §5.1's *"this answers the concurrency
    problem"* currently implies coverage the design does not provide.
@@ -642,6 +718,31 @@ This spec is verified by review, not by tests. Before it becomes a plan:
   are all new and must land in `CONTEXT.md`.
 - Dual adversarial review (Codex + Claude, independent) **to convergence** — mandatory here: this
   touches schema, identity, and the money path.
-- **Re-verify every fact in §3 against live code.** They were verified on 2026-08-03 and are
-  load-bearing; a stale premise invalidates the design.
-- Walk each row of §9 explicitly during review rather than accepting the table as written.
+- ~~**Re-verify every fact in §3 against live code.**~~ — **DONE 2026-08-05.** 16 facts checked
+  against `master` @ `7e142f6`; **13 survived verbatim, 3 citations corrected** (marked ⟳ in §3), and
+  **zero facts were found false**. Verified this round, each by reading the cited code:
+
+  | Fact | Result |
+  |---|---|
+  | Bucket `artifacts` private, no size/MIME limit | ✅ `0007:4` |
+  | RLS predicate, text-to-text, fails closed on NULL/empty | ✅ ⟳ line range `13-16` |
+  | Object path `<ownerId>/<playlistKey>/<key>` | ✅ `objectKey`, line 17 |
+  | Five Storage API operations | ✅ ⟳ seam now has a 6th, `copy`, not built on the API's |
+  | Nine blob kinds, all key shapes | ✅ all nine grep-confirmed |
+  | Paid/free split location | ✅ ⟳ moved to `paidKeysUnder` / behavior #3 |
+  | Slide assets keyed on `videoId`, not `base` | ✅ `slides.ts:185` |
+  | PDF key carries a content hash | ✅ `pdf-render-version.ts:22` |
+  | Model envelope overwrites in place | ✅ `model-store.ts:51` — a bare `put`, no versioning |
+  | Version constants compared to compile-time values | ✅ `docVersion 3.3`, `DIG_GENERATOR_VERSION 9`, `PDF_RENDER_VERSION 1` |
+  | **Zero** team/workspace/org concept in `lib/` + migrations | ✅ grep empty |
+  | `share_tokens` never creates a second owner | ✅ `0013` (+`0017`, `0019` cascade — no owner change) |
+  | Exactly one row per `(playlist_id, video_id)` | ✅ `0001:30`, the primary key |
+  | `jobs_idem_active` carries `playlist_id` (ADR-0002; §14 Q6 depends on it) | ✅ `0009:11-13` |
+
+  **The one methodological lesson, worth keeping past this spec:** all three corrections were stale
+  *line numbers*, none were stale *facts*. Cite the symbol; let the line number be a hint.
+- ~~Walk each row of §9 explicitly during review rather than accepting the table as written.~~ —
+  **DONE 2026-08-05, and it earned its cost: 3 of 4 rows did not survive** (§9.1). Row 1 answers a
+  *scalar* race with a *blob* fix and must wait on Q8; row 3 rests on the sufficiency claim §5.1
+  already retracted; row 4 sells team concurrency §11.1 disclaims. All three were invalidated by
+  **later sections of this same spec**, not by anything external.
