@@ -275,27 +275,53 @@ attempt (bounded, N = 3):
 
   # ── the destination: ADOPT, never re-derive from stale inputs (C1) ──────────
   if observedSummaryMd is not null:
-      baseName := adoptBase(observedSummaryMd)                 # VALIDATED — see below
+      # VALIDATE BEFORE ADOPTING. assertCloudSummaryMdKey (lib/html-doc/assert-cloud-summary-md-key.ts)
+      # is the repo's existing allowlist; resolveSummaryMdKey (lib/dig/cloud/resolve-summary-key.ts)
+      # rejects nested keys for the same reason. Adopting an unvalidated key writes PAID bytes to an
+      # address the serve path will later refuse (serve-summary-core.ts) — a silent, billed dead end.
+      if not assertCloudSummaryMdKey(observedSummaryMd):
+          raise PS002 (serial-unusable / address-unusable) -> NonRetryableError   # repair-needed
+      baseName := baseOf(observedSummaryMd)
   else:
       baseName := pad(observedSerial) + '_' + slug(payload.title)   # first summary only (G2)
   key := baseName + '.md'
 
-  REBUILD the payload every attempt (B2):
+  REBUILD the payload every attempt (B2). NOTE the docVersion split (B-R4-1):
       video.serialNumber := observedSerial
       video.summaryMd    := key
+      committedPayload   := video WITHOUT docVersion      # ← see "boundedness" below
+      promotedPayload    := video WITH    docVersion
 
   ref := putStaged(key); verify staged bytes
 
   # ── publish: committed -> durable -> promoted, ALWAYS (H-N3) ────────────────
-  persistSummary(..., expected := (observedSerial, observedSummaryMd),
+  if ctx.signal.aborted -> discard temp; throw AbortError       # H-R4-5: immediately before the
+                                                                # irreversible span, as :166 does
+  persistSummary(committedPayload, expected := (observedSerial, observedSummaryMd),
                  status := 'committed')
-  publish(ref, key)                                            # see "durability" below (B-N2/G12)
-  persistSummary(..., expected := (observedSerial, key),        # ← NOTE: `key`, not observedSummaryMd
+  if ctx.signal.aborted -> throw AbortError                     # H-R4-5: the span is not atomic
+  publish(ref, key)                                             # see "durability" below (B-N2/G12)
+  persistSummary(promotedPayload,  expected := (observedSerial, key),   # ← `key`, not observedSummaryMd
                  status := 'promoted')
 
-  on PS003 -> discard temp; observed := PS003.detail; next attempt
-  on PS001 / PS002 -> NonRetryableError
+  on PS003 -> DELETE temp explicitly; observed := PS003.detail; next attempt
+  on PS001 / PS002 -> DELETE temp explicitly; NonRetryableError
 ```
+
+**Why `docVersion` is withheld from the `'committed'` write (B-R4-1) — this is what makes the residual
+in §9 #22 actually bounded.** Round 4 measured that it was not. The re-address `'committed'` persist
+adopts the row's current key, so `0021:142-149` preserves `'promoted'`, while layer (3) writes
+`docVersion` and the new run's scalars. That combination satisfies **both** conjuncts of the
+idempotency skip (`summary-handler.ts:86-92` — `status === 'promoted'` **and** `docVersion` matches),
+so any fault inside the window (crash, SIGTERM, lease loss, a failing `put`) made the retry **skip**,
+report success, and freeze a row whose scalars and body came from different generations — permanently,
+with the paid output unrecoverable.
+
+Withholding `docVersion` until the `'promoted'` write breaks the skip's second conjunct. A fault inside
+the window now leaves a row the retry does **not** skip, so the job re-runs and repairs itself. The cost
+is one extra field on the second write. **This needs a mutation test** (restore `docVersion` to the
+`'committed'` payload → the freeze test must go red), because it is a one-field change carrying the
+entire boundedness argument.
 
 **The expected key changes mid-sequence, and that is the whole of B-N1.** The `'committed'` persist is
 the write that *sets* `summaryMd` (payload-wins, `0021:133`). Passing the same expected value to the
@@ -323,12 +349,28 @@ verified object. `putStaged → verify → put` proves nothing about what ends u
 
 ```
 publish(ref, key):
-    put(key, stagedBytes)                 # atomic upsert, overwrites on both backends
-    readBack := get(key)
-    if readBack is null or mdHash(readBack) != mdHash(stagedBytes):
-        throw            # do NOT persist 'promoted'; the row stays 'committed' → 503 → retry repairs
-    delete(ref.tempKey)   # best-effort
+    put(key, stagedBytes)                       # atomic upsert, overwrites on both backends
+    readBack := tryGet(key)                     # tryGet, NOT get — see below (B-R4-3)
+    if readBack is 'unreadable':
+        throw   RETRYABLE      # a fault, not a verdict: we do NOT know what is at the key
+    if readBack is 'absent' or mdHash(readBack.bytes) != mdHash(stagedBytes):
+        throw   RETRYABLE      # do NOT persist 'promoted'; the row stays 'committed' → 503 → repair
+    delete(ref.tempKey)                          # EXPLICIT — nothing sweeps staging (H-R4-4)
 ```
+
+**`tryGet`, never `get`** (B-R4-3, found independently by both reviewers). `BlobStore.get` **collapses
+unreadable and absent** into `null`, and its own contract forbids it *"before any irreversible or
+billable decision"* (`blob-store.ts:46-56`) — which this is. `copyBlob`, the precedent §6 cites by
+name, never uses it (`blob-store.ts:125`). Reading with `get` here would report "the bytes are wrong"
+when the truth is "we could not tell" — the fifth instance of absent-vs-failed conflation on this
+branch, inside the fix for a defect found by that same shape.
+
+**Temp deletion is explicit on every path, because nothing sweeps staging** (H-R4-4). An earlier draft
+claimed a leaked staging object was *"inert and swept by existing staging cleanup."* **That was false
+and is now verified false**: `_staging` appears only in the three `putStaged` implementations
+(`supabase-blob-store.ts:85`, `local-blob-store.ts:53`, `in-memory-blob-store.ts:152`), and no caller
+of `deletePrefix` targets it. With N = 3 attempts and `max_attempts` = 5 that is up to **15 leaked
+objects per job** unless every discard path deletes its own temp.
 
 This is not a new invention: `copyBlob` already verifies after write for precisely this reason
 (`blob-store.ts:161-171` — *"an unproven copy is not a copy"*). Note the precedent this spec cited,
@@ -363,12 +405,26 @@ Both failures share one root cause: **the row carries no artifact identity**, so
 artifact" is not expressible. That identity is exactly what the manifest introduces (`generation_id`),
 which makes this genuinely a pre-manifest limitation rather than an oversight.
 
-**Residual this slice therefore ships with** — stated so no reader infers otherwise: on a re-address,
-the intermediate `'committed'` write inherits A3's `'promoted'` status for the duration of one publish,
-so a reader in that window is served A3's copy rather than a 503. **Bounded and non-destructive** — the
-bytes at that key are a valid summary throughout (A3's copy before publish, the worker's after), and
-the following `'promoted'` persist reconciles the row. It is a staleness window, not corruption, and it
-is strictly smaller than the pre-slice behaviour it replaces.
+**Residual this slice ships with — restated after round 4 measured the previous version FALSE.** On a
+re-address the intermediate `'committed'` write inherits the prior `'promoted'` status for the duration
+of one publish, so a reader in that window is served the older copy rather than a 503.
+
+The previous draft called that *"bounded and non-destructive… strictly smaller than the pre-slice
+behaviour."* **It was none of those things**, and the scope-out of #22 was decided on that false
+premise. Measured: the same `'committed'` write also carried `docVersion` and the new run's scalars,
+which satisfied **both** conjuncts of the idempotency skip — so a fault inside the window was frozen
+**permanently** (retry skips → job reports success → row keeps new scalars over old bytes → the paid
+output is unrecoverable), whereas the **pre-slice** behaviour on that path **self-heals** (the keys
+differ, so `'promoted'` is not preserved → 503 → the retry does not skip → the job repairs). The
+residual was strictly *larger* than what it replaced.
+
+**Withholding `docVersion` from the `'committed'` write (§6) is what makes the original claim true.**
+With the skip's second conjunct broken, a fault inside the window no longer freezes: the retry re-runs
+and repairs. The residual is then genuinely a **staleness window, not corruption** — the bytes at the
+key are a valid summary throughout (the older copy before publish, the new one after), every fault
+inside it is recoverable by the existing retry, and it is strictly smaller than the pre-slice
+behaviour. *That* is the premise the #22 scope-out now rests on, and §8 mutation-tests it rather than
+asserting it.
 
 **N = 3 is a choice, not a derivation.** v2 justified it from PR #45's probe — but §1.2 refutes exactly
 that reasoning for the first relocation, and an A3 run past its probe completes regardless. The honest
@@ -416,11 +472,27 @@ loss was in **bytes**, and mandated mutating a construct that is unreachable as 
 proves the second comparison, and which passes trivially against a serial-only guard. Both assert row
 coherence **and** that paid dig keys under the new base are reachable.
 
-**Bytes, not pointers.** After a successful re-address, `get(<newBase>.md)` **equals the newly generated
-MD**. Every re-address test runs with `promoteSemantics: 'create-if-absent'`
-(`in-memory-blob-store.ts:52` defaults to `'overwrite'`, the *local* behaviour — the non-production one)
-or against real Supabase. Also assert the pointers (`data->>'summaryMd'` and
-`artifacts.summaryMd.key`), which remain necessary but insufficient.
+**Bytes, not pointers.** After a successful re-address, the object at `<newBase>.md` **equals the newly
+generated MD**. Also assert the pointers (`data->>'summaryMd'` and `artifacts.summaryMd.key`), which
+remain necessary but insufficient. *(An earlier draft required `promoteSemantics: 'create-if-absent'`
+on these tests. That knob gates `promote`, and §6 no longer calls `promote` — the requirement is inert
+and is dropped rather than left as decoration.)*
+
+**Boundedness of the #22 residual — the mutation test that carries the scope-out.** Restore
+`docVersion` to the `'committed'` payload; the freeze test MUST go red. The freeze test itself: force a
+fault between the `'committed'` persist and a successful `publish`, then re-run the job and assert it
+**does not** hit the idempotency skip and **does** repair the row. Without this, §9 #22 is an assertion
+again — which is exactly what round 4 falsified.
+
+**Two workers on one address** (B-R4-2, requested in rounds 3 and 4). `publish = put` overwrites
+unconditionally, so a worker whose address never moved can still overwrite a concurrent worker's paid
+bytes — the guard cannot see it, because nothing moved. Assert what actually happens with two workers
+racing the same key, and state the outcome the slice accepts.
+
+**Concurrency against the new `FOR UPDATE`** (Codex H4 — requested in rounds **2, 3 and 4** and argued
+away each time). The no-deadlock *argument* has been re-verified three times and is sound; that is not
+the same as a test. Add a concurrent-session test exercising `reserve_video_slot`, `claim_video_slot`
+and `persist_summary` against one playlist. Three requests is enough.
 
 **The normal path never enters the loop.** A plain first-time summary completes with **one**
 `'committed'` persist, **one** publish, **one** `'promoted'` persist, and **zero** `address-moved`
