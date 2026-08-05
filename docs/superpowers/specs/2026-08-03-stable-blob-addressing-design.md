@@ -435,10 +435,43 @@ Design:
 - **Mark and sweep** over `video_artifacts`. Anything not referenced is a candidate.
 - **Grace period — mandatory.** A blob written but not yet published is unreferenced and must never be
   collected. This is the classic GC race; a minimum age (hours, not minutes) is the standard defense.
-- **Retention — OPEN.** Keep authoritative only? Authoritative + last N? Keep all paid, GC only free
-  re-renders? The last is attractive: paid artifacts are the ones users would mourn, and HTML/PDF
-  regenerate for nothing.
-- **Trigger — OPEN.** Worker job, scheduled sweep, or on-demand.
+- **Retention — DECIDED 2026-08-05 (user).** One rule, and it fits in a sentence:
+
+  > **If a blob is not current, delete it — except a paid blob, which is retained for potential
+  > recovery.**
+
+  So *free* blobs (`htmls/…`, `pdfs/…`) live exactly as long as they are the authoritative copy of
+  their slot. *Paid* blobs (`<base>.md` / `summary.md`, `models/…`, `dig/…`, dig-deeper) are **never
+  collected**, superseded or not. Nothing that is current is ever a candidate, whatever its kind.
+
+  **Three consequences, each load-bearing.**
+
+  1. **The paid/free split must be derivable from the KEY ALONE.** An orphan has no manifest entry —
+     that is what makes it an orphan — so the sweeper cannot ask the manifest whether a candidate was
+     paid. It has to read the key. That works today, and it promotes key shape from an addressing
+     concern to a **money-safety** one: any future key that does not announce its own paid-ness is
+     either uncollectable or unsafe to collect. Add that to the review checklist for new key shapes.
+  2. **The grace period still applies to free blobs.** A PDF written but not yet published is
+     not-current and free, so the naive reading of the rule would sweep it mid-write. Grace period
+     first, kind second.
+  3. **Verify at plan time that nothing serves a non-current free blob by key.** The rule assumes
+     every reader resolves through the manifest and re-renders on miss. Share tokens resolve to
+     `(owner, playlist, video)` and re-derive, which is the reassuring case; the PDF and HTML serve
+     routes must be checked rather than assumed. This is an *assertion to write*, not a note to
+     remember — see the process rule about turning deferrals into tests.
+
+  > **Two facts that shaped this, both checked 2026-08-05.** The saving here is smaller than it looks:
+  > the PDF key is `pdfs/<base>.r<V>.<sha256[:16]>.pdf`, hashed on the rendered HTML, so an identical
+  > re-render **collapses onto the same key and never accumulates** — copies appear only when content
+  > genuinely changed. The HTML key (`htmls/<base>.html`) carries no version or hash and is overwritten
+  > in place today, so per-generation HTML is accumulation this design *creates* rather than inherits.
+  > The rule above is therefore chosen for **simplicity and a bounded footprint**, not because free
+  > re-renders are a storage problem today.
+
+- **Trigger — DECIDED 2026-08-05: scheduled sweep.** Follows from the retention rule: with paid blobs
+  never collected and free ones bounded as above, collection is not urgent, so it does not need to be
+  on any write path. A periodic sweep also keeps the money-sensitive classification in **one** place
+  instead of at every writer.
 
 > **Judgment recorded 2026-08-05 — these are ordinary costs, not a mark against the design.**
 > Mark-and-sweep with a grace period is a standard, well-understood pattern, and the two OPEN items
@@ -656,7 +689,12 @@ implementation.
 3. **Overlap threshold**, and the section-merge ambiguity (§6). **Not optional** — §4.2.1 shows this
    rule is the replacement for title matching, so the design has no cross-generation attach rule
    without it.
-4. **Retention policy and GC trigger** (§8).
+4. ~~**Retention policy and GC trigger** (§8).~~ — **CLOSED 2026-08-05 (user decision, §8).**
+   *Not current ⇒ delete, except paid, which is retained for recovery.* Trigger: scheduled sweep.
+   This was one of the three **prerequisites**; it is now closed, leaving Q3 and Q8.
+   The decision carries three constraints that outlive it — the paid/free split must be readable from
+   the **key alone** (orphans have no manifest entry), the grace period is checked **before** the kind,
+   and the free-blob serve paths must be *asserted* not assumed. All three are in §8.
 5. **Offline local generation** — the upload-then-publish path (§7).
 6. **Cross-playlist dedup: in or out?** (§12) — determines whether `jobs` and the 1D reservation are
    touched. The spec is coherent either way; the saving only materializes if `playlist_id` leaves the
