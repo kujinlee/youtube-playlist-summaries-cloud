@@ -250,9 +250,27 @@ The sequence below is specified in full because prose invited each of them.
 attempt (bounded, N = 3):
   if ctx.signal.aborted -> throw AbortError                    # EVERY attempt (H4)
 
-  # ── the address: ADOPT, never re-derive from stale inputs (C1) ──────────────
-  if observedSummaryMd is not null:                            # from PS003's detail, or the :84 read
-      baseName := baseOf(observedSummaryMd)                    # '003_alpha' or '007_beta'
+  # ── the observed address: WHERE IT COMES FROM (B-R3-1) ─────────────────────
+  # Attempt 1:  observedSerial    := reserveVideoSlot(...)     # NOT the :84 read — see below
+  #             observedSummaryMd := existing?.summaryMd ?? null   # the :84 read; null on a bare row
+  # Attempt 2+: both := PS003's `detail`, which is a SINGLE snapshot under the row lock (§5)
+  #
+  # ATTEMPT 1's TUPLE IS A TORN READ, and the spec must not pretend otherwise. The serial comes
+  # from reserveVideoSlot (`:95`) and the key from the `:84` read — two statements, two snapshots.
+  # A relocation landing between them yields a tuple that never simultaneously existed, so the
+  # guard rejects with PS003. That is CORRECT (a relocation did occur) and self-correcting
+  # (attempt 2 uses one atomic snapshot), but it means attempt 1 can fail for a reason no single
+  # observed state explains. Do not "fix" it by widening the :84 read to also supply the serial:
+  # reserveVideoSlot is what CREATES the row on a first ingest, so its serial is the only one that
+  # exists at that point (G2).
+  #
+  # Both values are coerced `?? null` at the wrapper. §4 originally mandated this for the key only;
+  # `p_expected_serial` needs it just as much — `undefined` is dropped by JSON.stringify, and a
+  # 6-key body is PGRST202/404 *after Gemini has been billed* (G14).
+
+  # ── the destination: ADOPT, never re-derive from stale inputs (C1) ──────────
+  if observedSummaryMd is not null:
+      baseName := adoptBase(observedSummaryMd)                 # VALIDATED — see below
   else:
       baseName := pad(observedSerial) + '_' + slug(payload.title)   # first summary only (G2)
   key := baseName + '.md'
@@ -283,14 +301,35 @@ would quietly run the recovery loop, the `'committed'` record would never be wri
 would carry no information. The second persist must expect **the key the first one just wrote**. This is
 the asymmetry §0 names: the serial the worker cannot move, the key it moves by design.
 
-**Durability must overwrite, and `promote` does not** (G12). On a re-address the destination **always**
-exists, because A3's copy phase writes `${newBase}.md` before advancing metadata (`:281-290`, `:293-296`)
-— and `promote` then **deletes the staged new bytes and returns void**. The row would advertise
-`promoted` over A3's *old* body with the fresh Gemini output discarded, silently, with pointer-level
-assertions passing. `publish(ref, key)` therefore means what `transferClassA` already does for this
-exact reason (`sync-run.ts:386-395`): `put` the verified staged bytes to the final key (atomic upsert,
-overwrites on **both** backends), then drop the temp. Never `promote` on a path where the destination
-may exist.
+**Durability must overwrite, and `promote` does not** (G12, now confirmed against live storage: `move`
+onto an existing destination returns **409 Duplicate**; `put` with upsert overwrites). On a re-address
+the destination **always** exists, because A3's copy phase writes `${newBase}.md` before advancing
+metadata (`:281-290`, `:293-296`) — and `promote` then **deletes the staged new bytes and returns
+void**. The row would advertise `promoted` over A3's *old* body with the fresh Gemini output discarded,
+silently, with pointer-level assertions passing.
+
+So `publish(ref, key)` uses `put`, as `transferClassA` already does for this exact reason
+(`sync-run.ts:386-395`). **But `put` is a second write, and that forfeits the property the staged
+verify was buying** (B-R3-3): the object that was verified is the *temp*; the final key receives a
+fresh, unverified upload. `putStaged → verify → promote` was safe because finalisation *moved* the
+verified object. `putStaged → verify → put` proves nothing about what ends up at the final key.
+
+**`publish` must therefore verify after writing, not before:**
+
+```
+publish(ref, key):
+    put(key, stagedBytes)                 # atomic upsert, overwrites on both backends
+    readBack := get(key)
+    if readBack is null or mdHash(readBack) != mdHash(stagedBytes):
+        throw            # do NOT persist 'promoted'; the row stays 'committed' → 503 → retry repairs
+    delete(ref.tempKey)   # best-effort
+```
+
+This is not a new invention: `copyBlob` already verifies after write for precisely this reason
+(`blob-store.ts:161-171` — *"an unproven copy is not a copy"*). Note the precedent this spec cited,
+`transferClassA`, does **not** verify after its `put` — so copying it uncritically would have inherited
+an unverified write on a money path. That is a defect in `transferClassA` worth its own entry, not a
+pattern to follow.
 
 **`'committed'` is retained** — round 2 answered v2's open question against it. It is not bookkeeping:
 the serve path returns **503 "not ready"** for `committed` (G13). That 503 *is* what makes the ordering
@@ -419,10 +458,30 @@ stays and inheritance is fixed narrowly instead.
 
 Open for round 3:
 
-1. **Is `p_artifact_is_new` the right shape for suppressing promoted-inheritance?** It is a caller
-   assertion about a fact the row cannot verify. The alternative is an artifact identity the row does not
-   carry — which is what the manifest introduces. Confirm the boolean is safe against a *lying* or
-   buggy caller, since the whole point of the monotonic rule was to defend against a stale one.
+1. **`p_artifact_is_new` — ANSWERED: NO, it is not safe. The circularity is real.** Both round-3
+   reviewers reached this independently, which per the standing rule makes it high-confidence.
+
+   The refutation of the coordinator's counter-argument matters and is recorded so it is not
+   re-derived: it was argued that the address guard *subsumes* the monotonic rule, since a stale caller
+   can no longer reach the `UPDATE`. **That is wrong.** A caller can be stale in **content** while its
+   **address never moved** — it generated bytes minutes ago against an address nobody has touched. Such
+   a caller passes the guard cleanly, and the flag then lets it disable the one defence aimed at it.
+   Combined with `publish = put` (which overwrites unconditionally), that converts a stale write from
+   *non-corrupting* into *destructive*. Measured window: the heartbeat fires every `leaseSeconds/3` =
+   **40 s** (`worker-runner.ts:47-52`), so a worker can run that long past lease loss with
+   `ctx.signal.aborted` still `false`.
+
+   A second, independent defect in the same parameter (Codex round 3): a **same-key re-summarize** at a
+   new `docVersion` is *also* a new artifact, yet §6 sets the flag only on re-address. So it inherits
+   `promoted`, and a crash before publish leaves current-version scalars over an old blob — which the
+   idempotency skip (`summary-handler.ts:86-92`) can then freeze permanently. The flag is both unsafe
+   where it is passed and absent where it is needed.
+
+   **The parameter must go. What replaces it is the open question**, and it is genuinely forked:
+   the honest fix needs an **artifact identity the row does not carry** — which is precisely what the
+   manifest introduces (`generation_id`). So the options are (a) find a narrower resolution that works
+   without one, or (b) accept that this specific defect is not properly fixable before the manifest and
+   scope it out with the residual named. **This is a goal-affecting decision and is with the human.**
 2. **Should `serial-unusable` self-heal rather than fail?** 154 live rows are in that state; a fatal
    error is right for this write but leaves them permanently unsummarizable. Repair may belong to a
    separate migration.
