@@ -514,6 +514,34 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
 **C** authority + divergence detection, **D** cloud rebuild parity. See
 `docs/superpowers/plans/2026-07-31-serial-coherence-sync.md` and `~/.claude/plans/`.
 
+## Stable blob addressing / manifest — own spec + merge gate (**spec in gates, not converged**)
+
+**Why it exists:** every hard defect of the last three weeks reduces to one sentence — *the blob
+address is derived from mutable data* (`base = <serial>_<slug>`, and both halves move). Spec:
+`docs/superpowers/specs/2026-08-03-stable-blob-addressing-design.md`; decision recorded in
+**ADR-0006**, which supersedes ADR-0002's rejection of video-level shared summaries.
+
+**Gate status (§15 of the spec):**
+
+- [x] **Re-verify §3 ground truth against live code** — ✅ 2026-08-05. 16 facts, **13 verbatim, 3
+      citations corrected, 0 facts false**. All three were stale *line numbers* pushed down by PRs
+      #45 and #38 — so the spec now cites symbols, not lines.
+- [x] **Walk each §9 concurrency row** — ✅ 2026-08-05, and it earned its cost: **3 of 4 rows did not
+      survive**, each invalidated by a *later section of the same spec*. Row 1 answers a **scalar**
+      race with a **blob** fix (this is Q8, concretely), row 3 rests on the sufficiency claim §5.1
+      retracted, row 4 sells team concurrency §11.1 disclaims.
+- [ ] **Close the 3 prerequisite open questions** (§14 Q3, Q4, Q8) — **HUMAN GATE.** These are design
+      forks, not mechanical choices, and Q8 now has a measured constraint: its "cheap" option needs a
+      persisted body hash that **does not exist** in any of the 21 migrations.
+- [ ] **`grill-with-docs` terminology pass** — 6 new terms (*tenant, generation, slot, manifest,
+      authoritative, rendering*) must land in `CONTEXT.md`. Human gate (terminology is Phase 1).
+- [ ] **Dual adversarial review to convergence** — mandatory (schema + identity + money path).
+      **Deliberately sequenced last:** running it while 3 prerequisite forks are open would burn a
+      round re-reporting "these are open."
+
+**Blocks:** backlog #17 / task #19 (the CAS conditional-write slice is deferred pending this), and
+task #18 (A6b `position` drop, likely dissolved by ADR-0006).
+
 ## Honest-blob-read slice (`BlobRead`) — own spec + merge gate
 
 **Why it exists:** Stage 3 cloud-sync produced 1 Blocking + 3 High that were all one shape — a value
