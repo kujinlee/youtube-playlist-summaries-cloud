@@ -463,6 +463,52 @@ traced on 2026-08-02/03; each must be re-checked at review.
 | Two syncs (two machines, one account) | Unconditional writes interleave | One manifest row, conditional write, loser re-runs |
 | Two teammates generate for one video | n/a (no teams) | Two generations, both retained; manifest picks one; neither is destroyed |
 
+### 9.1 Walk of each row — DONE 2026-08-05
+
+§15 requires walking each row rather than accepting the table. Done. **Row 2 survives; rows 1, 3 and
+4 do not, and row 1 is the serious one.**
+
+**⚠ Row 1 — the scenario and the answer are about different things.** The scenario names a collision
+on the **Class-A block**, which is `{ docVersionMajor, mdGeneratedAt, mdCorrectionsHash, mdHash }`
+(`lib/cloud-sync/types.ts:32`) — **row scalars that describe the body, not the body**. The answer
+given is *"different generations ⇒ no blob collision."* Generation-scoping the **body** does nothing
+about two writers racing on the **card**. So the row claims a fix for a race it does not touch.
+
+> This is §14 question 8 in concrete form, and it is why that question is a **prerequisite** and not
+> a detail. The row should not be repaired until Q8 is answered; whichever answer is chosen dictates
+> what this row can honestly say.
+>
+> **New measurement, 2026-08-05, and it constrains Q8's option B.** If the card stays on the row, a
+> reader needs some way to ask *"does this card describe this body?"* — and **today there is no
+> mechanism at all**. `mdHash` looks like one and is not: it is derived at read time from a body the
+> caller passes in (`backfill.ts:11`, `deriveClassASignals(video, mdBody)`) and **is never persisted**
+> — grep for `mdHash` across all 21 migrations returns **zero**. The durable whitelist
+> (`0021:120-132`) stores `mdCorrectionsHash`, which hashes the **corrections**, not the body. So
+> **option B is not "cheaper, no migration"** as §14 currently frames it: it requires *adding* a
+> persisted body hash before the question it must answer is even expressible.
+
+**✅ Row 2 — survives, with one qualification.** "No relocation exists" is true of *base* relocation,
+which is the whole point of §4. Two relocations do survive and should be named rather than left to
+contradict the row: the §10 migration is itself a one-time relocation, and §4's tenancy box admits
+that an ownership change would move every object.
+
+**⚠ Row 3 — inherits a claim this spec has already had to retract.** "One manifest row, conditional
+write, loser re-runs" rests on the conditional write being sufficient. The five-round review of
+`2026-08-04-cas-fence-persist-summary-design.md` established the opposite, and §5.1 already carries
+the correction: the *write* is trivial, the **publish protocol around it is not**. Row 3 must point at
+§5's publish protocol, not at the conditional write alone.
+
+**⚠ Row 4 — describes a feature the spec has since disclaimed.** "Two teammates generate for one
+video" sells team concurrency. §11.1 (added 2026-08-04, on the user's decision) says teams are **not
+planned** and that naming the tenant buys exactly one narrow transition. Either drop the row or
+re-label it explicitly hypothetical — as written it is the strongest team claim left in the document,
+sitting in a table a reviewer reads as commitments.
+
+**The pattern across three of four rows:** each was written on 2026-08-02/03 and each was invalidated
+by a *later section of this same spec* — Q8, §5.1's correction, and §11.1 respectively. Nothing
+external changed. That is what makes walking the table a real gate rather than a formality: a spec
+edited section-by-section grows internal contradictions, and only a deliberate cross-read finds them.
+
 ---
 
 ## 10. Migration
@@ -643,10 +689,18 @@ implementation.
    - **Card joins the generation** — card and body always travel together; the incoherence is gone by
      construction, and the idempotency skip gains a truthful thing to key on. Costs a schema decision
      about where the card lives and how a reader resolves it.
-   - **Card stays on the row** — cheaper, no migration of scalar storage, but then the spec must state
-     what a reader does when the card is **newer** than the authoritative body, and which readers are
-     allowed to observe that split (`deriveClassASignals` in `backfill.ts` reads `docVersionMajor`
-     independently of body hash; the quick-view route serves `tldr` without checking body coherence).
+   - **Card stays on the row** — ~~cheaper, no migration of scalar storage~~, but then the spec must
+     state what a reader does when the card is **newer** than the authoritative body, and which
+     readers are allowed to observe that split (`deriveClassASignals` in `backfill.ts` reads
+     `docVersionMajor` independently of body hash; the quick-view route serves `tldr` without checking
+     body coherence).
+
+     > **⟳ Measured 2026-08-05 (§9.1) — this option is NOT the cheap one.** Answering *"does this card
+     > describe this body?"* needs a persisted hash of the body, and **none exists**: `mdHash` is
+     > derived at read time from a body the caller supplies (`backfill.ts:11`) and appears in **zero**
+     > of the 21 migrations. The durable whitelist (`0021:120-132`) stores `mdCorrectionsHash` — the
+     > **corrections** hash, not the body's. So option B needs a schema addition before its own
+     > question is expressible, which removes the main reason to prefer it.
 
    **Not choosing is the one unacceptable option**, because §5.1's *"this answers the concurrency
    problem"* currently implies coverage the design does not provide.
@@ -687,4 +741,8 @@ This spec is verified by review, not by tests. Before it becomes a plan:
 
   **The one methodological lesson, worth keeping past this spec:** all three corrections were stale
   *line numbers*, none were stale *facts*. Cite the symbol; let the line number be a hint.
-- Walk each row of §9 explicitly during review rather than accepting the table as written.
+- ~~Walk each row of §9 explicitly during review rather than accepting the table as written.~~ —
+  **DONE 2026-08-05, and it earned its cost: 3 of 4 rows did not survive** (§9.1). Row 1 answers a
+  *scalar* race with a *blob* fix and must wait on Q8; row 3 rests on the sufficiency claim §5.1
+  already retracted; row 4 sells team concurrency §11.1 disclaims. All three were invalidated by
+  **later sections of this same spec**, not by anything external.
