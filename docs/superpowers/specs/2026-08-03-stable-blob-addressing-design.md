@@ -1351,24 +1351,59 @@ baseline** — the *other* thing called a manifest, in `lib/cloud-sync/manifest.
 generation set to exchange, so there is nothing for a set union to be commutative over. Sync must
 **translate**, not reconcile.
 
-**What makes the translation cheap is already in the repo, and it is not a coincidence.**
-`ClassASignals` (`lib/cloud-sync/types.ts:4-11`) is `mdHash`, `docVersionMajor`, `mdGeneratedAt`,
-`mdCorrectionsHash` — and those are, field for field, the **card** fields that `video_artifacts_current`
-ranks on. So:
+**The translation is a PROJECTION, and it needed a schema change to be possible at all.**
 
-- **cloud → signals:** project `current` down to a `ClassASignals`. One row, one tuple.
+> **⟳ ROUND 5 (B3, Blocking, found by both reviewers) — the previous version of this paragraph claimed
+> `ClassASignals` was "field for field" the ranked card fields and that `reconcileClassA` "runs as
+> written, unmodified". Both were false, and I wrote them one batch earlier.** The review brief
+> flagged this as the highest-stakes claim in the document *because* I had authored it; that
+> instruction is the only reason it was checked.
+
+`ClassASignals` (`lib/cloud-sync/types.ts:4-11`) has **six** fields; the old sentence named four.
+
+| `ClassASignals` field | Cloud source | Status |
+|---|---|---|
+| `docVersionMajor` | `video_generations.doc_version_major` | ✅ ranked, rung 2 |
+| `mdCorrectionsHash` | card `mdCorrectionsHash` | ✅ ranked, rung 1 |
+| `mdGeneratedAt` | card `mdGeneratedAt` | ⟳ **the view used to rank `produced_at` instead** |
+| `mdHash` | **nothing — it did not exist** | ⟳ **now `video_generations.md_hash`** |
+| `summaryMdKey` | `video_artifacts.blob_key` | projected, not ranked |
+| `backfilled` | no cloud analogue — a local provisional marker (§5.5) | projected as `false` |
+
+**Two of those were load-bearing, and neither was a wording problem.**
+
+**(a) `mdHash` did not exist.** `reconcileClassA` reads it as *presence* (`:17-18`) and as *equality*
+(`:32`). Project it as `null` and `:23` returns `copyToCloud` **unconditionally** — every sync appends
+a new generation, forever, and every append is a paid slot. Derive it instead by reading the cloud
+blob and you have reintroduced shape #1 on the money path, because `SupabaseBlobStore.get` cannot
+prove absence. The sharp part: **this document already said so, twice, in other sections** (§9.1's
+*"grep for `mdHash` across all 23 migrations returns zero"*, and §15's *"needs a persisted hash of the
+body, and none exists"*). §5.3 contradicted its own document, and the contradiction survived because
+no one reads a spec front-to-back looking for one section assuming what another disproves.
+It is now a recorded fact (`md_hash`, required for summary generations) — which is what "runs
+unmodified" always required and never said.
+
+**(b) the recency rung ranked a different value on each side.** The views ordered by `g.produced_at`;
+`reconcileClassA:49` orders by `mdGeneratedAt`. **MEASURED: opposite winners on the same pair** — two
+replicas, each correct by its own rule. Both views now rank the card's `mdGeneratedAt`, which keeps
+round 4's J2-3 property (a recorded fact, not a clock read) *and* matches the merged code.
+
+So the projection is:
+
+- **cloud → signals:** project `current` down to a `ClassASignals` — one row, one tuple, six fields,
+  two of which (`summaryMdKey`, `backfilled`) are carried rather than ranked.
 - **local → signals:** unchanged; the local file already produces exactly this today.
-- **reconcile:** `reconcileClassA` runs **as written**, unmodified.
+- **reconcile:** `reconcileClassA` runs unmodified — **now true**, and only because of `md_hash`.
 - **cloud ← a local win:** record a *new generation* whose card carries the local tuple, then write the
   bytes (record-first, §5.1.1). A local win is an **append**, never an overwrite.
 
 **This is why round 3's A-1 mattered beyond ranking.** `reconcileClassA` orders by
-corrections-currency → format → recency, and `video_artifacts_current` now orders by the same three
-rungs in the same order. Had `current` kept flat recency, the two sides would disagree about which of
-two identical inputs wins, and sync would oscillate — each replica correctly computing a different
-answer. **One hierarchy, two implementations, and they must not drift**: the ranking in
-`schema/04_artifacts.sql` and the branches in `reconcile-class-a.ts:38-50` are the same decision
-written twice, and each should cite the other.
+corrections-currency → format → recency, and the views now order by the same three rungs on the same
+values. Had `current` kept flat recency — or kept ranking `produced_at` — the two sides would disagree
+about which of two inputs wins and sync would oscillate. **One hierarchy, two implementations, and
+they must not drift.** They had already drifted, in the paragraph asserting they had not, which is the
+argument for the citation rather than the assurance: `schema/04_artifacts.sql`'s ranking and
+`reconcile-class-a.ts:38-50` are one decision written twice, and each must name the other.
 
 **Deliberately not settled here.** Which slots sync at all (§7 says the paid body; `digDeeper` is
 scope-blocked, not rule-blocked), what happens when local wins a slot whose cloud generation has
