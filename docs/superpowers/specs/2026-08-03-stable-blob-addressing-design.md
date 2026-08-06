@@ -10,7 +10,7 @@ before it becomes a plan. **Supersedes part of [ADR-0002](../../adr/0002-playlis
 
 **It now also closes a filed defect.** `docs/backlog.md` **#17** (fence the worker persist) was filed
 open when #42 merged: a stale worker persist landing after an A3 relocation orphans paid dig blobs,
-and only fencing closes it. §5.1 and §9 argue this design removes that class outright rather than
+and only fencing closes it. §5.1.1 and §9 argue this design removes that class outright rather than
 fencing it — the manifest collapses the race to one small row, and no relocation exists to race with.
 **If that argument survives review, #17 should be solved here rather than fenced separately.** Weigh
 it against the delay: #17 is live today.
@@ -187,8 +187,17 @@ re-asserts the owner at every hop. It **never creates a second owner**.
 
 Four properties, each load-bearing:
 
-**`<workspaceId>` stays first** — the RLS predicate requires it. Today it is literally `auth.uid()`, so
-the bytes are unchanged from the current layout and **the predicate needs no edit**.
+**`<workspaceId>` stays first** — the RLS predicate requires it.
+
+> **⟳ CORRECTED IN ROUND 1 (Blocking B3).** This previously read *"today it is literally `auth.uid()`, so
+> the bytes are unchanged and the predicate needs no edit"* — which contradicted §11.2 ("the predicate
+> changes on day one") and §5.1 (whose manifest RLS `workspace_id = auth.uid()` denies every row the
+> instant the id stops being a uid). Three sections said three things about one predicate.
+>
+> **Settled 2026-08-06 by the middle slice (§5.0): the segment is an independent workspace UUID, and
+> the storage predicate changes now** — to `workspace_readable(split_part(name,'/',1))`, a single
+> `security definer` function, with no teams, no ACL and no roles. Bytes are unchanged in *shape*;
+> the value in segment 1 is a workspace id rather than a uid, which is precisely the point.
 
 > **The one deliberate exception to this spec's own thesis — named, not hidden.** Everything else in
 > this template is immutable, but **ownership is not**: content can change hands. So `<workspaceId>` is
@@ -325,28 +334,140 @@ The same argument retires `sameTitles`: a model envelope stored under its genera
 
 ---
 
-## 5. The manifest
+## 5. The workspace and the artifact manifest
+
+### 5.0 The workspace table — ⟳ ADDED IN ROUND 1 (Blocking B2), scope settled 2026-08-06
+
+Round 1 found that `<workspaceId>` was the first segment of **every** blob key and the partition key of
+both new tables, while **nothing anywhere produced one** — no table, no column, no RPC. A plan could
+not have been written.
+
+**Decision (user, 2026-08-06): the middle slice. Ship the table now, one workspace per user, with an
+independent UUID. Defer everything else about teams.**
+
+```sql
+create table workspaces (
+  id       uuid primary key default gen_random_uuid(),   -- NEVER equal to a user's uid
+  owner_id uuid not null references profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table playlists add column workspace_id uuid not null references workspaces(id);
+```
+
+One workspace is auto-provisioned per user **inside the existing `handle_new_user()` trigger**
+(`0003:2-11`), which already creates the `profiles` row on `auth.users` insert — a two-line addition to
+infrastructure that already runs.
+
+**Why the id must be independent of `auth.uid()`, stated once so it is never re-litigated.** The table
+is cheap to add later; **the value baked into every object path is not.** Ship the segment as
+`auth.uid()` and adopting real workspaces later means moving every blob from `A/…` to `W/…` — a
+whole-corpus migration of paid content, on the money path. That is §1's thesis violated by the slice
+that implements §1's thesis. A uid-valued segment also grants its creator unrevocable access (§11.2).
+
+**RLS changes now, but only to this** — no teams, no ACL, no roles:
+
+```sql
+create function workspace_readable(p_ws text) returns boolean
+  language sql security definer set search_path = public stable as $$
+  select exists (select 1 from workspaces w
+                 where w.id::text = p_ws and w.owner_id = auth.uid());
+$$;
+revoke all on function workspace_readable(text) from public;
+grant execute on function workspace_readable(text) to authenticated, anon;
+-- storage policy body: bucket_id = 'artifacts' and workspace_readable(split_part(name,'/',1))
+```
+
+Text-to-text, **casting the column and never the segment** (§3). Anon still fails closed: `auth.uid()`
+is NULL, so no row matches — the property `0007:9-11` documents is preserved rather than re-derived.
+
+> **The structural payoff: `workspace_readable` becomes the SINGLE place teams are later added.** The
+> policy never changes again and no path ever changes. That is §11.2's membership-not-identity rule
+> made structural instead of aspirational.
+
+**Explicitly deferred and genuinely deferrable** (none of them change a path): multiple workspaces per
+user — the §11.0 grouping knob; teams, `workspace_members`, ACLs; the atomic-creation RPC; admin role
+checks on destructive verbs.
+
+**Cross-playlist dedup is NOT deferred.** With one workspace per user, every playlist that user owns
+shares the manifest key `(workspace, video, slot)` and therefore one copy of the blobs. What is
+deferred is *choosing a boundary smaller than the whole user*.
+
+### 5.1 The artifact manifest
 
 The per-video mapping from **slot → blob key**. This is the only mutable state in the design.
 
-```
-video_artifacts
-  workspace_id  uuid    not null
-  video_id      text    not null
-  slot          text    not null        -- 'summary' | 'model' | 'dig:120' | 'digDeeper' | ...
-  blob_key      text    not null
-  generation_id text    not null
-  updated_at    timestamptz not null default now()
-  primary key (workspace_id, video_id, slot)
+```sql
+create table video_artifacts (
+  workspace_id  uuid  not null references workspaces(id) on delete cascade,
+  video_id      text  not null,
+  slot          text  not null,          -- 'summary' | 'model' | 'dig:120' | 'digDeeper' | …
+  kind          text  not null,          -- MUST agree with slot; see below
+  state         text  not null default 'current'
+                check (state in ('current','detached')),
+  blob_key      text  not null,
+  generation_id text  not null,
+  start_sec     int,                     -- dig slots only; §6.2(b)
+  end_sec       int,                     -- dig slots only; §6.2(b)
+  updated_at    timestamptz not null default now(),
+  primary key (workspace_id, video_id, slot),
+  foreign key (workspace_id, video_id, generation_id, kind)
+    references video_generations (workspace_id, video_id, generation_id, kind),
+  check (kind = case when slot like 'dig:%' then 'dig' else 'summary' end)
+);
 ```
 
-A **table, not a jsonb column**, for one decisive reason: GC must ask *"select every referenced
+**A table, not a jsonb column**, for one decisive reason: GC must ask *"select every referenced
 blob_key"*, which is a query against a table and a full scan of jsonb otherwise.
 
-RLS follows the house pattern exactly (`enable` + `force row level security`, a
-`for all using/with check (workspace_id = auth.uid())` policy, an explicit grant, an index on the FK).
+Four constraints, each closing a round-1 finding:
 
-### 5.1 Why this answers the concurrency problem
+- **`kind` + the composite FK + the `check` (Codex B1).** Without them a row can assert
+  `slot='summary'` over dig bytes and resolve to a generation whose `card` is NULL. The FK carries
+  `kind` so the generation must be of the right sort, and the `check` ties `kind` to the slot's shape.
+- **`state` (Claude B4).** A `detached` dig keeps a row, so §8's sweeper — which marks from this table
+  — cannot collect the paid content §6.1 promises never to delete.
+- **`start_sec` / `end_sec` (Claude H4).** §6.1 is a span rule; without stored spans every attach
+  decision reads a *superseded* summary blob through a `get()` that collapses 5xx into `null`.
+- **`on delete cascade` from `workspaces`.** See §8 for the playlist-level unreferencing, which is the
+  case a cascade cannot reach.
+
+**RLS — ⟳ NOT the house pattern (M3).** The house pattern (`for all using/with check (… = auth.uid())`
+plus a client grant) is what `videos` uses, and a `videos` row is reconstructible. **A manifest row is
+not**: deleting it unreferences paid blobs and starts the 90-day clock, with no undo anywhere in §8.
+Follow `share_tokens` instead (`0013:16-18`) — the precedent §11.3 already praises: `force row level
+security`, **no** anon/authenticated write policy, service_role-only grants, and every write through a
+`security definer` RPC:
+
+```sql
+publish_slot(p_workspace uuid, p_video text, p_slot text,
+             p_expected_key text,   -- NULL means "expect no row"; this is the CAS of §5.2
+             p_new_key text, p_generation text) returns text
+```
+
+The client policy is **`select` only**. This also gives §5.2's conditional write a **single owner**
+instead of one hand-rolled copy per writer — the exact shape of the 2026-07-30 architecture review's
+finding #2.
+
+**Reading the manifest needs the same three-way contract as `BlobRead` (Claude H1).** Today the money
+guard is a `tryGet` on the blob, deliberately, because *a failed read must never look like an absent
+artifact* — that is the measured 6¢→12¢ defect (`serve-doc.ts:59-71`,
+`tests/integration/serve-model-unreadable.test.ts`). Under this design the authority moves to the
+manifest, so **the same hazard moves with it**: a PostgREST error, a transient RLS failure, or a
+`.maybeSingle()` whose error nobody inspects all produce "no row" → "no model" → a second paid Gemini
+call for a model already in the bucket.
+
+```ts
+type SlotRead =
+  | { ok: true;  key: string; generationId: string }
+  | { ok: false; reason: 'absent' }
+  | { ok: false; reason: 'unreadable'; cause: unknown };
+```
+
+`unreadable` is **required, not optional**, so callers cannot inherit an ambiguous form — the same
+argument `blob-store.ts:53-55` makes for `tryGet`. **Only `absent` may lead to a spend.** Write the
+assertion in this slice; `serve-model-unreadable.test.ts` is the template and the scaffolding exists.
+
+### 5.1.1 Why this answers the concurrency problem
 
 This is the payoff, and it is the reason the design started.
 
@@ -363,6 +484,17 @@ Under this design:
 - **The metadata race collapses to one small row.** Publishing means updating one manifest row. A
   conditional write (`update … where blob_key = <what I read>`, check affected rows) is then
   *trivially sufficient* — no locks, no leases, no draining, nobody waits.
+> **⟳ ROUND 1, Medium M4 — "the loser retries" is asserted three times and has no mechanism.**
+> `jobs_idem_active` covers `completed` (`0009:11-13`) and `enqueue_job` **joins** rather than inserting
+> on conflict (`0011:83-88`), so a worker whose conditional manifest write lost already holds a
+> `completed` job and **nothing re-runs it**. Combined with §5.2.2 the consequence is concrete: if the
+> loser is the generation that applied the user's corrections, the published generation is the one
+> **without** them, permanently. The claim appears at §5.1.1, §9 row 1 and §9 row 3 as load-bearing.
+>
+> **Rule:** say what publishes after a lost CAS. An idempotent re-read-and-republish of the *same*
+> generation is the right shape — the bytes exist and are addressed immutably, so republishing is free
+> and safe. Put it here, not in a claim.
+
 - **Failure is never destructive.** A loser's blobs still exist, so a wrong pointer is temporary and a
   re-run repairs it. This is what makes "compensate after the cycle" — the user's instinct — actually
   sound: compensation only works if the cycle never destroys anything.
@@ -372,7 +504,7 @@ Under this design:
 > overwritten slot on `videos.data`, so *"the new run's scalars beside an older generation's body"*
 > was expressible — a real, observed failure, and what froze a row permanently in the conditional-write
 > slice. **§5.2 closes it** (Q8, decided): the card is an attribute of the generation, so card and body
-> are inseparable by construction. This box stays because the *reasoning* is still needed — §5.1 alone
+> are inseparable by construction. This box stays because the *reasoning* is still needed — §5.1.1 alone
 > does not solve the concurrency problem, and a reader who stops here will believe it does.
 >
 > **"Trivially sufficient" is also now contradicted by evidence.** The conditional-write slice was
@@ -388,7 +520,7 @@ Under this design:
 A summary is **two** things produced by one Gemini run: a **body** (the blob) and a **card** — the
 summary-owned scalars `tldr`, `ratings`, `overallScore`, `takeaways`, `videoType`, `audience`,
 `language`, `tags`, `processedAt`, `docVersion`, `mdGeneratedAt`, `mdCorrectionsHash`
-(`0021:120-132`). §5.1 generation-scoped the body and left the card in one overwritten slot, which is
+(`0021:120-132`). §5.1.1 generation-scoped the body and left the card in one overwritten slot, which is
 what kept *"run #2's card beside run #1's body"* expressible.
 
 **Decision: the card is an attribute of the generation, not of the video.** One run produces one
@@ -471,6 +603,16 @@ corrections>`.
 **Rule:** a summary generation is not publishable until the current corrections have been applied to
 it, and `mdCorrectionsHash` records what was actually applied — never what was merely on file.
 
+> **⟳ ROUND 1, High (Codex) — "current" is a moving target, so the rule needs a CAS.** Corrections are
+> mutable while a generation runs (`update_video_annotations`, `0021:19`). A worker starts with C1,
+> the user saves C2 during the Gemini call, and the worker publishes a generation stamped C1 — **born
+> stale**, and by §5.2's own construction the row now truthfully describes a body the user has already
+> superseded.
+>
+> **Rule:** publish must CAS on the corrections hash (or `annotationsEditedAt.corrections`). If it
+> moved, the generation is stored **unpublished** and either retried against C2 or left for the next
+> run — never published. Storing rather than discarding matters: the bytes were paid for.
+
 **⚠ This rule depends on corrections being cheap to re-apply, which today they are not.** They are
 free-form English handed to `fixSummary` (`gemini.ts:456`), a Gemini pass that returns **the whole
 document**, so carrying them forward costs a full-document round trip per generation. That is why the
@@ -521,7 +663,21 @@ the two cannot disagree. Same RLS pattern as §5.
    stored `docVersion` against the job's. Today that `docVersion` can describe a body it did not come
    from — which is how a row froze permanently in the conditional-write slice (B-R4-1). Against a
    generation, the comparison means what it says.
-2. **`persist_summary`'s field-merge whitelist stops being load-bearing.** The three-layer jsonb merge
+2. **`persist_summary`'s field-merge whitelist stops being load-bearing — CONDITIONALLY.**
+   > **⟳ ROUND 1, High H2.** This is true only if every producer writes a **complete** card, and today
+   > the cloud worker writes none of the currency fields: `summary-handler.ts:149-164` carries
+   > `docVersion` and `processedAt` but **no `mdGeneratedAt` and no `mdCorrectionsHash`**. §5.2.2 names
+   > the second; the first has the identical hole on the identical lines. Under the old merge that
+   > silently preserved a stale value; under an immutable generation record it becomes a silent **NULL**,
+   > which is worse: `reconcile-class-a.ts:49` tiebreaks on `(a ?? '') > (b ?? '')`, so a NULL cloud
+   > `mdGeneratedAt` **loses to local every time, deterministically**, and the next sync overwrites a
+   > freshly-paid cloud body with an older local one. Today's stale-but-non-null value loses only
+   > sometimes; the §5.2 form loses always.
+   >
+   > **Rule:** make card completeness a **schema fact, not a convention** — every document fact
+   > `not null` on `video_generations`, plus a producer-side card type the compiler forces every writer
+   > to populate. Note `as any` on a test double opts out of compiler enforcement, so back it with a
+   > behavioural test. And fix `summary-handler.ts` **in this slice** — it is one of the two producers. The three-layer jsonb merge
    at `0021:116-133` exists to avoid dropping summary fields on a status-only persist. With the card
    written once as part of an immutable generation record, there is no partial-update semantics to get
    right — the merge disappears rather than being fixed. That whitelist and its "absent → preserved"
@@ -700,7 +856,37 @@ same. Without a manifest **nothing can tell you what is unreferenced**, so GC is
 
 Design:
 
-- **Mark and sweep** over `video_artifacts`. Anything not referenced is a candidate.
+- **Mark and sweep** over `video_artifacts`. Anything not referenced is a candidate. **Two root sets,
+  not one** — see the unreferencing rule below.
+
+> **⟳ ROUND 1, Blocking B5 — as written, an explicit delete INVERTED this rule.** `video_artifacts` has
+> no playlist column and no FK to `playlists`; the 0019 cascade reaches `videos`, `jobs` and
+> `share_tokens` only. So deleting a playlist left its manifest rows intact, the sweeper saw every blob
+> as **referenced**, and nothing was ever collected. §8's headline promise — *collected **immediately**,
+> not in 90 days* — became **never**, on the path built to honour an explicit delete. Worse, the blob
+> cleanup already runs best-effort and returns 200 on failure (`route.ts:78-82`), so nothing reports it.
+>
+> **Rule: unreferencing is DB state and belongs inside the commit-point transaction, not on the
+> best-effort byte path.** Delete the manifest rows in the same transaction as the playlist, then let
+> the sweeper (with its grace period) delete the bytes. **Byte deletion may stay best-effort;
+> unreferencing may not.** Order it so a partial failure fails toward *collectable* rather than toward
+> *pinned forever*. Only then is §8's "assert the collection, do not assume it" even expressible.
+>
+> **The sweeper needs a second root set:** objects with **no manifest row at all**. Without it an
+> orphan is not merely uncollected, it is *invisible* — which is how the current
+> superseded-dig and old-base accumulation already happens.
+
+> **⟳ ROUND 1, High H7 — `video_generations` has no lifecycle, so a card outlives its body.** §8 sweeps
+> `video_artifacts` and collects **blobs**; §5.2's generation record is DB state this section never
+> mentions. After a body is collected at day 91 its generation row remains, so any reader resolving a
+> generation by id — the recovery path this very 90-day window exists to serve, or §6.2's detached-dig
+> surface — gets **a card with a 404 body**. That is §5.2's "both or neither" failing across the GC
+> boundary, in the mirror direction, on the path built for recovery.
+>
+> **Rule:** collect the generation row with the last blob of that generation, **or** mark it
+> `body_collected` so a reader can tell. And specify the FK from `video_artifacts.generation_id`
+> including its `on delete` behaviour — §5.2 said "references it" and declared no constraint at all
+> (now fixed in §5.1's composite FK).
 - **Grace period — mandatory.** A blob written but not yet published is unreferenced and must never be
   collected. This is the classic GC race; a minimum age (hours, not minutes) is the standard defense.
 - **Retention — DECIDED 2026-08-05 (user).** One rule, and it fits in a sentence:
@@ -745,6 +931,26 @@ Design:
   > segment this design removes. Its worst failure mode is silent (the route accepts blob-cleanup
   > failures and returns 200), which would turn the 90-day ceiling into *forever* without anything
   > reporting it. **Assert the collection, do not assume it.**
+
+  > **⟳ ROUND 1, High H6 — assets are misclassified here, and this rule would delete the most expensive
+  > artifact in the system.** §3 calls slide assets "free of Gemini", so the paid/free split sends them
+  > to *delete when not current*. But `CONTEXT.md:44` classes them **source-of-truth**: they need a video
+  > download plus a re-encode, and on a hosted server they **cannot be recaptured at all** (ADR-0005 —
+  > the container ships no ffmpeg). **"Free of Gemini" is not "free to recreate", and this rule is
+  > written against cost of recreation.** Assets are retained on the paid side.
+  >
+  > **Second half of the same finding: assets are keyed on a per-generation value while stored
+  > generation-free.** §4 argues they may sit outside a generation because "a frame at 120s is the same
+  > frame regardless of which generation drew a boundary near it" — yet the key
+  > `assets/<videoId>/<sectionId>-<start>-<end>.jpg` leads with `sectionId`, which **is** `startSec`,
+  > allocated per generation. `lib/dig/slides.ts:207-231` then prunes every `<sectionId>-*.jpg` the
+  > current run did not write, **bypassing the BlobStore seam** (§14 Q7's second writer). So a dig run for
+  > generation *def*'s section 120 deletes generation *abc*'s images, and *abc*'s dig — which §6
+  > explicitly permits to remain attached — renders broken.
+  >
+  > **Rule:** key assets on the timestamp window alone, no `sectionId`. Per §4's own argument they are a
+  > function of `(videoId, start, end)`; leading with a per-generation value contradicts the reason they
+  > were placed outside generations in the first place.
 
   **Three further consequences, each load-bearing.**
 
@@ -795,8 +1001,8 @@ traced on 2026-08-02/03; each must be re-checked at review.
 |---|---|---|
 | Worker `persist_summary` finishes while sync writes its Class-A block | **Lost update.** Same row fields, same blob key; whichever lands second wins, and a paid generation can be destroyed | Different generations ⇒ **no blob collision.** Both publish to the manifest; the conditional write makes the loser retry. No paid work lost |
 | Dig job pins `base` at start, sync relocates during its Gemini call | Dig writes to a base the relocation **deleted** — orphaned, paid | No relocation exists. The dig publishes under its own generation |
-| Two syncs (two machines, one account) | Unconditional writes interleave | One manifest row, conditional write, loser re-runs |
-| Two teammates generate for one video | n/a (no teams) | Two generations, both retained; manifest picks one; neither is destroyed |
+| Two syncs (two machines, one account) | Unconditional writes interleave | One manifest row, conditional write — **and see §9.1/M4: what re-runs the loser must be specified, it is not automatic** |
+| ~~Two teammates generate for one video~~ | ~~n/a (no teams)~~ | ⟳ **ROW WITHDRAWN (round 1, M7).** It sold team concurrency that §11.1 disclaims and §13 scopes out. §9.1 retracted it and the table still asserted it — the exact contradiction §9.1's own closing argument warns about. |
 
 ### 9.1 Walk of each row — DONE 2026-08-05
 
@@ -836,7 +1042,7 @@ that an ownership change would move every object.
 
 **⚠ Row 3 — inherits a claim this spec has already had to retract.** "One manifest row, conditional
 write, loser re-runs" rests on the conditional write being sufficient. The five-round review of
-`2026-08-04-cas-fence-persist-summary-design.md` established the opposite, and §5.1 already carries
+`2026-08-04-cas-fence-persist-summary-design.md` established the opposite, and §5.1.1 already carries
 the correction: the *write* is trivial, the **publish protocol around it is not**. Row 3 must point at
 §5's publish protocol, not at the conditional write alone.
 
@@ -847,7 +1053,7 @@ re-label it explicitly hypothetical — as written it is the strongest team clai
 sitting in a table a reviewer reads as commitments.
 
 **The pattern across three of four rows:** each was written on 2026-08-02/03 and each was invalidated
-by a *later section of this same spec* — Q8, §5.1's correction, and §11.1 respectively. Nothing
+by a *later section of this same spec* — Q8, §5.1.1's correction, and §11.1 respectively. Nothing
 external changed. That is what makes walking the table a real gate rather than a formality: a spec
 edited section-by-section grows internal contradictions, and only a deliberate cross-read finds them.
 
@@ -908,10 +1114,42 @@ Three consequences, stated rather than discovered later:
 2. **A workspace changes hands for free; a playlist inside one does not.** Moving a playlist to another
    workspace requires **copying** its videos' blobs — copying, not moving, if another playlist in the
    old workspace still references the same video. A deliberate user action, not a background race.
-3. **Deleting a playlist needs REFERENCE COUNTING, not just enumeration.** Today
+3. **Deleting a playlist needs a LOCKED, TRANSACTIONAL unreference — reference counting alone is racy.**
+   ⟳ *Round 1 (Codex B2 / Claude M2).* Counting references and then deleting is a TOCTOU: the count for
+   video V returns zero, an ingest or sync adds V to a sibling playlist in the same workspace, and the
+   shared manifest row and blobs are deleted out from under it. The current delete makes this worse —
+   `route.ts:73-79` commits the playlist delete and does the blob work **afterwards, unlocked**. And per
+   §5.0 the reference source is `videos` rows across the workspace's playlists, which is only
+   enumerable now that `playlists.workspace_id` exists.
+
+   **Rule:** never count in the app and delete in the app. Express the unreference as a **single
+   transactional statement** alongside the playlist delete — `delete from video_artifacts where … and
+   not exists (surviving videos row)` — inside one `security definer` RPC that locks the workspace's
+   reference set. Bytes follow later via the sweeper's grace period (§8).
+
+   Superseded original wording: **Deleting a playlist needs REFERENCE COUNTING, not just enumeration.** Today
    `DELETE /api/playlists/[id]` ends in `deletePrefix(principal, '')`; in a multi-playlist workspace
    that sweep destroys the other playlists' blobs. This sharpens the §4 finding: the delete path must
    walk the manifest **and** check whether any surviving playlist still references each video.
+
+> **⟳ ROUND 1, High H5 / Codex H2 — there are TWO playlist-keyed money arbiters, and this section named
+> only one.** The paragraph below cited `jobs_idem_active`, which is the **queue**. The magazine model is
+> charged on the **serve** path by a *different* arbiter, also keyed on playlist:
+> `v_doc_key := p_playlist_id::text || '/' || p_video_id` (`0020:213`), against
+> `serve_model_charge (owner_id, doc_key, day)` with the K-attempt bound and the per-owner daily cap
+> (`serve_owner_budget`, `0014:6-10`) around it. That is the whole of the Stage 1G/G1 fairness cap.
+>
+> **The failure this design would ship:** one video in N playlists of one workspace resolves **one**
+> manifest slot for `model`, but each playlist keeps its own `doc_key`, hence its own daily lease and
+> its own `max_serve_attempts` budget against that single shared slot. **G1's cap becomes N times
+> looser**, and each attempt mints a new generation and re-points the manifest, so N−1 paid models go
+> not-current and start their 90-day clock. Storage dedup and spend dedup must agree or the workspace
+> knob is a money regression.
+>
+> **Rule: enumerate EVERY arbiter keyed on playlist and state what each is re-keyed to.** There are two:
+> `jobs_idem_active` (`0009:11-13`) and `serve_model_charge.doc_key` (`0020:213`). Both re-key to
+> `(workspace_id, video_id)`. A future arbiter that keys on playlist is a defect by construction, and
+> that belongs on the review checklist beside §8's key-shape rule.
 
 **Storage dedup is free; spend dedup is not.** Sharing the bytes falls out of the manifest key. *Not
 charging twice* still requires §14 Q6 — `jobs_idem_active` includes `playlist_id` (`0009:11-13`), so a
@@ -1071,7 +1309,7 @@ implementation.
 
 ## 13. Out of scope
 
-- Actual team/workspace support (§11) — only the naming hook is in scope.
+- Actual **team** support (§11) — ⟳ *narrowed in round 1*: the **workspace table itself is IN scope** (§5.0, one per user, independent UUID, plus the `workspace_readable` predicate). Out of scope: multiple workspaces per user, `workspace_members`, ACLs, the atomic-creation RPC, and role checks.
 - Changing what the summary or dig *contains*.
 - Background/automatic sync.
 - Any change to the Gemini prompts, cost caps, or the spend ledger's accounting rules.
@@ -1129,7 +1367,7 @@ implementation.
    measurement below — the "cheap" option was not cheap, so both options cost a schema change, and
    only one makes the incoherence *impossible* rather than merely *detectable*. That mattered because
    the readers that currently do not check (`deriveClassASignals`, the quick-view route) are exactly
-   the ones that would keep not checking. Knock-on effects: §5.1's scope box retired, §9 row 1
+   the ones that would keep not checking. Knock-on effects: §5.1.1's scope box retired, §9 row 1
    repaired, and §2's definition of *Generation* must change (a run produces a body **and its card**,
    inseparably). Original question retained below for the reasoning trail.
 
@@ -1142,7 +1380,7 @@ implementation.
    are produced by one Gemini run.
 
    **This design generation-scopes the body and says nothing about the card.** Blobs become immutable
-   per generation and never collide (§5.1); the card keeps living in one slot on `videos.data` and is
+   per generation and never collide (§5.1.1); the card keeps living in one slot on `videos.data` and is
    still overwritten in place. So **"run #2's card beside run #1's body" remains expressible** — a
    catalogue entry updated to the second edition while the shelf still holds the first. Every field
    reads consistent; the body isn't the one described.
@@ -1150,7 +1388,7 @@ implementation.
    That is not hypothetical. It is the exact state behind the conditional-write slice's B-R4-1: new
    `tldr` and `docVersion` on the row, old bytes at the key, and **nothing able to tell they came from
    different runs** — which then satisfied the idempotency skip (`summary-handler.ts:86-92`) and froze
-   the row permanently. A reader of §5.1 would reasonably conclude this design fixes that. **It does
+   the row permanently. A reader of §5.1.1 would reasonably conclude this design fixes that. **It does
    not.**
 
    Two defensible answers, and the spec must pick one:
@@ -1170,10 +1408,10 @@ implementation.
      > **corrections** hash, not the body's. So option B needs a schema addition before its own
      > question is expressible, which removes the main reason to prefer it.
 
-   **Not choosing is the one unacceptable option**, because §5.1's *"this answers the concurrency
+   **Not choosing is the one unacceptable option**, because §5.1.1's *"this answers the concurrency
    problem"* currently implies coverage the design does not provide.
 
-   Related: this question also decides whether §5.1's claim that a conditional write is *"trivially
+   Related: this question also decides whether §5.1.1's claim that a conditional write is *"trivially
    sufficient"* survives — see §15.
 
 ---
@@ -1223,6 +1461,6 @@ This spec is verified by review, not by tests. Before it becomes a plan:
   *line numbers*, none were stale *facts*. Cite the symbol; let the line number be a hint.
 - ~~Walk each row of §9 explicitly during review rather than accepting the table as written.~~ —
   **DONE 2026-08-05, and it earned its cost: 3 of 4 rows did not survive** (§9.1). Row 1 answers a
-  *scalar* race with a *blob* fix and must wait on Q8; row 3 rests on the sufficiency claim §5.1
+  *scalar* race with a *blob* fix and must wait on Q8; row 3 rests on the sufficiency claim §5.1.1
   already retracted; row 4 sells team concurrency §11.1 disclaims. All three were invalidated by
   **later sections of this same spec**, not by anything external.

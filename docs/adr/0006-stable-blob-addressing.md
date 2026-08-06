@@ -51,8 +51,19 @@ it — a bug class we fixed three separate times without removing its cause.
   already exists — `LocalFsBlobStore` ignores `Principal.id` entirely, so the two layouts were never
   really the same.
 
-- **`tenantId` is named now and equals `auth.uid()`. No team support is implied or built**, and teams
-  are not on the roadmap (decided 2026-08-04).
+- **⟳ SUPERSEDED 2026-08-06 — the segment is a `workspaceId`, an independent UUID, NOT `auth.uid()`.**
+  The earlier text here said *"`tenantId` is named now and equals `auth.uid()`"*. Round-1 review of the
+  spec found that contradicts the spec's own §11.2 and would bake in a whole-corpus blob migration:
+  once real workspaces arrive, a uid-valued segment forces every object to move — §1's thesis broken
+  by the slice implementing it. A uid-valued segment also grants its creator **unrevocable** access,
+  since the storage fast path names them directly and an `OR` cannot be revoked.
+
+  **Decided (user, 2026-08-06) — the middle slice.** A `workspaces` table ships now: one per user,
+  auto-provisioned in the existing `handle_new_user()` trigger, with `id` an independent UUID and
+  `playlists.workspace_id` referencing it. The storage predicate becomes a single `security definer`
+  `workspace_readable()` check. **No teams, no ACL, no roles** — those stay out of scope, and
+  `workspace_readable` is the one place they are later added, so no path ever changes again.
+  Detail: spec §5.0.
 
   **The name buys less than it appears to, and the honest scope matters more than the name.** It makes
   exactly one future transition free — a solo owner's *own* workspace gaining members, where the
