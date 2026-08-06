@@ -559,8 +559,19 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
 - [ ] **Dual adversarial review to convergence** — mandatory (schema + identity + money path).
       **Deliberately sequenced last:** running it while 3 prerequisite forks are open would burn a
       round re-reporting "these are open."
-      **Rounds 1–5 done, NOT CONVERGED** (7 → 8 → 10 → 6 → 7 Blocking). Round 6 pending. Trail:
-      `docs/reviews/spec-blob-addressing-r{1..5}-*.md` — PR #51.
+      **Rounds 1–6 done, NOT CONVERGED** (7 → 8 → 10 → 6 → 7 → 8 Blocking). Trail:
+      `docs/reviews/spec-blob-addressing-r{1..6}-*.md` — PR #51. Round 6's security/mechanical half is
+      applied; four design items are handed off in `…-r6-handoff.md`.
+
+      **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
+      `when others`, so six negatives were passing on a `[42601]` arity error instead of the
+      constraint they named — round 5's Blocking B1 and High H5 shipped **unverified** while the suite
+      printed green and exited 0. **The instrument was converting failures into passes**, which no
+      amount of further testing could have found. Any "verified" claim from round 5 or earlier
+      predates `3fb6970` and is not trustworthy. Two live security holes were also MEASURED, both
+      created by round 5's fixes: `anon` deleted another tenant's reservation through a definer
+      function with default `PUBLIC EXECUTE`, and `anon` TRUNCATEd the paid manifest — TRUNCATE sees
+      neither RLS nor a row trigger. 48 assertions now, each naming the guard that rejected it.
 
       **The artifact changed medium at round 4→5, and that is the headline.** Roughly half of round
       4's Blocking were *"the SQL in this prose block does not execute"* — compile errors being found
