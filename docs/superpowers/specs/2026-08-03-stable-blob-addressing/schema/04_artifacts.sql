@@ -77,6 +77,23 @@ grant select on video_artifacts to authenticated, anon;
 -- `not g.body_collected` had to move inside coalesce for the same reason: NULL is not false, and a
 -- WHERE clause drops NULL. An "is it collected?" test that answers NULL for an artifact that can
 -- never be collected is absent-vs-failed, shape #1, in a filter.
+-- Two views, because the SUMMARY ranking is an input to the ranking of everything derived from it,
+-- and a view cannot reference itself. Round 4 J2-4.
+create view video_summary_current as
+select distinct on (a.workspace_id, a.video_id) a.*
+from video_artifacts a
+join workspace_videos wv
+  on  wv.workspace_id = a.workspace_id and wv.video_id = a.video_id
+join video_generations g
+  on  g.workspace_id = a.workspace_id and g.video_id = a.video_id
+  and g.generation_id = a.generation_id
+where a.slot = 'summary' and a.state = 'recorded' and not g.body_collected
+order by a.workspace_id, a.video_id,
+         (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,
+         g.doc_version_major desc nulls last,
+         g.produced_at desc nulls last,
+         a.generation_id desc;
+
 create view video_artifacts_current as
 select distinct on (a.workspace_id, a.video_id, a.slot) a.*
 from video_artifacts a
@@ -85,8 +102,17 @@ join workspace_videos wv
 left join video_generations g
   on  g.workspace_id = a.workspace_id and g.video_id = a.video_id
   and g.generation_id = a.generation_id
+left join video_summary_current s
+  on  s.workspace_id = a.workspace_id and s.video_id = a.video_id
 where a.state = 'recorded' and not coalesce(g.body_collected, false)
 order by a.workspace_id, a.video_id, a.slot,
+         -- Round 4 J2-4: source-currency RANKS. It must never GATE — a paid model whose source
+         -- summary was regenerated still serves (stale, flagged), because the alternative is an
+         -- empty magazine view until someone pays for a new model. Rule 14, applied at the second
+         -- site: the round-3 fix demoted corrections from filter to rank and left this sibling
+         -- three lines away still filtering.
+         (a.source_generation_id is null
+          or a.source_generation_id is not distinct from s.generation_id) desc,
          (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,
          g.doc_version_major desc nulls last,
          g.produced_at desc nulls last,

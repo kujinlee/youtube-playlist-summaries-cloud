@@ -3,7 +3,13 @@
 -- playlists, videos, jobs. Each gets add-nullable → backfill → set not null. Round 4 J1-3/J1-1.
 
 create table workspaces (
-  id         uuid primary key,          -- NOT gen_random_uuid(): see 02_seed. Opaque either way.
+  id         uuid primary key,          -- NO default. The seed below sets id = owner_id, for migrated
+                                        -- AND new workspaces alike (round 3 B-3; round 4 Codex #11
+                                        -- corrected four sites that still said "random"). Opaque
+                                        -- regardless: nothing may branch on the equality, and no
+                                        -- predicate may compare a path segment to auth.uid().
+                                        -- (There is no 02_*.sql — the seed had to merge into THIS
+                                        -- file, because the backfills below read the rows it makes.)
   owner_id   uuid not null references profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
   unique (owner_id),                    -- one workspace per user IS the rule for this slice

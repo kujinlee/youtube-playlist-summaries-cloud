@@ -264,6 +264,46 @@ they are independent of section structure — a frame at 120s is the same frame 
 generation drew a section boundary near it. Keeping them generation-free avoids re-capturing video on
 every regeneration.
 
+### 4.0 Every key shape, and what the sweeper does with it — ⟳ ROUND 4 (J1-5, Codex #17; round 3's A3, unfixed for three rounds)
+
+The three-line template above covers **three** of the nine kinds §3 inventories. §8's sweeper decides
+whether bytes live or die from the key alone (rule 17), so for the other six that decision was
+undefined — and *undefined* on a delete path does not mean "nothing happens", it means whatever the
+implementer guesses. This table is the whole domain.
+
+| Key shape | Class | Manifest row? | Sweeper |
+|---|---|---|---|
+| `<ws>/videos/<vid>/<gen>/summary.md` | paid | `slot='summary'` | keep while any generation row references it; §8's 90-day clock after |
+| `<ws>/videos/<vid>/<gen>/model.json` | paid | `slot='model'` | same |
+| `<ws>/videos/<vid>/<gen>/dig/<sectionId>.md` | paid | `slot='dig:<sectionId>'` | same, and a **detached** dig keeps its row (§6.2) |
+| `<ws>/videos/<vid>/<gen>/dig-deeper.md` | paid | `slot='digDeeper'` | same |
+| `<ws>/videos/<vid>/renders/<name>.html` | free | `slot='html'` | delete when not current; **never** retained — it re-renders |
+| `<ws>/videos/<vid>/renders/<name>.pdf` | free | `slot='pdf:<kind>'` | same |
+| `_staging/<uuid>/<finalKey>` | transient | **none, ever** | delete when older than the write timeout. **Not** "unreferenced ⇒ garbage" — see §5.1.1's containment table |
+| Anything else | **unknown** | — | **fail closed: never delete, and report.** |
+| *(Slide assets)* | *local backend only* | *n/a* | *out of scope — round 3 A-6; no cloud instance exists* |
+
+**The last two rows are the ones that matter.**
+
+*Fail closed* is not a default chosen for tidiness. This classifier's two error directions are not
+symmetric: misclassifying garbage as precious wastes storage measured in cents, while misclassifying
+precious as garbage destroys paid, unreproducible bytes. An unknown key is exactly what a *legacy* key
+looks like during §10's migration, and what a *future* key looks like after someone adds a kind and
+forgets this table — so the unknown case is not hypothetical, it is the steady state during every
+migration. **Report, never delete**, and treat a non-empty unknown set as a migration that is not
+finished rather than as a sweep that found nothing.
+
+*Staging* earns its own row because it is the one shape where "no manifest row" is **correct and
+permanent**. A sweeper written from rule 17 alone deletes a live staging blob mid-promote — a
+data-loss bug whose window is milliseconds and whose reproduction is a race.
+
+**Why this went unfixed for three rounds, which is the more useful finding.** It was raised in round 1
+(M5), not fixed; round 2 did not re-raise it; round 3 recorded it *specifically so it would not be
+lost a third time* (A3) — and it was, because recording a finding is not fixing it and the two look
+identical in a review document. The countermeasure is not more diligence: it is that a rule with an
+enumerable domain should be written **as** the enumeration, where a missing row is visible, rather
+than as a sentence that quietly quantifies over a set nobody listed.
+
 ### 4.1 What is a `generationId`? — **OPEN**
 
 Three candidates, listed with their consequences:
@@ -379,11 +419,11 @@ The same argument retires `sameTitles`: a model envelope stored under its genera
 > unleased `pending`. Plus that format outranks recency, and that a user typing a correction **does not
 > empty the slot** — round 4's A-2 floor, as an executable test rather than a promise.
 >
-> **Two structural fixes are in the schema and not yet reflected in the prose below:** the manifest is
-> **append-only**, keyed `(workspace, video, slot, generation_id)` with `current` as a **view** (round 4
-> J2-1 / Codex #6 — the old PK admitted one row per slot while the ranking needs many); and `pending`
-> is **leased** with an attempt bound (Codex #5 — an unleased pending turns a double-charge into a
-> permanent `busy`). **Where this prose and the schema disagree, the schema is the design.**
+> **§5.1 has been reconciled to the schema** (2026-08-06): the manifest is **append-only** with
+> `current` as a **view** (round 4 J2-1 / Codex #6), and `pending` is **leased** (Codex #5). Reconciling
+> it meant re-reading the schema, which is how §5.1.3's defect was found — so the reconciliation paid
+> for itself before it finished. **Where any remaining prose and the schema disagree, the schema is the
+> design**, and that is a standing rule rather than a transitional note.
 
 
 > **⟳ ROUND 3 (A-5, A-7, A-9, A-10) — SCOPE, stated once because four findings share this root: every
@@ -410,7 +450,8 @@ opaque UUID. Defer everything else about teams.**
 
 ```sql
 create table workspaces (
-  id       uuid primary key default gen_random_uuid(),   -- opaque; MAY coincide with a uid (§5.0.2)
+  id       uuid primary key,   -- NO default: §5.0.2 supplies it, and in this slice it always
+                               -- EQUALS owner_id. Opaque regardless — nothing may branch on that.
   owner_id uuid not null references profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
   unique (owner_id),                    -- one workspace per user IS the rule for this slice
@@ -601,7 +642,7 @@ some uid grants nothing on its own.
 |---|---|---|
 | Old `<uid>/<playlistKey>/…` | the owner's uid | workspace `id = uid`, `owner_id = auth.uid()` ⇒ **TRUE** |
 | New `<workspaceId>/videos/…` | the same value | **TRUE** |
-| A new user's workspace | random UUID | **TRUE** — and they have no old-layout bytes |
+| A new user's workspace | the new user's uid (same rule) | **TRUE** — and they have no old-layout bytes |
 
 Three consequences, each removing work this spec had taken on:
 
@@ -613,43 +654,62 @@ Three consequences, each removing work this spec had taken on:
 3. **`Principal.id` is a no-op for existing users during the transition.** `p.id` = uid = workspace id,
    so `objectKey` composes byte-identical paths while the migration runs.
 
-**The one cost, stated so nobody reads meaning into it:** workspace ids come from two sources — seeded
-from a uid for migrated workspaces, random for new ones. Both are **opaque to every consumer**. The
-coincidence is a migration artifact and carries no semantics; nothing may branch on it, and no
-predicate may compare a path segment to `auth.uid()` (§5.0).
+**The one cost, stated so nobody reads meaning into it:** every workspace id in this slice *equals* a
+uid — migrated and new alike. It is nonetheless **opaque to every consumer**. The equality is a
+migration artifact and carries no semantics; nothing may branch on it, and no predicate may compare a
+path segment to `auth.uid()` (§5.0).
+
+> **⟳ ROUND 4 (Codex #11) — this paragraph, the table row above it, the §5.0 DDL default and ADR-0006
+> all still said new workspaces get a *random* id, thirty lines below the decision that they do not.**
+> Round 3 changed the rule at the site where the bug was found and left four sites stating the old
+> one. All four now agree.
+>
+> **Why this is the same failure as §5.1.3 and not a typo.** In both cases the fix was correct and
+> *local*, and the sweep for siblings was the step that did not happen. The difference is only in what
+> catches it: §5.1.3's sibling was in SQL, so executing the file found it in seconds; this one is in
+> English, where the only instrument is `grep` for the shape of the claim — which found all four in
+> one command, once someone thought to run it. **An I rule is checked by thinking, a P rule by
+> enumerating, and a rule stated in four places is checked by grep.** The inventory records the
+> classification; it should record the instrument too.
 
 ### 5.1 The artifact manifest
 
-The per-video mapping from **slot → blob key**. This is the only mutable state in the design.
+The per-video mapping from **slot → blob key**.
 
-```sql
-create table video_artifacts (
-  workspace_id  uuid  not null references workspaces(id) on delete cascade,
-  video_id      text  not null,
-  slot          text  not null,          -- 'summary' | 'model' | 'dig:120' | 'digDeeper' | …
-  kind          artifact_kind not null,  -- the ENUM, not text (round 3 B-1: `text = artifact_kind`
-                                         -- does not resolve; the DDL did not create)
-  state         text  not null default 'pending'
-                check (state in ('pending','recorded','detached')),
-                -- 'pending' is inserted BEFORE the bytes (round 3 A-1's record-first order);
-                -- only 'recorded' is servable, which is also A-2's floor
-  blob_key      text  not null,
-  generation_id text,                      -- NULLABLE (round 3 B-2: round-2 C1 said "nullable" in
-                                         -- prose and `not null` in the DDL, so `pdf:*` stayed
-                                         -- unrepresentable — reworded, not made)
-  start_sec     int,                     -- dig slots only; §6.2(b)
-  end_sec       int,                     -- dig slots only; §6.2(b)
-  updated_at    timestamptz not null default now(),
-  primary key (workspace_id, video_id, slot),
-  foreign key (workspace_id, video_id, generation_id, kind)
-    references video_generations (workspace_id, video_id, generation_id, kind),
-  check (slot_kind(slot) is not null and kind = slot_kind(slot)),   -- round 3 B-5: MEASURED to fail
-                                         -- OPEN. `slot_kind('html')` is NULL, `kind = NULL` is NULL,
-                                         -- and a CHECK passes on NULL — so slot='html', kind='dig'
-                                         -- was ACCEPTED. An unknown slot must now fail closed.
-  check ((kind in ('summary','model','dig','digDeeper')) = (generation_id is not null))
-);
-```
+> **The table is [`schema/04_artifacts.sql`](2026-08-03-stable-blob-addressing/schema/04_artifacts.sql).**
+> What follows is what it means and why; the file is what it *is*. Everything below was verified by
+> executing it, and three claims this section used to make did not survive that.
+
+**It is append-only, and it is not mutable state.** The first version of this section opened *"this is
+the only mutable state in the design"* and keyed the table `(workspace_id, video_id, slot)` — one row
+per slot, overwritten in place. That is incompatible with two other decisions made later and in other
+sections: rule 13 **ranks** many generations for a slot, and §5.1.1's record-first order must insert a
+row **before** the bytes exist. A single overwritable row can satisfy neither. So the manifest holds
+one row per **(slot, generation)**, nothing is ever overwritten, and `current` is a **view**
+(`video_artifacts_current`) rather than a column anyone writes.
+
+**Paid and free are keyed differently, and that is the taxonomy, not a workaround.**
+
+| | Key | Why |
+|---|---|---|
+| **Paid** (`summary`, `model`, `dig:*`, `digDeeper`) | append-only, one row per generation | the bytes cost money and are unreproducible; every one is kept and ranked |
+| **Free** (`pdf:*`, `html`) | one row per slot, overwritable | a deterministic re-render has nothing to preserve |
+
+Expressed as two **partial** unique indexes over a surrogate `artifact_id`, because a primary key
+cannot say this. **Measured 2026-08-06:** naming `generation_id` in a primary key makes it `NOT NULL`
+— a PK implies it, silently — which makes every free render unrepresentable
+(`null value in column "generation_id" … violates not-null constraint`) and makes the
+paid-kinds-need-a-generation check unsatisfiable for `render`. That is the **third** appearance of
+this exact defect: twice as prose disagreeing with DDL, and the third time as a *side effect of the
+fix for something else*. See §5.1.3.
+
+**`state` and the lease.** `pending` is inserted before the bytes (§5.1.1's record-first order) and
+only `recorded` is servable — §5.1.1's floor. A `pending` row **must** carry a lease expiry, enforced
+by `check ((state = 'pending') = (lease_expires_at is not null))`: without one, a writer that dies
+between the record and the bytes leaves a row that is neither servable nor collectable, and every
+later reader sees `busy` forever. Record-first converts a double-charge into a lease; it does not
+remove the need for one. Same shape as `reserve_serve_model`'s lease and attempt bound
+(`0012`/`0014`) — this project has already solved this once.
 
 > **⟳ ROUND 2 (Blocking) — my round-1 constraint made four of the six slot families unrepresentable.**
 > I wrote `check (kind = case when slot like 'dig:%' then 'dig' else 'summary' end)` beside a
@@ -670,26 +730,23 @@ create table video_artifacts (
 > function rather than a `case` buried in a constraint, and **the generation FK is nullable** — free
 > re-renders and assets have none. Codex B1's actual guard is preserved and narrowed to where it belongs:
 > it is the **paid** kinds that must name a generation, which the second `check` enforces.
->
-> ```sql
-> create type artifact_kind as enum ('summary','model','dig','digDeeper','render');
->   -- no 'asset': assets are SOURCES (§8), outside the manifest entirely
-> create function slot_kind(p_slot text) returns artifact_kind
->   language sql immutable as $$
->   select case
->     when p_slot = 'summary'      then 'summary'
->     when p_slot = 'model'        then 'model'
->     when p_slot like 'dig:%'     then 'dig'
->     when p_slot = 'digDeeper'    then 'digDeeper'
->     when p_slot like 'pdf:%'     then 'render'
->   end::artifact_kind $$;
-> ```
+> (`artifact_kind` and `slot_kind()` now live in `schema/03_generations.sql` and
+> `schema/04_artifacts.sql`. `slot_kind` gained an `html%` arm there that this round-2 draft lacked —
+> which is precisely how round 3 measured the slot guard failing **open**.)
 >
 > **And the composite FK needs a target it does not have (round 2, C2).** It references the 4-tuple
 > `(workspace_id, video_id, generation_id, kind)`, but `video_generations`' primary key is the 3-tuple —
 > Postgres rejects it outright: *"there is no unique constraint matching given keys for referenced
-> table."* Add `unique (workspace_id, video_id, generation_id, kind)` to `video_generations`; it is
-> trivially satisfied because `generation_id` is already unique within `(workspace, video)`.
+> table."* ✅ **Landed** — `schema/03_generations.sql` carries the `unique (workspace_id, video_id,
+> generation_id, kind)`; it is trivially satisfied because `generation_id` is already unique within
+> `(workspace, video)`.
+>
+> **A nullable FK column enforces nothing, which the round-2 fix did not account for.** Postgres FKs
+> default to `MATCH SIMPLE`: if *any* column of the tuple is NULL the constraint is **skipped entirely**.
+> So making `generation_id` nullable to admit free renders also made free renders unreferenced by any
+> FK — a `pdf:*` row could name a video that does not exist in the workspace. The manifest therefore
+> carries a **second** FK, on `(workspace_id, video_id)` → `workspace_videos`, which has no nullable
+> column and so always fires. The fix that bought expressiveness had to buy back the integrity it spent.
 >
 > `video_generations.kind` also widens from `summary | dig` to the same enum, so a `model` generation
 > can exist — it is a paid call and was never part of the summarize run.
@@ -706,8 +763,12 @@ Four constraints, each closing a round-1 finding:
   — cannot collect the paid content §6.1 promises never to delete.
 - **`start_sec` / `end_sec` (Claude H4).** §6.1 is a span rule; without stored spans every attach
   decision reads a *superseded* summary blob through a `get()` that collapses 5xx into `null`.
-- **`on delete cascade` from `workspaces`.** See §8 for the playlist-level unreferencing, which is the
-  case a cascade cannot reach.
+- **`on delete cascade`, from `workspace_videos` rather than `workspaces`.** The round-1 draft cascaded
+  from `workspaces`, which is a weaker statement than it looks: it only fires when an entire workspace
+  is deleted. Cascading from `workspace_videos` covers the deletion that actually happens — a video
+  leaving the workspace — and still reaches workspace deletion transitively, since `workspace_videos`
+  itself cascades from `workspaces`. See §8 for the playlist-level unreferencing, which is the case no
+  cascade can reach, because a video leaving *one* playlist must not delete a body another still uses.
 
 **RLS — ⟳ NOT the house pattern (M3).** The house pattern (`for all using/with check (… = auth.uid())`
 plus a client grant) is what `videos` uses, and a `videos` row is reconstructible. **A manifest row is
@@ -783,8 +844,24 @@ argument `blob-store.ts:53-55` makes for `tryGet`.
 > **Resolution — invert the write order, rather than adding a probe key.** `record_artifact` inserts the
 > row in state `pending` **BEFORE** the bytes are written, then flips it to `recorded` after a verified
 > write. Then:
-> - **bytes ⊆ records, always.** "No record" now *entails* "no bytes", determinately, with no probe
->   needed — so the vacuous branch stops existing rather than being filled in.
+> - **bytes ⊆ records** — over the keys this design addresses. "No record" *entails* "no bytes",
+>   determinately, with no probe needed, so the vacuous branch stops existing rather than being filled
+>   in. **⟳ ROUND 4 (J2-2): "always" was wrong, and the exceptions matter more than the word did.**
+>   Two classes of byte are outside the containment, one temporarily and one forever:
+>
+>   | | Records? | For how long |
+>   |---|---|---|
+>   | The **existing corpus** — every blob written before this design | no | until §10's migration records it. The set starts at 100% exempt |
+>   | **`_staging/<uuid>/<key>`** — the atomic-write temp prefix of all three blob stores (`supabase-blob-store.ts:85`, `local-blob-store.ts:53`, `in-memory-blob-store.ts:152`) | **never** | permanent, by construction: a staged byte exists precisely so that it is *not* yet the artifact |
+>
+>   **This does not weaken the money guard, and saying why is the point of the row.** The guard needs
+>   "no record ⇒ no bytes" **at the key it is about to spend on** — a `<ws>/videos/<v>/<gen>/…` key
+>   under a fresh generation id. A staging key is never that key (different prefix, minted per attempt,
+>   deleted on promote), and a legacy key is never that key either (old layout, no generation segment).
+>   The containment holds exactly where it is load-bearing. **What is not permitted is the unqualified
+>   sentence**, because §8's sweeper reads it as *"an unrecorded blob is garbage"* — and under that
+>   reading the sweeper would collect a live staging blob mid-promote, and the entire pre-migration
+>   corpus on its first run. One rule, two consumers, and only one of them can take it neat.
 > - **"Record exists" entails "key known"**, so the blob probe finally has an argument.
 > - A crash before recording leaves **nothing** — no bytes, no row, no orphan — so spending again is
 >   correct rather than a double-charge.
@@ -825,9 +902,33 @@ without replacing it leaves the model free to describe a body it was not built f
 
 Strictly simpler than what it replaces: today's check compares parsed section titles and can be fooled
 by a reworded heading (the same fragility §4.2.1 documents for dig attachment). An id either matches or
-it does not. It also composes with §5.1.1's derived `current`: a model whose `source_generation_id` is
-no longer the current summary is **ineligible to be current**, which is the same eligibility predicate
-already used for corrections — one rule, three consumers.
+it does not.
+
+> **⟳ ROUND 4 (J2-4) — this paragraph used to end *"a model whose `source_generation_id` is no longer
+> the current summary is **ineligible to be current**."* That is a gate, and rule 14 says staleness
+> must never gate.**
+>
+> **Failure:** a summary is regenerated. The existing paid magazine model now points at the previous
+> generation, so it is ineligible, so the `model` slot resolves to **nothing** — not "stale, with a
+> banner", nothing. The magazine view is empty until somebody pays for `generateMagazineModel` again.
+> That is round 4's A-2 with `model` substituted for `summary`, and today's shipped behaviour is the
+> opposite: `readTitleStableModel` returns `{status:'ok', stale:true}` and the reader shows the model
+> (`serve-doc.ts:90-96`).
+>
+> **Corrected: source-currency is a RANKING RUNG.** The floor stays `state = 'recorded'` and nothing
+> else. `schema/04_artifacts.sql` implements it as the top rung of `video_artifacts_current`, and
+> `05_assert.sql` proves the floor holds — *"a model whose SOURCE summary was superseded still serves"*.
+> Expressing it needed a **second view** (`video_summary_current`): the summary's own ranking is an
+> input to the ranking of everything derived from it, and a view cannot reference itself. Worth noting
+> because it is the first place the design's layering shows up as a structural constraint rather than
+> a stylistic one.
+>
+> **Same one-site-only pattern as §5.1.3 and Codex #11 — third instance this round.** Round 3 demoted
+> *corrections* from filter to rank and left this sibling, three lines away, still filtering. The fix
+> landed exactly where the finding pointed, and the finding pointed at one of two places.
+
+It composes with §5.1.1's derived `current`: source-currency, corrections-currency and format are
+three rungs of **one** ordering — one rule, three consumers, and none of them a gate.
 
 ### 5.1.1 Why this answers the concurrency problem
 
@@ -912,11 +1013,34 @@ Under this design:
 > video to an older body**, with no error surfaced anywhere. The very failure §5.1's `SlotRead`
 > contract exists to prevent, arriving through the back door.
 >
-> **Eligibility is computed from RECORDED FACTS only** — the artifact row exists, the card is
-> complete, `mdCorrectionsHash` matches the video's current corrections, `source_generation_id` (if
-> any) is still current, and the generation is not `body_collected`. **Readability is verified once,
-> at record time, by the writer that just wrote the bytes** — never re-litigated on the read path.
-> Resolving a slot therefore touches no blob at all.
+> **Eligibility is computed from RECORDED FACTS only.** ⟳ ROUND 4 (J2-4) — and it is now **two**
+> lists, because collapsing them is what let staleness gate:
+>
+> | | Test |
+> |---|---|
+> | **Servable** (the floor) | `state = 'recorded'`, and the generation is not `body_collected`. That is all of it, and it cannot empty a non-empty set |
+> | **Preferred** (the ranking) | source-currency, then corrections-currency, then format, then production time, then id |
+>
+> `mdCorrectionsHash` and `source_generation_id` used to appear in the first column. They now appear
+> only in the second. Card completeness moved out of both — it is a **table constraint**
+> (`gen_card_complete`), so an incomplete card cannot exist to be filtered.
+>
+> **Readability is verified once, at record time, by the writer that just wrote the bytes** — never
+> re-litigated on the read path. Resolving a slot therefore touches no blob at all.
+>
+> > **⟳ ROUND 4 (J3-4) — and that verification proves less than the sentence implies, so the limit is
+> > now stated rather than left to be discovered.** The writer is the worker, running as
+> > `service_role` (`0007:16-17`); the reader is a session client under an entirely different policy.
+> > **Record-time verification proves the bytes landed. It does not prove a reader may read them.**
+> > The one failure class it structurally cannot see is an **RLS denial** — which
+> > `SupabaseBlobStore.get:27-37` converts into `null`, i.e. into *absent*, which is root-cause
+> > shape #1 arriving at the one layer this design declared safe from it.
+> >
+> > **So the migration owes an assertion, not an assumption:** after §10, one **session-client** read
+> > per workspace, executed. This is the same demand §8 already makes of the sweeper — *assert the
+> > collection, do not assume it* — applied to the reader's context rather than the writer's. It is
+> > also the cheap kind: the scaffolding exists, and it either promotes a Blocking bug or retires a
+> > finding.
 >
 > **What dissolves rather than gets patched:** no CAS on the manifest, so no loser, no retry path, no
 > flip sequence, no bound to state (this finding); M4's "the loser retries" stops being a claim that
@@ -958,6 +1082,44 @@ Under this design:
 > adoption, field-omission semantics. The conditional write itself was correct from the first draft.
 > The claim should be narrowed to what was actually demonstrated: *the conditional write is simple;
 > the publish protocol around it is not.* Trail: `docs/reviews/spec-conditional-write-*.md`.
+
+### 5.1.3 The same defect, three times, the third time caused by its own fix
+
+Worth recording as a shape rather than an incident, because it is the most expensive pattern this
+review has produced and the third instance was the cheapest to have prevented.
+
+**The defect:** a free render (`pdf:*`, `html`) has no generation, and something makes
+`generation_id` mandatory, so free renders become unrepresentable.
+
+| | How it was written | How it was found |
+|---|---|---|
+| Round 2 (C1) | prose said *nullable*, the DDL said `not null` | human review, reading both |
+| Round 3 (B-2) | fixed in prose; the DDL was never edited | human review, reading both again |
+| Round 4 (this) | DDL edited — and a **new PK** silently re-imposed `NOT NULL` | **executing it**, in seconds |
+
+The third one is the interesting one. Nobody wrote `not null`. The fix was *"make the manifest
+append-only"*, done by adding `generation_id` to the primary key — and **a primary key implies
+`NOT NULL` on every column it names.** The mandatory-ness was a side effect of a correct fix to an
+unrelated finding, in a different subsection, defended by no reviewer's attention because no reviewer
+was looking at that line.
+
+**Three generalisations, in increasing order of usefulness.**
+
+1. *A physical rule is checked by enumerating, not by thinking* (round 4's method note). "PK implies
+   NOT NULL" belongs on the physical list; it was not on it, so the sweep could not have caught it.
+2. **A fix must be swept against the rules, exactly as an original is.** Rounds 2–4 each swept the
+   artifact and then edited it; nothing swept the edit. Five of the nine root-cause shapes are
+   "a fix that moved a defect," and this is why: the fix is the least-reviewed text in the document.
+3. **The cheap version of both is to make the artifact executable.** This instance was found in one
+   run, by a machine, for no review budget at all — and the two before it each cost a round. What
+   changed was not rigour but the *medium*: a design spec looks like the artifact, so schema lived in
+   it as illustration, and illustrations do not compile.
+
+**And a guard with no test is why it survived a green run.** `05_assert.sql` said, in a comment,
+*"a paid slot with a generation, **and a free render with none**"* — and inserted two paid summaries.
+The missing case was not overlooked; it was **named and not written**, which reads as coverage to
+every subsequent reader including its author. The assertion file now carries the free-render positive,
+and it fails without either half of the fix.
 
 ### 5.2 The card joins the generation — **DECIDED 2026-08-05 (user), closes Q8**
 
@@ -1170,10 +1332,50 @@ the two cannot disagree. Same RLS pattern as §5.
 that produced a body." It means **a run that produced a body and its card, which are inseparable.**
 Write that definition, not §2's current one.
 
-### 5.3 Sync becomes a manifest reconciliation
+### 5.3 Sync — ⟳ ROUND 4 (Codex #9, J2-5, and round 3's A-5): rewritten, because all three sentences were wrong
 
-Sync stops moving bytes. It compares two **artifact manifests** and produces one. (Not to be confused with the existing per-playlist **sync baseline**, also called a manifest in `lib/cloud-sync/manifest.ts` — see §2.) Nothing is copied, nothing is
-deleted, no address changes. Per-video, the result is a set of slot decisions.
+This section previously read, in full: *"Sync stops moving bytes. It compares two artifact manifests
+and produces one. Nothing is copied, nothing is deleted, no address changes."* Every clause of that is
+false, and the first two are false against **merged, production code** rather than against a later
+decision:
+
+| Claim | Reality |
+|---|---|
+| *"Sync stops moving bytes"* | `reconcileClassA` returns `copyToLocal` / `copyToCloud`, acted on at `lib/cloud-sync/sync-run.ts:780-791`. Copying bytes is what sync **is** |
+| *"compares two artifact manifests"* | **Local has no artifact manifest.** The §5 SCOPE box already established this; §5.3 was never updated to agree with it |
+| *"produces one"* | Set reconciliation presumes symmetry. One side has generations; the other has a file |
+
+**The asymmetry is the design, not a gap in it.** Cloud stores *n* generations per slot and derives
+`current`. Local stores **one file per slot** in a display-name layout (§7), plus a per-playlist **sync
+baseline** — the *other* thing called a manifest, in `lib/cloud-sync/manifest.ts` (§2). Local has no
+generation set to exchange, so there is nothing for a set union to be commutative over. Sync must
+**translate**, not reconcile.
+
+**What makes the translation cheap is already in the repo, and it is not a coincidence.**
+`ClassASignals` (`lib/cloud-sync/types.ts:4-11`) is `mdHash`, `docVersionMajor`, `mdGeneratedAt`,
+`mdCorrectionsHash` — and those are, field for field, the **card** fields that `video_artifacts_current`
+ranks on. So:
+
+- **cloud → signals:** project `current` down to a `ClassASignals`. One row, one tuple.
+- **local → signals:** unchanged; the local file already produces exactly this today.
+- **reconcile:** `reconcileClassA` runs **as written**, unmodified.
+- **cloud ← a local win:** record a *new generation* whose card carries the local tuple, then write the
+  bytes (record-first, §5.1.1). A local win is an **append**, never an overwrite.
+
+**This is why round 3's A-1 mattered beyond ranking.** `reconcileClassA` orders by
+corrections-currency → format → recency, and `video_artifacts_current` now orders by the same three
+rungs in the same order. Had `current` kept flat recency, the two sides would disagree about which of
+two identical inputs wins, and sync would oscillate — each replica correctly computing a different
+answer. **One hierarchy, two implementations, and they must not drift**: the ranking in
+`schema/04_artifacts.sql` and the branches in `reconcile-class-a.ts:38-50` are the same decision
+written twice, and each should cite the other.
+
+**Deliberately not settled here.** Which slots sync at all (§7 says the paid body; `digDeeper` is
+scope-blocked, not rule-blocked), what happens when local wins a slot whose cloud generation has
+`body_collected`, and whether a local file should mint a generation id or inherit one. **This spec's
+job was to name the asymmetry so the sync slice can be planned; the sync slice's job is to resolve
+it.** That slice cannot start until this section exists, which is exactly why three sentences was a
+Blocking finding rather than a stylistic one.
 
 ---
 
@@ -1523,10 +1725,25 @@ traced on 2026-08-02/03; each must be re-checked at review.
 
 | Scenario | Today | Under this design |
 |---|---|---|
-| Worker `persist_summary` finishes while sync writes its Class-A block | **Lost update.** Same row fields, same blob key; whichever lands second wins, and a paid generation can be destroyed | Different generations ⇒ **no blob collision.** Both publish to the manifest; the conditional write makes the loser retry. No paid work lost |
+| Worker `persist_summary` finishes while sync writes its Class-A block | **Lost update.** Same row fields, same blob key; whichever lands second wins, and a paid generation can be destroyed | Different generations ⇒ **no blob collision**, and card+body are one generation (§5.2) so neither can be torn from the other. Both writers **append**; neither overwrites |
 | Dig job pins `base` at start, sync relocates during its Gemini call | Dig writes to a base the relocation **deleted** — orphaned, paid | No relocation exists. The dig publishes under its own generation |
-| Two syncs (two machines, one account) | Unconditional writes interleave | One manifest row, conditional write — **and see §9.1/M4: what re-runs the loser must be specified, it is not automatic** |
+| Two syncs (two machines, one account) | Unconditional writes interleave | Both append. **No CAS, no loser, nothing to re-run** — see the note below |
 | ~~Two teammates generate for one video~~ | ~~n/a (no teams)~~ | ⟳ **ROW WITHDRAWN (round 1, M7).** It sold team concurrency that §11.1 disclaims and §13 scopes out. §9.1 retracted it and the table still asserted it — the exact contradiction §9.1's own closing argument warns about. |
+
+> **⟳ ROUND 4 (Codex #12) — the table was still selling a CAS the design had already deleted.** Rows 1
+> and 3 said *"the conditional write makes the loser retry"* and *"one manifest row, conditional
+> write"*. There is no conditional write on the manifest and there is no one row: §5.1 is
+> **append-only** and `current` is a **view**. A planner following the old table would have built a
+> CAS-and-retry protocol against a table that cannot lose a write.
+>
+> **The correction is a dissolution, not a rewording, and it is worth the extra sentence.** Under a
+> mutable pointer, two concurrent publishers are genuinely a race: one wins, one loses, and *"what
+> re-runs the loser"* is a real question — it was open as **M4**. Under append-only there is no race
+> to arbitrate. Both rows land, both are kept, and `current` is computed by ranking them whenever
+> anybody asks. The winner stops being the outcome of an interleaving and becomes the result of a
+> query, which is a property of the *set* and therefore identical for every reader, on every replica,
+> forever. **M4 is not answered; it stops being a question** — the third finding this round to close
+> that way rather than by being fixed.
 
 ### 9.1 Walk of each row — DONE 2026-08-05
 
@@ -1544,8 +1761,9 @@ about two writers racing on the **card**. So the row claims a fix for a race it 
 >
 > **⟳ REPAIRED 2026-08-05 — Q8 is closed (§5.2: the card joins the generation), so the row can now say
 > something honest.** Corrected reading: the worker and sync each produce a **whole generation** —
-> card and body together, neither overwriting anything. Both publish by conditionally updating one
-> manifest row; the loser retries. The scenario's actual failure, *a card describing a body it did not
+> card and body together, neither overwriting anything. ~~Both publish by conditionally updating one
+> manifest row; the loser retries.~~ **⟳ ROUND 4:** both **append** a row; there is no loser (see the
+> box above the walk). The scenario's actual failure, *a card describing a body it did not
 > come from*, is **no longer expressible**, because resolving a generation yields both or neither.
 > The row's original wording accidentally described this outcome while the design could not deliver
 > it; it can now.
@@ -1567,8 +1785,16 @@ that an ownership change would move every object.
 **⚠ Row 3 — inherits a claim this spec has already had to retract.** "One manifest row, conditional
 write, loser re-runs" rests on the conditional write being sufficient. The five-round review of
 `2026-08-04-cas-fence-persist-summary-design.md` established the opposite, and §5.1.1 already carries
-the correction: the *write* is trivial, the **publish protocol around it is not**. Row 3 must point at
-§5's publish protocol, not at the conditional write alone.
+the correction: the *write* is trivial, the **publish protocol around it is not**.
+
+> **⟳ ROUND 4 — and the row is now moot rather than corrected.** This walk concluded *"row 3 must
+> point at §5's publish protocol."* It no longer needs to point anywhere: append-only removes the
+> conditional write the row was built on. Recording the sequence deliberately, because it is the
+> clearest example in this document of the difference between the two kinds of progress — **round 3
+> corrected the row (it was pointing at the wrong thing); round 4 deleted the thing it pointed at.**
+> A correction that survives one round and is dissolved the next is not wasted work, but it is a
+> signal that the premise under it was never examined. That is what the round-3½ classification step
+> now exists to catch (`docs/dev-process.md`).
 
 **⚠ Row 4 — describes a feature the spec has since disclaimed.** "Two teammates generate for one
 video" sells team concurrency. §11.1 (added 2026-08-04, on the user's decision) says teams are **not
@@ -1584,6 +1810,34 @@ edited section-by-section grows internal contradictions, and only a deliberate c
 ---
 
 ## 10. Migration
+
+### 10.0 Ordering — ⟳ ROUND 4 (J3-3): the producer fix lands BEFORE or WITH the card constraint, never after
+
+**This is a prerequisite task, not a parenthetical**, and getting it backwards costs money on every
+cloud summarize.
+
+`gen_card_complete` requires a summary generation's card to carry `tldr`, `takeaways`, `docVersion`,
+`mdGeneratedAt`, `processedAt` and `mdCorrectionsHash`. **The producer cannot satisfy it today**:
+`lib/job-queue/summary-handler.ts:149-164` builds a `Video` with `docVersion` and `processedAt` and
+**no `mdGeneratedAt`, no `mdCorrectionsHash`**. So if the constraint ships first, every cloud
+summarize job fails its insert — **after** the Gemini call has been made and paid for. The user is
+charged, the bytes are produced, and the row that would have recorded them is rejected.
+
+| Order | Result |
+|---|---|
+| Constraint, then producer | every summarize pays for a generation it cannot record |
+| Producer, then constraint | correct — the producer emits complete cards before anything requires them |
+| Same migration | correct |
+
+**Round 4's J1-2 makes this sharper rather than softer, and that is worth understanding.** The
+round-3 constraint failed *open* on `card = NULL` (a `CHECK` passes on NULL), so a producer emitting
+no card at all would have slipped through silently — the ordering bug would have been invisible and
+the data merely wrong. Fixing J1-2 to fail closed makes the same bug **loud**. Both orders were
+always wrong; only fixing the fail-open made the wrongness observable, and only the sequencing
+statement makes it safe. **A guard becoming correct can turn a silent data defect into a loud outage
+— which is the right trade, and is exactly when a sequencing statement stops being bureaucracy.**
+
+### 10.1 Blob migration
 
 Every existing blob moves exactly once, from `<owner>/<playlist>/<base>.*` to the new layout.
 
@@ -1887,10 +2141,24 @@ implementation.
 3. ~~**Overlap threshold**, and the section-merge ambiguity (§6).~~ — **CLOSED 2026-08-05 (user
    decision, §6.1): when it is ambiguous, leave it unattached; never guess.** Attach only when the
    match is unambiguous in **both** directions — exactly one section overlaps the dig, *and* exactly
-   one dig claims that section. Threshold **0.8** of the dig's own span, tunable upward only.
+   one dig claims that section. Threshold **0.8 in both directions** — `overlap / dig_span ≥ 0.8`
+   **and** `overlap / section_span ≥ 0.8` — tunable upward only.
    **Closing it exposed a gap in §6:** the section-**split** case was never named, and it is
    ambiguous from the *dig's* side rather than the section's — a rule written only against the merge
    example would have missed it. This was the last prerequisite; **all three are now closed.**
+
+   > **⟳ ROUND 4 (Codex #13) — this line said "0.8 of the dig's own span", which is the ONE-sided rule
+   > §6.1 had already replaced.** One ratio cannot detect a section **merge**: a dig covering
+   > `[100,170)` sits entirely inside a merged section `[100,300)`, so `overlap/dig_span = 1.0` and the
+   > one-sided test attaches it to a section it describes a third of. An implementer reading the
+   > closed-questions list — which is exactly what someone planning the work reads — would have shipped
+   > the bug §6.1 exists to prevent.
+   >
+   > **The shape worth naming: a summary of a decision is a second copy of it.** §6.1 was fixed; this
+   > line summarises §6.1 and was not. Every "closed questions" list, ADR consequence and status table
+   > in this document is a cache of a decision written elsewhere, and caches go stale silently. Both
+   > of round 4's English-only findings (this and Codex #11) are exactly that, and both were found by
+   > grepping for the *value* rather than re-reading the prose.
 4. ~~**Retention policy and GC trigger** (§8).~~ — **CLOSED 2026-08-05 (user decision, §8).**
    *Not current ⇒ delete, except paid, which is retained **90 days** past the moment it stopped being
    current.* Trigger: scheduled sweep. A duration rather than a generation count, because a count

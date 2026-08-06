@@ -84,6 +84,21 @@ select assert_raises($$insert into video_artifacts
   values ((select id from t_ws),'vidGHOST','pdf:summary',null,'render','recorded','kX')$$,
   'a free render for a video with NO workspace_videos row (the FK the paid FK cannot enforce)');
 
+-- SOURCE-CURRENCY FLOOR (round 4 J2-4): a paid model whose source summary was superseded must STILL
+-- SERVE. gNEW is the current summary; this model points at gOLD, so it is stale by every measure.
+insert into video_generations (workspace_id,video_id,generation_id,kind,doc_version_major,produced_at)
+  values ((select id from t_ws),'vidA','gMODEL','model',null,'2026-01-15');
+insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
+  values ((select id from t_ws),'vidA','model','gMODEL','model','recorded','kMODEL','gOLD');
+do $$ declare k text; begin
+  select blob_key into k from video_artifacts_current where video_id='vidA' and slot='model';
+  if k is distinct from 'kMODEL' then
+    raise exception 'ASSERTION FAILED — stale model was GATED, not ranked: %', coalesce(k,'<no row>');
+  end if;
+  raise notice 'ok (floor): a model whose SOURCE summary was superseded still serves';
+end $$;
+
 -- RANKING: format outranks recency. gOLD is corrections-current-EQUAL but major 3; gNEW is major 4.
 do $$ declare v text; begin
   select generation_id into v from video_artifacts_current

@@ -51,7 +51,9 @@ it — a bug class we fixed three separate times without removing its cause.
   already exists — `LocalFsBlobStore` ignores `Principal.id` entirely, so the two layouts were never
   really the same.
 
-- **⟳ SUPERSEDED 2026-08-06 — the segment is a `workspaceId`, an independent UUID, NOT `auth.uid()`.**
+- **⟳ SUPERSEDED 2026-08-06 — the segment is a `workspaceId`, resolved through a workspace row rather
+  than compared to `auth.uid()`.** (Amended again below: in this slice that id *equals* the uid; what
+  changed is the predicate, not the value.)
   The earlier text here said *"`tenantId` is named now and equals `auth.uid()`"*. Round-1 review of the
   spec found that contradicts the spec's own §11.2 and would bake in a whole-corpus blob migration:
   once real workspaces arrive, a uid-valued segment forces every object to move — §1's thesis broken
@@ -59,11 +61,28 @@ it — a bug class we fixed three separate times without removing its cause.
   since the storage fast path names them directly and an `OR` cannot be revoked.
 
   **Decided (user, 2026-08-06) — the middle slice.** A `workspaces` table ships now: one per user,
-  auto-provisioned in the existing `handle_new_user()` trigger, with `id` an independent UUID and
-  `playlists.workspace_id` referencing it. The storage predicate becomes a single `security definer`
-  `workspace_readable()` check. **No teams, no ACL, no roles** — those stay out of scope, and
-  `workspace_readable` is the one place they are later added, so no path ever changes again.
-  Detail: spec §5.0.
+  auto-provisioned in the existing `handle_new_user()` trigger, with `playlists.workspace_id`
+  referencing it. The storage predicate becomes a single `security definer` `workspace_readable()`
+  check. **No teams, no ACL, no roles** — those stay out of scope, and `workspace_readable` is the one
+  place they are later added, so no path ever changes again. Detail: spec §5.0.
+
+  **⟳ CORRECTED 2026-08-06 (round 4, Codex #11) — `id` is NOT an independent UUID in this slice; it
+  EQUALS `owner_id`, for migrated and new workspaces alike.** An independent UUID breaks every *new*
+  user: `Principal.id` is `auth.uid()` (`lib/storage/resolve.ts:93`) and `objectKey` composes
+  `${p.id}/…`, so a new user writes to `<uid>/…` while their workspace has an unrelated id, and
+  `workspace_readable` matches nothing — they cannot read their own blobs while the `service_role`
+  worker keeps writing them.
+
+  **This does not weaken the decision above, and the distinction is the whole point.** What made a
+  uid-valued segment dangerous was never the *value*; it was the **predicate** — the old design let
+  storage compare the path segment to `auth.uid()` directly, which grants the creator access that no
+  row change can revoke. `workspace_readable` derives access from `workspaces.owner_id`, so it is
+  revoked by an `UPDATE`. A workspace id that happens to equal a uid grants nothing on its own. The
+  invariant that carries the safety is therefore *"no predicate may compare a path segment to
+  `auth.uid()`"* — a claim about a predicate, checkable by one grep at one site — and **not** *"the id
+  must never equal a uid"*, a claim about a value that would have forced a whole-corpus migration to
+  enforce. **Expiry:** the day multiple workspaces per user ship, `id` can no longer equal `owner_id`,
+  and `Principal` must become workspace-aware in that slice.
 
   **The name buys less than it appears to, and the honest scope matters more than the name.** It makes
   exactly one future transition free — a solo owner's *own* workspace gaining members, where the
