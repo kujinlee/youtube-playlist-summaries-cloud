@@ -187,16 +187,68 @@ layer that could hold the artifact; an indeterminate answer from any layer is `b
 exists, and with no record there is no key to probe. Resolved by the record-first write order, which
 makes *bytes ⊆ records* hold by construction, so "no record" *entails* "no bytes" without a probe.
 
+> **⟳ ROUND 4 (J2-2) — "by construction" is true only over the keys this design addresses.** Two
+> classes sit outside the containment: the **pre-migration corpus** (temporarily, until §10 records
+> it — the set starts 100% exempt) and **`_staging/<uuid>/<key>`**, the atomic-write temp prefix of
+> all three blob stores (permanently, by construction — a staged byte exists precisely so that it is
+> not yet the artifact). The money guard is unaffected, because it needs the containment only at the
+> fresh `<ws>/videos/<v>/<gen>/…` key it is about to spend on, and neither exception can be that key.
+> **§8's sweeper is the consumer that cannot take the unqualified sentence** — under it, an unrecorded
+> blob reads as garbage, which would collect a live staging blob mid-promote and the entire
+> pre-migration corpus on the first run.
+>
+> **⟳ ROUND 5 (B4/H4) — and record-first was still not sufficient, for a different reason.** *bytes ⊆
+> records* makes "no record ⇒ no bytes" true; it does **not** make "a record ⇒ only one writer" true.
+> Two writers minting different generation ids both inserted `pending` and both paid Gemini
+> (MEASURED, `count(*) = 2`) — the guard's `busy` branch was never reached. Record-first inherited its
+> mutual exclusion from a primary key that round 4 removed for unrelated and correct reasons. Now
+> enforced by `video_artifacts_inflight_uq`, landed together with a reclaim, because the index alone
+> converts a dead lease from a soft `busy` into a permanently dead slot.
+
 **Rule 14 gains a floor — staleness RANKS, it never GATES.** Eligibility-to-be-**served** is
-`state = 'recorded'`, full stop; it cannot empty a non-empty set. Corrections-currency and format move
+`state = 'recorded'`; it cannot empty a non-empty set. Corrections-currency and format move
 into the *ordering* for eligibility-to-be-**current**. Without this, a free user gesture (typing a
 correction) made every generation stale at once and deleted the visible summary.
 
-**Rule 13's ordering is the project's existing hierarchy, not flat recency** —
-`(corrections_current, doc_version_major, created_at, generation_id)`, matching
+> **⟳ ROUND 5 (H3) — "full stop" was wrong, and the correction is subtle enough to be worth stating
+> precisely.** The floor is `state = 'recorded'` **and** `not body_collected`, and the second conjunct
+> is not staleness — it is **byte existence**. A collected body has no bytes, so serving it would be
+> root-cause shape #4, and gating on it is therefore legitimate under rule 14 rather than an exception
+> to it. **The honest statement of rule 14 is: no rule that is not about byte existence may gate.**
+>
+> That was still not enough on its own. MEASURED: the summary slot went **2 rows → 0** when GC
+> collected both generations — round 3's A-2 failure ("the summary vanishes from the page") reached
+> through GC instead of through corrections. §8 stated no rule protecting the current generation. It
+> is now enforced by `forbid_collecting_current()` rather than written as a sentence the sweeper must
+> remember, because "the sweeper must remember" is exactly the rule that holds until the day it does
+> not, on the one path with no undo.
+>
+> **Still open (C5):** a free render has no generation, so the `body_collected` filter exempts it
+> structurally — the PDF of a collected body keeps serving. The §8 rule must also be *"collecting a
+> body collects the renders derived from it."*
+
+**Rule 13's ordering is the project's existing hierarchy, not flat recency** — matching
 `reconcile-class-a.ts:41-50` and the Stage 3 principle *"reconciled by format, not recency."* Every
 rung is a replica-independent recorded fact, which is what makes `current` a deterministic function of
 the generation set — and therefore what makes sync convergent without a tiebreak protocol.
+
+> **⟳ ROUNDS 4–5 — the tuple has changed twice since this was written, and both changes were forced
+> by a measurement rather than an argument.** It is now, in `schema/04_artifacts.sql`:
+>
+> `(source_current, corrections_current, doc_version_major, card→mdGeneratedAt, produced_at, generation_id)`
+>
+> - `created_at` is **gone** (round 4 J2-3): it defaulted to `now()`, so it was clock-derived, and a
+>   clock read is not a replica-independent recorded fact. The claim in this very paragraph was false
+>   while `created_at` was in the tuple.
+> - `source_current` was **added** (round 4 J2-4) as the top rung — and required a second view,
+>   because the summary's own ranking is an input to the ranking of everything derived from it.
+> - the recency rung is the **card's `mdGeneratedAt`**, not `produced_at` (round 5 B3). MEASURED: the
+>   two ranked opposite winners on the same pair, which is precisely the oscillation this paragraph
+>   claims is impossible. `produced_at` survives as a lower rung.
+>
+> **The paragraph's conclusion is now true. It was not true when it was written**, and it took two
+> rounds and two measurements to make the words match the schema — which is the case for keeping this
+> inventory current rather than treating it as a record of what was once decided.
 
 **Rule 15 is WITHDRAWN.** Assets are not a cloud concern at all: nothing writes them to the bucket and
 sync does not copy them. Every asset finding across three rounds is withdrawn rather than fixed. Its

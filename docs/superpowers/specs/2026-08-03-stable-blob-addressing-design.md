@@ -1018,12 +1018,32 @@ Under this design:
 >
 > | | Test |
 > |---|---|
-> | **Servable** (the floor) | `state = 'recorded'`, and the generation is not `body_collected`. That is all of it, and it cannot empty a non-empty set |
+> | **Servable** (the floor) | `state = 'recorded'`, and the generation is not `body_collected`. That is all of it — see the note below on why the second conjunct is not an exception to rule 14 |
 > | **Preferred** (the ranking) | source-currency, then corrections-currency, then format, then production time, then id |
 >
 > `mdCorrectionsHash` and `source_generation_id` used to appear in the first column. They now appear
 > only in the second. Card completeness moved out of both — it is a **table constraint**
 > (`gen_card_complete`), so an incomplete card cannot exist to be filtered.
+>
+> > **⟳ ROUND 5 (H3) — the floor said "and it cannot empty a non-empty set", and that was false.**
+> > MEASURED: the summary slot went **2 rows → 0** once GC set `body_collected` on both generations
+> > — round 3's A-2 failure reached through GC rather than through corrections, and §8 stated no rule
+> > protecting the current generation.
+> >
+> > **`body_collected` is not staleness; it is byte existence.** A collected body has no bytes, so
+> > serving it would be shape #4 — a row claiming something the blob does not satisfy. Gating on it is
+> > therefore *within* rule 14 rather than an exception to it, and the honest statement of rule 14 is:
+> > **no rule that is not about byte existence may gate.**
+> >
+> > That distinction alone does not save the floor, so the guarantee is now **enforced**:
+> > `forbid_collecting_current()` refuses to collect a generation that is current for any slot
+> > (asserted, and asserted in both directions — a *superseded* generation must still be collectable,
+> > or §8 can never reclaim anything). Written as a §8 sentence it would have been a rule the sweeper
+> > must remember, on the one path with no undo.
+> >
+> > **Still open (cross-derivation C5):** a free render has no generation, so this filter exempts it
+> > structurally — the PDF of a collected body keeps serving. §8 needs *"collecting a body collects the
+> > renders derived from it."* Recorded as open in `r5-cross-derivation.md`, not fixed.
 >
 > **Readability is verified once, at record time, by the writer that just wrote the bytes** — never
 > re-litigated on the read path. Resolving a slot therefore touches no blob at all.
