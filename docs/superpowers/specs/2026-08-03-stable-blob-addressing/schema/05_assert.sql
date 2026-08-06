@@ -77,6 +77,8 @@ values ((select id from t_ws),'vidA','gSPARE','summary',
 insert into video_generations (workspace_id,video_id,generation_id,kind,doc_version_major,produced_at)
 values ((select id from t_ws),'vidA','gDIG','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','gMODEL','model',null,'2026-01-15'),
+       ((select id from t_ws),'vidA','g_LD','dig',null,'2026-02-01'),
+       ((select id from t_ws),'vidA','%','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','wA','digDeeper',null,'2026-02-01'),
        ((select id from t_ws),'vidA','wB','digDeeper',null,'2026-02-01');
 insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
@@ -86,16 +88,16 @@ values ((select id from t_w2),'vidB','g2','summary',
 
 -- ── POSITIVES ───────────────────────────────────────────────────────────────────────────────────
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-values ((select id from t_ws),'vidA','summary','gOLD','summary','recorded','W/videos/vidA/gOLD/summary.md'),
-       ((select id from t_ws),'vidA','summary','gNEW','summary','recorded','W/videos/vidA/gNEW/summary.md'),
-       ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded','W/videos/vidA/renders/s.pdf');
+values ((select id from t_ws),'vidA','summary','gOLD','summary','recorded',(select id from t_ws)::text||'/videos/vidA/gOLD/summary.md'),
+       ((select id from t_ws),'vidA','summary','gNEW','summary','recorded',(select id from t_ws)::text||'/videos/vidA/gNEW/summary.md'),
+       ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded',(select id from t_ws)::text||'/videos/vidA/renders/s.pdf');
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
-values ((select id from t_ws),'vidA','dig:120','gDIG','dig','recorded','W/videos/vidA/gDIG/dig/120.md',120,170);
+values ((select id from t_ws),'vidA','dig:120','gDIG','dig','recorded',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/120.md',120,170);
 insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-values ((select id from t_ws),'vidA','model','gMODEL','model','recorded','W/videos/vidA/gMODEL/model.json','gOLD');
+values ((select id from t_ws),'vidA','model','gMODEL','model','recorded',(select id from t_ws)::text||'/videos/vidA/gMODEL/model.json','gOLD');
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-values ((select id from t_w2),'vidB','summary','g2','summary','recorded','W2/videos/vidB/g2/summary.md');
+values ((select id from t_w2),'vidB','summary','g2','summary','recorded',(select id from t_w2)::text||'/videos/vidB/g2/summary.md');
 
 do $$ declare n int; begin
   select count(*) into n from video_artifacts where video_id='vidA' and slot='summary';
@@ -105,7 +107,7 @@ end $$;
 
 do $$ declare k text; begin
   select blob_key into k from video_artifacts_current where video_id='vidA' and slot='pdf:summary';
-  if k is distinct from 'W/videos/vidA/renders/s.pdf' then
+  if k is distinct from (select id from t_ws)::text||'/videos/vidA/renders/s.pdf' then
     raise exception 'ASSERTION FAILED — free render not current: %', coalesce(k,'<no row>'); end if;
   raise notice 'ok (free render): a generation-less render is representable AND current';
 end $$;
@@ -113,7 +115,7 @@ end $$;
 -- FLOOR (round 4 J2-4): a paid model whose SOURCE summary was superseded must still serve.
 do $$ declare k text; begin
   select blob_key into k from video_artifacts_current where video_id='vidA' and slot='model';
-  if k is distinct from 'W/videos/vidA/gMODEL/model.json' then
+  if k is distinct from (select id from t_ws)::text||'/videos/vidA/gMODEL/model.json' then
     raise exception 'ASSERTION FAILED — stale model was GATED, not ranked: %', coalesce(k,'<none>');
   end if;
   raise notice 'ok (floor): a model whose SOURCE summary was superseded still serves';
@@ -188,74 +190,113 @@ select assert_raises($$insert into video_generations
 -- mismatch is wrong. Before round 5 this row was also FK-invalid, which masked the guard entirely.
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
-  values ((select id from t_ws),'vidA','html','gDIG','dig','recorded','W/videos/vidA/gDIG/x.html',1,2)$$,
+  values ((select id from t_ws),'vidA','html','gDIG','dig','recorded',(select id from t_ws)::text||'/videos/vidA/gDIG/x.html',1,2)$$,
   'slot=html declared kind=dig (round 3 B-5 failed OPEN; round 5 H1: the test was MASKED by the FK)', '23514', 'art_slot_kind');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidA','html-preview',null,'render','recorded','W/videos/vidA/renders/p.html')$$,
+  values ((select id from t_ws),'vidA','html-preview',null,'render','recorded',(select id from t_ws)::text||'/videos/vidA/renders/p.html')$$,
   'slot=html-preview — an UNKNOWN slot must fail closed (round 5 L3: like ''html%'' matched it)',
   '23514', 'art_slot_kind');
 
 -- art_pending_is_leased — FK-valid, spans present, key shaped. ONLY the missing lease is wrong.
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
-  values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending','W/videos/vidA/gDIG/dig/9.md',9,20)$$,
+  values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/9.md',9,20)$$,
   'pending row with NO LEASE (round 4 Codex #5; round 5 H1: this test was MASKED too)', '23514', 'art_pending_is_leased');
 
 -- art_paid_has_generation
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidA','digDeeper',null,'digDeeper','recorded','W/videos/vidA/x.md')$$,
+  values ((select id from t_ws),'vidA','digDeeper',null,'digDeeper','recorded',(select id from t_ws)::text||'/videos/vidA/x.md')$$,
   'PAID kind with no generation_id', '23514', 'art_paid_has_generation');
 
 -- art_dig_has_span (round 5 H6 — the one finding whose cost is irreversible)
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidA','dig:300','gDIG','dig','recorded','W/videos/vidA/gDIG/dig/300.md')$$,
+  values ((select id from t_ws),'vidA','dig:300','gDIG','dig','recorded',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/300.md')$$,
   'a dig row with NO SPAN (§6.2: cheap now, IMPOSSIBLE to retrofit after the first sweep)', '23514', 'art_dig_has_span');
 
 -- art_key_names_generation (round 5, Codex)
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','recorded','W/videos/vidA/gOLD/dd.md')$$,
+  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','recorded',(select id from t_ws)::text||'/videos/vidA/gOLD/dd.md')$$,
   'a row ranking wB''s card while serving gOLD''s BYTES (shape #4 on the paid path)',
+  '23514', 'art_key_names_generation');
+
+-- ROUND 6 H2: the three bypasses the LIKE version MEASURED. All need an FK-valid generation whose
+-- id is itself the hazard, so gWILD ('g_LD') and gPCT ('%') are seeded as real dig generations.
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
+  values ((select id from t_ws),'vidA','dig:55','g_LD','dig','recorded',
+          (select id from t_ws)::text||'/videos/vidA/gOLD/dig/55.md',55,60)$$,
+  'generation "g_LD" matching key segment gOLD (LIKE treated _ as a WILDCARD)',
+  '23514', 'art_key_names_generation');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
+  values ((select id from t_ws),'vidA','dig:56','%','dig','recorded',
+          (select id from t_ws)::text||'/videos/vidA/ANYTHING/dig/56.md',56,60)$$,
+  'generation "%" matching ANY key at all (LIKE treated % as a WILDCARD)',
+  '23514', 'art_key_names_generation');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
+  values ((select id from t_ws),'vidA','dig:57','gDIG','dig','recorded',
+          'OTHERWS/videos/gDIG/gOLD/dig/57.md',57,60)$$,
+  'the generation id appearing in the WRONG segment, of another workspace''s key',
+  '23514', 'art_key_names_generation');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
+  values ((select id from t_ws),'vidA','dig:58','gDIG','dig','recorded',
+          (select id from t_w2)::text||'/videos/vidA/gDIG/dig/58.md',58,60)$$,
+  'a key under ANOTHER workspace''s prefix, with video and generation segments correct',
+  '23514', 'art_key_names_generation');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
+  values ((select id from t_ws),'vidA','dig:59','gDIG','dig','recorded',
+          (select id from t_ws)::text||'/videos/OTHERVIDEO/gDIG/dig/59.md',59,60)$$,
+  'a key naming a DIFFERENT video, with workspace and generation segments correct',
+  '23514', 'art_key_names_generation');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
+  values ((select id from t_ws),'vidA','dig:60','gDIG','dig','recorded',
+          (select id from t_ws)::text||'/WRONG/vidA/gDIG/dig/60.md',60,65)$$,
+  'a key whose second segment is not the literal ''videos''',
   '23514', 'art_key_names_generation');
 
 -- art_summary_has_no_source (round 5 H2, the DATA half)
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-  values ((select id from t_ws),'vidA','summary','gSPARE','summary','recorded','W/videos/vidA/gSPARE/s.md','gOLD')$$,
+  values ((select id from t_ws),'vidA','summary','gSPARE','summary','recorded',(select id from t_ws)::text||'/videos/vidA/gSPARE/s.md','gOLD')$$,
   'a SUMMARY carrying a source_generation_id (it is derived from nothing)', '23514', 'art_summary_has_no_source');
 
 -- the source FK (round 5, Codex/M5)
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','recorded','W/videos/vidA/wB/dd.md','gGHOST')$$,
+  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','recorded',(select id from t_ws)::text||'/videos/vidA/wB/dd.md','gGHOST')$$,
   'provenance from a generation that DOES NOT EXIST', '23503', 'video_artifacts_workspace_id_video_id_source_generation_id_fkey');
 
 -- the two partial uniques, and the workspace_videos FK
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded','W/videos/vidA/renders/s2.pdf')$$,
+  values ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded',(select id from t_ws)::text||'/videos/vidA/renders/s2.pdf')$$,
   'a SECOND free render in one slot (free is one-per-slot; only paid is append-only)', '23505', 'video_artifacts_free_uq');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidA','summary','gNEW','summary','recorded','W/videos/vidA/gNEW/s2.md')$$,
+  values ((select id from t_ws),'vidA','summary','gNEW','summary','recorded',(select id from t_ws)::text||'/videos/vidA/gNEW/s2.md')$$,
   'the SAME paid generation twice in one slot (append-only is not append-anything)', '23505', 'video_artifacts_paid_uq');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidGHOST','pdf:summary',null,'render','recorded','W/videos/vidGHOST/r.pdf')$$,
+  values ((select id from t_ws),'vidGHOST','pdf:summary',null,'render','recorded',(select id from t_ws)::text||'/videos/vidGHOST/r.pdf')$$,
   'a free render for a video with NO workspace_videos row (the FK the paid FK cannot enforce)', '23503', 'video_artifacts_workspace_id_video_id_fkey');
 
 -- ── MONEY: the in-flight guard, and its reclaim (round 5 B4 + H4, ONE fix per cross-derivation C1) ──
 insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at)
   values ((select id from t_ws),'vidA','digDeeper','wA','digDeeper','pending',
-          'W/videos/vidA/wA/dd.md', now() + interval '5 min');
+          (select id from t_ws)::text||'/videos/vidA/wA/dd.md', now() + interval '5 min');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at)
   values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','pending',
-          'W/videos/vidA/wB/dd.md', now() + interval '5 min')$$,
+          (select id from t_ws)::text||'/videos/vidA/wB/dd.md', now() + interval '5 min')$$,
   'a SECOND in-flight reservation on one slot (both writers would pay Gemini)', '23505', 'video_artifacts_inflight_uq');
 
 -- the in-flight row must not stall the READER on another slot, and must not appear as current
@@ -270,14 +311,14 @@ update video_artifacts set state='recorded', lease_expires_at=null
  where video_id='vidA' and slot='digDeeper' and state='pending';
 do $$ declare k text; begin
   select blob_key into k from video_artifacts_current where video_id='vidA' and slot='digDeeper';
-  if k is distinct from 'W/videos/vidA/wA/dd.md' then
+  if k is distinct from (select id from t_ws)::text||'/videos/vidA/wA/dd.md' then
     raise exception 'ASSERTION FAILED — the record-first flip was blocked: %', coalesce(k,'<none>');
   end if;
   raise notice 'ok (flip): pending -> recorded is permitted, and then serves';
 end $$;
 
 -- ── APPEND-ONLY, ENFORCED (round 5 M1) ──────────────────────────────────────────────────────────
-select assert_raises($$update video_artifacts set blob_key='W/videos/vidA/gNEW/hijacked.md'
+select assert_raises($$update video_artifacts set blob_key=(select id from t_ws)::text||'/videos/vidA/gNEW/hijacked.md'
   where video_id='vidA' and slot='summary' and generation_id='gNEW'$$,
   'UPDATE of a recorded PAID row (shape #3 — a mutable value in an address)', 'P0001');
 select assert_raises($$delete from video_artifacts
@@ -302,7 +343,7 @@ insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,lease_attempts,
    start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:900','gDIG','dig','pending',
-          'W/videos/vidA/gDIG/dig/900.md', now() - interval '1 min', 2, 900, 950);
+          (select id from t_ws)::text||'/videos/vidA/gDIG/dig/900.md', now() - interval '1 min', 2, 900, 950);
 do $$ declare a int; n int; begin
   a := reclaim_expired_reservation((select id from t_ws),'vidA','dig:900');
   if a <> 2 then raise exception 'ASSERTION FAILED — reclaim lost the attempt count: %', a; end if;
@@ -316,7 +357,7 @@ do $$ declare n int; begin
   insert into video_artifacts
     (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,start_sec,end_sec)
     values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending',
-            'W/videos/vidA/gDIG/dig/9.md', now() + interval '5 min', 9, 20);
+            (select id from t_ws)::text||'/videos/vidA/gDIG/dig/9.md', now() + interval '5 min', 9, 20);
   perform reclaim_expired_reservation((select id from t_ws),'vidA','dig:9');
   select count(*) into n from video_artifacts where video_id='vidA' and slot='dig:9';
   if n <> 1 then raise exception 'ASSERTION FAILED — reclaim stole a LIVE lease (% rows)', n; end if;
@@ -360,6 +401,79 @@ do $$ declare n int; me uuid; begin
   reset role;
   if n = 0 then raise exception 'ASSERTION FAILED — the OWNER cannot read their own manifest'; end if;
   raise notice 'ok (RLS): the owner still reads their own manifest through the view';
+end $$;
+
+-- ── ROUND 6 B1 / H4 — THE PRIVILEGE SURFACE ────────────────────────────────────────────────────
+-- Both MEASURED as live holes before these revokes: anon DELETED another tenant's reservation
+-- through the definer function, and anon TRUNCATEd the paid manifest to zero rows.
+-- ⚠ Resolve the fixture id BEFORE switching role. The first version of this block read the TEMP
+-- table t_ws *after* `set local role anon`, so it got 42501 from the temp table and never reached
+-- the function — an assertion passing for a reason other than the one it names, which is the same
+-- class of defect as the `when others` harness. Found by mutation: removing the revoke left it GREEN.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  set local role anon;
+  begin
+    perform reclaim_expired_reservation(ws,'vidA','dig:9');
+    reset role;
+    raise exception 'ASSERTION FAILED — anon CALLED reclaim_expired_reservation (cross-tenant write)';
+  exception when insufficient_privilege then
+    reset role;
+    raise notice 'ok (rejected by 42501): anon calling reclaim_expired_reservation';
+  end;
+end $$;
+do $$ begin
+  set local role anon;
+  begin
+    execute 'truncate video_artifacts';
+    reset role;
+    raise exception 'ASSERTION FAILED — anon TRUNCATEd the paid manifest';
+  exception when insufficient_privilege then
+    reset role;
+    raise notice 'ok (rejected by 42501): anon truncating video_artifacts';
+  end;
+end $$;
+
+-- ROUND 6 H3 — round 5's cross-tenant assertion read ONE view and ONE table, so security_invoker on
+-- video_summary_current and the two new base-table policies were all mutation-GREEN. Read everything.
+do $$ declare n int; other uuid; begin
+  select id into other from t_w2;
+  perform set_config('request.jwt.claims', json_build_object('sub', other::text)::text, true);
+  set local role authenticated;
+  select (select count(*) from video_artifacts        where video_id='vidA')
+       + (select count(*) from video_artifacts_current where video_id='vidA')
+       + (select count(*) from video_summary_current   where video_id='vidA')
+       + (select count(*) from video_generations       where video_id='vidA')
+       + (select count(*) from workspace_videos        where video_id='vidA') into n;
+  reset role;
+  if n <> 0 then raise exception 'ASSERTION FAILED — cross-tenant leak: % rows across 5 objects', n; end if;
+  raise notice 'ok (RLS): tenant 2 sees 0 rows across BOTH views and all three base tables';
+end $$;
+do $$ declare n int; begin
+  set local role anon;
+  select (select count(*) from video_artifacts_current)
+       + (select count(*) from video_summary_current) into n;
+  reset role;
+  if n <> 0 then raise exception 'ASSERTION FAILED — anon read % rows through the views', n; end if;
+  raise notice 'ok (RLS): anon (no JWT) sees 0 rows through both views';
+end $$;
+
+-- ROUND 6 H3, the other direction. Mutation showed `video_generations_owner_read` was GREEN on
+-- removal: with force RLS and zero policies the table denies everyone, so every cross-tenant
+-- "sees 0 rows" assertion still passed. A policy's removal is only visible from the OWNER's side —
+-- and reading it through the view does not work either, because video_generations is LEFT-joined,
+-- so its rows vanishing turns into NULLs rather than into missing rows.
+do $$ declare ng int; nw int; me uuid; begin
+  select id into me from t_ws;
+  perform set_config('request.jwt.claims', json_build_object('sub', me::text)::text, true);
+  set local role authenticated;
+  select count(*) into ng from video_generations where video_id='vidA';
+  select count(*) into nw from workspace_videos  where video_id='vidA';
+  reset role;
+  if ng = 0 or nw = 0 then
+    raise exception 'ASSERTION FAILED — the owner cannot read their own base tables (gen %, wv %)', ng, nw;
+  end if;
+  raise notice 'ok (RLS): the owner reads video_generations and workspace_videos directly';
 end $$;
 
 -- FLOOR: make every generation corrections-stale. A stale generation must STILL SERVE (round 4 A-2).

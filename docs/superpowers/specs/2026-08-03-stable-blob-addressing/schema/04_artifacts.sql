@@ -73,8 +73,22 @@ create table video_artifacts (
     (kind <> 'dig' or (start_sec is not null and end_sec is not null and end_sec > start_sec)),
   -- Round 5 (Codex): nothing tied blob_key to the tuple, so a row could rank gNEW's card while
   -- serving gOLD's bytes — shape #4 on the paid path, and invisible to every other constraint.
-  constraint art_key_names_generation check
-    (generation_id is null or blob_key like '%/' || generation_id || '/%')
+  --
+  -- ⟳ ROUND 6 H2/Codex H4 — the LIKE version was a pattern match, not a comparison, and MEASURED
+  -- three bypasses: a generation id containing `_` matched any character, an id of `%` matched
+  -- ANY key at all, and the id was accepted anywhere in the path (`OTHERWS/videos/gDIG/gOLD/…`
+  -- passed for generation gDIG). §4.1 leaves the id FORM open and two of its three candidates can
+  -- contain `_`, so this could not be fixed by assuming well-formed ids.
+  --
+  -- Exact segment equality: no metacharacters, and POSITION is constrained, which the anchored-LIKE
+  -- alternative still would not have done. Text-to-text throughout — never cast a path segment
+  -- (round 1: a policy that RAISES fails the whole query rather than denying one row).
+  constraint art_key_names_generation check (
+    generation_id is null or (
+          split_part(blob_key, '/', 1) = workspace_id::text
+      and split_part(blob_key, '/', 2) = 'videos'
+      and split_part(blob_key, '/', 3) = video_id
+      and split_part(blob_key, '/', 4) = generation_id))
 );
 create unique index video_artifacts_paid_uq on video_artifacts
   (workspace_id, video_id, slot, generation_id) where generation_id is not null;
@@ -119,8 +133,25 @@ begin
   return coalesce(v_attempts, 0);   -- caller carries this into the next reservation and gives up
 end $$;                             -- past a terminal bound, as reserve_serve_model does (0012/0014)
 
+-- ⚠ ROUND 6 B1 — MEASURED: `anon`, with no JWT at all, called this and DELETED tenant-1's in-flight
+-- reservation. `security definer` means RLS is never consulted, so the GRANT is the entire
+-- authorization story — and the default is PUBLIC EXECUTE. This repo revokes PUBLIC on every other
+-- definer function it ships (0004:10, 0005:25, 0010:21, 0011:137); the one added as round 5's H4 fix,
+-- one file away, was not swept. Round 5 B2 was the READ half of this exact shape; this is the WRITE
+-- half, reintroduced in the same batch that fixed the read.
+revoke all on function reclaim_expired_reservation(uuid, text, text) from public, anon, authenticated;
+grant execute on function reclaim_expired_reservation(uuid, text, text) to service_role;
+revoke all on function slot_kind(text) from public, anon, authenticated;
+
 alter table video_artifacts enable row level security;
 alter table video_artifacts force row level security;
+-- ⚠ ROUND 6 H4 — REVOKE FIRST. MEASURED: `anon` TRUNCATEd this table to 0 rows.
+-- `pg_default_acl` carries `anon=Dxtm/postgres` for every table `postgres` creates in `public`
+-- (D=TRUNCATE, x=REFERENCES, t=TRIGGER), so an explicit `grant select` is ADDITIVE and narrows
+-- nothing. TRUNCATE fires neither RLS nor a ROW trigger — so it walks straight past both the policy
+-- below and the append-only trigger, which is this design's central invariant.
+-- The repo already knows this (`0011_cost_guardrails.sql:56` revokes); the new tables were not swept.
+revoke all on video_artifacts from anon, authenticated;
 grant select, insert, update, delete on video_artifacts to service_role;
 grant select on video_artifacts to authenticated, anon;
 
@@ -212,6 +243,7 @@ order by a.workspace_id, a.video_id, a.slot,
          g.produced_at desc nulls last,
          a.generation_id desc nulls last;
 
+revoke all on video_summary_current, video_artifacts_current from anon, authenticated;
 grant select on video_summary_current, video_artifacts_current
   to authenticated, anon, service_role;
 

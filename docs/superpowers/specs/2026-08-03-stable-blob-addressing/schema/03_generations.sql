@@ -12,6 +12,7 @@ create table workspace_videos (
 );
 alter table workspace_videos enable row level security;
 alter table workspace_videos force row level security;
+revoke all on workspace_videos from anon, authenticated;   -- round 6 H4; see video_artifacts
 grant select, insert, update, delete on workspace_videos to service_role;
 -- Round 5 B2, SECOND-ORDER: `security_invoker = true` on the views means the view runs as the READER,
 -- so the reader needs SELECT on EVERY base table the view joins — and a policy on each, since both
@@ -99,6 +100,7 @@ create table video_generations (
 );
 alter table video_generations enable row level security;
 alter table video_generations force row level security;
+revoke all on video_generations from anon, authenticated;  -- round 6 H4; see video_artifacts
 grant select, insert, update, delete on video_generations to service_role;
 grant select on video_generations to authenticated, anon;   -- see workspace_videos above (round 5 B2)
 create policy video_generations_owner_read on video_generations for select to authenticated
