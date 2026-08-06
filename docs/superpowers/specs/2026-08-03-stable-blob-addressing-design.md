@@ -625,11 +625,32 @@ Follow `share_tokens` instead (`0013:16-18`) — the precedent §11.3 already pr
 security`, **no** anon/authenticated write policy, service_role-only grants, and every write through a
 `security definer` RPC:
 
+> **⟳ ROUND 2 (Blocking N-B3) — this RPC was specified BEFORE four other fixes changed the table it
+> writes, so it could not set `kind`, `state`, `start_sec` or `end_sec`, and §6.2's "persist spans at
+> write time" was unsatisfiable through the only writer the design allowed. Re-specified last, and it
+> shrank rather than grew** — because §5.1.1 now *derives* `current` instead of writing it, so this is
+> no longer a CAS at all:
+
 ```sql
-publish_slot(p_workspace uuid, p_video text, p_slot text,
-             p_expected_key text,   -- NULL means "expect no row"; this is the CAS of §5.2
-             p_new_key text, p_generation text) returns text
+record_artifact(
+  p_workspace uuid, p_video text, p_slot text,
+  p_generation text,          -- NULL for a free render or a source kind
+  p_new_key text,
+  p_span int4range            -- dig slots only; NULL otherwise
+) returns artifact_record_result   -- typed: 'recorded' | 'duplicate' | 'ineligible'
 ```
+
+`kind` is derived inside the RPC by the same `slot_kind()` function the `check` uses — **one
+definition, called from both**, rather than the constraint and the procedure drifting apart. `state`
+is not a parameter because detachment (§6.2) is a separate verb (`detach_artifact`), and a verb that
+changes a row's meaning should not share an entry point with the one that creates it.
+
+> **The `p_expected_key is null` trap, worth keeping even though the CAS is gone.** A conditional
+> update spelled `where blob_key = NULL` **never matches**, so an "expect no row" path written that way
+> silently records nothing and reports success. Any insert-if-absent must be `insert … on conflict do
+> nothing` with a row-count check. This is the same shape as the `is not distinct from` correction the
+> conditional-write slice needed (`docs/superpowers/specs/2026-08-04-cas-fence-persist-summary-design.md`),
+> and it is why that slice is worth reading before implementing this one.
 
 The client policy is **`select` only**. This also gives §5.2's conditional write a **single owner**
 instead of one hand-rolled copy per writer — the exact shape of the 2026-07-30 architecture review's
@@ -666,6 +687,24 @@ argument `blob-store.ts:53-55` makes for `tryGet`.
 > was specified and the *old* one was assumed to have gone away. Write the
 assertion in this slice; `serve-model-unreadable.test.ts` is the template and the scaffolding exists.
 
+### 5.1.2 A derived artifact names the generation it came FROM — ⟳ ROUND 2 (High, N-H2)
+
+A magazine model is rendered **from a specific summary body**. Nothing in the manifest recorded that,
+and §4.2.1 retires the only drift check that exists today — the model envelope's `sourceSections`
+comparison against the MD's section titles (`CONTEXT.md`'s *magazine model* entry). Retiring a check
+without replacing it leaves the model free to describe a body it was not built from: root-cause shape
+#4, on a **paid** artifact.
+
+> **Rule:** a derived slot carries `source_generation_id` alongside its own `generation_id`. Drift
+> becomes an **id comparison** — is my source still the current summary generation? — rather than a
+> title-set heuristic.
+
+Strictly simpler than what it replaces: today's check compares parsed section titles and can be fooled
+by a reworded heading (the same fragility §4.2.1 documents for dig attachment). An id either matches or
+it does not. It also composes with §5.1.1's derived `current`: a model whose `source_generation_id` is
+no longer the current summary is **ineligible to be current**, which is the same eligibility predicate
+already used for corrections — one rule, three consumers.
+
 ### 5.1.1 Why this answers the concurrency problem
 
 This is the payoff, and it is the reason the design started.
@@ -690,9 +729,41 @@ Under this design:
 > loser is the generation that applied the user's corrections, the published generation is the one
 > **without** them, permanently. The claim appears at §5.1.1, §9 row 1 and §9 row 3 as load-bearing.
 >
-> **Rule:** say what publishes after a lost CAS. An idempotent re-read-and-republish of the *same*
-> generation is the right shape — the bytes exist and are addressed immutably, so republishing is free
-> and safe. Put it here, not in a claim.
+> **⟳ ROUND 2 (High, N-H4) — my fix made it WORSE, and the rule it rested on turned out to be optional.**
+> "Re-read and republish your own generation" always succeeds: the CAS was the only thing that could
+> refuse it, so the protocol degrades to **last-writer-wins with unbounded flips**. Worker publishes
+> *def*; sync loses with *abc*, re-reads, republishes, wins; the worker retries and wins back. Each flip
+> changes which body is served and starts a 90-day clock on the generation that just lost.
+>
+> **The assumption worth questioning: that publication is a WRITE at all.**
+>
+> Everything else in this design is immutable — generations never collide, blobs are never overwritten.
+> The manifest was kept mutable because §5.1.1 framed the problem as "two writers race for a pointer."
+> But if *current* is **derived rather than written**, there is no pointer to race for:
+>
+> > **`current` = the newest generation for that slot whose card is complete and whose body is
+> > readable**, ordered by `(created_at, generation_id)` — a total order, so no ties.
+>
+> **What dissolves rather than gets patched:** no CAS on the manifest, so no loser, no retry path, no
+> flip sequence, no bound to state (this finding); M4's "the loser retries" stops being a claim that
+> needs a mechanism; `publish_slot` shrinks to *insert a generation row*, which removes most of N-B3;
+> and §5.1.1's concurrency argument gets **shorter** — two concurrent runs simply produce two
+> generations and the newer one is current, by definition rather than by protocol.
+>
+> **What it costs, stated honestly.** You lose the ability to *pin* an older generation as current —
+> rollback after a bad regeneration. That is a real capability and §8's 90-day retention exists partly
+> to serve it. It is re-addable with one nullable `pinned_generation_id` on `workspace_videos`, where
+> `current` = the pin if set, else the derived value. **That is a deliberate override written by a
+> human action, not a race**, which is the distinction that matters: the mutable state moves from "every
+> writer" to "one explicit user gesture."
+>
+> **Second cost:** resolving a slot becomes an indexed query over a small per-video set rather than a
+> single-row lookup. Cacheable, and cheaper than the protocol it replaces.
+>
+> **The corrections CAS (§5.2.2) survives and gets simpler.** It stops guarding a *pointer write* and
+> becomes a completeness condition on the generation itself: a generation whose `mdCorrectionsHash`
+> no longer matches the video's current corrections is **not eligible to be current**. Same effect, no
+> race, and it composes with the eligibility rule above instead of sitting beside it.
 
 - **Failure is never destructive.** A loser's blobs still exist, so a wrong pointer is temporary and a
   re-run repairs it. This is what makes "compensate after the cycle" — the user's instinct — actually
@@ -1186,6 +1257,32 @@ Design:
   > **`pruneSectionAssets` must be disabled for the duration** — otherwise the transition itself
   > deletes the old-key bytes it is meant to preserve.
   >
+  > **⟳ ROUND 2 (Blocking N-B1 + High N-H9) — the fixes above collide, and the rule underneath both is
+  > the one to drop.** Round 1 reclassified assets as *paid*, moving them from "deleted immediately" to
+  > "deleted at day 90"; the *other* round-1 fix gave the sweeper a root set matching anything with no
+  > manifest row. Assets can never hold a manifest row — §4 puts them outside generations by design — so
+  > together the two fixes **guarantee** every slide asset is deleted on day 91, and per ADR-0005 the
+  > host cannot recapture them. "Repair needed" with no repair available. That is the **fourth**
+  > instance this session of a fix moving a defect rather than removing it.
+  >
+  > **The assumption worth questioning: that every object in the bucket is an ARTIFACT the manifest
+  > tracks.** It is not. `CONTEXT.md:42` already classifies a slide screenshot as **source-of-truth** —
+  > and a source is not garbage. A transcript is not garbage-collected either.
+  >
+  > > **Rule: assets are SOURCES, not artifacts. They are outside the manifest by design, and the age
+  > > sweeper never collects them.** They are removed only by an explicit delete of the video or
+  > > playlist that owns them — the same lifecycle a transcript would have. This is the reviewer's
+  > > "third root set", but justified by the artifact taxonomy the project already has rather than
+  > > bolted on to stop a symptom.
+  >
+  > **N-H9 dissolves with it.** `pruneSectionAssets` (`slides.ts:207-231`) deletes every
+  > `<sectionId>-*.jpg` the current run did not write, bypassing the BlobStore seam. Under
+  > generation-immutability that behaviour is simply **wrong** — assets are shared across generations,
+  > so a dig run for *def* must not touch *abc*'s frames. Apply the deletion test: remove the pruner and
+  > what reappears? Only unbounded growth of a *source* kind, which is what sources do and what the
+  > explicit-delete path already handles. **Delete the pruner rather than re-key it.** That also removes
+  > §14 Q7's second seam-bypassing writer, so the question shrinks to one writer.
+  >
   > **Rule:** key assets on the timestamp window alone, no `sectionId`. Per §4's own argument they are a
   > function of `(videoId, start, end)`; leading with a per-generation value contradicts the reason they
   > were placed outside generations in the first place.
@@ -1616,7 +1713,22 @@ implementation.
    root, so it must become **manifest-driven enumeration**. Uncosted work, on the delete path, with a
    silent failure mode. Q4's answer is not blocked on it; the *plan* is.
 5. **Offline local generation** — the upload-then-publish path (§7).
-6. **Cross-playlist dedup: in or out?** (§12) — determines whether `jobs` and the 1D reservation are
+6. ~~**Cross-playlist dedup: in or out?**~~ — **CLOSED 2026-08-06 by §11.0's granularity decision.**
+   ⟳ *Round 2, High N-H7: this was settled in a §11.0 footnote while §14 still listed it open — and it
+   was flagged elsewhere as "the single largest risk", so a footnote is the wrong place.* **It is IN.**
+   With one workspace per user (§5.0), every playlist that user owns shares the manifest key, so storage
+   dedup is a property of this design and not an option. Spend dedup follows: **both** playlist-keyed
+   arbiters re-key to `(workspace_id, video_id)` — `jobs_idem_active` (`0009:11-13`) and
+   `serve_model_charge.doc_key` (`0020:213`).
+
+   **§12's replacement cross-tenant guard, still owed and now written.** The existing guard is the
+   composite FK `jobs(playlist_id, owner_id) → playlists(id, owner_id)` (`0009:5-6`), which works only
+   because `playlists` carries `unique (id, owner_id)` (`0001:18`). Re-keying on workspace needs the
+   same shape one level up: `workspaces` carries `unique (id, owner_id)`, and `jobs` gains
+   `foreign key (workspace_id, owner_id) references workspaces (id, owner_id)`. That preserves ADR-0002's
+   injection guard verbatim — a job can never name a workspace its owner does not own.
+
+   Superseded question text: **Cross-playlist dedup: in or out?** (§12) — determines whether `jobs` and the 1D reservation are
    touched. The spec is coherent either way; the saving only materializes if `playlist_id` leaves the
    job identity.
 7. **Do the two seam-bypassing writers get fixed or scoped out?** `companion-doc.ts:448` writes
