@@ -559,6 +559,27 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
 - [ ] **Dual adversarial review to convergence** — mandatory (schema + identity + money path).
       **Deliberately sequenced last:** running it while 3 prerequisite forks are open would burn a
       round re-reporting "these are open."
+      **Rounds 1–5 done, NOT CONVERGED** (7 → 8 → 10 → 6 → 7 Blocking). Round 6 pending. Trail:
+      `docs/reviews/spec-blob-addressing-r{1..5}-*.md` — PR #51.
+
+      **The artifact changed medium at round 4→5, and that is the headline.** Roughly half of round
+      4's Blocking were *"the SQL in this prose block does not execute"* — compile errors being found
+      by human review, the most expensive possible way to find them. The schema moved out of prose
+      into **executable, verified DDL** (`…/2026-08-03-stable-blob-addressing/schema/`, run by
+      `verify-schema.sh` against the live local Postgres inside a rollback). It paid on the first run
+      and has paid every round since. **13 → 37 behavioural assertions, every guard mutation-checked.**
+
+      **Round 5 found three defects that no amount of reading had found in four rounds**, each
+      MEASURED: a **cross-tenant leak** (a view runs as its owner, so it bypasses RLS — and the
+      *missing* grant is what makes the leak look like a fix), an **empty card winning the ranking**
+      (`?&` tests key existence, and the resulting SQL NULLs made a placeholder outrank a real paid
+      generation), and a **double charge** (two writers reserving one slot, because round 4's
+      append-only fix removed the mutual exclusion round 3's money guard was standing on).
+
+      **Standing count: shape #9 — "a fix that moved or reintroduced a defect" — now at seven**, three
+      of them caused by this review's own fixes. That is the argument for the cross-derivation step
+      (`docs/dev-process.md`), which found five conflicts *between* round-5 findings before any were
+      written, four of them between different reviewers.
 
 **Blocks:** backlog #17 / task #19 (the CAS conditional-write slice is deferred pending this), and
 task #18 (A6b `position` drop, likely dissolved by ADR-0006).
