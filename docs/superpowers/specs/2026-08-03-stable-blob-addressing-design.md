@@ -77,7 +77,7 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 | **Workspace** | The immutable container a video's blobs are addressed under, and the first path segment. **Its id is opaque — one workspace per user in this slice.** ⟳ *Round 2 correction:* the id **may** coincide with a uid (migrated workspaces are deliberately seeded that way, §5.0.2); what is forbidden is any **predicate** that compares the path segment to `auth.uid()`. A **user-chosen grouping of playlists** — one per playlist, one per user, or anything between (§11.0). Its id **never changes**; what changes is who may access it. Chosen over *tenant* (already means the per-user boundary), *team* and *owner* (both name **who may access**, which is exactly what changes). The revocability that matters comes from `workspaces.owner_id`, not from the id's shape (§11.2). |
 | **Generation** | One production run of a paid artifact — a summarize run, or a dig run — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
 | **Card** | The **document facts** a summarize run produces alongside the body: `tldr`, `takeaways`, `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. **Does NOT include the video judgments** (`ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags`): §5.2.1 keeps those on the video, because they describe the *video*, which a regeneration did not change. ⟳ Corrected in the terminology pass — the first draft of this row listed all twelve scalars and contradicted §5.2.1. |
-| **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
+| **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`. What a reader asks for. ⟳ *Cross-derivation pass: `slide:<id>` was REMOVED — §8 classifies assets as **sources**, which live outside the manifest by design, so there is no slide slot.* Distinct from a **video slot** (`claim_video_slot`), a video's reserved position in a playlist. |
 | **Artifact manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. ⟳ **Qualified in round 1** — `Manifest` was ALREADY taken: `lib/cloud-sync/manifest.ts:6` is the per-playlist `.cloud-sync-manifest.json` **sync baseline**, with `readManifest`/`writeVideoBaseline`/`manifestPath` and consumers across `sync-run.ts`, `companion.ts` and 7 test files. This was a **fifth** vocabulary collision the terminology pass missed — and it missed it in the one section (§5.3) whose subject is sync, where the unqualified word is genuinely ambiguous. Say **artifact manifest** or **sync baseline**; never a bare *manifest*. |
 | **Authoritative** | The blob a slot currently resolves to. A property of the manifest, never of the blob itself. |
 | **Display name** | A human-facing filename derived from attributes (`003_alpha.md`), distinct from the address. Local filesystem only. ⟳ **Renamed from "Rendering" in the terminology pass** — `render` is an established term here for *summary → HTML/PDF* (`renderMagazineHtml`, `PDF_RENDER_VERSION`, and the whole source-vs-derived split in `CONTEXT.md`). Reusing it for a filename would overload the word that carries the artifact taxonomy. |
@@ -581,7 +581,8 @@ create table video_artifacts (
 > it is the **paid** kinds that must name a generation, which the second `check` enforces.
 >
 > ```sql
-> create type artifact_kind as enum ('summary','model','dig','digDeeper','render','asset');
+> create type artifact_kind as enum ('summary','model','dig','digDeeper','render');
+>   -- no 'asset': assets are SOURCES (§8), outside the manifest entirely
 > create function slot_kind(p_slot text) returns artifact_kind
 >   language sql immutable as $$
 >   select case
@@ -590,7 +591,6 @@ create table video_artifacts (
 >     when p_slot like 'dig:%'     then 'dig'
 >     when p_slot = 'digDeeper'    then 'digDeeper'
 >     when p_slot like 'pdf:%'     then 'render'
->     when p_slot like 'slide:%'   then 'asset'
 >   end::artifact_kind $$;
 > ```
 >
@@ -636,7 +636,7 @@ record_artifact(
   p_workspace uuid, p_video text, p_slot text,
   p_generation text,          -- NULL for a free render or a source kind
   p_new_key text,
-  p_span int4range            -- dig slots only; NULL otherwise
+  p_start_sec int, p_end_sec int   -- dig slots only; NULL otherwise (matches §5.1's columns)
 ) returns artifact_record_result   -- typed: 'recorded' | 'duplicate' | 'ineligible'
 ```
 
@@ -741,8 +741,21 @@ Under this design:
 > The manifest was kept mutable because §5.1.1 framed the problem as "two writers race for a pointer."
 > But if *current* is **derived rather than written**, there is no pointer to race for:
 >
-> > **`current` = the newest generation for that slot whose card is complete and whose body is
-> > readable**, ordered by `(created_at, generation_id)` — a total order, so no ties.
+> > **`current` = the newest RECORDED, ELIGIBLE generation for that slot**, ordered by
+> > `(created_at, generation_id)` — a total order, so no ties.
+>
+> **⟳ CROSS-DERIVATION PASS — an earlier draft of this line said "whose body is readable", and that
+> reintroduced root-cause shape #1 inside the fix that was removing a different one.** A readability
+> check at *resolve* time is a blob read per candidate, and `SupabaseBlobStore.get` cannot prove
+> absence — so a transient 5xx would make the newest generation ineligible and **silently demote the
+> video to an older body**, with no error surfaced anywhere. The very failure §5.1's `SlotRead`
+> contract exists to prevent, arriving through the back door.
+>
+> **Eligibility is computed from RECORDED FACTS only** — the artifact row exists, the card is
+> complete, `mdCorrectionsHash` matches the video's current corrections, `source_generation_id` (if
+> any) is still current, and the generation is not `body_collected`. **Readability is verified once,
+> at record time, by the writer that just wrote the bytes** — never re-litigated on the read path.
+> Resolving a slot therefore touches no blob at all.
 >
 > **What dissolves rather than gets patched:** no CAS on the manifest, so no loser, no retry path, no
 > flip sequence, no bound to state (this finding); M4's "the loser retries" stops being a claim that
@@ -807,7 +820,7 @@ because the document was regenerated — the video did not change.
 |---|---|---|
 | `tldr`, `takeaways` | the document's prose | **generation** |
 | `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash` | the run | **generation** |
-| `ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags` | the video | **video** — carried forward, stable across regenerations |
+| `ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags` | the video | **`workspace_videos`** (⟳ cross-derivation pass: "the video" was ambiguous once §5.0.1 split per-playlist rows from the per-workspace entity — one body must not have two scores) — carried forward, stable across regenerations |
 
 **Rule:** only *document facts* must travel with the body — those are the ones that can lie about it.
 *Video judgments* stay on the video and are **stable**: the first generation sets them, a later one
@@ -893,6 +906,21 @@ it, and `mdCorrectionsHash` records what was actually applied — never what was
 > idempotency slot open), or the unpublished generation lands in a `pending_publication` table a
 > worker sweeps and republishes idempotently. Naming the CAS without naming the retry path is the
 > same defect M4 already had — and M4's fix inherited it, which is why it recurred in the same round.
+>
+> **⟳ CROSS-DERIVATION PASS — most of this stack no longer applies, because §5.1.1 removed the publish
+> CAS entirely.** With `current` **derived** rather than written, there is no pointer to compare, no
+> CAS to lose, and therefore no "stored unpublished" limbo and no requeue protocol to specify. Two
+> rounds of review, three findings, and a `pending_publication` table all existed to make one mutable
+> pointer safe.
+>
+> **What survives, and it is strictly simpler:** the corrections rule becomes an **eligibility
+> condition** evaluated at resolve time from recorded facts — *a generation whose `mdCorrectionsHash`
+> does not match the video's current corrections is not eligible to be current.* The worker that raced
+> with C2 simply records its generation; it never becomes current, nothing is lost, its bytes stay for
+> §8's retention window, and the next run against C2 supersedes it by being newer and eligible.
+>
+> **Keep the reasoning above** — it is why the eligibility form is required rather than optional, and a
+> reader who skips it will re-propose the CAS.
 
 **⚠ This rule depends on corrections being cheap to re-apply, which today they are not.** They are
 free-form English handed to `fixSummary` (`gemini.ts:456`), a Gemini pass that returns **the whole
