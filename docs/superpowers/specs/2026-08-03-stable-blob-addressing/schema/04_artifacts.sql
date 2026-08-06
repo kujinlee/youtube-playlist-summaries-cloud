@@ -172,6 +172,12 @@ where a.slot = 'summary' and a.state = 'recorded' and not g.body_collected
 order by a.workspace_id, a.video_id,
          (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,
          g.doc_version_major desc nulls last,
+         -- Round 5 B3: rank the CARD's mdGeneratedAt, not produced_at. reconcileClassA:49 ranks
+         -- mdGeneratedAt; this ranked produced_at; MEASURED opposite winners on the same pair, which
+         -- is the oscillation §5.3 claimed round 3 had eliminated. An ISO-8601 string compares
+         -- lexicographically, which is exactly what reconcile-class-a.ts's `newer()` does.
+         -- It also keeps J2-3's property: the card is recorded DATA, not a clock read.
+         (g.card ->> 'mdGeneratedAt') desc nulls last,
          g.produced_at desc nulls last,
          a.generation_id desc;
 
@@ -202,6 +208,7 @@ order by a.workspace_id, a.video_id, a.slot,
           or a.source_generation_id is not distinct from s.generation_id) desc,
          (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,
          g.doc_version_major desc nulls last,
+         (g.card ->> 'mdGeneratedAt') desc nulls last,   -- round 5 B3; see video_summary_current
          g.produced_at desc nulls last,
          a.generation_id desc nulls last;
 

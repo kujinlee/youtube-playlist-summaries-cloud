@@ -42,6 +42,14 @@ create table video_generations (
   produced_at       timestamptz not null,   -- PRODUCTION time, carried as DATA across replicas —
                                             -- not now(), which is clock-derived (round 4 J2-3).
   body_collected    boolean not null default false,  -- round 1 H7's lifecycle marker.
+  -- Round 5 B3: sync's ClassASignals.mdHash had NO cloud source. The spec says so twice in its own
+  -- other sections ("grep for mdHash across all 23 migrations returns ZERO"; "needs a persisted hash
+  -- of the body, and none exists") while §5.3 asserted reconcileClassA "runs unmodified". It cannot:
+  -- reconcile-class-a.ts:17-18 reads mdHash as PRESENCE and :32 as EQUALITY, so projecting it null
+  -- makes :23 return copyToCloud unconditionally — every sync appends a new generation, forever, and
+  -- every append is a paid slot. Deriving it by READING the blob instead reintroduces shape #1 on the
+  -- money path. So it becomes a recorded fact, which is what "runs unmodified" always required.
+  md_hash           text,
   created_at        timestamptz not null default now(),
   primary key (workspace_id, video_id, generation_id),
   unique (workspace_id, video_id, generation_id, kind),   -- FK target for video_artifacts (round 2 C2)
@@ -80,6 +88,7 @@ create table video_generations (
       and card ->> 'mdGeneratedAt' is not null
       and card ->> 'processedAt'   is not null)),
   constraint gen_summary_has_format check (kind <> 'summary' or doc_version_major is not null),
+  constraint gen_summary_has_hash check (kind <> 'summary' or md_hash is not null),
   -- Round 5 H5: the ranking trusts `doc_version_major`, and nothing tied it to the `docVersion` the
   -- body actually carries. MEASURED: a card saying "3.3" with the column saying 99 inserted cleanly.
   -- That is §5.2's card/body lie relocated into the ranking key — the one place it does most damage,

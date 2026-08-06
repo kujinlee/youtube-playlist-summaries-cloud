@@ -30,31 +30,31 @@ insert into workspace_videos (workspace_id, video_id) select id, 'vidB' from t_w
 -- Keys are SHAPED (`…/<generation>/…`), because art_key_names_generation now requires it and an
 -- opaque 'k1' would make that guard untestable — round 5 (Codex): the executable schema was never
 -- proving the stable blob address it exists to enforce.
-insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
 values
  ((select id from t_ws),'vidA','gOLD','summary',
   '{"tldr":"t","takeaways":"k","docVersion":"3.3","mdGeneratedAt":"2026-01-01","processedAt":"y","mdCorrectionsHash":"H_OLD"}',
-  3,'2026-01-01'),
+  3,'2026-01-01','SHA_OLD'),
  ((select id from t_ws),'vidA','gNEW','summary',
   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-01","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
-  4,'2026-02-01');
+  4,'2026-02-01','SHA_NEW');
 -- gSPARE exists ONLY to isolate art_summary_has_no_source: that negative needs a summary generation
 -- with NO artifact row yet, or the paid unique fires first and masks the CHECK. Round 5 H1 again,
 -- reintroduced by me in the file rewritten to remove it, and caught by mutation testing rather than
 -- by reading — which is the argument for mutation testing in one line.
-insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
 values ((select id from t_ws),'vidA','gSPARE','summary',
   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-03-01","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
-  4,'2026-03-01');
+  4,'2026-03-01','SHA_SPARE');
 insert into video_generations (workspace_id,video_id,generation_id,kind,doc_version_major,produced_at)
 values ((select id from t_ws),'vidA','gDIG','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','gMODEL','model',null,'2026-01-15'),
        ((select id from t_ws),'vidA','wA','digDeeper',null,'2026-02-01'),
        ((select id from t_ws),'vidA','wB','digDeeper',null,'2026-02-01');
-insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
 values ((select id from t_w2),'vidB','g2','summary',
   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-01","processedAt":"y","mdCorrectionsHash":null}',
-  4,'2026-02-01');
+  4,'2026-02-01','SHA_2');
 
 -- ── POSITIVES ───────────────────────────────────────────────────────────────────────────────────
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
@@ -112,22 +112,22 @@ end $$;
 -- gen_card_complete (3 distinct ways to be incomplete; doc_version_major supplied so
 -- gen_summary_has_format cannot mask, and a NULL docVersion makes gen_major_matches_card pass on NULL)
 select assert_raises($$insert into video_generations
-  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB1','summary','{"tldr":"t"}',3,now())$$,
   'summary generation with an INCOMPLETE card');
 select assert_raises($$insert into video_generations
-  (workspace_id,video_id,generation_id,kind,doc_version_major,produced_at)
+  (workspace_id,video_id,generation_id,kind,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB2','summary',3,now())$$,
   'summary generation with a NULL card (round 4 J1-2: must fail CLOSED, not open)');
 select assert_raises($$insert into video_generations
-  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB3','summary',
    '{"tldr":null,"takeaways":null,"docVersion":null,"mdGeneratedAt":null,"processedAt":null,"mdCorrectionsHash":null}',
    3,now())$$,
   'a card of JSON NULLS (round 5 B1: ?& tests key EXISTENCE — this card WON the ranking)');
 
 select assert_raises($$insert into video_generations
-  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB6','summary',
    '{"tldr":"t","takeaways":null,"docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
    4,now())$$,
@@ -135,7 +135,7 @@ select assert_raises($$insert into video_generations
 
 -- gen_summary_has_format (card complete, docVersion present so the major check passes on NULL)
 select assert_raises($$insert into video_generations
-  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB4','summary',
    '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
    null,now())$$,
@@ -143,11 +143,18 @@ select assert_raises($$insert into video_generations
 
 -- gen_major_matches_card (round 5 H5) — card is complete, only the major disagrees
 select assert_raises($$insert into video_generations
-  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB5','summary',
    '{"tldr":"t","takeaways":"k","docVersion":"3.3","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
    99,now())$$,
   'doc_version_major=99 while the card says 3.3 (the card/body lie, moved into the ranking key)');
+
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+  values ((select id from t_ws),'vidA','gB7','summary',
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
+   4,now())$$,
+  'a summary generation with NO md_hash (round 5 B3: sync needs it and nothing persisted it)');
 
 -- art_slot_kind — FK-VALID (gDIG is kind='dig'), spans present, key shaped. ONLY the slot/kind
 -- mismatch is wrong. Before round 5 this row was also FK-invalid, which masked the guard entirely.
