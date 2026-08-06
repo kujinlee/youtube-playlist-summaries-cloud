@@ -394,6 +394,58 @@ what kept *"run #2's card beside run #1's body"* expressible.
 generation carrying both; a reader that resolves a generation gets a card and a body that provably
 came from the same run.
 
+#### 5.2.1 The card is not homogeneous — refined 2026-08-05
+
+**Some of those scalars describe the DOCUMENT; others describe the VIDEO.** The first draft moved all
+of them, which is more than the problem requires. A judgment about the video does not become wrong
+because the document was regenerated — the video did not change.
+
+| Scalar | Describes | Lives on |
+|---|---|---|
+| `tldr`, `takeaways` | the document's prose | **generation** |
+| `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash` | the run | **generation** |
+| `ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags` | the video | **video** — carried forward, stable across regenerations |
+
+**Rule:** only *document facts* must travel with the body — those are the ones that can lie about it.
+*Video judgments* stay on the video and are **stable**: the first generation sets them, a later one
+does not re-roll them. Rationale: Gemini is non-deterministic, so re-rolling means a video's score
+moves for a reason the user did not cause; and because nothing about them is a claim about the body,
+keeping them still creates no incoherence. A user who *wants* fresh judgments can ask for them —
+that is a deliberate action, not a side effect of a doc-version bump.
+
+> **Do not confuse these with the human fields.** `personalNote`, `personalScore` and `corrections`
+> (`backfill.ts:19`) were never card fields; they belong to the user and already survive regeneration.
+> `overallScore` is *Gemini's* score, distinct from the user's `personalScore`.
+
+#### 5.2.2 A generation is not publishable until corrections are applied
+
+**Corrections must carry forward to every new generation.** A user who corrected *"Clawcode" → "Claude
+Code"* must not be asked to type it again after a re-summarize — and today they are.
+
+**The live defect this closes** (verified 2026-08-05): a fresh summarize does **not** apply
+corrections. `pipeline.ts:272` stamps `mdCorrectionsHash: mdHash('')`, and the cloud worker
+(`summary-handler.ts`) does not mention corrections **at all**. Because the worker never *sets* the
+field, `persist_summary`'s layer-2 merge **preserves the old value**. So after a cloud re-summarize the
+body has no corrections applied while the row asserts `mdCorrectionsHash = <hash of the user's
+corrections>`.
+
+> **That is the same card/body lie as B-R4-1, on the path where the lost content is something the USER
+> typed.** The system does not merely drop the correction work — it claims the work is still there.
+> Only `/regenerate` applies corrections (`route.ts:63`), and that path edits an existing document
+> rather than producing a generation.
+
+**Rule:** a summary generation is not publishable until the current corrections have been applied to
+it, and `mdCorrectionsHash` records what was actually applied — never what was merely on file.
+
+**⚠ This rule depends on corrections being cheap to re-apply, which today they are not.** They are
+free-form English handed to `fixSummary` (`gemini.ts:456`), a Gemini pass that returns **the whole
+document**, so carrying them forward costs a full-document round trip per generation. That is why the
+code does not do it. **Backlog #23** restructures corrections as deterministic `{from, to}` pairs
+(LLM-authored so variants are still handled, but never LLM-applied), which makes carry-forward pure
+string replacement at zero cost — and keeps a model from rewriting a document whose **headings are an
+identity anchor** (§4.2.1). *This spec states the rule; #23 is what makes it affordable.* Sequence #23
+first, or this rule ships as an expensive per-generation Gemini call.
+
 **The card must stay queryable without fetching a blob.** Frontmatter inside `summary.md` is
 therefore rejected: the playlist list renders ratings and scores for every video, and the quick-view
 route serves `tldr`. Neither can afford N blob reads. So the card lives in the database, on a

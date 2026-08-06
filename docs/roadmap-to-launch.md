@@ -530,9 +530,19 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       survive**, each invalidated by a *later section of the same spec*. Row 1 answers a **scalar**
       race with a **blob** fix (this is Q8, concretely), row 3 rests on the sufficiency claim §5.1
       retracted, row 4 sells team concurrency §11.1 disclaims.
-- [ ] **Close the 3 prerequisite open questions** (§14 Q3, Q4, Q8) — **HUMAN GATE.** These are design
-      forks, not mechanical choices, and Q8 now has a measured constraint: its "cheap" option needs a
-      persisted body hash that **does not exist** in any of the 21 migrations.
+- [x] **Q4 — retention + GC trigger** — ✅ 2026-08-05. *Not current ⇒ delete, except paid, retained
+      **90 days**.* Scheduled sweep. A duration not a generation count, because a count evicts by
+      activity and bursts of activity are when mistakes happen. Explicit delete outranks retention.
+      **Surfaced while closing it:** removing `<playlistKey>` from the path breaks `Principal.indexKey`,
+      so playlist hard-delete (a prefix sweep) must become manifest-driven enumeration — uncosted work
+      on the delete path whose worst failure mode is silent.
+- [x] **Q8 — scalar coherence** — ✅ 2026-08-05. **The card joins the generation** (§5.2). Refined the
+      same day: the card is *not homogeneous* — document facts (`tldr`, `docVersion`, …) travel with the
+      body, video judgments (`ratings`, `overallScore`, `tags`, …) stay on the video and are stable
+      across regenerations. Also added §5.2.2: a generation is not publishable until corrections are
+      applied — **depends on backlog #23**.
+- [ ] **Q3 — overlap threshold + section-merge ambiguity** (§6) — **the last prerequisite, HUMAN GATE.**
+      A design fork, not a mechanical choice.
 - [ ] **`grill-with-docs` terminology pass** — 6 new terms (*tenant, generation, slot, manifest,
       authoritative, rendering*) must land in `CONTEXT.md`. Human gate (terminology is Phase 1).
 - [ ] **Dual adversarial review to convergence** — mandatory (schema + identity + money path).
@@ -541,6 +551,12 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
 
 **Blocks:** backlog #17 / task #19 (the CAS conditional-write slice is deferred pending this), and
 task #18 (A6b `position` drop, likely dissolved by ADR-0006).
+
+**Blocked by:** **backlog #23** — corrections as deterministic `{from, to}` pairs. §5.2.2 requires a
+generation to carry the user's corrections; today re-applying them costs a whole-document Gemini round
+trip, which is why the code silently does not do it *and stamps a hash claiming it did*. The rule is
+correct either way, but sequence #23 first or it ships as a per-generation LLM call on a document whose
+headings are an identity anchor.
 
 ## Honest-blob-read slice (`BlobRead`) — own spec + merge gate
 
