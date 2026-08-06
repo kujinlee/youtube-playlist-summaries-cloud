@@ -38,6 +38,14 @@ values
  ((select id from t_ws),'vidA','gNEW','summary',
   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-01","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
   4,'2026-02-01');
+-- gSPARE exists ONLY to isolate art_summary_has_no_source: that negative needs a summary generation
+-- with NO artifact row yet, or the paid unique fires first and masks the CHECK. Round 5 H1 again,
+-- reintroduced by me in the file rewritten to remove it, and caught by mutation testing rather than
+-- by reading — which is the argument for mutation testing in one line.
+insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+values ((select id from t_ws),'vidA','gSPARE','summary',
+  '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-03-01","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
+  4,'2026-03-01');
 insert into video_generations (workspace_id,video_id,generation_id,kind,doc_version_major,produced_at)
 values ((select id from t_ws),'vidA','gDIG','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','gMODEL','model',null,'2026-01-15'),
@@ -118,6 +126,13 @@ select assert_raises($$insert into video_generations
    3,now())$$,
   'a card of JSON NULLS (round 5 B1: ?& tests key EXISTENCE — this card WON the ranking)');
 
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
+  values ((select id from t_ws),'vidA','gB6','summary',
+   '{"tldr":"t","takeaways":null,"docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
+   4,now())$$,
+  'a card with ONE null value (each conjunct must bite, not just the set of them)');
+
 -- gen_summary_has_format (card complete, docVersion present so the major check passes on NULL)
 select assert_raises($$insert into video_generations
   (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
@@ -166,13 +181,13 @@ select assert_raises($$insert into video_artifacts
 -- art_key_names_generation (round 5, Codex)
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidA','digDeeper','gDIG','digDeeper','recorded','W/videos/vidA/gOLD/dd.md')$$,
-  'a row ranking gDIG''s card while serving gOLD''s BYTES (shape #4 on the paid path)');
+  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','recorded','W/videos/vidA/gOLD/dd.md')$$,
+  'a row ranking wB''s card while serving gOLD''s BYTES (shape #4 on the paid path)');
 
 -- art_summary_has_no_source (round 5 H2, the DATA half)
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-  values ((select id from t_ws),'vidA','summary','gDIG','summary','recorded','W/videos/vidA/gDIG/s.md','gOLD')$$,
+  values ((select id from t_ws),'vidA','summary','gSPARE','summary','recorded','W/videos/vidA/gSPARE/s.md','gOLD')$$,
   'a SUMMARY carrying a source_generation_id (it is derived from nothing)');
 
 -- the source FK (round 5, Codex/M5)
