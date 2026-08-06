@@ -175,3 +175,46 @@ what remains is a judgment about clutter, which is a product question rather tha
 **Not changing it unilaterally** — it reverses a decision made deliberately today ("leave unattached,
 don't guess"), and that decision is defensible. Flagging it because the rule's *stated reason* no
 longer fully applies once a UI can carry provenance.
+
+
+---
+
+# Round-3 amendments to the inventory
+
+**Rule 19 restated — determinacy, not absence.** *"A spend requires a determinate negative from every
+layer that could hold the artifact; an indeterminate answer from any layer is `busy`."* The old form
+("slot absent AND blob provably absent") was **vacuous**: the slot is absent exactly when no record
+exists, and with no record there is no key to probe. Resolved by the record-first write order, which
+makes *bytes ⊆ records* hold by construction, so "no record" *entails* "no bytes" without a probe.
+
+**Rule 14 gains a floor — staleness RANKS, it never GATES.** Eligibility-to-be-**served** is
+`state = 'recorded'`, full stop; it cannot empty a non-empty set. Corrections-currency and format move
+into the *ordering* for eligibility-to-be-**current**. Without this, a free user gesture (typing a
+correction) made every generation stale at once and deleted the visible summary.
+
+**Rule 13's ordering is the project's existing hierarchy, not flat recency** —
+`(corrections_current, doc_version_major, created_at, generation_id)`, matching
+`reconcile-class-a.ts:41-50` and the Stage 3 principle *"reconciled by format, not recency."* Every
+rung is a replica-independent recorded fact, which is what makes `current` a deterministic function of
+the generation set — and therefore what makes sync convergent without a tiebreak protocol.
+
+**Rule 15 is WITHDRAWN.** Assets are not a cloud concern at all: nothing writes them to the bucket and
+sync does not copy them. Every asset finding across three rounds is withdrawn rather than fixed. Its
+invalidation condition lives in the ADR-0005 amendment (2026-08-06).
+
+**Rules 12 and 13 are CLOUD invariants, not system-wide ones.** They are Postgres schema properties and
+the local backend is a filesystem with no manifest, no generations and no sweeper. Four round-3
+findings shared this root.
+
+## New entry — how a PHYSICAL rule fails
+
+**Rule 4** (`add column … not null` aborts on a populated table) was in this inventory, classified
+correctly as physical, and **still recurred twice after being fixed once** — `playlists` in round 2,
+then `workspace_videos` and `jobs` in round 3.
+
+> **A physical rule applies to every SITE, not to the site where you learned it.** Classification is
+> not enough; a P rule needs a **sweep** across every place its shape could occur. The I/H rules did not
+> behave this way, because an invariant is stated once and read once, while a physical constraint is
+> re-encountered every time you write DDL.
+
+This is the inventory's own blind spot, found by the round it was written to make cheaper.

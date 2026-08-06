@@ -182,7 +182,6 @@ re-asserts the owner at every hop. It **never creates a second owner**.
 <workspaceId>/videos/<videoId>/<generationId>/summary.md
 <workspaceId>/videos/<videoId>/<generationId>/model.json
 <workspaceId>/videos/<videoId>/<generationId>/dig/<sectionId>.md
-<workspaceId>/videos/<videoId>/assets/<sectionId>-<start>-<end>.jpg
 ```
 
 Four properties, each load-bearing:
@@ -240,7 +239,27 @@ the address entirely.
 **`<generationId>` makes every write create rather than overwrite.** No blob is ever modified in
 place, so no writer can destroy another's work, and no reader can observe a half-written artifact.
 
-**Assets sit outside a generation, keyed on absolute video timestamps.** They already are today, and
+> **⟳ ROUND 3 (Blocking A-6) — THE ASSET LINE IS REMOVED. No slide asset has ever been written to the
+> Supabase bucket, so three rounds designed keys, retention, GC and pruning for an artifact class with
+> zero cloud instances.** Verified three ways: the cloud dig path emits `slides: []` and rewrites every
+> slide token to a caption-only placeholder (`parse-dig-section-blob.ts:7-17`); `captureSlideFrame`
+> shells out to `ffmpeg`, which ADR-0005 deliberately keeps out of the image; and `lib/cloud-sync/`
+> contains **zero** references to assets, so sync does not carry them either — it nulls `digDeeperMd` on
+> additive create precisely so a receiver never advertises blobs it did not copy.
+>
+> **Assets are a LOCAL-BACKEND concern, and this spec now says nothing about them.** Note what that
+> means for the rules: rule 15 ("assets are sources, outside the manifest, never age-swept, removed by
+> explicit delete") described a backend that has **no manifest, no generations, no sweeper and no
+> playlist delete**. Every asset finding across three rounds — round-1 H6, round-2 N-B1/N-H9, Codex H3
+> and BLOCKING[15,18], my own A2 — is **withdrawn**, not fixed.
+>
+> **Invalidation condition (ADR-0005 amendment, 2026-08-06):** this holds only while (a) slide capture
+> stays off the hosted path, and (b) sync does not copy assets. Uploading locally-captured frames to the
+> cloud was proposed and **refused** — it makes our backend a redistribution pipeline for
+> YouTube-derived pixels, a different ToS surface from capture. If either fact changes, this section
+> reopens in full.
+>
+> *(Superseded text kept for the trail:)* **Assets sit outside a generation, keyed on absolute video timestamps.** They already are today, and
 they are independent of section structure — a frame at 120s is the same frame regardless of which
 generation drew a section boundary near it. Keeping them generation-free avoids re-capturing video on
 every regeneration.
@@ -336,6 +355,19 @@ The same argument retires `sameTitles`: a model envelope stored under its genera
 
 ## 5. The workspace and the artifact manifest
 
+> **⟳ ROUND 3 (A-5, A-7, A-9, A-10) — SCOPE, stated once because four findings share this root: every
+> mechanism in §5 is a POSTGRES SCHEMA PROPERTY, and only one of the two backends has that schema.**
+> The local backend is a filesystem (`LocalFsBlobStore` ignores `Principal.id` entirely). It has no
+> artifact manifest, no `video_generations`, no sweeper, and no playlist-delete route. So *"a generation
+> is body + card inseparably"* (rule 12) and *"`current` is derived"* (rule 13) are **cloud invariants**,
+> not system-wide ones.
+>
+> **This spec designs the CLOUD side. Local keeps its display-name layout (§7's hub-and-spoke), and
+> §5.3 is where the two must meet** — which is why §5.3 being three sentences is itself a finding (A-5).
+> Sync cannot reconcile generation *sets* when one side stores no generations; it has to translate.
+> **Naming the asymmetry is in scope for this spec; resolving it is the sync slice's job**, and that
+> slice cannot be planned until this sentence exists.
+
 ### 5.0 The workspace table — ⟳ ADDED IN ROUND 1 (Blocking B2), scope settled 2026-08-06
 
 Round 1 found that `<workspaceId>` was the first segment of **every** blob key and the partition key of
@@ -350,7 +382,11 @@ create table workspaces (
   id       uuid primary key default gen_random_uuid(),   -- opaque; MAY coincide with a uid (§5.0.2)
   owner_id uuid not null references profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
-  unique (owner_id)                     -- one workspace per user IS the rule for this slice
+  unique (owner_id),                    -- one workspace per user IS the rule for this slice
+  unique (id, owner_id)                 -- round 3 B-6: required as the FK target for the Q6
+                                        -- cross-tenant guard. Same shape as `playlists`
+                                        -- `unique (id, owner_id)` (0001:18), and the omission was
+                                        -- round-2 C2 recurring verbatim inside the fix that closed Q6
 );
 ```
 
@@ -503,9 +539,25 @@ is **asymmetric and invisible to a smoke test**.
 **The fix is one line in the migration:**
 
 ```sql
--- migrated workspaces take the founding owner's uid AS THEIR ID; new ones use gen_random_uuid()
-insert into workspaces (id, owner_id) select id, id from profiles;
+-- EVERY workspace takes its owner's uid as its id, for the life of this slice
+insert into workspaces (id, owner_id) select id, id from profiles;          -- migrated users
+-- and in handle_new_user(), for new users:
+--   insert into public.workspaces (id, owner_id) values (new.id, new.id);
 ```
+
+> **⟳ ROUND 3 (Blocking B-3 / Codex [10]) — an earlier draft seeded only MIGRATED workspaces and gave
+> new ones `gen_random_uuid()`. That fixed existing users by breaking every new one.** `Principal.id`
+> is `auth.uid()` (`lib/storage/resolve.ts:93`) and `objectKey` composes `${p.id}/…`
+> (`supabase-blob-store.ts:15`), so a post-migration user writes to `<uid>/…` while their workspace has
+> a random id — `workspace_readable(uid)` matches nothing and **they cannot read their own blobs**,
+> while the `service_role` worker happily keeps writing them. The same asymmetric, smoke-test-invisible
+> failure as N-B4, mirrored onto the other population. **Fifth instance of shape #9 this slice.**
+>
+> **`id = owner_id` for ALL workspaces makes `Principal.id` correct by construction** and needs no
+> `Principal` change at all. It is coherent only because rule 24 (one workspace per user) holds for
+> this slice. **Its expiry is stated with it:** the day multiple workspaces per user ship, `id` can no
+> longer equal `owner_id` for the second one, and `Principal` must become workspace-aware *in that
+> slice*. Recorded here so the coupling is visible rather than discovered.
 
 **Why that is safe, and why it is not a retreat to the position §11.2 rejects.** The revocability
 problem was never the id's *value* — it was the *predicate*. Under `workspace_readable`, access comes
@@ -544,18 +596,26 @@ create table video_artifacts (
   workspace_id  uuid  not null references workspaces(id) on delete cascade,
   video_id      text  not null,
   slot          text  not null,          -- 'summary' | 'model' | 'dig:120' | 'digDeeper' | …
-  kind          text  not null,          -- MUST agree with slot; see below
-  state         text  not null default 'current'
-                check (state in ('current','detached')),
+  kind          artifact_kind not null,  -- the ENUM, not text (round 3 B-1: `text = artifact_kind`
+                                         -- does not resolve; the DDL did not create)
+  state         text  not null default 'pending'
+                check (state in ('pending','recorded','detached')),
+                -- 'pending' is inserted BEFORE the bytes (round 3 A-1's record-first order);
+                -- only 'recorded' is servable, which is also A-2's floor
   blob_key      text  not null,
-  generation_id text  not null,
+  generation_id text,                      -- NULLABLE (round 3 B-2: round-2 C1 said "nullable" in
+                                         -- prose and `not null` in the DDL, so `pdf:*` stayed
+                                         -- unrepresentable — reworded, not made)
   start_sec     int,                     -- dig slots only; §6.2(b)
   end_sec       int,                     -- dig slots only; §6.2(b)
   updated_at    timestamptz not null default now(),
   primary key (workspace_id, video_id, slot),
   foreign key (workspace_id, video_id, generation_id, kind)
     references video_generations (workspace_id, video_id, generation_id, kind),
-  check (kind = slot_kind(slot)),
+  check (slot_kind(slot) is not null and kind = slot_kind(slot)),   -- round 3 B-5: MEASURED to fail
+                                         -- OPEN. `slot_kind('html')` is NULL, `kind = NULL` is NULL,
+                                         -- and a CHECK passes on NULL — so slot='html', kind='dig'
+                                         -- was ACCEPTED. An unknown slot must now fail closed.
   check ((kind in ('summary','model','dig','digDeeper')) = (generation_id is not null))
 );
 ```
@@ -674,6 +734,39 @@ type SlotRead =
 `unreadable` is **required, not optional**, so callers cannot inherit an ambiguous form — the same
 argument `blob-store.ts:53-55` makes for `tryGet`.
 
+> **⟳ ROUND 3 (Blocking A-1) — the "both reads" rule was VACUOUS, and the cause is this design's own
+> addressing change.** The rule permits a spend only when the slot is `absent` **and** the blob is
+> provably absent. But the slot is `absent` exactly when **no generation is recorded** — and with no
+> record there is **no key**, because the key needs a `generationId` that lives only inside the record.
+> The second read has no argument on 100% of the paths that reach it.
+>
+> Today's guard works precisely because `MODEL_KEY(base)` is a **pure function of `base`**, so
+> `serve-doc.ts:70` can ask *"are the bytes there anyway?"* about a record it does not have — which is
+> the only question a money guard ever asks. §4 moved the key from *derivable* to *derivable only from
+> a record*, and deleted that ability without noticing.
+>
+> **Live scenario:** a worker writes `<ws>/videos/V/g7/model.json`, then crashes before recording it.
+> Slot absent, no key to probe, serve path spends again, `g8` is minted, and `g7`'s paid bytes sit
+> unreferenced. Measured cost of exactly this shape: **6¢ → 12¢** (`serve-model-unreadable.test.ts`).
+>
+> **Resolution — invert the write order, rather than adding a probe key.** `record_artifact` inserts the
+> row in state `pending` **BEFORE** the bytes are written, then flips it to `recorded` after a verified
+> write. Then:
+> - **bytes ⊆ records, always.** "No record" now *entails* "no bytes", determinately, with no probe
+>   needed — so the vacuous branch stops existing rather than being filled in.
+> - **"Record exists" entails "key known"**, so the blob probe finally has an argument.
+> - A crash before recording leaves **nothing** — no bytes, no row, no orphan — so spending again is
+>   correct rather than a double-charge.
+>
+> **Rule 19 restated around DETERMINACY, not absence:** *a spend requires a determinate negative from
+> every layer that could hold the artifact; an indeterminate answer from any layer is `busy`.*
+>
+> **Two knock-ons, recorded rather than left to be discovered.** (a) §8's grace period was justified by
+> *"a blob written but not yet published is unreferenced"* — **that state no longer exists**, so the
+> grace period now covers only the orphan root set. (b) A generation id must be chosen *before* its
+> content, which rules out content-hash ids for anything on a spend path; §4.1 already recommends UUIDs
+> there and content hashes only for free re-renders, so the two agree — but §4.1 must say *why*.
+
 > **⟳ ROUND 2 (High, Codex) — `SlotRead` is NECESSARY AND NOT SUFFICIENT, and my round-1 fix RELOCATED
 > the guard instead of extending it.** A *present* slot still has to read the blob. If that read 5xxs
 > and the caller treats it as absence, the measured 6¢→12¢ defect returns **unchanged** — the manifest
@@ -741,8 +834,45 @@ Under this design:
 > The manifest was kept mutable because §5.1.1 framed the problem as "two writers race for a pointer."
 > But if *current* is **derived rather than written**, there is no pointer to race for:
 >
-> > **`current` = the newest RECORDED, ELIGIBLE generation for that slot**, ordered by
-> > `(created_at, generation_id)` — a total order, so no ties.
+> > **`current` = the highest-ranked RECORDED generation for that slot**, ordered by
+> > `(corrections_current desc, doc_version_major desc, created_at desc, generation_id desc)`.
+> > A total order, so no ties. **Ranking, not filtering — see the floor below.**
+
+> **⟳ ROUND 3 (A-4 + my own A1) — flat recency discarded a hierarchy this project already settled.**
+> `reconcile-class-a.ts:41-50` is merged and in production, and the Stage 3 spec states it as a
+> principle: *"Class A — generated … reconciled by **format**, not recency."* Its rungs are
+> **corrections-currency → format (never downgrade) → recency as a tiebreak within one major**. My
+> ordering kept only the last rung, so a retry at an older `docVersionMajor` landing five minutes later
+> would **silently downgrade the video's format**. `created_at` is also not comparable across replicas —
+> a machine with a fast clock wins permanently — which is *why* the existing code ranks format above it.
+>
+> **And it is what makes sync convergent.** With every rung a replica-independent recorded fact,
+> `current` is a deterministic function of the generation *set* — so two replicas that exchange sets
+> compute the same answer, and sync needs no tiebreak negotiation at all (§5.3). Flat recency is not a
+> function of the set; it depends on clocks. A-4 is therefore not only a correctness fix, it is the
+> precondition for that property.
+
+> **⟳ ROUND 3 (Blocking A-2) — THE FLOOR. Eligibility must never empty a non-empty set, and my
+> corrections rule did exactly that.** I made "`mdCorrectionsHash` matches the video's current
+> corrections" an eligibility *filter*. Corrections are a **free, synchronous, user-typed** field
+> (`update_video_annotations`, `0021:19-53`). The instant a user saves one, **every generation ever
+> recorded for that video is stale at once** — the newest and all its predecessors — so `current`
+> becomes empty, the summary vanishes from the page, §5.1.2 makes the `model` slot ineligible too, and
+> it comes back only after a **paid** regeneration. *A free user gesture would destroy visible content
+> and create a bill to restore it.*
+>
+> Today's system does none of that: `reconcileClassA` records staleness as `needsRegen` **beside a body
+> that keeps serving**, and `serve-summary-core.ts:47-57` never consults corrections at all.
+>
+> **Rule: staleness RANKS, it never GATES.** Split the two questions:
+> - **eligible to be SERVED** — `state = 'recorded'`. That is the whole test, and it cannot empty a
+>   non-empty set. This is the floor.
+> - **ranked to be CURRENT** — the ordering above, where corrections-currency and format are the top
+>   rungs. A stale generation still serves when it is the best available; it simply loses to a fresh one
+>   the moment one exists.
+>
+> This is the same shape as shape #9 yet again: I converted an advisory signal into a gate, which is
+> what turned "stale but serving" into "gone".
 >
 > **⟳ CROSS-DERIVATION PASS — an earlier draft of this line said "whose body is readable", and that
 > reintroduced root-cause shape #1 inside the fix that was removing a different one.** A readability
@@ -1763,6 +1893,18 @@ implementation.
    same shape one level up: `workspaces` carries `unique (id, owner_id)`, and `jobs` gains
    `foreign key (workspace_id, owner_id) references workspaces (id, owner_id)`. That preserves ADR-0002's
    injection guard verbatim — a job can never name a workspace its owner does not own.
+
+   > **⟳ ROUND 3 (B-6 + B-7) — this guard did not create, and its column could not be added. Both are
+   > repeats.** B-6: the FK needs `workspaces unique (id, owner_id)`, which I omitted — *round-2 C2
+   > verbatim, inside the fix that closed Q6*. B-7: `jobs.workspace_id not null` aborts on a populated
+   > table — **physical rule 4, which I fixed for `playlists` in round 2 and never re-derived for its
+   > sibling.** Same three-phase shape: add nullable → backfill from
+   > `playlists.workspace_id` via `jobs.playlist_id` → set `not null`.
+   >
+   > **The pattern is worth more than either fix.** A *physical* constraint I had already been bitten
+   > by, written down in the rules inventory as rule 4, recurred twice more because I applied it to the
+   > table in front of me and not to the class of tables. **A physical rule applies to every site, not
+   > to the site where you learned it** — that belongs in the inventory, not in three separate fixes.
 
    Superseded question text: **Cross-playlist dedup: in or out?** (§12) — determines whether `jobs` and the 1D reservation are
    touched. The spec is coherent either way; the saving only materializes if `playlist_id` leaves the
