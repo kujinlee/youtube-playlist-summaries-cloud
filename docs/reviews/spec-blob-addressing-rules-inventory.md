@@ -103,3 +103,75 @@ It checks rules against **rules**. It does not re-check rules against **code** �
 is for, and it is where round 1 and round 2 both found the most. The claim here is narrower: the set is
 now internally consistent, so round 3 can spend its budget on the spec-versus-reality gap rather than
 on the spec versus itself.
+
+
+---
+
+# Invariant evaluation — are the 12 chosen rules still reasonable?
+
+**Asked 2026-08-06 (user):** *"I don't want to move rules lightly, as current code is based on them —
+but if some invariants become too restrictive, we need to re-evaluate their value."* Exactly the right
+framing: the question is not *is this rule true* but **is what it buys still worth what it forbids.**
+
+Verdict: **8 sound, 3 need refinement, 1 relaxation candidate.** None should be dropped.
+
+## Sound — keep as written
+
+| # | What it buys | What it forbids | Verdict |
+|---|---|---|---|
+| 9 | The whole thesis | any address component that changes in normal operation | **Keep.** Note it is already *precisely* scoped, not absolute: §4 admits the workspace segment is mutable in principle (ownership transfer) and accepts it because rule 10 means no one reads it |
+| 10 | Revocability | the cheap pure predicate | **Keep.** Cost measured at 0.118 ms. Worth naming what is lost: a predicate with no table dependency cannot be broken by a bad row; this one can |
+| 13 | No CAS, no race, no limbo | pinning an old generation as current | **Keep** — pinning is re-addable as one nullable column, and as a *human gesture* rather than a race |
+| 14 | Resolving touches no blob | detecting a vanished body at resolve time | **Keep.** A missing body now surfaces as a loud 404 at serve time instead of a silent demotion. Louder is better |
+| 16 | Failure lands on *collectable*, never *pinned* | — | **Keep** |
+| 17 | Orphans are classifiable with no row to consult | future key shapes that hide their own kind | **Keep**, and note rule 15 **widens** it: the key must now reveal *paid/free* **and** *artifact/source* |
+| 18 | "Delete" means delete | — | **Keep.** Correctness, not policy |
+| 19 | The 6¢→12¢ defect | — | **Keep.** Scope narrowed usefully by rule 14: the blob read now happens only on the **spend** path, never on resolve |
+
+## Needs refinement — the rule is right, the wording is wrong
+
+### Rule 11 — "access by membership, never identity" has an undocumented third mode
+
+**Share tokens are neither.** `lib/share/serve.ts:19-24` reads `revoked_at` off `share_tokens` through
+`serviceClient`, bypassing RLS entirely. That is a **capability**: a bearer grant, revocable by setting
+a column. It satisfies the rule's *spirit* — revocability — while violating its letter, and it is in
+production today.
+
+**Refine to:** *access is granted by membership **or by an explicit revocable capability**, never by
+identity.* The load-bearing property was always **revocability**, not membership specifically. Stating
+it as "membership" makes the existing share path look like a violation, which invites someone to
+"fix" a design that is already correct.
+
+### Rule 12 — a generation is not necessarily paid
+
+§2 defines it as *"one production run of a **paid** artifact."* Backlog #23 makes corrections a
+deterministic `{from,to}` replacement — which produces **new bytes with no Gemini call**. Under rule 12
+that is a new generation, and a free one. The same is true of a re-render at a bumped format version.
+
+**Refine to:** *one production run that yields a new body*, with **paid** an attribute of the run, not
+part of the definition. This matters beyond wording: §8's retention keys on paid-vs-free, so a
+definition that implies every generation is paid would retain free re-renders for 90 days.
+
+### Rule 15 — sound, but it has an unstated accumulation cost
+
+Assets are sources, so the age sweeper never collects them. A user who digs a hundred sections and
+abandons them keeps those frames until they delete the video. **Accepted, but say so:** this is the one
+place the design knowingly trades storage for safety, and it is the right trade only because the bytes
+are unrecreatable (ADR-0005). If assets ever become recreatable, revisit this rule first.
+
+## Relaxation candidate — worth a decision, not a default
+
+### Rule 20 — "attach only when unambiguous in both directions" assumes attachment is binary
+
+The justification is §6's: *"a wrong attachment silently mislabels paid content … **the user cannot
+tell it is wrong**."* The whole argument rests on the *silently*. Codex then showed an ordinary
+section split leaves a paid dig stranded, and §6.2's `detached` state keeps it alive but invisible.
+
+**The unexamined assumption is that a dig is either attached or not.** A third state —
+**attached with provenance** (*"this detail was written for an earlier version of this section"*) —
+removes the word the objection depends on. The user *can* tell, so mislabelling is no longer the risk;
+what remains is a judgment about clutter, which is a product question rather than a correctness one.
+
+**Not changing it unilaterally** — it reverses a decision made deliberately today ("leave unattached,
+don't guess"), and that decision is defensible. Flagging it because the rule's *stated reason* no
+longer fully applies once a UI can carry provenance.

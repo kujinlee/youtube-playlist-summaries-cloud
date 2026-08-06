@@ -75,7 +75,7 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 |---|---|
 | **Tenant** | *Existing term, unchanged.* The per-user isolation boundary the RLS enforces — this app is already multi-tenant. **Not** the name of the path segment: see **Workspace**. |
 | **Workspace** | The immutable container a video's blobs are addressed under, and the first path segment. **Its id is opaque — one workspace per user in this slice.** ⟳ *Round 2 correction:* the id **may** coincide with a uid (migrated workspaces are deliberately seeded that way, §5.0.2); what is forbidden is any **predicate** that compares the path segment to `auth.uid()`. A **user-chosen grouping of playlists** — one per playlist, one per user, or anything between (§11.0). Its id **never changes**; what changes is who may access it. Chosen over *tenant* (already means the per-user boundary), *team* and *owner* (both name **who may access**, which is exactly what changes). The revocability that matters comes from `workspaces.owner_id`, not from the id's shape (§11.2). |
-| **Generation** | One production run of a paid artifact — a summarize run, or a dig run — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
+| **Generation** | One production run that yields a **new body** — a summarize run, a dig run, a corrections re-application, or a re-render at a bumped format version — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. ⟳ *Invariant evaluation 2026-08-06: this said "a paid artifact", which is too narrow — a corrections re-application (backlog #23) produces new bytes with **no Gemini call**. **Paid is an attribute of the run, not part of the definition**, and it matters: §8's retention keys on paid-vs-free, so the old wording would have retained free re-renders for 90 days.* |
 | **Card** | The **document facts** a summarize run produces alongside the body: `tldr`, `takeaways`, `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. **Does NOT include the video judgments** (`ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags`): §5.2.1 keeps those on the video, because they describe the *video*, which a regeneration did not change. ⟳ Corrected in the terminology pass — the first draft of this row listed all twelve scalars and contradicted §5.2.1. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`. What a reader asks for. ⟳ *Cross-derivation pass: `slide:<id>` was REMOVED — §8 classifies assets as **sources**, which live outside the manifest by design, so there is no slide slot.* Distinct from a **video slot** (`claim_video_slot`), a video's reserved position in a playlist. |
 | **Artifact manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. ⟳ **Qualified in round 1** — `Manifest` was ALREADY taken: `lib/cloud-sync/manifest.ts:6` is the per-playlist `.cloud-sync-manifest.json` **sync baseline**, with `readManifest`/`writeVideoBaseline`/`manifestPath` and consumers across `sync-run.ts`, `companion.ts` and 7 test files. This was a **fifth** vocabulary collision the terminology pass missed — and it missed it in the one section (§5.3) whose subject is sync, where the unqualified word is genuinely ambiguous. Say **artifact manifest** or **sync baseline**; never a bare *manifest*. |
@@ -1560,7 +1560,15 @@ on a sync race.
 
 **The one rule that survived four rounds of review of this design (external draft + critique, 2026-08-05/06):**
 
-> **Never let *being someone* grant access. Let *membership* grant access.**
+> **Never let *being someone* grant access. Let *membership* — or an explicit, revocable
+> *capability* — grant access.**
+>
+> ⟳ *Invariant evaluation 2026-08-06: the rule previously said "membership" alone, and this project
+> already has a third mode in production. A **share token** is a bearer capability: `lib/share/serve.ts:19-24`
+> reads `revoked_at` through `serviceClient`, bypassing RLS entirely. It satisfies the rule's spirit
+> — **revocability** — while violating its letter. Stating the rule as "membership" makes a correct
+> design look like a violation, which invites someone to "fix" it. **The load-bearing property was
+> always revocability, not membership specifically.**
 
 Every iteration that tried to solve the creation-bootstrap problem with an identity fallback —
 `created_by = auth.uid()`, or `split_part(name,'/',1) = auth.uid()::text` — re-created the same defect:
