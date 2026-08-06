@@ -1486,7 +1486,24 @@ dividing by zero.
 **The threshold is no longer the only path back to visibility.** Because a correct split now leaves a
 dig unattached by design, §6.1 must give it a route back — see the detached-slot rule below.
 
-### 6.2 A detached dig needs a manifest row and a stored span — ⟳ ADDED IN ROUND 1
+### 6.2 A detached dig needs a manifest row and a stored span — ⟳ ADDED IN ROUND 1, corrected in ROUND 5
+
+> **⟳ ROUND 5 — the `@<generationId>` suffix is gone, and it dissolved rather than being fixed.**
+> Detaching used to **rewrite the slot**, which is an address mutation — shape #3, in the section
+> whose entire purpose is to stop paid content being lost. Nobody flagged it for four rounds because
+> it looked like a naming convention rather than a write.
+>
+> It was only ever a workaround for the round-2 `primary key (workspace_id, video_id, slot)`, under
+> which a detached row would have collided with the row replacing it. **Append-only keys on
+> `(slot, generation_id)`, so two dig rows for one section coexist naturally and the slot never
+> changes.** A structural fix from round 4 retired a convention in round 5 that had been invented to
+> survive the constraint round 4 removed.
+>
+> **Found by cross-deriving my own fix, not by a reviewer.** The append-only trigger (round 5 M1)
+> initially froze every recorded paid row, which made detaching *impossible* — §6.2 unimplementable.
+> Asking why a detach needed to write at all is what surfaced the address rewrite underneath it. The
+> trigger now freezes the **address** (`slot`, `generation_id`, `blob_key`) and permits the one
+> meaning-change the design needs: `recorded → detached`. Both are asserted.
 
 **Two Blocking findings say "never deleted" and "re-attachable" are not yet rules, only intentions.**
 
@@ -1496,8 +1513,9 @@ candidate,"* and a detached dig — by §6.1's own construction — **has no man
 unreferenced, it is paid, and the 90-day clock collects it. Two decisions closed hours apart, and the
 one that runs wins.
 
-> **Rule:** a detached dig keeps a manifest row — slot `dig:<sectionId>@<generationId>` in state
-> `detached`. It is therefore *referenced*, therefore never a sweep candidate. This also gives the
+> **Rule:** a detached dig keeps a manifest row — ~~slot `dig:<sectionId>@<generationId>`~~ **slot
+> unchanged (⟳ round 5)**, in state `detached`. It is therefore *referenced*, therefore never a sweep
+> candidate. This also gives the
 > "surface it as detached-but-recoverable" requirement something to **enumerate**, which it had no way
 > to do before.
 

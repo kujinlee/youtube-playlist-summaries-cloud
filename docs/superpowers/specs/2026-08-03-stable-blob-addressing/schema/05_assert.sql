@@ -253,6 +253,19 @@ select assert_raises($$update video_artifacts set blob_key='W/videos/vidA/gNEW/h
 select assert_raises($$delete from video_artifacts
   where video_id='vidA' and slot='summary' and generation_id='gNEW'$$,
   'DELETE of a recorded PAID row (this is the serial-coherence orphaning defect)');
+select assert_raises($$update video_artifacts set slot='dig:120@gDIG'
+  where video_id='vidA' and slot='dig:120'$$,
+  'RENAMING the slot of a recorded dig (§6.2 used to specify exactly this — shape #3)');
+-- ...but DETACH must still work, or §6.2 is unimplementable. This is the transition my own
+-- append-only trigger forbade in its first version, found by cross-derivation, not by a reviewer.
+update video_artifacts set state='detached' where video_id='vidA' and slot='dig:120';
+do $$ declare st text; n int; begin
+  select state into st from video_artifacts where video_id='vidA' and slot='dig:120';
+  if st <> 'detached' then raise exception 'ASSERTION FAILED — detach was blocked (state %)', st; end if;
+  select count(*) into n from video_artifacts_current where video_id='vidA' and slot='dig:120';
+  if n <> 0 then raise exception 'ASSERTION FAILED — a detached dig is still being served'; end if;
+  raise notice 'ok (detach): recorded -> detached is permitted, keeps its row, and stops serving';
+end $$;
 
 -- ── THE RECLAIM (round 5 H4): an expired lease must be stealable, or the slot is dead forever ────
 insert into video_artifacts

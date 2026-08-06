@@ -252,12 +252,36 @@ create trigger forbid_collecting_current_trg
 --   update/delete recorded paid: nothing needs it                -> REJECTED
 -- Append-only is a claim about PAID HISTORY, never about in-flight reservations. Stating it as a
 -- table-wide property is what made it look enforceable-by-nothing.
+-- ⟳ SELF-INFLICTED, caught by cross-deriving this fix against §6.2 rather than by a reviewer:
+-- a blanket "recorded paid rows are frozen" ALSO forbids §6.2's DETACH, which is an update of a
+-- recorded dig row. The first version of this trigger made detaching a dig impossible.
+--
+-- And looking at why §6.2 needed an update at all dissolved the other half. §6.2 says a detached dig
+-- moves to slot `dig:<sectionId>@<generationId>` — i.e. detaching REWRITES THE ADDRESS, which is
+-- shape #3 in the section that exists to preserve paid content. That suffix was only ever a
+-- workaround for the round-2 `primary key (workspace, video, slot)`, under which the detached row
+-- would have collided with its replacement. Append-only keys on (slot, generation), so two dig rows
+-- for one section coexist naturally and THE SLOT NEVER CHANGES.
+--
+-- So: recorded -> detached is a change of MEANING, permitted. Everything that is part of the
+-- ADDRESS — slot, generation_id, blob_key — stays frozen, which is the actual invariant.
 create function video_artifacts_append_only() returns trigger
   language plpgsql security definer set search_path = '' as $$
 begin
   if old.state = 'recorded' and old.generation_id is not null then
-    raise exception 'video_artifacts is append-only for recorded paid rows (slot %, generation %)',
-      old.slot, old.generation_id;
+    if tg_op = 'DELETE' then
+      raise exception 'video_artifacts is append-only: cannot DELETE recorded paid row (slot %, gen %)',
+        old.slot, old.generation_id;
+    end if;
+    if new.slot is distinct from old.slot
+       or new.generation_id is distinct from old.generation_id
+       or new.blob_key is distinct from old.blob_key then
+      raise exception 'video_artifacts: the ADDRESS of a recorded paid row is immutable (slot %, gen %)',
+        old.slot, old.generation_id;
+    end if;
+    if new.state not in ('recorded','detached') then
+      raise exception 'video_artifacts: recorded paid rows may only become detached, not %', new.state;
+    end if;
   end if;
   return case tg_op when 'DELETE' then old else new end;
 end $$;
