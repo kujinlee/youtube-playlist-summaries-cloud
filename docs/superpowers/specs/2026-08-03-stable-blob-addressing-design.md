@@ -74,7 +74,7 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 | Term | Definition |
 |---|---|
 | **Tenant** | *Existing term, unchanged.* The per-user isolation boundary the RLS enforces — this app is already multi-tenant. **Not** the name of the path segment: see **Workspace**. |
-| **Workspace** | The immutable container a video's blobs are addressed under, and the first path segment. **Its id is an independent UUID — one per user in this slice — and NEVER a user's uid** (§5.0). A **user-chosen grouping of playlists** — one per playlist, one per user, or anything between (§11.0). Its id **never changes**; what changes is who may access it. Chosen over *tenant* (already means the per-user boundary), *team* and *owner* (both name **who may access**, which is exactly what changes). ⟳ Round 2: earlier text here said the value is `auth.uid()` today; that was the position §5.0 replaced. An id equal to a uid grants its creator **unrevocable** access (§11.2) and would force a whole-corpus blob migration later. |
+| **Workspace** | The immutable container a video's blobs are addressed under, and the first path segment. **Its id is opaque — one workspace per user in this slice.** ⟳ *Round 2 correction:* the id **may** coincide with a uid (migrated workspaces are deliberately seeded that way, §5.0.2); what is forbidden is any **predicate** that compares the path segment to `auth.uid()`. A **user-chosen grouping of playlists** — one per playlist, one per user, or anything between (§11.0). Its id **never changes**; what changes is who may access it. Chosen over *tenant* (already means the per-user boundary), *team* and *owner* (both name **who may access**, which is exactly what changes). The revocability that matters comes from `workspaces.owner_id`, not from the id's shape (§11.2). |
 | **Generation** | One production run of a paid artifact — a summarize run, or a dig run — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
 | **Card** | The **document facts** a summarize run produces alongside the body: `tldr`, `takeaways`, `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. **Does NOT include the video judgments** (`ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags`): §5.2.1 keeps those on the video, because they describe the *video*, which a regeneration did not change. ⟳ Corrected in the terminology pass — the first draft of this row listed all twelve scalars and contradicted §5.2.1. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
@@ -343,11 +343,11 @@ both new tables, while **nothing anywhere produced one** — no table, no column
 not have been written.
 
 **Decision (user, 2026-08-06): the middle slice. Ship the table now, one workspace per user, with an
-independent UUID. Defer everything else about teams.**
+opaque UUID. Defer everything else about teams.**
 
 ```sql
 create table workspaces (
-  id       uuid primary key default gen_random_uuid(),   -- NEVER equal to a user's uid
+  id       uuid primary key default gen_random_uuid(),   -- opaque; MAY coincide with a uid (§5.0.2)
   owner_id uuid not null references profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
   unique (owner_id)                     -- one workspace per user IS the rule for this slice
@@ -389,11 +389,24 @@ already creates the `profiles` row on `auth.users` insert.
 > Needs a signup regression test for both a registered and an anonymous user. My "two-line addition"
 > framing was right about the mechanism and wrong about the one detail that makes it work.
 
-**Why the id must be independent of `auth.uid()`, stated once so it is never re-litigated.** The table
-is cheap to add later; **the value baked into every object path is not.** Ship the segment as
-`auth.uid()` and adopting real workspaces later means moving every blob from `A/…` to `W/…` — a
-whole-corpus migration of paid content, on the money path. That is §1's thesis violated by the slice
-that implements §1's thesis. A uid-valued segment also grants its creator unrevocable access (§11.2).
+**Why the segment must stop being *interpreted* as a uid — ⟳ RESTATED IN ROUND 2, because the first
+version was over-constrained and cost a corpus migration.**
+
+The first version of this paragraph said the id *"must be an independent UUID, never equal to any
+user's uid."* **That is the wrong invariant.** The danger was never the segment's *value* — it was the
+**predicate**. `split_part(name,'/',1) = auth.uid()::text` is an identity comparison that no membership
+clause can revoke, because an `OR` against an unchanging fact cannot be undone. Once authorization goes
+through a table, a segment that happens to equal a uid is just an opaque string, and access is revoked
+by changing `workspaces.owner_id`.
+
+> **The correct invariant, narrower and testable: NO PREDICATE MAY COMPARE THE PATH SEGMENT TO
+> `auth.uid()`.** Exactly one site does today — `0007:14-15`, the policy this slice replaces. Verified
+> across all 23 migrations and `lib/`: there is no other. That makes this a *guard with a test*, which
+> the old wording was not.
+
+What remains true: the table is cheap to add later and **the value baked into every object path is
+not**, so the workspace must exist before the address is restructured. What is no longer true is that
+existing objects must be re-keyed to adopt it — see §5.0.2.
 
 **RLS changes now, but only to this** — no teams, no ACL, no roles:
 
@@ -474,6 +487,53 @@ solved structurally rather than by convention.
 > about this video"; per-playlist means "my note about this video *in this collection*." Unlike the
 > others this is a **product** question, not a correctness one. Not choosing means the migration has
 > nowhere to put them.
+
+### 5.0.2 Seed migrated workspaces from the owner's uid — ⟳ ROUND 2, closes N-B4
+
+**The problem this removes.** Replacing `artifacts_owner_rw`'s body with
+`workspace_readable(split_part(name,'/',1))` denies **every object that exists today**, because every
+one of them carries a *uid* in segment 1 and `workspace_readable` would find no workspace with that id.
+
+That is not merely an outage. `SupabaseBlobStore.get` **collapses an RLS denial into `null`**
+(`supabase-blob-store.ts:27-37`, `provesAbsence = false`), so the app would not report a failure — it
+would report **absent artifacts**, and the serve path would treat paid content that exists as content
+needing regeneration. The worker is unaffected (`artifacts_service_all`, `0007:16-17`), so the failure
+is **asymmetric and invisible to a smoke test**.
+
+**The fix is one line in the migration:**
+
+```sql
+-- migrated workspaces take the founding owner's uid AS THEIR ID; new ones use gen_random_uuid()
+insert into workspaces (id, owner_id) select id, id from profiles;
+```
+
+**Why that is safe, and why it is not a retreat to the position §11.2 rejects.** The revocability
+problem was never the id's *value* — it was the *predicate*. Under `workspace_readable`, access comes
+from `workspaces.owner_id`, so it is revoked by changing a row. A workspace id that happens to equal
+some uid grants nothing on its own.
+
+**What it buys — one predicate accepts both layouts at once, so there is no cutover:**
+
+| Path | Segment 1 | `workspace_readable(seg1)` |
+|---|---|---|
+| Old `<uid>/<playlistKey>/…` | the owner's uid | workspace `id = uid`, `owner_id = auth.uid()` ⇒ **TRUE** |
+| New `<workspaceId>/videos/…` | the same value | **TRUE** |
+| A new user's workspace | random UUID | **TRUE** — and they have no old-layout bytes |
+
+Three consequences, each removing work this spec had taken on:
+
+1. **N-B4 does not exist.** There is no window in which blobs are unreadable, so the
+   denial-reads-as-absent cascade never fires.
+2. **§10 stops being a cutover.** Both layouts are readable under one predicate, so the corpus
+   migration becomes **incremental, interruptible and reversible** — which also defuses M9's objection
+   that `reconcileCloudBase` cannot serve as a one-shot whole-corpus tool. It no longer has to.
+3. **`Principal.id` is a no-op for existing users during the transition.** `p.id` = uid = workspace id,
+   so `objectKey` composes byte-identical paths while the migration runs.
+
+**The one cost, stated so nobody reads meaning into it:** workspace ids come from two sources — seeded
+from a uid for migrated workspaces, random for new ones. Both are **opaque to every consumer**. The
+coincidence is a migration artifact and carries no semantics; nothing may branch on it, and no
+predicate may compare a path segment to `auth.uid()` (§5.0).
 
 ### 5.1 The artifact manifest
 
@@ -1254,7 +1314,7 @@ clobber-safe).
 
 ## 11. Workspaces, tenancy and teams
 
-**⟳ Round 2: `workspaceId` is an independent UUID and is NEVER `auth.uid()`** — see §5.0, which
+**⟳ Round 2: `workspaceId` is opaque, and no predicate may compare it to `auth.uid()`** — see §5.0, which
 settled this. Earlier drafts of this section said the value was `auth.uid()` today; that position was
 replaced because it grants the creator unrevocable access and forces a whole-corpus blob migration
 later. §11.0 describes the *grouping* concept. **Teams are exploration only** — not on the roadmap (user decision, 2026-08-04). Nothing here is
@@ -1387,11 +1447,15 @@ artifact *and* its first ACL row in one transaction, so there is never a window 
 grant — which is the gap every fallback was patching. `created_by` reverts to **audit only**, with
 `on delete set null` so a user can actually be deleted.
 
-**Consequence for this design, and it is not free:** `workspaceId` must be an **independent UUID, never
-equal to any user's uid**. Otherwise the existing fast path `split_part(name,'/',1) = auth.uid()::text`
-grants the creator their own workspace unconditionally and forever, and no membership clause can undo
-it — an `OR` cannot be revoked. **So the RLS predicate changes on day one, not "someday."** An earlier
-draft of this section said keeping `tenantId == auth.uid()` costs nothing; that was wrong.
+**Consequence for this design:** the **predicate** must stop comparing the path segment to
+`auth.uid()`. The existing fast path `split_part(name,'/',1) = auth.uid()::text` grants the creator
+their own workspace unconditionally and forever, and no membership clause can undo it — an `OR` cannot
+be revoked. **So the RLS predicate changes on day one, not "someday."**
+
+> ⟳ **Round 2 — two corrections, in opposite directions.** An early draft said keeping
+> `tenantId == auth.uid()` costs nothing: wrong, the predicate really must change. A later draft then
+> said the workspace **id** must never equal a uid: also wrong, and expensive — that version forced a
+> whole-corpus re-key. **The id may coincide with a uid; the predicate may not compare to one.**
 
 **Shape** (adapted to `storage.objects`, which has no joinable id — the policy sees only `name`):
 
@@ -1505,7 +1569,7 @@ implementation.
 
 ## 13. Out of scope
 
-- Actual **team** support (§11) — ⟳ *narrowed in round 1*: the **workspace table itself is IN scope** (§5.0, one per user, independent UUID, plus the `workspace_readable` predicate). Out of scope: multiple workspaces per user, `workspace_members`, ACLs, the atomic-creation RPC, and role checks.
+- Actual **team** support (§11) — ⟳ *narrowed in round 1*: the **workspace table itself is IN scope** (§5.0, one per user, opaque id, plus the `workspace_readable` predicate). Out of scope: multiple workspaces per user, `workspace_members`, ACLs, the atomic-creation RPC, and role checks.
 - Changing what the summary or dig *contains*.
 - Background/automatic sync.
 - Any change to the Gemini prompts, cost caps, or the spend ledger's accounting rules.
