@@ -74,7 +74,7 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 | Term | Definition |
 |---|---|
 | **Tenant** | *Existing term, unchanged.* The per-user isolation boundary the RLS enforces — this app is already multi-tenant. **Not** the name of the path segment: see **Workspace**. |
-| **Workspace** | The immutable container a video's blobs are addressed under, and the first path segment. A **user-chosen grouping of playlists** — one per playlist, one per user, or anything between (§11.0). Its id **never changes**; what changes is who may access it. Chosen over *tenant* (already means the per-user boundary), *team* and *owner* (both name **who may access**, which is exactly what changes). Today its value is `auth.uid()`, but if teams ever ship it must become an independent UUID — an id equal to a uid grants its creator unrevocable access (§11.2). |
+| **Workspace** | The immutable container a video's blobs are addressed under, and the first path segment. **Its id is an independent UUID — one per user in this slice — and NEVER a user's uid** (§5.0). A **user-chosen grouping of playlists** — one per playlist, one per user, or anything between (§11.0). Its id **never changes**; what changes is who may access it. Chosen over *tenant* (already means the per-user boundary), *team* and *owner* (both name **who may access**, which is exactly what changes). ⟳ Round 2: earlier text here said the value is `auth.uid()` today; that was the position §5.0 replaced. An id equal to a uid grants its creator **unrevocable** access (§11.2) and would force a whole-corpus blob migration later. |
 | **Generation** | One production run of a paid artifact — a summarize run, or a dig run — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
 | **Card** | The **document facts** a summarize run produces alongside the body: `tldr`, `takeaways`, `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. **Does NOT include the video judgments** (`ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags`): §5.2.1 keeps those on the video, because they describe the *video*, which a regeneration did not change. ⟳ Corrected in the terminology pass — the first draft of this row listed all twelve scalars and contradicted §5.2.1. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
@@ -349,14 +349,45 @@ independent UUID. Defer everything else about teams.**
 create table workspaces (
   id       uuid primary key default gen_random_uuid(),   -- NEVER equal to a user's uid
   owner_id uuid not null references profiles(id) on delete cascade,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (owner_id)                     -- one workspace per user IS the rule for this slice
 );
-alter table playlists add column workspace_id uuid not null references workspaces(id);
 ```
 
-One workspace is auto-provisioned per user **inside the existing `handle_new_user()` trigger**
-(`0003:2-11`), which already creates the `profiles` row on `auth.users` insert — a two-line addition to
-infrastructure that already runs.
+**⟳ ROUND 2 (Blocking) — the migration must be three-phase; the one-liner I wrote does not run.**
+`alter table playlists add column workspace_id uuid not null references workspaces(id)` aborts on any
+populated table (`ERROR: column "workspace_id" contains null values`), and the ordering problem is
+deeper than a default: every existing **owner** needs a workspace row before any playlist can reference
+one, and `handle_new_user()` only fires for *future* users.
+
+```sql
+-- 1. one workspace per EXISTING profile (the trigger covers only future users)
+insert into workspaces (owner_id) select id from profiles;
+-- 2. nullable, then backfill from the owner
+alter table playlists add column workspace_id uuid references workspaces(id);
+update playlists p set workspace_id = w.id from workspaces w where w.owner_id = p.owner_id;
+-- 3. only now
+alter table playlists alter column workspace_id set not null;
+```
+
+> **This is a SCHEMA migration and §10 covers only the BLOB migration.** Both are mandatory and they
+> are separate steps; §10 must not be read as covering this.
+
+**Provisioning for new users** goes in the existing `handle_new_user()` trigger (`0003:2-11`), which
+already creates the `profiles` row on `auth.users` insert.
+
+> **⟳ ROUND 2 (Medium, Codex) — and it must be SCHEMA-QUALIFIED, or signup breaks.** The trigger is
+> declared `security definer set search_path = ''` (`0003:3`) — which is exactly why its existing body
+> says `public.profiles`. An unqualified `insert into workspaces …` raises *relation does not exist* and
+> **breaks signup for every new user, including anonymous ones on the `/try` path**. It does not fail the
+> migration; it fails later, in production, on the account-creation path.
+>
+> ```sql
+> insert into public.workspaces (owner_id) values (new.id);   -- public. is REQUIRED
+> ```
+>
+> Needs a signup regression test for both a registered and an anonymous user. My "two-line addition"
+> framing was right about the mechanism and wrong about the one detail that makes it work.
 
 **Why the id must be independent of `auth.uid()`, stated once so it is never re-litigated.** The table
 is cheap to add later; **the value baked into every object path is not.** Ship the segment as
@@ -392,6 +423,58 @@ checks on destructive verbs.
 shares the manifest key `(workspace, video, slot)` and therefore one copy of the blobs. What is
 deferred is *choosing a boundary smaller than the whole user*.
 
+### 5.0.1 `workspace_videos` — the entity the manifest keys on
+
+**⟳ ROUND 2 (Blocking). Raised in round 1 by the coordinator, found independently by Codex in round 2,
+and only HALF closed by §5.0.** Adding `workspaces` gave `<workspaceId>` a source. It did not give
+`(workspace_id, video_id)` one — and that is what both new tables are keyed on.
+
+**`videos` has primary key `(playlist_id, video_id)`** (`0001:30`), so a video in two playlists is
+**two rows**, while the artifact manifest is keyed per workspace and resolves to **one** blob. Two rows
+therefore describe one shared body.
+
+**Failure scenario.** P1 and P2 sit in one workspace and both contain V. The user corrects
+*"Clawcode" → "Claude Code"* under P1. Per §5.2.2 the correction is applied before publish, so the
+**shared** body changes for both. P2's row still has `corrections = NULL` and an `mdCorrectionsHash`
+describing the uncorrected text — `update_video_annotations` is playlist-row scoped (`0021:48-53`). P2
+now asserts an uncorrected body while serving a corrected one. The same holds for `ratings`: one body,
+two different scores, and no way for a reader to tell which row describes what it is reading.
+
+**This is root-cause shape #4 at the level §5.2 did not reach.** §5.2 bound the card to the generation
+and moved the video judgments off it — correct when there is one video row per video, wrong the moment
+two rows share a body.
+
+```sql
+create table workspace_videos (
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  video_id     text not null,
+  -- everything that describes the SHARED BODY lives here, not on the per-playlist row
+  primary key (workspace_id, video_id)
+);
+-- videos keeps per-playlist membership and per-playlist presentation only
+alter table videos add column workspace_id uuid not null references workspaces(id);
+alter table videos add foreign key (workspace_id, video_id)
+  references workspace_videos (workspace_id, video_id);
+```
+
+`video_artifacts` and `video_generations` both FK to `workspace_videos`, so the manifest finally
+references an entity that exists — and a cascade from it reaches them, which is half of B5's problem
+solved structurally rather than by convention.
+
+**The split, stated so it is not re-litigated:**
+
+| Stays on `videos` (per playlist) | Moves to `workspace_videos` (per workspace) |
+|---|---|
+| `position`, `playlistIndex`, `archived` | `corrections`, `mdCorrectionsHash` — they change the shared bytes |
+| per-playlist presentation | the video judgments of §5.2.1 — one body, one score |
+| — | `personalNote`, `personalScore` — **open question**, see below |
+
+> **Open, and it must be answered before a plan: are `personalNote` and `personalScore` per-playlist or
+> per-workspace?** They do not affect the bytes, so either is defensible: per-workspace means "my note
+> about this video"; per-playlist means "my note about this video *in this collection*." Unlike the
+> others this is a **product** question, not a correctness one. Not choosing means the migration has
+> nowhere to put them.
+
 ### 5.1 The artifact manifest
 
 The per-video mapping from **slot → blob key**. This is the only mutable state in the design.
@@ -412,9 +495,53 @@ create table video_artifacts (
   primary key (workspace_id, video_id, slot),
   foreign key (workspace_id, video_id, generation_id, kind)
     references video_generations (workspace_id, video_id, generation_id, kind),
-  check (kind = case when slot like 'dig:%' then 'dig' else 'summary' end)
+  check (kind = slot_kind(slot)),
+  check ((kind in ('summary','model','dig','digDeeper')) = (generation_id is not null))
 );
 ```
+
+> **⟳ ROUND 2 (Blocking) — my round-1 constraint made four of the six slot families unrepresentable.**
+> I wrote `check (kind = case when slot like 'dig:%' then 'dig' else 'summary' end)` beside a
+> **mandatory** generation FK. §2 defines six slot families and the rule was wrong for four:
+>
+> | Slot | My check forced | Reality |
+> |---|---|---|
+> | `model` | `kind='summary'` | a **separate paid** Gemini call (`generateMagazineModel`) — its own generation |
+> | `digDeeper` | `kind='summary'` | a paid **dig** artifact (`lib/dig/generate.ts`) |
+> | `pdf:<kind>` | `kind='summary'` **+ an FK** | a **free deterministic re-render** — no generation exists |
+> | `slide:<id>` | `kind='summary'` **+ an FK** | §4 puts assets **outside generations by design** — there is no id to reference |
+>
+> **So the `slide` slot could not be inserted at all**: the design puts assets outside generations in one
+> section and required every manifest row to name one in another. That is shape #9 — I closed Codex B1's
+> soundness hole by trading it for an expressiveness hole in the same constraint.
+>
+> **Corrected.** `kind` is a first-class enum over the artifact taxonomy already in §3, the mapping is a
+> function rather than a `case` buried in a constraint, and **the generation FK is nullable** — free
+> re-renders and assets have none. Codex B1's actual guard is preserved and narrowed to where it belongs:
+> it is the **paid** kinds that must name a generation, which the second `check` enforces.
+>
+> ```sql
+> create type artifact_kind as enum ('summary','model','dig','digDeeper','render','asset');
+> create function slot_kind(p_slot text) returns artifact_kind
+>   language sql immutable as $$
+>   select case
+>     when p_slot = 'summary'      then 'summary'
+>     when p_slot = 'model'        then 'model'
+>     when p_slot like 'dig:%'     then 'dig'
+>     when p_slot = 'digDeeper'    then 'digDeeper'
+>     when p_slot like 'pdf:%'     then 'render'
+>     when p_slot like 'slide:%'   then 'asset'
+>   end::artifact_kind $$;
+> ```
+>
+> **And the composite FK needs a target it does not have (round 2, C2).** It references the 4-tuple
+> `(workspace_id, video_id, generation_id, kind)`, but `video_generations`' primary key is the 3-tuple —
+> Postgres rejects it outright: *"there is no unique constraint matching given keys for referenced
+> table."* Add `unique (workspace_id, video_id, generation_id, kind)` to `video_generations`; it is
+> trivially satisfied because `generation_id` is already unique within `(workspace, video)`.
+>
+> `video_generations.kind` also widens from `summary | dig` to the same enum, so a `model` generation
+> can exist — it is a paid call and was never part of the summarize run.
 
 **A table, not a jsonb column**, for one decisive reason: GC must ask *"select every referenced
 blob_key"*, which is a query against a table and a full scan of jsonb otherwise.
@@ -464,7 +591,19 @@ type SlotRead =
 ```
 
 `unreadable` is **required, not optional**, so callers cannot inherit an ambiguous form — the same
-argument `blob-store.ts:53-55` makes for `tryGet`. **Only `absent` may lead to a spend.** Write the
+argument `blob-store.ts:53-55` makes for `tryGet`.
+
+> **⟳ ROUND 2 (High, Codex) — `SlotRead` is NECESSARY AND NOT SUFFICIENT, and my round-1 fix RELOCATED
+> the guard instead of extending it.** A *present* slot still has to read the blob. If that read 5xxs
+> and the caller treats it as absence, the measured 6¢→12¢ defect returns **unchanged** — the manifest
+> said the model exists, so the failure moved one layer down rather than away.
+>
+> **Rule: every billable or source-of-truth serve path requires BOTH reads.** A paid regeneration is
+> permitted only when the slot is **`absent`** *and* the blob is **provably absent**
+> (`BlobRead.reason === 'absent'`, never a bare `null` — `provesAbsence` is `false` on Supabase). Slot
+> `unreadable` **or** blob `unreadable` ⇒ `busy`, never a spend. This is the third time this session a
+> fix moved a defect rather than removing it (shape #9); the tell each time was that the *new* layer
+> was specified and the *old* one was assumed to have gone away. Write the
 assertion in this slice; `serve-model-unreadable.test.ts` is the template and the scaffolding exists.
 
 ### 5.1.1 Why this answers the concurrency problem
@@ -612,6 +751,17 @@ it, and `mdCorrectionsHash` records what was actually applied — never what was
 > **Rule:** publish must CAS on the corrections hash (or `annotationsEditedAt.corrections`). If it
 > moved, the generation is stored **unpublished** and either retried against C2 or left for the next
 > run — never published. Storing rather than discarding matters: the bytes were paid for.
+>
+> **⟳ ROUND 2 (High, Codex) — "stored unpublished" is a dead end as written, because nothing ever
+> picks it up.** A worker that loses the CAS still finishes its job, and a `completed` job is a
+> dedup root: `jobs_idem_active` covers `completed` (`0009:10-13`) and `enqueue_job` **joins** rather
+> than inserting on conflict, so no re-enqueue is possible. The user's corrections are then
+> permanently absent from the published body while a paid, correct generation sits unreferenced.
+>
+> **Rule: a failed publish CAS is a NON-TERMINAL job outcome.** Either the job requeues (leaving the
+> idempotency slot open), or the unpublished generation lands in a `pending_publication` table a
+> worker sweeps and republishes idempotently. Naming the CAS without naming the retry path is the
+> same defect M4 already had — and M4's fix inherited it, which is why it recurred in the same round.
 
 **⚠ This rule depends on corrections being cheap to re-apply, which today they are not.** They are
 free-form English handed to `fixSummary` (`gemini.ts:456`), a Gemini pass that returns **the whole
@@ -674,9 +824,22 @@ the two cannot disagree. Same RLS pattern as §5.
    > freshly-paid cloud body with an older local one. Today's stale-but-non-null value loses only
    > sometimes; the §5.2 form loses always.
    >
-   > **Rule:** make card completeness a **schema fact, not a convention** — every document fact
-   > `not null` on `video_generations`, plus a producer-side card type the compiler forces every writer
-   > to populate. Note `as any` on a test double opts out of compiler enforcement, so back it with a
+   > **Rule:** make card completeness a **schema fact, not a convention** — plus a producer-side card
+   > type the compiler forces every writer to populate.
+   >
+   > **⟳ ROUND 2 (High) — my first wording said "every document fact `not null` on
+   > `video_generations`", which the schema contradicts.** The card is a single `card jsonb` column,
+   > explicitly **NULL for a dig generation** — `not null` cannot constrain members of a jsonb value,
+   > and a blanket `not null` on the column makes dig generations uninsertable. So the fix read as
+   > closed and enforced nothing. **Corrected — the constraint is conditional on kind:**
+   >
+   > ```sql
+   > check (kind <> 'summary' or card ?& array[
+   >   'tldr','takeaways','docVersion','mdGeneratedAt','processedAt','mdCorrectionsHash'])
+   > ```
+   >
+   > A summary generation cannot be inserted with an incomplete card; a dig generation may carry none.
+   > Completeness is now enforced by the database rather than promised by prose. Note `as any` on a test double opts out of compiler enforcement, so back it with a
    > behavioural test. And fix `summary-handler.ts` **in this slice** — it is one of the two producers. The three-layer jsonb merge
    at `0021:116-133` exists to avoid dropping summary fields on a status-only persist. With the card
    written once as part of an immutable generation record, there is no partial-update semantics to get
@@ -875,6 +1038,13 @@ Design:
 > **The sweeper needs a second root set:** objects with **no manifest row at all**. Without it an
 > orphan is not merely uncollected, it is *invisible* — which is how the current
 > superseded-dig and old-base accumulation already happens.
+>
+> **⟳ ROUND 2 — bound it, and make a failed listing fail CLOSED.** This root set is a full-bucket
+> enumeration differenced against the manifest, over a paginated `list` (`supabase-blob-store.ts:137`;
+> the local stack alone holds 973 objects). Scan **by workspace prefix** with a durable cursor, and
+> state the rule that matters most: **a `list` page that errors ABORTS the sweep.** Otherwise a
+> transient failure returns a short object list, every missing object reads as "no manifest row",
+> and the sweeper deletes live paid content — root-cause shape #1 aimed at the delete path.
 
 > **⟳ ROUND 1, High H7 — `video_generations` has no lifecycle, so a card outlives its body.** §8 sweeps
 > `video_artifacts` and collects **blobs**; §5.2's generation record is DB state this section never
@@ -947,6 +1117,14 @@ Design:
   > current run did not write, **bypassing the BlobStore seam** (§14 Q7's second writer). So a dig run for
   > generation *def*'s section 120 deletes generation *abc*'s images, and *abc*'s dig — which §6
   > explicitly permits to remain attached — renders broken.
+  >
+  > **⟳ ROUND 2 (High, Codex) — re-keying assets without a migration makes existing ones INVISIBLE,
+  > and they are the one artifact that cannot be recreated on the host at all (ADR-0005).** Bytes
+  > already live at `assets/<videoId>/<sectionId>-<start>-<end>.jpg` (`slides.ts:170-188`); readers
+  > asking for the new shape find nothing, and §8 now classes them paid, so nothing regenerates them
+  > either. **Required:** a dual-read fallback (new key, then old) until a rewrite pass completes, and
+  > **`pruneSectionAssets` must be disabled for the duration** — otherwise the transition itself
+  > deletes the old-key bytes it is meant to preserve.
   >
   > **Rule:** key assets on the timestamp window alone, no `sectionId`. Per §4's own argument they are a
   > function of `(videoId, start, end)`; leading with a per-generation value contradicts the reason they
@@ -1076,8 +1254,10 @@ clobber-safe).
 
 ## 11. Workspaces, tenancy and teams
 
-`workspaceId == auth.uid()`'s value today, **but the two are deliberately different concepts** — see
-§11.0. **Teams are exploration only** — not on the roadmap (user decision, 2026-08-04). Nothing here is
+**⟳ Round 2: `workspaceId` is an independent UUID and is NEVER `auth.uid()`** — see §5.0, which
+settled this. Earlier drafts of this section said the value was `auth.uid()` today; that position was
+replaced because it grants the creator unrevocable access and forces a whole-corpus blob migration
+later. §11.0 describes the *grouping* concept. **Teams are exploration only** — not on the roadmap (user decision, 2026-08-04). Nothing here is
 built; this section exists so a future reader inherits the facts instead of the guesses.
 
 ### 11.0 Why the segment is a `workspaceId` — settled 2026-08-05/06
@@ -1127,6 +1307,14 @@ Three consequences, stated rather than discovered later:
    not exists (surviving videos row)` — inside one `security definer` RPC that locks the workspace's
    reference set. Bytes follow later via the sweeper's grace period (§8).
 
+   > **⟳ ROUND 2 (High, Codex) — "locks the reference set" named no lock, so it excluded nothing.**
+   > Ingest today locks only its own **playlist** row (`0009:79-96`), so a delete of P1 and an ingest
+   > into P2 touch disjoint locks and the TOCTOU survives verbatim. **Both paths must take the SAME
+   > lock**, and the only key both share is the video: a transaction-scoped advisory lock on
+   > `(workspace_id, video_id)` — `pg_advisory_xact_lock(hashtextextended(workspace_id::text || video_id, 0))`
+   > — taken by `claim_video_slot`/ingest **and** by the unreference RPC. A rule that says "lock"
+   > without naming the lock is not a rule; it reads as fixed and changes nothing.
+
    Superseded original wording: **Deleting a playlist needs REFERENCE COUNTING, not just enumeration.** Today
    `DELETE /api/playlists/[id]` ends in `deletePrefix(principal, '')`; in a multi-playlist workspace
    that sweep destroys the other playlists' blobs. This sharpens the §4 finding: the delete path must
@@ -1145,6 +1333,14 @@ Three consequences, stated rather than discovered later:
 > looser**, and each attempt mints a new generation and re-points the manifest, so N−1 paid models go
 > not-current and start their 90-day clock. Storage dedup and spend dedup must agree or the workspace
 > knob is a money regression.
+>
+> **⟳ ROUND 2 (High, Codex) — re-keying `doc_key` ALONE breaks the serve path completely.**
+> `reserve_serve_model` gates on `v.data->'artifacts'->'summaryMd'->>'status' = 'promoted'`
+> (`0020:204-207`). Once summary authority moves to the artifact manifest that JSON stops being
+> maintained, the check sees nothing promoted, and the RPC returns **`denied` for every model
+> generation** — the magazine view dies for all users. The readiness predicate must be re-derived
+> against the manifest (a `current` `summary` slot resolving to a readable blob), and the whole
+> 0020 reserve/settle protocol re-stated in those terms. Re-keying is the smaller half of this work.
 >
 > **Rule: enumerate EVERY arbiter keyed on playlist and state what each is re-keyed to.** There are two:
 > `jobs_idem_active` (`0009:11-13`) and `serve_model_charge.doc_key` (`0020:213`). Both re-key to
