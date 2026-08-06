@@ -520,9 +520,43 @@ the current summary and does not render.
 **Arbitrary mixing is not safe; validated mixing is.** A wrong attachment silently mislabels paid
 content, which is worse than showing none: the user cannot tell it is wrong.
 
-**Open:** the threshold value; and what to do when a regeneration *merges* two sections, so two
-predecessor digs both overlap one successor heavily. Options: attach both, keep the higher overlap, or
-treat the ambiguity as grounds to leave unattached.
+### 6.1 The attachment rule — **DECIDED 2026-08-05 (user), closes Q3**
+
+> **When it is ambiguous, leave it unattached. Never guess.**
+
+**Attach a dig from generation *abc* to a section of summary *def* only when the match is unambiguous
+in BOTH directions:**
+
+1. **Exactly one** section of *def* overlaps the dig's span above the threshold — and
+2. **exactly one** dig claims that section.
+
+If either count is 0 or >1, the dig stays **stored and unattached**. It is never deleted, never
+attached to a guess, and never silently dropped.
+
+**Both directions are required, and §6 as written only described one of them.** Each side catches a
+different restructuring:
+
+| Case | Ambiguous from | Caught by |
+|---|---|---|
+| **Merge** — regeneration combines two sections; two predecessor digs land on one survivor | the **section's** side | clause 2 |
+| **Split** — regeneration divides one section; one predecessor dig overlaps two successors | the **dig's** side | clause 1 |
+
+A rule phrased only as *"does this dig match a section?"* passes both digs in the merge case and
+notices nothing. **§6 named merge and never named split** — worth recording, because it is the same
+defect shape as the merge case and would have been missed by a rule written only against the example
+that was in front of us.
+
+**Threshold: overlap ≥ 0.8 of the dig's own span**, measured as the fraction of the dig's span
+contained in the candidate section. Rationale: a minor boundary shift between generations leaves
+overlap near 1.0, while genuine restructuring drops it sharply, so 0.8 separates *"same section, edges
+moved"* from *"different section."* **Tunable, and safe in one direction only** — raising it can only
+withhold attachments, never create wrong ones; lowering it can create wrong ones. Tune upward without
+ceremony; treat lowering as a design change.
+
+**What the user sees when a dig is unattached is a product question this spec does not answer, but it
+must not be silence.** The dig is paid content that still exists; showing nothing is how content
+becomes invisible-and-forgotten, which is the failure mode §1's whole symptom table is about. Surface
+it as detached-but-recoverable and let a later slice decide the presentation.
 
 ---
 
@@ -871,9 +905,13 @@ implementation.
    **title**, used as an identity anchor in `mergeDigDoc`'s step-2 fallback and in `sameTitles`. It
    *does* dissolve under generation-scoping — but only because §6's span-overlap rule replaces it,
    which promotes question 3 from a tuning detail to a **prerequisite**.
-3. **Overlap threshold**, and the section-merge ambiguity (§6). **Not optional** — §4.2.1 shows this
-   rule is the replacement for title matching, so the design has no cross-generation attach rule
-   without it.
+3. ~~**Overlap threshold**, and the section-merge ambiguity (§6).~~ — **CLOSED 2026-08-05 (user
+   decision, §6.1): when it is ambiguous, leave it unattached; never guess.** Attach only when the
+   match is unambiguous in **both** directions — exactly one section overlaps the dig, *and* exactly
+   one dig claims that section. Threshold **0.8** of the dig's own span, tunable upward only.
+   **Closing it exposed a gap in §6:** the section-**split** case was never named, and it is
+   ambiguous from the *dig's* side rather than the section's — a rule written only against the merge
+   example would have missed it. This was the last prerequisite; **all three are now closed.**
 4. ~~**Retention policy and GC trigger** (§8).~~ — **CLOSED 2026-08-05 (user decision, §8).**
    *Not current ⇒ delete, except paid, which is retained **90 days** past the moment it stopped being
    current.* Trigger: scheduled sweep. A duration rather than a generation count, because a count

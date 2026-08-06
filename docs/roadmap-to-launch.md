@@ -541,8 +541,14 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       body, video judgments (`ratings`, `overallScore`, `tags`, …) stay on the video and are stable
       across regenerations. Also added §5.2.2: a generation is not publishable until corrections are
       applied — **depends on backlog #23**.
-- [ ] **Q3 — overlap threshold + section-merge ambiguity** (§6) — **the last prerequisite, HUMAN GATE.**
-      A design fork, not a mechanical choice.
+- [x] **Q3 — overlap threshold + section-merge ambiguity** — ✅ 2026-08-05. *When ambiguous, leave
+      unattached; never guess.* Attach only when unambiguous in **both** directions (exactly one
+      section overlaps the dig, and exactly one dig claims that section); threshold **0.8** of the
+      dig's own span, tunable upward only. **Exposed a gap in §6:** the section-**split** case was
+      never named and is ambiguous from the dig's side, not the section's.
+      **All three prerequisites are now closed.** Remaining §14 questions (Q1 generationId form,
+      Q5 offline local generation, Q6 cross-playlist dedup, Q7 seam-bypassing writers) are not
+      prerequisites and can be settled during the review.
 - [ ] **`grill-with-docs` terminology pass** — 6 new terms (*tenant, generation, slot, manifest,
       authoritative, rendering*) must land in `CONTEXT.md`. Human gate (terminology is Phase 1).
 - [ ] **Dual adversarial review to convergence** — mandatory (schema + identity + money path).
