@@ -78,7 +78,7 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 | **Generation** | One production run of a paid artifact — a summarize run, or a dig run — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
 | **Card** | The **document facts** a summarize run produces alongside the body: `tldr`, `takeaways`, `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. **Does NOT include the video judgments** (`ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags`): §5.2.1 keeps those on the video, because they describe the *video*, which a regeneration did not change. ⟳ Corrected in the terminology pass — the first draft of this row listed all twelve scalars and contradicted §5.2.1. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
-| **Manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. |
+| **Artifact manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. ⟳ **Qualified in round 1** — `Manifest` was ALREADY taken: `lib/cloud-sync/manifest.ts:6` is the per-playlist `.cloud-sync-manifest.json` **sync baseline**, with `readManifest`/`writeVideoBaseline`/`manifestPath` and consumers across `sync-run.ts`, `companion.ts` and 7 test files. This was a **fifth** vocabulary collision the terminology pass missed — and it missed it in the one section (§5.3) whose subject is sync, where the unqualified word is genuinely ambiguous. Say **artifact manifest** or **sync baseline**; never a bare *manifest*. |
 | **Authoritative** | The blob a slot currently resolves to. A property of the manifest, never of the blob itself. |
 | **Display name** | A human-facing filename derived from attributes (`003_alpha.md`), distinct from the address. Local filesystem only. ⟳ **Renamed from "Rendering" in the terminology pass** — `render` is an established term here for *summary → HTML/PDF* (`renderMagazineHtml`, `PDF_RENDER_VERSION`, and the whole source-vs-derived split in `CONTEXT.md`). Reusing it for a filename would overload the word that carries the artifact taxonomy. |
 
@@ -121,7 +121,7 @@ operations are used — `upload`, `download`, `remove`, `move`, `list`.
 
 **The one hard constraint.** Storage RLS is
 `bucket_id = 'artifacts' and split_part(name,'/',1) = auth.uid()::text`
-(`0007:13-16`, policy `artifacts_owner_rw` — ⟳ was cited as `12-17`). **The first
+(`0007:12-15`, policy `artifacts_owner_rw` — ⟳ was cited as `12-17`, then miscorrected to `13-16`; round-1 review caught that the *correction* was off by one at both ends). **The first
 path segment must equal the caller's uid.** Nothing else is checked — not the playlist segment, not
 the extension, not the size.
 
@@ -410,9 +410,42 @@ because the document was regenerated — the video did not change.
 **Rule:** only *document facts* must travel with the body — those are the ones that can lie about it.
 *Video judgments* stay on the video and are **stable**: the first generation sets them, a later one
 does not re-roll them. Rationale: Gemini is non-deterministic, so re-rolling means a video's score
-moves for a reason the user did not cause; and because nothing about them is a claim about the body,
-keeping them still creates no incoherence. A user who *wants* fresh judgments can ask for them —
-that is a deliberate action, not a side effect of a doc-version bump.
+moves for a reason the user did not cause. A user who *wants* fresh judgments can ask for them — a
+deliberate action, not a side effect of a doc-version bump.
+
+> **⟳ CORRECTED IN ROUND 1 (Blocking) — the premise "nothing about them is a claim about the body" was
+> FALSE, and the rule needs a second half.** Five of the six video judgments are **written into the
+> body's own YAML frontmatter** by the generator (`lib/ingestion/summary-core.ts:99-108`):
+>
+> ```
+> `lang: ${language.toUpperCase()}`,
+> ...(videoType ? [`type: ${videoType}`] : []),
+> ...(audience ? [`audience: ${audience}`] : []),
+> `score: ${overallScore}`, '---',
+> ```
+>
+> plus `tags` in both the frontmatter and the quick-view callout (`:121`, `:131`). Every value comes
+> from a **fresh Gemini roll** on each run (`:86`).
+>
+> **So "keep the row's value, let the body get a new one" reproduces exactly the card/body lie §5.2
+> exists to remove — on six fields, in the section that claims to remove it.** Generation *abc* scores
+> 8; the row says 8 and the body says 8. Regenerate: *def* rolls 6 and writes `score: 6` into its
+> frontmatter, the manifest makes *def* authoritative, the row still says 8. The list renders 8; the
+> document reads 6.
+>
+> **And one of them spends money.** `language` flows to `resolveMagazineModel` →
+> `generateMagazineModel(sections, language, …)` (`serve-summary-core.ts:110`, `serve-doc.ts:112-116`).
+> A row frozen at generation 1's language against generation 2's body prompts a **paid** magazine
+> transform in the wrong language.
+>
+> **Resolution — the writer is authoritative, not the reader.** Generation *N* must be **produced with
+> the carried-forward judgments as input**, so the body it writes agrees with the row by construction.
+> The reader-side alternative (resolve judgments from the earliest generation) does not work: Obsidian
+> indexes the frontmatter directly, so the body is a surface we do not control.
+>
+> **This is structurally the same rule as §5.2.2's corrections rule**, and it carries the same
+> unstated cost, now stated: `summaryCore` gains a parameter for prior judgments, and the Gemini prompt
+> contract changes to accept them. §5.2.1 was presented as *reducing* work; it does not.
 
 > **Do not confuse these with the human fields.** `personalNote`, `personalScore` and `corrections`
 > (`backfill.ts:19`) were never card fields; they belong to the user and already survive regeneration.
@@ -500,7 +533,7 @@ Write that definition, not §2's current one.
 
 ### 5.3 Sync becomes a manifest reconciliation
 
-Sync stops moving bytes. It compares two manifests and produces one. Nothing is copied, nothing is
+Sync stops moving bytes. It compares two **artifact manifests** and produces one. (Not to be confused with the existing per-playlist **sync baseline**, also called a manifest in `lib/cloud-sync/manifest.ts` — see §2.) Nothing is copied, nothing is
 deleted, no address changes. Per-video, the result is a set of slot decisions.
 
 ---
@@ -547,17 +580,73 @@ notices nothing. **§6 named merge and never named split** — worth recording, 
 defect shape as the merge case and would have been missed by a rule written only against the example
 that was in front of us.
 
-**Threshold: overlap ≥ 0.8 of the dig's own span**, measured as the fraction of the dig's span
-contained in the candidate section. Rationale: a minor boundary shift between generations leaves
-overlap near 1.0, while genuine restructuring drops it sharply, so 0.8 separates *"same section, edges
-moved"* from *"different section."* **Tunable, and safe in one direction only** — raising it can only
-withhold attachments, never create wrong ones; lowering it can create wrong ones. Tune upward without
-ceremony; treat lowering as a design change.
+**Threshold — ⟳ REWRITTEN IN ROUND 1. The single-ratio version was wrong in BOTH directions, and both
+reviewers found a different one.**
+
+The original rule was *"overlap ≥ 0.8 of the dig's own span."* It measures how much of the **dig** the
+section covers, and never how much of the **section** the dig covers. Consequences:
+
+- **It attaches wrongly (Claude H3).** *abc* has `[100,200)` and `[200,300)`; only the first was dug.
+  *def* merges them into `[90,400)`. The dig's span is entirely inside the section, so the ratio is
+  **1.0** and clause 1 passes; clause 2 passes because the second section was never dug. **Attached** —
+  and the reader sees a dig covering the first quarter of a section, presented as that section's dig.
+  §6 calls this the worst outcome: *"a wrong attachment silently mislabels paid content."*
+- **It strands legitimate content (Codex H4).** *abc*'s dig on `[100,200)`; *def* splits into
+  `[100,170)` and `[170,200)`. Overlaps are 0.7 and 0.3, so **nothing** clears 0.8 and clause 1 rejects
+  — permanently, for an ordinary split rather than a genuine ambiguity.
+
+**Corrected rule — the ratio must hold in BOTH directions:**
+
+> Attach only if `overlap / dig_span ≥ 0.8` **and** `overlap / section_span ≥ 0.8`.
+
+Both ratios stated explicitly so an implementer cannot pick one. Still tunable **upward** only: raising
+either can withhold attachments, never create wrong ones.
+
+**Degenerate spans (M8).** `windowForSection` can produce `endSec === startSec` — its own header
+documents the collision case, and `allocateSectionStarts`'s clamp (`hi = Math.max(lower, upper)`) lets
+the last start reach the duration. **A zero- or negative-length span never auto-attaches**, rather than
+dividing by zero.
+
+**The threshold is no longer the only path back to visibility.** Because a correct split now leaves a
+dig unattached by design, §6.1 must give it a route back — see the detached-slot rule below.
+
+### 6.2 A detached dig needs a manifest row and a stored span — ⟳ ADDED IN ROUND 1
+
+**Two Blocking findings say "never deleted" and "re-attachable" are not yet rules, only intentions.**
+
+**(a) §8 collects exactly what §6.1 promises to keep (Claude B4).** §6.1 says an unattached dig "is
+never deleted." §8 says *"mark and sweep over the artifact manifest; anything not referenced is a
+candidate,"* and a detached dig — by §6.1's own construction — **has no manifest row**. So it is
+unreferenced, it is paid, and the 90-day clock collects it. Two decisions closed hours apart, and the
+one that runs wins.
+
+> **Rule:** a detached dig keeps a manifest row — slot `dig:<sectionId>@<generationId>` in state
+> `detached`. It is therefore *referenced*, therefore never a sweep candidate. This also gives the
+> "surface it as detached-but-recoverable" requirement something to **enumerate**, which it had no way
+> to do before.
+
+**(b) The span exists nowhere durable, so re-attachment depends on a blob §8 deletes (Claude H4).**
+§6.1 is a span-overlap rule, but §4's key encodes only the **start** (`sectionId` *is* `startSec`), and
+`endSec` is derived at read time from the *whole parsed summary* of the generation that produced the
+dig (`lib/dig/section-window.ts:46-48,58`). Two failures follow:
+
+1. **Permanently unattachable.** A later generation restores the original boundary — but *abc*'s
+   `summary.md` stopped being current and was collected, so the span is unknowable and the dig can
+   never be re-attached.
+2. **Absent-vs-failed on the decision path.** Every attach decision reads a *superseded* summary blob,
+   and `SupabaseBlobStore.get` collapses 5xx/timeout/RLS into `null` (`provesAbsence = false`). A
+   transient blip renders an attachable paid dig as absent — paid content that flickers.
+
+> **Rule:** persist `start_sec` and `end_sec` on the artifact-manifest row **at write time**.
+> Attachment becomes a pure database computation: no blob read on the decision path, no dependency on
+> a collected summary, and the absent-vs-failed shape cannot reach it. **Cheap now, impossible to
+> retrofit after the first sweep runs.**
 
 **What the user sees when a dig is unattached is a product question this spec does not answer, but it
 must not be silence.** The dig is paid content that still exists; showing nothing is how content
-becomes invisible-and-forgotten, which is the failure mode §1's whole symptom table is about. Surface
-it as detached-but-recoverable and let a later slice decide the presentation.
+becomes invisible-and-forgotten, which is the failure mode §1's whole symptom table is about. With the
+`detached` slot above it is at least *enumerable*, so a later slice can decide presentation without
+first having to find the content.
 
 ---
 
@@ -735,7 +824,7 @@ about two writers racing on the **card**. So the row claims a fix for a race it 
 > reader needs some way to ask *"does this card describe this body?"* — and **today there is no
 > mechanism at all**. `mdHash` looks like one and is not: it is derived at read time from a body the
 > caller passes in (`backfill.ts:11`, `deriveClassASignals(video, mdBody)`) and **is never persisted**
-> — grep for `mdHash` across all 21 migrations returns **zero**. The durable whitelist
+> — grep for `mdHash` across all 23 migrations returns **zero**. The durable whitelist
 > (`0021:120-132`) stores `mdCorrectionsHash`, which hashes the **corrections**, not the body. So
 > **option B is not "cheaper, no migration"** as §14 currently frames it: it requires *adding* a
 > persisted body hash before the question it must answer is even expressible.
@@ -1077,7 +1166,7 @@ implementation.
      > **⟳ Measured 2026-08-05 (§9.1) — this option is NOT the cheap one.** Answering *"does this card
      > describe this body?"* needs a persisted hash of the body, and **none exists**: `mdHash` is
      > derived at read time from a body the caller supplies (`backfill.ts:11`) and appears in **zero**
-     > of the 21 migrations. The durable whitelist (`0021:120-132`) stores `mdCorrectionsHash` — the
+     > of the 23 migrations. The durable whitelist (`0021:120-132`) stores `mdCorrectionsHash` — the
      > **corrections** hash, not the body's. So option B needs a schema addition before its own
      > question is expressible, which removes the main reason to prefer it.
 
@@ -1096,7 +1185,7 @@ This spec is verified by review, not by tests. Before it becomes a plan:
 - ~~`grill-with-docs` terminology pass~~ — **DONE 2026-08-06.** Nine terms landed in `CONTEXT.md`
   (*tenant, workspace, generation, card, slot, manifest, authoritative, display name, membership-not-
   identity*). **It was not paperwork — it changed the design:**
-  - **Four collisions with established vocabulary**, all verified in code. *Slot* already meant a
+  - **Five collisions with established vocabulary**, all verified in code. ⟳ The fifth (*manifest* — see §2) was **missed by the pass and found by round-1 review**, which is the honest record: this list previously said four and claimed the pass caught them. *Slot* already meant a
     video's reserved position in a playlist (`claim_video_slot`); *rendering* already meant
     summary→HTML/PDF (`renderMagazineHtml`, `PDF_RENDER_VERSION`, and the whole source-vs-derived split)
     — **renamed to display name**; *tenant* was already `CONTEXT.md`'s gloss for **Owner**; and
@@ -1111,12 +1200,12 @@ This spec is verified by review, not by tests. Before it becomes a plan:
   touches schema, identity, and the money path.
 - ~~**Re-verify every fact in §3 against live code.**~~ — **DONE 2026-08-05.** 16 facts checked
   against `master` @ `7e142f6`; **13 survived verbatim, 3 citations corrected** (marked ⟳ in §3), and
-  **zero facts were found false**. Verified this round, each by reading the cited code:
+  **zero *facts* were found false — though round 1 showed one of my own *corrections* was wrong** (see the RLS row). Verified this round, each by reading the cited code:
 
   | Fact | Result |
   |---|---|
   | Bucket `artifacts` private, no size/MIME limit | ✅ `0007:4` |
-  | RLS predicate, text-to-text, fails closed on NULL/empty | ✅ ⟳ line range `13-16` |
+  | RLS predicate, text-to-text, fails closed on NULL/empty | ✅ ⟳ line range `12-15` (my first correction said `13-16` — wrong at both ends; see below) |
   | Object path `<ownerId>/<playlistKey>/<key>` | ✅ `objectKey`, line 17 |
   | Five Storage API operations | ✅ ⟳ seam now has a 6th, `copy`, not built on the API's |
   | Nine blob kinds, all key shapes | ✅ all nine grep-confirmed |
