@@ -87,3 +87,23 @@ render half by making the surviving PDF the only thing left.
 
 Four of the five conflicts are between findings from **different** reviewers, which is the argument for
 running the pass at all: no single reviewer could have seen them, because each saw only their own set.
+
+---
+
+## Round-5 findings NOT yet applied (recorded so they are not lost a fourth time)
+
+§4.0's own lesson: *recording a finding and fixing one look identical in a review document.* These are
+recorded as **open**, not as handled.
+
+| # | Finding | Why deferred |
+|---|---|---|
+| M3 | A nested `relDir` key can enter the bucket via `sync-run.ts:263/:381` `putStaged`, which skips the single-segment assertion the serve path enforces (`assert-cloud-summary-md-key.ts:14-19`). §4.0 then classifies it *unknown → fail closed*, so a routine sync permanently reports "a migration that is not finished". | A code fix in `lib/`, not a spec fix. Belongs to the implementation slice |
+| M4 | The content-addressed PDF cache (`pdf-render-version.ts:22` mints `pdfs/<base>.r<V>.<sha16>.pdf`, deliberately many per video) cannot be represented: §4.0 maps them all to one `slot='pdf:<kind>'`, which `video_artifacts_free_uq` caps at one row. | A real design question — does the render hash belong in the slot? — that should be decided, not patched |
+| M6 | The `anon`/`authenticated` grant on the raw manifest is now backed by a policy, but it still points a maintainer at the *unfiltered* table (pending rows, superseded generations, detached digs) rather than at `current`. | Cosmetic given B2's policy; revisit when the serve path is written |
+| C5 | **Collecting a body must collect the renders derived from it.** A free render has no generation, so `not coalesce(g.body_collected,false)` exempts it structurally: the PDF of a collected body keeps serving. H3's fix (GC may not collect the *current* generation) closes the summary half and leaves this one. | Needs a §8 rule and a sweeper change; no schema expression is obvious |
+| L1 | `slot_kind` is a plain function used inside a CHECK: `create or replace` changes the constraint's meaning without revalidating rows, and it has no pinned `search_path`. | Low, but genuinely a foot-gun for a later migration |
+| L4 | `lib/storage/supabase/consistency.ts:17-42` (`writeArtifact`) takes an arbitrary caller-supplied key with no shape validation. Zero production callers today. | Open hole in §4.0's totality claim; cheap to close in the implementation slice |
+
+**M2 was NOT deferred — it dissolved.** §4.0 and §6.2 gave different slot formats for a detached dig
+(`dig:<id>` vs `dig:<id>@<generationId>`). Cross-deriving the append-only trigger against §6.2 showed
+the suffix was an address rewrite, and that append-only removes the need for it entirely. See §6.2.
