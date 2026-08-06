@@ -61,7 +61,7 @@ The `fix/serial-coherence-sync` branch fixes the first symptom correctly. It is 
 fix under the wrong model**: it makes moving a mutable address safe, rather than removing the need to
 move it.
 
-**The reframe:** the address should be stable; **the filename is a rendering.** `videoId` is
+**The reframe:** the address should be stable; **the filename is a display name.** `videoId` is
 YouTube-assigned and immutable. `serialNumber` and `slug` are *display attributes* — the serial exists
 so a human can find a file in Obsidian, which is a presentation concern, not an identity one.
 
@@ -73,13 +73,14 @@ New terms introduced by this spec. All must land in `CONTEXT.md`.
 
 | Term | Definition |
 |---|---|
-| **Tenant** | The isolation boundary that owns blobs. **Today `tenantId == auth.uid()`** — one user, one tenant. Named separately for conceptual clarity, not as a teams feature: see §11.1 for what the name does and does not buy (it makes one narrow transition free, **not** the general case). |
+| **Tenant** | *Existing term, unchanged.* The per-user isolation boundary the RLS enforces — this app is already multi-tenant. **Not** the name of the path segment: see **Workspace**. |
+| **Workspace** | The immutable container a video's blobs are addressed under, and the first path segment. A **user-chosen grouping of playlists** — one per playlist, one per user, or anything between (§11.0). Its id **never changes**; what changes is who may access it. Chosen over *tenant* (already means the per-user boundary), *team* and *owner* (both name **who may access**, which is exactly what changes). Today its value is `auth.uid()`, but if teams ever ship it must become an independent UUID — an id equal to a uid grants its creator unrevocable access (§11.2). |
 | **Generation** | One production run of a paid artifact — a summarize run, or a dig run — **and everything that run produced: for a summary, both the body (the blob) and the card (the scalars), inseparably** (§5.2, decided 2026-08-05). Identified by an opaque, immutable `generationId`. Nothing in a generation is ever overwritten. |
-| **Card** | The summary-owned scalars one summarize run produces alongside the body: `tldr`, `ratings`, `overallScore`, `takeaways`, `videoType`, `audience`, `language`, `tags`, `processedAt`, `docVersion`, `mdGeneratedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. |
+| **Card** | The **document facts** a summarize run produces alongside the body: `tldr`, `takeaways`, `docVersion`, `mdGeneratedAt`, `processedAt`, `mdCorrectionsHash`. An attribute **of the generation**, never of the video — that distinction is the whole of Q8. **Does NOT include the video judgments** (`ratings`, `overallScore`, `videoType`, `audience`, `language`, `tags`): §5.2.1 keeps those on the video, because they describe the *video*, which a regeneration did not change. ⟳ Corrected in the terminology pass — the first draft of this row listed all twelve scalars and contradicted §5.2.1. |
 | **Slot** | A *logical* artifact position for a video: `summary`, `model`, `dig:<sectionId>`, `digDeeper`, `pdf:<kind>`, `slide:<id>`. What a reader asks for. |
 | **Manifest** | The per-video table mapping **slot → blob key**. The single source of truth for which copy is authoritative. |
 | **Authoritative** | The blob a slot currently resolves to. A property of the manifest, never of the blob itself. |
-| **Rendering** | A human-facing name derived from attributes (`003_alpha.md`), distinct from the address. Local filesystem only. |
+| **Display name** | A human-facing filename derived from attributes (`003_alpha.md`), distinct from the address. Local filesystem only. ⟳ **Renamed from "Rendering" in the terminology pass** — `render` is an established term here for *summary → HTML/PDF* (`renderMagazineHtml`, `PDF_RENDER_VERSION`, and the whole source-vs-derived split in `CONTEXT.md`). Reusing it for a filename would overload the word that carries the artifact taxonomy. |
 
 Existing terms kept unchanged: `base`, `serialNumber`, `slug`, `principal`, `indexKey`.
 
@@ -178,19 +179,19 @@ re-asserts the owner at every hop. It **never creates a second owner**.
 ## 4. Addressing
 
 ```
-<tenantId>/videos/<videoId>/<generationId>/summary.md
-<tenantId>/videos/<videoId>/<generationId>/model.json
-<tenantId>/videos/<videoId>/<generationId>/dig/<sectionId>.md
-<tenantId>/videos/<videoId>/assets/<sectionId>-<start>-<end>.jpg
+<workspaceId>/videos/<videoId>/<generationId>/summary.md
+<workspaceId>/videos/<videoId>/<generationId>/model.json
+<workspaceId>/videos/<videoId>/<generationId>/dig/<sectionId>.md
+<workspaceId>/videos/<videoId>/assets/<sectionId>-<start>-<end>.jpg
 ```
 
 Four properties, each load-bearing:
 
-**`<tenantId>` stays first** — the RLS predicate requires it. Today it is literally `auth.uid()`, so
+**`<workspaceId>` stays first** — the RLS predicate requires it. Today it is literally `auth.uid()`, so
 the bytes are unchanged from the current layout and **the predicate needs no edit**.
 
 > **The one deliberate exception to this spec's own thesis — named, not hidden.** Everything else in
-> this template is immutable, but **ownership is not**: content can change hands. So `<tenantId>` is
+> this template is immutable, but **ownership is not**: content can change hands. So `<workspaceId>` is
 > a mutable value in the address, which is the very mistake §1 exists to eliminate, one level up.
 > Accepted because **teams are not planned** (user decision, 2026-08-04) and no ownership-transfer
 > feature exists, so the value is immutable *in practice*. The consequence, spelled out: **if content
@@ -330,20 +331,20 @@ The per-video mapping from **slot → blob key**. This is the only mutable state
 
 ```
 video_artifacts
-  tenant_id     uuid    not null
+  workspace_id  uuid    not null
   video_id      text    not null
   slot          text    not null        -- 'summary' | 'model' | 'dig:120' | 'digDeeper' | ...
   blob_key      text    not null
   generation_id text    not null
   updated_at    timestamptz not null default now()
-  primary key (tenant_id, video_id, slot)
+  primary key (workspace_id, video_id, slot)
 ```
 
 A **table, not a jsonb column**, for one decisive reason: GC must ask *"select every referenced
 blob_key"*, which is a query against a table and a full scan of jsonb otherwise.
 
 RLS follows the house pattern exactly (`enable` + `force row level security`, a
-`for all using/with check (tenant_id = auth.uid())` policy, an explicit grant, an index on the FK).
+`for all using/with check (workspace_id = auth.uid())` policy, an explicit grant, an index on the FK).
 
 ### 5.1 Why this answers the concurrency problem
 
@@ -453,13 +454,13 @@ generation record:
 
 ```
 video_generations
-  tenant_id     uuid  not null
+  workspace_id  uuid  not null
   video_id      text  not null
   generation_id text  not null
   kind          text  not null          -- 'summary' | 'dig' — what run produced it
   card          jsonb                   -- the summary card; NULL for a dig generation
   created_at    timestamptz not null default now()
-  primary key (tenant_id, video_id, generation_id)
+  primary key (workspace_id, video_id, generation_id)
 ```
 
 `video_artifacts.generation_id` references it. Resolving *the current card* is then the same join as
@@ -569,7 +570,7 @@ This resolves cleanly *because addressing and naming are now separate concerns:*
 
 - **Cloud** stores every generation, addressed by id. Opaque, stable, never renamed.
 - **Local** materializes only the authoritative set, named for humans (`003_alpha.md`) so Obsidian
-  wiki-links and muscle memory keep working. `serialNumber` becomes purely a rendering input.
+  wiki-links and muscle memory keep working. `serialNumber` becomes purely a display-name input.
 - The manifest is the mapping between them.
 
 This also explains a real asymmetry already in the code: `LocalFsBlobStore` **ignores `Principal.id`
@@ -772,65 +773,146 @@ Every existing blob moves exactly once, from `<owner>/<playlist>/<base>.*` to th
 delete best-effort, with fail-closed refusals on ambiguity. It gets **used as the migration tool, then
 retired**. This is the concrete reason to merge that branch before starting this work.
 
-Local migration is a rename to the human-readable rendering, which
+Local migration is a rename to the human-readable display name, which
 `lib/serial-migrate.ts` / `serial-migrate-exec.ts` already do (two-phase, dry-run default,
 clobber-safe).
 
 ---
 
-## 11. Tenancy and teams
+## 11. Workspaces, tenancy and teams
 
-`tenantId == auth.uid()` today. **Teams are exploration only** — not on the roadmap (user decision,
-2026-08-04). Nothing here is built; this section exists so a future reader inherits the facts instead
-of the guesses.
+`workspaceId == auth.uid()`'s value today, **but the two are deliberately different concepts** — see
+§11.0. **Teams are exploration only** — not on the roadmap (user decision, 2026-08-04). Nothing here is
+built; this section exists so a future reader inherits the facts instead of the guesses.
 
-### 11.1 What naming it `tenantId` actually buys — corrected
+### 11.0 Why the segment is a `workspaceId` — settled 2026-08-05/06
 
-An earlier draft of this section claimed the name makes *"teams later a predicate change instead of a
-migration of every object key."* **That claim was too broad and is withdrawn.** It holds for exactly
-one transition:
+Three candidate names were worked through, and two were rejected for the *same* reason:
+
+| Name | Verdict |
+|---|---|
+| `workspaceId` | **Ambiguous.** This app is *already* multi-tenant — that is what the RLS is for — so "tenant" already means *the per-user isolation boundary*. `CONTEXT.md` even glossed it that way (*"Owner — the tenant a Principal represents"*). Reusing the word for the path segment gives it two meanings. |
+| `teamId` | **Names who may access.** Clearer than `workspaceId`, but a team is exactly the thing that changes, so putting it in the address reproduces §1's bug one level up. |
+| `ownerId` | **Names a person.** People are the most mutable thing in the system — they leave, and they delete their accounts. |
+| **`workspaceId`** | ✅ **Names the container.** Containers do not change hands; their *membership* does. Immutability becomes true by definition rather than by assumption. |
+
+**The rule this encodes:** the path segment's only job is to be **permanently stable**. Anything that
+names *who may access* is unfit for an address, because access is what changes.
+
+**A workspace is a user-chosen grouping of playlists**, not fixed at one-per-user or one-per-playlist.
+That single knob decides two things at once, and the design already supports it: the manifest is keyed
+`(workspace, video, slot)` with **no playlist**, so **two playlists in the same workspace sharing a
+video resolve the same manifest row and therefore one copy of the blobs.**
+
+| Workspace size | Blob dedup | Sharing granularity |
+|---|---|---|
+| one per playlist | none across playlists | fine |
+| one per user | full | all-or-nothing |
+| user-chosen grouping | within the workspace | per workspace |
+
+> **The rule in one line: things you share together, you store together.**
+
+Three consequences, stated rather than discovered later:
+
+1. **The dedup boundary and the sharing boundary are the same knob.** You cannot have fine-grained
+   sharing *and* dedup across that line. Acceptable, but it is a coupling, not a free lunch.
+2. **A workspace changes hands for free; a playlist inside one does not.** Moving a playlist to another
+   workspace requires **copying** its videos' blobs — copying, not moving, if another playlist in the
+   old workspace still references the same video. A deliberate user action, not a background race.
+3. **Deleting a playlist needs REFERENCE COUNTING, not just enumeration.** Today
+   `DELETE /api/playlists/[id]` ends in `deletePrefix(principal, '')`; in a multi-playlist workspace
+   that sweep destroys the other playlists' blobs. This sharpens the §4 finding: the delete path must
+   walk the manifest **and** check whether any surviving playlist still references each video.
+
+**Storage dedup is free; spend dedup is not.** Sharing the bytes falls out of the manifest key. *Not
+charging twice* still requires §14 Q6 — `jobs_idem_active` includes `playlist_id` (`0009:11-13`), so a
+second playlist enqueues a paid summarize job even when the blob already exists. **This granularity
+choice is what actually decides Q6**, which the spec had listed as optional.
+
+### 11.1 What naming the segment buys — corrected twice
+
+An early draft claimed the name makes *"teams later a predicate change instead of a migration of every
+object key."* A 2026-08-04 correction withdrew that as too broad, on the grounds that a project joining
+an *existing* team still moves every object.
+
+**⟳ That correction was itself wrong, and is now withdrawn (2026-08-06).** It assumed **authorization
+must read the path**. It does not. With membership-based authorization (§11.2) the workspace keeps its
+id forever and *the team gains access to it* — content never migrates to the team's id. So:
 
 | Transition | Blobs move? |
 |---|---|
-| A solo owner's **own** workspace gains members (tenant `A` keeps its id, members are added) | **No** |
-| A solo project joins an **existing** team that already has its own `team_id` | **Yes — every object**, `A/…` → `T/…` |
-| Any ownership transfer between existing tenants | **Yes — every object** |
+| A workspace gains members | **No** |
+| A workspace joins an existing team | **No** — grant the team access to the workspace |
+| A **playlist** moves to a different workspace | **Yes** — see §11.0 consequence 2 |
 
-The second row is the common case, and the naming does nothing for it. The reason is structural, not
-fixable by naming: **as long as the tenant is a path segment, changing tenant means changing every
-address.**
+The residual cost is real but small and bounded, and it lands on a deliberate user action rather than
+on a sync race.
 
-So the name buys conceptual clarity and one narrow case. It is still worth keeping — it costs zero
-bytes and zero policy edits — but it is not the general forward-compatibility it was sold as.
+### 11.2 If teams ever ship: membership, never identity
 
-### 11.2 If teams ever ship, the answer is NOT to re-key every object
+**The one rule that survived four rounds of review of this design (external draft + critique, 2026-08-05/06):**
 
-Recorded because the natural reading of §4 — "the tenant is in the path" — leads to
-*"teams would mean copying everything, too expensive"*, and that conclusion is **false**.
+> **Never let *being someone* grant access. Let *membership* grant access.**
 
-`storage.objects` carries `owner_id text` (also `owner uuid`, `user_metadata jsonb`). A policy can key
-on that **column** instead of on `split_part(name,…)`, which decouples authorization from the path
-entirely. Then ownership transfer is an `UPDATE` of one column and **no bytes move**, while the
-addresses stay immutable — fully consistent with this spec's thesis.
+Every iteration that tried to solve the creation-bootstrap problem with an identity fallback —
+`created_by = auth.uid()`, or `split_part(name,'/',1) = auth.uid()::text` — re-created the same defect:
+**an identity-based grant cannot be revoked.** A creator who leaves the team keeps read, write and
+delete forever, because removing their membership row does not touch the `OR` clause that names them.
 
-Preconditions, measured 2026-08-04:
+**The resolution is atomic creation, not a fallback clause.** A `security definer` RPC inserts the
+artifact *and* its first ACL row in one transaction, so there is never a window in which content has no
+grant — which is the gap every fallback was patching. `created_by` reverts to **audit only**, with
+`on delete set null` so a user can actually be deleted.
 
-- **Backfill is required.** `owner_id` is set on only **390 of 973** objects locally, because
-  `service_role` writes leave it NULL. Where set, it equals path segment 1 in **390/390** cases, so
-  the backfill is `set owner_id = split_part(name,'/',1)` — but every writer must populate it
-  thereafter.
-- **The predicate shape is a non-issue.** With a tenant *column*, `IN (subquery)` and correlated
-  `EXISTS` plan **identically** — same semi-join, same 45 buffers. Choose on readability.
-- **Cost is a non-issue.** Realistic name-anchored access measured **0.118 ms** (download one object)
-  and **0.234 ms** (list one prefix). A 175 ms parallel seq scan appears only for an unanchored query
-  the app never issues.
-- **Recursion is the real trap.** `team_members` needs its own policy, and the obvious one queries
-  `team_members`, which recurses infinitely (`infinite recursion detected in policy`). The fix is a
-  `security definer` helper — which then becomes *the* security boundary for the whole app, replacing
-  a string equality that cannot be wrong with a function that must be audited.
-- **Precedent already exists.** `lib/share/serve.ts:32` reads owner blobs via `serviceClient` because
-  the equality predicate cannot express "this anonymous visitor may read owner A's object." The
-  product already outgrew storage RLS on one path.
+**Consequence for this design, and it is not free:** `workspaceId` must be an **independent UUID, never
+equal to any user's uid**. Otherwise the existing fast path `split_part(name,'/',1) = auth.uid()::text`
+grants the creator their own workspace unconditionally and forever, and no membership clause can undo
+it — an `OR` cannot be revoked. **So the RLS predicate changes on day one, not "someday."** An earlier
+draft of this section said keeping `tenantId == auth.uid()` costs nothing; that was wrong.
+
+**Shape** (adapted to `storage.objects`, which has no joinable id — the policy sees only `name`):
+
+```sql
+create function workspace_member(p_ws text) returns boolean
+  language sql security definer set search_path = public stable as $$
+  select exists (select 1 from workspace_grants g
+                 join team_members m on m.team_id = g.team_id
+                 where g.workspace_id::text = p_ws and m.user_id = auth.uid());
+$$;
+revoke all on function workspace_member(text) from public;
+grant execute on function workspace_member(text) to authenticated, anon;
+```
+
+**Four hard-won constraints on that shape:**
+
+- **Never cast the path segment** — `g.workspace_id::text = p_ws`, never `p_ws::uuid`. `uuid::text`
+  always succeeds; `text::uuid` raises on one malformed name, and inside a policy an error does not deny
+  one row, it **fails the whole query for everyone** (§3). One `_staging/` object is enough.
+- **Call the helper; never inline the `exists`.** Inlining re-evaluates the ACL tables under *their*
+  RLS, which nests policy evaluation several levels deep per row — the exact fragility `security
+  definer` exists to remove.
+- **Take no user-id parameter.** A definer function accepting an arbitrary uid lets any caller enumerate
+  who can access what. Read `auth.uid()` inside, and `revoke ... from public`.
+- **Cover all four verbs.** A `for select` policy alone denies every write — ingest, worker, staging,
+  promotion.
+
+**Two facts that make this affordable, measured on the live stack:**
+
+- **Cost is a non-issue.** Name-anchored access measured **0.118 ms** (download one object) and
+  **0.234 ms** (list one prefix). The 175 ms parallel seq scan appears only for an unanchored query the
+  app never issues. `IN (subquery)` and correlated `EXISTS` plan **identically** — same semi-join, same
+  45 buffers. **Therefore path granularity is a domain-architecture choice, not a database constraint**
+  — do not justify a path shape by claiming joins are slow.
+- **`storage.objects` also carries `owner_id text`** (plus `owner uuid`, `user_metadata jsonb`), so a
+  policy can key on a **column** rather than the path. Precondition: `owner_id` is set on only **390 of
+  973** objects locally, because `service_role` writes leave it NULL. Where set, it equals path segment
+  1 in **390/390** cases, so a backfill is `set owner_id = split_part(name,'/',1)` — but every writer
+  must populate it thereafter.
+
+**Precedent already exists in this codebase.** `lib/share/serve.ts:32` reads owner blobs via
+`serviceClient` because the equality predicate cannot express "this anonymous visitor may read owner
+A's object." Team reads could take the same route, leaving storage RLS as the fast path. The product
+already outgrew storage RLS on one path.
 
 ### 11.3 What real team support would additionally require
 
@@ -838,16 +920,32 @@ Preconditions, measured 2026-08-04:
 
 - **Every RLS predicate converts** from a string comparison to a membership lookup, on
   `storage.objects` *and* on `profiles`, `playlists`, `videos`, `jobs`, `usage_counters`. This changes
-  isolation from "by construction" to "by a table that must be correct."
-  On our own tables that is clean, because they have an owner column to join on:
-  `exists (select 1 from team_members tm where tm.tenant_id = t.owner_id and tm.user_id = auth.uid())`.
-  For `storage.objects` prefer the `owner_id` column route in §11.2. If the path form is used instead,
-  it must keep the comparison in **text** — `split_part(name,'/',1) in (select tenant_id::text …)`,
-  casting the *tenant id*, never the segment (§3).
-- **Who pays.** `spend_ledger`, `quota_allowance` and `serve_owner_budget` are per-owner, and the
-  entire cost-guardrail system (1D, ADR-0004) keys on that identity.
+  isolation from "by construction" to "by a table that must be correct." On our own tables that is
+  clean — they have an owner column to join on.
+- **Recursion is a real trap.** `team_members` needs its own policy, and the obvious one queries
+  `team_members` (`infinite recursion detected in policy`). The `security definer` helper fixes it and
+  thereby *becomes* the security boundary for the whole app, replacing a string equality that cannot be
+  wrong with a function that must be audited.
+- **Destructive verbs need a role check.** Any-member `delete` on paid Gemini output is the money path.
+  Narrow `delete` (rows and ACL entries) to a team admin.
+- **Content must stop hanging off a person.** Today `playlists.owner_id → profiles → auth.users` is
+  `on delete cascade` (`0001:3`), so **deleting an account destroys its playlists and videos** — live
+  today, teams merely make it visible. Under a team model, content hangs off the workspace and survives.
+- **Two events, two answers.** *Leaving a team* removes a membership row and touches no content.
+  *Deleting an account* must not take the team's content with it. The code currently gives them the same
+  answer.
+- **The empty team is undecided.** If a team empties — or loses its last admin — its content becomes
+  permanently unreachable by anyone: not deleted, just invisible, which under the 90-day clock (§8) is
+  worse than deleted because nothing reports it. Three candidates: refuse the last removal, require
+  transfer first, or mark the workspace ownerless and start the retention clock. Refusing the last
+  removal is the only one that cannot silently lose paid content.
+- **Who pays.** `spend_ledger`, `quota_allowance` and `serve_owner_budget` are per-owner, and the entire
+  cost-guardrail system (1D, ADR-0004) keys on that identity.
 - **Write-sharing is a different problem from read-sharing.** `share_tokens` already solves the latter
-  and deliberately never creates a second owner.
+  and deliberately never creates a second owner. Worth noting it is **ahead of the standard advice**: it
+  has no anon/authenticated policy at all (`0013:18`), goes through `security definer` RPCs, and stores
+  a **hash** rather than the token — so the classic "put `expires_at > now()` in the policy and let
+  anyone scrape every shared row" trap is avoided by construction.
 
 ---
 
@@ -995,8 +1093,20 @@ implementation.
 
 This spec is verified by review, not by tests. Before it becomes a plan:
 
-- `grill-with-docs` terminology pass — *tenant, generation, slot, manifest, authoritative, rendering*
-  are all new and must land in `CONTEXT.md`.
+- ~~`grill-with-docs` terminology pass~~ — **DONE 2026-08-06.** Nine terms landed in `CONTEXT.md`
+  (*tenant, workspace, generation, card, slot, manifest, authoritative, display name, membership-not-
+  identity*). **It was not paperwork — it changed the design:**
+  - **Four collisions with established vocabulary**, all verified in code. *Slot* already meant a
+    video's reserved position in a playlist (`claim_video_slot`); *rendering* already meant
+    summary→HTML/PDF (`renderMagazineHtml`, `PDF_RENDER_VERSION`, and the whole source-vs-derived split)
+    — **renamed to display name**; *tenant* was already `CONTEXT.md`'s gloss for **Owner**; and
+    *authoritative* needed separating from *source-of-truth blob*.
+  - **One self-contradiction six hours old.** §2's `Card` row listed all twelve scalars while §5.2.1
+    had just split them.
+  - **The path segment was renamed** `tenantId` → `workspaceId`, and §11.1's pessimism about teams was
+    withdrawn as itself wrong (§11.0/§11.2).
+  This is why the pass runs **after** the open questions and **before** the review: Q8 changed what
+  *Generation* means, and running it earlier would have written the definition wrong.
 - Dual adversarial review (Codex + Claude, independent) **to convergence** — mandatory here: this
   touches schema, identity, and the money path.
 - ~~**Re-verify every fact in §3 against live code.**~~ — **DONE 2026-08-05.** 16 facts checked

@@ -549,8 +549,13 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       **All three prerequisites are now closed.** Remaining §14 questions (Q1 generationId form,
       Q5 offline local generation, Q6 cross-playlist dedup, Q7 seam-bypassing writers) are not
       prerequisites and can be settled during the review.
-- [ ] **`grill-with-docs` terminology pass** — 6 new terms (*tenant, generation, slot, manifest,
-      authoritative, rendering*) must land in `CONTEXT.md`. Human gate (terminology is Phase 1).
+- [x] **`grill-with-docs` terminology pass** — ✅ 2026-08-06. Nine terms in `CONTEXT.md`. Found four
+      collisions with established vocabulary (*slot* = `claim_video_slot`; *rendering* = summary→HTML/PDF,
+      **renamed to display name**; *tenant* was already the gloss for **Owner**; *authoritative* vs
+      *source-of-truth*), one six-hour-old self-contradiction (§2 `Card` vs §5.2.1), and it renamed the
+      path segment **`tenantId` → `workspaceId`** after establishing that a name for *who may access* is
+      unfit for an address. §11 rewritten: membership-not-identity, atomic creation, and §11.1's
+      teams-are-expensive claim withdrawn as wrong.
 - [ ] **Dual adversarial review to convergence** — mandatory (schema + identity + money path).
       **Deliberately sequenced last:** running it while 3 prerequisite forks are open would burn a
       round re-reporting "these are open."
