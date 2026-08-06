@@ -355,6 +355,37 @@ The same argument retires `sameTitles`: a model envelope stored under its genera
 
 ## 5. The workspace and the artifact manifest
 
+> # ⚠ THE DDL IN THIS SECTION IS NO LONGER THE ARTIFACT.
+>
+> **Executable schema:** [`2026-08-03-stable-blob-addressing/schema/`](2026-08-03-stable-blob-addressing/schema/)
+> **Verify:** `./docs/superpowers/specs/2026-08-03-stable-blob-addressing/verify-schema.sh`
+> — runs every statement against the **live local Postgres**, against the real populated tables
+> (5312 profiles / 4368 playlists / 2902 videos / 101 jobs), inside a transaction that always rolls
+> back, then executes behavioural assertions. Exit 0 = verified.
+>
+> **Why this moved out of prose.** Roughly half of round 4's Blocking findings were *"the SQL in this
+> prose block does not execute"* — a physical constraint fixed at one site and recurring at a sibling,
+> four rounds running, plus fixes that were **written in prose and never reached the DDL** (three
+> columns existed in exactly one sentence each and in no table). Those are **compile errors being
+> found by human review**, which is the most expensive possible way to find them.
+>
+> **It paid immediately.** The first run failed with `column "workspace_id" of relation "playlists"
+> contains null values` — the seed ran *after* the backfills that read it, so `UPDATE 0`. An ordering
+> defect that four review rounds and a cross-derivation pass had not caught, found in one execution.
+>
+> **And the assertions catch what mere creation does not.** Round 3's slot guard *created cleanly* and
+> then accepted `slot='html', kind='dig'`. `05_assert.sql` now proves each guard **rejects**: an
+> incomplete card, a NULL card, a mismatched slot/kind, a paid kind with no generation, and an
+> unleased `pending`. Plus that format outranks recency, and that a user typing a correction **does not
+> empty the slot** — round 4's A-2 floor, as an executable test rather than a promise.
+>
+> **Two structural fixes are in the schema and not yet reflected in the prose below:** the manifest is
+> **append-only**, keyed `(workspace, video, slot, generation_id)` with `current` as a **view** (round 4
+> J2-1 / Codex #6 — the old PK admitted one row per slot while the ranking needs many); and `pending`
+> is **leased** with an attempt bound (Codex #5 — an unleased pending turns a double-charge into a
+> permanent `busy`). **Where this prose and the schema disagree, the schema is the design.**
+
+
 > **⟳ ROUND 3 (A-5, A-7, A-9, A-10) — SCOPE, stated once because four findings share this root: every
 > mechanism in §5 is a POSTGRES SCHEMA PROPERTY, and only one of the two backends has that schema.**
 > The local backend is a filesystem (`LocalFsBlobStore` ignores `Principal.id` entirely). It has no
