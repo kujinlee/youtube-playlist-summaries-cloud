@@ -24,10 +24,31 @@ values
   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
   4,'2026-02-01');
 
--- POSITIVE: a paid slot with a generation, and a free render with none
+-- POSITIVE: a paid slot with a generation, and a free render with none.
+-- This comment used to promise the free render and insert only the two paid rows. That gap is why
+-- BOTH defects below reached a green run: the PK's implicit NOT NULL made a free render impossible
+-- to insert, and the view's inner join made it impossible to serve. A guard with no test, shape #6 —
+-- and here the missing test was named in a comment, which is the most confident way to miss it.
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
 values ((select id from t_ws),'vidA','summary','gOLD','summary','recorded','k1'),
-       ((select id from t_ws),'vidA','summary','gNEW','summary','recorded','k2');
+       ((select id from t_ws),'vidA','summary','gNEW','summary','recorded','k2'),
+       ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded','kPDF');
+
+-- APPEND-ONLY: the two paid generations must COEXIST, not overwrite. This is what round 4's J2-1
+-- changed the key for; without it the ranking below would rank a set of one.
+do $$ declare n int; begin
+  select count(*) into n from video_artifacts where video_id='vidA' and slot='summary';
+  if n <> 2 then raise exception 'ASSERTION FAILED — append-only: % paid rows, expected 2', n; end if;
+  raise notice 'ok (append-only): two generations coexist in one slot';
+end $$;
+
+-- FREE RENDER: representable, and REACHABLE through the view.
+do $$ declare k text; begin
+  select blob_key into k from video_artifacts_current where video_id='vidA' and slot='pdf:summary';
+  if k is distinct from 'kPDF' then
+    raise exception 'ASSERTION FAILED — free render not current: %', coalesce(k,'<no row>'); end if;
+  raise notice 'ok (free render): a generation-less render is representable AND current';
+end $$;
 
 -- NEGATIVES — each must raise
 select assert_raises($$insert into video_generations
@@ -50,6 +71,18 @@ select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
   values ((select id from t_ws),'vidA','dig:9','gNEW','dig','pending','k5')$$,
   'pending row with NO LEASE (round 4 Codex #5: unleased pending is a permanent busy)');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+  values ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded','kPDF2')$$,
+  'a SECOND free render in one slot (free is one-per-slot; only paid is append-only)');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+  values ((select id from t_ws),'vidA','summary','gNEW','summary','recorded','k2dup')$$,
+  'the SAME paid generation twice in one slot (append-only is not append-anything)');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+  values ((select id from t_ws),'vidGHOST','pdf:summary',null,'render','recorded','kX')$$,
+  'a free render for a video with NO workspace_videos row (the FK the paid FK cannot enforce)');
 
 -- RANKING: format outranks recency. gOLD is corrections-current-EQUAL but major 3; gNEW is major 4.
 do $$ declare v text; begin
