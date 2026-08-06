@@ -408,8 +408,14 @@ defect in either one."* A review round is the expensive way to learn that.
 | **I — Invariant we chose** | Load-bearing but **ours**. Changing it has a cost, not an impossibility |
 | **H — Heuristic** | A tuned value or default. Expected to move; must never block a design |
 
-**The whole point is separating I from P.** Measured on that spec: **every defect that cost a review
-round came from an I misfiled as a P.**
+**The whole point is separating I from P.** Measured on that spec: of roughly 30 findings across two
+rounds, **~9 dissolved outright when a rule was reclassified** — and they were specifically the ones
+that **kept coming back**. Ordinary defects (a missing FK target, a stale citation, judgments written
+into frontmatter) had nothing to do with premises and were simply fixed.
+
+> **So the trigger is recurrence, not volume.** When a *third* finding lands in the same area, stop
+> patching and ask which rule there is a choice wearing the costume of a constraint. Both clusters below
+> were on their third appearance before anyone questioned the premise underneath them.
 
 - *"The workspace id must never equal a uid"* — sounded physical, was a choice, and forced a
   whole-corpus migration of paid content. Restated as an **I about a predicate** (*no predicate may
