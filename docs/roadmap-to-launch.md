@@ -560,8 +560,24 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       **Deliberately sequenced last:** running it while 3 prerequisite forks are open would burn a
       round re-reporting "these are open."
       **Rounds 1–6 done, NOT CONVERGED** (7 → 8 → 10 → 6 → 7 → 8 Blocking). Trail:
-      `docs/reviews/spec-blob-addressing-r{1..6}-*.md` — PR #51. Round 6's security/mechanical half is
-      applied; four design items are handed off in `…-r6-handoff.md`.
+      `docs/reviews/spec-blob-addressing-r{1..6}-*.md` — ✅ **MERGED (PR #51)**. Round 6's
+      security/mechanical half is applied; four design items are handed off in `…-r6-handoff.md`.
+
+      **Handoff item 1 (`detached` fencing) — ✅ DONE (PR #52).** Sequenced first because it is
+      self-contained and its three sub-parts had to be cross-derived as one change. Outcome: of the
+      four measured bypasses, **two were fixed, one was closed by a constraint, and one was not a
+      defect** — H1's `P9` rested entirely on §6.2's "a detached dig is never deleted", which
+      contradicted §8's 90-day retention rule decided the day before. **User retired the §6.2 promise
+      2026-08-06**, and the finding dissolved without a code change. Third finding in that section in
+      three rounds, so `dev-process.md`'s recurrence trigger applied: the rule was a choice wearing the
+      costume of a constraint. New `detached_at` column carries the clock. 48 → 57 assertions,
+      **7/7 new guards mutation-checked RED**; the mutation harness is now committed
+      (`…/mutate-schema.py`) rather than rebuilt ad-hoc each round.
+      **Mutation found two defects in the round's own tests** — a two-guard fixture (round 5 H1's
+      masking shape, recurring) and a vacuous clock assertion (`now()` is transaction-stable, so it
+      compared `now()` with `now()` and could never fail). Both were invisible to reading and to a
+      green suite.
+      Items 2–4 remain: item 2 pairs with backlog #23, items 3–4 wait on the table settling.
 
       **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
       `when others`, so six negatives were passing on a `[42601]` arity error instead of the

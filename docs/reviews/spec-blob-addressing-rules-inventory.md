@@ -167,6 +167,13 @@ The justification is §6's: *"a wrong attachment silently mislabels paid content
 tell it is wrong**."* The whole argument rests on the *silently*. Codex then showed an ordinary
 section split leaves a paid dig stranded, and §6.2's `detached` state keeps it alive but invisible.
 
+> **⟳ ROUND 6 — the user decision of 2026-08-06 STRENGTHENS this candidate rather than settling it.**
+> §6.2's "a detached dig is never deleted" was retired: a detached dig now runs §8's ordinary 90-day
+> clock from `detached_at`. So the cost of leaving a dig unattached is no longer "alive but invisible",
+> it is **invisible, then collected** — the stranded dig is destroyed on a timer the user never sees.
+> That removes the fallback this rule was quietly leaning on. Re-read the trade with that in mind:
+> "attached with provenance" now competes against *losing* the content, not merely hiding it.
+
 **The unexamined assumption is that a dig is either attached or not.** A third state —
 **attached with provenance** (*"this detail was written for an earlier version of this section"*) —
 removes the word the objection depends on. The user *can* tell, so mislabelling is no longer the risk;

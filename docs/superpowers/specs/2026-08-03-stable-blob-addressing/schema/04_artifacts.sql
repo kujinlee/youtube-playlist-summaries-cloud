@@ -33,6 +33,19 @@ create table video_artifacts (
   lease_expires_at timestamptz,          -- round 4 Codex #5: `pending` MUST be leased, or a writer
   lease_attempts   int not null default 0, --   that dies leaves a permanent `busy`. Same shape as
                                            --   reserve_serve_model's lease/attempt bound (0012/0014).
+  -- ⟳ ROUND 6 — WHEN the row was detached, because §8's retention clock has no other input.
+  -- USER DECISION 2026-08-06: a detached artifact is NOT kept forever. §6.2 said a detached dig is
+  -- "never a sweep candidate"; §8 says a paid blob is collected 90 days after it stops being current.
+  -- A detached dig is never current BY CONSTRUCTION, so those two rules contradicted and the one that
+  -- runs would have won. §8 wins: detached artifacts are cleared periodically. §6.2 is corrected.
+  --
+  -- The clock starts at DETACHED-AT, not at stopped-being-current: a dig can be detached while its
+  -- generation is still current, and a not-current clock would then never start at all.
+  --
+  -- Same argument §6.2 makes for the span, and it is the reason this column is not deferred:
+  -- CHEAP NOW, UNRECOVERABLE LATER. Once digs start detaching without a timestamp there is no way to
+  -- reconstruct when they detached, and every one of them is paid content on a delete path.
+  detached_at   timestamptz,
   updated_at    timestamptz not null default now(),
   -- APPEND-ONLY, but NOT via a primary key. MEASURED 2026-08-06: `primary key (…, generation_id)`
   -- implicitly makes generation_id NOT NULL, which makes every FREE RENDER unrepresentable —
@@ -71,6 +84,27 @@ create table video_artifacts (
   -- span is recoverable only from a summary.md that §8 is entitled to collect.
   constraint art_dig_has_span check
     (kind <> 'dig' or (start_sec is not null and end_sec is not null and end_sec > start_sec)),
+  -- ⟳ ROUND 6 B3 / Codex B1 — ONLY A DIG MAY BE DETACHED. Detachment means "this artifact no longer
+  -- maps to a section of the summary", and only `dig:<sectionId>` is section-scoped. VERIFIED against
+  -- the producers, because the NAMES mislead: `digDeeper` is not a section-scoped dig, it is the
+  -- PER-VIDEO document that presents them (`companion-doc.ts:4` "maintains a per-video
+  -- <basename>-dig-deeper.md that accumulates dug sections"; cloud has no such blob at all and
+  -- assembles it at serve time, `app/api/html/[id]/route.ts:46-62`). It was never attached to one
+  -- section, so it cannot be detached from one. Round 2 already got this backwards once by reasoning
+  -- from the slot name and forcing digDeeper to kind='summary' (§5.1's table).
+  --
+  -- This is a material implication — `detached → dig`, written `¬detached ∨ dig` because SQL has no
+  -- implication operator. It never constrains a dig: a dig may be pending, recorded or detached.
+  --
+  -- It matters as a CHECK and not only as a trigger rule because the append-only trigger is
+  -- `before update or delete` — an INSERT written straight to state='detached' fires NO trigger.
+  -- A constraint governs STATES, a trigger governs TRANSITIONS, and the design needs both. Both
+  -- columns are NOT NULL, which is load-bearing: a CHECK admits a row whose predicate is NULL, so a
+  -- nullable `kind` would make this enforce nothing for exactly the malformed rows it targets.
+  constraint art_detached_is_dig check (state <> 'detached' or kind = 'dig'),
+  -- The retention clock exists exactly while the row is detached. Stated as an equivalence, not as
+  -- "detached implies a timestamp", so a stale detached_at cannot survive a re-attachment.
+  constraint art_detached_has_timestamp check ((state = 'detached') = (detached_at is not null)),
   -- Round 5 (Codex): nothing tied blob_key to the tuple, so a row could rank gNEW's card while
   -- serving gOLD's bytes — shape #4 on the paid path, and invisible to every other constraint.
   --
@@ -297,26 +331,84 @@ create trigger forbid_collecting_current_trg
 --
 -- So: recorded -> detached is a change of MEANING, permitted. Everything that is part of the
 -- ADDRESS — slot, generation_id, blob_key — stays frozen, which is the actual invariant.
+-- ⟳ ROUND 6 B3 + H1 (Claude), B1 + H5 (Codex) — MEASURED, and the gate was the whole defect.
+-- The first version gated its entire body on `old.state = 'recorded'`, so a DETACHED row was
+-- completely unprotected — and `recorded → detached` is the one transition this trigger deliberately
+-- permits. Every protection could therefore be stepped around in two statements:
+--
+--   P1   detach -> DELETE                              -> the serial-coherence orphaning defect (PR #42)
+--   P1b  detach -> rewrite blob_key -> re-record       -> shape #3, IN THE TRIGGER WRITTEN TO STOP IT
+--
+-- P1b is the one that survives the retention decision: it repoints a paid row at DIFFERENT BYTES
+-- while its address column reads as untouched. Retention is irrelevant to it.
+--
+-- Two of the four measured bypasses are NOT fixed here, deliberately:
+--   P10 (detach the current summary, then collect it, and the slot empties) is closed by
+--       `art_detached_is_dig` — a summary can no longer be detached at all.
+--   P9  (collecting a generation whose dig row is detached) is NOT A DEFECT. It was reported as one
+--       because §6.2 promised a detached dig is "never deleted"; the user retired that rule on
+--       2026-08-06 (see `detached_at`). GC clearing detached content is the intended behaviour, so
+--       `forbid_collecting_current` is left alone and §6.2's prose is corrected instead.
+--
+-- Codex H5 is folded in here rather than taken separately, because it is the same sentence: the
+-- frozen set was `slot, generation_id, blob_key` — the ADDRESS — and left `source_generation_id`,
+-- `start_sec` and `end_sec` mutable. Those are not decoration: `source_generation_id` is a RANKING
+-- input (the source-currency rung above), so a stale recorded model could rewrite its own provenance
+-- to the current summary and win without regenerating a byte; and the span is the durable recovery
+-- data §6.2 calls "impossible to retrofit". Immutability has to cover what the row CLAIMS, not only
+-- where it points.
 create function video_artifacts_append_only() returns trigger
   language plpgsql security definer set search_path = '' as $$
 begin
-  if old.state = 'recorded' and old.generation_id is not null then
+  if old.state in ('recorded','detached') and old.generation_id is not null then
     if tg_op = 'DELETE' then
-      raise exception 'video_artifacts is append-only: cannot DELETE recorded paid row (slot %, gen %)',
-        old.slot, old.generation_id;
+      raise exception 'video_artifacts is append-only: cannot DELETE % paid row (slot %, gen %)',
+        old.state, old.slot, old.generation_id;
     end if;
     if new.slot is distinct from old.slot
        or new.generation_id is distinct from old.generation_id
        or new.blob_key is distinct from old.blob_key then
-      raise exception 'video_artifacts: the ADDRESS of a recorded paid row is immutable (slot %, gen %)',
-        old.slot, old.generation_id;
+      raise exception 'video_artifacts: the ADDRESS of a % paid row is immutable (slot %, gen %)',
+        old.state, old.slot, old.generation_id;
+    end if;
+    if new.source_generation_id is distinct from old.source_generation_id
+       or new.start_sec is distinct from old.start_sec
+       or new.end_sec   is distinct from old.end_sec then
+      raise exception 'video_artifacts: the PROVENANCE of a % paid row is immutable (slot %, gen %)',
+        old.state, old.slot, old.generation_id;
     end if;
     if new.state not in ('recorded','detached') then
-      raise exception 'video_artifacts: recorded paid rows may only become detached, not %', new.state;
+      raise exception 'video_artifacts: a % paid row may only be recorded or detached, not %',
+        old.state, new.state;
     end if;
+    -- THE CLOCK IS SET HERE, NEVER BY THE WRITER — otherwise the party that benefits from postponing
+    -- collection is the party that sets the collection deadline. A re-detach must not restart it, or
+    -- a detach/re-attach cycle pins paid bytes forever, which §8 explicitly warns against
+    -- ("fail toward collectable rather than toward pinned forever").
+    if new.state = 'detached' then
+      new.detached_at := case when old.state = 'detached' then old.detached_at else now() end;
+    else
+      new.detached_at := null;
+    end if;
+    -- `now()` is legitimate here and would NOT be in a ranking rung (round 4 J2-3 requires every rung
+    -- to be recorded DATA so `current` is a deterministic function of the generation set). A retention
+    -- deadline is wall-clock by nature — the same reason `lease_expires_at` is allowed to be one.
   end if;
   return case tg_op when 'DELETE' then old else new end;
 end $$;
 create trigger video_artifacts_append_only_trg
   before update or delete on video_artifacts
   for each row execute function video_artifacts_append_only();
+-- ⚠ NOT `before insert`, and the omission is deliberate but it BOUNDS the claim above. On INSERT the
+-- writer supplies `detached_at` and nothing overwrites it, because SYNC must be able to replicate an
+-- already-detached dig carrying its ORIGINAL detach time — a receiver that stamped now() would reset
+-- the retention clock on every replica and the bytes would never be collectable. So:
+--   UPDATE : the clock is trigger-owned and a writer cannot influence it.
+--   INSERT : the clock is writer-supplied; `art_detached_is_dig` and `art_detached_has_timestamp`
+--            are the only guards, and neither constrains the VALUE.
+-- A writer can therefore backdate a detached row it is inserting for the first time, i.e. request
+-- earlier collection of its own paid content. Accepted: the insert path is service_role (our worker
+-- and sync), the failure direction is losing our own bytes rather than serving someone else's, and
+-- closing it needs the generation-write API that handoff item 3 has to specify anyway. FLAGGED FOR
+-- ROUND 7 rather than left silent — this is the kind of gap that reads as covered because the trigger
+-- above says "never by the writer".
