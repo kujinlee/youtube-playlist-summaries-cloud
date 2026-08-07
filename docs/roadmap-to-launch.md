@@ -530,17 +530,76 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       survive**, each invalidated by a *later section of the same spec*. Row 1 answers a **scalar**
       race with a **blob** fix (this is Q8, concretely), row 3 rests on the sufficiency claim §5.1
       retracted, row 4 sells team concurrency §11.1 disclaims.
-- [ ] **Close the 3 prerequisite open questions** (§14 Q3, Q4, Q8) — **HUMAN GATE.** These are design
-      forks, not mechanical choices, and Q8 now has a measured constraint: its "cheap" option needs a
-      persisted body hash that **does not exist** in any of the 21 migrations.
-- [ ] **`grill-with-docs` terminology pass** — 6 new terms (*tenant, generation, slot, manifest,
-      authoritative, rendering*) must land in `CONTEXT.md`. Human gate (terminology is Phase 1).
+- [x] **Q4 — retention + GC trigger** — ✅ 2026-08-05. *Not current ⇒ delete, except paid, retained
+      **90 days**.* Scheduled sweep. A duration not a generation count, because a count evicts by
+      activity and bursts of activity are when mistakes happen. Explicit delete outranks retention.
+      **Surfaced while closing it:** removing `<playlistKey>` from the path breaks `Principal.indexKey`,
+      so playlist hard-delete (a prefix sweep) must become manifest-driven enumeration — uncosted work
+      on the delete path whose worst failure mode is silent.
+- [x] **Q8 — scalar coherence** — ✅ 2026-08-05. **The card joins the generation** (§5.2). Refined the
+      same day: the card is *not homogeneous* — document facts (`tldr`, `docVersion`, …) travel with the
+      body, video judgments (`ratings`, `overallScore`, `tags`, …) stay on the video and are stable
+      across regenerations. Also added §5.2.2: a generation is not publishable until corrections are
+      applied — **depends on backlog #23**.
+- [x] **Q3 — overlap threshold + section-merge ambiguity** — ✅ 2026-08-05. *When ambiguous, leave
+      unattached; never guess.* Attach only when unambiguous in **both** directions (exactly one
+      section overlaps the dig, and exactly one dig claims that section); threshold **0.8** of the
+      dig's own span, tunable upward only. **Exposed a gap in §6:** the section-**split** case was
+      never named and is ambiguous from the dig's side, not the section's.
+      **All three prerequisites are now closed.** Remaining §14 questions (Q1 generationId form,
+      Q5 offline local generation, Q6 cross-playlist dedup, Q7 seam-bypassing writers) are not
+      prerequisites and can be settled during the review.
+- [x] **`grill-with-docs` terminology pass** — ✅ 2026-08-06. Nine terms in `CONTEXT.md`. Found four
+      collisions with established vocabulary (*slot* = `claim_video_slot`; *rendering* = summary→HTML/PDF,
+      **renamed to display name**; *tenant* was already the gloss for **Owner**; *authoritative* vs
+      *source-of-truth*), one six-hour-old self-contradiction (§2 `Card` vs §5.2.1), and it renamed the
+      path segment **`tenantId` → `workspaceId`** after establishing that a name for *who may access* is
+      unfit for an address. §11 rewritten: membership-not-identity, atomic creation, and §11.1's
+      teams-are-expensive claim withdrawn as wrong.
 - [ ] **Dual adversarial review to convergence** — mandatory (schema + identity + money path).
       **Deliberately sequenced last:** running it while 3 prerequisite forks are open would burn a
       round re-reporting "these are open."
+      **Rounds 1–6 done, NOT CONVERGED** (7 → 8 → 10 → 6 → 7 → 8 Blocking). Trail:
+      `docs/reviews/spec-blob-addressing-r{1..6}-*.md` — PR #51. Round 6's security/mechanical half is
+      applied; four design items are handed off in `…-r6-handoff.md`.
+
+      **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
+      `when others`, so six negatives were passing on a `[42601]` arity error instead of the
+      constraint they named — round 5's Blocking B1 and High H5 shipped **unverified** while the suite
+      printed green and exited 0. **The instrument was converting failures into passes**, which no
+      amount of further testing could have found. Any "verified" claim from round 5 or earlier
+      predates `3fb6970` and is not trustworthy. Two live security holes were also MEASURED, both
+      created by round 5's fixes: `anon` deleted another tenant's reservation through a definer
+      function with default `PUBLIC EXECUTE`, and `anon` TRUNCATEd the paid manifest — TRUNCATE sees
+      neither RLS nor a row trigger. 48 assertions now, each naming the guard that rejected it.
+
+      **The artifact changed medium at round 4→5, and that is the headline.** Roughly half of round
+      4's Blocking were *"the SQL in this prose block does not execute"* — compile errors being found
+      by human review, the most expensive possible way to find them. The schema moved out of prose
+      into **executable, verified DDL** (`…/2026-08-03-stable-blob-addressing/schema/`, run by
+      `verify-schema.sh` against the live local Postgres inside a rollback). It paid on the first run
+      and has paid every round since. **13 → 37 behavioural assertions, every guard mutation-checked.**
+
+      **Round 5 found three defects that no amount of reading had found in four rounds**, each
+      MEASURED: a **cross-tenant leak** (a view runs as its owner, so it bypasses RLS — and the
+      *missing* grant is what makes the leak look like a fix), an **empty card winning the ranking**
+      (`?&` tests key existence, and the resulting SQL NULLs made a placeholder outrank a real paid
+      generation), and a **double charge** (two writers reserving one slot, because round 4's
+      append-only fix removed the mutual exclusion round 3's money guard was standing on).
+
+      **Standing count: shape #9 — "a fix that moved or reintroduced a defect" — now at seven**, three
+      of them caused by this review's own fixes. That is the argument for the cross-derivation step
+      (`docs/dev-process.md`), which found five conflicts *between* round-5 findings before any were
+      written, four of them between different reviewers.
 
 **Blocks:** backlog #17 / task #19 (the CAS conditional-write slice is deferred pending this), and
 task #18 (A6b `position` drop, likely dissolved by ADR-0006).
+
+**Blocked by:** **backlog #23** — corrections as deterministic `{from, to}` pairs. §5.2.2 requires a
+generation to carry the user's corrections; today re-applying them costs a whole-document Gemini round
+trip, which is why the code silently does not do it *and stamps a hash claiming it did*. The rule is
+correct either way, but sequence #23 first or it ships as a per-generation LLM call on a document whose
+headings are an identity anchor.
 
 ## Honest-blob-read slice (`BlobRead`) — own spec + merge gate
 

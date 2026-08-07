@@ -392,6 +392,64 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 - **Convergence measures the prompt too.** Carry a standing list of root-cause *shapes* into each
   round's prompt and ask for siblings by shape, not another read-through. List: rationale doc.
 
+### Between rounds: classify the rules, then cross-derive them (added 2026-08-06)
+
+**Do this after round 2, before dispatching round 3.** Two rounds of review on the stable-blob-addressing
+spec produced a reviewer verdict that no individual finding could have: *"the fixes are individually
+thoughtful and most of them land. They fail **as a set** — each was written into its own section and
+none was re-derived against the others. Every Blocking is an interaction between two fixes, not a
+defect in either one."* A review round is the expensive way to learn that.
+
+**Step 1 — classify every rule the artifact now states.** Three kinds:
+
+| | Meaning |
+|---|---|
+| **P — Physical** | Imposed by the database, the platform or a vendor. Not negotiable |
+| **I — Invariant we chose** | Load-bearing but **ours**. Changing it has a cost, not an impossibility |
+| **H — Heuristic** | A tuned value or default. Expected to move; must never block a design |
+
+**The whole point is separating I from P.** Measured on that spec: of roughly 30 findings across two
+rounds, **~9 dissolved outright when a rule was reclassified** — and they were specifically the ones
+that **kept coming back**. Ordinary defects (a missing FK target, a stale citation, judgments written
+into frontmatter) had nothing to do with premises and were simply fixed.
+
+> **So the trigger is recurrence, not volume.** When a *third* finding lands in the same area, stop
+> patching and ask which rule there is a choice wearing the costume of a constraint. Both clusters below
+> were on their third appearance before anyone questioned the premise underneath them.
+
+- *"The workspace id must never equal a uid"* — sounded physical, was a choice, and forced a
+  whole-corpus migration of paid content. Restated as an **I about a predicate** (*no predicate may
+  compare the path segment to `auth.uid()`*) it dissolved a Blocking and made the migration incremental.
+- *"The manifest is mutable state protected by a conditional write"* — a choice. Deriving `current`
+  instead deleted a CAS, a limbo state, a requeue protocol and a whole table, and closed three findings.
+- *"Everything in the bucket is an artifact the manifest tracks"* — a choice. Reclassifying assets as
+  **sources** closed two more.
+
+Note the mirror: the openly-heuristic rules (a 0.8 threshold, a 90-day retention) **never caused a
+problem**. *Visible tuning knobs are safe; invisible ones are the dangerous kind*, because nobody
+thinks to question them.
+
+**Step 2 — cross-derive.** Check each rule against every other and record the conflicts. On that spec
+this found **five**, all between rules written within hours of each other — including one **new**
+defect introduced inside a fix (an eligibility test that read a blob, silently reintroducing
+absent-vs-failed in the fix that removed a different instance of it).
+
+**Step 3 — evaluate the I rules.** For each, ask **not** *"is it true?"* but ***"is what it buys still
+worth what it forbids?"*** Name what it forbids explicitly — a rule whose cost is unwritten cannot be
+re-evaluated. Expect refinements rather than deletions: on that spec, 8 of 12 were sound as written,
+2 were right in substance and wrong in wording (one had an undocumented exception **already in
+production**), and 1 was a relaxation candidate whose stated justification no longer held.
+
+**Why it goes here rather than in the review prompt.** The reviewer can only see the artifact. Which
+rules are *chosen* is authorial knowledge, and re-deriving your own fixes against each other is cheap,
+while paying a review round to discover the same interaction is not.
+
+**Related but different:** the `zoom-out` skill orients you in unfamiliar **code** (a map of modules and
+callers). This orients you in your own **assumptions**. Both are "go up a level"; only one questions
+whether a constraint is real.
+
+---
+
 **Where review effort belongs:** per-task review is structurally blind to composition defects. Keep it
 light for internally-simple tasks; spend the budget on whole-branch rounds.
 
