@@ -348,7 +348,12 @@ select assert_raises($$update video_artifacts
   set blob_key=(select id from t_ws)::text||'/videos/vidA/gDIG/dig/HIJACKED.md'
   where video_id='vidA' and slot='dig:120'$$,
   'REPOINTING a DETACHED paid row at different bytes (P1b — shape #3, the serious one)', 'P0001');
-select assert_raises($$update video_artifacts set start_sec=999
+-- 121, NOT 999: dig:120's span is (120,170), so `start_sec=999` ALSO violates art_dig_has_span
+-- (end_sec > start_sec becomes false) and the test passes under a disjunction — round 5 H1's masking
+-- defect exactly. Caught by mutation, not by reading: with the trigger removed the constraint still
+-- rejected it and the assertion still went red, for the wrong reason. 121 keeps the span legal so
+-- ONLY the trigger can object.
+select assert_raises($$update video_artifacts set start_sec=121
   where video_id='vidA' and slot='dig:120'$$,
   'rewriting the SPAN of a detached dig (Codex H5 — durable recovery data)', 'P0001');
 select assert_raises($$update video_artifacts
@@ -386,13 +391,25 @@ select assert_raises($$insert into video_artifacts
 
 -- POSITIVES. A constraint that rejects everything also passes every negative above, and the whole
 -- point of `detached` is that the dig REMAINS RECOVERABLE — §6.1 owes it "a route back".
+-- ⚠ THE RE-DETACH CHECK NEEDS A PRE-DATED FIXTURE, and finding out why is the whole reason this file
+-- mutation-tests. `now()` is transaction_timestamp() — CONSTANT for the life of this rollback — so
+-- comparing two trigger-written timestamps inside it compares now() with now() and can never fail.
+-- MEASURED: mutating the trigger to restart the clock unconditionally left the suite GREEN.
+-- An INSERT does not fire the trigger (it is `before update or delete`), so this is the one way to
+-- get a detached_at the trigger did not write and can therefore be seen to preserve or destroy.
+insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,detached_at)
+  values ((select id from t_ws),'vidA','dig:777','gDIG','dig','detached',
+          (select id from t_ws)::text||'/videos/vidA/gDIG/dig/777.md',777,800,
+          timestamptz '2020-01-01 00:00:00Z');
 do $$ declare t1 timestamptz; t2 timestamptz; st text; begin
   select detached_at into t1 from video_artifacts where video_id='vidA' and slot='dig:120';
   if t1 is null then raise exception 'ASSERTION FAILED — detaching did not start the retention clock'; end if;
   -- a re-detach must NOT restart it, or detach/re-attach cycling pins paid bytes forever
-  update video_artifacts set state='detached' where video_id='vidA' and slot='dig:120';
-  select detached_at into t2 from video_artifacts where video_id='vidA' and slot='dig:120';
-  if t2 is distinct from t1 then raise exception 'ASSERTION FAILED — a re-detach RESTARTED the clock'; end if;
+  update video_artifacts set state='detached' where video_id='vidA' and slot='dig:777';
+  select detached_at into t2 from video_artifacts where video_id='vidA' and slot='dig:777';
+  if t2 is distinct from timestamptz '2020-01-01 00:00:00Z' then
+    raise exception 'ASSERTION FAILED — a re-detach RESTARTED the clock (%)', t2; end if;
   -- re-attachment: the one transition §6.1 requires, and it must clear the clock
   update video_artifacts set state='recorded' where video_id='vidA' and slot='dig:120';
   select state, detached_at into st, t2 from video_artifacts where video_id='vidA' and slot='dig:120';

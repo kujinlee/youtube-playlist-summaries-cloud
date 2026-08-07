@@ -275,7 +275,7 @@ implementer guesses. This table is the whole domain.
 |---|---|---|---|
 | `<ws>/videos/<vid>/<gen>/summary.md` | paid | `slot='summary'` | keep while any generation row references it; §8's 90-day clock after |
 | `<ws>/videos/<vid>/<gen>/model.json` | paid | `slot='model'` | same |
-| `<ws>/videos/<vid>/<gen>/dig/<sectionId>.md` | paid | `slot='dig:<sectionId>'` | same, and a **detached** dig keeps its row (§6.2) |
+| `<ws>/videos/<vid>/<gen>/dig/<sectionId>.md` | paid | `slot='dig:<sectionId>'` | same, and a **detached** dig keeps its row (§6.2) — the row makes it enumerable and non-orphaned, *not* immortal: its 90-day clock runs from `detached_at` (⟳ round 6) |
 | `<ws>/videos/<vid>/<gen>/dig-deeper.md` | paid | `slot='digDeeper'` | same |
 | `<ws>/videos/<vid>/renders/<name>.html` | free | `slot='html'` | delete when not current; **never** retained — it re-renders |
 | `<ws>/videos/<vid>/renders/<name>.pdf` | free | `slot='pdf:<kind>'` | same |
@@ -760,7 +760,10 @@ Four constraints, each closing a round-1 finding:
   `slot='summary'` over dig bytes and resolve to a generation whose `card` is NULL. The FK carries
   `kind` so the generation must be of the right sort, and the `check` ties `kind` to the slot's shape.
 - **`state` (Claude B4).** A `detached` dig keeps a row, so §8's sweeper — which marks from this table
-  — cannot collect the paid content §6.1 promises never to delete.
+  — sees it as *referenced rather than orphaned*. ⟳ **ROUND 6: this used to read "cannot collect the
+  paid content §6.1 promises never to delete", and that promise was retired** (§6.2). The row buys
+  enumerability and an orderly 90-day clock from `detached_at`, not permanence. `detached` is also
+  restricted to `kind='dig'` and fenced by the append-only trigger in every state — §6.3.
 - **`start_sec` / `end_sec` (Claude H4).** §6.1 is a span rule; without stored spans every attach
   decision reads a *superseded* summary blob through a `get()` that collapses 5xx into `null`.
 - **`on delete cascade`, from `workspace_videos` rather than `workspaces`.** The round-1 draft cascaded
@@ -1444,8 +1447,9 @@ A dig is generated from a **section span** of a specific summary. A dig from *ab
 summary from *def* only if its span still corresponds to a real section in *def*.
 
 **Rule:** cross-generation attachment requires a **span overlap ratio** above a threshold (per the
-2026-07-31 decision). Below it, the dig remains stored — never deleted — but is **not attached** to
-the current summary and does not render.
+2026-07-31 decision). Below it, the dig remains stored — ~~never deleted~~ **not deleted *by the
+attachment rule* (⟳ round 6: §8's 90-day clock still applies from `detached_at` — see §6.2)** — but is
+**not attached** to the current summary and does not render.
 
 **Arbitrary mixing is not safe; validated mixing is.** A wrong attachment silently mislabels paid
 content, which is worse than showing none: the user cannot tell it is wrong.
@@ -1460,8 +1464,12 @@ in BOTH directions:**
 1. **Exactly one** section of *def* overlaps the dig's span above the threshold — and
 2. **exactly one** dig claims that section.
 
-If either count is 0 or >1, the dig stays **stored and unattached**. It is never deleted, never
-attached to a guess, and never silently dropped.
+If either count is 0 or >1, the dig stays **stored and unattached**. It is never
+attached to a guess and never silently dropped. ⟳ **ROUND 6 — it is NOT "never deleted":** that
+phrasing survived here after §6.2 retired it, and the two sentences would have shipped contradicting
+each other. Unattached ⇒ detached ⇒ §8's ordinary 90-day paid-retention clock, running from
+`detached_at`. What §6.1 guarantees is that *this rule* never deletes it — silence and a guess are the
+failures being excluded here, not collection.
 
 **Both directions are required, and §6 as written only described one of them.** Each side catches a
 different restructuring:
@@ -1534,10 +1542,88 @@ unreferenced, it is paid, and the 90-day clock collects it. Two decisions closed
 one that runs wins.
 
 > **Rule:** a detached dig keeps a manifest row — ~~slot `dig:<sectionId>@<generationId>`~~ **slot
-> unchanged (⟳ round 5)**, in state `detached`. It is therefore *referenced*, therefore never a sweep
-> candidate. This also gives the
+> unchanged (⟳ round 5)**, in state `detached`. It is therefore *referenced*, therefore
+> ~~never a sweep candidate~~ **not an ORPHAN — but still a sweep candidate on §8's ordinary clock
+> (⟳ round 6, see below)**. This also gives the
 > "surface it as detached-but-recoverable" requirement something to **enumerate**, which it had no way
 > to do before.
+
+> **⟳ ROUND 6 — "never a sweep candidate" was WRONG, and it contradicted a decision made the day
+> before.** §8's retention rule (*"if a blob is not current, delete it — except a paid blob, which is
+> retained for 90 days"*) applies to a detached dig **immediately**, because a detached dig is never
+> current *by construction* — that is what detaching means. So §6.2 promised permanence in the same
+> spec where §8 scheduled collection, and whichever mechanism shipped first would have won.
+>
+> **USER DECISION 2026-08-06: §8 wins. Detached artifacts are cleared periodically.** A dig whose
+> section no longer exists is not content the product owes the user forever; it is content the user can
+> re-dig against the new section structure.
+>
+> **This is the third finding in this section in three rounds** (round 5: the trigger made detaching
+> impossible; round 6 B3: detaching stripped every guard; round 6 H1: a detached dig was collectable).
+> Per `dev-process.md`'s recurrence trigger, the right response was to ask which rule here was a
+> **choice wearing the costume of a constraint** — and "a detached dig is never deleted" was exactly
+> that. Retiring it **dissolved round 6 H1's `P9`**, which had been reported as a defect only because
+> this sentence claimed otherwise. No code changed; the false premise did.
+>
+> **What the correction costs, stated explicitly** (a rule whose cost is unwritten cannot be
+> re-evaluated): a user who regenerates a summary, leaves a dig detached for 90 days, and then restores
+> the original section boundary will find the dig gone and must pay to re-dig it. That is accepted.
+> The alternative — paid bytes no sweep may ever touch — is an unbounded, un-auditable retention class,
+> and §8's own warning is to *"fail toward collectable rather than toward pinned forever."*
+>
+> **Rule (added):** the clock starts at **`detached_at`**, not at "stopped being current". A dig can be
+> detached while its generation is still current, in which case a not-current clock never starts at
+> all. The column is written by the append-only trigger, never by the writer — the party that benefits
+> from postponing collection must not set the deadline. Same "cheap now, impossible to retrofit"
+> argument this section already makes for the span: once digs detach without a timestamp, when they
+> detached is unknowable.
+
+### 6.3 `detached` is a state, so it must be FENCED like one — ⟳ ADDED IN ROUND 6
+
+**The round-5 append-only trigger gated its entire body on `old.state = 'recorded'`, and
+`recorded → detached` is the one transition it deliberately permits.** So detaching first stepped
+around everything it enforces — in two statements, in the trigger written to make that impossible.
+Four bypasses were measured; the two that were real are fixed, and naming why the other two are not is
+half the value of the finding.
+
+| | Measured | Disposition |
+|---|---|---|
+| `P1` | detach → `DELETE` succeeds | **Fixed** — the gate now reads `old.state in ('recorded','detached')`. This is the serial-coherence orphaning defect (PR #42) reachable in two statements |
+| `P1b` | detach → rewrite `blob_key` → re-record | **Fixed** — same gate. Shape #3, a mutable value in an address, *inside the trigger that exists to remove shape #3*. Retention is irrelevant to it: it repoints paid content at different bytes while the address column reads as untouched |
+| `P10` | detach the current summary → collect → the slot empties | **Closed by `art_detached_is_dig`** — a summary can no longer be detached at all |
+| `P9` | collect a generation whose dig row is detached | **Not a defect** — §6.2's retired promise was its only basis |
+
+**Only a dig may be detached** (`art_detached_is_dig`). Detachment means *"this artifact no longer maps
+to a section of the summary"*, and `dig:<sectionId>` is the only section-scoped slot. This was verified
+against the **producers**, not the slot names, because the names actively mislead: `digDeeper` is not a
+section-scoped dig but the **per-video document that accumulates them**
+(`companion-doc.ts:4`), and the cloud stores no such blob at all — it assembles the document at serve
+time from the individual digs (`app/api/html/[id]/route.ts:46-62`). It was never attached to one
+section, so it cannot be detached from one. **Round 2 already made this exact mistake in reverse**,
+forcing `digDeeper` to `kind='summary'` by reasoning from the slot name (§5.1's table).
+
+**It is a CHECK and not only a trigger rule, because the trigger is `before update or delete`** — an
+`INSERT` written straight to `state='detached'` fires no trigger. A constraint governs *states*; a
+trigger governs *transitions*; this design needs both, and `service_role` bypasses RLS but never a
+constraint.
+
+**Immutability now covers what a row CLAIMS, not only where it points (Codex H5).** The frozen set was
+`slot, generation_id, blob_key` — the address. `source_generation_id` is a **ranking input** to the
+source-currency rung, so a stale recorded model could rewrite its provenance to the current summary and
+win the rung *without regenerating a byte*; and `start_sec`/`end_sec` are the durable recovery data
+§6.2 calls impossible to retrofit. All three are frozen for recorded **and** detached paid rows.
+
+**Re-attachment (`detached → recorded`) stays permitted**, with the address unchanged — §6.1 owes a
+correctly-split dig "a route back", and a fence that forecloses recovery would defeat the section it
+protects.
+
+> **Known gap, not left silent:** on `INSERT` the writer supplies `detached_at` and nothing overwrites
+> it, because **sync must replicate an already-detached dig carrying its original clock** — a receiver
+> that stamped `now()` would reset the retention clock on every replica and the bytes would never be
+> collectable. So a writer can backdate a row it is inserting for the first time, i.e. request earlier
+> collection of its own paid content. Accepted for now: the insert path is `service_role`, the failure
+> direction is losing our own bytes rather than exposing anyone else's, and closing it properly needs
+> the generation-write API that **handoff item 3** must specify regardless. Flagged for round 7.
 
 **(b) The span exists nowhere durable, so re-attachment depends on a blob §8 deletes (Claude H4).**
 §6.1 is a span-overlap rule, but §4's key encodes only the **start** (`sectionId` *is* `startSec`), and
