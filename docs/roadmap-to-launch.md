@@ -577,7 +577,24 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       masking shape, recurring) and a vacuous clock assertion (`now()` is transaction-stable, so it
       compared `now()` with `now()` and could never fail). Both were invisible to reading and to a
       green suite.
-      Items 2–4 remain: item 2 pairs with backlog #23, items 3–4 wait on the table settling.
+      **Handoff item 2 (corrections representation) — ✅ DONE (PR #53, stacked on #52).** The
+      roadmap's "blocked by backlog #23" turned out to be **two claims, only one true**: §5.2.2's
+      publishability rule genuinely needs #23 (it is about the *cost* of re-applying corrections),
+      but the hash representation does not — provided "no corrections" is a **defined** constant
+      rather than one derived from the corrections shape. That distinction unblocked the slice.
+      Fixes a measured money-path defect (rung 1 stale for the whole corpus ⇒ `copyToCloud` on every
+      sync, forever). `corrections_hash` is now NOT NULL — the nullable column conflated "no
+      corrections" with "never computed", which is *why* 2903 wrong rows were invisible — and a
+      trigger keeps the denormalized copy from drifting, which is the half B4 did not ask for.
+      Reverses round 5's C2. 57 → 63 assertions, **13/13 mutations behaved as expected**.
+      **One mutation is documented as expected-GREEN:** rung 1's `=` carries no guard of its own
+      while NOT NULL holds, and saying so beats letting a tightened-looking comparison read as a fix.
+      Three defects found by running it, none visible to reading — a `distinct` that would violate the
+      PK for a video in two playlists, and *twice* an unqualified name that resolved everywhere except
+      inside the `security definer set search_path = ''` trigger (`no_corrections_hash`, then
+      pgcrypto's `digest`, which Supabase installs in `extensions`).
+      Items 3–4 remain, and both wait on the table settling — item 3 has already been
+      specified-before-the-table-changed twice.
 
       **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
       `when others`, so six negatives were passing on a `[42601]` arity error instead of the

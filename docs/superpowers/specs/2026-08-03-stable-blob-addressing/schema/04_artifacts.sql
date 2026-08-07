@@ -239,6 +239,14 @@ order by a.workspace_id, a.video_id,
          -- column by DDL, the card by gen_card_complete — so the null-tolerant comparison bought
          -- nothing and actively hid the defect: it returned TRUE for two NULLs, which read as
          -- "corrections-current" for every row the migration had failed to backfill.
+         --
+         -- ⚠ THIS LINE CARRIES NO GUARD OF ITS OWN, and the mutation harness says so out loud
+         -- (`mutate-schema.py`, the one entry expected to come back GREEN). While NOT NULL holds,
+         -- `=` and `is not distinct from` are behaviourally identical, so reverting this line
+         -- changes nothing and no assertion can go red. The protection lives ENTIRELY in the NOT
+         -- NULL; this is a clarification riding on it. Recorded rather than quietly asserted,
+         -- because "we tightened the comparison" reads like a fix and is not one — if the NOT NULL
+         -- is ever relaxed, this line silently stops being equivalent and B4 returns.
          (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,
          g.doc_version_major desc nulls last,
          -- Round 5 B3: rank the CARD's mdGeneratedAt, not produced_at. reconcileClassA:49 ranks
