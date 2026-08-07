@@ -1411,6 +1411,59 @@ unmodified" always required and never said.
 replicas, each correct by its own rule. Both views now rank the card's `mdGeneratedAt`, which keeps
 round 4's J2-3 property (a recorded fact, not a clock read) *and* matches the merged code.
 
+**(c) ⟳ ROUND 6 — rung 1 diverged too, for the ENTIRE corpus, and the fix for (b) did not sweep to
+it.** Round 5 corrected rung 3 and left rung 1 — *one line above it* — broken by two independent
+causes, both measured:
+
+- **the migration dropped the data.** `03` seeded `workspace_videos` with `select distinct
+  workspace_id, video_id from videos` and nothing else, so `corrections_hash` was **NULL for 2903 of
+  2904 rows** while **99 live videos carried real corrections**.
+- **the two sides spelled "no corrections" differently.** Both producers emit `mdHash('')` — a real
+  64-hex string (`pipeline.ts:272`, `sync-run.ts:651`) — while the schema permitted a JSON `null`.
+
+Consequence on the money path: cloud permanently rung-1-stale against a current local, so
+`reconcileClassA` returns `copyToCloud` on **every sync, forever** — verbatim the failure (a) above
+was written to remove, one rung higher. Shape #10 (a rule derived at one site and not re-derived at
+its sibling), and shape #9's cousin: the round-5 fix was correct and incomplete in the same motion.
+
+> **Rule: "no corrections" is ONE value, it is NOT NULL, and it is DEFINED rather than DERIVED.**
+> `no_corrections_hash()` returns a pinned constant which today equals `mdHash('')`, since
+> `canonicalizeMd('')` is a lone newline. Defining it is what let this be settled **before**
+> backlog #23: when corrections become `{from, to}` pairs, an empty pair list still hashes to this
+> constant *by definition* instead of to whatever `mdHash('[]')` happens to be. Re-deriving it is the
+> obvious future simplification and it silently re-opens the divergence.
+
+**Why NOT NULL is the actual fix and the backfill is not.** A nullable `corrections_hash` conflates
+*"this video has no corrections"* with *"nobody ever computed this"* — shape #1, absent-vs-failed,
+sitting on the **top rung of both view orderings**. That conflation is not incidental to the bug; it
+is *why the bug was invisible*: 2903 rows meaning "never backfilled" read as "no corrections", and
+`is not distinct from` obligingly returned TRUE for two NULLs. Backfilling repairs 2903 rows once;
+NOT NULL makes the state unrepresentable. Rung 1 correspondingly drops to a plain `=` — though that
+line **carries no guard of its own** while NOT NULL holds, and the schema says so where a reader will
+see it rather than letting a tightened-looking comparison pass for a fix.
+
+**`gen_card_complete` now requires `mdCorrectionsHash` as a VALUE**, reversing round 5's
+cross-derivation C2. C2 argued a JSON null was *"the correct, meaningful answer for a video with no
+corrections"* and that requiring a value would make rung 1 false for every uncorrected video. Checking
+the **producers** rather than reasoning about the value showed both halves wrong: no producer has ever
+emitted null, and rung 1 becomes *true*, not false, once the uncorrected side also carries the
+constant. Third round running where an argument was made about a symbol and the answer lived at the
+usage sites — `docs/dev-process.md` already encodes the fix ("at fix time, list the consumers").
+
+**Drift is prevented, not repaired — and this half no reviewer asked for.**
+`workspace_videos.corrections_hash` is a **denormalized copy**; the truth lives in `videos.data`. A
+backfill fixes today's rows and says nothing about the next write, so B4's fix as proposed would have
+been correct and temporary. A trigger on `videos` recomputes the copy whenever the corrections text
+changes — chosen over "route the writes through one RPC" because a routing rule holds only until
+someone adds a second writer, and there is already more than one (`update_video_annotations` in
+`0021`, and `persist_summary`'s layer-2 merge).
+
+**The cross-language agreement is a regression guard, not a one-off check.** The SQL canonicalizer
+reproduces `content-hash.ts` (CRLF → LF, strip trailing newlines, NFC, one trailing newline), verified
+on four vectors — empty, plain ASCII, CRLF with repeated trailing newlines, and non-ASCII — and those
+vectors are **asserted**, because if the two ever diverge the sole symptom is `copyToCloud` on every
+sync: a money-path failure that raises no error anywhere.
+
 So the projection is:
 
 - **cloud → signals:** project `current` down to a `ClassASignals` — one row, one tuple, six fields,

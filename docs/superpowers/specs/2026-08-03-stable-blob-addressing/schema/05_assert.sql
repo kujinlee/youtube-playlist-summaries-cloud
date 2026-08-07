@@ -46,6 +46,26 @@ begin
   raise exception 'ASSERTION FAILED — should have been rejected: %', p_label;
 end $$;
 
+-- ── ⟳ ROUND 6 B4 — THE BACKFILL, asserted against the LIVE corpus BEFORE any fixture exists ──────
+-- Placement is load-bearing and was found by the assertion failing: run after the fixtures and the
+-- `vidA` row (deliberately seeded with a non-constant 'H_NEW') is counted as a corrected video, so
+-- this reported `wv has 100, videos has 99`. The subject here is the MIGRATION'S OUTPUT, so nothing
+-- may have touched the table yet. B4 measured 2903 of 2904 rows NULL while 99 videos carried real
+-- corrections; both numbers are now asserted rather than described.
+-- (The rest of the item-2 assertions live at the end of this file, with the ranking fixtures.)
+do $$ declare n_null int; n_corr_wv int; n_corr_v int; begin
+  select count(*) into n_null from workspace_videos where corrections_hash is null;
+  if n_null <> 0 then
+    raise exception 'ASSERTION FAILED — % rows still carry a NULL corrections_hash', n_null; end if;
+  select count(*) into n_corr_wv from workspace_videos where corrections_hash <> no_corrections_hash();
+  select count(distinct (workspace_id, video_id)) into n_corr_v
+    from videos where coalesce(data->>'corrections','') <> '';
+  if n_corr_wv <> n_corr_v then
+    raise exception 'ASSERTION FAILED — backfill lost corrections: wv has %, videos has %',
+      n_corr_wv, n_corr_v; end if;
+  raise notice 'ok (backfill): 0 NULL hashes, and all % corrected videos carried across', n_corr_v;
+end $$;
+
 -- ── fixtures ────────────────────────────────────────────────────────────────────────────────────
 -- Use REAL seeded workspaces (id = owner_id): workspace_videos FKs to workspaces, so the fixtures
 -- must respect the same ordering the migration does.
@@ -83,7 +103,7 @@ values ((select id from t_ws),'vidA','gDIG','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','wB','digDeeper',null,'2026-02-01');
 insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
 values ((select id from t_w2),'vidB','g2','summary',
-  '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-01","processedAt":"y","mdCorrectionsHash":null}',
+  '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-01","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
   4,'2026-02-01','SHA_2');
 
 -- ── POSITIVES ───────────────────────────────────────────────────────────────────────────────────
@@ -159,7 +179,7 @@ select assert_raises($$insert into video_generations
 select assert_raises($$insert into video_generations
   (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB6','summary',
-   '{"tldr":"t","takeaways":null,"docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
+   '{"tldr":"t","takeaways":null,"docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
    4,now(),'SHA_X')$$,
   'a card with ONE null value (each conjunct must bite, not just the set of them)', '23514', 'gen_card_complete');
 
@@ -167,7 +187,7 @@ select assert_raises($$insert into video_generations
 select assert_raises($$insert into video_generations
   (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB4','summary',
-   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
    null,now(),'SHA_X')$$,
   'a summary generation with NO doc_version_major', '23514', 'gen_summary_has_format');
 
@@ -175,14 +195,14 @@ select assert_raises($$insert into video_generations
 select assert_raises($$insert into video_generations
   (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB5','summary',
-   '{"tldr":"t","takeaways":"k","docVersion":"3.3","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
+   '{"tldr":"t","takeaways":"k","docVersion":"3.3","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
    99,now(),'SHA_X')$$,
   'doc_version_major=99 while the card says 3.3 (the card/body lie, moved into the ranking key)', '23514', 'gen_major_matches_card');
 
 select assert_raises($$insert into video_generations
   (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at)
   values ((select id from t_ws),'vidA','gB7','summary',
-   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
    4,now())$$,
   'a summary generation with NO md_hash (round 5 B3: sync needs it and nothing persisted it)', '23514', 'gen_summary_has_hash');
 
@@ -564,4 +584,99 @@ do $$ declare n int; begin
   if n <> 1 then raise exception 'ASSERTION FAILED — floor broke: % rows, expected 1', n; end if;
   raise notice 'ok (floor): a user typing a correction does NOT empty the slot';
 end $$;
+
+-- ── ⟳ ROUND 6 B4 — ONE REPRESENTATION OF "NO CORRECTIONS", AND RUNG 1 ACTUALLY DECIDING ─────────
+-- The cross-language agreement is a REGRESSION GUARD, not a one-off check. If the SQL canonicalizer
+-- and content-hash.ts ever diverge, rung 1 is false for every corrected video and the only symptom is
+-- copyToCloud on every sync — a money-path failure with no error anywhere. Vectors verified against
+-- `mdHash` in node 2026-08-06: empty, plain ASCII, CRLF + repeated trailing newlines, non-ASCII.
+do $$ begin
+  if corrections_hash_of('') <> no_corrections_hash() then
+    raise exception 'ASSERTION FAILED — empty corrections must hash to the DEFINED constant'; end if;
+  if corrections_hash_of(null) <> no_corrections_hash() then
+    raise exception 'ASSERTION FAILED — absent corrections must hash to the DEFINED constant'; end if;
+  if no_corrections_hash() <> '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b' then
+    raise exception 'ASSERTION FAILED — the constant moved; every stamped card is now stale'; end if;
+  if corrections_hash_of('call it Clawcode not clawcode')
+     <> 'ce1046a668ae0385f2814f1cf824d369a82b9790a0c5cf684c92224ce5e90cc2' then
+    raise exception 'ASSERTION FAILED — SQL and content-hash.ts disagree on a plain correction'; end if;
+  if corrections_hash_of(E'line1\r\nline2\n\n\n')
+     <> '2751a3a2f303ad21752038085e2b8c5f98ecff61a2e4ebbd43506a941725be80' then
+    raise exception 'ASSERTION FAILED — SQL and content-hash.ts disagree on CRLF canonicalization'; end if;
+  if corrections_hash_of('café') <> '7b49b9e063bd91a4f9252b413261f5557b9c570aa61516989499f64a62dbcdd6' then
+    raise exception 'ASSERTION FAILED — SQL and content-hash.ts disagree on NFC normalization'; end if;
+  raise notice 'ok (hash): SQL reproduces content-hash.ts on 4 vectors, and the constant is pinned';
+end $$;
+
+-- RUNG 1 DECIDES, and this is the test that a mutation can actually turn red. Asserting the boolean
+-- `card->>'mdCorrectionsHash' = corrections_hash` would merely re-implement the rung; it has to pick a
+-- WINNER against the rungs below it. vidC takes the DEFAULT hash (no corrections), which is exactly
+-- the state B4 measured as corrections-current = FALSE for the entire corpus.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidC' from t_ws;
+insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+values
+ -- corrections-CURRENT but older and a LOWER format version: must still win, because rung 1 is first
+ ((select id from t_ws),'vidC','gC_CUR','summary',
+  ('{"tldr":"t","takeaways":"k","docVersion":"3.3","mdGeneratedAt":"2026-01-01","processedAt":"y",'
+   || '"mdCorrectionsHash":"' || no_corrections_hash() || '"}')::jsonb,
+  3,'2026-01-01','SHA_C_CUR'),
+ -- corrections-STALE but newer and a HIGHER format version: must lose
+ ((select id from t_ws),'vidC','gC_STALE','summary',
+  '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-09-09","processedAt":"y","mdCorrectionsHash":"H_STALE"}',
+  4,'2026-09-09','SHA_C_STALE');
+insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+values ((select id from t_ws),'vidC','summary','gC_CUR','summary','recorded',
+        (select id from t_ws)::text||'/videos/vidC/gC_CUR/summary.md'),
+       ((select id from t_ws),'vidC','summary','gC_STALE','summary','recorded',
+        (select id from t_ws)::text||'/videos/vidC/gC_STALE/summary.md');
+do $$ declare g text; begin
+  select generation_id into g from video_summary_current where video_id='vidC';
+  if g is distinct from 'gC_CUR' then
+    raise exception 'ASSERTION FAILED — rung 1 did not decide: current is %, expected gC_CUR', coalesce(g,'<none>');
+  end if;
+  raise notice 'ok (rung 1): an UNCORRECTED video ranks its constant-hash generation as current';
+end $$;
+
+-- THE ANTI-DRIFT TRIGGER. Backfilling repairs today; this is what stops the next write re-opening it.
+-- Runs against a REAL `videos` row, not the vidC fixture: vidC exists only in `workspace_videos`, so
+-- the first version of this test updated ZERO rows, the trigger never fired, and it reported the
+-- copy as drifted. A test that cannot reach the trigger it names proves nothing about it.
+-- ANY real video, not one constrained to t_ws — MEASURED: t_ws is `workspaces order by id limit 1`
+-- and that workspace holds no videos, so the filtered version selected zero rows and the assertion
+-- reported "no real video" rather than silently passing. Every `videos` row has a
+-- `workspace_videos` row by now; that is what the backfill above just asserted.
+create temp table t_real as select workspace_id, video_id from videos limit 1;
+do $$ declare h text; c text; n int; begin
+  select count(*) into n from t_real;
+  if n <> 1 then raise exception 'ASSERTION FAILED — no real video to test the trigger against'; end if;
+  update videos v set data = jsonb_set(v.data, '{corrections}', '"say Clawcode"')
+    from t_real r where v.workspace_id=r.workspace_id and v.video_id=r.video_id;
+  select wv.corrections_hash, wv.corrections into h, c
+    from workspace_videos wv join t_real r using (workspace_id, video_id);
+  if h <> corrections_hash_of('say Clawcode') then
+    raise exception 'ASSERTION FAILED — the copy drifted: wv has %, expected %',
+      h, corrections_hash_of('say Clawcode'); end if;
+  if c <> 'say Clawcode' then
+    raise exception 'ASSERTION FAILED — the copy kept a stale corrections text: %', coalesce(c,'<null>'); end if;
+  -- ...and clearing them must return the DEFINED CONSTANT, not NULL. This is the direction that
+  -- re-opens B4 if it regresses: a NULL here is indistinguishable from "never computed".
+  update videos v set data = jsonb_set(v.data, '{corrections}', '""')
+    from t_real r where v.workspace_id=r.workspace_id and v.video_id=r.video_id;
+  select wv.corrections_hash into h
+    from workspace_videos wv join t_real r using (workspace_id, video_id);
+  if h <> no_corrections_hash() then
+    raise exception 'ASSERTION FAILED — clearing corrections did not restore the constant: %', h; end if;
+  raise notice 'ok (anti-drift): editing corrections updates the copy; clearing restores the constant';
+end $$;
+
+select assert_raises($$insert into workspace_videos (workspace_id, video_id, corrections_hash)
+  values ((select id from t_ws),'vidNULL', null)$$,
+  'a NULL corrections_hash (absent-vs-failed on the top ranking rung)', '23502');
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+  values ((select id from t_ws),'vidA','gB8','summary',
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":null}',
+   4,now(),'SHA_X')$$,
+  'a card whose ONLY null is mdCorrectionsHash (round 5 C2 permitted this; no producer emits it)',
+  '23514', 'gen_card_complete');
 \echo ASSERTIONS_OK
