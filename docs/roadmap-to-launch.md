@@ -593,8 +593,22 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       PK for a video in two playlists, and *twice* an unqualified name that resolved everywhere except
       inside the `security definer set search_path = ''` trigger (`no_corrections_hash`, then
       pgcrypto's `digest`, which Supabase installs in `extensions`).
-      Items 3–4 remain, and both wait on the table settling — item 3 has already been
-      specified-before-the-table-changed twice.
+      **Handoff item 4 (the reservation protocol) — ✅ DONE (PR #54).** The reclaim added in round 5
+      was not a protocol: an untyped return that conflated absent with zero, a terminal bound that was
+      resettable because reclaim and reserve were two round trips, and no way for a reclaimed writer
+      to learn it lost. Replaced by `reserve_artifact_slot` / `renew_artifact_lease` /
+      `record_artifact`, modelled on `reserve_serve_model` (0014), already in production doing this.
+      **The reviewer's proposed fix was declined on purpose:** H5 wanted a token that VETOES the
+      record, but in the measured race both Gemini calls are already paid for by then, so rejecting
+      one discards bought content without preventing the charge. **User decision 2026-08-07: the
+      reservation guards SPENDING, not recording.** Renewal — token-fenced, ceiling-bounded — fixes
+      the actual defect (a lease expiring under a live worker) and tells the loser *while it is still
+      working*. 63 → 73 assertions, **22/22 mutations as expected**.
+      **`search_path` swept across the whole schema** after the same class of bug appeared four times
+      in one day, the last reached from a definer function *through a CHECK constraint*. Every
+      function now pins its path except `assert_raises`, labelled as the deliberate exception.
+      **Item 3 is the last one, and stays last** — it has already been
+      specified-before-the-table-changed twice, and `record_artifact`'s payload is its to finalize.
 
       **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
       `when others`, so six negatives were passing on a `[42601]` arity error instead of the

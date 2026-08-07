@@ -525,6 +525,23 @@ do $$ declare o text; t uuid; a int; n int; begin
   raise notice 'ok (reclaim): one row, re-pointed in place, attempts 1 -> 2 durably';
 end $$;
 
+-- ⚠ THE DISCRIMINATING CASE FOR live-lease-first, and the reason it needs its own block: at this
+-- point attempts = 2 = dig_max_attempts AND the lease is LIVE. Only here do the two orderings give
+-- different answers. The earlier `busy` assertion does NOT test the ordering — with attempts = 1 the
+-- exhaustion branch is false anyway, so it returns `busy` under either version. MEASURED: mutating
+-- the ordering left the whole suite GREEN until this block existed.
+-- The distinction is what a caller acts on: `busy` means come back, `exhausted` means never retry.
+do $$ declare o text; a int; begin
+  select outcome, attempts into o, a from reserve_artifact_slot(
+    (select id from t_ws),'vidA','dig:700','gTHIRD','dig',
+    (select id from t_ws)::text||'/videos/vidA/gTHIRD/dig/700.md', null, 700, 750);
+  if a is distinct from 2 then
+    raise exception 'ASSERTION FAILED — precondition: expected attempts=2 at the bound, got %', a; end if;
+  if o <> 'busy' then
+    raise exception 'ASSERTION FAILED — a LIVE lease at the attempt bound reported %, not busy', o; end if;
+  raise notice 'ok (reserve): a LIVE lease reads as busy even at the attempt bound, never exhausted';
+end $$;
+
 -- EXHAUSTION is a typed outcome, not a 23505 (shape #8: a policy that errors rather than denies).
 do $$ declare o text; begin
   update video_artifacts set lease_expires_at = now() - interval '1 min'

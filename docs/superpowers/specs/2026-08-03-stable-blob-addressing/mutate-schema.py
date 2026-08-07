@@ -101,6 +101,64 @@ MUTATIONS = [
      "select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text",
      "select encode(extensions.digest('[]', 'sha256'), 'hex')::text",
      "constant moved", GEN),
+    # ── item 4: the reservation protocol (round 6 H5 / Codex B2) ─────────────────
+    ("live-lease-first classification inverted (exhausted before busy)",
+     """  if v_row.lease_expires_at > now() then
+    return query select 'busy'::text, null::uuid, v_row.lease_attempts; return;
+  end if;
+""",
+     "",
+     "LIVE lease at the attempt bound reported", ART),
+
+    ("the attempt bound removed from the reclaim predicate",
+     "       and public.video_artifacts.lease_attempts   < v_max",
+     "       and true",
+     "past dig_max_attempts", ART),
+
+    ("the attempt increment made non-durable (reset instead of bumped)",
+     "       lease_attempts       = public.video_artifacts.lease_attempts + 1,",
+     "       lease_attempts       = 1,",
+     "attempt bound did not survive reclaim", ART),
+
+    ("renewal not fenced by the token (anyone may renew)",
+     "     and state = 'pending' and lease_token = p_token\n     and reserved_at > now()",
+     "     and state = 'pending' and (lease_token = p_token or true)\n     and reserved_at > now()",
+     "STRANGER renewed the lease", ART),
+
+    ("the renewal ceiling removed (a hung worker renews forever)",
+     "     and reserved_at > now() - make_interval(secs => v_ceiling);",
+     "     and true;",
+     "renewed past the ceiling", ART),
+
+    ("record refuses when the token is stale (H5's declined fix)",
+     """  insert into public.video_artifacts
+    (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
+     source_generation_id, start_sec, end_sec)
+  values (p_ws, p_video, p_slot, p_generation_id, p_kind, 'recorded', p_blob_key,
+          p_source_generation_id, p_start_sec, p_end_sec);
+  return 'recorded_after_loss';""",
+     "  return 'refused';",
+     "PAID work was discarded", ART),
+
+    ("art_pending_has_token dropped",
+     "  constraint art_pending_has_token check ((state = 'pending') = (lease_token is not null)),\n",
+     "",
+     "NO TOKEN", ART),
+
+    ("art_pending_has_reserved_at dropped",
+     "  constraint art_pending_has_reserved_at check ((state = 'pending') = (reserved_at is not null)),\n",
+     "",
+     "NO reserved_at", ART),
+
+    ("the idempotency short-circuit removed",
+     """  if exists (select 1 from public.video_artifacts
+              where workspace_id = p_ws and video_id = p_video and slot = p_slot
+                and generation_id = p_generation_id and state in ('recorded','detached')) then
+    return query select 'already_recorded'::text, null::uuid, null::int; return;
+  end if;
+""",
+     "",
+     "already-recorded generation is idempotent", ART),
 ]
 
 
