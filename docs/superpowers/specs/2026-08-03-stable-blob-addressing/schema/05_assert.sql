@@ -24,6 +24,10 @@
 -- A fixture that does not parse tests strictly LESS than one violating two guards, so round 5 H1's
 -- masking defect was not removed — it was deepened. The instrument has to name what it expects:
 -- p_sqlstate, and for a CHECK/constraint violation the constraint name. Anything else RE-RAISES.
+-- ⚠ DELIBERATELY THE ONE FUNCTION HERE WITHOUT A PINNED search_path (⟳ round 6). Everything the
+-- schema ships pins it; this is a test harness whose whole job is to `execute` caller-supplied SQL,
+-- and pinning would run the SQL under test in a path the production caller would not have. Labelled
+-- so the sweep that found four missing pins does not "fix" this one and quietly change what is tested.
 create function assert_raises(p_sql text, p_label text, p_sqlstate text, p_constraint text default null)
   returns void language plpgsql as $$
 declare v_state text; v_con text;
@@ -100,7 +104,15 @@ values ((select id from t_ws),'vidA','gDIG','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','g_LD','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','%','dig',null,'2026-02-01'),
        ((select id from t_ws),'vidA','wA','digDeeper',null,'2026-02-01'),
-       ((select id from t_ws),'vidA','wB','digDeeper',null,'2026-02-01');
+       ((select id from t_ws),'vidA','wB','digDeeper',null,'2026-02-01'),
+       -- ⟳ round 6 H5: the competing writers in the reservation-protocol block. Each reserve/record
+       -- names its OWN generation, which is the point — two writers never share an address.
+       ((select id from t_ws),'vidA','gOTHER','dig',null,'2026-02-02'),
+       ((select id from t_ws),'vidA','gTHIRD','dig',null,'2026-02-03');
+insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+values ((select id from t_ws),'vidA','gRETRY','summary',
+  '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-04","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
+  4,'2026-02-04','SHA_RETRY');
 insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
 values ((select id from t_w2),'vidB','g2','summary',
   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-01","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
@@ -219,10 +231,21 @@ select assert_raises($$insert into video_artifacts
   '23514', 'art_slot_kind');
 
 -- art_pending_is_leased — FK-valid, spans present, key shaped. ONLY the missing lease is wrong.
+-- ⟳ ROUND 6 H5: token + reserved_at ARE supplied, so only the missing LEASE is wrong. Without them
+-- this fixture violates three constraints and tests none of them — round 5 H1's masking shape, which
+-- adding two NOT-NULL-while-pending columns would otherwise have reintroduced across the whole file.
 select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
-  values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/9.md',9,20)$$,
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,lease_token,reserved_at)
+  values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/9.md',9,20,gen_random_uuid(),now())$$,
   'pending row with NO LEASE (round 4 Codex #5; round 5 H1: this test was MASKED too)', '23514', 'art_pending_is_leased');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,lease_expires_at,reserved_at)
+  values ((select id from t_ws),'vidA','dig:11','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/11.md',11,20,now()+interval '5 min',now())$$,
+  'pending row with NO TOKEN (nobody could renew it, and anybody could)', '23514', 'art_pending_has_token');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,lease_expires_at,lease_token)
+  values ((select id from t_ws),'vidA','dig:12','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/12.md',12,20,now()+interval '5 min',gen_random_uuid())$$,
+  'pending row with NO reserved_at (the renewal ceiling has nothing to measure)', '23514', 'art_pending_has_reserved_at');
 
 -- art_paid_has_generation
 select assert_raises($$insert into video_artifacts
@@ -310,13 +333,13 @@ select assert_raises($$insert into video_artifacts
 
 -- ── MONEY: the in-flight guard, and its reclaim (round 5 B4 + H4, ONE fix per cross-derivation C1) ──
 insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at)
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,lease_token,reserved_at)
   values ((select id from t_ws),'vidA','digDeeper','wA','digDeeper','pending',
-          (select id from t_ws)::text||'/videos/vidA/wA/dd.md', now() + interval '5 min');
+          (select id from t_ws)::text||'/videos/vidA/wA/dd.md', now() + interval '5 min', gen_random_uuid(), now());
 select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at)
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,lease_token,reserved_at)
   values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','pending',
-          (select id from t_ws)::text||'/videos/vidA/wB/dd.md', now() + interval '5 min')$$,
+          (select id from t_ws)::text||'/videos/vidA/wB/dd.md', now() + interval '5 min', gen_random_uuid(), now())$$,
   'a SECOND in-flight reservation on one slot (both writers would pay Gemini)', '23505', 'video_artifacts_inflight_uq');
 
 -- the in-flight row must not stall the READER on another slot, and must not appear as current
@@ -327,7 +350,7 @@ do $$ declare n int; begin
 end $$;
 
 -- the pending -> recorded flip must be PERMITTED (the append-only trigger must not over-reach)
-update video_artifacts set state='recorded', lease_expires_at=null
+update video_artifacts set state='recorded', lease_expires_at=null, lease_token=null, reserved_at=null
  where video_id='vidA' and slot='digDeeper' and state='pending';
 do $$ declare k text; begin
   select blob_key into k from video_artifacts_current where video_id='vidA' and slot='digDeeper';
@@ -377,7 +400,8 @@ select assert_raises($$update video_artifacts set start_sec=121
   where video_id='vidA' and slot='dig:120'$$,
   'rewriting the SPAN of a detached dig (Codex H5 — durable recovery data)', 'P0001');
 select assert_raises($$update video_artifacts
-  set state='pending', lease_expires_at=now()+interval '5 min', detached_at=null
+  set state='pending', lease_expires_at=now()+interval '5 min', detached_at=null,
+      lease_token=gen_random_uuid(), reserved_at=now()
   where video_id='vidA' and slot='dig:120'$$,
   'reviving a detached paid row back to PENDING (a second writer could then pay)', 'P0001');
 -- Codex H5 on a RECORDED row: provenance is a RANKING input, so a stale model rewriting it wins the
@@ -438,30 +462,148 @@ do $$ declare t1 timestamptz; t2 timestamptz; st text; begin
   raise notice 'ok (detached fencing): clock starts once, survives re-detach, clears on re-attach';
 end $$;
 
--- ── THE RECLAIM (round 5 H4): an expired lease must be stealable, or the slot is dead forever ────
-insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,lease_attempts,
-   start_sec,end_sec)
-  values ((select id from t_ws),'vidA','dig:900','gDIG','dig','pending',
-          (select id from t_ws)::text||'/videos/vidA/gDIG/dig/900.md', now() - interval '1 min', 2, 900, 950);
-do $$ declare a int; n int; begin
-  a := reclaim_expired_reservation((select id from t_ws),'vidA','dig:900');
-  if a <> 2 then raise exception 'ASSERTION FAILED — reclaim lost the attempt count: %', a; end if;
-  select count(*) into n from video_artifacts where video_id='vidA' and slot='dig:900';
-  if n <> 0 then raise exception 'ASSERTION FAILED — expired lease NOT reclaimed (% rows)', n; end if;
-  raise notice 'ok (reclaim): an expired reservation is stealable, and carries its attempt count';
+-- ── ⟳ ROUND 6 H5 / Codex B2 — THE RESERVATION PROTOCOL ──────────────────────────────────────────
+-- ⚠ THE BOUND IS PINNED HERE, not assumed. The first draft of this block read "dig_max_attempts = 2
+-- leaves room to observe a reclaim" — from the MIGRATION DEFAULT. The live local value is 1, so the
+-- block asserted against a number the database did not hold, and the failure it produced looked like
+-- a protocol bug. A test whose expectations depend on a tunable knob tests the knob. Set it, inside
+-- the rollback, so the protocol is what is under test.
+update guardrail_config set dig_max_attempts = 2, summary_max_attempts = 1 where id = true;
+do $$ declare o text; t1 uuid; t2 uuid; a int; begin
+  -- P2 — a typed outcome. The old reclaim returned a bare int and `coalesce(v_attempts,0)` made
+  -- "nothing to reclaim" and "reclaimed a row with 0 attempts" the same value, on the money path.
+  select outcome, token, attempts into o, t1, a from reserve_artifact_slot(
+    (select id from t_ws),'vidA','dig:700','gDIG','dig',
+    (select id from t_ws)::text||'/videos/vidA/gDIG/dig/700.md', null, 700, 750);
+  if o <> 'reserved' then raise exception 'ASSERTION FAILED — first reservation: %', o; end if;
+  if t1 is null then raise exception 'ASSERTION FAILED — reserved without a token'; end if;
+  if a <> 1 then raise exception 'ASSERTION FAILED — first attempt counted as %', a; end if;
+
+  -- P22, the half that IS a defect: a second writer must not start a paid call on a live lease.
+  select outcome, token into o, t2 from reserve_artifact_slot(
+    (select id from t_ws),'vidA','dig:700','gOTHER','dig',
+    (select id from t_ws)::text||'/videos/vidA/gOTHER/dig/700.md', null, 700, 750);
+  if o <> 'busy' then raise exception 'ASSERTION FAILED — a LIVE lease was stolen: %', o; end if;
+  if t2 is not null then raise exception 'ASSERTION FAILED — a losing reserve handed out a token'; end if;
+  raise notice 'ok (reserve): typed outcome, a token, and a live lease is not stealable';
 end $$;
--- ...and a LIVE lease must survive the reclaim, or the money guard is decorative
-do $$ declare n int; begin
-  perform reclaim_expired_reservation((select id from t_ws),'vidA','dig:9');
-  insert into video_artifacts
-    (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,start_sec,end_sec)
-    values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending',
-            (select id from t_ws)::text||'/videos/vidA/gDIG/dig/9.md', now() + interval '5 min', 9, 20);
-  perform reclaim_expired_reservation((select id from t_ws),'vidA','dig:9');
-  select count(*) into n from video_artifacts where video_id='vidA' and slot='dig:9';
-  if n <> 1 then raise exception 'ASSERTION FAILED — reclaim stole a LIVE lease (% rows)', n; end if;
-  raise notice 'ok (reclaim): a live lease is NOT stealable';
+
+-- RENEWAL is fenced by the TOKEN, not by the clock — a worker that overran its TTL but that nobody
+-- reclaimed keeps its work rather than losing it to a race that never happened.
+do $$ declare o text; t uuid; begin
+  select lease_token into t from video_artifacts where video_id='vidA' and slot='dig:700';
+  if renew_artifact_lease((select id from t_ws),'vidA','dig:700', gen_random_uuid()) <> 'lost' then
+    raise exception 'ASSERTION FAILED — a STRANGER renewed the lease'; end if;
+  update video_artifacts set lease_expires_at = now() - interval '1 min'
+   where video_id='vidA' and slot='dig:700';
+  o := renew_artifact_lease((select id from t_ws),'vidA','dig:700', t);
+  if o <> 'renewed' then raise exception 'ASSERTION FAILED — the holder could not renew past TTL: %', o; end if;
+  -- ...but the CEILING still bounds it, or a HUNG worker renews forever and the slot is never
+  -- reclaimable — the exact failure the reclaim exists to prevent, re-created by renewal.
+  update video_artifacts set reserved_at = now() - interval '10 hours'
+   where video_id='vidA' and slot='dig:700';
+  o := renew_artifact_lease((select id from t_ws),'vidA','dig:700', t);
+  if o <> 'ceiling_exceeded' then
+    raise exception 'ASSERTION FAILED — a hung worker renewed past the ceiling: %', o; end if;
+  raise notice 'ok (renew): token-fenced, survives its own TTL, bounded by the ceiling';
+end $$;
+
+-- RECLAIM, and the bound SURVIVES it. The old protocol's count was resettable because reclaim and
+-- reserve were two round trips; here the increment is in the statement that takes the slot.
+do $$ declare o text; t uuid; a int; n int; begin
+  update video_artifacts set lease_expires_at = now() - interval '1 min'
+   where video_id='vidA' and slot='dig:700';
+  select outcome, token, attempts into o, t, a from reserve_artifact_slot(
+    (select id from t_ws),'vidA','dig:700','gOTHER','dig',
+    (select id from t_ws)::text||'/videos/vidA/gOTHER/dig/700.md', null, 700, 750);
+  if o <> 'reserved' then raise exception 'ASSERTION FAILED — an EXPIRED lease was not reclaimable: %', o; end if;
+  if a <> 2 then raise exception 'ASSERTION FAILED — the attempt bound did not survive reclaim: %', a; end if;
+  select count(*) into n from video_artifacts where video_id='vidA' and slot='dig:700';
+  if n <> 1 then raise exception 'ASSERTION FAILED — reclaim duplicated the row (% rows)', n; end if;
+  -- the reclaimed writer LEARNS it lost, and learns it while still working
+  if renew_artifact_lease((select id from t_ws),'vidA','dig:700', (select lease_token from video_artifacts where video_id='vidA' and slot='dig:700' and lease_token = t)) is null then null; end if;
+  raise notice 'ok (reclaim): one row, re-pointed in place, attempts 1 -> 2 durably';
+end $$;
+
+-- ⚠ THE DISCRIMINATING CASE FOR live-lease-first, and the reason it needs its own block: at this
+-- point attempts = 2 = dig_max_attempts AND the lease is LIVE. Only here do the two orderings give
+-- different answers. The earlier `busy` assertion does NOT test the ordering — with attempts = 1 the
+-- exhaustion branch is false anyway, so it returns `busy` under either version. MEASURED: mutating
+-- the ordering left the whole suite GREEN until this block existed.
+-- The distinction is what a caller acts on: `busy` means come back, `exhausted` means never retry.
+do $$ declare o text; a int; begin
+  select outcome, attempts into o, a from reserve_artifact_slot(
+    (select id from t_ws),'vidA','dig:700','gTHIRD','dig',
+    (select id from t_ws)::text||'/videos/vidA/gTHIRD/dig/700.md', null, 700, 750);
+  if a is distinct from 2 then
+    raise exception 'ASSERTION FAILED — precondition: expected attempts=2 at the bound, got %', a; end if;
+  if o <> 'busy' then
+    raise exception 'ASSERTION FAILED — a LIVE lease at the attempt bound reported %, not busy', o; end if;
+  raise notice 'ok (reserve): a LIVE lease reads as busy even at the attempt bound, never exhausted';
+end $$;
+
+-- EXHAUSTION is a typed outcome, not a 23505 (shape #8: a policy that errors rather than denies).
+do $$ declare o text; begin
+  update video_artifacts set lease_expires_at = now() - interval '1 min'
+   where video_id='vidA' and slot='dig:700';
+  select outcome into o from reserve_artifact_slot(
+    (select id from t_ws),'vidA','dig:700','gTHIRD','dig',
+    (select id from t_ws)::text||'/videos/vidA/gTHIRD/dig/700.md', null, 700, 750);
+  if o <> 'exhausted' then
+    raise exception 'ASSERTION FAILED — past dig_max_attempts=2 the outcome was %', o; end if;
+  raise notice 'ok (reserve): the attempt bound terminates, as a value not an exception';
+end $$;
+
+-- THE FLIP NEVER REFUSES — USER DECISION 2026-08-07, "proceed, keep the paid work".
+-- A reclaimed writer already paid Gemini; rejecting its record would discard bought content without
+-- preventing the charge, which happened at reserve time. Append-only makes the second row the
+-- DESIGNED state: two generations, one slot, ranked by `current`.
+do $$ declare o text; t uuid; n int; begin
+  select lease_token into t from video_artifacts where video_id='vidA' and slot='dig:700';
+  o := record_artifact((select id from t_ws),'vidA','dig:700','gOTHER','dig',
+        (select id from t_ws)::text||'/videos/vidA/gOTHER/dig/700.md', t, null, 700, 750);
+  if o <> 'recorded_as_holder' then
+    raise exception 'ASSERTION FAILED — the holder could not record: %', o; end if;
+  -- now the ORIGINAL writer, long since reclaimed, comes back from its Gemini call
+  o := record_artifact((select id from t_ws),'vidA','dig:700','gDIG','dig',
+        (select id from t_ws)::text||'/videos/vidA/gDIG/dig/700.md', gen_random_uuid(), null, 700, 750);
+  if o <> 'recorded_after_loss' then
+    raise exception 'ASSERTION FAILED — a reclaimed writer''s PAID work was discarded: %', o; end if;
+  select count(*) into n from video_artifacts
+   where video_id='vidA' and slot='dig:700' and state='recorded';
+  if n <> 2 then raise exception 'ASSERTION FAILED — expected two ranked generations, got %', n; end if;
+  raise notice 'ok (record): the holder flips in place; a reclaimed writer APPENDS, losing nothing';
+end $$;
+
+-- IDEMPOTENCY: a worker that crashed between recording and reporting completion must learn it is
+-- done, not be handed an error it has to parse.
+do $$ declare o text; begin
+  select outcome into o from reserve_artifact_slot(
+    (select id from t_ws),'vidA','dig:700','gDIG','dig',
+    (select id from t_ws)::text||'/videos/vidA/gDIG/dig/700.md', null, 700, 750);
+  if o <> 'already_recorded' then
+    raise exception 'ASSERTION FAILED — re-reserving a recorded generation gave %', o; end if;
+  raise notice 'ok (reserve): re-reserving an already-recorded generation is idempotent';
+end $$;
+
+-- ⚠ THE CONSEQUENCE OF summary_max_attempts = 1, ASSERTED SO RAISING IT IS A DECISION.
+-- A summary worker that CRASHES leaves a slot nobody can retry: the first reserve sets attempts=1,
+-- and the bound is `< 1`. That is the money guardrail working as configured ("pay at most once"),
+-- not a protocol defect — but it is a real product trade-off (retrying costs money; not retrying
+-- leaves the video with no summary) and it belongs to whoever owns the guardrail numbers.
+do $$ declare o text; begin
+  select outcome into o from reserve_artifact_slot(
+    (select id from t_ws),'vidA','summary','gSPARE','summary',
+    (select id from t_ws)::text||'/videos/vidA/gSPARE/summary.md');
+  if o <> 'reserved' then raise exception 'ASSERTION FAILED — first summary reserve: %', o; end if;
+  update video_artifacts set lease_expires_at = now() - interval '1 min'
+   where video_id='vidA' and slot='summary' and state='pending';
+  select outcome into o from reserve_artifact_slot(
+    (select id from t_ws),'vidA','summary','gRETRY','summary',
+    (select id from t_ws)::text||'/videos/vidA/gRETRY/summary.md');
+  if o <> 'exhausted' then
+    raise exception 'ASSERTION FAILED — summary_max_attempts=1 no longer blocks a retry: %', o; end if;
+  raise notice 'ok (bound): with summary_max_attempts=1 a crashed summary slot is NOT retryable';
 end $$;
 
 -- ── GC MUST NOT COLLECT THE CURRENT GENERATION (round 5 H3) ──────────────────────────────────────
@@ -510,17 +652,30 @@ end $$;
 -- table t_ws *after* `set local role anon`, so it got 42501 from the temp table and never reached
 -- the function — an assertion passing for a reason other than the one it names, which is the same
 -- class of defect as the `when others` harness. Found by mutation: removing the revoke left it GREEN.
-do $$ declare ws uuid; begin
+-- ⟳ ROUND 6 H5 — ALL THREE replacements are swept, not just the one that inherited the name.
+-- B1 happened because a definer function was added one file away and the PUBLIC-revoke habit was
+-- applied at one site; replacing that function with three would have been the ideal way to reproduce
+-- the same mistake at triple scale.
+do $$ declare ws uuid; fn text; begin
   select id into ws from t_ws;
-  set local role anon;
-  begin
-    perform reclaim_expired_reservation(ws,'vidA','dig:9');
-    reset role;
-    raise exception 'ASSERTION FAILED — anon CALLED reclaim_expired_reservation (cross-tenant write)';
-  exception when insufficient_privilege then
-    reset role;
-    raise notice 'ok (rejected by 42501): anon calling reclaim_expired_reservation';
-  end;
+  foreach fn in array array['reserve_artifact_slot','renew_artifact_lease','record_artifact'] loop
+    set local role anon;
+    begin
+      case fn
+        when 'reserve_artifact_slot' then
+          perform * from reserve_artifact_slot(ws,'vidA','dig:9','gDIG','dig','k');
+        when 'renew_artifact_lease' then
+          perform renew_artifact_lease(ws,'vidA','dig:9', gen_random_uuid());
+        when 'record_artifact' then
+          perform record_artifact(ws,'vidA','dig:9','gDIG','dig','k', gen_random_uuid());
+      end case;
+      reset role;
+      raise exception 'ASSERTION FAILED — anon CALLED % (cross-tenant write)', fn;
+    exception when insufficient_privilege then
+      reset role;
+      raise notice 'ok (rejected by 42501): anon calling %', fn;
+    end;
+  end loop;
 end $$;
 do $$ begin
   set local role anon;

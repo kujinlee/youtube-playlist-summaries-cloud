@@ -1994,6 +1994,86 @@ which is the whole point of §4. Two relocations do survive and should be named 
 contradict the row: the §10 migration is itself a one-time relocation, and §4's tenancy box admits
 that an ownership change would move every object.
 
+> **⟳ ROUND 6 — WHAT THIS DOES AND DOES NOT DO TO BACKLOG #17.** Row 2 is the reason the roadmap
+> records #17 as possibly dissolved by this design. It is half right, and the halves are worth
+> separating because the wrong reading would close a live money-path defect on paper:
+>
+> - **The ADDRESS race — #17's original shape — IS dissolved.** #17 is *"a stale worker persist lands
+>   after an A3 relocation and orphans paid digs."* Under §4 the address is
+>   `<ws>/videos/<vid>/<gen>/summary.md`, carrying neither serial nor slug, so there is no relocation
+>   for a stale write to race with. Most of `2026-08-04-cas-fence-persist-summary-design.md` — five
+>   rounds, 26 Blocking — is genuinely **moot**, not deferred.
+> - **The RESERVATION race is NOT, and round 5 made it worse.** Round 6 MEASURED `P22`: a lease
+>   expiring under a live worker, a second writer reclaiming, and **two paid Gemini calls in one
+>   slot**. That was never about addressing, so nothing in §4 touches it. It is closed by §5.1.2's
+>   protocol instead.
+>
+> **#17 is therefore NARROWED, not closed**, and this box says so rather than letting a checkbox
+> claim otherwise. The residue is exactly the part that was never an addressing problem.
+
+### 9.2 The reservation protocol — ⟳ ADDED IN ROUND 6 (H5 / Codex B2)
+
+**Round 5 added a reclaim so a dead writer could not hold a slot forever, and the reclaim was not a
+protocol.** Three defects were measured in ten lines: a return value that could not distinguish
+*"nothing to reclaim"* from *"reclaimed something with zero attempts"* (shape #1, on the money path); a
+terminal bound that was **resettable**, because reclaim and reserve were two round trips with nothing
+atomic between them; and no way for a reclaimed writer to find out it had lost.
+
+**The reviewer's fix was declined, deliberately, and the reasoning is the useful part.** H5 proposed a
+`lease_token` that the record-flip must *match*, rejecting a reclaimed writer's record. Follow the
+money: in `P22` **both** Gemini calls are already paid for by the time the first writer tries to
+record. Rejecting it does not prevent the double charge — the charge happened at reserve time — it
+discards one of the two things we bought. And under append-only that record is not a defect at all:
+`video_artifacts_paid_uq` keys on `(slot, generation_id)`, so two recorded generations in one slot is
+precisely what append-only *means*, and `current` ranks them on recorded facts.
+
+> **Rule: the reservation guards SPENDING, not recording.** At most one writer may *start* a paid call
+> per slot. A writer that already paid always records. **USER DECISION 2026-08-07.**
+
+So `P22`'s two rows are the designed state, and the real defect is that **the lease expired while the
+worker was still alive** — which renewal fixes and rejection does not. Renewal needs the token anyway,
+since a reclaimed worker must not be able to renew the *new* holder's lease; so the token identifies
+the holder rather than vetoing a record. That also supplies the channel H5 correctly said was missing,
+and supplies it **earlier**: a failed renewal tells a worker it lost *while it is still working*, so it
+can stop before spending more, instead of learning at record time when the money is gone.
+
+**Three functions replace the reclaim** (`schema/04_artifacts.sql`), modelled on `reserve_serve_model`
+(`0014:50-70`), which has been in production in this repo doing exactly this:
+
+| | |
+|---|---|
+| `reserve_artifact_slot` | **One** upsert on the partial unique index → `reserved(token) \| busy \| exhausted \| already_recorded`. The attempt count is incremented **by the statement that takes the slot**, which is what makes the bound un-resettable |
+| `renew_artifact_lease` | Fenced by the **token, not the clock** → `renewed \| lost \| ceiling_exceeded` |
+| `record_artifact` | Flips in place when the token matches, otherwise **appends**. Never refuses |
+
+**The round-5 reclaim regressed to `DELETE`-then-`INSERT` on a premise that does not hold.** It assumed
+the expired row *"must stop existing before the next can be created"* — true of an INSERT against a
+partial unique index, false of an **UPDATE**, which re-points the pending row without ever challenging
+uniqueness. The append-only trigger does not fire on a `pending` row, so its `generation_id` is mutable
+by design. Every one of the three defects followed from routing around a constraint that never applied.
+
+**Renewal is bounded, or it re-creates the failure the reclaim exists to prevent.** A *hung* worker —
+alive but not progressing — would renew forever and the slot would never be reclaimable. The ceiling
+measures from a new `reserved_at` column, because `lease_expires_at` moves on every renewal and so
+measures "time until I give up", never "how long this attempt has run". It reuses
+`guardrail_config.max_duration_seconds` rather than inventing a number, and it is openly a
+**heuristic**: a genuinely slow worker past the ceiling can still be reclaimed mid-flight and then we
+pay twice. No protocol distinguishes *slow* from *stuck* from outside. What the design can do is make
+that rare rather than structural, and never compound it by also discarding paid work.
+
+**Two consequences recorded rather than left to be discovered:**
+
+- **`summary_max_attempts = 1` means a crashed summary worker leaves a slot nobody can retry.** The
+  first reserve sets `attempts = 1` and the bound is `< 1`. That is the money guardrail working as
+  configured — *pay at most once* — not a protocol defect, and it is **not** overridden here, because
+  a crashed worker may well have been billed. It is a product trade-off owned by whoever sets the
+  guardrail numbers, `exhausted` is typed so a caller can surface it instead of hanging, and it is
+  **asserted**, so raising the knob is a decision rather than an accident.
+- **`record_artifact`'s signature is not final.** Item 3 (`md_hash` has no producer) must add
+  `md_hash`, `card` and `doc_version_major` and create the generation row in the same transaction.
+  What is settled here is the **fencing semantics** of the flip; the payload belongs to item 3, which
+  is sequenced last because it has already been specified-before-the-table-changed twice.
+
 **⚠ Row 3 — inherits a claim this spec has already had to retract.** "One manifest row, conditional
 write, loser re-runs" rests on the conditional write being sufficient. The five-round review of
 `2026-08-04-cas-fence-persist-summary-design.md` established the opposite, and §5.1.1 already carries

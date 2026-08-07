@@ -9,8 +9,13 @@
 -- pairs, an EMPTY PAIR LIST still hashes to this constant BY DEFINITION rather than to whatever
 -- mdHash('[]') happens to be. Re-deriving it is the obvious future "simplification" and it would
 -- silently re-open the divergence below, so: do not.
+-- search_path pinned for the same reason as every other function here (see 04's `slot_kind`). This
+-- body happens to be safe today — a literal and a `pg_catalog` cast — but "safe because of what the
+-- body currently contains" is not a property anyone will re-check when the body changes.
 create function no_corrections_hash() returns text
-  language sql immutable as $$ select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text $$;
+  language sql immutable
+  set search_path = public
+  as $$ select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text $$;
 revoke all on function no_corrections_hash() from public, anon, authenticated;
 
 -- The canonicalization is `content-hash.ts`'s, reproduced in SQL: CRLF/CR -> LF, strip trailing

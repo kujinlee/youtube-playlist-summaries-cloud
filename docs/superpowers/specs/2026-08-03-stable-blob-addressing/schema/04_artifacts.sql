@@ -6,8 +6,21 @@
 -- slot — and `current` becomes a query rather than a stored pointer. That is what "current is derived"
 -- always required and the round-2 PK silently forbade.
 
+-- ⚠ `set search_path` PINNED — ⟳ ROUND 6, and this is the FOURTH instance of one class in a single
+-- session (the others: `no_corrections_hash`, pgcrypto's `digest`, and an enum literal, all in 03).
+-- A `language sql` helper with no pinned path inherits the CALLER's, and this one is reached from
+-- inside `reserve_artifact_slot` — a `security definer set search_path = ''` function — through the
+-- `art_slot_kind` CHECK. Its unqualified `::artifact_kind` then cannot be resolved and the INSERT
+-- fails with `type "artifact_kind" does not exist`, at runtime, from a constraint, three files away.
+-- MEASURED; invisible at every direct call site.
+--
+-- THE GENERAL RULE, since finding it four times by hand is not a strategy: EVERY function this schema
+-- ships pins its search_path. A helper without one is not "using the default", it is inheriting an
+-- unknown, and definer functions make that unknown EMPTY.
 create function slot_kind(p_slot text) returns artifact_kind
-  language sql immutable as $$
+  language sql immutable
+  set search_path = public
+  as $$
   select case
     when p_slot = 'summary'    then 'summary'
     when p_slot = 'model'      then 'model'
@@ -33,6 +46,14 @@ create table video_artifacts (
   lease_expires_at timestamptz,          -- round 4 Codex #5: `pending` MUST be leased, or a writer
   lease_attempts   int not null default 0, --   that dies leaves a permanent `busy`. Same shape as
                                            --   reserve_serve_model's lease/attempt bound (0012/0014).
+  -- ⟳ ROUND 6 H5 / Codex B2 — WHO holds the slot, and SINCE WHEN.
+  -- `lease_token` is the holder's identity, rotated every time the slot is taken. It exists because
+  -- RENEWAL needs it: without it a worker that was already reclaimed could renew the NEW holder's
+  -- lease and steal the slot back. It is deliberately NOT a veto on recording — see record_artifact.
+  -- `reserved_at` anchors the renewal ceiling. `lease_expires_at` cannot: renewal moves it, so it
+  -- measures "time until I give up", never "how long this attempt has been running".
+  lease_token      uuid,
+  reserved_at      timestamptz,
   -- ⟳ ROUND 6 — WHEN the row was detached, because §8's retention clock has no other input.
   -- USER DECISION 2026-08-06: a detached artifact is NOT kept forever. §6.2 said a detached dig is
   -- "never a sweep candidate"; §8 says a paid blob is collected 90 days after it stops being current.
@@ -73,6 +94,12 @@ create table video_artifacts (
   constraint art_paid_has_generation check
     ((kind in ('summary','model','dig','digDeeper')) = (generation_id is not null)),
   constraint art_pending_is_leased check ((state = 'pending') = (lease_expires_at is not null)),
+  -- ⟳ ROUND 6 H5 — THREE separate constraints, not one compound. This file's header demands that
+  -- every negative violate EXACTLY ONE guard; a single `(pending) = (a is not null and b is not null
+  -- and c is not null)` would make each of the three untestable in isolation, which is round 5 H1's
+  -- masking defect written deliberately instead of by accident.
+  constraint art_pending_has_token check ((state = 'pending') = (lease_token is not null)),
+  constraint art_pending_has_reserved_at check ((state = 'pending') = (reserved_at is not null)),
   -- Round 5 H2: a summary is not derived from anything, so it must not carry a source — otherwise the
   -- source-currency rung ranks the summary against its own output and the two views disagree about
   -- which summary is current. Guards the DATA; the rung below separately guards the QUERY. Both,
@@ -150,31 +177,219 @@ create unique index video_artifacts_free_uq on video_artifacts
 create unique index video_artifacts_inflight_uq on video_artifacts
   (workspace_id, video_id, slot)               where state = 'pending';
 
--- THE RECLAIM (round 5 H4). The lease columns were added in round 4 and NOTHING EVER READ THEM:
--- grepping the spec for lease_expires/lease_attempts/reclaim returned exactly one hit — the sentence
--- motivating the column. A guard that is written and never read is not a guard.
+-- ⟳ ROUND 6 H5 / Codex B2 — THE RECLAIM WAS NOT A PROTOCOL. Three MEASURED defects in ten lines:
 --
--- DELETE-then-insert, not update, because the unique index above is on the EXISTENCE of a pending
--- row: the expired one must stop existing before the next can be created.
-create function reclaim_expired_reservation(p_ws uuid, p_video text, p_slot text)
-  returns int language plpgsql security definer set search_path = '' as $$
-declare v_attempts int;
+--   P2   reclaim(a slot that never existed) = 0, and reclaim(a row with lease_attempts = 0) = 0.
+--        Indistinguishable — shape #1 on the money path, in a value the comment said the caller
+--        "carries into the next reservation and gives up past a terminal bound".
+--   --   the bound was RESETTABLE. Reclaim and reserve were two round trips with nothing atomic
+--        between them, so two reclaimers could race and the loser's count won: 2 -> 1, and a poison
+--        slot never terminates. The unique index makes the loser's INSERT fail; it does nothing to
+--        make the COUNT survive.
+--   P22  W1 reserves -> its lease expires while it is still inside Gemini -> W2 reclaims and reserves
+--        -> both call Gemini. TWO PAID CALLS in one slot.
+--
+-- ⚠ THE REVIEWER'S PROPOSED FIX WAS DECLINED, DELIBERATELY, AND THIS IS THE REASONING.
+-- H5 asked for a `lease_token` that the record-flip must MATCH, so a reclaimed writer's record is
+-- REJECTED. Follow the money: in P22 both Gemini calls are already paid for by the time W1 tries to
+-- record. Rejecting W1 does not prevent the double charge — it throws away one of the two things we
+-- paid for. And under append-only W1's row is not a defect at all: `video_artifacts_paid_uq` keys on
+-- (slot, generation_id), so two recorded generations in one slot is precisely what append-only MEANS,
+-- and `current` ranks them. W1 and W2 hold different generation ids (rule 19's record-first order
+-- makes the writer choose one before reserving), so their bytes never collide either.
+--
+-- So P22's two rows are the designed state. The defect is that THE LEASE EXPIRED WHILE THE WORKER WAS
+-- STILL ALIVE, and the fix for that is RENEWAL, not rejection. USER DECISION 2026-08-07: proceed and
+-- keep the paid work.
+--
+-- Renewal, however, needs the token anyway — a worker that was already reclaimed must not be able to
+-- renew the NEW holder's lease. So the token exists; it identifies the holder rather than vetoing a
+-- record. It also gives H5 the channel it correctly said was missing, and gives it EARLIER: a failed
+-- renewal tells a worker it lost WHILE IT IS STILL WORKING, so it can stop before spending more,
+-- instead of finding out at record time when the money is gone.
+--
+-- Modelled on `reserve_serve_model` (`0014:50-62`), which has been in production here and already
+-- does reclaim-and-reserve as ONE upsert. The round-5 reclaim regressed to DELETE-then-INSERT on the
+-- premise that the expired row "must stop existing before the next can be created" — true of an
+-- INSERT, false of an UPDATE. The pending row can simply be re-pointed: uniqueness is never
+-- challenged, and the append-only trigger does not fire on a `pending` row, so its generation_id is
+-- mutable by design. Every defect above followed from routing around a constraint that never applied.
+create function reserve_artifact_slot(
+  p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind artifact_kind, p_blob_key text,
+  p_source_generation_id text default null, p_start_sec int default null, p_end_sec int default null)
+  returns table (outcome text, token uuid, attempts int)
+  language plpgsql security definer set search_path = '' as $$
+declare v_ttl int; v_max int; v_cfg public.guardrail_config; v_row public.video_artifacts;
 begin
-  delete from public.video_artifacts
-   where workspace_id = p_ws and video_id = p_video and slot = p_slot
-     and state = 'pending' and lease_expires_at < now()
-  returning lease_attempts into v_attempts;
-  return coalesce(v_attempts, 0);   -- caller carries this into the next reservation and gives up
-end $$;                             -- past a terminal bound, as reserve_serve_model does (0012/0014)
+  select * into v_cfg from public.guardrail_config where id = true;
+  v_ttl := v_cfg.lease_ttl_seconds;
+  -- THE BOUND IS PER KIND, because the existing knobs already are and they disagree by 5x
+  -- (summary_max_attempts=1, dig_max_attempts=2, max_serve_attempts=5). A single number here would
+  -- have silently overridden a money guardrail somebody chose deliberately.
+  -- `p_kind::text`, NOT a bare `case p_kind when 'summary'`. MEASURED: `type "artifact_kind" does
+  -- not exist` AT RUNTIME. Comparing an enum against an unknown literal makes Postgres resolve the
+  -- enum's type NAME, and `set search_path = ''` puts it out of reach — the THIRD instance this
+  -- session of "correct everywhere except inside a definer function with an empty path" (the other
+  -- two were `no_corrections_hash` and pgcrypto's `digest` in 03). Casting to text sidesteps name
+  -- resolution entirely; the enum's own constraint already guarantees the value is one of these.
+  v_max := case p_kind::text
+             when 'summary'   then v_cfg.summary_max_attempts
+             when 'dig'       then v_cfg.dig_max_attempts
+             when 'digDeeper' then v_cfg.dig_max_attempts
+             else v_cfg.max_serve_attempts        -- 'model'; 'render' is free and never reserved
+           end;
+  -- ⚠ CONSEQUENCE, NAMED RATHER THAN DISCOVERED. `summary_max_attempts` DEFAULTS TO 1, so the first
+  -- reservation sets attempts=1 and any later reclaim of that slot returns `exhausted`: a summary
+  -- worker that CRASHES leaves a slot no one can retry. That is the money guardrail working as
+  -- configured — "pay at most once" — and it is deliberately NOT overridden here, because a crashed
+  -- worker may well have been billed already. It is a real product decision (retry costs money;
+  -- not retrying leaves the video without a summary), it belongs to whoever owns the guardrail
+  -- numbers, and `exhausted` is a TYPED outcome so a caller can surface it instead of hanging.
+  -- Asserted in 05, so raising the knob is a decision rather than an accident.
 
--- ⚠ ROUND 6 B1 — MEASURED: `anon`, with no JWT at all, called this and DELETED tenant-1's in-flight
--- reservation. `security definer` means RLS is never consulted, so the GRANT is the entire
--- authorization story — and the default is PUBLIC EXECUTE. This repo revokes PUBLIC on every other
--- definer function it ships (0004:10, 0005:25, 0010:21, 0011:137); the one added as round 5's H4 fix,
--- one file away, was not swept. Round 5 B2 was the READ half of this exact shape; this is the WRITE
--- half, reintroduced in the same batch that fixed the read.
-revoke all on function reclaim_expired_reservation(uuid, text, text) from public, anon, authenticated;
-grant execute on function reclaim_expired_reservation(uuid, text, text) to service_role;
+  -- Idempotency, and a REAL case rather than symmetry: a worker that crashed between recording and
+  -- reporting job completion retries, and must learn it is done rather than be handed an error.
+  if exists (select 1 from public.video_artifacts
+              where workspace_id = p_ws and video_id = p_video and slot = p_slot
+                and generation_id = p_generation_id and state in ('recorded','detached')) then
+    return query select 'already_recorded'::text, null::uuid, null::int; return;
+  end if;
+
+  -- ONE STATEMENT. The attempt count is incremented BY THE SAME STATEMENT THAT TAKES THE SLOT, which
+  -- is what makes the bound un-resettable; a partial unique index is a legal conflict arbiter as long
+  -- as its predicate is restated.
+  insert into public.video_artifacts
+    (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
+     source_generation_id, start_sec, end_sec,
+     lease_expires_at, lease_attempts, lease_token, reserved_at)
+  values (p_ws, p_video, p_slot, p_generation_id, p_kind, 'pending', p_blob_key,
+          p_source_generation_id, p_start_sec, p_end_sec,
+          now() + make_interval(secs => v_ttl), 1, gen_random_uuid(), now())
+  on conflict (workspace_id, video_id, slot) where state = 'pending'
+  do update set
+       generation_id        = excluded.generation_id,
+       kind                 = excluded.kind,
+       blob_key             = excluded.blob_key,
+       source_generation_id = excluded.source_generation_id,
+       start_sec            = excluded.start_sec,
+       end_sec              = excluded.end_sec,
+       lease_expires_at     = excluded.lease_expires_at,
+       lease_attempts       = public.video_artifacts.lease_attempts + 1,
+       lease_token          = excluded.lease_token,
+       reserved_at          = excluded.reserved_at
+     where public.video_artifacts.lease_expires_at < now()
+       and public.video_artifacts.lease_attempts   < v_max
+  returning * into v_row;
+
+  if found then
+    return query select 'reserved'::text, v_row.lease_token, v_row.lease_attempts; return;
+  end if;
+
+  -- Zero rows: the DO UPDATE's WHERE declined. Read back and say WHICH — never signal an outcome with
+  -- a raw 23505, which is shape #8 (a policy that errors rather than denies) and forces callers to
+  -- parse a constraint name to tell "busy" from "broken".
+  select * into v_row from public.video_artifacts
+   where workspace_id = p_ws and video_id = p_video and slot = p_slot and state = 'pending';
+  if not found then
+    return query select 'busy'::text, null::uuid, null::int; return;   -- lost a concurrent insert
+  end if;
+  -- ⚠ LIVE LEASE FIRST, EXHAUSTION SECOND — the order is the whole meaning, and getting it backwards
+  -- is a defect a caller acts on. MEASURED: with the local `dig_max_attempts = 1`, a second writer
+  -- arriving while the FIRST is still inside its Gemini call was told `exhausted` — i.e. "give up on
+  -- this slot permanently" — about a slot that was being worked on normally. `busy` says "come back";
+  -- `exhausted` says "this will never succeed". Only the second is terminal, so it must be reserved
+  -- for the case where nobody holds the slot AND the bound is spent.
+  -- `reserve_serve_model` (0014:66-70) already orders it this way; this is the precedent cited three
+  -- screens above and then not followed closely enough.
+  if v_row.lease_expires_at > now() then
+    return query select 'busy'::text, null::uuid, v_row.lease_attempts; return;
+  end if;
+  if v_row.lease_attempts >= v_max then
+    return query select 'exhausted'::text, null::uuid, v_row.lease_attempts; return;
+  end if;
+  return query select 'busy'::text, null::uuid, v_row.lease_attempts;
+end $$;
+
+-- RENEWAL — what actually fixes P22, by keeping a live worker's slot instead of arbitrating after
+-- both parties have paid.
+--
+-- ⚠ THERE IS DELIBERATELY NO `lease_expires_at > now()` HERE. The TOKEN decides ownership; the CLOCK
+-- only decides when somebody ELSE may take over. A worker that overran its TTL but that nobody
+-- reclaimed keeps its work, rather than losing it to a race that never actually happened.
+--
+-- The ceiling is what stops renewal from re-creating the failure the reclaim exists to fix — a HUNG
+-- worker (alive, not progressing) would otherwise renew forever and the slot would never be
+-- reclaimable. It reuses `max_duration_seconds`, already this project's "no single job runs longer
+-- than this" knob, rather than inventing a number. It is openly a HEURISTIC and its cost is real and
+-- not eliminable: a genuinely slow worker past the ceiling CAN still be reclaimed mid-flight, and
+-- then we pay twice. No protocol can tell "slow" from "stuck" from outside. What the design can do is
+-- make that rare rather than structural, and never compound it by ALSO discarding paid work.
+create function renew_artifact_lease(p_ws uuid, p_video text, p_slot text, p_token uuid)
+  returns text language plpgsql security definer set search_path = '' as $$
+declare v_ttl int; v_ceiling int; v_exists boolean;
+begin
+  select lease_ttl_seconds, max_duration_seconds into v_ttl, v_ceiling
+    from public.guardrail_config where id = true;
+
+  update public.video_artifacts
+     set lease_expires_at = now() + make_interval(secs => v_ttl)
+   where workspace_id = p_ws and video_id = p_video and slot = p_slot
+     and state = 'pending' and lease_token = p_token
+     and reserved_at > now() - make_interval(secs => v_ceiling);
+  if found then return 'renewed'; end if;
+
+  select exists (select 1 from public.video_artifacts
+                  where workspace_id = p_ws and video_id = p_video and slot = p_slot
+                    and state = 'pending' and lease_token = p_token) into v_exists;
+  return case when v_exists then 'ceiling_exceeded' else 'lost' end;
+end $$;
+
+-- THE FLIP — and it NEVER REFUSES. If the token still matches we own the pending row and update it in
+-- place; if it does not, we were reclaimed and we APPEND a recorded row for our own generation. The
+-- second path is not a fallback, it is append-only working as designed: the bytes are paid for, the
+-- generation is legitimate, and `current` ranks it against the winner's on the recorded facts.
+--
+-- ⚠ SCOPE, STATED SO IT IS NOT DISCOVERED: this signature is NOT final. Handoff item 3 (`md_hash` has
+-- no producer) must add `md_hash`, `card` and `doc_version_major` and create the generation row in the
+-- same transaction. That item is deliberately sequenced LAST because it has already been
+-- specified-before-the-table-changed twice (round 2 N-B3, round 5). What is settled HERE is the
+-- FENCING semantics of the flip; the payload is item 3's.
+create function record_artifact(
+  p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind artifact_kind, p_blob_key text,
+  p_token uuid, p_source_generation_id text default null,
+  p_start_sec int default null, p_end_sec int default null)
+  returns text language plpgsql security definer set search_path = '' as $$
+begin
+  update public.video_artifacts
+     set state = 'recorded', lease_expires_at = null, lease_token = null, reserved_at = null
+   where workspace_id = p_ws and video_id = p_video and slot = p_slot
+     and state = 'pending' and lease_token = p_token and generation_id = p_generation_id;
+  if found then return 'recorded_as_holder'; end if;
+
+  insert into public.video_artifacts
+    (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
+     source_generation_id, start_sec, end_sec)
+  values (p_ws, p_video, p_slot, p_generation_id, p_kind, 'recorded', p_blob_key,
+          p_source_generation_id, p_start_sec, p_end_sec);
+  return 'recorded_after_loss';
+end $$;
+
+-- ⚠ ROUND 6 B1 — MEASURED: `anon`, with no JWT at all, called the previous reclaim and DELETED
+-- tenant-1's in-flight reservation. `security definer` means RLS is never consulted, so the GRANT is
+-- the entire authorization story — and the default is PUBLIC EXECUTE. This repo revokes PUBLIC on
+-- every other definer function it ships (0004:10, 0005:25, 0010:21, 0011:137); the one added as round
+-- 5's H4 fix, one file away, was not swept. Sweeping all THREE replacements here, not just the one
+-- that inherited the name — that one-site habit is what produced B1 in the first place.
+revoke all on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int)
+  from public, anon, authenticated;
+grant execute on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int)
+  to service_role;
+revoke all on function renew_artifact_lease(uuid, text, text, uuid) from public, anon, authenticated;
+grant execute on function renew_artifact_lease(uuid, text, text, uuid) to service_role;
+revoke all on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int)
+  from public, anon, authenticated;
+grant execute on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int)
+  to service_role;
 revoke all on function slot_kind(text) from public, anon, authenticated;
 
 alter table video_artifacts enable row level security;
