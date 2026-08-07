@@ -338,6 +338,69 @@ do $$ declare st text; n int; begin
   raise notice 'ok (detach): recorded -> detached is permitted, keeps its row, and stops serving';
 end $$;
 
+-- ── ⟳ ROUND 6 B3/H1 + Codex B1/H5 — A DETACHED ROW IS FENCED LIKE A RECORDED ONE ────────────────
+-- The trigger used to gate on `old.state = 'recorded'`, so everything above could be stepped around
+-- by detaching first. `dig:120` is detached as of the block above — every negative here runs against
+-- a REAL detached row, which is the state that was unprotected.
+select assert_raises($$delete from video_artifacts where video_id='vidA' and slot='dig:120'$$,
+  'DELETE of a DETACHED paid row (P1 — orphaning, reachable in two statements)', 'P0001');
+select assert_raises($$update video_artifacts
+  set blob_key=(select id from t_ws)::text||'/videos/vidA/gDIG/dig/HIJACKED.md'
+  where video_id='vidA' and slot='dig:120'$$,
+  'REPOINTING a DETACHED paid row at different bytes (P1b — shape #3, the serious one)', 'P0001');
+select assert_raises($$update video_artifacts set start_sec=999
+  where video_id='vidA' and slot='dig:120'$$,
+  'rewriting the SPAN of a detached dig (Codex H5 — durable recovery data)', 'P0001');
+select assert_raises($$update video_artifacts
+  set state='pending', lease_expires_at=now()+interval '5 min', detached_at=null
+  where video_id='vidA' and slot='dig:120'$$,
+  'reviving a detached paid row back to PENDING (a second writer could then pay)', 'P0001');
+-- Codex H5 on a RECORDED row: provenance is a RANKING input, so a stale model rewriting it wins the
+-- source-currency rung without regenerating anything. `wA`'s digDeeper row is recorded by now.
+select assert_raises($$update video_artifacts set source_generation_id='gOLD'
+  where video_id='vidA' and slot='digDeeper' and generation_id='wA'$$,
+  'rewriting the PROVENANCE of a recorded paid row (Codex H5 — wins the rung for free)', 'P0001');
+
+-- art_detached_is_dig — only a section-scoped artifact can stop matching a section.
+-- Both fixtures carry detached_at so they violate EXACTLY ONE guard (round 5 H1's masking rule):
+-- without it art_detached_has_timestamp would reject them too and neither test would prove anything.
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,detached_at)
+  values ((select id from t_ws),'vidA','summary','gSPARE','summary','detached',
+          (select id from t_ws)::text||'/videos/vidA/gSPARE/s.md', now())$$,
+  'a DETACHED SUMMARY (P10 dies here — a summary is attached to no section)',
+  '23514', 'art_detached_is_dig');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,detached_at)
+  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','detached',
+          (select id from t_ws)::text||'/videos/vidA/wB/dd.md', now())$$,
+  'a DETACHED digDeeper (it is the per-video container, never section-scoped)',
+  '23514', 'art_detached_is_dig');
+-- ...and the equivalence in the other direction, or a stale clock survives a re-attachment.
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,detached_at)
+  values ((select id from t_ws),'vidA','dig:61','gDIG','dig','recorded',
+          (select id from t_ws)::text||'/videos/vidA/gDIG/dig/61.md',61,65, now())$$,
+  'a RECORDED row carrying a detached_at (the clock exists only while detached)',
+  '23514', 'art_detached_has_timestamp');
+
+-- POSITIVES. A constraint that rejects everything also passes every negative above, and the whole
+-- point of `detached` is that the dig REMAINS RECOVERABLE — §6.1 owes it "a route back".
+do $$ declare t1 timestamptz; t2 timestamptz; st text; begin
+  select detached_at into t1 from video_artifacts where video_id='vidA' and slot='dig:120';
+  if t1 is null then raise exception 'ASSERTION FAILED — detaching did not start the retention clock'; end if;
+  -- a re-detach must NOT restart it, or detach/re-attach cycling pins paid bytes forever
+  update video_artifacts set state='detached' where video_id='vidA' and slot='dig:120';
+  select detached_at into t2 from video_artifacts where video_id='vidA' and slot='dig:120';
+  if t2 is distinct from t1 then raise exception 'ASSERTION FAILED — a re-detach RESTARTED the clock'; end if;
+  -- re-attachment: the one transition §6.1 requires, and it must clear the clock
+  update video_artifacts set state='recorded' where video_id='vidA' and slot='dig:120';
+  select state, detached_at into st, t2 from video_artifacts where video_id='vidA' and slot='dig:120';
+  if st <> 'recorded' then raise exception 'ASSERTION FAILED — re-attachment was blocked (state %)', st; end if;
+  if t2 is not null then raise exception 'ASSERTION FAILED — re-attachment left a stale clock'; end if;
+  raise notice 'ok (detached fencing): clock starts once, survives re-detach, clears on re-attach';
+end $$;
+
 -- ── THE RECLAIM (round 5 H4): an expired lease must be stealable, or the slot is dead forever ────
 insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,lease_attempts,
