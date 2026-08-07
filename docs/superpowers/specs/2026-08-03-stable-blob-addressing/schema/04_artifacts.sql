@@ -235,7 +235,11 @@ join video_generations g
   and g.generation_id = a.generation_id
 where a.slot = 'summary' and a.state = 'recorded' and not g.body_collected
 order by a.workspace_id, a.video_id,
-         (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,
+         -- ⟳ ROUND 6 B4: plain `=`, not `is not distinct from`. Both sides are now NOT NULL — the
+         -- column by DDL, the card by gen_card_complete — so the null-tolerant comparison bought
+         -- nothing and actively hid the defect: it returned TRUE for two NULLs, which read as
+         -- "corrections-current" for every row the migration had failed to backfill.
+         (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,
          g.doc_version_major desc nulls last,
          -- Round 5 B3: rank the CARD's mdGeneratedAt, not produced_at. reconcileClassA:49 ranks
          -- mdGeneratedAt; this ranked produced_at; MEASURED opposite winners on the same pair, which
@@ -271,7 +275,7 @@ order by a.workspace_id, a.video_id, a.slot,
          (a.slot = 'summary'
           or a.source_generation_id is null
           or a.source_generation_id is not distinct from s.generation_id) desc,
-         (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,
+         (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,   -- ⟳ round 6 B4; see above
          g.doc_version_major desc nulls last,
          (g.card ->> 'mdGeneratedAt') desc nulls last,   -- round 5 B3; see video_summary_current
          g.produced_at desc nulls last,
