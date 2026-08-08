@@ -473,6 +473,26 @@ promoting a schema into `supabase/migrations/`. It is cheap, total, and mechanic
 axis from adversarial review, which is deep and selective. **Depth and coverage do not substitute for
 each other**, and a project buying a lot of depth should notice when it has bought no coverage.
 
+**⟳ IT IS NOW A RATCHET, NOT A DISCIPLINE (added 2026-08-07).** A rule that depends on remembering is
+the shape this project's own reviews keep finding in the *code*; running the classification by hand
+would have been the same defect in the *process*. Two mechanical checks:
+
+| Check | What it enumerates | Fails when |
+|---|---|---|
+| `scripts/check-guard-coverage.py` | every constraint, unique index, FK and trigger, read from **`pg_catalog`** | a guard is unclassified, a classification is stale, or a SEQUENCE guard has no mutation |
+| the coverage assertion in `schema/05_assert.sql` | every value of the `artifact_kind` enum × free/paid | any kind is never written a **second** time to the same slot |
+
+The population comes from the live catalog and the enum, never from a hand-maintained list — so a
+guard added tomorrow cannot be silently skipped. **Both earned their place on the first run:**
+the first found four guards nobody had ever inventoried (two auto-named `state` CHECKs among them),
+and the second, verified by deletion, reproduces the exact free-render defect that survived seven
+rounds. The machine count also corrected the manual one — 28 SHAPE / 4 SEQUENCE, not 26 / 6.
+
+**Both are LOCAL gates today**, alongside `verify-schema.sh`, because they need a live Postgres and
+CI has none while this schema is still outside `supabase/migrations/`. Wiring them into CI is part of
+the promotion slice, not a separate task — a gate that only runs when someone remembers is halfway
+back to a discipline.
+
 **Two rules that fall out, both learned by getting them wrong:**
 - **A promise like "this never refuses" is a NEGATIVE property over every guard on its write path.**
   Count them before believing it. `record_artifact` promised exactly that across **32** rejection

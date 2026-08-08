@@ -70,6 +70,31 @@ do $$ declare n_null int; n_corr_wv int; n_corr_v int; begin
   raise notice 'ok (backfill): 0 NULL hashes, and all % corrected videos carried across', n_corr_v;
 end $$;
 
+-- ── ⟳ POPULATION-COVERAGE INSTRUMENT (added 2026-08-07) ─────────────────────────────────────────
+-- THE RATCHET THAT MAKES THE FREE-RENDER DEFECT UNREINTRODUCIBLE.
+--
+-- That defect was not a wrong line anywhere. It was an ABSENCE: no fixture, in seven review rounds,
+-- ever wrote the same free slot TWICE. Every instrument this project owns is opt-in — an assertion
+-- exists because someone thought of the case, a mutation because someone wrote it, a review finds
+-- what a reviewer looks at — so they share ONE blind spot, and an absence is invisible to all of
+-- them at once.
+--
+-- An absence is only visible against an ENUMERATED WHOLE. `artifact_kind` is a finite population
+-- (5 values) and free-vs-paid is a 2-way split, so "has every kind been written a second time?" is
+-- checkable rather than remembered. The second write is exactly the SEQUENCE question — what does
+-- this do when the caller is not the first? — made mechanical.
+--
+-- Test-only instrumentation: it lives in the assertion file, not the schema, and rolls back with
+-- everything else.
+create temp table t_writes (kind text, paid boolean, slot text);
+create function record_write() returns trigger language plpgsql as $$
+begin
+  insert into t_writes values (new.kind::text, new.generation_id is not null, new.slot);
+  return null;
+end $$;
+create trigger t_writes_trg after insert or update on video_artifacts
+  for each row execute function record_write();
+
 -- ── fixtures ────────────────────────────────────────────────────────────────────────────────────
 -- Use REAL seeded workspaces (id = owner_id): workspace_videos FKs to workspaces, so the fixtures
 -- must respect the same ordering the migration does.
@@ -1263,15 +1288,23 @@ end $$;
 -- all 89 assertions stayed GREEN: no assertion read pg_trigger, no mutation touched a trigger name,
 -- and the whole correctness argument rested on 'v' sorting after 'a'. Shape #6 (a guard with no
 -- test) sitting under the one place the file says the design depends on ordering.
+--
+-- ⚠ `tgtype & 2` — BEFORE TRIGGERS ONLY, and the filter was missing until the coverage instrument
+-- above exposed it. That instrument is an AFTER trigger named `t_writes_trg`, and 't' sorts before
+-- 'v', so it appeared first in an unfiltered list and this assertion failed — correctly reporting a
+-- broken ordering that was never broken. The measuring apparatus perturbed the thing it measured.
+-- Only BEFORE triggers can affect each other's NEW row, so only their order was ever the claim.
 do $$ declare names text[]; begin
   select array_agg(t.tgname order by t.tgname) into names
     from pg_trigger t join pg_class c on c.oid = t.tgrelid
-   where c.relname = 'video_artifacts' and not t.tgisinternal;
+   where c.relname = 'video_artifacts' and not t.tgisinternal
+     and (t.tgtype & 2) <> 0;   -- BEFORE only; see the note below
   if names[1] <> 'video_artifacts_append_only_trg' then
     raise exception 'ASSERTION FAILED — append-only must fire FIRST on video_artifacts; order is %', names; end if;
   select array_agg(t.tgname order by t.tgname) into names
     from pg_trigger t join pg_class c on c.oid = t.tgrelid
-   where c.relname = 'video_generations' and not t.tgisinternal;
+   where c.relname = 'video_generations' and not t.tgisinternal
+     and (t.tgtype & 2) <> 0;
   if names[1] <> 'forbid_collecting_current_trg' then
     raise exception 'ASSERTION FAILED — forbid-collecting must fire FIRST on video_generations; order is %', names; end if;
   raise notice 'ok (R7/H1): both BEFORE-trigger firing orders are asserted, not assumed from naming';
@@ -1388,4 +1421,29 @@ end $$;
 select assert_raises($$update video_generations set body_collected = true
   where video_id='vidGC'$$,
   'a naive sweep that ignores the collectable view (the trigger backstop)', 'P0001');
+-- ── ⟳ THE POPULATION-COVERAGE RATCHET ITSELF ───────────────────────────────────────────────────
+-- Every value of `artifact_kind` must have been written a SECOND time to the same slot somewhere in
+-- this suite. Not "exercised" — written twice, because the first write of anything is the easy case
+-- and every defect in this class lived in the second.
+--
+-- ⚠ THIS IS THE ONLY CHECK HERE THAT LOOKS AT WHAT IS ABSENT. Everything else in this file asserts a
+-- property of something someone thought to write down. If a new artifact_kind is ever added, this
+-- fails until it is covered — which is the point: the enum is the enumerated whole, so the ratchet
+-- cannot be forgotten the way a convention can.
+do $$
+declare k text; missing text[] := '{}'; n int;
+begin
+  foreach k in array enum_range(null::artifact_kind)::text[] loop
+    select count(*) into n from (
+      select 1 from t_writes w where w.kind = k group by w.kind, w.paid, w.slot having count(*) > 1
+    ) s;
+    if n = 0 then missing := missing || k; end if;
+  end loop;
+  if array_length(missing, 1) is not null then
+    raise exception 'ASSERTION FAILED — no slot is written TWICE for kind(s): %.  '
+      'The first write of anything is the easy case; this suite never exercises the second for these.',
+      array_to_string(missing, ', ');
+  end if;
+  raise notice 'ok (coverage): every artifact_kind has a slot written twice — the SEQUENCE case is exercised';
+end $$;
 \echo ASSERTIONS_OK
