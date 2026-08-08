@@ -229,7 +229,10 @@ This project is built with Claude Code using a gate-based workflow (brainstorm �
 | Doc | Purpose |
 |---|---|
 | [`docs/available-skills.md`](docs/available-skills.md) | All Claude Code skills, agents, and commands available in this project — invoke strings, trigger type (`auto + /slash`, `/command`, `agent`), and descriptions |
-| [`docs/dev-process.md`](docs/dev-process.md) | Phase-by-phase development workflow and per-task checklist |
+| [`docs/dev-process.md`](docs/dev-process.md) | **The spine** — phases, gates, who decides what. Deliberately short and under a CI-enforced line budget; the three files below hold the detail |
+| [`docs/process-checklists.md`](docs/process-checklists.md) | Lists you work *through*: per-task checklist, post-plan gate, TDD policy, required spec contents |
+| [`docs/review-method.md`](docs/review-method.md) | How a review round is run: adversarial review, convergence, and the between-rounds classification passes (P/I/H rules, SHAPE/SEQUENCE guards) |
+| [`docs/process-rationale.md`](docs/process-rationale.md) | Why each rule exists, with the measured incident behind it — read when a rule looks arbitrary |
 | [`docs/plugins.md`](docs/plugins.md) | Required plugins, skill conflict resolution, and cleanup guidance |
 | [`docs/adr/`](docs/adr/README.md) | Architecture Decision Records — decisions a future reader would otherwise reverse by accident (e.g. why there is no `ffmpeg` in the Docker image) |
 | [`docs/roadmap-to-launch.md`](docs/roadmap-to-launch.md) | Milestones and next actions; reconciled against `git log`, not trusted as-is |

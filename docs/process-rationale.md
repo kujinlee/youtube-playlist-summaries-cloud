@@ -253,3 +253,71 @@ The Codex review of `docs/design-spec.md` and `docs/implementation-plan.md` (bet
 caught five architectural gaps that would have affected Tasks 3–10: SSE job identity, path-traversal
 risk, deep-dive transcript fallback underspecification, output-folder ambiguity, and Obsidian vault URI
 semantics.
+
+---
+
+## Evidence moved out of the spine (2026-08-08 restructure)
+
+`docs/dev-process.md` was split four ways. The *decisions* stayed there; the *evidence* for them is
+here, because it is read only when someone questions a rule. Nothing was retired — see
+*Rules flagged for review* at the end of the spine for the four candidates awaiting a decision.
+
+### Why branch + PR has no size exemption (Phase 5)
+
+**The axis is blast radius, not size.** A missing `sort()` silently reordered paid content (defect
+D1); a one-line predicate change moves money.
+
+**And the boundary between "just docs" and "code" is slippery in practice.** On 2026-07-30 the
+coordinator reasoned *"docs commits have precedent here"* and then, in the same batch, committed a new
+`lib/storage/testing/` module straight to `master`. **A rule with a judgment call in the middle is a
+rule that erodes** — which is why the relief comes from *batching* rather than from an exemption.
+
+The hook exists because prose did not prevent that: `.claude/hooks/block-default-branch-push.sh` was
+written after three commits, including that module, went to `master` while a 400-line always-loaded
+document said not to.
+
+**Merge ticks:** written twice as post-merge reconciles that should have been folded into the PR they
+described (PR #40, PR #43). Hence "write the tick before opening the PR, and do not chase the SHA."
+
+### Why anything longer than a line goes in a file
+
+Two failure modes hit in one session on 2026-08-04. A commit message broke on an **apostrophe** inside
+a `"$(cat <<'EOF' …)"` heredoc. And a Codex review prompt containing `` `key` `` was mangled into
+`bash: key: command not found` — **any backtick inside a double-quoted bash string is command
+substitution**, so the shell rewrote the prompt before the tool saw it, and the adversarial-review
+gate was silently skipped.
+
+This is **physical**, not a preference. `--body-file`, `git commit -F`, `--prompt-file`.
+
+### The `gh` two-remotes footgun — RESOLVED 2026-08-04
+
+The repo carried a second remote (`upstream` = `…-official-plugins`, the frozen predecessor) whose PR
+numbers **collided** with `origin`'s, so a bare `gh pr` could act on the wrong repo — a mutating
+`gh pr edit 2` once overwrote the other repo's PR body. The remote was removed
+(`git remote remove upstream`) and `gh pr` now resolves unambiguously, verified. Passing
+`--repo kujinlee/youtube-playlist-summaries-cloud` remains a harmless safe habit for mutating commands.
+
+*(`official-plugins` is the OLD repo, superseded — **do not edit it**. "Local" means local mode of
+`-cloud`.)*
+
+### Architecture review — lessons from the first run (2026-07-30)
+
+`docs/reviews/architecture-review-2026-07-30.md`.
+
+- **Verify in both directions.** That run corrected claims on *both* sides — including one where the
+  **coordinator's** grep was wrong and the agent was right (a line-wrapped expression a single-line
+  pattern missed). **A failed grep is not a disproof.**
+- **"Zero callers" does not always mean delete.** The run found a module implementing the correct
+  commit→promote protocol with zero production callers and 8 tests. The right reading was that the
+  *callers* were wrong, not the module. Apply the deletion test by asking where complexity would
+  reappear, not by counting references.
+
+### Anchor every ADR where the question arises
+
+**ADR-0005 was missed for four weeks** because nothing in the `Dockerfile` said ffmpeg's absence was
+deliberate. Correctness was never the problem — **reachability** was. A one-line comment at the code
+that looks wrong without it is the whole fix.
+
+Promotion criteria are already written in
+[`.claude/skills/grill-with-docs/ADR-FORMAT.md`](../.claude/skills/grill-with-docs/ADR-FORMAT.md) →
+*"When to offer an ADR"*. Do not invent new ones.

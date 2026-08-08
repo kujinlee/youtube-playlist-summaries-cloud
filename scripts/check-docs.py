@@ -169,11 +169,47 @@ def report_unpromoted_decisions() -> list[tuple[str, int]]:
     return out
 
 
+# ⟳ 2026-08-08 — LINE BUDGETS ON THE ALWAYS-LOADED DOCS.
+#
+# `docs/dev-process.md` reached 576 lines, ~28% of it added in two days. Every addition was justified
+# by a measured defect and the aggregate was unreadable — the "individually thoughtful, fail as a set"
+# verdict this project's reviews keep producing, applied to its own documentation. An unread rule is
+# worse than no rule: it creates a belief that something is covered.
+#
+# A budget nobody checks is a wish. These are the docs CLAUDE.md @-includes, so their length is a tax
+# paid on EVERY session — which is exactly why the budget belongs in CI and not in a paragraph asking
+# people to be brief.
+#
+# Raising a number here is legitimate. Doing it silently is not: it should appear in a diff, in a PR,
+# where someone can ask whether the content belongs in a read-on-demand file instead.
+LINE_BUDGETS = {
+    "docs/dev-process.md": 220,   # the spine: what must be true, in what order, who decides
+    "docs/plugins.md": 260,       # plugin governance + tool gates
+}
+
+
+def check_line_budgets(errors: list[str]) -> None:
+    for rel, budget in LINE_BUDGETS.items():
+        path = ROOT / rel
+        if not path.exists():
+            errors.append(f"{rel} is missing but has a line budget")
+            continue
+        n = len(path.read_text().splitlines())
+        status = "ok" if n <= budget else "OVER"
+        print(f"budget {rel:28s}: {n:4d} / {budget}  {status}")
+        if n > budget:
+            errors.append(
+                f"{rel} is {n} lines, over its {budget}-line budget by {n - budget}. "
+                f"Move detail to process-checklists.md / review-method.md / process-rationale.md, "
+                f"or make the rule a script — do not raise the budget as a reflex.")
+
+
 def main() -> int:
     errors: list[str] = []
 
     check_adr_frontmatter(errors)
     check_adr_index(errors)
+    check_line_budgets(errors)
     code_refs = check_adr_references(errors)
     links = check_living_links(errors)
 
