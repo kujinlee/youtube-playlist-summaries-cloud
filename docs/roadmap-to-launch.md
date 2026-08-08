@@ -607,8 +607,34 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       **`search_path` swept across the whole schema** after the same class of bug appeared four times
       in one day, the last reached from a definer function *through a CHECK constraint*. Every
       function now pins its path except `assert_raises`, labelled as the deliberate exception.
-      **Item 3 is the last one, and stays last** — it has already been
-      specified-before-the-table-changed twice, and `record_artifact`'s payload is its to finalize.
+      **Handoff item 3 (the generation-write API) — ✅ DONE (PR #55).** Sequenced last on purpose,
+      because it had been specified-before-the-table-changed **twice** (round 2 N-B3, round 5) and the
+      table only settled across the three merges above. **Measured, and worse than the handoff
+      described:** after items 1/2/4 landed, a cloud summarize could not reserve a summary slot *at
+      all* — reserving with no generation row raised `[23503]` on the artifact's FK, and creating that
+      row from what is knowable before the paid call raised `[23514] gen_card_complete`. Both doors
+      locked, with the Gemini call between them. §10.0 exists to prevent exactly this and predicted a
+      failure *after* payment; the real one was *before* it — safer, but a dead feature rather than an
+      expensive one, and all 73 assertions missed it because every fixture hand-inserts a **complete**
+      generation, the one thing no producer can do.
+      **The premise that failed:** *"a generation row is only ever complete"* — restated as **a
+      generation must be complete when something RECORDED points at it**. `video_generations` gets
+      `state` (`pending|complete`, defaulting to **complete**, which is the fail-*closed* default), the
+      four summary CHECKs gate on it, and an artifact-side trigger forbids recording against a pending
+      generation — that trigger, not the gate, is what keeps the relaxation from being a bypass.
+      `record_artifact` gained `md_hash` / `card` / `doc_version_major` / `produced_at` and completes
+      the generation in the same transaction. **73 → 89 assertions, 35/35 mutations as expected.**
+      **Task #25 dissolved without a schema change** — `digDeeper` was never bound to one generation;
+      the FK is on `(ws, video, generation_id, KIND)`, so it points at a *digDeeper* generation minted
+      per rewrite. Third time a finding came from reasoning about a **name** rather than reading the
+      constraints (round 2's `kind='summary'`, item 1's `P9`, this).
+      **Item 1's deferred `INSERT`-path `detached_at` gap is closed here rather than carried to round
+      7**, by bounding the clock to the artifact's real lifetime — and doing so found an illegal value
+      inside a *passing* fixture (a dig detached in 2020 from a generation produced in 2026).
+      **The mutation harness needed a fourth verdict.** Item 3's guards are triggers, and a trigger's
+      `raise exception` matched neither the assertion nor the constraint pattern — so three *working*
+      guards were reported `INVALID` ("the mutation broke the SQL"). That is the harness making the
+      mistake its own docstring warns about, one layer up; `RED(trigger)` now names it.
 
       **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
       `when others`, so six negatives were passing on a `[42601]` arity error instead of the

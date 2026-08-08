@@ -255,6 +255,22 @@ begin
     return query select 'already_recorded'::text, null::uuid, null::int; return;
   end if;
 
+  -- ⟳ ROUND 6 B5 — THE GENERATION ROW IS CREATED HERE, PENDING, or the INSERT below cannot satisfy
+  -- its own foreign key. MEASURED before this existed: [23503] on
+  -- video_artifacts_workspace_id_video_id_generation_id_kind_fkey — a cloud summarize could not
+  -- reserve its slot at all, because the only other order (create the generation first) needs a card
+  -- and an md_hash that do not exist until after the paid call.
+  --
+  -- `do nothing`, not `do update`: a generation that already exists is either a completed one being
+  -- retried (the `already_recorded` path above did not fire because this slot's row was reclaimed) or
+  -- one sync replicated in full. Neither may be reopened — 03's freeze trigger would reject it, and
+  -- silently re-pointing a generation is the mutable-address defect this design exists to remove.
+  if p_generation_id is not null then
+    insert into public.video_generations (workspace_id, video_id, generation_id, kind, state)
+    values (p_ws, p_video, p_generation_id, p_kind, 'pending')
+    on conflict (workspace_id, video_id, generation_id) do nothing;
+  end if;
+
   -- ONE STATEMENT. The attempt count is incremented BY THE SAME STATEMENT THAT TAKES THE SLOT, which
   -- is what makes the bound un-resettable; a partial unique index is a legal conflict arbiter as long
   -- as its predicate is restated.
@@ -349,17 +365,44 @@ end $$;
 -- second path is not a fallback, it is append-only working as designed: the bytes are paid for, the
 -- generation is legitimate, and `current` ranks it against the winner's on the recorded facts.
 --
--- ⚠ SCOPE, STATED SO IT IS NOT DISCOVERED: this signature is NOT final. Handoff item 3 (`md_hash` has
--- no producer) must add `md_hash`, `card` and `doc_version_major` and create the generation row in the
--- same transaction. That item is deliberately sequenced LAST because it has already been
--- specified-before-the-table-changed twice (round 2 N-B3, round 5). What is settled HERE is the
--- FENCING semantics of the flip; the payload is item 3's.
+-- ⟳ ROUND 6 B5 / Codex B3 — THE PAYLOAD, which item 4 deliberately left unspecified. `md_hash` was
+-- mandatory (gen_summary_has_hash) and had NO PRODUCER; the card and doc_version_major had the same
+-- gap. All three arrive here, and the generation is completed IN THE SAME TRANSACTION as the flip, so
+-- there is no instant at which a recorded artifact points at an incomplete generation.
+--
+-- ⚠ THE GENERATION IS COMPLETED FIRST, AND THE ORDER IS LOAD-BEARING, not stylistic:
+-- `video_artifacts_generation_complete` (below) rejects a recorded artifact whose generation is still
+-- pending. Both paths — the in-place flip and the append-after-loss — therefore depend on this UPDATE
+-- having already run. The API and the guard agree rather than one covering for the other, which is
+-- cross-derivation C3's rule (take BOTH the data guard and the query guard) applied to a protocol.
+--
+-- `coalesce(p_X, X)` rather than plain assignment, so a caller may complete a generation sync already
+-- replicated in full without having to re-send content it does not have. Re-stating IDENTICAL values
+-- passes 03's freeze trigger untouched; re-stating DIFFERENT ones raises, which is the honest answer
+-- to a caller claiming the bytes behind a frozen address changed.
+--
+-- `p_produced_at` is a PARAMETER with a now() fallback, never a bare now(). Sync replicates a local
+-- generation and must carry its ORIGINAL production time — a receiver stamping its own clock is item
+-- 1's detached_at defect exactly, and round 4's J2-3 forbids a clock read anywhere the ranking reads.
+-- The fallback is reached only by a fresh cloud summarize, where production time genuinely is now.
 create function record_artifact(
   p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind artifact_kind, p_blob_key text,
   p_token uuid, p_source_generation_id text default null,
-  p_start_sec int default null, p_end_sec int default null)
+  p_start_sec int default null, p_end_sec int default null,
+  p_md_hash text default null, p_card jsonb default null,
+  p_doc_version_major int default null, p_produced_at timestamptz default null)
   returns text language plpgsql security definer set search_path = '' as $$
 begin
+  if p_generation_id is not null then
+    update public.video_generations
+       set state             = 'complete',
+           card              = coalesce(p_card, card),
+           md_hash           = coalesce(p_md_hash, md_hash),
+           doc_version_major = coalesce(p_doc_version_major, doc_version_major),
+           produced_at       = coalesce(p_produced_at, produced_at, now())
+     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id;
+  end if;
+
   update public.video_artifacts
      set state = 'recorded', lease_expires_at = null, lease_token = null, reserved_at = null
    where workspace_id = p_ws and video_id = p_video and slot = p_slot
@@ -386,9 +429,11 @@ grant execute on function reserve_artifact_slot(uuid, text, text, text, artifact
   to service_role;
 revoke all on function renew_artifact_lease(uuid, text, text, uuid) from public, anon, authenticated;
 grant execute on function renew_artifact_lease(uuid, text, text, uuid) to service_role;
-revoke all on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int)
+revoke all on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int,
+                                      text, jsonb, int, timestamptz)
   from public, anon, authenticated;
-grant execute on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int)
+grant execute on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int,
+                                          text, jsonb, int, timestamptz)
   to service_role;
 revoke all on function slot_kind(text) from public, anon, authenticated;
 
@@ -626,6 +671,66 @@ end $$;
 create trigger video_artifacts_append_only_trg
   before update or delete on video_artifacts
   for each row execute function video_artifacts_append_only();
+
+-- ⟳ ROUND 6 B5 — THE OTHER HALF OF GATING 03'S FOUR CHECKS ON `state = 'complete'`.
+-- Relaxing a constraint to "only while complete" is safe ONLY if something guarantees that everything
+-- observable has reached complete. Without this trigger, `gen_card_complete`, `gen_summary_has_hash`,
+-- `gen_summary_has_format` and `gen_major_matches_card` all become optional for any writer willing to
+-- leave its generation `pending` — the relaxation would be a bypass wearing a lifecycle's clothes.
+--
+-- With it, every row either ranking view can reach has satisfied all four IN FULL, because both views
+-- filter `a.state = 'recorded'`. That is why the views needed no change at all.
+--
+-- ⚠ `before insert OR UPDATE`, and the INSERT half is not symmetry. `record_artifact`'s
+-- append-after-loss path INSERTS a recorded row directly, and 04's append-only trigger is
+-- `before update or delete` — so an INSERT is exactly the path that reaches no other guard. Item 1
+-- learned this the hard way at `art_detached_is_dig`: a constraint governs STATES, a trigger governs
+-- TRANSITIONS, and an INSERT is a state with no transition.
+create function video_artifacts_generation_complete() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+declare v_state text; v_produced timestamptz;
+begin
+  if new.generation_id is null or new.state not in ('recorded','detached') then
+    return new;
+  end if;
+  select state, produced_at into v_state, v_produced from public.video_generations
+   where workspace_id = new.workspace_id and video_id = new.video_id
+     and generation_id = new.generation_id;
+  if v_state is distinct from 'complete' then
+    raise exception 'video_artifacts: cannot mark % as % — generation % is %',
+      new.slot, new.state, new.generation_id, coalesce(v_state, '<absent>');
+  end if;
+
+  -- ⟳ ITEM 1'S INSERT-PATH GAP, CLOSED HERE RATHER THAN DEFERRED AGAIN. The append-only trigger owns
+  -- `detached_at` on UPDATE and deliberately not on INSERT, because sync must replicate an
+  -- already-detached dig carrying its ORIGINAL detach time. That left a writer able to BACKDATE its
+  -- own retention clock — i.e. request earlier collection of its own paid content — and it was flagged
+  -- for round 7 as needing "the generation-write API item 3 has to specify anyway". This is that API.
+  --
+  -- Not closed by forbidding a supplied value (sync needs it), but by BOUNDING it to the artifact's
+  -- actual lifetime: it cannot precede the generation that produced the bytes, and it cannot be in the
+  -- future. `produced_at` is frozen by 03's freeze trigger, so the lower bound cannot be walked back
+  -- either — which is what makes this a bound rather than a speed bump.
+  if new.state = 'detached' then
+    if new.detached_at < v_produced then
+      raise exception 'video_artifacts: detached_at % precedes generation % produced_at % (backdated retention clock)',
+        new.detached_at, new.generation_id, v_produced;
+    end if;
+    if new.detached_at > now() then
+      raise exception 'video_artifacts: detached_at % is in the FUTURE (postponed retention clock)',
+        new.detached_at;
+    end if;
+  end if;
+  return new;
+end $$;
+revoke all on function video_artifacts_generation_complete() from public, anon, authenticated;
+-- Name order puts this AFTER video_artifacts_append_only_trg, which is required rather than incidental:
+-- on UPDATE the append-only trigger OWNS `detached_at`, so the bounds above must read the value it
+-- settled, not the writer's. On INSERT no append-only trigger fires and the writer's value is the one
+-- under test — which is the whole point of the check.
+create trigger video_artifacts_generation_complete_trg
+  before insert or update on video_artifacts
+  for each row execute function video_artifacts_generation_complete();
 -- ⚠ NOT `before insert`, and the omission is deliberate but it BOUNDS the claim above. On INSERT the
 -- writer supplies `detached_at` and nothing overwrites it, because SYNC must be able to replicate an
 -- already-detached dig carrying its ORIGINAL detach time — a receiver that stamped now() would reset

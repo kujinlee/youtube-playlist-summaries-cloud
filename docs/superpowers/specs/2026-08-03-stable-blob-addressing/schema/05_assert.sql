@@ -441,18 +441,26 @@ select assert_raises($$insert into video_artifacts
 -- MEASURED: mutating the trigger to restart the clock unconditionally left the suite GREEN.
 -- An INSERT does not fire the trigger (it is `before update or delete`), so this is the one way to
 -- get a detached_at the trigger did not write and can therefore be seen to preserve or destroy.
+--
+-- ⟳ ROUND 6 B5 MOVED THIS DATE, and the move is a finding rather than an accommodation. It read
+-- `2020-01-01` — a dig detached six years BEFORE gDIG was produced (2026-02-01), which is not a state
+-- the system can reach. Item 3's INSERT-path bound rejected it, and the fixture only ever needed a
+-- timestamp the TRIGGER DID NOT WRITE, not an impossible one. `2026-02-02` is still distinguishable
+-- from this transaction's now(), so everything the assertion below tests is unchanged.
+-- Worth recording: a new guard finding an illegal value inside an existing FIXTURE is the same class
+-- as round 5 H1's masking pairs — a test can encode an unreachable world and still pass.
 insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,detached_at)
   values ((select id from t_ws),'vidA','dig:777','gDIG','dig','detached',
           (select id from t_ws)::text||'/videos/vidA/gDIG/dig/777.md',777,800,
-          timestamptz '2020-01-01 00:00:00Z');
+          timestamptz '2026-02-02 00:00:00Z');
 do $$ declare t1 timestamptz; t2 timestamptz; st text; begin
   select detached_at into t1 from video_artifacts where video_id='vidA' and slot='dig:120';
   if t1 is null then raise exception 'ASSERTION FAILED — detaching did not start the retention clock'; end if;
   -- a re-detach must NOT restart it, or detach/re-attach cycling pins paid bytes forever
   update video_artifacts set state='detached' where video_id='vidA' and slot='dig:777';
   select detached_at into t2 from video_artifacts where video_id='vidA' and slot='dig:777';
-  if t2 is distinct from timestamptz '2020-01-01 00:00:00Z' then
+  if t2 is distinct from timestamptz '2026-02-02 00:00:00Z' then
     raise exception 'ASSERTION FAILED — a re-detach RESTARTED the clock (%)', t2; end if;
   -- re-attachment: the one transition §6.1 requires, and it must clear the clock
   update video_artifacts set state='recorded' where video_id='vidA' and slot='dig:120';
@@ -834,4 +842,236 @@ select assert_raises($$insert into video_generations
    4,now(),'SHA_X')$$,
   'a card whose ONLY null is mdCorrectionsHash (round 5 C2 permitted this; no producer emits it)',
   '23514', 'gen_card_complete');
+
+-- ── ⟳ ROUND 6 B5 / Codex B3 — THE GENERATION-WRITE API (handoff item 3) ────────────────────────
+-- MEASURED before any of this existed, and it is worse than "md_hash has no producer": a cloud
+-- summarize could not RESERVE ITS SLOT AT ALL. Both doors were locked and the paid call sat between:
+--
+--   reserve with no generation row           -> [23503] video_artifacts…generation_id_kind_fkey
+--   create the generation row pre-Gemini     -> [23514] gen_card_complete
+--
+-- §10.0 exists to prevent exactly this and predicted a failure AFTER payment; the real one was
+-- BEFORE it. Safer direction, but it made the round-6 reservation protocol unreachable for its
+-- primary kind — and all 73 assertions missed it because every fixture above hand-inserts a
+-- COMPLETE generation row, which is the one thing no producer can do.
+--
+-- THE PREMISE THAT FAILED: "a generation row is only ever complete." True while the manifest held one
+-- row per slot and the generation was written once, after the fact. Rounds 5-6 gave the ARTIFACT a
+-- lifecycle (pending -> recorded -> detached) and a protocol that must insert a pending row BEFORE
+-- the content exists, and never gave its FK PARENT the matching lifecycle. Restated:
+--   a generation must be complete WHEN SOMETHING RECORDED POINTS AT IT, not from the moment it exists.
+-- Same move as item 1 (a CHECK governs states, a trigger governs transitions) and item 2 (the guard
+-- lived in the NOT NULL, not in the comparison). The tell each time was an UNSATISFIABLE ORDERING.
+
+insert into workspace_videos (workspace_id, video_id) select id, 'vidG' from t_ws;
+
+-- G1 — THE DEFECT ITSELF. This is the assertion that is red without the fix, and it is a POSITIVE:
+-- the failure was an inability to act, so no `assert_raises` can express it.
+do $$ declare o text; t uuid; ws uuid; begin
+  select id into ws from t_ws;
+  select outcome, token into o, t from reserve_artifact_slot(
+    ws,'vidG','summary','gG1','summary'::artifact_kind, ws::text||'/videos/vidG/gG1/summary.md');
+  if o <> 'reserved' then
+    raise exception 'ASSERTION FAILED — a producer cannot reserve a summary slot: %', o; end if;
+  raise notice 'ok (item 3): reserve creates its own PENDING generation; no card is needed yet';
+end $$;
+
+-- G2 — and what it created is honestly incomplete, not a fabricated placeholder. sync-run.ts:534-542
+-- already builds one of those and calls it "an HONEST unresolved placeholder"; round 5 B1 measured
+-- such a card WINNING the ranking. A pending generation carries NO content at all instead.
+do $$ declare r record; begin
+  select * into r from video_generations where video_id='vidG' and generation_id='gG1';
+  if r.state <> 'pending' then
+    raise exception 'ASSERTION FAILED — reserve did not leave the generation pending: %', r.state; end if;
+  if r.card is not null or r.md_hash is not null or r.produced_at is not null
+     or r.doc_version_major is not null then
+    raise exception 'ASSERTION FAILED — a pending generation fabricated content'; end if;
+  raise notice 'ok (item 3): a pending generation carries NO card, md_hash, doc_version or produced_at';
+end $$;
+
+-- G3 — THE RELAXATION MUST NOT LEAK. This is the guard that makes gating the four CHECKs safe: it
+-- restores the old invariant exactly where it was load-bearing. Without it, every completeness
+-- constraint becomes optional for anyone willing to write `state = 'pending'`.
+-- Direct UPDATE, deliberately: it isolates the trigger from record_artifact, and the append-only
+-- trigger cannot mask it (its body is gated on old.state, which is 'pending' here).
+--
+-- ⚠ THE LEASE COLUMNS ARE CLEARED IN THE SAME STATEMENT, and that is the header rule rather than
+-- tidiness. Without it this negative violates TWO guards — the trigger AND art_pending_is_leased,
+-- since `(state='pending') = (lease_expires_at is not null)` is false the moment state flips while
+-- the lease is still set. MEASURED via mutation: removing the trigger produced 23514 instead of
+-- P0001. The SQLSTATE pin caught it rather than reporting a false GREEN, which is round 6's harness
+-- fix doing its job — but a negative that needs the harness to disambiguate it is still round 5 H1.
+select assert_raises($$update video_artifacts
+  set state='recorded', lease_expires_at=null, lease_token=null, reserved_at=null
+  where video_id='vidG' and slot='summary'$$,
+  'recording an artifact whose generation is still PENDING (the completeness bypass)', 'P0001');
+
+-- G4 — a pending generation is invisible to BOTH ranking views. Follows from G3, asserted anyway:
+-- ranking is where round 5 B1 did its damage, and "follows from" is how round 5 H1's masking pairs
+-- were justified.
+do $$ declare n int; begin
+  select count(*) into n from video_artifacts_current where video_id='vidG';
+  if n <> 0 then raise exception 'ASSERTION FAILED — a PENDING generation reached current: % rows', n; end if;
+  raise notice 'ok (item 3): a pending generation is in neither ranking view';
+end $$;
+
+-- G5 — THE FLIP, carrying the payload item 3 exists to add. One transaction: the generation completes
+-- and the artifact records together, so there is no window where a recorded row points at a pending
+-- generation (G3 would reject it anyway — the API and the guard agree rather than one covering the other).
+do $$ declare o text; g text; r record; ws uuid; t uuid; begin
+  select id into ws from t_ws;
+  select lease_token into t from video_artifacts where video_id='vidG' and slot='summary';
+  o := record_artifact(ws,'vidG','summary','gG1','summary'::artifact_kind,
+        ws::text||'/videos/vidG/gG1/summary.md', t,
+        p_md_hash := 'SHA_G1',
+        p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-03-03",'
+               || '"processedAt":"z","mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+        p_doc_version_major := 4, p_produced_at := '2026-03-03');
+  if o <> 'recorded_as_holder' then
+    raise exception 'ASSERTION FAILED — the holder did not record: %', o; end if;
+  select * into r from video_generations where video_id='vidG' and generation_id='gG1';
+  if r.state <> 'complete' or r.md_hash <> 'SHA_G1' then
+    raise exception 'ASSERTION FAILED — record did not complete the generation: % %', r.state, r.md_hash; end if;
+  select generation_id into g from video_summary_current where video_id='vidG';
+  if g is distinct from 'gG1' then
+    raise exception 'ASSERTION FAILED — the recorded summary is not current: %', coalesce(g,'<none>'); end if;
+  raise notice 'ok (item 3): record completes the generation AND flips the artifact, one transaction';
+end $$;
+
+-- G6/G7 — md_hash AND the card ARE STILL MANDATORY. The constraints did not weaken; each moved to the
+-- moment its value can exist. This is the assertion §10.0 should have forced and did not.
+--
+-- ⚠ EACH GETS ITS OWN VIDEO, and both parts of that are load-bearing. The generation must be
+-- reserved rather than named, or record_artifact updates zero generation rows and the artifact INSERT
+-- fails on the FK [23503] — a fixture that never reaches the constraint it names, which is round 5
+-- H1's masking defect. And there is only ONE summary slot per video (slot_kind maps exactly one), so
+-- sharing vidG would leave G6's pending row holding the in-flight unique and G7 would read `busy`.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidG6' from t_ws;
+insert into workspace_videos (workspace_id, video_id) select id, 'vidG7' from t_ws;
+do $$ declare o text; ws uuid; begin
+  select id into ws from t_ws;
+  select outcome into o from reserve_artifact_slot(
+    ws,'vidG6','summary','gG6','summary'::artifact_kind, ws::text||'/videos/vidG6/gG6/summary.md');
+  if o <> 'reserved' then raise exception 'FIXTURE FAILED — G6 reserve: %', o; end if;
+  select outcome into o from reserve_artifact_slot(
+    ws,'vidG7','summary','gG7','summary'::artifact_kind, ws::text||'/videos/vidG7/gG7/summary.md');
+  if o <> 'reserved' then raise exception 'FIXTURE FAILED — G7 reserve: %', o; end if;
+end $$;
+
+select assert_raises($$select record_artifact((select id from t_ws),'vidG6','summary','gG6',
+   'summary'::artifact_kind,(select id from t_ws)::text||'/videos/vidG6/gG6/summary.md',
+   (select lease_token from video_artifacts where video_id='vidG6' and slot='summary'),
+   p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y",'
+          || '"mdCorrectionsHash":"H_NEW"}')::jsonb,
+   p_doc_version_major := 4, p_produced_at := now())$$,
+  'completing a summary generation with NO md_hash (the constraint moved, it did not weaken)',
+  '23514', 'gen_summary_has_hash');
+
+select assert_raises($$select record_artifact((select id from t_ws),'vidG7','summary','gG7',
+   'summary'::artifact_kind,(select id from t_ws)::text||'/videos/vidG7/gG7/summary.md',
+   (select lease_token from video_artifacts where video_id='vidG7' and slot='summary'),
+   p_md_hash := 'SHA_G7', p_doc_version_major := 4, p_produced_at := now())$$,
+  'completing a summary generation with NO card', '23514', 'gen_card_complete');
+
+-- G8 — COMPLETE IS TERMINAL. New content means a NEW generation; that is what append-only means one
+-- level up, and without this the frozen artifact address would point at re-writable content —
+-- shape #3 relocated from the artifact row into its parent.
+select assert_raises($$update video_generations set state = 'pending'
+  where video_id='vidG' and generation_id='gG1'$$,
+  'reverting a COMPLETE generation to pending', 'P0001');
+select assert_raises($$update video_generations set md_hash = 'SHA_TAMPERED'
+  where video_id='vidG' and generation_id='gG1'$$,
+  'rewriting the md_hash of a COMPLETE generation (the body it addresses cannot change)', 'P0001');
+select assert_raises($$update video_generations set doc_version_major = 99
+  where video_id='vidG' and generation_id='gG1'$$,
+  'rewriting doc_version_major of a COMPLETE generation (the format rung must never be re-pointed)',
+  'P0001');
+
+-- G9 — produced_at is CARRIED, NEVER STAMPED. Sync replicates a local generation and must keep its
+-- original production time; a receiver stamping now() is item 1's detached_at clock defect exactly,
+-- and round 4's J2-3 forbids a clock read anywhere the ranking reads.
+do $$ declare p timestamptz; begin
+  select produced_at into p from video_generations where video_id='vidG' and generation_id='gG1';
+  if p <> '2026-03-03'::timestamptz then
+    raise exception 'ASSERTION FAILED — produced_at was stamped, not carried: %', p; end if;
+  raise notice 'ok (item 3): produced_at is carried from the producer, not read from the clock';
+end $$;
+
+-- G10 — a completed generation needs a produced_at, or the bottom ranking rung reads NULL for a row
+-- that genuinely has a production time. Same shape as item 2's NOT NULL: absent-vs-failed on a rung.
+-- The pending generation is made by RESERVE, not by hand: an `update … where <no such row>` reports
+-- zero rows, raises nothing, and assert_raises would then fail with "should have been rejected" —
+-- a test bug that looks like a missing guard. Round 6's harness fix exists because of exactly that
+-- confusion, so the fixture has to be real.
+do $$ declare o text; ws uuid; begin
+  select id into ws from t_ws;
+  select outcome into o from reserve_artifact_slot(
+    ws,'vidG','model','gG10','model'::artifact_kind, ws::text||'/videos/vidG/gG10/model.json');
+  if o <> 'reserved' then raise exception 'FIXTURE FAILED — could not reserve for G10: %', o; end if;
+end $$;
+select assert_raises($$update video_generations set state='complete'
+  where video_id='vidG' and generation_id='gG10'$$,
+  'completing a generation with no produced_at', '23514', 'gen_complete_has_produced_at');
+
+-- G11 — TASK #25, and it needs NO SCHEMA CHANGE. `digDeeper` was never bound to one summary
+-- generation: the FK is on (ws, video, generation_id, KIND), so a digDeeper artifact points at a
+-- digDeeper GENERATION, minted per rewrite of the accumulator. Round 2 got this backwards the other
+-- way (forcing digDeeper to kind='summary') by reasoning from the slot NAME rather than the
+-- constraints — the same route as item 1's P9, which was also reported as a defect and was not one.
+do $$ declare o text; t uuid; ws uuid; n int; begin
+  select id into ws from t_ws;
+  select outcome, token into o, t from reserve_artifact_slot(
+    ws,'vidG','digDeeper','gDD_A','digDeeper'::artifact_kind, ws::text||'/videos/vidG/gDD_A/dig-deeper.md');
+  if o <> 'reserved' then raise exception 'ASSERTION FAILED — digDeeper could not reserve: %', o; end if;
+  o := record_artifact(ws,'vidG','digDeeper','gDD_A','digDeeper'::artifact_kind,
+        ws::text||'/videos/vidG/gDD_A/dig-deeper.md', t, p_produced_at := '2026-03-04');
+  if o <> 'recorded_as_holder' then
+    raise exception 'ASSERTION FAILED — digDeeper could not record: %', o; end if;
+  -- the accumulator is rewritten: a SECOND digDeeper generation, coexisting under append-only
+  select outcome, token into o, t from reserve_artifact_slot(
+    ws,'vidG','digDeeper','gDD_B','digDeeper'::artifact_kind, ws::text||'/videos/vidG/gDD_B/dig-deeper.md');
+  o := record_artifact(ws,'vidG','digDeeper','gDD_B','digDeeper'::artifact_kind,
+        ws::text||'/videos/vidG/gDD_B/dig-deeper.md', t, p_produced_at := '2026-03-05');
+  select count(*) into n from video_artifacts where video_id='vidG' and slot='digDeeper' and state='recorded';
+  if n <> 2 then
+    raise exception 'ASSERTION FAILED — the two digDeeper generations did not coexist: %', n; end if;
+  select generation_id into o from video_artifacts_current where video_id='vidG' and slot='digDeeper';
+  if o <> 'gDD_B' then
+    raise exception 'ASSERTION FAILED — current digDeeper is %, expected the newer gDD_B', o; end if;
+  raise notice 'ok (#25): digDeeper generations are per-REWRITE, coexist, and rank — no schema change';
+end $$;
+
+-- G12 — THE DEFAULT IS THE SAFE ONE. A direct insert that names no state is COMPLETE, so every
+-- producer that has not opted in keeps today's behaviour and today's rejection. A `pending` default
+-- would have made every completeness CHECK optional for anyone who simply forgot the column.
+do $$ declare s text; begin
+  select state into s from video_generations where video_id='vidA' and generation_id='gNEW';
+  if s <> 'complete' then
+    raise exception 'ASSERTION FAILED — a directly-inserted full generation is %, not complete', s; end if;
+  raise notice 'ok (item 3): state defaults to COMPLETE, so the relaxation is strictly opt-in';
+end $$;
+
+-- G13 — ITEM 1'S INSERT-PATH GAP, BOUNDED. The append-only trigger owns detached_at on UPDATE, and
+-- deliberately not on INSERT (sync must replicate an already-detached dig carrying its ORIGINAL
+-- detach time). That left a writer able to BACKDATE its own retention clock — flagged for round 7 as
+-- needing "the generation-write API item 3 has to specify anyway". This is that API, so it is closed
+-- here rather than deferred again. Not by forbidding a supplied value — sync needs it — but by
+-- bounding it to the artifact's ACTUAL lifetime: it cannot precede the generation that produced it,
+-- and it cannot be in the future. produced_at is frozen by G8, so the lower bound cannot be moved either.
+-- ⚠ A DIG GENERATION, not gG1. gG1 is kind='summary', so a dig artifact naming it violates the
+-- FK on (ws, video, generation_id, KIND) as well as the bound under test — two guards again, and
+-- mutation reported it as `expected P0001, got 23503`. Same defect as G3's lease columns, found the
+-- same way, in the same hour: isolating a negative is not something you get right by intending to.
+insert into video_generations (workspace_id,video_id,generation_id,kind,produced_at)
+  select id,'vidG','gGD','dig','2026-03-03' from t_ws;
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,detached_at)
+  values ((select id from t_ws),'vidG','dig:900','gGD','dig','detached',
+   (select id from t_ws)::text||'/videos/vidG/gGD/dig-900.md',900,960,'2026-03-01')$$,
+  'inserting a detached dig backdated BEFORE its generation was produced', 'P0001');
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,detached_at)
+  values ((select id from t_ws),'vidG','dig:901','gGD','dig','detached',
+   (select id from t_ws)::text||'/videos/vidG/gGD/dig-901.md',901,960, now() + interval '1 day')$$,
+  'inserting a detached dig whose retention clock starts in the FUTURE', 'P0001');
 \echo ASSERTIONS_OK
