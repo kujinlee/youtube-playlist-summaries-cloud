@@ -158,6 +158,18 @@ create table video_generations (
   -- caller that opts in is reserve_artifact_slot.
   state             text not null default 'complete'
                     check (state in ('pending','complete')),
+  -- ⟳ ROUND 7 H2 — WHO RESERVED THIS GENERATION. The generation UPDATE inside record_artifact was
+  -- fenced on NOTHING — no token, no state, no slot — while every other write in this design is
+  -- fenced. MEASURED: W2 named W1's generation, completed it with W2's production time, and W1 was
+  -- then locked out of its own paid work FOREVER by the freeze trigger below
+  -- ("the CONTENT of complete generation gW1 is immutable"). That is item 3's freeze silently
+  -- revoking item 4's user decision that a writer which already paid always records.
+  --
+  -- The token is the RESERVER's, captured at reserve time and never rotated by a later reclaim —
+  -- which is what makes it survive P22: a writer whose SLOT was reclaimed still holds the token that
+  -- reserved its own generation, so it can still complete it and record. Fencing on the artifact row
+  -- instead would have broken exactly that case.
+  reserved_by       uuid,
   card              jsonb,
   doc_version_major int,             -- rule 13's format rung. Round 4 J3-2: ranked on, never defined.
   -- NULLABLE while pending — nothing has been produced yet, and a `not null` here is what forced a
@@ -254,10 +266,33 @@ create table video_generations (
 -- (`already_recorded`) re-completes an already-complete row with identical content. Re-completing
 -- with DIFFERENT content raises, which is the honest answer — it is a caller claiming the bytes
 -- changed under an address that cannot.
+-- ⟳ ROUND 7 B2 / M5 — AND IT NOW ALSO BOUNDS `produced_at` TO THE PAST, on INSERT as well as UPDATE.
+-- `produced_at` is a RANKING RUNG (04's two view orderings) and a CALLER-SUPPLIED value —
+-- `record_artifact` takes it as a parameter precisely so sync can carry a remote clock's. Nothing
+-- bounded it, so ONE sync from a replica with a fast clock outranks everything real until the clock
+-- catches up. Round 4's J2-3 removed clock READS from the ranking; it did not stop a clock VALUE
+-- being injected into it.
+--
+-- It also made §6.2's detach UNSATISFIABLE. MEASURED: a dig whose generation carried a future
+-- produced_at could never be detached — the sibling trigger sets detached_at to now(), the bound
+-- compares it against produced_at, and the error blamed the writer for a value it never supplied:
+--   [P0001] detached_at 2026-08-08… precedes generation gFUT produced_at 2026-08-18…
+-- Permanently, since produced_at is frozen below and detached_at is trigger-owned. Not exotic: this
+-- spec's OWN fixture `gC_STALE` carried a produced_at a month ahead, in a passing test.
+--
+-- ⚠ A CHECK CANNOT DO THIS — `now()` is not immutable, so it is illegal in a CHECK constraint just as
+-- it is in an index predicate (the same physical rule that pushed the lease-expiry test out of
+-- video_artifacts_inflight_uq and into the RPC). A trigger is the only place it can live.
 create function video_generations_freeze() returns trigger
   language plpgsql security definer set search_path = '' as $$
 begin
-  if old.state = 'complete' then
+  if new.produced_at is not null and new.produced_at > now() then
+    raise exception 'video_generations: produced_at % is in the FUTURE — a clock value may not enter the ranking',
+      new.produced_at;
+  end if;
+  -- OLD does not exist on INSERT, so the freeze half must be guarded by tg_op rather than by
+  -- old.state. Same physical rule that forced 03's corrections sync into TWO triggers.
+  if tg_op = 'UPDATE' and old.state = 'complete' then
     if new.state <> 'complete' then
       raise exception 'video_generations: % is COMPLETE and cannot return to %',
         old.generation_id, new.state;
@@ -277,8 +312,10 @@ end $$;
 revoke all on function video_generations_freeze() from public, anon, authenticated;
 -- Fires AFTER forbid_collecting_current_trg (04): triggers run in name order, `f` < `v`, and both
 -- return NEW unchanged, so neither depends on the other's result.
+-- ⟳ ROUND 7 — `before INSERT or update`. The produced_at bound above is worthless on UPDATE alone:
+-- a direct INSERT is how sync creates a generation, and it is the path the bound exists for.
 create trigger video_generations_freeze_trg
-  before update on video_generations
+  before insert or update on video_generations
   for each row execute function video_generations_freeze();
 alter table video_generations enable row level security;
 alter table video_generations force row level security;

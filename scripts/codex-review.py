@@ -152,7 +152,30 @@ def run_codex(model: str, prompt: str, timeout: int) -> "tuple[int, str, str | N
     try:
         try:
             p = subprocess.run(
-                ["codex", "exec", "-m", model, "-o", msg_path, prompt],
+                # ⟳ `-s danger-full-access` — ADDED 2026-08-07, and it fixes a gate that had been
+                # running at HALF STRENGTH without saying so.
+                #
+                # THERE ARE TWO INDEPENDENT SANDBOXES and disabling the outer one does nothing to
+                # the inner one. Claude Code's `dangerouslyDisableSandbox` governs launching THIS
+                # process; `codex exec` then applies its OWN Seatbelt policy to itself, and with no
+                # `-s` flag that default is `workspace-write`. MEASURED in round 7: the reviewer
+                # could not reach Docker —
+                #   dial unix /Users/…/docker.sock: connect: operation not permitted
+                # — so it reported `0/35 mutations … SQL did not run` and reviewed by READING. Its
+                # findings were right, but this artifact was moved out of prose into executable SQL
+                # at round 4→5 precisely because reading is the most expensive way to find defects.
+                # A reviewer that cannot execute is reviewing the round-4 way.
+                #
+                # `trust_level = "trusted"` in ~/.codex/config.toml does NOT help: it governs
+                # approval prompts, not socket access. And there is no narrower setting that works —
+                # the verifier needs a unix socket outside any workspace root, so `workspace-write`
+                # cannot reach it no matter where the files are put.
+                #
+                # The trade is deliberate: every use of this wrapper is "run an adversarial review
+                # that must execute the suite", against a local Postgres, on the author's own
+                # machine. Full access is the requirement, not a convenience.
+                ["codex", "exec", "-m", model, "-s", "danger-full-access",
+                 "-o", msg_path, prompt],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

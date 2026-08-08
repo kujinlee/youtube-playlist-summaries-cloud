@@ -135,8 +135,21 @@ MUTATIONS = [
     (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
      source_generation_id, start_sec, end_sec)
   values (p_ws, p_video, p_slot, p_generation_id, p_kind, 'recorded', p_blob_key,
-          p_source_generation_id, p_start_sec, p_end_sec);
-  return 'recorded_after_loss';""",
+          coalesce(p_source_generation_id, v_src),
+          coalesce(p_start_sec, v_start), coalesce(p_end_sec, v_end))
+  on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
+  do update set
+       state                = 'recorded',
+       lease_expires_at     = null,
+       lease_token          = null,
+       reserved_at          = null,
+       source_generation_id = excluded.source_generation_id,
+       start_sec            = excluded.start_sec,
+       end_sec              = excluded.end_sec;""",
+     # An early `return` makes the real one below unreachable, which is exactly the mutation's
+     # intent. The anchor deliberately stops at the statement — extending it through the trailing
+     # comment is what broke it when round 7 rewrote this block, and an anchor that spans prose is
+     # an anchor that breaks every time someone explains themselves.
      "  return 'refused';",
      "PAID work was discarded", ART),
 
@@ -190,7 +203,12 @@ MUTATIONS = [
     ("state defaults to pending instead of complete",
      "  state             text not null default 'complete'",
      "  state             text not null default 'pending'",
-     "PENDING generation reached current", GEN),
+     # ⟳ round 7: was "PENDING generation reached current", and RED(other) said so. The default
+     # flipping to `pending` is caught EARLIER — by the artifact-side trigger, when a fixture that
+     # hand-inserts a complete generation tries to record against it. Naming the guard that actually
+     # fires is the whole value of comparing `expect`; leaving it stale would have scored a real
+     # catch as a miss the moment anything else changed.
+     "cannot mark", GEN),
 
     ("freeze: complete is no longer terminal",
      "    if new.state <> 'complete' then\n      raise exception 'video_generations: % is COMPLETE and cannot return to %',\n        old.generation_id, new.state;\n    end if;\n",
@@ -220,28 +238,64 @@ MUTATIONS = [
      "clock starts in the FUTURE", ART),
 
     ("reserve no longer creates the pending generation (the measured defect)",
-     """  if p_generation_id is not null then
-    insert into public.video_generations (workspace_id, video_id, generation_id, kind, state)
-    values (p_ws, p_video, p_generation_id, p_kind, 'pending')
+     """    insert into public.video_generations
+      (workspace_id, video_id, generation_id, kind, state, reserved_by)
+    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token)
     on conflict (workspace_id, video_id, generation_id) do nothing;
-  end if;
+    v_made_generation := found;
 """,
      "",
      "cannot reserve a summary slot", ART),
 
-    ("record no longer completes the generation",
-     """  if p_generation_id is not null then
-    update public.video_generations
-       set state             = 'complete',
-           card              = coalesce(p_card, card),
-           md_hash           = coalesce(p_md_hash, md_hash),
-           doc_version_major = coalesce(p_doc_version_major, doc_version_major),
-           produced_at       = coalesce(p_produced_at, produced_at, now())
-     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id;
+    # ⟳ ROUND 7 H3 — the cleanup on the DENIED paths. Without it every `busy` loser leaves an
+    # FK-valid parent no artifact points at, no ranking view reaches, and no sweep collects.
+    ("a denied reservation keeps the generation row it created (round 7 H3)",
+     """  if v_made_generation then
+    delete from public.video_generations
+     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id
+       and state = 'pending';
   end if;
 """,
      "",
-     "generation is still PENDING", ART),
+     "orphan generation row", ART),
+
+    ("record no longer completes the generation",
+     """  if p_generation_id is not null then
+    update public.video_generations g
+       set state             = 'complete',
+           card              = coalesce(p_card, g.card),
+           md_hash           = coalesce(p_md_hash, g.md_hash),
+           doc_version_major = coalesce(p_doc_version_major, g.doc_version_major),
+           produced_at       = coalesce(p_produced_at, g.produced_at, now()),
+           reserved_by       = null
+     where g.workspace_id = p_ws and g.video_id = p_video and g.generation_id = p_generation_id
+       and g.state = 'pending'
+       and (g.reserved_by = p_token
+            or exists (select 1 from public.video_artifacts a
+                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot
+                          and a.state = 'pending' and a.generation_id = p_generation_id));
+  end if;
+""",
+     "",
+     "cannot mark", ART),
+
+    # ⟳ ROUND 7 H2 — the ownership fence itself. Removing ONLY the two ownership disjuncts leaves the
+    # completion working for every legitimate caller, so nothing but the hijack test can go red.
+    ("the generation-completion ownership fence removed (round 7 H2)",
+     """       and (g.reserved_by = p_token
+            or exists (select 1 from public.video_artifacts a
+                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot
+                          and a.state = 'pending' and a.generation_id = p_generation_id))""",
+     "",
+     "generation it does not hold", ART),
+
+    # And the other half: fencing on the TOKEN alone breaks the restarted worker (B1a), fencing on
+    # the SLOT alone breaks the reclaimed one. Each disjunct is mutated separately, because a
+    # compound guard hides which half carries the weight — round 5 H1's rule applied to a predicate.
+    ("only the slot-ownership disjunct kept (a restarted worker cannot complete)",
+     "       and (g.reserved_by = p_token\n            or exists",
+     "       and (false\n            or exists",
+     "cannot mark", ART),
 
     # produced_at is a PARAMETER, not a clock read. Stamping now() is item 1's detached_at
     # defect in a different column, and J2-3 forbids a clock read anywhere the ranking reads.
@@ -253,9 +307,45 @@ MUTATIONS = [
     # every complete generation untouched, so the freeze never fires and G9 is the only thing
     # that can go red. Round 5 H1's masking rule applies to mutations, not just to fixtures.
     ("produced_at ignores the caller and reads the clock (sync cannot replicate a time)",
-     "           produced_at       = coalesce(p_produced_at, produced_at, now())",
-     "           produced_at       = coalesce(produced_at, now())",
+     "           produced_at       = coalesce(p_produced_at, g.produced_at, now()),",
+     "           produced_at       = coalesce(g.produced_at, now()),",
      "produced_at was stamped, not carried", ART),
+
+    # ── round 7: the guards added for this round's own findings ──────────────────
+    ("the produced_at future bound removed (a fast clock outranks reality)",
+     """  if new.produced_at is not null and new.produced_at > now() then
+    raise exception 'video_generations: produced_at % is in the FUTURE — a clock value may not enter the ranking',
+      new.produced_at;
+  end if;
+""",
+     "",
+     "produced_at in the FUTURE", GEN),
+
+    # EXPECTED GREEN, and measuring it changed what I believe about my own fix.
+    #
+    # B2 had two halves: bound `produced_at` to the past, and scope the detached_at bound to INSERT.
+    # I shipped both. The mutation says the second carries NO GUARD OF ITS OWN: once produced_at
+    # cannot be in the future, `detached_at = now()` on the UPDATE path is necessarily within
+    # [produced_at, now()], so running the bound there is a guaranteed no-op and restoring the
+    # "broken" form breaks nothing.
+    #
+    # So `tg_op = 'INSERT'` is a CLARIFICATION riding on the produced_at bound — exactly the status
+    # of item 2's rung-1 `=`, and recorded the same way rather than quietly asserted. It stays,
+    # because it says truthfully where the guard lives; but if the produced_at bound were ever
+    # relaxed, this line would silently start carrying weight it is not tested for.
+    ("the detached_at bound runs on UPDATE again (no-op once produced_at is bounded)",
+     "  if tg_op = 'INSERT' and new.state = 'detached' then",
+     "  if new.state = 'detached' then",
+     None, ART),
+
+    ("forbid_collecting_current disabled (round 5 H3 — never mutated until round 7 M3)",
+     """  if new.body_collected and not old.body_collected
+     and exists (select 1 from public.video_artifacts_current c
+                  where c.workspace_id = new.workspace_id and c.video_id = new.video_id
+                    and c.generation_id = new.generation_id)
+  then""",
+     "  if (false) then",
+     "collecting the CURRENT generation", ART),
 ]
 
 
@@ -289,9 +379,23 @@ def classify(rc, out, expect):
     # Anchored on the schema's OWN raise-exception prefixes, so a genuine runtime error
     # (a missing function, a bad cast) still classifies as INVALID rather than being
     # laundered into a pass.
-    m = re.search(r"ERROR:\s*video_(artifacts|generations):[^\n]*", out)
+    # ⟳ ROUND 7 — this branch was WRONG IN BOTH DIRECTIONS, and both were found by review rather
+    # than by the harness, which is the point of shape #11 (an instrument that misreports itself).
+    #
+    #  TOO PERMISSIVE (Codex, High): it returned success WITHOUT comparing `expect`, so a mutation
+    #    aimed at one guard could be caught by a different trigger entirely and still count. The
+    #    assertion branch above has carried that comparison since round 6 — and it is exactly what
+    #    caught two masked negatives the day before. Not sweeping it here is shape #10, in the fix
+    #    written hours earlier for the previous instance of shape #11.
+    #  TOO NARROW (Claude, M2): the anchor missed two of the schema's own raise messages —
+    #    `video_artifacts is append-only:` (no colon after the table name) and
+    #    `refusing to collect generation …` (no prefix at all). No mutation landed on either, so
+    #    35/35 was honest — but round 7 adds a mutation for each, and without this they would have
+    #    been reported INVALID, i.e. a working guard scored as an untested one. Again.
+    m = re.search(r"ERROR:\s*(video_artifacts|video_generations|refusing to collect)[^\n]*", out)
     if m:
-        return "RED(trigger)", m.group(0).strip()
+        detail = m.group(0).strip()
+        return ("RED(trigger)" if expect.lower() in detail.lower() else "RED(other)"), detail
     m = re.search(r"ERROR:[^\n]*", out)
     return "INVALID", (m.group(0).strip() if m else "no error captured; SQL did not run")
 

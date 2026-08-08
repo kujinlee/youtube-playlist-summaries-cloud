@@ -636,6 +636,34 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       guards were reported `INVALID` ("the mutation broke the SQL"). That is the harness making the
       mistake its own docstring warns about, one layer up; `RED(trigger)` now names it.
 
+- [ ] **Round 7 — NOT CONVERGED (2 Blocking, 3 High, 5 Medium), fixes on `fix/blob-addressing-r7-findings` (PR #56).**
+      Called for one purpose: the four items had each been reviewed against *itself* and none against
+      the others. **Every Blocking and High was an interaction between two of them and a defect in
+      none individually** — round 6's cross-derivation verdict, reproduced under the same condition.
+      Both reviewers independently **confirmed** the 89/89 and 35/35 claims as true; every finding was
+      something neither instrument could see.
+      **B1 silently revoked a user decision.** `record_artifact`'s append was blind, so a worker that
+      merely *restarted* and forgot its token collided with its own pending row (`[23505]`, no race).
+      The 2026-08-07 decision — *the reservation guards spending, not recording* — was restored as a
+      rejection by item 3's freeze trigger, written a day later **in a different file**. A rule can be
+      overturned by a change that never mentions it.
+      **B2:** nothing bounded `produced_at`, a caller-supplied **ranking rung**; a future value made
+      §6.2's detach permanently impossible. **H2:** the generation completion was fenced on nothing,
+      so a caller could complete another writer's generation and lock the real owner out of its paid
+      work forever. **H3:** a denied reservation littered an unreachable `pending` generation.
+      **89 → 98 assertions, 35 → 41 mutations, all as expected.**
+      Two physical rules learned from the fixes: **a CHECK is evaluated on the proposed tuple before
+      conflict resolution** (so `excluded.*` cannot repair itself), and **the span belongs to the slot
+      while provenance belongs to the generation**.
+      **The Codex gate had been running at half strength.** Two independent sandboxes: disabling
+      Claude Code's does nothing to the one `codex exec` applies to itself, so the reviewer could not
+      reach Docker and reviewed by *reading* — `0/35 … SQL did not run`. Fixed with
+      `-s danger-full-access`; recorded in `docs/plugins.md`. The prior memory note covered the
+      **outer** sandbox only, which is shape #10 in the tooling rather than the schema.
+- [ ] **Round 8** — mandatory: a round returning new Blocking/High is proof the loop is still earning
+      its cost. Standing agenda: the inert `pending` generation left by a crashed summary worker (§8
+      has no sweep for it), and `persist_summary`'s merge semantics (backlog #17's residue).
+
       **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
       `when others`, so six negatives were passing on a `[42601]` arity error instead of the
       constraint they named — round 5's Blocking B1 and High H5 shipped **unverified** while the suite

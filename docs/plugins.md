@@ -136,6 +136,28 @@ never stdout text. Run `--self-test` (15 cases) after touching it. Prefer it ove
 for anything that must actually produce a review; `scripts/codex-frontier-model.py` alone cannot
 guarantee a runnable model and says so in its docstring.
 
+**THERE ARE TWO SANDBOXES, AND DISABLING THE OUTER ONE DOES NOTHING TO THE INNER ONE (added 2026-08-07).**
+
+| Layer | Controlled by | What it governs |
+|---|---|---|
+| Outer | Claude Code's `dangerouslyDisableSandbox` on the Bash call | whether *we* may launch the process |
+| **Inner** | **`codex exec -s <mode>`**, default `workspace-write` | what **Codex** may do to the machine |
+
+MEASURED in round 7 of the blob-addressing review: the wrapper passed no `-s`, so Codex sandboxed
+*itself*, could not open the Docker socket
+(`dial unix …/docker.sock: connect: operation not permitted`), and reported
+`0/35 mutations … SQL did not run`. It reviewed by **reading**. Its findings happened to be right,
+but the whole reason that artifact was moved out of prose into executable SQL is that reading is the
+most expensive way to find defects — **a reviewer that cannot execute is a downgraded gate that still
+reports success.** Note the shape: this is the *same class* as the fail-open cases below, one layer
+out, and the existing memory note ("run Codex from the coordinator with `dangerouslyDisableSandbox`")
+covered the **outer** sandbox only — solving one instance and reading as if it covered the class.
+
+`scripts/codex-review.py` now passes `-s danger-full-access`. `trust_level = "trusted"` in
+`~/.codex/config.toml` does **not** substitute — it governs approval prompts, not socket access — and
+no narrower mode works, because the verifier needs a unix socket outside every workspace root.
+If a review ever reports that it could not run the suite, **treat the gate as not having run.**
+
 **The gate can FAIL OPEN — verify it actually ran (added 2026-07-18).**
 
 1. **Wrong model slug → HTTP 400, empty review. ✅ SOLVED by the wrapper above.**

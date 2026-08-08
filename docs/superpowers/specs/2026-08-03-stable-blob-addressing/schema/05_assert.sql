@@ -785,8 +785,13 @@ values
   3,'2026-01-01','SHA_C_CUR'),
  -- corrections-STALE but newer and a HIGHER format version: must lose
  ((select id from t_ws),'vidC','gC_STALE','summary',
+  -- ⟳ ROUND 7 B2 — produced_at moved back from '2026-09-09'. It was a MONTH IN THE FUTURE, which is
+  -- now rejected outright (a clock value may not enter the ranking) — and while it stood, it was the
+  -- fixture that made B2 reachable in practice: a generation with a future produced_at could never
+  -- have its digs detached. `mdGeneratedAt` deliberately KEEPS its later date: it is the string this
+  -- row exists to lose the ranking on, and it is card data, not a clock the schema bounds.
   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-09-09","processedAt":"y","mdCorrectionsHash":"H_STALE"}',
-  4,'2026-09-09','SHA_C_STALE');
+  4,'2026-02-09','SHA_C_STALE');
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
 values ((select id from t_ws),'vidC','summary','gC_CUR','summary','recorded',
         (select id from t_ws)::text||'/videos/vidC/gC_CUR/summary.md'),
@@ -1074,4 +1079,222 @@ select assert_raises($$insert into video_artifacts
   values ((select id from t_ws),'vidG','dig:901','gGD','dig','detached',
    (select id from t_ws)::text||'/videos/vidG/gGD/dig-901.md',901,960, now() + interval '1 day')$$,
   'inserting a detached dig whose retention clock starts in the FUTURE', 'P0001');
+-- ── ⟳ ROUND 7 — THE FOUR ITEMS CROSS-DERIVED AGAINST EACH OTHER ────────────────────────────────
+-- Every finding below is an INTERACTION between two of the four merged items and a defect in
+-- neither one alone — which is the same verdict round 6's cross-derivation produced, reproduced
+-- under the same condition: four items, four sittings, no re-derivation between them.
+--
+-- ⚠ THESE FIXTURES GO THROUGH THE RPCs. Round 7 found that `05:335-338` hand-builds a pending row
+-- with a hand-made token, which is exactly why B1a was invisible to 89 assertions: no assertion
+-- ever called record_artifact with a token the reservation did not issue. A fixture that bypasses
+-- the protocol cannot test the protocol.
+
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR' from t_ws;
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR2' from t_ws;
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR3' from t_ws;
+
+-- R1 (B1a) — A WORKER THAT RESTARTED AND LOST ITS TOKEN MUST STILL RECORD ITS PAID WORK.
+-- No race, no reclaim, lease still LIVE. Measured before the fix:
+--   [23505] duplicate key value violates unique constraint "video_artifacts_paid_uq"
+-- because the append path inserted BLIND and collided with the worker's OWN pending row.
+-- This is the user's rule of 2026-08-07 — "the reservation guards SPENDING, not RECORDING; a writer
+-- that already paid always records" — failing via a raw SQLSTATE instead of a typed refusal, in the
+-- function whose own comment says it "never refuses". Shape #8, and shape #10 against
+-- reserve_artifact_slot:304-306 which already fixed exactly this for itself.
+do $$ declare o text; ws uuid; n int; begin
+  select id into ws from t_ws;
+  perform reserve_artifact_slot(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
+    ws::text||'/videos/vidR/gR1/dig-3.md', p_start_sec := 3, p_end_sec := 9);
+  o := record_artifact(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
+        ws::text||'/videos/vidR/gR1/dig-3.md', gen_random_uuid(),   -- token FORGOTTEN across a restart
+        p_start_sec := 3, p_end_sec := 9, p_produced_at := '2026-05-01');
+  if o <> 'recorded_after_token_loss' then
+    raise exception 'ASSERTION FAILED — a restarted worker did not record its paid work: %', o; end if;
+  select count(*) into n from video_artifacts
+   where video_id='vidR' and slot='dig:3' and state='recorded';
+  if n <> 1 then
+    raise exception 'ASSERTION FAILED — expected ONE recorded row, got %', n; end if;
+  raise notice 'ok (R1/B1a): a worker that lost its token records in place, no 23505, typed outcome';
+end $$;
+
+-- R2 (B1c) — THE TWO PATHS MUST AGREE GIVEN IDENTICAL ARGUMENTS. The holder path never read
+-- span/provenance (its UPDATE touches only state and lease columns), so a caller could legitimately
+-- omit them and rely on what reserve stored — and then fail ONLY under the race, which is the worst
+-- possible place to put a latent argument requirement.
+do $$ declare o text; s int; e int; ws uuid; begin
+  select id into ws from t_ws;
+  perform reserve_artifact_slot(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
+    ws::text||'/videos/vidR/gR2/dig-4.md', p_start_sec := 4, p_end_sec := 44);
+  o := record_artifact(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
+        ws::text||'/videos/vidR/gR2/dig-4.md', gen_random_uuid(),   -- loss path, span OMITTED
+        p_produced_at := '2026-05-02');
+  select start_sec, end_sec into s, e from video_artifacts where video_id='vidR' and slot='dig:4';
+  if s <> 4 or e <> 44 then
+    raise exception 'ASSERTION FAILED — the loss path lost the reserved span: (%,%)', s, e; end if;
+  raise notice 'ok (R2/B1c): both record paths take the span from the reservation when omitted';
+end $$;
+
+-- R3 (H2) — A CALLER MAY NOT COMPLETE A GENERATION IT DOES NOT HOLD, and the real owner must keep
+-- its paid work. Measured before the fix: W2 named W1's generation, completed it with W2's
+-- production time, and W1 was then locked out FOREVER by the freeze trigger
+--   [P0001] video_generations: the CONTENT of complete generation gA is immutable
+-- — item 3's freeze silently revoking item 4's user decision. The generation UPDATE was fenced on
+-- NOTHING while every other write in this design is fenced.
+do $$ declare o text; tW1 uuid; tW2 uuid; st text; ws uuid; begin
+  select id into ws from t_ws;
+  select token into tW1 from reserve_artifact_slot(ws,'vidR2','dig:1','gW1','dig'::artifact_kind,
+    ws::text||'/videos/vidR2/gW1/dig-1.md', p_start_sec := 1, p_end_sec := 11);
+  select token into tW2 from reserve_artifact_slot(ws,'vidR2','dig:2','gW2','dig'::artifact_kind,
+    ws::text||'/videos/vidR2/gW2/dig-2.md', p_start_sec := 2, p_end_sec := 22);
+  -- W2 records ITS OWN slot but NAMES W1's generation. No (slot,generation) collision exists, so
+  -- nothing in the paid unique index can stop it — the fence has to.
+  --
+  -- ⚠ THIS IS THE ONE CASE WHERE REFUSING IS CORRECT, and it does not contradict "record_artifact
+  -- never refuses". That rule protects a writer's OWN paid work. gW1 is not W2's work — W2's work is
+  -- gW2 — so this is a caller naming a generation it never reserved, and the honest answer is a
+  -- typed refusal rather than silently poisoning the real owner's row.
+  begin
+    perform record_artifact(ws,'vidR2','dig:2','gW1','dig'::artifact_kind,
+      ws::text||'/videos/vidR2/gW1/dig-2.md', tW2, p_start_sec := 2, p_end_sec := 22,
+      p_produced_at := '2026-01-01');
+    raise exception 'ASSERTION FAILED — W2 recorded against a generation it does not hold';
+  exception when sqlstate 'P0001' then
+    if sqlerrm like 'ASSERTION FAILED%' then raise; end if;   -- never swallow our own assertion
+  end;
+  select state into st from video_generations where video_id='vidR2' and generation_id='gW1';
+  if st <> 'pending' then
+    raise exception 'ASSERTION FAILED — W2 completed a generation it does not hold (state %)', st; end if;
+  -- ...and W1, the real owner, must still be able to record.
+  o := record_artifact(ws,'vidR2','dig:1','gW1','dig'::artifact_kind,
+        ws::text||'/videos/vidR2/gW1/dig-1.md', tW1, p_start_sec := 1, p_end_sec := 11,
+        p_produced_at := '2026-06-06');
+  select state into st from video_generations where video_id='vidR2' and generation_id='gW1';
+  if o not in ('recorded_as_holder','recorded_after_token_loss') or st <> 'complete' then
+    raise exception 'ASSERTION FAILED — the real owner lost its paid work: outcome=% state=%', o, st; end if;
+  raise notice 'ok (R3/H2): only the reserving holder completes a generation; the owner keeps its work';
+end $$;
+
+-- R3b — P22 ITSELF, WITH A GENERATION THE PROTOCOL CREATED. Found by MUTATION, not by reading:
+-- removing the `reserved_by = p_token` disjunct left the whole suite GREEN, which means nothing was
+-- exercising the case that disjunct exists for. The item-4 `recorded_after_loss` test could not:
+-- its generations are hand-inserted as COMPLETE, so the completion is a no-op and the fence is never
+-- consulted. This is the fixture critique from round 7 applied to round 7's own fix — a guard whose
+-- only witness bypasses the protocol is a guard with no test.
+--
+-- The shape is item 4's P22 exactly: W1 reserves, its lease expires mid-Gemini, W2 reclaims the SLOT
+-- under its own generation, and W1 returns holding a token that no longer matches any artifact row.
+-- W1 must still complete ITS OWN generation and record — that is the user decision of 2026-08-07.
+do $$ declare tW1 uuid; o text; st text; n int; ws uuid; begin
+  select id into ws from t_ws;
+  update guardrail_config set lease_ttl_seconds = 1, dig_max_attempts = 5 where id = true;
+  select token into tW1 from reserve_artifact_slot(ws,'vidR','dig:8','gP1','dig'::artifact_kind,
+    ws::text||'/videos/vidR/gP1/dig-8.md', p_start_sec := 8, p_end_sec := 88);
+  -- expire W1's lease without touching the clock (now() is transaction-stable inside this rollback)
+  update video_artifacts set lease_expires_at = now() - interval '1 min'
+   where video_id='vidR' and slot='dig:8';
+  select outcome into o from reserve_artifact_slot(ws,'vidR','dig:8','gP2','dig'::artifact_kind,
+    ws::text||'/videos/vidR/gP2/dig-8.md', p_start_sec := 8, p_end_sec := 88);
+  if o <> 'reserved' then raise exception 'FIXTURE FAILED — W2 could not reclaim: %', o; end if;
+  -- W1 comes back. Its slot is gone; its GENERATION is still its own.
+  o := record_artifact(ws,'vidR','dig:8','gP1','dig'::artifact_kind,
+        ws::text||'/videos/vidR/gP1/dig-8.md', tW1, p_produced_at := '2026-05-03');
+  select state into st from video_generations where video_id='vidR' and generation_id='gP1';
+  if o <> 'recorded_after_loss' or st <> 'complete' then
+    raise exception 'ASSERTION FAILED — a reclaimed writer lost its paid work: outcome=% gP1=%', o, st; end if;
+  select count(*) into n from video_artifacts
+   where video_id='vidR' and slot='dig:8' and state='recorded' and generation_id='gP1';
+  if n <> 1 then
+    raise exception 'ASSERTION FAILED — the reclaimed writer recorded % rows, expected 1', n; end if;
+  raise notice 'ok (R3b/P22): a reclaimed writer completes its OWN generation via reserved_by and records';
+end $$;
+
+-- R4 (H3) — A DENIED RESERVATION MUST NOT LEAVE A GENERATION ROW BEHIND. Item 3 put the generation
+-- INSERT above the upsert that decides who gets the slot, so every `busy` loser littered an
+-- FK-valid parent that no artifact points at, no ranking view reaches, and no sweep collects —
+-- unbounded growth for a worker looping on `busy` with a fresh id per attempt.
+do $$ declare o text; n int; ws uuid; begin
+  select id into ws from t_ws;
+  perform reserve_artifact_slot(ws,'vidR3','summary','gS1','summary'::artifact_kind,
+    ws::text||'/videos/vidR3/gS1/summary.md');
+  select outcome into o from reserve_artifact_slot(ws,'vidR3','summary','gS2','summary'::artifact_kind,
+    ws::text||'/videos/vidR3/gS2/summary.md');
+  if o <> 'busy' then raise exception 'FIXTURE FAILED — expected busy, got %', o; end if;
+  select count(*) into n from video_generations where video_id='vidR3' and generation_id='gS2';
+  if n <> 0 then
+    raise exception 'ASSERTION FAILED — a DENIED reservation left % orphan generation row(s)', n; end if;
+  raise notice 'ok (R4/H3): a denied reservation leaves no generation row behind';
+end $$;
+
+-- R5 (B2 / M5) — produced_at IS A RANKING RUNG AND A CALLER-SUPPLIED VALUE. Nothing bounded it, so
+-- one sync from a replica with a fast clock ranks a generation above everything real until the clock
+-- catches up. Round 4's J2-3 removed clock READS from the ranking; it did not stop a clock VALUE
+-- being injected into it. Separately, a future produced_at made §6.2's detach UNSATISFIABLE forever
+-- (the bound compares detached_at, which the sibling trigger sets to now(), against it).
+select assert_raises($$select record_artifact((select id from t_ws),'vidR','dig:5','gR5','dig'::artifact_kind,
+   (select id from t_ws)::text||'/videos/vidR/gR5/dig-5.md',
+   (select token from reserve_artifact_slot((select id from t_ws),'vidR','dig:5','gR5',
+      'dig'::artifact_kind,(select id from t_ws)::text||'/videos/vidR/gR5/dig-5.md',
+      p_start_sec := 5, p_end_sec := 55)),
+   p_start_sec := 5, p_end_sec := 55, p_produced_at := now() + interval '10 days')$$,
+  'completing a generation with a produced_at in the FUTURE (a fast replica clock outranks reality)',
+  'P0001');
+
+-- R6 (B2) — A DIG WHOSE GENERATION IS LEGITIMATE MUST ALWAYS BE DETACHABLE. Before the fix, a
+-- generation carrying a future produced_at could NEVER have its digs detached — permanently, since
+-- produced_at is frozen and detached_at is trigger-owned on UPDATE. The error even blamed the writer
+-- for a value the writer never supplied.
+do $$ declare ws uuid; st text; t timestamptz; begin
+  select id into ws from t_ws;
+  perform reserve_artifact_slot(ws,'vidR','dig:6','gR6','dig'::artifact_kind,
+    ws::text||'/videos/vidR/gR6/dig-6.md', p_start_sec := 6, p_end_sec := 66);
+  perform record_artifact(ws,'vidR','dig:6','gR6','dig'::artifact_kind,
+    ws::text||'/videos/vidR/gR6/dig-6.md',
+    (select lease_token from video_artifacts where video_id='vidR' and slot='dig:6'),
+    p_start_sec := 6, p_end_sec := 66, p_produced_at := now() - interval '1 minute');
+  update video_artifacts set state='detached' where video_id='vidR' and slot='dig:6';
+  select state, detached_at into st, t from video_artifacts where video_id='vidR' and slot='dig:6';
+  if st <> 'detached' or t is null then
+    raise exception 'ASSERTION FAILED — a recently-produced dig could not be detached (% %)', st, t; end if;
+  raise notice 'ok (R6/B2): detach works for a generation produced moments ago (the bound is INSERT-only)';
+end $$;
+
+-- R7 (H1) — THE TRIGGER FIRING ORDER IS ASSERTED, NOT ASSUMED. Round 7 renamed
+-- video_artifacts_append_only_trg to zz_… , inverting the order the file called load-bearing, and
+-- all 89 assertions stayed GREEN: no assertion read pg_trigger, no mutation touched a trigger name,
+-- and the whole correctness argument rested on 'v' sorting after 'a'. Shape #6 (a guard with no
+-- test) sitting under the one place the file says the design depends on ordering.
+do $$ declare names text[]; begin
+  select array_agg(t.tgname order by t.tgname) into names
+    from pg_trigger t join pg_class c on c.oid = t.tgrelid
+   where c.relname = 'video_artifacts' and not t.tgisinternal;
+  if names[1] <> 'video_artifacts_append_only_trg' then
+    raise exception 'ASSERTION FAILED — append-only must fire FIRST on video_artifacts; order is %', names; end if;
+  select array_agg(t.tgname order by t.tgname) into names
+    from pg_trigger t join pg_class c on c.oid = t.tgrelid
+   where c.relname = 'video_generations' and not t.tgisinternal;
+  if names[1] <> 'forbid_collecting_current_trg' then
+    raise exception 'ASSERTION FAILED — forbid-collecting must fire FIRST on video_generations; order is %', names; end if;
+  raise notice 'ok (R7/H1): both BEFORE-trigger firing orders are asserted, not assumed from naming';
+end $$;
+
+-- R8 (M1) — THE PRIVILEGE SWEEP IS COMPLETE, ASSERTED RATHER THAN CLAIMED. 04's own comment says
+-- "Sweeping all THREE replacements here, not just the one that inherited the name — that one-site
+-- habit is what produced B1 in the first place", and measured, two `security definer` functions
+-- still carried the default PUBLIC EXECUTE. Exploitability is near zero (Postgres refuses a direct
+-- call to a trigger function: [0A000]) but the CLAIM OF COMPLETENESS was false, and that sweep is
+-- the only thing standing between this design and round 6's B1. Asserted over pg_proc so the next
+-- definer function added is caught by the suite rather than by the next reviewer.
+do $$ declare leaky text[]; begin
+  select array_agg(p.proname order by p.proname) into leaky
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prosecdef
+     and p.proname in ('slot_kind','reserve_artifact_slot','renew_artifact_lease','record_artifact',
+                       'forbid_collecting_current','video_artifacts_append_only',
+                       'video_artifacts_generation_complete','video_generations_freeze',
+                       'sync_corrections_to_workspace_video')
+     and has_function_privilege('anon', p.oid, 'EXECUTE');
+  if leaky is not null then
+    raise exception 'ASSERTION FAILED — anon holds EXECUTE on definer function(s): %', leaky; end if;
+  raise notice 'ok (R8/M1): no definer function in this schema is reachable by anon';
+end $$;
 \echo ASSERTIONS_OK
