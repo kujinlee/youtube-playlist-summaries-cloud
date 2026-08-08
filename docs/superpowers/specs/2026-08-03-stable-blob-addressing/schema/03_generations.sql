@@ -136,9 +136,34 @@ create table video_generations (
   video_id          text not null,
   generation_id     text not null,
   kind              artifact_kind not null,
+  -- ⟳ ROUND 6 B5 / Codex B3 — A GENERATION HAS A LIFECYCLE TOO.
+  -- MEASURED: a cloud summarize could not RESERVE its summary slot. Reserving with no generation row
+  -- raised [23503] on the artifact's FK; creating the generation row from what is knowable BEFORE the
+  -- Gemini call raised [23514] gen_card_complete. The paid call sits between those two, so both doors
+  -- were locked and the primary kind of the round-6 reservation protocol was unreachable.
+  --
+  -- The premise that failed was "a generation row is only ever complete" — true while the manifest
+  -- held one row per slot and the generation was written once, after the fact. Rounds 5-6 gave the
+  -- ARTIFACT a lifecycle and a protocol that must insert a `pending` row BEFORE the content exists,
+  -- and never gave its FK PARENT the matching one. The honest rule is narrower than the old one:
+  --   A GENERATION MUST BE COMPLETE WHEN SOMETHING RECORDED POINTS AT IT — not from the moment it
+  --   exists. `video_artifacts_generation_complete` (04) is what enforces the second half, and it is
+  --   what makes gating the four CHECKs below safe rather than merely convenient.
+  --
+  -- ⚠ THE DEFAULT IS `complete`, AND THAT IS A SAFETY ARGUMENT, NOT A COMPATIBILITY ONE. A producer
+  -- that never heard of this column keeps TODAY's behaviour exactly: its incomplete row is still
+  -- rejected by gen_card_complete. Defaulting to `pending` would have made every completeness CHECK
+  -- below optional for anyone who simply omitted the column — a fail-open default in the constraints
+  -- that round 4's J1-2 fixed for being fail-open. The relaxation is strictly opt-in, and the only
+  -- caller that opts in is reserve_artifact_slot.
+  state             text not null default 'complete'
+                    check (state in ('pending','complete')),
   card              jsonb,
   doc_version_major int,             -- rule 13's format rung. Round 4 J3-2: ranked on, never defined.
-  produced_at       timestamptz not null,   -- PRODUCTION time, carried as DATA across replicas —
+  -- NULLABLE while pending — nothing has been produced yet, and a `not null` here is what forced a
+  -- reserving writer to invent a production time. Required again at completion
+  -- (gen_complete_has_produced_at), so no ranked row can carry a NULL on the bottom rung.
+  produced_at       timestamptz,              -- PRODUCTION time, carried as DATA across replicas —
                                             -- not now(), which is clock-derived (round 4 J2-3).
   body_collected    boolean not null default false,  -- round 1 H7's lifecycle marker.
   -- Round 5 B3: sync's ClassASignals.mdHash had NO cloud source. The spec says so twice in its own
@@ -180,8 +205,13 @@ create table video_generations (
   --     now also carries the constant instead of NULL. The old pairing (card 'mdHash('')' vs column
   --     NULL) is exactly what MEASURED as corrections-current = FALSE for the entire corpus.
   -- Kept as key-presence AND value, since `?&` alone was what let round 5's B1 all-null card win.
+  -- ⟳ ROUND 6 B5 — `state <> 'complete' or …` on all four. The constraints did NOT weaken; each moved
+  -- to the moment its value can exist. What keeps that from being a bypass is the artifact-side
+  -- trigger in 04: nothing may be RECORDED against a generation that is still pending, so every row
+  -- either ranking view can ever see has satisfied all four in full.
+  constraint gen_complete_has_produced_at check (state <> 'complete' or produced_at is not null),
   constraint gen_card_complete check (
-    kind <> 'summary' or (
+    state <> 'complete' or kind <> 'summary' or (
       card is not null
       and card ?& array['tldr','takeaways','docVersion','mdGeneratedAt','processedAt',
                         'mdCorrectionsHash']
@@ -194,16 +224,62 @@ create table video_generations (
       and card ->> 'mdGeneratedAt' is not null
       and card ->> 'processedAt'   is not null
       and card ->> 'mdCorrectionsHash' is not null)),   -- ⟳ round 6 B4; see the note above
-  constraint gen_summary_has_format check (kind <> 'summary' or doc_version_major is not null),
-  constraint gen_summary_has_hash check (kind <> 'summary' or md_hash is not null),
+  constraint gen_summary_has_format check
+    (state <> 'complete' or kind <> 'summary' or doc_version_major is not null),
+  constraint gen_summary_has_hash check
+    (state <> 'complete' or kind <> 'summary' or md_hash is not null),
   -- Round 5 H5: the ranking trusts `doc_version_major`, and nothing tied it to the `docVersion` the
   -- body actually carries. MEASURED: a card saying "3.3" with the column saying 99 inserted cleanly.
   -- That is §5.2's card/body lie relocated into the ranking key — the one place it does most damage,
   -- since the format rung is the rung that must never regress.
   constraint gen_major_matches_card check (
-    kind <> 'summary'
+    state <> 'complete'
+    or kind <> 'summary'
     or doc_version_major = split_part(card ->> 'docVersion', '.', 1)::int)
 );
+
+-- ⟳ ROUND 6 B5 — COMPLETE IS TERMINAL, AND THE CONTENT FREEZES WITH IT.
+-- Without this the artifact's frozen ADDRESS would point at re-writable CONTENT: `video_artifacts`
+-- forbids rewriting blob_key on a recorded paid row, and the bytes that key names are described here.
+-- Rewriting `md_hash` or `doc_version_major` in place is shape #3 relocated one table up — a mutable
+-- value inside an address — and `doc_version_major` is the format rung, the one rung rule 13 says must
+-- never regress. New content means a NEW generation; that is what append-only means at this level.
+--
+-- `body_collected` is deliberately NOT frozen: it is §8's lifecycle marker, the one thing about a
+-- finished generation that is supposed to change. Freezing it would break GC, which is the same class
+-- of error as the first version of the artifact trigger forbidding §6.2's detach.
+--
+-- An UPDATE that re-states the SAME values passes untouched, and that is load-bearing rather than
+-- incidental: record_artifact completes the generation unconditionally, so the crash-retry path
+-- (`already_recorded`) re-completes an already-complete row with identical content. Re-completing
+-- with DIFFERENT content raises, which is the honest answer — it is a caller claiming the bytes
+-- changed under an address that cannot.
+create function video_generations_freeze() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+begin
+  if old.state = 'complete' then
+    if new.state <> 'complete' then
+      raise exception 'video_generations: % is COMPLETE and cannot return to %',
+        old.generation_id, new.state;
+    end if;
+    if new.card              is distinct from old.card
+       or new.md_hash           is distinct from old.md_hash
+       or new.doc_version_major is distinct from old.doc_version_major
+       or new.produced_at       is distinct from old.produced_at
+       or new.kind              is distinct from old.kind
+       or new.generation_id     is distinct from old.generation_id then
+      raise exception 'video_generations: the CONTENT of complete generation % is immutable',
+        old.generation_id;
+    end if;
+  end if;
+  return new;
+end $$;
+revoke all on function video_generations_freeze() from public, anon, authenticated;
+-- Fires AFTER forbid_collecting_current_trg (04): triggers run in name order, `f` < `v`, and both
+-- return NEW unchanged, so neither depends on the other's result.
+create trigger video_generations_freeze_trg
+  before update on video_generations
+  for each row execute function video_generations_freeze();
 alter table video_generations enable row level security;
 alter table video_generations force row level security;
 revoke all on video_generations from anon, authenticated;  -- round 6 H4; see video_artifacts

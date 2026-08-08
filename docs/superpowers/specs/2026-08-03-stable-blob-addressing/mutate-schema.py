@@ -159,6 +159,103 @@ MUTATIONS = [
 """,
      "",
      "already-recorded generation is idempotent", ART),
+
+    # ── item 3: the generation-write API (round 6 B5, Codex B3) ──────────────────
+    # The four CHECK gates are mutated INDIVIDUALLY. Restoring any one of them alone
+    # re-locks the door item 3 opened, and the point is that each is separately
+    # load-bearing — round 5 H1's lesson was that a compound guard hides which half works.
+    ("gen_card_complete gate removed (back to unconditional)",
+     "    state <> 'complete' or kind <> 'summary' or (\n      card is not null",
+     "    kind <> 'summary' or (\n      card is not null",
+     "cannot reserve a summary slot", GEN),
+
+    ("gen_summary_has_hash gate removed",
+     "  constraint gen_summary_has_hash check\n    (state <> 'complete' or kind <> 'summary' or md_hash is not null),",
+     "  constraint gen_summary_has_hash check (kind <> 'summary' or md_hash is not null),",
+     "cannot reserve a summary slot", GEN),
+
+    ("gen_summary_has_format gate removed",
+     "  constraint gen_summary_has_format check\n    (state <> 'complete' or kind <> 'summary' or doc_version_major is not null),",
+     "  constraint gen_summary_has_format check (kind <> 'summary' or doc_version_major is not null),",
+     "cannot reserve a summary slot", GEN),
+
+    ("gen_complete_has_produced_at dropped",
+     "  constraint gen_complete_has_produced_at check (state <> 'complete' or produced_at is not null),\n",
+     "",
+     "no produced_at", GEN),
+
+    # THE DEFAULT. `pending` is the tempting default (it reads as "safer"), and it is the
+    # fail-open one: every completeness CHECK becomes optional for a producer that simply
+    # omits the column. This mutation is what makes that argument checkable rather than asserted.
+    ("state defaults to pending instead of complete",
+     "  state             text not null default 'complete'",
+     "  state             text not null default 'pending'",
+     "PENDING generation reached current", GEN),
+
+    ("freeze: complete is no longer terminal",
+     "    if new.state <> 'complete' then\n      raise exception 'video_generations: % is COMPLETE and cannot return to %',\n        old.generation_id, new.state;\n    end if;\n",
+     "",
+     "reverting a COMPLETE generation to pending", GEN),
+
+    ("freeze: the CONTENT clause removed (md_hash/doc_version_major re-writable)",
+     "    if new.card              is distinct from old.card\n       or new.md_hash           is distinct from old.md_hash",
+     "    if (false)\n       or (false)",
+     "rewriting the md_hash", GEN),
+
+    # The artifact-side half. Without this the four gates above ARE a bypass, so this is the
+    # single most load-bearing line item 3 adds.
+    ("generation-complete guard removed (the gates become a bypass)",
+     "  if v_state is distinct from 'complete' then\n    raise exception 'video_artifacts: cannot mark % as % — generation % is %',\n      new.slot, new.state, new.generation_id, coalesce(v_state, '<absent>');\n  end if;\n",
+     "",
+     "generation is still PENDING", ART),
+
+    ("detached_at lower bound removed (backdating the retention clock)",
+     "    if new.detached_at < v_produced then",
+     "    if (false) then",
+     "backdated BEFORE its generation", ART),
+
+    ("detached_at future bound removed (postponing the retention clock)",
+     "    if new.detached_at > now() then",
+     "    if (false) then",
+     "clock starts in the FUTURE", ART),
+
+    ("reserve no longer creates the pending generation (the measured defect)",
+     """  if p_generation_id is not null then
+    insert into public.video_generations (workspace_id, video_id, generation_id, kind, state)
+    values (p_ws, p_video, p_generation_id, p_kind, 'pending')
+    on conflict (workspace_id, video_id, generation_id) do nothing;
+  end if;
+""",
+     "",
+     "cannot reserve a summary slot", ART),
+
+    ("record no longer completes the generation",
+     """  if p_generation_id is not null then
+    update public.video_generations
+       set state             = 'complete',
+           card              = coalesce(p_card, card),
+           md_hash           = coalesce(p_md_hash, md_hash),
+           doc_version_major = coalesce(p_doc_version_major, doc_version_major),
+           produced_at       = coalesce(p_produced_at, produced_at, now())
+     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id;
+  end if;
+""",
+     "",
+     "generation is still PENDING", ART),
+
+    # produced_at is a PARAMETER, not a clock read. Stamping now() is item 1's detached_at
+    # defect in a different column, and J2-3 forbids a clock read anywhere the ranking reads.
+    #
+    # ⚠ THE MUTATION DROPS THE PARAMETER, it does not assign now() outright — and the
+    # difference is the whole test. `produced_at = now()` is caught by the FREEZE trigger on
+    # an already-complete fixture (gOTHER) long before G9 runs, so it proves the freeze works
+    # and says NOTHING about whether the parameter is honoured. Ignoring the parameter leaves
+    # every complete generation untouched, so the freeze never fires and G9 is the only thing
+    # that can go red. Round 5 H1's masking rule applies to mutations, not just to fixtures.
+    ("produced_at ignores the caller and reads the clock (sync cannot replicate a time)",
+     "           produced_at       = coalesce(p_produced_at, produced_at, now())",
+     "           produced_at       = coalesce(produced_at, now())",
+     "produced_at was stamped, not carried", ART),
 ]
 
 
@@ -182,6 +279,19 @@ def classify(rc, out, expect):
     m = re.search(r"ERROR:\s*(new row for relation|.*violates .*constraint)[^\n]*", out)
     if m:
         return "RED(constraint)", m.group(0).strip()
+    # ⟳ ROUND 6 B5 — A FOURTH VERDICT, and it was added because this harness made the
+    # mistake its own docstring warns about, one layer up. Item 3's guards are TRIGGERS,
+    # and a trigger's `raise exception` is an ERROR that matches neither the assertion
+    # pattern nor the constraint pattern — so three working guards were reported INVALID
+    # ("the mutation broke the SQL"), which is indistinguishable from an untested guard.
+    # Same shape as round 5's `when others`: an instrument that cannot name what caught
+    # something will eventually report a catch as a miss.
+    # Anchored on the schema's OWN raise-exception prefixes, so a genuine runtime error
+    # (a missing function, a bad cast) still classifies as INVALID rather than being
+    # laundered into a pass.
+    m = re.search(r"ERROR:\s*video_(artifacts|generations):[^\n]*", out)
+    if m:
+        return "RED(trigger)", m.group(0).strip()
     m = re.search(r"ERROR:[^\n]*", out)
     return "INVALID", (m.group(0).strip() if m else "no error captured; SQL did not run")
 
@@ -202,7 +312,7 @@ def main():
             target.write_text(original)
 
     print("\n" + "=" * 78)
-    ok = {"RED", "RED(constraint)", "GREEN(expected)"}
+    ok = {"RED", "RED(constraint)", "RED(trigger)", "GREEN(expected)"}
     bad = 0
     for label, verdict, detail in results:
         mark = "✅" if verdict in ok else ("⚠️ " if verdict == "RED(other)" else "❌")

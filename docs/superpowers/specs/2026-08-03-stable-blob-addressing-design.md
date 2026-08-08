@@ -786,14 +786,30 @@ security`, **no** anon/authenticated write policy, service_role-only grants, and
 > shrank rather than grew** — because §5.1.1 now *derives* `current` instead of writing it, so this is
 > no longer a CAS at all:
 
+> **⟳ ROUND 6 (B5 / Codex B3) — SETTLED, and the block below is now the SCHEMA's signature rather
+> than prose.** This RPC was specified-before-the-table-changed a *third* time: round 5 changed the
+> manifest under it again, and the round-6 reservation protocol (§9.2) shipped it explicitly
+> incomplete. Handoff item 3 closed it, and the rule that finally stopped the cycle was sequencing —
+> the payload was specified **last**, after the table had settled across three merges.
+
 ```sql
 record_artifact(
-  p_workspace uuid, p_video text, p_slot text,
-  p_generation text,          -- NULL for a free render or a source kind
-  p_new_key text,
-  p_start_sec int, p_end_sec int   -- dig slots only; NULL otherwise (matches §5.1's columns)
-) returns artifact_record_result   -- typed: 'recorded' | 'duplicate' | 'ineligible'
+  p_ws uuid, p_video text, p_slot text, p_generation_id text,
+  p_kind artifact_kind, p_blob_key text,
+  p_token uuid,                                   -- §9.2's holder identity; never a veto
+  p_source_generation_id text default null,
+  p_start_sec int default null, p_end_sec int default null,
+  -- ⟳ round 6 B5 — THE PAYLOAD. `md_hash` was mandatory and had no producer at all.
+  p_md_hash text default null, p_card jsonb default null,
+  p_doc_version_major int default null,
+  p_produced_at timestamptz default null          -- CARRIED for sync; now() only as a fallback
+) returns text                                    -- 'recorded_as_holder' | 'recorded_after_loss'
 ```
+
+**It completes the generation row and flips the artifact in one transaction, generation first.** The
+order is enforced rather than merely intended: `video_artifacts_generation_complete` rejects a
+recorded artifact whose generation is still `pending`, so both the in-place flip and the
+append-after-loss path depend on the completion having already run.
 
 `kind` is derived inside the RPC by the same `slot_kind()` function the `check` uses — **one
 definition, called from both**, rather than the constraint and the procedure drifting apart. `state`
@@ -1355,6 +1371,83 @@ the two cannot disagree. Same RLS pattern as §5.
 that produced a body." It means **a run that produced a body and its card, which are inseparable.**
 Write that definition, not §2's current one.
 
+> **⟳ ROUND 6 (B5) — refine that sentence before writing it into `CONTEXT.md`: they are inseparable
+> *once the generation is complete*.** A generation also has a moment of existing before either
+> exists, and taking "inseparable" as unconditional is precisely what made the write path
+> unsatisfiable. See §5.2.3.
+
+### 5.2.3 A generation has a lifecycle too — ⟳ ADDED IN ROUND 6 (B5 / Codex B3), handoff item 3
+
+**The premise that failed:** *a generation row is only ever complete.*
+
+That was true while the manifest held one row per slot and the generation was written once, after the
+fact. Rounds 5 and 6 gave the **artifact** a lifecycle — `pending → recorded → detached` — and a
+reservation protocol (§9.2) that must insert a `pending` row **before** the content exists. Its FK
+parent never got the matching one. So the child had states and the parent did not, and the two rules
+met in the middle:
+
+- the FK requires the generation row to exist **before** the artifact row;
+- `gen_card_complete` / `gen_summary_has_hash` / `gen_major_matches_card` require it to be complete,
+  which is only knowable **after** the paid call.
+
+Both were measured (§10.0). The honest invariant is narrower than the one that was written:
+
+> **A generation must be complete when something RECORDED points at it** — not from the moment it
+> exists.
+
+**Same move as items 1 and 2, and the tell was the same each time.** Item 1 separated *a CHECK governs
+states, a trigger governs transitions*; item 2 found the guard living in the `NOT NULL` rather than in
+the comparison beside it. All three were an invariant written as *"X is always true"* that meant *"X
+must be true when Y observes it"* — and in each case the symptom was an **unsatisfiable ordering**,
+never a wrong value. Classified per `dev-process.md`: *knowing `md_hash` requires the Gemini call*
+is **P**; *completeness is unconditional* was **I**, and it was the one wearing the costume.
+
+**The shape:**
+
+| | |
+|---|---|
+| `video_generations.state` | `pending \| complete`, **defaulting to `complete`** |
+| The four summary CHECKs | gated on `state = 'complete'` |
+| `produced_at` | nullable while pending; required at completion (`gen_complete_has_produced_at`) |
+| `video_artifacts_generation_complete` | nothing may be `recorded`/`detached` against a pending generation |
+| `video_generations_freeze` | `complete` is terminal and the content freezes with it |
+| `reserve_artifact_slot` | lazily inserts the **pending** generation, satisfying the FK |
+| `record_artifact` | completes the generation, then flips the artifact — one transaction |
+
+**The default is `complete`, and that is a safety argument rather than a compatibility one.** A
+producer that never heard of the column keeps today's behaviour exactly: its incomplete row is still
+rejected. Defaulting to `pending` would have made every completeness CHECK optional for anyone who
+merely omitted the column — a fail-open default inside the constraints round 4's J1-2 fixed *for
+being fail-open*. The relaxation is strictly opt-in and `reserve_artifact_slot` is the only caller
+that opts in.
+
+**What makes gating the CHECKs safe is the artifact-side trigger, not the gate.** Relaxing a
+constraint to "only while complete" is a bypass unless something guarantees everything observable
+reaches complete. With the trigger, every row either ranking view can reach has satisfied all four in
+full — which is why the views needed no change at all. Mutation-checked in both directions: removing
+the trigger turns the gates into the bypass, and it goes red.
+
+**`complete` is terminal because the artifact's address is frozen.** `video_artifacts` forbids
+rewriting `blob_key` on a recorded paid row, and this table describes the bytes that key names.
+Rewriting `md_hash` or `doc_version_major` in place would be shape #3 — a mutable value inside an
+address — relocated one table up, and `doc_version_major` is the format rung, the one rung rule 13
+says must never regress. `body_collected` is deliberately **not** frozen: it is §8's lifecycle
+marker, the one thing about a finished generation that is supposed to change.
+
+**Two consequences worth stating rather than discovering:**
+
+- **Task #25 dissolved — `digDeeper` was never bound to one generation.** The FK is on
+  `(ws, video, generation_id, kind)`, so a `digDeeper` artifact points at a **`digDeeper` generation**,
+  minted per rewrite of the accumulator, not at the summary generation whose sections it contains.
+  Those need no card and no `md_hash`; two coexist under append-only and `current` ranks them.
+  Verified by execution. The finding came from reasoning about the *name* — the same route by which
+  round 2 forced `digDeeper` to `kind='summary'`, and by which item 1's `P9` was reported as a defect
+  and was not one. **Third instance: check the constraints, not the noun.**
+- **A crashed summary worker now leaves a `pending` generation row as well as an exhausted slot**
+  (§9.2's `summary_max_attempts = 1` consequence). It is inert — never ranked, never served, never
+  collected — but it is litter, and §8 currently has no sweep for it. Flagged for round 7 rather than
+  fixed here, because the retention rule for an abandoned reservation is a decision, not a mechanism.
+
 ### 5.3 Sync — ⟳ ROUND 4 (Codex #9, J2-5, and round 3's A-5): rewritten, because all three sentences were wrong
 
 This section previously read, in full: *"Sync stops moving bytes. It compares two artifact manifests
@@ -1670,13 +1763,24 @@ win the rung *without regenerating a byte*; and `start_sec`/`end_sec` are the du
 correctly-split dig "a route back", and a fence that forecloses recovery would defeat the section it
 protects.
 
-> **Known gap, not left silent:** on `INSERT` the writer supplies `detached_at` and nothing overwrites
-> it, because **sync must replicate an already-detached dig carrying its original clock** — a receiver
-> that stamped `now()` would reset the retention clock on every replica and the bytes would never be
-> collectable. So a writer can backdate a row it is inserting for the first time, i.e. request earlier
-> collection of its own paid content. Accepted for now: the insert path is `service_role`, the failure
-> direction is losing our own bytes rather than exposing anyone else's, and closing it properly needs
-> the generation-write API that **handoff item 3** must specify regardless. Flagged for round 7.
+> **~~Known gap, not left silent~~ — ⟳ CLOSED BY ITEM 3 (§5.2.3), not carried into round 7.** On
+> `INSERT` the writer supplies `detached_at` and nothing overwrites it, because **sync must replicate
+> an already-detached dig carrying its original clock** — a receiver that stamped `now()` would reset
+> the retention clock on every replica and the bytes would never be collectable. That left a writer
+> able to backdate a row it is inserting for the first time, i.e. request earlier collection of its
+> own paid content, and it was deferred on the grounds that closing it needed the generation-write API
+> **handoff item 3** had to specify regardless.
+>
+> That API exists now, so it is closed here. **Not by forbidding a supplied value — sync still needs
+> one — but by bounding it to the artifact's actual lifetime:** `detached_at` may not precede the
+> `produced_at` of the generation that made the bytes, and may not be in the future. What turns that
+> into a real bound rather than a speed bump is item 3's freeze trigger: `produced_at` is immutable
+> once the generation is complete, so the lower bound cannot be walked back either.
+>
+> **It also found an illegal value inside an existing test fixture.** The re-detach assertion carried
+> `detached_at = 2020-01-01` against a generation produced in `2026-02-01` — a state the system cannot
+> reach, sitting in a passing test. The fixture only ever needed a timestamp the *trigger* had not
+> written. Same class as round 5 H1: a test can encode an unreachable world and still be green.
 
 **(b) The span exists nowhere durable, so re-attachment depends on a blob §8 deletes (Claude H4).**
 §6.1 is a span-overlap rule, but §4's key encodes only the **start** (`sectionId` *is* `startSec`), and
@@ -2069,8 +2173,8 @@ that rare rather than structural, and never compound it by also discarding paid 
   a crashed worker may well have been billed. It is a product trade-off owned by whoever sets the
   guardrail numbers, `exhausted` is typed so a caller can surface it instead of hanging, and it is
   **asserted**, so raising the knob is a decision rather than an accident.
-- **`record_artifact`'s signature is not final.** Item 3 (`md_hash` has no producer) must add
-  `md_hash`, `card` and `doc_version_major` and create the generation row in the same transaction.
+- **~~`record_artifact`'s signature is not final.~~ ⟳ SETTLED by item 3 — see §5.2.3.** It gained
+  `md_hash`, `card`, `doc_version_major` and `p_produced_at`, and now creates the generation row in the same transaction.
   What is settled here is the **fencing semantics** of the flip; the payload belongs to item 3, which
   is sequenced last because it has already been specified-before-the-table-changed twice.
 
@@ -2120,6 +2224,31 @@ charged, the bytes are produced, and the row that would have recorded them is re
 | Constraint, then producer | every summarize pays for a generation it cannot record |
 | Producer, then constraint | correct — the producer emits complete cards before anything requires them |
 | Same migration | correct |
+
+**⟳ ROUND 6 (B5 / Codex B3) — THIS SECTION LISTED THE CARD FIELDS AND OMITTED `md_hash`, WHICH IS THE
+FAILURE IT EXISTS TO PREVENT.** `gen_summary_has_hash` made `md_hash` mandatory for a summary
+generation and *nothing anywhere computed it* — the mechanism was sitting unused two files away
+(`lib/cloud-sync/content-hash.ts:16` exports `mdHash()`, and `core.mdContent` is in scope at
+`summary-handler.ts:172`). The same applied to `doc_version_major`, which `gen_major_matches_card`
+ties to the card. A section that enumerates a producer's obligations is only as good as its
+enumeration, and the omission survived four review rounds because every reader checked the *ordering
+argument* rather than the *list*.
+
+**Measured, and worse than the ordering table describes.** Once the round-6 reservation protocol
+landed, the two rules together were not merely mis-ordered — they were **unsatisfiable in both
+directions**, so a cloud summarize could not reserve its slot at all:
+
+| Attempt | Result |
+|---|---|
+| Reserve, then create the generation | `[23503]` — the artifact's FK needs the generation to exist first |
+| Create the generation, then reserve | `[23514] gen_card_complete` — it cannot exist before Gemini has run |
+
+The paid call sits between those two. That is a *safer* failure than the one this section predicted
+(nothing is charged), but it is a dead feature rather than an expensive one. §5.2.3 is the fix.
+
+**Three producers, not one** — `lib/job-queue/summary-handler.ts`, `lib/cloud-sync/sync-run.ts` and
+`lib/storage/worker-persistence.ts`. Each must supply `md_hash`, `card` and `doc_version_major` to
+`record_artifact`; sync must additionally carry `p_produced_at` rather than let it default.
 
 **Round 4's J1-2 makes this sharper rather than softer, and that is worth understanding.** The
 round-3 constraint failed *open* on `card = NULL` (a `CHECK` passes on NULL), so a producer emitting
