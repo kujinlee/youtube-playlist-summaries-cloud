@@ -70,6 +70,31 @@ do $$ declare n_null int; n_corr_wv int; n_corr_v int; begin
   raise notice 'ok (backfill): 0 NULL hashes, and all % corrected videos carried across', n_corr_v;
 end $$;
 
+-- ── ⟳ POPULATION-COVERAGE INSTRUMENT (added 2026-08-07) ─────────────────────────────────────────
+-- THE RATCHET THAT MAKES THE FREE-RENDER DEFECT UNREINTRODUCIBLE.
+--
+-- That defect was not a wrong line anywhere. It was an ABSENCE: no fixture, in seven review rounds,
+-- ever wrote the same free slot TWICE. Every instrument this project owns is opt-in — an assertion
+-- exists because someone thought of the case, a mutation because someone wrote it, a review finds
+-- what a reviewer looks at — so they share ONE blind spot, and an absence is invisible to all of
+-- them at once.
+--
+-- An absence is only visible against an ENUMERATED WHOLE. `artifact_kind` is a finite population
+-- (5 values) and free-vs-paid is a 2-way split, so "has every kind been written a second time?" is
+-- checkable rather than remembered. The second write is exactly the SEQUENCE question — what does
+-- this do when the caller is not the first? — made mechanical.
+--
+-- Test-only instrumentation: it lives in the assertion file, not the schema, and rolls back with
+-- everything else.
+create temp table t_writes (kind text, paid boolean, slot text);
+create function record_write() returns trigger language plpgsql as $$
+begin
+  insert into t_writes values (new.kind::text, new.generation_id is not null, new.slot);
+  return null;
+end $$;
+create trigger t_writes_trg after insert or update on video_artifacts
+  for each row execute function record_write();
+
 -- ── fixtures ────────────────────────────────────────────────────────────────────────────────────
 -- Use REAL seeded workspaces (id = owner_id): workspace_videos FKs to workspaces, so the fixtures
 -- must respect the same ordering the migration does.
@@ -1263,15 +1288,23 @@ end $$;
 -- all 89 assertions stayed GREEN: no assertion read pg_trigger, no mutation touched a trigger name,
 -- and the whole correctness argument rested on 'v' sorting after 'a'. Shape #6 (a guard with no
 -- test) sitting under the one place the file says the design depends on ordering.
+--
+-- ⚠ `tgtype & 2` — BEFORE TRIGGERS ONLY, and the filter was missing until the coverage instrument
+-- above exposed it. That instrument is an AFTER trigger named `t_writes_trg`, and 't' sorts before
+-- 'v', so it appeared first in an unfiltered list and this assertion failed — correctly reporting a
+-- broken ordering that was never broken. The measuring apparatus perturbed the thing it measured.
+-- Only BEFORE triggers can affect each other's NEW row, so only their order was ever the claim.
 do $$ declare names text[]; begin
   select array_agg(t.tgname order by t.tgname) into names
     from pg_trigger t join pg_class c on c.oid = t.tgrelid
-   where c.relname = 'video_artifacts' and not t.tgisinternal;
+   where c.relname = 'video_artifacts' and not t.tgisinternal
+     and (t.tgtype & 2) <> 0;   -- BEFORE only; see the note below
   if names[1] <> 'video_artifacts_append_only_trg' then
     raise exception 'ASSERTION FAILED — append-only must fire FIRST on video_artifacts; order is %', names; end if;
   select array_agg(t.tgname order by t.tgname) into names
     from pg_trigger t join pg_class c on c.oid = t.tgrelid
-   where c.relname = 'video_generations' and not t.tgisinternal;
+   where c.relname = 'video_generations' and not t.tgisinternal
+     and (t.tgtype & 2) <> 0;
   if names[1] <> 'forbid_collecting_current_trg' then
     raise exception 'ASSERTION FAILED — forbid-collecting must fire FIRST on video_generations; order is %', names; end if;
   raise notice 'ok (R7/H1): both BEFORE-trigger firing orders are asserted, not assumed from naming';
@@ -1296,5 +1329,121 @@ do $$ declare leaky text[]; begin
   if leaky is not null then
     raise exception 'ASSERTION FAILED — anon holds EXECUTE on definer function(s): %', leaky; end if;
   raise notice 'ok (R8/M1): no definer function in this schema is reachable by anon';
+end $$;
+-- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
+-- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
+--   SHAPE    — is this row well-formed and referentially sound? A violation is a CALLER BUG. Reject.
+--   SEQUENCE — who got here first, has this already happened, is this in flight? A violation is
+--              CONCURRENCY. The caller did nothing wrong and may already have spent money.
+--              It must RECONCILE — an upsert, a no-op, or a typed outcome — never a raw rejection.
+--
+-- 32 guards: 26 SHAPE (all 13 CHECKs, all 3 FKs, the immutability rules) and 6 SEQUENCE. Of the six,
+-- three were already reconcilers and one is a deliberate ownership fence. TWO WERE REJECTERS, and
+-- both are below. Neither was found by seven rounds of adversarial review, because the question
+-- "what does this guard do when the caller is merely SECOND?" is not one a reviewer thinks to ask
+-- of a constraint that is plainly correct.
+--
+-- The rule generalises the user decision of 2026-08-07 ("the reservation guards SPENDING, not
+-- RECORDING"), which was the same insight recorded at ONE site instead of as a property of a class.
+
+-- C1 — A FREE RENDER MUST BE OVERWRITABLE, WHICH THE SCHEMA SAYS AND DID NOT DO.
+-- `video_artifacts_free_uq`'s own comment: "free -> one row per slot, OVERWRITABLE; a deterministic
+-- re-render has nothing to preserve." MEASURED before this fix: the first render of a slot succeeded
+-- and EVERY re-render failed with a raw [23505]. record_artifact could not write one at all past the
+-- first, because its only conflict arbiter was the PAID partial index (`where generation_id is not
+-- null`), which a NULL generation can never match.
+--
+-- Structurally the same defect as handoff item 3 — an entire KIND of write is unreachable — and it
+-- survived for the same reason: every fixture writes a free render once, with a direct INSERT.
+-- Re-rendering is normal and unpaid: regenerate a summary and its PDF and HTML must be rebuilt.
+do $$ declare o text; n int; k text; ws uuid; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidF');
+  o := record_artifact(ws,'vidF','pdf:summary',null,'render'::artifact_kind,
+        ws::text||'/videos/vidF/render/summary-v1.pdf', null);
+  if o <> 'recorded_free' then
+    raise exception 'ASSERTION FAILED — first free render: %', o; end if;
+  o := record_artifact(ws,'vidF','pdf:summary',null,'render'::artifact_kind,
+        ws::text||'/videos/vidF/render/summary-v2.pdf', null);
+  if o <> 'recorded_free' then
+    raise exception 'ASSERTION FAILED — RE-render was refused: %', o; end if;
+  select count(*), max(blob_key) into n, k from video_artifacts
+   where video_id='vidF' and slot='pdf:summary';
+  if n <> 1 then
+    raise exception 'ASSERTION FAILED — a free slot holds % rows; free is one-per-slot', n; end if;
+  if k not like '%summary-v2.pdf' then
+    raise exception 'ASSERTION FAILED — the re-render did not overwrite: %', k; end if;
+  raise notice 'ok (C1): a free render OVERWRITES in place, as the taxonomy always claimed';
+end $$;
+
+-- C2 — and a free render still may not masquerade as paid. The SHAPE guards are untouched by C1's
+-- reconciler: this is the boundary the free/paid split exists to hold, and a new write path is
+-- exactly where it would be lost.
+select assert_raises($$select record_artifact((select id from t_ws),'vidF','summary',null,
+   'summary'::artifact_kind,(select id from t_ws)::text||'/videos/vidF/x/summary.md', null)$$,
+  'a PAID kind written with no generation through the free path', '23514', 'art_paid_has_generation');
+
+-- C3 — THE SWEEPER MUST SKIP A CURRENT GENERATION, NOT ABORT ON IT.
+-- `forbid_collecting_current` is correct in intent and was expressed as an exception, so a batch
+-- `update … set body_collected = true` over 500 generations DIED on the first current one and rolled
+-- back the other 499. MEASURED: [P0001] refusing to collect generation gCur.
+--
+-- Worse than a lost batch: retrying cannot help, because the current generation is PERMANENTLY
+-- current. The sweep could never succeed at all — §8's whole retention story was unrunnable.
+--
+-- The guard moves into a predicate the sweeper selects THROUGH; the trigger stays as a backstop for
+-- anything that writes directly. Round 5's cross-derivation C3 again: take both the data guard and
+-- the query guard, because they fail independently.
+do $$ declare n int; c int; ws uuid; begin
+  select id into ws from t_ws;
+  update video_generations g set body_collected = true
+   where (g.workspace_id, g.video_id, g.generation_id) in
+         (select workspace_id, video_id, generation_id from video_generations_collectable);
+  get diagnostics n = row_count;
+  select count(*) into c from video_generations where body_collected;
+  if n = 0 then
+    raise exception 'ASSERTION FAILED — the sweep collected nothing at all'; end if;
+  raise notice 'ok (C3): a batch sweep through video_generations_collectable skips, % rows collected', n;
+end $$;
+
+-- C4 — the backstop is intact. A sweeper that ignores the view is still refused, so the fix is a
+-- SAFE PATH rather than a REMOVED GUARD. Without this, C3 could be satisfied by deleting the trigger.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidGC');
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+   values (ws,'vidGC','gLive','summary',
+     ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-02-01","processedAt":"y",'
+      ||'"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,4,'2026-02-01','SHA_LIVE');
+  insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+   values (ws,'vidGC','summary','gLive','summary','recorded',ws::text||'/videos/vidGC/gLive/summary.md');
+end $$;
+select assert_raises($$update video_generations set body_collected = true
+  where video_id='vidGC'$$,
+  'a naive sweep that ignores the collectable view (the trigger backstop)', 'P0001');
+-- ── ⟳ THE POPULATION-COVERAGE RATCHET ITSELF ───────────────────────────────────────────────────
+-- Every value of `artifact_kind` must have been written a SECOND time to the same slot somewhere in
+-- this suite. Not "exercised" — written twice, because the first write of anything is the easy case
+-- and every defect in this class lived in the second.
+--
+-- ⚠ THIS IS THE ONLY CHECK HERE THAT LOOKS AT WHAT IS ABSENT. Everything else in this file asserts a
+-- property of something someone thought to write down. If a new artifact_kind is ever added, this
+-- fails until it is covered — which is the point: the enum is the enumerated whole, so the ratchet
+-- cannot be forgotten the way a convention can.
+do $$
+declare k text; missing text[] := '{}'; n int;
+begin
+  foreach k in array enum_range(null::artifact_kind)::text[] loop
+    select count(*) into n from (
+      select 1 from t_writes w where w.kind = k group by w.kind, w.paid, w.slot having count(*) > 1
+    ) s;
+    if n = 0 then missing := missing || k; end if;
+  end loop;
+  if array_length(missing, 1) is not null then
+    raise exception 'ASSERTION FAILED — no slot is written TWICE for kind(s): %.  '
+      'The first write of anything is the easy case; this suite never exercises the second for these.',
+      array_to_string(missing, ', ');
+  end if;
+  raise notice 'ok (coverage): every artifact_kind has a slot written twice — the SEQUENCE case is exercised';
 end $$;
 \echo ASSERTIONS_OK
