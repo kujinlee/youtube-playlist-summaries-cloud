@@ -1,198 +1,140 @@
 # Development Process
 
-Gate-based workflow. This file is the canonical source for the workflow. It lives in the project repo so the process is reproducible by anyone who clones it.
+Gate-based workflow. This file is the **spine**: what must be true, in what order, and who decides.
+It lives in the project repo so the process is reproducible by anyone who clones it.
+
+**It is deliberately short, and there is a budget** — see *Keeping this file short* at the end.
+Detail lives in four places, each with a different read-trigger:
+
+| File | Read when |
+|---|---|
+| [`docs/process-checklists.md`](process-checklists.md) | you are working a gate — per-task list, post-plan gate, TDD policy, spec contents |
+| [`docs/review-method.md`](review-method.md) | a review round is starting — adversarial review, convergence, the classification passes |
+| [`docs/process-rationale.md`](process-rationale.md) | a rule here looks arbitrary, expensive or wrong |
+| [`docs/plugins.md`](plugins.md) | choosing a skill, or a tool gate misbehaves |
 
 ---
 
 ## Human-in-the-Loop Policy — Conditional AFK
 
-The **spec is the human gate.** Design, terminology, and goal decisions are settled *with* the human in Phase 1. Once `docs/design-spec.md` is approved the goal is fixed, and **plan (Phase 2) and implementation (Phase 3) proceed autonomously** — dual adversarial review to convergence is the quality gate, not a human sign-off. At convergence the coordinator *notifies* the human and continues; it does not sit and wait for an ack.
+The **spec is the human gate.** Design, terminology, and goal decisions are settled *with* the human
+in Phase 1. Once `docs/design-spec.md` is approved the goal is fixed, and **plan (Phase 2) and
+implementation (Phase 3) proceed autonomously** — dual adversarial review to convergence is the
+quality gate, not a human sign-off. At convergence the coordinator *notifies* and continues.
 
-Pull the human back in only for an **unexpected situation** — something the automated loop cannot resolve on its own:
-- a genuine ambiguity or fork the spec did not settle (a real decision, not a mechanical choice with an obvious default);
-- an adversarial-review round that **cannot reach convergence** — a Blocking/High that resists fixing, or fixes that keep surfacing new Blocking/High. **Resolution of the apparent conflict with "Iterative Re-Review" (added 2026-07-18):** that section says to *keep going* on a new Blocking/High; this section says to *pull the human in*. Both fire at the same trigger, so the rule is: **notify and continue.** Stop and wait only if (a) the human replies, (b) the next action is outward-facing or irreversible, or (c) the fix is not clearly specified — i.e. you would be guessing at intent. Continuing while a notification is outstanding is correct; going silent is not;
+Pull the human back in only for an **unexpected situation**:
+
+- a genuine ambiguity or fork the spec did not settle (a real decision, not a mechanical choice);
+- an adversarial-review round that **cannot converge**. This collides with *Iterative Re-Review*,
+  which says keep going. The rule is **notify and continue**. Stop and wait only if (a) the human
+  replies, (b) the next action is outward-facing or irreversible, or (c) the fix is not clearly
+  specified — i.e. you would be guessing at intent. Continuing while a notification is outstanding is
+  correct; going silent is not;
 - a **blocker**: missing access/credentials, an external dependency down, a gate that will not go green;
 - anything that would **move the goal** (change the spec) rather than approach it;
-- an **outward-facing or hard-to-reverse action** — push, merge, deploy, delete, spend. These stay human gates regardless (see Phase 5).
+- an **outward-facing or hard-to-reverse action** — push, merge, deploy, delete, spend.
 
-If none of those apply, keep going. Routine gates (plan approval, per-task review) do **not** require a human stop — carrying the work forward through trial-and-error toward a fixed goal is the point; a human ack there rarely changes the outcome and costs a round-trip.
-
-**Notification is mandatory whenever you actually need the human.** When an unexpected situation above arises, or a long autonomous run has completed and only a human gate (e.g. merge) remains, send a phone notification (`PushNotification` — one line, lead with the decision needed). Silently "waiting" without notifying wastes the human's time: they cannot act on a request they never saw. Do **not** notify for routine progress or for something you can decide yourself.
+**Notification is mandatory whenever you actually need the human** (`PushNotification` — one line,
+lead with the decision needed). Silently "waiting" without notifying wastes their time. Do **not**
+notify for routine progress, or for anything you can decide yourself.
 
 ---
 
 ## Session Resume
 
-At session start, verify progress from ground-truth sources before acting:
+Verify progress from ground truth before acting — never from a context summary, which is a
+compressed snapshot and can be stale after `/compact`:
+
 1. `git log --oneline` — which tasks are committed
 2. `ls tests/lib/ docs/reviews/` — what work exists on disk
-3. Cross-reference `docs/implementation-plan.md` — find first uncommitted task
-
-Never rely on context summary alone — it is a compressed snapshot and can be stale after `/compact`.
+3. Cross-reference `docs/implementation-plan.md` — find the first uncommitted task
 
 ---
 
 ## Roadmap & Task List — Always Maintained
 
-There is **always** a current, coherent answer to "what's left to the goal, and what's next" — kept in three layers that must stay in sync. This holds whether work is proceeding autonomously (AFK) or through chat; the roadmap is updated **proactively, without being asked**.
+There is **always** a current answer to "what's left, and what's next", kept in three layers that
+must stay in sync — updated proactively, without being asked.
 
-| Layer | File / tool | Scope | Horizon |
-|---|---|---|---|
-| **Roadmap** | `docs/roadmap-to-launch.md` | Milestones → steps to the **final goal** (the running app), with gating deps + status checkboxes | Whole project; survives compaction |
-| **Task list** | `TaskCreate`/`TaskUpdate` | The live, actionable near-term steps (one per roadmap step in flight) | Current milestone |
-| **SDD ledger** | `.superpowers/sdd/progress.md` | Per-task execution record **within** a single slice | Current slice |
+| Layer | File / tool | Horizon |
+|---|---|---|
+| **Roadmap** | `docs/roadmap-to-launch.md` | whole project; survives compaction |
+| **Task list** | `TaskCreate`/`TaskUpdate` | current milestone |
+| **SDD ledger** | `.superpowers/sdd/progress.md` | current slice |
 
-**Coherence rules:**
-- A roadmap step is not done until its checkbox is ticked **and** its task list entry is `completed`. Never mark one without the other.
-- When you **discover** a new step (a review finding that becomes work, a blocker, a follow-up), add it to the roadmap **and** the task list in the same turn — a discovery that lives only in chat is lost at the next `/compact`.
-- At a **milestone/slice boundary** (merge, convergence, deploy): update the roadmap status line, tick the step, close the task, and record the outcome in memory.
-- **Session start (extends Session Resume):** reconcile all three against git ground truth (`git log`, merged PRs, files on disk) before acting — the roadmap's checkboxes are a claim, `git` is the truth. If they disagree, fix the roadmap.
-- The roadmap is the **compaction-proof source**; the task list can always be rebuilt from it. If no roadmap exists for a multi-milestone effort, **create one before starting work** (like the Post-Plan Gate for plans).
-
-**When to (re)build the roadmap:** any time the work spans more than one slice/merge to reach the goal, or the user asks "what's next / what's left." A single self-contained slice does not need its own roadmap — the SDD ledger suffices.
-
----
-
-## Reference Docs (Read On Demand)
-
-These files are not @-included — read them when the trigger condition is met.
-
-| Doc | Read when |
-|---|---|
-| `docs/roadmap-to-launch.md` | "What's left / what's next" to the final app; session start (reconcile vs git); any milestone/step boundary — keep it current (see Roadmap & Task List) |
-| `docs/implementation-plan.md` | Session resume (find next uncommitted task); start of each task |
-| `docs/design-spec.md` | Phase 4 verification checklist; any spec ambiguity during implementation |
-| `docs/process-rationale.md` | A rule here looks arbitrary, expensive or wrong; you are about to skip or "simplify" one; a review finding resembles something the process claims to prevent |
-| `docs/available-skills.md` | Unsure which skill to use or how to invoke it; after installing or updating plugins. Say **"sync docs"** or run `/sync-docs` (`sync-docs` skill) to regenerate. |
+- A roadmap step is not done until its checkbox is ticked **and** its task entry is `completed`.
+- A **discovered** step (a review finding that becomes work, a blocker, a follow-up) goes into the
+  roadmap **and** the task list in the same turn — a discovery living only in chat is lost at `/compact`.
+- At a **milestone boundary**: update the roadmap status line, tick the step, close the task, record
+  the outcome in memory.
+- **At session start, reconcile all three against git.** The checkboxes are a claim; `git` is the truth.
+- The roadmap is the compaction-proof source; the task list can be rebuilt from it. If none exists for
+  a multi-milestone effort, **create one before starting work**.
 
 ---
 
 ## Phases
 
-0. **Project Setup** (before Phase 1)
-   - `git init` + initial commit
-   - Create `docs/` folder
+| # | Phase | Artifact | Gate |
+|---|---|---|---|
+| 0 | Setup | `git init`, `docs/` | — |
+| 1 | **Brainstorming** | `docs/design-spec.md` | grill-with-docs + adversarial review + **user approval**. Spec contents: checklists doc |
+| 2 | **Writing Plans** | `docs/implementation-plan.md` | dual adversarial review **to convergence**; then notify and proceed. Post-Plan Gate: checklists doc |
+| 3 | **Implementation** | code + tests | per-task two-stage review to convergence, autonomous. Per-Task Checklist: checklists doc |
+| 4 | **Verification** | evidence | enumerate every UX case as a task list *before* clicking anything; screenshots to `.screenshots/` (gitignored) |
+| 5 | **Final Review + Finish** | PR | full review → commit → push → PR. **Merging is a human gate** |
+| 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone**, not per task |
 
-1. **Brainstorming** → `docs/design-spec.md`
-   - Dialogue → spec → `grill-with-docs` (terminology + CONTEXT.md) → Codex adversarial review
-   - Gate: grill-with-docs + adversarial review + user approval — for big/critical specs, **iterate the review to convergence** (see Adversarial Review → Iterative Re-Review)
-   - **For projects with a frontend:** brainstorming includes wireframe + design tokens. `docs/design-spec.md` must contain a `## UI Design` section (ASCII wireframe, token table, badge/component specs) before any Tailwind or styling code is written. The gate is unchanged — user approves the full spec, which now includes the UI section.
-   - **For projects that write files:** `docs/design-spec.md` must contain a `## Output File Format` section with: filename convention (with example), required frontmatter/header fields, and an annotated sample file body. No pipeline or file-writing task begins until this section is approved.
-   - **For projects with a list/table UI:** `docs/design-spec.md` must enumerate every sort, filter, and grouping operation the user needs — column, direction semantics, and what undefined/missing values do. Discovering missing operations after implementation counts as a spec gap.
-   - **For any UI component that triggers an async operation (fetch, ingest, AI generation):** The spec must answer before any component task begins: (1) Blocking or non-blocking? (overlay vs. status bar vs. inline indicator) — default to non-blocking unless the user cannot do anything useful during the operation. (2) What does the user need to see/do while the operation runs? (3) What triggers dismissal? A full-screen blocking overlay requires explicit justification in the spec; "simpler to build" is not justification. Use the brainstorming Visual Companion to show a non-blocking alternative before deciding.
-   - **For tasks that include UI components generating URLs or containing modals/overlays:** `docs/design-spec.md` must contain a `## URL Contracts` table (`Component | Link text | Full URL with all params`) — one row per distinct link — and a `## Overlay Dismissal` table (`Component | Mechanism | Expected result`) — one row per dismissal path. Gate: user approves both tables before any component task begins.
+**Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a fresh
+subagent per task. Proceed automatically; do not ask the user to choose each time.
 
-2. **Writing Plans** → `docs/implementation-plan.md`
-   - Dual adversarial review (Codex + Claude, independent)
-   - Gate (Conditional AFK): **dual adversarial review to convergence** (see Adversarial Review → Iterative Re-Review) *is* the gate. On convergence — a full re-review round with no new Blocking/High — **notify the human and proceed** to implementation without waiting. Stop for the human only on non-convergence or a goal-affecting ambiguity (per Human-in-the-Loop Policy).
-   - **Required:** immediately after saving the plan, create a Post-Plan Gate checklist (see below) — do not dispatch any implementation subagent until the gate is satisfied (convergence, or human decision when one was needed)
+**Phase 5 — branch + PR is the standard path (set 2026-07-30). The axis is blast radius, not size.**
+A one-line change can be the most dangerous thing in the repo.
 
-3. **Implementation** (per task)
-   - **Execution method default (set 2026-06-09):** use **`superpowers:subagent-driven-development`** — a fresh subagent per task with two-stage review between tasks. Proceed with this method automatically; do **not** ask the user to choose between subagent-driven and inline execution each time. (Under Conditional AFK the plan gate is satisfied by convergence; this default governs only *how* the plan is executed.)
-   - Per-task two-stage review to convergence is autonomous. Surface a task to the human only on an unexpected situation (Human-in-the-Loop Policy): a blocker, a genuine ambiguity, or a plan/spec contradiction the review loop cannot resolve.
-   - At task start: create a TaskCreate checklist (see Per-Task Checklist below) — do not write any code until the list exists
-   - Write failing tests → implement → Claude code review → Codex adversarial review → address → mark done
-   - Save each review to `docs/reviews/task-N-<name>-review.md` (Claude) and `docs/reviews/task-N-<name>-codex.md` (Codex)
-   - TDD: tests written before implementation; must be failing first
+| Change | Path |
+|---|---|
+| `lib/` `app/` `components/` `worker/` `supabase/` `scripts/` `tests/`, or any config | **Branch + PR, always.** No size exemption |
+| Docs | Branch + PR, **batched** |
+| Repo has no remote (a PR is impossible) | Direct commit |
 
-4. **Verification**
-   - Before clicking anything: enumerate ALL UX test cases as a `TaskCreate` list — one task per scenario (happy path, each error state, each dismissal path, each disabled state). No ad-hoc clicking before the list exists.
-   - Work through the list in order; mark each `completed` with `TaskUpdate` immediately after verifying it. Do not batch.
-   - Run actual app; step through `docs/design-spec.md` checklist with evidence
-   - Tool: `verification-before-completion`
-   - **Screenshots:** always save to `.screenshots/<name>.png` — never to the project root. The `.screenshots/` folder is gitignored; delete its contents after verification is complete.
+- **Batch to kill the friction — the fix is fewer PRs, not more direct pushes.** Roadmap/backlog
+  status ticks ride in the **same PR** as the work they describe. Standalone doc edits accumulate.
+- **Write the merge tick BEFORE opening the PR**, and do not chase the squash SHA — the PR number
+  exists as soon as the PR does.
+- Merging stays a **human gate**: open the PR, notify, do not merge.
 
-5. **Final Review + Finish**
-   - Full code review → commit → push → PR
-   - Tool: `finishing-a-development-branch`
+**Phase 6 — why it is per-milestone:** per-task review is structurally blind to composition defects.
+It only ever sees one change, and every change can be individually correct while the structure they
+add up to degrades. Read `CONTEXT.md` + `docs/adr/` first; ADRs must not be re-litigated. Agent output
+is a **lead, not a finding** — verify every load-bearing claim by hand. Findings that become work go to
+`docs/backlog.md` **and** the roadmap in the same turn. Also ask: *"what did we decide this milestone
+that isn't written down?"* — the one failure no tool can see.
 
-   **Branch + PR is the standard path (set 2026-07-30).** Work on a `feat/…`, `fix/…` or
-   `chore/…` branch, push it, open a PR, and let the human merge.
+---
 
-   **The axis is blast radius, not size.** A one-line change can be the most dangerous
-   thing in the repo — a missing `sort()` silently reorders paid content (defect D1), and a
-   one-line predicate change moves money. "It's small" is never the reason to skip the branch.
+## What is mechanically enforced
 
-   | Change | Path |
-   |---|---|
-   | `lib/` `app/` `components/` `worker/` `supabase/` `scripts/` `tests/`, or any config | **Branch + PR, always.** No size exemption. |
-   | Docs | Branch + PR, **batched** — see below |
-   | Repo has no remote (`git remote` empty — a PR is impossible) | Direct commit |
+**The script is the truth. These lines are pointers, not restatements** — a restatement is a second
+copy that drifts.
 
-   **Batch to kill the friction — the fix is fewer PRs, not more direct pushes.**
-   - **Backlog/roadmap status updates ride in the SAME PR as the work they describe.** This
-     removes most "tiny docs commit" cases outright, and it is better anyway: the status
-     tick and the change it claims land together instead of drifting apart.
-   - Standalone doc edits accumulate — a typo fix rides on whatever branch is open, or
-     waits for the next one. It does not need its own PR.
-   - **Write the merge tick BEFORE opening the PR, and do not chase the squash SHA.** This is
-     the one status update the rule above cannot cover on its own: a merge tick seems to need
-     information that only exists *after* the merge, so it gets deferred — and then wants a
-     PR of its own to land. It does not. The PR number exists as soon as the PR is created,
-     so `✅ MERGED (PR #NN)` can be written **in that same PR**, along with every other tick
-     (review rounds converged, tasks done). Only the squash SHA is genuinely unavailable
-     beforehand, and it is decoration — a PR number is what anyone actually searches for.
-     If you want the SHA recorded, let it ride the next branch that opens; do not open one
-     for it. *(Happened twice before this was written: PR #40 and PR #43, both post-merge
-     reconciles that should have been folded into the PR they described.)*
+| Check | Enforces |
+|---|---|
+| `.claude/hooks/block-default-branch-push.sh` | no push to the default branch (escape: `ALLOW_DEFAULT_BRANCH_PUSH=1`) |
+| `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
+| `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
+| `scripts/check-schema-gates.sh` | **one command for all four schema gates** — run this, not the pieces |
+| `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated |
+| `scripts/check-docs.py` | documentation integrity |
+| `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
+| `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
 
-   **Why docs stay on the branch path.** The boundary between "just docs" and "code" is
-   slippery in practice. On 2026-07-30 the coordinator reasoned "docs commits have
-   precedent here" and then, in the same batch, committed a new `lib/storage/testing/`
-   module to `master`. A rule with a judgment call in the middle is a rule that erodes.
-   Batching gives the relief without reintroducing the judgment call.
+**Not yet in CI:** `test:integration` and `test:e2e` (need a live Supabase stack), and the schema
+gates (need a live Postgres — wiring them in belongs to the promotion slice). Run these locally
+before asking for a merge.
 
-   - **Enforced, not just written:** `.claude/hooks/block-default-branch-push.sh` (PreToolUse on
-     `git push`) denies a push to the default branch. Escape hatch: `ALLOW_DEFAULT_BRANCH_PUSH=1`.
-   - Merging stays a **human gate** (see Human-in-the-Loop Policy). Open the PR, notify,
-     do not merge.
-   - Use the branch even when the work is already committed on `master` locally: create
-     the branch at `HEAD`, `git reset --hard origin/master`, and push the branch. Nothing
-     is lost as long as the commits are not yet pushed.
-   - **`gh` two-remotes footgun — RESOLVED 2026-08-04.** This repo used to carry a second
-     remote (`upstream` = `…-official-plugins`, the frozen predecessor repo) whose PR
-     numbers collided with `origin`'s, so a bare `gh pr` could silently act on the wrong
-     repo — a mutating `gh pr edit 2` once overwrote the other repo's PR body. The remote
-     was removed (`git remote remove upstream`); `gh pr` with no `--repo` now resolves
-     unambiguously, verified. Passing `--repo kujinlee/youtube-playlist-summaries-cloud`
-     remains harmless and is still the safe habit for mutating commands.
-     *(`official-plugins` itself is unchanged: the OLD repo, superseded, **do not edit it**.
-     "Local" means local mode of `-cloud`.)*
-   - **Anything longer than a line goes in a FILE, never a shell argument.** Write PR bodies
-     to a file and use `--body-file`; commit messages with `git commit -F`; Codex review
-     prompts with `scripts/codex-review.py --prompt-file`. A `"$(cat <<'EOF' …)"` heredoc
-     breaks on apostrophes, and **any backtick inside a double-quoted bash string is command
-     substitution** — the shell rewrites the text before the tool sees it. Both failure modes
-     hit in one session on 2026-08-04: a commit message broke on an apostrophe, and a review
-     prompt containing `` `key` `` was mangled into `bash: key: command not found`, silently
-     skipping the adversarial-review gate. See `docs/plugins.md` → Code Review.
-   - **CI runs on every PR** (`.github/workflows/ci.yml`): `tsc --noEmit`, the unit suite,
-     and the `service_role` confinement guard, on Node 22 to match the Dockerfile. That is
-     what makes the PR a gate rather than a checkpoint someone has to read. Integration
-     (`test:integration`, needs a live Supabase stack) and `test:e2e` are **not** in CI yet
-     — still run those locally before asking for a merge.
-
-6. **Architecture Review** (per **milestone**, not per task — added 2026-07-30)
-   - Trigger: a milestone/slice boundary, or any time "should these two files be one module?" comes up twice.
-   - Tool: `improve-codebase-architecture`. Read `CONTEXT.md` + `docs/adr/` first — ADRs record decisions the review must **not** re-litigate; mark a candidate that contradicts one rather than silently proposing it.
-   - Dispatch parallel `Explore` agents per area (rendering / storage / money path worked well), then **verify every load-bearing claim by hand before writing it down**. Agent output is a **lead, not a finding**.
-   - Save to `docs/reviews/architecture-review-<date>.md`. Findings that become work go to `docs/backlog.md` **and** the roadmap in the same turn (Roadmap & Task List coherence rule).
-   - **Why this is not per-task:** per-task review is structurally blind to composition defects — it only ever sees one change, and every change can be individually correct while the structure they add up to degrades. Findings here are about *relationships between files*, which accrete over many merges.
-
-   - **Ask "what did we decide this milestone that isn't written down?"** This is the only
-     defense against the one failure no tool can see: a decision made in conversation and
-     never recorded anywhere. `scripts/check-docs.py` can find an unpromoted decision in a
-     *spec*; nothing can find one that exists only in someone's memory. Promotion criteria
-     are already written — [`.claude/skills/grill-with-docs/ADR-FORMAT.md`](../.claude/skills/grill-with-docs/ADR-FORMAT.md)
-     → *"When to offer an ADR"*. Do not invent new ones.
-   - **Anchor every ADR where the question arises.** A one-line comment at the code that
-     looks wrong without it. ADR-0005 was missed for four weeks because nothing in the
-     `Dockerfile` said ffmpeg's absence was deliberate — correctness was never the problem,
-     **reachability** was.
-
-   **Two rules learned from the first run (2026-07-30, `docs/reviews/architecture-review-2026-07-30.md`):**
-   - **Verify in both directions.** That run corrected claims on both sides — including one where the *coordinator's* grep was wrong and the agent was right (a line-wrapped expression a single-line pattern missed). A failed grep is not a disproof.
-   - **"Zero callers" does not always mean delete.** The run found a module implementing the correct commit→promote protocol with zero production callers and 8 tests. The right reading was that the *callers* were wrong, not the module. Apply the deletion test by asking where complexity would reappear, not by counting references.
+**Anything longer than a line goes in a FILE, never a shell argument** — `--body-file`,
+`git commit -F`, `--prompt-file`. Any backtick inside a double-quoted bash string is command
+substitution, and it has silently skipped a review gate. *(Physical, not a preference.)*
 
 ---
 
@@ -200,295 +142,49 @@ These files are not @-included — read them when the trigger condition is met.
 
 | Tool | Phase |
 |---|---|
-| `superpowers:brainstorming` | 1 — design dialogue |
-| `mattpocock:grill-with-docs` | 1 — terminology stress-test → CONTEXT.md |
-| `codex:rescue` | 1, 2 — doc adversarial review; 3 — code adversarial review |
-| `superpowers:writing-plans` | 2 — task breakdown |
-| `superpowers:test-driven-development` | 3 — TDD (behaviors specified upfront) |
-| `superpowers:requesting-code-review` | 3 — Claude code review |
-| `TaskCreate` / `TaskUpdate` | 3 — per-task checklist (create at task start, mark each step done) |
-| `superpowers:verification-before-completion` | 4 — evidence collection |
-| `superpowers:finishing-a-development-branch` | 5 — commit + PR |
-| `improve-codebase-architecture` | 6 — per-milestone architecture review (composition defects) |
+| `superpowers:brainstorming` | 1 |
+| `mattpocock:grill-with-docs` | 1 |
+| `codex:rescue` | 1, 2 (docs), 3 (code) |
+| `superpowers:writing-plans` | 2 |
+| `superpowers:test-driven-development` | 3 |
+| `superpowers:requesting-code-review` | 3 |
+| `TaskCreate` / `TaskUpdate` | 3 |
+| `superpowers:verification-before-completion` | 4 |
+| `superpowers:finishing-a-development-branch` | 5 |
+| `improve-codebase-architecture` | 6 |
 
 ---
 
-## Post-Plan Gate Checklist
+## Project-Specific
 
-Immediately after saving the plan document, create these items with `TaskCreate`. Do not dispatch any implementation subagent until the gate is satisfied.
+**Sub-projects.** 1 — Backend (types, lib, API routes, pipelines). 2 — Frontend (React, SSE, Obsidian
+URI, PDF viewer). *(⚠ flagged: the original "2 does not begin until 1 is fully verified and merged"
+now looks obsolete — see Rules flagged for review.)*
 
-```
-[ ] Run the dual adversarial review of the plan (Codex + Claude, independent)
-[ ] Save each round to docs/reviews/plan-<feature>-*.md; iterate to convergence
-[ ] Address all Blocking/High; record Medium/Low dispositions in the review doc
-[ ] Convergence reached — a full re-review round with no new Blocking/High?
-      YES → notify the human (PushNotification) and PROCEED to implementation.
-      NO, or a goal-affecting ambiguity surfaced → notify the human and WAIT for a decision.
-[ ] Clear sentinel: rm .claude/plan-gate-pending  (if sentinel exists from the write hook)
-```
-
-**Rule (Conditional AFK):** the plan gate is **convergence**, not a human ack. When the dual review converges with no unresolved Blocking/High and no goal-affecting ambiguity, notify the human and proceed to implementation without waiting for a reply. Stop and wait for the human only when: review cannot converge, an ambiguity would change the goal (spec), or the next step is outward-facing/irreversible (push/merge/deploy — always a human gate). Never mark a "wait for human" step complete speculatively.
-
-**Why both hook and task list?** The hook (PreToolUse on Agent) is a machine-enforceable backstop — it blocks subagent dispatch while the sentinel file exists; clear the sentinel only once the gate is satisfied (convergence, or a human decision when one was actually needed). The task list is the human-readable contract for what must happen first. Neither is sufficient alone.
+**Mocking boundaries.** `lib/gemini.ts` — all Gemini calls. `lib/youtube.ts` — YouTube Data API +
+transcript fetching. E2E mocks at the **API route** level, not the lib boundary.
 
 ---
 
-## Per-Task Checklist
+## Keeping this file short
 
-At the start of every implementation task, create the following items with `TaskCreate` before writing any code. Mark each `completed` with `TaskUpdate` as you finish it — do not batch.
+This document reached **576 lines**, of which ~28% was added in two days. Every addition was justified
+by a measured defect; the aggregate was unreadable — the *"individually thoughtful, fail as a set"*
+verdict these reviews keep producing, applied to their own documentation. An unread rule is worse than
+no rule, because it creates a belief that something is covered.
 
-```
-[ ] Enumerate all behaviors + edge cases in plan file (table: behavior, trigger, expected)
-[ ] (If complex — see "Behaviors adversarial review" below) Codex adversarial review of behaviors table — wrong, missing, or underspecified?
-[ ] Write failing tests (RED)
-[ ] Run tests — confirm failure for the right reason
-[ ] Implement (GREEN)
-[ ] Run tests — confirm all pass
-[ ] Run full suite — confirm no regressions
-[ ] Mutation-check every new guard: remove it → tests MUST go red → restore (see below)
-[ ] Claude code review (superpowers:requesting-code-review)
-[ ] Write docs/reviews/task-N-<name>-review.md
-[ ] Codex adversarial review (codex:rescue)
-[ ] Write docs/reviews/task-N-<name>-codex.md
-[ ] Address all High/P1 and Important findings
-[ ] Re-run tests — confirm still green
-[ ] Commit
-```
+> **Before adding a rule here, ask whether it can be a script.** If it can, write the script and add a
+> pointer row above. If it cannot, it belongs in the checklists, method, or rationale doc — not the
+> spine. **`scripts/check-docs.py` enforces the line budget.**
 
-**Rule:** a step is not done until it is marked done. If a step is skipped or deferred, it stays open — do not mark it complete.
+### Rules flagged for review, not retired
 
-**Enumerate step:** Write the behaviors table in the task's plan file **before writing any test code**. For each behavior also ask: what if the input is missing or invalid? what if each external call fails? what if it fails mid-chain? Every answer that isn't "impossible" becomes a row in the table and a test case.
+Surfaced by running this project's own **P / I / H** classification (see `review-method.md`) on the
+process itself. Flagged rather than removed — retiring a rule is the user's call.
 
-**Plan file format — required section:** Each task plan must include an **Enumerated Behaviors** table before any implementation design. Columns: `# | Behavior | Trigger | Expected`. Must include edge cases. This table is the contract tests are written against and that code reviewers check for coverage gaps. Surviving context compression is a key reason to write it in the plan file rather than in conversation.
-
-**Mandatory behavior categories** — check these before writing any rows:
-- **URL-generating components:** One row per link, Expected = exact href with every query param named (e.g. `/api/pdf/[id]?outputFolder=…&type=summary`). A row that names the route but omits params is incomplete.
-- **Modal/overlay/status-bar components:** One row per dismissal mechanism (backdrop click, Escape, close button, auto-close on done). Zero dismissal rows = incomplete.
-- **Optional-prop rendering:** One row for the null/absent state and one for the non-null/present state of each nullable prop. Happy-path-only = incomplete.
-- **Cross-module nullable/union values:** for every `T | null` / union crossing a module boundary, one
-  row: `Value | Variants | Produced by | Consumer can distinguish?`. If any row answers **No**, make the
-  type honest (`{ok:true,…} | {ok:false, reason:'absent'|'unreadable'}`) — do not add a side-channel
-  flag. Make the new member **required, not optional**: an optional one does not propagate, and callers
-  keep silently inheriting the ambiguous original. Same row names, per boundary, which faults abort versus which are swallowed and reported.
-
-If a task touches URL-generating components, overlays, optional props, or a nullable/union value
-crossing a module boundary, and the behaviors table has zero rows in the relevant category, the
-Enumerate step is not done.
-
-*(Why: 4 Blocking/High from one `| null` that passed 6 plan rounds — `docs/process-rationale.md`.)*
-
-**Mutation-check step:** for each guard the task adds, delete it → re-run the covering tests → they
-MUST go red → restore. A test that passes in both the buggy and fixed world is documentation, not a
-guard. **Commit the fix before mutating** (`git checkout` also reverts an uncommitted fix). Note
-`as any` / `as never` on a test double opts OUT of compiler enforcement — tsc cannot flag a missing
-member behind a cast, so behavioural tests are the only net there.
-*(Why: found a defence layer with zero coverage behind 40 green tests — `docs/process-rationale.md`.)*
-
-**Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
-
----
-
-## TDD Policy
-
-### Is TDD a good fit?
-
-**Yes:** core business logic, parsing/transformation, external API boundaries,
-data integrity (file I/O, atomic writes), error handling with branching paths,
-security validation, complex orchestration.
-
-**No:** config/scaffold, TypeScript types (compiler validates), thin wrappers
-(one smoke test after instead), simple UI layouts and rendering,
-UI wiring/integration (E2E covers this), exploratory spikes or prototypes.
-
-If No: implement first → spot-test any non-trivial logic after → review.
-
-### Which TDD skill?
-
-See `docs/plugins.md` — TDD conflict resolution.
-
-### Test layers
-
-Unit (jest + ts-jest) → Component (@testing-library/react) → E2E (Playwright)
-
-Mock external API calls at the lib boundary. No real API calls in unit/component tests.
-
-### Fast feedback loop
-
-Run the narrowest test that covers the changed code first — full suite only before commit.
-
-| Changed file | Run first |
+| Rule | Why flagged |
 |---|---|
-| `components/Foo.tsx` | `npx jest Foo` |
-| `lib/bar.ts` | `npx jest bar` |
-| Visual / interaction bug | `npx playwright test --grep "keyword" --headed` |
-| Cross-component wiring, SSE, routing | `npx playwright test` |
-
-**Watch mode** eliminates manual re-runs during active work:
-```bash
-npm test -- --watch   # hit p to filter by file, t to filter by test name
-```
-
-**Rule:** targeted test green → full `npm test` once → commit. Never skip the full suite before committing, but never wait for it during iteration.
-
-**Known-red suites: quarantine or fix, never normalise.** A permanently-red suite makes "confirm no
-regressions" unfalsifiable. Whenever a suite is red for a reason **not** caused by the current work:
-1. **Prove it** — stash the working changes and re-run. Same failure on a clean tree ⇒ pre-existing.
-2. **Record it** in `docs/roadmap-to-launch.md` → *Dev-infrastructure debt*, with the proof.
-3. **Name it in the commit** that ships alongside it — "suite X red on a clean tree, unrelated".
-4. The full-suite step is only satisfiable while the set of known-red suites is **explicitly named**.
-   If you cannot name why each red suite is red, the gate is not met.
-
-Currently known-red: **none** — the list is empty as of 2026-07-19 (`reservation-release` fixed in
-`c8be696`; the full integration suite is idempotent across back-to-back runs). See
-*Dev-infrastructure debt* in the roadmap for the live list and the proof. **The list is meant to be
-empty.** An entry appearing is the signal to stop adding features and fix the harness — and a green
-suite that is only green on its FIRST run counts as red, so verify by running it twice without a DB
-reset, not once.
-
-### E2E quality rules
-
-Violating any rule below means the E2E step is not done.
-
-- **Link assertions — assert ALL params, not just one.** Wrong: `expect(url.searchParams.get('type')).toBe('summary')`. Right: one `expect` per param listed in the URL Contracts table (`type`, `outputFolder`, etc.).
-- **Status bar / overlay dismissal — test ALL dismissal paths.** For each mechanism (✕ button, Escape, auto-close on done), write one test block that exercises that specific path.
-- **Conditional rendering — fixtures must cover null and non-null.** For any nullable prop (e.g. `summaryPdf`, `deepDiveMd`), the E2E fixture set must include at least one video where the prop is `null` and one where it is set.
-
----
-
-## Adversarial Review
-
-Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every phase.
-- **Spec:** architectural gaps, underspecified behaviour, security risks, contradictions, edge cases
-- **Plan:** missing tasks, wrong order, underspecified acceptance criteria, implementation risks
-- **Code:** per-task (Claude + Codex independently). Both must complete before marking a task done.
-
-Address all High/P1 findings before showing the user. Present Medium/P2 for a decision.
-
-### Iterative Re-Review (big / critical changes) — required
-
-One review round is not the gate; **convergence** is. After addressing a round's Blocking/High findings, **re-run the full dual adversarial review (Codex + Claude) on the *revised* artifact**, and repeat until a round reaches **diminishing returns**. Fixes routinely introduce new defects or expose deeper ones that the first pass could not see — a single round gives false confidence.
-
-**When this is required** (any one triggers it):
-- Schema / identity / idempotency changes; concurrency, leasing, or locking; auth / RLS / multi-tenant isolation; money-spending or irreversible paths.
-- Refactors that touch already-merged, shared code (e.g. a function used by both local and cloud).
-- **Any round that returned a Blocking finding, or whose fixes were non-trivial** (more than a reworded line). A Blocking fix is itself a new, unreviewed design — it must be re-reviewed.
-
-For small, contained changes (single-file logic, config, thin wrappers), one round is fine — do **not** over-apply this.
-
-**The loop:**
-1. Review (Codex + Claude, independent) → group Blocking/High/Medium/Low.
-2. Address all Blocking/High (present Medium for a decision).
-3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
-4. Repeat from 2.
-
-**Four rules for the loop** — evidence for each in `docs/process-rationale.md`:
-- **At fix time, list the consumers.** Before a fix that changes what state *means*, name every reader
-  — including the same code in a **different process**. `grep` for the field name is usually the job.
-- **Reviewer disagreement is the signal.** Never resolve a split by majority or by trusting a CONVERGED
-  verdict. Adjudicate by reading the code, and **record the adjudication in the review doc**.
-- **Each gate re-derives ONE inherited assumption** — chosen because this gate has information the
-  earlier one lacked (per-task review re-derives what produces each variant of the types it consumes).
-  One question, not a re-review.
-- **Convergence measures the prompt too.** Carry a standing list of root-cause *shapes* into each
-  round's prompt and ask for siblings by shape, not another read-through. List: rationale doc.
-
-### Between rounds: classify the rules, then cross-derive them (added 2026-08-06)
-
-**Do this after round 2, before dispatching round 3.** Two rounds of review on the stable-blob-addressing
-spec produced a reviewer verdict that no individual finding could have: *"the fixes are individually
-thoughtful and most of them land. They fail **as a set** — each was written into its own section and
-none was re-derived against the others. Every Blocking is an interaction between two fixes, not a
-defect in either one."* A review round is the expensive way to learn that.
-
-**Step 1 — classify every rule the artifact now states.** Three kinds:
-
-| | Meaning |
-|---|---|
-| **P — Physical** | Imposed by the database, the platform or a vendor. Not negotiable |
-| **I — Invariant we chose** | Load-bearing but **ours**. Changing it has a cost, not an impossibility |
-| **H — Heuristic** | A tuned value or default. Expected to move; must never block a design |
-
-**The whole point is separating I from P.** Measured on that spec: of roughly 30 findings across two
-rounds, **~9 dissolved outright when a rule was reclassified** — and they were specifically the ones
-that **kept coming back**. Ordinary defects (a missing FK target, a stale citation, judgments written
-into frontmatter) had nothing to do with premises and were simply fixed.
-
-> **So the trigger is recurrence, not volume.** When a *third* finding lands in the same area, stop
-> patching and ask which rule there is a choice wearing the costume of a constraint. Both clusters below
-> were on their third appearance before anyone questioned the premise underneath them.
-
-- *"The workspace id must never equal a uid"* — sounded physical, was a choice, and forced a
-  whole-corpus migration of paid content. Restated as an **I about a predicate** (*no predicate may
-  compare the path segment to `auth.uid()`*) it dissolved a Blocking and made the migration incremental.
-- *"The manifest is mutable state protected by a conditional write"* — a choice. Deriving `current`
-  instead deleted a CAS, a limbo state, a requeue protocol and a whole table, and closed three findings.
-- *"Everything in the bucket is an artifact the manifest tracks"* — a choice. Reclassifying assets as
-  **sources** closed two more.
-
-Note the mirror: the openly-heuristic rules (a 0.8 threshold, a 90-day retention) **never caused a
-problem**. *Visible tuning knobs are safe; invisible ones are the dangerous kind*, because nobody
-thinks to question them.
-
-**Step 2 — cross-derive.** Check each rule against every other and record the conflicts. On that spec
-this found **five**, all between rules written within hours of each other — including one **new**
-defect introduced inside a fix (an eligibility test that read a blob, silently reintroducing
-absent-vs-failed in the fix that removed a different instance of it).
-
-**Step 3 — evaluate the I rules.** For each, ask **not** *"is it true?"* but ***"is what it buys still
-worth what it forbids?"*** Name what it forbids explicitly — a rule whose cost is unwritten cannot be
-re-evaluated. Expect refinements rather than deletions: on that spec, 8 of 12 were sound as written,
-2 were right in substance and wrong in wording (one had an undocumented exception **already in
-production**), and 1 was a relaxation candidate whose stated justification no longer held.
-
-**Why it goes here rather than in the review prompt.** The reviewer can only see the artifact. Which
-rules are *chosen* is authorial knowledge, and re-deriving your own fixes against each other is cheap,
-while paying a review round to discover the same interaction is not.
-
-**Related but different:** the `zoom-out` skill orients you in unfamiliar **code** (a map of modules and
-callers). This orients you in your own **assumptions**. Both are "go up a level"; only one questions
-whether a constraint is real.
-
----
-
-**Where review effort belongs:** per-task review is structurally blind to composition defects. Keep it
-light for internally-simple tasks; spend the budget on whole-branch rounds.
-
-**Before deferring a finding, try to turn it into an assertion.** "Unverified — check at deploy" is a
-bet that a manual check happens later. If the claim can be expressed as a test using scaffolding that
-already exists, write it NOW: it is usually minutes, it either promotes the finding to a fixed bug or
-retires it, and either way it leaves a regression guard. Applies hardest to money and data-loss paths,
-where the alternative first evidence is a production incident. Determine external behaviour by probing
-the live system, not by reading vendor types.
-*(Why: a suspected double-charge sat as a roadmap line for a day; one test measured it at 6¢→12¢ —
-`docs/process-rationale.md`.)*
-
-**Stop (diminishing returns) when** a full re-review round returns **no new Blocking or High** — only Low/nits, or findings already known-and-accepted (recorded as deferred with an owner). That round is the gate; then get human approval. Do **not** stop merely because you are tired of reviewing or the artifact "feels done."
-
-**Keep going when** a round surfaces a *new* Blocking/High (common after a big rewrite) — that is proof the loop is still earning its cost; another round is mandatory.
-
-**Save every round** to `docs/reviews/` with a version/round suffix (e.g. `-v2-rereview.md`) so the convergence trail is auditable.
-
-*(Empirical basis — Stage 1E-b and Stage 3 cloud-sync: `docs/process-rationale.md`.)*
-
----
-
-## Project-Specific: Sub-Projects
-
-Two sequential sub-projects. Sub-project 2 does not begin until Sub-project 1 is fully verified and merged.
-
-| Sub-project | Scope |
-|---|---|
-| 1 — Backend | Types, lib layer, API routes, ingestion pipeline, deep-dive pipeline |
-| 2 — Frontend | React components, SSE consumption, Obsidian URI, PDF viewer |
-
----
-
-## Project-Specific: Mocking Boundaries
-
-| Boundary | What is mocked |
-|---|---|
-| `lib/gemini.ts` | All Gemini API calls |
-| `lib/youtube.ts` | YouTube Data API + transcript fetching |
-| API route level | E2E tests mock here, not at the lib boundary |
-
----
+| Sub-project 2 waits for 1 to be "fully verified and merged" | The frontend shipped; both now proceed in parallel. Looks superseded by events |
+| `gh` two-remotes footgun | Marked **RESOLVED 2026-08-04** — the remote was removed. Now history occupying spine space; the story belongs in rationale |
+| `subagent-driven-development` as the execution default | Set 2026-06-09, never re-examined; this session ran largely inline |
+| "Currently known-red: none" | That is **state**, not policy. Belongs in the roadmap's dev-infrastructure debt section |

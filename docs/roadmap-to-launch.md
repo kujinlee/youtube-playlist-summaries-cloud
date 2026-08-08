@@ -660,9 +660,37 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       reach Docker and reviewed by *reading* — `0/35 … SQL did not run`. Fixed with
       `-s danger-full-access`; recorded in `docs/plugins.md`. The prior memory note covered the
       **outer** sandbox only, which is shape #10 in the tooling rather than the schema.
+- [ ] **Round 8 opening — the GUARD CLASSIFICATION pass (PR #57).** Ran *before* the review round, and
+      it found two defects seven adversarial rounds had missed. Every guard on the two tables was
+      labelled **SHAPE** (is this row well-formed? a violation is a caller bug → **reject**) or
+      **SEQUENCE** (who got here first? a violation is concurrency, and the caller may already have
+      spent money → **reconcile**, never a raw rejection).
+      **32 guards: 26 SHAPE, 6 SEQUENCE.** Every CHECK and FK is SHAPE and correct. Three of the six
+      were already reconcilers — including `video_artifacts_inflight_uq`, the one predicted broken —
+      one is a deliberate ownership fence, and **two were rejecters**:
+      **(1) The free-render path had no working writer.** `free_uq` promises renders are
+      "overwritable"; measured, the first render of a slot worked and every re-render failed with a
+      raw `23505`. One INSERT takes one conflict arbiter and `record_artifact`'s was the **paid**
+      partial index, which a NULL generation can never match. Same shape as handoff item 3 — a whole
+      *kind* of write unreachable — surviving because every fixture writes a free render **once**.
+      **(2) §8's retention sweep could never run.** `forbid_collecting_current` raised, so a batch
+      collect died on the first current generation and rolled back the rest; retrying could not help
+      because a current generation is *permanently* current. A guard that made its own purpose
+      unreachable. Fixed by moving the currency test into `video_generations_collectable`, which the
+      sweeper selects **through**, with the trigger kept as a backstop — deliberately **not** by
+      silently suppressing the update (shape #5, on the one path with no undo).
+      **98 → 102 assertions, 41 → 44 mutations.**
+      **Why review missed both: each guard is *plainly correct*.** The pass does not ask whether a
+      guard is right, it asks what it does when the caller is merely **second** — a question nobody
+      asks of a constraint they agree with. Depth and coverage are different axes; seven deep rounds
+      lost to one shallow total sweep.
 - [ ] **Round 8** — mandatory: a round returning new Blocking/High is proof the loop is still earning
       its cost. Standing agenda: the inert `pending` generation left by a crashed summary worker (§8
-      has no sweep for it), and `persist_summary`'s merge semantics (backlog #17's residue).
+      has no sweep for it), `persist_summary`'s merge semantics (backlog #17's residue), and the one
+      SEQUENCE item the classification could **not** measure — `reserve_artifact_slot` guards
+      `paid_uq` with a check-then-act, so a concurrent recorder between the read and the write yields
+      a raw `23505` instead of the typed `already_recorded`. Proving it needs real concurrency, which
+      the rollback harness cannot produce.
 
       **Round 6's headline is a correction to round 5's own report.** `assert_raises` caught
       `when others`, so six negatives were passing on a `[42601]` arity error instead of the

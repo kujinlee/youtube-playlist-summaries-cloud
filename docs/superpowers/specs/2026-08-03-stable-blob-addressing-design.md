@@ -1376,6 +1376,61 @@ Write that definition, not §2's current one.
 > exists, and taking "inseparable" as unconditional is precisely what made the write path
 > unsatisfiable. See §5.2.3.
 
+### 5.2.5 Guard classification: SHAPE or SEQUENCE — ⟳ ADDED 2026-08-07, opening round 8
+
+**The question that produced this.** Round 7's `B1` was a decision that had an assertion *and* a
+passing mutation and broke anyway. Asking why led one level up: `record_artifact` promises *"never
+discards paid work"*, which is a **negative property over 32 independent rejection mechanisms** —
+23 on `video_artifacts`, 8 on `video_generations`, plus every one added later. No assertion can hold
+that, because each new guard is a new way to break it. Item 3 added one trigger and the promise
+broke.
+
+**The rule.** Every guard is one of two kinds, and they want opposite failure behaviour:
+
+| | Asks | A violation means | Must |
+|---|---|---|---|
+| **SHAPE** | is this row well-formed and referentially sound? | the **caller is wrong** | **reject** |
+| **SEQUENCE** | who got here first? has this already happened? is this in flight? | **concurrency** — the caller did nothing wrong and may already have spent money | **reconcile**: upsert, no-op, or typed outcome. Never a raw rejection |
+
+**This generalises the user decision of 2026-08-07** — *"the reservation guards SPENDING, not
+RECORDING"* — which was exactly this insight, recorded as a rule about one function instead of as a
+property of a class. That is why it broke twice more, in places nobody thought to look.
+
+**Result of the pass: 32 guards, 26 SHAPE, 6 SEQUENCE.** Every CHECK and every FK is SHAPE and
+correct. Of the six:
+
+| SEQUENCE guard | Expressed as | Verdict |
+|---|---|---|
+| `video_artifacts_inflight_uq` | typed `busy` / `exhausted` | ✅ built as a reconciler |
+| `video_artifacts_paid_uq` | `on conflict … do update` | ✅ reconciler since round 7 |
+| generation-not-complete | raise | ✅ deliberate — it *is* the ownership fence |
+| generation CONTENT freeze | raise + caller-side `state='pending'` filter | ⚠️ reconciles on the protocol path only |
+| **`video_artifacts_free_uq`** | raw `23505` | ❌ **no reconciler existed** |
+| **`forbid_collecting_current`** | raise | ❌ **aborted the caller** |
+
+**Both defects were invisible to seven rounds of adversarial review**, and the reason is instructive:
+each guard is *plainly correct*, so a reviewer reads it and moves on. The classification does not ask
+whether a guard is right — it asks **what it does when the caller is merely second**, which is a
+question nobody asks of a constraint they agree with.
+
+- **The free-render path had no working writer.** `free_uq`'s own comment promises free renders are
+  *"overwritable"*; measured, the first render of a slot succeeded and every re-render failed with a
+  raw `23505`. `record_artifact` could not write one past the first at all, because one INSERT takes
+  one conflict arbiter and its was the **paid** partial index, which a NULL generation can never
+  match. Structurally the same defect as handoff item 3 — an entire *kind* of write unreachable —
+  surviving for the same reason: every fixture writes a free render **once**.
+- **§8's retention sweep could never run.** `forbid_collecting_current` raised, so a batch
+  `update … set body_collected = true` died on the first current generation and rolled back the rest.
+  Retrying could not help, because a current generation is *permanently* current. A guard that made
+  its own purpose unreachable. Fixed by moving the currency test into a predicate the sweeper selects
+  **through** (`video_generations_collectable`), keeping the trigger as a backstop — **not** by
+  weakening it, and deliberately not by silently suppressing the update, which would be shape #5 on
+  the one path with no undo.
+
+**Where this belongs in the process.** It is the same move `dev-process.md` already mandates for
+*rules* — classify **P / I / H**, then cross-derive — applied one level down, to **guards**. The
+technique existed and was pointed at the wrong layer.
+
 ### 5.2.4 What round 7 found — the four items **as a set** — ⟳ ADDED IN ROUND 7
 
 Round 7 was called for one purpose: the four merged items had each been reviewed against *itself* and

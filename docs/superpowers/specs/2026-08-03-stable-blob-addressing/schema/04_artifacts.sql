@@ -418,6 +418,26 @@ create function record_artifact(
   returns text language plpgsql security definer set search_path = '' as $$
 declare v_existed boolean; v_start int; v_end int; v_src text;
 begin
+  -- ⟳ ROUND 8 (guard classification, C1) — THE FREE PATH, which did not exist.
+  -- `video_artifacts_free_uq` is a SEQUENCE guard ("a render for this slot already exists") and it
+  -- had no reconciler at all: one INSERT statement takes ONE conflict arbiter, and this function's
+  -- was the PAID partial index (`where generation_id is not null`), which a NULL generation can
+  -- never match. MEASURED: the first render of a slot succeeded and every RE-render failed with a
+  -- raw [23505] — against a comment three screens up promising free renders are "overwritable".
+  --
+  -- Free is genuinely different and the branch is not duplication: there is no generation to
+  -- complete, no token to check (nothing was ever reserved because nothing was paid for), and the
+  -- ADDRESS IS MUTABLE — the append-only trigger skips rows with a null generation_id by design, so
+  -- overwriting blob_key here is legal where it would be shape #3 on a paid row.
+  if p_generation_id is null then
+    insert into public.video_artifacts
+      (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
+    values (p_ws, p_video, p_slot, null, p_kind, 'recorded', p_blob_key)
+    on conflict (workspace_id, video_id, slot) where generation_id is null
+    do update set blob_key = excluded.blob_key, state = 'recorded';
+    return 'recorded_free';
+  end if;
+
   -- ⟳ ROUND 7 H2 — THE COMPLETION IS FENCED. It used to filter on (ws, video, generation_id) alone:
   -- no token, no state, no slot. Two conditions, and either alone is proof of ownership:
   --   reserved_by = p_token  — we reserved this generation. Survives a reclaim of our SLOT, which is
@@ -688,6 +708,34 @@ revoke all on function forbid_collecting_current() from public, anon, authentica
 create trigger forbid_collecting_current_trg
   before update on video_generations
   for each row execute function forbid_collecting_current();
+
+-- ⟳ ROUND 8 (guard classification, C3) — THE SWEEPER'S PREDICATE, because the trigger above is a
+-- SEQUENCE guard that was expressed as an exception.
+--
+-- It is correct in intent — never collect the current generation — and as a raise it converted
+-- "skip this row" into "lose the whole sweep": MEASURED, a batch `update … set body_collected = true`
+-- died on the first current generation and rolled back every other row in the statement.
+-- And retrying could not help, because a current generation is PERMANENTLY current — so §8's
+-- retention sweep could never succeed at all. A guard that makes its own purpose unreachable.
+--
+-- The fix is not to weaken the trigger. Silently suppressing the change would be worse: the caller
+-- would believe it collected bytes it did not (shape #5, silent failure on a best-effort path, on
+-- the one path with no undo). Instead the currency test becomes something the sweeper SELECTS
+-- THROUGH, and the trigger stays as a backstop for anything writing directly. Cross-derivation C3's
+-- rule — take both the data guard and the query guard — applied to GC.
+--
+-- Deliberately scoped to CURRENCY only. §8's age predicate (90 days since the row stopped being
+-- current, or since detached_at) belongs to the sweeper, because it is a tunable retention
+-- heuristic and this view is a correctness floor. Mixing them would bury a knob inside an invariant.
+create view video_generations_collectable with (security_invoker = true) as
+select g.*
+  from video_generations g
+ where not g.body_collected
+   and not exists (select 1 from video_artifacts_current c
+                    where c.workspace_id = g.workspace_id and c.video_id = g.video_id
+                      and c.generation_id = g.generation_id);
+revoke all on video_generations_collectable from anon, authenticated;
+grant select on video_generations_collectable to service_role;
 
 -- APPEND-ONLY, ENFORCED. Round 5 M1: the header comment and two others assert append-only, and the
 -- table had no trigger, no rule, and `grant update, delete to service_role`. The partial unique stops

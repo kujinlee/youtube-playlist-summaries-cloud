@@ -1,0 +1,169 @@
+# Process Checklists
+
+The lists you work *through*, not the ones you read to understand the workflow. Kept out of
+`docs/dev-process.md` because their read-trigger is different: the spine is read at session start,
+these are opened at the moment a gate applies.
+
+**Rule for all of them:** a step is not done until it is marked done. If a step is skipped or
+deferred, it stays open — do not mark it complete.
+
+---
+
+## Post-Plan Gate Checklist
+
+Immediately after saving the plan document, create these items with `TaskCreate`. Do not dispatch any implementation subagent until the gate is satisfied.
+
+```
+[ ] Run the dual adversarial review of the plan (Codex + Claude, independent)
+[ ] Save each round to docs/reviews/plan-<feature>-*.md; iterate to convergence
+[ ] Address all Blocking/High; record Medium/Low dispositions in the review doc
+[ ] Convergence reached — a full re-review round with no new Blocking/High?
+      YES → notify the human (PushNotification) and PROCEED to implementation.
+      NO, or a goal-affecting ambiguity surfaced → notify the human and WAIT for a decision.
+[ ] Clear sentinel: rm .claude/plan-gate-pending  (if sentinel exists from the write hook)
+```
+
+**Rule (Conditional AFK):** the plan gate is **convergence**, not a human ack. When the dual review converges with no unresolved Blocking/High and no goal-affecting ambiguity, notify the human and proceed to implementation without waiting for a reply. Stop and wait for the human only when: review cannot converge, an ambiguity would change the goal (spec), or the next step is outward-facing/irreversible (push/merge/deploy — always a human gate). Never mark a "wait for human" step complete speculatively.
+
+**Why both hook and task list?** The hook (PreToolUse on Agent) is a machine-enforceable backstop — it blocks subagent dispatch while the sentinel file exists; clear the sentinel only once the gate is satisfied (convergence, or a human decision when one was actually needed). The task list is the human-readable contract for what must happen first. Neither is sufficient alone.
+
+---
+
+## Per-Task Checklist
+
+At the start of every implementation task, create the following items with `TaskCreate` before writing any code. Mark each `completed` with `TaskUpdate` as you finish it — do not batch.
+
+```
+[ ] Enumerate all behaviors + edge cases in plan file (table: behavior, trigger, expected)
+[ ] (If complex — see "Behaviors adversarial review" below) Codex adversarial review of behaviors table — wrong, missing, or underspecified?
+[ ] Write failing tests (RED)
+[ ] Run tests — confirm failure for the right reason
+[ ] Implement (GREEN)
+[ ] Run tests — confirm all pass
+[ ] Run full suite — confirm no regressions
+[ ] Mutation-check every new guard: remove it → tests MUST go red → restore (see below)
+[ ] Claude code review (superpowers:requesting-code-review)
+[ ] Write docs/reviews/task-N-<name>-review.md
+[ ] Codex adversarial review (codex:rescue)
+[ ] Write docs/reviews/task-N-<name>-codex.md
+[ ] Address all High/P1 and Important findings
+[ ] Re-run tests — confirm still green
+[ ] Commit
+```
+
+**Rule:** a step is not done until it is marked done. If a step is skipped or deferred, it stays open — do not mark it complete.
+
+**Enumerate step:** Write the behaviors table in the task's plan file **before writing any test code**. For each behavior also ask: what if the input is missing or invalid? what if each external call fails? what if it fails mid-chain? Every answer that isn't "impossible" becomes a row in the table and a test case.
+
+**Plan file format — required section:** Each task plan must include an **Enumerated Behaviors** table before any implementation design. Columns: `# | Behavior | Trigger | Expected`. Must include edge cases. This table is the contract tests are written against and that code reviewers check for coverage gaps. Surviving context compression is a key reason to write it in the plan file rather than in conversation.
+
+**Mandatory behavior categories** — check these before writing any rows:
+- **URL-generating components:** One row per link, Expected = exact href with every query param named (e.g. `/api/pdf/[id]?outputFolder=…&type=summary`). A row that names the route but omits params is incomplete.
+- **Modal/overlay/status-bar components:** One row per dismissal mechanism (backdrop click, Escape, close button, auto-close on done). Zero dismissal rows = incomplete.
+- **Optional-prop rendering:** One row for the null/absent state and one for the non-null/present state of each nullable prop. Happy-path-only = incomplete.
+- **Cross-module nullable/union values:** for every `T | null` / union crossing a module boundary, one
+  row: `Value | Variants | Produced by | Consumer can distinguish?`. If any row answers **No**, make the
+  type honest (`{ok:true,…} | {ok:false, reason:'absent'|'unreadable'}`) — do not add a side-channel
+  flag. Make the new member **required, not optional**: an optional one does not propagate, and callers
+  keep silently inheriting the ambiguous original. Same row names, per boundary, which faults abort versus which are swallowed and reported.
+
+If a task touches URL-generating components, overlays, optional props, or a nullable/union value
+crossing a module boundary, and the behaviors table has zero rows in the relevant category, the
+Enumerate step is not done.
+
+*(Why: 4 Blocking/High from one `| null` that passed 6 plan rounds — `docs/process-rationale.md`.)*
+
+**Mutation-check step:** for each guard the task adds, delete it → re-run the covering tests → they
+MUST go red → restore. A test that passes in both the buggy and fixed world is documentation, not a
+guard. **Commit the fix before mutating** (`git checkout` also reverts an uncommitted fix). Note
+`as any` / `as never` on a test double opts OUT of compiler enforcement — tsc cannot flag a missing
+member behind a cast, so behavioural tests are the only net there.
+*(Why: found a defence layer with zero coverage behind 40 green tests — `docs/process-rationale.md`.)*
+
+**Behaviors adversarial review (conditional):** After enumerating behaviors and before writing tests, run Codex adversarial review of the behaviors table when the task has any of: >8 behaviors, SSE/async state machine, multiple error paths, or concurrent interactions. Skip for simple rendering, pure data transforms, or single-function tasks.
+
+---
+
+---
+
+## TDD Policy
+
+### Is TDD a good fit?
+
+**Yes:** core business logic, parsing/transformation, external API boundaries,
+data integrity (file I/O, atomic writes), error handling with branching paths,
+security validation, complex orchestration.
+
+**No:** config/scaffold, TypeScript types (compiler validates), thin wrappers
+(one smoke test after instead), simple UI layouts and rendering,
+UI wiring/integration (E2E covers this), exploratory spikes or prototypes.
+
+If No: implement first → spot-test any non-trivial logic after → review.
+
+### Which TDD skill?
+
+See `docs/plugins.md` — TDD conflict resolution.
+
+### Test layers
+
+Unit (jest + ts-jest) → Component (@testing-library/react) → E2E (Playwright)
+
+Mock external API calls at the lib boundary. No real API calls in unit/component tests.
+
+### Fast feedback loop
+
+Run the narrowest test that covers the changed code first — full suite only before commit.
+
+| Changed file | Run first |
+|---|---|
+| `components/Foo.tsx` | `npx jest Foo` |
+| `lib/bar.ts` | `npx jest bar` |
+| Visual / interaction bug | `npx playwright test --grep "keyword" --headed` |
+| Cross-component wiring, SSE, routing | `npx playwright test` |
+
+**Watch mode** eliminates manual re-runs during active work:
+```bash
+npm test -- --watch   # hit p to filter by file, t to filter by test name
+```
+
+**Rule:** targeted test green → full `npm test` once → commit. Never skip the full suite before committing, but never wait for it during iteration.
+
+**Known-red suites: quarantine or fix, never normalise.** A permanently-red suite makes "confirm no
+regressions" unfalsifiable. Whenever a suite is red for a reason **not** caused by the current work:
+1. **Prove it** — stash the working changes and re-run. Same failure on a clean tree ⇒ pre-existing.
+2. **Record it** in `docs/roadmap-to-launch.md` → *Dev-infrastructure debt*, with the proof.
+3. **Name it in the commit** that ships alongside it — "suite X red on a clean tree, unrelated".
+4. The full-suite step is only satisfiable while the set of known-red suites is **explicitly named**.
+   If you cannot name why each red suite is red, the gate is not met.
+
+Currently known-red: **none** — the list is empty as of 2026-07-19 (`reservation-release` fixed in
+`c8be696`; the full integration suite is idempotent across back-to-back runs). See
+*Dev-infrastructure debt* in the roadmap for the live list and the proof. **The list is meant to be
+empty.** An entry appearing is the signal to stop adding features and fix the harness — and a green
+suite that is only green on its FIRST run counts as red, so verify by running it twice without a DB
+reset, not once.
+
+### E2E quality rules
+
+Violating any rule below means the E2E step is not done.
+
+- **Link assertions — assert ALL params, not just one.** Wrong: `expect(url.searchParams.get('type')).toBe('summary')`. Right: one `expect` per param listed in the URL Contracts table (`type`, `outputFolder`, etc.).
+- **Status bar / overlay dismissal — test ALL dismissal paths.** For each mechanism (✕ button, Escape, auto-close on done), write one test block that exercises that specific path.
+- **Conditional rendering — fixtures must cover null and non-null.** For any nullable prop (e.g. `summaryPdf`, `deepDiveMd`), the E2E fixture set must include at least one video where the prop is `null` and one where it is set.
+
+---
+
+---
+
+## Spec content requirements (Phase 1 gate)
+
+The spec is the human gate, so these are what "the spec is complete" means. Each was added because
+its absence was discovered *after* implementation.
+
+   - **For projects with a frontend:** brainstorming includes wireframe + design tokens. `docs/design-spec.md` must contain a `## UI Design` section (ASCII wireframe, token table, badge/component specs) before any Tailwind or styling code is written. The gate is unchanged — user approves the full spec, which now includes the UI section.
+   - **For projects that write files:** `docs/design-spec.md` must contain a `## Output File Format` section with: filename convention (with example), required frontmatter/header fields, and an annotated sample file body. No pipeline or file-writing task begins until this section is approved.
+   - **For projects with a list/table UI:** `docs/design-spec.md` must enumerate every sort, filter, and grouping operation the user needs — column, direction semantics, and what undefined/missing values do. Discovering missing operations after implementation counts as a spec gap.
+   - **For any UI component that triggers an async operation (fetch, ingest, AI generation):** The spec must answer before any component task begins: (1) Blocking or non-blocking? (overlay vs. status bar vs. inline indicator) — default to non-blocking unless the user cannot do anything useful during the operation. (2) What does the user need to see/do while the operation runs? (3) What triggers dismissal? A full-screen blocking overlay requires explicit justification in the spec; "simpler to build" is not justification. Use the brainstorming Visual Companion to show a non-blocking alternative before deciding.
+   - **For tasks that include UI components generating URLs or containing modals/overlays:** `docs/design-spec.md` must contain a `## URL Contracts` table (`Component | Link text | Full URL with all params`) — one row per distinct link — and a `## Overlay Dismissal` table (`Component | Mechanism | Expected result`) — one row per dismissal path. Gate: user approves both tables before any component task begins.
+
+2. **Writing Plans** → `docs/implementation-plan.md`

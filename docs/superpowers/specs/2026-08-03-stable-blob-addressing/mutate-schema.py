@@ -102,7 +102,7 @@ MUTATIONS = [
      "select encode(extensions.digest('[]', 'sha256'), 'hex')::text",
      "constant moved", GEN),
     # ── item 4: the reservation protocol (round 6 H5 / Codex B2) ─────────────────
-    ("live-lease-first classification inverted (exhausted before busy)",
+    ("video_artifacts_inflight_uq: live-lease-first classification inverted (exhausted before busy)",
      """  if v_row.lease_expires_at > now() then
     return query select 'busy'::text, null::uuid, v_row.lease_attempts; return;
   end if;
@@ -130,7 +130,7 @@ MUTATIONS = [
      "     and true;",
      "renewed past the ceiling", ART),
 
-    ("record refuses when the token is stale (H5's declined fix)",
+    ("video_artifacts_paid_uq: record refuses when the token is stale (H5's declined fix)",
      """  insert into public.video_artifacts
     (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
      source_generation_id, start_sec, end_sec)
@@ -337,6 +337,39 @@ MUTATIONS = [
      "  if tg_op = 'INSERT' and new.state = 'detached' then",
      "  if new.state = 'detached' then",
      None, ART),
+
+    # ── round 8: the guard-classification fixes. Each converts a SEQUENCE guard from a rejecter
+    # into a reconciler, so each mutation restores the REJECTER and must go red.
+    ("video_artifacts_free_uq: the free-render reconciler removed (re-render collides again)",
+     """  if p_generation_id is null then
+    insert into public.video_artifacts
+      (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
+    values (p_ws, p_video, p_slot, null, p_kind, 'recorded', p_blob_key)
+    on conflict (workspace_id, video_id, slot) where generation_id is null
+    do update set blob_key = excluded.blob_key, state = 'recorded';
+    return 'recorded_free';
+  end if;
+""",
+     "",
+     "first free render", ART),
+
+    # The `do update` specifically — keeping the branch but making the insert blind. Without this,
+    # deleting the whole branch is the only thing tested, and "the branch exists" is weaker than
+    # "the branch reconciles".
+    ("video_artifacts_free_uq: the free upsert made blind (branch kept, conflict handling dropped)",
+     """    on conflict (workspace_id, video_id, slot) where generation_id is null
+    do update set blob_key = excluded.blob_key, state = 'recorded';""",
+     "    ;",
+     "RE-render was refused", ART),
+
+    # C3: the sweeper's predicate. Dropping the currency test makes the view select rows the
+    # backstop trigger then refuses — i.e. the batch aborts again, which is the original defect.
+    ("the collectable view stops excluding CURRENT generations",
+     """   and not exists (select 1 from video_artifacts_current c
+                    where c.workspace_id = g.workspace_id and c.video_id = g.video_id
+                      and c.generation_id = g.generation_id)""",
+     "",
+     "refusing to collect", ART),
 
     ("forbid_collecting_current disabled (round 5 H3 — never mutated until round 7 M3)",
      """  if new.body_collected and not old.body_collected
