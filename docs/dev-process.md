@@ -444,6 +444,68 @@ production**), and 1 was a relaxation candidate whose stated justification no lo
 rules are *chosen* is authorial knowledge, and re-deriving your own fixes against each other is cheap,
 while paying a review round to discover the same interaction is not.
 
+### Step 4 — classify the GUARDS: SHAPE or SEQUENCE (added 2026-08-07)
+
+Steps 1–3 classify the **rules**. This classifies the **enforcement**, and it is a different pass with
+a different yield. Run it over *every* guard — constraints, unique indexes, foreign keys, trigger
+raises, early returns — including the boring ones.
+
+| | Asks | A violation means | Must |
+|---|---|---|---|
+| **SHAPE** | is this well-formed and referentially sound? | the **caller is wrong** | **reject** |
+| **SEQUENCE** | who got here first? has this already happened? is this in flight? | **concurrency** — the caller did nothing wrong, and may already have spent money | **reconcile**: an upsert, a no-op, or a typed outcome. **Never a raw rejection** |
+
+**The one question to ask of each guard: what does this do when the caller is merely SECOND?**
+
+That is deliberately *not* "is this guard correct?" Both defects this found were **plainly correct**
+guards — a reviewer reads them, agrees, and moves on. Seven rounds of adversarial review with
+unlimited depth missed both; one shallow pass over all 32 found them in an hour.
+
+**Measured on the blob-addressing schema (2026-08-07):** 32 guards, 26 SHAPE, 6 SEQUENCE. Every CHECK
+and FK was SHAPE and correct, so the pass concentrates attention on ~6 items out of 32 — most of its
+value. Of the six, three were already reconcilers (including the one predicted broken), one was a
+deliberate fence, and **two were rejecters**: an entire *kind* of write was unreachable (every
+re-render failed with a raw `23505`), and the retention sweep **could never run at all**, because its
+safety rule aborted the batch and the row it tripped on was permanently in that state.
+
+**When to run it:** before a review round on anything with a write protocol, and *always* before
+promoting a schema into `supabase/migrations/`. It is cheap, total, and mechanical — the opposite
+axis from adversarial review, which is deep and selective. **Depth and coverage do not substitute for
+each other**, and a project buying a lot of depth should notice when it has bought no coverage.
+
+**Two rules that fall out, both learned by getting them wrong:**
+- **A promise like "this never refuses" is a NEGATIVE property over every guard on its write path.**
+  Count them before believing it. `record_artifact` promised exactly that across **32** rejection
+  mechanisms; each new guard was a new way to break it, and one added a day later did.
+- **Never convert a rejecter into a silent no-op.** Move the test into a predicate the caller selects
+  *through*, and keep the rejecter as a backstop. Suppressing the write quietly tells the caller it
+  succeeded — shape #5, and worst on delete paths, which have no undo.
+
+*(Origin: round 7's `B1` was a decision that had an assertion **and** a passing mutation and broke
+anyway. Asking why led here — see `docs/superpowers/specs/2026-08-03-stable-blob-addressing-design.md`
+§5.2.5.)*
+
+### And apply the Enumerated Behaviors table to DECISIONS, not only to tasks (added 2026-08-07)
+
+The Per-Task Checklist already demands an **Enumerated Behaviors** table before tests are written.
+Nothing demanded one for a **decision** — and a decision is exactly where it is most needed, because
+a decision is recorded as prose and defended by a test written against *the scenario that prompted
+it*.
+
+Measured: the user decision *"the reservation guards spending, not recording"* had an assertion naming
+it and a mutation confirming that assertion was load-bearing. Both passed. It broke anyway, because
+the assertion passed a *different* generation id and *supplied* the span — the one configuration where
+the implementation happened to be correct. Three other arrivals at the same function violated the same
+promise with no assertion at all.
+
+> **Mutation testing proves a guard is LOAD-BEARING. It never proves the assertion set is COMPLETE.**
+> It answers *"does deleting this code break a test?"*, not *"does the test cover the promise?"*
+
+So: when a decision is made — especially one made **against** a recommendation — enumerate the ways a
+caller can reach the code it constrains, and assert the property at each. For `record_artifact` that
+was four cells (holder vs lost token × same vs different generation × args supplied vs omitted ×
+generation pending vs completed-by-another). Three were broken.
+
 **Related but different:** the `zoom-out` skill orients you in unfamiliar **code** (a map of modules and
 callers). This orients you in your own **assumptions**. Both are "go up a level"; only one questions
 whether a constraint is real.
