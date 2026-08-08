@@ -1376,6 +1376,48 @@ Write that definition, not §2's current one.
 > exists, and taking "inseparable" as unconditional is precisely what made the write path
 > unsatisfiable. See §5.2.3.
 
+### 5.2.4 What round 7 found — the four items **as a set** — ⟳ ADDED IN ROUND 7
+
+Round 7 was called for one purpose: the four merged items had each been reviewed against *itself* and
+none against the others. **Every Blocking and High it returned was an interaction between two of
+them, and a defect in none of them individually** — reproducing round 6's cross-derivation verdict
+under the same condition.
+
+| | Interaction | What it did |
+|---|---|---|
+| **B1** | item 4 × item 3 | `record_artifact`'s append was **blind**, so a worker that merely restarted and forgot its token collided with its **own** pending row — `[23505]`, no race required. The function whose comment says it *"never refuses"* discarded paid work through a raw SQLSTATE |
+| **B2** | item 1 × item 3 | nothing bounded `produced_at`, a **caller-supplied ranking rung**. A future value made §6.2's detach permanently impossible, and the error blamed the writer for a value it never supplied |
+| **H2** | item 3 × item 4 | the generation completion was fenced on **nothing** — a caller could complete another writer's generation, and item 3's freeze then locked the real owner out of its own paid work **forever** |
+| **H3** | item 3 × item 4 | a **denied** reservation still left a `pending` generation row that nothing reaches or collects |
+
+**The through-line: item 3 gave the generation a lifecycle and item 4's protocol was never re-derived
+against it.** Every fence item 4 established was on the *artifact*; item 3 added a second table to the
+write path and no fence followed it there. That is shape #10 — a fix applied at one site with an
+identical sibling nearby — at the granularity of a whole table rather than a line.
+
+**B1 is the one worth remembering, because it silently revoked a user decision.** On 2026-08-07 the
+`lease_token` veto was **declined** so that a writer which already paid always records. Item 3's
+freeze trigger, written a day later in a different file, restored exactly that rejection through
+`video_generations` instead of `video_artifacts`. *A rule can be overturned by a change that never
+mentions it.*
+
+Two things the fixes taught that no reviewer reported:
+
+- **A CHECK constraint is evaluated on the proposed tuple BEFORE conflict resolution.** The first
+  version of B1's fix put `coalesce(excluded.…, …)` in the `DO UPDATE`, and a caller omitting the
+  span still got `[23514] art_dig_has_span` from the `VALUES` clause. `excluded.*` is the tuple that
+  already had to be legal — **it cannot be used to repair itself.** Added to the physical-rules sweep.
+- **The span belongs to the SLOT, the provenance to the GENERATION.** A reclaimed writer's own row is
+  gone, so a same-generation lookup finds no span; but `dig:8` means seconds 8–88 in every generation
+  of it, so the span is recoverable from any row for the slot. `source_generation_id` is not —
+  borrowing it across generations would manufacture a provenance claim.
+
+**And one fix turned out to carry no guard of its own.** B2 had two halves — bound `produced_at`, and
+scope the `detached_at` bound to `INSERT`. Mutation shows the second is *subsumed*: once `produced_at`
+cannot be in the future, running the bound on `UPDATE` is a guaranteed no-op. It stays because it says
+truthfully where the guard lives, and it is recorded as an expected-GREEN mutation — the same status,
+and the same treatment, as item 2's rung-1 `=`.
+
 ### 5.2.3 A generation has a lifecycle too — ⟳ ADDED IN ROUND 6 (B5 / Codex B3), handoff item 3
 
 **The premise that failed:** *a generation row is only ever complete.*
@@ -2148,7 +2190,7 @@ can stop before spending more, instead of learning at record time when the money
 |---|---|
 | `reserve_artifact_slot` | **One** upsert on the partial unique index → `reserved(token) \| busy \| exhausted \| already_recorded`. The attempt count is incremented **by the statement that takes the slot**, which is what makes the bound un-resettable |
 | `renew_artifact_lease` | Fenced by the **token, not the clock** → `renewed \| lost \| ceiling_exceeded` |
-| `record_artifact` | Flips in place when the token matches, otherwise **appends**. Never refuses |
+| `record_artifact` | Flips in place when the token matches, otherwise **appends idempotently**. Never discards paid work |
 
 **The round-5 reclaim regressed to `DELETE`-then-`INSERT` on a premise that does not hold.** It assumed
 the expired row *"must stop existing before the next can be created"* — true of an INSERT against a
