@@ -33,6 +33,7 @@ SECOND?"
 
 Usage:  ./scripts/check-guard-coverage.py     (exit 0 = every guard classified)
 """
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +44,16 @@ SCHEMA = SPEC / "schema"
 MUTATIONS = SPEC / "mutate-schema.py"
 CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 TABLES = ("video_artifacts", "video_generations")
+
+# ⟳ ROUND 9 — THE ENUMERATED WHOLE WAS ITSELF SCOPED TOO NARROWLY, which is this script's own
+# thesis used against it. Round 9's B3 fix added `resolve_workspace_from_playlist` as a trigger on
+# `videos` and `jobs`; this ratchet enumerated triggers on TWO tables, so it reported ✅ and "32
+# guards" with a brand-new guard sitting outside its query. `sync_corrections_to_workspace_video`
+# (round 6) had been invisible the same way since the day this script was written.
+#
+# An absence is only visible against an enumerated whole — and the whole has to be "every table this
+# spec puts a guard on", not the two that were interesting the day the query was typed.
+TRIGGER_TABLES = TABLES + ("videos", "jobs", "workspace_videos", "playlists", "profiles")
 
 # Every guard the schema ships, with its class. A guard present in the database and
 # absent here FAILS THE RATCHET - that is the whole point: adding a guard forces a
@@ -87,6 +98,25 @@ GUARDS: dict[str, tuple[str, str]] = {
     "video_artifacts_append_only":         ("SHAPE", ""),
     "video_artifacts_generation_complete": ("SHAPE", ""),
     "video_generations_freeze":            ("SHAPE", ""),
+    "set_videos_updated_at":               ("SHAPE", ""),
+    "guard_is_anonymous":                  ("SHAPE", ""),   # immutable field; a change is a caller bug
+    # ── ⟳ ROUND 9 (round 8 M2): SHAPE *ONLY BECAUSE* SOMETHING ELSE RECONCILES ──
+    # A guard is SHAPE given a reconciler, and the old two-way label stored that conclusion while
+    # discarding its premise — so the reconcilers holding a SHAPE guard back from rejecting a
+    # blameless second caller were exactly what nothing protected. These must name the reconciler
+    # AND be mutation-covered, on the same terms as SEQUENCE.
+    "resolve_workspace_from_playlist": (
+        "SHAPE(reconciled)",
+        "the manifest parent is `on conflict do nothing` — the same video in a SECOND playlist is a "
+        "second videos row and ONE shared body, so the later insert must not collide or clobber"),
+    "ensure_workspace_for_profile": (
+        "SHAPE(reconciled)",
+        "`on conflict (owner_id) do nothing` — every profile 01's seed already covered reaches this "
+        "trigger too, and must not error on the workspace it already has"),
+    "sync_corrections_to_workspace_video": (
+        "SHAPE(reconciled)",
+        "the INSERT half's WHEN clause skips rows carrying no corrections; without it the same video "
+        "added to a second playlist CLOBBERED the shared corrections (measured round 9)"),
     "forbid_collecting_current": (
         "SEQUENCE",
         "the sweeper selects THROUGH video_generations_collectable; trigger kept as a backstop "
@@ -109,6 +139,21 @@ GUARDS: dict[str, tuple[str, str]] = {
 # Empty by design: if this grows, the ratchet is being talked out of rather than met.
 MUTATION_EXEMPT: dict[str, str] = {}
 
+# Both classes carry the same obligations: name the reconciler, and mutate it. The distinction is
+# only about who is at fault when the guard fires — never about how much proof it needs.
+RECONCILING = {"SEQUENCE", "SHAPE(reconciled)"}
+
+# Which mutation LABELS must exist for a guard, when the guard's own name is not in them.
+# A guard absent from here is required to appear in a label verbatim.
+COVERED_BY: dict[str, tuple[str, ...]] = {
+    "resolve_workspace_from_playlist":     ("B3: workspace_id no longer derived",
+                                            "B3: the manifest parent no longer created",
+                                            "B3: a disagreeing workspace_id"),
+    "ensure_workspace_for_profile":        ("B3: a new profile gets no workspace",),
+    "sync_corrections_to_workspace_video": ("the anti-drift trigger removed",
+                                            "the INSERT-half sync unguarded"),
+}
+
 CATALOG_SQL = f"""
 select 'check:' || conname from pg_constraint
  where conrelid = any (array{list(TABLES)}::regclass[]) and contype = 'c'
@@ -122,9 +167,9 @@ select 'index:' || indexrelid::regclass::text from pg_index
  where indrelid = any (array{list(TABLES)}::regclass[]) and indisunique
    and indexrelid::regclass::text like '%_uq'
 union all
-select 'trigger:' || p.proname from pg_trigger t
+select distinct 'trigger:' || p.proname from pg_trigger t
   join pg_proc p on p.oid = t.tgfoid
- where t.tgrelid = any (array{list(TABLES)}::regclass[]) and not t.tgisinternal;
+ where t.tgrelid = any (array{list(TRIGGER_TABLES)}::regclass[]) and not t.tgisinternal;
 """
 
 
@@ -148,12 +193,43 @@ def catalog_guards() -> set[str]:
             if ":" in ln and ln.split(":", 1)[0] in {"check", "fk", "index", "trigger"}}
 
 
+def mutation_labels() -> list[str]:
+    """The LABEL of every entry in mutate-schema.py's MUTATIONS list.
+
+    ⟳ ROUND 9 (round 8 M1). This used to be `if name not in mutation_text` — a substring search over
+    the whole file. Measured by the round-8 reviewer: every SEQUENCE guard's requirement was met by
+    its name appearing inside a mutation's label string and by nothing else, so a guard name left in
+    a COMMENT after its mutation was deleted would still satisfy the ratchet. The script's own
+    docstring says an absence is only visible against an enumerated whole, and then verified
+    coverage against free text.
+
+    Parsed with `ast`, not regex: a mutation's `find`/`replace` strings are SQL full of guard names,
+    so anything reading the file body cannot tell a label from the code being mutated.
+    """
+    tree = ast.parse(MUTATIONS.read_text())
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(getattr(t, "id", None) == "MUTATIONS" for t in node.targets):
+            continue
+        out = []
+        for elt in getattr(node.value, "elts", []):
+            first = getattr(elt, "elts", [None])[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                out.append(first.value)
+        return out
+    return []
+
+
 def main() -> int:
     live = catalog_guards()
     if not live:
         print("no guards found — the catalog query returned nothing, which is itself a failure")
         return 2
-    mutation_text = MUTATIONS.read_text()
+    labels = mutation_labels()
+    if not labels:
+        print("no mutation labels parsed — the coverage check would pass vacuously")
+        return 2
     problems: list[str] = []
 
     for name in sorted(live - set(GUARDS)):
@@ -169,25 +245,32 @@ def main() -> int:
 
     for name in sorted(live & set(GUARDS)):
         kind, note = GUARDS[name]
-        if kind != "SEQUENCE":
+        if kind not in RECONCILING:
+            if kind != "SHAPE":
+                problems.append(
+                    f"UNKNOWN KIND  {name}\n"
+                    f"              '{kind}' is not one of: SHAPE, SHAPE(reconciled), SEQUENCE.")
             continue
         if not note:
             problems.append(
                 f"UNJUSTIFIED   {name}\n"
-                f"              SEQUENCE guards must record HOW they reconcile.")
+                f"              {kind} guards must record HOW the second caller is reconciled.")
         if name in MUTATION_EXEMPT:
             continue
-        if name not in mutation_text:
-            problems.append(
-                f"UNMUTATED     {name}\n"
-                f"              A SEQUENCE guard with no mutation entry. Its reconciler is a claim,\n"
-                f"              not a tested behaviour — add one to mutate-schema.py.")
+        # Match the guard against mutation LABELS, never the file body (round 8 M1).
+        wanted = COVERED_BY.get(name, (name,))
+        for token in wanted:
+            if not any(token in label for label in labels):
+                problems.append(
+                    f"UNMUTATED     {name}\n"
+                    f"              No mutation label contains {token!r}. Its reconciler is a claim,\n"
+                    f"              not a tested behaviour — add one to mutate-schema.py.")
 
-    seq = sorted(n for n in live & set(GUARDS) if GUARDS[n][0] == "SEQUENCE")
+    seq = sorted(n for n in live & set(GUARDS) if GUARDS[n][0] in RECONCILING)
     print(f"guards in schema: {len(live)}   "
-          f"SHAPE: {len(live) - len(seq)}   SEQUENCE: {len(seq)}")
+          f"SHAPE: {len(live) - len(seq)}   reconciling: {len(seq)}")
     for n in seq:
-        print(f"  SEQUENCE  {n}\n            reconciles via: {GUARDS[n][1]}")
+        print(f"  {GUARDS[n][0]:18} {n}\n            reconciles via: {GUARDS[n][1]}")
 
     if problems:
         print("\n" + "=" * 78)

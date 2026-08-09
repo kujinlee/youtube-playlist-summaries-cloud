@@ -1421,6 +1421,106 @@ end $$;
 select assert_raises($$update video_generations set body_collected = true
   where video_id='vidGC'$$,
   'a naive sweep that ignores the collectable view (the trigger backstop)', 'P0001');
+-- ── ⟳ ROUND 9 B3 — INGEST STILL WORKS AFTER THE MIGRATION ──────────────────────────────────────
+-- The defect these assert against was total: `claim_video_slot`'s INSERT, run verbatim, returned
+-- [23502] on videos.workspace_id and then [23503] on videos_workspace_video_fk. Nothing could ingest
+-- a new video, and 103 assertions passed anyway — because every fixture in this file inserts videos
+-- that the migration's own seed had already created a parent for. The suite described a world in
+-- which no NEW video ever arrives.
+--
+-- ⚠ THE FIRST ASSERTION IS THE ONE THAT MATTERED: the writer's column list is UNCHANGED. If a future
+-- edit "fixes" ingest by adding workspace_id to the callers, this still passes while the design
+-- decision (derive, never hand-copy — 2026-08-08) has been silently reversed. Assert the promise, not
+-- the implementation.
+do $$
+declare v_pl uuid; v_ws uuid;
+begin
+  select id, workspace_id into v_pl, v_ws from playlists limit 1;
+  insert into videos (playlist_id, owner_id, video_id, position, data)   -- 0023:87, verbatim
+    select v_pl, pl.owner_id, 'ingestNew', 9991, jsonb_build_object('id','ingestNew')
+      from playlists pl where pl.id = v_pl;
+  if (select workspace_id from videos where playlist_id=v_pl and video_id='ingestNew') <> v_ws then
+    raise exception 'ASSERTION FAILED — workspace_id was not derived from the playlist'; end if;
+  if (select count(*) from workspace_videos where video_id='ingestNew') <> 1 then
+    raise exception 'ASSERTION FAILED — no manifest parent was created for a new video'; end if;
+  raise notice 'ok (B3): an UNCHANGED writer ingests a new video; both values derived';
+
+  -- The sibling site. jobs.workspace_id had the identical defect and every enqueue RPC omits it.
+  insert into jobs (playlist_id, owner_id, video_id, job_kind, job_version, payload)
+    select v_pl, pl.owner_id, 'ingestNew', 'summary', 'v1', '{}'::jsonb
+      from playlists pl where pl.id = v_pl;
+  if (select workspace_id from jobs where video_id='ingestNew' limit 1) <> v_ws then
+    raise exception 'ASSERTION FAILED — jobs.workspace_id was not derived'; end if;
+  raise notice 'ok (B3 sibling): an UNCHANGED enqueue derives jobs.workspace_id';
+
+  -- A caller with the RIGHT opinion is not punished for having one.
+  insert into videos (playlist_id, owner_id, video_id, position, data, workspace_id)
+    select v_pl, pl.owner_id, 'ingestAgree', 9992, jsonb_build_object('id','ingestAgree'), v_ws
+      from playlists pl where pl.id = v_pl;
+  raise notice 'ok (B3): a caller supplying the CORRECT workspace passes unremarked';
+end $$;
+
+-- THE WHOLE CHAIN, not just its bottom two links. `01` seeds workspaces from profiles and backfills
+-- playlists/videos/jobs — four one-shot statements, none of which produces the NEXT row. Fixing only
+-- `videos` and `jobs` would have left a new user unable to create a playlist, so the repaired video
+-- path would have been unreachable and this suite would still have passed.
+do $$
+declare v_prof uuid := gen_random_uuid(); v_pl uuid; v_ws uuid;
+begin
+  -- `profiles.id` FKs to auth.users, so the identity has to exist before the profile does. Creating
+  -- it here rather than reusing a seeded profile is the point: a SEEDED profile already has a
+  -- workspace from 01's one-shot insert, so the assertion would pass with the trigger deleted.
+  insert into auth.users (id) values (v_prof);
+  -- `do nothing` because signup already creates the profile via its own trigger on auth.users —
+  -- measured here as [23505] profiles_pkey. That is the REAL path a new user takes, so this
+  -- assertion exercises it rather than a synthetic one.
+  insert into profiles (id) values (v_prof) on conflict (id) do nothing;
+  select id into v_ws from workspaces where owner_id = v_prof;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — a NEW profile got no workspace; the chain starts broken'; end if;
+  raise notice 'ok (B3 chain): a new profile gets a workspace';
+
+  insert into playlists (owner_id, playlist_key, playlist_url)
+  values (v_prof, 'k-assert-chain', 'https://example/chain') returning id into v_pl;
+  if (select workspace_id from playlists where id = v_pl) <> v_ws then
+    raise exception 'ASSERTION FAILED — a NEW playlist did not derive its workspace'; end if;
+  raise notice 'ok (B3 chain): a new playlist derives its workspace from its owner';
+end $$;
+
+-- ⟳ ROUND 9 — CORRECTIONS SURVIVE THE SAME VIDEO ARRIVING IN A SECOND PLAYLIST.
+-- Round 6's INSERT-half sync was unconditional, and it was harmless only because B3 made INSERTs
+-- impossible. MEASURED the moment ingest worked: 'KEEP ME' -> <null>. `corrections` describes the
+-- SHARED BODY while `videos` is per-playlist, so a second playlist's row carrying none is not
+-- evidence that anyone removed them.
+do $$
+declare v_own uuid; v_p1 uuid; v_p2 uuid;
+begin
+  select owner_id into v_own from playlists limit 1;
+  insert into playlists (owner_id, playlist_key, playlist_url)
+    values (v_own, 'k-assert-c1', 'https://example/c1') returning id into v_p1;
+  insert into playlists (owner_id, playlist_key, playlist_url)
+    values (v_own, 'k-assert-c2', 'https://example/c2') returning id into v_p2;
+  insert into videos (playlist_id, owner_id, video_id, position, data)
+    values (v_p1, v_own, 'sharedCorr', 8001,
+            jsonb_build_object('id','sharedCorr','corrections','KEEP ME'));
+  insert into videos (playlist_id, owner_id, video_id, position, data)
+    values (v_p2, v_own, 'sharedCorr', 8002, jsonb_build_object('id','sharedCorr'));
+  if (select corrections from workspace_videos where video_id='sharedCorr')
+       is distinct from 'KEEP ME' then
+    raise exception 'ASSERTION FAILED — the second playlist CLOBBERED the shared corrections'; end if;
+  raise notice 'ok (round 9): a corrected video survives being added to a second playlist';
+end $$;
+
+-- And a caller with the WRONG opinion is TOLD, not silently corrected. This is the whole reason the
+-- explicit-writer option was not simply discarded: a caller confused about tenancy is a real bug, and
+-- silently repairing it would be shape #5 on the tenancy boundary.
+select assert_raises($$
+  insert into videos (playlist_id, owner_id, video_id, position, data, workspace_id)
+    select p.id, p.owner_id, 'ingestWrong', 9993, jsonb_build_object('id','ingestWrong'),
+           (select id from workspaces where id <> p.workspace_id order by id desc limit 1)
+      from playlists p limit 1;
+$$, 'a workspace_id disagreeing with the playlist is refused, not repaired', 'P0001');
+
 -- ── ⟳ THE POPULATION-COVERAGE RATCHET ITSELF ───────────────────────────────────────────────────
 -- Every value of `artifact_kind` must have been written a SECOND time to the same slot somewhere in
 -- this suite. Not "exercised" — written twice, because the first write of anything is the easy case

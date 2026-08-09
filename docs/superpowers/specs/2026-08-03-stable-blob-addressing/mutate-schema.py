@@ -16,13 +16,33 @@ broken edit as an untested guard:
 Usage:  ./mutate-schema.py          (exit 0 = every guard confirmed RED)
 """
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 SPEC = Path(__file__).resolve().parent
 GEN = SPEC / "schema/03_generations.sql"
 ART = SPEC / "schema/04_artifacts.sql"
+
+# ⟳ ROUND 8 M3 — THIS HARNESS USED TO MUTATE THE REPO-TRACKED FILES AND PUT THEM BACK IN A
+# `finally`, and that is shape #11 (an instrument that misreports its own result) in the
+# instrument built to catch shape #11.
+#
+# MEASURED during round 8, when two reviewers ran `./scripts/check-schema-gates.sh` at the same
+# time on the same checkout: 23/44 in the repo against 44/44 in an isolated copy of the SAME
+# COMMIT, with 21 entries reported `RED(other)` carrying detail text belonging to a different
+# mutation. Each run was reading the other's edits. The failure was loud and WRONG — a reviewer
+# spent a cycle treating a green artifact as broken, and the opposite mistake (a concurrent run
+# masking a genuine GREEN as RED(other)) is equally available.
+#
+# The `finally` also does not survive SIGKILL, so an interrupted run left a MUTATED, repo-tracked
+# schema file on disk — a mutation one `git commit -a` away from being the schema.
+#
+# So the mutation now lands on a COPY and the repo files are opened read-only. `verify-schema.sh`
+# resolves its schema directory from its own location, so copying it beside the schema is the
+# whole trick.
 
 # (label, find, replace, assertion-substring expected to go red, target file)
 MUTATIONS = [
@@ -60,7 +80,7 @@ MUTATIONS = [
     ("clock not cleared on re-attachment",
      "      new.detached_at := null;",
      "      new.detached_at := old.detached_at;",
-     "detached fencing", ART),
+     "art_detached_has_timestamp", ART),
 
     # ── item 2: the corrections representation (round 6 B4) ──────────────────────
     ("corrections_hash nullable again (default kept, so ONLY nullability changes)",
@@ -171,7 +191,7 @@ MUTATIONS = [
   end if;
 """,
      "",
-     "already-recorded generation is idempotent", ART),
+     "video_artifacts_paid_uq", ART),
 
     # ── item 3: the generation-write API (round 6 B5, Codex B3) ──────────────────
     # The four CHECK gates are mutated INDIVIDUALLY. Restoring any one of them alone
@@ -180,17 +200,17 @@ MUTATIONS = [
     ("gen_card_complete gate removed (back to unconditional)",
      "    state <> 'complete' or kind <> 'summary' or (\n      card is not null",
      "    kind <> 'summary' or (\n      card is not null",
-     "cannot reserve a summary slot", GEN),
+     "gen_card_complete", GEN),
 
     ("gen_summary_has_hash gate removed",
      "  constraint gen_summary_has_hash check\n    (state <> 'complete' or kind <> 'summary' or md_hash is not null),",
      "  constraint gen_summary_has_hash check (kind <> 'summary' or md_hash is not null),",
-     "cannot reserve a summary slot", GEN),
+     "gen_summary_has_hash", GEN),
 
     ("gen_summary_has_format gate removed",
      "  constraint gen_summary_has_format check\n    (state <> 'complete' or kind <> 'summary' or doc_version_major is not null),",
      "  constraint gen_summary_has_format check (kind <> 'summary' or doc_version_major is not null),",
-     "cannot reserve a summary slot", GEN),
+     "gen_summary_has_format", GEN),
 
     ("gen_complete_has_produced_at dropped",
      "  constraint gen_complete_has_produced_at check (state <> 'complete' or produced_at is not null),\n",
@@ -245,7 +265,7 @@ MUTATIONS = [
     v_made_generation := found;
 """,
      "",
-     "cannot reserve a summary slot", ART),
+     "video_artifacts_workspace_id_video_id_generation_id_kind_fkey", ART),
 
     # ⟳ ROUND 7 H3 — the cleanup on the DENIED paths. Without it every `busy` loser leaves an
     # FK-valid parent no artifact points at, no ranking view reaches, and no sweep collects.
@@ -360,7 +380,7 @@ MUTATIONS = [
      """    on conflict (workspace_id, video_id, slot) where generation_id is null
     do update set blob_key = excluded.blob_key, state = 'recorded';""",
      "    ;",
-     "RE-render was refused", ART),
+     "video_artifacts_free_uq", ART),
 
     # C3: the sweeper's predicate. Dropping the currency test makes the view select rows the
     # backstop trigger then refuses — i.e. the batch aborts again, which is the original defect.
@@ -379,11 +399,47 @@ MUTATIONS = [
   then""",
      "  if (false) then",
      "collecting the CURRENT generation", ART),
+
+    # ── ⟳ ROUND 9 B3: the workspace resolver, whose absence made ingest impossible ────
+    # Each of the trigger's three jobs is mutated separately, because they fail in three
+    # different places and a single "disable the trigger" mutation would prove only that
+    # SOMETHING in it matters.
+    ("B3: workspace_id no longer derived (the [23502] half of the measured defect)",
+     "  new.workspace_id := v_ws;",
+     "  new.workspace_id := new.workspace_id;",
+     'column "workspace_id" of relation "videos"', GEN),
+
+    ("B3: the manifest parent no longer created (the [23503] half)",
+     "  if tg_table_name = 'videos' then",
+     "  if false then",
+     "videos_workspace_video_fk", GEN),
+
+    ("B3: a disagreeing workspace_id silently repaired instead of refused",
+     "  if new.workspace_id is not null and new.workspace_id <> v_ws then",
+     "  if false then",
+     "disagreeing with the playlist", GEN),
+
+    ("B3: a new profile gets no workspace (the TOP of the chain)",
+     "  insert into public.workspaces (id, owner_id) values (new.id, new.id)\n"
+     "  on conflict (owner_id) do nothing;",
+     "  insert into public.workspaces (id, owner_id) select new.id, new.id where false;",
+     "a NEW profile got no workspace", GEN),
+
+    # The reconciler that makes `sync_corrections_to_workspace_video` SHAPE rather than a guard that
+    # destroys data when a caller is merely SECOND. Removing the WHEN clause restores round 6's
+    # unconditional INSERT-half sync — harmless for as long as B3 made inserts impossible, and a
+    # measured clobber the moment ingest worked.
+    ("the INSERT-half sync unguarded (round 6's version, live once ingest worked)",
+     "  for each row\n  when (coalesce(new.data->>'corrections','') <> '')\n"
+     "  execute function sync_corrections_to_workspace_video();",
+     "  for each row execute function sync_corrections_to_workspace_video();",
+     "CLOBBERED the shared corrections", GEN),
 ]
 
 
-def run():
-    p = subprocess.run([str(SPEC / "verify-schema.sh")], capture_output=True, text=True, cwd=SPEC)
+def run(script):
+    """Run the verifier that lives beside the schema being mutated — never the repo's."""
+    p = subprocess.run([str(script)], capture_output=True, text=True, cwd=script.parent)
     return p.returncode, p.stdout + p.stderr
 
 
@@ -399,9 +455,16 @@ def classify(rc, out, expect):
         detail = m.group(0)
         return ("RED" if expect.lower() in detail.lower() else "RED(other)"), detail.strip()
     # Caught by a constraint rather than an assertion — still covered.
+    # ⟳ ROUND 9 — AND IT NOW COMPARES `expect`, LIKE THE OTHER TWO BRANCHES. Round 6 added the
+    # comparison to the assertion branch; round 7 added it to the trigger branch and wrote that not
+    # sweeping it was "shape #10, in the fix written hours earlier for the previous instance of shape
+    # #11". This branch was the third sibling, and neither round swept to it — so a mutation aimed at
+    # one constraint could be caught by ANY constraint and still be scored as covering its target.
+    # Found while writing round 9's own mutations, which is the only reason it is not a fourth.
     m = re.search(r"ERROR:\s*(new row for relation|.*violates .*constraint)[^\n]*", out)
     if m:
-        return "RED(constraint)", m.group(0).strip()
+        detail = m.group(0).strip()
+        return ("RED(constraint)" if expect.lower() in detail.lower() else "RED(other)"), detail
     # ⟳ ROUND 6 B5 — A FOURTH VERDICT, and it was added because this harness made the
     # mistake its own docstring warns about, one layer up. Item 3's guards are TRIGGERS,
     # and a trigger's `raise exception` is an ERROR that matches neither the assertion
@@ -434,6 +497,21 @@ def classify(rc, out, expect):
 
 
 def main():
+    with tempfile.TemporaryDirectory(prefix="mutate-schema-") as tmp:
+        return run_suite(Path(tmp))
+
+
+def run_suite(tmp: Path):
+    # The repo files are READ here and never written. Everything the verifier touches lives in
+    # `tmp`, so two agents running this at once cannot see each other's mutations (round 8 M3).
+    work = tmp / "spec"
+    work.mkdir()
+    shutil.copytree(SPEC / "schema", work / "schema")
+    shutil.copy2(SPEC / "verify-schema.sh", work / "verify-schema.sh")
+    (work / "verify-schema.sh").chmod(0o755)
+    script = work / "verify-schema.sh"
+    copy_of = {GEN: work / "schema" / GEN.name, ART: work / "schema" / ART.name}
+
     originals = {ART: ART.read_text(), GEN: GEN.read_text()}
     results = []
     for label, find, repl, expect, target in MUTATIONS:
@@ -441,12 +519,13 @@ def main():
         if find not in original:
             results.append((label, "INVALID", "anchor not found — mutation never applied"))
             continue
-        try:
-            target.write_text(original.replace(find, repl, 1))
-            rc, out = run()
-            results.append((label, *classify(rc, out, expect)))
-        finally:
-            target.write_text(original)
+        # No `finally` restore is needed to protect the repo — nothing repo-tracked was ever
+        # opened for writing. The copy is rewritten wholesale before each mutation instead, so a
+        # crash mid-suite leaves a temp directory behind and the checkout untouched.
+        copy_of[target].write_text(original.replace(find, repl, 1))
+        rc, out = run(script)
+        results.append((label, *classify(rc, out, expect)))
+        copy_of[target].write_text(original)
 
     print("\n" + "=" * 78)
     ok = {"RED", "RED(constraint)", "RED(trigger)", "GREEN(expected)"}
@@ -461,7 +540,9 @@ def main():
     print(f"{len(results) - bad}/{len(results)} mutations behaved as expected "
           f"(RED, or GREEN where documented as subsumed)")
 
-    rc, _ = run()
+    # The baseline now proves the COPY is unmutated, which is the only thing this suite could have
+    # broken. That the repo is untouched is guaranteed structurally rather than checked.
+    rc, _ = run(script)
     print("baseline restored:", "GREEN ✅" if rc == 0 else "STILL BROKEN ❌")
     return 1 if bad or rc else 0
 
