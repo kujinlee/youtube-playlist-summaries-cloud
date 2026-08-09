@@ -84,12 +84,24 @@ end $$;
 -- checkable rather than remembered. The second write is exactly the SEQUENCE question — what does
 -- this do when the caller is not the first? — made mechanical.
 --
+-- ⟳ ROUND 9 (round 8 M4) — IT COUNTS *INSERTS*, NOT ROW-WRITES, AND THAT WAS THE WHOLE CLAIM.
+-- The trigger fires `after insert or update`, and a paid artifact's ordinary life is `reserve`
+-- (INSERT pending) then `record` (UPDATE recorded) — two rows in this table, ONE caller, and no
+-- second-caller behaviour exercised anywhere. The ratchet said "the SEQUENCE case is exercised" and
+-- could be satisfied by a lifecycle that never has a second caller: shape #11, in the instrument
+-- built to close an absence.
+--
+-- Measured before tightening: it was TRUTHFUL — every kind did have a real second INSERT (summary
+-- 11, digDeeper 3, model 2, render 2, dig via dig:700 and dig:8) — though four dig:* slots passed on
+-- a single-writer lifecycle alone. So the weakness was live but not yet load-bearing, and requiring
+-- >= 2 INSERTs passes today UNCHANGED, which is the proof the tightening costs nothing.
+--
 -- Test-only instrumentation: it lives in the assertion file, not the schema, and rolls back with
 -- everything else.
-create temp table t_writes (kind text, paid boolean, slot text);
+create temp table t_writes (kind text, paid boolean, slot text, op text);
 create function record_write() returns trigger language plpgsql as $$
 begin
-  insert into t_writes values (new.kind::text, new.generation_id is not null, new.slot);
+  insert into t_writes values (new.kind::text, new.generation_id is not null, new.slot, tg_op);
   return null;
 end $$;
 create trigger t_writes_trg after insert or update on video_artifacts
@@ -308,27 +320,34 @@ select assert_raises($$insert into video_artifacts
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:57','gDIG','dig','recorded',
-          'OTHERWS/videos/gDIG/gOLD/dig/57.md',57,60)$$,
-  'the generation id appearing in the WRONG segment, of another workspace''s key',
-  '23514', 'art_key_names_generation');
+          'OTHERWS/videos/vidA/gDIG/dig/57.md',57,60)$$,
+  -- ⟳ ROUND 9 H5 — SHARPENED. It used to be 'OTHERWS/videos/gDIG/gOLD/...', which violated the
+  -- workspace segment, the video segment AND the generation segment at once — three faults across
+  -- two constraints, in the file whose header requires every negative to violate exactly one.
+  -- Now only segment 1 is wrong, so it tests the tenant prefix and nothing else.
+  'a key under another workspace''s prefix, every other segment correct',
+  '23514', 'art_key_names_workspace');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:58','gDIG','dig','recorded',
           (select id from t_w2)::text||'/videos/vidA/gDIG/dig/58.md',58,60)$$,
+  -- ⟳ ROUND 9 H5 — now caught by the constraint that actually means it. Tenant confinement used to
+  -- live INSIDE art_key_names_generation, which is gated on a non-null generation, so free rows
+  -- escaped it entirely (measured: a render row in workspace A storing workspace B's prefix).
   'a key under ANOTHER workspace''s prefix, with video and generation segments correct',
-  '23514', 'art_key_names_generation');
+  '23514', 'art_key_names_workspace');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:59','gDIG','dig','recorded',
           (select id from t_ws)::text||'/videos/OTHERVIDEO/gDIG/dig/59.md',59,60)$$,
   'a key naming a DIFFERENT video, with workspace and generation segments correct',
-  '23514', 'art_key_names_generation');
+  '23514', 'art_key_names_workspace');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:60','gDIG','dig','recorded',
           (select id from t_ws)::text||'/WRONG/vidA/gDIG/dig/60.md',60,65)$$,
   'a key whose second segment is not the literal ''videos''',
-  '23514', 'art_key_names_generation');
+  '23514', 'art_key_names_workspace');
 
 -- art_summary_has_no_source (round 5 H2, the DATA half)
 select assert_raises($$insert into video_artifacts
@@ -1126,13 +1145,19 @@ insert into workspace_videos (workspace_id, video_id) select id, 'vidR3' from t_
 -- that already paid always records" — failing via a raw SQLSTATE instead of a typed refusal, in the
 -- function whose own comment says it "never refuses". Shape #8, and shape #10 against
 -- reserve_artifact_slot:304-306 which already fixed exactly this for itself.
-do $$ declare o text; ws uuid; n int; begin
+-- ⟳ ROUND 9 — THE SCENARIO IS UNCHANGED; THE CREDENTIAL IS NOT. Round 7 let this worker through on
+-- "the slot's pending row names this generation", which round 8 measured a STRANGER satisfying just
+-- as easily. It now presents `worker_id` + `job_id` — the two things that survive the restart that
+-- lost it the token — so the same worker still records and a stranger no longer can.
+do $$ declare o text; ws uuid; n int; job uuid := gen_random_uuid(); begin
   select id into ws from t_ws;
   perform reserve_artifact_slot(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR1/dig-3.md', p_start_sec := 3, p_end_sec := 9);
+    ws::text||'/videos/vidR/gR1/dig-3.md', p_start_sec := 3, p_end_sec := 9,
+    p_worker_id := 'worker-R1', p_job_id := job);
   o := record_artifact(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
         ws::text||'/videos/vidR/gR1/dig-3.md', gen_random_uuid(),   -- token FORGOTTEN across a restart
-        p_start_sec := 3, p_end_sec := 9, p_produced_at := '2026-05-01');
+        p_start_sec := 3, p_end_sec := 9, p_produced_at := '2026-05-01',
+        p_worker_id := 'worker-R1', p_job_id := job);              -- but it still knows WHO it is
   if o <> 'recorded_after_token_loss' then
     raise exception 'ASSERTION FAILED — a restarted worker did not record its paid work: %', o; end if;
   select count(*) into n from video_artifacts
@@ -1146,13 +1171,15 @@ end $$;
 -- span/provenance (its UPDATE touches only state and lease columns), so a caller could legitimately
 -- omit them and rely on what reserve stored — and then fail ONLY under the race, which is the worst
 -- possible place to put a latent argument requirement.
-do $$ declare o text; s int; e int; ws uuid; begin
+do $$ declare o text; s int; e int; ws uuid; job uuid := gen_random_uuid(); begin
   select id into ws from t_ws;
   perform reserve_artifact_slot(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR2/dig-4.md', p_start_sec := 4, p_end_sec := 44);
+    ws::text||'/videos/vidR/gR2/dig-4.md', p_start_sec := 4, p_end_sec := 44,
+    p_worker_id := 'worker-R2', p_job_id := job);
   o := record_artifact(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
         ws::text||'/videos/vidR/gR2/dig-4.md', gen_random_uuid(),   -- loss path, span OMITTED
-        p_produced_at := '2026-05-02');
+        p_produced_at := '2026-05-02',
+        p_worker_id := 'worker-R2', p_job_id := job);
   select start_sec, end_sec into s, e from video_artifacts where video_id='vidR' and slot='dig:4';
   if s <> 4 or e <> 44 then
     raise exception 'ASSERTION FAILED — the loss path lost the reserved span: (%,%)', s, e; end if;
@@ -1330,6 +1357,176 @@ do $$ declare leaky text[]; begin
     raise exception 'ASSERTION FAILED — anon holds EXECUTE on definer function(s): %', leaky; end if;
   raise notice 'ok (R8/M1): no definer function in this schema is reachable by anon';
 end $$;
+-- ── ⟳ ROUND 9 — THE OWNERSHIP FENCE, MEASURED IN BOTH DIRECTIONS ───────────────────────────────
+-- Round 8 found the round-7 fence broken BOTH ways at once, which is why the fix is a different
+-- credential rather than a tighter or looser one. Both directions are asserted here, because a fix
+-- for either alone is what produced the defect in the first place.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR9a' from t_ws;
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR9b' from t_ws;
+
+-- ⟳ R9-1 — A STRANGER CANNOT COMPLETE A GENERATION IT DOES NOT OWN.
+-- Measured in round 8 with p_token = NULL (`md_hash=SHA_ATTACKER`) AND with a random valid non-NULL
+-- token (`SHA_FOREIGN`), so the fixture below hands the stranger a FULL, well-formed credential of
+-- its own — a real token, a real worker id, a real job id. It is refused for the only reason that
+-- should matter: none of them is the credential this generation was reserved with.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  perform reserve_artifact_slot(ws,'vidR9a','summary','gR9a','summary'::artifact_kind,
+    ws::text||'/videos/vidR9a/gR9a/summary.md',
+    p_worker_id := 'worker-owner', p_job_id := '11111111-1111-1111-1111-111111111111');
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidR9a','summary','gR9a','summary'::artifact_kind,
+    %L, gen_random_uuid(), p_md_hash := 'SHA_FOREIGN', p_produced_at := '2026-05-03',
+    p_card := '{"tldr":"FOREIGN","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-03","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    p_doc_version_major := 4,
+    p_worker_id := 'worker-STRANGER', p_job_id := '22222222-2222-2222-2222-222222222222');
+$$, (select id from t_ws), (select id from t_ws)::text||'/videos/vidR9a/gR9a/summary.md'),
+ 'a stranger with its OWN full credential cannot complete another worker''s generation', 'P0001');
+
+-- ⟳ R9-2 — THE DOUBLY-LOST WORKER STILL RECORDS. Round 7 reasoned about single losses only; the
+-- conjunction is ordinary, because the crash that loses the token also lapses the lease that invites
+-- the reclaim. Measured before this fix: `[P0001] generation gW1 is pending`, paid work destroyed,
+-- with the identical call succeeding when the worker still knew its token — which isolated the fence
+-- as the cause rather than anything about the reclaim.
+do $$ declare o text; ws uuid; job uuid := gen_random_uuid(); begin
+  select id into ws from t_ws;
+  update guardrail_config set dig_max_attempts = 3 where id = true;   -- reclaim must be permitted
+  perform reserve_artifact_slot(ws,'vidR9b','dig:8','gR9b1','dig'::artifact_kind,
+    ws::text||'/videos/vidR9b/gR9b1/dig-8.md', p_start_sec := 8, p_end_sec := 88,
+    p_worker_id := 'worker-lost', p_job_id := job);
+  update video_artifacts set lease_expires_at = now() - interval '1 hour'
+   where video_id='vidR9b' and slot='dig:8';                          -- the lease lapses
+  perform reserve_artifact_slot(ws,'vidR9b','dig:8','gR9b2','dig'::artifact_kind,
+    ws::text||'/videos/vidR9b/gR9b2/dig-8.md', p_start_sec := 8, p_end_sec := 88,
+    p_worker_id := 'worker-other', p_job_id := gen_random_uuid());    -- and the SLOT is reclaimed
+  o := record_artifact(ws,'vidR9b','dig:8','gR9b1','dig'::artifact_kind,
+        ws::text||'/videos/vidR9b/gR9b1/dig-8.md', null,             -- token GONE
+        p_start_sec := 8, p_end_sec := 88, p_produced_at := '2026-05-04',
+        p_worker_id := 'worker-lost', p_job_id := job);               -- identity SURVIVED
+  if o <> 'recorded_after_loss' then
+    raise exception 'ASSERTION FAILED — the doubly-lost worker did not record: %', o; end if;
+  if (select state from video_generations where video_id='vidR9b' and generation_id='gR9b1')
+       <> 'complete' then
+    raise exception 'ASSERTION FAILED — its generation was left pending, so the bytes are orphaned';
+  end if;
+  raise notice 'ok (R9-2): a worker that lost BOTH its token and its slot still records its paid work';
+end $$;
+
+-- ⟳ R9-3 (round 8 B1) — GC MAY NOT COLLECT A GENERATION THAT IS STILL BEING PAID FOR.
+-- `video_artifacts_current` requires state='recorded', so an in-flight reservation had no current
+-- row and was offered to the sweeper. The worker then recorded SUCCESSFULLY and its row was
+-- invisible forever. Asserted at both ends: not collectable while pending, and visible after.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR9c' from t_ws;
+do $$ declare ws uuid; o text; tok uuid; n int; begin
+  select id into ws from t_ws;
+  select token into tok from reserve_artifact_slot(ws,'vidR9c','summary','gR9c','summary'::artifact_kind,
+    ws::text||'/videos/vidR9c/gR9c/summary.md',
+    p_worker_id := 'worker-gc', p_job_id := gen_random_uuid());
+  select count(*) into n from video_generations_collectable
+   where video_id='vidR9c' and generation_id='gR9c';
+  if n <> 0 then
+    raise exception 'ASSERTION FAILED — an IN-FLIGHT generation is collectable; a sweep would bury paid work';
+  end if;
+  o := record_artifact(ws,'vidR9c','summary','gR9c','summary'::artifact_kind,
+        ws::text||'/videos/vidR9c/gR9c/summary.md', tok, p_md_hash := 'SHA_R9C',
+        p_card := '{"tldr":"z","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-05","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+        p_doc_version_major := 4, p_produced_at := '2026-05-05');
+  if (select count(*) from video_artifacts_current where video_id='vidR9c') <> 1 then
+    raise exception 'ASSERTION FAILED — the recorded artifact is not visible in current'; end if;
+  raise notice 'ok (R9-3): an in-flight generation is not collectable, and records visibly';
+end $$;
+
+-- ⟳ R9-4 (round 8 H4) — THE FUTURE BOUND TOLERATES CLOCK SKEW BUT NOT A CLOCK VALUE.
+-- Both halves, because a tolerance that swallowed round 7 B2 would be a regression dressed as a fix.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR9d');
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+  values (ws,'vidR9d','gSkew','summary',
+    '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-06","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    4, clock_timestamp(), 'SHA_SKEW');     -- a few hundred ms of Fly-vs-Supabase drift
+  raise notice 'ok (R9-4): ordinary clock skew no longer refuses a paid summarize';
+end $$;
+select assert_raises(format($$
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+  values (%L::uuid,'vidR9d','gFar','summary',
+    '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-06","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    4, now() + interval '3 days', 'SHA_FAR');
+$$, (select id from t_ws)),
+ 'a genuinely future produced_at is still refused (round 7 B2 preserved)', 'P0001');
+
+-- ⟳ R9-5 (round 8 H2) — THE FREE SHORT-CIRCUIT IS REACHABLE AT ALL.
+-- It compared `generation_id = p_generation_id`, and for a free slot both sides are NULL, so the
+-- test was NULL — never true. The branch existed and could not run; reserve then hit
+-- video_artifacts_free_uq raw. The assertion is the TYPED outcome, because a raw 23505 is the defect.
+do $$ declare ws uuid; o text; res text; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-1.pdf',null);
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-2.pdf',null);
+  select outcome into res from reserve_artifact_slot(ws,'vidR9c','pdf:summary',null,
+    'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-3.pdf');
+  if res <> 'already_recorded' then
+    raise exception 'ASSERTION FAILED — reserving a recorded FREE slot gave %, not already_recorded', res;
+  end if;
+  raise notice 'ok (R9-5): reserving a recorded free slot returns a typed outcome, not a raw 23505';
+end $$;
+
+-- ⟳ R9-6 (round 8 H5) — A FREE ROW IS CONFINED TO ITS WORKSPACE TOO.
+-- Tenant confinement used to live INSIDE `art_key_names_generation`, which is gated on a non-null
+-- generation — so the rows with no generation, i.e. every free render, escaped it completely.
+-- MEASURED: a `render` row in workspace A storing `<workspace-B>/videos/vidH5/OTHER-TENANT.pdf` was
+-- ACCEPTED and returned `recorded_free`. Every pre-existing fixture happened to use a well-formed
+-- key, which is precisely why five rounds never saw it.
+select assert_raises(format($$
+  insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+  values (%L::uuid,'vidR9c','pdf:cross',null,'render','recorded',
+          %L||'/videos/vidR9c/renders/leak.pdf');
+$$, (select id from t_ws), (select id from t_w2)::text),
+ 'a FREE row may not carry a key under another workspace''s prefix', '23514',
+ 'art_key_names_workspace');
+
+-- ⟳ R9-7 (round 8 Claude H2) — A FREE SLOT THAT WAS RESERVED IS STILL RECORDABLE.
+-- The free branch set blob_key and state and left the three lease columns, so a reserved free slot
+-- failed art_pending_has_reserved_at on every retry, forever. The convention "'render' is free and
+-- never reserved" was the only thing preventing it, and a convention is not a guard.
+do $$ declare ws uuid; r record; o text; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR9e');
+  select * into r from reserve_artifact_slot(ws,'vidR9e','pdf:summary',null,'render'::artifact_kind,
+    ws::text||'/videos/vidR9e/renders/s.pdf');
+  if r.outcome <> 'reserved' then
+    raise exception 'ASSERTION FAILED — a free slot could not be reserved: %', r.outcome; end if;
+  o := record_artifact(ws,'vidR9e','pdf:summary',null,'render'::artifact_kind,
+        ws::text||'/videos/vidR9e/renders/s.pdf', r.token);
+  if o <> 'recorded_free' then
+    raise exception 'ASSERTION FAILED — a RESERVED free slot could not be recorded: %', o; end if;
+  raise notice 'ok (R9-7): a free slot that was reserved still records';
+end $$;
+
+-- ⟳ R9-8 (round 8 Claude H3) — THE MANIFEST MAY NOT NAME AN ADDRESS THE CALLER DID NOT WRITE.
+-- Neither the holder path nor the append path assigned blob_key, so a caller that wrote its bytes
+-- at one key was told `recorded_as_holder` while the row kept pointing at the reserved key — shape
+-- #4, silent, on the SUCCESS path. Both keys pass art_key_names_generation, which constrains only
+-- the first four segments, so no constraint could catch it.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR9f');
+  perform reserve_artifact_slot(ws,'vidR9f','summary','gR9f','summary'::artifact_kind,
+    ws::text||'/videos/vidR9f/gR9f/RESERVED.md',
+    p_worker_id := 'worker-addr',
+    p_job_id := '33333333-3333-3333-3333-333333333333');
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidR9f','summary','gR9f','summary'::artifact_kind,
+    %L, null, p_md_hash := 'SHA_ADDR', p_produced_at := '2026-05-07',
+    p_card := '{"tldr":"d","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-07","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    p_doc_version_major := 4, p_worker_id := 'worker-addr',
+    p_job_id := '33333333-3333-3333-3333-333333333333');
+$$, (select id from t_ws), (select id from t_ws)::text||'/videos/vidR9f/gR9f/ACTUALLY-WRITTEN.md'),
+ 'recording under a key that differs from the reserved one is refused, not silently dropped',
+ 'P0001');
+
 -- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
 -- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
 --   SHAPE    — is this row well-formed and referentially sound? A violation is a CALLER BUG. Reject.
@@ -1421,6 +1618,106 @@ end $$;
 select assert_raises($$update video_generations set body_collected = true
   where video_id='vidGC'$$,
   'a naive sweep that ignores the collectable view (the trigger backstop)', 'P0001');
+-- ── ⟳ ROUND 9 B3 — INGEST STILL WORKS AFTER THE MIGRATION ──────────────────────────────────────
+-- The defect these assert against was total: `claim_video_slot`'s INSERT, run verbatim, returned
+-- [23502] on videos.workspace_id and then [23503] on videos_workspace_video_fk. Nothing could ingest
+-- a new video, and 103 assertions passed anyway — because every fixture in this file inserts videos
+-- that the migration's own seed had already created a parent for. The suite described a world in
+-- which no NEW video ever arrives.
+--
+-- ⚠ THE FIRST ASSERTION IS THE ONE THAT MATTERED: the writer's column list is UNCHANGED. If a future
+-- edit "fixes" ingest by adding workspace_id to the callers, this still passes while the design
+-- decision (derive, never hand-copy — 2026-08-08) has been silently reversed. Assert the promise, not
+-- the implementation.
+do $$
+declare v_pl uuid; v_ws uuid;
+begin
+  select id, workspace_id into v_pl, v_ws from playlists limit 1;
+  insert into videos (playlist_id, owner_id, video_id, position, data)   -- 0023:87, verbatim
+    select v_pl, pl.owner_id, 'ingestNew', 9991, jsonb_build_object('id','ingestNew')
+      from playlists pl where pl.id = v_pl;
+  if (select workspace_id from videos where playlist_id=v_pl and video_id='ingestNew') <> v_ws then
+    raise exception 'ASSERTION FAILED — workspace_id was not derived from the playlist'; end if;
+  if (select count(*) from workspace_videos where video_id='ingestNew') <> 1 then
+    raise exception 'ASSERTION FAILED — no manifest parent was created for a new video'; end if;
+  raise notice 'ok (B3): an UNCHANGED writer ingests a new video; both values derived';
+
+  -- The sibling site. jobs.workspace_id had the identical defect and every enqueue RPC omits it.
+  insert into jobs (playlist_id, owner_id, video_id, job_kind, job_version, payload)
+    select v_pl, pl.owner_id, 'ingestNew', 'summary', 'v1', '{}'::jsonb
+      from playlists pl where pl.id = v_pl;
+  if (select workspace_id from jobs where video_id='ingestNew' limit 1) <> v_ws then
+    raise exception 'ASSERTION FAILED — jobs.workspace_id was not derived'; end if;
+  raise notice 'ok (B3 sibling): an UNCHANGED enqueue derives jobs.workspace_id';
+
+  -- A caller with the RIGHT opinion is not punished for having one.
+  insert into videos (playlist_id, owner_id, video_id, position, data, workspace_id)
+    select v_pl, pl.owner_id, 'ingestAgree', 9992, jsonb_build_object('id','ingestAgree'), v_ws
+      from playlists pl where pl.id = v_pl;
+  raise notice 'ok (B3): a caller supplying the CORRECT workspace passes unremarked';
+end $$;
+
+-- THE WHOLE CHAIN, not just its bottom two links. `01` seeds workspaces from profiles and backfills
+-- playlists/videos/jobs — four one-shot statements, none of which produces the NEXT row. Fixing only
+-- `videos` and `jobs` would have left a new user unable to create a playlist, so the repaired video
+-- path would have been unreachable and this suite would still have passed.
+do $$
+declare v_prof uuid := gen_random_uuid(); v_pl uuid; v_ws uuid;
+begin
+  -- `profiles.id` FKs to auth.users, so the identity has to exist before the profile does. Creating
+  -- it here rather than reusing a seeded profile is the point: a SEEDED profile already has a
+  -- workspace from 01's one-shot insert, so the assertion would pass with the trigger deleted.
+  insert into auth.users (id) values (v_prof);
+  -- `do nothing` because signup already creates the profile via its own trigger on auth.users —
+  -- measured here as [23505] profiles_pkey. That is the REAL path a new user takes, so this
+  -- assertion exercises it rather than a synthetic one.
+  insert into profiles (id) values (v_prof) on conflict (id) do nothing;
+  select id into v_ws from workspaces where owner_id = v_prof;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — a NEW profile got no workspace; the chain starts broken'; end if;
+  raise notice 'ok (B3 chain): a new profile gets a workspace';
+
+  insert into playlists (owner_id, playlist_key, playlist_url)
+  values (v_prof, 'k-assert-chain', 'https://example/chain') returning id into v_pl;
+  if (select workspace_id from playlists where id = v_pl) <> v_ws then
+    raise exception 'ASSERTION FAILED — a NEW playlist did not derive its workspace'; end if;
+  raise notice 'ok (B3 chain): a new playlist derives its workspace from its owner';
+end $$;
+
+-- ⟳ ROUND 9 — CORRECTIONS SURVIVE THE SAME VIDEO ARRIVING IN A SECOND PLAYLIST.
+-- Round 6's INSERT-half sync was unconditional, and it was harmless only because B3 made INSERTs
+-- impossible. MEASURED the moment ingest worked: 'KEEP ME' -> <null>. `corrections` describes the
+-- SHARED BODY while `videos` is per-playlist, so a second playlist's row carrying none is not
+-- evidence that anyone removed them.
+do $$
+declare v_own uuid; v_p1 uuid; v_p2 uuid;
+begin
+  select owner_id into v_own from playlists limit 1;
+  insert into playlists (owner_id, playlist_key, playlist_url)
+    values (v_own, 'k-assert-c1', 'https://example/c1') returning id into v_p1;
+  insert into playlists (owner_id, playlist_key, playlist_url)
+    values (v_own, 'k-assert-c2', 'https://example/c2') returning id into v_p2;
+  insert into videos (playlist_id, owner_id, video_id, position, data)
+    values (v_p1, v_own, 'sharedCorr', 8001,
+            jsonb_build_object('id','sharedCorr','corrections','KEEP ME'));
+  insert into videos (playlist_id, owner_id, video_id, position, data)
+    values (v_p2, v_own, 'sharedCorr', 8002, jsonb_build_object('id','sharedCorr'));
+  if (select corrections from workspace_videos where video_id='sharedCorr')
+       is distinct from 'KEEP ME' then
+    raise exception 'ASSERTION FAILED — the second playlist CLOBBERED the shared corrections'; end if;
+  raise notice 'ok (round 9): a corrected video survives being added to a second playlist';
+end $$;
+
+-- And a caller with the WRONG opinion is TOLD, not silently corrected. This is the whole reason the
+-- explicit-writer option was not simply discarded: a caller confused about tenancy is a real bug, and
+-- silently repairing it would be shape #5 on the tenancy boundary.
+select assert_raises($$
+  insert into videos (playlist_id, owner_id, video_id, position, data, workspace_id)
+    select p.id, p.owner_id, 'ingestWrong', 9993, jsonb_build_object('id','ingestWrong'),
+           (select id from workspaces where id <> p.workspace_id order by id desc limit 1)
+      from playlists p limit 1;
+$$, 'a workspace_id disagreeing with the playlist is refused, not repaired', 'P0001');
+
 -- ── ⟳ THE POPULATION-COVERAGE RATCHET ITSELF ───────────────────────────────────────────────────
 -- Every value of `artifact_kind` must have been written a SECOND time to the same slot somewhere in
 -- this suite. Not "exercised" — written twice, because the first write of anything is the easy case
@@ -1435,7 +1732,8 @@ declare k text; missing text[] := '{}'; n int;
 begin
   foreach k in array enum_range(null::artifact_kind)::text[] loop
     select count(*) into n from (
-      select 1 from t_writes w where w.kind = k group by w.kind, w.paid, w.slot having count(*) > 1
+      select 1 from t_writes w where w.kind = k and w.op = 'INSERT'
+       group by w.kind, w.paid, w.slot having count(*) > 1
     ) s;
     if n = 0 then missing := missing || k; end if;
   end loop;

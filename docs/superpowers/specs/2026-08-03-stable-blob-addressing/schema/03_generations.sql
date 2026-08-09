@@ -96,6 +96,124 @@ insert into workspace_videos (workspace_id, video_id, corrections, corrections_h
 alter table videos add constraint videos_workspace_video_fk
   foreign key (workspace_id, video_id) references workspace_videos (workspace_id, video_id);
 
+-- ⟳ ROUND 8 B3 — THE MIGRATION HAD NO PRODUCER FOR EITHER VALUE IT MADE MANDATORY, so after it ran,
+-- NOTHING COULD INGEST A NEW VIDEO. MEASURED, running `claim_video_slot`'s INSERT verbatim (0023:87):
+--
+--   [23502] null value in column "workspace_id" of relation "videos" violates not-null constraint
+--   [23503] ... and supplying it -> violates foreign key constraint "videos_workspace_video_fk"
+--
+-- Two independent breakages, one behind the other. The seed above populates `workspace_videos` for
+-- every video that existed at migration time and nothing populates it ever again; `videos.workspace_id`
+-- is NOT NULL with no default while every live writer's column list omits it (0023:87, 0009:94,
+-- 0007:35). §5.0.1 calls workspace_videos "the entity the manifest keys on" and never says who
+-- inserts a row into it.
+--
+-- ⚠ WHY A TRIGGER RATHER THAN MAKING EVERY WRITER SUPPLY IT (user decision, 2026-08-08). The
+-- explicit option is tempting — NOT NULL fails loudly, so a forgetful writer breaks in dev, not in
+-- production. It was rejected because **`videos.workspace_id` is a pure function of `playlist_id`**:
+-- `videos.playlist_id` is NOT NULL and `playlists.workspace_id` is NOT NULL (01), so the value is
+-- always derivable and never ambiguous. A caller supplying it cannot add information — it can only
+-- agree, or DISAGREE. That is not explicitness, it is a DRIFT CHANNEL, and it is the third
+-- denormalized copy this project would be maintaining by hand after being bitten by the other two
+-- (this file's own corrections_hash, and the serial-coherence slice, PR #42).
+--
+-- ⚠ AND A DISAGREEMENT RAISES rather than being silently corrected. This is what the explicit option
+-- was actually worth: a caller with a WRONG opinion about tenancy is a real bug and must be loud.
+-- Silently overwriting it would be shape #5 (silent repair on a path where the caller was wrong) on
+-- the tenancy boundary. A caller supplying the RIGHT value passes unremarked.
+--
+-- ⚠ APPLIED TO `jobs` IN THE SAME BREATH. `jobs.workspace_id` (01:46-48) is the identical defect —
+-- NOT NULL, no default, and every enqueue RPC's column list omits it (0008:54, 0009:26, 0011:83,
+-- 0018:32). Fixing only `videos` would be shape #10 (a fix applied at one site with an identical
+-- sibling nearby) for the EIGHTH time, self-inflicted, in the round that recorded the seventh.
+-- ⚠ AND IT IS A CHAIN, FOUR LEVELS DEEP — found by the probe for the two sites above failing on the
+-- THIRD. `01` seeds `workspaces` from `profiles`, then backfills `playlists`, `videos` and `jobs`,
+-- and EVERY ONE of those is a one-shot statement with no producer for the next row:
+--
+--   profiles -> workspaces   seeded once from profiles; a NEW user gets no workspace
+--   workspaces -> playlists  backfilled once; a NEW playlist cannot derive one  [23502]
+--   playlists -> videos      backfilled once; measured above                    [23502]/[23503]
+--   playlists -> jobs        backfilled once; every enqueue RPC omits it
+--
+-- Fixing `videos` and `jobs` alone would have been shape #10 committed INSIDE the fix for shape #10:
+-- a new user could not create a playlist, so the repaired video path was unreachable anyway. Each
+-- level derives from the one above, so each gets the same treatment rather than a special case.
+create function ensure_workspace_for_profile() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+begin
+  -- The SAME rule as 01's seed (`select id, id from profiles`), in the one place that runs for rows
+  -- the seed could not see. When the "one workspace per user" rule expires, both change together —
+  -- the seed is dead code by then and this is the only live writer.
+  insert into public.workspaces (id, owner_id) values (new.id, new.id)
+  on conflict (owner_id) do nothing;
+  return new;
+end $$;
+revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+create trigger profiles_ensure_workspace_trg
+  after insert on profiles
+  for each row execute function ensure_workspace_for_profile();
+
+create function resolve_workspace_from_playlist() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+declare v_ws uuid;
+begin
+  if tg_table_name = 'playlists' then
+    -- One level up: a playlist derives its workspace from its OWNER, exactly as 01's backfill did.
+    select w.id into v_ws from public.workspaces w where w.owner_id = new.owner_id;
+    if v_ws is null then
+      raise exception 'playlists: owner % has no workspace — cannot derive workspace_id',
+        new.owner_id;
+    end if;
+  else
+    select p.workspace_id into v_ws from public.playlists p where p.id = new.playlist_id;
+    if v_ws is null then
+      raise exception '%: playlist % has no workspace — cannot derive workspace_id',
+        tg_table_name, new.playlist_id;
+    end if;
+  end if;
+  if new.workspace_id is not null and new.workspace_id <> v_ws then
+    raise exception '%: workspace_id % disagrees with playlist %, which belongs to workspace %',
+      tg_table_name, new.workspace_id, new.playlist_id, v_ws;
+  end if;
+  new.workspace_id := v_ws;
+  -- The manifest parent, created for the rows the seed could not know about. `do nothing`, because
+  -- a video in two playlists is two `videos` rows and ONE shared body (round 2 B3) — the second
+  -- insert must not clobber the first's corrections.
+  if tg_table_name = 'videos' then
+    insert into public.workspace_videos (workspace_id, video_id, corrections, corrections_hash)
+    values (v_ws, new.video_id, nullif(new.data->>'corrections', ''),
+            public.corrections_hash_of(new.data->>'corrections'))
+    on conflict (workspace_id, video_id) do nothing;
+  end if;
+  return new;
+end $$;
+revoke all on function resolve_workspace_from_playlist() from public, anon, authenticated;
+
+-- BEFORE, not AFTER: it must set NEW.workspace_id before NOT NULL is checked, and create the parent
+-- before the FK is. Split INSERT/UPDATE for the same physical reason documented below — a WHEN clause
+-- may reference only OLD/NEW, so `tg_op` cannot appear in one.
+-- The UPDATE half is scoped to the two columns that can invalidate the derivation, so ordinary video
+-- writes (every summarize, every annotation) cost nothing. `playlist_id` covers relocation;
+-- `workspace_id` covers anyone writing the copy directly, which is the drift this exists to prevent.
+create trigger playlists_resolve_workspace_ins_trg
+  before insert on playlists
+  for each row execute function resolve_workspace_from_playlist();
+create trigger playlists_resolve_workspace_upd_trg
+  before update of owner_id, workspace_id on playlists
+  for each row execute function resolve_workspace_from_playlist();
+create trigger videos_resolve_workspace_ins_trg
+  before insert on videos
+  for each row execute function resolve_workspace_from_playlist();
+create trigger videos_resolve_workspace_upd_trg
+  before update of playlist_id, workspace_id on videos
+  for each row execute function resolve_workspace_from_playlist();
+create trigger jobs_resolve_workspace_ins_trg
+  before insert on jobs
+  for each row execute function resolve_workspace_from_playlist();
+create trigger jobs_resolve_workspace_upd_trg
+  before update of playlist_id, workspace_id on jobs
+  for each row execute function resolve_workspace_from_playlist();
+
 -- ⟳ ROUND 6 B4, THE HALF THE FINDING DID NOT ASK FOR — DRIFT IS PREVENTED, NOT REPAIRED.
 -- `workspace_videos.corrections_hash` is a DENORMALIZED COPY; the truth lives in `videos.data`.
 -- Backfilling it fixes the 2903 rows that are wrong TODAY and says nothing about the next write.
@@ -120,9 +238,23 @@ revoke all on function sync_corrections_to_workspace_video() from public, anon, 
 -- exist` — a WHEN clause may reference only OLD/NEW, and OLD does not exist for INSERT at all, so the
 -- combined form cannot be written. The UPDATE half keeps its guard so ordinary video writes (every
 -- summarize, every annotation) cost nothing.
+-- ⟳ ROUND 9 — THE INSERT HALF IS GUARDED TOO, and this was a live defect the moment B3 was fixed.
+-- MEASURED: video with corrections 'KEEP ME' in playlist A, then the SAME video added to playlist B
+-- with a row carrying none -> `after playlist B insert: corrections = <null>  -> CLOBBERED`.
+-- `corrections` describes the SHARED BODY (round 2 B3) while `videos` is per-playlist, so the second
+-- playlist's row is not evidence that the corrections were removed — it is a row that never had them.
+--
+-- Latent until now ONLY because ingest was impossible (B3): no INSERT could reach this trigger at
+-- all. Fixing ingest made a dormant defect live, which is shape #9 — and it was found by probing the
+-- fix's own blast radius rather than by a reviewer.
+--
+-- The rule is the seed's, restated: the seed picks `(has corrections) desc` precisely so "a corrected
+-- row never loses to an uncorrected duplicate". The trigger now obeys the same bias.
 create trigger videos_corrections_sync_ins_trg
   after insert on videos
-  for each row execute function sync_corrections_to_workspace_video();
+  for each row
+  when (coalesce(new.data->>'corrections','') <> '')
+  execute function sync_corrections_to_workspace_video();
 create trigger videos_corrections_sync_upd_trg
   after update of data on videos
   for each row
@@ -170,6 +302,29 @@ create table video_generations (
   -- reserved its own generation, so it can still complete it and record. Fencing on the artifact row
   -- instead would have broken exactly that case.
   reserved_by       uuid,
+  -- ⟳ ROUND 9 (round 8 B2 + H1) — THE DURABLE HALF OF THE CREDENTIAL, and it exists because round 8
+  -- measured the token-based fence failing in BOTH directions at once:
+  --
+  --   TOO PERMISSIVE — a caller supplying `p_token = NULL`, and equally a caller supplying a random
+  --     valid non-NULL token, completed another worker's in-flight generation with its own content
+  --     (`md_hash=SHA_ATTACKER`, then `SHA_FOREIGN`). The fallback disjunct "the slot's pending row
+  --     names this generation" is satisfied by anyone who can NAME the slot and the generation.
+  --   TOO STRICT — the worker that legitimately needed that fallback, having lost its token to a
+  --     crash AND its slot to the reclaim the lapsed lease invited, was REFUSED
+  --     ([P0001] generation gW1 is pending) and its paid Gemini output destroyed. A control call
+  --     with the token succeeded, isolating the fence as the cause.
+  --
+  -- A fence that is simultaneously too permissive and too strict is not mis-tuned; it is asking for
+  -- the WRONG CREDENTIAL. Of the three things that identify a worker mid-job, only two survive a
+  -- restart: `worker_id` is stable config, `job_id` is recoverable by querying jobs for
+  -- `locked_by = me and status = 'active'` — and `lease_token` is a random uuid handed out once and
+  -- held only in memory. Round 7 fenced on the one thing that cannot survive, so the fallback HAD to
+  -- be weak enough to let a stranger through.
+  --
+  -- Recorded here rather than only on the artifact because the artifact row is what a reclaim
+  -- re-points; the generation is what the writer paid for.
+  reserved_by_worker text,
+  reserved_by_job    uuid,
   card              jsonb,
   doc_version_major int,             -- rule 13's format rung. Round 4 J3-2: ranked on, never defined.
   -- NULLABLE while pending — nothing has been produced yet, and a `not null` here is what forced a
@@ -286,7 +441,18 @@ create table video_generations (
 create function video_generations_freeze() returns trigger
   language plpgsql security definer set search_path = '' as $$
 begin
-  if new.produced_at is not null and new.produced_at > now() then
+  -- ⟳ ROUND 9 H4 — WITH A SKEW TOLERANCE, because the bound was zero-width against a TRANSACTION
+  -- timestamp. `now()` is `transaction_timestamp()`, so any value stamped after the transaction
+  -- opened is already "the future": MEASURED 0.63s into a transaction, `clock_timestamp()` was
+  -- rejected. The realistic trigger is not a long transaction but APP-VS-DATABASE CLOCK SKEW — the
+  -- worker runs on Fly, Postgres on Supabase, and `produced_at` is stamped in application code, so a
+  -- few hundred milliseconds of NTP drift turned a successful summarize into a raw exception AFTER
+  -- the paid Gemini call. Shape #8 on the money path, failing closed in the wrong direction.
+  --
+  -- Five minutes preserves round 7 B2's intent completely: that finding was a value YEARS in the
+  -- future winning the ranking permanently. A tolerance wide enough for clock drift is nowhere near
+  -- wide enough to matter to a ranking ordered by production time.
+  if new.produced_at is not null and new.produced_at > now() + interval '5 minutes' then
     raise exception 'video_generations: produced_at % is in the FUTURE — a clock value may not enter the ranking',
       new.produced_at;
   end if;
