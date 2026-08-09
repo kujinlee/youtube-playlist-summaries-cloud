@@ -50,7 +50,7 @@ TABLES = ("video_artifacts", "video_generations", "workspace_videos",
 MEANINGS: dict[tuple[str, str], str] = {
     # ── video_artifacts ─────────────────────────────────────────────────────────
     ("video_artifacts", "generation_id"):
-        "CONFLATED — see CONJUNCTION_OK; ADR-0007 removes this",
+        "CONFLATED — see CONJUNCTION_OK; the render-addressing slice removes this",
     ("video_artifacts", "source_generation_id"):
         "this artifact was not derived from another generation",
     ("video_artifacts", "start_sec"):        "this artifact does not describe a time span",
