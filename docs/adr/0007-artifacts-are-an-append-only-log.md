@@ -1,31 +1,30 @@
 ---
-status: proposed — supersedes the reservation protocol of ADR-0006's spec (handoff item 4)
-revised: 2026-08-09, round 13 (first DESIGN review of this spec). 2 Blocking, 4 High, 6 Medium, 1 Low
-  — all answered here. The decision to delete the reservation SURVIVED review; its justification did
-  not, and that is what changed. See docs/reviews/spec-blob-addressing-r13-coordinator.md
+status: proposed — supersedes the reservation protocol of ADR-0006's spec (handoff item 4).
+  DEPENDS ON ADR-0006 BEING ACCEPTED; ADR-0006 is itself `proposed`, so the two stand or fall together
+revised: 2026-08-09. Round 13 (first DESIGN review) — 2B/4H/6M/1L, all answered. Round 14 (review of
+  round 13's own fixes) — 4B/4H/5M/1L; the non-render findings are answered here, and RENDER ADDRESSING
+  IS UNRESOLVED AND CARVED OUT (see "Renders" below). The decision to delete the reservation has now
+  survived TWO design reviews. See docs/reviews/spec-blob-addressing-r1{3,4}-coordinator.md
 ---
 
 # Artifacts are an append-only log; nothing coordinates writers, because writers do not contend
 
 `video_artifacts` records what was produced. It has **no lease, no token, and no attempt counter**.
-Every artifact has an immutable derived address: paid kinds under a generation id chosen before the
-content, renders under `sha256(rendered bytes)`. Producer exclusivity comes from the job queue's
-existing lease/heartbeat; "which artifact is current" from the ranking view that already exists.
+Paid artifacts are addressed under a generation id chosen before the content. Producer coordination
+comes from the job queue's existing lease/heartbeat; "which artifact is current" from the ranking view
+that already exists.
 
-**Two qualifications, both forced by round 13 and both stated up front rather than buried:**
+**Three qualifications, stated up front rather than buried:**
 
 1. **The `model` kind is a paid producer with no job**, arbitrated by `serve_model_charge` instead.
    The one-mechanism-per-concern rule has this standing exception, and deleting
-   `video_artifacts_inflight_uq` requires re-keying `doc_key` in the same slice.
+   `video_artifacts_inflight_uq` requires re-keying `doc_key` in the same slice. *(Round 13 B1.)*
 2. **The free/paid distinction does not vanish** — it moves out of the write path into how an id is
-   minted (UUID-before-content for paid, content hash for free). Smaller and more honest, but not
+   minted (UUID-before-content for paid, content-derived for free). Smaller and more honest, but not
    zero.
-
-We decided this because the reservation protocol built alongside ADR-0006 produced a Blocking or High
-in **six consecutive adversarial rounds**, and four of those defects were introduced by the previous
-round's own fix. Every other component of that spec converged and stayed converged. The problem was
-not any of the twelve defects; it was that the mechanism re-solved a problem ADR-0006 had already
-dissolved.
+3. ⚠ **Render addressing is NOT settled by this ADR.** Two successive designs failed design review in
+   two consecutive rounds, which is this project's own escalation criterion. The render half is carved
+   out pending its own design pass; **everything else here stands on its own.** *(Round 14 B4/H1.)*
 
 We decided this because the reservation protocol built alongside ADR-0006 produced a Blocking or High
 in **six consecutive adversarial rounds**, and four of those defects were introduced by the previous
@@ -79,8 +78,8 @@ serves exactly one concern. **`model` is a standing exception — see the next s
 
 | Concern | Mechanism | Evidence |
 |---|---|---|
-| producer **enqueue** dedup | `jobs_idem_active` — one non-terminal job per (owner, playlist, video, section, kind, version) | `[VERIFIED: 0009_job_playlist_identity_and_worker_persistence.sql:11-13]` |
-| producer **execution** exclusivity | lease + heartbeat → `leaseLost.abort()`, re-checked immediately before the irreversible write | `[VERIFIED: lib/job-queue/worker-runner.ts:48-51, :30-32]` + `[VERIFIED: lib/job-queue/summary-handler.ts:170]` |
+| producer **enqueue** dedup | `jobs_idem_active` — one job per (owner, playlist, video, section, kind, version) whose status is `queued`/`active`/**`completed`** (the predicate includes the terminal `completed`, so a finished job still blocks a re-enqueue) | `[VERIFIED: 0009_job_playlist_identity_and_worker_persistence.sql:11-13]` |
+| producer **execution**: stale-writer window **bounded, not excluded** | lease + heartbeat → `leaseLost.abort()`, re-checked immediately before the irreversible write. Stale writes are tolerated because they are **idempotent** — merge-safety, not mutual exclusion. Full lease-fencing of `persist_summary` is **deferred** | `[VERIFIED: lib/job-queue/worker-runner.ts:48-51, :30-32]` + `[VERIFIED: lib/job-queue/summary-handler.ts:166-170]` |
 | pay-at-most-once **accounting** | `jobs.ever_metered` + `reserved_cents`, durable across retries — prevents an under-count on release, **not** a second real charge | `[VERIFIED: 0020_reservation_release.sql:25-32]` |
 | at-most-once **spend** | heartbeat-abort (above) + per-kind attempt bounds in `guardrail_config`. **Bounded, not zero** — a reclaim after the Gemini call has already billed is a known residual | `[VERIFIED: lib/job-queue/summary-handler.ts:166-169]` |
 | execution liveness | job lease + heartbeat + `sweep_expired_leases` | `[VERIFIED: 0009_…:63-78]` |
@@ -95,22 +94,7 @@ have provided execution exclusivity. And `ever_metered`/`reserved_cents` govern 
 *spend* — the code says so in its own words at `summary-handler.ts:166-169`. Both rows previously
 claimed a guarantee their mechanism does not make.
 
-## What already serves each concern
-
-This table is the check that was never run. Every concern has exactly one mechanism, and every
-mechanism serves exactly one concern.
-
-| Concern | Mechanism | Evidence |
-|---|---|---|
-| producer exclusivity | `jobs_idem_active` — one non-terminal job per (owner, playlist, video, section, kind, version) | `[VERIFIED: unique partial index on jobs]` |
-| producer idempotency | the same index | as above |
-| pay at most once | `jobs.ever_metered` + `reserved_cents`, durable across retries | `[VERIFIED: 0020_reservation_release.sql:25-32]` |
-| execution liveness | job lease + heartbeat + `sweep_expired_leases` | `[VERIFIED: 0008_jobs_queue.sql:96-130]` |
-| stable addressing | generation id → blob key | ADR-0006 |
-| which artifact is current | `video_artifacts_current` ranking | `schema/04_artifacts.sql` |
-| what may be deleted | `video_generations_collectable` + `body_collected` | round 8 |
-
-The reservation protocol re-implemented rows 1–4 in a second vocabulary — `lease_token`,
+The reservation protocol re-implemented the first four concerns in a second vocabulary — `lease_token`,
 `lease_expires_at`, `lease_attempts`, `reserved_by` against `jobs`' `lease_token`,
 `lease_expires_at`, `attempts`, `locked_by` — and **every defect of rounds 7–12 lived in the seam
 between the two**.
@@ -130,9 +114,17 @@ Gemini call — reached from `[VERIFIED: lib/html-doc/serve-summary-core.ts:105]
 `summary`, `dig`, `digDeeper`.
 
 Its arbiter is a **third coordination vocabulary** — `serve_model_charge`, keyed
-`(owner_id, doc_key, day)` with a lease and an `attempt_count` bounded by `max_serve_attempts`
-`[VERIFIED: 0012_serve_model_charge.sql:7-13]`. It has a 180 s TTL and **no renewal RPC**
-`[VERIFIED: 0012_serve_model_charge.sql:24]`.
+`(owner_id, doc_key, day)` `[VERIFIED: 0012_serve_model_charge.sql:7-13]` with a lease and an
+`attempt_count` bounded by `max_serve_attempts` (default **5**)
+`[VERIFIED: 0012_serve_model_charge.sql:21]`, enforced at `[VERIFIED: 0012:65]` and `[VERIFIED: 0012:80]`.
+It has a 180 s TTL `[VERIFIED: 0012_serve_model_charge.sql:22]` and **no renewal RPC**
+`[VERIFIED: 0012_serve_model_charge.sql:3]`.
+
+⟳ *Round 14 M5: the three tags in this paragraph were previously one tag pointing at `0012:24`, which
+is a comment header — the TTL is at `:22`, the attempt bound at `:21`/`:65`/`:80`, and "no release
+RPC" at `:3`. A citation audit of all 57 `[VERIFIED:]` tags in this document found 1 wrong, 1
+partial-wrong, 3 off-by-N, and 1 claim-vs-code mismatch; all are corrected. In a document whose entire
+method is these tags, a tag that resolves to the wrong line is the failure mode, not a typo.*
 
 ### The coupling that makes the deletion safe, and without which it is a money regression
 
@@ -153,11 +145,34 @@ where it has sat unimplemented.
 > — `0012:53`, `0014:47`, `0020:213` — plus a data migration and
 > `tests/integration/serve-doc-materialize.test.ts:78`, which hardcodes the formula.
 
-**Data migration — `attempt_count` merges by SUM, not MAX.** Collapsing N playlist-scoped rows into
-one workspace-scoped row per day must preserve attempts that were really paid for. The governing rule
-is the serve path's own: *"over-count is safe, under-count is the bug"*
-`[VERIFIED: lib/html-doc/serve-doc.ts:105-109]`. `max` would license spend that already happened.
-Rows are per-day, so any over-tightening clears the next day.
+**Data migration — `attempt_count` merges by `least(sum(attempt_count), max_serve_attempts - 1)`.**
+
+⟳ **Round 14 H3 — this was plain `SUM`, and the justification was wrong.** Both reviewers found it.
+The rule quoted to license SUM — *"over-count is safe, under-count is the bug"*
+`[VERIFIED: lib/html-doc/serve-doc.ts:105-109]` — is scoped to **refunding a single attempt whose
+metering status is uncertain** ("when in doubt, do not refund"). It says nothing about merging
+independent counters, where over-counting costs no money and instead **denies service**:
+
+- `attempt_count` is a **retry/lease bound, not a spend ledger.** Spend is accounted separately, in
+  `serve_owner_budget` and `spend_ledger`, both incremented by `magazine_est_cents`
+  `[VERIFIED: 0020_reservation_release.sql:237-247]`. So SUM buys no money protection at all.
+- `max_serve_attempts` defaults to **5** `[VERIFIED: 0012_serve_model_charge.sql:21]`. A video in
+  three playlists at two attempts each SUMs to 6 > 5.
+- The result is `attempts_exhausted` → **HTTP 503** `[VERIFIED: lib/html-doc/serve-summary-core.ts:121]`
+  — and this is **the one serve outcome with no stale fallback.** D5's title-stable stale serve is
+  reachable only from `owner_over_budget` `[VERIFIED: lib/html-doc/serve-doc.ts:90-95]`. The `model`
+  exception above cites that D5 fallback as a reason the serve path deserves its exception; SUM then
+  routed users into the sibling branch that lacks it.
+
+The clamp keeps the no-under-count intent while guaranteeing at least one attempt survives the
+migration. **Bound, stated honestly:** a fresh model short-circuits before the reserve
+`[VERIFIED: lib/html-doc/serve-doc.ts:56-57]`, so only documents whose model is absent/drifted/
+stale-version are affected at all, and rows are per-day, so anything missed clears at UTC midnight.
+
+**Recorded because it is the pattern, not the instance:** round 13's B1 found this ADR proving a true
+lemma about *writes* and reading it as a conclusion about *money*. This paragraph took a true rule
+about *spend* and read it as a conclusion about *availability* — the same substitution, made in the
+fix for the first one. A citation that **resolves** is not a citation that **supports**.
 
 ### Why `model` is not routed through `jobs` (decided 2026-08-09, user)
 
@@ -250,8 +265,65 @@ property). That conflation is the same root cause as nullable `corrections_hash`
 `<gen>/` key.** The first draft proposed `hash(source_generation_ids, GENERATOR_VERSION)`. Round 13
 measured that this breaks two things, so it is replaced:
 
-> **A render's identity is `sha256(rendered bytes)`, carried in a `render_id` column, and the key keeps
-> its existing `<ws>/videos/<vid>/renders/…` prefix.**
+> ⛔ **WITHDRAWN by round 14 (B4/H1). Do not implement.** ~~A render's identity is
+> `sha256(rendered bytes)`, carried in a `render_id` column, and the key keeps its existing
+> `<ws>/videos/<vid>/renders/…` prefix.~~
+
+### ⛔ Render addressing is UNRESOLVED — two designs, two rounds, both refuted
+
+**This section states what is known and what is ruled out. It does not propose a third design**,
+because a third patch is what this project's stop condition exists to prevent: *two consecutive rounds
+whose findings were caused by the previous round's fixes ⇒ escalate from fix to redesign.* Render
+addressing has now met that criterion in its own right.
+
+| Round | Proposal | Refuted because |
+|---|---|---|
+| 13 | `hash(source_generation_ids, GENERATOR_VERSION)` | incomplete enumeration — there are **three** version constants plus a pinned Chromium; and a `<gen>/`-shaped key breaks §8's classifier |
+| 14 | `sha256(rendered bytes)` + unchanged key | the identity **never reaches the address**; and it cannot be a cache probe key |
+
+**Round 14 B4 — the identity never reaches the address.** Nothing binds `render_id` to `blob_key`:
+`art_key_names_generation` is *vacuously true* when `generation_id is null`
+`[VERIFIED: schema/04_artifacts.sql:159-160]`, and `art_key_names_workspace` constrains segments 1–3
+only `[VERIFIED: schema/04_artifacts.sql:154-157]`. So uniqueness on `(ws, video, slot, render_id)`
+permits **N rows on one key**, and renders are written with `put` — an overwrite. Today
+`video_artifacts_free_uq` at least keeps row↔blob **1:1**, so "overwritable" is coherent; the proposal
+gives N rows, one key, and N−1 rows pointing at bytes that no longer exist. **For an append-only log
+that is strictly worse than the status quo it replaced.**
+
+The precise error, worth keeping because it is subtle: a render was not *addressed by*
+`sha256(rendered bytes)` — it was *identified* by it in a column while remaining *addressed* by an
+unchanged key. **The sentence silently swapped address for identity.**
+
+**Round 14 H1 — an output hash cannot be a cache probe key.** `app/api/pdf/[id]/route.ts:54` computes
+the key from the HTML and `:60` probes the blob store **before** rendering. An identity that cannot be
+computed until the bytes exist cannot be the cache key of a path whose entire purpose is to avoid
+producing the bytes. Any workable scheme therefore needs **two** keys — an input-derived probe key and
+an output-derived identity — and must say which is `blob_key` and which is `render_id`.
+
+**What is RULED OUT (do not re-propose):**
+
+- an identity assembled by enumerating version constants (round 13);
+- an identity that lives only in a column while the key is unchanged (round 14);
+- a `<gen>/`-shaped render key, which breaks §8's *"paid-ness from the KEY ALONE"* rule
+  `[VERIFIED: …-design.md:2096-2100]`.
+
+**What is ESTABLISHED and survives:**
+
+- the paid/free **partition** is total and sound — `artifact_kind` is exactly the five kinds
+  `[VERIFIED: schema/03_generations.sql:264]` and `art_paid_has_generation` puts exactly four in the
+  paid set `[VERIFIED: schema/04_artifacts.sql:94-95]`, so *"exactly one of `generation_id` /
+  `render_id` is non-null"* holds for every kind including `model` and `digDeeper`. It is the address,
+  not the partition, that failed;
+- §8's key-alone rule is a real constraint any design must satisfy;
+- the `renders/` prefix exists **in the spec only** — `grep -rn "renders/" --include=*.ts` returns
+  zero hits; production keys are `pdfs/{base}.r{V}.{hash}.pdf`
+  `[VERIFIED: lib/pdf/pdf-render-version.ts:22]` and `models/{base}.json`
+  `[VERIFIED: lib/html-doc/model-store.ts:31]`. Round 13 called the prefix *"existing"*, which was
+  true of the spec and not of the code the sentence appeared to describe.
+
+⚠ **Consequence for scope:** the reservation deletion does **not** depend on this being settled. The
+`generation_id IS NULL` conflation is the only thing binding them, and that conflation is a reason to
+fix render addressing — not a reason to fix it *here*.
 
 **Why not a generation-shaped key (B2 — MEASURED).** §8 derives a money-safety rule for itself:
 *"the paid/free split must be derivable from the KEY ALONE… any future key that does not announce its
@@ -284,7 +356,19 @@ address for different bytes** — in an append-only log, a silent overwrite or a
 An identity built by enumerating version constants is only as complete as the enumeration, and this
 codebase has three constants and a Chromium pin to forget.
 
-**Content addressing is complete by construction, and production already does it.**
+⛔ **WITHDRAWN by round 14 H1 — this warrant is refuted by its own citation.** Kept, struck through,
+because it is the clearest instance in this document of a citation that *resolves* without
+*supporting*, and deleting it would delete the evidence.
+
+`lib/pdf/pdf-render-version.ts:21` hashes `htmlNonceFree` — the renderer's **input**, not its output —
+and `.r${PDF_RENDER_VERSION}` is a **separate literal segment in the same key**, present precisely
+because the hash does not subsume it. The same file's docblock `[VERIFIED: lib/pdf/pdf-render-version.ts:5-9]`
+says a missed bump cannot be detected and must be a review-time checklist item. So production is
+**input-addressing plus a hand-maintained version constant** — verbatim the enumeration approach this
+ADR rejects two paragraphs earlier. **The codebase's clearest instance of the failure mode was cited
+as proof of the cure.**
+
+~~**Content addressing is complete by construction, and production already does it.**~~
 `[VERIFIED: lib/pdf/pdf-render-version.ts:22]` keys PDFs as
 `pdfs/${base}.r${PDF_RENDER_VERSION}.${sha256(html)[:16]}.pdf`, called on the nonce-free rendered HTML
 `[VERIFIED: app/api/pdf/[id]/route.ts:54]`. It subsumes every version constant, present and future,
@@ -307,21 +391,31 @@ ADR should not claim renders lost their special case entirely. **Put the branch 
 function** beside `slot_kind` `[VERIFIED: schema/04_artifacts.sql:20]` rather than in caller
 convention, or it becomes exactly the unwritten caller rule §12b was retired for being.
 
-### Does the founding conflation still dissolve? Yes — by a different route, and it must be checked
+### Does the founding conflation dissolve? NOT YET — and this is the honest state (round 14)
 
 This ADR exists because `generation_id IS NULL` carries **two** meanings: *"this is free"* (money) and
 *"this address may be overwritten"* (addressing). The first draft dissolved it by giving renders a
-generation id. Renders now get a `render_id` instead, so the question has to be re-answered rather
-than inherited — and `scripts/check-sentinel-meanings.py` will ask it, since its current entry for
-`art_paid_has_generation` says *"delete this entry when renders get a derived generation id"*, which
-is no longer the plan.
+generation id (refuted, round 13 B2). Round 13 claimed it dissolved via `render_id` instead.
 
-**It dissolves, because the second meaning is what actually goes away.** A render addressed by
-`sha256(rendered bytes)` is immutable: re-rendering identical bytes lands on the same address (nothing
-to overwrite) and any byte change lands on a new one (a new row). So renders stop being overwritable
-whether or not they carry a generation id. `generation_id IS NULL` is then left meaning exactly one
-thing — *"this kind is free"* — which is a **money** property with a single owner, and that is the
-condition the sentinel gate enforces.
+**Round 14 B4 refuted that too, and the reason is exactly the conflation's second half.** The argument
+was: *"a render addressed by `sha256(rendered bytes)` is immutable, so renders stop being
+overwritable."* But renders were never *addressed by* it — the key was unchanged, so renders **remain
+overwritable**. The second meaning does not go away, and therefore the conflation does not dissolve.
+
+**What this means, stated plainly rather than papered over:** the ADR's founding motivation is
+**unmet** until render addressing is settled. `scripts/check-sentinel-meanings.py`'s entry for
+`art_paid_has_generation` — *"delete this entry when renders get a derived generation id"*
+`[VERIFIED: scripts/check-sentinel-meanings.py:90]` — must **stay** for now, and must not be deleted
+on the strength of either withdrawn plan. Deleting it would be the gate laundering an unfixed defect.
+
+**What is settled**, and survives whatever render addressing turns out to be: the paid/free
+**partition** — *"exactly one of `generation_id` / `render_id` is non-null"* — is total across all
+five kinds (see the Renders section). The partition is sound; the address is not. Those are separable,
+and only the second is open.
+
+⚠ This is the strongest argument for the scope split: **the reservation deletion does not depend on
+the conflation dissolving.** The conflation is a defect in *addressing*; the reservation is a defect
+in *coordination*. Round 13 bundled them because the same `NULL` participates in both.
 
 The mechanical consequences, for the implementing slice:
 
@@ -344,8 +438,15 @@ Plus `video_artifacts_free_uq` and the whole free branch of `record_artifact`.
 ## Consequences
 
 **Deleted:** `reserve_artifact_slot`, `renew_artifact_lease`, the lease columns on `video_artifacts`,
-`reserved_by` on `video_generations`, `video_artifacts_free_uq`, and the `pending` artifact state.
-`record_artifact` becomes an append with a typed outcome and no fence.
+`reserved_by` on `video_generations`, and the `pending` artifact state. `record_artifact` becomes an
+append with a typed outcome and no fence.
+
+**NOT deleted — `video_artifacts_free_uq` stays until render addressing is settled.** ⟳ *Round 14 H3
+(Codex): this list said "deleted" while the render section said "replaced" — a flat contradiction
+inside one document.* It is now **neither**, and that is the honest position: it is the only thing
+keeping renders row↔blob **1:1** `[VERIFIED: schema/04_artifacts.sql:164-165]`, and with render
+addressing withdrawn there is no successor to replace it with. Deleting it now would leave renders
+with no uniqueness at all — strictly worse than today. It goes when the render ADR lands, not before.
 
 **Retired:** §12b's caller obligation. It exists to make a fence safe; with no fence, a worker that
 loses its token simply appends nothing, and the job queue already governs whether it may run at all.
@@ -364,15 +465,35 @@ premise.
   so the predicate goes **vacuously true** and the guard stops guarding without being deleted. This is
   retrospective B6's shape ("a guard that never started") arriving by *subtraction* — and the mutation
   harness will still score it load-bearing against a fixture no caller can produce.
-  **The implementing slice must state the successor explicitly.** The candidate is the existing
-  staged-write order — `putStaged` → `exists` verify → `persistSummary('committed')` → `promote`
-  `[VERIFIED: lib/job-queue/summary-handler.ts:173-179]`, with staged bytes under `_staging/…`
-  permanently exempt from the sweeper `[VERIFIED: …-design.md:874]`. ⚠ If that is the new guarantee it
-  is a **caller obligation**, which is the very class this ADR retires two paragraphs above. Name it,
-  or reinstate §8's grace period with an age predicate on the blob. Note the coupling: §8's grace
-  period was dropped because *"a blob written but not yet published is unreferenced — that state no
-  longer exists"* `[VERIFIED: …-design.md:891-893]`, and that state existed only because rule 19's
-  record-first order put a `pending` row down first. **Delete `pending` and the state returns.**
+  **The successor is PER KIND, and there is no single one.** ⟳ *Round 14 B2 — the first draft named
+  one successor for all kinds, and it does not cover the very kind this ADR carves out as its
+  exception. Two of round 13's own fixes contradicted each other, and neither section mentioned the
+  other.*
+
+  | Kind | In-flight guarantee after `pending` is deleted | Evidence |
+  |---|---|---|
+  | `summary`, `dig` | staged-write order: `putStaged` → `exists` verify → `persistSummary('committed')` → `promote`, with staged bytes under `_staging/…` permanently exempt from the sweeper | `[VERIFIED: lib/job-queue/summary-handler.ts:173-179]` + `[VERIFIED: …-design.md:874]` |
+  | **`model`** | **the live `serve_model_charge` lease** — the sweeper must treat a generation whose slot holds an unexpired lease as non-collectable | `[VERIFIED: 0012_serve_model_charge.sql:7-13]` |
+
+  **Why `model` cannot use the staged route.** `lib/html-doc/model-store.ts:51` writes it with a plain
+  `put`, and the docblock at `:42-43` says the staged→promote protocol *"is NOT used for the model"* —
+  deliberately: a regenerated model must **overwrite** the stale blob or the serve path re-reserves and
+  re-charges every view until K, then 503s `[VERIFIED: lib/html-doc/serve-doc.ts:102-104]`. Left
+  uncovered, a `model` generation is collectable **while its paid Gemini call is in flight** — round
+  9's B1 exactly, whose measured transcript survives at `schema/04_artifacts.sql:888-892`: *"Money
+  spent, bytes queued for deletion, no error anywhere."* `model` is the worst kind to leave uncovered:
+  no job, no staging, no renewal RPC, a 180 s TTL `[VERIFIED: 0012_serve_model_charge.sql:22]`, and a
+  paid call on an HTTP GET.
+
+  ⚠ The staged route **is** a caller obligation — the class this ADR retires two paragraphs above. It
+  is accepted here for `summary`/`dig` because it is already implemented and load-bearing, but it must
+  be named as an obligation rather than assumed. The lease route for `model` is not a caller
+  obligation: the sweeper reads the lease.
+
+  Note the coupling that makes this necessary at all: §8's grace period was dropped because *"a blob
+  written but not yet published is unreferenced — that state no longer exists"*
+  `[VERIFIED: …-design.md:891-893]`, and that state existed only because rule 19's record-first order
+  put a `pending` row down first. **Delete `pending` and the state returns.**
 - **The append-only trigger must be tightened in the same change, not after (M1).** It scopes
   immutability by transition `[VERIFIED: schema/04_artifacts.sql:911-913]`, permitting
   `pending → recorded` and `delete an expired pending`. With `pending` gone both are unreachable — but
@@ -380,10 +501,10 @@ premise.
   immutable is a fail-open branch waiting for someone to reintroduce the state. Delete both branches.
 - **The per-kind attempt ceiling is deleted with no successor, and the numbers disagree (M5).**
   `reserve_artifact_slot` bounds attempts per kind from `guardrail_config`
-  `[VERIFIED: schema/04_artifacts.sql:245-252]`. There is no row above for *"how many times may we pay
+  `[VERIFIED: schema/04_artifacts.sql:257-262]`. There is no row above for *"how many times may we pay
   for this slot"*. The candidates conflict: `jobs.max_attempts` defaults to **5**
   `[VERIFIED: 0008_jobs_queue.sql:14]` while `summary_max_attempts` is **1**, a difference documented
-  as a deliberate product decision `[VERIFIED: schema/04_artifacts.sql:253-260]`. Deleting the
+  as a deliberate product decision `[VERIFIED: schema/04_artifacts.sql:263-270]`. Deleting the
   artifact-layer bound silently promotes summaries from 1 to 5. **The implementing slice must state
   which number wins**; this ADR does not get to leave it implicit.
 
@@ -405,7 +526,7 @@ detail.
   `(a.slot = 'summary' or a.source_generation_id is null or a.source_generation_id is not distinct
   from s.generation_id) desc`. With a set, *"is this render current w.r.t. its sources"* becomes *"are
   **all** its sources current"*, which one column cannot express and one `desc` cannot rank.
-- **The FK** `[VERIFIED: schema/04_artifacts.sql:90-91]` — MATCH SIMPLE, added by round 5's M5
+- **The FK** `[VERIFIED: schema/04_artifacts.sql:91-92]` — MATCH SIMPLE, added by round 5's M5
   precisely so provenance cannot name a generation that does not exist.
 
 **Decision: address and provenance are different questions and get different mechanisms.**
@@ -414,7 +535,31 @@ detail.
    strictly worse — it is an enumeration of inputs, and the section above is the record of this
    codebase getting an enumeration wrong.
 2. **Provenance** = a `video_artifact_sources (artifact_id, source_generation_id)` join table, FK'd to
-   `video_generations` the same way, `on delete restrict`.
+   `video_generations` **`on delete cascade`** — and to `video_artifacts (artifact_id)` on delete
+   cascade as well.
+
+   ⟳ **Round 14 B3 corrected this from `on delete restrict`, which was MEASURED to break account
+   deletion.** A `RESTRICT` child aborts a parent delete *even when that parent delete is itself a
+   cascade step*, and the live chain is
+   `profiles → workspaces → workspace_videos → video_generations`, all `on delete cascade`
+   `[VERIFIED: schema/01_workspaces.sql:13]` `[VERIFIED: schema/03_generations.sql:49]`
+   `[VERIFIED: schema/03_generations.sql:362-363]`. So once **any** render carried a provenance row,
+   `delete from profiles` failed — the account-erasure path, which is a real caller, not a
+   hypothetical.
+   `RESTRICT` had been chosen to stop GC collecting a still-referenced generation. **That protection
+   is already provided by a different mechanism** — the second `not exists` over this join table added
+   to `video_generations_collectable` below. Keeping `RESTRICT` too was two mechanisms for one
+   concern, in a table introduced by a fix, and the redundant one was the one that broke a live path.
+
+3. **`source_generation_id` is DROPPED in the same change**, and the round-5 M5 guarantee migrates to
+   this table's FK. ⟳ *Round 14 H4: the first draft added the join table and rewrote two of the
+   column's consumers without ever saying whether the column survived. If it survives, provenance has
+   two representations that can disagree — the exact root cause the retrospective names, reintroduced
+   by a fix for it.* `art_summary_has_no_source` `[VERIFIED: schema/04_artifacts.sql:107]` goes with
+   it, and its replacement **cannot be a CHECK** — a CHECK cannot reference another table — so it
+   becomes a constraint trigger. That change of mechanism is safe for the reason `:104-106` gives for
+   having the CHECK at all (*"service_role bypasses policies, not constraints"*): `service_role` does
+   not bypass triggers either. Stated rather than assumed (round 14 M3).
 
 A hash alone cannot answer *"which generations does this render reference"* without already knowing
 the answer — and **GC needs that answer**. `video_generations_collectable`
