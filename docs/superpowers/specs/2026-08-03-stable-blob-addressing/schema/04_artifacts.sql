@@ -815,6 +815,13 @@ create trigger forbid_collecting_current_trg
 -- Deliberately scoped to CURRENCY only. §8's age predicate (90 days since the row stopped being
 -- current, or since detached_at) belongs to the sweeper, because it is a tunable retention
 -- heuristic and this view is a correctness floor. Mixing them would bury a knob inside an invariant.
+--
+-- ⟳ ROUND 9 (round 8 M5) — SO READ THIS BEFORE WRITING A SWEEPER: a dig detached ONE SECOND ago
+-- appears here (measured). That is correct under the 2026-08-06 retention decision only because the
+-- 90-day clock lives in the sweeper, so a sweeper that forgets it deletes paid bytes the user can
+-- still see. Stated here rather than in §8 because this view is what a future sweeper author will
+-- read. Note the asymmetry with `state = 'complete'` above: currency and completeness are
+-- CORRECTNESS and belong in the floor; age is a POLICY and does not.
 create view video_generations_collectable with (security_invoker = true) as
 select g.*
   from video_generations g
