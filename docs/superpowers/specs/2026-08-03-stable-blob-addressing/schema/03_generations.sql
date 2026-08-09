@@ -302,6 +302,29 @@ create table video_generations (
   -- reserved its own generation, so it can still complete it and record. Fencing on the artifact row
   -- instead would have broken exactly that case.
   reserved_by       uuid,
+  -- ⟳ ROUND 9 (round 8 B2 + H1) — THE DURABLE HALF OF THE CREDENTIAL, and it exists because round 8
+  -- measured the token-based fence failing in BOTH directions at once:
+  --
+  --   TOO PERMISSIVE — a caller supplying `p_token = NULL`, and equally a caller supplying a random
+  --     valid non-NULL token, completed another worker's in-flight generation with its own content
+  --     (`md_hash=SHA_ATTACKER`, then `SHA_FOREIGN`). The fallback disjunct "the slot's pending row
+  --     names this generation" is satisfied by anyone who can NAME the slot and the generation.
+  --   TOO STRICT — the worker that legitimately needed that fallback, having lost its token to a
+  --     crash AND its slot to the reclaim the lapsed lease invited, was REFUSED
+  --     ([P0001] generation gW1 is pending) and its paid Gemini output destroyed. A control call
+  --     with the token succeeded, isolating the fence as the cause.
+  --
+  -- A fence that is simultaneously too permissive and too strict is not mis-tuned; it is asking for
+  -- the WRONG CREDENTIAL. Of the three things that identify a worker mid-job, only two survive a
+  -- restart: `worker_id` is stable config, `job_id` is recoverable by querying jobs for
+  -- `locked_by = me and status = 'active'` — and `lease_token` is a random uuid handed out once and
+  -- held only in memory. Round 7 fenced on the one thing that cannot survive, so the fallback HAD to
+  -- be weak enough to let a stranger through.
+  --
+  -- Recorded here rather than only on the artifact because the artifact row is what a reclaim
+  -- re-points; the generation is what the writer paid for.
+  reserved_by_worker text,
+  reserved_by_job    uuid,
   card              jsonb,
   doc_version_major int,             -- rule 13's format rung. Round 4 J3-2: ranked on, never defined.
   -- NULLABLE while pending — nothing has been produced yet, and a `not null` here is what forced a

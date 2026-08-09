@@ -216,7 +216,11 @@ create unique index video_artifacts_inflight_uq on video_artifacts
 -- mutable by design. Every defect above followed from routing around a constraint that never applied.
 create function reserve_artifact_slot(
   p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind artifact_kind, p_blob_key text,
-  p_source_generation_id text default null, p_start_sec int default null, p_end_sec int default null)
+  p_source_generation_id text default null, p_start_sec int default null, p_end_sec int default null,
+  -- ⟳ ROUND 9 — the durable half of the credential. Optional in SIGNATURE only: a caller that omits
+  -- both can still reserve, but has nothing to prove ownership with if it loses its token, so it
+  -- gets the round-7 behaviour and no more. See video_generations.reserved_by_worker.
+  p_worker_id text default null, p_job_id uuid default null)
   returns table (outcome text, token uuid, attempts int)
   language plpgsql security definer set search_path = '' as $$
 declare v_ttl int; v_max int; v_cfg public.guardrail_config; v_row public.video_artifacts;
@@ -278,8 +282,10 @@ begin
   -- already exist. So it is created here and REMOVED on the denial paths.
   if p_generation_id is not null then
     insert into public.video_generations
-      (workspace_id, video_id, generation_id, kind, state, reserved_by)
-    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token)
+      (workspace_id, video_id, generation_id, kind, state, reserved_by,
+       reserved_by_worker, reserved_by_job)
+    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token,
+            p_worker_id, p_job_id)
     on conflict (workspace_id, video_id, generation_id) do nothing;
     v_made_generation := found;
   end if;
@@ -414,7 +420,8 @@ create function record_artifact(
   p_token uuid, p_source_generation_id text default null,
   p_start_sec int default null, p_end_sec int default null,
   p_md_hash text default null, p_card jsonb default null,
-  p_doc_version_major int default null, p_produced_at timestamptz default null)
+  p_doc_version_major int default null, p_produced_at timestamptz default null,
+  p_worker_id text default null, p_job_id uuid default null)
   returns text language plpgsql security definer set search_path = '' as $$
 declare v_existed boolean; v_start int; v_end int; v_src text;
 begin
@@ -438,15 +445,31 @@ begin
     return 'recorded_free';
   end if;
 
-  -- ⟳ ROUND 7 H2 — THE COMPLETION IS FENCED. It used to filter on (ws, video, generation_id) alone:
-  -- no token, no state, no slot. Two conditions, and either alone is proof of ownership:
-  --   reserved_by = p_token  — we reserved this generation. Survives a reclaim of our SLOT, which is
-  --                            what keeps item 4's `recorded_after_loss` path working.
-  --   the slot's pending row names this generation — we hold the slot. Survives losing our TOKEN,
-  --                            which is what keeps a restarted worker (B1a) able to record.
-  -- Both are needed: fencing on the token alone breaks the restarted worker, and fencing on the slot
-  -- alone breaks the reclaimed one. `state = 'pending'` makes re-completion a NO-OP rather than an
-  -- error, which is what stops the freeze trigger from discarding a second writer's paid work.
+  -- ⟳ ROUND 9 (round 8 B2 + H1) — THE FENCE ASKS FOR A CREDENTIAL THAT SURVIVES A RESTART.
+  --
+  -- Round 7's version offered two disjuncts, and round 8 measured BOTH ends failing at once:
+  --   `reserved_by = p_token`               — correct, but the token dies with the process.
+  --   `the slot's pending row names this generation` — survives a restart, and proves NOTHING:
+  --      it is satisfied by anyone who can NAME the slot and the generation. Measured with
+  --      p_token = NULL *and* with a random valid token: `md_hash=SHA_ATTACKER` / `SHA_FOREIGN`.
+  --      So `p_token is not null` would have fixed nothing; NULL was never the crux.
+  -- And the worker that disjunct existed for — restarted, then reclaimed — did not match EITHER,
+  -- so it was refused and its paid work destroyed (measured: `[P0001] generation gW1 is pending`,
+  -- with the identical call succeeding when it still knew its token).
+  --
+  -- The replacement is the SAME identity the job queue already fences on
+  -- (`heartbeat_job`/`complete_job` filter on `id, locked_by, lease_token`), minus the part that
+  -- cannot survive: `worker_id` is stable config and `job_id` is recoverable from `jobs`, so a
+  -- restarted worker can present both. A stranger presents a different pair and is rejected. One
+  -- change, both directions.
+  --
+  -- ⚠ `=` ON A NULL CREDENTIAL YIELDS NULL, NEVER TRUE — so a caller passing nothing matches
+  -- nothing, and the fence is fail-CLOSED for callers that never supplied a credential. That is the
+  -- same NULL-comparison rule that made the free short-circuit unreachable (round 8 H2); here it is
+  -- load-bearing in our favour, so it is stated rather than relied on silently.
+  --
+  -- `state = 'pending'` still makes re-completion a NO-OP rather than an error, which is what stops
+  -- the freeze trigger from discarding a second writer's paid work.
   if p_generation_id is not null then
     update public.video_generations g
        set state             = 'complete',
@@ -458,9 +481,7 @@ begin
      where g.workspace_id = p_ws and g.video_id = p_video and g.generation_id = p_generation_id
        and g.state = 'pending'
        and (g.reserved_by = p_token
-            or exists (select 1 from public.video_artifacts a
-                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot
-                          and a.state = 'pending' and a.generation_id = p_generation_id));
+            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));
   end if;
 
   update public.video_artifacts
@@ -542,17 +563,19 @@ end $$;
 -- every other definer function it ships (0004:10, 0005:25, 0010:21, 0011:137); the one added as round
 -- 5's H4 fix, one file away, was not swept. Sweeping all THREE replacements here, not just the one
 -- that inherited the name — that one-site habit is what produced B1 in the first place.
-revoke all on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int)
+revoke all on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int,
+                                       text, uuid)
   from public, anon, authenticated;
-grant execute on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int)
+grant execute on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int,
+                                       text, uuid)
   to service_role;
 revoke all on function renew_artifact_lease(uuid, text, text, uuid) from public, anon, authenticated;
 grant execute on function renew_artifact_lease(uuid, text, text, uuid) to service_role;
 revoke all on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int,
-                                      text, jsonb, int, timestamptz)
+                                      text, jsonb, int, timestamptz, text, uuid)
   from public, anon, authenticated;
 grant execute on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int,
-                                          text, jsonb, int, timestamptz)
+                                          text, jsonb, int, timestamptz, text, uuid)
   to service_role;
 revoke all on function slot_kind(text) from public, anon, authenticated;
 -- ⟳ ROUND 7 M1 — THE TWO THE SWEEP MISSED, in the file whose comment above claims it swept all of

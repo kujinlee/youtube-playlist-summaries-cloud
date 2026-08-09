@@ -1126,13 +1126,19 @@ insert into workspace_videos (workspace_id, video_id) select id, 'vidR3' from t_
 -- that already paid always records" — failing via a raw SQLSTATE instead of a typed refusal, in the
 -- function whose own comment says it "never refuses". Shape #8, and shape #10 against
 -- reserve_artifact_slot:304-306 which already fixed exactly this for itself.
-do $$ declare o text; ws uuid; n int; begin
+-- ⟳ ROUND 9 — THE SCENARIO IS UNCHANGED; THE CREDENTIAL IS NOT. Round 7 let this worker through on
+-- "the slot's pending row names this generation", which round 8 measured a STRANGER satisfying just
+-- as easily. It now presents `worker_id` + `job_id` — the two things that survive the restart that
+-- lost it the token — so the same worker still records and a stranger no longer can.
+do $$ declare o text; ws uuid; n int; job uuid := gen_random_uuid(); begin
   select id into ws from t_ws;
   perform reserve_artifact_slot(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR1/dig-3.md', p_start_sec := 3, p_end_sec := 9);
+    ws::text||'/videos/vidR/gR1/dig-3.md', p_start_sec := 3, p_end_sec := 9,
+    p_worker_id := 'worker-R1', p_job_id := job);
   o := record_artifact(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
         ws::text||'/videos/vidR/gR1/dig-3.md', gen_random_uuid(),   -- token FORGOTTEN across a restart
-        p_start_sec := 3, p_end_sec := 9, p_produced_at := '2026-05-01');
+        p_start_sec := 3, p_end_sec := 9, p_produced_at := '2026-05-01',
+        p_worker_id := 'worker-R1', p_job_id := job);              -- but it still knows WHO it is
   if o <> 'recorded_after_token_loss' then
     raise exception 'ASSERTION FAILED — a restarted worker did not record its paid work: %', o; end if;
   select count(*) into n from video_artifacts
@@ -1146,13 +1152,15 @@ end $$;
 -- span/provenance (its UPDATE touches only state and lease columns), so a caller could legitimately
 -- omit them and rely on what reserve stored — and then fail ONLY under the race, which is the worst
 -- possible place to put a latent argument requirement.
-do $$ declare o text; s int; e int; ws uuid; begin
+do $$ declare o text; s int; e int; ws uuid; job uuid := gen_random_uuid(); begin
   select id into ws from t_ws;
   perform reserve_artifact_slot(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR2/dig-4.md', p_start_sec := 4, p_end_sec := 44);
+    ws::text||'/videos/vidR/gR2/dig-4.md', p_start_sec := 4, p_end_sec := 44,
+    p_worker_id := 'worker-R2', p_job_id := job);
   o := record_artifact(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
         ws::text||'/videos/vidR/gR2/dig-4.md', gen_random_uuid(),   -- loss path, span OMITTED
-        p_produced_at := '2026-05-02');
+        p_produced_at := '2026-05-02',
+        p_worker_id := 'worker-R2', p_job_id := job);
   select start_sec, end_sec into s, e from video_artifacts where video_id='vidR' and slot='dig:4';
   if s <> 4 or e <> 44 then
     raise exception 'ASSERTION FAILED — the loss path lost the reserved span: (%,%)', s, e; end if;
@@ -1330,6 +1338,62 @@ do $$ declare leaky text[]; begin
     raise exception 'ASSERTION FAILED — anon holds EXECUTE on definer function(s): %', leaky; end if;
   raise notice 'ok (R8/M1): no definer function in this schema is reachable by anon';
 end $$;
+-- ── ⟳ ROUND 9 — THE OWNERSHIP FENCE, MEASURED IN BOTH DIRECTIONS ───────────────────────────────
+-- Round 8 found the round-7 fence broken BOTH ways at once, which is why the fix is a different
+-- credential rather than a tighter or looser one. Both directions are asserted here, because a fix
+-- for either alone is what produced the defect in the first place.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR9a' from t_ws;
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR9b' from t_ws;
+
+-- ⟳ R9-1 — A STRANGER CANNOT COMPLETE A GENERATION IT DOES NOT OWN.
+-- Measured in round 8 with p_token = NULL (`md_hash=SHA_ATTACKER`) AND with a random valid non-NULL
+-- token (`SHA_FOREIGN`), so the fixture below hands the stranger a FULL, well-formed credential of
+-- its own — a real token, a real worker id, a real job id. It is refused for the only reason that
+-- should matter: none of them is the credential this generation was reserved with.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  perform reserve_artifact_slot(ws,'vidR9a','summary','gR9a','summary'::artifact_kind,
+    ws::text||'/videos/vidR9a/gR9a/summary.md',
+    p_worker_id := 'worker-owner', p_job_id := '11111111-1111-1111-1111-111111111111');
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidR9a','summary','gR9a','summary'::artifact_kind,
+    %L, gen_random_uuid(), p_md_hash := 'SHA_FOREIGN', p_produced_at := '2026-05-03',
+    p_card := '{"tldr":"FOREIGN","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-03","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    p_doc_version_major := 4,
+    p_worker_id := 'worker-STRANGER', p_job_id := '22222222-2222-2222-2222-222222222222');
+$$, (select id from t_ws), (select id from t_ws)::text||'/videos/vidR9a/gR9a/summary.md'),
+ 'a stranger with its OWN full credential cannot complete another worker''s generation', 'P0001');
+
+-- ⟳ R9-2 — THE DOUBLY-LOST WORKER STILL RECORDS. Round 7 reasoned about single losses only; the
+-- conjunction is ordinary, because the crash that loses the token also lapses the lease that invites
+-- the reclaim. Measured before this fix: `[P0001] generation gW1 is pending`, paid work destroyed,
+-- with the identical call succeeding when the worker still knew its token — which isolated the fence
+-- as the cause rather than anything about the reclaim.
+do $$ declare o text; ws uuid; job uuid := gen_random_uuid(); begin
+  select id into ws from t_ws;
+  update guardrail_config set dig_max_attempts = 3 where id = true;   -- reclaim must be permitted
+  perform reserve_artifact_slot(ws,'vidR9b','dig:8','gR9b1','dig'::artifact_kind,
+    ws::text||'/videos/vidR9b/gR9b1/dig-8.md', p_start_sec := 8, p_end_sec := 88,
+    p_worker_id := 'worker-lost', p_job_id := job);
+  update video_artifacts set lease_expires_at = now() - interval '1 hour'
+   where video_id='vidR9b' and slot='dig:8';                          -- the lease lapses
+  perform reserve_artifact_slot(ws,'vidR9b','dig:8','gR9b2','dig'::artifact_kind,
+    ws::text||'/videos/vidR9b/gR9b2/dig-8.md', p_start_sec := 8, p_end_sec := 88,
+    p_worker_id := 'worker-other', p_job_id := gen_random_uuid());    -- and the SLOT is reclaimed
+  o := record_artifact(ws,'vidR9b','dig:8','gR9b1','dig'::artifact_kind,
+        ws::text||'/videos/vidR9b/gR9b1/dig-8.md', null,             -- token GONE
+        p_start_sec := 8, p_end_sec := 88, p_produced_at := '2026-05-04',
+        p_worker_id := 'worker-lost', p_job_id := job);               -- identity SURVIVED
+  if o <> 'recorded_after_loss' then
+    raise exception 'ASSERTION FAILED — the doubly-lost worker did not record: %', o; end if;
+  if (select state from video_generations where video_id='vidR9b' and generation_id='gR9b1')
+       <> 'complete' then
+    raise exception 'ASSERTION FAILED — its generation was left pending, so the bytes are orphaned';
+  end if;
+  raise notice 'ok (R9-2): a worker that lost BOTH its token and its slot still records its paid work';
+end $$;
+
 -- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
 -- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
 --   SHAPE    — is this row well-formed and referentially sound? A violation is a CALLER BUG. Reject.

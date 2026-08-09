@@ -259,8 +259,10 @@ MUTATIONS = [
 
     ("reserve no longer creates the pending generation (the measured defect)",
      """    insert into public.video_generations
-      (workspace_id, video_id, generation_id, kind, state, reserved_by)
-    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token)
+      (workspace_id, video_id, generation_id, kind, state, reserved_by,
+       reserved_by_worker, reserved_by_job)
+    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token,
+            p_worker_id, p_job_id)
     on conflict (workspace_id, video_id, generation_id) do nothing;
     v_made_generation := found;
 """,
@@ -291,9 +293,7 @@ MUTATIONS = [
      where g.workspace_id = p_ws and g.video_id = p_video and g.generation_id = p_generation_id
        and g.state = 'pending'
        and (g.reserved_by = p_token
-            or exists (select 1 from public.video_artifacts a
-                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot
-                          and a.state = 'pending' and a.generation_id = p_generation_id));
+            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));
   end if;
 """,
      "",
@@ -303,18 +303,16 @@ MUTATIONS = [
     # completion working for every legitimate caller, so nothing but the hijack test can go red.
     ("the generation-completion ownership fence removed (round 7 H2)",
      """       and (g.reserved_by = p_token
-            or exists (select 1 from public.video_artifacts a
-                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot
-                          and a.state = 'pending' and a.generation_id = p_generation_id))""",
+            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id))""",
      "",
      "generation it does not hold", ART),
 
     # And the other half: fencing on the TOKEN alone breaks the restarted worker (B1a), fencing on
     # the SLOT alone breaks the reclaimed one. Each disjunct is mutated separately, because a
     # compound guard hides which half carries the weight — round 5 H1's rule applied to a predicate.
-    ("only the slot-ownership disjunct kept (a restarted worker cannot complete)",
-     "       and (g.reserved_by = p_token\n            or exists",
-     "       and (false\n            or exists",
+    ("only the durable credential kept (a worker holding a LIVE token cannot complete)",
+     "       and (g.reserved_by = p_token\n            or (g.reserved_by_worker",
+     "       and (false\n            or (g.reserved_by_worker",
      "cannot mark", ART),
 
     # produced_at is a PARAMETER, not a clock read. Stamping now() is item 1's detached_at
@@ -418,6 +416,26 @@ MUTATIONS = [
      "  if new.workspace_id is not null and new.workspace_id <> v_ws then",
      "  if false then",
      "disagreeing with the playlist", GEN),
+
+    # ── ⟳ ROUND 9: the ownership fence, mutated in BOTH directions it failed in ──────
+    # Expect names R1/B1a, not R9-2, because R1 runs FIRST and the verifier stops at the first
+    # failure — and R1 is the honest headline anyway: with only the in-memory token accepted, every
+    # worker that restarts loses its paid work, which is the whole reason round 7 invented the weak
+    # disjunct this replaced.
+    ("the durable credential removed (only the in-memory token is accepted)",
+     "            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));",
+     "            or false);",
+     "cannot mark dig:3 as recorded", ART),
+
+    # The mutation that matters most: put round 7's disjunct BACK and watch a stranger walk in.
+    # It is what makes "the fence is why the stranger is refused" a tested claim rather than a story
+    # about a line of SQL — the same standard round 8 held every other guard to.
+    ("round 7's slot-name disjunct restored (a stranger completes what it can NAME)",
+     "            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));",
+     "            or exists (select 1 from public.video_artifacts a\n"
+     "                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot\n"
+     "                          and a.state = 'pending' and a.generation_id = p_generation_id));",
+     "should have been rejected: a stranger", ART),
 
     ("B3: a new profile gets no workspace (the TOP of the chain)",
      "  insert into public.workspaces (id, owner_id) values (new.id, new.id)\n"
