@@ -224,11 +224,7 @@ create unique index video_artifacts_inflight_uq on video_artifacts
 -- mutable by design. Every defect above followed from routing around a constraint that never applied.
 create function reserve_artifact_slot(
   p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind artifact_kind, p_blob_key text,
-  p_source_generation_id text default null, p_start_sec int default null, p_end_sec int default null,
-  -- ⟳ ROUND 9 — the durable half of the credential. Optional in SIGNATURE only: a caller that omits
-  -- both can still reserve, but has nothing to prove ownership with if it loses its token, so it
-  -- gets the round-7 behaviour and no more. See video_generations.reserved_by_worker.
-  p_worker_id text default null, p_job_id uuid default null)
+  p_source_generation_id text default null, p_start_sec int default null, p_end_sec int default null)
   returns table (outcome text, token uuid, attempts int)
   language plpgsql security definer set search_path = '' as $$
 declare v_ttl int; v_max int; v_cfg public.guardrail_config; v_row public.video_artifacts;
@@ -310,10 +306,8 @@ begin
   -- already exist. So it is created here and REMOVED on the denial paths.
   if p_generation_id is not null then
     insert into public.video_generations
-      (workspace_id, video_id, generation_id, kind, state, reserved_by,
-       reserved_by_worker, reserved_by_job)
-    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token,
-            p_worker_id, p_job_id)
+      (workspace_id, video_id, generation_id, kind, state, reserved_by)
+    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token)
     on conflict (workspace_id, video_id, generation_id) do nothing;
     v_made_generation := found;
   end if;
@@ -448,8 +442,7 @@ create function record_artifact(
   p_token uuid, p_source_generation_id text default null,
   p_start_sec int default null, p_end_sec int default null,
   p_md_hash text default null, p_card jsonb default null,
-  p_doc_version_major int default null, p_produced_at timestamptz default null,
-  p_worker_id text default null, p_job_id uuid default null)
+  p_doc_version_major int default null, p_produced_at timestamptz default null)
   returns text language plpgsql security definer set search_path = '' as $$
 declare v_existed boolean; v_start int; v_end int; v_src text;
 begin
@@ -480,6 +473,23 @@ begin
   -- the "an anchor spanning prose breaks whenever someone explains themselves" lesson, committed
   -- again in the round that recorded it.
   if p_generation_id is null then
+    -- ⟳ ROUND 11 (round 10 H2) — A NON-HOLDER MAY NOT TAKE A LIVE FREE RESERVATION. MEASURED:
+    --   W1 reserved a free slot -> reserved (token held)
+    --   W2 tokenless record     -> recorded_free ; pending rows left 0 ; key now …/OTHER.pdf
+    -- W2 cleared W1's lease and repointed the slot. Caused by round 9's own lease-clearing fix —
+    -- the FIFTH face of the free/paid seam after the reconciler, the short-circuit, the tenant
+    -- confinement and the lease columns.
+    -- A typed `busy` rather than a raise, because W2 did nothing wrong (it is merely SECOND) — and
+    -- rather than "clear the lease only for the holder", which is unrepresentable: the pending
+    -- constraints are BICONDITIONAL, so a recorded row MUST have null lease columns. Refusing costs
+    -- nothing here because free work has no paid bytes to protect; that is the whole difference.
+    if exists (select 1 from public.video_artifacts
+                where workspace_id = p_ws and video_id = p_video and slot = p_slot
+                  and generation_id is null and state = 'pending'
+                  and lease_expires_at > now()
+                  and lease_token is distinct from p_token) then
+      return 'busy';
+    end if;
     insert into public.video_artifacts
       (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
     values (p_ws, p_video, p_slot, null, p_kind, 'recorded', p_blob_key)
@@ -524,8 +534,25 @@ begin
            reserved_by       = null
      where g.workspace_id = p_ws and g.video_id = p_video and g.generation_id = p_generation_id
        and g.state = 'pending'
-       and (g.reserved_by = p_token
-            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));
+       and g.reserved_by = p_token;
+    -- ⟳ ROUND 11 (round 10 B1, second half) — DO NOT REPORT SUCCESS WHEN ANOTHER WRITER'S CONTENT
+    -- STANDS. The UPDATE above requires `g.state = 'pending'`, so once someone else completed this
+    -- generation the coalesce never runs — and the function then fell through to the append path,
+    -- whose `do update` does not touch md_hash. MEASURED, with NO attacker, just two writers:
+    --   ATTACKER completes -> recorded_after_token_loss ; md_hash SHA_ATTACKER
+    --   VICTIM records its REAL work -> recorded_after_token_loss   (a SUCCESS string)
+    --   md_hash the manifest claims = SHA_ATTACKER, while the victim paid for SHA_REAL
+    -- Shape #4 and shape #5 together, on the SUCCESS path, on the money path.
+    -- Only when the content actually DIFFERS: an idempotent retry presenting the same hash is a
+    -- benign second call and must still fall through to the append.
+    if not found and exists (
+         select 1 from public.video_generations g
+          where g.workspace_id = p_ws and g.video_id = p_video
+            and g.generation_id = p_generation_id and g.state = 'complete'
+            and p_md_hash is not null and g.md_hash is distinct from p_md_hash)
+    then
+      return 'completed_by_another';
+    end if;
   end if;
 
   -- ⟳ ROUND 9 (round 8 Claude H3) — A DIVERGENT ADDRESS IS REFUSED, NOT SILENTLY DROPPED.
@@ -628,19 +655,17 @@ end $$;
 -- every other definer function it ships (0004:10, 0005:25, 0010:21, 0011:137); the one added as round
 -- 5's H4 fix, one file away, was not swept. Sweeping all THREE replacements here, not just the one
 -- that inherited the name — that one-site habit is what produced B1 in the first place.
-revoke all on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int,
-                                       text, uuid)
+revoke all on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int)
   from public, anon, authenticated;
-grant execute on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int,
-                                       text, uuid)
+grant execute on function reserve_artifact_slot(uuid, text, text, text, artifact_kind, text, text, int, int)
   to service_role;
 revoke all on function renew_artifact_lease(uuid, text, text, uuid) from public, anon, authenticated;
 grant execute on function renew_artifact_lease(uuid, text, text, uuid) to service_role;
 revoke all on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int,
-                                      text, jsonb, int, timestamptz, text, uuid)
+                                      text, jsonb, int, timestamptz)
   from public, anon, authenticated;
 grant execute on function record_artifact(uuid, text, text, text, artifact_kind, text, uuid, text, int, int,
-                                          text, jsonb, int, timestamptz, text, uuid)
+                                          text, jsonb, int, timestamptz)
   to service_role;
 revoke all on function slot_kind(text) from public, anon, authenticated;
 -- ⟳ ROUND 7 M1 — THE TWO THE SWEEP MISSED, in the file whose comment above claims it swept all of

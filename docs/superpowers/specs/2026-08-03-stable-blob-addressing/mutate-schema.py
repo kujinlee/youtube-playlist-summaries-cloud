@@ -260,10 +260,8 @@ MUTATIONS = [
 
     ("reserve no longer creates the pending generation (the measured defect)",
      """    insert into public.video_generations
-      (workspace_id, video_id, generation_id, kind, state, reserved_by,
-       reserved_by_worker, reserved_by_job)
-    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token,
-            p_worker_id, p_job_id)
+      (workspace_id, video_id, generation_id, kind, state, reserved_by)
+    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token)
     on conflict (workspace_id, video_id, generation_id) do nothing;
     v_made_generation := found;
 """,
@@ -293,30 +291,16 @@ MUTATIONS = [
            reserved_by       = null
      where g.workspace_id = p_ws and g.video_id = p_video and g.generation_id = p_generation_id
        and g.state = 'pending'
-       and (g.reserved_by = p_token
-            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));
-  end if;
-""",
-     "",
+       and g.reserved_by = p_token;""",
+     "  if false then",
      "cannot mark", ART),
 
     # ⟳ ROUND 7 H2 — the ownership fence itself. Removing ONLY the two ownership disjuncts leaves the
     # completion working for every legitimate caller, so nothing but the hijack test can go red.
-    ("the generation-completion ownership fence removed (round 7 H2)",
-     """       and (g.reserved_by = p_token
-            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id))""",
-     "",
-     "generation it does not hold", ART),
-
-    # And the other half: fencing on the TOKEN alone breaks the restarted worker (B1a), fencing on
+        # And the other half: fencing on the TOKEN alone breaks the restarted worker (B1a), fencing on
     # the SLOT alone breaks the reclaimed one. Each disjunct is mutated separately, because a
     # compound guard hides which half carries the weight — round 5 H1's rule applied to a predicate.
-    ("only the durable credential kept (a worker holding a LIVE token cannot complete)",
-     "       and (g.reserved_by = p_token\n            or (g.reserved_by_worker",
-     "       and (false\n            or (g.reserved_by_worker",
-     "cannot mark", ART),
-
-    # produced_at is a PARAMETER, not a clock read. Stamping now() is item 1's detached_at
+        # produced_at is a PARAMETER, not a clock read. Stamping now() is item 1's detached_at
     # defect in a different column, and J2-3 forbids a clock read anywhere the ranking reads.
     #
     # ⚠ THE MUTATION DROPS THE PARAMETER, it does not assign now() outright — and the
@@ -359,12 +343,12 @@ MUTATIONS = [
 
     # ── round 8: the guard-classification fixes. Each converts a SEQUENCE guard from a rejecter
     # into a reconciler, so each mutation restores the REJECTER and must go red.
-    ("video_artifacts_free_uq: the free-render reconciler removed (re-render collides again)",
-     "  if p_generation_id is null then\n    insert into public.video_artifacts",
-     "  if false then\n    insert into public.video_artifacts",
-     "video_artifacts_free_uq", ART),
-
-    # The `do update` specifically — keeping the branch but making the insert blind. Without this,
+    # ⟳ ROUND 11 — "the free-render reconciler removed" was DELETED here, not repaired. Round 11 put a
+    # non-holder check above the free INSERT, which broke its anchor; rewriting it produced a mutation
+    # that no longer removed anything (GREEN). It was always the same test as "the free upsert made
+    # blind" below — both delete the ON CONFLICT handling on the free path — so one is kept rather
+    # than two anchors drifting apart. `video_artifacts_free_uq` stays mutation-covered by that entry.
+        # The `do update` specifically — keeping the branch but making the insert blind. Without this,
     # deleting the whole branch is the only thing tested, and "the branch exists" is weaker than
     # "the branch reconciles".
     ("video_artifacts_free_uq: the free upsert made blind (branch kept, conflict handling dropped)",
@@ -456,25 +440,49 @@ MUTATIONS = [
      "                and generation_id = p_generation_id and false) then",
      "differs from the reserved one", ART),
 
-    # ── ⟳ ROUND 9: the ownership fence, mutated in BOTH directions it failed in ──────
-    # Expect names R1/B1a, not R9-2, because R1 runs FIRST and the verifier stops at the first
-    # failure — and R1 is the honest headline anyway: with only the in-memory token accepted, every
-    # worker that restarts loses its paid work, which is the whole reason round 7 invented the weak
-    # disjunct this replaced.
-    ("the durable credential removed (only the in-memory token is accepted)",
-     "            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));",
-     "            or false);",
-     "cannot mark dig:3 as recorded", ART),
+    # ── ⟳ ROUND 11: the fence is now ONE condition, and these prove it is load-bearing ──────
+    # Round 9's two fence mutations are gone with the columns they tested. The replacement pair
+    # mutates the only condition left, in both directions it could fail.
+    ("the completion fence removed entirely (any caller completes any generation)",
+     "       and g.reserved_by = p_token;",
+     "       and true;",
+     "recorded against a generation it does not hold", ART),
 
-    # The mutation that matters most: put round 7's disjunct BACK and watch a stranger walk in.
-    # It is what makes "the fence is why the stranger is refused" a tested claim rather than a story
-    # about a line of SQL — the same standard round 8 held every other guard to.
-    ("round 7's slot-name disjunct restored (a stranger completes what it can NAME)",
-     "            or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));",
-     "            or exists (select 1 from public.video_artifacts a\n"
-     "                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot\n"
-     "                          and a.state = 'pending' and a.generation_id = p_generation_id));",
-     "should have been rejected: a stranger", ART),
+    # Round 7's disjunct and round 9's durable pair were each the round's worst finding. Restoring
+    # the SHAPE of that mistake — any second condition that a non-holder can satisfy — must go red,
+    # so a future author cannot reintroduce the class without the suite noticing.
+    ("a permissive second disjunct reintroduced (the round 7 / round 9 shape)",
+     "       and g.reserved_by = p_token;",
+     """       and (g.reserved_by = p_token
+            or exists (select 1 from public.video_artifacts a
+                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot
+                          and a.state = 'pending' and a.generation_id = p_generation_id));""",
+     "a stranger cannot complete another worker", ART),
+
+    ("round 10 B1: success reported while another writer's content stands",
+     """    if not found and exists (
+         select 1 from public.video_generations g
+          where g.workspace_id = p_ws and g.video_id = p_video
+            and g.generation_id = p_generation_id and g.state = 'complete'
+            and p_md_hash is not null and g.md_hash is distinct from p_md_hash)
+    then
+      return 'completed_by_another';
+    end if;
+""",
+     "",
+     "was NOT adopted was told", ART),
+
+    ("round 10 H2: a non-holder may take a live free reservation again",
+     """    if exists (select 1 from public.video_artifacts
+                where workspace_id = p_ws and video_id = p_video and slot = p_slot
+                  and generation_id is null and state = 'pending'
+                  and lease_expires_at > now()
+                  and lease_token is distinct from p_token) then
+      return 'busy';
+    end if;
+""",
+     "",
+     "non-holder took a live free reservation", ART),
 
     ("B3: a new profile gets no workspace (the TOP of the chain)",
      "  insert into public.workspaces (id, owner_id) values (new.id, new.id)\n"

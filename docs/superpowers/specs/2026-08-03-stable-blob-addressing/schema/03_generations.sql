@@ -302,29 +302,44 @@ create table video_generations (
   -- reserved its own generation, so it can still complete it and record. Fencing on the artifact row
   -- instead would have broken exactly that case.
   reserved_by       uuid,
-  -- ⟳ ROUND 9 (round 8 B2 + H1) — THE DURABLE HALF OF THE CREDENTIAL, and it exists because round 8
-  -- measured the token-based fence failing in BOTH directions at once:
+  -- ⟳ ROUND 11 (round 10 B1/H1) — THERE IS NO SECOND CREDENTIAL, AND REMOVING IT IS THE FIX.
   --
-  --   TOO PERMISSIVE — a caller supplying `p_token = NULL`, and equally a caller supplying a random
-  --     valid non-NULL token, completed another worker's in-flight generation with its own content
-  --     (`md_hash=SHA_ATTACKER`, then `SHA_FOREIGN`). The fallback disjunct "the slot's pending row
-  --     names this generation" is satisfied by anyone who can NAME the slot and the generation.
-  --   TOO STRICT — the worker that legitimately needed that fallback, having lost its token to a
-  --     crash AND its slot to the reclaim the lapsed lease invited, was REFUSED
-  --     ([P0001] generation gW1 is pending) and its paid Gemini output destroyed. A control call
-  --     with the token succeeded, isolating the fence as the cause.
+  -- Round 9 added `reserved_by_worker` / `reserved_by_job` here so a restarted worker could prove
+  -- ownership after losing its token. Round 10 measured that failing in BOTH directions, again:
   --
-  -- A fence that is simultaneously too permissive and too strict is not mis-tuned; it is asking for
-  -- the WRONG CREDENTIAL. Of the three things that identify a worker mid-job, only two survive a
-  -- restart: `worker_id` is stable config, `job_id` is recoverable by querying jobs for
-  -- `locked_by = me and status = 'active'` — and `lease_token` is a random uuid handed out once and
-  -- held only in memory. Round 7 fenced on the one thing that cannot survive, so the fallback HAD to
-  -- be weak enough to let a stranger through.
+  --   REPLAYABLE — both columns live in the row being fenced, and `video_generations` grants
+  --     `select` to `service_role`, the same role that may call `record_artifact`. So an attacker
+  --     READS the credential and completes the victim's generation. Measured:
+  --       ATTACKER reads: worker=worker-VICTIM job=1ab8a512-…  ->  recorded_after_token_loss
+  --       md_hash now SHA_ATTACKER, while the victim paid for SHA_REAL
+  --   AND STILL UNUSABLE — the premise was false. `worker/main.ts:69` is
+  --       `${os.hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`
+  --     a fresh uuid and pid minted at PROCESS START, exactly as volatile as the token it replaced;
+  --     and `sweep_expired_leases` nulls `locked_by`/`lease_token` and moves the job off `active`,
+  --     so "find my job by locked_by = me and status = active" returns nothing precisely when
+  --     recovery is needed.
   --
-  -- Recorded here rather than only on the artifact because the artifact row is what a reclaim
-  -- re-points; the generation is what the writer paid for.
-  reserved_by_worker text,
-  reserved_by_job    uuid,
+  -- ⚠ AND THE REQUIREMENT ITSELF WAS NOT REAL — which is why the answer is deletion, not a third
+  -- credential. The party that holds paid bytes ALWAYS still holds its token:
+  --   * a process that crashed lost the Gemini result from memory too, so it has nothing to record;
+  --   * a worker that loses its lease STOPS — `lib/job-queue/worker-runner.ts` heartbeats every
+  --     third of a lease and calls `leaseLost.abort()`, composed into the handler's AbortSignal;
+  --   * and there are NO callers yet: `reserve_artifact_slot` / `record_artifact` / `generation_id`
+  --     appear nowhere under `worker/`, `lib/job-queue/` or `lib/cloud-sync/`.
+  -- Rounds 7 and 9 each built a fallback for a caller that cannot occur, and each fallback was the
+  -- round's worst finding. The token alone is unguessable, is held by exactly the party with the
+  -- bytes, and is stored nowhere a caller reads it as a credential.
+  --
+  -- ⚠ THE CONDITION IS NOW A RULE ABOUT CALLERS, and it belongs in the spec (§ "the caller's
+  -- obligation"): a worker MUST hold its reservation token for the life of the job, and a worker
+  -- that cannot MUST abandon rather than record. `worker-runner` already behaves this way; when the
+  -- cloud caller is written, assert it there.
+  --
+  -- ⚠ HOW THIS ERROR HAPPENED, because the lesson outlived the code: "worker_id is stable config"
+  -- was written into this file as a fact and was never read from `worker/main.ts`. Every instrument
+  -- this spec owns points at the SCHEMA, and the false premise was about code outside it. The rule
+  -- that would have caught it: QUOTE THE CODE YOU RELY ON, DO NOT CHARACTERISE IT — quoting forces
+  -- a read, characterising lets you write from memory.
   card              jsonb,
   doc_version_major int,             -- rule 13's format rung. Round 4 J3-2: ranked on, never defined.
   -- NULLABLE while pending — nothing has been produced yet, and a `not null` here is what forced a

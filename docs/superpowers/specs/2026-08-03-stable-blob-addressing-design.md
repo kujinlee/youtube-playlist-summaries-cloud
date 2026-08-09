@@ -2633,6 +2633,37 @@ implementation.
 
 ---
 
+## 12b. The caller's obligation (round 11)
+
+Everything the reservation protocol guarantees rests on **one rule about callers**, and it is stated
+here because two rounds tried to enforce it in SQL instead and each attempt was that round's worst
+finding.
+
+> **A worker MUST hold its reservation token for the life of the job. A worker that cannot present
+> it MUST abandon rather than record.**
+
+There is no fallback, no second credential, and no recovery path. `record_artifact` completes a
+generation only for `reserved_by = p_token`.
+
+**Why the rule is safe rather than harsh** — the party that holds paid bytes always still holds the
+token, because the two live in the same process memory:
+
+| Event | What happens to the bytes | What happens to the token |
+|---|---|---|
+| process crashes | lost with the process | lost with the process — nothing to record |
+| lease expires | handler is **aborted** — `lib/job-queue/worker-runner.ts` heartbeats every third of a lease and calls `leaseLost.abort()` into the handler's `AbortSignal` | irrelevant; the worker stops |
+| slot reclaimed while the worker runs | still in hand | still in hand → records via `recorded_after_loss` |
+
+**The two failed attempts, kept as a warning.** Round 7 accepted *"the slot's pending row names this
+generation"*; round 8 measured a stranger satisfying it. Round 9 accepted a durable
+`(worker_id, job_id)` pair; round 10 measured a stranger **reading it out of the row it fenced**, and
+also that `worker_id` is regenerated per process (`worker/main.ts:69`), so no honest worker could use
+it either. Both fallbacks existed for a caller that cannot occur.
+
+**When the cloud caller is written**, assert this rule there — that the token is held for the job's
+duration, and that a worker which loses it abandons. It is a property of the caller and cannot be
+checked by the schema.
+
 ## 13. Out of scope
 
 - Actual **team** support (§11) — ⟳ *narrowed in round 1*: the **workspace table itself is IN scope** (§5.0, one per user, opaque id, plus the `workspace_readable` predicate). Out of scope: multiple workspaces per user, `workspace_members`, ACLs, the atomic-creation RPC, and role checks.
