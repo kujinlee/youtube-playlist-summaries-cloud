@@ -636,6 +636,46 @@ address is derived from mutable data* (`base = <serial>_<slug>`, and both halves
       guards were reported `INVALID` ("the mutation broke the SQL"). That is the harness making the
       mistake its own docstring warns about, one layer up; `RED(trigger)` now names it.
 
+- [ ] **Round 14 — the escalation rule fires a SECOND time, and the slice is SPLIT (2026-08-09).**
+      **NOT CONVERGED: 4 Blocking, 4 High, 5 Medium, 1 Low.** Reviews:
+      `docs/reviews/spec-blob-addressing-r14-{codex,claude,coordinator}.md`. PR #65 (`c16d44a`).
+      Aimed at **round 13's own fixes**, and the aim was right: **every Blocking was in a change made
+      the day before**, and two of them were round-13 fixes that contradicted each other.
+      **B2, the deepest:** round 13 named staged-write ordering as the GC-floor successor *and* carved
+      `model` out as the standing exception — but `model-store.ts:51` writes the model with a plain
+      `put`, and its docblock says staged→promote *"is NOT used for the model"* **deliberately** (a
+      regenerated model must overwrite). So a `model` generation would be collectable while its paid
+      Gemini call is in flight — round 9's B1 resurrected. The successor is now stated **per kind**.
+      **B3 (MEASURED):** `on delete restrict` on the new provenance table aborts the cascade
+      `profiles → workspaces → workspace_videos → video_generations`, so **account deletion broke**.
+      Now cascade.
+      **B4:** `render_id` reached the column but never the **address**, so renders stayed overwritable
+      — N rows on one key, N−1 pointing at bytes that no longer exist. *A render was not ADDRESSED by
+      the hash; it was IDENTIFIED by it while remaining ADDRESSED by an unchanged key.*
+      **B1 was my own editing error** — two copies of the central table, the second being the refuted
+      version, at equal authority. `check-docs.py` now has a **mutation-verified duplicate-heading
+      gate**; it had passed the file because it checked links, frontmatter and budgets but never asked
+      whether a normative document contradicts itself.
+      **The coordinator made the same class of error twice**, in the fixes for the round that named
+      it. Round 13's B1 was *"a true lemma about writes read as a conclusion about money"*; round 14
+      found (a) a true rule about **spend** read as a conclusion about **availability** (`SUM` on
+      `attempt_count` → `attempts_exhausted` → a 503 with no stale fallback; now
+      `least(sum, max-1)`), and (b) *"production already does content addressing"* citing a file that
+      hashes the renderer's **input** and carries a separate hand-maintained version segment
+      *precisely because the hash does not subsume it*. **All three citations RESOLVE. Resolving is
+      not supporting.**
+      A **57-tag `[VERIFIED:]` audit** found 1 wrong, 1 partial-wrong, 3 off-by-N, 1 claim-vs-code
+      mismatch — all corrected.
+      **⟳ SCOPE SPLIT (user decision):** render addressing failed design review **twice in two
+      rounds**, meeting the escalation criterion in its own right, so it is **not patched a third
+      time**. It moves to [`docs/superpowers/specs/2026-08-09-render-addressing-brief.md`](superpowers/specs/2026-08-09-render-addressing-brief.md)
+      + backlog #25, awaiting Phase 1 brainstorming — which **neither previous attempt ever had**
+      (each was one paragraph written while fixing something else; that is the root cause, not
+      difficulty). **ADR-0007 is now scoped to COORDINATION only**, and states honestly that the
+      `generation_id IS NULL` conflation it was drafted to dissolve is **still open**.
+      **The core decision has now survived TWO design reviews** — neither reviewer could break the
+      disjointness claim in either round.
+
 - [ ] **Round 13 — the FIRST DESIGN REVIEW, and the escalation rule's first firing (2026-08-09).**
       **NOT CONVERGED: 2 Blocking, 4 High, 6 Medium, 1 Low.** Reviews:
       `docs/reviews/spec-blob-addressing-r13-{codex,claude,coordinator}.md`. ADR-0007 revised in

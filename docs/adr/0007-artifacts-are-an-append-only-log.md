@@ -2,9 +2,12 @@
 status: proposed — supersedes the reservation protocol of ADR-0006's spec (handoff item 4).
   DEPENDS ON ADR-0006 BEING ACCEPTED; ADR-0006 is itself `proposed`, so the two stand or fall together
 revised: 2026-08-09. Round 13 (first DESIGN review) — 2B/4H/6M/1L, all answered. Round 14 (review of
-  round 13's own fixes) — 4B/4H/5M/1L; the non-render findings are answered here, and RENDER ADDRESSING
-  IS UNRESOLVED AND CARVED OUT (see "Renders" below). The decision to delete the reservation has now
-  survived TWO design reviews. See docs/reviews/spec-blob-addressing-r1{3,4}-coordinator.md
+  round 13's own fixes) — 4B/4H/5M/1L, all non-render findings answered here.
+  SCOPE NARROWED by user decision 2026-08-09: render addressing is SPLIT OUT to
+  docs/superpowers/specs/2026-08-09-render-addressing-brief.md (backlog #25) after two designs were
+  refuted in two rounds. This ADR is now about COORDINATION only. The decision to delete the
+  reservation has survived TWO design reviews.
+  See docs/reviews/spec-blob-addressing-r1{3,4}-coordinator.md
 ---
 
 # Artifacts are an append-only log; nothing coordinates writers, because writers do not contend
@@ -247,7 +250,10 @@ covers the spec schema only.
   claim), so there is nothing to coordinate. What remains — *which of several appended rows is
   current* — is a merge question, and the ranking view is already the merge function.
 
-## Renders lose their special case too
+## Renders keep their special case — for now, and deliberately
+
+This ADR was drafted believing it would dissolve the render conflation as well. **It does not**, and
+saying so plainly is the point of this section.
 
 `generation_id is null` currently encodes **two independent facts**:
 `[VERIFIED: schema/04_artifacts.sql:95]`
@@ -261,135 +267,37 @@ constraint art_paid_has_generation check (
 property). That conflation is the same root cause as nullable `corrections_hash` ("no corrections" vs
 "never computed") and absent-vs-failed-to-read, and it produced five of the twelve rounds' findings.
 
-**A render therefore gets an immutable derived address too — but NOT a generation id, and NOT under a
-`<gen>/` key.** The first draft proposed `hash(source_generation_ids, GENERATOR_VERSION)`. Round 13
-measured that this breaks two things, so it is replaced:
+Two designs were written to dissolve it. **Both were refuted, and both are withdrawn:**
 
-> ⛔ **WITHDRAWN by round 14 (B4/H1). Do not implement.** ~~A render's identity is
-> `sha256(rendered bytes)`, carried in a `render_id` column, and the key keeps its existing
-> `<ws>/videos/<vid>/renders/…` prefix.~~
+> ⛔ **WITHDRAWN (round 13, B2).** ~~A render gets a derived generation id:
+> `hash(source_generation_ids, GENERATOR_VERSION)`.~~
+>
+> ⛔ **WITHDRAWN (round 14, B4/H1).** ~~A render's identity is `sha256(rendered bytes)`, carried in a
+> `render_id` column, and the key keeps its existing `<ws>/videos/<vid>/renders/…` prefix.~~
 
-### ⛔ Render addressing is UNRESOLVED — two designs, two rounds, both refuted
+### ⛔ Render addressing is OUT OF SCOPE — split to its own slice (user decision, 2026-08-09)
 
-**This section states what is known and what is ruled out. It does not propose a third design**,
-because a third patch is what this project's stop condition exists to prevent: *two consecutive rounds
-whose findings were caused by the previous round's fixes ⇒ escalate from fix to redesign.* Render
-addressing has now met that criterion in its own right.
+Two designs were refuted in two consecutive rounds — round 13's `hash(source_generation_ids,
+GENERATOR_VERSION)` and round 14's `sha256(rendered bytes)`. That meets this project's own escalation
+criterion (*two consecutive rounds whose findings were caused by the previous round's fixes ⇒
+escalate from fix to redesign*), so **this ADR does not attempt a third design.**
 
-| Round | Proposal | Refuted because |
-|---|---|---|
-| 13 | `hash(source_generation_ids, GENERATOR_VERSION)` | incomplete enumeration — there are **three** version constants plus a pinned Chromium; and a `<gen>/`-shaped key breaks §8's classifier |
-| 14 | `sha256(rendered bytes)` + unchanged key | the identity **never reaches the address**; and it cannot be a cache probe key |
+**Everything — the problem, both refutations with evidence, the constraints any design must satisfy,
+the ruled-out list, and the open questions — moved to
+[`docs/superpowers/specs/2026-08-09-render-addressing-brief.md`](../superpowers/specs/2026-08-09-render-addressing-brief.md)**
+(backlog #25). It awaits a Phase 1 design pass, which neither previous attempt ever had: both were
+written as a single paragraph while fixing something else.
 
-**Round 14 B4 — the identity never reaches the address.** Nothing binds `render_id` to `blob_key`:
-`art_key_names_generation` is *vacuously true* when `generation_id is null`
-`[VERIFIED: schema/04_artifacts.sql:159-160]`, and `art_key_names_workspace` constrains segments 1–3
-only `[VERIFIED: schema/04_artifacts.sql:154-157]`. So uniqueness on `(ws, video, slot, render_id)`
-permits **N rows on one key**, and renders are written with `put` — an overwrite. Today
-`video_artifacts_free_uq` at least keeps row↔blob **1:1**, so "overwritable" is coherent; the proposal
-gives N rows, one key, and N−1 rows pointing at bytes that no longer exist. **For an append-only log
-that is strictly worse than the status quo it replaced.**
+**What this ADR still asserts about renders — and it is only this:**
 
-The precise error, worth keeping because it is subtle: a render was not *addressed by*
-`sha256(rendered bytes)` — it was *identified* by it in a column while remaining *addressed* by an
-unchanged key. **The sentence silently swapped address for identity.**
-
-**Round 14 H1 — an output hash cannot be a cache probe key.** `app/api/pdf/[id]/route.ts:54` computes
-the key from the HTML and `:60` probes the blob store **before** rendering. An identity that cannot be
-computed until the bytes exist cannot be the cache key of a path whose entire purpose is to avoid
-producing the bytes. Any workable scheme therefore needs **two** keys — an input-derived probe key and
-an output-derived identity — and must say which is `blob_key` and which is `render_id`.
-
-**What is RULED OUT (do not re-propose):**
-
-- an identity assembled by enumerating version constants (round 13);
-- an identity that lives only in a column while the key is unchanged (round 14);
-- a `<gen>/`-shaped render key, which breaks §8's *"paid-ness from the KEY ALONE"* rule
-  `[VERIFIED: …-design.md:2096-2100]`.
-
-**What is ESTABLISHED and survives:**
-
-- the paid/free **partition** is total and sound — `artifact_kind` is exactly the five kinds
-  `[VERIFIED: schema/03_generations.sql:264]` and `art_paid_has_generation` puts exactly four in the
-  paid set `[VERIFIED: schema/04_artifacts.sql:94-95]`, so *"exactly one of `generation_id` /
-  `render_id` is non-null"* holds for every kind including `model` and `digDeeper`. It is the address,
-  not the partition, that failed;
-- §8's key-alone rule is a real constraint any design must satisfy;
-- the `renders/` prefix exists **in the spec only** — `grep -rn "renders/" --include=*.ts` returns
-  zero hits; production keys are `pdfs/{base}.r{V}.{hash}.pdf`
-  `[VERIFIED: lib/pdf/pdf-render-version.ts:22]` and `models/{base}.json`
-  `[VERIFIED: lib/html-doc/model-store.ts:31]`. Round 13 called the prefix *"existing"*, which was
-  true of the spec and not of the code the sentence appeared to describe.
-
-⚠ **Consequence for scope:** the reservation deletion does **not** depend on this being settled. The
-`generation_id IS NULL` conflation is the only thing binding them, and that conflation is a reason to
-fix render addressing — not a reason to fix it *here*.
-
-**Why not a generation-shaped key (B2 — MEASURED).** §8 derives a money-safety rule for itself:
-*"the paid/free split must be derivable from the KEY ALONE… any future key that does not announce its
-own paid-ness is either uncollectable or unsafe to collect"* `[VERIFIED: …-design.md:2096-2100]`. The
-discriminator is literally path segment 4 — a generation id, or the constant `renders`
-`[VERIFIED: …-design.md:275-282]`. Uniform generation-derived addressing erases exactly that
-discriminator, and renders become uncollectable (the accumulation §8 exists to prevent, which ADR-0006
-already flags at `…-design.md:2113-2114`) or the sweeper becomes unsafe on paid bytes.
-
-Round 13 also measured that `art_key_names_generation`
-`[VERIFIED: schema/04_artifacts.sql:159-161]` — a constraint the first draft never mentioned while
-listing stable addressing as *"Kept, unchanged"* — rejects a render carrying a generation id at the
-§4.0 render key, and `art_paid_has_generation` rejects it at a generation-shaped key. Both routes were
-closed by constraints this ADR claimed to be preserving.
-
-**Why not a hash of source ids + `GENERATOR_VERSION` (H2 — the identity was incomplete).**
-`GENERATOR_VERSION` does not version the renderer. It versions the paid magazine model's shape and
-prompt `[VERIFIED: lib/html-doc/constants.ts:1-5]`; its use as an HTML-cache key is convention. There
-are **three** independent constants, and a PDF's bytes depend on all of them:
-
-| Constant | Evidence | Governs |
-|---|---|---|
-| `GENERATOR_VERSION` | `[VERIFIED: lib/html-doc/constants.ts:5]` | magazine model shape/prompt |
-| `PDF_RENDER_VERSION` | `[VERIFIED: lib/pdf/pdf-render-version.ts:10]` | PDF settings **and the pinned Chromium** |
-| `DIG_GENERATOR_VERSION` | `[VERIFIED: lib/dig/generate.ts:15]` | dig bodies — decides what a dig-deeper render contains |
-
-`pdf-render-version.ts:5-9` states the failure mode itself: those bumps *"alter PDF bytes WITHOUT
-changing the HTML."* Under the first draft's hash, a `PDF_RENDER_VERSION` bump yields **the same
-address for different bytes** — in an append-only log, a silent overwrite or an unrecordable artifact.
-An identity built by enumerating version constants is only as complete as the enumeration, and this
-codebase has three constants and a Chromium pin to forget.
-
-⛔ **WITHDRAWN by round 14 H1 — this warrant is refuted by its own citation.** Kept, struck through,
-because it is the clearest instance in this document of a citation that *resolves* without
-*supporting*, and deleting it would delete the evidence.
-
-`lib/pdf/pdf-render-version.ts:21` hashes `htmlNonceFree` — the renderer's **input**, not its output —
-and `.r${PDF_RENDER_VERSION}` is a **separate literal segment in the same key**, present precisely
-because the hash does not subsume it. The same file's docblock `[VERIFIED: lib/pdf/pdf-render-version.ts:5-9]`
-says a missed bump cannot be detected and must be a review-time checklist item. So production is
-**input-addressing plus a hand-maintained version constant** — verbatim the enumeration approach this
-ADR rejects two paragraphs earlier. **The codebase's clearest instance of the failure mode was cited
-as proof of the cure.**
-
-~~**Content addressing is complete by construction, and production already does it.**~~
-`[VERIFIED: lib/pdf/pdf-render-version.ts:22]` keys PDFs as
-`pdfs/${base}.r${PDF_RENDER_VERSION}.${sha256(html)[:16]}.pdf`, called on the nonce-free rendered HTML
-`[VERIFIED: app/api/pdf/[id]/route.ts:54]`. It subsumes every version constant, present and future,
-without anyone maintaining a list.
-
-- Re-rendering the same source with the same renderer yields the **same** address — idempotent,
-  nothing to overwrite.
-- Any change to bytes — model, dig, renderer setting, Chromium — yields a **different** address.
-- The ADR's falsifier #3 (deterministic derivability) is satisfied: it is a hash of the output.
-
-**One constraint it must respect, and does.** `[VERIFIED: …-design.md:893]`: *"A generation id must be
-chosen before its content, which rules out content-hash ids for anything on a spend path; §4.1 already
-recommends UUIDs there and content hashes only for free re-renders."* Renders are the free side, so
-this is the permitted case — paid kinds keep UUID generation ids chosen before the Gemini call.
-
-**Note honestly what this costs the headline.** The free/paid distinction does not vanish; it moves
-from `record_artifact`'s write branch into *how an id is minted* — UUID-before-content for paid,
-hash-of-content for free. That is a smaller and more honest place for it, but it is not zero, and this
-ADR should not claim renders lost their special case entirely. **Put the branch in a data-driven
-function** beside `slot_kind` `[VERIFIED: schema/04_artifacts.sql:20]` rather than in caller
-convention, or it becomes exactly the unwritten caller rule §12b was retired for being.
+- The paid/free **partition** is sound and total: *exactly one of `generation_id` / `render_id` is
+  non-null*, across all five kinds `[VERIFIED: schema/03_generations.sql:264]`
+  `[VERIFIED: schema/04_artifacts.sql:94-95]`. It is the **address** that is unresolved, not the
+  partition.
+- `video_artifacts_free_uq` **stays** until the render slice lands — see Consequences.
+- Nothing in the reservation deletion depends on render addressing. The two collide on one column,
+  not on one question: the reservation is a **coordination** defect, render addressing an **identity**
+  one.
 
 ### Does the founding conflation dissolve? NOT YET — and this is the honest state (round 14)
 

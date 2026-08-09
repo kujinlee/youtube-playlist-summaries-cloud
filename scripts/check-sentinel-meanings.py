@@ -81,13 +81,22 @@ MEANINGS: dict[tuple[str, str], str] = {
 # A meaning may contain a conjunction ONLY with a written reason. Empty is the goal.
 CONJUNCTION_OK: dict[tuple[str, str], str] = {
     ("video_artifacts", "generation_id"): (
-        "KNOWN CONFLATION, recorded rather than hidden — this is the defect ADR-0007 removes.\n"
+        "KNOWN CONFLATION, recorded rather than hidden.\n"
         "                NULL currently means BOTH 'this artifact is free' (a MONEY property) and\n"
         "                'this address may be overwritten' (an ADDRESSING property). The schema\n"
         "                literally defines free-ness as the absence of a generation id:\n"
         "                  (kind in ('summary','model','dig','digDeeper')) = (generation_id is not null)\n"
         "                Five findings across rounds 8-12 came out of that single conflation.\n"
-        "                Delete this entry when renders get a derived generation id."),
+        "\n"
+        "                ⟳ 2026-08-09 — THE OLD DELETION TRIGGER WAS 'when renders get a derived\n"
+        "                generation id'. That plan is DEAD: it was refuted by round 13 (B2), its\n"
+        "                replacement was refuted by round 14 (B4), and render addressing has been\n"
+        "                split out of ADR-0007 entirely. A trigger that can never fire is a rule\n"
+        "                that rots, so it is restated rather than left pointing at a dead plan.\n"
+        "                ADR-0007 no longer removes this defect — it is scoped to COORDINATION.\n"
+        "                NEW TRIGGER: delete this entry when the render-addressing slice lands\n"
+        "                (docs/superpowers/specs/2026-08-09-render-addressing-brief.md, backlog #25).\n"
+        "                Do NOT delete it on the strength of either withdrawn design."),
 }
 
 

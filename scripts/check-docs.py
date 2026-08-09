@@ -105,7 +105,12 @@ def check_adr_index(errors: list[str]) -> None:
         errors.append("docs/adr/README.md (the ADR index) does not exist")
         return
     text = ADR_INDEX.read_text(errors="ignore")
-    listed = {m.group(0) for m in re.finditer(r"\d{4}-[a-z0-9-]+\.md", text)}
+    # Match only MARKDOWN LINK TARGETS — `[0007](0007-slug.md)` — not every 4-digit-prefixed
+    # filename mentioned in prose. Tightened 2026-08-09: the old pattern was a bare filename
+    # match, so citing a DATE-named spec from the index (`2026-08-09-render-addressing-brief.md`)
+    # was read as an ADR that "does not exist". A gate that forbids referring to other documents
+    # is a gate that pushes cross-references out of the index, which is the opposite of the job.
+    listed = {m.group(1) for m in re.finditer(r"\]\((\d{4}-[a-z0-9-]+\.md)\)", text)}
     actual = {p.name for p in adr_files()}
     for missing in sorted(actual - listed):
         errors.append(f"ADR index does not list {missing} — index has drifted")
