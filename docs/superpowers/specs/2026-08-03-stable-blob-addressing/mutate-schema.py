@@ -360,16 +360,8 @@ MUTATIONS = [
     # ── round 8: the guard-classification fixes. Each converts a SEQUENCE guard from a rejecter
     # into a reconciler, so each mutation restores the REJECTER and must go red.
     ("video_artifacts_free_uq: the free-render reconciler removed (re-render collides again)",
-     """  if p_generation_id is null then
-    insert into public.video_artifacts
-      (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
-    values (p_ws, p_video, p_slot, null, p_kind, 'recorded', p_blob_key)
-    on conflict (workspace_id, video_id, slot) where generation_id is null
-    do update set blob_key = excluded.blob_key, state = 'recorded';
-    return 'recorded_free';
-  end if;
-""",
-     "",
+     "  if p_generation_id is null then\n    insert into public.video_artifacts",
+     "  if false then\n    insert into public.video_artifacts",
      "video_artifacts_free_uq", ART),
 
     # The `do update` specifically — keeping the branch but making the insert blind. Without this,
@@ -377,7 +369,8 @@ MUTATIONS = [
     # "the branch reconciles".
     ("video_artifacts_free_uq: the free upsert made blind (branch kept, conflict handling dropped)",
      """    on conflict (workspace_id, video_id, slot) where generation_id is null
-    do update set blob_key = excluded.blob_key, state = 'recorded';""",
+    do update set blob_key = excluded.blob_key, state = 'recorded',
+                  lease_expires_at = null, lease_token = null, reserved_at = null;""",
      "    ;",
      "video_artifacts_free_uq", ART),
 
@@ -451,6 +444,17 @@ MUTATIONS = [
      "                and generation_id is not distinct from p_generation_id",
      "                and generation_id = p_generation_id",
      "video_artifacts_free_uq", ART),
+
+    ("Claude H2: the free branch stops clearing the lease columns (a reserved free slot is stuck)",
+     """    do update set blob_key = excluded.blob_key, state = 'recorded',
+                  lease_expires_at = null, lease_token = null, reserved_at = null;""",
+     "    do update set blob_key = excluded.blob_key, state = 'recorded';",
+     "art_pending_has_reserved_at", ART),
+
+    ("Claude H3: a divergent blob_key silently kept instead of refused",
+     "                and generation_id = p_generation_id and blob_key is distinct from p_blob_key) then",
+     "                and generation_id = p_generation_id and false) then",
+     "differs from the reserved one", ART),
 
     # ── ⟳ ROUND 9: the ownership fence, mutated in BOTH directions it failed in ──────
     # Expect names R1/B1a, not R9-2, because R1 runs FIRST and the verifier stops at the first

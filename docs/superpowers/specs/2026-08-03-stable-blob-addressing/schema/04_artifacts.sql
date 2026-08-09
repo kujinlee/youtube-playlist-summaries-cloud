@@ -464,12 +464,28 @@ begin
   -- complete, no token to check (nothing was ever reserved because nothing was paid for), and the
   -- ADDRESS IS MUTABLE — the append-only trigger skips rows with a null generation_id by design, so
   -- overwriting blob_key here is legal where it would be shape #3 on a paid row.
+  -- ⟳ ROUND 9 (round 8 Claude H2) — THE LEASE COLUMNS ARE CLEARED HERE TOO. Both paid paths clear
+  -- all three; this one set blob_key and state and left them, so a free slot that had been
+  -- RESERVED became permanently unrecordable:
+  --   reserve a FREE slot -> reserved (state=pending)
+  --   record it           -> RAW [23514] art_pending_has_reserved_at, on every retry, forever
+  -- The only thing standing between the design and that was the aside "'render' is free and never
+  -- reserved" — a CONVENTION, not a guard, and `reserve_artifact_slot` has a dedicated
+  -- `if p_generation_id is not null` branch precisely so a null generation is an ordinary call.
+  -- Clearing them makes reserve-then-record work rather than forbidding it, because a free render
+  -- has no spend to guard but may still want a lease against two workers doing the same CPU work.
+  -- ⚠ THE COMMENT LIVES ABOVE THE STATEMENT, NOT INSIDE IT. Placed between `on conflict` and
+  -- `do update` it split the clause, and a mutation that removes conflict handling then orphaned
+  -- the `on conflict` line: `syntax error at end of input`, reported as an untested guard. That is
+  -- the "an anchor spanning prose breaks whenever someone explains themselves" lesson, committed
+  -- again in the round that recorded it.
   if p_generation_id is null then
     insert into public.video_artifacts
       (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
     values (p_ws, p_video, p_slot, null, p_kind, 'recorded', p_blob_key)
     on conflict (workspace_id, video_id, slot) where generation_id is null
-    do update set blob_key = excluded.blob_key, state = 'recorded';
+    do update set blob_key = excluded.blob_key, state = 'recorded',
+                  lease_expires_at = null, lease_token = null, reserved_at = null;
     return 'recorded_free';
   end if;
 
@@ -510,6 +526,27 @@ begin
        and g.state = 'pending'
        and (g.reserved_by = p_token
             or (g.reserved_by_worker = p_worker_id and g.reserved_by_job = p_job_id));
+  end if;
+
+  -- ⟳ ROUND 9 (round 8 Claude H3) — A DIVERGENT ADDRESS IS REFUSED, NOT SILENTLY DROPPED.
+  -- Neither the holder path below nor the append path's `do update` assigns blob_key; only the fresh
+  -- INSERT used it. MEASURED: a caller recording with a DIFFERENT key got `recorded_as_holder`, and
+  -- the manifest kept pointing at the RESERVED key. The bytes are at one address and the row names
+  -- another — shape #4, silent, on the success path, in the spec whose entire subject is the address.
+  -- `art_key_names_generation` cannot catch it: both keys agree on all four constrained segments.
+  --
+  -- Raising rather than assigning, and the choice is forced. Assigning would make a recorded address
+  -- MUTABLE, which is shape #3 and the defect this whole design exists to remove. Keeping one of two
+  -- divergent addresses silently is the only option that cannot be right. So it is a caller bug — a
+  -- SHAPE violation, where rejecting is correct.
+  if exists (select 1 from public.video_artifacts
+              where workspace_id = p_ws and video_id = p_video and slot = p_slot
+                and generation_id = p_generation_id and blob_key is distinct from p_blob_key) then
+    raise exception 'video_artifacts: % names blob_key %, but this slot already holds % — an address may not be rewritten',
+      p_generation_id, p_blob_key,
+      (select blob_key from public.video_artifacts
+        where workspace_id = p_ws and video_id = p_video and slot = p_slot
+          and generation_id = p_generation_id);
   end if;
 
   update public.video_artifacts

@@ -1486,6 +1486,47 @@ $$, (select id from t_ws), (select id from t_w2)::text),
  'a FREE row may not carry a key under another workspace''s prefix', '23514',
  'art_key_names_workspace');
 
+-- ⟳ R9-7 (round 8 Claude H2) — A FREE SLOT THAT WAS RESERVED IS STILL RECORDABLE.
+-- The free branch set blob_key and state and left the three lease columns, so a reserved free slot
+-- failed art_pending_has_reserved_at on every retry, forever. The convention "'render' is free and
+-- never reserved" was the only thing preventing it, and a convention is not a guard.
+do $$ declare ws uuid; r record; o text; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR9e');
+  select * into r from reserve_artifact_slot(ws,'vidR9e','pdf:summary',null,'render'::artifact_kind,
+    ws::text||'/videos/vidR9e/renders/s.pdf');
+  if r.outcome <> 'reserved' then
+    raise exception 'ASSERTION FAILED — a free slot could not be reserved: %', r.outcome; end if;
+  o := record_artifact(ws,'vidR9e','pdf:summary',null,'render'::artifact_kind,
+        ws::text||'/videos/vidR9e/renders/s.pdf', r.token);
+  if o <> 'recorded_free' then
+    raise exception 'ASSERTION FAILED — a RESERVED free slot could not be recorded: %', o; end if;
+  raise notice 'ok (R9-7): a free slot that was reserved still records';
+end $$;
+
+-- ⟳ R9-8 (round 8 Claude H3) — THE MANIFEST MAY NOT NAME AN ADDRESS THE CALLER DID NOT WRITE.
+-- Neither the holder path nor the append path assigned blob_key, so a caller that wrote its bytes
+-- at one key was told `recorded_as_holder` while the row kept pointing at the reserved key — shape
+-- #4, silent, on the SUCCESS path. Both keys pass art_key_names_generation, which constrains only
+-- the first four segments, so no constraint could catch it.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR9f');
+  perform reserve_artifact_slot(ws,'vidR9f','summary','gR9f','summary'::artifact_kind,
+    ws::text||'/videos/vidR9f/gR9f/RESERVED.md',
+    p_worker_id := 'worker-addr',
+    p_job_id := '33333333-3333-3333-3333-333333333333');
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidR9f','summary','gR9f','summary'::artifact_kind,
+    %L, null, p_md_hash := 'SHA_ADDR', p_produced_at := '2026-05-07',
+    p_card := '{"tldr":"d","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-07","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    p_doc_version_major := 4, p_worker_id := 'worker-addr',
+    p_job_id := '33333333-3333-3333-3333-333333333333');
+$$, (select id from t_ws), (select id from t_ws)::text||'/videos/vidR9f/gR9f/ACTUALLY-WRITTEN.md'),
+ 'recording under a key that differs from the reserved one is refused, not silently dropped',
+ 'P0001');
+
 -- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
 -- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
 --   SHAPE    — is this row well-formed and referentially sound? A violation is a CALLER BUG. Reject.
