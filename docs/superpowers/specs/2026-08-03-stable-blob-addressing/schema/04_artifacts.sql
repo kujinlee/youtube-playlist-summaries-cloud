@@ -339,6 +339,34 @@ begin
   returning * into v_row;
 
   if found then
+    -- ⟳ ROUND 12 B1 — THE WINNER OWNS THE GENERATION IT JUST RESERVED, and this line restores an
+    -- invariant the code two screens up already claims: the token is *"minted ONCE and shared by the
+    -- generation and the artifact, so the holder of a slot and the reserver of its generation are
+    -- provably the same party"*. The generation insert above is `on conflict do nothing`, so when the
+    -- row already existed and was still pending it kept the PREVIOUS caller's `reserved_by` while the
+    -- artifact upsert re-pointed `lease_token` to ours. The two halves came apart in silence.
+    --
+    -- MEASURED: W2 reclaims the slot with the same generation id, is told `reserved`, PAYS, presents
+    -- the token this very RPC returned to it, and is refused:
+    --   W2 reserve -> reserved (attempts=2) ; reserved_by == W2 token: f  STALE: t
+    --   W2 record with ITS OWN token -> [P0001] cannot mark dig:8 as recorded — generation gX is pending
+    -- Shape #12 (a guard rejecting a caller who did nothing wrong) reached through the ONE credential
+    -- round 11 kept — and it falsified §12b's load-bearing claim, since the caller held both the paid
+    -- bytes and the token it was given.
+    --
+    -- ⚠ ONLY AFTER `found`, never beside the insert. Re-pointing before the upsert decides would hand
+    -- the generation to a caller that goes on to be denied `busy`/`exhausted` — the round-7 H3 defect
+    -- (a denied reservation leaving a parent behind), inverted. And `state = 'pending'` keeps it away
+    -- from a completed generation, whose content the freeze trigger owns.
+    --
+    -- ⚠ WHAT THE PREVIOUS HOLDER LOSES: nothing that was reachable. Sharing a generation id means
+    -- sharing the blob key (it is derived from that id) and colliding on `video_artifacts_paid_uq`,
+    -- so two writers on one generation were never going to produce two rows. A reclaimed writer that
+    -- wants its own work preserved uses its OWN generation id and lands on `recorded_after_loss`.
+    update public.video_generations
+       set reserved_by = v_token
+     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id
+       and state = 'pending';
     return query select 'reserved'::text, v_row.lease_token, v_row.lease_attempts; return;
   end if;
 

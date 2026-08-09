@@ -459,6 +459,15 @@ MUTATIONS = [
                           and a.state = 'pending' and a.generation_id = p_generation_id));""",
      "a stranger cannot complete another worker", ART),
 
+    ("round 12 B1: the generation keeps the PREVIOUS caller's token after a reclaim",
+     """    update public.video_generations
+       set reserved_by = v_token
+     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id
+       and state = 'pending';
+""",
+     "",
+     "a token the generation does not name", ART),
+
     ("round 10 B1: success reported while another writer's content stands",
      """    if not found and exists (
          select 1 from public.video_generations g

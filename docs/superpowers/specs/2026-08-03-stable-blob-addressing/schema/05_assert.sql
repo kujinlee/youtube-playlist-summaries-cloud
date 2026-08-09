@@ -1595,6 +1595,37 @@ do $$ declare ws uuid; tok uuid; o text; n int; begin
   raise notice 'ok (R11-2): a live free reservation is the holder''s; a stranger gets a typed busy';
 end $$;
 
+-- ⟳ R12-1 (round 12 B1) — THE TOKEN THE RPC HANDS OUT MUST BE THE TOKEN THE FENCE ACCEPTS.
+-- `reserve_artifact_slot` creates the generation `on conflict do nothing`, so when the row already
+-- existed and was still pending it kept the PREVIOUS caller's `reserved_by` while the artifact
+-- upsert re-pointed `lease_token` to the new one. A caller was told `reserved`, PAID, presented the
+-- token it had just been given, and was refused — shape #12 through the one credential round 11
+-- kept, and a direct counter-example to §12b's "the party holding paid bytes always still holds the
+-- token". It held both. They just were not the same token.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR12' from t_ws;
+do $$ declare ws uuid; t1 uuid; t2 uuid; o text; begin
+  select id into ws from t_ws;
+  update guardrail_config set dig_max_attempts = 3 where id = true;
+  select token into t1 from reserve_artifact_slot(ws,'vidR12','dig:8','gR12','dig'::artifact_kind,
+    ws::text||'/videos/vidR12/gR12/dig-8.md', p_start_sec := 8, p_end_sec := 88);
+  update video_artifacts set lease_expires_at = now() - interval '1 hour'
+   where video_id='vidR12' and slot='dig:8';
+  -- the SAME generation id is reclaimed by a second caller
+  select token into t2 from reserve_artifact_slot(ws,'vidR12','dig:8','gR12','dig'::artifact_kind,
+    ws::text||'/videos/vidR12/gR12/dig-8.md', p_start_sec := 8, p_end_sec := 88);
+  if (select reserved_by from video_generations
+       where video_id='vidR12' and generation_id='gR12') <> t2 then
+    raise exception 'ASSERTION FAILED — reserve returned a token the generation does not name';
+  end if;
+  o := record_artifact(ws,'vidR12','dig:8','gR12','dig'::artifact_kind,
+        ws::text||'/videos/vidR12/gR12/dig-8.md', t2, p_start_sec := 8, p_end_sec := 88,
+        p_produced_at := '2026-05-12');
+  if o not in ('recorded_as_holder','recorded_after_loss') then
+    raise exception 'ASSERTION FAILED — a caller could not record with the token it was given: %', o;
+  end if;
+  raise notice 'ok (R12-1): the token reserve HANDS OUT is the token the fence accepts';
+end $$;
+
 -- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
 -- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
 --   SHAPE    — is this row well-formed and referentially sound? A violation is a CALLER BUG. Reject.
