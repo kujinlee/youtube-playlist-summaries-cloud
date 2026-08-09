@@ -1,0 +1,28 @@
+<!-- codex-review: model=gpt-5.5 -->
+
+**JOB 1**
+
+**HIGH — Durable completion credential is still the wrong shape: optional when needed, and collision-prone when present.**  
+Scenario: if the reserving caller omits `p_worker_id/p_job_id`, then loses token and slot, recording paid work still fails: measured `record without original durable credential errored [P0001] video_artifacts: cannot mark dig:3 as recorded — generation gNC1 is pending`. Conversely, if two workers collide on `worker_id` and `job_id`, a tokenless caller completes another generation: measured `record with same empty worker_id + same job_id + no token: recorded_after_token_loss`, `completed md_hash/tldr: SHA_COLLIDE / hijack`. Evidence: [04_artifacts.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/04_artifacts.sql:228) makes the durable credential optional; [04_artifacts.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/04_artifacts.sql:527) accepts equality on worker/job only. Change: make the restart-proof credential mandatory for paid reservations and make it an unguessable per-attempt durable secret, not `worker_id`; reject empty worker IDs and assert the collision case.
+
+**HIGH — Conditional corrections INSERT prevents clobber but loses legitimate insert-time clears.**  
+Scenario: a second playlist row carrying `corrections: ""` cannot distinguish “never had corrections” from “user explicitly cleared corrections before this replica inserted”; measured `corrections after second playlist INSERT with explicit empty string: KEEP`, while an UPDATE clear works: `corrections after UPDATE clear on original row: <null>`. Evidence: [03_generations.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/03_generations.sql:253) skips insert sync for empty corrections; [03_generations.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/03_generations.sql:258) only clears on update. Change: carry an explicit corrections revision/tombstone, or route corrections writes directly to `workspace_videos`; do not infer delete-vs-absence from per-playlist INSERT shape.
+
+**MEDIUM — Free render recording can clear another worker’s free lease without holding it.**  
+Scenario: W1 reserves a free render, W2 calls `record_artifact(... generation_id null ..., p_token null)` and clears the pending lease; measured `W1 reserve outcome/token reserved, W2 tokenless record outcome recorded_free, pending rows 0`. Evidence: [04_artifacts.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/04_artifacts.sql:482) branches on `p_generation_id is null`; [04_artifacts.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/04_artifacts.sql:486) upserts and clears lease columns without token ownership. Change: either forbid reserving free slots, or require the token when a pending free row exists.
+
+**JOB 2**
+
+**MEDIUM — Guard coverage still omits spec-added FKs on `jobs`, while reporting “every guard classified.”**  
+Scenario: `jobs_workspace_owner_fk` and `jobs.workspace_id`’s FK can change or disappear without classification because the catalog query excludes `jobs` FKs; measured gate output still says `guards in schema: 38 ... ✅ every guard classified`. Evidence: [01_workspaces.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/01_workspaces.sql:50) adds `jobs_workspace_owner_fk`; [check-guard-coverage.py](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/scripts/check-guard-coverage.py:165) enumerates FKs only for `video_artifacts`, `video_generations`, `workspace_videos`, and `videos`. Change: enumerate every public table touched by the spec, or derive the table set from loaded schema objects rather than a hand list.
+
+**MEDIUM — The population ratchet still proves two INSERTs, not a genuine second caller.**  
+Scenario: a future artifact kind can satisfy the ratchet with two direct fixture inserts in one block; no caller/scenario identity is recorded. Evidence: [05_assert.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/05_assert.sql:101) records only `kind/paid/slot/op`; [05_assert.sql](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/05_assert.sql:1733) requires only grouped `count(*) > 1`. Change: record scenario/caller labels and require distinct scenarios for the second write.
+
+No finding on the temp-copy mutation claim: the full gate passed `58/58`; two concurrent scratch mutation suites also both reported `58/58 mutations behaved as expected` and `baseline restored: GREEN`, with no repo schema diff.
+
+**JOB 3**
+
+The reservation invariant is not structural yet: JOB 1’s credential finding shows paid recording still depends on callers supplying optional, collision-free identity. The generation-complete invariant held on the probed paths; `video_artifacts_generation_complete` still rejects pending generations. The fifth free/paid face is the free lease-clearing path above.
+
+Verdict: **NOT CONVERGED**.

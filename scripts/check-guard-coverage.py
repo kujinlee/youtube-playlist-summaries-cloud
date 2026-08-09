@@ -134,6 +134,18 @@ GUARDS: dict[str, tuple[str, str]] = {
     # naming them costs two lines.
     "videos_playlist_id_owner_id_fkey":                              ("SHAPE", ""),
     "videos_workspace_id_fkey":                                      ("SHAPE", ""),
+    # ⟳ ROUND 11 — surfaced the moment the FK clause stopped being a second hand-written list.
+    # All referential and structural: a violation means the caller named a parent that is not
+    # theirs or does not exist, which is a caller bug at any ordering. Note two of them
+    # (`jobs_workspace_owner_fk`, `jobs_playlist_owner_fk`) are §14 Q6's CROSS-TENANT guards —
+    # they had been outside every inventory this project keeps.
+    "jobs_owner_id_fkey":                                            ("SHAPE", ""),
+    "jobs_playlist_owner_fk":                                        ("SHAPE", ""),
+    "jobs_workspace_id_fkey":                                        ("SHAPE", ""),
+    "jobs_workspace_owner_fk":                                       ("SHAPE", ""),
+    "playlists_owner_id_fkey":                                       ("SHAPE", ""),
+    "playlists_workspace_id_fkey":                                   ("SHAPE", ""),
+    "profiles_id_fkey":                                              ("SHAPE", ""),
 }
 
 # A SEQUENCE guard whose reconciler cannot be mutation-tested must say why here.
@@ -159,10 +171,14 @@ CATALOG_SQL = f"""
 select 'check:' || conname from pg_constraint
  where conrelid = any (array{list(TABLES)}::regclass[]) and contype = 'c'
 union all
+-- ⟳ ROUND 11 (round 10) — DERIVED FROM THE SAME SET AS THE TRIGGERS, not a second hand-written
+-- list. Round 9 widened the TRIGGER enumeration to six tables and left this clause on its original
+-- four, so `jobs_workspace_owner_fk` was invisible while the gate printed "every guard classified"
+-- — shape #10 committed INSIDE the fix that was widening an enumeration. One list, one place.
 select 'fk:' || conname from pg_constraint
  where contype = 'f'
    and connamespace = 'public'::regnamespace
-   and conrelid::regclass::text in ('video_artifacts','video_generations','workspace_videos','videos')
+   and conrelid = any (array{list(TRIGGER_TABLES)}::regclass[])
 union all
 select 'index:' || indexrelid::regclass::text from pg_index
  where indrelid = any (array{list(TABLES)}::regclass[]) and indisunique

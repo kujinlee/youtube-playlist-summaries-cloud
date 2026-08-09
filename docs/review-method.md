@@ -12,6 +12,29 @@ How adversarial review is run here, and the classification passes that go betwee
 
 ---
 
+## Two rules for PREMISES, not findings (added 2026-08-08)
+
+Both were bought with a full review round. The existing discipline — *a finding you MEASURED beats
+one you reasoned about* — was applied to findings and never to the premises a design rests on.
+
+**1. Quote the code you rely on; do not characterise it.**
+A design decision that depends on how existing code behaves must paste the relevant lines, with a
+`file:line`. Measured cost of not doing it: a spec comment asserted *"worker_id is stable config"*,
+`worker/main.ts:69` says
+`` `${os.hostname()}-${process.pid}-${randomUUID().slice(0, 8)}` ``, and an entire ownership
+mechanism was built on the false half. Quoting forces a read; characterising lets you write from
+memory. Where a premise genuinely cannot be verified, label it **unverified** in the same sentence —
+what must never happen is a premise sitting in a table beside measured facts in the same voice.
+
+**2. Ask "what caller reaches this state?" of every measured defect.**
+A rolled-back probe can construct any state you can type, including states no caller can reach.
+Round 8 measured a doubly-lost worker being refused and graded it Blocking; two rounds then designed
+against it; round 10 established the state cannot occur. *"Is this refused?"* and *"can a caller BE
+here?"* are different questions, and only the second decides whether a fix is needed.
+
+> A defect with no reachable caller is a fact about the schema's expressiveness, not about the
+> system. It may still be worth a guard — but it is not worth a mechanism.
+
 ## Adversarial Review
 
 Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every phase.
