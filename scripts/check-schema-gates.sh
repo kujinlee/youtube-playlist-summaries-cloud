@@ -27,17 +27,23 @@ run() {
 }
 
 # 1. The schema executes against live Postgres, and every behavioural assertion holds.
-run "1/4  schema + assertions (verify-schema.sh)"      "$SPEC/verify-schema.sh"
+run "1/6  schema + assertions (verify-schema.sh)"      "$SPEC/verify-schema.sh"
 
 # 2. Every guard is mutation-checked — a guard that is never mutated is documentation.
-run "2/4  mutation suite (mutate-schema.py)"           "$SPEC/mutate-schema.py"
+run "2/6  mutation suite (mutate-schema.py)"           "$SPEC/mutate-schema.py"
 
 # 3. COVERAGE, the only gate that looks at what is ABSENT rather than what is present.
 #    Enumerates guards from pg_catalog, so a guard added today cannot be skipped.
-run "3/4  guard coverage (check-guard-coverage.py)"    ./scripts/check-guard-coverage.py
+run "3/6  guard coverage (check-guard-coverage.py)"    ./scripts/check-guard-coverage.py
 
-# 4. Docs integrity — cheap, and catches spec/prose drift.
-run "4/4  documentation integrity"                     python3 scripts/check-docs.py
+# 4. COHERENCE, not correctness. Everything above asks "is this right?" — a LOCAL question
+#    that can always be answered yes by patching, which is how a wrong shape survives twelve
+#    review rounds while the gates get greener. These two compare the design against ITSELF.
+run "4/6  sentinel meanings (one NULL, one meaning)"   ./scripts/check-sentinel-meanings.py
+run "5/6  vocabulary collisions (one mechanism)"       ./scripts/check-vocabulary-collisions.py
+
+# 6. Docs integrity — cheap, and catches spec/prose drift.
+run "6/6  documentation integrity"                     python3 scripts/check-docs.py
 
 echo
 if [ "$fail" -eq 0 ]; then
