@@ -231,9 +231,19 @@ begin
   -- ⟳ ROUND 7 H2 — minted ONCE and shared by the generation and the artifact, so the holder of a
   -- slot and the reserver of its generation are provably the same party.
   v_token := gen_random_uuid();
-  -- THE BOUND IS PER KIND, because the existing knobs already are and they disagree by 5x
-  -- (summary_max_attempts=1, dig_max_attempts=2, max_serve_attempts=5). A single number here would
-  -- have silently overridden a money guardrail somebody chose deliberately.
+  -- THE BOUND IS PER KIND, because the existing knobs already are and they disagree. MEASURED from
+  -- the live `guardrail_config` on 2026-08-08: summary=1, **dig=1**, serve=5, lease_ttl=180.
+  -- A single number here would have silently overridden a money guardrail somebody chose
+  -- deliberately.
+  -- ⟳ ROUND 9 (round 8 M6) — THIS COMMENT USED TO SAY `dig_max_attempts=2`, AND THE RUNNING SYSTEM
+  -- SAYS 1. The assertions then SET the value they go on to verify, so the schema's reasoning and
+  -- production had drifted apart with a green suite in between. The consequence is not cosmetic: at
+  -- 1, the named consequence below (a crashed worker leaves a slot no one can retry) silently
+  -- extends from summaries to digs, and round 8's B2 scenario is unreachable in production for the
+  -- ACCIDENTAL reason that no dig slot is reclaimable at all — which is not a mitigation, because
+  -- the same conjunction is reachable through any kind using max_serve_attempts=5.
+  -- The values are quoted rather than read here because this is a comment; the assertions that
+  -- depend on a specific value set it explicitly and say so.
   -- `p_kind::text`, NOT a bare `case p_kind when 'summary'`. MEASURED: `type "artifact_kind" does
   -- not exist` AT RUNTIME. Comparing an enum against an unknown literal makes Postgres resolve the
   -- enum's type NAME, and `set search_path = ''` puts it out of reach — the THIRD instance this
@@ -257,9 +267,19 @@ begin
 
   -- Idempotency, and a REAL case rather than symmetry: a worker that crashed between recording and
   -- reporting job completion retries, and must learn it is done rather than be handed an error.
+  -- ⟳ ROUND 9 H2 — `generation_id is not distinct from p_generation_id`, NOT `=`.
+  -- Round 8's C1 gave the free path a reconciler in `record_artifact` and left this sibling entry
+  -- point alone, and the root cause is invisible on inspection: for a FREE slot both sides are NULL,
+  -- and `NULL = NULL` is NULL — never true. So this short-circuit was not merely wrong for free
+  -- slots, it was UNREACHABLE for them, and the INSERT below uses the in-flight partial index as its
+  -- conflict arbiter, which a recorded FREE row can never match. MEASURED:
+  --   record free html -> recorded_free ; re-render -> recorded_free ;
+  --   reserve the same free slot -> RAW [23505] on video_artifacts_free_uq
+  -- A typed outcome promised, a constraint name delivered. Shape #10, in the round that added C1.
   if exists (select 1 from public.video_artifacts
               where workspace_id = p_ws and video_id = p_video and slot = p_slot
-                and generation_id = p_generation_id and state in ('recorded','detached')) then
+                and generation_id is not distinct from p_generation_id
+                and state in ('recorded','detached')) then
     return query select 'already_recorded'::text, null::uuid, null::int; return;
   end if;
 
@@ -754,6 +774,22 @@ create view video_generations_collectable with (security_invoker = true) as
 select g.*
   from video_generations g
  where not g.body_collected
+   -- ⟳ ROUND 9 B1 — AND THE GENERATION MUST BE FINISHED. Both round-8 reviewers found this
+   -- independently, and it is round 8's OWN fix reproducing the defect it was written to remove:
+   -- this view was added to stop the trigger aborting a sweep, and it copied the currency test
+   -- faithfully INCLUDING its blind spot. `video_artifacts_current` requires `state = 'recorded'`,
+   -- so an IN-FLIGHT reservation has no current row and its generation was offered to the sweeper
+   -- while the paid call was still running. MEASURED end to end, no attacker and no second worker:
+   --   collectable WHILE IN FLIGHT: 1 ; sweep collected 1 ; holder records -> recorded_as_holder
+   --   gen complete, artifact recorded, and video_artifacts_current rows for that video: 0
+   -- The worker's own record SUCCEEDS and reports success; the row is invisible forever, because
+   -- `not coalesce(g.body_collected, false)` now excludes it. Money spent, bytes queued for
+   -- deletion, no error anywhere — shape #7 and shape #5 on the one path with no undo.
+   -- Item 3 introduced `state` for exactly this distinction, and the view written a day later did
+   -- not consult it. Shape #10.
+   -- ⚠ A 90-day age predicate in the sweeper would have HIDDEN this while leaving the floor wrong,
+   -- which is why the fix belongs here and not in the retention heuristic.
+   and g.state = 'complete'
    and not exists (select 1 from video_artifacts_current c
                     where c.workspace_id = g.workspace_id and c.video_id = g.video_id
                       and c.generation_id = g.generation_id);

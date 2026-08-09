@@ -1394,6 +1394,65 @@ do $$ declare o text; ws uuid; job uuid := gen_random_uuid(); begin
   raise notice 'ok (R9-2): a worker that lost BOTH its token and its slot still records its paid work';
 end $$;
 
+-- ⟳ R9-3 (round 8 B1) — GC MAY NOT COLLECT A GENERATION THAT IS STILL BEING PAID FOR.
+-- `video_artifacts_current` requires state='recorded', so an in-flight reservation had no current
+-- row and was offered to the sweeper. The worker then recorded SUCCESSFULLY and its row was
+-- invisible forever. Asserted at both ends: not collectable while pending, and visible after.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidR9c' from t_ws;
+do $$ declare ws uuid; o text; tok uuid; n int; begin
+  select id into ws from t_ws;
+  select token into tok from reserve_artifact_slot(ws,'vidR9c','summary','gR9c','summary'::artifact_kind,
+    ws::text||'/videos/vidR9c/gR9c/summary.md',
+    p_worker_id := 'worker-gc', p_job_id := gen_random_uuid());
+  select count(*) into n from video_generations_collectable
+   where video_id='vidR9c' and generation_id='gR9c';
+  if n <> 0 then
+    raise exception 'ASSERTION FAILED — an IN-FLIGHT generation is collectable; a sweep would bury paid work';
+  end if;
+  o := record_artifact(ws,'vidR9c','summary','gR9c','summary'::artifact_kind,
+        ws::text||'/videos/vidR9c/gR9c/summary.md', tok, p_md_hash := 'SHA_R9C',
+        p_card := '{"tldr":"z","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-05","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+        p_doc_version_major := 4, p_produced_at := '2026-05-05');
+  if (select count(*) from video_artifacts_current where video_id='vidR9c') <> 1 then
+    raise exception 'ASSERTION FAILED — the recorded artifact is not visible in current'; end if;
+  raise notice 'ok (R9-3): an in-flight generation is not collectable, and records visibly';
+end $$;
+
+-- ⟳ R9-4 (round 8 H4) — THE FUTURE BOUND TOLERATES CLOCK SKEW BUT NOT A CLOCK VALUE.
+-- Both halves, because a tolerance that swallowed round 7 B2 would be a regression dressed as a fix.
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR9d');
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+  values (ws,'vidR9d','gSkew','summary',
+    '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-06","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    4, clock_timestamp(), 'SHA_SKEW');     -- a few hundred ms of Fly-vs-Supabase drift
+  raise notice 'ok (R9-4): ordinary clock skew no longer refuses a paid summarize';
+end $$;
+select assert_raises(format($$
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+  values (%L::uuid,'vidR9d','gFar','summary',
+    '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-06","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+    4, now() + interval '3 days', 'SHA_FAR');
+$$, (select id from t_ws)),
+ 'a genuinely future produced_at is still refused (round 7 B2 preserved)', 'P0001');
+
+-- ⟳ R9-5 (round 8 H2) — THE FREE SHORT-CIRCUIT IS REACHABLE AT ALL.
+-- It compared `generation_id = p_generation_id`, and for a free slot both sides are NULL, so the
+-- test was NULL — never true. The branch existed and could not run; reserve then hit
+-- video_artifacts_free_uq raw. The assertion is the TYPED outcome, because a raw 23505 is the defect.
+do $$ declare ws uuid; o text; res text; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,'free/r9-1',null);
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,'free/r9-2',null);
+  select outcome into res from reserve_artifact_slot(ws,'vidR9c','pdf:summary',null,
+    'render'::artifact_kind,'free/r9-3');
+  if res <> 'already_recorded' then
+    raise exception 'ASSERTION FAILED — reserving a recorded FREE slot gave %, not already_recorded', res;
+  end if;
+  raise notice 'ok (R9-5): reserving a recorded free slot returns a typed outcome, not a raw 23505';
+end $$;
+
 -- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
 -- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
 --   SHAPE    — is this row well-formed and referentially sound? A violation is a CALLER BUG. Reject.

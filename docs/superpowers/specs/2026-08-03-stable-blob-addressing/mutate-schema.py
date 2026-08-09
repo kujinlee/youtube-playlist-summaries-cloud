@@ -186,7 +186,8 @@ MUTATIONS = [
     ("the idempotency short-circuit removed",
      """  if exists (select 1 from public.video_artifacts
               where workspace_id = p_ws and video_id = p_video and slot = p_slot
-                and generation_id = p_generation_id and state in ('recorded','detached')) then
+                and generation_id is not distinct from p_generation_id
+                and state in ('recorded','detached')) then
     return query select 'already_recorded'::text, null::uuid, null::int; return;
   end if;
 """,
@@ -331,7 +332,7 @@ MUTATIONS = [
 
     # ── round 7: the guards added for this round's own findings ──────────────────
     ("the produced_at future bound removed (a fast clock outranks reality)",
-     """  if new.produced_at is not null and new.produced_at > now() then
+     """  if new.produced_at is not null and new.produced_at > now() + interval '5 minutes' then
     raise exception 'video_generations: produced_at % is in the FUTURE — a clock value may not enter the ranking',
       new.produced_at;
   end if;
@@ -369,7 +370,7 @@ MUTATIONS = [
   end if;
 """,
      "",
-     "first free render", ART),
+     "video_artifacts_free_uq", ART),
 
     # The `do update` specifically — keeping the branch but making the insert blind. Without this,
     # deleting the whole branch is the only thing tested, and "the branch exists" is weaker than
@@ -416,6 +417,29 @@ MUTATIONS = [
      "  if new.workspace_id is not null and new.workspace_id <> v_ws then",
      "  if false then",
      "disagreeing with the playlist", GEN),
+
+    # ── ⟳ ROUND 9: the three schema fixes both reviewers' findings converged on ──────
+    ("B1: the collectable floor drops `state = complete` (GC buries in-flight paid work)",
+     "   and g.state = 'complete'\n",
+     "",
+     "IN-FLIGHT generation is collectable", ART),
+
+    ("H4: the produced_at tolerance removed (zero-width bound against a txn timestamp)",
+     "new.produced_at > now() + interval '5 minutes'",
+     "new.produced_at > now()",
+     "is in the FUTURE", GEN),
+
+    # The reverse direction matters as much: a tolerance wide enough to swallow round 7 B2 would be
+    # a regression wearing a fix's clothes, so widening it must ALSO go red.
+    ("H4: the tolerance widened to a week (round 7 B2 undone)",
+     "new.produced_at > now() + interval '5 minutes'",
+     "new.produced_at > now() + interval '7 days'",
+     "should have been rejected: a genuinely future produced_at", GEN),
+
+    ("H2: the free short-circuit back to `=` (unreachable for NULL generations)",
+     "                and generation_id is not distinct from p_generation_id",
+     "                and generation_id = p_generation_id",
+     "video_artifacts_free_uq", ART),
 
     # ── ⟳ ROUND 9: the ownership fence, mutated in BOTH directions it failed in ──────
     # Expect names R1/B1a, not R9-2, because R1 runs FIRST and the verifier stops at the first

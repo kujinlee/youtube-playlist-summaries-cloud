@@ -441,7 +441,18 @@ create table video_generations (
 create function video_generations_freeze() returns trigger
   language plpgsql security definer set search_path = '' as $$
 begin
-  if new.produced_at is not null and new.produced_at > now() then
+  -- ⟳ ROUND 9 H4 — WITH A SKEW TOLERANCE, because the bound was zero-width against a TRANSACTION
+  -- timestamp. `now()` is `transaction_timestamp()`, so any value stamped after the transaction
+  -- opened is already "the future": MEASURED 0.63s into a transaction, `clock_timestamp()` was
+  -- rejected. The realistic trigger is not a long transaction but APP-VS-DATABASE CLOCK SKEW — the
+  -- worker runs on Fly, Postgres on Supabase, and `produced_at` is stamped in application code, so a
+  -- few hundred milliseconds of NTP drift turned a successful summarize into a raw exception AFTER
+  -- the paid Gemini call. Shape #8 on the money path, failing closed in the wrong direction.
+  --
+  -- Five minutes preserves round 7 B2's intent completely: that finding was a value YEARS in the
+  -- future winning the ranking permanently. A tolerance wide enough for clock drift is nowhere near
+  -- wide enough to matter to a ranking ordered by production time.
+  if new.produced_at is not null and new.produced_at > now() + interval '5 minutes' then
     raise exception 'video_generations: produced_at % is in the FUTURE — a clock value may not enter the ranking',
       new.produced_at;
   end if;
