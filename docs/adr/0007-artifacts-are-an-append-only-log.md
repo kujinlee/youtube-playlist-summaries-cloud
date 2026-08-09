@@ -5,9 +5,10 @@ revised: 2026-08-09. Rounds 13, 14, 15 — three DESIGN reviews, all answered he
   SCOPE: COORDINATION ONLY. Render addressing was SPLIT OUT (user decision) to
   docs/superpowers/specs/2026-08-09-render-addressing-brief.md (backlog #25) after two designs were
   refuted in two rounds.
-  The GC-floor successor is `video_generations.in_flight_until` — ONE sweeper-only marker for every
-  kind (user decision, round 15 B2, "option C"), replacing the per-kind table whose `model` half was
-  measured to expire mid-call.
+  The GC floor needs NO successor: round 16 MEASURED that after these deletions no `video_generations`
+  row exists during a paid call, so nothing is collectable and the window closes itself. Rounds 14-16
+  proposed three covers (per-kind table, `serve_model_charge` lease, an `in_flight_until` marker); all
+  three are withdrawn. What still needs protecting is the ORPHAN BLOB, via §8's reinstated grace period.
   The core decision — delete the reservation protocol — has survived THREE design reviews unbroken;
   every finding in rounds 14 and 15 was in a FIX, not in the decision.
   See docs/reviews/spec-blob-addressing-r1{3,4,5}-coordinator.md
@@ -20,12 +21,11 @@ Paid artifacts are addressed under a generation id chosen before the content. Pr
 comes from the job queue's existing lease/heartbeat; "which artifact is current" from the ranking view
 that already exists.
 
-⚠ **One marker survives, and it is not a lease.** `video_generations.in_flight_until` tells the
-**sweeper** that a paid call is running, so it does not collect bytes that are being paid for. It has
-no token, no attempt counter, and **no caller may read it to exclude another** — it coordinates
-nobody. That distinction is the whole difference between this and the `pending` state being deleted,
-and it is stated here because a reader who meets the column first will otherwise read it as the
-reservation growing back.
+⚠ **Nothing survives to coordinate writers — not even a GC marker.** Three rounds tried to give the
+garbage collector an in-flight signal; round 16 measured that it needs none, because after these
+deletions **no generation row exists while a paid call runs** (see *When is a `video_generations` row
+created?*). The bytes written during that window are protected as orphans, by §8's grace period, which
+is the orphan sweeper's existing mechanism.
 
 **Three qualifications, stated up front rather than buried:**
 
@@ -98,7 +98,7 @@ serves exactly one concern. **`model` is a standing exception — see the next s
 | execution liveness | job lease + heartbeat + `sweep_expired_leases` | `[VERIFIED: 0009_…:63-78]` |
 | stable addressing | generation id → blob key | ADR-0006 |
 | which artifact is current | `video_artifacts_current` ranking | `schema/04_artifacts.sql` |
-| what may be deleted | `video_generations_collectable` + `body_collected`, floored by `video_generations.in_flight_until` (one sweeper-only marker, every kind — round 15 B2) | round 8 + round 15 |
+| what may be deleted | `video_generations_collectable` + `body_collected`; no in-flight floor is needed, because no generation row exists during a paid call (round 16 B1). Orphan **blobs** in that window are covered by §8's reinstated grace period | round 8 + round 16 |
 | **`model`: bounded single-flight + spend** | `serve_model_charge` lease, **not** `jobs` — see the next section. ⟳ *Round 15 H2: this row said "exclusivity" one row after that word was removed from `jobs` for being unsupportable. The reclaim clause `[VERIFIED: 0012_serve_model_charge.sql:64-65]` admits a second producer the moment the lease lapses, which round 15 B2 measured happens mid-call. It is a bounded window, not exclusion* | `[VERIFIED: 0012_serve_model_charge.sql:7-13, :53]` |
 
 **Two corrections round 13 forced, recorded so they are not re-lost.** `jobs_idem_active` dedupes
@@ -193,9 +193,15 @@ migration. **Bound, stated honestly — BOTH bounds, availability AND money:**
   `[VERIFIED: 0020_reservation_release.sql:237-247]`); and `least(1, 0) = 0` fully resets an
   exhausted document, since `max_serve_attempts >= 1` is permitted
   `[VERIFIED: 0012_serve_model_charge.sql:21]`. **Restricting the clamp to rows that actually merge
-  removes this entirely** — single-source rows are untouched, so no already-exhausted document is
-  revived, and the migration becomes **idempotent under re-run**, a question the first version never
-  addressed.
+  removes the single-source case completely**, and bounds the merged case to at most one extra paid
+  magazine call per merged key, once, at migration time. ⟳ *Round 16 M1: the first version said
+  "removes this entirely", which is false — a video in two playlists with one key at `attempt_count = 5`
+  (exhausted) and its sibling at 1 still has `count(*) = 2`, so `least(5 + 1, 4) = 4` revives it. The
+  restriction shrinks the affected population from every row to multi-playlist rows; it does not empty
+  it. A completeness claim on the money path, in the paragraph whose own lesson is "name what the rule
+  ranges over" — the third instance of that error, caught by the round that came looking for it.* The
+  migration is **idempotent under re-run**: after the first pass each key has one row, so `count(*) = 1`
+  and the clamp does not fire.
 
 **This is the third round in which the same substitution appeared, and it is recorded rather than
 quietly fixed.** Round 13 B1: a true lemma about *writes* read as a conclusion about *money*. Round 14
@@ -384,12 +390,16 @@ of these; this one it missed, and only a pass asking "which sections constrain e
 `reserved_by` on `video_generations`, and the `pending` artifact state. `record_artifact` becomes an
 append with a typed outcome and no fence.
 
-**ADDED — one column, and it is the only thing this ADR adds.** ⟳ *Reconciliation pass, 2026-08-09:
-the Consequences list recorded every deletion and no addition, so the ADR's net schema effect was
-unstated.*
-`video_generations.in_flight_until timestamptz` — the GC floor's successor, sweeper-read only, one
-marker for every kind (round 15 B2, option C). Plus `video_artifact_sources`, the provenance join
-table, which replaces the dropped `source_generation_id` column rather than adding to it.
+**ADDED — exactly one table, and no columns.** ⟳ *Reconciliation pass 2026-08-09 added this because
+the list recorded every deletion and no addition. ⟳ Round 16 L1 then caught it calling a table a
+column, and round 16 B1 removed the column entirely.*
+`video_artifact_sources`, the provenance join table, which **replaces** the dropped
+`source_generation_id` column rather than adding to it — so this ADR's net schema effect is one
+column removed, one table added, and everything else deleted.
+
+**REINSTATED:** §8's grace period, as an age predicate on orphan blobs. Not new — it was dropped on a
+premise (*"a blob written but not yet published is unreferenced — that state no longer exists"*) that
+these deletions falsify.
 
 **NOT deleted — `video_artifacts_free_uq` stays until render addressing is settled.** ⟳ *Round 14 H3
 (Codex): this list said "deleted" while the render section said "replaced" — a flat contradiction
@@ -407,89 +417,100 @@ premise.
 
 **Kept but NOT unchanged — three the first draft wrongly listed above (round 13):**
 
-- **The GC floor is not preserved by leaving it alone (H1).** `video_generations_collectable` requires
-  `g.state = 'complete'` `[VERIFIED: schema/04_artifacts.sql:897]` — round 9's B1 fix, whose comment
-  records the measurement: *"collectable WHILE IN FLIGHT: 1 ; sweep collected 1 … Money spent, bytes
-  queued for deletion, no error anywhere."* Deleting the `pending` artifact state leaves nothing that
-  produces a `pending` generation `[VERIFIED: schema/04_artifacts.sql:307-312 is the only producer]`,
-  so the predicate goes **vacuously true** and the guard stops guarding without being deleted. This is
-  retrospective B6's shape ("a guard that never started") arriving by *subtraction* — and the mutation
-  harness will still score it load-bearing against a fixture no caller can produce.
-  **The successor is ONE mechanism for every kind: a sweeper-only in-flight marker on
-  `video_generations`.** ⟳ *Round 14 B2 named a per-kind successor; round 15 B2 MEASURED that the
-  `model` half of it — the `serve_model_charge` lease — expires before the call it covers. Option C,
-  chosen by the user 2026-08-09.*
+- **The GC floor's predicate dies, and needs no replacement — DELETE it (round 13 H1 → round 16 B1).**
+  `video_generations_collectable` requires `g.state = 'complete'`
+  `[VERIFIED: schema/04_artifacts.sql:897]` — round 9's B1 fix, whose comment records the measurement:
+  *"collectable WHILE IN FLIGHT: 1 ; sweep collected 1 … Money spent, bytes queued for deletion, no
+  error anywhere."* Deleting the `pending` artifact state leaves nothing that produces a `pending`
+  generation `[VERIFIED: schema/04_artifacts.sql:307-312 is the only producer]`, so the predicate goes
+  **vacuously true**. That is retrospective B6's shape ("a guard that never started") arriving by
+  *subtraction*, and the mutation harness would still score it load-bearing against a fixture no
+  caller can produce — so **the dead predicate is removed from the view rather than left standing as
+  decoration**.
 
-  > **`video_generations.in_flight_until timestamptz`.** A generation whose `in_flight_until` is in
-  > the future is **not collectable**. Written by whoever starts a paid call, for **every** kind.
-  > `video_generations_collectable` gains `and (g.in_flight_until is null or g.in_flight_until <= now())`
-  > in place of the vacated `g.state = 'complete'`.
+  **Rounds 13-15 read "the predicate is vacuously true" as "the guard needs a successor". It does
+  not**, and the difference is the whole of round 16 B1: a vacuous predicate and an absent row are
+  different facts, and the second makes the first harmless. Three mechanisms were designed before
+  anyone asked whether the row exists.
+  **THE GC FLOOR NEEDS NO SUCCESSOR. IT IS DISSOLVED, NOT COVERED.** ⟳ *Round 16 B1, MEASURED. Round
+  14 named a per-kind successor; round 15 measured its `model` half expiring mid-call; round 15's fix
+  (option C) added `video_generations.in_flight_until`. Round 16 measured that **the marker has no row
+  to be written to**, and in doing so answered the underlying question the previous three rounds never
+  asked.*
 
-  **Why one mechanism and not two.** The per-kind table was itself an exception, and this ADR's rule
-  is one mechanism per concern. The concern is *"a paid call is running against this generation"* —
-  identical for `summary`, `dig` and `model`. Staged-write ordering stays as it is, but it is no
-  longer load-bearing for **GC**: it protects the bytes, the marker protects the row. That separation
-  is what lets `model` — which cannot stage, see below — be covered by the same rule as everything
-  else.
+  ### When is a `video_generations` row created? **At record time — after the paid call.**
 
-  **THE INVARIANT THIS ADR PREVIOUSLY OMITTED, stated once and enforced by a check:**
+  That one sentence decides everything here, and it is **forced by this ADR's own deletions**, not
+  chosen:
 
-  > **The covering mechanism's lifetime ≥ the covered operation's worst case.**
+  - `reserve_artifact_slot` is the **only** production INSERT into `video_generations`
+    `[VERIFIED: schema/04_artifacts.sql:308]` — every other `insert into video_generations` in the
+    repo is a fixture in `05_assert.sql`. This ADR deletes that function.
+  - It inserts `state = 'pending'`, and that state is the **only** thing making a contentless row
+    legal. `state` is `not null default 'complete'` `[VERIFIED: schema/03_generations.sql:291]`, and
+    the four completeness constraints are each written `state <> 'complete' or <requirement>`
+    `[VERIFIED: schema/03_generations.sql:394, :395-408, :409-410, :411-412]`. With `pending`
+    unreachable they are **unconditional**, and they demand `card`, `md_hash`, `doc_version_major`
+    and `produced_at` — every one of which is derived from the Gemini output.
 
-  Round 15 B2 measured that the previous successor failed exactly this test and that the ADR never
-  performed the comparison. The magazine call's worst case is `MAGAZINE_MAX_PASSES` = 3
-  `[VERIFIED: lib/gemini-cost.ts:29]` × `REQUEST_TIMEOUT_MS` = 60 000 ms
-  `[VERIFIED: lib/gemini.ts:94]` = 180 000 ms, **plus** 400 + 800 ms backoff
-  `[VERIFIED: lib/gemini.ts:252, :267]`, **plus** an untimed `countTokens` preflight
-  `[VERIFIED: lib/gemini.ts:82-84]`, **plus** an unbounded upload. `in_flight_until` must be set past
-  that bound, and **a CI check must fail if any input grows past it** — otherwise the next
-  `REQUEST_TIMEOUT_MS` bump silently reopens the window. A derived constant with no gate is an
-  enumeration, and this spec has already been bitten twice by enumerations.
+  So both doors are locked, which this schema already recorded when it hit them
+  `[VERIFIED: schema/03_generations.sql:271-283]`:
 
-  **⛔ TWO RULES THAT KEEP THIS FROM REGROWING INTO THE THING WE JUST DELETED.** `pending` was a
-  marker too. What made it a reservation protocol was a token, an attempt counter, and callers that
-  read it to exclude each other.
+  > *"Reserving with no generation row raised [23503] on the artifact's FK; creating the generation
+  > row from what is knowable BEFORE the Gemini call raised [23514] gen_card_complete. **The paid call
+  > sits between those two, so both doors were locked.**"*
 
-  1. **Only the sweeper may read `in_flight_until`.** No caller may consult it to decide whether to
-     proceed. It is a GC hint, never a fence. This is grep-checkable and should be checked.
-  2. **It carries no token and no attempt counter.** If either appears, the reservation protocol is
-     growing back and this ADR has been reversed without anyone saying so.
+  `state = 'pending'` was the key cut for that lock. This ADR throws the key away — so the row is born
+  **complete, at record time**, and there is no instant during the paid call at which it exists.
 
-  **Why this beats the alternatives** (all four were costed; user chose C):
-  - a **renewal RPC** on the serve lease fires this ADR's own trigger for routing `model` through
-    `jobs`, and grows the duplicate vocabulary rather than shrinking it;
-  - a **derived TTL** on that lease closes the gap but leaves the guard in `supabase/migrations/`,
-    which **neither executable gate can see** — `verify-schema.sh` and `mutate-schema.py` read only
-    the spec `schema/` dir (round 15 M1). A money-path guard that cannot be asserted or
-    mutation-scored is one that will silently stop guarding;
-  - an **age floor on `created_at`** is cheapest, and was **rejected**: `04_artifacts.sql:893-896`
-    already records the objection — *"a 90-day age predicate in the sweeper would have HIDDEN this
-    while leaving the floor wrong"*. An age floor is a heuristic; when the real invariant breaks it
-    masks the breakage instead of surfacing it. Recorded here because retiring that objection
-    silently is the failure mode this project has already measured.
+  ### Therefore: nothing is collectable during the call, and `in_flight_until` is DELETED
 
-  `in_flight_until` lives in the spec schema, so `05_assert.sql` can assert it and `mutate-schema.py`
-  can score it — the property the lease could never have.
+  `video_generations_collectable` `[VERIFIED: schema/04_artifacts.sql:878-900]` can only return rows
+  that exist. Round 9's B1 window — *"collectable WHILE IN FLIGHT … Money spent, bytes queued for
+  deletion, no error anywhere"* — is closed **by the deletions themselves**.
 
-  **Why `model` cannot use the staged route** (unchanged, and it is why one uniform marker was needed).
-  `lib/html-doc/model-store.ts:51` writes it with a plain `put`, and the docblock at `:42-43` says the
-  staged→promote protocol *"is NOT used for the model"* — deliberately: a regenerated model must
-  **overwrite** the stale blob or the serve path re-reserves and re-charges every view until K, then
-  503s `[VERIFIED: lib/html-doc/serve-doc.ts:102-104]`. Left uncovered, a `model` generation is
-  collectable **while its paid Gemini call is in flight** — round 9's B1 exactly, whose measured
-  transcript survives at `schema/04_artifacts.sql:888-892`: *"Money spent, bytes queued for deletion,
-  no error anywhere."*
+  Adding a marker to re-close it would have been a column, a CI check, two prose rules, an assertion
+  burden and a mutation-scoring burden spent on a window that was already shut: **two mechanisms for
+  one concern, in the document written to stop exactly that.** Dissolving beats covering, and it is
+  the same move that earned this ADR its headline.
 
-  ⚠ Staged-write ordering **is** a caller obligation — the class this ADR retires two paragraphs
-  above. It is accepted for the **bytes** of `summary`/`dig` because it is already implemented and
-  load-bearing. It is **no longer** the GC guarantee for any kind; `in_flight_until` is, and the
-  sweeper reads it without any caller having to remember anything.
+  **Everything option C dragged in goes with it** — the "covering lifetime ≥ covered worst case"
+  invariant and its promised CI check, the sweeper-only read rule, the marker's NULL meaning, and the
+  per-kind bound arithmetic. Round 16's H1 (the bound was computed for `MAGAZINE_MAX_PASSES` = 3 while
+  `SUMMARY_MAX_PASSES` = 12 `[VERIFIED: lib/gemini-cost.ts:27, :29]`), M2 (the "grep-checkable" rule
+  had no script and a hole), M3 (was it ever cleared?) and L2 (the sentinel registry) all dissolve
+  with it rather than being fixed. **That is the tell that the dissolution is the right call:** four
+  findings, one deletion.
 
-  Note the coupling that makes this necessary at all: §8's grace period was dropped because *"a blob
-  written but not yet published is unreferenced — that state no longer exists"*
-  `[VERIFIED: …-design.md:891-893]`, and that state existed only because rule 19's record-first order
-  put a `pending` row down first. **Delete `pending` and the state returns** — `in_flight_until` is
-  what replaces it.
+  ### What DOES still need protecting: the blob, not the row
+
+  The bytes are written before any row references them, so during the call they are an **orphan** —
+  and §8's grace period is the mechanism for orphans. This ADR previously noted that the grace period
+  was dropped because *"a blob written but not yet published is unreferenced — that state no longer
+  exists"* `[VERIFIED: …-design.md:891-893]`, which was true **only because** rule 19's record-first
+  order put a `pending` row down first.
+
+  > **Delete `pending` and that state returns. §8's grace period is REINSTATED, as an age predicate on
+  > the blob.** It is the orphan sweeper's own mechanism, not a new one, and it is uniform across
+  > kinds.
+
+  Note this is **not** the age-floor-on-generations that `[VERIFIED: schema/04_artifacts.sql:893-896]`
+  rejects (*"a 90-day age predicate in the sweeper would have HIDDEN this while leaving the floor
+  wrong"*). That objection is about masking a wrong **state floor on rows**; this is §8's original
+  grace period on **orphan blobs**, a different mechanism for a different object. Recorded because
+  retiring an objection silently is this project's measured failure mode.
+
+  **The grace period's length is the implementing slice's number**, and it must satisfy the one
+  invariant worth keeping from option C: **it is longer than the worst-case paid call**, computed per
+  kind from `SUMMARY_MAX_PASSES` / `TRANSCRIBE_MAX_PASSES` / `MAGAZINE_MAX_PASSES` — all three already
+  exported from `lib/gemini-cost.ts` for exactly this purpose — and bounded only once `countTokens`
+  `[VERIFIED: lib/gemini.ts:82-84]` and the blob upload `[VERIFIED: lib/html-doc/model-store.ts:51]`
+  are given timeouts, since both are untimed today (round 16, Codex). **Those timeouts are a blocking
+  precondition of the implementing slice**, not a promise this ADR can keep by itself.
+
+  ⚠ Staged-write ordering is unchanged and remains a caller obligation for the **bytes** of
+  `summary`/`dig` `[VERIFIED: lib/job-queue/summary-handler.ts:173-179]`. It was never the GC
+  guarantee, and with the floor dissolved nothing pretends it is.
 - **The append-only trigger must be tightened in the same change, not after (M1).** It scopes
   immutability by transition `[VERIFIED: schema/04_artifacts.sql:911-913]`, permitting
   `pending → recorded` and `delete an expired pending`. With `pending` gone both are unreachable — but
@@ -579,10 +600,20 @@ concern (what may be collected) rather than an addressing one.*
    > never started, arriving by subtraction."* Committed inside the fix set that names it. **Third
    > occurrence of the signature**, this time between two sections of one round's own work.
 
-   **So: `record_artifact` writes the join rows in the same statement as the artifact row.** The
-   re-record case must be stated too — the `coalesce(…, v_src)` carry-forward has no join-table
-   analogue, so the ADR must say whether a re-record replaces the source set or unions with it.
-   **Replace**, to match the carry-forward's "the row names its own sources" semantics.
+   **So: `record_artifact` writes the join rows in the same statement as the artifact row.** ⟳ *Round 16
+   H2 corrected the re-record rule, which said **replace** and contradicted (b) ten lines below: a
+   replace is a delete-and-insert, and the trigger being moved forbids exactly that.*
+
+   > **A re-record must present the SAME source set, or raise. An omitted `p_source_generation_id`
+   > carries the recorded set forward unchanged.**
+
+   That is what the cited carry-forward actually does: `coalesce(p_source_generation_id, v_src)` with
+   `v_src` read from the same (slot, generation) row `[VERIFIED: schema/04_artifacts.sql:654, :663]`
+   means **omission = keep what is recorded**, which is how a re-record avoids tripping the
+   immutability raise today — it re-states an identical value, so `is distinct from` is false. The
+   carry-forward is an argument for **idempotent re-statement**, not for replacement. "Replace" on the
+   omission path would have **wiped** the source set, making both new guards vacuously true — the very
+   failure (a) is written to prevent.
 
    **(b) Provenance must stay append-only.** `[VERIFIED: schema/04_artifacts.sql:969-973]` — the
    append-only trigger raises *"the PROVENANCE of a % paid row is immutable"* on any change to
