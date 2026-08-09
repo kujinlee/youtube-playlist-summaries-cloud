@@ -2648,10 +2648,18 @@ generation only for `reserved_by = p_token`.
 **Why the rule is safe rather than harsh** — the party that holds paid bytes always still holds the
 token, because the two live in the same process memory:
 
+⚠ **Corrected in round 12.** An earlier version of this table said a worker that loses its lease
+"stops", full stop. It does not: the runtime *signals*, and a handler is free to ignore the signal
+and return. That is safe for two independent reasons, and stating only the first was the same
+over-claim this section exists to warn about. A handler that ignores the abort still holds its
+artifact token, so it lands on `recorded_after_loss` — the designed path for a writer whose slot was
+reclaimed — and its *job* completion is refused by `complete_job`'s own fence. The obligation below
+is therefore about the token, not about obedience to a signal.
+
 | Event | What happens to the bytes | What happens to the token |
 |---|---|---|
 | process crashes | lost with the process | lost with the process — nothing to record |
-| lease expires | handler is **aborted** — `lib/job-queue/worker-runner.ts` heartbeats every third of a lease and calls `leaseLost.abort()` into the handler's `AbortSignal` | irrelevant; the worker stops |
+| lease expires | the handler is **signalled** — `lib/job-queue/worker-runner.ts` heartbeats every third of a lease and calls `leaseLost.abort()` into the handler's `AbortSignal` — and a handler that ignores it cannot land a terminal success anyway, because `complete_job` filters on `locked_by`/`lease_token`/`status='active'` and `sweep_expired_leases` nulls all three | still in hand → records via `recorded_after_loss`, which is the designed outcome |
 | slot reclaimed while the worker runs | still in hand | still in hand → records via `recorded_after_loss` |
 
 **The two failed attempts, kept as a warning.** Round 7 accepted *"the slot's pending row names this
@@ -2660,9 +2668,18 @@ generation"*; round 8 measured a stranger satisfying it. Round 9 accepted a dura
 also that `worker_id` is regenerated per process (`worker/main.ts:69`), so no honest worker could use
 it either. Both fallbacks existed for a caller that cannot occur.
 
-**When the cloud caller is written**, assert this rule there — that the token is held for the job's
-duration, and that a worker which loses it abandons. It is a property of the caller and cannot be
-checked by the schema.
+**Enforced, not remembered:** `tests/lib/blob-addressing-caller-contract.test.ts` asserts these
+premises against `lib/job-queue/worker-runner.ts` in the CI-covered suite. It is mutation-checked —
+removing the lease-loss abort turns it red — so a refactor that adds auto-reconnect or job resumption
+fails there rather than silently invalidating this section.
+
+Premise tags for this section, per `docs/review-method.md`:
+`[VERIFIED: lib/job-queue/worker-runner.ts:47-53]` heartbeat → `leaseLost.abort()` into the handler's
+signal · `[VERIFIED: worker/main.ts:69]` `worker_id` is per-process, NOT stable · `[VERIFIED:
+supabase/migrations/0008_jobs_queue.sql]` `sweep_expired_leases` nulls `locked_by`/`lease_token`.
+
+**When the cloud caller is written**, extend that contract test to it — that the token is held for the
+job's duration, and that a worker which loses it abandons.
 
 ## 13. Out of scope
 
