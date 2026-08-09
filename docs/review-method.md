@@ -35,6 +35,41 @@ here?"* are different questions, and only the second decides whether a fix is ne
 > A defect with no reachable caller is a fact about the schema's expressiveness, not about the
 > system. It may still be worth a guard — but it is not worth a mechanism.
 
+## The stop condition: when to stop fixing and start redesigning (added 2026-08-09)
+
+Adversarial review answers *"is this correct?"* — a **local** question, and a local question can
+always be answered *yes* by patching. So a wrong shape never fails a round; it emits a stream of
+defects that get fixed, and **each fix makes the gates greener**. The process does not merely
+tolerate patching a bad design — it rewards it.
+
+> **If a component produces findings caused by the PREVIOUS round's fixes in two consecutive rounds,
+> it escalates from FIX to REDESIGN, and the next round is a design review — not another defect hunt.**
+
+**Two, not three.** The stable-blob-addressing reservation hit it at round 9 and ran to round 12
+anyway; two would have cost four rounds instead of six.
+
+**The evidence was already being collected and no rule acted on it.** The standing shape list tracks
+*"a fix that moved or reintroduced a defect"* — counted to nine, then ten, then eleven across rounds
+8–12, carried forward as **trivia in a prompt** because nothing said what to do when the number went
+up. The fix is not a new measurement. It is permission for the existing one to conclude something.
+
+**What a design review asks instead:**
+
+1. **What already serves this concern?** — answered with a `file:line`, not a characterisation. The
+   reservation's 2800-line spec never mentions `jobs` once, which already had exclusivity,
+   idempotency, leases and a durable money guard.
+2. **Which coordination pattern is this?** — append-only-plus-merge, mutual exclusion, or idempotency
+   key. A design holding two of them cannot be repaired locally: that fence had to be PERMISSIVE so a
+   reclaimed writer could still record paid work and STRICT so a stranger could not complete a
+   generation. Five successive credentials failed on that contradiction.
+3. **Who are the writers, and what identity does each carry?** — if two writer classes cannot present
+   the same credential, it is a broker or merge problem and a lock will never converge on it. One
+   four-minute read (`sync-run.ts:380-394` — sync *replicates*, it does not produce) would have ended
+   the credential search on day one.
+
+**Convergence is not enough on its own.** *"No new Blocking or High"* is a statement about the
+REVIEWERS, not the design. A locally-repairable design passes it forever.
+
 ## Adversarial Review
 
 Dispatch Codex (`codex:rescue`) with an explicit adversarial mandate at every phase.

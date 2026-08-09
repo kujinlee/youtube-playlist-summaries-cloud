@@ -83,7 +83,7 @@ must stay in sync — updated proactively, without being asked.
 | 3 | **Implementation** | code + tests | per-task two-stage review to convergence, autonomous. Per-Task Checklist: checklists doc |
 | 4 | **Verification** | evidence | enumerate every UX case as a task list *before* clicking anything; screenshots to `.screenshots/` (gitignored) |
 | 5 | **Final Review + Finish** | PR | full review → commit → push → PR. **Merging is a human gate** |
-| 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone**, not per task |
+| 6 | **Architecture Review** | `docs/reviews/architecture-review-<date>.md` | per **milestone** — **or after 4 review rounds without convergence**, whichever comes first |
 
 **Phase 3 execution default (set 2026-06-09):** `superpowers:subagent-driven-development` — a fresh
 subagent per task. Proceed automatically; do not ask the user to choose each time.
@@ -102,6 +102,15 @@ A one-line change can be the most dangerous thing in the repo.
 - **Write the merge tick BEFORE opening the PR**, and do not chase the squash SHA — the PR number
   exists as soon as the PR does.
 - Merging stays a **human gate**: open the PR, notify, do not merge.
+
+**⟳ Phase 6 also fires on FOUR NON-CONVERGING ROUNDS (added 2026-08-09), and that trigger was bought
+with twelve of them.** The stable-blob-addressing reservation protocol produced a Blocking or High in
+six consecutive rounds — four of them introduced by the previous round's own fix — while every other
+component of the same spec converged and stayed converged. Phase 6 describes that failure in its own
+sentence below and never ran, because a spec can burn twelve rounds in a week without crossing a
+milestone. **The inventory was right; the arming condition was wrong.** See
+[`review-method.md`](review-method.md) for the stop condition that goes with it, and
+`docs/reviews/blob-addressing-retrospective-2026-08-09.md` for the full account.
 
 **Phase 6 — why it is per-milestone:** per-task review is structurally blind to composition defects.
 It only ever sees one change, and every change can be individually correct while the structure they
@@ -122,8 +131,10 @@ copy that drifts.
 | `.claude/hooks/block-default-branch-push.sh` | no push to the default branch (escape: `ALLOW_DEFAULT_BRANCH_PUSH=1`) |
 | `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
-| `scripts/check-schema-gates.sh` | **one command for all four schema gates** — run this, not the pieces |
+| `scripts/check-schema-gates.sh` | **one command for all six schema gates** — run this, not the pieces |
 | `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated |
+| `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
+| `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |
 | `scripts/check-docs.py` | documentation integrity |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |

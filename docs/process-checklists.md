@@ -167,3 +167,30 @@ its absence was discovered *after* implementation.
    - **For tasks that include UI components generating URLs or containing modals/overlays:** `docs/design-spec.md` must contain a `## URL Contracts` table (`Component | Link text | Full URL with all params`) — one row per distinct link — and a `## Overlay Dismissal` table (`Component | Mechanism | Expected result`) — one row per dismissal path. Gate: user approves both tables before any component task begins.
 
 2. **Writing Plans** → `docs/implementation-plan.md`
+
+## Spec contents — the coherence section (added 2026-08-09)
+
+Two fields, both cheap, both bought with twelve review rounds. They belong in every spec that adds a
+mechanism, before Phase 1's approval.
+
+### 1. The concern → mechanism table
+
+| Concern | Mechanism | Evidence |
+|---|---|---|
+
+**Every concern has exactly ONE mechanism. Every mechanism serves exactly ONE concern.** A cell with
+two entries is a duplicate protocol; a mechanism appearing twice is a conflation. Both are the smell,
+and this table is the only place either becomes visible at a glance — no per-item check can see
+"two mechanisms, one job".
+
+Filled in by the same person who designed it, so it is weak by construction. Its value is that the
+omission becomes visible **to a reviewer**, not that it prevents the omission.
+
+### 2. "What already does this?"
+
+For each new mechanism: **which existing mechanism serves this concern, and why is it insufficient?**
+Answered with a `file:line`. *"Nothing does"* is a fine answer; a vague answer is the finding.
+
+Measured cost of skipping it: a 2800-line spec that never mentions `jobs`, which already had
+exclusivity, idempotency, leases and a durable money guard — and six review rounds spent in the seam
+between the two protocols.
