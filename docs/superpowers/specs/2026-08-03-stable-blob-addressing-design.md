@@ -2660,9 +2660,18 @@ generation"*; round 8 measured a stranger satisfying it. Round 9 accepted a dura
 also that `worker_id` is regenerated per process (`worker/main.ts:69`), so no honest worker could use
 it either. Both fallbacks existed for a caller that cannot occur.
 
-**When the cloud caller is written**, assert this rule there — that the token is held for the job's
-duration, and that a worker which loses it abandons. It is a property of the caller and cannot be
-checked by the schema.
+**Enforced, not remembered:** `tests/lib/blob-addressing-caller-contract.test.ts` asserts these
+premises against `lib/job-queue/worker-runner.ts` in the CI-covered suite. It is mutation-checked —
+removing the lease-loss abort turns it red — so a refactor that adds auto-reconnect or job resumption
+fails there rather than silently invalidating this section.
+
+Premise tags for this section, per `docs/review-method.md`:
+`[VERIFIED: lib/job-queue/worker-runner.ts:47-53]` heartbeat → `leaseLost.abort()` into the handler's
+signal · `[VERIFIED: worker/main.ts:69]` `worker_id` is per-process, NOT stable · `[VERIFIED:
+supabase/migrations/0008_jobs_queue.sql]` `sweep_expired_leases` nulls `locked_by`/`lease_token`.
+
+**When the cloud caller is written**, extend that contract test to it — that the token is held for the
+job's duration, and that a worker which loses it abandons.
 
 ## 13. Out of scope
 

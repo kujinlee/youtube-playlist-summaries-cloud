@@ -69,6 +69,33 @@ up. The fix is not a new measurement. It is permission for the existing one to c
 
 **Convergence is not enough on its own.** *"No new Blocking or High"* is a statement about the
 REVIEWERS, not the design. A locally-repairable design passes it forever.
+## Premise tags, and the asymmetry they exist to fix (added 2026-08-08)
+
+**The diagnosis, which is sharper than "my instruments only look at the schema":** the validation
+stack was **asymmetric**. Heavy automated verification on the TARGET layer (122 assertions, 57
+mutations, guard coverage) and *nothing at all* on the ASSUMPTIONS layer — the external runtime code
+the design rests on. That asymmetry manufactures false confidence: a green 57/57 feels like maximum
+rigour while the whole premise sits in one unread line of another file.
+
+So every foundational statement in a spec, review brief or ADR carries a tag:
+
+| Tag | Means |
+|---|---|
+| `[VERIFIED: path/to/file:line]` | read from the CURRENT head, this round |
+| `[ASSUMPTION]` | believed, not read this round |
+
+**A safety fence, credential, or invariant may not be designed on an `[ASSUMPTION]`.** Upgrade it to
+`[VERIFIED]` first, or design for both branches. A tag that was `[VERIFIED]` three rounds ago is an
+`[ASSUMPTION]` today — the point is not that someone once checked, it is that someone checked *this*
+round.
+
+**And when a fence depends on caller behaviour, write a CONTRACT TEST at the runtime boundary.**
+Prose in a design doc is a rule that depends on remembering, which is the failure mode this whole
+document exists to remove. See `tests/lib/blob-addressing-caller-contract.test.ts`: it asserts the
+properties `…-stable-blob-addressing-design.md` §12b relies on, lives in the CI-covered suite, and is
+itself mutation-checked so it cannot pass vacuously. A future refactor that adds auto-reconnect or
+job resumption then fails *there*, instead of silently invalidating a schema nobody thought to
+re-read.
 
 ## Adversarial Review
 
