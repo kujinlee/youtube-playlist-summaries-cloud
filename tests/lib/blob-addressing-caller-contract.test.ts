@@ -51,15 +51,20 @@ function makeJob(overrides: Partial<LeasedJob> = {}): LeasedJob {
   } as LeasedJob;
 }
 
-function makeQueue(job: LeasedJob): jest.Mocked<JobQueue> {
+function makeQueue(job: LeasedJob, leaseLost = false): jest.Mocked<JobQueue> {
   return {
     enqueue: jest.fn(),
     getStatus: jest.fn(async () => ({ id: job.id, status: 'active' as JobStatus, cancelRequested: false, result: null, error: null })),
     requestCancel: jest.fn(),
     claim: jest.fn(async () => job),
+    // ⚠ THE FAKE MODELS THE DB'S FENCING. `complete_job`/`fail_job` filter on
+    // `id, locked_by, lease_token, status='active'` (supabase/migrations/0008_jobs_queue.sql), and
+    // `sweep_expired_leases` nulls all three — so a terminal write AFTER a lost lease returns
+    // ok:false in production. A fake that always answered ok:true hid exactly the property these
+    // tests exist to pin, and did so while showing green. Round 12 caught it.
     heartbeat: jest.fn(async () => ({ ok: true })),
-    complete: jest.fn(async () => ({ ok: true })),
-    fail: jest.fn(async () => ({ ok: true, status: 'failed' as JobStatus })),
+    complete: jest.fn(async () => ({ ok: !leaseLost })),
+    fail: jest.fn(async () => ({ ok: !leaseLost, status: 'failed' as JobStatus })),
     sweepExpired: jest.fn(async () => 0),
     setProgressPhase: jest.fn(async () => ({ ok: true })),
   } as unknown as jest.Mocked<JobQueue>;
@@ -78,26 +83,33 @@ describe('blob-addressing §12b — the caller contract the SQL fence depends on
    * lease, it would come back holding paid Gemini bytes for a slot another worker now owns, which
    * is precisely the scenario rounds 7 and 9 built (broken) fallbacks for.
    */
-  it('aborts the handler when the lease is lost, so a worker never returns with paid bytes it may not record', async () => {
+  it('signals abort on lease loss AND cannot land a terminal success afterwards', async () => {
     jest.useFakeTimers();
     const job = makeJob();
-    const queue = makeQueue(job);
+    const queue = makeQueue(job, /* leaseLost */ true);
     queue.heartbeat.mockResolvedValue({ ok: false } as never);
 
     let observedAbort = false;
+    // ⚠ THIS HANDLER DELIBERATELY IGNORES THE ABORT and returns paid bytes anyway — the worst
+    // caller §12b has to survive. Round 12 found the first version of this test asserting only that
+    // the SIGNAL arrived, which is necessary and nowhere near sufficient: `runOnce` proceeds from
+    // `await handler(...)` straight to `queue.complete(...)`, so "abort delivered" and "work
+    // abandoned" are different claims and only the second is what §12b needs.
     const handler: JobHandler = async (_job, ctx) => {
       await new Promise<void>((resolve) => {
         ctx.signal.addEventListener('abort', () => { observedAbort = true; resolve(); });
         setTimeout(resolve, 10_000); // if the signal never fires, this resolves and the test fails
       });
-      return { done: true };
+      return { paidBytes: 'SHA_REAL' };
     };
 
     const p = runOnce(queue, handler, { workerId: 'w1', leaseSeconds: 2 });
     await jest.advanceTimersByTimeAsync(10_000);
-    await p;
+    const outcome = await p;
 
     expect(observedAbort).toBe(true);
+    // The load-bearing half: the run does NOT report success for work done after the lease was lost.
+    expect(outcome).toBe('lost');
   });
 
   /**

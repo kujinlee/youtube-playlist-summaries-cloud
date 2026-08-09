@@ -2648,10 +2648,18 @@ generation only for `reserved_by = p_token`.
 **Why the rule is safe rather than harsh** — the party that holds paid bytes always still holds the
 token, because the two live in the same process memory:
 
+⚠ **Corrected in round 12.** An earlier version of this table said a worker that loses its lease
+"stops", full stop. It does not: the runtime *signals*, and a handler is free to ignore the signal
+and return. That is safe for two independent reasons, and stating only the first was the same
+over-claim this section exists to warn about. A handler that ignores the abort still holds its
+artifact token, so it lands on `recorded_after_loss` — the designed path for a writer whose slot was
+reclaimed — and its *job* completion is refused by `complete_job`'s own fence. The obligation below
+is therefore about the token, not about obedience to a signal.
+
 | Event | What happens to the bytes | What happens to the token |
 |---|---|---|
 | process crashes | lost with the process | lost with the process — nothing to record |
-| lease expires | handler is **aborted** — `lib/job-queue/worker-runner.ts` heartbeats every third of a lease and calls `leaseLost.abort()` into the handler's `AbortSignal` | irrelevant; the worker stops |
+| lease expires | the handler is **signalled** — `lib/job-queue/worker-runner.ts` heartbeats every third of a lease and calls `leaseLost.abort()` into the handler's `AbortSignal` — and a handler that ignores it cannot land a terminal success anyway, because `complete_job` filters on `locked_by`/`lease_token`/`status='active'` and `sweep_expired_leases` nulls all three | still in hand → records via `recorded_after_loss`, which is the designed outcome |
 | slot reclaimed while the worker runs | still in hand | still in hand → records via `recorded_after_loss` |
 
 **The two failed attempts, kept as a warning.** Round 7 accepted *"the slot's pending row names this
