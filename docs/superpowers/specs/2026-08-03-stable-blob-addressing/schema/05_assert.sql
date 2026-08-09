@@ -84,12 +84,24 @@ end $$;
 -- checkable rather than remembered. The second write is exactly the SEQUENCE question — what does
 -- this do when the caller is not the first? — made mechanical.
 --
+-- ⟳ ROUND 9 (round 8 M4) — IT COUNTS *INSERTS*, NOT ROW-WRITES, AND THAT WAS THE WHOLE CLAIM.
+-- The trigger fires `after insert or update`, and a paid artifact's ordinary life is `reserve`
+-- (INSERT pending) then `record` (UPDATE recorded) — two rows in this table, ONE caller, and no
+-- second-caller behaviour exercised anywhere. The ratchet said "the SEQUENCE case is exercised" and
+-- could be satisfied by a lifecycle that never has a second caller: shape #11, in the instrument
+-- built to close an absence.
+--
+-- Measured before tightening: it was TRUTHFUL — every kind did have a real second INSERT (summary
+-- 11, digDeeper 3, model 2, render 2, dig via dig:700 and dig:8) — though four dig:* slots passed on
+-- a single-writer lifecycle alone. So the weakness was live but not yet load-bearing, and requiring
+-- >= 2 INSERTs passes today UNCHANGED, which is the proof the tightening costs nothing.
+--
 -- Test-only instrumentation: it lives in the assertion file, not the schema, and rolls back with
 -- everything else.
-create temp table t_writes (kind text, paid boolean, slot text);
+create temp table t_writes (kind text, paid boolean, slot text, op text);
 create function record_write() returns trigger language plpgsql as $$
 begin
-  insert into t_writes values (new.kind::text, new.generation_id is not null, new.slot);
+  insert into t_writes values (new.kind::text, new.generation_id is not null, new.slot, tg_op);
   return null;
 end $$;
 create trigger t_writes_trg after insert or update on video_artifacts
@@ -308,27 +320,34 @@ select assert_raises($$insert into video_artifacts
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:57','gDIG','dig','recorded',
-          'OTHERWS/videos/gDIG/gOLD/dig/57.md',57,60)$$,
-  'the generation id appearing in the WRONG segment, of another workspace''s key',
-  '23514', 'art_key_names_generation');
+          'OTHERWS/videos/vidA/gDIG/dig/57.md',57,60)$$,
+  -- ⟳ ROUND 9 H5 — SHARPENED. It used to be 'OTHERWS/videos/gDIG/gOLD/...', which violated the
+  -- workspace segment, the video segment AND the generation segment at once — three faults across
+  -- two constraints, in the file whose header requires every negative to violate exactly one.
+  -- Now only segment 1 is wrong, so it tests the tenant prefix and nothing else.
+  'a key under another workspace''s prefix, every other segment correct',
+  '23514', 'art_key_names_workspace');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:58','gDIG','dig','recorded',
           (select id from t_w2)::text||'/videos/vidA/gDIG/dig/58.md',58,60)$$,
+  -- ⟳ ROUND 9 H5 — now caught by the constraint that actually means it. Tenant confinement used to
+  -- live INSIDE art_key_names_generation, which is gated on a non-null generation, so free rows
+  -- escaped it entirely (measured: a render row in workspace A storing workspace B's prefix).
   'a key under ANOTHER workspace''s prefix, with video and generation segments correct',
-  '23514', 'art_key_names_generation');
+  '23514', 'art_key_names_workspace');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:59','gDIG','dig','recorded',
           (select id from t_ws)::text||'/videos/OTHERVIDEO/gDIG/dig/59.md',59,60)$$,
   'a key naming a DIFFERENT video, with workspace and generation segments correct',
-  '23514', 'art_key_names_generation');
+  '23514', 'art_key_names_workspace');
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
   values ((select id from t_ws),'vidA','dig:60','gDIG','dig','recorded',
           (select id from t_ws)::text||'/WRONG/vidA/gDIG/dig/60.md',60,65)$$,
   'a key whose second segment is not the literal ''videos''',
-  '23514', 'art_key_names_generation');
+  '23514', 'art_key_names_workspace');
 
 -- art_summary_has_no_source (round 5 H2, the DATA half)
 select assert_raises($$insert into video_artifacts
@@ -1443,15 +1462,29 @@ $$, (select id from t_ws)),
 -- video_artifacts_free_uq raw. The assertion is the TYPED outcome, because a raw 23505 is the defect.
 do $$ declare ws uuid; o text; res text; begin
   select id into ws from t_ws;
-  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,'free/r9-1',null);
-  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,'free/r9-2',null);
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-1.pdf',null);
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-2.pdf',null);
   select outcome into res from reserve_artifact_slot(ws,'vidR9c','pdf:summary',null,
-    'render'::artifact_kind,'free/r9-3');
+    'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-3.pdf');
   if res <> 'already_recorded' then
     raise exception 'ASSERTION FAILED — reserving a recorded FREE slot gave %, not already_recorded', res;
   end if;
   raise notice 'ok (R9-5): reserving a recorded free slot returns a typed outcome, not a raw 23505';
 end $$;
+
+-- ⟳ R9-6 (round 8 H5) — A FREE ROW IS CONFINED TO ITS WORKSPACE TOO.
+-- Tenant confinement used to live INSIDE `art_key_names_generation`, which is gated on a non-null
+-- generation — so the rows with no generation, i.e. every free render, escaped it completely.
+-- MEASURED: a `render` row in workspace A storing `<workspace-B>/videos/vidH5/OTHER-TENANT.pdf` was
+-- ACCEPTED and returned `recorded_free`. Every pre-existing fixture happened to use a well-formed
+-- key, which is precisely why five rounds never saw it.
+select assert_raises(format($$
+  insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+  values (%L::uuid,'vidR9c','pdf:cross',null,'render','recorded',
+          %L||'/videos/vidR9c/renders/leak.pdf');
+$$, (select id from t_ws), (select id from t_w2)::text),
+ 'a FREE row may not carry a key under another workspace''s prefix', '23514',
+ 'art_key_names_workspace');
 
 -- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
 -- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
@@ -1658,7 +1691,8 @@ declare k text; missing text[] := '{}'; n int;
 begin
   foreach k in array enum_range(null::artifact_kind)::text[] loop
     select count(*) into n from (
-      select 1 from t_writes w where w.kind = k group by w.kind, w.paid, w.slot having count(*) > 1
+      select 1 from t_writes w where w.kind = k and w.op = 'INSERT'
+       group by w.kind, w.paid, w.slot having count(*) > 1
     ) s;
     if n = 0 then missing := missing || k; end if;
   end loop;

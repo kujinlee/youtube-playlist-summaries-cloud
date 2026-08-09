@@ -73,6 +73,7 @@ GUARDS: dict[str, tuple[str, str]] = {
     "art_detached_is_dig":         ("SHAPE", ""),
     "art_detached_has_timestamp":  ("SHAPE", ""),
     "art_key_names_generation":    ("SHAPE", ""),
+    "art_key_names_workspace":     ("SHAPE", ""),   # ⟳ round 9 H5; applies to FREE rows too
     # ── video_generations: SHAPE ────────────────────────────────────────────────
     "gen_complete_has_produced_at": ("SHAPE", ""),
     "gen_card_complete":            ("SHAPE", ""),

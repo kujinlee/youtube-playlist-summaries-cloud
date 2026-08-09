@@ -144,12 +144,20 @@ create table video_artifacts (
   -- Exact segment equality: no metacharacters, and POSITION is constrained, which the anchored-LIKE
   -- alternative still would not have done. Text-to-text throughout — never cast a path segment
   -- (round 1: a policy that RAISES fails the whole query rather than denying one row).
+  -- ⟳ ROUND 9 H5 — SPLIT IN TWO, because the WHOLE thing was gated on `generation_id is not null`
+  -- and free rows are exactly the ones with a null generation. MEASURED: a `render` row in workspace
+  -- A stored `<workspace-B>/videos/vidH5/OTHER-TENANT.pdf` and was ACCEPTED.
+  -- Tenant confinement is not a property of paid rows; it is a property of every row, and it was
+  -- written inside the constraint that legitimately only applies to paid ones. Shape #10 — the same
+  -- one-site habit as the free-render reconciler (round 8 C1) and the free short-circuit (H2), on
+  -- the third face of the same free/paid split.
+  constraint art_key_names_workspace check (
+        split_part(blob_key, '/', 1) = workspace_id::text
+    and split_part(blob_key, '/', 2) = 'videos'
+    and split_part(blob_key, '/', 3) = video_id),
+  -- The generation segment is the part that genuinely only exists for paid rows.
   constraint art_key_names_generation check (
-    generation_id is null or (
-          split_part(blob_key, '/', 1) = workspace_id::text
-      and split_part(blob_key, '/', 2) = 'videos'
-      and split_part(blob_key, '/', 3) = video_id
-      and split_part(blob_key, '/', 4) = generation_id))
+    generation_id is null or split_part(blob_key, '/', 4) = generation_id)
 );
 create unique index video_artifacts_paid_uq on video_artifacts
   (workspace_id, video_id, slot, generation_id) where generation_id is not null;

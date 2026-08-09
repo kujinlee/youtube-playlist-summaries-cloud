@@ -418,6 +418,17 @@ MUTATIONS = [
      "  if false then",
      "disagreeing with the playlist", GEN),
 
+    # Restores the EXACT original defect — the confinement re-gated on a non-null generation —
+    # rather than deleting the constraint. Deleting it makes a PAID assertion fail first, which
+    # would leave the free-row coverage untested by the very mutation added to prove it.
+    ("H5: tenant confinement re-gated on a non-null generation (free rows escape again)",
+     """  constraint art_key_names_workspace check (
+        split_part(blob_key, '/', 1) = workspace_id::text""",
+     """  constraint art_key_names_workspace check (
+    generation_id is null or
+        split_part(blob_key, '/', 1) = workspace_id::text""",
+     "a FREE row may not carry a key under another workspace", ART),
+
     # ── ⟳ ROUND 9: the three schema fixes both reviewers' findings converged on ──────
     ("B1: the collectable floor drops `state = complete` (GC buries in-flight paid work)",
      "   and g.state = 'complete'\n",
