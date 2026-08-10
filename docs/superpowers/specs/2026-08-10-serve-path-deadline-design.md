@@ -181,16 +181,31 @@ that are individually fine and jointly wrong) fails the suite rather than produc
 
 **Deadline expiry is an abort**, landing in the existing catch at `serve-doc.ts:129`.
 
-The money rule needs **no change**. The `billing.metered` latch already distinguishes the two cases:
+The money rule needs **no change**, and a deadline abort **always keeps the charge** — including when
+it fires before any paid call. Traced, because the first draft of this section got it wrong:
 
-| when the deadline fires | metered | outcome |
-|---|---|---|
-| during `countTokens` (preflight) | false | refund — positively-not-metered class-A |
-| during the upload (post-Gemini) | true | keep the charge |
+| step | what happens on a deadline abort |
+|---|---|
+| `gemini-failure.ts:77` | `ourSignal?.aborted` is **false** — the deadline aborts the *composed* signal, not the caller's |
+| `gemini-failure.ts:78-84` | the cause chain looks for `NonRetryableError` / `GeminiHttpError`; a `DOMException` `AbortError` is neither |
+| `gemini-failure.ts:85` | falls through to `'keep'` |
+| `serve-doc.ts:130-132` | `released` is false → `settle_serve_model(p_released := false)` → charge kept |
+
+**Do not "fix" this by refunding a pre-meter deadline abort.** The guard is right there —
+`!billing.metered` — and using it would be a money bug. `gemini.ts:260` sets `metered = true` only
+*after* `generateContent` returns ("body received = Google billed"). A deadline firing **during** an
+in-flight call, after Google began billing but before the body arrived, leaves `metered` false.
+Refunding on that reading is an **under-count**, which this codebase treats as the bug while an
+over-count is merely expensive (`serve-doc.ts:107-110`).
+
+`billing.metered` does not mean *"was I billed"*. It means *"do I have proof I was billed"*. Those two
+differ exactly in the window an abort lands in, which is why the deadline — a mechanism that fires
+precisely where evidence is missing — must not be wired to it.
 
 Client disconnect stays distinguishable from budget expiry because the caller's original signal
 survives inside the `AbortSignal.any` composition, and `classifyGeminiFailure(err, signal)`
-(`serve-doc.ts:131`) still receives it.
+(`serve-doc.ts:131`) still receives it. Both classify as `'keep'`; the distinction is for logging and
+for the `attempt_count` story, not for the money.
 
 `lease_too_short` → **503 plus a loud log**. It is always a misconfiguration, never a user condition.
 It deliberately does **not** fall back to the stale rendering that `owner_over_budget` uses
@@ -203,6 +218,15 @@ It deliberately does **not** fall back to the stale rendering that `owner_over_b
 **Unit** — deadline arithmetic under a mocked monotonic clock; the retry loop declining to start an
 attempt it cannot fund; each of the three bounded calls aborting at the budget rather than hanging;
 the derived-requirement constant fitting under the shipped TTL default.
+
+**Money** — a deadline abort **keeps the charge**, asserted at the point where the tempting fix would
+break it: a deadline firing *during* an in-flight `generateContent`, before `billing.metered` is
+latched (`gemini.ts:260`), must still settle with `p_released := false`. Nothing asserts this today,
+and §4 explains why the natural-looking alternative is an under-count. The test must fail if someone
+later adds a deadline-aware refund branch.
+
+Assert the error *identity*, not merely that settling happened — a negative test that accepts "any
+failure" passes on a typo, which this project has measured before.
 
 **Integration (live Supabase)** — `lease_too_short` moves **no money AND burns no attempt**, asserted
 as both. Asserting only the money would pass against the exact defect described in §1.3, because the
