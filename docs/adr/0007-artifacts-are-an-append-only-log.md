@@ -508,7 +508,35 @@ premise.
   > **So the invariant must be carried, not inferred:** *no generation row is created before its paid
   > call completes.* For `summary` the constraints enforce it. For `model`, `dig` and `digDeeper`
   > **nothing does** — the implementing slice must either extend the constraints to those kinds or
-  > assert the rule. `model` is the sharp case: no job, no staging, its own serve lease, and an early
+  > assert the rule.
+
+  ### ✅ IMPLEMENTED (T4) — and the answer is "carried", with the reason measured
+
+  The implementing slice ran the measurement this section asked for, and **a constraint cannot close
+  the gap**: it searched every producer for a column that could *witness production* and found none.
+  A CHECK sees one row, and for `model`/`dig`/`digDeeper` **no value in that row is a function of the
+  paid output** — so there is nothing for a constraint to test. Extending `gen_card_complete` to those
+  kinds would have required a card they legitimately do not have.
+
+  So the fix ran the other way — rather than *requiring* a card of kinds that have none, the schema now
+  **forbids** one (`gen_card_is_summary_only`, `gen_major_is_summary_only`), which makes the taxonomy
+  exact without pretending to enforce something it cannot.
+
+  **What carries the invariant is one structural fact:** `record_artifact` is the only function that
+  inserts into `video_generations`, and it runs after the paid call. **The structural fact is the
+  guard, so the structural fact is what is tested** — an assertion now fails if a second inserter ever
+  appears.
+
+  **And the cost is measured rather than described.** A characterisation test records what a pre-call
+  generation for a non-summary kind actually does today — the paid record succeeds and the row is *not*
+  visible in `video_artifacts_current`, i.e. it buries its own paid bytes — and raises
+  `CHARACTERISATION STALE` if that ever changes. A gap that cannot be closed is at least a gap that
+  cannot move silently.
+
+  **`pending` is now unrepresentable**, not merely unproduced: `check (state in ('complete'))`. T2 had
+  noted the schema still *admitted* a hand-written pending row which, with the GC floor's predicate
+  gone, would have been collectable. That door is shut in the schema rather than by the absence of a
+  caller. `model` is the sharp case: no job, no staging, its own serve lease, and an early
   > row would reopen round 9's window with the floor already deleted and no assertion to go red.
 
   **Fifth instance of "name what the rule ranges over"** — after round 13 B1, round 14 H3, round 15 H3
