@@ -1,7 +1,7 @@
 ---
 status: proposed — supersedes the reservation protocol of ADR-0006's spec (handoff item 4).
   DEPENDS ON ADR-0006 BEING ACCEPTED; ADR-0006 is itself `proposed`, so the two stand or fall together
-revised: 2026-08-09. Rounds 13, 14, 15 — three DESIGN reviews, all answered here.
+revised: 2026-08-09. Rounds 13, 14, 15, 16, 17 — five DESIGN reviews, all answered here.
   SCOPE: COORDINATION ONLY. Render addressing was SPLIT OUT (user decision) to
   docs/superpowers/specs/2026-08-09-render-addressing-brief.md (backlog #25) after two designs were
   refuted in two rounds.
@@ -9,9 +9,9 @@ revised: 2026-08-09. Rounds 13, 14, 15 — three DESIGN reviews, all answered he
   row exists during a paid call, so nothing is collectable and the window closes itself. Rounds 14-16
   proposed three covers (per-kind table, `serve_model_charge` lease, an `in_flight_until` marker); all
   three are withdrawn. What still needs protecting is the ORPHAN BLOB, via §8's reinstated grace period.
-  The core decision — delete the reservation protocol — has survived THREE design reviews unbroken;
-  every finding in rounds 14 and 15 was in a FIX, not in the decision.
-  See docs/reviews/spec-blob-addressing-r1{3,4,5}-coordinator.md
+  The core decision — delete the reservation protocol — has survived FIVE design reviews unbroken;
+  every finding in rounds 14-17 was in a FIX, not in the decision.
+  See docs/reviews/spec-blob-addressing-r1{3,4,5,6,7}-coordinator.md
 ---
 
 # Artifacts are an append-only log; nothing coordinates writers, because writers do not contend
@@ -24,8 +24,8 @@ that already exists.
 ⚠ **Nothing survives to coordinate writers — not even a GC marker.** Three rounds tried to give the
 garbage collector an in-flight signal; round 16 measured that it needs none, because after these
 deletions **no generation row exists while a paid call runs** (see *When is a `video_generations` row
-created?*). The bytes written during that window are protected as orphans, by §8's grace period, which
-is the orphan sweeper's existing mechanism.
+created?*). The bytes written during that window are orphans, and §8's grace period is the
+mechanism for them — **specified, not yet implemented** (round 17 H2).
 
 **Three qualifications, stated up front rather than buried:**
 
@@ -98,7 +98,7 @@ serves exactly one concern. **`model` is a standing exception — see the next s
 | execution liveness | job lease + heartbeat + `sweep_expired_leases` | `[VERIFIED: 0009_…:63-78]` |
 | stable addressing | generation id → blob key | ADR-0006 |
 | which artifact is current | `video_artifacts_current` ranking | `schema/04_artifacts.sql` |
-| what may be deleted | `video_generations_collectable` + `body_collected`; no in-flight floor is needed, because no generation row exists during a paid call (round 16 B1). Orphan **blobs** in that window are covered by §8's reinstated grace period | round 8 + round 16 |
+| what may be deleted | `video_generations_collectable` + `body_collected`; no in-flight floor is needed, because no generation row exists during a paid call (round 16 B1). Orphan **blobs** in that window need §8's grace period, which is **specified but UNIMPLEMENTED** — there is no orphan sweeper in any code, and `BlobStore` exposes no object age (round 17 H2) | round 8; `…-design.md:1995-1996` **(not implemented)** |
 | **`model`: bounded single-flight + spend** | `serve_model_charge` lease, **not** `jobs` — see the next section. ⟳ *Round 15 H2: this row said "exclusivity" one row after that word was removed from `jobs` for being unsupportable. The reclaim clause `[VERIFIED: 0012_serve_model_charge.sql:64-65]` admits a second producer the moment the lease lapses, which round 15 B2 measured happens mid-call. It is a bounded window, not exclusion* | `[VERIFIED: 0012_serve_model_charge.sql:7-13, :53]` |
 
 **Two corrections round 13 forced, recorded so they are not re-lost.** `jobs_idem_active` dedupes
@@ -388,7 +388,9 @@ of these; this one it missed, and only a pass asking "which sections constrain e
 
 **Deleted:** `reserve_artifact_slot`, `renew_artifact_lease`, the lease columns on `video_artifacts`,
 `reserved_by` on `video_generations`, and the `pending` artifact state. `record_artifact` becomes an
-append with a typed outcome and no fence.
+append with a typed outcome and no fence — **and gains the generation INSERT that
+`reserve_artifact_slot` used to perform; see REPLACED below, without which nothing creates a generation
+row at all** (round 17 B1).
 
 **ADDED — exactly one table, and no columns.** ⟳ *Reconciliation pass 2026-08-09 added this because
 the list recorded every deletion and no addition. ⟳ Round 16 L1 then caught it calling a table a
@@ -397,9 +399,39 @@ column, and round 16 B1 removed the column entirely.*
 `source_generation_id` column rather than adding to it — so this ADR's net schema effect is one
 column removed, one table added, and everything else deleted.
 
-**REINSTATED:** §8's grace period, as an age predicate on orphan blobs. Not new — it was dropped on a
-premise (*"a blob written but not yet published is unreferenced — that state no longer exists"*) that
-these deletions falsify.
+**REINSTATED:** §8's **specified but UNIMPLEMENTED** grace period, as an age predicate on orphan blobs.
+It was dropped on a premise (*"a blob written but not yet published is unreferenced — that state no
+longer exists"*) that these deletions falsify. ⟳ *Round 17 H2: this said "the orphan sweeper's existing
+mechanism". §8's grace period is real and reinstatable `[VERIFIED: …-design.md:1995-1996]`, but §8's own
+opening says "There is no GC of superseded blobs anywhere… GC is currently impossible"
+`[VERIFIED: …-design.md:1949-1953]`, and no orphan sweeper exists in any code. Calling it "existing" was
+the ADR's own diagnosed failure — an instrument whose success line claims more than its input covers.*
+
+**⚠ REPLACED — `record_artifact` INSERTs the generation row (round 17 B1, MEASURED).** This is the
+sentence the round-16 dissolution rested on and never wrote.
+
+> `record_artifact` **inserts** `video_generations` — born `state='complete'` — and then inserts the
+> artifact row that FKs it, in one transaction. The FK `[VERIFIED: schema/04_artifacts.sql:85-86]`
+> forces that order.
+
+The RPC already accepts every column required: `p_card`, `p_md_hash`, `p_doc_version_major`,
+`p_produced_at`, `p_kind` `[VERIFIED: schema/04_artifacts.sql:468-473]`. Today its generation write is
+an **UPDATE** `[VERIFIED: :556-565]` gated on `g.state = 'pending'` *and* `g.reserved_by = p_token` —
+**both deleted by this ADR**, so the function would not even resolve after the column drop. That UPDATE
+is **replaced**, not merely unfenced. A second writer stays safe through the existing
+`on conflict do nothing` + `completed_by_another` outcome `[VERIFIED: :576-583]` — MEASURED in round 17
+(T5): a record against an already-complete generation returns `completed_by_another` and does **not**
+overwrite `md_hash`.
+
+Without this paragraph the previous section's claim held for a degenerate reason — no row exists during
+the call because no row is ever created — and **MEASURED (T4)** every paid record raises
+`[P0001] cannot mark summary as recorded — generation … is <absent>`.
+
+**`video_generations.state` survives, and becomes single-valued** ⟳ *(round 17 M2)*. With `pending`
+unreachable it always reads `'complete'`. It is **kept**, because five consumers still read it: the
+four completeness constraints (all written `state <> 'complete' or …`) and
+`video_artifacts_generation_complete` `[VERIFIED: schema/04_artifacts.sql:1023]` — which, once the GC
+floor predicate goes, is the **only** guard left between a record and a missing generation.
 
 **NOT deleted — `video_artifacts_free_uq` stays until render addressing is settled.** ⟳ *Round 14 H3
 (Codex): this list said "deleted" while the render section said "replaced" — a flat contradiction
@@ -426,7 +458,13 @@ premise.
   **vacuously true**. That is retrospective B6's shape ("a guard that never started") arriving by
   *subtraction*, and the mutation harness would still score it load-bearing against a fixture no
   caller can produce — so **the dead predicate is removed from the view rather than left standing as
-  decoration**.
+  decoration** — and **its paired assertion and mutation are retired with it, not orphaned**
+  ⟳ *(round 17 M1)*: the assertion *"not collectable while pending, and visible after"*
+  `[VERIFIED: schema/05_assert.sql:1428-1445]` and the named mutation *"B1: the collectable floor drops
+  `state = complete`"* `[VERIFIED: mutate-schema.py:410-413]`, whose anchor is the exact line being
+  deleted. Left in place the anchor stops matching and the harness reports **INVALID**, which this
+  project has measured reads as *untested* rather than *retired*. This ADR applied that standard to
+  the provenance assertions and not to these.
 
   **Rounds 13-15 read "the predicate is vacuously true" as "the guard needs a successor". It does
   not**, and the difference is the whole of round 16 B1: a vacuous predicate and an absent row are
@@ -440,18 +478,43 @@ premise.
 
   ### When is a `video_generations` row created? **At record time — after the paid call.**
 
-  That one sentence decides everything here, and it is **forced by this ADR's own deletions**, not
-  chosen:
+  That one sentence decides everything here. For `summary` it is **forced by this ADR's own
+  deletions**; for `model`, `dig` and `digDeeper` it is an invariant that must be **carried**, not
+  inferred — see the boxed warning below, which is the difference between a schema consequence and a
+  convention:
 
   - `reserve_artifact_slot` is the **only** production INSERT into `video_generations`
     `[VERIFIED: schema/04_artifacts.sql:308]` — every other `insert into video_generations` in the
     repo is a fixture in `05_assert.sql`. This ADR deletes that function.
-  - It inserts `state = 'pending'`, and that state is the **only** thing making a contentless row
-    legal. `state` is `not null default 'complete'` `[VERIFIED: schema/03_generations.sql:291]`, and
-    the four completeness constraints are each written `state <> 'complete' or <requirement>`
-    `[VERIFIED: schema/03_generations.sql:394, :395-408, :409-410, :411-412]`. With `pending`
-    unreachable they are **unconditional**, and they demand `card`, `md_hash`, `doc_version_major`
-    and `produced_at` — every one of which is derived from the Gemini output.
+  - It inserts `state = 'pending'`, and that state is the only thing making a contentless row legal for
+    a **summary**. `state` is `not null default 'complete'`
+    `[VERIFIED: schema/03_generations.sql:291]`, and the completeness constraints are written
+    `state <> 'complete' or <requirement>`, so with `pending` unreachable they bind.
+
+  ### ⚠ …but only `summary` is FORCED. The other three paid kinds are convention (round 17 H1, MEASURED)
+
+  ⟳ *This previously said the constraints "demand `card`, `md_hash`, `doc_version_major` and
+  `produced_at`" for every kind. **Three of the four are also gated `kind <> 'summary'`** —
+  `gen_card_complete` `[VERIFIED: schema/03_generations.sql:395]`, `gen_summary_has_format` `[:409-410]`,
+  `gen_summary_has_hash` `[:411-412]`. Only `gen_complete_has_produced_at` `[:394]` ranges over all
+  kinds, and `produced_at` is knowable before any Gemini call — `record_artifact` defaults it to `now()`
+  `[VERIFIED: schema/04_artifacts.sql:473]`.*
+
+  **MEASURED (round 17, T1):** a `model`, `dig` or `digDeeper` row inserted with **only** `produced_at`
+  is **ACCEPTED**; the same shape for `summary` is refused `[23514] gen_card_complete`. The repo already
+  relies on this — `05_assert.sql:138-139` inserts `gDIG`/`gMODEL` complete with `card` and `md_hash`
+  NULL, and the suite is green.
+
+  > **So the invariant must be carried, not inferred:** *no generation row is created before its paid
+  > call completes.* For `summary` the constraints enforce it. For `model`, `dig` and `digDeeper`
+  > **nothing does** — the implementing slice must either extend the constraints to those kinds or
+  > assert the rule. `model` is the sharp case: no job, no staging, its own serve lease, and an early
+  > row would reopen round 9's window with the floor already deleted and no assertion to go red.
+
+  **Fifth instance of "name what the rule ranges over"** — after round 13 B1, round 14 H3, round 15 H3
+  and round 16 M1 — this time in the paragraph that *is* round 16's load-bearing argument. The quoted
+  *"both doors were locked"* measurement below is likewise summary-specific: its second door,
+  `gen_card_complete`, is a summary-only constraint.
 
   So both doors are locked, which this schema already recorded when it hit them
   `[VERIFIED: schema/03_generations.sql:271-283]`:
@@ -491,8 +554,36 @@ premise.
   order put a `pending` row down first.
 
   > **Delete `pending` and that state returns. §8's grace period is REINSTATED, as an age predicate on
-  > the blob.** It is the orphan sweeper's own mechanism, not a new one, and it is uniform across
-  > kinds.
+  > the blob.**
+
+  ### ⚠ Rule 19 bought TWO more things, both on the money path (round 17 H4)
+
+  ⟳ *The first version named only the GC knock-on. Six rounds passed without anyone checking what else
+  the record-first order was load-bearing for.*
+
+  §5.1's rule-19 resolution `[VERIFIED: …-design.md:864-887]` also bought **bytes ⊆ records** and:
+
+  > *"**A crash before recording leaves nothing — no bytes, no row, no orphan — so spending again is
+  > correct rather than a double-charge.**"*
+
+  It was adopted against a MEASURED defect — *"Slot absent, no key to probe, serve path spends again …
+  **6¢ → 12¢**"* `[VERIFIED: …-design.md:860-863]`.
+
+  **With `pending` gone the row cannot precede the bytes.** So a crash *after* the blob write leaves
+  paid bytes at a generation-derived key **no later attempt can name** — each attempt mints a fresh id
+  — and the next attempt spends again. That is the shape rule 19 was rewritten to remove, reintroduced
+  by this deletion, and §5.1's sentence *"a crash before recording leaves nothing"* is now **false and
+  must be corrected in the same slice**.
+
+  **Bounded, and named rather than hidden:** `summary_max_attempts` = 1
+  `[VERIFIED: schema/04_artifacts.sql:263-270]` and `max_serve_attempts` = 5
+  `[VERIFIED: 0012_serve_model_charge.sql:21]`, so the residual is at most one extra paid call per
+  attempt bound — the same class as the reclaim residual the concern table already carries. It is
+  recorded here because this ADR's falsifier #4 (*"a paid kind whose spend is not bounded by a
+  mechanism named in the concern table"*) exists to surface exactly this.
+
+  §8's grace period is not a new mechanism — it is the one §8 already specifies, and it is uniform
+  across kinds. **It is specified and NOT implemented**; see the concern table's evidence column.
 
   Note this is **not** the age-floor-on-generations that `[VERIFIED: schema/04_artifacts.sql:893-896]`
   rejects (*"a 90-day age predicate in the sweeper would have HIDDEN this while leaving the floor
@@ -502,8 +593,13 @@ premise.
 
   **The grace period's length is the implementing slice's number**, and it must satisfy the one
   invariant worth keeping from option C: **it is longer than the worst-case paid call**, computed per
-  kind from `SUMMARY_MAX_PASSES` / `TRANSCRIBE_MAX_PASSES` / `MAGAZINE_MAX_PASSES` — all three already
-  exported from `lib/gemini-cost.ts` for exactly this purpose — and bounded only once `countTokens`
+  kind from `SUMMARY_MAX_PASSES`, `TRANSCRIBE_MAX_PASSES`, `MAGAZINE_MAX_PASSES` **and
+  `DIG_GENERATE_MAX_PASSES`** `[VERIFIED: lib/gemini-cost.ts:51]` — ⟳ *round 17 M3: the first version
+  named three of the four and omitted dig, whose bytes are paid and whose cloud producer is
+  `[VERIFIED: lib/job-queue/dig-handler.ts:100]`. A grace period shorter than a dig's worst case
+  collects paid dig bytes mid-call — the exact failure the reinstatement exists to prevent. An
+  enumeration missing a member, in the text that replaced the dissolved warning about enumerations.
+  The constants are exported "for the guard test" `[VERIFIED: lib/gemini-cost.ts:25]`, not for this* — and bounded only once `countTokens`
   `[VERIFIED: lib/gemini.ts:82-84]` and the blob upload `[VERIFIED: lib/html-doc/model-store.ts:51]`
   are given timeouts, since both are untimed today (round 16, Codex). **Those timeouts are a blocking
   precondition of the implementing slice**, not a promise this ADR can keep by itself.
@@ -606,6 +702,9 @@ concern (what may be collected) rather than an addressing one.*
 
    > **A re-record must present the SAME source set, or raise. An omitted `p_source_generation_id`
    > carries the recorded set forward unchanged.**
+   >
+   > **Enforced by a `before insert` trigger on `video_artifact_sources`** (or an explicit set
+   > comparison inside `record_artifact`) — **not** by the moved append-only branch.
 
    That is what the cited carry-forward actually does: `coalesce(p_source_generation_id, v_src)` with
    `v_src` read from the same (slot, generation) row `[VERIFIED: schema/04_artifacts.sql:654, :663]`
@@ -619,7 +718,15 @@ concern (what may be collected) rather than an addressing one.*
    append-only trigger raises *"the PROVENANCE of a % paid row is immutable"* on any change to
    `source_generation_id`. A child table with `on delete cascade` on both FKs and **no trigger of its
    own** makes provenance freely insertable and deletable, in the ADR titled *"artifacts are an
-   append-only log."* **That trigger branch moves onto `video_artifact_sources`.**
+   append-only log."* **That trigger branch moves onto `video_artifact_sources`** — and it is **NOT
+   sufficient on its own.** ⟳ *Round 17 H3, MEASURED: that branch is installed `before update or delete`
+   `[VERIFIED: schema/04_artifacts.sql:995-997]`, and a re-record naming a different source is an
+   **INSERT**, which fires no such trigger — the probe got a silent **union**, neither the same set nor
+   a raise. The schema states the rule twice in its own comments: "a constraint governs STATES, a
+   trigger governs TRANSITIONS, and an INSERT is a state with no transition"
+   `[VERIFIED: schema/04_artifacts.sql:1010-1012]`. The round-16 fix assigned an invariant to the one
+   mechanism shape that structurally cannot see the operation that violates it — "a guard that never
+   started", the signature this ADR names three times.*
 
    **(c) The four executable assertions are REWRITTEN, not deleted** — `05_assert.sql:166`, `:354-356`,
    `:360-362`, `:453`. `:453` is the executable proof of (b); deleting it would remove the evidence
