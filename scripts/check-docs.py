@@ -105,7 +105,12 @@ def check_adr_index(errors: list[str]) -> None:
         errors.append("docs/adr/README.md (the ADR index) does not exist")
         return
     text = ADR_INDEX.read_text(errors="ignore")
-    listed = {m.group(0) for m in re.finditer(r"\d{4}-[a-z0-9-]+\.md", text)}
+    # Match only MARKDOWN LINK TARGETS — `[0007](0007-slug.md)` — not every 4-digit-prefixed
+    # filename mentioned in prose. Tightened 2026-08-09: the old pattern was a bare filename
+    # match, so citing a DATE-named spec from the index (`2026-08-09-render-addressing-brief.md`)
+    # was read as an ADR that "does not exist". A gate that forbids referring to other documents
+    # is a gate that pushes cross-references out of the index, which is the opposite of the job.
+    listed = {m.group(1) for m in re.finditer(r"\]\((\d{4}-[a-z0-9-]+\.md)\)", text)}
     actual = {p.name for p in adr_files()}
     for missing in sorted(actual - listed):
         errors.append(f"ADR index does not list {missing} — index has drifted")
@@ -204,18 +209,54 @@ def check_line_budgets(errors: list[str]) -> None:
                 f"or make the rule a script — do not raise the budget as a reflex.")
 
 
+def check_duplicate_headings(errors: list[str]) -> int:
+    """No ADR may carry the same `##`/`###` heading twice.
+
+    Added 2026-08-09 after round 14 B1. A large ADR revision left TWO copies of
+    `## What already serves each concern` in one file — and the second was the
+    pre-revision version whose central claims the review had just refuted, sitting
+    at equal authority. An implementer had even odds of reading the wrong one.
+
+    This gate passed that file, because it checked links, frontmatter and budgets
+    but never asked whether the document contradicted itself structurally. That is
+    the same shape the reviews keep naming: an instrument whose success line claims
+    more than its input covers.
+
+    Scoped to ADRs deliberately — they are normative. Specs and reviews legitimately
+    repeat headings across rounds (`## Blocking` per round, etc.).
+    """
+    checked = 0
+    for path in adr_files():
+        seen: dict[str, int] = {}
+        for i, line in enumerate(strip_code(path.read_text()).splitlines(), 1):
+            if line.startswith(("## ", "### ")):
+                key = line.strip()
+                if key in seen:
+                    errors.append(
+                        f"{path.relative_to(ROOT)}: duplicate heading {key!r} "
+                        f"(lines {seen[key]} and {i}). Two sections under one heading in a "
+                        f"normative document means a reader can land on either; if both are "
+                        f"needed, they must say different things and be named differently.")
+                else:
+                    seen[key] = i
+        checked += len(seen)
+    return checked
+
+
 def main() -> int:
     errors: list[str] = []
 
     check_adr_frontmatter(errors)
     check_adr_index(errors)
     check_line_budgets(errors)
+    headings = check_duplicate_headings(errors)
     code_refs = check_adr_references(errors)
     links = check_living_links(errors)
 
     print(f"ADRs                    : {len(adr_files())}")
     print(f"ADR refs from source    : {code_refs}")
     print(f"living-doc links checked: {links}")
+    print(f"ADR headings (unique)   : {headings}")
 
     unpromoted = report_unpromoted_decisions()
     if unpromoted:
