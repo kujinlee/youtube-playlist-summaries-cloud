@@ -2,7 +2,8 @@
 -- round 3's slot check created cleanly and accepted slot='html', kind='dig'.
 --
 -- ⚠ ROUND 5 H1 — THE RULE THIS FILE IS WRITTEN TO. Mutation testing found 15 of 25 guards untested,
--- and worse: `art_slot_kind` and `art_pending_is_leased` were MASKING EACH OTHER. Their fixture rows
+-- and worse: `art_slot_kind` and `art_pending_is_leased` (since deleted by ADR-0007, along with 13
+-- other blocks marked ⛔ below) were MASKING EACH OTHER. Their fixture rows
 -- were ALSO FK-invalid, so each assertion was satisfied by a disjunction — remove the CHECK and the FK
 -- rejected it; remove the FK and the CHECK rejected it. Red only under a DOUBLE mutation. The round-3
 -- and round-4 fixes those two lines were written to verify were both still unverified, in the file
@@ -85,16 +86,19 @@ end $$;
 -- this do when the caller is not the first? — made mechanical.
 --
 -- ⟳ ROUND 9 (round 8 M4) — IT COUNTS *INSERTS*, NOT ROW-WRITES, AND THAT WAS THE WHOLE CLAIM.
--- The trigger fires `after insert or update`, and a paid artifact's ordinary life is `reserve`
--- (INSERT pending) then `record` (UPDATE recorded) — two rows in this table, ONE caller, and no
--- second-caller behaviour exercised anywhere. The ratchet said "the SEQUENCE case is exercised" and
--- could be satisfied by a lifecycle that never has a second caller: shape #11, in the instrument
--- built to close an absence.
+-- The trigger fires `after insert or update`, and a paid artifact's ordinary life used to be
+-- `reserve` (INSERT pending) then `record` (UPDATE recorded) — two rows in this table, ONE caller,
+-- and no second-caller behaviour exercised anywhere. The ratchet said "the SEQUENCE case is
+-- exercised" and could be satisfied by a lifecycle that never has a second caller: shape #11, in the
+-- instrument built to close an absence.
 --
--- Measured before tightening: it was TRUTHFUL — every kind did have a real second INSERT (summary
--- 11, digDeeper 3, model 2, render 2, dig via dig:700 and dig:8) — though four dig:* slots passed on
--- a single-writer lifecycle alone. So the weakness was live but not yet load-bearing, and requiring
--- >= 2 INSERTs passes today UNCHANGED, which is the proof the tightening costs nothing.
+-- ⟳ ADR-0007 — THAT LIFECYCLE IS GONE AND THE INSTRUMENT IS WORTH MORE, NOT LESS. A paid artifact
+-- now has exactly ONE write, so "two INSERTs to one slot" can only mean two callers; the distinction
+-- the round-9 tightening had to argue for is now structural. And it EARNED ITSELF IN THIS SLICE:
+-- retiring the reservation assertions removed `model`'s only second write, and this ratchet went RED
+-- naming it — an absence created by a DELETION, which is precisely the direction no assertion, no
+-- mutation and no reviewer looks in, because all three are opt-in and only ever see what someone
+-- thought to write down.
 --
 -- Test-only instrumentation: it lives in the assertion file, not the schema, and rolls back with
 -- everything else.
@@ -162,9 +166,14 @@ values ((select id from t_ws),'vidA','summary','gOLD','summary','recorded',(sele
        ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded',(select id from t_ws)::text||'/videos/vidA/renders/s.pdf');
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
 values ((select id from t_ws),'vidA','dig:120','gDIG','dig','recorded',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/120.md',120,170);
+-- ⟳ T3 — PROVENANCE IS A ROW IN A CHILD TABLE NOW, not a column. Two statements, same claim: this
+-- model was built FROM gOLD, which `video_summary_current` will shortly rank as superseded.
 insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-values ((select id from t_ws),'vidA','model','gMODEL','model','recorded',(select id from t_ws)::text||'/videos/vidA/gMODEL/model.json','gOLD');
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+values ((select id from t_ws),'vidA','model','gMODEL','model','recorded',(select id from t_ws)::text||'/videos/vidA/gMODEL/model.json');
+insert into video_artifact_sources (artifact_id, workspace_id, video_id, source_generation_id)
+select a.artifact_id, a.workspace_id, a.video_id, 'gOLD'
+  from video_artifacts a where a.video_id='vidA' and a.slot='model';
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
 values ((select id from t_w2),'vidB','summary','g2','summary','recorded',(select id from t_w2)::text||'/videos/vidB/g2/summary.md');
 
@@ -255,6 +264,39 @@ select assert_raises($$insert into video_generations
    4,now())$$,
   'a summary generation with NO md_hash (round 5 B3: sync needs it and nothing persisted it)', '23514', 'gen_summary_has_hash');
 
+-- ⟳ T4 — A GENERATION CANNOT BE PENDING. T2 deleted the GC floor's `state = 'complete'` predicate as
+-- vacuous and named what it was leaving: the CHECK still ADMITTED 'pending', so a hand-written
+-- `insert … state='pending'` was still legal and, with the floor's predicate gone, still collectable.
+-- "No producer" is not a constraint. The row below is valid in EVERY other respect — complete card,
+-- matching major, produced_at, md_hash — so it violates exactly one guard, and that guard is the one
+-- T4 added. This is the stronger claim that lets G3's hand-built pending fixture be retired.
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,state,card,doc_version_major,produced_at,md_hash)
+  values ((select id from t_ws),'vidA','gT4P','summary','pending',
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
+   4,now(),'SHA_T4P')$$,
+  'a generation written PENDING (T4: unrepresentable now, not merely unproduced)',
+  '23514', 'video_generations_state_check');
+
+-- ⟳ T4 (round 17 H1) — `card` AND `doc_version_major` BELONG TO `summary`, AND THAT IS A MEASURED
+-- CONCLUSION, not a tidy-up. The obvious repair for H1 was to extend the three `kind <> 'summary'`
+-- CHECKs to every paid kind; the producers refuse it (03's T4 block quotes each one). What IS true is
+-- the dual — no other kind can legitimately carry these two — and it is worth enforcing because both
+-- are RANKING RUNGS that 04's `video_artifacts_current` applies to every kind: a dig carrying a card
+-- would outrank its own siblings on a rung that means nothing for a dig.
+-- Two negatives against two constraints; a fixture invalid in both ways would test neither (round 6 H5).
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,produced_at,card)
+  values ((select id from t_ws),'vidA','gT4C','dig',now(),
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}')$$,
+  'a DIG generation carrying a summary card (it would win a ranking rung that means nothing for its kind)',
+  '23514', 'gen_card_is_summary_only');
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,produced_at,doc_version_major)
+  values ((select id from t_ws),'vidA','gT4M','model',now(),4)$$,
+  'a MODEL generation carrying doc_version_major (rule 13''s format rung is the summary''s)',
+  '23514', 'gen_major_is_summary_only');
+
 -- art_slot_kind — FK-VALID (gDIG is kind='dig'), spans present, key shaped. ONLY the slot/kind
 -- mismatch is wrong. Before round 5 this row was also FK-invalid, which masked the guard entirely.
 select assert_raises($$insert into video_artifacts
@@ -267,22 +309,23 @@ select assert_raises($$insert into video_artifacts
   'slot=html-preview — an UNKNOWN slot must fail closed (round 5 L3: like ''html%'' matched it)',
   '23514', 'art_slot_kind');
 
--- art_pending_is_leased — FK-valid, spans present, key shaped. ONLY the missing lease is wrong.
--- ⟳ ROUND 6 H5: token + reserved_at ARE supplied, so only the missing LEASE is wrong. Without them
--- this fixture violates three constraints and tests none of them — round 5 H1's masking shape, which
--- adding two NOT-NULL-while-pending columns would otherwise have reintroduced across the whole file.
+-- ⛔ RETIRED BY ADR-0007 — three negatives stood here, one per deleted constraint:
+--     art_pending_is_leased        (round 4 Codex #5, isolated by round 5 H1 / round 6 H5)
+--     art_pending_has_token        (round 6 H5)
+--     art_pending_has_reserved_at  (round 6 H5)
+-- All three asserted a biconditional on `state = 'pending'` over the lease columns. ADR-0007 deleted
+-- the state, the columns and the constraints, so these are retired rather than moved: there is no
+-- surviving guard they could be rewritten against.
+-- ⚠ THE RULE THEY CARRIED IS NOT RETIRED. It was round 6 H5's — THREE separate constraints, never
+-- one compound, because a fixture that is invalid in two ways tests neither. That rule governs every
+-- negative in this file and is stated in its header.
+-- ⚠ AND THE `state = 'pending'` NEGATIVE THAT REPLACES THEM IS BELOW, on the state CHECK itself:
+-- a row can no longer BE pending, which is the stronger claim.
 select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,lease_token,reserved_at)
-  values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/9.md',9,20,gen_random_uuid(),now())$$,
-  'pending row with NO LEASE (round 4 Codex #5; round 5 H1: this test was MASKED too)', '23514', 'art_pending_is_leased');
-select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,lease_expires_at,reserved_at)
-  values ((select id from t_ws),'vidA','dig:11','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/11.md',11,20,now()+interval '5 min',now())$$,
-  'pending row with NO TOKEN (nobody could renew it, and anybody could)', '23514', 'art_pending_has_token');
-select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec,lease_expires_at,lease_token)
-  values ((select id from t_ws),'vidA','dig:12','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/12.md',12,20,now()+interval '5 min',gen_random_uuid())$$,
-  'pending row with NO reserved_at (the renewal ceiling has nothing to measure)', '23514', 'art_pending_has_reserved_at');
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
+  values ((select id from t_ws),'vidA','dig:9','gDIG','dig','pending',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/9.md',9,20)$$,
+  'an artifact row written PENDING (ADR-0007 deleted the state; it must be unrepresentable, not merely unused)',
+  '23514', 'video_artifacts_state_check');
 
 -- art_paid_has_generation
 select assert_raises($$insert into video_artifacts
@@ -349,17 +392,46 @@ select assert_raises($$insert into video_artifacts
   'a key whose second segment is not the literal ''videos''',
   '23514', 'art_key_names_workspace');
 
--- art_summary_has_no_source (round 5 H2, the DATA half)
-select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-  values ((select id from t_ws),'vidA','summary','gSPARE','summary','recorded',(select id from t_ws)::text||'/videos/vidA/gSPARE/s.md','gOLD')$$,
-  'a SUMMARY carrying a source_generation_id (it is derived from nothing)', '23514', 'art_summary_has_no_source');
+-- ── ⟳ T3 — THE FOUR PROVENANCE ASSERTIONS, REWRITTEN AGAINST THE JOIN TABLE ─────────────────────
+-- They are REWRITTEN, NOT DELETED. Deleting them would remove the EVIDENCE that these rules hold
+-- rather than the rules — and one of them (the immutability negative, further down) is the only
+-- executable proof that provenance cannot be rewritten, which is the guarantee round 17 H3 measured
+-- a hole in. Each still violates exactly one guard, which took more care than before: with the rule
+-- spread over a constraint trigger, an INSERT enforcer and two FKs, a careless fixture trips two.
 
--- the source FK (round 5, Codex/M5)
-select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','recorded',(select id from t_ws)::text||'/videos/vidA/wB/dd.md','gGHOST')$$,
-  'provenance from a generation that DOES NOT EXIST', '23503', 'video_artifacts_workspace_id_video_id_source_generation_id_fkey');
+-- art_summary_has_no_source (round 5 H2, the DATA half) — now a CARDINALITY-ZERO rule enforced by a
+-- CONSTRAINT TRIGGER, because a CHECK cannot reach another table. The subject row is gNEW's SUMMARY
+-- artifact, which has NO sources of its own — so the INSERT enforcer cannot fire and this negative
+-- can only be answered by the summary rule. 'gOLD' is a real generation, so the FK cannot fire either.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, 'gOLD' from video_artifacts a
+   where a.video_id='vidA' and a.slot='summary' and a.generation_id='gNEW'$$,
+  'a SUMMARY artifact recording a source (it is derived from nothing)', 'P0001');
+
+-- the source FK (round 5, Codex/M5), which migrated onto this table with the column. Same claim,
+-- per SOURCE: provenance may not name a generation that does not exist.
+-- ⚠ THE SUBJECT IS `dig:120`, WHICH HAS NO SOURCES OF ITS OWN, AND THAT IS DELIBERATE. Using the
+-- `model` artifact — the obvious choice, since it is the one with provenance — would make the row
+-- violate the INSERT enforcer TOO, and it would pass under a disjunction: FK checks are AFTER ROW
+-- and the enforcer is AFTER STATEMENT, so the FK merely happens to answer first. Round 5 H1's
+-- masking rule reaches guards that fire in a fixed order just as it reaches two constraints.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, 'gGHOST' from video_artifacts a
+   where a.video_id='vidA' and a.slot='dig:120'$$,
+  'provenance from a generation that DOES NOT EXIST', '23503', 'vas_source_generation_fk');
+
+-- ⟳ T3 — THE TENANT COORDINATE IS FK'd BACK TO THE ARTIFACT, and this is the negative that proves
+-- the denormalisation cannot lie. Without `vas_artifact_fk` a source row could sit under tenant 1's
+-- model while naming tenant 2's (workspace, video), and the currency rung would then rank a paid
+-- render against ANOTHER TENANT's summary. `g2` is a real generation — of the OTHER workspace — so
+-- `vas_source_generation_fk` is satisfied and only the artifact FK can object.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, (select id from t_w2), 'vidB', 'g2' from video_artifacts a
+   where a.video_id='vidA' and a.slot='dig:120'$$,
+  'a source row whose tenant coordinate is not its artifact''s', '23503', 'vas_artifact_fk');
 
 -- the two partial uniques, and the workspace_videos FK
 select assert_raises($$insert into video_artifacts
@@ -375,33 +447,28 @@ select assert_raises($$insert into video_artifacts
   values ((select id from t_ws),'vidGHOST','pdf:summary',null,'render','recorded',(select id from t_ws)::text||'/videos/vidGHOST/r.pdf')$$,
   'a free render for a video with NO workspace_videos row (the FK the paid FK cannot enforce)', '23503', 'video_artifacts_workspace_id_video_id_fkey');
 
--- ── MONEY: the in-flight guard, and its reclaim (round 5 B4 + H4, ONE fix per cross-derivation C1) ──
+-- ⛔ RETIRED BY ADR-0007 — THE IN-FLIGHT MONEY GUARD AND ITS FLIP (round 5 B4 + H4, cross-derivation
+-- C1). Three assertions stood here:
+--   * a SECOND in-flight reservation on one slot, rejected by `video_artifacts_inflight_uq`. All
+--     three round-5 reviewers MEASURED this independently: without the index two writers insert
+--     `pending` for one slot under their OWN generation ids, both succeed, and `count(*) = 2` paid
+--     Gemini calls. The index is deleted; see 04's tombstone for the ONE consumer that survives it
+--     (the `model` serve path, which needs `doc_key` re-keyed in the same slice, NOT this one).
+--   * "a pending reservation is never servable" — no row can be pending.
+--   * "the pending -> recorded flip is permitted, and then serves" — there is no flip; the append
+--     below is the whole of it.
+-- The fixture is kept, as a plain recorded row, because later assertions run against it: `wA`'s
+-- digDeeper row is what the PROVENANCE-immutability negative rewrites.
 insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,lease_token,reserved_at)
-  values ((select id from t_ws),'vidA','digDeeper','wA','digDeeper','pending',
-          (select id from t_ws)::text||'/videos/vidA/wA/dd.md', now() + interval '5 min', gen_random_uuid(), now());
-select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,lease_expires_at,lease_token,reserved_at)
-  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','pending',
-          (select id from t_ws)::text||'/videos/vidA/wB/dd.md', now() + interval '5 min', gen_random_uuid(), now())$$,
-  'a SECOND in-flight reservation on one slot (both writers would pay Gemini)', '23505', 'video_artifacts_inflight_uq');
-
--- the in-flight row must not stall the READER on another slot, and must not appear as current
-do $$ declare n int; begin
-  select count(*) into n from video_artifacts_current where video_id='vidA' and slot='digDeeper';
-  if n <> 0 then raise exception 'ASSERTION FAILED — a PENDING row was served (% rows)', n; end if;
-  raise notice 'ok (floor): a pending reservation is never servable';
-end $$;
-
--- the pending -> recorded flip must be PERMITTED (the append-only trigger must not over-reach)
-update video_artifacts set state='recorded', lease_expires_at=null, lease_token=null, reserved_at=null
- where video_id='vidA' and slot='digDeeper' and state='pending';
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+  values ((select id from t_ws),'vidA','digDeeper','wA','digDeeper','recorded',
+          (select id from t_ws)::text||'/videos/vidA/wA/dd.md');
 do $$ declare k text; begin
   select blob_key into k from video_artifacts_current where video_id='vidA' and slot='digDeeper';
   if k is distinct from (select id from t_ws)::text||'/videos/vidA/wA/dd.md' then
-    raise exception 'ASSERTION FAILED — the record-first flip was blocked: %', coalesce(k,'<none>');
+    raise exception 'ASSERTION FAILED — a recorded digDeeper is not current: %', coalesce(k,'<none>');
   end if;
-  raise notice 'ok (flip): pending -> recorded is permitted, and then serves';
+  raise notice 'ok: a recorded digDeeper serves';
 end $$;
 
 -- ── APPEND-ONLY, ENFORCED (round 5 M1) ──────────────────────────────────────────────────────────
@@ -443,16 +510,57 @@ select assert_raises($$update video_artifacts
 select assert_raises($$update video_artifacts set start_sec=121
   where video_id='vidA' and slot='dig:120'$$,
   'rewriting the SPAN of a detached dig (Codex H5 — durable recovery data)', 'P0001');
+-- ⟳ ADR-0007 REWROTE THIS, IT DID NOT RETIRE IT. It used to revive a detached row to `pending` —
+-- a state the ADR deleted, so the fixture would now violate the state CHECK as well as the trigger
+-- and would test neither (round 5 H1's masking shape). A state OUTSIDE the domain keeps the subject
+-- unchanged: the trigger is `before update`, so it answers FIRST with a typed P0001, and the CHECK
+-- never gets to speak. Mutating the trigger branch away yields 23514, and the SQLSTATE pin turns
+-- that into a failure rather than a false GREEN.
 select assert_raises($$update video_artifacts
-  set state='pending', lease_expires_at=now()+interval '5 min', detached_at=null,
-      lease_token=gen_random_uuid(), reserved_at=now()
+  set state='reserved', detached_at=null
   where video_id='vidA' and slot='dig:120'$$,
-  'reviving a detached paid row back to PENDING (a second writer could then pay)', 'P0001');
--- Codex H5 on a RECORDED row: provenance is a RANKING input, so a stale model rewriting it wins the
--- source-currency rung without regenerating anything. `wA`'s digDeeper row is recorded by now.
-select assert_raises($$update video_artifacts set source_generation_id='gOLD'
-  where video_id='vidA' and slot='digDeeper' and generation_id='wA'$$,
+  'moving a detached paid row to a state outside the domain (the trigger answers before the CHECK)',
+  'P0001');
+-- ── ⟳ T3 — PROVENANCE IMMUTABILITY, AND THIS IS THE EXECUTABLE PROOF OF IT ──────────────────────
+-- Codex H5's rule is unchanged: provenance is a RANKING input, so a stale model that rewrites it to
+-- the current summary wins the source-currency rung without regenerating a byte. What changed is
+-- that provenance is now a SET, so "rewriting it" has THREE spellings, and round 17 H3 MEASURED
+-- that the round-16 fix — moving 04's PROVENANCE branch onto this table — caught only two of them.
+-- The subject is `vidA`'s model artifact, whose source is gOLD.
+--
+--   (a) UPDATE the row in place                — the append-only trigger on the child table
+select assert_raises($$update video_artifact_sources set source_generation_id='gNEW'
+  where artifact_id = (select artifact_id from video_artifacts where video_id='vidA' and slot='model')$$,
   'rewriting the PROVENANCE of a recorded paid row (Codex H5 — wins the rung for free)', 'P0001');
+--   (b) DELETE it, then re-insert             — the same trigger's DELETE branch. Without it, (a) and
+--       (c) are both reachable in two statements: empty the set, then write a new one into an
+--       artifact that now records nothing. Same two-statement bypass shape as round 6 B3's detach.
+select assert_raises($$delete from video_artifact_sources
+  where artifact_id = (select artifact_id from video_artifacts where video_id='vidA' and slot='model')$$,
+  'DELETING the provenance of a live artifact (the two-statement route to rewriting it)', 'P0001');
+--   (c) INSERT a DIFFERENT source beside it    — ⚠ THIS IS ROUND 17 H3, AND IT IS WHY THE MOVED
+--       TRIGGER WAS NOT SUFFICIENT. That trigger is `before update or delete`; an INSERT fires no
+--       such trigger, and the measured result was a silent UNION — neither the same set nor a raise,
+--       i.e. this artifact would then claim provenance from BOTH gOLD and gNEW and rank as current.
+--       "A constraint governs STATES, a trigger governs TRANSITIONS, and an INSERT is a state with
+--       no transition" is stated twice in 04's own comments; the round-16 fix assigned the invariant
+--       to the one mechanism shape that structurally cannot see the operation that violates it.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, 'gNEW' from video_artifacts a
+   where a.video_id='vidA' and a.slot='model'$$,
+  'ADDING a source to an artifact that already records one (round 17 H3 — the silent UNION)', 'P0001');
+-- ...and the set is intact after all three. A negative that is rejected for the wrong reason still
+-- reads as green, so the state itself is asserted rather than inferred from three P0001s.
+do $$ declare srcs text; begin
+  select string_agg(s.source_generation_id, ',' order by s.source_generation_id) into srcs
+    from video_artifact_sources s
+    join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidA' and a.slot='model';
+  if srcs is distinct from 'gOLD' then
+    raise exception 'ASSERTION FAILED — the model''s source set is now {%}, expected {gOLD}', coalesce(srcs,''); end if;
+  raise notice 'ok (T3): provenance survives update, delete and union — all three spellings refused';
+end $$;
 
 -- art_detached_is_dig — only a section-scoped artifact can stop matching a section.
 -- Both fixtures carry detached_at so they violate EXACTLY ONE guard (round 5 H1's masking rule):
@@ -514,148 +622,67 @@ do $$ declare t1 timestamptz; t2 timestamptz; st text; begin
   raise notice 'ok (detached fencing): clock starts once, survives re-detach, clears on re-attach';
 end $$;
 
--- ── ⟳ ROUND 6 H5 / Codex B2 — THE RESERVATION PROTOCOL ──────────────────────────────────────────
--- ⚠ THE BOUND IS PINNED HERE, not assumed. The first draft of this block read "dig_max_attempts = 2
--- leaves room to observe a reclaim" — from the MIGRATION DEFAULT. The live local value is 1, so the
--- block asserted against a number the database did not hold, and the failure it produced looked like
--- a protocol bug. A test whose expectations depend on a tunable knob tests the knob. Set it, inside
--- the rollback, so the protocol is what is under test.
-update guardrail_config set dig_max_attempts = 2, summary_max_attempts = 1 where id = true;
-do $$ declare o text; t1 uuid; t2 uuid; a int; begin
-  -- P2 — a typed outcome. The old reclaim returned a bare int and `coalesce(v_attempts,0)` made
-  -- "nothing to reclaim" and "reclaimed a row with 0 attempts" the same value, on the money path.
-  select outcome, token, attempts into o, t1, a from reserve_artifact_slot(
-    (select id from t_ws),'vidA','dig:700','gDIG','dig',
-    (select id from t_ws)::text||'/videos/vidA/gDIG/dig/700.md', null, 700, 750);
-  if o <> 'reserved' then raise exception 'ASSERTION FAILED — first reservation: %', o; end if;
-  if t1 is null then raise exception 'ASSERTION FAILED — reserved without a token'; end if;
-  if a <> 1 then raise exception 'ASSERTION FAILED — first attempt counted as %', a; end if;
-
-  -- P22, the half that IS a defect: a second writer must not start a paid call on a live lease.
-  select outcome, token into o, t2 from reserve_artifact_slot(
-    (select id from t_ws),'vidA','dig:700','gOTHER','dig',
-    (select id from t_ws)::text||'/videos/vidA/gOTHER/dig/700.md', null, 700, 750);
-  if o <> 'busy' then raise exception 'ASSERTION FAILED — a LIVE lease was stolen: %', o; end if;
-  if t2 is not null then raise exception 'ASSERTION FAILED — a losing reserve handed out a token'; end if;
-  raise notice 'ok (reserve): typed outcome, a token, and a live lease is not stealable';
-end $$;
-
--- RENEWAL is fenced by the TOKEN, not by the clock — a worker that overran its TTL but that nobody
--- reclaimed keeps its work rather than losing it to a race that never happened.
-do $$ declare o text; t uuid; begin
-  select lease_token into t from video_artifacts where video_id='vidA' and slot='dig:700';
-  if renew_artifact_lease((select id from t_ws),'vidA','dig:700', gen_random_uuid()) <> 'lost' then
-    raise exception 'ASSERTION FAILED — a STRANGER renewed the lease'; end if;
-  update video_artifacts set lease_expires_at = now() - interval '1 min'
-   where video_id='vidA' and slot='dig:700';
-  o := renew_artifact_lease((select id from t_ws),'vidA','dig:700', t);
-  if o <> 'renewed' then raise exception 'ASSERTION FAILED — the holder could not renew past TTL: %', o; end if;
-  -- ...but the CEILING still bounds it, or a HUNG worker renews forever and the slot is never
-  -- reclaimable — the exact failure the reclaim exists to prevent, re-created by renewal.
-  update video_artifacts set reserved_at = now() - interval '10 hours'
-   where video_id='vidA' and slot='dig:700';
-  o := renew_artifact_lease((select id from t_ws),'vidA','dig:700', t);
-  if o <> 'ceiling_exceeded' then
-    raise exception 'ASSERTION FAILED — a hung worker renewed past the ceiling: %', o; end if;
-  raise notice 'ok (renew): token-fenced, survives its own TTL, bounded by the ceiling';
-end $$;
-
--- RECLAIM, and the bound SURVIVES it. The old protocol's count was resettable because reclaim and
--- reserve were two round trips; here the increment is in the statement that takes the slot.
-do $$ declare o text; t uuid; a int; n int; begin
-  update video_artifacts set lease_expires_at = now() - interval '1 min'
-   where video_id='vidA' and slot='dig:700';
-  select outcome, token, attempts into o, t, a from reserve_artifact_slot(
-    (select id from t_ws),'vidA','dig:700','gOTHER','dig',
-    (select id from t_ws)::text||'/videos/vidA/gOTHER/dig/700.md', null, 700, 750);
-  if o <> 'reserved' then raise exception 'ASSERTION FAILED — an EXPIRED lease was not reclaimable: %', o; end if;
-  if a <> 2 then raise exception 'ASSERTION FAILED — the attempt bound did not survive reclaim: %', a; end if;
-  select count(*) into n from video_artifacts where video_id='vidA' and slot='dig:700';
-  if n <> 1 then raise exception 'ASSERTION FAILED — reclaim duplicated the row (% rows)', n; end if;
-  -- the reclaimed writer LEARNS it lost, and learns it while still working
-  if renew_artifact_lease((select id from t_ws),'vidA','dig:700', (select lease_token from video_artifacts where video_id='vidA' and slot='dig:700' and lease_token = t)) is null then null; end if;
-  raise notice 'ok (reclaim): one row, re-pointed in place, attempts 1 -> 2 durably';
-end $$;
-
--- ⚠ THE DISCRIMINATING CASE FOR live-lease-first, and the reason it needs its own block: at this
--- point attempts = 2 = dig_max_attempts AND the lease is LIVE. Only here do the two orderings give
--- different answers. The earlier `busy` assertion does NOT test the ordering — with attempts = 1 the
--- exhaustion branch is false anyway, so it returns `busy` under either version. MEASURED: mutating
--- the ordering left the whole suite GREEN until this block existed.
--- The distinction is what a caller acts on: `busy` means come back, `exhausted` means never retry.
-do $$ declare o text; a int; begin
-  select outcome, attempts into o, a from reserve_artifact_slot(
-    (select id from t_ws),'vidA','dig:700','gTHIRD','dig',
-    (select id from t_ws)::text||'/videos/vidA/gTHIRD/dig/700.md', null, 700, 750);
-  if a is distinct from 2 then
-    raise exception 'ASSERTION FAILED — precondition: expected attempts=2 at the bound, got %', a; end if;
-  if o <> 'busy' then
-    raise exception 'ASSERTION FAILED — a LIVE lease at the attempt bound reported %, not busy', o; end if;
-  raise notice 'ok (reserve): a LIVE lease reads as busy even at the attempt bound, never exhausted';
-end $$;
-
--- EXHAUSTION is a typed outcome, not a 23505 (shape #8: a policy that errors rather than denies).
-do $$ declare o text; begin
-  update video_artifacts set lease_expires_at = now() - interval '1 min'
-   where video_id='vidA' and slot='dig:700';
-  select outcome into o from reserve_artifact_slot(
-    (select id from t_ws),'vidA','dig:700','gTHIRD','dig',
-    (select id from t_ws)::text||'/videos/vidA/gTHIRD/dig/700.md', null, 700, 750);
-  if o <> 'exhausted' then
-    raise exception 'ASSERTION FAILED — past dig_max_attempts=2 the outcome was %', o; end if;
-  raise notice 'ok (reserve): the attempt bound terminates, as a value not an exception';
-end $$;
-
--- THE FLIP NEVER REFUSES — USER DECISION 2026-08-07, "proceed, keep the paid work".
--- A reclaimed writer already paid Gemini; rejecting its record would discard bought content without
--- preventing the charge, which happened at reserve time. Append-only makes the second row the
--- DESIGNED state: two generations, one slot, ranked by `current`.
-do $$ declare o text; t uuid; n int; begin
-  select lease_token into t from video_artifacts where video_id='vidA' and slot='dig:700';
-  o := record_artifact((select id from t_ws),'vidA','dig:700','gOTHER','dig',
-        (select id from t_ws)::text||'/videos/vidA/gOTHER/dig/700.md', t, null, 700, 750);
-  if o <> 'recorded_as_holder' then
-    raise exception 'ASSERTION FAILED — the holder could not record: %', o; end if;
-  -- now the ORIGINAL writer, long since reclaimed, comes back from its Gemini call
-  o := record_artifact((select id from t_ws),'vidA','dig:700','gDIG','dig',
-        (select id from t_ws)::text||'/videos/vidA/gDIG/dig/700.md', gen_random_uuid(), null, 700, 750);
-  if o <> 'recorded_after_loss' then
-    raise exception 'ASSERTION FAILED — a reclaimed writer''s PAID work was discarded: %', o; end if;
+-- ── ⛔ RETIRED BY ADR-0007 — THE RESERVATION PROTOCOL (round 6 H5 / Codex B2) ────────────────────
+-- ~140 lines of assertions stood here. They are listed by subject so a later round can see what was
+-- covered and what the deletion cost, rather than discovering an absence:
+--
+--   P2 / typed outcome     — reserve returns `reserved` + a token + attempts=1, never a bare int
+--   P22, the live half     — a second writer on a LIVE lease reads `busy` and gets no token
+--   renewal                — token-fenced (a stranger gets `lost`), survives its own TTL, and is
+--                            bounded by `max_duration_seconds` so a HUNG worker cannot renew forever
+--   reclaim                — an expired lease is re-pointed IN PLACE (one row, not two) and the
+--                            attempt count survives, because the increment is in the statement that
+--                            takes the slot. The old reclaim's count was resettable.
+--   live-lease-first       — at attempts = max AND a live lease the answer is `busy`, not
+--                            `exhausted`. The ONLY case where the two orderings differ; mutating the
+--                            ordering left the whole suite GREEN until this block existed.
+--   exhaustion             — a typed outcome past the bound, not a raw [23505] (shape #8)
+--   idempotent re-reserve  — re-reserving an already-recorded generation is `already_recorded`
+--   summary_max_attempts=1 — asserted so that RAISING it is a decision, not an accident: a crashed
+--                            summary worker leaves a slot nobody can retry
+--
+-- ⚠ TWO OF THOSE ARE MONEY GUARANTEES WITH NO SUCCESSOR IN THIS FILE, and saying so is the point of
+-- this tombstone. The per-kind attempt ceiling is gone (04's tombstone names the conflict:
+-- `summary_max_attempts` = 1 against `jobs.max_attempts` = 5), and single-flight for the `model`
+-- serve path now rests entirely on `serve_model_charge`, which lives in `supabase/migrations/` and
+-- is outside this file's reach. Neither is asserted here because neither is in this schema.
+--
+-- WHAT SURVIVES IS APPEND-ONLY ITSELF, and it is asserted below rather than retired: two generations
+-- of one slot coexist and are ranked. That was the DESIGNED state the reservation kept colliding
+-- with — user decision 2026-08-07, "the reservation guards SPENDING, not RECORDING" — and with the
+-- reservation gone it is simply what `record_artifact` does.
+do $$ declare o text; n int; ws uuid; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidA','dig:700','gOTHER','dig'::artifact_kind,
+        ws::text||'/videos/vidA/gOTHER/dig/700.md', p_start_sec := 700, p_end_sec := 750);
+  if o <> 'recorded' then
+    raise exception 'ASSERTION FAILED — the first writer of a slot got: %', o; end if;
+  -- a SECOND writer, its own generation, its own key. Under the old protocol this was the
+  -- `recorded_after_loss` path and required a reclaim to reach; it is now the ordinary case.
+  o := record_artifact(ws,'vidA','dig:700','gDIG','dig'::artifact_kind,
+        ws::text||'/videos/vidA/gDIG/dig/700.md', p_start_sec := 700, p_end_sec := 750);
+  if o <> 'recorded' then
+    raise exception 'ASSERTION FAILED — a second writer''s PAID work was discarded: %', o; end if;
   select count(*) into n from video_artifacts
    where video_id='vidA' and slot='dig:700' and state='recorded';
   if n <> 2 then raise exception 'ASSERTION FAILED — expected two ranked generations, got %', n; end if;
-  raise notice 'ok (record): the holder flips in place; a reclaimed writer APPENDS, losing nothing';
+  raise notice 'ok (append-only): two writers, two generations, one slot, both kept and ranked';
 end $$;
 
 -- IDEMPOTENCY: a worker that crashed between recording and reporting completion must learn it is
--- done, not be handed an error it has to parse.
-do $$ declare o text; begin
-  select outcome into o from reserve_artifact_slot(
-    (select id from t_ws),'vidA','dig:700','gDIG','dig',
-    (select id from t_ws)::text||'/videos/vidA/gDIG/dig/700.md', null, 700, 750);
+-- done, not be handed an error it has to parse. The old protocol answered this at RESERVE time
+-- (`already_recorded`); with no reserve, `record_artifact` answers it itself — and it is the same
+-- word, because it is the same question.
+do $$ declare o text; n int; ws uuid; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidA','dig:700','gDIG','dig'::artifact_kind,
+        ws::text||'/videos/vidA/gDIG/dig/700.md', p_start_sec := 700, p_end_sec := 750);
   if o <> 'already_recorded' then
-    raise exception 'ASSERTION FAILED — re-reserving a recorded generation gave %', o; end if;
-  raise notice 'ok (reserve): re-reserving an already-recorded generation is idempotent';
-end $$;
-
--- ⚠ THE CONSEQUENCE OF summary_max_attempts = 1, ASSERTED SO RAISING IT IS A DECISION.
--- A summary worker that CRASHES leaves a slot nobody can retry: the first reserve sets attempts=1,
--- and the bound is `< 1`. That is the money guardrail working as configured ("pay at most once"),
--- not a protocol defect — but it is a real product trade-off (retrying costs money; not retrying
--- leaves the video with no summary) and it belongs to whoever owns the guardrail numbers.
-do $$ declare o text; begin
-  select outcome into o from reserve_artifact_slot(
-    (select id from t_ws),'vidA','summary','gSPARE','summary',
-    (select id from t_ws)::text||'/videos/vidA/gSPARE/summary.md');
-  if o <> 'reserved' then raise exception 'ASSERTION FAILED — first summary reserve: %', o; end if;
-  update video_artifacts set lease_expires_at = now() - interval '1 min'
-   where video_id='vidA' and slot='summary' and state='pending';
-  select outcome into o from reserve_artifact_slot(
-    (select id from t_ws),'vidA','summary','gRETRY','summary',
-    (select id from t_ws)::text||'/videos/vidA/gRETRY/summary.md');
-  if o <> 'exhausted' then
-    raise exception 'ASSERTION FAILED — summary_max_attempts=1 no longer blocks a retry: %', o; end if;
-  raise notice 'ok (bound): with summary_max_attempts=1 a crashed summary slot is NOT retryable';
+    raise exception 'ASSERTION FAILED — re-recording an identical row gave %', o; end if;
+  select count(*) into n from video_artifacts where video_id='vidA' and slot='dig:700';
+  if n <> 2 then
+    raise exception 'ASSERTION FAILED — the idempotent retry appended a row (% rows)', n; end if;
+  raise notice 'ok (record): an identical retry is idempotent and typed, never a raw 23505';
 end $$;
 
 -- ── GC MUST NOT COLLECT THE CURRENT GENERATION (round 5 H3) ──────────────────────────────────────
@@ -704,30 +731,25 @@ end $$;
 -- table t_ws *after* `set local role anon`, so it got 42501 from the temp table and never reached
 -- the function — an assertion passing for a reason other than the one it names, which is the same
 -- class of defect as the `when others` harness. Found by mutation: removing the revoke left it GREEN.
--- ⟳ ROUND 6 H5 — ALL THREE replacements are swept, not just the one that inherited the name.
+-- ⟳ ROUND 6 H5 — ALL replacements are swept, not just the one that inherited the name.
 -- B1 happened because a definer function was added one file away and the PUBLIC-revoke habit was
 -- applied at one site; replacing that function with three would have been the ideal way to reproduce
 -- the same mistake at triple scale.
-do $$ declare ws uuid; fn text; begin
+-- ⟳ ADR-0007 — three definer functions became ONE. `reserve_artifact_slot` and
+-- `renew_artifact_lease` are gone, so their loop arms go with them; the ratchet that makes this
+-- claim checkable rather than remembered is R8's pg_proc sweep below, which is what would catch a
+-- FOURTH function being added without a revoke.
+do $$ declare ws uuid; begin
   select id into ws from t_ws;
-  foreach fn in array array['reserve_artifact_slot','renew_artifact_lease','record_artifact'] loop
-    set local role anon;
-    begin
-      case fn
-        when 'reserve_artifact_slot' then
-          perform * from reserve_artifact_slot(ws,'vidA','dig:9','gDIG','dig','k');
-        when 'renew_artifact_lease' then
-          perform renew_artifact_lease(ws,'vidA','dig:9', gen_random_uuid());
-        when 'record_artifact' then
-          perform record_artifact(ws,'vidA','dig:9','gDIG','dig','k', gen_random_uuid());
-      end case;
-      reset role;
-      raise exception 'ASSERTION FAILED — anon CALLED % (cross-tenant write)', fn;
-    exception when insufficient_privilege then
-      reset role;
-      raise notice 'ok (rejected by 42501): anon calling %', fn;
-    end;
-  end loop;
+  set local role anon;
+  begin
+    perform record_artifact(ws,'vidA','dig:9','gDIG','dig'::artifact_kind,'k');
+    reset role;
+    raise exception 'ASSERTION FAILED — anon CALLED record_artifact (cross-tenant write)';
+  exception when insufficient_privilege then
+    reset role;
+    raise notice 'ok (rejected by 42501): anon calling record_artifact';
+  end;
 end $$;
 do $$ begin
   set local role anon;
@@ -751,10 +773,14 @@ do $$ declare n int; other uuid; begin
        + (select count(*) from video_artifacts_current where video_id='vidA')
        + (select count(*) from video_summary_current   where video_id='vidA')
        + (select count(*) from video_generations       where video_id='vidA')
-       + (select count(*) from workspace_videos        where video_id='vidA') into n;
+       + (select count(*) from workspace_videos        where video_id='vidA')
+       -- ⟳ T3 — the join table joins the sweep. It is a fourth base table carrying tenant data
+       -- (blob provenance), created after the sweep was written, which is precisely how round 6 H3
+       -- happened: "read ONE view and ONE table" left three guards mutation-GREEN.
+       + (select count(*) from video_artifact_sources  where video_id='vidA') into n;
   reset role;
-  if n <> 0 then raise exception 'ASSERTION FAILED — cross-tenant leak: % rows across 5 objects', n; end if;
-  raise notice 'ok (RLS): tenant 2 sees 0 rows across BOTH views and all three base tables';
+  if n <> 0 then raise exception 'ASSERTION FAILED — cross-tenant leak: % rows across 6 objects', n; end if;
+  raise notice 'ok (RLS): tenant 2 sees 0 rows across BOTH views and all four base tables';
 end $$;
 do $$ declare n int; begin
   set local role anon;
@@ -770,17 +796,24 @@ end $$;
 -- "sees 0 rows" assertion still passed. A policy's removal is only visible from the OWNER's side —
 -- and reading it through the view does not work either, because video_generations is LEFT-joined,
 -- so its rows vanishing turns into NULLs rather than into missing rows.
-do $$ declare ng int; nw int; me uuid; begin
+-- ⟳ T3 — AND `video_artifact_sources` IS READ FROM THE OWNER'S SIDE FOR A SECOND REASON BEYOND
+-- SYMMETRY. `video_artifacts_current` is `security_invoker`, and its currency rung reads this table.
+-- With force RLS and no policy the `not exists` would be vacuously TRUE for an authenticated owner
+-- and false for `service_role` — the two would rank the SAME manifest differently, which is round 5
+-- H2's "the two views disagree" defect relocated into the privilege system. Every cross-tenant
+-- assertion would still pass, because a missing policy is only visible from the owner's side.
+do $$ declare ng int; nw int; ns int; me uuid; begin
   select id into me from t_ws;
   perform set_config('request.jwt.claims', json_build_object('sub', me::text)::text, true);
   set local role authenticated;
-  select count(*) into ng from video_generations where video_id='vidA';
-  select count(*) into nw from workspace_videos  where video_id='vidA';
+  select count(*) into ng from video_generations      where video_id='vidA';
+  select count(*) into nw from workspace_videos       where video_id='vidA';
+  select count(*) into ns from video_artifact_sources where video_id='vidA';
   reset role;
-  if ng = 0 or nw = 0 then
-    raise exception 'ASSERTION FAILED — the owner cannot read their own base tables (gen %, wv %)', ng, nw;
+  if ng = 0 or nw = 0 or ns = 0 then
+    raise exception 'ASSERTION FAILED — the owner cannot read their own base tables (gen %, wv %, sources %)', ng, nw, ns;
   end if;
-  raise notice 'ok (RLS): the owner reads video_generations and workspace_videos directly';
+  raise notice 'ok (RLS): the owner reads video_generations, workspace_videos and video_artifact_sources directly';
 end $$;
 
 -- FLOOR: make every generation corrections-stale. A stale generation must STILL SERVE (round 4 A-2).
@@ -914,113 +947,102 @@ select assert_raises($$insert into video_generations
 
 insert into workspace_videos (workspace_id, video_id) select id, 'vidG' from t_ws;
 
--- G1 — THE DEFECT ITSELF. This is the assertion that is red without the fix, and it is a POSITIVE:
--- the failure was an inability to act, so no `assert_raises` can express it.
-do $$ declare o text; t uuid; ws uuid; begin
-  select id into ws from t_ws;
-  select outcome, token into o, t from reserve_artifact_slot(
-    ws,'vidG','summary','gG1','summary'::artifact_kind, ws::text||'/videos/vidG/gG1/summary.md');
-  if o <> 'reserved' then
-    raise exception 'ASSERTION FAILED — a producer cannot reserve a summary slot: %', o; end if;
-  raise notice 'ok (item 3): reserve creates its own PENDING generation; no card is needed yet';
-end $$;
-
--- G2 — and what it created is honestly incomplete, not a fabricated placeholder. sync-run.ts:534-542
--- already builds one of those and calls it "an HONEST unresolved placeholder"; round 5 B1 measured
--- such a card WINNING the ranking. A pending generation carries NO content at all instead.
-do $$ declare r record; begin
-  select * into r from video_generations where video_id='vidG' and generation_id='gG1';
-  if r.state <> 'pending' then
-    raise exception 'ASSERTION FAILED — reserve did not leave the generation pending: %', r.state; end if;
-  if r.card is not null or r.md_hash is not null or r.produced_at is not null
-     or r.doc_version_major is not null then
-    raise exception 'ASSERTION FAILED — a pending generation fabricated content'; end if;
-  raise notice 'ok (item 3): a pending generation carries NO card, md_hash, doc_version or produced_at';
-end $$;
-
--- G3 — THE RELAXATION MUST NOT LEAK. This is the guard that makes gating the four CHECKs safe: it
--- restores the old invariant exactly where it was load-bearing. Without it, every completeness
--- constraint becomes optional for anyone willing to write `state = 'pending'`.
--- Direct UPDATE, deliberately: it isolates the trigger from record_artifact, and the append-only
--- trigger cannot mask it (its body is gated on old.state, which is 'pending' here).
+-- G1/G2 — ⛔ RETIRED BY ADR-0007. They asserted that `reserve_artifact_slot` creates its own PENDING
+-- generation (G1, round 6 B5's defect: before it, a cloud summarize could not reserve a summary slot
+-- at all — [23503] on the artifact FK one way, [23514] gen_card_complete the other, with the paid
+-- call sitting between two locked doors) and that the row it created was honestly EMPTY rather than
+-- a fabricated placeholder (G2, round 5 B1: a placeholder card WON the ranking).
 --
--- ⚠ THE LEASE COLUMNS ARE CLEARED IN THE SAME STATEMENT, and that is the header rule rather than
--- tidiness. Without it this negative violates TWO guards — the trigger AND art_pending_is_leased,
--- since `(state='pending') = (lease_expires_at is not null)` is false the moment state flips while
--- the lease is still set. MEASURED via mutation: removing the trigger produced 23514 instead of
--- P0001. The SQLSTATE pin caught it rather than reporting a false GREEN, which is round 6's harness
--- fix doing its job — but a negative that needs the harness to disambiguate it is still round 5 H1.
-select assert_raises($$update video_artifacts
-  set state='recorded', lease_expires_at=null, lease_token=null, reserved_at=null
-  where video_id='vidG' and slot='summary'$$,
-  'recording an artifact whose generation is still PENDING (the completeness bypass)', 'P0001');
-
--- G4 — a pending generation is invisible to BOTH ranking views. Follows from G3, asserted anyway:
--- ranking is where round 5 B1 did its damage, and "follows from" is how round 5 H1's masking pairs
--- were justified.
-do $$ declare n int; begin
-  select count(*) into n from video_artifacts_current where video_id='vidG';
-  if n <> 0 then raise exception 'ASSERTION FAILED — a PENDING generation reached current: % rows', n; end if;
-  raise notice 'ok (item 3): a pending generation is in neither ranking view';
-end $$;
-
--- G5 — THE FLIP, carrying the payload item 3 exists to add. One transaction: the generation completes
--- and the artifact records together, so there is no window where a recorded row points at a pending
--- generation (G3 would reject it anyway — the API and the guard agree rather than one covering the other).
-do $$ declare o text; g text; r record; ws uuid; t uuid; begin
+-- ⚠ THE SECOND DOOR IS STILL LOCKED AND THE FIRST ONE IS GONE. `state = 'pending'` was the key cut
+-- for that lock; ADR-0007 throws the key away and moves the whole row to the far side of the paid
+-- call. G1' below is the replacement, and it is the assertion that is RED without round 17 B1's
+-- fix — MEASURED, every paid record raised
+--   [P0001] cannot mark summary as recorded — generation gG1 is <absent>
+-- because deleting `reserve_artifact_slot` deleted the only non-fixture INSERT into
+-- `video_generations` and nothing replaced it.
+do $$ declare o text; r record; ws uuid; begin
   select id into ws from t_ws;
-  select lease_token into t from video_artifacts where video_id='vidG' and slot='summary';
+  if exists (select 1 from video_generations where video_id='vidG' and generation_id='gG1') then
+    raise exception 'FIXTURE FAILED — gG1 exists before anyone recorded it'; end if;
   o := record_artifact(ws,'vidG','summary','gG1','summary'::artifact_kind,
-        ws::text||'/videos/vidG/gG1/summary.md', t,
+        ws::text||'/videos/vidG/gG1/summary.md',
         p_md_hash := 'SHA_G1',
         p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-03-03",'
                || '"processedAt":"z","mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
         p_doc_version_major := 4, p_produced_at := '2026-03-03');
-  if o <> 'recorded_as_holder' then
-    raise exception 'ASSERTION FAILED — the holder did not record: %', o; end if;
+  if o <> 'recorded' then
+    raise exception 'ASSERTION FAILED — a producer cannot record a summary: %', o; end if;
   select * into r from video_generations where video_id='vidG' and generation_id='gG1';
   if r.state <> 'complete' or r.md_hash <> 'SHA_G1' then
-    raise exception 'ASSERTION FAILED — record did not complete the generation: % %', r.state, r.md_hash; end if;
+    raise exception 'ASSERTION FAILED — record did not create a COMPLETE generation: % %', r.state, r.md_hash; end if;
+  raise notice 'ok (ADR-0007 G1''): record_artifact creates its own generation, born complete';
+end $$;
+
+-- G3 — THE RELAXATION MUST NOT LEAK. This is the guard that makes gating the four completeness
+-- CHECKs on `state = 'complete'` safe: without it, every one of them becomes optional for anyone
+-- willing to write `state = 'pending'` on the generation.
+-- ⚠ ⟳ T4 — THE HAND-BUILT PENDING FIXTURE IS RETIRED, AND THE GUARD IS NOT. ADR-0007 left this
+-- assertion standing on a `pending` generation built by direct `service_role` DML, and named that as
+-- "an honest weakening worth naming rather than hiding" — the only caller that could reach the guard
+-- was a hand-written INSERT. T4 narrowed `video_generations.state` to a single value, so that caller
+-- is gone too, and the negative that replaces it is the STRONGER claim, asserted above: a generation
+-- can no longer BE pending. Same move ADR-0007 made one table over, where three `art_pending_*`
+-- negatives became one negative on `video_artifacts_state_check`.
+--
+-- ⚠ WHAT SURVIVES HERE IS THE OTHER BRANCH OF THE SAME GUARD, AND IT IS THE ONE T1 MEASURED:
+-- `<absent>`. `video_artifacts_generation_complete` reads the parent's state and answers
+-- `coalesce(v_state,'<absent>')`, so with `pending` unrepresentable the live case is a recorded
+-- artifact naming a generation that does not exist — verbatim what T1 hit with the reservation
+-- deleted and record_artifact's INSERT not yet written:
+--   [P0001] cannot mark summary as recorded — generation gG1 is <absent>
+-- ⚠ AND IT IS NOT MASKED BY THE FK, which is the reason this negative is honest rather than
+-- double-guarded: a BEFORE ROW trigger runs before constraints are evaluated, so the typed P0001
+-- wins the race against [23503] on (ws, video, generation_id, kind). Remove the guard and the FK
+-- catches it instead — a different SQLSTATE, which is exactly what makes the mutation legible.
+select assert_raises($$insert into video_artifacts
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+  values ((select id from t_ws),'vidG','summary','gABSENT','summary','recorded',
+          (select id from t_ws)::text||'/videos/vidG/gABSENT/summary.md')$$,
+  'recording an artifact whose generation is not COMPLETE — reachable now only as ABSENT', 'P0001');
+
+-- G4 — ⛔ RETIRED BY ADR-0007. It asserted that a pending generation is invisible to both ranking
+-- views. Its premise was a RECORDED artifact pointing at a pending generation, and G3 is the proof
+-- that no such row can exist — so the views have nothing to hide and the assertion now describes an
+-- unreachable world. ("A test can encode an unreachable world and still pass" is this file's own
+-- round-6 B5 lesson; retiring it is applying that lesson rather than re-learning it.)
+
+-- G5 — THE PAYLOAD item 3 exists to add. `md_hash` was mandatory (gen_summary_has_hash) and had NO
+-- PRODUCER; the card and doc_version_major had the same gap. All three arrive through
+-- `record_artifact`, and the generation is written in the SAME TRANSACTION as the artifact, so there
+-- is no instant at which a recorded row points at an incomplete generation. G1' above performed the
+-- write; this asserts what the ranking then sees.
+do $$ declare g text; begin
   select generation_id into g from video_summary_current where video_id='vidG';
   if g is distinct from 'gG1' then
     raise exception 'ASSERTION FAILED — the recorded summary is not current: %', coalesce(g,'<none>'); end if;
-  raise notice 'ok (item 3): record completes the generation AND flips the artifact, one transaction';
+  raise notice 'ok (item 3): the generation and the artifact land together, and the summary serves';
 end $$;
 
 -- G6/G7 — md_hash AND the card ARE STILL MANDATORY. The constraints did not weaken; each moved to the
 -- moment its value can exist. This is the assertion §10.0 should have forced and did not.
 --
--- ⚠ EACH GETS ITS OWN VIDEO, and both parts of that are load-bearing. The generation must be
--- reserved rather than named, or record_artifact updates zero generation rows and the artifact INSERT
--- fails on the FK [23503] — a fixture that never reaches the constraint it names, which is round 5
--- H1's masking defect. And there is only ONE summary slot per video (slot_kind maps exactly one), so
--- sharing vidG would leave G6's pending row holding the in-flight unique and G7 would read `busy`.
+-- ⚠ EACH GETS ITS OWN VIDEO. There is only ONE summary slot per video (slot_kind maps exactly one),
+-- and the negatives must not collide with each other's rows or with gG1's.
 insert into workspace_videos (workspace_id, video_id) select id, 'vidG6' from t_ws;
 insert into workspace_videos (workspace_id, video_id) select id, 'vidG7' from t_ws;
-do $$ declare o text; ws uuid; begin
-  select id into ws from t_ws;
-  select outcome into o from reserve_artifact_slot(
-    ws,'vidG6','summary','gG6','summary'::artifact_kind, ws::text||'/videos/vidG6/gG6/summary.md');
-  if o <> 'reserved' then raise exception 'FIXTURE FAILED — G6 reserve: %', o; end if;
-  select outcome into o from reserve_artifact_slot(
-    ws,'vidG7','summary','gG7','summary'::artifact_kind, ws::text||'/videos/vidG7/gG7/summary.md');
-  if o <> 'reserved' then raise exception 'FIXTURE FAILED — G7 reserve: %', o; end if;
-end $$;
 
 select assert_raises($$select record_artifact((select id from t_ws),'vidG6','summary','gG6',
    'summary'::artifact_kind,(select id from t_ws)::text||'/videos/vidG6/gG6/summary.md',
-   (select lease_token from video_artifacts where video_id='vidG6' and slot='summary'),
    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y",'
           || '"mdCorrectionsHash":"H_NEW"}')::jsonb,
    p_doc_version_major := 4, p_produced_at := now())$$,
-  'completing a summary generation with NO md_hash (the constraint moved, it did not weaken)',
+  'recording a summary with NO md_hash (the constraint moved, it did not weaken)',
   '23514', 'gen_summary_has_hash');
 
 select assert_raises($$select record_artifact((select id from t_ws),'vidG7','summary','gG7',
    'summary'::artifact_kind,(select id from t_ws)::text||'/videos/vidG7/gG7/summary.md',
-   (select lease_token from video_artifacts where video_id='vidG7' and slot='summary'),
    p_md_hash := 'SHA_G7', p_doc_version_major := 4, p_produced_at := now())$$,
-  'completing a summary generation with NO card', '23514', 'gen_card_complete');
+  'recording a summary with NO card', '23514', 'gen_card_complete');
 
 -- G8 — COMPLETE IS TERMINAL. New content means a NEW generation; that is what append-only means one
 -- level up, and without this the frozen artifact address would point at re-writable content —
@@ -1048,39 +1070,36 @@ end $$;
 
 -- G10 — a completed generation needs a produced_at, or the bottom ranking rung reads NULL for a row
 -- that genuinely has a production time. Same shape as item 2's NOT NULL: absent-vs-failed on a rung.
--- The pending generation is made by RESERVE, not by hand: an `update … where <no such row>` reports
--- zero rows, raises nothing, and assert_raises would then fail with "should have been rejected" —
--- a test bug that looks like a missing guard. Round 6's harness fix exists because of exactly that
--- confusion, so the fixture has to be real.
-do $$ declare o text; ws uuid; begin
-  select id into ws from t_ws;
-  select outcome into o from reserve_artifact_slot(
-    ws,'vidG','model','gG10','model'::artifact_kind, ws::text||'/videos/vidG/gG10/model.json');
-  if o <> 'reserved' then raise exception 'FIXTURE FAILED — could not reserve for G10: %', o; end if;
-end $$;
-select assert_raises($$update video_generations set state='complete'
-  where video_id='vidG' and generation_id='gG10'$$,
-  'completing a generation with no produced_at', '23514', 'gen_complete_has_produced_at');
+-- ⟳ T4 — AND IT IS A PLAIN INSERT NOW, WHICH IS BOTH SIMPLER AND STRICTLY STRONGER. ADR-0007 built a
+-- `pending` row by hand and then asserted that COMPLETING it was refused; `pending` is no longer
+-- representable, and it was never needed — `state` defaults to `complete`, so a direct insert that
+-- names no state is already the completed row this guard is about. The old two-step also carried a
+-- warning that is now moot with it: an `update … where <no such row>` raises nothing and
+-- assert_raises then fails with "should have been rejected", a test bug wearing a missing guard's
+-- clothes. An INSERT cannot miss.
+-- `model` is deliberate: `gen_complete_has_produced_at` is the ONE completeness CHECK that ranges
+-- over every kind rather than being gated `kind <> 'summary'`, so this is the only one a non-summary
+-- fixture can reach — and after T4 it is joined by the two `*_is_summary_only` constraints, which
+-- this row satisfies (no card, no doc_version_major) so that it violates exactly one guard.
+select assert_raises($$insert into video_generations (workspace_id,video_id,generation_id,kind)
+  values ((select id from t_ws),'vidG','gG10','model')$$,
+  'a model generation with no produced_at (the one completeness CHECK ranging over every kind)',
+  '23514', 'gen_complete_has_produced_at');
 
 -- G11 — TASK #25, and it needs NO SCHEMA CHANGE. `digDeeper` was never bound to one summary
 -- generation: the FK is on (ws, video, generation_id, KIND), so a digDeeper artifact points at a
 -- digDeeper GENERATION, minted per rewrite of the accumulator. Round 2 got this backwards the other
 -- way (forcing digDeeper to kind='summary') by reasoning from the slot NAME rather than the
 -- constraints — the same route as item 1's P9, which was also reported as a defect and was not one.
-do $$ declare o text; t uuid; ws uuid; n int; begin
+do $$ declare o text; ws uuid; n int; begin
   select id into ws from t_ws;
-  select outcome, token into o, t from reserve_artifact_slot(
-    ws,'vidG','digDeeper','gDD_A','digDeeper'::artifact_kind, ws::text||'/videos/vidG/gDD_A/dig-deeper.md');
-  if o <> 'reserved' then raise exception 'ASSERTION FAILED — digDeeper could not reserve: %', o; end if;
   o := record_artifact(ws,'vidG','digDeeper','gDD_A','digDeeper'::artifact_kind,
-        ws::text||'/videos/vidG/gDD_A/dig-deeper.md', t, p_produced_at := '2026-03-04');
-  if o <> 'recorded_as_holder' then
+        ws::text||'/videos/vidG/gDD_A/dig-deeper.md', p_produced_at := '2026-03-04');
+  if o <> 'recorded' then
     raise exception 'ASSERTION FAILED — digDeeper could not record: %', o; end if;
   -- the accumulator is rewritten: a SECOND digDeeper generation, coexisting under append-only
-  select outcome, token into o, t from reserve_artifact_slot(
-    ws,'vidG','digDeeper','gDD_B','digDeeper'::artifact_kind, ws::text||'/videos/vidG/gDD_B/dig-deeper.md');
   o := record_artifact(ws,'vidG','digDeeper','gDD_B','digDeeper'::artifact_kind,
-        ws::text||'/videos/vidG/gDD_B/dig-deeper.md', t, p_produced_at := '2026-03-05');
+        ws::text||'/videos/vidG/gDD_B/dig-deeper.md', p_produced_at := '2026-03-05');
   select count(*) into n from video_artifacts where video_id='vidG' and slot='digDeeper' and state='recorded';
   if n <> 2 then
     raise exception 'ASSERTION FAILED — the two digDeeper generations did not coexist: %', n; end if;
@@ -1088,6 +1107,38 @@ do $$ declare o text; t uuid; ws uuid; n int; begin
   if o <> 'gDD_B' then
     raise exception 'ASSERTION FAILED — current digDeeper is %, expected the newer gDD_B', o; end if;
   raise notice 'ok (#25): digDeeper generations are per-REWRITE, coexist, and rank — no schema change';
+end $$;
+
+-- ⟳ ADR-0007 — THE `model` KIND ON THE RECORD PATH, AND THE POPULATION RATCHET IS WHY IT IS HERE.
+-- Retiring the reservation assertions removed every SECOND write of a `model` slot from this suite,
+-- and the ratchet at the foot of this file went RED naming `model` — an absence created by a
+-- deletion, caught by the one instrument that looks at what is missing rather than at what someone
+-- thought to write down. That is exactly the case it was built for, arriving by subtraction.
+--
+-- ⚠ AND `model` IS THE KIND THAT MOST NEEDS EXERCISING, because it is ADR-0007's standing exception:
+-- the only PAID producer with no job in its call graph (`lib/html-doc/serve-doc.ts:112`, reached from
+-- an HTTP GET), arbitrated by `serve_model_charge` rather than by `jobs`. Its single-flight and its
+-- spend bound both live in `supabase/migrations/`, outside this schema and outside this suite —
+-- so what CAN be asserted here is what this schema owns: two model generations of one slot coexist,
+-- are ranked, and the newer wins.
+do $$ declare o text; ws uuid; n int; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidG','model','gM_A','model'::artifact_kind,
+        ws::text||'/videos/vidG/gM_A/model.json',
+        p_source_generation_id := 'gG1', p_produced_at := '2026-03-06');
+  if o <> 'recorded' then raise exception 'ASSERTION FAILED — model could not record: %', o; end if;
+  -- the summary is re-magazined: a SECOND model generation for the same slot
+  o := record_artifact(ws,'vidG','model','gM_B','model'::artifact_kind,
+        ws::text||'/videos/vidG/gM_B/model.json',
+        p_source_generation_id := 'gG1', p_produced_at := '2026-03-07');
+  if o <> 'recorded' then raise exception 'ASSERTION FAILED — the second model record: %', o; end if;
+  select count(*) into n from video_artifacts where video_id='vidG' and slot='model';
+  if n <> 2 then
+    raise exception 'ASSERTION FAILED — the two model generations did not coexist: %', n; end if;
+  select generation_id into o from video_artifacts_current where video_id='vidG' and slot='model';
+  if o <> 'gM_B' then
+    raise exception 'ASSERTION FAILED — current model is %, expected the newer gM_B', o; end if;
+  raise notice 'ok (model): two model generations coexist in one slot and the newer ranks first';
 end $$;
 
 -- G12 — THE DEFAULT IS THE SAFE ONE. A direct insert that names no state is COMPLETE, so every
@@ -1137,167 +1188,68 @@ insert into workspace_videos (workspace_id, video_id) select id, 'vidR' from t_w
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR2' from t_ws;
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR3' from t_ws;
 
--- R1 (B1a) — A WORKER THAT RESTARTED AND LOST ITS TOKEN MUST STILL RECORD ITS PAID WORK.
--- No race, no reclaim, lease still LIVE. Measured before the fix:
---   [23505] duplicate key value violates unique constraint "video_artifacts_paid_uq"
--- because the append path inserted BLIND and collided with the worker's OWN pending row.
--- This is the user's rule of 2026-08-07 — "the reservation guards SPENDING, not RECORDING; a writer
--- that already paid always records" — failing via a raw SQLSTATE instead of a typed refusal, in the
--- function whose own comment says it "never refuses". Shape #8, and shape #10 against
--- reserve_artifact_slot:304-306 which already fixed exactly this for itself.
--- ⟳ ROUND 11 — THIS ASSERTION IS INVERTED, AND THE INVERSION IS THE DESIGN.
--- Rounds 7 and 9 each built a way for a worker that LOST its token to record anyway, and each was
--- the round's worst finding (a stranger satisfying the same condition). Round 10 established the
--- requirement was never real: a crashed process lost the paid bytes with the token, a worker that
--- loses its lease is ABORTED by `worker-runner`, and there are no callers yet. So the party with
--- bytes always still holds its token, and losing the token now means losing the RIGHT TO RECORD.
--- What used to be a fallback is now a CALLER OBLIGATION, asserted as a refusal.
-do $$ declare tok uuid; ws uuid; o text; begin
-  select id into ws from t_ws;
-  select token into tok from reserve_artifact_slot(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR1/dig-3.md', p_start_sec := 3, p_end_sec := 9);
-  -- THE HOLDER still records normally: the token is the whole credential.
-  o := record_artifact(ws,'vidR','dig:3','gR1','dig'::artifact_kind,
-        ws::text||'/videos/vidR/gR1/dig-3.md', tok,
-        p_start_sec := 3, p_end_sec := 9, p_produced_at := '2026-05-01');
-  if o <> 'recorded_as_holder' then
-    raise exception 'ASSERTION FAILED — the token holder did not record: %', o; end if;
-  raise notice 'ok (R1): the token holder records; the token is the whole credential';
-end $$;
--- And a caller WITHOUT it is refused — the same shape rounds 7 and 9 each opened a door for.
-select assert_raises(format($$
-  select record_artifact(%L::uuid,'vidR','dig:4b','gR1b','dig'::artifact_kind, %L,
-    gen_random_uuid(), p_start_sec := 4, p_end_sec := 9, p_produced_at := '2026-05-01');
-$$, (select id from t_ws), (select id from t_ws)::text||'/videos/vidR/gR1b/dig-4b.md'),
- 'a caller that cannot present the reservation token may not record', 'P0001');
+-- R1 — ⛔ RETIRED BY ADR-0007. Two assertions stood here, and their history is the whole argument
+-- for the deletion, so it is recorded rather than dropped:
+--   round 7 (B1a) asserted a worker that LOST its token must still record its paid work;
+--   round 9 built a durable credential (`reserved_by_worker` / `reserved_by_job`) for that caller;
+--   round 10 MEASURED both directions failing — a stranger satisfied the same condition, and the
+--     premise was false anyway (`worker/main.ts:69` mints the worker id per PROCESS);
+--   round 11 INVERTED the assertion: losing the token means losing the right to record;
+--   round 12 (B1) then MEASURED a caller being refused with the token this very RPC handed it.
+-- FIVE successive credentials, six rounds, and the fence had to be permissive and strict at once.
+-- ADR-0007 removes the credential rather than choosing a sixth. There is nothing left to assert.
 
--- R2 (B1c) — THE TWO PATHS MUST AGREE GIVEN IDENTICAL ARGUMENTS. The holder path never read
--- span/provenance (its UPDATE touches only state and lease columns), so a caller could legitimately
--- omit them and rely on what reserve stored — and then fail ONLY under the race, which is the worst
--- possible place to put a latent argument requirement.
-do $$ declare o text; s int; e int; ws uuid; tok uuid; begin
+-- R2 (B1c) — SPAN CARRY-FORWARD. A caller may omit the span and get the one this slot already
+-- records, rather than having to re-supply data the manifest holds. Round 7 measured the opposite:
+-- one path read the span and the other did not, so an omitting caller worked in the common case and
+-- failed ONLY under a race — the worst possible place for a latent argument requirement.
+-- ⟳ ADR-0007 — the two paths are one path now, so the case is reached the way a real caller reaches
+-- it: a SECOND generation of the same slot, recorded without a span.
+do $$ declare o text; s int; e int; ws uuid; begin
   select id into ws from t_ws;
-  update guardrail_config set dig_max_attempts = 3 where id = true;
-  select token into tok from reserve_artifact_slot(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR2/dig-4.md', p_start_sec := 4, p_end_sec := 44);
-  -- The loss path is now reached by the REAL case: this writer still holds its token, but its SLOT
-  -- was reclaimed, so the holder UPDATE matches nothing and it falls through to the append.
-  update video_artifacts set lease_expires_at = now() - interval '1 hour'
-   where video_id='vidR' and slot='dig:4';
-  perform reserve_artifact_slot(ws,'vidR','dig:4','gR2b','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR2b/dig-4.md', p_start_sec := 4, p_end_sec := 44);
   o := record_artifact(ws,'vidR','dig:4','gR2','dig'::artifact_kind,
-        ws::text||'/videos/vidR/gR2/dig-4.md', tok,                 -- token HELD, slot LOST
+        ws::text||'/videos/vidR/gR2/dig-4.md', p_start_sec := 4, p_end_sec := 44,
         p_produced_at := '2026-05-02');
-  select start_sec, end_sec into s, e from video_artifacts where video_id='vidR' and slot='dig:4';
+  if o <> 'recorded' then raise exception 'FIXTURE FAILED — first dig:4 record: %', o; end if;
+  o := record_artifact(ws,'vidR','dig:4','gR2b','dig'::artifact_kind,
+        ws::text||'/videos/vidR/gR2b/dig-4.md', p_produced_at := '2026-05-02');   -- span OMITTED
+  if o <> 'recorded' then raise exception 'ASSERTION FAILED — second dig:4 record: %', o; end if;
+  select start_sec, end_sec into s, e from video_artifacts
+   where video_id='vidR' and slot='dig:4' and generation_id='gR2b';
   if s <> 4 or e <> 44 then
-    raise exception 'ASSERTION FAILED — the loss path lost the reserved span: (%,%)', s, e; end if;
-  raise notice 'ok (R2/B1c): both record paths take the span from the reservation when omitted';
+    raise exception 'ASSERTION FAILED — the span was not carried across generations: (%,%)', s, e; end if;
+  raise notice 'ok (R2/B1c): an omitted span is taken from the slot, not demanded from the caller';
 end $$;
 
--- R3 (H2) — A CALLER MAY NOT COMPLETE A GENERATION IT DOES NOT HOLD, and the real owner must keep
--- its paid work. Measured before the fix: W2 named W1's generation, completed it with W2's
--- production time, and W1 was then locked out FOREVER by the freeze trigger
---   [P0001] video_generations: the CONTENT of complete generation gA is immutable
--- — item 3's freeze silently revoking item 4's user decision. The generation UPDATE was fenced on
--- NOTHING while every other write in this design is fenced.
-do $$ declare o text; tW1 uuid; tW2 uuid; st text; ws uuid; begin
-  select id into ws from t_ws;
-  select token into tW1 from reserve_artifact_slot(ws,'vidR2','dig:1','gW1','dig'::artifact_kind,
-    ws::text||'/videos/vidR2/gW1/dig-1.md', p_start_sec := 1, p_end_sec := 11);
-  select token into tW2 from reserve_artifact_slot(ws,'vidR2','dig:2','gW2','dig'::artifact_kind,
-    ws::text||'/videos/vidR2/gW2/dig-2.md', p_start_sec := 2, p_end_sec := 22);
-  -- W2 records ITS OWN slot but NAMES W1's generation. No (slot,generation) collision exists, so
-  -- nothing in the paid unique index can stop it — the fence has to.
-  --
-  -- ⚠ THIS IS THE ONE CASE WHERE REFUSING IS CORRECT, and it does not contradict "record_artifact
-  -- never refuses". That rule protects a writer's OWN paid work. gW1 is not W2's work — W2's work is
-  -- gW2 — so this is a caller naming a generation it never reserved, and the honest answer is a
-  -- typed refusal rather than silently poisoning the real owner's row.
-  begin
-    perform record_artifact(ws,'vidR2','dig:2','gW1','dig'::artifact_kind,
-      ws::text||'/videos/vidR2/gW1/dig-2.md', tW2, p_start_sec := 2, p_end_sec := 22,
-      p_produced_at := '2026-01-01');
-    raise exception 'ASSERTION FAILED — W2 recorded against a generation it does not hold';
-  exception when sqlstate 'P0001' then
-    if sqlerrm like 'ASSERTION FAILED%' then raise; end if;   -- never swallow our own assertion
-  end;
-  select state into st from video_generations where video_id='vidR2' and generation_id='gW1';
-  if st <> 'pending' then
-    raise exception 'ASSERTION FAILED — W2 completed a generation it does not hold (state %)', st; end if;
-  -- ...and W1, the real owner, must still be able to record.
-  o := record_artifact(ws,'vidR2','dig:1','gW1','dig'::artifact_kind,
-        ws::text||'/videos/vidR2/gW1/dig-1.md', tW1, p_start_sec := 1, p_end_sec := 11,
-        p_produced_at := '2026-06-06');
-  select state into st from video_generations where video_id='vidR2' and generation_id='gW1';
-  if o not in ('recorded_as_holder','recorded_after_token_loss') or st <> 'complete' then
-    raise exception 'ASSERTION FAILED — the real owner lost its paid work: outcome=% state=%', o, st; end if;
-  raise notice 'ok (R3/H2): only the reserving holder completes a generation; the owner keeps its work';
-end $$;
-
--- R3b — P22 ITSELF, WITH A GENERATION THE PROTOCOL CREATED. Found by MUTATION, not by reading:
--- removing the `reserved_by = p_token` disjunct left the whole suite GREEN, which means nothing was
--- exercising the case that disjunct exists for. The item-4 `recorded_after_loss` test could not:
--- its generations are hand-inserted as COMPLETE, so the completion is a no-op and the fence is never
--- consulted. This is the fixture critique from round 7 applied to round 7's own fix — a guard whose
--- only witness bypasses the protocol is a guard with no test.
+-- R3 / R3b — ⛔ RETIRED BY ADR-0007. R3 asserted that a caller may not COMPLETE a generation it does
+-- not hold (round 7 H2: W2 named W1's generation, completed it with W2's production time, and W1 was
+-- locked out of its own paid work forever by 03's freeze trigger). R3b was P22 itself — W1's lease
+-- expires mid-Gemini, W2 reclaims the SLOT, and W1 must still record its OWN generation.
 --
--- The shape is item 4's P22 exactly: W1 reserves, its lease expires mid-Gemini, W2 reclaims the SLOT
--- under its own generation, and W1 returns holding a token that no longer matches any artifact row.
--- W1 must still complete ITS OWN generation and record — that is the user decision of 2026-08-07.
-do $$ declare tW1 uuid; o text; st text; n int; ws uuid; begin
-  select id into ws from t_ws;
-  update guardrail_config set lease_ttl_seconds = 1, dig_max_attempts = 5 where id = true;
-  select token into tW1 from reserve_artifact_slot(ws,'vidR','dig:8','gP1','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gP1/dig-8.md', p_start_sec := 8, p_end_sec := 88);
-  -- expire W1's lease without touching the clock (now() is transaction-stable inside this rollback)
-  update video_artifacts set lease_expires_at = now() - interval '1 min'
-   where video_id='vidR' and slot='dig:8';
-  select outcome into o from reserve_artifact_slot(ws,'vidR','dig:8','gP2','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gP2/dig-8.md', p_start_sec := 8, p_end_sec := 88);
-  if o <> 'reserved' then raise exception 'FIXTURE FAILED — W2 could not reclaim: %', o; end if;
-  -- W1 comes back. Its slot is gone; its GENERATION is still its own.
-  o := record_artifact(ws,'vidR','dig:8','gP1','dig'::artifact_kind,
-        ws::text||'/videos/vidR/gP1/dig-8.md', tW1, p_produced_at := '2026-05-03');
-  select state into st from video_generations where video_id='vidR' and generation_id='gP1';
-  if o <> 'recorded_after_loss' or st <> 'complete' then
-    raise exception 'ASSERTION FAILED — a reclaimed writer lost its paid work: outcome=% gP1=%', o, st; end if;
-  select count(*) into n from video_artifacts
-   where video_id='vidR' and slot='dig:8' and state='recorded' and generation_id='gP1';
-  if n <> 1 then
-    raise exception 'ASSERTION FAILED — the reclaimed writer recorded % rows, expected 1', n; end if;
-  raise notice 'ok (R3b/P22): a reclaimed writer completes its OWN generation via reserved_by and records';
-end $$;
+-- ⚠ BOTH RESTED ON `reserved_by`, AND WHAT REPLACES THEM IS NOT A FENCE. `record_artifact` INSERTs
+-- the generation `on conflict do nothing`, so a second writer never overwrites the first's content —
+-- and if its own content differs it is TOLD, via `completed_by_another`, which is asserted at R11-1
+-- below. That is the surviving half of R3's guarantee (the real owner keeps its paid work); the
+-- other half (a stranger is refused) is gone with the mechanism, because two writers landing on one
+-- generation id is not a state the design tries to arbitrate — they would need the same id AND the
+-- same key AND different bytes.
+-- R3b is retired outright: there is no reclaim, so there is no reclaimed writer.
 
--- R4 (H3) — A DENIED RESERVATION MUST NOT LEAVE A GENERATION ROW BEHIND. Item 3 put the generation
--- INSERT above the upsert that decides who gets the slot, so every `busy` loser littered an
--- FK-valid parent that no artifact points at, no ranking view reaches, and no sweep collects —
--- unbounded growth for a worker looping on `busy` with a fresh id per attempt.
-do $$ declare o text; n int; ws uuid; begin
-  select id into ws from t_ws;
-  perform reserve_artifact_slot(ws,'vidR3','summary','gS1','summary'::artifact_kind,
-    ws::text||'/videos/vidR3/gS1/summary.md');
-  select outcome into o from reserve_artifact_slot(ws,'vidR3','summary','gS2','summary'::artifact_kind,
-    ws::text||'/videos/vidR3/gS2/summary.md');
-  if o <> 'busy' then raise exception 'FIXTURE FAILED — expected busy, got %', o; end if;
-  select count(*) into n from video_generations where video_id='vidR3' and generation_id='gS2';
-  if n <> 0 then
-    raise exception 'ASSERTION FAILED — a DENIED reservation left % orphan generation row(s)', n; end if;
-  raise notice 'ok (R4/H3): a denied reservation leaves no generation row behind';
-end $$;
+-- R4 — ⛔ RETIRED BY ADR-0007. It asserted that a DENIED reservation leaves no generation row behind
+-- (round 7 H3: item 3 put the generation INSERT above the upsert that decided who got the slot, so
+-- every `busy` loser littered an FK-valid parent that no artifact pointed at, no ranking view
+-- reached and no sweep collected — unbounded growth for a worker looping on `busy` with a fresh id
+-- per attempt). There is no denial path: `record_artifact` writes the generation and the artifact in
+-- one transaction, so either both land or neither does.
 
 -- R5 (B2 / M5) — produced_at IS A RANKING RUNG AND A CALLER-SUPPLIED VALUE. Nothing bounded it, so
 -- one sync from a replica with a fast clock ranks a generation above everything real until the clock
 -- catches up. Round 4's J2-3 removed clock READS from the ranking; it did not stop a clock VALUE
--- being injected into it. Separately, a future produced_at made §6.2's detach UNSATISFIABLE forever
--- (the bound compares detached_at, which the sibling trigger sets to now(), against it).
+-- being injected into it. Separately, a future produced_at made §6.2's detach UNSATISFIABLE forever.
 select assert_raises($$select record_artifact((select id from t_ws),'vidR','dig:5','gR5','dig'::artifact_kind,
    (select id from t_ws)::text||'/videos/vidR/gR5/dig-5.md',
-   (select token from reserve_artifact_slot((select id from t_ws),'vidR','dig:5','gR5',
-      'dig'::artifact_kind,(select id from t_ws)::text||'/videos/vidR/gR5/dig-5.md',
-      p_start_sec := 5, p_end_sec := 55)),
    p_start_sec := 5, p_end_sec := 55, p_produced_at := now() + interval '10 days')$$,
-  'completing a generation with a produced_at in the FUTURE (a fast replica clock outranks reality)',
+  'recording with a produced_at in the FUTURE (a fast replica clock outranks reality)',
   'P0001');
 
 -- R6 (B2) — A DIG WHOSE GENERATION IS LEGITIMATE MUST ALWAYS BE DETACHABLE. Before the fix, a
@@ -1306,11 +1258,8 @@ select assert_raises($$select record_artifact((select id from t_ws),'vidR','dig:
 -- for a value the writer never supplied.
 do $$ declare ws uuid; st text; t timestamptz; begin
   select id into ws from t_ws;
-  perform reserve_artifact_slot(ws,'vidR','dig:6','gR6','dig'::artifact_kind,
-    ws::text||'/videos/vidR/gR6/dig-6.md', p_start_sec := 6, p_end_sec := 66);
   perform record_artifact(ws,'vidR','dig:6','gR6','dig'::artifact_kind,
     ws::text||'/videos/vidR/gR6/dig-6.md',
-    (select lease_token from video_artifacts where video_id='vidR' and slot='dig:6'),
     p_start_sec := 6, p_end_sec := 66, p_produced_at := now() - interval '1 minute');
   update video_artifacts set state='detached' where video_id='vidR' and slot='dig:6';
   select state, detached_at into st, t from video_artifacts where video_id='vidR' and slot='dig:6';
@@ -1357,92 +1306,284 @@ do $$ declare leaky text[]; begin
   select array_agg(p.proname order by p.proname) into leaky
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.prosecdef
-     and p.proname in ('slot_kind','reserve_artifact_slot','renew_artifact_lease','record_artifact',
+     -- ⟳ ADR-0007 removed `reserve_artifact_slot` and `renew_artifact_lease` from this list because
+     -- it removed the functions. The list is still hand-maintained, which is its known weakness: it
+     -- catches a definer function that KEEPS the default PUBLIC EXECUTE, not one nobody adds here.
+     -- ⟳ T3 added THREE definer functions to this file, and adding them here is the whole point of
+     -- the list being hand-maintained: two of them are trigger functions, which round 7 M1 measured
+     -- as exactly the kind that keeps the default PUBLIC EXECUTE unnoticed.
+     and p.proname in ('slot_kind','record_artifact',
                        'forbid_collecting_current','video_artifacts_append_only',
                        'video_artifacts_generation_complete','video_generations_freeze',
-                       'sync_corrections_to_workspace_video')
+                       'sync_corrections_to_workspace_video',
+                       'video_artifact_sources_append_only','video_artifact_sources_insert_once',
+                       'art_summary_has_no_source')
      and has_function_privilege('anon', p.oid, 'EXECUTE');
   if leaky is not null then
     raise exception 'ASSERTION FAILED — anon holds EXECUTE on definer function(s): %', leaky; end if;
   raise notice 'ok (R8/M1): no definer function in this schema is reachable by anon';
 end $$;
--- ── ⟳ ROUND 9 — THE OWNERSHIP FENCE, MEASURED IN BOTH DIRECTIONS ───────────────────────────────
--- Round 8 found the round-7 fence broken BOTH ways at once, which is why the fix is a different
--- credential rather than a tighter or looser one. Both directions are asserted here, because a fix
--- for either alone is what produced the defect in the first place.
+
+-- ── ⟳ T4 — WHAT ACTUALLY CARRIES "NO GENERATION ROW BEFORE ITS PAID CALL COMPLETES" ─────────────
+-- Everything ADR-0007 subtracted rests on that sentence. Round 16 argued the GC floor needs no
+-- successor precisely because no row exists while a paid call runs, and T2 deleted the floor's
+-- predicate on that basis. So the sentence has to be worth what was spent on it, and it is worth
+-- DIFFERENT amounts per kind — which is the whole finding of T4:
+--
+--   summary                  ENFORCED. gen_card_complete requires six fields of Gemini's own output
+--                            and gen_summary_has_hash requires a hash OF THE PRODUCED BYTES. Neither
+--                            can be satisfied before the call returns. 03's own comment records both
+--                            doors being locked, which is the proof: the reservation could not open
+--                            them either.
+--   model / dig / digDeeper  NOT ENFORCED. MEASURED (round 17 H1): a row carrying only `produced_at`
+--                            is accepted, and `produced_at` is knowable before the call. T4 measured
+--                            every producer for a column that could witness production and found
+--                            NONE (03's T4 block quotes each). There is nothing for a CHECK to test:
+--                            a constraint sees one row, and for these three kinds no value in that
+--                            row is a function of the paid output.
+--
+-- ⚠ SO FOR THREE OF THE FOUR PAID KINDS THE INVARIANT IS CARRIED, NOT DERIVED, AND WHAT CARRIES IT
+-- IS ONE STRUCTURAL FACT: `record_artifact` is the only function that inserts into
+-- `video_generations`, and it runs after the paid call. A structural fact is worth exactly as much
+-- as the instrument that notices when it stops being true. These two assertions are that instrument.
+--
+-- ⚠ AND THIS RANGES OVER EVERY FUNCTION IN `public`, WHICH THE R8 SWEEP ABOVE DELIBERATELY DOES NOT.
+-- R8's list is hand-maintained and its own comment names the weakness — "it catches a definer
+-- function that KEEPS the default PUBLIC EXECUTE, not one nobody adds here." A second WRITER is
+-- precisely the thing nobody would think to add to a list, so this one ENUMERATES instead of
+-- remembering. Same argument as the population ratchet at the foot of this file: an absence is only
+-- visible against an enumerated whole.
+-- ⚠ ⟳ ADR-0007 IMPLEMENTATION REVIEW, H1 — THIS WAS ONE REGEX OVER `prosrc`, AND IT SAW ONE
+-- SPELLING OF INSERT. Both reviewers built second writers that CREATED A REAL ROW while this
+-- assertion still reported `writers = {record_artifact}`. MEASURED, seven of them, each verified to
+-- have inserted:
+--   `insert into public."video_generations"`   quoted identifier          -> invisible
+--   `insert into public . video_generations`   spaces around the dot      -> invisible
+--   `merge into public.video_generations …`    the standard PG15+ upsert  -> invisible
+--   a function in schema `probe_ns`            (the scan was `public`-only)-> invisible
+--   `insert into public.vg_v`                  an auto-updatable VIEW     -> invisible
+--   an `on insert do instead` RULE on another table                       -> invisible
+--   the naive spelling                         (control)                  -> SEEN
+-- ADR-0007 nominates this assertion as the sole guarantor of a carried invariant, so "matches the
+-- way we happen to write it today" is not what it can be. The branch's own mutation proves the
+-- assertion is LOAD-BEARING and cannot prove it COMPLETE — this project's recorded lesson, and the
+-- reason the repair is a property rather than a longer pattern.
+--
+-- TWO QUESTIONS, BECAUSE A WRITER IS EITHER SOME CODE OR SOME RELATION:
+--   (1) does any FUNCTION BODY name this table in a write? — text, normalised first, so quoting and
+--       spacing cannot change the answer, `merge` counts as the insert it is, and EVERY schema is
+--       scanned rather than `public` alone;
+--   (2) is any RELATION OTHER THAN THE TABLE an insertable write surface onto it? — asked of the
+--       catalog (`pg_depend` -> `pg_rewrite` -> `pg_relation_is_updatable`), never of source text,
+--       so a view or rule is caught by WHAT IT IS rather than by what it is called. This is the half
+--       no amount of pattern-widening could ever reach: `insert into public.vg_v` does not contain
+--       the string `video_generations` at all.
+--
+-- ⚠ WHAT IS STILL NOT COVERED, WRITTEN DOWN RATHER THAN LEFT TO LOOK COMPLETE — the instrument's
+-- success line must not claim more than its input covers, which is the shape this file, `docs/plugins.md`
+-- and this ADR all name:
+--   * DYNAMIC SQL. `execute format('insert into %I …', …)` assembles the name at runtime, so no text
+--     scan can see it. T5's territory, and the reason the ROLE assertion below is the real floor.
+--   * `COPY … FROM` and direct DML by the table's OWNER. Accepted residue — ADR-0007 says a trusted
+--     role can write; the assertion below is what keeps that set to exactly {service_role}.
+--   * a writer in another DATABASE, or one added after the last suite run. Neither is checkable here.
+do $$ declare writers text[]; begin
+  -- Normalise BEFORE matching: strip quoting, then close up whitespace around the schema dot. Both
+  -- evasions become the naive spelling, so one pattern answers all three forms instead of three
+  -- alternatives answering the three someone thought of.
+  select coalesce(array_agg(n.nspname||'.'||p.proname order by n.nspname||'.'||p.proname), '{}'::text[])
+    into writers
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where regexp_replace(replace(p.prosrc, '"', ''), '\s*\.\s*', '.', 'g')
+         ~* '(insert|merge)\s+into\s+([a-z_][a-z0-9_$]*\.)?video_generations\y';
+  if writers is distinct from array['public.record_artifact'] then
+    raise exception 'ASSERTION FAILED — a SECOND writer of video_generations exists: {%}. '
+      'T4''s invariant for model/dig/digDeeper rests on record_artifact being the only one, '
+      'because it is the only one known to run AFTER the paid call.',
+      array_to_string(writers, ', ');
+  end if;
+  raise notice 'ok (T4/H1): record_artifact is the ONLY function that inserts a generation, in ANY schema and by ANY spelling';
+end $$;
+
+-- The RELATION half. A view over this table is insertable whenever Postgres judges it auto-updatable,
+-- and a rule `on insert to anything do instead insert into video_generations` makes the ordinary table
+-- carrying it a write surface too — neither names the table in the inserting statement, so neither is
+-- findable by pattern.
+--
+-- ⚠ THE ALLOWLIST IS A RATCHET, AND IT FAILS IN THE OPPOSITE DIRECTION TO R8's LIST ABOVE. R8's is an
+-- INCLUSION list: forget to add something and it is silently not checked (its own comment says so).
+-- This one is an EQUALITY: anything new appearing here fails until someone writes it down, so
+-- forgetting is the failing case rather than the passing one.
+--
+-- `video_generations_collectable` is on it because it MEASURES as auto-updatable (mask 28 =
+-- 4 UPDATE | 8 INSERT | 16 DELETE) — a plain `select g.* from video_generations g where …` is a simple
+-- view, and Postgres makes simple views updatable. It grants nobody a capability they lack: no role
+-- holds INSERT on it (asserted below), so only the owner can write through it, and the owner can write
+-- the table directly anyway. It is deliberately left updatable rather than broken with a subquery
+-- wrapper, because §8's sweeper is specified to work THROUGH this view and `update
+-- video_generations_collectable set body_collected = true` is the shape it is likely to want.
+do $$ declare surfaces text[]; leaky text[]; owner text; begin
+  select coalesce(array_agg(distinct rn.nspname||'.'||rc.relname order by rn.nspname||'.'||rc.relname),
+                  '{}'::text[])
+    into surfaces
+    from pg_depend d
+    join pg_rewrite r on r.oid = d.objid
+    join pg_class rc on rc.oid = r.ev_class
+    join pg_namespace rn on rn.oid = rc.relnamespace
+   where d.classid = 'pg_rewrite'::regclass
+     and d.refclassid = 'pg_class'::regclass
+     and d.refobjid = 'public.video_generations'::regclass
+     and rc.oid <> 'public.video_generations'::regclass
+     and (pg_catalog.pg_relation_is_updatable(rc.oid, true) & 8) <> 0;   -- 8 = the INSERT bit
+  if surfaces is distinct from array['public.video_generations_collectable'] then
+    raise exception 'ASSERTION FAILED — a SECOND writer of video_generations exists: the insertable '
+      'relation(s) over it are {%}, expected exactly {public.video_generations_collectable}. '
+      'An insertable view or an ON INSERT DO INSTEAD rule is a write surface that names no table.',
+      array_to_string(surfaces, ', ');
+  end if;
+  -- …and nobody may reach through the one that is allowed.
+  select c.relowner::regrole::text into owner
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'video_generations_collectable';
+  select coalesce(array_agg(distinct a.grantee::regrole::text), '{}'::text[]) into leaky
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral aclexplode(c.relacl) a
+   where n.nspname = 'public' and c.relname = 'video_generations_collectable'
+     and a.privilege_type = 'INSERT'
+     and a.grantee::regrole::text <> owner;
+  if leaky is distinct from '{}'::text[] then
+    raise exception 'ASSERTION FAILED — role(s) {%} hold INSERT on video_generations_collectable, '
+      'which is auto-updatable onto video_generations', array_to_string(leaky, ', ');
+  end if;
+  raise notice 'ok (T4/H1): no relation other than the table is an insertable write surface a role can use';
+end $$;
+
+-- The other half of "who can write one", because a second writer does not have to be a function.
+-- `service_role` holding direct DML is the residue ADR-0007 explicitly accepts ("a trusted role can
+-- write"); anyone ELSE holding it would make the invariant unenforceable by any means, since
+-- `security definer` never consults RLS and RLS never applies to the role that bypasses it.
+do $$ declare grantees text[]; owner text; begin
+  select c.relowner::regrole::text into owner
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'video_generations';
+  select coalesce(array_agg(distinct a.grantee::regrole::text), '{}'::text[]) into grantees
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral aclexplode(c.relacl) a
+   where n.nspname = 'public' and c.relname = 'video_generations'
+     and a.privilege_type = 'INSERT'
+     and a.grantee::regrole::text <> owner;
+  if grantees is distinct from array['service_role'] then
+    raise exception 'ASSERTION FAILED — roles holding INSERT on video_generations are {%}, expected exactly {service_role} (owner % excluded)',
+      array_to_string(grantees, ', '), owner;
+  end if;
+  raise notice 'ok (T4): only service_role may write a generation directly';
+end $$;
+
+-- ── ⟳ T4 — THE CARRIED INVARIANT'S COST, MEASURED RATHER THAN DESCRIBED ────────────────────────
+-- ⚠ READ THE LABEL BEFORE THE CODE: this block asserts that a DEFECT REPRODUCES. It is the only
+-- block in this file that does, and it is here because "carried, not derived" is a phrase that costs
+-- nothing to write and this project has measured what happens when such a phrase is believed. If
+-- someone later closes the gap, THIS BLOCK GOES RED — that is the intended signal, and the correct
+-- response is to delete it, not to work around it.
+--
+-- What it costs, if a writer that creates a generation BEFORE its paid call ever appears: exactly
+-- round 9's B1, the defect T2 deleted the floor's predicate over, reached by the other three kinds.
+--   * the bare generation is not current (no artifact yet) -> `video_generations_collectable`
+--     returns it, which is correct given what it can see;
+--   * a sweep sets body_collected -> `forbid_collecting_current` does not fire, because there is no
+--     current row to protect;
+--   * the paid call returns and `record_artifact` appends the artifact — legally, since the
+--     generation is `complete` — and `p_md_hash` is NULL for these kinds, so `completed_by_another`
+--     cannot fire either;
+--   * both ranking views filter `not g.body_collected`, so the paid row is INVISIBLE FOREVER.
+-- Money spent, content unreachable, and no error anywhere — round 9's B1 verbatim.
+--
+-- ⚠ NOT CLOSED HERE, AND THE REASON IS THE SCOPE OF THE CLAIM, NOT THE COST OF THE FIX. Adding a
+-- successor predicate to `video_generations_collectable` would reverse T2 and round 16's decision on
+-- T4's authority, and it would not enforce the invariant anyway — a pre-call writer can derive
+-- `blob_key` from (workspace, video, generation, slot) before any bytes exist, so no artifact-side
+-- witness closes it either. What closes it is a producer-computed content hash for the other three
+-- kinds, i.e. `md_hash`, which is exactly why 03 leaves that column unconfined. T5's territory.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidT4' from t_ws;
+do $$ declare ws uuid; n int; o text; begin
+  select id into ws from t_ws;
+  -- the pre-call shape: everything knowable before Gemini returns, and nothing else
+  insert into video_generations (workspace_id,video_id,generation_id,kind,produced_at)
+    values (ws,'vidT4','gT4','dig',now() - interval '1 minute');
+  if not exists (select 1 from video_generations_collectable
+                  where video_id='vidT4' and generation_id='gT4') then
+    raise exception 'T4 CHARACTERISATION STALE — a bare dig generation is no longer collectable; '
+      'the gap may have been closed. Re-read this block and delete it if so.'; end if;
+  update video_generations set body_collected = true
+   where video_id='vidT4' and generation_id='gT4';          -- the sweep, unopposed
+  o := record_artifact(ws,'vidT4','dig:10','gT4','dig'::artifact_kind,
+        ws::text||'/videos/vidT4/gT4/dig/10.md', p_start_sec := 10, p_end_sec := 60);
+  if o <> 'recorded' then
+    raise exception 'T4 CHARACTERISATION STALE — the paid record was refused (%); the gap may have been closed.', o; end if;
+  select count(*) into n from video_artifacts_current where video_id='vidT4';
+  if n <> 0 then
+    raise exception 'T4 CHARACTERISATION STALE — the paid row is visible (% rows); the gap may have been closed.', n; end if;
+  raise notice 'ok (T4, MEASURED COST): a pre-call generation for a non-summary kind still buries its own paid bytes — carried, not enforced';
+end $$;
+-- ── ⛔ RETIRED BY ADR-0007 — THE OWNERSHIP FENCE (round 9, measured in both directions) ──────────
+-- R9-1 asserted that a STRANGER holding a full, well-formed credential of its own cannot complete
+-- another worker's generation. R11 (was R9-2) asserted the case the design was always for — token
+-- HELD, slot LOST — and that the reclaimed writer still records.
+--
+-- Both are gone with `reserved_by`. What replaces the first is NOT a fence but a property: the
+-- generation INSERT is `on conflict do nothing`, so nobody's content can be overwritten by anybody,
+-- stranger or not, and a writer whose content differs is told `completed_by_another` (R11-1 below).
+-- What replaces the second is that there is no reclaim to survive.
+--
+-- ⚠ THE ONE QUESTION THIS BLOCK COST TWO ROUNDS TO LEARN IS KEPT, because it outlives the fence:
+-- a rolled-back probe can CONSTRUCT any state you can type, INCLUDING STATES NO CALLER CAN REACH.
+-- "Is this refused?" is not the same question as "can a caller BE here?", and rounds 8 and 9 each
+-- answered only the first. That is the question T4 must ask about `model`, `dig` and `digDeeper`.
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR9a' from t_ws;
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR9b' from t_ws;
 
--- ⟳ R9-1 — A STRANGER CANNOT COMPLETE A GENERATION IT DOES NOT OWN.
--- Measured in round 8 with p_token = NULL (`md_hash=SHA_ATTACKER`) AND with a random valid non-NULL
--- token (`SHA_FOREIGN`), so the fixture below hands the stranger a FULL, well-formed credential of
--- its own — a real token, a real worker id, a real job id. It is refused for the only reason that
--- should matter: none of them is the credential this generation was reserved with.
-do $$ declare ws uuid; begin
-  select id into ws from t_ws;
-  perform reserve_artifact_slot(ws,'vidR9a','summary','gR9a','summary'::artifact_kind,
-    ws::text||'/videos/vidR9a/gR9a/summary.md');
-end $$;
-select assert_raises(format($$
-  select record_artifact(%L::uuid,'vidR9a','summary','gR9a','summary'::artifact_kind,
-    %L, gen_random_uuid(), p_md_hash := 'SHA_FOREIGN', p_produced_at := '2026-05-03',
-    p_card := '{"tldr":"FOREIGN","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-03","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
-    p_doc_version_major := 4);
-$$, (select id from t_ws), (select id from t_ws)::text||'/videos/vidR9a/gR9a/summary.md'),
- 'a stranger cannot complete another worker''s generation', 'P0001');
-
--- ⟳ ROUND 11 (was R9-2) — THE REAL CASE IS TOKEN HELD, SLOT LOST — and it is the one the design
--- was always for. Round 8 measured the DOUBLY-lost worker being refused and graded it Blocking;
--- round 9 built a durable credential for it; round 10 established the scenario cannot occur —
--- a crashed process lost its paid bytes along with the token, and a worker that loses its lease is
--- ABORTED by `lib/job-queue/worker-runner.ts` rather than returning with results.
+-- ⛔ RETIRED BY ADR-0007 (T1 retired this assertion; T2 completed the retirement) — R9-3, round 8 B1:
+-- "GC MAY NOT COLLECT A GENERATION THAT IS STILL BEING PAID FOR." `video_artifacts_current` requires
+-- state='recorded', so an IN-FLIGHT reservation had no current row and was offered to the sweeper;
+-- the worker then recorded SUCCESSFULLY and its row was invisible forever. MEASURED end to end:
+--   collectable WHILE IN FLIGHT: 1 ; sweep collected 1 ; holder records -> recorded_as_holder
+--   gen complete, artifact recorded, and video_artifacts_current rows for that video: 0
+-- Money spent, bytes queued for deletion, no error anywhere.
 --
--- ⚠ THE MISSING QUESTION, kept because it cost two rounds: a rolled-back probe can CONSTRUCT any
--- state you can type, including states no caller can reach. Asking "is this refused?" is not the
--- same as asking "can a caller BE here?" — and two rounds of design answered only the first.
-do $$ declare o text; ws uuid; tok uuid; begin
-  select id into ws from t_ws;
-  update guardrail_config set dig_max_attempts = 3 where id = true;   -- reclaim must be permitted
-  select token into tok from reserve_artifact_slot(ws,'vidR9b','dig:8','gR9b1','dig'::artifact_kind,
-    ws::text||'/videos/vidR9b/gR9b1/dig-8.md', p_start_sec := 8, p_end_sec := 88);
-  update video_artifacts set lease_expires_at = now() - interval '1 hour'
-   where video_id='vidR9b' and slot='dig:8';                          -- the lease lapses
-  perform reserve_artifact_slot(ws,'vidR9b','dig:8','gR9b2','dig'::artifact_kind,
-    ws::text||'/videos/vidR9b/gR9b2/dig-8.md', p_start_sec := 8, p_end_sec := 88);
-  o := record_artifact(ws,'vidR9b','dig:8','gR9b1','dig'::artifact_kind,
-        ws::text||'/videos/vidR9b/gR9b1/dig-8.md', tok,               -- token HELD, slot LOST
-        p_start_sec := 8, p_end_sec := 88, p_produced_at := '2026-05-04');
-  if o <> 'recorded_after_loss' then
-    raise exception 'ASSERTION FAILED — a reclaimed writer holding its token did not record: %', o;
-  end if;
-  if (select state from video_generations where video_id='vidR9b' and generation_id='gR9b1')
-       <> 'complete' then
-    raise exception 'ASSERTION FAILED — its generation was left pending, so the bytes are orphaned';
-  end if;
-  raise notice 'ok (R11): a writer whose SLOT was reclaimed still records — it never lost its token';
-end $$;
-
--- ⟳ R9-3 (round 8 B1) — GC MAY NOT COLLECT A GENERATION THAT IS STILL BEING PAID FOR.
--- `video_artifacts_current` requires state='recorded', so an in-flight reservation had no current
--- row and was offered to the sweeper. The worker then recorded SUCCESSFULLY and its row was
--- invisible forever. Asserted at both ends: not collectable while pending, and visible after.
+-- ⚠ THE WINDOW IS CLOSED BY SUBTRACTION, NOT BY A SUCCESSOR — and that is the claim to attack.
+-- No `video_generations` row exists at all while a paid call runs, because `record_artifact` creates
+-- it AFTER the call, so `video_generations_collectable` cannot return it. Three rounds proposed
+-- three covers (a per-kind table, a `serve_model_charge` lease, an `in_flight_until` marker) before
+-- anyone asked whether the row exists. It does not.
+--
+-- ⚠ WHAT IS NOT CLOSED IS THE BLOB. The bytes are written before any row references them, so during
+-- the call they are an ORPHAN with no owner and no sweeper — §8's grace period is the specified and
+-- UNIMPLEMENTED mechanism for that, and there is no assertion for it here because there is nothing
+-- to assert against yet.
+--
+-- The paired `g.state = 'complete'` predicate in `video_generations_collectable`, its named mutation
+-- in `mutate-schema.py` ("B1: the collectable floor drops `state = complete`") and this assertion
+-- were ONE retirement, and T2 finished it: the predicate is deleted from the view
+-- (04_artifacts.sql, the ⛔ block above `create view video_generations_collectable`) and the mutation
+-- is retired in place rather than left anchored on a deleted line — an orphaned anchor makes the
+-- harness report INVALID, which this project has MEASURED reads as *untested* rather than *retired*.
+-- The mutation was reporting ❌ GREEN before it was retired, and GREEN was the CORRECT result: with
+-- no producer of a `pending` generation, removing the predicate cannot change which rows the view
+-- returns. A mutation that can no longer alter behaviour proves nothing.
+--
+-- The surviving half — a recorded artifact IS visible in `current` — is asserted at G5 and below.
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR9c' from t_ws;
-do $$ declare ws uuid; o text; tok uuid; n int; begin
+do $$ declare ws uuid; o text; begin
   select id into ws from t_ws;
-  select token into tok from reserve_artifact_slot(ws,'vidR9c','summary','gR9c','summary'::artifact_kind,
-    ws::text||'/videos/vidR9c/gR9c/summary.md');
-  select count(*) into n from video_generations_collectable
-   where video_id='vidR9c' and generation_id='gR9c';
-  if n <> 0 then
-    raise exception 'ASSERTION FAILED — an IN-FLIGHT generation is collectable; a sweep would bury paid work';
-  end if;
   o := record_artifact(ws,'vidR9c','summary','gR9c','summary'::artifact_kind,
-        ws::text||'/videos/vidR9c/gR9c/summary.md', tok, p_md_hash := 'SHA_R9C',
+        ws::text||'/videos/vidR9c/gR9c/summary.md', p_md_hash := 'SHA_R9C',
         p_card := '{"tldr":"z","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-05","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
         p_doc_version_major := 4, p_produced_at := '2026-05-05');
   if (select count(*) from video_artifacts_current where video_id='vidR9c') <> 1 then
     raise exception 'ASSERTION FAILED — the recorded artifact is not visible in current'; end if;
-  raise notice 'ok (R9-3): an in-flight generation is not collectable, and records visibly';
+  raise notice 'ok: a recorded artifact is visible in current';
 end $$;
 
 -- ⟳ R9-4 (round 8 H4) — THE FUTURE BOUND TOLERATES CLOCK SKEW BUT NOT A CLOCK VALUE.
@@ -1464,20 +1605,21 @@ select assert_raises(format($$
 $$, (select id from t_ws)),
  'a genuinely future produced_at is still refused (round 7 B2 preserved)', 'P0001');
 
--- ⟳ R9-5 (round 8 H2) — THE FREE SHORT-CIRCUIT IS REACHABLE AT ALL.
--- It compared `generation_id = p_generation_id`, and for a free slot both sides are NULL, so the
--- test was NULL — never true. The branch existed and could not run; reserve then hit
--- video_artifacts_free_uq raw. The assertion is the TYPED outcome, because a raw 23505 is the defect.
-do $$ declare ws uuid; o text; res text; begin
+-- ⟳ R9-5 (round 8 H2) — THE FREE PATH'S SHORT-CIRCUIT WAS UNREACHABLE, AND `NULL = NULL` IS WHY.
+-- `reserve_artifact_slot`'s idempotency test compared `generation_id = p_generation_id`, and for a
+-- free slot both sides are NULL, so the test was NULL — never true. The branch existed and could not
+-- run. ⟳ ADR-0007 deleted that entry point; the RULE it taught is what this now asserts, on the one
+-- free path left: a re-render of a recorded free slot must be a typed outcome, never a raw [23505]
+-- against `video_artifacts_free_uq`.
+do $$ declare ws uuid; o text; n int; begin
   select id into ws from t_ws;
-  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-1.pdf',null);
-  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-2.pdf',null);
-  select outcome into res from reserve_artifact_slot(ws,'vidR9c','pdf:summary',null,
-    'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-3.pdf');
-  if res <> 'already_recorded' then
-    raise exception 'ASSERTION FAILED — reserving a recorded FREE slot gave %, not already_recorded', res;
-  end if;
-  raise notice 'ok (R9-5): reserving a recorded free slot returns a typed outcome, not a raw 23505';
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-1.pdf');
+  o := record_artifact(ws,'vidR9c','pdf:summary',null,'render'::artifact_kind,ws::text||'/videos/vidR9c/renders/r9-2.pdf');
+  if o <> 'recorded_free' then
+    raise exception 'ASSERTION FAILED — re-rendering a recorded FREE slot gave %', o; end if;
+  select count(*) into n from video_artifacts where video_id='vidR9c' and slot='pdf:summary';
+  if n <> 1 then raise exception 'ASSERTION FAILED — a free slot holds % rows', n; end if;
+  raise notice 'ok (R9-5): re-rendering a recorded free slot is typed and one-per-slot, not a raw 23505';
 end $$;
 
 -- ⟳ R9-6 (round 8 H5) — A FREE ROW IS CONFINED TO ITS WORKSPACE TOO.
@@ -1494,69 +1636,68 @@ $$, (select id from t_ws), (select id from t_w2)::text),
  'a FREE row may not carry a key under another workspace''s prefix', '23514',
  'art_key_names_workspace');
 
--- ⟳ R9-7 (round 8 Claude H2) — A FREE SLOT THAT WAS RESERVED IS STILL RECORDABLE.
--- The free branch set blob_key and state and left the three lease columns, so a reserved free slot
--- failed art_pending_has_reserved_at on every retry, forever. The convention "'render' is free and
--- never reserved" was the only thing preventing it, and a convention is not a guard.
-do $$ declare ws uuid; r record; o text; begin
-  select id into ws from t_ws;
-  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR9e');
-  select * into r from reserve_artifact_slot(ws,'vidR9e','pdf:summary',null,'render'::artifact_kind,
-    ws::text||'/videos/vidR9e/renders/s.pdf');
-  if r.outcome <> 'reserved' then
-    raise exception 'ASSERTION FAILED — a free slot could not be reserved: %', r.outcome; end if;
-  o := record_artifact(ws,'vidR9e','pdf:summary',null,'render'::artifact_kind,
-        ws::text||'/videos/vidR9e/renders/s.pdf', r.token);
-  if o <> 'recorded_free' then
-    raise exception 'ASSERTION FAILED — a RESERVED free slot could not be recorded: %', o; end if;
-  raise notice 'ok (R9-7): a free slot that was reserved still records';
-end $$;
+-- ⛔ RETIRED BY ADR-0007 — R9-7 (round 8 Claude H2): "a free slot that was RESERVED is still
+-- recordable." Round 9's own lease-clearing fix had left a reserved free slot failing
+-- `art_pending_has_reserved_at` on every retry, forever, and the only thing that had prevented it
+-- was the aside "'render' is free and never reserved" — a CONVENTION, not a guard. There is no
+-- reserve and there are no lease columns, so there is no reserved free slot to record.
+--
+-- ⚠ THE LESSON IS THE ONE THING WORTH CARRYING FORWARD, and it is not about leases: A CONVENTION IS
+-- NOT A GUARD. ADR-0007 leaves exactly one of these behind — "no generation row is created before
+-- its paid call completes", which the constraints enforce for `summary` and for `model`, `dig` and
+-- `digDeeper` enforce nothing at all (MEASURED, round 17 T1). That is T4's whole subject, and this
+-- retirement is the precedent for why it cannot be left as prose.
 
 -- ⟳ R9-8 (round 8 Claude H3) — THE MANIFEST MAY NOT NAME AN ADDRESS THE CALLER DID NOT WRITE.
--- Neither the holder path nor the append path assigned blob_key, so a caller that wrote its bytes
--- at one key was told `recorded_as_holder` while the row kept pointing at the reserved key — shape
--- #4, silent, on the SUCCESS path. Both keys pass art_key_names_generation, which constrains only
--- the first four segments, so no constraint could catch it.
+-- Neither record path assigned blob_key, so a caller that wrote its bytes at one key was told
+-- success while the row kept pointing at the other — shape #4, silent, on the SUCCESS path. Both
+-- keys pass `art_key_names_generation`, which constrains only the first four segments, so no
+-- constraint could catch it.
+-- ⟳ ADR-0007 — the first key is now laid down by a RECORD rather than by a reservation, so the
+-- fixture is one real write followed by a second naming a different address for the same
+-- (slot, generation). The old note about stashing a token is gone with the token: there is no
+-- ownership fence left to reject the call before it reaches the address guard, which is exactly
+-- what that note was working around.
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR9f' from t_ws;
--- ⚠ THE TOKEN IS STASHED so this negative reaches the ADDRESS guard. Without it the call is
--- rejected by the ownership fence first and the assertion passes for the wrong reason — measured
--- twice now, once by a GREEN mutation in round 9 and again in round 11 after the fence changed.
-create temp table t_addr_tok as
-  select token from reserve_artifact_slot((select id from t_ws),'vidR9f','summary','gR9f',
-    'summary'::artifact_kind,
-    (select id from t_ws)::text||'/videos/vidR9f/gR9f/RESERVED.md');
-do $$ begin
-  if (select token from t_addr_tok) is null then
-    raise exception 'ASSERTION FAILED — the address fixture did not obtain a token'; end if;
+do $$ declare ws uuid; o text; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidR9f','summary','gR9f','summary'::artifact_kind,
+        ws::text||'/videos/vidR9f/gR9f/RESERVED.md', p_md_hash := 'SHA_ADDR',
+        p_card := '{"tldr":"d","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-07","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
+        p_doc_version_major := 4, p_produced_at := '2026-05-07');
+  if o <> 'recorded' then raise exception 'FIXTURE FAILED — the address fixture: %', o; end if;
 end $$;
 select assert_raises(format($$
   select record_artifact(%L::uuid,'vidR9f','summary','gR9f','summary'::artifact_kind,
-    %L, (select token from t_addr_tok), p_md_hash := 'SHA_ADDR', p_produced_at := '2026-05-07',
+    %L, p_md_hash := 'SHA_ADDR', p_produced_at := '2026-05-07',
     p_card := '{"tldr":"d","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-07","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
     p_doc_version_major := 4);
 $$, (select id from t_ws), (select id from t_ws)::text||'/videos/vidR9f/gR9f/ACTUALLY-WRITTEN.md'),
- 'recording under a key that differs from the reserved one is refused, not silently dropped',
+ 'recording under a key that differs from the one this slot already holds is refused, not silently dropped',
  'P0001');
 
 -- ⟳ R11-1 (round 10 B1, second half) — NEVER REPORT SUCCESS WHEN ANOTHER WRITER'S CONTENT STANDS.
--- No attacker: two ordinary writers on one generation. The completion UPDATE requires
+-- No attacker: two ordinary writers on one generation. The completion UPDATE required
 -- `state = 'pending'`, so once someone else finished it the coalesce never ran and the function fell
 -- through to an append whose `do update` does not touch md_hash. MEASURED: the second writer was
--- told `recorded_after_token_loss` — a SUCCESS string — while the manifest kept the first writer's
--- hash. Both halves are asserted, because a fix that also refused the benign idempotent retry would
--- be the same defect facing the other way.
+-- told a SUCCESS string while the manifest kept the first writer's hash. Both halves are asserted,
+-- because a fix that also refused the benign idempotent retry would be the same defect facing the
+-- other way.
+-- ⚠ ⟳ ADR-0007 — THIS ASSERTION CARRIES MORE WEIGHT NOW, NOT LESS. `on conflict do nothing` on the
+-- generation INSERT is what makes a second writer safe, and this is the only thing that proves the
+-- second writer is TOLD rather than silently ignored. With `reserved_by` deleted it is the whole of
+-- what used to be R3's guarantee that the real owner keeps its paid work.
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR11' from t_ws;
-do $$ declare ws uuid; tok uuid; o text; begin
+do $$ declare ws uuid; o text; begin
   select id into ws from t_ws;
-  select token into tok from reserve_artifact_slot(ws,'vidR11','summary','gR11','summary'::artifact_kind,
-    ws::text||'/videos/vidR11/gR11/summary.md');
   o := record_artifact(ws,'vidR11','summary','gR11','summary'::artifact_kind,
-        ws::text||'/videos/vidR11/gR11/summary.md', tok, p_md_hash := 'SHA_W1',
+        ws::text||'/videos/vidR11/gR11/summary.md', p_md_hash := 'SHA_W1',
         p_card := '{"tldr":"w1","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-11","processedAt":"y","mdCorrectionsHash":"H_NEW"}'::jsonb,
         p_doc_version_major := 4, p_produced_at := '2026-05-11');
+  if o <> 'recorded' then raise exception 'FIXTURE FAILED — W1 record: %', o; end if;
 
   o := record_artifact(ws,'vidR11','summary','gR11','summary'::artifact_kind,
-        ws::text||'/videos/vidR11/gR11/summary.md', tok, p_md_hash := 'SHA_W2',
+        ws::text||'/videos/vidR11/gR11/summary.md', p_md_hash := 'SHA_W2',
         p_produced_at := '2026-05-11');
   if o <> 'completed_by_another' then
     raise exception 'ASSERTION FAILED — a writer whose content was NOT adopted was told: %', o; end if;
@@ -1565,66 +1706,34 @@ do $$ declare ws uuid; tok uuid; o text; begin
     raise exception 'ASSERTION FAILED — the manifest hash changed under the second writer'; end if;
 
   o := record_artifact(ws,'vidR11','summary','gR11','summary'::artifact_kind,
-        ws::text||'/videos/vidR11/gR11/summary.md', tok, p_md_hash := 'SHA_W1',
+        ws::text||'/videos/vidR11/gR11/summary.md', p_md_hash := 'SHA_W1',
         p_produced_at := '2026-05-11');
   if o = 'completed_by_another' then
     raise exception 'ASSERTION FAILED — a benign idempotent retry was refused'; end if;
   raise notice 'ok (R11-1): divergent content gets a typed outcome; an identical retry still records';
 end $$;
 
--- ⟳ R11-2 (round 10 H2) — A NON-HOLDER MAY NOT TAKE A LIVE FREE RESERVATION.
--- Round 9's lease-clearing fix let a TOKENLESS caller clear W1's lease and repoint the slot
--- (measured: `pending rows left = 0`, key replaced). The fifth face of the free/paid seam.
-do $$ declare ws uuid; tok uuid; o text; n int; begin
-  select id into ws from t_ws;
-  insert into workspace_videos (workspace_id, video_id) values (ws,'vidR11b');
-  select token into tok from reserve_artifact_slot(ws,'vidR11b','pdf:summary',null,
-    'render'::artifact_kind, ws::text||'/videos/vidR11b/renders/s.pdf');
-  o := record_artifact(ws,'vidR11b','pdf:summary',null,'render'::artifact_kind,
-        ws::text||'/videos/vidR11b/renders/OTHER.pdf', null);
-  if o <> 'busy' then
-    raise exception 'ASSERTION FAILED — a non-holder took a live free reservation: %', o; end if;
-  select count(*) into n from video_artifacts
-   where video_id='vidR11b' and slot='pdf:summary' and state='pending';
-  if n <> 1 then
-    raise exception 'ASSERTION FAILED — the holder''s lease was cleared by a stranger'; end if;
-  o := record_artifact(ws,'vidR11b','pdf:summary',null,'render'::artifact_kind,
-        ws::text||'/videos/vidR11b/renders/s.pdf', tok);
-  if o <> 'recorded_free' then
-    raise exception 'ASSERTION FAILED — the holder itself could not record: %', o; end if;
-  raise notice 'ok (R11-2): a live free reservation is the holder''s; a stranger gets a typed busy';
-end $$;
+-- ⛔ RETIRED BY ADR-0007 — R11-2 (round 10 H2): "a NON-HOLDER may not take a LIVE FREE RESERVATION."
+-- Round 9's lease-clearing fix let a TOKENLESS caller clear W1's lease and repoint a free slot
+-- (measured: `pending rows left = 0`, key replaced) — the fifth face of the free/paid seam, after
+-- the reconciler, the short-circuit, the tenant confinement and the lease columns.
+-- A free slot can no longer be reserved, held, or taken: free renders are unpaid, overwritable and
+-- one-per-slot, which is what C1 below asserts and all that is left to assert.
 
--- ⟳ R12-1 (round 12 B1) — THE TOKEN THE RPC HANDS OUT MUST BE THE TOKEN THE FENCE ACCEPTS.
--- `reserve_artifact_slot` creates the generation `on conflict do nothing`, so when the row already
--- existed and was still pending it kept the PREVIOUS caller's `reserved_by` while the artifact
--- upsert re-pointed `lease_token` to the new one. A caller was told `reserved`, PAID, presented the
--- token it had just been given, and was refused — shape #12 through the one credential round 11
--- kept, and a direct counter-example to §12b's "the party holding paid bytes always still holds the
--- token". It held both. They just were not the same token.
-insert into workspace_videos (workspace_id, video_id) select id, 'vidR12' from t_ws;
-do $$ declare ws uuid; t1 uuid; t2 uuid; o text; begin
-  select id into ws from t_ws;
-  update guardrail_config set dig_max_attempts = 3 where id = true;
-  select token into t1 from reserve_artifact_slot(ws,'vidR12','dig:8','gR12','dig'::artifact_kind,
-    ws::text||'/videos/vidR12/gR12/dig-8.md', p_start_sec := 8, p_end_sec := 88);
-  update video_artifacts set lease_expires_at = now() - interval '1 hour'
-   where video_id='vidR12' and slot='dig:8';
-  -- the SAME generation id is reclaimed by a second caller
-  select token into t2 from reserve_artifact_slot(ws,'vidR12','dig:8','gR12','dig'::artifact_kind,
-    ws::text||'/videos/vidR12/gR12/dig-8.md', p_start_sec := 8, p_end_sec := 88);
-  if (select reserved_by from video_generations
-       where video_id='vidR12' and generation_id='gR12') <> t2 then
-    raise exception 'ASSERTION FAILED — reserve returned a token the generation does not name';
-  end if;
-  o := record_artifact(ws,'vidR12','dig:8','gR12','dig'::artifact_kind,
-        ws::text||'/videos/vidR12/gR12/dig-8.md', t2, p_start_sec := 8, p_end_sec := 88,
-        p_produced_at := '2026-05-12');
-  if o not in ('recorded_as_holder','recorded_after_loss') then
-    raise exception 'ASSERTION FAILED — a caller could not record with the token it was given: %', o;
-  end if;
-  raise notice 'ok (R12-1): the token reserve HANDS OUT is the token the fence accepts';
-end $$;
+-- ⛔ RETIRED BY ADR-0007 — R12-1 (round 12 B1): "the token the RPC HANDS OUT must be the token the
+-- fence ACCEPTS." `reserve_artifact_slot` created the generation `on conflict do nothing`, so when
+-- the row already existed and was still pending it kept the PREVIOUS caller's `reserved_by` while
+-- the artifact upsert re-pointed `lease_token` to the new one. MEASURED: a caller was told
+-- `reserved`, PAID, presented the token it had just been given, and was refused — a direct
+-- counter-example to §12b's "the party holding paid bytes always still holds the token". It held
+-- both; they just were not the same token.
+--
+-- ⚠ THIS IS THE FINDING THAT ENDED THE PROTOCOL, so it is worth being precise about what remains.
+-- The `on conflict do nothing` that caused it is STILL THERE, in `record_artifact`'s generation
+-- INSERT — because the defect was never the clause. It was that a SECOND piece of state
+-- (`lease_token`) moved while the first did not. With one write and no second piece of state there
+-- is nothing to come apart, which is the difference between removing a defect and removing the
+-- possibility of it.
 
 -- ── ⟳ ROUND 8 OPENING — THE GUARD CLASSIFICATION PASS ─────────────────────────────────────────────
 -- Not a review round. Every guard on these two tables was classified SHAPE or SEQUENCE:
@@ -1656,11 +1765,11 @@ do $$ declare o text; n int; k text; ws uuid; begin
   select id into ws from t_ws;
   insert into workspace_videos (workspace_id, video_id) values (ws,'vidF');
   o := record_artifact(ws,'vidF','pdf:summary',null,'render'::artifact_kind,
-        ws::text||'/videos/vidF/render/summary-v1.pdf', null);
+        ws::text||'/videos/vidF/render/summary-v1.pdf');
   if o <> 'recorded_free' then
     raise exception 'ASSERTION FAILED — first free render: %', o; end if;
   o := record_artifact(ws,'vidF','pdf:summary',null,'render'::artifact_kind,
-        ws::text||'/videos/vidF/render/summary-v2.pdf', null);
+        ws::text||'/videos/vidF/render/summary-v2.pdf');
   if o <> 'recorded_free' then
     raise exception 'ASSERTION FAILED — RE-render was refused: %', o; end if;
   select count(*), max(blob_key) into n, k from video_artifacts
@@ -1676,7 +1785,7 @@ end $$;
 -- reconciler: this is the boundary the free/paid split exists to hold, and a new write path is
 -- exactly where it would be lost.
 select assert_raises($$select record_artifact((select id from t_ws),'vidF','summary',null,
-   'summary'::artifact_kind,(select id from t_ws)::text||'/videos/vidF/x/summary.md', null)$$,
+   'summary'::artifact_kind,(select id from t_ws)::text||'/videos/vidF/x/summary.md')$$,
   'a PAID kind written with no generation through the free path', '23514', 'art_paid_has_generation');
 
 -- C3 — THE SWEEPER MUST SKIP A CURRENT GENERATION, NOT ABORT ON IT.
@@ -1816,6 +1925,290 @@ select assert_raises($$
            (select id from workspaces where id <> p.workspace_id order by id desc limit 1)
       from playlists p limit 1;
 $$, 'a workspace_id disagreeing with the playlist is refused, not repaired', 'P0001');
+
+-- ── ⟳ T3 — PROVENANCE AS A SET: THE RUNG DECIDES, THE RE-RECORD RULE, AND GC REACHABILITY ──────
+-- ⚠ THE RUNG HAD NO ASSERTION THAT COULD GO RED, AND NO MUTATION AT ALL, FOR SEVENTEEN ROUNDS.
+-- What existed was the FLOOR ("a paid model whose SOURCE summary was superseded must still serve"),
+-- which is satisfied by a rung that does nothing whatsoever — it asserts the rung never GATES and
+-- says nothing about whether it RANKS. Every guard here is opt-in, and this is what that costs: the
+-- one rung the whole provenance design exists to feed was documentation. T3 rewrites it, so T3 owes
+-- it a test that DECIDES between two candidates and a mutation that can kill that test.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidT3' from t_ws;
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  -- two summary generations for vidT3; gT3b is the newer and therefore current
+  perform record_artifact(ws,'vidT3','summary','gT3a','summary'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3a/summary.md', p_md_hash := 'SHA_T3A',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-06-01","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-06-01');
+  perform record_artifact(ws,'vidT3','summary','gT3b','summary'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3b/summary.md', p_md_hash := 'SHA_T3B',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-06-05","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-06-05');
+  -- ⚠ THE STALE-SOURCE MODEL IS THE NEWER ONE, AND THAT INVERSION IS THE WHOLE TEST. A `model` row
+  -- carries no card and no doc_version_major (T4's two `*_is_summary_only` constraints), so every
+  -- rung between source-currency and `produced_at` is NULL for both candidates. Give the stale one
+  -- the later produced_at and the ONLY thing that can make the current-source one win is the rung.
+  perform record_artifact(ws,'vidT3','model','gT3mCUR','model'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3mCUR/model.json',
+    p_source_generation_id := 'gT3b', p_produced_at := '2026-06-06');
+  perform record_artifact(ws,'vidT3','model','gT3mOLD','model'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3mOLD/model.json',
+    p_source_generation_id := 'gT3a', p_produced_at := '2026-06-07');
+end $$;
+do $$ declare g text; begin
+  select generation_id into g from video_artifacts_current where video_id='vidT3' and slot='model';
+  if g is distinct from 'gT3mCUR' then
+    raise exception 'ASSERTION FAILED — the source-currency rung did not decide: current model is %, expected gT3mCUR (the NEWER model is built from a superseded summary)',
+      coalesce(g,'<none>'); end if;
+  raise notice 'ok (T3 rung): a model built from the CURRENT summary outranks a newer one built from a stale summary';
+end $$;
+
+-- ⟳ ROUND 15 M3 — ONLY SUMMARY-KIND SOURCES PARTICIPATE, AND WITHOUT THAT THE RUNG IS UNDEFINED
+-- EXACTLY WHERE THE JOIN TABLE IS NEEDED. `video_summary_current` has one row per (workspace, video)
+-- and NO row for a `dig` generation, so comparing a dig source against it scores that source stale
+-- FOREVER — and the artifact that carries dig sources is `digDeeper`, the multi-source case this
+-- table exists for. `gT3dA` carries a DIG source and is the newer; it must win on produced_at, which
+-- it can only do if its non-summary source is ignored by the rung rather than scored against it.
+do $$ declare ws uuid; g text; begin
+  select id into ws from t_ws;
+  insert into video_generations (workspace_id,video_id,generation_id,kind,produced_at)
+    values (ws,'vidT3','gT3dig','dig','2026-06-02');
+  perform record_artifact(ws,'vidT3','digDeeper','gT3dB','digDeeper'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3dB/dd.md', p_produced_at := '2026-06-08');
+  perform record_artifact(ws,'vidT3','digDeeper','gT3dA','digDeeper'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3dA/dd.md',
+    p_source_generation_id := 'gT3dig', p_produced_at := '2026-06-09');
+  select generation_id into g from video_artifacts_current where video_id='vidT3' and slot='digDeeper';
+  if g is distinct from 'gT3dA' then
+    raise exception 'ASSERTION FAILED — a NON-SUMMARY source was scored for currency: current digDeeper is %, expected gT3dA',
+      coalesce(g,'<none>'); end if;
+  raise notice 'ok (T3/M3): a dig-kind source is recorded for GC and does NOT rank';
+end $$;
+
+-- ⚠ "ARE *ALL* ITS SOURCES CURRENT" — the question a set can answer and the dropped scalar could
+-- not, and the reason the rung is a `not exists` rather than a comparison. `gT3mmMIX` names one
+-- current and one superseded summary and is the NEWER row; one stale source must sink it.
+-- ⚠ THE TWO-SOURCE SET IS WRITTEN BY DIRECT DML, AND THAT IS AN HONEST GAP RATHER THAN A CHOICE OF
+-- STYLE: `record_artifact` takes a SCALAR `p_source_generation_id`, so no RPC caller can build a
+-- multi-source artifact today. The table, the rung and the GC reachability check are all set-shaped
+-- and the only writer is not. Whoever adds the multi-source producer changes the signature; until
+-- then this assertion is what stops the set semantics from being untested prose. It is also why the
+-- INSERT enforcer had to permit a multi-row statement — see its comment in 04.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidT3m' from t_ws;
+do $$ declare ws uuid; g text; begin
+  select id into ws from t_ws;
+  perform record_artifact(ws,'vidT3m','summary','gMsCUR','summary'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMsCUR/summary.md', p_md_hash := 'SHA_MS_CUR',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-05","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-05');
+  perform record_artifact(ws,'vidT3m','summary','gMsOLD','summary'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMsOLD/summary.md', p_md_hash := 'SHA_MS_OLD',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-01","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-01');
+  perform record_artifact(ws,'vidT3m','model','gMmALL','model'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMmALL/model.json',
+    p_source_generation_id := 'gMsCUR', p_produced_at := '2026-07-06');
+  perform record_artifact(ws,'vidT3m','model','gMmMIX','model'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMmMIX/model.json', p_produced_at := '2026-07-07');
+  insert into video_artifact_sources (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, s
+    from video_artifacts a, unnest(array['gMsCUR','gMsOLD']) s
+   where a.video_id='vidT3m' and a.slot='model' and a.generation_id='gMmMIX';
+  select generation_id into g from video_artifacts_current where video_id='vidT3m' and slot='model';
+  if g is distinct from 'gMmALL' then
+    raise exception 'ASSERTION FAILED — a model with ONE stale source among two ranked as current: %',
+      coalesce(g,'<none>'); end if;
+  raise notice 'ok (T3): the rung asks whether ALL sources are current, not whether ANY is';
+end $$;
+
+-- ⟳ T3 — GC REACHABILITY, THE HOLE THAT PREDATES THIS SLICE. `video_generations_collectable` checked
+-- only an artifact's OWN generation, so a superseded summary that a paid model was built FROM was
+-- offered to the sweeper: collect it and every render derived from it serves against bytes that no
+-- longer exist. `gT3a` is superseded (gT3b is current) and is the source of `gT3mOLD`, so it is
+-- exactly that row. `gT3c` is superseded and referenced by nothing, and it is here because a floor
+-- that excludes everything also passes the first half of this test.
+do $$ declare ws uuid; n_src int; n_free int; begin
+  select id into ws from t_ws;
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+    values (ws,'vidT3','gT3c','summary',
+      ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-01","processedAt":"y",'
+       ||'"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb, 4,'2026-05-01','SHA_T3C');
+  select count(*) into n_src  from video_generations_collectable
+   where video_id='vidT3' and generation_id='gT3a';
+  select count(*) into n_free from video_generations_collectable
+   where video_id='vidT3' and generation_id='gT3c';
+  if n_src <> 0 then
+    raise exception 'ASSERTION FAILED — a superseded generation a render is BUILT FROM was offered to the sweeper'; end if;
+  if n_free <> 1 then
+    raise exception 'ASSERTION FAILED — an unreferenced superseded generation is not collectable; the floor excludes everything'; end if;
+  raise notice 'ok (T3 GC): a referenced generation is protected; an unreferenced one is still collectable';
+end $$;
+
+-- ── ⟳ ADR-0007 IMPLEMENTATION REVIEW, H3 — THE PIN IS PERMANENT, MEASURED ───────────────────────
+-- ⚠ READ THE LABEL BEFORE THE CODE: this is the SECOND block in this file that asserts a known
+-- limitation REPRODUCES, and it is here for the same reason as T4's — the schema comment for the GC
+-- reachability check used to promise that "§8's retention clock … eventually releases it", and no
+-- release exists. The assertion above tests the half that works (referenced ⇒ protected); nothing
+-- tested that a reference is ever RELEASED, because under this design it never is, and an absence is
+-- invisible to every opt-in instrument at once.
+--
+-- The chain, all of it through the RPC: a model is built from a summary, both are superseded, the
+-- model's own generation is swept — and the summary is STILL not collectable. The three exits are
+-- closed by three guards this branch added (provenance undeletable while its artifact lives, paid
+-- artifacts undeletable, the sweeper selects THROUGH the view), so nothing short of deleting the
+-- account clears it.
+--
+-- IF SOMEONE CLOSES THIS — the candidate is in 04's comment and in docs/backlog.md #27 — THIS BLOCK
+-- GOES RED. That is the intended signal, and the correct response is to delete it, not to work
+-- around it.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidH3' from t_ws;
+do $$ declare ws uuid; n int; begin
+  select id into ws from t_ws;
+  perform record_artifact(ws,'vidH3','summary','gH3s','summary'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3s/summary.md', p_md_hash := 'SHA_H3S',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-01","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-01');
+  perform record_artifact(ws,'vidH3','model','gH3m','model'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3m/model.json',
+    p_source_generation_id := 'gH3s', p_produced_at := '2026-07-02');
+  -- supersede both, so neither is current and the retention clock is the only thing left
+  perform record_artifact(ws,'vidH3','summary','gH3s2','summary'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3s2/summary.md', p_md_hash := 'SHA_H3S2',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-03","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-03');
+  perform record_artifact(ws,'vidH3','model','gH3m2','model'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3m2/model.json',
+    p_source_generation_id := 'gH3s2', p_produced_at := '2026-07-04');
+  select count(*) into n from video_generations_collectable
+   where video_id='vidH3' and generation_id='gH3m';
+  if n <> 1 then
+    raise exception 'H3 CHARACTERISATION STALE — the superseded model is no longer collectable (% rows); '
+      're-read this block.', n; end if;
+  update video_generations set body_collected = true
+   where video_id='vidH3' and generation_id='gH3m';           -- its only referrer, swept
+  select count(*) into n from video_generations_collectable
+   where video_id='vidH3' and generation_id='gH3s';
+  if n <> 0 then
+    raise exception 'H3 CHARACTERISATION STALE — the pin RELEASED (% rows). If the release was '
+      'implemented deliberately, DELETE this block and 04''s note; do not work around it.', n; end if;
+  raise notice 'ok (H3, MEASURED COST): a source generation stays pinned after its only referrer was swept — retained for the life of the workspace, not 90 days';
+end $$;
+
+-- ⟳ T3 — THE RE-RECORD RULE, THROUGH THE RPC THAT REAL CALLERS USE. Round 16 H2 corrected this from
+-- "replace" to "present the same set or raise", and the correction is load-bearing: a replace is a
+-- delete-and-insert, which the child table's own freeze forbids — and on the OMISSION path a replace
+-- would have WIPED the set, making the rung and the GC check vacuously true, which is the failure
+-- round 15 B3 wrote this item to prevent.
+do $$ declare ws uuid; o text; srcs text; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidT3','model','gT3mCUR','model'::artifact_kind,
+        ws::text||'/videos/vidT3/gT3mCUR/model.json',
+        p_source_generation_id := 'gT3b', p_produced_at := '2026-06-06');
+  if o <> 'already_recorded' then
+    raise exception 'ASSERTION FAILED — re-recording with the SAME source gave %', o; end if;
+  o := record_artifact(ws,'vidT3','model','gT3mCUR','model'::artifact_kind,
+        ws::text||'/videos/vidT3/gT3mCUR/model.json', p_produced_at := '2026-06-06');  -- source OMITTED
+  if o <> 'already_recorded' then
+    raise exception 'ASSERTION FAILED — re-recording with an OMITTED source gave %', o; end if;
+  select string_agg(s.source_generation_id, ',' order by s.source_generation_id) into srcs
+    from video_artifact_sources s join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidT3' and a.slot='model' and a.generation_id='gT3mCUR';
+  if srcs is distinct from 'gT3b' then
+    raise exception 'ASSERTION FAILED — an omitted source did not CARRY FORWARD: the set is now {%}', coalesce(srcs,''); end if;
+  raise notice 'ok (T3): a re-record presenting the same set is idempotent, and an omitted source carries forward';
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidT3','model','gT3mCUR','model'::artifact_kind,
+    %L||'/videos/vidT3/gT3mCUR/model.json',
+    p_source_generation_id := 'gT3a', p_produced_at := '2026-06-06');
+$$, (select id from t_ws), (select id from t_ws)::text),
+ 're-recording with a DIFFERENT source (round 16 H2 — the same set, or a raise)', 'P0001');
+
+-- ── ⟳ ADR-0007 IMPLEMENTATION REVIEW, H2 — THE THIRD RE-RECORD CASE, WHICH HAD NO ASSERTION ─────
+-- The three blocks above exercise SAME-set, OMITTED and DIFFERENT-set. The fourth transition a real
+-- caller reaches is EMPTY -> NON-EMPTY: record first, learn the source later. It had no assertion,
+-- and an absence is invisible to every opt-in instrument at once (this file's own ratchet argument),
+-- so `record_artifact` silently ADDED provenance to an already-recorded PAID row — a one-way change
+-- the sibling DELETE freeze then makes permanent. The cause was one sentinel carrying two facts:
+-- `v_recorded = '{}'` meant both "this artifact has no provenance yet" and "this artifact is
+-- RECORDED AS HAVING NONE", and only the first of those is "this is the first write".
+--
+-- ⚠ THE FIXTURE IS BUILT THROUGH THE RPC ON PURPOSE. A rolled-back probe can construct any state you
+-- can type, so the question this file has to ask (see R9's kept lesson above) is not "is it refused?"
+-- but "can a caller BE here?" — and this one is: three of the four paid kinds are recorded with no
+-- source at all, and `gMmMIX` two blocks up is exactly such a row.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidH2' from t_ws;
+do $$ declare ws uuid; o text; n int; begin
+  select id into ws from t_ws;
+  perform record_artifact(ws,'vidH2','summary','gH2s','summary'::artifact_kind,
+    ws::text||'/videos/vidH2/gH2s/summary.md', p_md_hash := 'SHA_H2S',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-05","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-05');
+  o := record_artifact(ws,'vidH2','model','gH2m','model'::artifact_kind,
+    ws::text||'/videos/vidH2/gH2m/model.json', p_produced_at := '2026-07-06');   -- SOURCE OMITTED
+  if o <> 'recorded' then
+    raise exception 'ASSERTION FAILED — the H2 fixture did not record: %', o; end if;
+  select count(*) into n from video_artifact_sources s
+    join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidH2' and a.slot='model';
+  if n <> 0 then
+    raise exception 'ASSERTION FAILED — the H2 fixture already carries provenance (% row(s))', n; end if;
+  raise notice 'ok (H2 fixture): a paid model is RECORDED WITH NO SOURCE — reached through the RPC, not typed';
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidH2','model','gH2m','model'::artifact_kind,
+    %L||'/videos/vidH2/gH2m/model.json',
+    p_source_generation_id := 'gH2s', p_produced_at := '2026-07-06');
+$$, (select id from t_ws), (select id from t_ws)::text),
+ 'an artifact recorded with NO source has provenance ADDED on re-record (review H2)', 'P0001');
+-- The refusal has to be total, not merely reported: the raise is what stops the INSERT, and an
+-- assertion that only reads the SQLSTATE would pass over a guard that raised after writing.
+do $$ declare srcs text; begin
+  select coalesce(string_agg(s.source_generation_id, ',' order by s.source_generation_id),'') into srcs
+    from video_artifact_sources s join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidH2' and a.slot='model';
+  if srcs <> '' then
+    raise exception 'ASSERTION FAILED — the refused re-record still left provenance {%}', srcs; end if;
+  raise notice 'ok (H2): a recorded EMPTY source set stays empty — "no row yet" and "recorded as none" are two facts now';
+end $$;
+
+-- ⟳ T3 — THE CASCADE THE `restrict` DECISION WAS MADE FOR, AND THE DELETE GUARD'S OWN CONDITION.
+-- Round 14 B3 measured `on delete restrict` breaking account erasure. Round 15 L1 refined the cause
+-- to DEPTH, not RESTRICT. The delete guard this slice adds could re-break exactly that path — a
+-- FREE render is deletable, so its provenance cascades — which is why the guard is conditioned on
+-- the parent artifact still existing. This asserts the resulting behaviour end to end.
+-- ⚠ MEASURED AND NOT SMOOTHED OVER: this only reaches the join table because the workspace holds no
+-- PAID artifact. With one, `delete from profiles` dies earlier and unrelatedly, at
+-- `video_artifacts is append-only: cannot DELETE recorded paid row`. Account erasure against a paid
+-- manifest is an open question this slice does not settle; what T3 owes is not to add a THIRD
+-- blocker, and this is the assertion that says it did not.
+do $$ declare p uuid := gen_random_uuid(); ws uuid; a uuid; begin
+  insert into auth.users (id) values (p);
+  insert into profiles (id) values (p) on conflict (id) do nothing;
+  select id into ws from workspaces where owner_id = p;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidT3f');
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+    values (ws,'vidT3f','gT3f','summary',
+      ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-09","processedAt":"y",'
+       ||'"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb, 4,'2026-07-09','SHA_T3F');
+  insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+    values (ws,'vidT3f','pdf:summary',null,'render','recorded', ws::text||'/videos/vidT3f/renders/s.pdf')
+    returning artifact_id into a;
+  insert into video_artifact_sources (artifact_id, workspace_id, video_id, source_generation_id)
+    values (a, ws, 'vidT3f', 'gT3f');
+  delete from profiles where id = p;
+  if exists (select 1 from video_artifact_sources where artifact_id = a) then
+    raise exception 'ASSERTION FAILED — the provenance row outlived the account that owned it'; end if;
+  raise notice 'ok (T3 cascade): account erasure carries provenance away with it; the delete guard does not block it';
+end $$;
 
 -- ── ⟳ THE POPULATION-COVERAGE RATCHET ITSELF ───────────────────────────────────────────────────
 -- Every value of `artifact_kind` must have been written a SECOND time to the same slot somewhere in

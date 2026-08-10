@@ -288,58 +288,56 @@ create table video_generations (
   -- below optional for anyone who simply omitted the column — a fail-open default in the constraints
   -- that round 4's J1-2 fixed for being fail-open. The relaxation is strictly opt-in, and the only
   -- caller that opts in is reserve_artifact_slot.
+  --
+  -- ⟳ ADR-0007 (T1 deleted the opting-in caller; T2 depends on it) — THERE IS NO LONGER ANY PRODUCER
+  -- OF `pending`. `reserve_artifact_slot` is gone, `record_artifact` INSERTs `state` defaulted to
+  -- `complete`, and `video_generations_freeze` forbids leaving complete — so the four CHECKs gated on
+  -- `state <> 'complete'` now always bind, and `video_generations_collectable`'s `state = 'complete'`
+  -- predicate went vacuous and was DELETED (04_artifacts.sql).
+  --
+  -- ⟳ T4 — AND THE DOMAIN IS NOW NARROWED TO ONE VALUE, WHICH IS THE RESIDUAL T2 NAMED AND LEFT.
+  -- T2's note said it exactly: "single-valued here is the absence of a producer, not a constraint. A
+  -- hand-written `insert … state='pending'` is still legal and, with the floor's predicate gone,
+  -- still collectable." That is the rolled-back-probe lesson (05_assert.sql: "is this refused?" is
+  -- not "can a caller BE here?") pointed at this file's own CHECK. The CHECK now says what the
+  -- design means, so the two questions have the same answer.
+  --
+  -- ⚠ NARROWED, NOT DROPPED, and the column earns its keep in three places that would each have to
+  -- be rewritten to lose it:
+  --   * ⟳ ADR-0007 IMPLEMENTATION REVIEW, M1 / Codex Low — THIS LINE USED TO SAY the five
+  --     completeness CHECKs below "are written `state <> 'complete' or …`", IN THE SAME BRANCH THAT
+  --     DELETED THAT DISJUNCT FROM ALL FIVE (see the ⛔ block below, and the CHECKs at :410-435 —
+  --     `grep "state <> 'complete'"` over this file now finds only prose and the freeze trigger).
+  --     What is true is the step before it: the domain is SINGLE-VALUED, which is WHY the disjunct
+  --     was constantly false, and why every one of those CHECKs now binds UNCONDITIONALLY — the
+  --     relaxation round 6 B5 granted the reservation is repaid, not merely left unused. Re-widening
+  --     `state` fails CLOSED, because without the disjunct a pending row must satisfy all five in
+  --     full. The correction matters because this comment is the justification for KEEPING a column:
+  --     a reason that has stopped being true reads as settled, which is worse than no reason at all.
+  --   * `video_artifacts_generation_complete` (04) selects this column to tell present-and-complete
+  --     from `<absent>`, and `<absent>` is the branch T1 MEASURED
+  --     ([P0001] cannot mark summary as recorded — generation gG1 is <absent>). Dropping the column
+  --     deletes that typed message and leaves a bare FK [23503] in its place.
+  --   * `record_artifact` reads it to decide `completed_by_another`.
+  -- ⚠ WIDENING THIS LINE DOES NOT BRING `pending` BACK — it brings back a state with no protocol.
+  -- Four in-flight mechanisms were costed and withdrawn across rounds 14-16; see docs/adr/0007.
   state             text not null default 'complete'
-                    check (state in ('pending','complete')),
-  -- ⟳ ROUND 7 H2 — WHO RESERVED THIS GENERATION. The generation UPDATE inside record_artifact was
-  -- fenced on NOTHING — no token, no state, no slot — while every other write in this design is
-  -- fenced. MEASURED: W2 named W1's generation, completed it with W2's production time, and W1 was
-  -- then locked out of its own paid work FOREVER by the freeze trigger below
-  -- ("the CONTENT of complete generation gW1 is immutable"). That is item 3's freeze silently
-  -- revoking item 4's user decision that a writer which already paid always records.
+                    check (state in ('complete')),
+  -- ⛔ `reserved_by uuid` STOOD HERE AND IS DELETED BY ADR-0007 (T1). It was round 7 H2's fence on
+  -- the generation UPDATE inside `record_artifact` — "who reserved this generation" — and the last
+  -- survivor of FIVE successive credentials (round 7's token, round 9's `reserved_by_worker` /
+  -- `reserved_by_job` pair, round 10's slot disjunct, round 11's token-alone, round 12's re-point).
+  -- Six consecutive rounds produced a Blocking or High in that seam, four of them introduced by the
+  -- previous round's own fix. ADR-0007 deletes the mechanism rather than the sixth credential:
+  -- `record_artifact` no longer UPDATEs a pending generation, it INSERTs a complete one, and
+  -- `on conflict do nothing` + `completed_by_another` is what keeps a second writer safe.
   --
-  -- The token is the RESERVER's, captured at reserve time and never rotated by a later reclaim —
-  -- which is what makes it survive P22: a writer whose SLOT was reclaimed still holds the token that
-  -- reserved its own generation, so it can still complete it and record. Fencing on the artifact row
-  -- instead would have broken exactly that case.
-  reserved_by       uuid,
-  -- ⟳ ROUND 11 (round 10 B1/H1) — THERE IS NO SECOND CREDENTIAL, AND REMOVING IT IS THE FIX.
-  --
-  -- Round 9 added `reserved_by_worker` / `reserved_by_job` here so a restarted worker could prove
-  -- ownership after losing its token. Round 10 measured that failing in BOTH directions, again:
-  --
-  --   REPLAYABLE — both columns live in the row being fenced, and `video_generations` grants
-  --     `select` to `service_role`, the same role that may call `record_artifact`. So an attacker
-  --     READS the credential and completes the victim's generation. Measured:
-  --       ATTACKER reads: worker=worker-VICTIM job=1ab8a512-…  ->  recorded_after_token_loss
-  --       md_hash now SHA_ATTACKER, while the victim paid for SHA_REAL
-  --   AND STILL UNUSABLE — the premise was false. `worker/main.ts:69` is
-  --       `${os.hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`
-  --     a fresh uuid and pid minted at PROCESS START, exactly as volatile as the token it replaced;
-  --     and `sweep_expired_leases` nulls `locked_by`/`lease_token` and moves the job off `active`,
-  --     so "find my job by locked_by = me and status = active" returns nothing precisely when
-  --     recovery is needed.
-  --
-  -- ⚠ AND THE REQUIREMENT ITSELF WAS NOT REAL — which is why the answer is deletion, not a third
-  -- credential. The party that holds paid bytes ALWAYS still holds its token:
-  --   * a process that crashed lost the Gemini result from memory too, so it has nothing to record;
-  --   * a worker that loses its lease STOPS — `lib/job-queue/worker-runner.ts` heartbeats every
-  --     third of a lease and calls `leaseLost.abort()`, composed into the handler's AbortSignal;
-  --   * and there are NO callers yet: `reserve_artifact_slot` / `record_artifact` / `generation_id`
-  --     appear nowhere under `worker/`, `lib/job-queue/` or `lib/cloud-sync/`.
-  -- Rounds 7 and 9 each built a fallback for a caller that cannot occur, and each fallback was the
-  -- round's worst finding. The token alone is unguessable, is held by exactly the party with the
-  -- bytes, and is stored nowhere a caller reads it as a credential.
-  --
-  -- ⚠ THE CONDITION IS NOW A RULE ABOUT CALLERS, and it belongs in the spec (§ "the caller's
-  -- obligation"): a worker MUST hold its reservation token for the life of the job, and a worker
-  -- that cannot MUST abandon rather than record. `worker-runner` already behaves this way; when the
-  -- cloud caller is written, assert it there.
-  --
-  -- ⚠ HOW THIS ERROR HAPPENED, because the lesson outlived the code: "worker_id is stable config"
-  -- was written into this file as a fact and was never read from `worker/main.ts`. Every instrument
-  -- this spec owns points at the SCHEMA, and the false premise was about code outside it. The rule
-  -- that would have caught it: QUOTE THE CODE YOU RELY ON, DO NOT CHARACTERISE IT — quoting forces
-  -- a read, characterising lets you write from memory.
+  -- ⚠ TWO LESSONS OUTLIVE THE COLUMN, so they are kept rather than deleted with it:
+  --   * QUOTE THE CODE YOU RELY ON, DO NOT CHARACTERISE IT. Round 9's pair rested on "worker_id is
+  --     stable config", written into this file as a fact and never read from `worker/main.ts:69`,
+  --     which mints it per PROCESS as `${os.hostname()}-${process.pid}-${randomUUID().slice(0,8)}`.
+  --   * A FENCE WRONG IN BOTH DIRECTIONS IS ASKING FOR THE WRONG CREDENTIAL, never for a different
+  --     threshold. Round 8 measured the round-7 fence too permissive AND too strict in one round.
   card              jsonb,
   doc_version_major int,             -- rule 13's format rung. Round 4 J3-2: ranked on, never defined.
   -- NULLABLE while pending — nothing has been produced yet, and a `not null` here is what forced a
@@ -387,13 +385,31 @@ create table video_generations (
   --     now also carries the constant instead of NULL. The old pairing (card 'mdHash('')' vs column
   --     NULL) is exactly what MEASURED as corrections-current = FALSE for the entire corpus.
   -- Kept as key-presence AND value, since `?&` alone was what let round 5's B1 all-null card win.
-  -- ⟳ ROUND 6 B5 — `state <> 'complete' or …` on all four. The constraints did NOT weaken; each moved
-  -- to the moment its value can exist. What keeps that from being a bypass is the artifact-side
-  -- trigger in 04: nothing may be RECORDED against a generation that is still pending, so every row
-  -- either ranking view can ever see has satisfied all four in full.
-  constraint gen_complete_has_produced_at check (state <> 'complete' or produced_at is not null),
+  -- ⟳ ROUND 6 B5 put `state <> 'complete' or …` on all four. The constraints did not weaken; each
+  -- moved to the moment its value can exist, and what kept that from being a bypass was the
+  -- artifact-side trigger in 04 — nothing may be RECORDED against a generation that is still pending.
+  --
+  -- ⛔ ⟳ T4 — THE `state <> 'complete' or` DISJUNCT IS DELETED FROM ALL FIVE, AND IT IS DELETED
+  -- RATHER THAN LEFT STANDING FOR THE SAME REASON T2 DELETED THE GC FLOOR'S. With the domain narrowed
+  -- to a single value the disjunct is CONSTANTLY FALSE: `state` is `not null` and the CHECK admits
+  -- only 'complete', so no row that could be saved by it can exist — and a row attempting 'pending'
+  -- is rejected by the state CHECK whatever these five say. T2's own words for the identical shape:
+  -- "a guard that never starts — arriving by SUBTRACTION, so it is deleted rather than left standing
+  -- as decoration."
+  --
+  -- ⚠ AND THE MEASUREMENT SAYS SO OUT LOUD, WHICH IS WHY THIS IS NOT A JUDGEMENT CALL. Three
+  -- mutations that had been RED for eleven rounds — "gen_card_complete gate removed",
+  -- "gen_summary_has_hash gate removed", "gen_summary_has_format gate removed" — ALL WENT GREEN the
+  -- moment T4 retired the hand-built `pending` fixture that was their only red. They were never
+  -- testing these constraints; they were testing the existence of a pending row. Keeping a predicate
+  -- whose removal provably changes nothing is the decoration this file has twice refused to keep.
+  --
+  -- ⚠ IF `state` IS EVER RE-WIDENED, THIS DELETION FAILS CLOSED. Without the disjunct a pending row
+  -- would have to satisfy all five in full, which is stricter than round 6 B5's version, never looser.
+  -- What replaces the three mutations is the question T4 actually had to answer — see `kind` below.
+  constraint gen_complete_has_produced_at check (produced_at is not null),
   constraint gen_card_complete check (
-    state <> 'complete' or kind <> 'summary' or (
+    kind <> 'summary' or (
       card is not null
       and card ?& array['tldr','takeaways','docVersion','mdGeneratedAt','processedAt',
                         'mdCorrectionsHash']
@@ -407,17 +423,60 @@ create table video_generations (
       and card ->> 'processedAt'   is not null
       and card ->> 'mdCorrectionsHash' is not null)),   -- ⟳ round 6 B4; see the note above
   constraint gen_summary_has_format check
-    (state <> 'complete' or kind <> 'summary' or doc_version_major is not null),
+    (kind <> 'summary' or doc_version_major is not null),
   constraint gen_summary_has_hash check
-    (state <> 'complete' or kind <> 'summary' or md_hash is not null),
+    (kind <> 'summary' or md_hash is not null),
   -- Round 5 H5: the ranking trusts `doc_version_major`, and nothing tied it to the `docVersion` the
   -- body actually carries. MEASURED: a card saying "3.3" with the column saying 99 inserted cleanly.
   -- That is §5.2's card/body lie relocated into the ranking key — the one place it does most damage,
   -- since the format rung is the rung that must never regress.
   constraint gen_major_matches_card check (
-    state <> 'complete'
-    or kind <> 'summary'
-    or doc_version_major = split_part(card ->> 'docVersion', '.', 1)::int)
+    kind <> 'summary'
+    or doc_version_major = split_part(card ->> 'docVersion', '.', 1)::int),
+
+  -- ── ⟳ T4 (round 17 H1) — WHAT THE OTHER THREE PAID KINDS CARRY, MEASURED, NOT ASSUMED ─────────
+  -- H1's finding: only `gen_complete_has_produced_at` ranges over every kind. The three CHECKs above
+  -- are additionally gated `kind <> 'summary'`, so a `model`, `dig` or `digDeeper` row inserted with
+  -- ONLY `produced_at` is ACCEPTED — and `produced_at` is knowable BEFORE any Gemini call. The
+  -- gating reads like an oversight, and the obvious repair is to extend the CHECKs to every kind.
+  -- THAT REPAIR IS WRONG, and the producers are what say so:
+  --
+  --   model     `lib/html-doc/model-store.ts:14-23` — the envelope is
+  --             {sourceMd, generatedAt, sourceSections, generatorVersion?, model, sourceMdHash?}.
+  --             NONE of gen_card_complete's six keys, and no docVersion. `sourceMdHash` is the hash
+  --             of the model's SOURCE summary, which is knowable before the call — it witnesses the
+  --             input, never the output.
+  --   dig       `lib/job-queue/dig-handler.ts:119-125` -> `lib/dig/cloud/write-dig-section-blob.ts:29-46`.
+  --             The frontmatter is videoId/sectionId/startSec/title/language/sourceVideoUrl/
+  --             generatedAt/genVersion. No card, no docVersion. `genVersion` is the DIG generator's
+  --             version, not rule 13's format rung, and it lives in the blob.
+  --   digDeeper cloud has no such blob AT ALL — it is assembled at serve time from the individual
+  --             dig blobs: `app/api/html/[id]/route.ts:45-61` calls `loadDigForServe` then
+  --             `renderDigDeeperDoc({summary, envelope, dug, …})` and returns the HTML. VERIFIED at
+  --             those lines rather than inherited from 04's `art_detached_is_dig` note, which cites
+  --             a slightly different range. There is no document whose format or content this row
+  --             could describe.
+  --   summary   `lib/job-queue/summary-handler.ts:146-164` and `lib/pipeline.ts:272` produce every
+  --             field the card requires, and `mdHash(mdContent)` hashes GEMINI'S OWN OUTPUT.
+  --
+  -- So the conclusion runs the other way: `card` and `doc_version_major` are SUMMARY'S columns, and
+  -- these two constraints say so. Demanding either of a `model` would demand a value no producer can
+  -- compute — round 6 B5's two locked doors, re-cut for three more kinds.
+  -- It also removes a live ranking hazard rather than only tidying: 04's `video_artifacts_current`
+  -- ranks EVERY kind on `card->>'mdCorrectionsHash'` and then on `doc_version_major`, so a dig
+  -- generation carrying a card would outrank its own siblings on a rung that means nothing for its
+  -- kind. TWO constraints, never one compound — round 6 H5's rule: a fixture invalid in two ways
+  -- tests neither.
+  --
+  -- ⚠ `md_hash` IS DELIBERATELY *NOT* CONFINED, AND THAT IS THE ONE DOOR HELD OPEN ON PURPOSE.
+  -- It is the only column here whose value is a function of the PRODUCED BYTES — the only candidate
+  -- production witness the other three kinds could ever have. No producer computes one for them
+  -- today (`mdHash` exists only on the summary path, `lib/cloud-sync/content-hash.ts:16`, consumed
+  -- by `reconcile-class-a.ts:17-32`), so REQUIRING it now would be the same locked door; FORBIDDING
+  -- it would shut the only route by which T4's invariant could later become DERIVED instead of
+  -- carried. Neither. See the T4 block in 05_assert.sql for what carries it meanwhile.
+  constraint gen_card_is_summary_only  check (kind = 'summary' or card is null),
+  constraint gen_major_is_summary_only check (kind = 'summary' or doc_version_major is null)
 );
 
 -- ⟳ ROUND 6 B5 — COMPLETE IS TERMINAL, AND THE CONTENT FREEZES WITH IT.

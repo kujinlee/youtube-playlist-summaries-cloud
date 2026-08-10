@@ -57,9 +57,9 @@ If that is false, this ADR is wrong and the reservation protocol should be resto
 
 - `[VERIFIED: lib/cloud-sync/sync-run.ts:372-394]` — `transferClassA` copies an existing body between
   replicas. No Gemini call, no payment. Sync **replicates**; it does not produce.
-- `[VERIFIED: docs/adr/0006]` + `schema/04_artifacts.sql:147-160` — the blob key is
+- `[VERIFIED: docs/adr/0006]` + `schema/04_artifacts.sql:181-187` — the blob key is
   `<ws>/videos/<video>/<generation>/…`, derived from the generation id.
-- `[VERIFIED: schema/04_artifacts.sql:162-163]` — `video_artifacts_paid_uq` keys on
+- `[VERIFIED: schema/04_artifacts.sql:189-190]` — `video_artifacts_paid_uq` keys on
   `(workspace, video, slot, generation)`, so two generations of one slot are two rows, never a
   conflict.
 
@@ -67,7 +67,7 @@ If that is false, this ADR is wrong and the reservation protocol should be resto
 
 Round 13 confirmed the claim above by measurement and then showed that **proving it is not the same as
 proving there is nothing to coordinate.** Round 5 had already measured the reason
-`[VERIFIED: schema/04_artifacts.sql:168-172]`:
+`[VERIFIED: schema/04_artifacts.sql — round 5's reason was DELETED with the reservation; the surviving statement of it is 05_assert.sql:453-455]`:
 
 > *"without it, two writers insert `pending` for the same slot under their OWN generation ids, both
 > succeed (different ids ⇒ the paid unique does not collide), and both call Gemini. `count(*) = 2`."*
@@ -122,8 +122,8 @@ slice to discover.
 call graph.** `[VERIFIED: lib/html-doc/serve-doc.ts:112]` calls `generateMagazineModel` — a paid
 Gemini call — reached from `[VERIFIED: lib/html-doc/serve-summary-core.ts:105]`, which serves both
 `app/api/html/[id]/route.ts` and `app/api/pdf/[id]/route.ts`. `model` is a **paid** kind:
-`[VERIFIED: schema/04_artifacts.sql:26]` maps `slot='model'` → `kind='model'`, and
-`art_paid_has_generation` `[VERIFIED: schema/04_artifacts.sql:95]` puts it in the paid set beside
+`[VERIFIED: schema/04_artifacts.sql:28]` maps `slot='model'` → `kind='model'`, and
+`art_paid_has_generation` `[VERIFIED: schema/04_artifacts.sql:119-120]` puts it in the paid set beside
 `summary`, `dig`, `digDeeper`.
 
 Its arbiter is a **third coordination vocabulary** — `serve_model_charge`, keyed
@@ -293,7 +293,7 @@ This ADR was drafted believing it would dissolve the render conflation as well. 
 saying so plainly is the point of this section.
 
 `generation_id is null` currently encodes **two independent facts**:
-`[VERIFIED: schema/04_artifacts.sql:95]`
+`[VERIFIED: schema/04_artifacts.sql:119-120]`
 
 ```sql
 constraint art_paid_has_generation check (
@@ -329,7 +329,7 @@ written as a single paragraph while fixing something else.
 
 - The paid/free **partition** is sound and total **as the schema states it today**: *free ⇔
   `generation_id is null`*, over exactly the five kinds `[VERIFIED: schema/03_generations.sql:264]`
-  `[VERIFIED: schema/04_artifacts.sql:94-95]`. It is the **address** that is unresolved, not the
+  `[VERIFIED: schema/04_artifacts.sql:119-120]`. It is the **address** that is unresolved, not the
   partition. ⟳ *Round 15 M5: this previously stated the partition as "exactly one of `generation_id` /
   `render_id`", naming a column that exists in no schema and whose home is now the brief. The
   two-column form belongs there; the one-column form is what these two tags actually verify.*
@@ -411,12 +411,12 @@ the ADR's own diagnosed failure — an instrument whose success line claims more
 sentence the round-16 dissolution rested on and never wrote.
 
 > `record_artifact` **inserts** `video_generations` — born `state='complete'` — and then inserts the
-> artifact row that FKs it, in one transaction. The FK `[VERIFIED: schema/04_artifacts.sql:85-86]`
+> artifact row that FKs it, in one transaction. The FK `[VERIFIED: schema/04_artifacts.sql:110-111]`
 > forces that order.
 
 The RPC already accepts every column required: `p_card`, `p_md_hash`, `p_doc_version_major`,
-`p_produced_at`, `p_kind` `[VERIFIED: schema/04_artifacts.sql:468-473]`. Today its generation write is
-an **UPDATE** `[VERIFIED: :556-565]` gated on `g.state = 'pending'` *and* `g.reserved_by = p_token` —
+`p_produced_at`, `p_kind` `[VERIFIED: schema/04_artifacts.sql:354-359]`. Today its generation write is
+an **UPDATE** `[VERIFIED: schema/04_artifacts.sql — that UPDATE is DELETED by T1; the INSERT that replaced it is at :442-447]` gated on `g.state = 'pending'` *and* `g.reserved_by = p_token` —
 **both deleted by this ADR**, so the function would not even resolve after the column drop. That UPDATE
 is **replaced**, not merely unfenced. A second writer stays safe through the existing
 `on conflict do nothing` + `completed_by_another` outcome `[VERIFIED: :576-583]` — MEASURED in round 17
@@ -428,15 +428,34 @@ the call because no row is ever created — and **MEASURED (T4)** every paid rec
 `[P0001] cannot mark summary as recorded — generation … is <absent>`.
 
 **`video_generations.state` survives, and becomes single-valued** ⟳ *(round 17 M2)*. With `pending`
-unreachable it always reads `'complete'`. It is **kept**, because five consumers still read it: the
-four completeness constraints (all written `state <> 'complete' or …`) and
-`video_artifacts_generation_complete` `[VERIFIED: schema/04_artifacts.sql:1023]` — which, once the GC
-floor predicate goes, is the **only** guard left between a record and a missing generation.
+unreachable it always reads `'complete'`, and T4 narrowed the CHECK to admit nothing else
+`[VERIFIED: schema/03_generations.sql:324-325]`.
+
+⟳ **Corrected by the implementation review (M1 / Codex Low).** This paragraph said the column is kept
+"because five consumers still read it: the four completeness constraints (all written
+`state <> 'complete' or …`)". **T4 deleted that disjunct from all five constraints**
+`[VERIFIED: schema/03_generations.sql:410-435]` — because with the domain single-valued it is
+constantly false, so the constraints now bind *unconditionally* — and no CHECK on the table references
+`state` at all any more. Four of the five cited consumers no longer exist, and this paragraph is the
+justification for keeping a column: a reason that has stopped being true is worse than no reason,
+because it reads as settled. The three real reasons, which are the ones the schema itself already
+carries `[VERIFIED: schema/03_generations.sql:305-322]`:
+
+- **the single-valued domain is what makes the five CHECKs unconditional** — the relaxation round 6 B5
+  granted the reservation is repaid rather than merely unused, and re-widening `state` fails *closed*
+  (a pending row would have to satisfy all five in full);
+- **`record_artifact` reads it to decide `completed_by_another`**
+  `[VERIFIED: schema/04_artifacts.sql:438, :463-465]`;
+- **`video_artifacts_generation_complete` selects it to tell present-and-complete from `<absent>`**
+  `[VERIFIED: schema/04_artifacts.sql:1176, :1186]` — which, once the GC floor predicate goes, is the
+  **only** guard left between a record and a missing generation, and `<absent>` is the branch T1
+  measured (`cannot mark summary as recorded — generation gG1 is <absent>`). Dropping the column
+  deletes that typed message and leaves a bare FK `[23503]` in its place.
 
 **NOT deleted — `video_artifacts_free_uq` stays until render addressing is settled.** ⟳ *Round 14 H3
 (Codex): this list said "deleted" while the render section said "replaced" — a flat contradiction
 inside one document.* It is now **neither**, and that is the honest position: it is the only thing
-keeping renders row↔blob **1:1** `[VERIFIED: schema/04_artifacts.sql:164-165]`, and with render
+keeping renders row↔blob **1:1** `[VERIFIED: schema/04_artifacts.sql:191-192]`, and with render
 addressing withdrawn there is no successor to replace it with. Deleting it now would leave renders
 with no uniqueness at all — strictly worse than today. It goes when the render ADR lands, not before.
 
@@ -451,10 +470,10 @@ premise.
 
 - **The GC floor's predicate dies, and needs no replacement — DELETE it (round 13 H1 → round 16 B1).**
   `video_generations_collectable` requires `g.state = 'complete'`
-  `[VERIFIED: schema/04_artifacts.sql:897]` — round 9's B1 fix, whose comment records the measurement:
+  `[VERIFIED: schema/04_artifacts.sql — the predicate is DELETED by T2; the view is now :918-928]` — round 9's B1 fix, whose comment records the measurement:
   *"collectable WHILE IN FLIGHT: 1 ; sweep collected 1 … Money spent, bytes queued for deletion, no
   error anywhere."* Deleting the `pending` artifact state leaves nothing that produces a `pending`
-  generation `[VERIFIED: schema/04_artifacts.sql:307-312 is the only producer]`, so the predicate goes
+  generation `[VERIFIED: schema/04_artifacts.sql — DELETED by T1; the ⛔ block recording what it was stands at :289-321]`, so the predicate goes
   **vacuously true**. That is retrospective B6's shape ("a guard that never started") arriving by
   *subtraction*, and the mutation harness would still score it load-bearing against a fixture no
   caller can produce — so **the dead predicate is removed from the view rather than left standing as
@@ -484,21 +503,21 @@ premise.
   convention:
 
   - `reserve_artifact_slot` is the **only** production INSERT into `video_generations`
-    `[VERIFIED: schema/04_artifacts.sql:308]` — every other `insert into video_generations` in the
+    `[VERIFIED: schema/04_artifacts.sql — DELETED by T1; the ⛔ block stands at :289-321. The successor claim — record_artifact is now the only inserter — is ASSERTED rather than stated: 05_assert.sql, the two T4/H1 blocks]` — every other `insert into video_generations` in the
     repo is a fixture in `05_assert.sql`. This ADR deletes that function.
   - It inserts `state = 'pending'`, and that state is the only thing making a contentless row legal for
     a **summary**. `state` is `not null default 'complete'`
-    `[VERIFIED: schema/03_generations.sql:291]`, and the completeness constraints are written
+    `[VERIFIED: schema/03_generations.sql:324]`, and the completeness constraints are written
     `state <> 'complete' or <requirement>`, so with `pending` unreachable they bind.
 
   ### ⚠ …but only `summary` is FORCED. The other three paid kinds are convention (round 17 H1, MEASURED)
 
   ⟳ *This previously said the constraints "demand `card`, `md_hash`, `doc_version_major` and
   `produced_at`" for every kind. **Three of the four are also gated `kind <> 'summary'`** —
-  `gen_card_complete` `[VERIFIED: schema/03_generations.sql:395]`, `gen_summary_has_format` `[:409-410]`,
-  `gen_summary_has_hash` `[:411-412]`. Only `gen_complete_has_produced_at` `[:394]` ranges over all
+  `gen_card_complete` `[VERIFIED: schema/03_generations.sql:411]`, `gen_summary_has_format` `[:425-426]`,
+  `gen_summary_has_hash` `[:427-428]`. Only `gen_complete_has_produced_at` `[:410]` ranges over all
   kinds, and `produced_at` is knowable before any Gemini call — `record_artifact` defaults it to `now()`
-  `[VERIFIED: schema/04_artifacts.sql:473]`.*
+  `[VERIFIED: schema/04_artifacts.sql:446]`.*
 
   **MEASURED (round 17, T1):** a `model`, `dig` or `digDeeper` row inserted with **only** `produced_at`
   is **ACCEPTED**; the same shape for `summary` is refused `[23514] gen_card_complete`. The repo already
@@ -508,7 +527,35 @@ premise.
   > **So the invariant must be carried, not inferred:** *no generation row is created before its paid
   > call completes.* For `summary` the constraints enforce it. For `model`, `dig` and `digDeeper`
   > **nothing does** — the implementing slice must either extend the constraints to those kinds or
-  > assert the rule. `model` is the sharp case: no job, no staging, its own serve lease, and an early
+  > assert the rule.
+
+  ### ✅ IMPLEMENTED (T4) — and the answer is "carried", with the reason measured
+
+  The implementing slice ran the measurement this section asked for, and **a constraint cannot close
+  the gap**: it searched every producer for a column that could *witness production* and found none.
+  A CHECK sees one row, and for `model`/`dig`/`digDeeper` **no value in that row is a function of the
+  paid output** — so there is nothing for a constraint to test. Extending `gen_card_complete` to those
+  kinds would have required a card they legitimately do not have.
+
+  So the fix ran the other way — rather than *requiring* a card of kinds that have none, the schema now
+  **forbids** one (`gen_card_is_summary_only`, `gen_major_is_summary_only`), which makes the taxonomy
+  exact without pretending to enforce something it cannot.
+
+  **What carries the invariant is one structural fact:** `record_artifact` is the only function that
+  inserts into `video_generations`, and it runs after the paid call. **The structural fact is the
+  guard, so the structural fact is what is tested** — an assertion now fails if a second inserter ever
+  appears.
+
+  **And the cost is measured rather than described.** A characterisation test records what a pre-call
+  generation for a non-summary kind actually does today — the paid record succeeds and the row is *not*
+  visible in `video_artifacts_current`, i.e. it buries its own paid bytes — and raises
+  `CHARACTERISATION STALE` if that ever changes. A gap that cannot be closed is at least a gap that
+  cannot move silently.
+
+  **`pending` is now unrepresentable**, not merely unproduced: `check (state in ('complete'))`. T2 had
+  noted the schema still *admitted* a hand-written pending row which, with the GC floor's predicate
+  gone, would have been collectable. That door is shut in the schema rather than by the absence of a
+  caller. `model` is the sharp case: no job, no staging, its own serve lease, and an early
   > row would reopen round 9's window with the floor already deleted and no assertion to go red.
 
   **Fifth instance of "name what the rule ranges over"** — after round 13 B1, round 14 H3, round 15 H3
@@ -528,7 +575,7 @@ premise.
 
   ### Therefore: nothing is collectable during the call, and `in_flight_until` is DELETED
 
-  `video_generations_collectable` `[VERIFIED: schema/04_artifacts.sql:878-900]` can only return rows
+  `video_generations_collectable` `[VERIFIED: schema/04_artifacts.sql:918-928]` can only return rows
   that exist. Round 9's B1 window — *"collectable WHILE IN FLIGHT … Money spent, bytes queued for
   deletion, no error anywhere"* — is closed **by the deletions themselves**.
 
@@ -576,7 +623,7 @@ premise.
   must be corrected in the same slice**.
 
   **Bounded, and named rather than hidden:** `summary_max_attempts` = 1
-  `[VERIFIED: schema/04_artifacts.sql:263-270]` and `max_serve_attempts` = 5
+  `[VERIFIED: schema/04_artifacts.sql — DELETED by T1; recorded in the ⛔ block at :309-313]` and `max_serve_attempts` = 5
   `[VERIFIED: 0012_serve_model_charge.sql:21]`, so the residual is at most one extra paid call per
   attempt bound — the same class as the reclaim residual the concern table already carries. It is
   recorded here because this ADR's falsifier #4 (*"a paid kind whose spend is not bounded by a
@@ -585,7 +632,7 @@ premise.
   §8's grace period is not a new mechanism — it is the one §8 already specifies, and it is uniform
   across kinds. **It is specified and NOT implemented**; see the concern table's evidence column.
 
-  Note this is **not** the age-floor-on-generations that `[VERIFIED: schema/04_artifacts.sql:893-896]`
+  Note this is **not** the age-floor-on-generations that `[VERIFIED: schema/04_artifacts.sql — that objection's text went with the GC floor predicate (T2); the surviving age/currency asymmetry is stated at :828-837]`
   rejects (*"a 90-day age predicate in the sweeper would have HIDDEN this while leaving the floor
   wrong"*). That objection is about masking a wrong **state floor on rows**; this is §8's original
   grace period on **orphan blobs**, a different mechanism for a different object. Recorded because
@@ -608,38 +655,59 @@ premise.
   `summary`/`dig` `[VERIFIED: lib/job-queue/summary-handler.ts:173-179]`. It was never the GC
   guarantee, and with the floor dissolved nothing pretends it is.
 - **The append-only trigger must be tightened in the same change, not after (M1).** It scopes
-  immutability by transition `[VERIFIED: schema/04_artifacts.sql:911-913]`, permitting
+  immutability by transition `[VERIFIED: schema/04_artifacts.sql:993 — T4 replaced the transition gate with `old.generation_id is not null`; both permissions are gone]`, permitting
   `pending → recorded` and `delete an expired pending`. With `pending` gone both are unreachable — but
   they are *permissions*, and an unreachable permission in the one trigger that makes history
   immutable is a fail-open branch waiting for someone to reintroduce the state. Delete both branches.
 - **The per-kind attempt ceiling is deleted with no successor, and the numbers disagree (M5).**
   `reserve_artifact_slot` bounds attempts per kind from `guardrail_config`
-  `[VERIFIED: schema/04_artifacts.sql:257-262]`. There is no row above for *"how many times may we pay
+  `[VERIFIED: schema/04_artifacts.sql — DELETED by T1; the reads stood in the ⛔ block at :289-321]`.
+  There is no row above for *"how many times may we pay
   for this slot"*. The candidates conflict: `jobs.max_attempts` defaults to **5**
-  `[VERIFIED: 0008_jobs_queue.sql:14]` while `summary_max_attempts` is **1**, a difference documented
-  as a deliberate product decision `[VERIFIED: schema/04_artifacts.sql:263-270]`. Deleting the
+  `[VERIFIED: 0008_jobs_queue.sql:14]` while `summary_max_attempts` is **1**, a
+  difference documented as a deliberate product decision. Deleting the
   artifact-layer bound silently promotes summaries from 1 to 5. **The implementing slice must state
   which number wins**; this ADR does not get to leave it implicit.
+
+  ⟳ **It did not state it, and for two commits the loss existed only as a comment — now tracked as
+  [`docs/backlog.md` #26](../backlog.md)** *(implementation review, M2)*. The slice declined the
+  decision **in writing** (04's ⛔ block: *"WHICH NUMBER WINS IS AN OPEN DECISION, not something this
+  file settles"*) and the assertion that enforced the bound — *"with `summary_max_attempts`=1 a
+  crashed summary slot is NOT retryable"* — was retired with the function it tested. Backlog #26
+  carries both numbers, three candidate resolutions, and the trigger: **close it before a real caller
+  reaches `record_artifact` for a `summary`**, i.e. before T5 (task #44). It is a spec regression
+  today and not yet a money regression — nothing outside `docs/` calls either function — and that is
+  why it was invisible, not why it is harmless.
 
 **Not addressed here:** direct `service_role` DML can still write these tables. With no fence to
 bypass, that stops being a hole in an authorization mechanism and becomes an ordinary "trusted role
 can write" property. Round 13 confirmed the residue is bounded: `service_role` bypasses **RLS**, not
-**triggers**, so `video_generations_freeze_trg` `[VERIFIED: schema/03_generations.sql:498-500]` and
+**triggers**, so `video_generations_freeze_trg` `[VERIFIED: schema/03_generations.sql:557-558]` and
 the append-only trigger still hold — *provided* the trigger is tightened per M1 above. Round 12's H1
 dissolves on that condition and not otherwise.
 
 ## Multi-source render provenance — SETTLED (round 13, H4)
+
+⟳ **"Settled" means the SHAPE is settled, not that a caller can build one** *(implementation review,
+L1)*. The table, the ranking rung and the GC reachability check are all set-shaped; **`record_artifact`
+is not** — it takes a scalar `p_source_generation_id` and writes `array[p_source_generation_id]`, so
+**no RPC caller can create a multi-source artifact today**. The code says so where it matters rather
+than only here: the two-source fixture in `05_assert.sql` is written by direct DML and its comment
+calls that *"an honest gap rather than a choice of style"*, and the statement-level INSERT enforcer is
+deliberately built to permit the multi-row first write the day a producer appears. Whoever adds that
+producer changes the signature; until then the heading and the code disagree only about tense, and
+this paragraph is what stops the heading from reading as "and it works".
 
 The first draft deferred this to the implementing slice while saying it must not be discovered during
 implementation. Those two are incompatible, and round 13 showed why: `source_generation_id` is
 load-bearing in two places that both read it as a **scalar**, so a set is a schema change, not a
 detail.
 
-- **The ranking view** `[VERIFIED: schema/04_artifacts.sql:814-816]` —
+- **The ranking view** `[VERIFIED: schema/04_artifacts.sql:767-777 — T3 replaced the scalar comparison with the set-shaped `not exists`]` —
   `(a.slot = 'summary' or a.source_generation_id is null or a.source_generation_id is not distinct
   from s.generation_id) desc`. With a set, *"is this render current w.r.t. its sources"* becomes *"are
   **all** its sources current"*, which one column cannot express and one `desc` cannot rank.
-- **The FK** `[VERIFIED: schema/04_artifacts.sql:91-92]` — MATCH SIMPLE, added by round 5's M5
+- **The FK** `[VERIFIED: schema/04_artifacts.sql:242-243 — T3 moved it to `vas_source_generation_fk`, per SOURCE]` — MATCH SIMPLE, added by round 5's M5
   precisely so provenance cannot name a generation that does not exist.
 
 **Decision: address and provenance are different questions, and only ONE of them is in scope here.**
@@ -664,7 +732,7 @@ concern (what may be collected) rather than an addressing one.*
    either.* The live chain is
    `profiles → workspaces → workspace_videos → video_generations`, all `on delete cascade`
    `[VERIFIED: schema/01_workspaces.sql:13]` `[VERIFIED: schema/03_generations.sql:49]`
-   `[VERIFIED: schema/03_generations.sql:362-363]`. So once **any** render carried a provenance row,
+   `[VERIFIED: schema/03_generations.sql:360-361]`. So once **any** render carried a provenance row,
    `delete from profiles` failed — the account-erasure path, which is a real caller, not a
    hypothetical.
    `RESTRICT` had been chosen to stop GC collecting a still-referenced generation. **That protection
@@ -685,9 +753,9 @@ concern (what may be collected) rather than an addressing one.*
    them **this fix reproduces the exact defect it was written beside**:
 
    **(a) `record_artifact` is the ONLY writer of provenance, and it survives this ADR.** It takes
-   `p_source_generation_id` `[VERIFIED: schema/04_artifacts.sql:470]` and writes it with a
+   `p_source_generation_id` `[VERIFIED: schema/04_artifacts.sql:356]` and writes it with a
    `coalesce(p_source_generation_id, v_src)` carry-forward
-   `[VERIFIED: schema/04_artifacts.sql:661-671, esp. :663]`. **Drop the column and leave the RPC
+   `[VERIFIED: schema/04_artifacts.sql — the `coalesce` carry-forward is DELETED by T3; omission now carries forward STRUCTURALLY, :547-607]`. **Drop the column and leave the RPC
    unchanged and `video_artifact_sources` is always empty** — at which point *both* new guards below
    go **vacuously true**: the ranking rung and the GC `not exists`.
 
@@ -707,24 +775,24 @@ concern (what may be collected) rather than an addressing one.*
    > comparison inside `record_artifact`) — **not** by the moved append-only branch.
 
    That is what the cited carry-forward actually does: `coalesce(p_source_generation_id, v_src)` with
-   `v_src` read from the same (slot, generation) row `[VERIFIED: schema/04_artifacts.sql:654, :663]`
+   `v_src` read from the same (slot, generation) row `[VERIFIED: schema/04_artifacts.sql — `v_src` and its second read are DELETED by T3; see the note at :571-581]`
    means **omission = keep what is recorded**, which is how a re-record avoids tripping the
    immutability raise today — it re-states an identical value, so `is distinct from` is false. The
    carry-forward is an argument for **idempotent re-statement**, not for replacement. "Replace" on the
    omission path would have **wiped** the source set, making both new guards vacuously true — the very
    failure (a) is written to prevent.
 
-   **(b) Provenance must stay append-only.** `[VERIFIED: schema/04_artifacts.sql:969-973]` — the
+   **(b) Provenance must stay append-only.** `[VERIFIED: schema/04_artifacts.sql:1071-1084 — T3 moved the branch onto `video_artifact_sources`]` — the
    append-only trigger raises *"the PROVENANCE of a % paid row is immutable"* on any change to
    `source_generation_id`. A child table with `on delete cascade` on both FKs and **no trigger of its
    own** makes provenance freely insertable and deletable, in the ADR titled *"artifacts are an
    append-only log."* **That trigger branch moves onto `video_artifact_sources`** — and it is **NOT
    sufficient on its own.** ⟳ *Round 17 H3, MEASURED: that branch is installed `before update or delete`
-   `[VERIFIED: schema/04_artifacts.sql:995-997]`, and a re-record naming a different source is an
+   `[VERIFIED: schema/04_artifacts.sql:1085-1087]`, and a re-record naming a different source is an
    **INSERT**, which fires no such trigger — the probe got a silent **union**, neither the same set nor
    a raise. The schema states the rule twice in its own comments: "a constraint governs STATES, a
    trigger governs TRANSITIONS, and an INSERT is a state with no transition"
-   `[VERIFIED: schema/04_artifacts.sql:1010-1012]`. The round-16 fix assigned an invariant to the one
+   `[VERIFIED: schema/04_artifacts.sql:1012]`. The round-16 fix assigned an invariant to the one
    mechanism shape that structurally cannot see the operation that violates it — "a guard that never
    started", the signature this ADR names three times.*
 
@@ -732,14 +800,14 @@ concern (what may be collected) rather than an addressing one.*
    `:360-362`, `:453`. `:453` is the executable proof of (b); deleting it would remove the evidence
    that the guard works rather than the guard.
 
-   `art_summary_has_no_source` `[VERIFIED: schema/04_artifacts.sql:107]` goes with the column, and its
+   `art_summary_has_no_source` `[VERIFIED: schema/04_artifacts.sql:1136-1152 — T3 made it a constraint trigger over the join table]` goes with the column, and its
    replacement **cannot be a CHECK** — a CHECK cannot reference another table — so it becomes a
    constraint trigger. That change of mechanism is safe for the reason `:104-106` gives for having the
    CHECK at all (*"service_role bypasses policies, not constraints"*): `service_role` does not bypass
    triggers either. Stated rather than assumed (round 14 M3).
 
 3. **"Current" is defined per source kind** ⟳ *(round 15 M3)*. The rung being replaced compares
-   `source_generation_id` against `video_summary_current` `[VERIFIED: schema/04_artifacts.sql:814-816]`,
+   `source_generation_id` against `video_summary_current` `[VERIFIED: schema/04_artifacts.sql:767-777 — T3 replaced the scalar comparison with the set-shaped `not exists`]`,
    which has one row per (workspace, video) — **no row at all for a `dig` generation**. So a
    `digDeeper` render's sources have no defined currency under the naive rewrite, which is precisely
    the multi-source case the join table exists for. **Only summary-kind sources participate in the
@@ -756,15 +824,26 @@ concern (what may be collected) rather than an addressing one.*
 
 A hash alone cannot answer *"which generations does this render reference"* without already knowing
 the answer — and **GC needs that answer**. `video_generations_collectable`
-`[VERIFIED: schema/04_artifacts.sql:898-900]` currently checks only an artifact's *own* generation, so
+`[VERIFIED: schema/04_artifacts.sql:918-928]` currently checks only an artifact's *own* generation, so
 a render referencing a summary generation does not protect it from collection today either. The join
 table closes that hole; a hash cannot.
 
 **Consequences to write into the implementing slice, not discover in it:**
 
 - the ranking rung becomes `not exists (select 1 … where source not current)`;
-- `video_generations_collectable` gains a second `not exists` over the join table;
-- `art_summary_has_no_source` `[VERIFIED: schema/04_artifacts.sql:107]` becomes a cardinality-zero
+- `video_generations_collectable` gains a second `not exists` over the join table.
+  ⟳ **And that `not exists` is a PERMANENT PIN, not a retention delay — [`docs/backlog.md` #27](../backlog.md)**
+  *(implementation review, H3)*. The implementing slice's comment claimed §8's retention clock would
+  eventually release a pinned source; **MEASURED 2026-08-10, no such release exists** — the provenance
+  row cannot be deleted while its artifact lives, the paid artifact cannot be deleted at all, and the
+  sweeper selects *through* the view, so a summary generation stays pinned even after the only render
+  built from it has itself been swept. Since `model` is generated on first serve, that is every served
+  document. The comment is corrected and the pin is now asserted as a **characterisation** in
+  `05_assert.sql` (it goes RED if someone implements the release, which is the intended signal); the
+  retention decision itself is open, with the measured candidate predicate recorded in #27. It is not
+  taken here because deciding when paid bytes become deletable is a retention rule, and this ADR did
+  not decide one;
+- `art_summary_has_no_source` `[VERIFIED: schema/04_artifacts.sql:1136-1152 — T3 made it a constraint trigger over the join table]` becomes a cardinality-zero
   rule on the join table rather than a NULL check.
 
 ## What would falsify this
