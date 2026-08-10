@@ -627,28 +627,47 @@ create trigger forbid_collecting_current_trg
 -- appears here (measured). That is correct under the 2026-08-06 retention decision only because the
 -- 90-day clock lives in the sweeper, so a sweeper that forgets it deletes paid bytes the user can
 -- still see. Stated here rather than in §8 because this view is what a future sweeper author will
--- read. Note the asymmetry with `state = 'complete'` above: currency and completeness are
--- CORRECTNESS and belong in the floor; age is a POLICY and does not.
+-- read. The asymmetry that puts it there survives the deletion below: CURRENCY is correctness and
+-- belongs in the floor; AGE is a tunable policy and does not.
+--
+-- ── ⛔ ADR-0007 (round 13 H1 → round 16 B1) — `and g.state = 'complete'` IS DELETED FROM THIS VIEW ──
+-- It was ROUND 9's B1 fix, and it was RIGHT when it was written. Both round-8 reviewers found the
+-- defect independently: this view had copied `video_artifacts_current`'s currency test faithfully
+-- INCLUDING its blind spot — `current` requires `state = 'recorded'`, so an IN-FLIGHT reservation had
+-- no current row and its generation was offered to the sweeper while the paid call was still running.
+-- MEASURED end to end, no attacker and no second worker:
+--   collectable WHILE IN FLIGHT: 1 ; sweep collected 1 ; holder records -> recorded_as_holder
+--   gen complete, artifact recorded, and video_artifacts_current rows for that video: 0
+-- Money spent, bytes queued for deletion, no error anywhere.
+--
+-- ⚠ IT IS REMOVED BECAUSE IT BECAME VACUOUS, NOT BECAUSE IT WAS WRONG. ADR-0007 deletes the `pending`
+-- artifact state and `reserve_artifact_slot`, which was the only producer of a non-`complete`
+-- generation; `state` is `not null default 'complete'` and nothing else writes it, so no REACHABLE
+-- row can fail it. That is retrospective B6's shape — a guard that never starts — arriving by
+-- SUBTRACTION, so it is deleted rather than left standing as decoration.
+--
+-- ⚠ "VACUOUS" MEANS UNREACHABLE, NOT UNUSED, AND THE DIFFERENCE IS MEASURABLE. Deleting it moved
+-- 05's C3 sweep from 13 rows to 15: `gPEND` (G3) and `gG10` (G10) are pending generations the
+-- assertions now build by DIRECT DML, precisely because no RPC can produce one. Both are collectable
+-- now and neither can bury a byte — `video_artifacts_generation_complete` refuses to record or detach
+-- an artifact against a non-complete generation, so a pending generation never has content to lose.
+-- Left in place, this predicate would have kept scoring load-bearing against exactly those two
+-- unreachable fixtures: the harness cannot tell "excludes rows" from "excludes rows a caller can
+-- reach", and that is the reason to read it here rather than trust the mutation's colour.
+--
+-- ⚠ AND IT NEEDS NO SUCCESSOR — DO NOT ADD ONE. `record_artifact` creates the generation row AFTER
+-- the paid call returns, so while that call runs there is no row for this view to return: round 9's
+-- window is closed by subtraction, not covered by a replacement. Rounds 14-16 designed three covers
+-- (a per-kind table, a `serve_model_charge` lease, a `video_generations.in_flight_until` marker) and
+-- withdrew all three; round 16 measured that the marker had no row to be written to. What is NOT
+-- closed is the BLOB — bytes are written before any row references them, and §8's grace period is the
+-- specified, unimplemented mechanism for that orphan. It is not this view's job.
+-- Its paired assertion (05_assert.sql, R9-3) and its named mutation in `mutate-schema.py`
+-- ("B1: the collectable floor drops `state = complete`") are retired with it, not orphaned.
 create view video_generations_collectable with (security_invoker = true) as
 select g.*
   from video_generations g
  where not g.body_collected
-   -- ⟳ ROUND 9 B1 — AND THE GENERATION MUST BE FINISHED. Both round-8 reviewers found this
-   -- independently, and it is round 8's OWN fix reproducing the defect it was written to remove:
-   -- this view was added to stop the trigger aborting a sweep, and it copied the currency test
-   -- faithfully INCLUDING its blind spot. `video_artifacts_current` requires `state = 'recorded'`,
-   -- so an IN-FLIGHT reservation has no current row and its generation was offered to the sweeper
-   -- while the paid call was still running. MEASURED end to end, no attacker and no second worker:
-   --   collectable WHILE IN FLIGHT: 1 ; sweep collected 1 ; holder records -> recorded_as_holder
-   --   gen complete, artifact recorded, and video_artifacts_current rows for that video: 0
-   -- The worker's own record SUCCEEDS and reports success; the row is invisible forever, because
-   -- `not coalesce(g.body_collected, false)` now excludes it. Money spent, bytes queued for
-   -- deletion, no error anywhere — shape #7 and shape #5 on the one path with no undo.
-   -- Item 3 introduced `state` for exactly this distinction, and the view written a day later did
-   -- not consult it. Shape #10.
-   -- ⚠ A 90-day age predicate in the sweeper would have HIDDEN this while leaving the floor wrong,
-   -- which is why the fix belongs here and not in the retention heuristic.
-   and g.state = 'complete'
    and not exists (select 1 from video_artifacts_current c
                     where c.workspace_id = g.workspace_id and c.video_id = g.video_id
                       and c.generation_id = g.generation_id);

@@ -288,6 +288,16 @@ create table video_generations (
   -- below optional for anyone who simply omitted the column — a fail-open default in the constraints
   -- that round 4's J1-2 fixed for being fail-open. The relaxation is strictly opt-in, and the only
   -- caller that opts in is reserve_artifact_slot.
+  --
+  -- ⟳ ADR-0007 (T1 deleted the opting-in caller; T2 depends on it) — THERE IS NO LONGER ANY PRODUCER
+  -- OF `pending`. `reserve_artifact_slot` is gone, `record_artifact` INSERTs `state` defaulted to
+  -- `complete`, and `video_generations_freeze` forbids leaving complete — so the four CHECKs gated on
+  -- `state <> 'complete'` now always bind, and `video_generations_collectable`'s `state = 'complete'`
+  -- predicate went vacuous and was DELETED (04_artifacts.sql). ⚠ The CHECK below still ADMITS
+  -- 'pending': single-valued here is the absence of a producer, not a constraint. A hand-written
+  -- `insert … state='pending'` is still legal and, with the floor's predicate gone, still collectable
+  -- — the rolled-back-probe lesson exactly (05_assert.sql: "is this refused?" is not "can a caller BE
+  -- here?"). Narrowing the CHECK is NOT T2's to do; it belongs with T4's per-kind invariant.
   state             text not null default 'complete'
                     check (state in ('pending','complete')),
   -- ⛔ `reserved_by uuid` STOOD HERE AND IS DELETED BY ADR-0007 (T1). It was round 7 H2's fence on

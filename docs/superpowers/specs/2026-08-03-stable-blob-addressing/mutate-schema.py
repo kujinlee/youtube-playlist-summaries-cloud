@@ -428,10 +428,23 @@ MUTATIONS = [
      "a FREE row may not carry a key under another workspace", ART),
 
     # ── ⟳ ROUND 9: the three schema fixes both reviewers' findings converged on ──────
-    ("B1: the collectable floor drops `state = complete` (GC buries in-flight paid work)",
-     "   and g.state = 'complete'\n",
-     "",
-     "IN-FLIGHT generation is collectable", ART),
+    # ⛔ RETIRED BY ADR-0007 (round 13 H1 → round 16 B1) — "B1: the collectable floor drops
+    # `state = complete` (GC buries in-flight paid work)" (round 9). It removed the predicate from
+    # `video_generations_collectable` and expected the R9-3 assertion to fail with "IN-FLIGHT
+    # generation is collectable": with a reservation in flight the generation had no current row,
+    # so the sweeper was offered a generation whose paid call was still running.
+    # ⚠ RETIRED BECAUSE IT WENT GREEN, AND GREEN IS NOW THE CORRECT RESULT. That is the whole reason
+    # it is retired rather than repaired. ADR-0007 deletes `reserve_artifact_slot` and the `pending`
+    # state, so nothing produces a non-`complete` generation and removing the predicate can no longer
+    # change which rows the view returns. A mutation that cannot alter behaviour proves nothing, and
+    # left in place its anchor would vanish with the predicate and the harness would report INVALID —
+    # which this project has measured reads as *untested* rather than *retired*.
+    # ⚠ AND NO SUCCESSOR MUTATION REPLACES IT, because there is no successor guard to cover: no
+    # `video_generations` row exists while the paid call runs (`record_artifact` creates it after),
+    # so the window is closed by subtraction. Rounds 14-16 costed three covering mechanisms and
+    # withdrew all three. An entry here would be the first place one gets silently reintroduced.
+    # The currency half of the same view is still mutated — "the collectable view stops excluding
+    # CURRENT generations" above — so the floor itself remains covered.
 
     ("H4: the produced_at tolerance removed (zero-width bound against a txn timestamp)",
      "new.produced_at > now() + interval '5 minutes'",

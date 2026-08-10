@@ -1211,7 +1211,7 @@ end $$;
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR9a' from t_ws;
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR9b' from t_ws;
 
--- ⛔ RETIRED BY ADR-0007 (and its remaining half belongs to T2) — R9-3, round 8 B1:
+-- ⛔ RETIRED BY ADR-0007 (T1 retired this assertion; T2 completed the retirement) — R9-3, round 8 B1:
 -- "GC MAY NOT COLLECT A GENERATION THAT IS STILL BEING PAID FOR." `video_artifacts_current` requires
 -- state='recorded', so an IN-FLIGHT reservation had no current row and was offered to the sweeper;
 -- the worker then recorded SUCCESSFULLY and its row was invisible forever. MEASURED end to end:
@@ -1232,9 +1232,13 @@ insert into workspace_videos (workspace_id, video_id) select id, 'vidR9b' from t
 --
 -- The paired `g.state = 'complete'` predicate in `video_generations_collectable`, its named mutation
 -- in `mutate-schema.py` ("B1: the collectable floor drops `state = complete`") and this assertion
--- are ONE retirement. T2 owns the first two; leaving the mutation anchored on a deleted line makes
--- the harness report INVALID, which this project has MEASURED reads as *untested* rather than
--- *retired*.
+-- were ONE retirement, and T2 finished it: the predicate is deleted from the view
+-- (04_artifacts.sql, the ⛔ block above `create view video_generations_collectable`) and the mutation
+-- is retired in place rather than left anchored on a deleted line — an orphaned anchor makes the
+-- harness report INVALID, which this project has MEASURED reads as *untested* rather than *retired*.
+-- The mutation was reporting ❌ GREEN before it was retired, and GREEN was the CORRECT result: with
+-- no producer of a `pending` generation, removing the predicate cannot change which rows the view
+-- returns. A mutation that can no longer alter behaviour proves nothing.
 --
 -- The surviving half — a recorded artifact IS visible in `current` — is asserted at G5 and below.
 insert into workspace_videos (workspace_id, video_id) select id, 'vidR9c' from t_ws;
