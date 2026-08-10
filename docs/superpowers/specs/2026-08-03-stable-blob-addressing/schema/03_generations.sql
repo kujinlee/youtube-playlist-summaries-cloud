@@ -290,56 +290,21 @@ create table video_generations (
   -- caller that opts in is reserve_artifact_slot.
   state             text not null default 'complete'
                     check (state in ('pending','complete')),
-  -- ⟳ ROUND 7 H2 — WHO RESERVED THIS GENERATION. The generation UPDATE inside record_artifact was
-  -- fenced on NOTHING — no token, no state, no slot — while every other write in this design is
-  -- fenced. MEASURED: W2 named W1's generation, completed it with W2's production time, and W1 was
-  -- then locked out of its own paid work FOREVER by the freeze trigger below
-  -- ("the CONTENT of complete generation gW1 is immutable"). That is item 3's freeze silently
-  -- revoking item 4's user decision that a writer which already paid always records.
+  -- ⛔ `reserved_by uuid` STOOD HERE AND IS DELETED BY ADR-0007 (T1). It was round 7 H2's fence on
+  -- the generation UPDATE inside `record_artifact` — "who reserved this generation" — and the last
+  -- survivor of FIVE successive credentials (round 7's token, round 9's `reserved_by_worker` /
+  -- `reserved_by_job` pair, round 10's slot disjunct, round 11's token-alone, round 12's re-point).
+  -- Six consecutive rounds produced a Blocking or High in that seam, four of them introduced by the
+  -- previous round's own fix. ADR-0007 deletes the mechanism rather than the sixth credential:
+  -- `record_artifact` no longer UPDATEs a pending generation, it INSERTs a complete one, and
+  -- `on conflict do nothing` + `completed_by_another` is what keeps a second writer safe.
   --
-  -- The token is the RESERVER's, captured at reserve time and never rotated by a later reclaim —
-  -- which is what makes it survive P22: a writer whose SLOT was reclaimed still holds the token that
-  -- reserved its own generation, so it can still complete it and record. Fencing on the artifact row
-  -- instead would have broken exactly that case.
-  reserved_by       uuid,
-  -- ⟳ ROUND 11 (round 10 B1/H1) — THERE IS NO SECOND CREDENTIAL, AND REMOVING IT IS THE FIX.
-  --
-  -- Round 9 added `reserved_by_worker` / `reserved_by_job` here so a restarted worker could prove
-  -- ownership after losing its token. Round 10 measured that failing in BOTH directions, again:
-  --
-  --   REPLAYABLE — both columns live in the row being fenced, and `video_generations` grants
-  --     `select` to `service_role`, the same role that may call `record_artifact`. So an attacker
-  --     READS the credential and completes the victim's generation. Measured:
-  --       ATTACKER reads: worker=worker-VICTIM job=1ab8a512-…  ->  recorded_after_token_loss
-  --       md_hash now SHA_ATTACKER, while the victim paid for SHA_REAL
-  --   AND STILL UNUSABLE — the premise was false. `worker/main.ts:69` is
-  --       `${os.hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`
-  --     a fresh uuid and pid minted at PROCESS START, exactly as volatile as the token it replaced;
-  --     and `sweep_expired_leases` nulls `locked_by`/`lease_token` and moves the job off `active`,
-  --     so "find my job by locked_by = me and status = active" returns nothing precisely when
-  --     recovery is needed.
-  --
-  -- ⚠ AND THE REQUIREMENT ITSELF WAS NOT REAL — which is why the answer is deletion, not a third
-  -- credential. The party that holds paid bytes ALWAYS still holds its token:
-  --   * a process that crashed lost the Gemini result from memory too, so it has nothing to record;
-  --   * a worker that loses its lease STOPS — `lib/job-queue/worker-runner.ts` heartbeats every
-  --     third of a lease and calls `leaseLost.abort()`, composed into the handler's AbortSignal;
-  --   * and there are NO callers yet: `reserve_artifact_slot` / `record_artifact` / `generation_id`
-  --     appear nowhere under `worker/`, `lib/job-queue/` or `lib/cloud-sync/`.
-  -- Rounds 7 and 9 each built a fallback for a caller that cannot occur, and each fallback was the
-  -- round's worst finding. The token alone is unguessable, is held by exactly the party with the
-  -- bytes, and is stored nowhere a caller reads it as a credential.
-  --
-  -- ⚠ THE CONDITION IS NOW A RULE ABOUT CALLERS, and it belongs in the spec (§ "the caller's
-  -- obligation"): a worker MUST hold its reservation token for the life of the job, and a worker
-  -- that cannot MUST abandon rather than record. `worker-runner` already behaves this way; when the
-  -- cloud caller is written, assert it there.
-  --
-  -- ⚠ HOW THIS ERROR HAPPENED, because the lesson outlived the code: "worker_id is stable config"
-  -- was written into this file as a fact and was never read from `worker/main.ts`. Every instrument
-  -- this spec owns points at the SCHEMA, and the false premise was about code outside it. The rule
-  -- that would have caught it: QUOTE THE CODE YOU RELY ON, DO NOT CHARACTERISE IT — quoting forces
-  -- a read, characterising lets you write from memory.
+  -- ⚠ TWO LESSONS OUTLIVE THE COLUMN, so they are kept rather than deleted with it:
+  --   * QUOTE THE CODE YOU RELY ON, DO NOT CHARACTERISE IT. Round 9's pair rested on "worker_id is
+  --     stable config", written into this file as a fact and never read from `worker/main.ts:69`,
+  --     which mints it per PROCESS as `${os.hostname()}-${process.pid}-${randomUUID().slice(0,8)}`.
+  --   * A FENCE WRONG IN BOTH DIRECTIONS IS ASKING FOR THE WRONG CREDENTIAL, never for a different
+  --     threshold. Round 8 measured the round-7 fence too permissive AND too strict in one round.
   card              jsonb,
   doc_version_major int,             -- rule 13's format rung. Round 4 J3-2: ranked on, never defined.
   -- NULLABLE while pending — nothing has been produced yet, and a `not null` here is what forced a

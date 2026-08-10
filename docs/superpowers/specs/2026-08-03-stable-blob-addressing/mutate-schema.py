@@ -57,9 +57,17 @@ MUTATIONS = [
      "",
      "RECORDED row carrying a detached_at", ART),
 
-    ("trigger gate narrowed back to recorded-only",
-     "  if old.state in ('recorded','detached') and old.generation_id is not null then",
-     "  if old.state = 'recorded' and old.generation_id is not null then",
+    # ⟳ ADR-0007 — RE-ANCHORED, NOT RETIRED, AND THE DIRECTION FLIPPED. The gate used to read
+    # `if old.state in ('recorded','detached') and old.generation_id is not null then`, and this
+    # mutation RESTORED round 6 B3/H1's `old.state = 'recorded'` — the version under which a detached
+    # row was completely unprotected and every append-only guarantee was reachable in two statements.
+    # ADR-0007 deleted the two permitted transitions that clause carried, so the gate is now
+    # `old.generation_id is not null` alone. The defect it protected against is unchanged and still
+    # reachable, so the mutation now ADDS the narrowing instead of restoring it. Same rule, same
+    # assertions (the DETACHED-paid-row negatives), new anchor.
+    ("trigger gate narrowed back to recorded-only (round 6 B3/H1)",
+     "  if old.generation_id is not null then",
+     "  if old.generation_id is not null and old.state = 'recorded' then",
      "DETACHED paid row", ART),
 
     ("freeze: only the PROVENANCE clause removed (Codex H5)",
@@ -121,36 +129,52 @@ MUTATIONS = [
      "select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text",
      "select encode(extensions.digest('[]', 'sha256'), 'hex')::text",
      "constant moved", GEN),
-    # ── item 4: the reservation protocol (round 6 H5 / Codex B2) ─────────────────
-    ("video_artifacts_inflight_uq: live-lease-first classification inverted (exhausted before busy)",
-     """  if v_row.lease_expires_at > now() then
-    return query select 'busy'::text, null::uuid, v_row.lease_attempts; return;
-  end if;
-""",
-     "",
-     "LIVE lease at the attempt bound reported", ART),
+    # ── ⛔ item 4: the reservation protocol (round 6 H5 / Codex B2) — RETIRED BY ADR-0007 ─────────
+    # SEVEN mutations stood here. Their anchors went with `reserve_artifact_slot`,
+    # `renew_artifact_lease`, the `pending` state, the lease columns and the two `pending`
+    # biconditional CHECKs. They are listed by what each PROVED rather than deleted silently,
+    # because in this harness a dangling anchor reports INVALID and INVALID reads as *untested*:
+    #
+    #   "video_artifacts_inflight_uq: live-lease-first classification inverted" (round 6 H5)
+    #       At attempts = max AND a live lease, the answer had to be `busy`, not `exhausted` — the
+    #       ONLY case where the two orderings differ. The whole suite stayed GREEN under this
+    #       mutation until the assertion for it existed, which is why it was written.
+    #   "the attempt bound removed from the reclaim predicate" (round 6 H5)
+    #       A reclaim past the per-kind `dig_max_attempts` was refused.
+    #   "the attempt increment made non-durable (reset instead of bumped)" (round 6 H5)
+    #       The count survived a reclaim, because the increment lived in the statement that took
+    #       the slot rather than in a separate update the next caller could reset.
+    #   "renewal not fenced by the token (anyone may renew)" (round 6 H5)
+    #   "the renewal ceiling removed (a hung worker renews forever)" (round 6 H5)
+    #       The two halves of `renew_artifact_lease`: a stranger got `lost`, and a live holder could
+    #       not renew past `max_duration_seconds`.
+    #   "art_pending_has_token dropped" / "art_pending_has_reserved_at dropped" (round 6 H5)
+    #       Biconditionals on `state = 'pending'` over columns that no longer exist. Their negatives
+    #       are retired in 05 for the same reason, and replaced there by the stronger claim: a row
+    #       can no longer BE pending.
+    #
+    # ⚠ ONE OF THE SEVEN IS A COVERAGE LOSS, NOT A RETIREMENT, AND SAYING SO IS THE POINT.
+    # `video_artifacts_inflight_uq` was also the single-flight guard for the `model` serve path, and
+    # 04's tombstone names the successor that has NOT been built (`doc_key` re-keyed to
+    # `(workspace_id, video_id)`). No mutation can cover that here: the mechanism lives in
+    # `supabase/migrations/`, outside this schema and outside this suite's reach.
+    #
+    # ⚠ AND TWO MORE ARE RE-ANCHORED RATHER THAN RETIRED — the two entries immediately below.
 
-    ("the attempt bound removed from the reclaim predicate",
-     "       and public.video_artifacts.lease_attempts   < v_max",
-     "       and true",
-     "past dig_max_attempts", ART),
-
-    ("the attempt increment made non-durable (reset instead of bumped)",
-     "       lease_attempts       = public.video_artifacts.lease_attempts + 1,",
-     "       lease_attempts       = 1,",
-     "attempt bound did not survive reclaim", ART),
-
-    ("renewal not fenced by the token (anyone may renew)",
-     "     and state = 'pending' and lease_token = p_token\n     and reserved_at > now()",
-     "     and state = 'pending' and (lease_token = p_token or true)\n     and reserved_at > now()",
-     "STRANGER renewed the lease", ART),
-
-    ("the renewal ceiling removed (a hung worker renews forever)",
-     "     and reserved_at > now() - make_interval(secs => v_ceiling);",
-     "     and true;",
-     "renewed past the ceiling", ART),
-
-    ("video_artifacts_paid_uq: record refuses when the token is stale (H5's declined fix)",
+    # ⟳ ADR-0007 RE-ANCHORED. This was "video_artifacts_paid_uq: record refuses when the token is
+    # stale (H5's declined fix)". Round 6 H5 proposed making `record_artifact` refuse a writer whose
+    # token had gone stale; the fix was DECLINED because the charge happens at reserve time, so
+    # refusing the loser's record discards paid work without preventing the cost. There is no token
+    # and no staleness left — but the DECISION that mutation guarded is still live and still
+    # load-bearing. 04 states it in its own words ("THE APPEND — and it never refuses a writer its
+    # own paid work"), and ADR-0007's whole dissolution rests on it: writers do not contend because
+    # the append accepts all of them. So the mutation still injects a refusal into the append; only
+    # the anchor moved to the statement that survived, which no longer clears any lease column.
+    # An early `return` makes the real one below unreachable, which is exactly the intent. The
+    # anchor deliberately stops at the statement — extending it through the trailing comment is what
+    # broke it when round 7 rewrote this block, and an anchor that spans prose is an anchor that
+    # breaks every time someone explains themselves.
+    ("record_artifact refuses instead of appending (round 6 H5's declined fix)",
      """  insert into public.video_artifacts
     (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
      source_generation_id, start_sec, end_sec)
@@ -160,38 +184,30 @@ MUTATIONS = [
   on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
   do update set
        state                = 'recorded',
-       lease_expires_at     = null,
-       lease_token          = null,
-       reserved_at          = null,
        source_generation_id = excluded.source_generation_id,
        start_sec            = excluded.start_sec,
        end_sec              = excluded.end_sec;""",
-     # An early `return` makes the real one below unreachable, which is exactly the mutation's
-     # intent. The anchor deliberately stops at the statement — extending it through the trailing
-     # comment is what broke it when round 7 rewrote this block, and an anchor that spans prose is
-     # an anchor that breaks every time someone explains themselves.
      "  return 'refused';",
-     "PAID work was discarded", ART),
+     "the first writer of a slot got", ART),
 
-    ("art_pending_has_token dropped",
-     "  constraint art_pending_has_token check ((state = 'pending') = (lease_token is not null)),\n",
-     "",
-     "NO TOKEN", ART),
-
-    ("art_pending_has_reserved_at dropped",
-     "  constraint art_pending_has_reserved_at check ((state = 'pending') = (reserved_at is not null)),\n",
-     "",
-     "NO reserved_at", ART),
-
-    ("the idempotency short-circuit removed",
-     """  if exists (select 1 from public.video_artifacts
-              where workspace_id = p_ws and video_id = p_video and slot = p_slot
-                and generation_id is not distinct from p_generation_id
-                and state in ('recorded','detached')) then
-    return query select 'already_recorded'::text, null::uuid, null::int; return;
-  end if;
-""",
-     "",
+    # ⟳ ADR-0007 RE-ANCHORED, AND IT CHANGES OWNER. This was "the idempotency short-circuit removed",
+    # which deleted `reserve_artifact_slot`'s `already_recorded` early return and expected a raw
+    # [23505] on `video_artifacts_paid_uq`. The entry point is gone; the QUESTION it answered is not,
+    # and `record_artifact` now answers it itself through round 7 B1's `on conflict … do update`
+    # (05 says so out loud: "it is the same word, because it is the same question").
+    # ⚠ AND THIS CLOSES A REAL HOLE RATHER THAN PRESERVING A NOMINAL ONE. Round 7 B1 — a worker
+    # retrying its own record collided with its own row, [23505] instead of a typed outcome, shape #8
+    # on the money path — never had a mutation of its own. It was covered only incidentally, by the
+    # ANCHOR of the entry above, which happened to span the `do update` while testing something else.
+    # Making the paid append blind tests it directly, and the expected verdict is the original one.
+    ("the paid append made blind (round 7 B1 — a retry collides with its own row)",
+     """  on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
+  do update set
+       state                = 'recorded',
+       source_generation_id = excluded.source_generation_id,
+       start_sec            = excluded.start_sec,
+       end_sec              = excluded.end_sec;""",
+     "  ;",
      "video_artifacts_paid_uq", ART),
 
     # ── item 3: the generation-write API (round 6 B5, Codex B3) ──────────────────
@@ -246,7 +262,12 @@ MUTATIONS = [
     ("generation-complete guard removed (the gates become a bypass)",
      "  if v_state is distinct from 'complete' then\n    raise exception 'video_artifacts: cannot mark % as % — generation % is %',\n      new.slot, new.state, new.generation_id, coalesce(v_state, '<absent>');\n  end if;\n",
      "",
-     "generation is still PENDING", ART),
+     # ⟳ ADR-0007 — was "generation is still PENDING", and RED(other) said so the moment T1 landed.
+     # The mutation is unchanged and the guard is unchanged; G3's assertion text moved, because with
+     # `pending` unreachable by any RPC the fixture is now a hand-built generation and the assertion
+     # names the CONDITION (not COMPLETE) rather than the state. Comparing `expect` is what turns a
+     # renamed assertion into a loud mismatch instead of a silently mis-attributed pass.
+     "generation is not COMPLETE", ART),
 
     ("detached_at lower bound removed (backdating the retention clock)",
      "    if new.detached_at < v_produced then",
@@ -258,60 +279,59 @@ MUTATIONS = [
      "    if (false) then",
      "clock starts in the FUTURE", ART),
 
-    ("reserve no longer creates the pending generation (the measured defect)",
-     """    insert into public.video_generations
-      (workspace_id, video_id, generation_id, kind, state, reserved_by)
-    values (p_ws, p_video, p_generation_id, p_kind, 'pending', v_token)
-    on conflict (workspace_id, video_id, generation_id) do nothing;
-    v_made_generation := found;
-""",
-     "",
-     "video_artifacts_workspace_id_video_id_generation_id_kind_fkey", ART),
-
-    # ⟳ ROUND 7 H3 — the cleanup on the DENIED paths. Without it every `busy` loser leaves an
-    # FK-valid parent no artifact points at, no ranking view reaches, and no sweep collects.
-    ("a denied reservation keeps the generation row it created (round 7 H3)",
-     """  if v_made_generation then
-    delete from public.video_generations
-     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id
-       and state = 'pending';
-  end if;
-""",
-     "",
-     "orphan generation row", ART),
-
-    ("record no longer completes the generation",
-     """  if p_generation_id is not null then
-    update public.video_generations g
-       set state             = 'complete',
-           card              = coalesce(p_card, g.card),
-           md_hash           = coalesce(p_md_hash, g.md_hash),
-           doc_version_major = coalesce(p_doc_version_major, g.doc_version_major),
-           produced_at       = coalesce(p_produced_at, g.produced_at, now()),
-           reserved_by       = null
-     where g.workspace_id = p_ws and g.video_id = p_video and g.generation_id = p_generation_id
-       and g.state = 'pending'
-       and g.reserved_by = p_token;""",
-     "  if false then",
+    # ⟳ ADR-0007 RE-ANCHORED — SAME DEFECT, DIFFERENT WRITER. This was "reserve no longer creates the
+    # pending generation (the measured defect)": round 6 B5 measured that with nothing inserting the
+    # FK parent, a cloud summarize could not record at all. `record_artifact` is now the ONLY
+    # production writer of `video_generations` (04's round 17 B1 note — every other INSERT in the
+    # repo is a fixture in 05), so the same defect is reproduced by disabling ITS insert.
+    # ⚠ THE EXPECTED ERROR MOVED WITH THE WRITER, and that is the interesting half. The reservation
+    # inserted the parent BEFORE the artifact, so removing it hit the artifact's FK [23503]. The
+    # record path writes both in one transaction, so removing the parent now hits
+    # `video_artifacts_generation_complete` FIRST — a typed P0001 naming the absent generation,
+    # verbatim what round 17 T1 measured with the reservation deleted and this INSERT not yet
+    # written. Anchoring on the `if` rather than on the statement keeps the mutation valid SQL.
+    ("record_artifact no longer creates the generation (round 17 B1's measured defect)",
+     "  if not found then\n    insert into public.video_generations",
+     "  if false then\n    insert into public.video_generations",
      "cannot mark", ART),
 
-    # ⟳ ROUND 7 H2 — the ownership fence itself. Removing ONLY the two ownership disjuncts leaves the
-    # completion working for every legitimate caller, so nothing but the hijack test can go red.
-        # And the other half: fencing on the TOKEN alone breaks the restarted worker (B1a), fencing on
-    # the SLOT alone breaks the reclaimed one. Each disjunct is mutated separately, because a
-    # compound guard hides which half carries the weight — round 5 H1's rule applied to a predicate.
-        # produced_at is a PARAMETER, not a clock read. Stamping now() is item 1's detached_at
+    # ⛔ RETIRED BY ADR-0007 — "a denied reservation keeps the generation row it created" (round 7 H3).
+    # It proved the cleanup on the DENIED paths: without it every `busy` loser left an FK-valid parent
+    # that no artifact pointed at, no ranking view reached and no sweep collected — unbounded growth
+    # for a worker looping on `busy` with a fresh id per attempt. There is no denial path left:
+    # `record_artifact` writes the generation and the artifact in one transaction, so either both
+    # land or neither does. Retired rather than re-anchored because there is nothing to clean up.
+    #
+    # ⛔ RETIRED BY ADR-0007 — "record no longer completes the generation". It disabled the UPDATE
+    # that flipped a pending generation to complete and expected the artifact-side trigger to refuse.
+    # ⚠ IT IS NOT LOST, IT IS MERGED: insert-then-complete became ONE statement, so the mutation that
+    # removes the generation write is the entry directly above. Keeping both would have been two
+    # anchors on one statement, drifting apart — the failure mode round 11 recorded when it deleted
+    # the duplicated free-render reconciler rather than repairing its anchor.
+
+    # ⛔ A round 7 H2 note stood here describing the ownership fence's two disjuncts and why each was
+    # mutated separately. It was already stale — round 11 collapsed the fence to one condition and
+    # moved its mutations down the file — and ADR-0007 retires the fence entirely. The account now
+    # lives in one place, with the three mutations it explains: see "THE OWNERSHIP FENCE, ALL THREE
+    # MUTATIONS OF IT" below. Left as a pointer rather than deleted, because a reader who remembers
+    # the fence will look for it here first.
+    #
+    # produced_at is a PARAMETER, not a clock read. Stamping now() is item 1's detached_at
     # defect in a different column, and J2-3 forbids a clock read anywhere the ranking reads.
     #
-    # ⚠ THE MUTATION DROPS THE PARAMETER, it does not assign now() outright — and the
-    # difference is the whole test. `produced_at = now()` is caught by the FREEZE trigger on
-    # an already-complete fixture (gOTHER) long before G9 runs, so it proves the freeze works
-    # and says NOTHING about whether the parameter is honoured. Ignoring the parameter leaves
-    # every complete generation untouched, so the freeze never fires and G9 is the only thing
-    # that can go red. Round 5 H1's masking rule applies to mutations, not just to fixtures.
+    # ⚠ ⟳ ADR-0007 RE-ANCHORED, AND THE MASKING ARGUMENT THAT SHAPED IT NO LONGER APPLIES — which is
+    # worth saying, because the old form was deliberately convoluted for a reason that has expired.
+    # Under the reservation this was an UPDATE of an existing generation, so assigning `now()`
+    # outright was caught by the FREEZE trigger on an already-complete fixture long before G9 ran:
+    # it proved the freeze works and said nothing about whether the parameter is honoured. The
+    # mutation therefore had to DROP the parameter rather than stamp the clock (round 5 H1's masking
+    # rule, applied to a mutation instead of a fixture).
+    # The write is now an INSERT of a generation that did not exist, so there is no old row and no
+    # freeze to mask it: stamping the clock is the honest, direct form of the same mutation, and G9
+    # is still the only assertion that can go red for it.
     ("produced_at ignores the caller and reads the clock (sync cannot replicate a time)",
-     "           produced_at       = coalesce(p_produced_at, g.produced_at, now()),",
-     "           produced_at       = coalesce(g.produced_at, now()),",
+     "            p_card, p_md_hash, p_doc_version_major, coalesce(p_produced_at, now()))",
+     "            p_card, p_md_hash, p_doc_version_major, now())",
      "produced_at was stamped, not carried", ART),
 
     # ── round 7: the guards added for this round's own findings ──────────────────
@@ -351,10 +371,11 @@ MUTATIONS = [
         # The `do update` specifically — keeping the branch but making the insert blind. Without this,
     # deleting the whole branch is the only thing tested, and "the branch exists" is weaker than
     # "the branch reconciles".
+    # ⟳ ADR-0007 RE-ANCHORED — the mutation and the rule are untouched; only the lease columns left
+    # the `do update` list, and they took the anchor with them.
     ("video_artifacts_free_uq: the free upsert made blind (branch kept, conflict handling dropped)",
      """    on conflict (workspace_id, video_id, slot) where generation_id is null
-    do update set blob_key = excluded.blob_key, state = 'recorded',
-                  lease_expires_at = null, lease_token = null, reserved_at = null;""",
+    do update set blob_key = excluded.blob_key, state = 'recorded';""",
      "    ;",
      "video_artifacts_free_uq", ART),
 
@@ -424,74 +445,73 @@ MUTATIONS = [
      "new.produced_at > now() + interval '7 days'",
      "should have been rejected: a genuinely future produced_at", GEN),
 
-    ("H2: the free short-circuit back to `=` (unreachable for NULL generations)",
-     "                and generation_id is not distinct from p_generation_id",
-     "                and generation_id = p_generation_id",
-     "video_artifacts_free_uq", ART),
-
-    ("Claude H2: the free branch stops clearing the lease columns (a reserved free slot is stuck)",
-     """    do update set blob_key = excluded.blob_key, state = 'recorded',
-                  lease_expires_at = null, lease_token = null, reserved_at = null;""",
-     "    do update set blob_key = excluded.blob_key, state = 'recorded';",
-     "art_pending_has_reserved_at", ART),
+    # ⛔ RETIRED BY ADR-0007 — "H2: the free short-circuit back to `=` (unreachable for NULL
+    # generations)" (round 8 H2). It restored `generation_id = p_generation_id` inside
+    # `reserve_artifact_slot`'s idempotency test, where both sides are NULL for a free slot: the
+    # comparison was NULL, never true, and the branch could not run at all.
+    # ⚠ RETIRED BECAUSE THE CLASS IS NOW UNREPRESENTABLE, NOT BECAUSE IT STOPPED MATTERING.
+    # `record_artifact` branches on `if p_generation_id is null then … return` and every surviving
+    # `generation_id = p_generation_id` predicate sits below that early return, so no free row can
+    # ever reach a three-valued comparison on the generation. A structural fix leaves nothing for a
+    # mutation to remove — which is a strictly better outcome than a guard, and worth recording as
+    # the reason rather than letting the absence look like an oversight.
+    #
+    # ⛔ RETIRED BY ADR-0007 — "Claude H2: the free branch stops clearing the lease columns (a
+    # reserved free slot is stuck)" (round 9). Round 9's own lease-clearing fix had left a reserved
+    # free slot failing `art_pending_has_reserved_at` on every retry, forever. There are no lease
+    # columns to clear and no reserved free slot to be stuck. The free `do update` that survives is
+    # still mutated — by the free-upsert entry above.
 
     ("Claude H3: a divergent blob_key silently kept instead of refused",
      "                and generation_id = p_generation_id and blob_key is distinct from p_blob_key) then",
      "                and generation_id = p_generation_id and false) then",
-     "differs from the reserved one", ART),
+     # ⟳ ADR-0007 — was "differs from the reserved one", and RED(other) said so. The guard is
+     # byte-identical; R9-8's fixture stopped laying the first key down with a RESERVATION and now
+     # lays it down with a RECORD, so its assertion says "the one this slot already holds".
+     "differs from the one this slot already holds", ART),
 
-    # ── ⟳ ROUND 11: the fence is now ONE condition, and these prove it is load-bearing ──────
-    # Round 9's two fence mutations are gone with the columns they tested. The replacement pair
-    # mutates the only condition left, in both directions it could fail.
-    ("the completion fence removed entirely (any caller completes any generation)",
-     "       and g.reserved_by = p_token;",
-     "       and true;",
-     "recorded against a generation it does not hold", ART),
+    # ── ⛔ RETIRED BY ADR-0007 — THE OWNERSHIP FENCE, ALL THREE MUTATIONS OF IT ──────────────────
+    # Round 11 wrote these when the fence became ONE condition (`g.reserved_by = p_token`), replacing
+    # round 9's pair, which had replaced round 7's disjunct. What each proved:
+    #
+    #   "the completion fence removed entirely (any caller completes any generation)" — round 11
+    #   "a permissive second disjunct reintroduced (the round 7 / round 9 shape)" — round 11
+    #       Deliberately a PAIR, in both directions the fence could fail, because round 8 measured
+    #       the round-7 fence too permissive AND too strict in one round. The second mutation does
+    #       not restore a specific old predicate; it restores the SHAPE — any second condition a
+    #       non-holder can satisfy — so the class could not be reintroduced unnoticed.
+    #   "round 12 B1: the generation keeps the PREVIOUS caller's token after a reclaim" — round 12
+    #       The token the RPC handed out had to be the token the fence accepted. A caller was told
+    #       `reserved`, PAID, presented that very token, and was refused.
+    #
+    # ⚠ THE PAIR IS THE EVIDENCE FOR THE DELETION, WHICH IS WHY IT IS LISTED AND NOT JUST DROPPED.
+    # Five successive credentials over six rounds, each round's fix producing the next round's
+    # Blocking, because the fence had to be permissive (a reclaimed writer must record work it has
+    # already paid for) and strict (a stranger must not complete a generation) at once. ADR-0007
+    # removes the credential instead of choosing a sixth: `record_artifact` INSERTs the generation
+    # `on conflict do nothing`, so nobody's content can be overwritten by anybody, holder or not.
+    # There is no fence, so there is nothing to mutate — the surviving guarantee is a PROPERTY, and
+    # its mutation is `completed_by_another` below.
 
-    # Round 7's disjunct and round 9's durable pair were each the round's worst finding. Restoring
-    # the SHAPE of that mistake — any second condition that a non-holder can satisfy — must go red,
-    # so a future author cannot reintroduce the class without the suite noticing.
-    ("a permissive second disjunct reintroduced (the round 7 / round 9 shape)",
-     "       and g.reserved_by = p_token;",
-     """       and (g.reserved_by = p_token
-            or exists (select 1 from public.video_artifacts a
-                        where a.workspace_id = p_ws and a.video_id = p_video and a.slot = p_slot
-                          and a.state = 'pending' and a.generation_id = p_generation_id));""",
-     "a stranger cannot complete another worker", ART),
-
-    ("round 12 B1: the generation keeps the PREVIOUS caller's token after a reclaim",
-     """    update public.video_generations
-       set reserved_by = v_token
-     where workspace_id = p_ws and video_id = p_video and generation_id = p_generation_id
-       and state = 'pending';
-""",
-     "",
-     "a token the generation does not name", ART),
-
+    # ⟳ ADR-0007 RE-ANCHORED — the ONE round-10/11/12 entry whose mechanism survives intact. The
+    # guard moved out of the completion UPDATE and into `record_artifact`'s read-then-decide block,
+    # and 05 records that it carries MORE weight now, not less: with `reserved_by` deleted it is the
+    # whole of what round 7 H2's fence used to promise — a writer whose content was not adopted is
+    # TOLD, rather than handed a success string over another writer's hash.
     ("round 10 B1: success reported while another writer's content stands",
-     """    if not found and exists (
-         select 1 from public.video_generations g
-          where g.workspace_id = p_ws and g.video_id = p_video
-            and g.generation_id = p_generation_id and g.state = 'complete'
-            and p_md_hash is not null and g.md_hash is distinct from p_md_hash)
-    then
-      return 'completed_by_another';
-    end if;
+     """  if not v_made_gen and v_gen_state = 'complete'
+     and p_md_hash is not null and v_gen_hash is distinct from p_md_hash then
+    return 'completed_by_another';
+  end if;
 """,
      "",
      "was NOT adopted was told", ART),
 
-    ("round 10 H2: a non-holder may take a live free reservation again",
-     """    if exists (select 1 from public.video_artifacts
-                where workspace_id = p_ws and video_id = p_video and slot = p_slot
-                  and generation_id is null and state = 'pending'
-                  and lease_expires_at > now()
-                  and lease_token is distinct from p_token) then
-      return 'busy';
-    end if;
-""",
-     "",
-     "non-holder took a live free reservation", ART),
+    # ⛔ RETIRED BY ADR-0007 — "round 10 H2: a non-holder may take a live free reservation again".
+    # Round 9's lease-clearing fix let a TOKENLESS caller clear a holder's lease and repoint a free
+    # slot (measured: pending rows left = 0, key replaced) — the fifth face of the free/paid seam.
+    # A free slot can no longer be reserved, held or taken: free renders are unpaid, overwritable and
+    # one-per-slot, and that is what the free-upsert mutation above tests.
 
     ("B3: a new profile gets no workspace (the TOP of the chain)",
      "  insert into public.workspaces (id, owner_id) values (new.id, new.id)\n"
