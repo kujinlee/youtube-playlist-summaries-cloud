@@ -285,8 +285,9 @@ begin
 
   -- ⟳ ADR-0007 / ROUND 17 B1 — THE GENERATION IS BORN COMPLETE, AT RECORD TIME, AFTER THE PAID CALL.
   -- There is no longer any moment at which a contentless generation row is legal for a summary:
-  -- `state` defaults to 'complete' (03) and the four completeness CHECKs are written
-  -- `state <> 'complete' or …`, so with `pending` unreachable they bind. That is exactly why the row
+  -- `state` defaults to 'complete' and — ⟳ T4 — its CHECK now admits nothing else, so the five
+  -- completeness CHECKs in 03 bind UNCONDITIONALLY (their `state <> 'complete' or` disjunct became
+  -- constantly false and was deleted with it). That is exactly why the row
   -- cannot be created BEFORE the Gemini call — 03's own comment records both doors being locked:
   -- reserving with no generation row raised [23503] on the artifact's FK, and creating the row from
   -- what is knowable pre-call raised [23514] gen_card_complete. `state = 'pending'` was the key cut
@@ -786,11 +787,20 @@ create trigger video_artifacts_append_only_trg
 -- ⟳ ROUND 6 B5 — THE OTHER HALF OF GATING 03'S FOUR CHECKS ON `state = 'complete'`.
 -- Relaxing a constraint to "only while complete" is safe ONLY if something guarantees that everything
 -- observable has reached complete. Without this trigger, `gen_card_complete`, `gen_summary_has_hash`,
--- `gen_summary_has_format` and `gen_major_matches_card` all become optional for any writer willing to
+-- `gen_summary_has_format` and `gen_major_matches_card` all became optional for any writer willing to
 -- leave its generation `pending` — the relaxation would be a bypass wearing a lifecycle's clothes.
 --
 -- With it, every row either ranking view can reach has satisfied all four IN FULL, because both views
 -- filter `a.state = 'recorded'`. That is why the views needed no change at all.
+--
+-- ⟳ T4 — THE RELAXATION IS GONE, AND THIS TRIGGER IS NOT, WHICH IS THE INTERESTING PART. Narrowing
+-- `video_generations.state` to a single value made those four CHECKs unconditional again, so the
+-- bypass this trigger was written to close cannot be opened by a `pending` generation any more.
+-- What it still catches is the OTHER branch of its own test, and that branch is the one T1 measured:
+-- a recorded artifact naming a generation that is `<absent>`. `record_artifact` writes the generation
+-- first precisely so this never fires on the happy path — the API and the guard agree rather than one
+-- covering for the other (cross-derivation C3). Deleting it because "state can only be complete now"
+-- would delete the absent-parent check with it and leave a raw [23503] in place of a typed P0001.
 --
 -- ⚠ `before insert OR UPDATE`, and the INSERT half is not symmetry. `record_artifact`'s
 -- append-after-loss path INSERTS a recorded row directly, and 04's append-only trigger is

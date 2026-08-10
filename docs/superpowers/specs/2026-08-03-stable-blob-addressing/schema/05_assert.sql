@@ -259,6 +259,39 @@ select assert_raises($$insert into video_generations
    4,now())$$,
   'a summary generation with NO md_hash (round 5 B3: sync needs it and nothing persisted it)', '23514', 'gen_summary_has_hash');
 
+-- ⟳ T4 — A GENERATION CANNOT BE PENDING. T2 deleted the GC floor's `state = 'complete'` predicate as
+-- vacuous and named what it was leaving: the CHECK still ADMITTED 'pending', so a hand-written
+-- `insert … state='pending'` was still legal and, with the floor's predicate gone, still collectable.
+-- "No producer" is not a constraint. The row below is valid in EVERY other respect — complete card,
+-- matching major, produced_at, md_hash — so it violates exactly one guard, and that guard is the one
+-- T4 added. This is the stronger claim that lets G3's hand-built pending fixture be retired.
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,state,card,doc_version_major,produced_at,md_hash)
+  values ((select id from t_ws),'vidA','gT4P','summary','pending',
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}',
+   4,now(),'SHA_T4P')$$,
+  'a generation written PENDING (T4: unrepresentable now, not merely unproduced)',
+  '23514', 'video_generations_state_check');
+
+-- ⟳ T4 (round 17 H1) — `card` AND `doc_version_major` BELONG TO `summary`, AND THAT IS A MEASURED
+-- CONCLUSION, not a tidy-up. The obvious repair for H1 was to extend the three `kind <> 'summary'`
+-- CHECKs to every paid kind; the producers refuse it (03's T4 block quotes each one). What IS true is
+-- the dual — no other kind can legitimately carry these two — and it is worth enforcing because both
+-- are RANKING RUNGS that 04's `video_artifacts_current` applies to every kind: a dig carrying a card
+-- would outrank its own siblings on a rung that means nothing for a dig.
+-- Two negatives against two constraints; a fixture invalid in both ways would test neither (round 6 H5).
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,produced_at,card)
+  values ((select id from t_ws),'vidA','gT4C','dig',now(),
+   '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"x","processedAt":"y","mdCorrectionsHash":"H_NEW"}')$$,
+  'a DIG generation carrying a summary card (it would win a ranking rung that means nothing for its kind)',
+  '23514', 'gen_card_is_summary_only');
+select assert_raises($$insert into video_generations
+  (workspace_id,video_id,generation_id,kind,produced_at,doc_version_major)
+  values ((select id from t_ws),'vidA','gT4M','model',now(),4)$$,
+  'a MODEL generation carrying doc_version_major (rule 13''s format rung is the summary''s)',
+  '23514', 'gen_major_is_summary_only');
+
 -- art_slot_kind — FK-VALID (gDIG is kind='dig'), spans present, key shaped. ONLY the slot/kind
 -- mismatch is wrong. Before round 5 this row was also FK-invalid, which masked the guard entirely.
 select assert_raises($$insert into video_artifacts
@@ -868,21 +901,29 @@ end $$;
 -- G3 — THE RELAXATION MUST NOT LEAK. This is the guard that makes gating the four completeness
 -- CHECKs on `state = 'complete'` safe: without it, every one of them becomes optional for anyone
 -- willing to write `state = 'pending'` on the generation.
--- ⚠ ⟳ ADR-0007 — THE FIXTURE IS NOW A HAND-BUILT PENDING GENERATION, AND THAT IS A HONEST WEAKENING
--- WORTH NAMING RATHER THAN HIDING. No RPC can produce a pending generation any more, so the only
--- caller that can reach this guard is DIRECT `service_role` DML — which is exactly the residue
--- ADR-0007 says it leaves ("trusted role can write"), and `service_role` bypasses RLS, not triggers.
--- The guard therefore still has a reachable caller; it is no longer on the RPC path.
--- ⚠ AND `video_generations.state` IS WHY IT IS KEPT despite being single-valued in practice: this
--- trigger is, with the GC floor's own `state` predicate on the way out (T2), the ONLY guard left
--- between a recorded artifact and an incomplete generation.
-insert into video_generations (workspace_id,video_id,generation_id,kind,state)
-  select id,'vidG','gPEND','summary','pending' from t_ws;
+-- ⚠ ⟳ T4 — THE HAND-BUILT PENDING FIXTURE IS RETIRED, AND THE GUARD IS NOT. ADR-0007 left this
+-- assertion standing on a `pending` generation built by direct `service_role` DML, and named that as
+-- "an honest weakening worth naming rather than hiding" — the only caller that could reach the guard
+-- was a hand-written INSERT. T4 narrowed `video_generations.state` to a single value, so that caller
+-- is gone too, and the negative that replaces it is the STRONGER claim, asserted above: a generation
+-- can no longer BE pending. Same move ADR-0007 made one table over, where three `art_pending_*`
+-- negatives became one negative on `video_artifacts_state_check`.
+--
+-- ⚠ WHAT SURVIVES HERE IS THE OTHER BRANCH OF THE SAME GUARD, AND IT IS THE ONE T1 MEASURED:
+-- `<absent>`. `video_artifacts_generation_complete` reads the parent's state and answers
+-- `coalesce(v_state,'<absent>')`, so with `pending` unrepresentable the live case is a recorded
+-- artifact naming a generation that does not exist — verbatim what T1 hit with the reservation
+-- deleted and record_artifact's INSERT not yet written:
+--   [P0001] cannot mark summary as recorded — generation gG1 is <absent>
+-- ⚠ AND IT IS NOT MASKED BY THE FK, which is the reason this negative is honest rather than
+-- double-guarded: a BEFORE ROW trigger runs before constraints are evaluated, so the typed P0001
+-- wins the race against [23503] on (ws, video, generation_id, kind). Remove the guard and the FK
+-- catches it instead — a different SQLSTATE, which is exactly what makes the mutation legible.
 select assert_raises($$insert into video_artifacts
   (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-  values ((select id from t_ws),'vidG','summary','gPEND','summary','recorded',
-          (select id from t_ws)::text||'/videos/vidG/gPEND/summary.md')$$,
-  'recording an artifact whose generation is not COMPLETE (the completeness bypass)', 'P0001');
+  values ((select id from t_ws),'vidG','summary','gABSENT','summary','recorded',
+          (select id from t_ws)::text||'/videos/vidG/gABSENT/summary.md')$$,
+  'recording an artifact whose generation is not COMPLETE — reachable now only as ABSENT', 'P0001');
 
 -- G4 — ⛔ RETIRED BY ADR-0007. It asserted that a pending generation is invisible to both ranking
 -- views. Its premise was a RECORDED artifact pointing at a pending generation, and G3 is the proof
@@ -949,18 +990,21 @@ end $$;
 
 -- G10 — a completed generation needs a produced_at, or the bottom ranking rung reads NULL for a row
 -- that genuinely has a production time. Same shape as item 2's NOT NULL: absent-vs-failed on a rung.
--- ⟳ ADR-0007 — THE FIXTURE IS HAND-BUILT NOW, and the old warning survives the change: the row must
--- be REAL, because an `update … where <no such row>` reports zero rows, raises nothing, and
--- assert_raises then fails with "should have been rejected" — a test bug that looks like a missing
--- guard. `reserve_artifact_slot` used to build it; nothing does, so the fixture inserts it directly.
+-- ⟳ T4 — AND IT IS A PLAIN INSERT NOW, WHICH IS BOTH SIMPLER AND STRICTLY STRONGER. ADR-0007 built a
+-- `pending` row by hand and then asserted that COMPLETING it was refused; `pending` is no longer
+-- representable, and it was never needed — `state` defaults to `complete`, so a direct insert that
+-- names no state is already the completed row this guard is about. The old two-step also carried a
+-- warning that is now moot with it: an `update … where <no such row>` raises nothing and
+-- assert_raises then fails with "should have been rejected", a test bug wearing a missing guard's
+-- clothes. An INSERT cannot miss.
 -- `model` is deliberate: `gen_complete_has_produced_at` is the ONE completeness CHECK that ranges
 -- over every kind rather than being gated `kind <> 'summary'`, so this is the only one a non-summary
--- fixture can reach.
-insert into video_generations (workspace_id,video_id,generation_id,kind,state)
-  select id,'vidG','gG10','model','pending' from t_ws;
-select assert_raises($$update video_generations set state='complete'
-  where video_id='vidG' and generation_id='gG10'$$,
-  'completing a generation with no produced_at', '23514', 'gen_complete_has_produced_at');
+-- fixture can reach — and after T4 it is joined by the two `*_is_summary_only` constraints, which
+-- this row satisfies (no card, no doc_version_major) so that it violates exactly one guard.
+select assert_raises($$insert into video_generations (workspace_id,video_id,generation_id,kind)
+  values ((select id from t_ws),'vidG','gG10','model')$$,
+  'a model generation with no produced_at (the one completeness CHECK ranging over every kind)',
+  '23514', 'gen_complete_has_produced_at');
 
 -- G11 — TASK #25, and it needs NO SCHEMA CHANGE. `digDeeper` was never bound to one summary
 -- generation: the FK is on (ws, video, generation_id, KIND), so a digDeeper artifact points at a
@@ -1193,6 +1237,118 @@ do $$ declare leaky text[]; begin
   if leaky is not null then
     raise exception 'ASSERTION FAILED — anon holds EXECUTE on definer function(s): %', leaky; end if;
   raise notice 'ok (R8/M1): no definer function in this schema is reachable by anon';
+end $$;
+
+-- ── ⟳ T4 — WHAT ACTUALLY CARRIES "NO GENERATION ROW BEFORE ITS PAID CALL COMPLETES" ─────────────
+-- Everything ADR-0007 subtracted rests on that sentence. Round 16 argued the GC floor needs no
+-- successor precisely because no row exists while a paid call runs, and T2 deleted the floor's
+-- predicate on that basis. So the sentence has to be worth what was spent on it, and it is worth
+-- DIFFERENT amounts per kind — which is the whole finding of T4:
+--
+--   summary                  ENFORCED. gen_card_complete requires six fields of Gemini's own output
+--                            and gen_summary_has_hash requires a hash OF THE PRODUCED BYTES. Neither
+--                            can be satisfied before the call returns. 03's own comment records both
+--                            doors being locked, which is the proof: the reservation could not open
+--                            them either.
+--   model / dig / digDeeper  NOT ENFORCED. MEASURED (round 17 H1): a row carrying only `produced_at`
+--                            is accepted, and `produced_at` is knowable before the call. T4 measured
+--                            every producer for a column that could witness production and found
+--                            NONE (03's T4 block quotes each). There is nothing for a CHECK to test:
+--                            a constraint sees one row, and for these three kinds no value in that
+--                            row is a function of the paid output.
+--
+-- ⚠ SO FOR THREE OF THE FOUR PAID KINDS THE INVARIANT IS CARRIED, NOT DERIVED, AND WHAT CARRIES IT
+-- IS ONE STRUCTURAL FACT: `record_artifact` is the only function that inserts into
+-- `video_generations`, and it runs after the paid call. A structural fact is worth exactly as much
+-- as the instrument that notices when it stops being true. These two assertions are that instrument.
+--
+-- ⚠ AND THIS RANGES OVER EVERY FUNCTION IN `public`, WHICH THE R8 SWEEP ABOVE DELIBERATELY DOES NOT.
+-- R8's list is hand-maintained and its own comment names the weakness — "it catches a definer
+-- function that KEEPS the default PUBLIC EXECUTE, not one nobody adds here." A second WRITER is
+-- precisely the thing nobody would think to add to a list, so this one ENUMERATES instead of
+-- remembering. Same argument as the population ratchet at the foot of this file: an absence is only
+-- visible against an enumerated whole.
+do $$ declare writers text[]; begin
+  select coalesce(array_agg(p.proname::text order by p.proname::text), '{}'::text[]) into writers
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.prosrc ~* 'insert\s+into\s+(public\.)?video_generations\y';
+  if writers is distinct from array['record_artifact'] then
+    raise exception 'ASSERTION FAILED — a SECOND writer of video_generations exists: {%}. '
+      'T4''s invariant for model/dig/digDeeper rests on record_artifact being the only one, '
+      'because it is the only one known to run AFTER the paid call.',
+      array_to_string(writers, ', ');
+  end if;
+  raise notice 'ok (T4): record_artifact is the ONLY function that inserts a generation';
+end $$;
+
+-- The other half of "who can write one", because a second writer does not have to be a function.
+-- `service_role` holding direct DML is the residue ADR-0007 explicitly accepts ("a trusted role can
+-- write"); anyone ELSE holding it would make the invariant unenforceable by any means, since
+-- `security definer` never consults RLS and RLS never applies to the role that bypasses it.
+do $$ declare grantees text[]; owner text; begin
+  select c.relowner::regrole::text into owner
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'video_generations';
+  select coalesce(array_agg(distinct a.grantee::regrole::text), '{}'::text[]) into grantees
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral aclexplode(c.relacl) a
+   where n.nspname = 'public' and c.relname = 'video_generations'
+     and a.privilege_type = 'INSERT'
+     and a.grantee::regrole::text <> owner;
+  if grantees is distinct from array['service_role'] then
+    raise exception 'ASSERTION FAILED — roles holding INSERT on video_generations are {%}, expected exactly {service_role} (owner % excluded)',
+      array_to_string(grantees, ', '), owner;
+  end if;
+  raise notice 'ok (T4): only service_role may write a generation directly';
+end $$;
+
+-- ── ⟳ T4 — THE CARRIED INVARIANT'S COST, MEASURED RATHER THAN DESCRIBED ────────────────────────
+-- ⚠ READ THE LABEL BEFORE THE CODE: this block asserts that a DEFECT REPRODUCES. It is the only
+-- block in this file that does, and it is here because "carried, not derived" is a phrase that costs
+-- nothing to write and this project has measured what happens when such a phrase is believed. If
+-- someone later closes the gap, THIS BLOCK GOES RED — that is the intended signal, and the correct
+-- response is to delete it, not to work around it.
+--
+-- What it costs, if a writer that creates a generation BEFORE its paid call ever appears: exactly
+-- round 9's B1, the defect T2 deleted the floor's predicate over, reached by the other three kinds.
+--   * the bare generation is not current (no artifact yet) -> `video_generations_collectable`
+--     returns it, which is correct given what it can see;
+--   * a sweep sets body_collected -> `forbid_collecting_current` does not fire, because there is no
+--     current row to protect;
+--   * the paid call returns and `record_artifact` appends the artifact — legally, since the
+--     generation is `complete` — and `p_md_hash` is NULL for these kinds, so `completed_by_another`
+--     cannot fire either;
+--   * both ranking views filter `not g.body_collected`, so the paid row is INVISIBLE FOREVER.
+-- Money spent, content unreachable, and no error anywhere — round 9's B1 verbatim.
+--
+-- ⚠ NOT CLOSED HERE, AND THE REASON IS THE SCOPE OF THE CLAIM, NOT THE COST OF THE FIX. Adding a
+-- successor predicate to `video_generations_collectable` would reverse T2 and round 16's decision on
+-- T4's authority, and it would not enforce the invariant anyway — a pre-call writer can derive
+-- `blob_key` from (workspace, video, generation, slot) before any bytes exist, so no artifact-side
+-- witness closes it either. What closes it is a producer-computed content hash for the other three
+-- kinds, i.e. `md_hash`, which is exactly why 03 leaves that column unconfined. T5's territory.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidT4' from t_ws;
+do $$ declare ws uuid; n int; o text; begin
+  select id into ws from t_ws;
+  -- the pre-call shape: everything knowable before Gemini returns, and nothing else
+  insert into video_generations (workspace_id,video_id,generation_id,kind,produced_at)
+    values (ws,'vidT4','gT4','dig',now() - interval '1 minute');
+  if not exists (select 1 from video_generations_collectable
+                  where video_id='vidT4' and generation_id='gT4') then
+    raise exception 'T4 CHARACTERISATION STALE — a bare dig generation is no longer collectable; '
+      'the gap may have been closed. Re-read this block and delete it if so.'; end if;
+  update video_generations set body_collected = true
+   where video_id='vidT4' and generation_id='gT4';          -- the sweep, unopposed
+  o := record_artifact(ws,'vidT4','dig:10','gT4','dig'::artifact_kind,
+        ws::text||'/videos/vidT4/gT4/dig/10.md', p_start_sec := 10, p_end_sec := 60);
+  if o <> 'recorded' then
+    raise exception 'T4 CHARACTERISATION STALE — the paid record was refused (%); the gap may have been closed.', o; end if;
+  select count(*) into n from video_artifacts_current where video_id='vidT4';
+  if n <> 0 then
+    raise exception 'T4 CHARACTERISATION STALE — the paid row is visible (% rows); the gap may have been closed.', n; end if;
+  raise notice 'ok (T4, MEASURED COST): a pre-call generation for a non-summary kind still buries its own paid bytes — carried, not enforced';
 end $$;
 -- ── ⛔ RETIRED BY ADR-0007 — THE OWNERSHIP FENCE (round 9, measured in both directions) ──────────
 -- R9-1 asserted that a STRANGER holding a full, well-formed credential of its own cannot complete

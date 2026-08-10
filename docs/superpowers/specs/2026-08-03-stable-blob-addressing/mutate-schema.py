@@ -211,26 +211,45 @@ MUTATIONS = [
      "video_artifacts_paid_uq", ART),
 
     # ── item 3: the generation-write API (round 6 B5, Codex B3) ──────────────────
-    # The four CHECK gates are mutated INDIVIDUALLY. Restoring any one of them alone
-    # re-locks the door item 3 opened, and the point is that each is separately
-    # load-bearing — round 5 H1's lesson was that a compound guard hides which half works.
-    ("gen_card_complete gate removed (back to unconditional)",
-     "    state <> 'complete' or kind <> 'summary' or (\n      card is not null",
-     "    kind <> 'summary' or (\n      card is not null",
+    # ⛔ ⟳ T4 — THREE MUTATIONS STOOD HERE AND ARE REPLACED, NOT RETIRED, AND THE MEASUREMENT THAT
+    # FORCED IT IS THE MOST USEFUL THING IN THIS FILE THIS ROUND.
+    #
+    # They were "gen_card_complete / gen_summary_has_hash / gen_summary_has_format gate removed",
+    # each dropping the `state <> 'complete' or` disjunct round 6 B5 added, and each had been RED for
+    # eleven rounds. The moment T4 narrowed `state` to a single value and retired the hand-built
+    # `pending` fixture that G3 used, ALL THREE WENT GREEN — measured, in this harness, in one run.
+    #
+    # ⚠ THEY WERE NEVER TESTING THESE CONSTRAINTS. Their red came entirely from one fixture row: a
+    # `pending` summary generation carrying no card. Remove the disjunct and that row was rejected;
+    # remove the row and the disjunct proves nothing, because with `state` single-valued the disjunct
+    # is constantly false and deleting it cannot change which rows are accepted. That is the exact
+    # shape T2 recorded when it retired the collectable floor's mutation — "a mutation that can no
+    # longer alter behaviour proves nothing" — arriving a second time, by subtraction, in the same
+    # slice. 03 deletes the disjunct for the same reason.
+    #
+    # ⚠ WHAT REPLACES THEM IS THE QUESTION ROUND 17 H1 ACTUALLY ASKED, and the answer is the reverse
+    # of the obvious repair. H1 found these three CHECKs gated `kind <> 'summary'`, so a model, dig or
+    # digDeeper row carrying only `produced_at` is accepted. The tempting fix is to extend them to
+    # every kind. THESE MUTATIONS ARE THAT FIX, and each must go RED against the real fixtures —
+    # because no producer of those three kinds computes a card, a doc version or a hash (03's T4 block
+    # quotes each one). A gate is load-bearing in two directions and this only ever tested one.
+    ("gen_card_complete extended to every kind (round 17 H1's tempting repair)",
+     "  constraint gen_card_complete check (\n    kind <> 'summary' or (\n      card is not null",
+     "  constraint gen_card_complete check (\n    (\n      card is not null",
      "gen_card_complete", GEN),
 
-    ("gen_summary_has_hash gate removed",
-     "  constraint gen_summary_has_hash check\n    (state <> 'complete' or kind <> 'summary' or md_hash is not null),",
-     "  constraint gen_summary_has_hash check (kind <> 'summary' or md_hash is not null),",
+    ("gen_summary_has_hash extended to every kind (a dig has no md_hash to give)",
+     "  constraint gen_summary_has_hash check\n    (kind <> 'summary' or md_hash is not null),",
+     "  constraint gen_summary_has_hash check (md_hash is not null),",
      "gen_summary_has_hash", GEN),
 
-    ("gen_summary_has_format gate removed",
-     "  constraint gen_summary_has_format check\n    (state <> 'complete' or kind <> 'summary' or doc_version_major is not null),",
-     "  constraint gen_summary_has_format check (kind <> 'summary' or doc_version_major is not null),",
+    ("gen_summary_has_format extended to every kind (a dig has no doc version)",
+     "  constraint gen_summary_has_format check\n    (kind <> 'summary' or doc_version_major is not null),",
+     "  constraint gen_summary_has_format check (doc_version_major is not null),",
      "gen_summary_has_format", GEN),
 
     ("gen_complete_has_produced_at dropped",
-     "  constraint gen_complete_has_produced_at check (state <> 'complete' or produced_at is not null),\n",
+     "  constraint gen_complete_has_produced_at check (produced_at is not null),\n",
      "",
      "no produced_at", GEN),
 
@@ -241,11 +260,61 @@ MUTATIONS = [
      "  state             text not null default 'complete'",
      "  state             text not null default 'pending'",
      # ⟳ round 7: was "PENDING generation reached current", and RED(other) said so. The default
-     # flipping to `pending` is caught EARLIER — by the artifact-side trigger, when a fixture that
-     # hand-inserts a complete generation tries to record against it. Naming the guard that actually
+     # flipping to `pending` was then caught by the artifact-side trigger, when a fixture that
+     # hand-inserts a complete generation tried to record against it. Naming the guard that actually
      # fires is the whole value of comparing `expect`; leaving it stale would have scored a real
      # catch as a miss the moment anything else changed.
-     "cannot mark", GEN),
+     # ⟳ T4 — AND IT MOVED AGAIN, ONE GUARD EARLIER, FOR THE THIRD TIME. With the domain narrowed to
+     # `check (state in ('complete'))` the fail-open default is no longer merely caught downstream by
+     # something that notices its consequence — it is UNREPRESENTABLE, and the very first generation
+     # fixture is rejected by the CHECK itself. That is strictly the better catch (every writer, at
+     # the write, naming the column) and re-pointing `expect` at it is what keeps this entry honest
+     # rather than scoring a stronger guard as a regression.
+     "video_generations_state_check", GEN),
+
+    # ── ⟳ T4: the per-kind invariant ─────────────────────────────────────────────
+    # THE RESIDUE T2 NAMED AND LEFT. `state` was single-valued in PRACTICE — no producer of
+    # `pending` — while the CHECK still admitted it, and T2 had just deleted the GC floor's
+    # `state = 'complete'` predicate as vacuous. Widening this line restores exactly the state T2
+    # described: a hand-written pending generation, legal, and collectable with nothing to stop it.
+    ("state admits `pending` again (T2's named residual)",
+     "                    check (state in ('complete')),",
+     "                    check (state in ('pending','complete')),",
+     "written PENDING", GEN),
+
+    # The two halves of T4's per-kind measurement, mutated INDIVIDUALLY — round 5 H1's rule, that a
+    # compound guard hides which half works. `check (true)` rather than deleting the line, because
+    # `gen_major_is_summary_only` is the LAST constraint in the table and removing it would orphan
+    # the preceding comma into a syntax error, i.e. INVALID, which this harness has measured reads as
+    # *untested* rather than as *retired*.
+    ("gen_card_is_summary_only neutralised (a dig may carry a summary card)",
+     "constraint gen_card_is_summary_only  check (kind = 'summary' or card is null)",
+     "constraint gen_card_is_summary_only  check (true)",
+     "carrying a summary card", GEN),
+
+    ("gen_major_is_summary_only neutralised (a model may carry the format rung)",
+     "constraint gen_major_is_summary_only check (kind = 'summary' or doc_version_major is null)",
+     "constraint gen_major_is_summary_only check (true)",
+     "carrying doc_version_major", GEN),
+
+    # ⚠ THE ONLY MUTATION HERE THAT ADDS A WRITER RATHER THAN REMOVING A GUARD, because for
+    # `model`, `dig` and `digDeeper` the invariant IS the writer set — no column in those rows
+    # witnesses production, so there is no CHECK to delete. This injects a second, perfectly ordinary
+    # generation writer and expects 05's enumeration over `pg_proc` to name it.
+    # ⚠ IT IS ALSO DELIBERATELY INVISIBLE TO THE R8 SWEEP, which is the point of having both. R8
+    # checks a HAND-MAINTAINED list for a leaked PUBLIC EXECUTE; this function is `security definer`,
+    # keeps the default PUBLIC EXECUTE, and R8 stays green — because nobody added it to the list. A
+    # second writer is exactly the thing nobody adds to a list.
+    ("a SECOND function writes video_generations (T4's carried invariant, broken)",
+     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;",
+     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+create function t4_shadow_writer(p_ws uuid, p_video text, p_gen text) returns void
+  language plpgsql security definer set search_path = '' as $t4$
+begin
+  insert into public.video_generations (workspace_id, video_id, generation_id, kind, produced_at)
+  values (p_ws, p_video, p_gen, 'dig', now());
+end $t4$;""",
+     "a SECOND writer of video_generations exists", GEN),
 
     ("freeze: complete is no longer terminal",
      "    if new.state <> 'complete' then\n      raise exception 'video_generations: % is COMPLETE and cannot return to %',\n        old.generation_id, new.state;\n    end if;\n",
