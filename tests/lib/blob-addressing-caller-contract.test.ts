@@ -7,15 +7,35 @@ import type { JobQueue, JobStatus, LeasedJob } from '@/lib/storage/job-queue';
  *
  * WHY THIS FILE EXISTS, and it is worth the paragraph.
  *
- * `docs/superpowers/specs/2026-08-03-stable-blob-addressing-design.md` §12b states one rule:
+ * ⚠ RE-POINTED BY ADR-0007 — THE FENCE THIS FILE WAS WRITTEN UNDER NO LONGER EXISTS, AND THESE TESTS
+ * OUTLIVE IT. It used to open with §12b's caller obligation:
  *
  *     A worker MUST hold its reservation token for the life of the job.
  *     A worker that cannot present it MUST abandon rather than record.
  *
- * `record_artifact` completes a generation ONLY for `reserved_by = p_token` — no fallback, no
- * recovery path. That is safe only because of how THIS code behaves, and rounds 7 and 9 each built
- * an elaborate SQL fallback for a caller state that the runtime already prevents. Round 10 then
- * measured both fallbacks being usable by a stranger.
+ * and with "`record_artifact` completes a generation ONLY for `reserved_by = p_token` — no fallback,
+ * no recovery path." **There is no `reserved_by`, no token and no fence.** ADR-0007 deleted the
+ * reservation protocol outright — six consecutive review rounds produced a Blocking or High in that
+ * one seam, four of them introduced by the previous round's own fix, because the fence had to be
+ * permissive (so a reclaimed writer could record work it had already paid for) and strict (so a
+ * stranger could not complete a generation) at the same time. Writers now simply do not contend:
+ * `record_artifact` INSERTs a new generation and appends its artifact, and `on conflict do nothing`
+ * plus a `completed_by_another` outcome is what keeps a second writer safe. `docs/adr/0007` retires
+ * §12b explicitly and says this file stays but is re-purposed — *"it now documents job-queue
+ * behaviour rather than propping up a schema premise."* This header is that re-purposing (found
+ * un-done by the 2026-08-10 implementation review, M4).
+ *
+ * SO WHAT THE THREE PREMISES BELOW ARE NOW. They are job-queue properties, and they are worth pinning
+ * on their own account — a worker that keeps working after losing its lease is a second worker on the
+ * same paid job, which costs money whether or not any SQL predicate reads a token. They are no longer
+ * the thing that makes a schema fence safe, because there is no fence to make safe. **If one of them
+ * fails, that is a real regression in `worker-runner`** — fix the runner, not the test — but it no
+ * longer means "the schema's fence must be reconsidered", which is what this header used to say and
+ * which would now send a reader looking for something that was deleted.
+ *
+ * Rounds 7 and 9 each built an elaborate SQL fallback for a caller state that the runtime already
+ * prevents, and round 10 measured both fallbacks being usable by a stranger — kept here because it is
+ * the reason this file exists at all, and it survives the fence.
  *
  * The structural lesson (round 11): the validation stack was ASYMMETRIC. The schema had 122
  * assertions and 57 mutations; the runtime premises underneath it had nothing at all — one of them
@@ -23,12 +43,11 @@ import type { JobQueue, JobStatus, LeasedJob } from '@/lib/storage/job-queue';
  * written in prose in a design doc is a rule that depends on remembering.
  *
  * So these are not tests of `worker-runner`'s features — `worker-runner-runtime.test.ts` covers
- * those. They are tests of the exact properties the SQL fence RELIES on, co-located with the code
- * that provides them, so that a future refactor (auto-reconnect, background retry, resuming a job
- * after a restart) fails HERE rather than silently invalidating the schema's core assumption.
- *
- * If one of these ever fails, do not "fix" the test: the schema's fence must be reconsidered,
- * because its premise has changed.
+ * those. They pin the properties that decide WHETHER A SECOND WORKER CAN BE RUNNING A PAID JOB, and
+ * they are co-located with the code that provides them so that a future refactor (auto-reconnect,
+ * background retry, resuming a job after a restart) fails HERE rather than quietly re-introducing
+ * one. That was the schema's core assumption while a fence existed; with the fence gone it is a
+ * spend property of the job queue, which is why the file survives the thing it was written for.
  *
  * MUTATION-CHECKED, because a contract test that cannot fail is worse than none. Removing the abort
  * in `worker-runner.ts` (`.then(r => { if (!r.ok) leaseLost.abort(); })`) turns PREMISE 1 red and
@@ -75,13 +94,14 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-describe('blob-addressing §12b — the caller contract the SQL fence depends on', () => {
+describe('blob-addressing — the job-queue properties that bound a paid job to ONE worker', () => {
   /**
    * PREMISE 1 — a worker that loses its lease STOPS.
    *
-   * This is what makes "no recovery path" safe. If a worker could keep running after losing its
-   * lease, it would come back holding paid Gemini bytes for a slot another worker now owns, which
-   * is precisely the scenario rounds 7 and 9 built (broken) fallbacks for.
+   * This used to be "what makes `no recovery path` safe". With the fence gone it is simpler and no
+   * less valuable: a worker that keeps running after losing its lease comes back holding paid Gemini
+   * bytes for a slot another worker now owns — two paid calls for one job. ADR-0007 removed the SQL
+   * that cared about WHO records; nothing removed the cost of computing the same thing twice.
    */
   it('signals abort on lease loss AND cannot land a terminal success afterwards', async () => {
     jest.useFakeTimers();
@@ -115,10 +135,13 @@ describe('blob-addressing §12b — the caller contract the SQL fence depends on
   /**
    * PREMISE 2 — the token is passed through from the claim and never re-derived.
    *
-   * The fence is `reserved_by = p_token`. If the runner ever RE-READ a token — from the jobs row,
-   * from a cache, from anywhere — then the credential would be recoverable by whoever can perform
-   * that read, which is exactly the defect round 10 measured in the `(worker_id, job_id)` pair.
-   * Asserting the terminal writes carry the ORIGINAL claim's token keeps that property visible.
+   * The credential this protects is now the JOB QUEUE's, not the artifact schema's: `complete_job` /
+   * `fail_job` filter on `(id, locked_by, lease_token, status='active')`
+   * (`supabase/migrations/0008_jobs_queue.sql`). If the runner ever RE-READ a token — from the jobs
+   * row, from a cache, from anywhere — that credential becomes recoverable by whoever can perform the
+   * read, which is exactly the defect round 10 measured in the deleted `(worker_id, job_id)` pair.
+   * The lesson outlived the fence it was learned on. Asserting the terminal writes carry the ORIGINAL
+   * claim's token keeps the property visible.
    */
   it('carries the claim-time lease token into every terminal write, never a re-derived one', async () => {
     const job = makeJob({ leaseToken: 'tok-original' });
@@ -135,8 +158,8 @@ describe('blob-addressing §12b — the caller contract the SQL fence depends on
   /**
    * PREMISE 3 — one job, one claim, no resumption.
    *
-   * §12b's "abandon rather than record" is only meaningful if a lost job is not silently picked
-   * back up inside the same run. A future "auto-reconnect" would break the fence's premise without
+   * "Abandon rather than record" is only meaningful if a lost job is not silently picked back up
+   * inside the same run. A future "auto-reconnect" would put a second paid call on one job without
    * touching a line of SQL; this is the test that would catch it.
    */
   it('does not re-claim or resume a job after losing its lease', async () => {

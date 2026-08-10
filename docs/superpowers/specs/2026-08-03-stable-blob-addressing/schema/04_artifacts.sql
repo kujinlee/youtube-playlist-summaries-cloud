@@ -476,6 +476,13 @@ begin
   -- MUTABLE, which is shape #3 and the defect this whole design exists to remove. Keeping one of two
   -- divergent addresses silently is the only option that cannot be right. So it is a caller bug — a
   -- SHAPE violation, where rejecting is correct.
+  -- ⚠ RESIDUAL, NAMED RATHER THAN HIDDEN (⟳ ADR-0007 implementation review, L2), and it is the same
+  -- size and shape as the 23514 residual named above: this reads the slot, and the append below
+  -- inserts with a `do update` that deliberately does not assign `blob_key`. A peer landing a row
+  -- with a DIFFERENT key between the two keeps its own key, and this caller is told
+  -- `already_recorded` — round 9's H3 surviving inside the race window rather than on the ordinary
+  -- path. Closing it needs the comparison to happen in the same statement as the write (a `where`
+  -- on the `do update` that raises), which round 9 costed and left; it is bounded, it is not zero.
   if exists (select 1 from public.video_artifacts
               where workspace_id = p_ws and video_id = p_video and slot = p_slot
                 and generation_id = p_generation_id and blob_key is distinct from p_blob_key) then
@@ -557,11 +564,37 @@ begin
   -- re-record that presents FEWER sources than are recorded, because a shrink inserts nothing —
   -- there is no operation for a trigger to fire on. Cross-derivation C3: the API and the guard each
   -- own the half the other structurally cannot see.
+  --
+  -- ⚠ ⟳ ADR-0007 IMPLEMENTATION REVIEW, H2 — "IS THE SET EMPTY" AND "IS THIS THE FIRST WRITE" ARE
+  -- TWO FACTS, AND THEY WERE ONE SENTINEL. The gate below read `v_recorded = '{}'` as *this artifact
+  -- has no provenance yet, so this is its first write*. It ALSO means *this artifact is recorded as
+  -- having no sources* — which is not a hypothetical row: `record_artifact` writes exactly that
+  -- every time a caller records a `model`, `dig` or `digDeeper` and only LEARNS the source later
+  -- (the assertion for the multi-source rung two files over builds `gMmMIX` that way). MEASURED
+  -- through this RPC alone, no direct DML anywhere:
+  --   C1 record model gPm with NO source            -> recorded    ; provenance: <empty>
+  --   C2 re-record gPm presenting {gPs}             -> already_recorded
+  --      provenance is NOW: gPs   <- ADDED to an already-recorded PAID row
+  --   C3 re-record again presenting {gPs2}          -> raise (as designed)
+  -- So the third call was refused and the second was not, against a rule this file, the ADR and 05
+  -- each state in the same words: A RE-RECORD MUST PRESENT THE SAME SET, OR RAISE. And it is
+  -- ONE-WAY — the row it adds can never be removed (the sibling DELETE freeze below), so a single
+  -- wrong call is permanent. Compare the divergent-`blob_key` refusal eleven lines up, which raises
+  -- on exactly this shape and calls it "a caller bug — a SHAPE violation, where rejecting is
+  -- correct"; the two are now treated the same way.
+  --
+  -- THE FIX ASKS THE QUESTION THE GATE MEANT TO ASK: was the artifact row created by THIS call?
+  -- `v_existed` is that fact, already read above for the append's own idempotence, and it is a
+  -- DIFFERENT fact rather than a proxy for this one — which is the whole finding. The emptiness test
+  -- stays beside it and is not redundant: in the read-then-insert race a peer can commit its own
+  -- artifact AND its provenance between our two reads, leaving `not v_existed` true and the set
+  -- non-empty, and falling through to the comparison then answers a same-set re-statement with the
+  -- benign no-op rather than with a duplicate INSERT for the statement trigger to refuse.
   if p_source_generation_id is not null then
     select coalesce(array_agg(s.source_generation_id order by s.source_generation_id), '{}'::text[])
       into v_recorded
       from public.video_artifact_sources s where s.artifact_id = v_art;
-    if v_recorded = '{}'::text[] then
+    if not v_existed and v_recorded = '{}'::text[] then
       insert into public.video_artifact_sources
         (artifact_id, workspace_id, video_id, source_generation_id)
       values (v_art, p_ws, p_video, p_source_generation_id);
@@ -846,9 +879,39 @@ create trigger forbid_collecting_current_trg
 -- table exists (a content hash cannot answer it either, per ADR-0007).
 --
 -- ⚠ IT IS DELIBERATELY NOT SCOPED TO *CURRENT* RENDERS. A superseded model still names the summary
--- it was built from, and §8's retention clock — not this view — is what eventually releases it. This
--- view is a CORRECTNESS FLOOR and age is a tunable the sweeper owns; mixing them buries a knob
--- inside an invariant, which is the same asymmetry recorded above for the currency test.
+-- it was built from, and this view is a CORRECTNESS FLOOR while age is a tunable the sweeper owns;
+-- mixing them buries a knob inside an invariant, which is the same asymmetry recorded above for the
+-- currency test.
+--
+-- ⛔ ⟳ ADR-0007 IMPLEMENTATION REVIEW, H3 — AND THIS COMMENT USED TO END "…§8's retention clock —
+-- not this view — is what eventually releases it." THERE IS NO SUCH RELEASE. What this `not exists`
+-- expresses is not a retention DELAY but a PERMANENT PIN, and the sentence promising otherwise was
+-- an unenforced assertion of exactly the kind this file refuses elsewhere. MEASURED, end to end,
+-- through the RPC:
+--   summary gPs recorded; model gPm recorded naming gPs; both then superseded
+--   superseded MODEL gPm collectable: 1  -> swept
+--   superseded SUMMARY gPs collectable AFTER its only referrer was collected: 0
+--   rows still pinning gPs: 1
+-- All three exits are closed BY DESIGN, each by a guard added in this same branch: the provenance row
+-- cannot be deleted while its artifact lives (`video_artifact_sources_append_only`), the paid artifact
+-- cannot be deleted at all (`video_artifacts_append_only`), and §8's sweeper SELECTS THROUGH this
+-- view, so no age predicate it owns can ever reach a pinned row. Only deleting the account clears it.
+--
+-- ⚠ SO STATE THE CONSEQUENCE RATHER THAN THE INTENTION: once ANY model or digDeeper is recorded
+-- against a summary generation — which is every served document, since `model` is generated on the
+-- first serve — that summary generation's blob is retained for the life of the workspace. §8's "a
+-- paid blob is collected 90 days after it stops being current" does not hold for the dominant case.
+--
+-- ⚠ WHY IT IS NOT FIXED HERE. The obvious repair is to scope the `not exists` to LIVE references —
+-- ignore sources whose referencing artifact's own generation is already `body_collected` — and it
+-- MEASURES as working (the same fixture above returns 1 for gPs under that predicate). It is not
+-- applied because it is a new RETENTION RULE, not a defect fix: it decides when paid bytes become
+-- deletable, on the one path with no undo, and it leaves a second permanent pin standing anyway
+-- (a FREE render has no generation of its own, so `body_collected` is never true for it and its
+-- source stays pinned forever). ADR-0007 did not decide that, and an implementation slice is not
+-- where it gets decided. Recorded as an open decision — docs/backlog.md #27 — with the candidate
+-- predicate and this measurement attached, and asserted below as a CHARACTERISATION so the pin is a
+-- stated fact with an instrument rather than a side effect nobody reads.
 -- ⚠ AND IT IS WHY THE FKs ABOVE MAY BE `cascade` RATHER THAN `restrict`: this is the mechanism that
 -- stops GC collecting a still-referenced generation. RESTRICT was the SECOND mechanism for that one
 -- concern, and it was the one that broke `delete from profiles`.

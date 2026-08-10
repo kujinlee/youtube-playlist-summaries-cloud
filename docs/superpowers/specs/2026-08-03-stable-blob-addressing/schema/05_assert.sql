@@ -1353,18 +1353,110 @@ end $$;
 -- precisely the thing nobody would think to add to a list, so this one ENUMERATES instead of
 -- remembering. Same argument as the population ratchet at the foot of this file: an absence is only
 -- visible against an enumerated whole.
+-- ⚠ ⟳ ADR-0007 IMPLEMENTATION REVIEW, H1 — THIS WAS ONE REGEX OVER `prosrc`, AND IT SAW ONE
+-- SPELLING OF INSERT. Both reviewers built second writers that CREATED A REAL ROW while this
+-- assertion still reported `writers = {record_artifact}`. MEASURED, seven of them, each verified to
+-- have inserted:
+--   `insert into public."video_generations"`   quoted identifier          -> invisible
+--   `insert into public . video_generations`   spaces around the dot      -> invisible
+--   `merge into public.video_generations …`    the standard PG15+ upsert  -> invisible
+--   a function in schema `probe_ns`            (the scan was `public`-only)-> invisible
+--   `insert into public.vg_v`                  an auto-updatable VIEW     -> invisible
+--   an `on insert do instead` RULE on another table                       -> invisible
+--   the naive spelling                         (control)                  -> SEEN
+-- ADR-0007 nominates this assertion as the sole guarantor of a carried invariant, so "matches the
+-- way we happen to write it today" is not what it can be. The branch's own mutation proves the
+-- assertion is LOAD-BEARING and cannot prove it COMPLETE — this project's recorded lesson, and the
+-- reason the repair is a property rather than a longer pattern.
+--
+-- TWO QUESTIONS, BECAUSE A WRITER IS EITHER SOME CODE OR SOME RELATION:
+--   (1) does any FUNCTION BODY name this table in a write? — text, normalised first, so quoting and
+--       spacing cannot change the answer, `merge` counts as the insert it is, and EVERY schema is
+--       scanned rather than `public` alone;
+--   (2) is any RELATION OTHER THAN THE TABLE an insertable write surface onto it? — asked of the
+--       catalog (`pg_depend` -> `pg_rewrite` -> `pg_relation_is_updatable`), never of source text,
+--       so a view or rule is caught by WHAT IT IS rather than by what it is called. This is the half
+--       no amount of pattern-widening could ever reach: `insert into public.vg_v` does not contain
+--       the string `video_generations` at all.
+--
+-- ⚠ WHAT IS STILL NOT COVERED, WRITTEN DOWN RATHER THAN LEFT TO LOOK COMPLETE — the instrument's
+-- success line must not claim more than its input covers, which is the shape this file, `docs/plugins.md`
+-- and this ADR all name:
+--   * DYNAMIC SQL. `execute format('insert into %I …', …)` assembles the name at runtime, so no text
+--     scan can see it. T5's territory, and the reason the ROLE assertion below is the real floor.
+--   * `COPY … FROM` and direct DML by the table's OWNER. Accepted residue — ADR-0007 says a trusted
+--     role can write; the assertion below is what keeps that set to exactly {service_role}.
+--   * a writer in another DATABASE, or one added after the last suite run. Neither is checkable here.
 do $$ declare writers text[]; begin
-  select coalesce(array_agg(p.proname::text order by p.proname::text), '{}'::text[]) into writers
+  -- Normalise BEFORE matching: strip quoting, then close up whitespace around the schema dot. Both
+  -- evasions become the naive spelling, so one pattern answers all three forms instead of three
+  -- alternatives answering the three someone thought of.
+  select coalesce(array_agg(n.nspname||'.'||p.proname order by n.nspname||'.'||p.proname), '{}'::text[])
+    into writers
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public'
-     and p.prosrc ~* 'insert\s+into\s+(public\.)?video_generations\y';
-  if writers is distinct from array['record_artifact'] then
+   where regexp_replace(replace(p.prosrc, '"', ''), '\s*\.\s*', '.', 'g')
+         ~* '(insert|merge)\s+into\s+([a-z_][a-z0-9_$]*\.)?video_generations\y';
+  if writers is distinct from array['public.record_artifact'] then
     raise exception 'ASSERTION FAILED — a SECOND writer of video_generations exists: {%}. '
       'T4''s invariant for model/dig/digDeeper rests on record_artifact being the only one, '
       'because it is the only one known to run AFTER the paid call.',
       array_to_string(writers, ', ');
   end if;
-  raise notice 'ok (T4): record_artifact is the ONLY function that inserts a generation';
+  raise notice 'ok (T4/H1): record_artifact is the ONLY function that inserts a generation, in ANY schema and by ANY spelling';
+end $$;
+
+-- The RELATION half. A view over this table is insertable whenever Postgres judges it auto-updatable,
+-- and a rule `on insert to anything do instead insert into video_generations` makes the ordinary table
+-- carrying it a write surface too — neither names the table in the inserting statement, so neither is
+-- findable by pattern.
+--
+-- ⚠ THE ALLOWLIST IS A RATCHET, AND IT FAILS IN THE OPPOSITE DIRECTION TO R8's LIST ABOVE. R8's is an
+-- INCLUSION list: forget to add something and it is silently not checked (its own comment says so).
+-- This one is an EQUALITY: anything new appearing here fails until someone writes it down, so
+-- forgetting is the failing case rather than the passing one.
+--
+-- `video_generations_collectable` is on it because it MEASURES as auto-updatable (mask 28 =
+-- 4 UPDATE | 8 INSERT | 16 DELETE) — a plain `select g.* from video_generations g where …` is a simple
+-- view, and Postgres makes simple views updatable. It grants nobody a capability they lack: no role
+-- holds INSERT on it (asserted below), so only the owner can write through it, and the owner can write
+-- the table directly anyway. It is deliberately left updatable rather than broken with a subquery
+-- wrapper, because §8's sweeper is specified to work THROUGH this view and `update
+-- video_generations_collectable set body_collected = true` is the shape it is likely to want.
+do $$ declare surfaces text[]; leaky text[]; owner text; begin
+  select coalesce(array_agg(distinct rn.nspname||'.'||rc.relname order by rn.nspname||'.'||rc.relname),
+                  '{}'::text[])
+    into surfaces
+    from pg_depend d
+    join pg_rewrite r on r.oid = d.objid
+    join pg_class rc on rc.oid = r.ev_class
+    join pg_namespace rn on rn.oid = rc.relnamespace
+   where d.classid = 'pg_rewrite'::regclass
+     and d.refclassid = 'pg_class'::regclass
+     and d.refobjid = 'public.video_generations'::regclass
+     and rc.oid <> 'public.video_generations'::regclass
+     and (pg_catalog.pg_relation_is_updatable(rc.oid, true) & 8) <> 0;   -- 8 = the INSERT bit
+  if surfaces is distinct from array['public.video_generations_collectable'] then
+    raise exception 'ASSERTION FAILED — a SECOND writer of video_generations exists: the insertable '
+      'relation(s) over it are {%}, expected exactly {public.video_generations_collectable}. '
+      'An insertable view or an ON INSERT DO INSTEAD rule is a write surface that names no table.',
+      array_to_string(surfaces, ', ');
+  end if;
+  -- …and nobody may reach through the one that is allowed.
+  select c.relowner::regrole::text into owner
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public' and c.relname = 'video_generations_collectable';
+  select coalesce(array_agg(distinct a.grantee::regrole::text), '{}'::text[]) into leaky
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral aclexplode(c.relacl) a
+   where n.nspname = 'public' and c.relname = 'video_generations_collectable'
+     and a.privilege_type = 'INSERT'
+     and a.grantee::regrole::text <> owner;
+  if leaky is distinct from '{}'::text[] then
+    raise exception 'ASSERTION FAILED — role(s) {%} hold INSERT on video_generations_collectable, '
+      'which is auto-updatable onto video_generations', array_to_string(leaky, ', ');
+  end if;
+  raise notice 'ok (T4/H1): no relation other than the table is an insertable write surface a role can use';
 end $$;
 
 -- The other half of "who can write one", because a second writer does not have to be a function.
@@ -1957,6 +2049,58 @@ do $$ declare ws uuid; n_src int; n_free int; begin
   raise notice 'ok (T3 GC): a referenced generation is protected; an unreferenced one is still collectable';
 end $$;
 
+-- ── ⟳ ADR-0007 IMPLEMENTATION REVIEW, H3 — THE PIN IS PERMANENT, MEASURED ───────────────────────
+-- ⚠ READ THE LABEL BEFORE THE CODE: this is the SECOND block in this file that asserts a known
+-- limitation REPRODUCES, and it is here for the same reason as T4's — the schema comment for the GC
+-- reachability check used to promise that "§8's retention clock … eventually releases it", and no
+-- release exists. The assertion above tests the half that works (referenced ⇒ protected); nothing
+-- tested that a reference is ever RELEASED, because under this design it never is, and an absence is
+-- invisible to every opt-in instrument at once.
+--
+-- The chain, all of it through the RPC: a model is built from a summary, both are superseded, the
+-- model's own generation is swept — and the summary is STILL not collectable. The three exits are
+-- closed by three guards this branch added (provenance undeletable while its artifact lives, paid
+-- artifacts undeletable, the sweeper selects THROUGH the view), so nothing short of deleting the
+-- account clears it.
+--
+-- IF SOMEONE CLOSES THIS — the candidate is in 04's comment and in docs/backlog.md #27 — THIS BLOCK
+-- GOES RED. That is the intended signal, and the correct response is to delete it, not to work
+-- around it.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidH3' from t_ws;
+do $$ declare ws uuid; n int; begin
+  select id into ws from t_ws;
+  perform record_artifact(ws,'vidH3','summary','gH3s','summary'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3s/summary.md', p_md_hash := 'SHA_H3S',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-01","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-01');
+  perform record_artifact(ws,'vidH3','model','gH3m','model'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3m/model.json',
+    p_source_generation_id := 'gH3s', p_produced_at := '2026-07-02');
+  -- supersede both, so neither is current and the retention clock is the only thing left
+  perform record_artifact(ws,'vidH3','summary','gH3s2','summary'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3s2/summary.md', p_md_hash := 'SHA_H3S2',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-03","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-03');
+  perform record_artifact(ws,'vidH3','model','gH3m2','model'::artifact_kind,
+    ws::text||'/videos/vidH3/gH3m2/model.json',
+    p_source_generation_id := 'gH3s2', p_produced_at := '2026-07-04');
+  select count(*) into n from video_generations_collectable
+   where video_id='vidH3' and generation_id='gH3m';
+  if n <> 1 then
+    raise exception 'H3 CHARACTERISATION STALE — the superseded model is no longer collectable (% rows); '
+      're-read this block.', n; end if;
+  update video_generations set body_collected = true
+   where video_id='vidH3' and generation_id='gH3m';           -- its only referrer, swept
+  select count(*) into n from video_generations_collectable
+   where video_id='vidH3' and generation_id='gH3s';
+  if n <> 0 then
+    raise exception 'H3 CHARACTERISATION STALE — the pin RELEASED (% rows). If the release was '
+      'implemented deliberately, DELETE this block and 04''s note; do not work around it.', n; end if;
+  raise notice 'ok (H3, MEASURED COST): a source generation stays pinned after its only referrer was swept — retained for the life of the workspace, not 90 days';
+end $$;
+
 -- ⟳ T3 — THE RE-RECORD RULE, THROUGH THE RPC THAT REAL CALLERS USE. Round 16 H2 corrected this from
 -- "replace" to "present the same set or raise", and the correction is load-bearing: a replace is a
 -- delete-and-insert, which the child table's own freeze forbids — and on the OMISSION path a replace
@@ -1986,6 +2130,55 @@ select assert_raises(format($$
     p_source_generation_id := 'gT3a', p_produced_at := '2026-06-06');
 $$, (select id from t_ws), (select id from t_ws)::text),
  're-recording with a DIFFERENT source (round 16 H2 — the same set, or a raise)', 'P0001');
+
+-- ── ⟳ ADR-0007 IMPLEMENTATION REVIEW, H2 — THE THIRD RE-RECORD CASE, WHICH HAD NO ASSERTION ─────
+-- The three blocks above exercise SAME-set, OMITTED and DIFFERENT-set. The fourth transition a real
+-- caller reaches is EMPTY -> NON-EMPTY: record first, learn the source later. It had no assertion,
+-- and an absence is invisible to every opt-in instrument at once (this file's own ratchet argument),
+-- so `record_artifact` silently ADDED provenance to an already-recorded PAID row — a one-way change
+-- the sibling DELETE freeze then makes permanent. The cause was one sentinel carrying two facts:
+-- `v_recorded = '{}'` meant both "this artifact has no provenance yet" and "this artifact is
+-- RECORDED AS HAVING NONE", and only the first of those is "this is the first write".
+--
+-- ⚠ THE FIXTURE IS BUILT THROUGH THE RPC ON PURPOSE. A rolled-back probe can construct any state you
+-- can type, so the question this file has to ask (see R9's kept lesson above) is not "is it refused?"
+-- but "can a caller BE here?" — and this one is: three of the four paid kinds are recorded with no
+-- source at all, and `gMmMIX` two blocks up is exactly such a row.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidH2' from t_ws;
+do $$ declare ws uuid; o text; n int; begin
+  select id into ws from t_ws;
+  perform record_artifact(ws,'vidH2','summary','gH2s','summary'::artifact_kind,
+    ws::text||'/videos/vidH2/gH2s/summary.md', p_md_hash := 'SHA_H2S',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-05","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-05');
+  o := record_artifact(ws,'vidH2','model','gH2m','model'::artifact_kind,
+    ws::text||'/videos/vidH2/gH2m/model.json', p_produced_at := '2026-07-06');   -- SOURCE OMITTED
+  if o <> 'recorded' then
+    raise exception 'ASSERTION FAILED — the H2 fixture did not record: %', o; end if;
+  select count(*) into n from video_artifact_sources s
+    join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidH2' and a.slot='model';
+  if n <> 0 then
+    raise exception 'ASSERTION FAILED — the H2 fixture already carries provenance (% row(s))', n; end if;
+  raise notice 'ok (H2 fixture): a paid model is RECORDED WITH NO SOURCE — reached through the RPC, not typed';
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidH2','model','gH2m','model'::artifact_kind,
+    %L||'/videos/vidH2/gH2m/model.json',
+    p_source_generation_id := 'gH2s', p_produced_at := '2026-07-06');
+$$, (select id from t_ws), (select id from t_ws)::text),
+ 'an artifact recorded with NO source has provenance ADDED on re-record (review H2)', 'P0001');
+-- The refusal has to be total, not merely reported: the raise is what stops the INSERT, and an
+-- assertion that only reads the SQLSTATE would pass over a guard that raised after writing.
+do $$ declare srcs text; begin
+  select coalesce(string_agg(s.source_generation_id, ',' order by s.source_generation_id),'') into srcs
+    from video_artifact_sources s join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidH2' and a.slot='model';
+  if srcs <> '' then
+    raise exception 'ASSERTION FAILED — the refused re-record still left provenance {%}', srcs; end if;
+  raise notice 'ok (H2): a recorded EMPTY source set stays empty — "no row yet" and "recorded as none" are two facts now';
+end $$;
 
 -- ⟳ T3 — THE CASCADE THE `restrict` DECISION WAS MADE FOR, AND THE DELETE GUARD'S OWN CONDITION.
 -- Round 14 B3 measured `on delete restrict` breaking account erasure. Round 15 L1 refined the cause

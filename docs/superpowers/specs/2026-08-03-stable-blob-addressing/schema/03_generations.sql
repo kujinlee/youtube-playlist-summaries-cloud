@@ -304,10 +304,16 @@ create table video_generations (
   --
   -- ⚠ NARROWED, NOT DROPPED, and the column earns its keep in three places that would each have to
   -- be rewritten to lose it:
-  --   * the five completeness CHECKs below are written `state <> 'complete' or …`. With the domain
-  --     single-valued that disjunct is CONSTANTLY FALSE, so every one of them now binds
-  --     UNCONDITIONALLY — the relaxation round 6 B5 granted the reservation is repaid, not merely
-  --     left unused.
+  --   * ⟳ ADR-0007 IMPLEMENTATION REVIEW, M1 / Codex Low — THIS LINE USED TO SAY the five
+  --     completeness CHECKs below "are written `state <> 'complete' or …`", IN THE SAME BRANCH THAT
+  --     DELETED THAT DISJUNCT FROM ALL FIVE (see the ⛔ block below, and the CHECKs at :410-435 —
+  --     `grep "state <> 'complete'"` over this file now finds only prose and the freeze trigger).
+  --     What is true is the step before it: the domain is SINGLE-VALUED, which is WHY the disjunct
+  --     was constantly false, and why every one of those CHECKs now binds UNCONDITIONALLY — the
+  --     relaxation round 6 B5 granted the reservation is repaid, not merely left unused. Re-widening
+  --     `state` fails CLOSED, because without the disjunct a pending row must satisfy all five in
+  --     full. The correction matters because this comment is the justification for KEEPING a column:
+  --     a reason that has stopped being true reads as settled, which is worse than no reason at all.
   --   * `video_artifacts_generation_complete` (04) selects this column to tell present-and-complete
   --     from `<absent>`, and `<absent>` is the branch T1 MEASURED
   --     ([P0001] cannot mark summary as recorded — generation gG1 is <absent>). Dropping the column

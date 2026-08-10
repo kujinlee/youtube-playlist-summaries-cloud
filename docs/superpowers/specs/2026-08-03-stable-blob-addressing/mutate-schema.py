@@ -198,10 +198,21 @@ MUTATIONS = [
     # omission path is the DELETE branch mutated above; the assertion is still worth its place,
     # because a FUTURE writer that adds a statement there would have nothing else to catch it.
     ("T3: a re-record REPLACES the source set (round 16 H2's withdrawn draft)",
-     """    if v_recorded = '{}'::text[] then""",
+     """    if not v_existed and v_recorded = '{}'::text[] then""",
      """    delete from public.video_artifact_sources where artifact_id = v_art;
     if true then""",
      "cannot DELETE the provenance", ART),
+
+    # ⟳ ADR-0007 IMPLEMENTATION REVIEW, H2 — THE CONJUNCT THAT SEPARATES THE TWO FACTS. Removing it
+    # restores the shipped defect EXACTLY: the gate falls back to reading "the recorded set is empty"
+    # as "this is the first write", and a `model` recorded with no source gets provenance ADDED on
+    # re-record. Note which assertion catches it — not a provenance negative but the new EMPTY ->
+    # NON-EMPTY case, because the other three transitions are all still handled correctly by the
+    # `elsif`. That is the point of the entry: the old gate was right about three cases out of four.
+    ("H2: 'the set is empty' stands in for 'this is the first write' again",
+     """    if not v_existed and v_recorded = '{}'::text[] then""",
+     """    if v_recorded = '{}'::text[] then""",
+     "has provenance ADDED on re-record", ART),
 
     # ── ⟳ T3: the table's own shape ──────────────────────────────────────────────────────────────
     ("T3: the source row's tenant coordinate no longer FK'd to its artifact",
@@ -462,6 +473,37 @@ begin
   values (p_ws, p_video, p_gen, 'dig', now());
 end $t4$;""",
      "a SECOND writer of video_generations exists", GEN),
+
+    # ⟳ ADR-0007 IMPLEMENTATION REVIEW, H1 — THREE MORE SECOND WRITERS, EACH IN A FORM THE OLD
+    # ONE-REGEX ASSERTION MEASURED AS INVISIBLE. The entry above injects the NAIVE spelling and was
+    # the only one; it proved the assertion load-bearing and could not prove it complete, so the
+    # widened assertion gets a mutation per NEW clause rather than one per rule.
+    #
+    #   quoted identifier -> the `replace(prosrc,'"','')` normalisation
+    #   insertable VIEW   -> the pg_rewrite/pg_relation_is_updatable half, which no pattern reaches
+    #                        (the inserting statement does not contain the string `video_generations`)
+    #   an INSERT grant   -> the surface-privilege clause on the one allowlisted view
+    ("a SECOND writer spells the table QUOTED (H1 — the normalisation)",
+     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;",
+     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+create function t4_quoted_writer(p_ws uuid, p_video text, p_gen text) returns void
+  language plpgsql security definer set search_path = '' as $t4q$
+begin
+  insert into public."video_generations" (workspace_id, video_id, generation_id, kind, produced_at)
+  values (p_ws, p_video, p_gen, 'dig', now());
+end $t4q$;""",
+     "a SECOND writer of video_generations exists", GEN),
+
+    ("a SECOND writer arrives as an insertable VIEW (H1 — the relation half)",
+     "create trigger video_generations_freeze_trg",
+     """create view vg_shadow as select * from video_generations;
+create trigger video_generations_freeze_trg""",
+     "insertable relation(s) over it are", GEN),
+
+    ("the allowlisted GC view becomes writable by a role (H1 — the surface grant)",
+     "grant select on video_generations_collectable to service_role;",
+     "grant select, insert on video_generations_collectable to service_role;",
+     "hold INSERT on video_generations_collectable", ART),
 
     ("freeze: complete is no longer terminal",
      "    if new.state <> 'complete' then\n      raise exception 'video_generations: % is COMPLETE and cannot return to %',\n        old.generation_id, new.state;\n    end if;\n",
