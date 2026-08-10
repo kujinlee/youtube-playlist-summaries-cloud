@@ -70,15 +70,156 @@ MUTATIONS = [
      "  if old.generation_id is not null and old.state = 'recorded' then",
      "DETACHED paid row", ART),
 
-    ("freeze: only the PROVENANCE clause removed (Codex H5)",
-     "    if new.source_generation_id is distinct from old.source_generation_id\n       or new.start_sec",
-     "    if (false)\n       or new.start_sec",
-     "PROVENANCE", ART),
+    # ⟳ T3 RE-ANCHORED — the PROVENANCE half of this branch moved to `video_artifact_sources`, so the
+    # mutation moved with it. Codex H5's rule is unchanged: provenance is a ranking input, so a stale
+    # model that rewrites it wins the currency rung without regenerating a byte. Only the spelling
+    # changed — with a set, "rewrite" is UPDATE, DELETE-then-insert, or an alien INSERT, and each gets
+    # its own entry below rather than one anchor covering three mechanisms.
+    ("vas freeze: the UPDATE branch removed (Codex H5 — provenance rewritten in place)",
+     "  raise exception 'video_artifact_sources: the PROVENANCE of artifact % is immutable — % may not become %',\n    old.artifact_id, old.source_generation_id, new.source_generation_id;",
+     "  return new;",
+     "rewriting the PROVENANCE", ART),
+
+    ("vas freeze: the DELETE branch removed (the two-statement route back to a rewrite)",
+     """  if tg_op = 'DELETE' then
+    if exists (select 1 from public.video_artifacts a where a.artifact_id = old.artifact_id) then
+      raise exception 'video_artifact_sources: cannot DELETE the provenance of a live artifact % (source %)',
+        old.artifact_id, old.source_generation_id;
+    end if;
+    return old;
+  end if;""",
+     "  if tg_op = 'DELETE' then\n    return old;\n  end if;",
+     "DELETING the provenance", ART),
+
+    # ⚠ THE OTHER DIRECTION OF THE SAME BRANCH, and it is here because round 14 B3 measured what an
+    # over-broad rule on this path costs. Making the DELETE raise unconditional is the tempting
+    # "stricter is safer" edit; it re-breaks account erasure through the FREE-render cascade, which is
+    # the live caller `on delete cascade` was chosen for in the first place. A guard is load-bearing in
+    # two directions and only one of them is a missing raise.
+    ("vas freeze: the DELETE raise made unconditional (account erasure blocked again)",
+     "    if exists (select 1 from public.video_artifacts a where a.artifact_id = old.artifact_id) then",
+     "    if true then",
+     "cannot DELETE the provenance", ART),
+
+    # ⚠ ROUND 17 H3, AS A MUTATION. This is the guard whose ABSENCE was measured: with only the
+    # update/delete freeze above, a re-record naming a different source is an INSERT, which fires no
+    # such trigger, and the probe got a silent UNION — neither the same set nor a raise.
+    ("vas: the INSERT enforcer removed (round 17 H3 — the silent UNION returns)",
+     """create trigger video_artifact_sources_insert_once_trg
+  after insert on video_artifact_sources
+  referencing new table as ins
+  for each statement execute function video_artifact_sources_insert_once();""",
+     "",
+     "ADDING a source to an artifact", ART),
+
+    # The other direction: an enforcer that refuses a legitimate multi-row set would make the table's
+    # own purpose unreachable. `>` becomes `>=`, so every insert looks like an addition.
+    ("vas: the INSERT enforcer refuses the FIRST set too (multi-source unrepresentable)",
+     "       > (select count(*) from ins j where j.artifact_id = i.artifact_id)",
+     "       >= (select count(*) from ins j where j.artifact_id = i.artifact_id)",
+     "the PROVENANCE of artifact", ART),
 
     ("freeze: only the SPAN clauses removed (Codex H5)",
-     "       or new.start_sec is distinct from old.start_sec\n       or new.end_sec   is distinct from old.end_sec then",
-     "       or (false)\n       or (false) then",
+     "    if new.start_sec is distinct from old.start_sec\n       or new.end_sec   is distinct from old.end_sec then",
+     "    if (false)\n       or (false) then",
      "SPAN", ART),
+
+    # ⟳ T3 — `art_summary_has_no_source` IS A CONSTRAINT TRIGGER NOW, and it had never been mutated as
+    # a CHECK either: the old entry list has no line for it. Neutralised rather than deleted, so the
+    # trigger still exists and only its verdict changes.
+    ("art_summary_has_no_source neutralised (a summary may record a source again)",
+     "  if v_kind = 'summary' then",
+     "  if false then",
+     "a SUMMARY artifact recording a source", ART),
+
+    # ── ⟳ T3: the source-currency rung, which had NO mutation for seventeen rounds ────────────────
+    # ⚠ THE RUNG WAS UNTESTED, NOT UNDER-TESTED. The only assertion touching it was the FLOOR ("a
+    # stale model must still serve"), which a rung that does nothing at all satisfies. Both directions
+    # get an entry, because the two ways to break a rung are to make it decide nothing and to make it
+    # decide the wrong thing.
+    ("T3: the source-currency rung neutralised (staleness stops ranking)",
+     """         (a.slot = 'summary'
+          or not exists (select 1""",
+     """         (a.slot = 'summary'
+          or true
+          or not exists (select 1""",
+     "the source-currency rung did not decide", ART),
+
+    # ⟳ ROUND 15 M3, AS A MUTATION. `video_summary_current` has no row for a dig generation, so
+    # scoring a non-summary source against it marks it stale FOREVER — and the artifact that carries
+    # dig sources is `digDeeper`, the multi-source case the table exists for.
+    ("T3: every source kind ranks, not only summary (round 15 M3's undefined case)",
+     "                            and sg.kind = 'summary'\n",
+     "",
+     "a NON-SUMMARY source was scored for currency", ART),
+
+    ("T3: the GC reachability check removed (a referenced generation is collectable again)",
+     """   and not exists (select 1 from video_artifact_sources vas
+                    where vas.workspace_id = g.workspace_id and vas.video_id = g.video_id
+                      and vas.source_generation_id = g.generation_id)""",
+     "",
+     "was offered to the sweeper", ART),
+
+    # ── ⟳ T3: record_artifact's half of the re-record rule ───────────────────────────────────────
+    # ⚠ THE FIRST OF THESE IS ROUND 15 B3 ITSELF — "drop the column, leave the RPC unchanged, and the
+    # table is always empty, at which point BOTH new guards go vacuously true." It is the failure this
+    # ADR names three times ("a guard that never started, arriving by subtraction"), so it gets a
+    # mutation rather than a paragraph. Note which assertion catches it: the RUNG, not a provenance
+    # negative — an empty table breaks no rule, it just stops deciding anything.
+    ("T3: record_artifact stops writing provenance (round 15 B3 — both guards go vacuous)",
+     """      insert into public.video_artifact_sources
+        (artifact_id, workspace_id, video_id, source_generation_id)
+      values (v_art, p_ws, p_video, p_source_generation_id);""",
+     "      null;",
+     "the source-currency rung did not decide", ART),
+
+    ("T3: the re-record set comparison removed (a shrink the trigger cannot see)",
+     """    elsif v_recorded is distinct from array[p_source_generation_id] then
+      raise exception 'video_artifact_sources: the PROVENANCE of % (slot %, gen %) is immutable — it records {%}, and this record presents {%}',
+        v_art, p_slot, p_generation_id,
+        array_to_string(v_recorded, ', '), p_source_generation_id;""",
+     "",
+     "re-recording with a DIFFERENT source", ART),
+
+    # ⟳ ROUND 16 H2, AS A MUTATION: the rule said REPLACE until round 16 corrected it to "present the
+    # same set, or raise". This restores the replace — delete the recorded set, then write the
+    # presented one — and the verdict is the interesting part: it dies on the child table's own DELETE
+    # freeze, which is precisely the contradiction H2 identified ("a replace is a delete-and-insert,
+    # and the trigger being moved forbids exactly that"). The draft was not merely wrong about intent;
+    # it was unimplementable beside the other half of the same fix.
+    #
+    # ⚠ AND THE OMISSION HALF OF THE RULE HAS NO MUTATION, WHICH IS A PROPERTY AND NOT A GAP — said
+    # out loud because an absence here is indistinguishable from an oversight. "An omitted
+    # p_source_generation_id carries the recorded set forward unchanged" is carried by NOTHING
+    # EXECUTING: the block is gated on `p_source_generation_id is not null`, so on the omission path
+    # there is no statement to remove and no predicate to invert. The first version of this entry
+    # tried to force one by widening that gate, and it measured a NOT NULL violation rather than a
+    # wiped set — a mutation modelling a defect the code cannot have. What actually protects the
+    # omission path is the DELETE branch mutated above; the assertion is still worth its place,
+    # because a FUTURE writer that adds a statement there would have nothing else to catch it.
+    ("T3: a re-record REPLACES the source set (round 16 H2's withdrawn draft)",
+     """    if v_recorded = '{}'::text[] then""",
+     """    delete from public.video_artifact_sources where artifact_id = v_art;
+    if true then""",
+     "cannot DELETE the provenance", ART),
+
+    # ── ⟳ T3: the table's own shape ──────────────────────────────────────────────────────────────
+    ("T3: the source row's tenant coordinate no longer FK'd to its artifact",
+     """  constraint vas_artifact_fk foreign key (artifact_id, workspace_id, video_id)
+    references video_artifacts (artifact_id, workspace_id, video_id) on delete cascade,""",
+     """  constraint vas_artifact_fk foreign key (artifact_id)
+    references video_artifacts (artifact_id) on delete cascade,""",
+     "tenant coordinate is not its artifact", ART),
+
+    # RLS on the join table is not symmetry: `video_artifacts_current` is security_invoker and reads
+    # this table inside the rung, so without the policy the owner and service_role rank the SAME
+    # manifest differently. Round 6 H3's lesson — a policy's removal is only visible from the OWNER's
+    # side — is why the assertion this kills is an owner-side read, not a cross-tenant one.
+    ("T3: the owner-read policy on video_artifact_sources removed",
+     """create policy video_artifact_sources_owner_read on video_artifact_sources for select to authenticated
+  using (workspace_id in (select id from workspaces where owner_id = (select auth.uid())));""",
+     "",
+     "the owner cannot read their own base tables", ART),
 
     ("clock restarts on every re-detach",
      "      new.detached_at := case when old.state = 'detached' then old.detached_at else now() end;",
@@ -174,19 +315,21 @@ MUTATIONS = [
     # anchor deliberately stops at the statement — extending it through the trailing comment is what
     # broke it when round 7 rewrote this block, and an anchor that spans prose is an anchor that
     # breaks every time someone explains themselves.
+    # ⟳ T3 — ANCHOR UPDATED, RULE UNTOUCHED. `source_generation_id` left the column list and the
+    # `do update` set with the column, and the statement gained `returning artifact_id into v_art`
+    # because provenance now needs the surrogate key.
     ("record_artifact refuses instead of appending (round 6 H5's declined fix)",
      """  insert into public.video_artifacts
     (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
-     source_generation_id, start_sec, end_sec)
+     start_sec, end_sec)
   values (p_ws, p_video, p_slot, p_generation_id, p_kind, 'recorded', p_blob_key,
-          coalesce(p_source_generation_id, v_src),
           coalesce(p_start_sec, v_start), coalesce(p_end_sec, v_end))
   on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
   do update set
        state                = 'recorded',
-       source_generation_id = excluded.source_generation_id,
        start_sec            = excluded.start_sec,
-       end_sec              = excluded.end_sec;""",
+       end_sec              = excluded.end_sec
+  returning artifact_id into v_art;""",
      "  return 'refused';",
      "the first writer of a slot got", ART),
 
@@ -200,14 +343,18 @@ MUTATIONS = [
     # on the money path — never had a mutation of its own. It was covered only incidentally, by the
     # ANCHOR of the entry above, which happened to span the `do update` while testing something else.
     # Making the paid append blind tests it directly, and the expected verdict is the original one.
+    # ⟳ T3 — ANCHOR UPDATED for the same two reasons as the entry above, and the replacement keeps
+    # `returning artifact_id into v_art` rather than dropping to a bare `;`: without it the mutated
+    # function does not compile and the harness reports INVALID, which this project has measured reads
+    # as *untested* rather than as *a broken edit*.
     ("the paid append made blind (round 7 B1 — a retry collides with its own row)",
      """  on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
   do update set
        state                = 'recorded',
-       source_generation_id = excluded.source_generation_id,
        start_sec            = excluded.start_sec,
-       end_sec              = excluded.end_sec;""",
-     "  ;",
+       end_sec              = excluded.end_sec
+  returning artifact_id into v_art;""",
+     "  returning artifact_id into v_art;",
      "video_artifacts_paid_uq", ART),
 
     # ── item 3: the generation-write API (round 6 B5, Codex B3) ──────────────────
@@ -664,7 +811,13 @@ def classify(rc, out, expect):
     #    `refusing to collect generation …` (no prefix at all). No mutation landed on either, so
     #    35/35 was honest — but round 7 adds a mutation for each, and without this they would have
     #    been reported INVALID, i.e. a working guard scored as an untested one. Again.
-    m = re.search(r"ERROR:\s*(video_artifacts|video_generations|refusing to collect)[^\n]*", out)
+    # ⟳ T3 — A FOURTH PREFIX, AND IT IS THE THIRD TIME THIS ANCHOR HAS BEEN TOO NARROW.
+    # `video_artifact_sources` is NOT matched by `video_artifacts` — the next character is `_`, not
+    # `s` — so every one of T3's five trigger guards would have been reported INVALID, i.e. a working
+    # guard scored as an untested one, which is the exact failure round 6 B5 and round 7 M2 both
+    # recorded here. The list is hand-maintained and that is its standing weakness: a new table's
+    # raise prefix is invisible until someone adds it. Ordered longest-first so the intent is legible.
+    m = re.search(r"ERROR:\s*(video_artifact_sources|video_artifacts|video_generations|refusing to collect)[^\n]*", out)
     if m:
         detail = m.group(0).strip()
         return ("RED(trigger)" if expect.lower() in detail.lower() else "RED(other)"), detail

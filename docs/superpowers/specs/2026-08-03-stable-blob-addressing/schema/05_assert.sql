@@ -166,9 +166,14 @@ values ((select id from t_ws),'vidA','summary','gOLD','summary','recorded',(sele
        ((select id from t_ws),'vidA','pdf:summary',null,'render','recorded',(select id from t_ws)::text||'/videos/vidA/renders/s.pdf');
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key,start_sec,end_sec)
 values ((select id from t_ws),'vidA','dig:120','gDIG','dig','recorded',(select id from t_ws)::text||'/videos/vidA/gDIG/dig/120.md',120,170);
+-- ⟳ T3 — PROVENANCE IS A ROW IN A CHILD TABLE NOW, not a column. Two statements, same claim: this
+-- model was built FROM gOLD, which `video_summary_current` will shortly rank as superseded.
 insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-values ((select id from t_ws),'vidA','model','gMODEL','model','recorded',(select id from t_ws)::text||'/videos/vidA/gMODEL/model.json','gOLD');
+  (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+values ((select id from t_ws),'vidA','model','gMODEL','model','recorded',(select id from t_ws)::text||'/videos/vidA/gMODEL/model.json');
+insert into video_artifact_sources (artifact_id, workspace_id, video_id, source_generation_id)
+select a.artifact_id, a.workspace_id, a.video_id, 'gOLD'
+  from video_artifacts a where a.video_id='vidA' and a.slot='model';
 insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
 values ((select id from t_w2),'vidB','summary','g2','summary','recorded',(select id from t_w2)::text||'/videos/vidB/g2/summary.md');
 
@@ -387,17 +392,46 @@ select assert_raises($$insert into video_artifacts
   'a key whose second segment is not the literal ''videos''',
   '23514', 'art_key_names_workspace');
 
--- art_summary_has_no_source (round 5 H2, the DATA half)
-select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-  values ((select id from t_ws),'vidA','summary','gSPARE','summary','recorded',(select id from t_ws)::text||'/videos/vidA/gSPARE/s.md','gOLD')$$,
-  'a SUMMARY carrying a source_generation_id (it is derived from nothing)', '23514', 'art_summary_has_no_source');
+-- ── ⟳ T3 — THE FOUR PROVENANCE ASSERTIONS, REWRITTEN AGAINST THE JOIN TABLE ─────────────────────
+-- They are REWRITTEN, NOT DELETED. Deleting them would remove the EVIDENCE that these rules hold
+-- rather than the rules — and one of them (the immutability negative, further down) is the only
+-- executable proof that provenance cannot be rewritten, which is the guarantee round 17 H3 measured
+-- a hole in. Each still violates exactly one guard, which took more care than before: with the rule
+-- spread over a constraint trigger, an INSERT enforcer and two FKs, a careless fixture trips two.
 
--- the source FK (round 5, Codex/M5)
-select assert_raises($$insert into video_artifacts
-  (workspace_id,video_id,slot,generation_id,kind,state,blob_key,source_generation_id)
-  values ((select id from t_ws),'vidA','digDeeper','wB','digDeeper','recorded',(select id from t_ws)::text||'/videos/vidA/wB/dd.md','gGHOST')$$,
-  'provenance from a generation that DOES NOT EXIST', '23503', 'video_artifacts_workspace_id_video_id_source_generation_id_fkey');
+-- art_summary_has_no_source (round 5 H2, the DATA half) — now a CARDINALITY-ZERO rule enforced by a
+-- CONSTRAINT TRIGGER, because a CHECK cannot reach another table. The subject row is gNEW's SUMMARY
+-- artifact, which has NO sources of its own — so the INSERT enforcer cannot fire and this negative
+-- can only be answered by the summary rule. 'gOLD' is a real generation, so the FK cannot fire either.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, 'gOLD' from video_artifacts a
+   where a.video_id='vidA' and a.slot='summary' and a.generation_id='gNEW'$$,
+  'a SUMMARY artifact recording a source (it is derived from nothing)', 'P0001');
+
+-- the source FK (round 5, Codex/M5), which migrated onto this table with the column. Same claim,
+-- per SOURCE: provenance may not name a generation that does not exist.
+-- ⚠ THE SUBJECT IS `dig:120`, WHICH HAS NO SOURCES OF ITS OWN, AND THAT IS DELIBERATE. Using the
+-- `model` artifact — the obvious choice, since it is the one with provenance — would make the row
+-- violate the INSERT enforcer TOO, and it would pass under a disjunction: FK checks are AFTER ROW
+-- and the enforcer is AFTER STATEMENT, so the FK merely happens to answer first. Round 5 H1's
+-- masking rule reaches guards that fire in a fixed order just as it reaches two constraints.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, 'gGHOST' from video_artifacts a
+   where a.video_id='vidA' and a.slot='dig:120'$$,
+  'provenance from a generation that DOES NOT EXIST', '23503', 'vas_source_generation_fk');
+
+-- ⟳ T3 — THE TENANT COORDINATE IS FK'd BACK TO THE ARTIFACT, and this is the negative that proves
+-- the denormalisation cannot lie. Without `vas_artifact_fk` a source row could sit under tenant 1's
+-- model while naming tenant 2's (workspace, video), and the currency rung would then rank a paid
+-- render against ANOTHER TENANT's summary. `g2` is a real generation — of the OTHER workspace — so
+-- `vas_source_generation_fk` is satisfied and only the artifact FK can object.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, (select id from t_w2), 'vidB', 'g2' from video_artifacts a
+   where a.video_id='vidA' and a.slot='dig:120'$$,
+  'a source row whose tenant coordinate is not its artifact''s', '23503', 'vas_artifact_fk');
 
 -- the two partial uniques, and the workspace_videos FK
 select assert_raises($$insert into video_artifacts
@@ -487,11 +521,46 @@ select assert_raises($$update video_artifacts
   where video_id='vidA' and slot='dig:120'$$,
   'moving a detached paid row to a state outside the domain (the trigger answers before the CHECK)',
   'P0001');
--- Codex H5 on a RECORDED row: provenance is a RANKING input, so a stale model rewriting it wins the
--- source-currency rung without regenerating anything. `wA`'s digDeeper row is recorded by now.
-select assert_raises($$update video_artifacts set source_generation_id='gOLD'
-  where video_id='vidA' and slot='digDeeper' and generation_id='wA'$$,
+-- ── ⟳ T3 — PROVENANCE IMMUTABILITY, AND THIS IS THE EXECUTABLE PROOF OF IT ──────────────────────
+-- Codex H5's rule is unchanged: provenance is a RANKING input, so a stale model that rewrites it to
+-- the current summary wins the source-currency rung without regenerating a byte. What changed is
+-- that provenance is now a SET, so "rewriting it" has THREE spellings, and round 17 H3 MEASURED
+-- that the round-16 fix — moving 04's PROVENANCE branch onto this table — caught only two of them.
+-- The subject is `vidA`'s model artifact, whose source is gOLD.
+--
+--   (a) UPDATE the row in place                — the append-only trigger on the child table
+select assert_raises($$update video_artifact_sources set source_generation_id='gNEW'
+  where artifact_id = (select artifact_id from video_artifacts where video_id='vidA' and slot='model')$$,
   'rewriting the PROVENANCE of a recorded paid row (Codex H5 — wins the rung for free)', 'P0001');
+--   (b) DELETE it, then re-insert             — the same trigger's DELETE branch. Without it, (a) and
+--       (c) are both reachable in two statements: empty the set, then write a new one into an
+--       artifact that now records nothing. Same two-statement bypass shape as round 6 B3's detach.
+select assert_raises($$delete from video_artifact_sources
+  where artifact_id = (select artifact_id from video_artifacts where video_id='vidA' and slot='model')$$,
+  'DELETING the provenance of a live artifact (the two-statement route to rewriting it)', 'P0001');
+--   (c) INSERT a DIFFERENT source beside it    — ⚠ THIS IS ROUND 17 H3, AND IT IS WHY THE MOVED
+--       TRIGGER WAS NOT SUFFICIENT. That trigger is `before update or delete`; an INSERT fires no
+--       such trigger, and the measured result was a silent UNION — neither the same set nor a raise,
+--       i.e. this artifact would then claim provenance from BOTH gOLD and gNEW and rank as current.
+--       "A constraint governs STATES, a trigger governs TRANSITIONS, and an INSERT is a state with
+--       no transition" is stated twice in 04's own comments; the round-16 fix assigned the invariant
+--       to the one mechanism shape that structurally cannot see the operation that violates it.
+select assert_raises($$insert into video_artifact_sources
+  (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, 'gNEW' from video_artifacts a
+   where a.video_id='vidA' and a.slot='model'$$,
+  'ADDING a source to an artifact that already records one (round 17 H3 — the silent UNION)', 'P0001');
+-- ...and the set is intact after all three. A negative that is rejected for the wrong reason still
+-- reads as green, so the state itself is asserted rather than inferred from three P0001s.
+do $$ declare srcs text; begin
+  select string_agg(s.source_generation_id, ',' order by s.source_generation_id) into srcs
+    from video_artifact_sources s
+    join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidA' and a.slot='model';
+  if srcs is distinct from 'gOLD' then
+    raise exception 'ASSERTION FAILED — the model''s source set is now {%}, expected {gOLD}', coalesce(srcs,''); end if;
+  raise notice 'ok (T3): provenance survives update, delete and union — all three spellings refused';
+end $$;
 
 -- art_detached_is_dig — only a section-scoped artifact can stop matching a section.
 -- Both fixtures carry detached_at so they violate EXACTLY ONE guard (round 5 H1's masking rule):
@@ -704,10 +773,14 @@ do $$ declare n int; other uuid; begin
        + (select count(*) from video_artifacts_current where video_id='vidA')
        + (select count(*) from video_summary_current   where video_id='vidA')
        + (select count(*) from video_generations       where video_id='vidA')
-       + (select count(*) from workspace_videos        where video_id='vidA') into n;
+       + (select count(*) from workspace_videos        where video_id='vidA')
+       -- ⟳ T3 — the join table joins the sweep. It is a fourth base table carrying tenant data
+       -- (blob provenance), created after the sweep was written, which is precisely how round 6 H3
+       -- happened: "read ONE view and ONE table" left three guards mutation-GREEN.
+       + (select count(*) from video_artifact_sources  where video_id='vidA') into n;
   reset role;
-  if n <> 0 then raise exception 'ASSERTION FAILED — cross-tenant leak: % rows across 5 objects', n; end if;
-  raise notice 'ok (RLS): tenant 2 sees 0 rows across BOTH views and all three base tables';
+  if n <> 0 then raise exception 'ASSERTION FAILED — cross-tenant leak: % rows across 6 objects', n; end if;
+  raise notice 'ok (RLS): tenant 2 sees 0 rows across BOTH views and all four base tables';
 end $$;
 do $$ declare n int; begin
   set local role anon;
@@ -723,17 +796,24 @@ end $$;
 -- "sees 0 rows" assertion still passed. A policy's removal is only visible from the OWNER's side —
 -- and reading it through the view does not work either, because video_generations is LEFT-joined,
 -- so its rows vanishing turns into NULLs rather than into missing rows.
-do $$ declare ng int; nw int; me uuid; begin
+-- ⟳ T3 — AND `video_artifact_sources` IS READ FROM THE OWNER'S SIDE FOR A SECOND REASON BEYOND
+-- SYMMETRY. `video_artifacts_current` is `security_invoker`, and its currency rung reads this table.
+-- With force RLS and no policy the `not exists` would be vacuously TRUE for an authenticated owner
+-- and false for `service_role` — the two would rank the SAME manifest differently, which is round 5
+-- H2's "the two views disagree" defect relocated into the privilege system. Every cross-tenant
+-- assertion would still pass, because a missing policy is only visible from the owner's side.
+do $$ declare ng int; nw int; ns int; me uuid; begin
   select id into me from t_ws;
   perform set_config('request.jwt.claims', json_build_object('sub', me::text)::text, true);
   set local role authenticated;
-  select count(*) into ng from video_generations where video_id='vidA';
-  select count(*) into nw from workspace_videos  where video_id='vidA';
+  select count(*) into ng from video_generations      where video_id='vidA';
+  select count(*) into nw from workspace_videos       where video_id='vidA';
+  select count(*) into ns from video_artifact_sources where video_id='vidA';
   reset role;
-  if ng = 0 or nw = 0 then
-    raise exception 'ASSERTION FAILED — the owner cannot read their own base tables (gen %, wv %)', ng, nw;
+  if ng = 0 or nw = 0 or ns = 0 then
+    raise exception 'ASSERTION FAILED — the owner cannot read their own base tables (gen %, wv %, sources %)', ng, nw, ns;
   end if;
-  raise notice 'ok (RLS): the owner reads video_generations and workspace_videos directly';
+  raise notice 'ok (RLS): the owner reads video_generations, workspace_videos and video_artifact_sources directly';
 end $$;
 
 -- FLOOR: make every generation corrections-stale. A stale generation must STILL SERVE (round 4 A-2).
@@ -1229,10 +1309,15 @@ do $$ declare leaky text[]; begin
      -- ⟳ ADR-0007 removed `reserve_artifact_slot` and `renew_artifact_lease` from this list because
      -- it removed the functions. The list is still hand-maintained, which is its known weakness: it
      -- catches a definer function that KEEPS the default PUBLIC EXECUTE, not one nobody adds here.
+     -- ⟳ T3 added THREE definer functions to this file, and adding them here is the whole point of
+     -- the list being hand-maintained: two of them are trigger functions, which round 7 M1 measured
+     -- as exactly the kind that keeps the default PUBLIC EXECUTE unnoticed.
      and p.proname in ('slot_kind','record_artifact',
                        'forbid_collecting_current','video_artifacts_append_only',
                        'video_artifacts_generation_complete','video_generations_freeze',
-                       'sync_corrections_to_workspace_video')
+                       'sync_corrections_to_workspace_video',
+                       'video_artifact_sources_append_only','video_artifact_sources_insert_once',
+                       'art_summary_has_no_source')
      and has_function_privilege('anon', p.oid, 'EXECUTE');
   if leaky is not null then
     raise exception 'ASSERTION FAILED — anon holds EXECUTE on definer function(s): %', leaky; end if;
@@ -1748,6 +1833,189 @@ select assert_raises($$
            (select id from workspaces where id <> p.workspace_id order by id desc limit 1)
       from playlists p limit 1;
 $$, 'a workspace_id disagreeing with the playlist is refused, not repaired', 'P0001');
+
+-- ── ⟳ T3 — PROVENANCE AS A SET: THE RUNG DECIDES, THE RE-RECORD RULE, AND GC REACHABILITY ──────
+-- ⚠ THE RUNG HAD NO ASSERTION THAT COULD GO RED, AND NO MUTATION AT ALL, FOR SEVENTEEN ROUNDS.
+-- What existed was the FLOOR ("a paid model whose SOURCE summary was superseded must still serve"),
+-- which is satisfied by a rung that does nothing whatsoever — it asserts the rung never GATES and
+-- says nothing about whether it RANKS. Every guard here is opt-in, and this is what that costs: the
+-- one rung the whole provenance design exists to feed was documentation. T3 rewrites it, so T3 owes
+-- it a test that DECIDES between two candidates and a mutation that can kill that test.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidT3' from t_ws;
+do $$ declare ws uuid; begin
+  select id into ws from t_ws;
+  -- two summary generations for vidT3; gT3b is the newer and therefore current
+  perform record_artifact(ws,'vidT3','summary','gT3a','summary'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3a/summary.md', p_md_hash := 'SHA_T3A',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-06-01","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-06-01');
+  perform record_artifact(ws,'vidT3','summary','gT3b','summary'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3b/summary.md', p_md_hash := 'SHA_T3B',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-06-05","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-06-05');
+  -- ⚠ THE STALE-SOURCE MODEL IS THE NEWER ONE, AND THAT INVERSION IS THE WHOLE TEST. A `model` row
+  -- carries no card and no doc_version_major (T4's two `*_is_summary_only` constraints), so every
+  -- rung between source-currency and `produced_at` is NULL for both candidates. Give the stale one
+  -- the later produced_at and the ONLY thing that can make the current-source one win is the rung.
+  perform record_artifact(ws,'vidT3','model','gT3mCUR','model'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3mCUR/model.json',
+    p_source_generation_id := 'gT3b', p_produced_at := '2026-06-06');
+  perform record_artifact(ws,'vidT3','model','gT3mOLD','model'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3mOLD/model.json',
+    p_source_generation_id := 'gT3a', p_produced_at := '2026-06-07');
+end $$;
+do $$ declare g text; begin
+  select generation_id into g from video_artifacts_current where video_id='vidT3' and slot='model';
+  if g is distinct from 'gT3mCUR' then
+    raise exception 'ASSERTION FAILED — the source-currency rung did not decide: current model is %, expected gT3mCUR (the NEWER model is built from a superseded summary)',
+      coalesce(g,'<none>'); end if;
+  raise notice 'ok (T3 rung): a model built from the CURRENT summary outranks a newer one built from a stale summary';
+end $$;
+
+-- ⟳ ROUND 15 M3 — ONLY SUMMARY-KIND SOURCES PARTICIPATE, AND WITHOUT THAT THE RUNG IS UNDEFINED
+-- EXACTLY WHERE THE JOIN TABLE IS NEEDED. `video_summary_current` has one row per (workspace, video)
+-- and NO row for a `dig` generation, so comparing a dig source against it scores that source stale
+-- FOREVER — and the artifact that carries dig sources is `digDeeper`, the multi-source case this
+-- table exists for. `gT3dA` carries a DIG source and is the newer; it must win on produced_at, which
+-- it can only do if its non-summary source is ignored by the rung rather than scored against it.
+do $$ declare ws uuid; g text; begin
+  select id into ws from t_ws;
+  insert into video_generations (workspace_id,video_id,generation_id,kind,produced_at)
+    values (ws,'vidT3','gT3dig','dig','2026-06-02');
+  perform record_artifact(ws,'vidT3','digDeeper','gT3dB','digDeeper'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3dB/dd.md', p_produced_at := '2026-06-08');
+  perform record_artifact(ws,'vidT3','digDeeper','gT3dA','digDeeper'::artifact_kind,
+    ws::text||'/videos/vidT3/gT3dA/dd.md',
+    p_source_generation_id := 'gT3dig', p_produced_at := '2026-06-09');
+  select generation_id into g from video_artifacts_current where video_id='vidT3' and slot='digDeeper';
+  if g is distinct from 'gT3dA' then
+    raise exception 'ASSERTION FAILED — a NON-SUMMARY source was scored for currency: current digDeeper is %, expected gT3dA',
+      coalesce(g,'<none>'); end if;
+  raise notice 'ok (T3/M3): a dig-kind source is recorded for GC and does NOT rank';
+end $$;
+
+-- ⚠ "ARE *ALL* ITS SOURCES CURRENT" — the question a set can answer and the dropped scalar could
+-- not, and the reason the rung is a `not exists` rather than a comparison. `gT3mmMIX` names one
+-- current and one superseded summary and is the NEWER row; one stale source must sink it.
+-- ⚠ THE TWO-SOURCE SET IS WRITTEN BY DIRECT DML, AND THAT IS AN HONEST GAP RATHER THAN A CHOICE OF
+-- STYLE: `record_artifact` takes a SCALAR `p_source_generation_id`, so no RPC caller can build a
+-- multi-source artifact today. The table, the rung and the GC reachability check are all set-shaped
+-- and the only writer is not. Whoever adds the multi-source producer changes the signature; until
+-- then this assertion is what stops the set semantics from being untested prose. It is also why the
+-- INSERT enforcer had to permit a multi-row statement — see its comment in 04.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidT3m' from t_ws;
+do $$ declare ws uuid; g text; begin
+  select id into ws from t_ws;
+  perform record_artifact(ws,'vidT3m','summary','gMsCUR','summary'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMsCUR/summary.md', p_md_hash := 'SHA_MS_CUR',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-05","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-05');
+  perform record_artifact(ws,'vidT3m','summary','gMsOLD','summary'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMsOLD/summary.md', p_md_hash := 'SHA_MS_OLD',
+    p_card := ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-01","processedAt":"y",'
+           || '"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb,
+    p_doc_version_major := 4, p_produced_at := '2026-07-01');
+  perform record_artifact(ws,'vidT3m','model','gMmALL','model'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMmALL/model.json',
+    p_source_generation_id := 'gMsCUR', p_produced_at := '2026-07-06');
+  perform record_artifact(ws,'vidT3m','model','gMmMIX','model'::artifact_kind,
+    ws::text||'/videos/vidT3m/gMmMIX/model.json', p_produced_at := '2026-07-07');
+  insert into video_artifact_sources (artifact_id, workspace_id, video_id, source_generation_id)
+  select a.artifact_id, a.workspace_id, a.video_id, s
+    from video_artifacts a, unnest(array['gMsCUR','gMsOLD']) s
+   where a.video_id='vidT3m' and a.slot='model' and a.generation_id='gMmMIX';
+  select generation_id into g from video_artifacts_current where video_id='vidT3m' and slot='model';
+  if g is distinct from 'gMmALL' then
+    raise exception 'ASSERTION FAILED — a model with ONE stale source among two ranked as current: %',
+      coalesce(g,'<none>'); end if;
+  raise notice 'ok (T3): the rung asks whether ALL sources are current, not whether ANY is';
+end $$;
+
+-- ⟳ T3 — GC REACHABILITY, THE HOLE THAT PREDATES THIS SLICE. `video_generations_collectable` checked
+-- only an artifact's OWN generation, so a superseded summary that a paid model was built FROM was
+-- offered to the sweeper: collect it and every render derived from it serves against bytes that no
+-- longer exist. `gT3a` is superseded (gT3b is current) and is the source of `gT3mOLD`, so it is
+-- exactly that row. `gT3c` is superseded and referenced by nothing, and it is here because a floor
+-- that excludes everything also passes the first half of this test.
+do $$ declare ws uuid; n_src int; n_free int; begin
+  select id into ws from t_ws;
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+    values (ws,'vidT3','gT3c','summary',
+      ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-05-01","processedAt":"y",'
+       ||'"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb, 4,'2026-05-01','SHA_T3C');
+  select count(*) into n_src  from video_generations_collectable
+   where video_id='vidT3' and generation_id='gT3a';
+  select count(*) into n_free from video_generations_collectable
+   where video_id='vidT3' and generation_id='gT3c';
+  if n_src <> 0 then
+    raise exception 'ASSERTION FAILED — a superseded generation a render is BUILT FROM was offered to the sweeper'; end if;
+  if n_free <> 1 then
+    raise exception 'ASSERTION FAILED — an unreferenced superseded generation is not collectable; the floor excludes everything'; end if;
+  raise notice 'ok (T3 GC): a referenced generation is protected; an unreferenced one is still collectable';
+end $$;
+
+-- ⟳ T3 — THE RE-RECORD RULE, THROUGH THE RPC THAT REAL CALLERS USE. Round 16 H2 corrected this from
+-- "replace" to "present the same set or raise", and the correction is load-bearing: a replace is a
+-- delete-and-insert, which the child table's own freeze forbids — and on the OMISSION path a replace
+-- would have WIPED the set, making the rung and the GC check vacuously true, which is the failure
+-- round 15 B3 wrote this item to prevent.
+do $$ declare ws uuid; o text; srcs text; begin
+  select id into ws from t_ws;
+  o := record_artifact(ws,'vidT3','model','gT3mCUR','model'::artifact_kind,
+        ws::text||'/videos/vidT3/gT3mCUR/model.json',
+        p_source_generation_id := 'gT3b', p_produced_at := '2026-06-06');
+  if o <> 'already_recorded' then
+    raise exception 'ASSERTION FAILED — re-recording with the SAME source gave %', o; end if;
+  o := record_artifact(ws,'vidT3','model','gT3mCUR','model'::artifact_kind,
+        ws::text||'/videos/vidT3/gT3mCUR/model.json', p_produced_at := '2026-06-06');  -- source OMITTED
+  if o <> 'already_recorded' then
+    raise exception 'ASSERTION FAILED — re-recording with an OMITTED source gave %', o; end if;
+  select string_agg(s.source_generation_id, ',' order by s.source_generation_id) into srcs
+    from video_artifact_sources s join video_artifacts a on a.artifact_id = s.artifact_id
+   where a.video_id='vidT3' and a.slot='model' and a.generation_id='gT3mCUR';
+  if srcs is distinct from 'gT3b' then
+    raise exception 'ASSERTION FAILED — an omitted source did not CARRY FORWARD: the set is now {%}', coalesce(srcs,''); end if;
+  raise notice 'ok (T3): a re-record presenting the same set is idempotent, and an omitted source carries forward';
+end $$;
+select assert_raises(format($$
+  select record_artifact(%L::uuid,'vidT3','model','gT3mCUR','model'::artifact_kind,
+    %L||'/videos/vidT3/gT3mCUR/model.json',
+    p_source_generation_id := 'gT3a', p_produced_at := '2026-06-06');
+$$, (select id from t_ws), (select id from t_ws)::text),
+ 're-recording with a DIFFERENT source (round 16 H2 — the same set, or a raise)', 'P0001');
+
+-- ⟳ T3 — THE CASCADE THE `restrict` DECISION WAS MADE FOR, AND THE DELETE GUARD'S OWN CONDITION.
+-- Round 14 B3 measured `on delete restrict` breaking account erasure. Round 15 L1 refined the cause
+-- to DEPTH, not RESTRICT. The delete guard this slice adds could re-break exactly that path — a
+-- FREE render is deletable, so its provenance cascades — which is why the guard is conditioned on
+-- the parent artifact still existing. This asserts the resulting behaviour end to end.
+-- ⚠ MEASURED AND NOT SMOOTHED OVER: this only reaches the join table because the workspace holds no
+-- PAID artifact. With one, `delete from profiles` dies earlier and unrelatedly, at
+-- `video_artifacts is append-only: cannot DELETE recorded paid row`. Account erasure against a paid
+-- manifest is an open question this slice does not settle; what T3 owes is not to add a THIRD
+-- blocker, and this is the assertion that says it did not.
+do $$ declare p uuid := gen_random_uuid(); ws uuid; a uuid; begin
+  insert into auth.users (id) values (p);
+  insert into profiles (id) values (p) on conflict (id) do nothing;
+  select id into ws from workspaces where owner_id = p;
+  insert into workspace_videos (workspace_id, video_id) values (ws,'vidT3f');
+  insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
+    values (ws,'vidT3f','gT3f','summary',
+      ('{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-07-09","processedAt":"y",'
+       ||'"mdCorrectionsHash":"'||no_corrections_hash()||'"}')::jsonb, 4,'2026-07-09','SHA_T3F');
+  insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
+    values (ws,'vidT3f','pdf:summary',null,'render','recorded', ws::text||'/videos/vidT3f/renders/s.pdf')
+    returning artifact_id into a;
+  insert into video_artifact_sources (artifact_id, workspace_id, video_id, source_generation_id)
+    values (a, ws, 'vidT3f', 'gT3f');
+  delete from profiles where id = p;
+  if exists (select 1 from video_artifact_sources where artifact_id = a) then
+    raise exception 'ASSERTION FAILED — the provenance row outlived the account that owned it'; end if;
+  raise notice 'ok (T3 cascade): account erasure carries provenance away with it; the delete guard does not block it';
+end $$;
 
 -- ── ⟳ THE POPULATION-COVERAGE RATCHET ITSELF ───────────────────────────────────────────────────
 -- Every value of `artifact_kind` must have been written a SECOND time to the same slot somewhere in

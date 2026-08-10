@@ -47,7 +47,13 @@ create table video_artifacts (
   state         text not null default 'recorded'
                 check (state in ('recorded','detached')),
   blob_key      text not null,
-  source_generation_id text,             -- §5.1.2: what a derived artifact was built FROM
+  -- ⛔ `source_generation_id text` STOOD HERE (§5.1.2 — what a derived artifact was built FROM) AND
+  -- IS DELETED BY ADR-0007 (T3). It is replaced by `video_artifact_sources` below, and the reason is
+  -- that TWO of its consumers read it as a SCALAR while the design needs a SET: the source-currency
+  -- rung ("is this render current w.r.t. its sources" becomes "are ALL of them current", which one
+  -- column cannot express and one `desc` cannot rank) and GC reachability. Round 14 H4 is why it is
+  -- DROPPED in the same change rather than left standing: two representations of provenance that can
+  -- disagree is the exact root cause the blob-addressing retrospective names.
   start_sec     int,
   end_sec       int,
   -- ⛔ `lease_expires_at`, `lease_attempts`, `lease_token`, `reserved_at` STOOD HERE (round 4 Codex
@@ -83,16 +89,32 @@ create table video_artifacts (
   --   free  -> one row per slot, overwritable; a deterministic re-render has nothing to preserve.
   artifact_id   uuid not null default gen_random_uuid(),
   primary key (artifact_id),
+  -- ⟳ T3 — A COMPOSITE FK TARGET, AND IT EXISTS TO STOP A DENORMALISATION FROM LYING.
+  -- `video_artifact_sources` must carry (workspace_id, video_id) of its own, because the ONLY key
+  -- `video_generations` offers is (workspace_id, video_id, generation_id) — an artifact_id alone
+  -- cannot name a generation. Two copies of a tenant coordinate is exactly the "two representations
+  -- that can disagree" shape this slice is deleting a column for, so the join table's copy is FK'd
+  -- back to THIS row rather than trusted. Without it a source row could sit under artifact A (in
+  -- workspace X) while naming workspace Y's generation, and the rung below would then rank a paid
+  -- render against ANOTHER TENANT's summary. `artifact_id` is already unique by the PK; this states
+  -- the wider tuple so it can be referenced.
+  -- ⚠ NAMED `…_uq` ON PURPOSE, AND NOT FOR CONSISTENCY. `scripts/check-guard-coverage.py` enumerates
+  -- unique indexes with `indexrelid::regclass::text like '%_uq'`, so the generated name
+  -- (`video_artifacts_artifact_id_workspace_id_video_id_key`) would leave this guard OUTSIDE the
+  -- enumerated whole that ratchet checks — invisible to the one instrument built to notice absences.
+  -- It is not a `paid_uq`/`free_uq` sibling: those express the paid/free taxonomy, this one exists
+  -- only to be an FK target. The suffix is what the ratchet reads, so the suffix is what it gets.
+  constraint video_artifacts_identity_uq unique (artifact_id, workspace_id, video_id),
   foreign key (workspace_id, video_id)
     references workspace_videos (workspace_id, video_id) on delete cascade,
   foreign key (workspace_id, video_id, generation_id, kind)
     references video_generations (workspace_id, video_id, generation_id, kind),
-  -- Round 5 (Codex, M5): source_generation_id was pure documentation — no FK, so a model could claim
-  -- provenance from a generation that does not exist, and the rung would score it merely "stale"
-  -- rather than "impossible". MATCH SIMPLE disables this FK when the column is NULL, which is the
-  -- wanted behaviour: a non-derived artifact has no source and must not be forced to invent one.
-  foreign key (workspace_id, video_id, source_generation_id)
-    references video_generations (workspace_id, video_id, generation_id),
+  -- ⛔ THE SOURCE FK STOOD HERE (round 5 Codex M5 — source_generation_id was pure documentation, so a
+  -- model could claim provenance from a generation that does not exist) AND MOVES ONTO
+  -- `video_artifact_sources` WITH THE COLUMN. The M5 guarantee is not weakened by the move: the join
+  -- table's own FK to `video_generations` says the same thing per SOURCE rather than per ROW, and
+  -- that column is NOT NULL there, so MATCH SIMPLE's "a non-derived artifact must not be forced to
+  -- invent a source" is expressed by having NO ROW instead of by a nullable column.
   constraint art_slot_kind check (slot_kind(slot) is not null and kind = slot_kind(slot)),
   constraint art_paid_has_generation check
     ((kind in ('summary','model','dig','digDeeper')) = (generation_id is not null)),
@@ -100,11 +122,16 @@ create table video_artifacts (
   -- (round 4 Codex #5, round 6 H5) AND ARE DELETED BY ADR-0007. All three were biconditionals on
   -- `state = 'pending'`: they existed only to describe a state that no longer exists, over columns
   -- that no longer exist. Nothing else read them.
-  -- Round 5 H2: a summary is not derived from anything, so it must not carry a source — otherwise the
-  -- source-currency rung ranks the summary against its own output and the two views disagree about
-  -- which summary is current. Guards the DATA; the rung below separately guards the QUERY. Both,
-  -- because they fail independently (service_role bypasses policies, not constraints).
-  constraint art_summary_has_no_source check (kind <> 'summary' or source_generation_id is null),
+  -- ⛔ `art_summary_has_no_source` STOOD HERE (round 5 H2 — a summary is derived from nothing, so if
+  -- it carries a source the currency rung ranks the summary against its OWN output and the two views
+  -- MEASURED opposite winners). ⟳ T3 MOVES IT, IT DOES NOT RETIRE IT: with provenance in a child
+  -- table the rule is a CARDINALITY-ZERO rule over another table, and a CHECK cannot reference one.
+  -- It becomes `art_summary_has_no_source_trg`, a CONSTRAINT TRIGGER on `video_artifact_sources`.
+  -- ⚠ THE CHANGE OF MECHANISM IS SAFE FOR THE REASON THIS CHECK'S OWN COMMENT GAVE FOR EXISTING —
+  -- "service_role bypasses policies, not constraints" — and it is stated rather than assumed
+  -- (round 14 M3): `service_role` does not bypass TRIGGERS either. `rolbypassrls` is the only bypass
+  -- that role holds, and it is about RLS. The rung below still separately guards the QUERY; both,
+  -- because they fail independently (cross-derivation C3).
   -- Round 5 H6: §6.2 calls persisting the span "cheap now, IMPOSSIBLE to retrofit after the first
   -- sweep runs" — and then declared both columns nullable with nothing requiring them. MEASURED: a
   -- dig:120 row accepted with both NULL. The only finding this round whose cost is irreversible: the
@@ -163,6 +190,81 @@ create unique index video_artifacts_paid_uq on video_artifacts
   (workspace_id, video_id, slot, generation_id) where generation_id is not null;
 create unique index video_artifacts_free_uq on video_artifacts
   (workspace_id, video_id, slot)               where generation_id is null;
+
+-- ── ⟳ T3 — PROVENANCE, AS A SET (ADR-0007, "Multi-source render provenance") ─────────────────────
+-- WHAT a derived artifact was built FROM. It replaces `video_artifacts.source_generation_id`, and
+-- the reason it is a TABLE is that both of that column's consumers read a scalar where the design
+-- needs a set: the currency rung has to ask "are ALL its sources current", and GC has to ask "which
+-- generations does this render reference" — a question `video_generations_collectable` could not
+-- answer at all before this table, so a render referencing a summary generation did not protect it.
+--
+-- ⚠ BOTH FKs ARE `on delete cascade`, AND `on delete restrict` WAS TRIED AND MEASURED TO BREAK
+-- ACCOUNT DELETION (round 14 B3, cause refined by round 15 L1). THE OPERATIVE FACT IS DEPTH, NOT
+-- `RESTRICT`: a one-hop child with the same shape survives a parent cascade even as plain
+-- `NO ACTION` — which is exactly what the FK this table replaces was — while a two-hop GRANDCHILD
+-- aborts the cascade even with `NO ACTION`. This table sits one hop deeper than the column it
+-- replaces, on the live chain `profiles → workspaces → workspace_videos → video_generations`
+-- (all cascade), so once ANY render carried a provenance row, `delete from profiles` failed. That is
+-- the account-erasure path — a real caller. `RESTRICT` had been chosen to stop GC collecting a
+-- still-referenced generation; that protection is provided by `video_generations_collectable`'s
+-- second `not exists` below, so keeping it here too was two mechanisms for one concern, and the
+-- redundant one was the one that broke a live path. DO NOT "IMPROVE" THIS BACK TO RESTRICT.
+--
+-- ⚠ AND A MEASUREMENT THE ADR DOES NOT RECORD, taken while writing T3 and reported rather than
+-- smoothed over: `delete from profiles` DOES NOT SUCCEED TODAY EITHER, and it never reaches this
+-- table. With one recorded PAID artifact in the workspace it dies at
+--   [P0001] video_artifacts is append-only: cannot DELETE recorded paid row (slot summary, gen gDEL)
+-- because the append-only trigger is `before update or delete` and a cascade DELETE is a DELETE.
+-- So the cascade decision above removes ONE of TWO blockers on that path, and the other one is
+-- deliberate. Account erasure against a paid manifest is an OPEN QUESTION this slice does not
+-- settle; what T3 owes is not to add a THIRD blocker, which is why the delete guard below is
+-- conditioned on the parent artifact still existing.
+create table video_artifact_sources (
+  artifact_id          uuid not null,
+  -- The tenant coordinate is carried because `video_generations` has no artifact-shaped key, and it
+  -- is FK'd back to the artifact so the two copies cannot disagree — see the composite unique above.
+  workspace_id         uuid not null,
+  video_id             text not null,
+  -- NOT NULL, and that is the join table's version of MATCH SIMPLE: "this artifact is derived from
+  -- nothing" is expressed by having no row, never by a row naming nothing.
+  source_generation_id text not null,
+  -- One row per (artifact, source). A re-record presenting a source it already records is therefore
+  -- a duplicate rather than a second claim — which is what makes idempotent re-statement possible.
+  primary key (artifact_id, source_generation_id),
+  -- ⚠ BOTH FKs ARE NAMED. The generated names would be
+  -- `video_artifact_sources_workspace_id_video_id_source_generation_id_fkey` and its sibling, both
+  -- past Postgres's 63-byte identifier limit and therefore SILENTLY TRUNCATED — and 05 pins the
+  -- constraint name on every negative, so a truncated name is a test that passes for a reason it
+  -- cannot state. Round 6 B2's rule (the instrument has to name what it expects) applied to the DDL.
+  constraint vas_artifact_fk foreign key (artifact_id, workspace_id, video_id)
+    references video_artifacts (artifact_id, workspace_id, video_id) on delete cascade,
+  -- Round 5 M5's guarantee, per SOURCE: provenance cannot name a generation that does not exist.
+  constraint vas_source_generation_fk foreign key (workspace_id, video_id, source_generation_id)
+    references video_generations (workspace_id, video_id, generation_id) on delete cascade
+);
+-- Postgres indexes the PK and NOT the second FK, and the second FK's columns are exactly what
+-- `video_generations_collectable`'s new `not exists` probes once per candidate generation.
+create index video_artifact_sources_gen_idx on video_artifact_sources
+  (workspace_id, video_id, source_generation_id);
+
+alter table video_artifact_sources enable row level security;
+alter table video_artifact_sources force row level security;
+-- ⚠ REVOKE FIRST — round 6 H4, and this is the new table the sweep would have missed.
+-- `pg_default_acl` carries `anon=Dxtm/postgres` for every table `postgres` creates in `public`, so
+-- anon holds TRUNCATE by default, and TRUNCATE fires neither RLS nor a ROW trigger: it would walk
+-- straight past the policy below AND past the append-only trigger, on the table that decides which
+-- paid render is current. Same three lines as `video_artifacts` because it is the same hazard.
+revoke all on video_artifact_sources from anon, authenticated;
+grant select, insert, update, delete on video_artifact_sources to service_role;
+grant select on video_artifact_sources to authenticated, anon;
+-- ⚠ THE POLICY IS NOT COSMETIC, AND THE REASON IS `security_invoker`. `video_artifacts_current` reads
+-- this table inside its currency rung and runs as the INVOKER, so without an owner-read policy the
+-- `not exists` would be vacuously TRUE for an authenticated owner and FALSE-ish for `service_role` —
+-- the two would rank the same manifest differently, which is round 5 H2's "two views disagree"
+-- defect relocated into the privilege system. Force RLS plus zero policies is the shape that
+-- produces it (round 5 B2).
+create policy video_artifact_sources_owner_read on video_artifact_sources for select to authenticated
+  using (workspace_id in (select id from workspaces where owner_id = (select auth.uid())));
 
 -- ⛔ `video_artifacts_inflight_uq` STOOD HERE — "at most one in-flight reservation per slot", the
 -- money guard MEASURED independently by all three round-5 reviewers. ADR-0007 DELETES IT, and the
@@ -256,8 +358,9 @@ create function record_artifact(
   p_md_hash text default null, p_card jsonb default null,
   p_doc_version_major int default null, p_produced_at timestamptz default null)
   returns text language plpgsql security definer set search_path = '' as $$
-declare v_existed boolean; v_start int; v_end int; v_src text;
+declare v_existed boolean; v_start int; v_end int; v_art uuid;
         v_made_gen boolean := false; v_gen_state text; v_gen_hash text;
+        v_recorded text[];
 begin
   -- ⟳ ROUND 8 (guard classification, C1) — THE FREE PATH, which did not exist.
   -- `video_artifacts_free_uq` is a SEQUENCE guard ("a render for this slot already exists") and it
@@ -280,6 +383,13 @@ begin
     values (p_ws, p_video, p_slot, null, p_kind, 'recorded', p_blob_key)
     on conflict (workspace_id, video_id, slot) where generation_id is null
     do update set blob_key = excluded.blob_key, state = 'recorded';
+    -- ⚠ ⟳ T3 — A FREE RENDER RECORDS NO PROVENANCE, AND THAT IS UNCHANGED BEHAVIOUR NAMED RATHER
+    -- THAN INHERITED. The dropped column was never written on this path either. A free row's address
+    -- is MUTABLE (the overwrite two lines up), so a provenance set attached to it would be a claim
+    -- about bytes that can be replaced underneath it — and the currency rung already reads a free
+    -- row as current, because a deterministic re-render has nothing to be stale about. So
+    -- `p_source_generation_id` is ignored here; it is the one argument this branch does not honour,
+    -- and a caller passing one is not told. Recorded as a known asymmetry, not defended as ideal.
     return 'recorded_free';
   end if;
 
@@ -392,14 +502,21 @@ begin
                   where workspace_id = p_ws and video_id = p_video and slot = p_slot
                     and generation_id = p_generation_id) into v_existed;
 
-  -- ⚠ THE SPAN IS RECOVERED FROM THE SLOT; PROVENANCE ONLY FROM THE SAME GENERATION. The distinction
-  -- is real rather than a workaround:
+  -- ⚠ THE SPAN IS RECOVERED FROM THE SLOT; PROVENANCE IS NOT RECOVERED AT ALL. The distinction is
+  -- real rather than a workaround:
   --   start_sec/end_sec describe the SECTION the slot names — `dig:8` is seconds 8..88 in every
   --     generation of it — so borrowing across generations is not just safe, it is the definition.
-  --   source_generation_id is PROVENANCE — which summary generation this artifact was built FROM —
-  --     and two generations of one slot can legitimately differ. Borrowing it across generations
-  --     would manufacture a provenance claim, which is shape #4 in the ranking input round 6's
-  --     Codex H5 froze precisely to stop a row rewriting its own.
+  --   provenance is which generation this artifact was built FROM, and two generations of one slot
+  --     can legitimately differ. Borrowing it across generations would manufacture a provenance
+  --     claim, which is shape #4 in the ranking input round 6's Codex H5 froze precisely to stop a
+  --     row rewriting its own.
+  -- ⟳ T3 — AND THE SECOND READ IS GONE RATHER THAN REWRITTEN. It used to fetch `v_src` from THIS
+  -- (slot, generation) row so the append could write `coalesce(p_source_generation_id, v_src)`; with
+  -- provenance in a child table that carry-forward is STRUCTURAL — an omitted source simply leaves
+  -- the recorded rows alone. Round 16 H2 is the reason the omission path must not "replace": a
+  -- replace on omission WIPES the source set, and both new guards (the currency rung and the GC
+  -- `not exists`) then go vacuously true, which is the failure round 15 B3 wrote this whole item to
+  -- prevent.
   -- ⟳ ADR-0007: the ordering term `state = 'pending' desc` is gone with the state; the surviving
   -- term prefers this generation's own row and otherwise takes any sibling row of the same slot.
   select start_sec, end_sec into v_start, v_end
@@ -408,23 +525,54 @@ begin
    order by (generation_id = p_generation_id) desc nulls last
    limit 1;
 
-  select source_generation_id into v_src
-    from public.video_artifacts
-   where workspace_id = p_ws and video_id = p_video and slot = p_slot
-     and generation_id = p_generation_id;
-
   insert into public.video_artifacts
     (workspace_id, video_id, slot, generation_id, kind, state, blob_key,
-     source_generation_id, start_sec, end_sec)
+     start_sec, end_sec)
   values (p_ws, p_video, p_slot, p_generation_id, p_kind, 'recorded', p_blob_key,
-          coalesce(p_source_generation_id, v_src),
           coalesce(p_start_sec, v_start), coalesce(p_end_sec, v_end))
   on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
   do update set
        state                = 'recorded',
-       source_generation_id = excluded.source_generation_id,
        start_sec            = excluded.start_sec,
-       end_sec              = excluded.end_sec;
+       end_sec              = excluded.end_sec
+  returning artifact_id into v_art;
+
+  -- ── ⟳ T3 — THE PROVENANCE WRITE, IN THE SAME TRANSACTION AS THE ARTIFACT ROW ───────────────────
+  -- ⚠ THIS BLOCK IS WHY THE ITEM IS NOT "DROP A COLUMN, ADD A TABLE". Round 15 B3 measured that the
+  -- round-14 fix rewrote two consumers and never said who WRITES the table — and with no writer
+  -- `video_artifact_sources` is always empty, at which point the currency rung and the GC `not
+  -- exists` are both VACUOUSLY TRUE. That is this ADR's own named signature ("a guard that never
+  -- started, arriving by subtraction"), and it would have been committed inside the fix set that
+  -- names it. `record_artifact` is the only writer, and this is the write.
+  --
+  -- THE RE-RECORD RULE (round 16 H2, corrected by round 17 H3):
+  --   a re-record must present the SAME source set, or raise;
+  --   an OMITTED p_source_generation_id carries the recorded set forward unchanged.
+  -- The omission half is the `if … is not null` gate: doing nothing IS carrying forward, and it is
+  -- what the old `coalesce(p_source_generation_id, v_src)` was buying with a read.
+  --
+  -- ⚠ THE COMPARISON IS A SET COMPARISON, NOT A MEMBERSHIP TEST, and the difference is the only
+  -- thing the sibling trigger cannot do. `video_artifact_sources_append_only_trg` sees INSERTs, so
+  -- it catches a re-record ADDING a source (round 17 H3's measured silent union). It cannot see a
+  -- re-record that presents FEWER sources than are recorded, because a shrink inserts nothing —
+  -- there is no operation for a trigger to fire on. Cross-derivation C3: the API and the guard each
+  -- own the half the other structurally cannot see.
+  if p_source_generation_id is not null then
+    select coalesce(array_agg(s.source_generation_id order by s.source_generation_id), '{}'::text[])
+      into v_recorded
+      from public.video_artifact_sources s where s.artifact_id = v_art;
+    if v_recorded = '{}'::text[] then
+      insert into public.video_artifact_sources
+        (artifact_id, workspace_id, video_id, source_generation_id)
+      values (v_art, p_ws, p_video, p_source_generation_id);
+    elsif v_recorded is distinct from array[p_source_generation_id] then
+      raise exception 'video_artifact_sources: the PROVENANCE of % (slot %, gen %) is immutable — it records {%}, and this record presents {%}',
+        v_art, p_slot, p_generation_id,
+        array_to_string(v_recorded, ', '), p_source_generation_id;
+    end if;
+    -- else: the recorded set is exactly what was presented — an idempotent re-statement, which is
+    -- the path a crash-retry takes and must NOT be refused (round 7 B1's rule, one table over).
+  end if;
   -- A typed outcome per path, never a constraint name for the caller to parse.
   -- ⟳ ADR-0007 RENAMED BOTH. They were `recorded_after_token_loss` and `recorded_after_loss` — two
   -- names describing which half of a reservation the caller had lost. There is no reservation and
@@ -565,10 +713,34 @@ order by a.workspace_id, a.video_id, a.slot,
          -- against its own output, and the two views MEASURED opposite winners — so the summary the
          -- user is SERVED was not the summary every derived artifact is RANKED AGAINST. That is §6's
          -- "sharpest constraint" (cross-generation mixing) violated by the view pair added to enforce
-         -- ranking. art_summary_has_no_source guards the DATA; cross-derivation C3 says take both.
+         -- ranking. The summary-has-no-source rule guards the DATA; cross-derivation C3 says both.
+         --
+         -- ⟳ T3 — THE RUNG NOW ASKS "ARE ALL ITS SOURCES CURRENT", which is the question a set can
+         -- answer and a scalar could not. The three old disjuncts map one-to-one: a summary is
+         -- excluded as before; an artifact with NO sources has an empty `not exists` and ranks
+         -- current, which is what `source_generation_id is null` did; and an artifact whose sources
+         -- are all the current summary ranks current, which is what the `is not distinct from` did.
+         -- A source that is stale, or a `s` that is NULL because no summary is current at all, makes
+         -- the subquery return a row and the rung false — same behaviour as before, per source.
+         --
+         -- ⚠ ONLY SUMMARY-KIND SOURCES PARTICIPATE, AND WITHOUT THAT LINE THE RUNG IS UNDEFINED
+         -- EXACTLY WHERE IT IS NEEDED (round 15 M3). `video_summary_current` holds one row per
+         -- (workspace, video) and NO row for a `dig` or `model` generation, so "is this source
+         -- current" has no answer for a non-summary source: comparing it to `s.generation_id` would
+         -- score every such source STALE, permanently, and a digDeeper render — the multi-source
+         -- case this table exists for — would rank below its own siblings forever. Other kinds are
+         -- recorded here for GC REACHABILITY (the second `not exists` in the collectable view) and
+         -- deliberately do not rank.
          (a.slot = 'summary'
-          or a.source_generation_id is null
-          or a.source_generation_id is not distinct from s.generation_id) desc,
+          or not exists (select 1
+                           from video_artifact_sources vas
+                           join video_generations sg
+                             on  sg.workspace_id  = vas.workspace_id
+                             and sg.video_id      = vas.video_id
+                             and sg.generation_id = vas.source_generation_id
+                          where vas.artifact_id = a.artifact_id
+                            and sg.kind = 'summary'
+                            and vas.source_generation_id is distinct from s.generation_id)) desc,
          (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,   -- ⟳ round 6 B4; see above
          g.doc_version_major desc nulls last,
          (g.card ->> 'mdGeneratedAt') desc nulls last,   -- round 5 B3; see video_summary_current
@@ -665,13 +837,31 @@ create trigger forbid_collecting_current_trg
 -- specified, unimplemented mechanism for that orphan. It is not this view's job.
 -- Its paired assertion (05_assert.sql, R9-3) and its named mutation in `mutate-schema.py`
 -- ("B1: the collectable floor drops `state = complete`") are retired with it, not orphaned.
+-- ── ⟳ T3 — THE SECOND `not exists`, AND IT CLOSES A HOLE THAT PREDATES THIS SLICE ───────────────
+-- This view checked only an artifact's OWN generation, so a render REFERENCING a summary generation
+-- did not protect it: the summary could be superseded, drop out of `video_artifacts_current`, be
+-- collected, and every model or digDeeper built from it would then be serving against bytes that no
+-- longer exist. `source_generation_id` could not close it — GC has to ask "which generations does
+-- this render reference", and that is a set-shaped question, which is the second reason the join
+-- table exists (a content hash cannot answer it either, per ADR-0007).
+--
+-- ⚠ IT IS DELIBERATELY NOT SCOPED TO *CURRENT* RENDERS. A superseded model still names the summary
+-- it was built from, and §8's retention clock — not this view — is what eventually releases it. This
+-- view is a CORRECTNESS FLOOR and age is a tunable the sweeper owns; mixing them buries a knob
+-- inside an invariant, which is the same asymmetry recorded above for the currency test.
+-- ⚠ AND IT IS WHY THE FKs ABOVE MAY BE `cascade` RATHER THAN `restrict`: this is the mechanism that
+-- stops GC collecting a still-referenced generation. RESTRICT was the SECOND mechanism for that one
+-- concern, and it was the one that broke `delete from profiles`.
 create view video_generations_collectable with (security_invoker = true) as
 select g.*
   from video_generations g
  where not g.body_collected
    and not exists (select 1 from video_artifacts_current c
                     where c.workspace_id = g.workspace_id and c.video_id = g.video_id
-                      and c.generation_id = g.generation_id);
+                      and c.generation_id = g.generation_id)
+   and not exists (select 1 from video_artifact_sources vas
+                    where vas.workspace_id = g.workspace_id and vas.video_id = g.video_id
+                      and vas.source_generation_id = g.generation_id);
 revoke all on video_generations_collectable from anon, authenticated;
 grant select on video_generations_collectable to service_role;
 
@@ -748,10 +938,20 @@ begin
       raise exception 'video_artifacts: the ADDRESS of a % paid row is immutable (slot %, gen %)',
         old.state, old.slot, old.generation_id;
     end if;
-    if new.source_generation_id is distinct from old.source_generation_id
-       or new.start_sec is distinct from old.start_sec
+    -- ⟳ T3 — THE PROVENANCE DISJUNCT IS GONE FROM HERE AND LIVES ON `video_artifact_sources`, WHICH
+    -- IS THE COLUMN MOVING RATHER THAN THE RULE RELAXING. What remains is the SPAN, and the rename
+    -- matters: this branch used to say PROVENANCE and mean both, so a reader of the raise could not
+    -- tell which invariant had been hit.
+    -- ⚠ AND MOVING THE BRANCH IS NOT SUFFICIENT — round 17 H3, MEASURED. This trigger is
+    -- `before update or delete`. A re-record naming a DIFFERENT source is an INSERT on the child
+    -- table, which fires no such trigger, and the measured result was a silent UNION: neither the
+    -- same set nor a raise. This file states the general rule twice in its own comments (see
+    -- `art_detached_is_dig` and `video_artifacts_generation_complete`) — a constraint governs STATES,
+    -- a trigger governs TRANSITIONS, and an INSERT is a state with no transition. So the child table
+    -- carries BOTH an update/delete freeze and an INSERT enforcer; see its triggers below.
+    if new.start_sec is distinct from old.start_sec
        or new.end_sec   is distinct from old.end_sec then
-      raise exception 'video_artifacts: the PROVENANCE of a % paid row is immutable (slot %, gen %)',
+      raise exception 'video_artifacts: the SPAN of a % paid row is immutable (slot %, gen %)',
         old.state, old.slot, old.generation_id;
     end if;
     -- ⟳ ADR-0007 — THIS BRANCH IS A REJECTION, NOT A PERMISSION, so it stays. It reads like a
@@ -783,6 +983,109 @@ revoke all on function video_artifacts_append_only() from public, anon, authenti
 create trigger video_artifacts_append_only_trg
   before update or delete on video_artifacts
   for each row execute function video_artifacts_append_only();
+
+-- ── ⟳ T3 — PROVENANCE IS APPEND-ONLY TOO, AND IT TAKES *TWO* TRIGGERS ───────────────────────────
+-- A child table with `on delete cascade` on both FKs and no trigger of its own makes provenance
+-- freely insertable and deletable, in the ADR titled "artifacts are an append-only log". Round 16's
+-- fix moved 04's PROVENANCE branch onto this table and stopped there; round 17 H3 MEASURED that this
+-- is not enough, and the shape of the miss is this project's most repeated one — an invariant
+-- assigned to the one mechanism that structurally cannot see the operation that violates it.
+--
+--   UPDATE / DELETE  -> this trigger. A rewrite in place, or a delete-then-insert.
+--   INSERT           -> `video_artifact_sources_insert_once` below. A trigger governs TRANSITIONS
+--                       and an INSERT is a state with no transition, so the first trigger cannot
+--                       see it at all: the probe got a silent UNION.
+--
+-- ⚠ THE DELETE HALF IS CONDITIONED ON THE PARENT ARTIFACT STILL EXISTING, and that condition is the
+-- whole reason this guard does not repeat round 14 B3. Deleting an artifact CASCADES here, and a
+-- free render is deletable, so an unconditional raise would abort `delete from workspace_videos`
+-- (and therefore `delete from profiles`) for any workspace holding a free render with provenance —
+-- i.e. it would re-break the account-erasure path that the choice of `cascade` over `restrict` was
+-- made to protect. In a cascade the parent row is already gone when this fires, so the condition
+-- reads exactly as the invariant does: PROVENANCE MAY NOT BE REMOVED FROM AN ARTIFACT THAT STILL
+-- EXISTS. That is the threat — Codex H5's stale model rewriting its own provenance to win the
+-- currency rung without regenerating a byte, which with a set is spelled delete-then-insert.
+create function video_artifact_sources_append_only() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+begin
+  if tg_op = 'DELETE' then
+    if exists (select 1 from public.video_artifacts a where a.artifact_id = old.artifact_id) then
+      raise exception 'video_artifact_sources: cannot DELETE the provenance of a live artifact % (source %)',
+        old.artifact_id, old.source_generation_id;
+    end if;
+    return old;
+  end if;
+  raise exception 'video_artifact_sources: the PROVENANCE of artifact % is immutable — % may not become %',
+    old.artifact_id, old.source_generation_id, new.source_generation_id;
+end $$;
+revoke all on function video_artifact_sources_append_only() from public, anon, authenticated;
+create trigger video_artifact_sources_append_only_trg
+  before update or delete on video_artifact_sources
+  for each row execute function video_artifact_sources_append_only();
+
+-- ⚠ AN `after insert … for each statement` TRIGGER WITH A TRANSITION TABLE, AND THE SHAPE IS FORCED.
+-- ADR-0007 prescribes "a `before insert` trigger", and a per-ROW one cannot express this rule: the
+-- test is "did this artifact have provenance BEFORE this statement", and a per-row trigger firing on
+-- the second row of a legitimate MULTI-SOURCE insert sees the first row and cannot tell it from a
+-- pre-existing one. It would therefore have to forbid every second source — making multi-source
+-- provenance unrepresentable in the table added for multi-source provenance, and the currency rung's
+-- "are ALL its sources current" permanently a one-element question. That is a guard making its own
+-- purpose unreachable, which this file has already refused once (see `forbid_collecting_current`).
+-- A transition table answers the question exactly: the set is written by ONE statement, and any
+-- later statement adding to it raises. The ADR's alternative — "an explicit set comparison inside
+-- record_artifact" — is ALSO implemented, in `record_artifact`; each covers a half the other cannot
+-- see (a shrink inserts nothing; a direct INSERT bypasses the RPC).
+create function video_artifact_sources_insert_once() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+declare v_art uuid; v_recorded text; v_added text;
+begin
+  select i.artifact_id into v_art
+    from ins i
+   where (select count(*) from public.video_artifact_sources s where s.artifact_id = i.artifact_id)
+       > (select count(*) from ins j where j.artifact_id = i.artifact_id)
+   limit 1;
+  if v_art is not null then
+    select string_agg(j.source_generation_id, ', ' order by j.source_generation_id) into v_added
+      from ins j where j.artifact_id = v_art;
+    select string_agg(s.source_generation_id, ', ' order by s.source_generation_id) into v_recorded
+      from public.video_artifact_sources s
+     where s.artifact_id = v_art and s.source_generation_id not in (select k.source_generation_id
+                                                                     from ins k
+                                                                    where k.artifact_id = v_art);
+    raise exception 'video_artifact_sources: the PROVENANCE of artifact % is immutable — it already records {%}, and this INSERT adds {%}',
+      v_art, coalesce(v_recorded, ''), coalesce(v_added, '');
+  end if;
+  return null;
+end $$;
+revoke all on function video_artifact_sources_insert_once() from public, anon, authenticated;
+create trigger video_artifact_sources_insert_once_trg
+  after insert on video_artifact_sources
+  referencing new table as ins
+  for each statement execute function video_artifact_sources_insert_once();
+
+-- ⟳ T3 — `art_summary_has_no_source`, AS A CARDINALITY-ZERO RULE. Round 5 H2's rule is unchanged —
+-- a summary is derived from nothing, so ranking it on source-currency ranks it against its own
+-- output and the two views MEASURED opposite winners — but it now spans two tables, and a CHECK
+-- cannot reference another table. A CONSTRAINT TRIGGER can, and `service_role` bypasses neither.
+-- ⚠ IT LIVES ON THE CHILD, NOT THE PARENT, because the child is where the violating row appears:
+-- the FK makes a source row impossible before its artifact exists, so there is no ordering in which
+-- a summary artifact could acquire a source without an INSERT here.
+create function art_summary_has_no_source() returns trigger
+  language plpgsql security definer set search_path = '' as $$
+declare v_kind text; v_slot text;
+begin
+  select a.kind::text, a.slot into v_kind, v_slot
+    from public.video_artifacts a where a.artifact_id = new.artifact_id;
+  if v_kind = 'summary' then
+    raise exception 'video_artifact_sources: a SUMMARY artifact (slot %) is derived from nothing and may record no source — % was presented',
+      v_slot, new.source_generation_id;
+  end if;
+  return null;
+end $$;
+revoke all on function art_summary_has_no_source() from public, anon, authenticated;
+create constraint trigger art_summary_has_no_source_trg
+  after insert on video_artifact_sources
+  for each row execute function art_summary_has_no_source();
 
 -- ⟳ ROUND 6 B5 — THE OTHER HALF OF GATING 03'S FOUR CHECKS ON `state = 'complete'`.
 -- Relaxing a constraint to "only while complete" is safe ONLY if something guarantees that everything
