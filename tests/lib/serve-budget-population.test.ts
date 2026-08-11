@@ -45,9 +45,27 @@ function libSources(dir: string): string[] {
   });
 }
 
-/** Source with comments stripped, so prose can neither satisfy nor trip a rule. */
-function codeOnly(src: string): string {
+/**
+ * Comments only. Import specifiers ARE string literals, so a rule about imports must read them —
+ * stripping strings turned `from '@/lib/serve-budget'` into `from ''` and the import scan found
+ * nothing. Caught immediately by that test's own not-passing-vacuously assertion, which is the
+ * cheapest line in this file.
+ */
+function withoutComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
+/**
+ * Source with comments AND string/template literals stripped, so prose can neither satisfy nor trip
+ * a rule. Round-7 review L-R7-2: this stripped only comments while its docstring and its sibling in
+ * serve-bounded-import-guard.test.ts both promised strings too — a smaller version of the
+ * overclaimed-comment shape this branch keeps finding.
+ */
+function codeOnly(src: string): string {
+  return withoutComments(src)
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""');
 }
 
 /** The right-hand side of `export const NAME = …;`. */
@@ -84,8 +102,8 @@ function spendingExpressions(code: string): string {
  *
  * `ServeBudget` is excluded because it is the CARRIER, not a scalar: it fans several of these values
  * across a function boundary and has no duration of its own. Excluding it is not a loophole — the
- * test below asserts every one of its FIELDS is itself one of these branded scalars, so the carrier
- * cannot smuggle an unaccounted value across the boundary either.
+ * carrier test below asserts every one of its FIELDS is itself one of these branded scalars, so
+ * the carrier cannot smuggle an unaccounted value across the boundary either.
  */
 function brandedExports(code: string): string[] {
   return [...code.matchAll(/export\s+const\s+([A-Z0-9_]+)\s*=\s*[^;]*?\bas\s+(\w*(?:Budget|AttemptCount))\s*;/g)]
@@ -174,6 +192,28 @@ describe('the population of lease-spent budgets is CLOSED, and closure is enforc
     expect(unbooked).toEqual([]);
   });
 
+  // ── THE CARRIER (round-7 review L-R7-1). ───────────────────────────────────────────────────
+  // ServeBudget is the one object that crosses into lib/gemini.ts, so a field of it that is not an
+  // accounted scalar is a duration spent inside the lease and booked nowhere.
+  //
+  // Two corrections live here. The rule's first regex required a TRAILING COMMA, so a value added as
+  // the LAST property escaped it entirely — measured. And when the mint replaced the older rules,
+  // this test was deleted while the docstring above kept claiming it existed, which is the
+  // overclaimed-comment shape appearing for the sixth time, that time authored by me.
+  //
+  // `serve-budget.test.ts`'s exact `toEqual` shape pin also catches this, and independently. Both
+  // are kept: that one asserts the SHAPE, this one asserts every field is ACCOUNTED — different
+  // properties that happen to overlap on this mutant.
+  it('the CARRIER cannot smuggle a value across the boundary — every field is an accounted scalar', () => {
+    const literal = code.slice(code.indexOf('export const SERVE_BUDGET'));
+    const body = literal.slice(literal.indexOf('{'), literal.indexOf('})') + 1);
+    // No trailing comma required (?=[,}\n]) — the last property is a property too.
+    const assigned = [...body.matchAll(/:\s*([A-Z0-9_]+)\s*(?=[,}\n])/g)].map((m) => m[1]);
+    expect(assigned.length).toBeGreaterThanOrEqual(4);       // not passing vacuously
+    const accounted = new Set(brandedExports(code));
+    expect(assigned.filter((name) => !accounted.has(name))).toEqual([]);
+  });
+
   // ── A DOCUMENTED WAIVER IS NOT A GUARD (round-7 review, Medium). ───────────────────────────
   // MEASURED: a plain `export const SERVE_EXTRA_TIMEOUT_MS = 30_000;` plus one line in the map below
   // passed every rule — the map is trusted, so it can waive a value that IS spent inside the lease.
@@ -181,7 +221,7 @@ describe('the population of lease-spent budgets is CLOSED, and closure is enforc
   // this module must be branded, so an unbranded constant cannot reach a bounded call however well
   // documented it is.
   it('lease-held code imports only BRANDED budgets (a waiver cannot smuggle a plain number in)', () => {
-    const serveDoc = codeOnly(readFileSync(join(LIB, 'html-doc/serve-doc.ts'), 'utf-8'));
+    const serveDoc = withoutComments(readFileSync(join(LIB, 'html-doc/serve-doc.ts'), 'utf-8'));
     const importBlocks = [...serveDoc.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*'@\/lib\/serve-budget'/g)]
       .map((m) => m[1]);
     expect(importBlocks.length).toBeGreaterThan(0);          // not passing vacuously
