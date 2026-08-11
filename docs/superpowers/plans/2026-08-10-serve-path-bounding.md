@@ -1,31 +1,47 @@
 # Serve-Path Bounding Implementation Plan
 
-> ## STATUS 2026-08-10 — ALL 8 TASKS IMPLEMENTED. Open gate: whole-branch dual review.
+> ## STATUS 2026-08-11 — COMPLETE. 8/8 tasks + 7 dual adversarial review rounds. PR open; MERGING IS A HUMAN GATE.
 >
-> Commits `5124986` → `fee9add` on `fix/serve-path-deadline` (unpushed). `tsc --noEmit` clean;
-> 262 unit suites / 2638 tests; full integration 66 suites / 482 tests, green **twice back-to-back
-> with no reset**. Every guard mutation-checked. The money pin
-> (`serve-doc-materialize.test.ts` 429-refund, against a real DB) passes with **zero** edits to its
-> assertions.
+> `tsc --noEmit` clean · unit **265 suites / 2671 tests** · full integration **67 suites / 487 tests**,
+> green twice back-to-back after a `db reset` · migrations 0024 + 0025 verified from scratch ·
+> `check-docs.py` OK. The 429-refund money pin passes with **zero** edits to its assertions.
 >
-> **Three things execution found that nine plan-review rounds did not**, recorded here because the
-> pattern is the point — each was invisible to reading and immediate to running:
+> ### Seven rounds, and what they actually found
 >
-> 1. **Task 6 — the plan named 2 files that mock `@/lib/gemini`; there are 4.** Both citations were
->    accurate; the *enumeration* behind them was not, and a per-file `[VERIFIED]` tag cannot say so.
->    Found by running the FULL integration suite instead of the named pattern.
->    `grep -rln "jest.mock('@/lib/gemini'" tests/` would have found it in any of the nine rounds.
-> 2. **Task 7 — migration 0024 had no data fix-up.** `ADD CONSTRAINT` validates existing rows, so it
->    was unrunnable against any database ever tuned below the new floor. A deploy-blocker.
-> 3. **Task 3 — the plan's own test laundered its assertion.** `expect(o.timeout).toBe(60_000)`
->    inside the `generateContent` mock runs inside `generateJson`'s retry loop, which catches
->    everything; the failure is swallowed, retried, re-wrapped, and accepted by the outer
->    `rejects.toThrow()`. It would have gone GREEN on the regression it exists to catch.
+> | round | Highs | source |
+> |---|---|---|
+> | 1 | 3 | original defects |
+> | 2 | 2 | round 1's own fixes |
+> | 3 | 2 (one per reviewer, different) | round 2's fixes → **FIX escalated to REDESIGN** |
+> | 4 | 1, found independently by **both** reviewers | the field redesign 1 missed |
+> | 5 | 1 + 1 coordinator self-finding | the second count, and the backoff |
+> | 6 | 1 | the enumeration was correct but **unenforced** |
+> | 7 | 1 | the enforcement gate answered "is it mentioned?", not "does it count?" → **the mint** |
 >
-> **Known red, NOT this branch:** `scripts/check-schema-gates.sh` exits 1 on guard-coverage /
-> sentinel-meanings / vocabulary-collisions. Every finding names `video_artifacts` or
-> `video_generations` — ADR-0007 blob-addressing residue. Verified identical on a clean `master`
-> worktree, and identical with and without 0024.
+> **A single CONVERGED verdict was wrong four times out of five.** Dual review was the gate, not
+> redundancy — and in round 3 the reviewer with the worse verdict record produced the sharpest
+> finding, so reviewers were read on merit every round, never weighted by reputation.
+>
+> **What never produced a finding, across seven rounds, three reviewers and ~60 mutations:** the
+> bounding mechanism itself — the static sum, the required-positional boundaries, the migration floor,
+> the live CHECK, the refund rule. Every High was about an *instrument* or a *signal*.
+>
+> ### Two redesigns, both forced by the escalation rule
+>
+> 1. **Budgets are branded, and the sum is the mint.** A literal, an arithmetic expression, an object
+>    literal, a laundered value, a swapped brand, a budget declared-but-unspent, spent zero times,
+>    added outside `spend()`, or booked with the wrong multiplicity — all fail, most at compile time.
+> 2. **The settle is observable.** `settle_serve_model` writes a `ledger_audit` row **iff** that token
+>    settled, so the previously unfalsifiable `indeterminate` state is resolvable by one indexed read.
+>
+> ### Recorded, not fixed here
+> backlog **#28** (a reserve timeout strands 6¢ — a delta this branch creates; measure the RPC p99
+> first) · **#29** (migration guards outside the ratchet) · **#30** (`TRUNCATE` granted to session
+> roles on every money table — platform default, unreachable via PostgREST) · spec **§3.5.1** (the
+> late-write clobber, now logged; fix is content addressing, backlog #25).
+>
+> Full trail: `docs/reviews/whole-branch-serve-path-bounding-*` — both reviewers per round plus a
+> coordinator adjudication recording every disagreement and how it was resolved by re-measuring.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
