@@ -14,6 +14,7 @@ import { NonRetryableError } from './job-queue/errors';
 import { sectionStartsComplete, ensureSectionTimestamps } from './summary-section-timestamps';
 import { parseSections } from './html-doc/parse';
 import type { BillingLatch } from './job-queue/billing-latch';
+import type { ServeBudget } from './serve-budget';
 
 /**
  * Fail-closed flag for the cloud audio-fallback transcription path. While `false`, a cloud call
@@ -261,12 +262,15 @@ export async function generateJson<T>(
   retries = GENERATE_JSON_RETRIES,
   baseDelayMs = 400,
   opts?: { signal?: AbortSignal; billing?: BillingLatch },
+  // Optional HERE because its default IS the existing behaviour for every existing caller. The
+  // REQUIRED boundary is generateMagazineModelForServe, below.
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (opts?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
     try {
-      const result = await model.generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS, signal: opts?.signal });
+      const result = await model.generateContent(prompt, { timeout: timeoutMs, signal: opts?.signal });
       if (opts?.billing) opts.billing.metered = true;   // body received = Google billed → latch (before parse)
       assertNotTruncated(result);
       return schema.parse(JSON.parse(result.response.text()));
@@ -510,6 +514,10 @@ export async function generateMagazineModel(
   sections: Array<{ title: string; prose: string }>,
   language: 'en' | 'ko',
   opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal; billing?: BillingLatch },
+  // INTERNAL 4th parameter, deliberately not the serve entry point. The local caller
+  // (html-doc/generate.ts:40) omits it and every branch below falls back to the local numbers.
+  // Serve callers go through generateMagazineModelForServe, where the budget is REQUIRED.
+  budget?: ServeBudget,
 ): Promise<MagazineModel> {
   const caps = opts?.caps;
   // Fail closed on a cloud caps object missing either magazine field (F1): otherwise the output cap
@@ -555,8 +563,19 @@ ${numbered}
 </sections>`;
 
   try {
-    if (caps) await assertMagazineInputWithinCap(model, prompt, generationConfig, caps); // cloud preflight; local skips
-    const parsed = await generateJson(model, prompt, MagazineModelSchema, 'magazine', undefined, undefined, opts);
+    if (caps) {
+      await assertMagazineInputWithinCap(model, prompt, generationConfig, caps, {   // cloud preflight; local skips
+        signal: opts?.signal,
+        ...(budget ? { timeoutMs: budget.countTokensTimeoutMs } : {}),
+      });
+    }
+    const parsed = await generateJson(
+      model, prompt, MagazineModelSchema, 'magazine',
+      budget ? budget.attempts - 1 : undefined,   // generateJson takes RETRIES, so attempts - 1
+      undefined,
+      opts,
+      budget ? budget.attemptTimeoutMs : undefined,
+    );
     if (parsed.sections.length !== sections.length) {
       throw new Error(`section count mismatch: got ${parsed.sections.length}, expected ${sections.length}`);
     }
@@ -567,6 +586,25 @@ ${numbered}
     const cause = err instanceof Error ? err.message : String(err);
     throw new Error(`Gemini magazine transform failed: ${cause}`, { cause: err });
   }
+}
+
+/**
+ * The serve path's entry point into the magazine transform. `budget` is REQUIRED and POSITIONAL:
+ * omitting it cannot compile, which is the entire point.
+ *
+ * An optional `opts.serve?` was the obvious alternative and is the wrong one. The serve call site
+ * would compile unchanged and keep running 3 attempts at 60s while migration 0024's lease floor
+ * assumes 2 at 50s — the floor would be wrong in the one configuration nobody tests, and nothing
+ * would say so. `docs/process-checklists.md:64-68`: where omitting a bound silently restores the
+ * bug, the boundary takes a required parameter, never an optional field.
+ */
+export async function generateMagazineModelForServe(
+  sections: Array<{ title: string; prose: string }>,
+  language: 'en' | 'ko',
+  budget: ServeBudget,
+  opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal; billing?: BillingLatch },
+): Promise<MagazineModel> {
+  return generateMagazineModel(sections, language, opts, budget);
 }
 
 // Controlled-generation schema: structurally constrains Gemini's transcript JSON. The OpenAPI subset
