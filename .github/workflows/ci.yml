@@ -81,3 +81,10 @@ jobs:
       # failure would just get switched off. This stops the NEXT one.
       - name: Gate falsifiability ratchet
         run: python3 scripts/check-gate-falsifiability.py
+
+      # The ratchets' own contract, enforced rather than described. Written because the prose in
+      # docs/process-checklists.md said "there are three ratchets" — from memory, and wrong by half;
+      # this script found six. It checks the two rules that are statically decidable (a --self-test
+      # exists; no `except` handler returns 0) and states plainly that it does not check the rest.
+      - name: Ratchet contract
+        run: python3 scripts/check-ratchet-contract.py
