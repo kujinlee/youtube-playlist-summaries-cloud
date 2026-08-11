@@ -8,11 +8,19 @@ import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import type { ParsedSummary } from '@/lib/html-doc/types';
 
-jest.mock('@/lib/gemini', () => ({
-  generateMagazineModel: jest.fn(async (sections: Array<{ title: string }>) => ({
-    sections: sections.map(() => ({ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] })),
-  })),
-}));
+jest.mock('@/lib/gemini', () => {
+  const LEAD = 'L';   // this file's assertions read 'L'; the mapping file's read 'GEN' — do NOT unify
+  const generateMagazineModel = jest.fn(async (sections: Array<{ title: string }>) => ({
+    sections: sections.map(() => ({ lead: LEAD, bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] })),
+  }));
+  return {
+    generateMagazineModel,
+    // Delegates, so existing assertions on generateMagazineModel — including
+    // mockImplementationOnce overrides — still fire.
+    generateMagazineModelForServe: jest.fn((sections: unknown, language: unknown, _budget: unknown, opts: unknown) =>
+      (generateMagazineModel as unknown as (a: unknown, b: unknown, c: unknown) => unknown)(sections, language, opts)),
+  };
+});
 import { generateMagazineModel } from '@/lib/gemini';
 
 const svc = adminClient();

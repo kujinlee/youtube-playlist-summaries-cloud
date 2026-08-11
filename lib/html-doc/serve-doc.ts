@@ -3,10 +3,14 @@ import type { BlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary, MagazineModel } from './types';
 import { GENERATOR_VERSION } from './constants';
-import { writeModelEnvelope, MODEL_KEY } from './model-store';
+import { writeModelEnvelopeWithin, MODEL_KEY } from './model-store';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
 import { readFreshMagazineModel, readTitleStableModel } from './read-model';
-import { generateMagazineModel } from '@/lib/gemini';
+import { generateMagazineModelForServe } from '@/lib/gemini';
+import { callRpcBounded } from '@/lib/serve-rpc';
+import {
+  SERVE_BUDGET, SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
+} from '@/lib/serve-budget';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import { classifyGeminiFailure, releaseGateOpen } from '@/lib/gemini-failure';
 import type { BillingLatch } from '@/lib/job-queue/billing-latch';
@@ -71,11 +75,21 @@ export async function resolveMagazineModel(args: {
   if (!probe.ok && probe.reason === 'unreadable') return { status: 'busy' };
 
   // Absent / drifted / stale-version → materialize under the reserve RPC.
-  const { data, error } = await supabaseClient.rpc('reserve_serve_model', {
-    p_playlist_id: playlistId, p_video_id: videoId,
-  });
-  if (error) throw error;
-  const row = (data as Array<{ status: string; release_token: string | null }> | null)?.[0];   // table-return → data[0]
+  const reserve = await callRpcBounded(
+    (abortSignal) => supabaseClient
+      .rpc('reserve_serve_model', { p_playlist_id: playlistId, p_video_id: videoId })
+      .abortSignal(abortSignal),
+    SERVE_RESERVE_RPC_TIMEOUT_MS, 'reserve_serve_model',
+  );
+  if (!reserve.ok) {
+    if (reserve.reason === 'error') throw reserve.cause;   // unchanged from `if (error) throw error`
+    // TIMEOUT. The transaction is NOT rolled back, so what may exist now is an EMPTY PAID LEASE:
+    // charged, an attempt burned, no producer. Retries before expiry see in_flight although nobody
+    // is generating. Loud, because that is an infrastructure alarm, not a user error.
+    console.error('[serve-model] reserve timed out — possible empty paid lease');
+    return { status: 'busy' };
+  }
+  const row = (reserve.data as Array<{ status: string; release_token: string | null }> | null)?.[0];   // table-return → data[0]
   const reserveStatus = row?.status;
   const releaseToken = row?.release_token ?? null;
   switch (reserveStatus) {
@@ -109,12 +123,13 @@ export async function resolveMagazineModel(args: {
   // under-count is the bug.
   const billing: BillingLatch = { metered: false };
   try {
-    const model = await generateMagazineModel(
+    const model = await generateMagazineModelForServe(
       parsed.sections.map((s) => ({ title: s.title, prose: s.prose })),
       language,
+      SERVE_BUDGET,                                   // REQUIRED — cannot be omitted
       { caps: SERVE_CAPS, signal, billing },
     );
-    await writeModelEnvelope(principal, base, {
+    await writeModelEnvelopeWithin(SERVE_PUT_TIMEOUT_MS, principal, base, {
       sourceMd: parsed.sourceMd ?? `${base}.md`,
       generatedAt: new Date().toISOString(),
       sourceSections: titles,
@@ -123,14 +138,43 @@ export async function resolveMagazineModel(args: {
       // Hash the MD BODY, not the key — see the `mdBody` param doc above (§4.2).
       ...(mdBody !== undefined ? { sourceMdHash: mdHash(mdBody) } : {}),
     }, blobStore);
-    if (releaseToken) await supabaseClient.rpc('settle_serve_model', { p_token: releaseToken, p_released: false });
+    if (releaseToken) await settleBounded(supabaseClient, releaseToken, false);
     return { status: 'ok', model };
   } catch (err) {
     // Same rule as generation: refund only a positively-not-metered class-A failure.
     const released = releaseGateOpen()
       && classifyGeminiFailure(err, signal) === 'release'
       && !billing.metered;
-    if (releaseToken) await supabaseClient.rpc('settle_serve_model', { p_token: releaseToken, p_released: released });
+    if (releaseToken) await settleBounded(supabaseClient, releaseToken, released);
     throw err;
   }
+}
+
+/**
+ * Settle the reservation under a bounded wait, retrying ONLY the refund.
+ *
+ * Bounding the settle is not free. Before this, an unbounded await eventually landed; a bounded one
+ * can give up with the refund unapplied — real money left on the ledger. So the release path gets a
+ * second attempt and a lost keep does not: `released=false` merely clears a per-attempt token whose
+ * charge is already correct, while `released=true` is the refund itself.
+ *
+ * Returns false rather than throwing: the caller must never CLAIM a refund it could not apply, but a
+ * failed settle must not also mask the original error on the throw path.
+ */
+async function settleBounded(
+  supabaseClient: SupabaseClient, token: string, released: boolean,
+): Promise<boolean> {
+  // An unapplied REFUND is real money left on the ledger; a lost KEEP is already correct.
+  const attempts = released ? 2 : 1;
+  for (let i = 0; i < attempts; i++) {
+    const out = await callRpcBounded(
+      (abortSignal) => supabaseClient
+        .rpc('settle_serve_model', { p_token: token, p_released: released })
+        .abortSignal(abortSignal),
+      SERVE_SETTLE_RPC_TIMEOUT_MS, `settle_serve_model(released=${released})`,
+    );
+    if (out.ok) return true;
+    console.warn(`[serve-model] settle attempt ${i + 1}/${attempts} failed: ${out.reason}`);
+  }
+  return false;   // caller must NOT claim a refund it could not apply
 }

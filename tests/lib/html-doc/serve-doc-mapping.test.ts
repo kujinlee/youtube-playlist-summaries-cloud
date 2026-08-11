@@ -10,13 +10,33 @@ import { GENERATOR_VERSION } from '@/lib/html-doc/render';
 import type { BlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary } from '@/lib/html-doc/types';
+import { fakeRpcBuilder } from '../../support/fake-rpc';
+import { GoogleGenerativeAIFetchError } from '@google/generative-ai';
 
-jest.mock('@/lib/gemini', () => ({
-  generateMagazineModel: jest.fn(async (sections: Array<{ title: string }>) => ({
-    sections: sections.map(() => ({ lead: 'GEN', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] })),
-  })),
+// Jest's default per-test timeout is 5000ms and this repo sets no override — the SAME number as the
+// real SERVE_*_RPC_TIMEOUT_MS. A hanging-RPC test would race Jest itself. Shrink the two RPC budgets
+// for this file only; the real values stay asserted by tests/lib/serve-budget.test.ts and by the
+// migration pin. This file tests the PLUMBING, not the numbers.
+jest.mock('@/lib/serve-budget', () => ({
+  ...jest.requireActual('@/lib/serve-budget'),
+  SERVE_RESERVE_RPC_TIMEOUT_MS: 20,
+  SERVE_SETTLE_RPC_TIMEOUT_MS: 20,
 }));
-import { generateMagazineModel } from '@/lib/gemini';
+
+jest.mock('@/lib/gemini', () => {
+  const LEAD = 'GEN';
+  const generateMagazineModel = jest.fn(async (sections: Array<{ title: string }>) => ({
+    sections: sections.map(() => ({ lead: LEAD, bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] })),
+  }));
+  return {
+    generateMagazineModel,
+    // Delegates, so existing assertions on generateMagazineModel — including
+    // mockImplementationOnce overrides — still fire.
+    generateMagazineModelForServe: jest.fn((sections: unknown, language: unknown, _budget: unknown, opts: unknown) =>
+      (generateMagazineModel as unknown as (a: unknown, b: unknown, c: unknown) => unknown)(sections, language, opts)),
+  };
+});
+import { generateMagazineModel, generateMagazineModelForServe } from '@/lib/gemini';
 
 const principal: Principal = { id: 'u1', indexKey: 'pk1' };
 const parsed = (): ParsedSummary => ({
@@ -29,7 +49,9 @@ const parsed = (): ParsedSummary => ({
  *  reads `data[0].status` (Task 5). Wrap the scripted status in the single-row shape. */
 function fakeSupabase(rpcData: string): SupabaseClient {
   return {
-    rpc: jest.fn(async () => ({ data: [{ status: rpcData, release_token: null }], error: null })),
+    // A chainable thenable, not a bare async fn: production calls `.abortSignal(signal)` before
+    // awaiting, and a plain promise has no such method.
+    rpc: jest.fn(() => fakeRpcBuilder({ data: [{ status: rpcData, release_token: null }], error: null })),
   } as unknown as SupabaseClient;
 }
 
@@ -78,7 +100,12 @@ const baseArgs = (supabaseClient: SupabaseClient, blobStore: BlobStore) => ({
   playlistId: 'p1', videoId: 'v1', base: 'v1', parsed: parsed(), language: 'en' as const,
 });
 
-beforeEach(() => { (generateMagazineModel as jest.Mock).mockClear(); });
+beforeEach(() => {
+  (generateMagazineModel as jest.Mock).mockClear();
+  // Clear the wrapper too, or it stays dirty across tests and `not.toHaveBeenCalled()`
+  // becomes order-dependent.
+  (generateMagazineModelForServe as jest.Mock).mockClear();
+});
 
 describe('resolveMagazineModel — reserve_serve_model status mapping (seam)', () => {
   it('denied → {status:"denied"}, generateMagazineModel NOT called', async () => {
@@ -120,5 +147,71 @@ describe('resolveMagazineModel — reserve_serve_model status mapping (seam)', (
     expect(generateMagazineModel).toHaveBeenCalledTimes(1);
     if (res.status === 'ok') expect(res.model.sections[0].lead).toBe('GEN'); // the generated (mock) model, not a cache
     expect(blobStore.putMock).toHaveBeenCalledTimes(1); // writeModelEnvelope persisted the new model
+  });
+});
+
+describe('resolveMagazineModel — bounded RPCs (#46)', () => {
+  /** A fake whose reserve/settle behaviour is scripted per RPC name. */
+  function scriptedSupabase(script: (fn: string) => ReturnType<typeof fakeRpcBuilder>): SupabaseClient {
+    return { rpc: jest.fn((fn: string) => script(fn)) } as unknown as SupabaseClient;
+  }
+  const reserved = () =>
+    fakeRpcBuilder({ data: [{ status: 'reserved', release_token: 'tok' }], error: null });
+  const hangs = () => fakeRpcBuilder<never>(() => new Promise(() => {}));
+
+  // Restore the release gate or it leaks into every later test in this worker.
+  // Mirrors tests/integration/serve-doc-materialize.test.ts and gemini-failure.test.ts.
+  const prevGate = process.env.CLOUD_GEMINI_RELEASE_VERIFIED;
+  afterEach(() => { process.env.CLOUD_GEMINI_RELEASE_VERIFIED = prevGate; });
+
+  // The bounded paths log by design; capture so the suite output stays pristine.
+  let errorLog: jest.SpyInstance;
+  let warnLog: jest.SpyInstance;
+  beforeEach(() => {
+    errorLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+    warnLog = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => { errorLog.mockRestore(); warnLog.mockRestore(); });
+
+  it('a reserve TIMEOUT returns busy and makes no Gemini call', async () => {
+    const client = scriptedSupabase(() => hangs());
+    const res = await resolveMagazineModel(baseArgs(client, fakeBlobStore([null])));
+    expect(res).toEqual({ status: 'busy' });
+    // The empty-paid-lease state: charged, an attempt burned, and NO producer. Loud on purpose.
+    expect(generateMagazineModelForServe).not.toHaveBeenCalled();
+    expect(errorLog).toHaveBeenCalledWith('[serve-model] reserve timed out — possible empty paid lease');
+  });
+
+  it('a reserve ERROR still throws, exactly as today', async () => {
+    const client = scriptedSupabase(() => fakeRpcBuilder({ data: null, error: { message: 'nope' } }));
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null]))))
+      .rejects.toMatchObject({ message: 'nope' });
+  });
+
+  it('retries the settle ONCE when the release-path settle times out', async () => {
+    let settles = 0;
+    const client = scriptedSupabase((fn) => {
+      if (fn === 'reserve_serve_model') return reserved();
+      settles++;
+      return settles === 1 ? hangs() : fakeRpcBuilder({ data: true, error: null });
+    });
+    (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+      throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+    });
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';   // else releaseGateOpen() is false
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
+    expect(settles).toBe(2);
+  });
+
+  it('does NOT retry the settle on the kept path', async () => {
+    let settles = 0;
+    const client = scriptedSupabase((fn) => {
+      if (fn === 'reserve_serve_model') return reserved();
+      settles++;
+      return hangs();   // hangs every time
+    });
+    const res = await resolveMagazineModel(baseArgs(client, fakeBlobStore([null])));
+    expect(res.status).toBe('ok');                        // a lost keep does not fail the request
+    expect(settles).toBe(1);   // a lost keep is benign; only a lost refund is money
   });
 });
