@@ -18,6 +18,12 @@
 - **Serve-path-only.** Local generation (`lib/html-doc/generate.ts:40`) must keep `GENERATE_JSON_RETRIES` (3 attempts) and `REQUEST_TIMEOUT_MS` (60 s). Every task that changes a shared function asserts the local path is unaffected.
 - **Optional parameters do not propagate** (`docs/process-checklists.md:64-68`). Where omitting a bound would silently restore the bug, the boundary gets a wrapper with a **required** parameter, never an optional field on an existing signature.
 - **Mutation-check every guard** (`docs/process-checklists.md:76-81`): delete the guard → covering tests must go red → restore. Commit the fix before mutating.
+- **Imports: the snippets show the symbols, the compiler owns the list.** Each task names the imports
+  it needs, but four consecutive plan-gate rounds found missing or duplicated import lines in prose —
+  a class `tsc` settles in one second and a markdown file cannot. **Every task therefore ends with
+  `npx tsc --noEmit` before its commit step**, and the implementer adds or removes imports as the
+  compiler demands rather than trusting this document's lists. A snippet showing a symbol is an
+  instruction to import it, not a claim that the import line is complete.
 - Branch `fix/serve-path-deadline` (already exists, spec committed). Branch + PR; **merging is a human gate**.
 
 ---
@@ -515,7 +521,13 @@ the guess, which is worse than omitting one.)
 Build the store the same way :83 does, preserving `localBlobStore`'s prototype:
 
 ```ts
-// tests/lib/html-doc/model-store.test.ts — add, reusing ENVELOPE / principal / BASE
+// tests/lib/html-doc/model-store.test.ts — EXTEND THE EXISTING IMPORTS. `[VERIFIED: :5]` the file
+// imports { writeModelEnvelope, readModelEnvelope, type ModelEnvelope } and has no BlobStore import
+// (plan-review r6 High).
+import { writeModelEnvelopeWithin } from '@/lib/html-doc/model-store';
+import type { BlobStore } from '@/lib/storage/blob-store';
+
+// add, reusing ENVELOPE / principal / BASE
 const storeWith = (put: BlobStore['put']) =>
   Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put }) as typeof localBlobStore;
 
@@ -892,7 +904,7 @@ Real values stay asserted by `tests/lib/serve-budget.test.ts` (Task 1) and by th
 ```ts
 // tests/lib/html-doc/serve-doc-mapping.test.ts — add. `principal`, `parsed`, and the fake blob
 // store already exist in this file (see its header); reuse them.
-import { fakeRpcBuilder } from '../../support/fake-rpc';
+// `fakeRpcBuilder` is already imported by Step 1 — do NOT import it twice (TS2300).
 // `[VERIFIED: serve-doc-mapping.test.ts:1-13]` this file does NOT import the Google error type —
 // the integration file does, and the settle-retry test below needs it (plan-review r4/r5 High).
 import { GoogleGenerativeAIFetchError } from '@google/generative-ai';
@@ -970,6 +982,18 @@ Run: `npx jest tests/integration/serve-doc-materialize -v` → PASS, with no edi
 - [ ] **Step 5: Write the implementation**
 
 ```ts
+// lib/html-doc/serve-doc.ts — ADD THESE IMPORTS FIRST. `[VERIFIED: serve-doc.ts:1-14]` the file
+// imports generateMagazineModel and writeModelEnvelope today and none of the symbols below
+// (plan-review r6 High).
+import { generateMagazineModelForServe } from '@/lib/gemini';
+import { writeModelEnvelopeWithin } from './model-store';
+import { callRpcBounded } from '@/lib/serve-rpc';
+import {
+  SERVE_BUDGET, SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
+} from '@/lib/serve-budget';
+// `generateMagazineModel` and `writeModelEnvelope` become unused on this path — remove them from
+// the existing import lines if nothing else in the file still calls them.
+
 // lib/html-doc/serve-doc.ts — reserve
 const reserve = await callRpcBounded(
   (signal) => supabaseClient
