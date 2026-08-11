@@ -40,7 +40,7 @@
 | `tests/lib/html-doc/read-model.test.ts` | **new.** Characterises the accepted residual. |
 | `tests/lib/html-doc/model-store.test.ts` | extend — the put race. |
 | `tests/integration/serve-config-invariant.test.ts` | extend — the CHECK floor, plus its mutation. |
-| `tests/integration/serve-doc-materialize.test.ts` | extend — refund survives, reserve timeout, settle retry. |
+| `tests/integration/serve-doc-materialize.test.ts` | **mock factory only** — its existing 429-refund test at `:278-303` is the money pin and must pass UNCHANGED. The reserve-timeout and settle-retry tests live in the mapping file, which can control the RPC. |
 
 **Task order:** 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. Task 1 is a hard dependency for 6 and 7; Task 5 is a
 hard dependency for 6.
@@ -326,7 +326,8 @@ loop around it was already fully abortable."
 **All helpers used below are defined in this block or imported.** An earlier draft referenced
 `mockModel`, `okResponse` and `SERVE_CAPS` without defining them, and `SERVE_CAPS` is a *private*
 const at `lib/html-doc/serve-doc.ts:20` — the test could not have compiled (plan-review r1 High).
-Task 6 exports it; until then this file builds its own caps.
+`SERVE_CAPS` stays private — Task 6 does NOT export it, because this file builds its own
+`TEST_CAPS` and the export would have had no consumer (plan-review r4 Low / r5 Medium).
 
 ```ts
 // tests/lib/gemini-serve-budget.test.ts
@@ -422,6 +423,10 @@ export async function generateJson<T>(
 ```
 
 ```ts
+// lib/gemini.ts — ADD THIS IMPORT; the snippets below use ServeBudget and lib/gemini.ts has none
+// today (plan-review r5 High).
+import type { ServeBudget } from '@/lib/serve-budget';
+
 // lib/gemini.ts — the serve boundary. `budget` is REQUIRED and positional: omitting it
 // cannot compile, which is the entire point (round-6 H1).
 export async function generateMagazineModelForServe(
@@ -888,6 +893,9 @@ Real values stay asserted by `tests/lib/serve-budget.test.ts` (Task 1) and by th
 // tests/lib/html-doc/serve-doc-mapping.test.ts — add. `principal`, `parsed`, and the fake blob
 // store already exist in this file (see its header); reuse them.
 import { fakeRpcBuilder } from '../../support/fake-rpc';
+// `[VERIFIED: serve-doc-mapping.test.ts:1-13]` this file does NOT import the Google error type —
+// the integration file does, and the settle-retry test below needs it (plan-review r4/r5 High).
+import { GoogleGenerativeAIFetchError } from '@google/generative-ai';
 
 // Restore the release gate or it leaks into every later test in this worker (plan-review r3 High).
 // Mirrors tests/integration/serve-doc-materialize.test.ts:275-276 and gemini-failure.test.ts:55-57.
