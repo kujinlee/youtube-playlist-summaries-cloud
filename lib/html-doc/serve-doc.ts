@@ -141,8 +141,11 @@ export async function resolveMagazineModel(args: {
     }, blobStore);
     // A lost KEEP is benign — the charge is already correct and only a per-attempt token is left
     // behind — but it is still an infrastructure signal worth seeing.
-    if (releaseToken && !await settleBounded(supabaseClient, releaseToken, false)) {
-      console.warn('[serve-model] keep-settle did not apply; the charge stands, the token was not cleared');
+    if (releaseToken) {
+      const outcome = await settleBounded(supabaseClient, releaseToken, false);
+      if (outcome !== 'applied') {
+        console.warn(`[serve-model] keep-settle ${outcome}; the charge stands, the token was not cleared`);
+      }
     }
     return { status: 'ok', model };
   } catch (err) {
@@ -153,12 +156,42 @@ export async function resolveMagazineModel(args: {
     // A lost REFUND is money: the owner was charged 6¢ for work that failed and the ledger still
     // holds it. Distinguish it from a lost keep AT THE POINT WHERE THE DISTINCTION HAS A COST, or
     // the refund mechanism can stop working in production and emit nothing at all.
-    if (releaseToken && !await settleBounded(supabaseClient, releaseToken, released) && released) {
-      console.error('[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation');
+    //
+    // Three outcomes, three different things to say. `error` is reserved for the one case where we
+    // KNOW money is stranded; an alarm that also fires on "we are not sure" trains its reader to
+    // ignore it, which is how the round-1 signal would have died a second death.
+    if (releaseToken) {
+      const outcome = await settleBounded(supabaseClient, releaseToken, released);
+      if (released && outcome === 'refused') {
+        console.error('[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation');
+      } else if (released && outcome === 'indeterminate') {
+        console.warn(
+          '[serve-model] refund outcome UNKNOWN — a settle attempt went unanswered and may have '
+          + 'committed; reconcile against ledger_audit rather than assuming either way',
+        );
+      }
     }
     throw err;
   }
 }
+
+/**
+ * What a settle actually did. THREE values, because a boolean here carried three meanings and the
+ * alarm built on it fired on the wrong one (round-2 review H-R2-2).
+ *
+ *   applied        the database says it settled — the only outcome that may be reported as success
+ *   refused        the database said no on FIRST contact: the token is stale, duplicated, forged, or
+ *                  the lease was reclaimed. Nothing settled, and nothing will
+ *   indeterminate  we never got a trustworthy answer. An attempt timed out or errored, and this
+ *                  path already knows such a call CAN commit server-side (`serve-doc.ts` reserve
+ *                  branch, and backlog #28, both rest on exactly that). A later no-op reply may
+ *                  therefore be the idempotent echo of our own success rather than a refusal
+ *
+ * Collapsing the last two is what made `REFUND NOT APPLIED` fire on refunds that HAD applied. The
+ * deliverable of the round-1 fix was a trustworthy signal; an alarm that cries wolf on the only
+ * path it watches is worth no more than the silence it replaced.
+ */
+type SettleOutcome = 'applied' | 'refused' | 'indeterminate';
 
 /**
  * Settle the reservation under a bounded wait, retrying ONLY the refund.
@@ -168,14 +201,18 @@ export async function resolveMagazineModel(args: {
  * second attempt and a lost keep does not: `released=false` merely clears a per-attempt token whose
  * charge is already correct, while `released=true` is the refund itself.
  *
- * Returns false rather than throwing: the caller must never CLAIM a refund it could not apply, but a
- * failed settle must not also mask the original error on the throw path.
+ * Never throws: a failed settle must not mask the original error on the throw path.
  */
 async function settleBounded(
   supabaseClient: SupabaseClient, token: string, released: boolean,
-): Promise<boolean> {
+): Promise<SettleOutcome> {
   // An unapplied REFUND is real money left on the ledger; a lost KEEP is already correct.
   const attempts = released ? SERVE_SETTLE_ATTEMPTS : 1;
+  // Once ANY attempt fails to return a trustworthy answer, every later reply is ambiguous: the RPC
+  // may have committed after we stopped listening. Conservative on purpose — over-reporting
+  // "indeterminate" costs an operator one reconciliation; under-reporting it means claiming a
+  // refund was refused when it was applied.
+  let anAttemptMayHaveCommitted = false;
   for (let i = 0; i < attempts; i++) {
     // `boolean | null`, not `boolean`: postgrest types data as null on its failure branch, and
     // asserting a non-null the client never promises is the same absent-vs-failed conflation this
@@ -189,20 +226,23 @@ async function settleBounded(
     if (out.ok) {
       // `ok` means the ROUND TRIP succeeded, not that the settle happened. settle_serve_model
       // `returns boolean` and answers `false` for a no-op — `if not found then return false`
-      // (0020_reservation_release.sql:280) — when the token is stale, duplicated, forged, or the
-      // lease was reclaimed while this attempt was still running. Reading that as settled is the
-      // absent-vs-failed conflation this project keeps paying for, landing on the refund path.
-      if (out.data === true) return true;
-      // Deterministic refusal: the token will not become valid on a second try, so do NOT spend the
-      // retry (it is budgeted for a transport failure). Fail loudly instead — a refund mechanism
-      // that stops working must never do so silently.
+      // (0020_reservation_release.sql:280). Measured against the live database in
+      // tests/integration/settle-rpc-shape.test.ts: success is `true`, a no-op is `false`, and
+      // neither is an error.
+      if (out.data === true) return 'applied';
+      // A no-op AFTER one of our own attempts went unanswered is exactly what an idempotent
+      // re-settle looks like — the second call cannot distinguish "someone else's stale token" from
+      // "the row my own timed-out attempt already cleared". Do not spend the retry either way: a
+      // genuinely stale token will not become valid.
+      if (anAttemptMayHaveCommitted) return 'indeterminate';
       console.warn(
         `[serve-model] settle(released=${released}) REFUSED by the database — token stale, `
         + 'duplicated, or the lease was reclaimed; nothing was settled',
       );
-      return false;
+      return 'refused';
     }
+    anAttemptMayHaveCommitted = true;
     console.warn(`[serve-model] settle attempt ${i + 1}/${attempts} failed: ${out.reason}`);
   }
-  return false;   // caller must NOT claim a refund it could not apply
+  return 'indeterminate';   // no attempt ever answered
 }

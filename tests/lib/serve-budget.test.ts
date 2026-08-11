@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_COUNT_TOKENS_TIMEOUT_MS, SERVE_ATTEMPT_TIMEOUT_MS,
   SERVE_ATTEMPTS, SERVE_BACKOFF_TOTAL_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
@@ -74,6 +75,40 @@ describe('serve budget', () => {
       attemptTimeoutMs: SERVE_ATTEMPT_TIMEOUT_MS,
       countTokensTimeoutMs: SERVE_COUNT_TOKENS_TIMEOUT_MS,
     });
+  });
+
+  // A migration literal cannot import a TypeScript constant, so this is the ONLY thing between a
+  // tuned constant and a floor that no longer covers the work.
+  //
+  // It pins EVERY floor literal in the file, not just the CHECK (round-1 review M2). 0024 carries
+  // three: the fix-up's `set`, the fix-up's `where`, and the constraint. Pinning only the
+  // constraint meant a retune could raise SERVE_MARGIN_MS, see one failing test, edit the one line
+  // it pointed at, and ship a migration whose fix-up still repairs rows to the OLD floor — leaving
+  // any database between the two values unrunnable, because ADD CONSTRAINT validates existing rows.
+  // That is precisely the deploy-blocker this branch already hit once, one retune later.
+  //
+  // IT LIVES IN THE UNIT SUITE ON PURPOSE (round-2 review M-R2-1). It reads the .sql off disk and
+  // needs no database, and the integration suite is not wired into CI — so as an integration test
+  // it was a gate that only ran when someone remembered, guarding a money-path relationship.
+  it('EVERY floor literal in migration 0024 equals SERVE_FLOOR_SECONDS', () => {
+    const raw = readFileSync('supabase/migrations/0024_lease_covers_serve.sql', 'utf-8');
+    // Measure the SQL, not the prose. `--` comments in this migration legitimately quote example
+    // constraint definitions (e.g. `CHECK ((lease_ttl_seconds >= 1) AND …)` explaining what the
+    // sweep must NOT drop), and counting those as floor literals made the population assertion fire
+    // on documentation. Caught by this very test the moment that comment was written, which is the
+    // population check doing its job — a pin that reads comments pins the wrong thing.
+    const sql = raw.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n');
+    const literals = [
+      ...[...sql.matchAll(/set\s+lease_ttl_seconds\s*=\s*(\d+)/g)].map((m) => ['set', m[1]] as const),
+      ...[...sql.matchAll(/lease_ttl_seconds\s*<\s*(\d+)/g)].map((m) => ['where', m[1]] as const),
+      ...[...sql.matchAll(/lease_ttl_seconds\s*>=\s*(\d+)\s*\)/g)].map((m) => ['check', m[1]] as const),
+    ];
+    // Assert the POPULATION as well as the values: if a future edit deletes the fix-up, this must
+    // fail rather than quietly pin fewer literals than the file has.
+    expect(literals.map(([where]) => where).sort()).toEqual(['check', 'set', 'where']);
+    for (const [where, value] of literals) {
+      expect({ where, value: Number(value) }).toEqual({ where, value: SERVE_FLOOR_SECONDS });
+    }
   });
 
   it('every enforced term is a positive duration', () => {

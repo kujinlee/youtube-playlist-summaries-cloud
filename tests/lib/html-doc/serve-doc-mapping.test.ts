@@ -249,6 +249,36 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
     expect(warnLog.mock.calls.map((c) => String(c[0])).join('\n')).toContain('REFUSED by the database');
   });
 
+  // ── H-R2-2 (round-2 review). The round-1 fix made `false` carry three meanings. ─────────────
+  // A settle attempt that times out CLIENT-side can still have COMMITTED server-side — this very
+  // file's reserve branch is built on that fact, and so is backlog #28. When it does, the retry's
+  // reply is `false`: the idempotent echo of our OWN success, indistinguishable from a stale token.
+  // Round 1 logged that as REFUND NOT APPLIED, so the alarm fired hardest on refunds that had
+  // worked. The deliverable of H3 was a trustworthy signal; this is what keeps it trustworthy.
+  it('a no-op AFTER an unanswered attempt is INDETERMINATE, not a refusal — no false alarm', async () => {
+    let settles = 0;
+    const client = scriptedSupabase((fn) => {
+      if (fn === 'reserve_serve_model') return reserved();
+      settles++;
+      // Attempt 1 never answers (committed server-side, we stopped listening); attempt 2 sees the
+      // row already cleared and idempotently answers false.
+      return settles === 1 ? hangs() : fakeRpcBuilder({ data: false, error: null });
+    });
+    (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+      throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+    });
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
+
+    expect(settles).toBe(2);
+    // The money alarm must NOT fire: for all we know the refund applied, and it probably did.
+    expect(errorLog).not.toHaveBeenCalledWith(
+      '[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation',
+    );
+    // But silence is not acceptable either — say plainly that the outcome is unknown.
+    expect(warnLog.mock.calls.map((c) => String(c[0])).join('\n')).toContain('refund outcome UNKNOWN');
+  });
+
   it('does NOT spend the retry on a deterministic refusal — only on a transport failure', async () => {
     // The retry is budgeted for a timed-out round trip. A stale token will not become valid on a
     // second try, so retrying it burns 5s of a lease-bounded budget to get the same answer.

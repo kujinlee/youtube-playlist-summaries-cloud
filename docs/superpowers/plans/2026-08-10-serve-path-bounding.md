@@ -232,7 +232,7 @@ export const SERVE_BUDGET: ServeBudget = {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx jest serve-budget`
-Expected: PASS (5 tests). `SERVE_BOUNDED_MS` = 135_400, `SERVE_FLOOR_MS` = 155_400, `SERVE_FLOOR_SECONDS` = 156.
+Expected: PASS (5 tests). `SERVE_BOUNDED_MS` = 140_400, `SERVE_FLOOR_MS` = 160_400, `SERVE_FLOOR_SECONDS` = 161.
 
 - [ ] **Step 5: Commit**
 
@@ -1125,7 +1125,7 @@ the mechanism that carries it out."
 - Test: `tests/integration/serve-config-invariant.test.ts` (exists — extend)
 
 **Interfaces:**
-- Consumes: `SERVE_FLOOR_SECONDS` (Task 1) = **156**.
+- Consumes: `SERVE_FLOOR_SECONDS` (Task 1) = **161**.
 - Produces: constraint `guardrail_config_lease_ttl_covers_serve`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1184,7 +1184,7 @@ Expected: FAIL — `30` is accepted (today's floor is `>= 1`) and the migration 
 -- "the work fits the lease" true at CONFIGURATION time, once, for every request forever —
 -- rather than negotiated per request. See the spec §3.3.
 --
--- 156 = SERVE_FLOOR_SECONDS = ceil((135_400 enforced + 20_000 margin) / 1000).
+-- 161 = SERVE_FLOOR_SECONDS = ceil((140_400 enforced + 20_000 margin) / 1000).
 -- Pinned by tests/integration/serve-config-invariant.test.ts — a literal here cannot import it.
 --
 -- The old floor was `>= 1`: a one-second lease was legal, which is why the app could never
@@ -1215,7 +1215,7 @@ end $$;
 
 -- Idempotent: the loop above removes our own constraint if the migration is re-applied.
 alter table guardrail_config
-  add constraint guardrail_config_lease_ttl_covers_serve check (lease_ttl_seconds >= 156);
+  add constraint guardrail_config_lease_ttl_covers_serve check (lease_ttl_seconds >= 161);
 ```
 
 - [ ] **Step 4: Apply and run tests**
@@ -1229,7 +1229,7 @@ earlier state survived.
 
 - [ ] **Step 5: Mutation-check the constraint**
 
-Change `>= 156` to `>= 1`, re-apply, re-run → the "refuses a lease shorter" test must go RED.
+Change `>= 161` to `>= 1`, re-apply, re-run → the "refuses a lease shorter" test must go RED.
 Restore and re-apply.
 
 - [ ] **Step 6: Schema gates + full integration suite**
@@ -1319,7 +1319,7 @@ day someone changes that, with the reasoning attached."
 - [ ] `npm run test:integration` — needs a live Supabase stack (not in CI; `dev-process.md:142`)
 - [ ] `./scripts/check-schema-gates.sh` — all six
 - [ ] `python3 scripts/check-docs.py`
-- [ ] **Deploy precondition (§6):** read `lease_ttl_seconds` in every environment. If any is below **156**, raise it *before* 0024 is applied or the migration fails on a live database. `[unverified]` — production's value has not been read this session, and per the compaction memory note the doc is not evidence.
+- [ ] **Deploy precondition (§6):** read `lease_ttl_seconds` in every environment. If any is below **161**, raise it *before* 0024 is applied or the migration fails on a live database. `[unverified]` — production's value has not been read this session, and per the compaction memory note the doc is not evidence.
 - [ ] Whole-branch dual adversarial review (Codex + Claude) to convergence
 - [ ] Open the PR, notify, **do not merge** — merging is a human gate
 

@@ -18,25 +18,44 @@ declare
   v_name text;
   v_count int;
 begin
-  -- Drop every pre-existing LOWER-BOUND check on lease_ttl_seconds, not just the first: `select
-  -- conname into v_name` would silently take one row and raise TOO_MANY_ROWS on a partially-applied
-  -- schema.
+  -- Drop every pre-existing SIMPLE LOWER-BOUND check on lease_ttl_seconds, not just the first:
+  -- `select conname into v_name` would silently take one row and raise TOO_MANY_ROWS on a
+  -- partially-applied schema.
   --
-  -- Matched on `>=` rather than on the column name alone (round-1 review, both reviewers). A
-  -- substring match on '%lease_ttl_seconds%' also drops constraints this migration has no business
-  -- touching — an operator's upper bound (`lease_ttl_seconds <= 3600`), or a multi-column CHECK
-  -- whose other half is unrelated — and nothing recreates them. Dropping a guard you did not author
-  -- is the one thing a migration must never do silently.
+  -- Two narrowings, each bought with a review finding:
+  --   `>=`            round 1. A substring match on '%lease_ttl_seconds%' also dropped an
+  --                   operator's UPPER bound (`lease_ttl_seconds <= 3600`) and never recreated it.
+  --   no and/or       round 2, MEASURED: `CHECK ((lease_ttl_seconds >= 1) AND (max_serve_attempts
+  --                   >= 1))` still matched the `>=` form and would have been dropped WHOLE, taking
+  --                   an unrelated guard with it. A compound constraint is not ours to delete.
+  --
+  -- Dropping a guard you did not author is the one thing a migration must never do silently — so
+  -- anything mentioning the column that this does NOT drop is reported rather than ignored. Leaving
+  -- a foreign lower bound in place is safe: ours is added alongside and the stricter of the two
+  -- wins.
   select count(*) into v_count from pg_constraint
    where conrelid = 'guardrail_config'::regclass and contype = 'c'
-     and pg_get_constraintdef(oid) ~* 'lease_ttl_seconds[[:space:]]*>=';
+     and pg_get_constraintdef(oid) ~* 'lease_ttl_seconds[[:space:]]*>='
+     and pg_get_constraintdef(oid) !~* '\yand\y|\yor\y';
   if v_count > 1 then
     raise warning 'dropping % pre-existing lease_ttl_seconds lower-bound checks', v_count;
   end if;
+
+  for v_name in
+    select conname from pg_constraint
+     where conrelid = 'guardrail_config'::regclass and contype = 'c'
+       and pg_get_constraintdef(oid) ilike '%lease_ttl_seconds%'
+       and not (pg_get_constraintdef(oid) ~* 'lease_ttl_seconds[[:space:]]*>='
+                and pg_get_constraintdef(oid) !~* '\yand\y|\yor\y')
+  loop
+    raise warning 'leaving constraint % in place: it mentions lease_ttl_seconds but is not a simple lower bound', v_name;
+  end loop;
+
   for v_name in
     select conname from pg_constraint
      where conrelid = 'guardrail_config'::regclass and contype = 'c'
        and pg_get_constraintdef(oid) ~* 'lease_ttl_seconds[[:space:]]*>='
+       and pg_get_constraintdef(oid) !~* '\yand\y|\yor\y'
   loop
     execute format('alter table guardrail_config drop constraint %I', v_name);
   end loop;

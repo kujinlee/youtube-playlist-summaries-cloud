@@ -230,13 +230,13 @@ BOUNDED — every term is a timeout the code actually applies
   PUT_TIMEOUT_MS                              15_000
   SETTLE_RPC_TIMEOUT_MS                        5_000
                                              -------
-  SERVE_BOUNDED_MS                           135_400
+  SERVE_BOUNDED_MS                           140_400
 
 UNBOUNDABLE — cannot be timed out, so it is margin, not budget
   SERVE_MARGIN_MS                             20_000
 
-  SERVE_FLOOR_MS      = 135_400 + 20_000  =  155_400
-  SERVE_FLOOR_SECONDS = ceil(155_400/1000) =     156
+  SERVE_FLOOR_MS      = 140_400 + 20_000  =  160_400
+  SERVE_FLOOR_SECONDS = ceil(160_400/1000) =     161
 ```
 
 **The split is the point.** `SERVE_BOUNDED_MS` is a promise the code keeps: each term corresponds to a
@@ -272,7 +272,7 @@ be pinned against.
 -- migration 0024
 alter table guardrail_config drop constraint <lease_ttl_check>;   -- read the generated name first
 alter table guardrail_config add  constraint guardrail_config_lease_ttl_covers_serve
-  check (lease_ttl_seconds >= 156);                               -- = SERVE_FLOOR_SECONDS
+  check (lease_ttl_seconds >= 161);                               -- = SERVE_FLOOR_SECONDS
 ```
 
 Today `[VERIFIED: 0012:22]` `check (lease_ttl_seconds >= 1)` — a one-second lease is legal, which is
@@ -372,12 +372,12 @@ those logs ever appear, that is the trigger to promote the addressing work rathe
 
 ```mermaid
 gantt
-    title Serve budget — 135.4s enforced + 20s margin = floor 156s, inside a 180s lease
+    title Serve budget — 140.4s enforced + 20s margin = floor 161s, inside a 180s lease
     dateFormat X
     axisFormat %ss
 
     section Lease
-    lease_ttl_seconds = 180 (CHECK floor 156)   :active, 0, 180
+    lease_ttl_seconds = 180 (CHECK floor 161)   :active, 0, 180
 
     section Enforced by a timeout
     reserve RPC (5s)                :a0, 0, 5
@@ -590,20 +590,20 @@ an over-count, the safe direction — rather than silently reporting success.
 1 and an integration test inserting `lease_ttl_seconds = 30` must stop failing. An unmutated guard is
 undemonstrated.
 
-**Anti-drift.** The migration's literal `156` must equal `SERVE_FLOOR_SECONDS` from
+**Anti-drift.** The migration's literal `161` must equal `SERVE_FLOOR_SECONDS` from
 `lib/serve-budget.ts`. A migration literal cannot import a TypeScript constant, so this assertion is
 the only thing between a tuned constant and a floor that no longer covers the work.
 
 ---
 ## 6. Deploy ordering
 
-The constraint must not be applied while a deployed installation has `lease_ttl_seconds < 156`, or the
+The constraint must not be applied while a deployed installation has `lease_ttl_seconds < 161`, or the
 migration fails on a live database.
 
 1. Read the current value in each environment. `[unverified]` — production's configured
    `lease_ttl_seconds` has not been checked against the live database in this session, and the memory
    note on out-of-band changes says the doc is not evidence. **Check before applying.**
-2. If any environment is below 156, raise it first, in its own step.
+2. If any environment is below 161, raise it first, in its own step.
 3. Then apply 0024, then deploy the app.
 
 App and schema are **not** coupled this time: the app change is safe with or without the constraint,
