@@ -1,5 +1,7 @@
 // tests/integration/serve-config-invariant.test.ts
+import { readFileSync } from 'node:fs';
 import { adminClient } from './helpers/clients';
+import { SERVE_FLOOR_SECONDS } from '@/lib/serve-budget';
 
 const svc = adminClient();
 const SAFETY_FRACTION = 0.2;
@@ -139,4 +141,38 @@ it('1G per-owner serve cap bounds the registered residual within the safety frac
   const bound = dailyCapCents * SAFETY_FRACTION;                  // 500·0.2 = 100
   expect(preCapWorst).toBeGreaterThan(bound);                    // 600 > 100 — the residual 1G exists to bound
   expect(perOwnerServeDailyCents).toBeLessThanOrEqual(bound);    // 60 <= 100 — now bounded by the per-owner daily cap
+});
+
+// ── #46: the lease must be long enough to cover the serve path's bounded work ─────────────────
+// The app's timeouts sum to a build-time constant. This constraint makes "the work fits the lease"
+// true at CONFIGURATION time, once, rather than negotiated per request. The old floor was `>= 1`:
+// a one-second lease was legal, which is why the app could never assume the lease covered its work.
+
+it('refuses a lease shorter than the serve path can finish in', async () => {
+  const { error } = await svc.from('guardrail_config')
+    .update({ lease_ttl_seconds: 30 }).eq('id', true);
+  expect(error).toMatchObject({ code: '23514' });        // check_violation
+});
+
+it('accepts exactly the floor, then restores whatever was there', async () => {
+  const { data: before } = await svc.from('guardrail_config')
+    .select('lease_ttl_seconds').eq('id', true).single();
+  try {
+    expect((await svc.from('guardrail_config')
+      .update({ lease_ttl_seconds: SERVE_FLOOR_SECONDS }).eq('id', true)).error).toBeNull();
+  } finally {
+    // A thrown expect must NOT leave the shared singleton at the floor — this suite runs
+    // --runInBand against one DB, and every later file reads this row.
+    await svc.from('guardrail_config')
+      .update({ lease_ttl_seconds: before!.lease_ttl_seconds }).eq('id', true);
+  }
+});
+
+// A migration literal cannot import a TypeScript constant, so this is the ONLY thing between a
+// tuned constant and a floor that no longer covers the work.
+it('the migration literal equals SERVE_FLOOR_SECONDS', () => {
+  const sql = readFileSync('supabase/migrations/0024_lease_covers_serve.sql', 'utf-8');
+  const m = sql.match(/lease_ttl_seconds\s*>=\s*(\d+)\s*\)/);
+  expect(m).not.toBeNull();
+  expect(Number(m![1])).toBe(SERVE_FLOOR_SECONDS);
 });
