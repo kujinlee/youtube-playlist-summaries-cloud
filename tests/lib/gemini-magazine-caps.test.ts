@@ -90,6 +90,40 @@ it('fails closed (NonRetryableError) when caps is present but missing magazineOu
   expect(mockCountTokens).not.toHaveBeenCalled();
 });
 
+it('passes an abort signal and timeout to countTokens', async () => {
+  const { assertMagazineInputWithinCap } = await import('@/lib/gemini');
+  const seen: Array<{ signal?: AbortSignal; timeout?: number }> = [];
+  const model = {
+    countTokens: jest.fn(async (_req: unknown, opts?: { signal?: AbortSignal; timeout?: number }) => {
+      seen.push({ signal: opts?.signal, timeout: opts?.timeout });
+      return { totalTokens: 10 };
+    }),
+  };
+  const ctrl = new AbortController();
+  await assertMagazineInputWithinCap(
+    model as never, 'prompt', {}, { ...caps, magazineInputTokens: 100 },
+    { signal: ctrl.signal, timeoutMs: 1234 },
+  );
+  expect(seen[0].signal).toBe(ctrl.signal);
+  expect(seen[0].timeout).toBe(1234);
+});
+
+it('rejects with AbortError when the signal is already aborted', async () => {
+  const { assertMagazineInputWithinCap } = await import('@/lib/gemini');
+  const model = {
+    countTokens: jest.fn(async (_r: unknown, opts?: { signal?: AbortSignal }) => {
+      if (opts?.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+      return { totalTokens: 10 };
+    }),
+  };
+  // Assert the error IDENTITY, not that "something threw" — a test accepting any error
+  // passes on a typo.
+  await expect(assertMagazineInputWithinCap(
+    model as never, 'p', {}, { ...caps, magazineInputTokens: 100 },
+    { signal: AbortSignal.abort() },
+  )).rejects.toMatchObject({ name: 'AbortError' });
+});
+
 it('fails closed (NonRetryableError) when caps is present but missing magazineInputTokens — no Gemini call made', async () => {
   const { generateMagazineModel } = await import('@/lib/gemini');
   const { NonRetryableError } = await import('@/lib/job-queue/errors');

@@ -74,14 +74,24 @@ export async function assertMagazineInputWithinCap(
   prompt: string,
   generationConfig: GenerationConfig,
   caps: CloudGeminiCaps,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<void> {
   const cap = caps.magazineInputTokens;
   if (cap == null) {
     throw new NonRetryableError('cloud magazine caps missing magazineInputTokens');
   }
-  const { totalTokens } = await model.countTokens({
-    generateContentRequest: { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig },
-  });
+  // SingleRequestOptions (generative-ai.d.ts:1297-1307) carries both `signal` and, via
+  // RequestOptions, `timeout`. Both keys are omitted when absent so the local path — which
+  // passes no opts — reaches countTokens with exactly the call it made before.
+  const { totalTokens } = await model.countTokens(
+    {
+      generateContentRequest: { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig },
+    },
+    {
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      ...(opts?.timeoutMs ? { timeout: opts.timeoutMs } : {}),
+    },
+  );
   if (totalTokens > cap) {
     throw new NonRetryableError(`magazine input ${totalTokens} tokens exceeds cap ${cap}`);
   }
