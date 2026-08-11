@@ -234,9 +234,19 @@ two held by tests. Only the human-checked one was reopened. Reopen the part that
 
 ## Writing a RATCHET (added 2026-08-11)
 
-There are three — `check-arch-findings.py`, `check-guard-coverage.py`,
-`check-gate-falsifiability.py` — and each invented these independently, differently. This is the
-contract, written down after the third one so the fourth does not reinvent it a fourth time.
+**There are SIX**, and each invented these independently, differently:
+`check-arch-findings.py`, `check-guard-coverage.py`, `check-sentinel-meanings.py`,
+`check-vocabulary-collisions.py`, `check-gate-falsifiability.py`, `check-ratchet-contract.py`.
+
+*This paragraph originally said "three", written from memory — it undercounted by half, and
+`scripts/check-ratchet-contract.py` is what caught it before this document merged. Which is the
+argument for the whole section: a convention described from recollection is already wrong.*
+
+**Enforced, not merely written.** `check-ratchet-contract.py` discovers ratchets from two independent
+sources — CI step names containing *"ratchet"*, and any `scripts/check-*.py` whose docstring declares
+itself one — so neither a forgotten registry entry nor an unwired script can evade it. It enforces the
+two rules that are statically decidable (**1** and **4** below) and **says so explicitly** rather than
+implying it covers all six. Currently 4 violations, all rule 4, all pre-dating the contract.
 
 **1. "Cannot run" is a FAILURE, never a pass.** The single most important line here. If the tool
 cannot reach what it measures, it must exit non-zero and say *treat this as NOT RUN*. Measured
