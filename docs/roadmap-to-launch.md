@@ -88,6 +88,15 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   with the new code. Caveat surfaced: a tab open *across* the deploy runs stale JS and needed a hard
   refresh → filed backlog #16 (app-wide "new version available" banner); #15 removes the
   share-specific instance.
+  **Redeploy 2026-08-11 (release v6) — 45 commits, the largest gap yet.** Shipped the two slices that
+  were merged but protecting nothing: **#46 serve-path bounding** (PR #67 — its durability half lives
+  in migrations `0024`/`0025`, so the app half alone would have been *worse* than either end state)
+  and **PR #42 serial coherence** (whose migration `0023` had gone unapplied since 2026-08-03).
+  Migrations pushed first; see *Prod schema reconciliation* below. Post-deploy green: `/login`→200,
+  `/dev-login`→404 (gate closed), both machines on one digest, Next.js 16.2.6 booted, worker running,
+  zero boot errors. Investigated and cleared: `/api/version`→401 not 404 — **no such route exists**
+  (backlog #16 would add it) and the middleware auth-gates `/api/*` before routing can 404, which is
+  the fail-closed direction.
   **Still to do in 1.4 → actionable checklist: [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md)**
   (a) ~~download~~ ✅ ~~share-before-view~~ ✅ (live, v5); (b) raise prod
   `daily_cap_cents` if the owner wants full playlists; (c) the 5 cloud-sync checks below.
@@ -117,6 +126,31 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
     share starts returning 503.
   - [ ] **No service-role on the sync path** in the deployed config (`scripts/check-service-confinement.ts`
     passes against the real environment, not just local).
+
+### Prod schema reconciliation — 2026-08-11
+
+**This document said prod was verified "through 0021". Prod was actually at 0022, and three
+migrations were unapplied.** Read live via the read-only `claude_ro` role, not inferred from files.
+
+- **`0022` had been applied out-of-band and recorded nowhere.** Harmless in itself — but the same
+  blind spot is why **`0023` sat unapplied for eight days** after the serial-coherence slice merged
+  (PR #42, 2026-08-03). Prod ran without the phantom-serial fix for that whole window and every
+  document here read as "merged, done". **Reconciliation covers git and files; it does not and
+  cannot cover live infrastructure.** The only defence is to read the running system, so a migration
+  applied by hand must be recorded here *at the moment it is applied*.
+- **`0023`/`0024`/`0025` applied 2026-08-11** (`supabase db push --linked`). `migration list` now
+  reports local == remote for all 25.
+- Safety was established against the live catalog *before* pushing, and re-verified after:
+  `claim_video_slot` has **both** the 2-arg wrapper and the 3-arg form with identical return tables
+  (so in-flight old instances keep resolving); `guardrail_config_lease_ttl_covers_serve` is present
+  and `lease_ttl_seconds` is still **180** — above the 161 floor, so `0024`'s fix-up `UPDATE` was a
+  no-op on prod (it was *not* local, which sat at 30 and refused the migration);
+  `settle_serve_model(uuid, boolean) → boolean` unchanged, so `create or replace` succeeded.
+- Live `guardrail_config` recorded for the next session: `daily_cap_cents=5000`,
+  `magazine_est_cents=6`, `max_serve_attempts=5`, `summary_max_attempts=1`, `dig_max_attempts=2`.
+- **The push printed a `pgdelta` certificate stack trace and still succeeded** — that is the CLI
+  failing to cache its own local catalog snapshot, not a database error. It was treated as
+  unproven either way and settled by querying `pg_catalog` directly.
 
 **M1 done = a real URL a user can log into and use.**
 
@@ -514,7 +548,24 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
 **C** authority + divergence detection, **D** cloud rebuild parity. See
 `docs/superpowers/plans/2026-07-31-serial-coherence-sync.md` and `~/.claude/plans/`.
 
-## Stable blob addressing / manifest — own spec + merge gate (**spec in gates, not converged**)
+## Stable blob addressing / manifest — ⏸ **PARKED 2026-08-11 (user decision)**
+
+**⏸ STATUS — PARKED, not abandoned, and not blocked.** Design is done and merged: **ADR-0006**,
+**ADR-0007** (`efee284`) and the coordination implementation (`1a7c076`), behind seventeen adversarial
+review rounds. What is *not* done is the migration: **the schema has never run and holds zero rows** —
+`video_artifacts`/`video_generations` appear in no migration (prod and master both end at `0025`), and
+it lives only at `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/`.
+
+*Why park:* everything it currently fixes is a defect **in itself**, not in the running product, and
+the roadmap's stated goal is M3 acceptance. The remaining risk sits entirely in first contact with
+real data, which deserves a deliberate slice rather than a continuation. Every parked piece carries
+its own trigger — task #44 (T5 code preconditions), task #45 (`doc_key` re-key ⟷ `inflight_uq`
+coupling), backlog #25 (render addressing), #26 (attempt ceiling), #27 (GC retention).
+
+**⚠ UNPARK TRIGGER:** when backlog #17/#19 (CAS conditional-write on `persist_summary`) becomes the
+next slice, or when a real caller is about to reach `record_artifact` for a paid kind. **Backlog #26
+must be closed FIRST** in that case — ADR-0007 deleted the only per-kind attempt bound on the money
+path, so shipping without that decision silently promotes a summary from 1 paid attempt to 5.
 
 **Why it exists:** every hard defect of the last three weeks reduces to one sentence — *the blob
 address is derived from mutable data* (`base = <serial>_<slug>`, and both halves move). Spec:
@@ -930,15 +981,30 @@ Current: **M1 core is DONE — the app is LIVE.** 1.1 ✅ 1.2 ✅ 1.3 ✅ (2026-
 (2026-07-22, PR #32); 1.4 finish-up items remain in [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md).
 Update the checkboxes as steps land.
 
-### ▶ NEXT ACTIONS (as of 2026-07-30 — read this first on a fresh session)
+### ▶ NEXT ACTIONS (**refreshed 2026-08-11** — read this first on a fresh session)
 
-**The deploy blockers are GONE.** M1.1–M1.3 are done and the app is live; the previous version of
-this block still named M1.3 as "the single remaining blocker" nine days after it shipped — it
-contradicted the checkboxes directly above it. Reconcile this block against `git log` and the
-merged-PR list every time, per *Session Resume*.
+**Reconcile this block against `git log` AND against live infrastructure every time.** The
+2026-07-30 version of it was stale within days, and the entries below it still are — treat the
+numbered engineering list as a *candidate pool*, not a current plan, and check each against
+`git log` before picking one up. **Also read the running system**, not just the repo: on 2026-08-11
+this file claimed prod was at migration `0021` when it was at `0022`, which is how `0023` came to sit
+unapplied for eight days while every document read "merged, done".
 
-**Blocked on the human:** nothing. PR #38 (`04984af`) and PR #39 (`622e793`) are both merged;
-`master` is green.
+**Current state (2026-08-11):**
+- **`master` = `0aac16d`**, clean, tsc clean, **2671 unit tests / 265 suites green**.
+- **Prod == master.** All 25 migrations applied; **release v6 deployed 2026-08-11 15:47Z**.
+- **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
+  trigger. Do not resume it by momentum.
+
+**Blocked on the human:** nothing.
+
+**The actual next step: the B-group live checks** in
+[`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) (B1–B5), which close M1.4 and were
+untestable until hosted infra existed. Then **M3 acceptance**. Note B3/B4 spend real Gemini money and
+need a signed-in session, so they are a deliberate pass, not a background chore.
+
+**Older candidate pool below — VERIFY BEFORE STARTING. Several of these predate three merged
+slices.**
 
 **Unblocked — engineering, in recommended order:**
 0. **Finding #2 — CONFIRMED DEFECT (2026-07-30).** A re-dug section silently keeps its OLD body
