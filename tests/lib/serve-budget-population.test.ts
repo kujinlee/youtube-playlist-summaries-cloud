@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // ── H-R6-1. THE SET WAS CLOSED; THE CLOSURE WAS NOT ENFORCED. ────────────────────────────────────
@@ -21,11 +21,28 @@ import { join } from 'node:path';
 // pinned a population — of known call sites, not of bounded values.
 //
 // This file closes it from the other end, where the population actually lives: every branded budget
-// this module exports must be SPENT IN THE ARITHMETIC that produces the floor. A new brand that
-// nobody added to the sum fails here, which is the difference between "the set is closed today" and
-// "the set cannot be opened".
+// must be SPENT IN THE ARITHMETIC that produces the floor. A new brand that nobody added to the sum
+// fails here, which is the difference between "the set is closed today" and "the set cannot be
+// opened".
+//
+// WHAT THIS GATE DOES NOT STOP, stated because four overclaimed comments have already been caught on
+// this branch: a term written into the sum so as to contribute nothing — `+ 0 * SERVE_X` — satisfies
+// every rule below. MEASURED: it passes. That is not closed, and it is not going to be: it is a
+// deliberate act, not the drift these rules exist to catch, and a test that claimed to stop
+// deliberate circumvention would be the fifth overclaim. The rules defend against a budget being
+// FORGOTTEN, which is what actually happened three times here.
 
-const SERVE_BUDGET_SRC = join(process.cwd(), 'lib/serve-budget.ts');
+const LIB = join(process.cwd(), 'lib');
+const SERVE_BUDGET_SRC = join(LIB, 'serve-budget.ts');
+
+/** Every .ts under lib/, so a brand minted in ANOTHER file cannot escape the rules below. */
+function libSources(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) return libSources(p);
+    return e.isFile() && p.endsWith('.ts') ? [p] : [];
+  });
+}
 
 /** Source with comments stripped, so prose can neither satisfy nor trip a rule. */
 function codeOnly(src: string): string {
@@ -91,6 +108,29 @@ const UNBRANDED_BY_DESIGN: Record<string, string> = {
 
 describe('the population of lease-spent budgets is CLOSED, and closure is enforced', () => {
   const code = codeOnly(readFileSync(SERVE_BUDGET_SRC, 'utf-8'));
+
+  // ── EVASION A, found by attacking this gate rather than reading it. ─────────────────────────
+  // The first version of these rules scanned serve-budget.ts alone, so a maintainer adding
+  // `lib/serve-verify-budget.ts` with its own `as VerifyBudget` constant walked straight through —
+  // and putting a new subsystem's budget in a new file is what someone would actually do. The brand
+  // TYPE lives in serve-budget.ts, so any file minting one is minting a lease-spent value, and the
+  // rule has to follow the brand rather than the filename.
+  it('NO OTHER FILE under lib/ mints a budget brand — serve-budget.ts is the only mint', () => {
+    const offenders = libSources(LIB)
+      .filter((f) => f !== SERVE_BUDGET_SRC)
+      .map((f) => ({ file: f.replace(`${process.cwd()}/`, ''), src: codeOnly(readFileSync(f, 'utf-8')) }))
+      .filter(({ src }) => /\bas\s+\w*(?:Budget|AttemptCount)\s*[;,)]/.test(src))
+      .map(({ file }) => file);
+    // If a new budget legitimately belongs elsewhere, the sum has to move with it — which is the
+    // conversation this failure is meant to force.
+    expect(offenders).toEqual([]);
+  });
+
+  it('scans a real tree — the lib/ walk is not silently empty', () => {
+    const all = libSources(LIB);
+    expect(all.length).toBeGreaterThan(20);
+    expect(all).toContain(SERVE_BUDGET_SRC);
+  });
 
   it('finds a non-trivial set of branded budgets — the scan is not passing vacuously', () => {
     // A guard that silently matches nothing is the failure mode this repo keeps measuring.
