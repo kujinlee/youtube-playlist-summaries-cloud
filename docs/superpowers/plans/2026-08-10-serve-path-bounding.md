@@ -18,6 +18,10 @@
 - **Serve-path-only.** Local generation (`lib/html-doc/generate.ts:40`) must keep `GENERATE_JSON_RETRIES` (3 attempts) and `REQUEST_TIMEOUT_MS` (60 s). Every task that changes a shared function asserts the local path is unaffected.
 - **Optional parameters do not propagate** (`docs/process-checklists.md:64-68`). Where omitting a bound would silently restore the bug, the boundary gets a wrapper with a **required** parameter, never an optional field on an existing signature.
 - **Mutation-check every guard** (`docs/process-checklists.md:76-81`): delete the guard → covering tests must go red → restore. Commit the fix before mutating.
+- **`npx jest` in this repo takes NO `-v` flag.** `[VERIFIED: measured while running Task 1]` it
+  errors with *Unrecognized option "v"* and runs nothing. Every command here is plain
+  `npx jest <pattern>`. This survived all eight plan-gate rounds because no reviewer executes the
+  commands — which is the standing argument for running a task rather than reviewing it once more.
 - **Integration tests need `npm run test:integration`, never bare `npx jest`.**
   `[VERIFIED: jest.config.ts testMatch]` covers `tests/lib`, `tests/api`, `tests/scripts`, smoke and
   components — **not `tests/integration`**. `npx jest tests/integration/foo` selects **zero tests and
@@ -127,7 +131,7 @@ describe('serve budget', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest serve-budget -v`
+Run: `npx jest serve-budget`
 Expected: FAIL — `Cannot find module '@/lib/serve-budget'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -200,7 +204,7 @@ export const SERVE_BUDGET: ServeBudget = {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx jest serve-budget -v`
+Run: `npx jest serve-budget`
 Expected: PASS (5 tests). `SERVE_BOUNDED_MS` = 135_400, `SERVE_FLOOR_MS` = 155_400, `SERVE_FLOOR_SECONDS` = 156.
 
 - [ ] **Step 5: Commit**
@@ -267,7 +271,7 @@ it('rejects with AbortError when the signal is already aborted', async () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest gemini-magazine-caps -v`
+Run: `npx jest gemini-magazine-caps`
 Expected: FAIL — the 5th argument is not accepted / `seen[0].signal` is `undefined`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -303,7 +307,7 @@ export async function assertMagazineInputWithinCap(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `npx jest gemini-magazine-caps gemini-caps -v`
+Run: `npx jest gemini-magazine-caps gemini-caps`
 Expected: PASS, including the pre-existing cap tests (the new param is optional, so existing callers compile).
 
 - [ ] **Step 5: Run the full unit suite**
@@ -413,7 +417,7 @@ describe('generateMagazineModelForServe', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest gemini-serve-budget -v`
+Run: `npx jest gemini-serve-budget`
 Expected: FAIL — `generateMagazineModelForServe is not a function`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -484,13 +488,13 @@ export async function generateMagazineModel(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `npx jest gemini-serve-budget gemini -v`
+Run: `npx jest gemini-serve-budget gemini`
 Expected: PASS, all three, including the local-path guard.
 
 - [ ] **Step 5: Mutation-check the boundary**
 
 Temporarily change `generateMagazineModelForServe` to drop the budget (`return generateMagazineModel(sections, language, opts)`).
-Run: `npx jest gemini-serve-budget -v`
+Run: `npx jest gemini-serve-budget`
 Expected: RED on both serve tests. Restore.
 
 - [ ] **Step 6: Commit**
@@ -563,7 +567,7 @@ it('validates the envelope BEFORE writing', async () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest tests/lib/html-doc/model-store -v`  ← the bare pattern `model-store` also
+Run: `npx jest tests/lib/html-doc/model-store`  ← the bare pattern `model-store` also
 matches `tests/lib/model-store-cloud.test.ts`
 Expected: FAIL — `writeModelEnvelopeWithin is not a function`.
 
@@ -609,7 +613,7 @@ export async function writeModelEnvelopeWithin(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `npx jest tests/lib/html-doc/model-store -v`
+Run: `npx jest tests/lib/html-doc/model-store`
 Expected: PASS (3 new + existing).
 
 - [ ] **Step 5: Commit**
@@ -692,7 +696,7 @@ describe('callRpcBounded', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest serve-rpc -v`
+Run: `npx jest serve-rpc`
 Expected: FAIL — `Cannot find module '@/lib/serve-rpc'`.
 
 - [ ] **Step 3: Write the implementation and the shared fake**
@@ -781,13 +785,13 @@ export function fakeRpcBuilder<T>(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx jest serve-rpc -v`
+Run: `npx jest serve-rpc`
 Expected: PASS (4).
 
 - [ ] **Step 5: Mutation-check the timeout branch**
 
 Delete the `expiry` entry from the `Promise.race` array.
-Run: `npx jest serve-rpc -v` → Expected: RED (the timeout test hangs to jest's own timeout). Restore.
+Run: `npx jest serve-rpc` → Expected: RED (the timeout test hangs to jest's own timeout). Restore.
 
 - [ ] **Step 6: Commit**
 
@@ -832,7 +836,7 @@ function fakeSupabase(rpcData: string): SupabaseClient {
 }
 ```
 
-Run: `npx jest serve-doc-mapping -v`
+Run: `npx jest serve-doc-mapping`
 Expected: PASS — a thenable still awaits identically, so this is green *before* production changes.
 Doing it first means a later failure is unambiguously the production change, not the fake.
 
@@ -883,7 +887,7 @@ beforeEach(() => {
 });
 ```
 
-Run: `npx jest serve-doc-mapping -v` **and** `npm run test:integration -- serve-doc-materialize`
+Run: `npx jest serve-doc-mapping` **and** `npm run test:integration -- serve-doc-materialize`
 → both still green (nothing calls the wrapper yet). **Two commands, because bare `npx jest` cannot
 reach `tests/integration` at all** (Global Constraints) — this step edits both files, so it must
 verify both.
@@ -984,7 +988,7 @@ unchanged is this task's acceptance criterion for the money rule.**
 
 - [ ] **Step 4: Run the NEW tests to verify they fail**
 
-Run: `npx jest serve-doc-mapping -v`   ← where the new tests actually live
+Run: `npx jest serve-doc-mapping`   ← where the new tests actually live
 Expected: FAIL — the reserve timeout does not return `busy`, and the settle is called once, not twice.
 
 Then confirm the money pin is untouched and still green:
@@ -1060,7 +1064,7 @@ computation at `:130-132` — **do not touch that expression**; it is the refund
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `npx jest serve-doc-mapping -v` **and** `npm run test:integration -- serve-doc-materialize`
+Run: `npx jest serve-doc-mapping` **and** `npm run test:integration -- serve-doc-materialize`
 Expected: PASS — 5 new, plus the pre-existing refund and mapping tests.
 
 - [ ] **Step 7: Mutation-check the retry and the timeout branch**
@@ -1264,7 +1268,7 @@ Do **not** add title-drift or version-bump cases — `:29` and `:32` already ass
 
 - [ ] **Step 2: Run the test**
 
-Run: `npx jest read-model -v`
+Run: `npx jest read-model`
 Expected: PASS immediately — this characterises existing behaviour. **If test 1 fails, `isFresh`
 already reads the hash and §3.5.1's premise is wrong: stop and re-read the spec.**
 
