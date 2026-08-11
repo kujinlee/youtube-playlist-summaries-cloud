@@ -333,7 +333,7 @@ Task 6 exports it; until then this file builds its own caps.
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { generateMagazineModel, generateMagazineModelForServe } from '@/lib/gemini';
 import { SERVE_BUDGET } from '@/lib/serve-budget';
-import type { CloudGeminiCaps } from '@/lib/gemini-caps';
+import type { CloudGeminiCaps } from '@/lib/gemini-cost';   // NOT @/lib/gemini-caps — that module does not exist
 
 jest.mock('@google/generative-ai');
 
@@ -341,8 +341,16 @@ jest.mock('@google/generative-ai');
 const TEST_CAPS: CloudGeminiCaps = { magazineInputTokens: 100_000, magazineOutputTokens: 8_000 } as CloudGeminiCaps;
 
 /** One valid magazine JSON response body. */
+// MagazineModelSchema requires 3-7 bullets. One bullet fails Zod and the test would throw for the
+// wrong reason. Mirrors the fixtures in serve-doc-mapping.test.ts:15-17.
 const okResponse = () => ({
-  response: { text: () => JSON.stringify({ sections: [{ lead: 'l', bullets: [{ label: 'b', text: 't' }] }] }) },
+  response: {
+    text: () => JSON.stringify({
+      sections: [{ lead: 'L', bullets: [
+        { label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' },
+      ] }],
+    }),
+  },
 });
 
 /** Point the mocked SDK at a model whose generateContent/countTokens we control. */
@@ -497,26 +505,32 @@ nobody tests. Required and positional, so omission is a compile error."
 it defines `ENVELOPE`, `principal`, `BASE` and `fakeBlobStore` — an earlier draft invented
 `validEnvelope` and `stubStore`, which do not exist (plan-review r1 Medium).
 
+`fakeBlobStore` is **local to one existing test**, not a shared fixture (plan-review r2 Medium — my
+`[VERIFIED]` tag on it was wrong). Build one the same way that test does
+(`tests/lib/html-doc/model-store.test.ts:84`), preserving `localBlobStore`'s prototype:
+
 ```ts
 // tests/lib/html-doc/model-store.test.ts — add, reusing ENVELOPE / principal / BASE
+const storeWith = (put: BlobStore['put']) =>
+  Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put }) as typeof localBlobStore;
+
 it('rejects with TimeoutError when the put exceeds the budget', async () => {
-  const hanging = { ...fakeBlobStore, put: () => new Promise<void>(() => {}) };
+  const hanging = storeWith(() => new Promise<void>(() => {}));
   await expect(
-    writeModelEnvelopeWithin(20, principal, BASE, ENVELOPE, hanging as never),
+    writeModelEnvelopeWithin(20, principal, BASE, ENVELOPE, hanging),
   ).rejects.toMatchObject({ name: 'TimeoutError' });   // identity, not "any error"
 });
 
 it('resolves normally when the put completes within the budget', async () => {
   const put = jest.fn(async () => {});
-  await writeModelEnvelopeWithin(5_000, principal, BASE, ENVELOPE, { ...fakeBlobStore, put } as never);
+  await writeModelEnvelopeWithin(5_000, principal, BASE, ENVELOPE, storeWith(put));
   expect(put).toHaveBeenCalledTimes(1);
 });
 
 it('validates the envelope BEFORE writing', async () => {
   const put = jest.fn(async () => {});
   await expect(
-    writeModelEnvelopeWithin(5_000, principal, BASE, { ...ENVELOPE, sourceMd: '' } as never,
-      { ...fakeBlobStore, put } as never),
+    writeModelEnvelopeWithin(5_000, principal, BASE, { ...ENVELOPE, sourceMd: '' } as never, storeWith(put)),
   ).rejects.toThrow();
   expect(put).not.toHaveBeenCalled();   // fail loud before any write, as writeModelEnvelope does
 });
@@ -686,10 +700,18 @@ export async function callRpcBounded<T>(
     timer = setTimeout(() => { ctrl.abort(); resolve({ kind: 'timeout' }); }, timeoutMs);
   });
   try {
-    const raced = await Promise.race([
-      Promise.resolve(make(ctrl.signal)).then((r) => ({ kind: 'settled' as const, r })),
-      expiry,
-    ]);
+    // `make` is invoked inside the try AND its rejection is folded into the union: a synchronous
+    // throw or a rejected builder must not escape as an exception, or Task 6's `!ok` callers miss
+    // it entirely (plan-review r2 High).
+    const attempt = (async () => {
+      try {
+        return { kind: 'settled' as const, r: await make(ctrl.signal) };
+      } catch (cause) {
+        return { kind: 'threw' as const, cause };
+      }
+    })();
+    const raced = await Promise.race([attempt, expiry]);
+    if (raced.kind === 'threw') return { ok: false, reason: 'error', cause: raced.cause };
     if (raced.kind === 'timeout') {
       console.warn(`[serve-rpc] ${label} exceeded ${timeoutMs}ms`);
       return { ok: false, reason: 'timeout' };
@@ -715,9 +737,15 @@ export function fakeRpcBuilder<T>(
   result: { data: T; error: unknown } | (() => Promise<{ data: T; error: unknown }>),
 ) {
   const settle = typeof result === 'function' ? result : async () => result;
-  const builder = {
+  // `then` MUST match PromiseLike.then or the builder is not assignable to PromiseLike under
+  // --strict (plan-review r2 Blocking).
+  type Row = { data: T; error: unknown };
+  const builder: PromiseLike<Row> & { abortSignal(s: AbortSignal): typeof builder } = {
     abortSignal(_s: AbortSignal) { return builder; },
-    then<A, B>(onOk?: (v: { data: T; error: unknown }) => A, onErr?: (e: unknown) => B) {
+    then<R1 = Row, R2 = never>(
+      onOk?: ((v: Row) => R1 | PromiseLike<R1>) | null,
+      onErr?: ((e: unknown) => R2 | PromiseLike<R2>) | null,
+    ): PromiseLike<R1 | R2> {
       return settle().then(onOk, onErr);
     },
   };
@@ -782,69 +810,103 @@ Run: `npx jest serve-doc-mapping -v`
 Expected: PASS — a thenable still awaits identically, so this is green *before* production changes.
 Doing it first means a later failure is unambiguously the production change, not the fake.
 
-- [ ] **Step 2: Write the failing tests**
+- [ ] **Step 2: Extend BOTH Gemini module mocks (plan-review r2 Blocking)**
+
+`[VERIFIED: tests/lib/html-doc/serve-doc-mapping.test.ts:14-18]` and
+`[VERIFIED: tests/integration/serve-doc-materialize.test.ts:11-15]` both do
+`jest.mock('@/lib/gemini', () => ({ generateMagazineModel: jest.fn(...) }))` — **only that symbol**.
+The moment production calls `generateMagazineModelForServe`, both files get `undefined` from the mock
+and fail with a TypeError. Add the wrapper to each factory, delegating so the existing assertions on
+`generateMagazineModel` keep working:
 
 ```ts
-// tests/integration/serve-doc-materialize.test.ts — add
-import { fakeRpcBuilder } from '../support/fake-rpc';
+jest.mock('@/lib/gemini', () => {
+  const generateMagazineModel = jest.fn(async (sections: Array<{ title: string }>) => ({
+    sections: sections.map(() => ({ lead: 'GEN', bullets: [
+      { label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' },
+    ] })),
+  }));
+  return {
+    generateMagazineModel,
+    // The serve wrapper delegates, so tests that assert on generateMagazineModel still see the call.
+    generateMagazineModelForServe: jest.fn((sections, language, _budget, opts) =>
+      generateMagazineModel(sections, language, opts)),
+  };
+});
+import { generateMagazineModel, generateMagazineModelForServe } from '@/lib/gemini';
+```
 
-it('a not-metered 429 still refunds (the rule two spec versions broke)', async () => {
-  const rpc = jest.fn((fn: string) =>
-    fn === 'reserve_serve_model'
-      ? fakeRpcBuilder({ data: [{ status: 'reserved', release_token: 'tok' }], error: null })
-      : fakeRpcBuilder({ data: true, error: null }));
-  await expect(runServe({ rpc, geminiError: new GeminiHttpError(429) })).rejects.toBeDefined();
-  expect(rpc).toHaveBeenCalledWith('settle_serve_model',
-    expect.objectContaining({ p_token: 'tok', p_released: true }));
+Run: `npx jest serve-doc-mapping -v` → still green (nothing calls the wrapper yet).
+
+- [ ] **Step 3: Write the failing tests — in the UNIT file, not the integration file**
+
+**Correcting the plan's earlier structure (plan-review r2 Blocking).** There is **no `runServe`
+harness**; `[VERIFIED: tests/integration/serve-doc-materialize.test.ts:1-40]` that file calls
+`resolveMagazineModel({...})` directly against **real seeded Supabase clients**. You cannot make a
+real RPC time out on demand there. The timeout and retry tests belong in
+`tests/lib/html-doc/serve-doc-mapping.test.ts`, whose `fakeSupabase` we control.
+
+```ts
+// tests/lib/html-doc/serve-doc-mapping.test.ts — add. `principal`, `parsed`, and the fake blob
+// store already exist in this file (see its header); reuse them.
+import { fakeRpcBuilder } from '../../support/fake-rpc';
+
+/** A fake whose reserve/settle behaviour is scripted per RPC name. */
+function scriptedSupabase(script: (fn: string) => ReturnType<typeof fakeRpcBuilder>): SupabaseClient {
+  return { rpc: jest.fn((fn: string) => script(fn)) } as unknown as SupabaseClient;
+}
+const reserved = () =>
+  fakeRpcBuilder({ data: [{ status: 'reserved', release_token: 'tok' }], error: null });
+
+it('a reserve TIMEOUT returns busy and makes no Gemini call', async () => {
+  const client = scriptedSupabase(() => fakeRpcBuilder(() => new Promise(() => {})));
+  const res = await resolveMagazineModel({ supabaseClient: client, /* …existing args… */ });
+  expect(res.status).toBe('busy');
+  // The empty-paid-lease state: charged, an attempt burned, and NO producer.
+  expect(generateMagazineModelForServe).not.toHaveBeenCalled();
+});
+
+it('a reserve ERROR still throws, exactly as today', async () => {
+  const client = scriptedSupabase(() => fakeRpcBuilder({ data: null, error: { message: 'nope' } }));
+  await expect(resolveMagazineModel({ supabaseClient: client, /* … */ }))
+    .rejects.toMatchObject({ message: 'nope' });
 });
 
 it('retries the settle ONCE when the release-path settle times out', async () => {
   let settles = 0;
-  const rpc = jest.fn((fn: string) => {
-    if (fn === 'reserve_serve_model') {
-      return fakeRpcBuilder({ data: [{ status: 'reserved', release_token: 'tok' }], error: null });
-    }
+  const client = scriptedSupabase((fn) => {
+    if (fn === 'reserve_serve_model') return reserved();
     settles++;
-    return settles === 1
-      ? fakeRpcBuilder(() => new Promise(() => {}))          // hangs -> our timer fires
-      : fakeRpcBuilder({ data: true, error: null });
+    return settles === 1 ? fakeRpcBuilder(() => new Promise(() => {}))
+                         : fakeRpcBuilder({ data: true, error: null });
   });
-  await expect(runServe({ rpc, geminiError: new GeminiHttpError(429) })).rejects.toBeDefined();
+  (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+    throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+  });
+  process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';   // else releaseGateOpen() is false
+  await expect(resolveMagazineModel({ supabaseClient: client, /* … */ })).rejects.toThrow();
   expect(settles).toBe(2);
 });
 
-// NOTE: assert the CALL COUNT, not a return field. ResolveResult (serve-doc.ts:29-35) has no
-// refundConfirmed and the failure path rethrows at :134 — an earlier draft of this plan invented
-// a return contract that does not exist (plan-review r1 High).
-it('does not retry the settle on the KEPT path', async () => {
+it('does NOT retry the settle on the kept path', async () => {
   let settles = 0;
-  const rpc = jest.fn((fn: string) => {
-    if (fn === 'reserve_serve_model') {
-      return fakeRpcBuilder({ data: [{ status: 'reserved', release_token: 'tok' }], error: null });
-    }
+  const client = scriptedSupabase((fn) => {
+    if (fn === 'reserve_serve_model') return reserved();
     settles++;
-    return fakeRpcBuilder(() => new Promise(() => {}));      // hangs on every attempt
+    return fakeRpcBuilder(() => new Promise(() => {}));   // hangs every time
   });
-  await runServe({ rpc });                                    // success path -> released=false
-  expect(settles).toBe(1);                                    // one attempt; a lost keep is benign
-});
-
-it('a reserve timeout returns busy and makes no Gemini call', async () => {
-  const generateContent = jest.fn();
-  const rpc = jest.fn(() => fakeRpcBuilder(() => new Promise(() => {})));
-  const res = await runServe({ rpc, generateContent });
-  expect(res.status).toBe('busy');
-  expect(generateContent).not.toHaveBeenCalled();   // empty paid lease: charged, no producer
-});
-
-it('a reserve ERROR still throws, as it does today', async () => {
-  const rpc = jest.fn(() => fakeRpcBuilder({ data: null, error: { message: 'nope' } }));
-  await expect(runServe({ rpc })).rejects.toMatchObject({ message: 'nope' });
+  await resolveMagazineModel({ supabaseClient: client, /* … */ });   // success -> released=false
+  expect(settles).toBe(1);   // a lost keep is benign; only a lost refund is money
 });
 ```
 
-**`runServe` is the existing harness in this file.** Read it before writing these; if it does not
-accept `{ rpc, geminiError, generateContent }`, extend it — do not invent a new one.
+**The 429-refund regression pin already exists — do not write a new one.**
+`[VERIFIED: tests/integration/serve-doc-materialize.test.ts:278-303]` *"serve class-A throw refunds
+both ledgers (gate on, not metered)"* asserts both ledgers return to 0 against a **real** database. It
+sets `CLOUD_GEMINI_RELEASE_VERIFIED = 'true'` and throws `GoogleGenerativeAIFetchError(503)` — note
+both details; an earlier draft of this plan used a nonexistent `GeminiHttpError` and omitted the gate,
+so it would have asserted a refund that `releaseGateOpen()` forbids. **That existing test passing
+unchanged is this task's acceptance criterion for the money rule.**
 
 - [ ] **Step 3: Run tests to verify they fail**
 
@@ -958,17 +1020,23 @@ the mechanism that carries it out."
 import { readFileSync } from 'node:fs';
 import { SERVE_FLOOR_SECONDS } from '@/lib/serve-budget';
 
+// This file uses `svc`, not `admin` (plan-review r2 High), and its header warns that the whole
+// integration suite shares ONE guardrail_config row and other files mutate it. So: read the current
+// value, and restore THAT — never hardcode 180, which would be the tautology this file exists to
+// avoid.
 it('refuses a lease shorter than the serve path can finish in', async () => {
-  const { error } = await admin.from('guardrail_config')
+  const { error } = await svc.from('guardrail_config')
     .update({ lease_ttl_seconds: 30 }).eq('id', true);
   expect(error).toMatchObject({ code: '23514' });        // check_violation
 });
 
-it('accepts exactly the floor, then restores the default', async () => {
-  expect((await admin.from('guardrail_config')
+it('accepts exactly the floor, then restores whatever was there', async () => {
+  const { data: before } = await svc.from('guardrail_config')
+    .select('lease_ttl_seconds').eq('id', true).single();
+  expect((await svc.from('guardrail_config')
     .update({ lease_ttl_seconds: SERVE_FLOOR_SECONDS }).eq('id', true)).error).toBeNull();
-  expect((await admin.from('guardrail_config')
-    .update({ lease_ttl_seconds: 180 }).eq('id', true)).error).toBeNull();
+  expect((await svc.from('guardrail_config')
+    .update({ lease_ttl_seconds: before!.lease_ttl_seconds }).eq('id', true)).error).toBeNull();
 });
 
 // A migration literal cannot import a TypeScript constant, so this is the ONLY thing between a
@@ -981,7 +1049,7 @@ it('the migration literal equals SERVE_FLOOR_SECONDS', () => {
 });
 ```
 
-`admin` is the service-role client this file already builds — reuse it, do not create another.
+`svc` is the service-role client this file already builds (`serve-config-invariant.test.ts:3`) — reuse it.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1151,7 +1219,7 @@ day someone changes that, with the reasoning attached."
 | §3.5.1 accepted residual | 8 |
 | §4.1 settle retry on the release path | 6 |
 | §4 reserve timeout → `busy`, empty paid lease | 6 |
-| §5 every bounded term aborts | 2, 4, 5, 6 |
+| §5 every bounded term aborts | 2, 5, 6 — **Task 4 bounds the WAIT, not the upload** (§3.4); the plan does not claim otherwise |
 | §5 refund decision AND outcome | 6 |
 | §5 mutation coverage | 3, 5, 6, 7 |
 | §6 deploy ordering | final verification |
