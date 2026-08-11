@@ -111,6 +111,19 @@ describe('serve budget', () => {
     }
   });
 
+  // Round-4 review H1. The brands closed the DURATIONS; the attempt COUNT was a plain mutable
+  // `number`, so `SERVE_BUDGET.attempts = 3` compiled — restoring the exact pre-fix configuration
+  // through the one field the redesign had not covered. The type-level halves (a branded count and
+  // `readonly` fields) are enforced by `tsc`; this pins the RUNTIME half, which no type can.
+  it('SERVE_BUDGET is frozen — no module holding the reference can retune the serve path', () => {
+    expect(Object.isFrozen(SERVE_BUDGET)).toBe(true);
+    // Silent in sloppy mode, throws in strict; either way the value must not move.
+    try { (SERVE_BUDGET as unknown as { attempts: number }).attempts = 3; } catch { /* strict mode */ }
+    expect(SERVE_BUDGET.attempts).toBe(SERVE_ATTEMPTS);
+    expect(SERVE_BUDGET.attemptTimeoutMs).toBe(SERVE_ATTEMPT_TIMEOUT_MS);
+    expect(SERVE_BUDGET.countTokensTimeoutMs).toBe(SERVE_COUNT_TOKENS_TIMEOUT_MS);
+  });
+
   it('every enforced term is a positive duration', () => {
     // A zero or negative timeout is not a bound — it is an immediate abort wearing one's name.
     for (const [name, ms] of Object.entries({

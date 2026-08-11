@@ -24,12 +24,37 @@
 -- future attempt could answer it in code rather than guessing.
 --
 -- Note what this does NOT change: the settle's money semantics are untouched. This adds a witness,
--- not a rule.
+-- not a rule. The body below is byte-identical to 0020_reservation_release.sql:268-298 apart from
+-- the marked insert — verified by diffing the two, not by intending it.
+--
+-- LIMIT OF THE DURABILITY CLAIM, stated because an overclaimed guarantee is worse than a known gap
+-- (round-4 review). 0020:21 says ledger_audit has "no policies → no session-client access at all".
+-- That is true for SELECT/INSERT/UPDATE/DELETE and FALSE for TRUNCATE: RLS does not cover TRUNCATE,
+-- and MEASURED on the live stack, `authenticated` and `anon` both hold the TRUNCATE privilege — on
+-- this table AND on spend_ledger, serve_owner_budget, serve_model_charge and guardrail_config. It
+-- is a Supabase platform default for `public`, not something this migration introduces, and it is
+-- not reachable through PostgREST (which exposes no TRUNCATE verb). Recorded as backlog #30 as a
+-- money-table-wide revoke, because hardening only the table this migration happens to touch would
+-- be the instance-not-class error three rounds of this review were spent correcting.
+-- So: the witness is durable against every access path the application actually exposes, and not
+-- against a direct-SQL session holding one of those roles.
 
--- The lookup this exists to serve is "did THIS token settle?", i.e. by (kind, note). Without an
--- index that read is a sequential scan over every audit row ever written, and an operator
--- instruction nobody can afford to follow is the same defect one layer out.
-create index if not exists ledger_audit_kind_note_idx on ledger_audit (kind, note);
+-- The lookup this exists to serve is "did THIS token settle?" — `kind = 'serve_settle' and note
+-- like '<token>:%'`. Without an index that is a sequential scan over every audit row ever written,
+-- and an operator instruction nobody can afford to follow is the same defect one layer out.
+--
+-- `text_pattern_ops` IS LOAD-BEARING, not a flourish. MEASURED on the live stack: with the default
+-- `text_ops` opclass the planner uses the index for `kind` only and applies the prefix as a FILTER,
+-- so the read still scans every serve_settle row — and there is one per paid serve, forever. With
+-- `text_pattern_ops` the prefix becomes an Index Cond:
+--
+--   Index Cond: ((kind = 'serve_settle') AND (note ~>=~ '<token>:') AND (note ~<~ '<token>;'))
+--
+-- The default opclass cannot do that under a non-C collation. Caught by checking the plan rather
+-- than by assuming the index would be used, which is the same "verify, don't characterise" rule
+-- this review has applied to everything else.
+create index if not exists ledger_audit_kind_note_idx
+  on ledger_audit (kind, note text_pattern_ops);
 
 -- Body reproduced from 0020_reservation_release.sql:268-298 with ONE addition, marked below.
 -- Reproduced rather than patched because Postgres has no "add a statement to a function"; the rest
@@ -51,8 +76,24 @@ begin
 
   -- ── THE ADDITION: a durable witness that THIS token settled. ──────────────────────────────────
   -- Written only past the `not found` gate, so the row exists if and only if this call is the one
-  -- that cleared the reservation. `expected_amt` carries the refunded amount (0 on a keep) so the
-  -- row is self-describing without a join.
+  -- that cleared the reservation.
+  --
+  -- `expected_amt` MEANS ONE THING across every kind: THE CENTS THIS ROW IS ABOUT. For
+  -- `release_underflow` that is the amount whose guarded decrement failed; for `serve_settle` it is
+  -- the amount actually returned to the ledgers, hence 0 on a keep, where nothing moved. Spelled
+  -- out because this repo's own `check-sentinel-meanings` rule is that a column meaning a
+  -- CONJUNCTION of things is a defect, and a reviewer reasonably read the two writers as carrying
+  -- two meanings (round-4 review L-R4-3).
+  --
+  -- ⚠ CONSEQUENCE FOR ANY FUTURE ALARM: `sum(expected_amt) where day = …` is no longer a sum of
+  -- anomalies. Routine settles are in this table now, so such an alarm MUST filter on
+  -- `kind = 'release_underflow'`. That is the one thing this change makes easy to get wrong.
+  --
+  -- RETENTION, decided knowingly (round-4 review L-R4-2): this turns ledger_audit from an
+  -- exception-only log into one row per settled serve, forever, and `service_role` holds no DELETE
+  -- (`roadmap-to-launch.md`: "ledger_audit: cannot be wiped, and must not be"). At this project's
+  -- scale the append-only property is worth more than the bytes — but it IS a policy change, so it
+  -- is written down here rather than discovered later.
   insert into ledger_audit(day, kind, expected_amt, note, at)
     values (v_day, 'serve_settle',
             case when p_released then v_cfg.magazine_est_cents else 0 end,

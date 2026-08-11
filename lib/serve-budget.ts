@@ -46,9 +46,19 @@
  * So the boundary stops DETECTING wrong values and starts making them UNREPRESENTABLE. Each budget
  * carries a phantom brand naming the call site it belongs to, and every bounded API demands its own
  * brand. Arithmetic on branded numbers yields a plain `number`, so `A + B` no longer type-checks;
- * an integer literal is a plain `number`, so it no longer type-checks; and one site's budget is not
- * another's type, so a swap no longer type-checks. `tsc --noEmit` — which already runs in CI —
- * becomes the gate, and no test has to anticipate the next expression someone writes.
+ * an integer literal is a plain `number`, so it no longer type-checks. `tsc --noEmit` — which already
+ * runs in CI — becomes the gate, and no test has to anticipate the next expression someone writes.
+ *
+ * WHAT THIS DOES *NOT* CLOSE, stated because an earlier draft of this comment overclaimed it
+ * (round-4 review L-R4-1). A swap between the two RPC budgets DOES still type-check, because
+ * `callRpcBounded` serves both sites and takes `ReserveRpcBudget | SettleRpcBudget`. MEASURED:
+ * passing the settle budget at the reserve call site compiles. The text guard in
+ * `tests/lib/html-doc/serve-bounded-import-guard.test.ts` is what covers that case — it asserts each
+ * constant appears at exactly one site — and both values are 5_000 today, so there is no live
+ * consequence. Closing it by type would mean two thin per-site wrappers; that is a mechanism for a
+ * case an existing instrument already covers, so it is deliberately not built. The division of
+ * labour is: TYPES cover literals, arithmetic and object literals; the GUARD covers site-swaps,
+ * counts and population.
  *
  * Aliasing (`const t = SERVE_PUT_TIMEOUT_MS`) still compiles, and should: it carries the brand
  * because it IS the value.
@@ -62,6 +72,8 @@ export type SettleRpcBudget = Budget<'settleRpc'>;
 export type CountTokensBudget = Budget<'countTokens'>;
 export type AttemptBudget = Budget<'attempt'>;
 export type PutBudget = Budget<'put'>;
+/** An attempt COUNT, not a duration — branded for the same reason (round-4 review H1). */
+export type AttemptCount = Budget<'attempts'>;
 
 /** One round trip to Postgres. PROVISIONAL — revise from observed p99. */
 export const SERVE_RESERVE_RPC_TIMEOUT_MS = 5_000 as ReserveRpcBudget;
@@ -73,7 +85,7 @@ export const SERVE_COUNT_TOKENS_TIMEOUT_MS = 10_000 as CountTokensBudget;
 export const SERVE_ATTEMPT_TIMEOUT_MS = 50_000 as AttemptBudget;
 
 /** Attempts on the serve path. Three does not fit the lease — that is the defect being fixed. */
-export const SERVE_ATTEMPTS = 2;
+export const SERVE_ATTEMPTS = 2 as AttemptCount;
 
 /** generateJson backoff: 400 * 2**n summed over (SERVE_ATTEMPTS - 1) gaps (`gemini.ts:267`). */
 export const SERVE_BACKOFF_TOTAL_MS = 400;
@@ -137,14 +149,19 @@ export interface ServeBudget {
    *  `{ attempts: 3, attemptTimeoutMs: 60_000, … }` no longer type-checks at the serve call site —
    *  round-1 H1, made unrepresentable rather than merely asserted. */
   readonly [budgetBrand]: 'serveBudget';
-  attempts: number;
-  attemptTimeoutMs: AttemptBudget;
-  countTokensTimeoutMs: CountTokensBudget;
+  // `readonly` + a branded count, because round-4 review H1 measured that a plain mutable `number`
+  // left three ways in: `SERVE_BUDGET.attempts = 3` (assignment), `{ ...SERVE_BUDGET, attempts: 3 }`
+  // (spread-replacement — the phantom brand survives a spread, so the result still satisfies this
+  // interface), and a runtime write from any module holding the reference. Branding the count
+  // closes the first two; Object.freeze below closes the third.
+  readonly attempts: AttemptCount;
+  readonly attemptTimeoutMs: AttemptBudget;
+  readonly countTokensTimeoutMs: CountTokensBudget;
 }
 
 /** The one place the brand is minted. Every other reference to a serve budget is this value. */
-export const SERVE_BUDGET = {
+export const SERVE_BUDGET = Object.freeze({
   attempts: SERVE_ATTEMPTS,
   attemptTimeoutMs: SERVE_ATTEMPT_TIMEOUT_MS,
   countTokensTimeoutMs: SERVE_COUNT_TOKENS_TIMEOUT_MS,
-} as ServeBudget;
+}) as ServeBudget;
