@@ -68,6 +68,11 @@ INVESTIGATION_RE = re.compile(
     re.IGNORECASE,
 )
 NPM_RUN_RE = re.compile(r"npm run ([A-Za-z0-9:_-]+)")
+# A tick records THAT something was verified and never WHAT AGAINST. Measured 2026-08-11: A1 and A2
+# are ticked from 2026-07-22/23 (the v3/v4 era) and two releases have shipped since, so both are
+# claims about code that no longer runs. Same shape as the migration drift found the same morning:
+# the record captured a claim without capturing its subject.
+VERIFIED_AGAINST_RE = re.compile(r"VERIFIED\s+AGAINST:\s*v(\d+)", re.IGNORECASE)
 CHECKBOX_RE = re.compile(r"^(\s*)- \[([ xX~])\]\s*(.*)$")
 
 
@@ -75,7 +80,7 @@ CHECKBOX_RE = re.compile(r"^(\s*)- \[([ xX~])\]\s*(.*)$")
 class Finding:
     path: str
     line: int
-    kind: str          # missing_falsifier | investigation_phrasing | unknown_command
+    kind: str          # missing_falsifier | investigation_phrasing | unknown_command | stale_verification
     excerpt: str
     detail: str
 
@@ -125,7 +130,8 @@ def _blocks(text: str, sections: list[str] | None = None):
 
 
 def find_gate_defects(text: str, path: str, known_scripts: set[str],
-                      sections: list[str] | None = None) -> list[Finding]:
+                      sections: list[str] | None = None,
+                      current_release: int | None = None) -> list[Finding]:
     findings: list[Finding] = []
     for line_no, mark, body in _blocks(text, sections):
         excerpt = (body[:80] + "…") if len(body) > 80 else body
@@ -135,9 +141,20 @@ def find_gate_defects(text: str, path: str, known_scripts: set[str],
                 findings.append(Finding(path, line_no, "unknown_command", excerpt,
                                         f"names `npm run {m.group(1)}`, which is not in package.json"))
 
-        # Ticked items are OUT OF SCOPE. A done item carries its evidence; retro-fitting falsifiers
-        # to history is churn, and the point of this check is to stop the NEXT false tick.
+        # Ticked items are out of scope FOR FALSIFIERS — a done item carries its evidence and
+        # retro-fitting clauses to history is churn. They are NOT out of scope for STALENESS: a tick
+        # whose subject has been replaced is worse than an untied box, because it reads as covered.
         if mark in ("x", "X"):
+            if current_release is not None:
+                m = VERIFIED_AGAINST_RE.search(body)
+                if m is None:
+                    # NOT silently skipped. Saying "nothing is stale" while being unable to judge
+                    # most items is the fail-open this whole exercise is about.
+                    findings.append(Finding(path, line_no, "unversioned_tick", excerpt,
+                                            "ticked with no `VERIFIED AGAINST:` — staleness cannot be judged"))
+                elif int(m.group(1)) < current_release:
+                    findings.append(Finding(path, line_no, "stale_verification", excerpt,
+                                            f"verified against v{m.group(1)}, deployed is v{current_release}"))
             continue
 
         has_falsifier = bool(FALSIFIER_RE.search(body))
@@ -151,6 +168,27 @@ def find_gate_defects(text: str, path: str, known_scripts: set[str],
             findings.append(Finding(path, line_no, "missing_falsifier", excerpt,
                                     "no `FAILS IF:` — nothing states what observation would fail it"))
     return findings
+
+
+def deployed_release() -> int | None:
+    """Highest release version currently deployed, or None if it cannot be determined.
+
+    Callers MUST treat None as "not checked", never as "nothing is stale" — see main()."""
+    import subprocess
+    try:
+        app = re.search(r'^app\s*=\s*"([^"]+)"',
+                        (ROOT / "fly.toml").read_text(), re.MULTILINE)
+        if not app:
+            return None
+        out = subprocess.run(["fly", "releases", "-a", app.group(1), "--json"],
+                             capture_output=True, text=True, timeout=60)
+        if out.returncode != 0:
+            return None
+        vers = [int(str(r.get("Version", r.get("version", ""))).lstrip("v"))
+                for r in json.loads(out.stdout) if str(r.get("Version", r.get("version", ""))).lstrip("v").isdigit()]
+        return max(vers) if vers else None
+    except Exception:
+        return None
 
 
 def known_npm_scripts() -> set[str]:
@@ -196,16 +234,36 @@ CASES: list[tuple[str, str, list[str]]] = [
 ]
 
 
+# Staleness cases carry a deployed-release number; (name, text, current_release, expected).
+STALENESS_CASES: list[tuple[str, str, int, list[str]]] = [
+    ("a tick verified against an older release is stale",
+     "- [x] **A1** done. VERIFIED AGAINST: v4", 6, ["stale_verification"]),
+    ("a tick verified against the current release is clean",
+     "- [x] **A1** done. VERIFIED AGAINST: v6", 6, []),
+    ("a tick with no VERIFIED AGAINST is reported, never silently skipped",
+     "- [x] **A1** done.", 6, ["unversioned_tick"]),
+    ("an UNticked item is not a staleness concern",
+     "- [ ] **A1** todo. FAILS IF: it 500s.", 6, []),
+    ("a newer verification than the deployed release is not flagged stale",
+     "- [x] **A1** done. VERIFIED AGAINST: v7", 6, []),
+]
+
+
 def self_test() -> int:
     failures = 0
     scripts = {"test", "check:confinement"}
+    for name, text, release, expected in STALENESS_CASES:
+        got = [f.kind for f in find_gate_defects(text, "t.md", scripts, None, release)]
+        if got != expected:
+            print(f"  FAIL {name}\n       expected {expected}\n       got      {got}")
+            failures += 1
     for name, text, expected in CASES:
         sections = ["## M1", "## M2", "## M3"] if text.startswith("## ") else None
         got = [f.kind for f in find_gate_defects(text, "t.md", scripts, sections)]
         if got != expected:
             print(f"  FAIL {name}\n       expected {expected}\n       got      {got}")
             failures += 1
-    total = len(CASES)
+    total = len(CASES) + len(STALENESS_CASES)
     print(f"self-test: {total - failures}/{total} passed")
     return 1 if failures else 0
 
@@ -215,6 +273,26 @@ def main(argv: list[str]) -> int:
         return self_test()
 
     report_only = "--report" in argv
+    staleness = "--staleness" in argv
+
+    current_release: int | None = None
+    if staleness:
+        explicit = [a for a in argv if a.startswith("--current-release=")]
+        if explicit:
+            raw = explicit[0].split("=", 1)[1].lstrip("vV")
+            if not raw.isdigit():
+                print(f"FAILED: --current-release must be a version number like v6, got '{raw}'.")
+                return 1
+            current_release = int(raw)
+        else:
+            current_release = deployed_release()
+        if current_release is None:
+            # FAIL CLOSED. "Could not determine the deployed release" is NOT "nothing is stale".
+            print("FAILED: could not determine the deployed release (fly unavailable/unauthenticated).")
+            print("Staleness was NOT checked — treat this as not run, and pass --current-release=vN.")
+            return 1
+        print(f"deployed release: v{current_release}")
+
     scripts = known_npm_scripts()
     findings: list[Finding] = []
     for rel, sections in GATE_SCOPES.items():
@@ -222,7 +300,8 @@ def main(argv: list[str]) -> int:
         if not p.exists():
             print(f"gate doc missing: {rel}")
             return 1
-        findings.extend(find_gate_defects(p.read_text(errors="ignore"), rel, scripts, sections))
+        findings.extend(find_gate_defects(p.read_text(errors="ignore"), rel, scripts, sections,
+                                          current_release))
 
     if not findings:
         print("gate falsifiability OK — every unticked gate item names what would fail it")
