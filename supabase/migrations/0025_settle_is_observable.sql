@@ -53,6 +53,12 @@
 -- The default opclass cannot do that under a non-C collation. Caught by checking the plan rather
 -- than by assuming the index would be used, which is the same "verify, don't characterise" rule
 -- this review has applied to everything else.
+-- LOCK NOTE (round-6 review): a plain `create index` takes a write lock for the build, and
+-- `create index concurrently` cannot run inside a migration's transaction. Measured on the live
+-- stack: ledger_audit is 60 rows / 48 kB, and it grows by one row per PAID serve — so the build is
+-- milliseconds and the lock is not worth splitting this into a non-transactional migration. Revisit
+-- if that table ever reaches a size where an exclusive build is felt.
+--
 -- DROP-THEN-CREATE, not `if not exists` (round-5 review M-R5-1). MEASURED: `create index if not
 -- exists` on an existing name SKIPS — it never changes the opclass — so any database that applied
 -- an earlier revision of this migration with the default `text_ops` would keep the unusable index

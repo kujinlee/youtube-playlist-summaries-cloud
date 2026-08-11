@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { generateMagazineModel, generateMagazineModelForServe } from '@/lib/gemini';
 import { SERVE_BUDGET } from '@/lib/serve-budget';
+import { serveBudgetWith } from '../support/budget';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';   // NOT @/lib/gemini-caps — that module does not exist
 
 jest.mock('@google/generative-ai');
@@ -86,12 +87,17 @@ describe('generateMagazineModelForServe', () => {
     }) as never);
     const generateContent = jest.fn(async () => { throw new Error('boom'); });
     mockModel({ generateContent });
+    // A DISTINCT value, not SERVE_BUDGET's own. Asserting against the production constant proved
+    // nothing: it is 400 and generateJson's inherited default is also 400, so passing it and not
+    // passing it were observationally identical and reverting the fix left every test green
+    // (round-6 review M-R6-1). 137 is a number no default can produce.
+    const budget = serveBudgetWith({ backoffMs: 137 });
     await expect(generateMagazineModelForServe(
-      [{ title: 'A', prose: 'x' }], 'en', SERVE_BUDGET, { caps: TEST_CAPS },
+      [{ title: 'A', prose: 'x' }], 'en', budget, { caps: TEST_CAPS },
     )).rejects.toThrow();
     (global.setTimeout as unknown as jest.SpyInstance).mockRestore();
-    // SERVE_ATTEMPTS - 1 gaps, the first at exactly the budgeted base.
-    expect(delays).toEqual([SERVE_BUDGET.backoffMs]);
+    // SERVE_ATTEMPTS - 1 gaps, the first at exactly the budget's base — proving it TRAVELLED.
+    expect(delays).toEqual([137]);
   });
 
   it('passes the serve countTokens timeout to the preflight', async () => {

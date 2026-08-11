@@ -12,7 +12,7 @@ import {
   SERVE_BUDGET, SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
   SERVE_SETTLE_ATTEMPTS,
 } from '@/lib/serve-budget';
-import type { AttemptCount } from '@/lib/serve-budget';
+import type { SettleAttemptCount } from '@/lib/serve-budget';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import { classifyGeminiFailure, releaseGateOpen } from '@/lib/gemini-failure';
 import type { BillingLatch } from '@/lib/job-queue/billing-latch';
@@ -241,7 +241,7 @@ async function settleBounded(
   // happily — measured at tsc exit 0 with all 2657 tests green, spending 4 settles against a sum
   // that pays for 2. Naming the type is what makes the arithmetic unrepresentable; branding the
   // constant alone does not, because nothing was checking the local.
-  const attempts: AttemptCount | 1 = released ? SERVE_SETTLE_ATTEMPTS : 1;
+  const attempts: SettleAttemptCount | 1 = released ? SERVE_SETTLE_ATTEMPTS : 1;
   // Once ANY attempt fails to return a trustworthy answer, every later reply is ambiguous: the RPC
   // may have committed after we stopped listening. Conservative on purpose — over-reporting
   // "indeterminate" costs an operator one reconciliation; under-reporting it means claiming a

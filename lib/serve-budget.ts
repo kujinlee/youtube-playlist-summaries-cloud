@@ -57,8 +57,19 @@
  * constant appears at exactly one site — and both values are 5_000 today, so there is no live
  * consequence. Closing it by type would mean two thin per-site wrappers; that is a mechanism for a
  * case an existing instrument already covers, so it is deliberately not built. The division of
- * labour is: TYPES cover literals, arithmetic and object literals; the GUARD covers site-swaps,
- * counts and population.
+ * labour, stated exactly — three earlier versions of this sentence overclaimed and were each
+ * falsified by a reviewer, so it is now written against what has been MEASURED:
+ *
+ *   TYPES              literals · arithmetic · object literals · Number()/Math.min() laundering ·
+ *                      assignment to a readonly field · spread-replacement · a swap between budgets
+ *                      with DIFFERENT brands (including the two attempt counts, separated in r6)
+ *   THE IMPORT GUARD   the reserve/settle RPC swap — those two share `callRpcBounded` and so share a
+ *                      union type · Object.assign replacement, which TypeScript permits ·
+ *                      literal durations and counts · the number of calls to the functions it lists
+ *   THE POPULATION GATE  (tests/lib/serve-budget-population.test.ts) every branded budget is spent in
+ *                      the sum, every ServeBudget field is an accounted scalar, and every unbranded
+ *                      export is unbranded on purpose — so a TWELFTH bounded value cannot be added
+ *                      without either joining the sum or declaring why it does not
  *
  * Aliasing (`const t = SERVE_PUT_TIMEOUT_MS`) still compiles, and should: it carries the brand
  * because it IS the value.
@@ -73,8 +84,14 @@ export type CountTokensBudget = Budget<'countTokens'>;
 export type AttemptBudget = Budget<'attempt'>;
 export type PutBudget = Budget<'put'>;
 export type BackoffBudget = Budget<'backoff'>;
-/** An attempt COUNT, not a duration — branded for the same reason (round-4 review H1). */
-export type AttemptCount = Budget<'attempts'>;
+/**
+ * Attempt COUNTS, not durations — branded for the same reason (round-4 review H1), and branded
+ * SEPARATELY from each other (round-6 review M-R6-2): they are spent at different call sites and
+ * one is not a legal value for the other. A shared `AttemptCount` let the generation count be spent
+ * as the settle count, and unlike the RPC-budget swap nothing else covered that.
+ */
+export type GenerationAttemptCount = Budget<'generationAttempts'>;
+export type SettleAttemptCount = Budget<'settleAttempts'>;
 
 /** One round trip to Postgres. PROVISIONAL — revise from observed p99. */
 export const SERVE_RESERVE_RPC_TIMEOUT_MS = 5_000 as ReserveRpcBudget;
@@ -86,7 +103,7 @@ export const SERVE_COUNT_TOKENS_TIMEOUT_MS = 10_000 as CountTokensBudget;
 export const SERVE_ATTEMPT_TIMEOUT_MS = 50_000 as AttemptBudget;
 
 /** Attempts on the serve path. Three does not fit the lease — that is the defect being fixed. */
-export const SERVE_ATTEMPTS = 2 as AttemptCount;
+export const SERVE_ATTEMPTS = 2 as GenerationAttemptCount;
 
 /**
  * The PER-GAP backoff base, PASSED to generateJson rather than left to its default.
@@ -145,7 +162,7 @@ export const SERVE_SETTLE_RPC_TIMEOUT_MS = 5_000 as SettleRpcBudget;
  * The brand alone does not close it: the consuming local must be TYPED, or it is just an inference
  * site that happily accepts a plain number. See `settleBounded` in serve-doc.ts.
  */
-export const SERVE_SETTLE_ATTEMPTS = 2 as AttemptCount;
+export const SERVE_SETTLE_ATTEMPTS = 2 as SettleAttemptCount;
 
 /**
  * ASSUMPTION, NOT A BOUND. ~15% of the bounded budget, for unmodelled local work.
@@ -187,7 +204,7 @@ export interface ServeBudget {
   // (spread-replacement — the phantom brand survives a spread, so the result still satisfies this
   // interface), and a runtime write from any module holding the reference. Branding the count
   // closes the first two; Object.freeze below closes the third.
-  readonly attempts: AttemptCount;
+  readonly attempts: GenerationAttemptCount;
   readonly attemptTimeoutMs: AttemptBudget;
   readonly countTokensTimeoutMs: CountTokensBudget;
   readonly backoffMs: BackoffBudget;

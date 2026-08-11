@@ -31,8 +31,12 @@ import { join } from 'path';
 //                   budget handed to the put)
 //   THIS GUARD    a swap between the TWO RPC budgets — they share `callRpcBounded`, hence share
 //                 `ReserveRpcBudget | SettleRpcBudget`, so that one swap compiles · `Object.assign`
-//                 replacement, which TypeScript permits via intersection · the POPULATION of bounded
-//                 call sites · counts, which the brand cannot reach at a call site
+//                 replacement, which TypeScript permits via intersection · literal durations and
+//                 counts · THE NUMBER OF CALLS TO THE FUNCTIONS LISTED BELOW — note the precision:
+//                 round 6 measured that this is NOT "the population of bounded calls", because a
+//                 call to a function absent from the table is never searched for. That gap is
+//                 closed from the other end by tests/lib/serve-budget-population.test.ts, which
+//                 requires every branded budget to be spent in the sum.
 //
 // So this file remains as a BACKSTOP, and is honest about being one. What it no longer has to do is
 // anticipate the next expression someone writes.
@@ -44,9 +48,11 @@ import { join } from 'path';
 //      count and budget must arrive as an identifier from lib/serve-budget, whose own values are
 //      asserted against the lease in tests/lib/serve-budget.test.ts.
 //   2. Each bounded call site receives its OWN designated constant — not merely some constant.
-//   3. The POPULATION of bounded call sites is pinned. Adding a fifth bounded call without
-//      extending this table fails here, which is the difference between a class assertion and four
-//      instance assertions. Round 2's lesson was that round 1 wrote the latter.
+//   3. The number of calls to EACH LISTED function is pinned, so a second
+//      `writeModelEnvelopeWithin` cannot appear unnoticed. It does NOT pin the population of bounded
+//      calls in general — a call to an unlisted function is never searched for, which round 6
+//      measured (mutant M5) and which tests/lib/serve-budget-population.test.ts now closes by
+//      requiring every branded budget to be spent in the sum.
 
 const root = process.cwd();
 const SERVE_DOC = join(root, 'lib/html-doc/serve-doc.ts');
