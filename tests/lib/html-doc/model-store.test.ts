@@ -2,9 +2,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
-import { writeModelEnvelope, readModelEnvelope, type ModelEnvelope } from '../../../lib/html-doc/model-store';
+import { writeModelEnvelope, writeModelEnvelopeWithin, readModelEnvelope, type ModelEnvelope } from '../../../lib/html-doc/model-store';
 import { localPrincipal, type Principal } from '@/lib/storage/principal';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import type { BlobStore } from '@/lib/storage/blob-store';
+import { putBudget } from '../../support/budget';
 
 let dir: string;
 let principal: Principal;
@@ -100,5 +102,52 @@ describe('model-store', () => {
     const result = await readModelEnvelope(principal, BASE, fakeBlobStore);
     expect(fakeGet).toHaveBeenCalledWith(localPrincipal(dir), 'models/a-title.json');
     expect(result).toEqual(ENVELOPE);
+  });
+});
+
+describe('writeModelEnvelopeWithin', () => {
+  /** Same construction as the fakeBlobStore above — preserves localBlobStore's prototype. */
+  const storeWith = (put: BlobStore['put']) =>
+    Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put }) as typeof localBlobStore;
+
+  it('rejects with TimeoutError when the put exceeds the budget', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const hanging = storeWith(() => new Promise<void>(() => {}));
+    await expect(
+      writeModelEnvelopeWithin(putBudget(20), principal, BASE, ENVELOPE, hanging),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });   // identity, not "any error"
+    warn.mockRestore();
+  });
+
+  // Round-1 review H2. Spec §3.5.1 accepts the late-write clobber ONLY because the timeout is
+  // "logged with elapsed time and the target key, so the window in which this is possible is
+  // visible in production rather than inferred. If those logs ever appear, that is the trigger to
+  // promote the addressing work." The first implementation logged nothing, so the residual was
+  // accepted in exchange for a detection mechanism that did not exist — and `isFresh` ignores
+  // sourceMdHash, so a clobbered model is served indefinitely when titles are unchanged.
+  it('LOGS the timeout with elapsed time and the target key — the residual was traded for this', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const hanging = storeWith(() => new Promise<void>(() => {}));
+    await expect(
+      writeModelEnvelopeWithin(putBudget(20), principal, BASE, ENVELOPE, hanging),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+    warn.mockRestore();
+    expect(logged).toContain('models/a-title.json');   // the target key, so the doc is identifiable
+    expect(logged).toMatch(/elapsed \d+ms/);           // elapsed time, so the window is measurable
+  });
+
+  it('resolves normally when the put completes within the budget', async () => {
+    const put = jest.fn(async () => {});
+    await writeModelEnvelopeWithin(putBudget(5_000), principal, BASE, ENVELOPE, storeWith(put));
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates the envelope BEFORE writing', async () => {
+    const put = jest.fn(async () => {});
+    await expect(
+      writeModelEnvelopeWithin(putBudget(5_000), principal, BASE, { ...ENVELOPE, sourceMd: '' } as never, storeWith(put)),
+    ).rejects.toThrow();
+    expect(put).not.toHaveBeenCalled();   // fail loud before any write, as writeModelEnvelope does
   });
 });

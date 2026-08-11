@@ -9,11 +9,18 @@ import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 
 // The route builds its OWN service client internally (createServiceClient()), so the money-proof
 // spy below targets the SupabaseClient PROTOTYPE, not an injected instance (B18).
-jest.mock('@/lib/gemini', () => ({
-  generateMagazineModel: jest.fn(async () => {
+jest.mock('@/lib/gemini', () => {
+  const generateMagazineModel = jest.fn(async () => {
     throw new Error('generateMagazineModel must NEVER be called on the anonymous share path');
-  }),
-}));
+  });
+  return {
+    generateMagazineModel,
+    // The serve path calls the WRAPPER (#46), so the negative guard has to live behind it too —
+    // otherwise this file would "pass" on a TypeError from an undefined export rather than on the
+    // assertion it was written to make.
+    generateMagazineModelForServe: jest.fn(() => generateMagazineModel()),
+  };
+});
 import { generateMagazineModel } from '@/lib/gemini';
 
 // B10b needs to interject BETWEEN the route's two internal getShareServeContext calls (the initial

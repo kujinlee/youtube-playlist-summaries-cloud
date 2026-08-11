@@ -60,11 +60,17 @@ jest.mock('@/lib/supabase/server', () => ({
   createServerSupabase: jest.fn(() => mockAls.getStore() ?? mockClient),
 }));
 
-jest.mock('@/lib/gemini', () => ({
-  generateMagazineModel: jest.fn(async () => ({
+jest.mock('@/lib/gemini', () => {
+  const generateMagazineModel = jest.fn(async () => ({
     sections: [{ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }],
-  })),
-}));
+  }));
+  return {
+    generateMagazineModel,
+    // The serve path calls the WRAPPER (#46). Delegates, so this file's assertions on
+    // generateMagazineModel keep working unchanged.
+    generateMagazineModelForServe: jest.fn(() => generateMagazineModel()),
+  };
+});
 import { generateMagazineModel } from '@/lib/gemini';
 
 const SMALL_PDF_BUFFER = Buffer.from('%PDF-1.4 fake pdf bytes for test\n', 'utf-8');

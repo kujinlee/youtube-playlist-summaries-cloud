@@ -1,5 +1,7 @@
 // tests/integration/serve-config-invariant.test.ts
+import { readFileSync } from 'node:fs';
 import { adminClient } from './helpers/clients';
+import { SERVE_FLOOR_SECONDS } from '@/lib/serve-budget';
 
 const svc = adminClient();
 const SAFETY_FRACTION = 0.2;
@@ -140,3 +142,35 @@ it('1G per-owner serve cap bounds the registered residual within the safety frac
   expect(preCapWorst).toBeGreaterThan(bound);                    // 600 > 100 — the residual 1G exists to bound
   expect(perOwnerServeDailyCents).toBeLessThanOrEqual(bound);    // 60 <= 100 — now bounded by the per-owner daily cap
 });
+
+// ── #46: the lease must be long enough to cover the serve path's bounded work ─────────────────
+// The app's timeouts sum to a build-time constant. This constraint makes "the work fits the lease"
+// true at CONFIGURATION time, once, rather than negotiated per request. The old floor was `>= 1`:
+// a one-second lease was legal, which is why the app could never assume the lease covered its work.
+
+it('refuses a lease shorter than the serve path can finish in', async () => {
+  const { error } = await svc.from('guardrail_config')
+    .update({ lease_ttl_seconds: 30 }).eq('id', true);
+  expect(error).toMatchObject({ code: '23514' });        // check_violation
+});
+
+it('accepts exactly the floor, then restores whatever was there', async () => {
+  const { data: before } = await svc.from('guardrail_config')
+    .select('lease_ttl_seconds').eq('id', true).single();
+  try {
+    expect((await svc.from('guardrail_config')
+      .update({ lease_ttl_seconds: SERVE_FLOOR_SECONDS }).eq('id', true)).error).toBeNull();
+  } finally {
+    // A thrown expect must NOT leave the shared singleton at the floor — this suite runs
+    // --runInBand against one DB, and every later file reads this row.
+    await svc.from('guardrail_config')
+      .update({ lease_ttl_seconds: before!.lease_ttl_seconds }).eq('id', true);
+  }
+});
+
+// NOTE: the anti-drift pin on the migration's floor literals lives in
+// tests/lib/serve-budget.test.ts, NOT here. It reads the .sql off disk and needs no database, and
+// this file is integration-only — i.e. NOT RUN IN CI (`dev-process.md`: test:integration needs a
+// live Supabase stack and is not wired in). Round-2 review M-R2-1: leaving the only instrument
+// between a retuned constant and a stale migration literal outside CI is a gate that runs when
+// someone remembers. It has been moved to the unit suite; only the DB-dependent assertions stay.

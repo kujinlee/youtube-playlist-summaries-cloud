@@ -26,11 +26,18 @@ import { copyBlob } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
 import type { ParsedSummary } from '@/lib/html-doc/types';
 
-jest.mock('@/lib/gemini', () => ({
-  generateMagazineModel: jest.fn(async (sections: Array<{ title: string }>) => ({
+jest.mock('@/lib/gemini', () => {
+  const generateMagazineModel = jest.fn(async (sections: Array<{ title: string }>) => ({
     sections: sections.map(() => ({ lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] })),
-  })),
-}));
+  }));
+  return {
+    generateMagazineModel,
+    // The serve path calls the WRAPPER (#46). Delegates, so this file's assertions on
+    // generateMagazineModel — including "not called" — keep working unchanged.
+    generateMagazineModelForServe: jest.fn((sections: unknown, language: unknown, _budget: unknown, opts: unknown) =>
+      (generateMagazineModel as unknown as (a: unknown, b: unknown, c: unknown) => unknown)(sections, language, opts)),
+  };
+});
 import { generateMagazineModel } from '@/lib/gemini';
 
 const svc = adminClient();
