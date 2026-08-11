@@ -194,3 +194,73 @@ Answered with a `file:line`. *"Nothing does"* is a fine answer; a vague answer i
 Measured cost of skipping it: a 2800-line spec that never mentions `jobs`, which already had
 exclusivity, idempotency, leases and a durable money guard — and six review rounds spent in the seam
 between the two protocols.
+
+---
+
+## Writing a GATE (added 2026-08-11)
+
+A gate is a claim that something about the world is true. Everything here exists because
+`m1.4-finishup-checklist.md` B5 — *"`npm run check:confinement` passes against the **real deployed
+environment**"* — named a **static** script that has no env, no fetch and no network. It emits
+identical output everywhere, so it could only ever pass. Run it, see `OK`, tick the box, and now
+believe production was verified. A guard that passes in both worlds, except the guard was a sentence.
+
+Enforced by `scripts/check-gate-falsifiability.py` (CI ratchet; `--staleness` for the version half).
+
+**1. `FAILS IF:` — name the observation, not the activity.**
+Not *"verify downloads work"* but *"FAILS IF an owner MD download returns non-200, zero bytes, or HTML
+when `format=md` was requested."* The clause cannot tell you whether your instrument can observe its
+subject — that is judgment — but writing it forces you to look. Writing B5's clause is what exposed
+that the command takes no URL.
+
+**2. `VERIFIED AGAINST: vN` on every manual gate.** A tick records *that* something was verified and
+never *what against*. Measured 2026-08-11: A1 and A2 were ticked on 2026-07-22/23 (the **v3/v4** era)
+while the app ran **v6** — claims about code that had not run in two releases, and nothing knew.
+A machine cannot know whether you looked; it can know whether the thing you looked at still runs.
+
+**3. A gate phrased as a question is a MISSING DECISION, not a gate.** B4 — *"check whether a
+rendering share starts returning 503"* — has no pass condition because nobody decided what version
+skew *should* do. Tolerate / refuse / heal are all coherent, and **the same observation is a pass
+under one and a failure under another**. Do not run the experiment; it yields a fact nobody can grade.
+Decide, then the gate is one line.
+
+**4. A DECISION filed as a gate cannot fail — convert it to a drift assertion.** *"We chose 5000¢"*
+has no falsifier. *"FAILS IF prod `daily_cap_cents` ≠ 5000 and no newer decision is recorded"* does,
+and it is the version that would have caught the 500→5000 change made by direct SQL while this repo
+said 500¢ for days.
+
+**5. Code-enforced acceptance points do not go stale on deploy; manual ones do.** A2 has three points,
+two held by tests. Only the human-checked one was reopened. Reopen the part that rots, not the item.
+
+## Writing a RATCHET (added 2026-08-11)
+
+There are three — `check-arch-findings.py`, `check-guard-coverage.py`,
+`check-gate-falsifiability.py` — and each invented these independently, differently. This is the
+contract, written down after the third one so the fourth does not reinvent it a fourth time.
+
+**1. "Cannot run" is a FAILURE, never a pass.** The single most important line here. If the tool
+cannot reach what it measures, it must exit non-zero and say *treat this as NOT RUN*. Measured
+precedents: Codex reviewing by reading because it was sandboxed out of the Docker socket and reporting
+success anyway; the integration suite running green against the wrong schema. `check-gate-falsifiability
+--staleness` exits 1 when it cannot read the deployed release, verified by running with `fly` off `PATH`.
+
+**2. Exit semantics, all three directions:** at baseline → **0**; above → **1**; below → **0 plus a
+nudge to lower it**. Test all three. The first revision of the newest ratchet returned **1 at
+baseline**, which would have broken CI the moment it merged.
+
+**3. The baseline is a named constant with a dated comment.** Lowering locks in a gain; raising must
+appear in a diff where someone can ask why. A ratchet exists because a big-bang failure over existing
+debt gets switched off — the point is to stop the *next* one, not to punish the backlog.
+
+**4. `--self-test`, and mutation-verify the discriminators.** Stub the detector and confirm cases go
+red. Expect roughly half your cases to pass against a stub — those are the "expect no findings" ones,
+necessary against false positives and useless as proof of life. Then mutate each discriminator
+separately and confirm each kills at least one case.
+
+**5. Declare the scope, because an unstated one is assumed total.** `check-guard-coverage.py` reads
+`pg_catalog` for the blob-addressing tables only, so migration-defined guards are invisible to it and
+its output is byte-identical with and without migration `0024` (backlog #29). Say what is covered in
+the file, and prefer failing over silently covering less.
+
+**6. Never mutate repo-tracked files.** Mutate a temp copy. A harness that edits the working tree
+corrupted a concurrent reviewer's run: 23/44 vs 44/44 on the same commit.

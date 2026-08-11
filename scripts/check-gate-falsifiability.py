@@ -57,8 +57,12 @@ GATE_SCOPES: dict[str, list[str] | None] = {
     "docs/roadmap-to-launch.md": ["## M1", "## M2", "## M3"],
 }
 
-# Existing debt, measured 2026-08-11. See the ratchet in main() for why this is a number and not zero.
-BASELINE = 13
+# Existing debt. See the ratchet in main() for why this is a number and not zero.
+#   13 → 2026-08-11, first measurement
+#    8 → 2026-08-11, after the A/B rewrite (PR #69) and B5's resolution (PR #70)
+# Remaining 8: five are the roadmap DUPLICATING the checklist's B-group (each doc names the other as
+# canonical — worth de-duplicating rather than annotating twice), and three are M3.1/3.2/3.3.
+BASELINE = 8
 
 FALSIFIER_RE = re.compile(r"\bFAILS?\s+IF\b", re.IGNORECASE)
 # An item phrased as an investigation has no pass condition by construction. B4 is the live example:
