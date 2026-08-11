@@ -233,7 +233,7 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
 
   // ── H3 (round-1 review). A settle the DATABASE REFUSED is not a settle. ────────────────────
   // settle_serve_model `returns boolean` and answers false for a no-op — `if not found then return
-  // false` (0020_reservation_release.sql:280) — when the token is stale, duplicated, forged, or the
+  // false` (0020_reservation_release.sql:281) — when the token is stale, duplicated, forged, or the
   // lease was reclaimed mid-attempt. callRpcBounded's `ok` means the ROUND TRIP succeeded, so
   // `{ ok: true, data: false }` was being read as settled: the refund silently never applied, the
   // retry that exists for this case never fired, and nothing was logged anywhere.

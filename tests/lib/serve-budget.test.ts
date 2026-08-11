@@ -61,7 +61,8 @@ describe('serve budget', () => {
   });
 
   it('backoff matches generateJson: one 400ms gap between two attempts', () => {
-    // gemini.ts:267 — baseDelayMs * 2**attempt, baseDelayMs = 400, gaps = SERVE_ATTEMPTS - 1.
+    // gemini.ts:281 — `baseDelayMs * 2 ** attempt`, with `baseDelayMs = 400` defaulted at
+    // gemini.ts:263; gaps = SERVE_ATTEMPTS - 1 because the sleep is guarded by `attempt < retries`.
     let expected = 0;
     for (let i = 0; i < SERVE_ATTEMPTS - 1; i++) expected += 400 * 2 ** i;
     expect(SERVE_BACKOFF_TOTAL_MS).toBe(expected);

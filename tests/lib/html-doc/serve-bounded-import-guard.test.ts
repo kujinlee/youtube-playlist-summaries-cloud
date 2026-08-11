@@ -16,15 +16,26 @@ import { join } from 'path';
 // spending the 20s unmodelled-work margin as enforced wait. Three rounds, three detectors, each
 // defeated by a slightly different expression.
 //
-// ⚠ THE PRIMARY DEFENCE IS NO LONGER THIS FILE. `lib/serve-budget.ts` now brands every budget with
-// the call site it belongs to, so a literal, an arithmetic expression, an object literal and a
-// swapped constant are all COMPILE errors — verified against all four mutants. `tsc --noEmit` runs
-// in CI, so the drift is unrepresentable rather than detected.
+// ⚠ THE PRIMARY DEFENCE IS NO LONGER THIS FILE. `lib/serve-budget.ts` brands every budget with the
+// call site it belongs to, and `tsc --noEmit` runs in CI, so most drift is unrepresentable rather
+// than detected.
 //
-// This file remains as a BACKSTOP, and is honest about being one. It still earns its place: it pins
-// the POPULATION of bounded call sites (a fifth one added without a brand would type-check fine if
-// its parameter were a plain number), and it catches counts, which carry no brand. What it no
-// longer has to do is anticipate the next expression someone writes.
+// THE DIVISION OF LABOUR, STATED EXACTLY — an earlier version of this comment claimed the types
+// caught "a swapped constant" too, and a reviewer measured that as false (round-5 review). A comment
+// promising a guarantee the code does not give is its own defect: the concrete harm is a maintainer
+// trusting it and weakening the guard below.
+//
+//   TYPES cover   a literal · an arithmetic expression · an object literal · `Number()`/`Math.min()`
+//                 laundering · assignment to a `readonly` field · spread-replacement of one
+//                 · a budget swapped between call sites WITH DIFFERENT brands (e.g. the settle
+//                   budget handed to the put)
+//   THIS GUARD    a swap between the TWO RPC budgets — they share `callRpcBounded`, hence share
+//                 `ReserveRpcBudget | SettleRpcBudget`, so that one swap compiles · `Object.assign`
+//                 replacement, which TypeScript permits via intersection · the POPULATION of bounded
+//                 call sites · counts, which the brand cannot reach at a call site
+//
+// So this file remains as a BACKSTOP, and is honest about being one. What it no longer has to do is
+// anticipate the next expression someone writes.
 //
 // It asserts the CLASS, not the instance:
 //

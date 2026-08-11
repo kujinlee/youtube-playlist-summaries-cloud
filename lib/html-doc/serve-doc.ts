@@ -12,6 +12,7 @@ import {
   SERVE_BUDGET, SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
   SERVE_SETTLE_ATTEMPTS,
 } from '@/lib/serve-budget';
+import type { AttemptCount } from '@/lib/serve-budget';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import { classifyGeminiFailure, releaseGateOpen } from '@/lib/gemini-failure';
 import type { BillingLatch } from '@/lib/job-queue/billing-latch';
@@ -235,7 +236,12 @@ async function settleBounded(
   supabaseClient: SupabaseClient, token: string, released: boolean, docKey: string,
 ): Promise<SettleOutcome> {
   // An unapplied REFUND is real money left on the ledger; a lost KEEP is already correct.
-  const attempts = released ? SERVE_SETTLE_ATTEMPTS : 1;
+  // TYPED, not inferred (round-5 review H-R5-1). `const attempts = released ? … : 1` is an inference
+  // site: it widens to `number`, so `SERVE_SETTLE_ATTEMPTS + SERVE_SETTLE_ATTEMPTS` assigns to it
+  // happily — measured at tsc exit 0 with all 2657 tests green, spending 4 settles against a sum
+  // that pays for 2. Naming the type is what makes the arithmetic unrepresentable; branding the
+  // constant alone does not, because nothing was checking the local.
+  const attempts: AttemptCount | 1 = released ? SERVE_SETTLE_ATTEMPTS : 1;
   // Once ANY attempt fails to return a trustworthy answer, every later reply is ambiguous: the RPC
   // may have committed after we stopped listening. Conservative on purpose — over-reporting
   // "indeterminate" costs an operator one reconciliation; under-reporting it means claiming a
@@ -254,7 +260,7 @@ async function settleBounded(
     if (out.ok) {
       // `ok` means the ROUND TRIP succeeded, not that the settle happened. settle_serve_model
       // `returns boolean` and answers `false` for a no-op — `if not found then return false`
-      // (0020_reservation_release.sql:280). Measured against the live database in
+      // (0020_reservation_release.sql:281). Measured against the live database in
       // tests/integration/settle-rpc-shape.test.ts: success is `true`, a no-op is `false`, and
       // neither is an error.
       if (out.data === true) return 'applied';

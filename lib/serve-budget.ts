@@ -87,7 +87,8 @@ export const SERVE_ATTEMPT_TIMEOUT_MS = 50_000 as AttemptBudget;
 /** Attempts on the serve path. Three does not fit the lease — that is the defect being fixed. */
 export const SERVE_ATTEMPTS = 2 as AttemptCount;
 
-/** generateJson backoff: 400 * 2**n summed over (SERVE_ATTEMPTS - 1) gaps (`gemini.ts:267`). */
+/** generateJson backoff: 400 * 2**n summed over (SERVE_ATTEMPTS - 1) gaps — the default at
+ *  `gemini.ts:263` and the sleep it feeds at `gemini.ts:281`, guarded by `if (attempt < retries)`. */
 export const SERVE_BACKOFF_TOTAL_MS = 400;
 
 /** One small-JSON upload. PROVISIONAL — revise from observed p99. */
@@ -111,8 +112,15 @@ export const SERVE_SETTLE_RPC_TIMEOUT_MS = 5_000 as SettleRpcBudget;
  *
  * A bound that holds by coincidence is not a bound. Paying for both settles unconditionally costs
  * 5s of headroom and removes the coupling entirely.
+ *
+ * BRANDED, like SERVE_ATTEMPTS, and for the reason round 5 measured: this is the SECOND count on the
+ * serve path, round 4 branded only the first, and `SERVE_SETTLE_ATTEMPTS + SERVE_SETTLE_ATTEMPTS` at
+ * the settle call site type-checked and passed all 2657 tests — spending 20s of settle against a
+ * sum that pays for 10s, pushing the floor to 170.4s under a lease the CHECK permits to be 161s.
+ * The brand alone does not close it: the consuming local must be TYPED, or it is just an inference
+ * site that happily accepts a plain number. See `settleBounded` in serve-doc.ts.
  */
-export const SERVE_SETTLE_ATTEMPTS = 2;
+export const SERVE_SETTLE_ATTEMPTS = 2 as AttemptCount;
 
 /**
  * ASSUMPTION, NOT A BOUND. ~15% of the bounded budget, for unmodelled local work.

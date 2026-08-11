@@ -53,7 +53,13 @@
 -- The default opclass cannot do that under a non-C collation. Caught by checking the plan rather
 -- than by assuming the index would be used, which is the same "verify, don't characterise" rule
 -- this review has applied to everything else.
-create index if not exists ledger_audit_kind_note_idx
+-- DROP-THEN-CREATE, not `if not exists` (round-5 review M-R5-1). MEASURED: `create index if not
+-- exists` on an existing name SKIPS — it never changes the opclass — so any database that applied
+-- an earlier revision of this migration with the default `text_ops` would keep the unusable index
+-- forever, and the fix would reach only fresh databases. The one place that needs repairing is
+-- precisely the one `if not exists` cannot touch.
+drop index if exists ledger_audit_kind_note_idx;
+create index ledger_audit_kind_note_idx
   on ledger_audit (kind, note text_pattern_ops);
 
 -- Body reproduced from 0020_reservation_release.sql:268-298 with ONE addition, marked below.
@@ -78,9 +84,14 @@ begin
   -- Written only past the `not found` gate, so the row exists if and only if this call is the one
   -- that cleared the reservation.
   --
-  -- `expected_amt` MEANS ONE THING across every kind: THE CENTS THIS ROW IS ABOUT. For
-  -- `release_underflow` that is the amount whose guarded decrement failed; for `serve_settle` it is
-  -- the amount actually returned to the ledgers, hence 0 on a keep, where nothing moved. Spelled
+  -- `expected_amt` MEANS ONE THING across every kind: THE CENTS THIS ROW IS ABOUT — and note that
+  -- the column is called EXPECTED, which is exactly right here. For `release_underflow` it is the
+  -- amount whose guarded decrement failed. For `serve_settle` it is the amount this settle
+  -- UNDERTAKES to return, 0 on a keep — written here, BEFORE the two ledger decrements below, so it
+  -- is a statement of intent and not a receipt (round-5 review L-R5-1 caught an earlier draft of
+  -- this comment claiming "actually returned", which the statement order makes impossible). If a
+  -- decrement then fails, its own `release_underflow` row records that, and the pair reads
+  -- correctly: intended here, failed there. Spelled
   -- out because this repo's own `check-sentinel-meanings` rule is that a column meaning a
   -- CONJUNCTION of things is a defect, and a reviewer reasonably read the two writers as carrying
   -- two meanings (round-4 review L-R4-3).
