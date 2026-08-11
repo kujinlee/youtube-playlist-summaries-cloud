@@ -30,7 +30,7 @@
 | `lib/gemini.ts` | `assertMagazineInputWithinCap` gains a signal; `generateJson` gains `timeoutMs`; new `generateMagazineModelForServe` wrapper with a **required** budget. |
 | `lib/html-doc/model-store.ts` | new `writeModelEnvelopeWithin` — required `timeoutMs`, races the `put`. |
 | `lib/serve-rpc.ts` | **new.** `callRpcBounded` — a bounded RPC returning an honest `{ok:false, reason:'timeout'\|'error'}` union, so a timeout can never be read as success. |
-| `lib/html-doc/serve-doc.ts` | calls the two wrappers; bounds both RPCs; retries settle once on the release path; maps a reserve timeout to `busy`; exports `SERVE_CAPS`. |
+| `lib/html-doc/serve-doc.ts` | calls the two wrappers; bounds both RPCs; retries settle once on the release path; maps a reserve timeout to `busy`. |
 | `supabase/migrations/0024_lease_covers_serve.sql` | **new.** Raises the `lease_ttl_seconds` CHECK floor to `SERVE_FLOOR_SECONDS`. |
 | `tests/lib/serve-budget.test.ts` | **new.** The sum, the bounds, the unit discipline. |
 | `tests/lib/gemini-serve-budget.test.ts` | **new.** Wrapper behaviour + local path unaffected. |
@@ -501,10 +501,6 @@ nobody tests. Required and positional, so omission is a compile error."
 
 - [ ] **Step 1: Write the failing test**
 
-**Use the fixtures this file already has.** `[VERIFIED: tests/lib/html-doc/model-store.test.ts:12]`
-it defines `ENVELOPE`, `principal`, `BASE` and `fakeBlobStore` — an earlier draft invented
-`validEnvelope` and `stubStore`, which do not exist (plan-review r1 Medium).
-
 **Fixtures, read from the file rather than remembered** — `[VERIFIED: tests/lib/html-doc/model-store.test.ts:10-12]`
 `principal` is declared at :10 and assigned in `beforeEach`, `BASE` is :11, `ENVELOPE` starts at :12.
 `[VERIFIED: :83]` `fakeBlobStore` exists only as a **local const inside one test** — not a shared
@@ -783,13 +779,13 @@ Racing our own timer makes the outcome independent of both."
 ### Task 6: Wire the serve path — both RPCs, the refund retry, the two wrappers
 
 **Files:**
-- Modify: `lib/html-doc/serve-doc.ts:20` (export `SERVE_CAPS`), `:74-77` (reserve), `:112-125` (wrappers), `:126`, `:133` (settle)
+- Modify: `lib/html-doc/serve-doc.ts:74-77` (reserve), `:112-125` (wrappers), `:126`, `:133` (settle)
 - Modify: `tests/lib/html-doc/serve-doc-mapping.test.ts:30-33` — **`fakeSupabase` must return a chainable builder**
 - Test: `tests/integration/serve-doc-materialize.test.ts` (exists — extend)
 
 **Interfaces:**
 - Consumes: `SERVE_BUDGET`, `SERVE_*_TIMEOUT_MS` (Task 1); `generateMagazineModelForServe` (Task 3); `writeModelEnvelopeWithin` (Task 4); `callRpcBounded` (Task 5); `fakeRpcBuilder` (Task 5).
-- Produces: `SERVE_CAPS` becomes an export (Task 3's tests need it). `ResolveResult` is **unchanged** — a reserve timeout maps onto the existing `busy`.
+- Produces: no new exports. `SERVE_CAPS` stays **private** — an earlier draft exported it for Task 3's tests, but Task 3 builds its own `TEST_CAPS`, so the export had no consumer (plan-review r4 Low). `ResolveResult` is **unchanged** — a reserve timeout maps onto the existing `busy`.
 
 **Existing fakes break without this task's edit (plan-review r1 Blocking).**
 `[VERIFIED: tests/lib/html-doc/serve-doc-mapping.test.ts:30-33]` `fakeSupabase` returns
@@ -955,17 +951,15 @@ both details; an earlier draft of this plan used a nonexistent `GeminiHttpError`
 so it would have asserted a refund that `releaseGateOpen()` forbids. **That existing test passing
 unchanged is this task's acceptance criterion for the money rule.**
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [ ] **Step 4: Run the NEW tests to verify they fail**
 
-Run: `npx jest tests/integration/serve-doc-materialize -v`
-Expected: FAIL — no retry (one settle), and the reserve timeout hangs rather than returning `busy`.
+Run: `npx jest serve-doc-mapping -v`   ← where the new tests actually live
+Expected: FAIL — the reserve timeout does not return `busy`, and the settle is called once, not twice.
 
-- [ ] **Step 4: Write the implementation**
+Then confirm the money pin is untouched and still green:
+Run: `npx jest tests/integration/serve-doc-materialize -v` → PASS, with no edits to its assertions.
 
-```ts
-// lib/html-doc/serve-doc.ts:20 — SERVE_CAPS becomes an export (Task 3's tests import it)
-export const SERVE_CAPS: CloudGeminiCaps = { /* unchanged */ };
-```
+- [ ] **Step 5: Write the implementation**
 
 ```ts
 // lib/html-doc/serve-doc.ts — reserve
@@ -1021,22 +1015,22 @@ async function settleBounded(
 The two call sites keep their existing `if (releaseToken)` guard and the existing `released`
 computation at `:130-132` — **do not touch that expression**; it is the refund rule.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 6: Run tests to verify they pass**
 
 Run: `npx jest tests/integration/serve-doc-materialize serve-doc-mapping -v`
 Expected: PASS — 5 new, plus the pre-existing refund and mapping tests.
 
-- [ ] **Step 6: Mutation-check the retry and the timeout branch**
+- [ ] **Step 7: Mutation-check the retry and the timeout branch**
 
 1. `const attempts = 1;` unconditionally → the retry test must go RED. Restore.
 2. Change the reserve timeout branch to `throw new Error('x')` → the `busy` test must go RED. Restore.
 
-- [ ] **Step 7: Full suite + typecheck**
+- [ ] **Step 8: Full suite + typecheck**
 
 Run: `npx tsc --noEmit && npm test`
 Expected: clean.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add lib/html-doc/serve-doc.ts tests/integration/serve-doc-materialize.test.ts tests/lib/html-doc/serve-doc-mapping.test.ts
