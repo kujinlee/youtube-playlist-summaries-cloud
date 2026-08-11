@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import {
   SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_COUNT_TOKENS_TIMEOUT_MS, SERVE_ATTEMPT_TIMEOUT_MS,
-  SERVE_ATTEMPTS, SERVE_BACKOFF_TOTAL_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
+  SERVE_ATTEMPTS, SERVE_BACKOFF_TOTAL_MS, SERVE_BACKOFF_BASE_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
   SERVE_SETTLE_ATTEMPTS,
   SERVE_MARGIN_MS, SERVE_BOUNDED_MS, SERVE_FLOOR_MS, SERVE_FLOOR_SECONDS, SERVE_BUDGET,
 } from '@/lib/serve-budget';
@@ -60,11 +60,17 @@ describe('serve budget', () => {
     expect(SERVE_FLOOR_SECONDS).toBeLessThanOrEqual(SHIPPED_LEASE_TTL_SECONDS);
   });
 
-  it('backoff matches generateJson: one 400ms gap between two attempts', () => {
-    // gemini.ts:281 — `baseDelayMs * 2 ** attempt`, with `baseDelayMs = 400` defaulted at
-    // gemini.ts:263; gaps = SERVE_ATTEMPTS - 1 because the sleep is guarded by `attempt < retries`.
+  it('the total backoff is derived from the base the serve path actually passes', () => {
+    // gemini.ts:281 — `baseDelayMs * 2 ** attempt`, over (SERVE_ATTEMPTS - 1) gaps because the sleep
+    // is guarded by `attempt < retries`.
+    //
+    // Asserted against SERVE_BACKOFF_BASE_MS, not a hard-coded 400. The old version of this test
+    // re-typed `400` and so compared the constant to itself: MEASURED, changing generateJson's
+    // `baseDelayMs` default to 5_000 left tsc clean and all 2657 tests green while the serve path
+    // slept 5s against a 400ms budget. The base is now PASSED (gemini.ts, the budget's `backoffMs`),
+    // so the number spent and the number budgeted are the same object.
     let expected = 0;
-    for (let i = 0; i < SERVE_ATTEMPTS - 1; i++) expected += 400 * 2 ** i;
+    for (let gap = 0; gap < SERVE_ATTEMPTS - 1; gap++) expected += SERVE_BACKOFF_BASE_MS * 2 ** gap;
     expect(SERVE_BACKOFF_TOTAL_MS).toBe(expected);
   });
 
@@ -75,6 +81,7 @@ describe('serve budget', () => {
       attempts: SERVE_ATTEMPTS,
       attemptTimeoutMs: SERVE_ATTEMPT_TIMEOUT_MS,
       countTokensTimeoutMs: SERVE_COUNT_TOKENS_TIMEOUT_MS,
+      backoffMs: SERVE_BACKOFF_BASE_MS,
     });
   });
 

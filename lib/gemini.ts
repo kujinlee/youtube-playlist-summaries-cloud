@@ -572,7 +572,10 @@ ${numbered}
     const parsed = await generateJson(
       model, prompt, MagazineModelSchema, 'magazine',
       budget ? budget.attempts - 1 : undefined,   // generateJson takes RETRIES, so attempts - 1
-      undefined,
+      // The serve path SPENDS this, so the serve path must SUPPLY it. Leaving it to the default
+      // below meant the sum budgeted one number and the code slept a different one, with nothing
+      // relating them (round-5 population sweep).
+      budget ? budget.backoffMs : undefined,
       opts,
       budget ? budget.attemptTimeoutMs : undefined,
     );

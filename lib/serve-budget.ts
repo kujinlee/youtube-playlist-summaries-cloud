@@ -72,6 +72,7 @@ export type SettleRpcBudget = Budget<'settleRpc'>;
 export type CountTokensBudget = Budget<'countTokens'>;
 export type AttemptBudget = Budget<'attempt'>;
 export type PutBudget = Budget<'put'>;
+export type BackoffBudget = Budget<'backoff'>;
 /** An attempt COUNT, not a duration — branded for the same reason (round-4 review H1). */
 export type AttemptCount = Budget<'attempts'>;
 
@@ -87,9 +88,33 @@ export const SERVE_ATTEMPT_TIMEOUT_MS = 50_000 as AttemptBudget;
 /** Attempts on the serve path. Three does not fit the lease — that is the defect being fixed. */
 export const SERVE_ATTEMPTS = 2 as AttemptCount;
 
-/** generateJson backoff: 400 * 2**n summed over (SERVE_ATTEMPTS - 1) gaps — the default at
- *  `gemini.ts:263` and the sleep it feeds at `gemini.ts:281`, guarded by `if (attempt < retries)`. */
-export const SERVE_BACKOFF_TOTAL_MS = 400;
+/**
+ * The PER-GAP backoff base, PASSED to generateJson rather than left to its default.
+ *
+ * Round 5 found two counts where the redesign had branded one. Enumerating the rest of the
+ * population found this: the backoff was the one term in the sum that the serve path never passed.
+ * It relied on `generateJson`'s own `baseDelayMs = 400` default, and MEASURED — changing that
+ * default to 5_000 left `tsc` clean and all 2657 tests green while the serve path spent 5s of
+ * backoff against a sum that budgeted 400ms. Nothing tied the two numbers together; the test
+ * compared SERVE_BACKOFF_TOTAL_MS against its own hard-coded 400.
+ *
+ * Passing it closes the gap by CONSTRUCTION instead of by another assertion: the serve path now
+ * spends exactly the number the sum computed from.
+ */
+export const SERVE_BACKOFF_BASE_MS = 400 as BackoffBudget;
+
+/**
+ * The total backoff the serve path can spend: `base * 2**n` over the (SERVE_ATTEMPTS - 1) gaps
+ * `generateJson` actually sleeps for — the sleep at `gemini.ts:281`, guarded by
+ * `if (attempt < retries)`, so a 2-attempt budget yields exactly one gap.
+ *
+ * DERIVED, never re-typed. A hand-written total is a second copy of a relationship, and this file
+ * exists because two numbers that must agree had nothing making them agree.
+ */
+export const SERVE_BACKOFF_TOTAL_MS = Array.from(
+  { length: SERVE_ATTEMPTS - 1 },
+  (_unused, gap) => SERVE_BACKOFF_BASE_MS * 2 ** gap,
+).reduce((total, gap) => total + gap, 0);
 
 /** One small-JSON upload. PROVISIONAL — revise from observed p99. */
 export const SERVE_PUT_TIMEOUT_MS = 15_000 as PutBudget;
@@ -165,6 +190,7 @@ export interface ServeBudget {
   readonly attempts: AttemptCount;
   readonly attemptTimeoutMs: AttemptBudget;
   readonly countTokensTimeoutMs: CountTokensBudget;
+  readonly backoffMs: BackoffBudget;
 }
 
 /** The one place the brand is minted. Every other reference to a serve budget is this value. */
@@ -172,4 +198,5 @@ export const SERVE_BUDGET = Object.freeze({
   attempts: SERVE_ATTEMPTS,
   attemptTimeoutMs: SERVE_ATTEMPT_TIMEOUT_MS,
   countTokensTimeoutMs: SERVE_COUNT_TOKENS_TIMEOUT_MS,
+  backoffMs: SERVE_BACKOFF_BASE_MS,
 }) as ServeBudget;

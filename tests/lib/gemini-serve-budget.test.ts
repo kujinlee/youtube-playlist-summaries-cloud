@@ -75,6 +75,25 @@ describe('generateMagazineModelForServe', () => {
     expect(seen).toEqual([SERVE_BUDGET.attemptTimeoutMs]);   // 50_000
   });
 
+  // The backoff is the term the serve path used to leave to generateJson's default — budgeted in
+  // one place, slept in another, with nothing relating them. Assert it now travels WITH the budget.
+  it('passes the serve backoff base, rather than inheriting generateJson\'s default', async () => {
+    const delays: number[] = [];
+    const realSetTimeout = global.setTimeout;
+    jest.spyOn(global, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      if (typeof ms === 'number' && ms > 0) delays.push(ms);
+      return realSetTimeout(fn, 0);
+    }) as never);
+    const generateContent = jest.fn(async () => { throw new Error('boom'); });
+    mockModel({ generateContent });
+    await expect(generateMagazineModelForServe(
+      [{ title: 'A', prose: 'x' }], 'en', SERVE_BUDGET, { caps: TEST_CAPS },
+    )).rejects.toThrow();
+    (global.setTimeout as unknown as jest.SpyInstance).mockRestore();
+    // SERVE_ATTEMPTS - 1 gaps, the first at exactly the budgeted base.
+    expect(delays).toEqual([SERVE_BUDGET.backoffMs]);
+  });
+
   it('passes the serve countTokens timeout to the preflight', async () => {
     const seen: Array<number | undefined> = [];
     const countTokens = jest.fn(async (_r: unknown, o?: { timeout?: number }) => {
