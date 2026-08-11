@@ -1,7 +1,8 @@
 # Bounding the Serve Path — Design Spec
 
-**Status:** **v5** — round-5 findings applied to the v4 redesign. v1–v3 are superseded, not amended.
-**Round 6 is required** — the gate is a full round with no new Blocking/High, which has not happened.
+**Status:** **v6** — rounds 5 and 6 applied to the v4 redesign. v1–v3 are superseded, not amended.
+**Proceeding to Phase 2 (writing-plans)**, where the plan carries its own dual adversarial review to
+convergence (`dev-process.md:82`). See §7.5 for why that, and not a seventh spec round.
 **Task:** #46 · **Prod issue:** yes — the unbounded awaits are live today
 
 **Review trail**
@@ -13,6 +14,7 @@
 | 3 | [codex r3](../../reviews/spec-serve-deadline-codex-r3.md) | NOT CONVERGED — 7 findings, **7 caused by round 2's fixes** |
 | 4 | [design review](../../reviews/spec-serve-deadline-design-review-r4.md) | **VERDICT: REDESIGN** |
 | 5 | [codex v4 r5](../../reviews/spec-serve-deadline-codex-v4-r5.md) | NOT CONVERGED — 7 findings on the redesign, **none a regression from a prior fix** |
+| 6 | [codex v5 r6](../../reviews/spec-serve-deadline-codex-v5-r6.md) | NOT CONVERGED — 5 findings, all from v5's fixes; 4 are prose overstating the design, 1 is a scope decision |
 
 Rounds 2 and 3 tripped the escalation rule in [`review-method.md:45-47`](../../review-method.md) —
 *findings caused by the previous round's fixes in two consecutive rounds → stop fixing, redesign.*
@@ -154,21 +156,30 @@ external calls; they are bounded here.**
 | `blobStore.put` (`model-store.ts:51`) | bare await | `PUT_TIMEOUT_MS`, caller-side race |
 | `settle_serve_model` RPC (`serve-doc.ts:126`, `:133`) | bare await | `SETTLE_RPC_TIMEOUT_MS` |
 
-**The Supabase client supports this.** `[VERIFIED: node_modules/@supabase/postgrest-js/dist/index.d.mts]`
-exposes `abortSignal(signal: AbortSignal): this`, and its own documentation example is
-`abortSignal(AbortSignal.timeout(1000))`. `[VERIFIED: lib/supabase/server.ts:10-20]` sets no timeout
+**The Supabase client supports this.** `[VERIFIED: @supabase/postgrest-js 2.109.0 —
+dist/index.d.mts:5246-5254 and :1408]` `rpc()` returns a `PostgrestFilterBuilder` carrying
+`abortSignal(signal: AbortSignal): this`; the package's own example is
+`abortSignal(AbortSignal.timeout(1000))`. Version pinned in the tag because a capability claim without
+one is a premise that silently expires. `[VERIFIED: lib/supabase/server.ts:10-20]` sets no timeout
 today, which is why both RPCs are currently unbounded.
 
 **What a bounded RPC does and does not do.**
 
-- *Reserve:* a timeout means we stop waiting. It does **not** roll back the transaction — the lease
-  may have been granted and charged. So on a reserve timeout the app **abandons without producing**:
-  no Gemini call, no write. The charge and the `attempt_count` are lost (§1.3), and the lease blocks
-  other producers until it expires — the *safe* direction, since single-flight is preserved and no
-  second producer exists. Logged loudly; a recurring reserve timeout is an infrastructure alarm.
+- *Reserve:* a timeout means we stop waiting. It does **not** roll back the transaction — the lease may
+  have been granted and charged. So on a reserve timeout the app **abandons without producing**: no
+  Gemini call, no write.
+
+  **v5 called this "safe because single-flight is preserved". That is the wrong description
+  (round-6 M1).** What exists after a reserve timeout is an **empty paid lease**: 6¢ charged, an
+  `attempt_count` burned, and *no producer at all*. Concretely — the user sees `busy`; retries before
+  expiry see `in_flight` and are refused although nobody is generating; retries after expiry can burn
+  another 6¢ and another attempt. Bounded by `max_serve_attempts` and the daily cap, not by anything
+  in this design. Logged loudly; a recurring reserve timeout is an infrastructure alarm, and this
+  state is why.
+
 - *Settle:* a timeout means we stop waiting; the statement may still commit. It is **not** a
   cancellation, and the spec must not imply one. Its purpose is solely to stop a hung settle from
-  running past the lease.
+  running past the lease — but see §4.1, because on the **release** path that is not free.
 
 **The Gemini SDK supports the preflight bound.** `[VERIFIED: generative-ai.d.ts:778]`
 `countTokens(request, requestOptions?: SingleRequestOptions)` and `[VERIFIED: :1297-1306]`
@@ -180,9 +191,33 @@ such parameter `[VERIFIED: gemini.ts:499-505]`, and `html-doc/generate.ts:40` ca
 path. Changing `gemini.ts:549` from `undefined` to `1` would silently reduce local generation's
 retries too.
 
-So: `generateMagazineModel` gains `opts.serve?: { retries: number; attemptTimeoutMs: number }`, and
-`generateJson` gains an optional `timeoutMs` defaulting to `REQUEST_TIMEOUT_MS`. Absent the option,
-every existing caller keeps `GENERATE_JSON_RETRIES` and 60 s — asserted by test (§5).
+**v5 proposed an OPTIONAL `opts.serve?`. That repeats a failure this project has already written down
+(round-6 H1).** `process-checklists.md:64-68`: *"Make the new member **required, not optional**: an
+optional one does not propagate, and callers keep silently inheriting the ambiguous original."*
+
+The concrete failure it permits: the serve caller keeps passing `{ caps, signal, billing }`, TypeScript
+accepts it, the direct unit tests that pass `opts.serve` go green — and **production serves with 3
+attempts at 60 s while the CHECK floor assumes 2 at 50 s.** The floor would then be wrong in the one
+configuration nobody tested, which is the entire failure this spec exists to prevent.
+
+**So the serve boundary gets its own entry point, where omission cannot compile:**
+
+```ts
+// lib/gemini.ts — the serve path calls THIS, never generateMagazineModel directly
+export function generateMagazineModelForServe(
+  sections, language,
+  budget: ServeBudget,          // REQUIRED — no default, no `?`
+  opts?: { caps?: CloudGeminiCaps; signal?: AbortSignal; billing?: BillingLatch },
+): Promise<MagazineModel>
+```
+
+`generateJson` gains an optional `timeoutMs` defaulting to `REQUEST_TIMEOUT_MS` — optional is correct
+*there*, because that default is the existing behaviour for every existing caller and the serve path
+reaches it only through the wrapper above, which cannot omit the budget.
+
+A wrapper rather than a required parameter on `generateMagazineModel` itself, because the latter would
+force `html-doc/generate.ts:40` (the local path) to pass a serve budget it has no business knowing
+about. **The boundary that must not be crossed silently gets its own name.**
 
 ### 3.2 The worst case: enforced terms, and one quarantined margin
 
@@ -281,14 +316,53 @@ writes a fresh model, then A's original upload completes with `upsert:true` and 
 The caller-side race cancels our *wait*, never the upload — the same vendor asymmetry as an aborted
 Gemini call, one layer out.
 
-Traced, the consequence is bounded but real: `readFreshMagazineModel` compares `sourceSections` and
-`sourceMdHash`, so a regressed envelope reads as **drifted** and regenerates. The cost is another
-6¢ generation, not permanent corruption or a wrong document. Requires A to time out, B to write in the
-interval, *and* the source MD to have changed between them.
+**v5 claimed this was bounded to one extra generation. That claim was false (round-6 B1), and the
+correction matters more than the original error.**
 
-**Not eliminated.** A conditional write would fix it, and `put` is `upload(upsert:true)` with no
-precondition support. Logged with elapsed time so a `PUT_TIMEOUT_MS` set too low is diagnosable rather
-than inferred.
+`[VERIFIED: lib/html-doc/read-model.ts:20-24]`
+
+```ts
+export function isFresh(envelope, titles): boolean {
+  return sameTitles(envelope, titles) && envelope.generatorVersion === GENERATOR_VERSION;
+}
+```
+
+**`sourceMdHash` is not read here.** `[VERIFIED: grep]` its only readers are on the sync path
+(`lib/cloud-sync/companion.ts:97-139`). `companion.ts:43` states the asymmetry outright — the serve
+freshness check uses *"generatorVersion, never sourceMdHash"*.
+
+v5 asserted the hash was compared, and labelled the assertion *traced*. It traced `sourceSections` and
+inferred the rest from the field's existence in the envelope schema. **A field being written is not
+evidence that anything reads it** — the refutation was sitting in a comment in the repo.
+
+**The real consequence.** If A's late upload overwrites B's newer model and the section **titles** are
+unchanged — the common case, since editing prose rarely changes headings — `isFresh` returns true and
+the stale model is served **indefinitely**, until titles change or `GENERATOR_VERSION` bumps. That is
+silent, user-visible stale content, not a bounded extra charge.
+
+### 3.5.1 Decision: the residual is ACCEPTED, and it is not this task's to fix
+
+Three options were live. Recorded because a residual accepted without alternatives is indistinguishable
+from one nobody noticed.
+
+| option | why not chosen |
+|---|---|
+| Make `isFresh` compare `sourceMdHash` | Closes it, but changes serve-path **caching**, not timeouts. `companion.ts:43` indicates ignoring the hash is deliberate: it stops a prose-only MD edit forcing a paid regeneration. Flipping that is a **money** decision needing its own reasoning, not a rider on a timeout fix |
+| Leave `put` unbounded | That is the live production defect this task exists to fix |
+| **Accept, document, and route the fix** | ✅ chosen |
+
+**Where the real fix lives:** making a write unable to clobber a newer one is *content addressing*, which
+is already owned by **backlog #25 / task #39** (render addressing). This spec must not invent a fourth
+coordination mechanism for it — inventing one is precisely how v1–v3 burned three rounds.
+
+**Preconditions for the residual to bite:** A's `put` must exceed `PUT_TIMEOUT_MS` (15 s for one small
+JSON — already pathological), *then* succeed later, *and* B must write in that interval, *and* the
+titles must be unchanged. Rare. Not impossible, and no longer described as bounded.
+
+**Detection, since prevention is out of scope:** a `put` timeout is logged with elapsed time and the
+target key, so the window in which this is possible is visible in production rather than inferred. If
+those logs ever appear, that is the trigger to promote the addressing work rather than to tune
+`PUT_TIMEOUT_MS`.
 
 ---
 
@@ -415,9 +489,45 @@ Cancellation is **not a cost-control mechanism**. It protects the lease, never t
 meaning it already carries at `serve-doc.ts:84`), and log. No Gemini call has been made and no
 `release_token` is in hand, so there is nothing to settle.
 
-**Settle timeout** → the work is done and the model is written; only our acknowledgement was lost. Log
-and return the successful result. The reservation clears when the statement commits, or the lease
-expires and the row is reclaimed — the existing behaviour for any lost settle.
+### 4.1 The settle timeout is NOT free on the release path (round-6 B2)
+
+**v5 said "the refund rule is unchanged". Delete that claim — it is true of the rule and false of the
+outcome.**
+
+The rule at `serve-doc.ts:130-132` is untouched. But bounding the RPC that *executes* it changes what
+happens:
+
+| settle | on timeout | consequence |
+|---|---|---|
+| `p_released := false` (kept) | statement commits or the row is reclaimed at expiry | benign — money was already correctly kept |
+| **`p_released := true` (refund)** | **if the statement never commits, the refund never happens** | `spend_ledger.reserved_cents` and `serve_owner_budget.spent_cents` stay +6¢, `release_token` stays set |
+
+Concretely: reserve succeeds, Gemini throws a **not-metered 503**, `released = true`, the settle times
+out and does not commit. The user keeps a charge that the system decided to refund, and the caller has
+lost the token, so nothing retries it.
+
+**Direction, which decides how serious this is.** An unapplied refund is an **over-count** — the
+ledger holds more than was spent. This codebase's standing rule (`serve-doc.ts:107-110`) is that
+over-count is safe and under-count is the bug. So this is real money and not a correctness violation,
+which is why it is mitigated rather than made impossible:
+
+> **On the release path only, the settle is retried once** within `SETTLE_RPC_TIMEOUT_MS`, which
+> `SERVE_MARGIN_MS` covers. On the kept path there is nothing to retry — the charge is already correct.
+
+**The residual is stated, not dismissed:** if both attempts fail, the refund is lost and no reaper
+reconciles it. `ledger_audit` (`0020:12-19`) records release *underflow* at settle time and cannot
+record a settle that never arrived.
+
+`★` The general shape, since this is its second appearance in this spec: **a rule can be preserved
+verbatim and still stop working when you bound the mechanism that carries it out.** v3 revoked this
+same refund by rewriting the rule; v5 revoked it by bounding its transport. "Unchanged" must be a claim
+about the outcome, or it is not a claim at all.
+
+### 4.2 Settle timeout, kept path
+
+The work is done and the model is written; only our acknowledgement was lost. Log and return the
+successful result. The reservation clears when the statement commits, or the lease expires and the row
+is reclaimed — the existing behaviour for any lost settle.
 
 ---
 
@@ -429,29 +539,52 @@ default. Write this first and watch it fail against today's constants (181,200 >
 assertion that would have caught §1.2.
 
 **Every bounded term is actually bounded.** One test per row of §3.1's table: reserve, `countTokens`,
-`generateContent`, `put`, settle each abort at their timeout rather than hanging. **This is the test
-that distinguishes v5 from v4** — v4's `SETTLE_SLACK_MS` would have passed a sum test and failed this
-one. Assert the error *identity*, not that "something failed".
+`generateContent` and settle each abort at their timeout rather than hanging. **This is the test that
+distinguishes v5 from v4** — v4's `SETTLE_SLACK_MS` would have passed a sum test and failed this one.
+Assert the error *identity*, not that "something failed".
+
+**`put` is the exception, and the test must say so (round-6 M2).** `[VERIFIED:
+lib/storage/supabase/supabase-blob-store.ts:22-24]` maps to Supabase Storage `upload(..., {upsert:
+true})` with **no signal**. So the test asserts the **caller's race resolves** at `PUT_TIMEOUT_MS` — it
+cannot assert the upload was cancelled, because it is not. Writing it the other way would be a test
+asserting a behaviour the stack does not have, and the difference is exactly what makes §3.5's residual
+possible.
 
 **The margin is not a bound, and the tests must not imply it is.** There is no test for
 `SERVE_MARGIN_MS`; it is an assumption. What *is* asserted is that it appears only in `SERVE_FLOOR_MS`
 and never as a timeout argument.
 
-**Serve-only-ness (round-5 H1).** `generateMagazineModel` **without** `opts.serve` uses
-`GENERATE_JSON_RETRIES` and `REQUEST_TIMEOUT_MS`; **with** it, 2 attempts at 50 s. Assert the local
-path (`html-doc/generate.ts:40`) is unchanged — the regression this test exists to prevent is silent.
+**Serve-only-ness (round-5 H1, round-6 H1).** `generateMagazineModel` — the un-wrapped entry point —
+still uses `GENERATE_JSON_RETRIES` and `REQUEST_TIMEOUT_MS`, asserted against the local caller
+(`html-doc/generate.ts:40`). `generateMagazineModelForServe` uses 2 attempts at 50 s.
+
+**And assert the serve route reaches the wrapper**, not `generateMagazineModel` directly. The required
+`budget` parameter makes omission a compile error, so this test guards the remaining hole: someone
+calling the un-wrapped function from the serve path on purpose. A grep-style import guard is
+appropriate — the repo already uses one at `tests/lib/share/import-guard.test.ts`.
 
 **The attempt count.** At most 2 `generateContent` calls on the serve path. Mutate the option away and
 this must go red, or it asserts nothing.
 
-**The refund rule is unchanged, so pin it.** 429 while not metered still refunds (`p_released := true`).
-v3 would have broken this and nothing would have noticed. This test exists to make that class of
-regression impossible, not because v5 changes anything.
+**The refund DECISION is unchanged, so pin it.** 429 while not metered still calls settle with
+`p_released := true`. v3 would have broken this by rewriting the rule and nothing would have noticed.
 
-**Late-`put` overwrite (round-5 H2).** A's timed-out upload landing after B's write produces a *drifted*
-envelope that `readFreshMagazineModel` rejects, triggering regeneration rather than serving stale
-content. Assert the drift detection fires — the claim in §3.5 that the damage is bounded to one extra
-generation is load-bearing, and untested it is just a hope.
+Assert the **decision** and the **outcome** separately, because §4.1 is precisely the case where they
+diverge: v5 preserved the decision and broke the outcome by bounding the RPC that carries it. A test
+asserting only "settle was called with released=true" passes while the refund never lands.
+
+**Late-`put` overwrite — assert the RESIDUAL, not a fix (round-6 B1).** v5 wanted a test proving drift
+detection regenerates. That test would fail, because `isFresh` does not read `sourceMdHash`
+(§3.5). The accepted residual (§3.5.1) is instead pinned by a **characterisation test**: an envelope
+whose `sourceMdHash` differs but whose titles match IS served as fresh.
+
+That test documents the known gap and, more usefully, **goes red the day someone makes `isFresh`
+hash-aware** — at which point whoever does it finds this spec's reasoning attached to the failure
+rather than having to rediscover it. A residual with no test is indistinguishable from an oversight.
+
+**Refund survives a settle timeout (round-6 B2).** On the release path, a first settle that times out
+must be retried once. Assert the retry happens *and* that a double failure leaves the charge kept —
+an over-count, the safe direction — rather than silently reporting success.
 
 **Schema.** `scripts/check-schema-gates.sh`, plus a mutation on the constraint: lower the floor back to
 1 and an integration test inserting `lease_ttl_seconds = 30` must stop failing. An unmutated guard is
@@ -541,6 +674,56 @@ is a mechanical act that was skipped.
 **What would have caught it earlier:** drawing the Gantt chart from the await list rather than from the
 design's narrative. The chart in §3.6 now has a bar per enforced term, so a missing term is a visible
 gap rather than a silent omission in an addition.
+
+### 7.4 Round 6: the redesign's second round
+
+`docs/reviews/spec-serve-deadline-codex-v5-r6.md` — NOT CONVERGED, 5 findings, all confirmed, all
+introduced by v5's fixes.
+
+| # | Finding | Disposition |
+|---|---|---|
+| B1 | late-`put` still unbounded — `isFresh` ignores `sourceMdHash` | **Accepted; residual ACCEPTED by decision** — §3.5.1, fix routed to backlog #25 / task #39 |
+| B2 | bounding the settle silently revokes the refund on the release path | **Accepted** — §4.1, one retry, residual stated, "unchanged" claim deleted |
+| H1 | `opts.serve?` repeats the optional-boundary failure | **Accepted** — §3.1, a required-parameter wrapper instead |
+| M1 | reserve timeout leaves an *empty paid lease*, not single-flight | **Accepted** — §3.1, the state is now described exactly |
+| M2 | the `put` abort test cannot be written truthfully | **Accepted** — §5, it asserts the caller's race |
+
+**Four of the five are prose that overstated what the design does.** The design did not change: §2.1's
+concern→mechanism table is byte-identical to v4 and v5. B1 is the only one requiring a decision, and
+the decision was to accept a residual rather than add a mechanism.
+
+**Two findings are the same lesson at different layers, and both are mine.** B1: I checked that
+`sourceMdHash` was *written* and inferred that it was *read*. B2: I checked that the refund *rule* was
+unchanged and inferred that the refund still *happened*. In both cases the artifact existed and the
+consumer did not — and in both cases the refutation was already in the repo, in
+`read-model.ts:20-24` and in `companion.ts:43`.
+
+> **The rule this spec earns:** *a claim about behaviour must cite the code that PERFORMS it, never the
+> code that prepares it.* A written field, a preserved rule, a declared constant — none of them do
+> anything. Cite the reader, the executor, the consumer.
+
+### 7.5 Why Phase 2 rather than a seventh round
+
+Round 6's findings are questions about **what the code does**, asked of a document with no code:
+whether an optional parameter propagates, whether a test can be written truthfully, what a timeout does
+to one specific RPC. Review answers those by argument; the compiler and the suite answer them by
+execution, immediately and without a round trip.
+
+The evidence that the *shape* has converged, which is the thing spec review is actually for:
+
+| | rounds 1–3 | rounds 5–6 |
+|---|---|---|
+| findings asking for a **new mechanism** | 6 | **0** |
+| changes to §2.1's concern→mechanism table | rewritten each round | **none since v4** |
+| findings that are prose vs. design | mixed | 4 of 5 prose |
+
+**This is not skipping a gate.** `dev-process.md:82` — Phase 2 plans carry their own dual adversarial
+review to convergence. The artifact under review changes from prose to enumerated behaviours and named
+tests, which is a strictly harder thing to be wrong in: H1's failure mode (the option not passed) is a
+compile error there, and M2's (an unwritable test) is discovered by trying to write it.
+
+**The honest risk:** B1 was a design-level defect found in round 6, so spec review had not stopped
+paying entirely. It was found by *reading code* — which is what a plan does more of than a review does.
 
 ## 8. Out of scope
 
