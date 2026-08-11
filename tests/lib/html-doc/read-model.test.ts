@@ -32,6 +32,20 @@ describe('isFresh', () => {
   it('false when generatorVersion differs', () => {
     expect(isFresh(envelope({ generatorVersion: 'old' }), titles)).toBe(false);
   });
+
+  // KNOWN GAP, accepted in the serve-bounding spec §3.5.1 (#46).
+  it('treats an envelope with a STALE sourceMdHash as fresh when titles match', () => {
+    // The accepted residual: writeModelEnvelopeWithin bounds our WAIT, not the upload, so a put
+    // that timed out can still land later and overwrite a newer model — and it is then served
+    // indefinitely whenever the section titles did not change (the common case for a prose-only
+    // edit). The fix is content addressing (backlog #25), NOT a change here.
+    //
+    // Note what is being pinned: the hash is the ONLY difference from the passing case above.
+    //
+    // WHEN THIS GOES RED: someone made isFresh hash-aware. That is a MONEY decision — prose-only
+    // edits would then force paid regeneration — so read §3.5.1 before deleting this test.
+    expect(isFresh(envelope({ sourceMdHash: 'hash-of-OLD-markdown' }), titles)).toBe(true);
+  });
 });
 
 describe('readFreshMagazineModel', () => {
