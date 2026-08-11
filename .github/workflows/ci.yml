@@ -69,3 +69,15 @@ jobs:
       # STORAGE_BACKEND branch. Criteria: docs/reviews/architecture-findings-acceptance.md
       - name: Architecture findings ratchet
         run: python3 scripts/check-arch-findings.py
+
+      # Ratchet on gate items that never say what would FAIL them.
+      #
+      # M1.4's B5 asked a STATIC script to "pass against the real deployed environment" — it has no
+      # env, no fetch, no network, so it emitted identical output everywhere and could only ever
+      # pass. A guard that passes in both worlds, except the guard was a SENTENCE, which is why
+      # every other instrument here missed it: they all inspect code, none inspects a gate.
+      #
+      # Ratchet, not a hard gate: 13 existing items lack a `FAILS IF:` clause and a big-bang
+      # failure would just get switched off. This stops the NEXT one.
+      - name: Gate falsifiability ratchet
+        run: python3 scripts/check-gate-falsifiability.py
