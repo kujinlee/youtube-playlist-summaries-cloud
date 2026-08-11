@@ -31,12 +31,15 @@ jest.mock('@/lib/gemini', () => {
   return {
     generateMagazineModel,
     // Delegates, so existing assertions on generateMagazineModel — including
-    // mockImplementationOnce overrides — still fire.
+    // mockImplementationOnce overrides — still fire. The BUDGET argument is deliberately kept
+    // (not swallowed by the delegate) so the test below can assert its VALUE — see the comment
+    // on that test for why the required-parameter type is not enough.
     generateMagazineModelForServe: jest.fn((sections: unknown, language: unknown, _budget: unknown, opts: unknown) =>
       (generateMagazineModel as unknown as (a: unknown, b: unknown, c: unknown) => unknown)(sections, language, opts)),
   };
 });
 import { generateMagazineModel, generateMagazineModelForServe } from '@/lib/gemini';
+import { SERVE_BUDGET } from '@/lib/serve-budget';
 
 const principal: Principal = { id: 'u1', indexKey: 'pk1' };
 const parsed = (): ParsedSummary => ({
@@ -173,6 +176,28 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
   });
   afterEach(() => { errorLog.mockRestore(); warnLog.mockRestore(); });
 
+  // ── H1 (round-1 review). THE ASSERTION THIS WHOLE BRANCH RESTS ON. ──────────────────────────
+  // MEASURED before this test existed: replacing SERVE_BUDGET at serve-doc.ts with
+  // `{ attempts: 3, attemptTimeoutMs: 60_000, countTokensTimeoutMs: 10_000 }` — the exact pre-fix
+  // configuration this branch exists to remove — left `tsc --noEmit` at exit 0, 1786 unit tests
+  // green and 59 integration tests green. The 6¢→12¢ double charge was silently restored and every
+  // gate stayed green.
+  //
+  // The required positional parameter defends against OMISSION; the type is `ServeBudget`, and any
+  // object literal of that shape satisfies it. Nothing defended against a WRONG VALUE, because the
+  // wrapper's own tests call it directly with SERVE_BUDGET and every serve-doc test mocks
+  // `@/lib/gemini` with a delegate that discards argument 3.
+  //
+  // Mutation-testing the wrapper proved the mechanism is load-bearing. It could never prove the
+  // call site uses it.
+  it('hands the serve wrapper SERVE_BUDGET itself — not merely some object of that shape', async () => {
+    const client = scriptedSupabase((fn) =>
+      (fn === 'reserve_serve_model' ? reserved() : fakeRpcBuilder({ data: true, error: null })));
+    await resolveMagazineModel(baseArgs(client, fakeBlobStore([null])));
+    const budgetArg = (generateMagazineModelForServe as jest.Mock).mock.calls[0][2];
+    expect(budgetArg).toEqual(SERVE_BUDGET);
+  });
+
   it('a reserve TIMEOUT returns busy and makes no Gemini call', async () => {
     const client = scriptedSupabase(() => hangs());
     const res = await resolveMagazineModel(baseArgs(client, fakeBlobStore([null])));
@@ -201,6 +226,44 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
     process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';   // else releaseGateOpen() is false
     await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
     expect(settles).toBe(2);
+  });
+
+  // ── H3 (round-1 review). A settle the DATABASE REFUSED is not a settle. ────────────────────
+  // settle_serve_model `returns boolean` and answers false for a no-op — `if not found then return
+  // false` (0020_reservation_release.sql:280) — when the token is stale, duplicated, forged, or the
+  // lease was reclaimed mid-attempt. callRpcBounded's `ok` means the ROUND TRIP succeeded, so
+  // `{ ok: true, data: false }` was being read as settled: the refund silently never applied, the
+  // retry that exists for this case never fired, and nothing was logged anywhere.
+  it('treats a DB-refused settle (data:false) as NOT settled, and says so', async () => {
+    const client = scriptedSupabase((fn) =>
+      (fn === 'reserve_serve_model' ? reserved() : fakeRpcBuilder({ data: false, error: null })));
+    (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+      throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+    });
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
+    // The money signal: a refund that did not apply must be loud, not inferred from silence.
+    expect(errorLog).toHaveBeenCalledWith(
+      '[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation',
+    );
+    expect(warnLog.mock.calls.map((c) => String(c[0])).join('\n')).toContain('REFUSED by the database');
+  });
+
+  it('does NOT spend the retry on a deterministic refusal — only on a transport failure', async () => {
+    // The retry is budgeted for a timed-out round trip. A stale token will not become valid on a
+    // second try, so retrying it burns 5s of a lease-bounded budget to get the same answer.
+    let settles = 0;
+    const client = scriptedSupabase((fn) => {
+      if (fn === 'reserve_serve_model') return reserved();
+      settles++;
+      return fakeRpcBuilder({ data: false, error: null });
+    });
+    (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+      throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+    });
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
+    expect(settles).toBe(1);
   });
 
   it('does NOT retry the settle on the kept path', async () => {

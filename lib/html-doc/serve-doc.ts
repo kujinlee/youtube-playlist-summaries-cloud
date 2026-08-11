@@ -10,6 +10,7 @@ import { generateMagazineModelForServe } from '@/lib/gemini';
 import { callRpcBounded } from '@/lib/serve-rpc';
 import {
   SERVE_BUDGET, SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
+  SERVE_SETTLE_ATTEMPTS,
 } from '@/lib/serve-budget';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 import { classifyGeminiFailure, releaseGateOpen } from '@/lib/gemini-failure';
@@ -138,14 +139,23 @@ export async function resolveMagazineModel(args: {
       // Hash the MD BODY, not the key — see the `mdBody` param doc above (§4.2).
       ...(mdBody !== undefined ? { sourceMdHash: mdHash(mdBody) } : {}),
     }, blobStore);
-    if (releaseToken) await settleBounded(supabaseClient, releaseToken, false);
+    // A lost KEEP is benign — the charge is already correct and only a per-attempt token is left
+    // behind — but it is still an infrastructure signal worth seeing.
+    if (releaseToken && !await settleBounded(supabaseClient, releaseToken, false)) {
+      console.warn('[serve-model] keep-settle did not apply; the charge stands, the token was not cleared');
+    }
     return { status: 'ok', model };
   } catch (err) {
     // Same rule as generation: refund only a positively-not-metered class-A failure.
     const released = releaseGateOpen()
       && classifyGeminiFailure(err, signal) === 'release'
       && !billing.metered;
-    if (releaseToken) await settleBounded(supabaseClient, releaseToken, released);
+    // A lost REFUND is money: the owner was charged 6¢ for work that failed and the ledger still
+    // holds it. Distinguish it from a lost keep AT THE POINT WHERE THE DISTINCTION HAS A COST, or
+    // the refund mechanism can stop working in production and emit nothing at all.
+    if (releaseToken && !await settleBounded(supabaseClient, releaseToken, released) && released) {
+      console.error('[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation');
+    }
     throw err;
   }
 }
@@ -165,15 +175,33 @@ async function settleBounded(
   supabaseClient: SupabaseClient, token: string, released: boolean,
 ): Promise<boolean> {
   // An unapplied REFUND is real money left on the ledger; a lost KEEP is already correct.
-  const attempts = released ? 2 : 1;
+  const attempts = released ? SERVE_SETTLE_ATTEMPTS : 1;
   for (let i = 0; i < attempts; i++) {
-    const out = await callRpcBounded(
+    // `boolean | null`, not `boolean`: postgrest types data as null on its failure branch, and
+    // asserting a non-null the client never promises is the same absent-vs-failed conflation this
+    // function exists to remove — one level up, in the types. Hence the explicit `=== true` below.
+    const out = await callRpcBounded<boolean | null>(
       (abortSignal) => supabaseClient
         .rpc('settle_serve_model', { p_token: token, p_released: released })
         .abortSignal(abortSignal),
       SERVE_SETTLE_RPC_TIMEOUT_MS, `settle_serve_model(released=${released})`,
     );
-    if (out.ok) return true;
+    if (out.ok) {
+      // `ok` means the ROUND TRIP succeeded, not that the settle happened. settle_serve_model
+      // `returns boolean` and answers `false` for a no-op — `if not found then return false`
+      // (0020_reservation_release.sql:280) — when the token is stale, duplicated, forged, or the
+      // lease was reclaimed while this attempt was still running. Reading that as settled is the
+      // absent-vs-failed conflation this project keeps paying for, landing on the refund path.
+      if (out.data === true) return true;
+      // Deterministic refusal: the token will not become valid on a second try, so do NOT spend the
+      // retry (it is budgeted for a transport failure). Fail loudly instead — a refund mechanism
+      // that stops working must never do so silently.
+      console.warn(
+        `[serve-model] settle(released=${released}) REFUSED by the database — token stale, `
+        + 'duplicated, or the lease was reclaimed; nothing was settled',
+      );
+      return false;
+    }
     console.warn(`[serve-model] settle attempt ${i + 1}/${attempts} failed: ${out.reason}`);
   }
   return false;   // caller must NOT claim a refund it could not apply

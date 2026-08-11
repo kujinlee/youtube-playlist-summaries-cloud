@@ -70,10 +70,24 @@ export async function writeModelEnvelopeWithin(
   blobStore: BlobStore = localBlobStore,
 ): Promise<void> {
   const bytes = serialize(envelope);          // validates first — fail loud before any write
+  const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expiry = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(
-      () => reject(new DOMException(`model put exceeded ${timeoutMs}ms`, 'TimeoutError')),
+      () => {
+        // THE DETECTION THE RESIDUAL WAS TRADED FOR. Spec §3.5.1 accepts the late-write clobber
+        // only because "a `put` timeout is logged with elapsed time and the target key, so the
+        // window in which this is possible is visible in production rather than inferred. If those
+        // logs ever appear, that is the trigger to promote the addressing work rather than to tune
+        // PUT_TIMEOUT_MS." Without this line the residual is not accepted-and-observable, it is
+        // merely accepted — and `isFresh` ignores sourceMdHash, so a clobbered model is served
+        // indefinitely whenever the section titles are unchanged.
+        console.warn(
+          `[model-store] put exceeded ${timeoutMs}ms (elapsed ${Date.now() - startedAt}ms) for `
+          + `${MODEL_KEY(base)} — a late write may clobber a newer model (spec §3.5.1)`,
+        );
+        reject(new DOMException(`model put exceeded ${timeoutMs}ms`, 'TimeoutError'));
+      },
       timeoutMs,
     );
   });

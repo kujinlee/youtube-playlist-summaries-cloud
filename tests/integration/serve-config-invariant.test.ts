@@ -170,9 +170,24 @@ it('accepts exactly the floor, then restores whatever was there', async () => {
 
 // A migration literal cannot import a TypeScript constant, so this is the ONLY thing between a
 // tuned constant and a floor that no longer covers the work.
-it('the migration literal equals SERVE_FLOOR_SECONDS', () => {
+//
+// It pins EVERY floor literal in the file, not just the CHECK (round-1 review M2). 0024 carries
+// three: the fix-up's `set`, the fix-up's `where`, and the constraint. Pinning only the constraint
+// meant a retune could raise SERVE_MARGIN_MS, see one failing test, edit the one line it pointed at,
+// and ship a migration whose fix-up still repairs rows to the OLD floor — leaving any database
+// between the two values unrunnable, because ADD CONSTRAINT validates existing rows. That is
+// precisely the deploy-blocker this branch already hit once, reintroduced one retune later.
+it('EVERY floor literal in the migration equals SERVE_FLOOR_SECONDS', () => {
   const sql = readFileSync('supabase/migrations/0024_lease_covers_serve.sql', 'utf-8');
-  const m = sql.match(/lease_ttl_seconds\s*>=\s*(\d+)\s*\)/);
-  expect(m).not.toBeNull();
-  expect(Number(m![1])).toBe(SERVE_FLOOR_SECONDS);
+  const literals = [
+    ...[...sql.matchAll(/set\s+lease_ttl_seconds\s*=\s*(\d+)/g)].map((m) => ['set', m[1]] as const),
+    ...[...sql.matchAll(/lease_ttl_seconds\s*<\s*(\d+)/g)].map((m) => ['where', m[1]] as const),
+    ...[...sql.matchAll(/lease_ttl_seconds\s*>=\s*(\d+)\s*\)/g)].map((m) => ['check', m[1]] as const),
+  ];
+  // Assert the POPULATION as well as the values: if a future edit deletes the fix-up, this test
+  // must fail rather than quietly pin fewer literals than the file has.
+  expect(literals.map(([where]) => where).sort()).toEqual(['check', 'set', 'where']);
+  for (const [where, value] of literals) {
+    expect({ where, value: Number(value) }).toEqual({ where, value: SERVE_FLOOR_SECONDS });
+  }
 });

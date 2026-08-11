@@ -47,6 +47,24 @@ export const SERVE_PUT_TIMEOUT_MS = 15_000;
 export const SERVE_SETTLE_RPC_TIMEOUT_MS = 5_000;
 
 /**
+ * Settle attempts the sum must pay for. The REFUND path retries once
+ * (`serve-doc.ts` `settleBounded`: `attempts = released ? 2 : 1`), because an unapplied refund is
+ * real money left on the ledger while a lost keep is already correct.
+ *
+ * WHY THE SUM PAYS FOR THE WORST CASE RATHER THAN THE COMMON ONE (round-1 review M1/C-1).
+ * The two settle counts sit on mutually exclusive paths — a refund means the generation failed, so
+ * the 15s put never ran — and for a while this sum counted the settle ONCE and stayed correct by
+ * that coincidence. It was correct for a reason written down nowhere, resting on `released`
+ * requiring `!billing.metered` (`gemini.ts:274` latches the instant the response body arrives) and
+ * on `classifyGeminiFailure` mapping timeouts to 'keep'. Add one refundable POST-meter failure class
+ * and the sum silently under-counts, with no test to say so.
+ *
+ * A bound that holds by coincidence is not a bound. Paying for both settles unconditionally costs
+ * 5s of headroom and removes the coupling entirely.
+ */
+export const SERVE_SETTLE_ATTEMPTS = 2;
+
+/**
  * ASSUMPTION, NOT A BOUND. ~15% of the bounded budget, for unmodelled local work.
  * REVISE UPWARD on any observed lease expiry the bounded terms above cannot explain.
  */
@@ -59,7 +77,7 @@ export const SERVE_BOUNDED_MS =
   + SERVE_ATTEMPTS * SERVE_ATTEMPT_TIMEOUT_MS
   + SERVE_BACKOFF_TOTAL_MS
   + SERVE_PUT_TIMEOUT_MS
-  + SERVE_SETTLE_RPC_TIMEOUT_MS;
+  + SERVE_SETTLE_ATTEMPTS * SERVE_SETTLE_RPC_TIMEOUT_MS;
 
 /** Enforced work plus the unbounded-work assumption. This is what the lease must cover. */
 export const SERVE_FLOOR_MS = SERVE_BOUNDED_MS + SERVE_MARGIN_MS;

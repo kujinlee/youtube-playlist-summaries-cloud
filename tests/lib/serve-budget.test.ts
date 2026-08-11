@@ -1,6 +1,7 @@
 import {
   SERVE_RESERVE_RPC_TIMEOUT_MS, SERVE_COUNT_TOKENS_TIMEOUT_MS, SERVE_ATTEMPT_TIMEOUT_MS,
   SERVE_ATTEMPTS, SERVE_BACKOFF_TOTAL_MS, SERVE_PUT_TIMEOUT_MS, SERVE_SETTLE_RPC_TIMEOUT_MS,
+  SERVE_SETTLE_ATTEMPTS,
   SERVE_MARGIN_MS, SERVE_BOUNDED_MS, SERVE_FLOOR_MS, SERVE_FLOOR_SECONDS, SERVE_BUDGET,
 } from '@/lib/serve-budget';
 
@@ -17,8 +18,28 @@ describe('serve budget', () => {
       + SERVE_ATTEMPTS * SERVE_ATTEMPT_TIMEOUT_MS
       + SERVE_BACKOFF_TOTAL_MS
       + SERVE_PUT_TIMEOUT_MS
-      + SERVE_SETTLE_RPC_TIMEOUT_MS,
+      + SERVE_SETTLE_ATTEMPTS * SERVE_SETTLE_RPC_TIMEOUT_MS,
     );
+  });
+
+  // Round-1 review M1/C-1. The sum previously counted the settle ONCE while the refund path runs it
+  // twice, and stayed correct only because a refund implies the generation failed, so the 15s put
+  // never ran. That coupling was written down nowhere and one new refundable post-meter failure
+  // class would have broken it silently. Assert BOTH terminal paths independently, so neither can
+  // rely on the other's spend.
+  it('BOTH terminal paths fit inside the enforced sum, independently', () => {
+    const upToGeneration =
+      SERVE_RESERVE_RPC_TIMEOUT_MS + SERVE_COUNT_TOKENS_TIMEOUT_MS
+      + SERVE_ATTEMPTS * SERVE_ATTEMPT_TIMEOUT_MS + SERVE_BACKOFF_TOTAL_MS;
+    // keep: the put runs, the settle runs once (released=false).
+    expect(upToGeneration + SERVE_PUT_TIMEOUT_MS + SERVE_SETTLE_RPC_TIMEOUT_MS)
+      .toBeLessThanOrEqual(SERVE_BOUNDED_MS);
+    // refund: no put, and the settle retries.
+    expect(upToGeneration + SERVE_SETTLE_ATTEMPTS * SERVE_SETTLE_RPC_TIMEOUT_MS)
+      .toBeLessThanOrEqual(SERVE_BOUNDED_MS);
+    // and the pathological case the old sum could NOT have absorbed: a put that ran AND a refund.
+    expect(upToGeneration + SERVE_PUT_TIMEOUT_MS + SERVE_SETTLE_ATTEMPTS * SERVE_SETTLE_RPC_TIMEOUT_MS)
+      .toBeLessThanOrEqual(SERVE_BOUNDED_MS);
   });
 
   it('the floor adds the unbounded-work margin on top of the enforced sum', () => {

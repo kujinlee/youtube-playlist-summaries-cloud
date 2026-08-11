@@ -110,10 +110,30 @@ describe('writeModelEnvelopeWithin', () => {
     Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put }) as typeof localBlobStore;
 
   it('rejects with TimeoutError when the put exceeds the budget', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const hanging = storeWith(() => new Promise<void>(() => {}));
     await expect(
       writeModelEnvelopeWithin(20, principal, BASE, ENVELOPE, hanging),
     ).rejects.toMatchObject({ name: 'TimeoutError' });   // identity, not "any error"
+    warn.mockRestore();
+  });
+
+  // Round-1 review H2. Spec §3.5.1 accepts the late-write clobber ONLY because the timeout is
+  // "logged with elapsed time and the target key, so the window in which this is possible is
+  // visible in production rather than inferred. If those logs ever appear, that is the trigger to
+  // promote the addressing work." The first implementation logged nothing, so the residual was
+  // accepted in exchange for a detection mechanism that did not exist — and `isFresh` ignores
+  // sourceMdHash, so a clobbered model is served indefinitely when titles are unchanged.
+  it('LOGS the timeout with elapsed time and the target key — the residual was traded for this', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const hanging = storeWith(() => new Promise<void>(() => {}));
+    await expect(
+      writeModelEnvelopeWithin(20, principal, BASE, ENVELOPE, hanging),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
+    warn.mockRestore();
+    expect(logged).toContain('models/a-title.json');   // the target key, so the doc is identifiable
+    expect(logged).toMatch(/elapsed \d+ms/);           // elapsed time, so the window is measurable
   });
 
   it('resolves normally when the put completes within the budget', async () => {
