@@ -12,6 +12,7 @@ Detail lives in four places, each with a different read-trigger:
 | [`docs/review-method.md`](review-method.md) | a review round is starting — adversarial review, convergence, the classification passes |
 | [`docs/process-rationale.md`](process-rationale.md) | a rule here looks arbitrary, expensive or wrong |
 | [`docs/plugins.md`](plugins.md) | choosing a skill, or a tool gate misbehaves |
+| [`docs/portable-practices.md`](portable-practices.md) | **starting a NEW project** — the measured, project-independent subset of everything here |
 
 ---
 
