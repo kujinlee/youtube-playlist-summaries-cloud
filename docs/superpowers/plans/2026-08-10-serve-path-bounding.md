@@ -563,7 +563,8 @@ it('validates the envelope BEFORE writing', async () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest model-store -v`
+Run: `npx jest tests/lib/html-doc/model-store -v`  ← the bare pattern `model-store` also
+matches `tests/lib/model-store-cloud.test.ts`
 Expected: FAIL — `writeModelEnvelopeWithin is not a function`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -608,7 +609,7 @@ export async function writeModelEnvelopeWithin(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `npx jest model-store -v`
+Run: `npx jest tests/lib/html-doc/model-store -v`
 Expected: PASS (3 new + existing).
 
 - [ ] **Step 5: Commit**
@@ -1219,7 +1220,10 @@ same fact per request. The old floor was >= 1."
 ### Task 8: Pin the accepted residual
 
 **Files:**
-- Create: `tests/lib/html-doc/read-model.test.ts` (if absent — check first)
+- **Modify** (NOT create): `tests/lib/html-doc/read-model.test.ts` — `[VERIFIED: it exists]`, with a
+  `describe('isFresh')` at `:25` already covering *true when titles+version match*, *false when a
+  title differs*, and *false when generatorVersion differs*. `[VERIFIED: grep]` it has **zero**
+  `sourceMdHash` coverage.
 
 **Interfaces:** consumes nothing; produces nothing. A characterisation test only.
 
@@ -1229,12 +1233,15 @@ because `isFresh` (`lib/html-doc/read-model.ts:20-24`) compares titles and `gene
 
 - [ ] **Step 1: Write the characterisation test**
 
-```ts
-// tests/lib/html-doc/read-model.test.ts
-import { isFresh } from '@/lib/html-doc/read-model';
-import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
+**Add ONE case to the existing `describe('isFresh')` block.** Two of the three cases an earlier
+draft of this task listed — title drift and version bump — are already at `:29` and `:32`; writing
+them again would be duplicate coverage that looks like new coverage.
 
-describe('isFresh — KNOWN GAP, accepted in the serve-bounding spec §3.5.1', () => {
+```ts
+// tests/lib/html-doc/read-model.test.ts — ADD to the existing describe('isFresh') at :25.
+// GENERATOR_VERSION is already imported by this file; do not import it twice.
+
+  // KNOWN GAP, accepted in the serve-bounding spec §3.5.1.
   it('treats an envelope with a STALE sourceMdHash as fresh when titles match', () => {
     const stale = {
       sourceSections: ['A', 'B'],
@@ -1249,17 +1256,9 @@ describe('isFresh — KNOWN GAP, accepted in the serve-bounding spec §3.5.1', (
     // edits would then force paid regeneration), so read the spec's §3.5.1 before deleting it.
     expect(isFresh(stale, ['A', 'B'])).toBe(true);
   });
-
-  it('detects drift when a title changes', () => {
-    expect(isFresh({ sourceSections: ['A', 'B'], generatorVersion: GENERATOR_VERSION },
-      ['A', 'CHANGED'])).toBe(false);
-  });
-
-  it('detects a generator-version bump', () => {
-    expect(isFresh({ sourceSections: ['A'], generatorVersion: 'v-old' }, ['A'])).toBe(false);
-  });
-});
 ```
+
+Do **not** add title-drift or version-bump cases — `:29` and `:32` already assert both.
 
 - [ ] **Step 2: Run the test**
 
