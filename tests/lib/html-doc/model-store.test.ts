@@ -2,9 +2,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
-import { writeModelEnvelope, readModelEnvelope, type ModelEnvelope } from '../../../lib/html-doc/model-store';
+import { writeModelEnvelope, writeModelEnvelopeWithin, readModelEnvelope, type ModelEnvelope } from '../../../lib/html-doc/model-store';
 import { localPrincipal, type Principal } from '@/lib/storage/principal';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import type { BlobStore } from '@/lib/storage/blob-store';
 
 let dir: string;
 let principal: Principal;
@@ -100,5 +101,32 @@ describe('model-store', () => {
     const result = await readModelEnvelope(principal, BASE, fakeBlobStore);
     expect(fakeGet).toHaveBeenCalledWith(localPrincipal(dir), 'models/a-title.json');
     expect(result).toEqual(ENVELOPE);
+  });
+});
+
+describe('writeModelEnvelopeWithin', () => {
+  /** Same construction as the fakeBlobStore above — preserves localBlobStore's prototype. */
+  const storeWith = (put: BlobStore['put']) =>
+    Object.assign(Object.create(Object.getPrototypeOf(localBlobStore)), localBlobStore, { put }) as typeof localBlobStore;
+
+  it('rejects with TimeoutError when the put exceeds the budget', async () => {
+    const hanging = storeWith(() => new Promise<void>(() => {}));
+    await expect(
+      writeModelEnvelopeWithin(20, principal, BASE, ENVELOPE, hanging),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });   // identity, not "any error"
+  });
+
+  it('resolves normally when the put completes within the budget', async () => {
+    const put = jest.fn(async () => {});
+    await writeModelEnvelopeWithin(5_000, principal, BASE, ENVELOPE, storeWith(put));
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates the envelope BEFORE writing', async () => {
+    const put = jest.fn(async () => {});
+    await expect(
+      writeModelEnvelopeWithin(5_000, principal, BASE, { ...ENVELOPE, sourceMd: '' } as never, storeWith(put)),
+    ).rejects.toThrow();
+    expect(put).not.toHaveBeenCalled();   // fail loud before any write, as writeModelEnvelope does
   });
 });

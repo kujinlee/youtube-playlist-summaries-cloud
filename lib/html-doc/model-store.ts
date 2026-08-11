@@ -51,6 +51,42 @@ export async function writeModelEnvelope(
   await blobStore.put(principal, MODEL_KEY(base), serialize(envelope), 'application/json');
 }
 
+/**
+ * writeModelEnvelope with a bounded WAIT.
+ *
+ * This does NOT cancel the upload — SupabaseBlobStore.put maps to Storage `upload(upsert:true)`
+ * and takes no signal (`lib/storage/supabase/supabase-blob-store.ts:22-24`). A put that times out
+ * here may still land later and overwrite a newer model. That residual is ACCEPTED and its fix
+ * belongs to the render-addressing slice (backlog #25). See the spec §3.5.1.
+ *
+ * `timeoutMs` is REQUIRED: an optional one would let the serve caller silently restore the
+ * unbounded await this exists to remove.
+ */
+export async function writeModelEnvelopeWithin(
+  timeoutMs: number,
+  principal: Principal,
+  base: string,
+  envelope: ModelEnvelope,
+  blobStore: BlobStore = localBlobStore,
+): Promise<void> {
+  const bytes = serialize(envelope);          // validates first — fail loud before any write
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new DOMException(`model put exceeded ${timeoutMs}ms`, 'TimeoutError')),
+      timeoutMs,
+    );
+  });
+  try {
+    await Promise.race([
+      blobStore.put(principal, MODEL_KEY(base), bytes, 'application/json'),
+      expiry,
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);           // else the timer holds the event loop open
+  }
+}
+
 /** Read + validate. Returns null if absent, unparseable, or schema-invalid. */
 export async function readModelEnvelope(
   principal: Principal,
