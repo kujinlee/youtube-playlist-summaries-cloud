@@ -1,5 +1,32 @@
 # Serve-Path Bounding Implementation Plan
 
+> ## STATUS 2026-08-10 — ALL 8 TASKS IMPLEMENTED. Open gate: whole-branch dual review.
+>
+> Commits `5124986` → `fee9add` on `fix/serve-path-deadline` (unpushed). `tsc --noEmit` clean;
+> 262 unit suites / 2638 tests; full integration 66 suites / 482 tests, green **twice back-to-back
+> with no reset**. Every guard mutation-checked. The money pin
+> (`serve-doc-materialize.test.ts` 429-refund, against a real DB) passes with **zero** edits to its
+> assertions.
+>
+> **Three things execution found that nine plan-review rounds did not**, recorded here because the
+> pattern is the point — each was invisible to reading and immediate to running:
+>
+> 1. **Task 6 — the plan named 2 files that mock `@/lib/gemini`; there are 4.** Both citations were
+>    accurate; the *enumeration* behind them was not, and a per-file `[VERIFIED]` tag cannot say so.
+>    Found by running the FULL integration suite instead of the named pattern.
+>    `grep -rln "jest.mock('@/lib/gemini'" tests/` would have found it in any of the nine rounds.
+> 2. **Task 7 — migration 0024 had no data fix-up.** `ADD CONSTRAINT` validates existing rows, so it
+>    was unrunnable against any database ever tuned below the new floor. A deploy-blocker.
+> 3. **Task 3 — the plan's own test laundered its assertion.** `expect(o.timeout).toBe(60_000)`
+>    inside the `generateContent` mock runs inside `generateJson`'s retry loop, which catches
+>    everything; the failure is swallowed, retried, re-wrapped, and accepted by the outer
+>    `rejects.toThrow()`. It would have gone GREEN on the regression it exists to catch.
+>
+> **Known red, NOT this branch:** `scripts/check-schema-gates.sh` exits 1 on guard-coverage /
+> sentinel-meanings / vocabulary-collisions. Every finding names `video_artifacts` or
+> `video_generations` — ADR-0007 blob-addressing residue. Verified identical on a clean `master`
+> worktree, and identical with and without 0024.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Bound every call the serve path makes while holding a paid `serve_model_charge` lease, and stop the lease from being configured shorter than that bounded work.
