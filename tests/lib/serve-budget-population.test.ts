@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import * as BUDGET from '@/lib/serve-budget';
 
 // ── H-R6-1. THE SET WAS CLOSED; THE CLOSURE WAS NOT ENFORCED. ────────────────────────────────────
 //
@@ -145,6 +146,43 @@ describe('the population of lease-spent budgets is CLOSED, and closure is enforc
     expect(unaccounted).toEqual([]);
   });
 
+  // ── APPEARING IN THE SUM IS NOT CONTRIBUTING TO IT (round-7 review). ────────────────────────
+  // MEASURED: `+ SERVE_EXTRA_TIMEOUT_MS * 0` satisfies the text rule above while adding nothing to
+  // the floor — a branded budget can be "accounted for" and still spend lease time the CHECK does
+  // not permit. The text rules answer "is it mentioned?"; only arithmetic answers "does it count?".
+  //
+  // So the sum is recomputed here from an INDEPENDENT table of terms and multiplicities. Two
+  // statements of one relationship, and any drift between them fails: a zero coefficient in the
+  // source no longer matches a table entry that says the term is spent once, and a new constant has
+  // to be added HERE as well, with an explicit multiplicity someone had to think about.
+  const EXPECTED_TERMS: Array<{ name: keyof typeof BUDGET; times: number; why: string }> = [
+    { name: 'SERVE_RESERVE_RPC_TIMEOUT_MS', times: 1, why: 'one reserve round trip' },
+    { name: 'SERVE_COUNT_TOKENS_TIMEOUT_MS', times: 1, why: 'one preflight' },
+    { name: 'SERVE_ATTEMPT_TIMEOUT_MS', times: BUDGET.SERVE_ATTEMPTS, why: 'one per generation attempt' },
+    { name: 'SERVE_PUT_TIMEOUT_MS', times: 1, why: 'one model upload' },
+    { name: 'SERVE_SETTLE_RPC_TIMEOUT_MS', times: BUDGET.SERVE_SETTLE_ATTEMPTS, why: 'the refund retries' },
+  ];
+
+  it('every term CONTRIBUTES: the sum recomputes exactly, with no zero coefficients', () => {
+    for (const { name, times, why } of EXPECTED_TERMS) {
+      // A term spent zero times is not a term; it is a name in an expression.
+      expect({ name, why, positive: times >= 1 }).toEqual({ name, why, positive: true });
+    }
+    const recomputed = EXPECTED_TERMS
+      .reduce((total, { name, times }) => total + (BUDGET[name] as number) * times, 0)
+      + BUDGET.SERVE_BACKOFF_TOTAL_MS;
+    expect(BUDGET.SERVE_BOUNDED_MS).toBe(recomputed);
+  });
+
+  it('the term table covers every branded budget — neither list may drift from the other', () => {
+    const inTable = new Set<string>(EXPECTED_TERMS.map((t) => t.name as string));
+    // The multipliers and the backoff base are branded too, and are spent THROUGH the terms above.
+    const spentAsMultipliers = ['SERVE_ATTEMPTS', 'SERVE_SETTLE_ATTEMPTS', 'SERVE_BACKOFF_BASE_MS'];
+    const missing = brandedExports(code)
+      .filter((name) => !inTable.has(name) && !spentAsMultipliers.includes(name));
+    expect(missing).toEqual([]);
+  });
+
   it('the CARRIER cannot smuggle a value across the boundary — every ServeBudget field is a branded scalar', () => {
     // ServeBudget is the one thing that crosses into lib/gemini.ts, so a field of it that is not one
     // of the accounted scalars would be a duration spent inside the lease and summed nowhere —
@@ -155,6 +193,26 @@ describe('the population of lease-spent budgets is CLOSED, and closure is enforc
     expect(assigned.length).toBeGreaterThanOrEqual(4);       // not passing vacuously
     const accounted = new Set(brandedExports(code));
     expect(assigned.filter((name) => !accounted.has(name))).toEqual([]);
+  });
+
+  // ── A DOCUMENTED WAIVER IS NOT A GUARD (round-7 review, Medium). ───────────────────────────
+  // MEASURED: a plain `export const SERVE_EXTRA_TIMEOUT_MS = 30_000;` plus one line in the map below
+  // passed every rule — the map is trusted, so it can waive a value that IS spent inside the lease.
+  // Close it where it can be checked rather than asserted: whatever lease-held code IMPORTS from
+  // this module must be branded, so an unbranded constant cannot reach a bounded call however well
+  // documented it is.
+  it('lease-held code imports only BRANDED budgets (a waiver cannot smuggle a plain number in)', () => {
+    const serveDoc = codeOnly(readFileSync(join(LIB, 'html-doc/serve-doc.ts'), 'utf-8'));
+    const importBlocks = [...serveDoc.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*'@\/lib\/serve-budget'/g)]
+      .map((m) => m[1]);
+    expect(importBlocks.length).toBeGreaterThan(0);          // not passing vacuously
+    const imported = importBlocks
+      .flatMap((block) => block.split(',').map((n) => n.trim()))
+      .filter((n) => /^[A-Z][A-Z0-9_]*$/.test(n));           // value imports only, not types
+    expect(imported.length).toBeGreaterThan(0);
+    const branded = new Set(brandedExports(code));
+    const plain = imported.filter((n) => n !== 'SERVE_BUDGET' && !branded.has(n));
+    expect(plain).toEqual([]);
   });
 
   it('every UNBRANDED export is unbranded ON PURPOSE, with the reason written down', () => {
