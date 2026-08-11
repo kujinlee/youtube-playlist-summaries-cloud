@@ -57,19 +57,23 @@
  * constant appears at exactly one site — and both values are 5_000 today, so there is no live
  * consequence. Closing it by type would mean two thin per-site wrappers; that is a mechanism for a
  * case an existing instrument already covers, so it is deliberately not built. The division of
- * labour, stated exactly — three earlier versions of this sentence overclaimed and were each
- * falsified by a reviewer, so it is now written against what has been MEASURED:
+ * labour, stated exactly — FIVE earlier versions of this sentence overclaimed and were each
+ * falsified by a reviewer, so it is written against what has been MEASURED and nothing else. If you
+ * are about to widen a clause here, measure it first.
  *
  *   TYPES              literals · arithmetic · object literals · Number()/Math.min() laundering ·
  *                      assignment to a readonly field · spread-replacement · a swap between budgets
- *                      with DIFFERENT brands (including the two attempt counts, separated in r6)
+ *                      with DIFFERENT brands, including the two attempt counts
  *   THE IMPORT GUARD   the reserve/settle RPC swap — those two share `callRpcBounded` and so share a
- *                      union type · Object.assign replacement, which TypeScript permits ·
- *                      literal durations and counts · the number of calls to the functions it lists
- *   THE POPULATION GATE  (tests/lib/serve-budget-population.test.ts) every branded budget is spent in
- *                      the sum, every ServeBudget field is an accounted scalar, and every unbranded
- *                      export is unbranded on purpose — so a TWELFTH bounded value cannot be added
- *                      without either joining the sum or declaring why it does not
+ *                      union type · Object.assign replacement, which TypeScript permits · literal
+ *                      durations and counts in serve-doc.ts · the number of calls to the functions
+ *                      it lists — NOT the population of bounded calls in general
+ *   THE ACCOUNTING     `spend()` books every term and the tests read the book, so a budget
+ *                      declared-but-unspent, spent zero times, added to the sum outside spend(), or
+ *                      booked with the wrong multiplicity all fail — measured against all four
+ *   NOTHING COVERS     deliberate circumvention. A term can still be written to contribute nothing
+ *                      by someone who intends that. These mechanisms exist because a budget was
+ *                      FORGOTTEN three times, not because anyone tried to hide one
  *
  * Aliasing (`const t = SERVE_PUT_TIMEOUT_MS`) still compiles, and should: it carries the brand
  * because it IS the value.
@@ -170,14 +174,41 @@ export const SERVE_SETTLE_ATTEMPTS = 2 as SettleAttemptCount;
  */
 export const SERVE_MARGIN_MS = 20_000;
 
+/**
+ * ── THE SUM IS THE MINT (round-7 review H-R7-1). ─────────────────────────────────────────────────
+ *
+ * Rounds 1-3 each built a text detector for budget drift and each was defeated by the next
+ * expression, which this file already calls "the signature of patching an instrument instead of
+ * changing a shape". Round 6 added a fourth text detector — for the POPULATION this time — and
+ * round 7 defeated it with five expressions, including `+ SERVE_X * 0`, which satisfies "is it
+ * mentioned?" while contributing nothing.
+ *
+ * So the accounting stops being SCANNED and starts being RECORDED. `spend()` is the only way a
+ * duration enters the floor, and it books what it returns. A budget that was never spent is not in
+ * `SPENT_TERMS`; a budget spent zero times is recorded as zero and fails the positivity rule. The
+ * test no longer keeps its own copy of the term table — it reads what the code actually did.
+ *
+ * This deliberately does NOT try to stop deliberate circumvention. It makes FORGETTING a budget
+ * structurally visible, which is the thing that actually happened three times on this branch.
+ */
+const SPENT: Array<{ ms: number; times: number }> = [];
+
+function spend(ms: number, times = 1): number {
+  SPENT.push({ ms, times });
+  return ms * times;
+}
+
+/** What `spend()` booked, in declaration order. Read by tests/lib/serve-budget-population.test.ts. */
+export const SPENT_TERMS: ReadonlyArray<{ ms: number; times: number }> = SPENT;
+
 /** The sum of the ENFORCED terms — every one of these is a timeout that fires. */
 export const SERVE_BOUNDED_MS =
-  SERVE_RESERVE_RPC_TIMEOUT_MS
-  + SERVE_COUNT_TOKENS_TIMEOUT_MS
-  + SERVE_ATTEMPTS * SERVE_ATTEMPT_TIMEOUT_MS
-  + SERVE_BACKOFF_TOTAL_MS
-  + SERVE_PUT_TIMEOUT_MS
-  + SERVE_SETTLE_ATTEMPTS * SERVE_SETTLE_RPC_TIMEOUT_MS;
+  spend(SERVE_RESERVE_RPC_TIMEOUT_MS)
+  + spend(SERVE_COUNT_TOKENS_TIMEOUT_MS)
+  + spend(SERVE_ATTEMPT_TIMEOUT_MS, SERVE_ATTEMPTS)
+  + spend(SERVE_BACKOFF_BASE_MS, SERVE_BACKOFF_TOTAL_MS / SERVE_BACKOFF_BASE_MS)
+  + spend(SERVE_PUT_TIMEOUT_MS)
+  + spend(SERVE_SETTLE_RPC_TIMEOUT_MS, SERVE_SETTLE_ATTEMPTS);
 
 /** Enforced work plus the unbounded-work assumption. This is what the lease must cover. */
 export const SERVE_FLOOR_MS = SERVE_BOUNDED_MS + SERVE_MARGIN_MS;

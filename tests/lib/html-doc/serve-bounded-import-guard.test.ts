@@ -35,8 +35,10 @@ import { join } from 'path';
 //                 counts · THE NUMBER OF CALLS TO THE FUNCTIONS LISTED BELOW — note the precision:
 //                 round 6 measured that this is NOT "the population of bounded calls", because a
 //                 call to a function absent from the table is never searched for. That gap is
-//                 closed from the other end by tests/lib/serve-budget-population.test.ts, which
-//                 requires every branded budget to be spent in the sum.
+//                 closed from the other end by lib/serve-budget.ts's `spend()` accounting and
+//                 tests/lib/serve-budget-population.test.ts, which read what the code BOOKED rather
+//                 than scanning for what it mentions. See serve-budget.ts's division-of-labour block
+//                 for the exact split, including what nothing covers.
 //
 // So this file remains as a BACKSTOP, and is honest about being one. What it no longer has to do is
 // anticipate the next expression someone writes.
