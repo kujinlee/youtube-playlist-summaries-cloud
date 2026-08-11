@@ -243,16 +243,47 @@ def check_duplicate_headings(errors: list[str]) -> int:
     return checked
 
 
+# ⟳ 2026-08-11 — BACKLOG IDS MUST BE UNIQUE.
+#
+# `docs/backlog.md` had assigned `17` to TWO unrelated items for weeks: the architectural-review gate
+# (adopted, became Phase 6) and the worker-vs-sync fencing hazard. Items #19-#22 all say "split from
+# #17", four memory files cite "backlog #17", and a task description points at it — every one of those
+# references was ambiguous and nothing said so.
+#
+# Silent by construction: a duplicate ID breaks no build and reads fine locally. It is only visible
+# when someone follows a reference to the wrong row, which is a bug you find late or never.
+def check_backlog_ids(errors: list[str]) -> int:
+    path = ROOT / "docs/backlog.md"
+    if not path.exists():
+        errors.append("docs/backlog.md is missing")
+        return 0
+    seen: dict[str, int] = {}
+    for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+        m = re.match(r"^\|\s*(\d+)\s*\|", line)
+        if not m:
+            continue
+        item = m.group(1)
+        if item in seen:
+            errors.append(
+                f"docs/backlog.md: item #{item} is defined twice (lines {seen[item]} and {i}) — "
+                f"every reference to #{item} is ambiguous")
+        else:
+            seen[item] = i
+    return len(seen)
+
+
 def main() -> int:
     errors: list[str] = []
 
     check_adr_frontmatter(errors)
     check_adr_index(errors)
     check_line_budgets(errors)
+    backlog_ids = check_backlog_ids(errors)
     headings = check_duplicate_headings(errors)
     code_refs = check_adr_references(errors)
     links = check_living_links(errors)
 
+    print(f"backlog items (unique)  : {backlog_ids}")
     print(f"ADRs                    : {len(adr_files())}")
     print(f"ADR refs from source    : {code_refs}")
     print(f"living-doc links checked: {links}")
