@@ -204,7 +204,10 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
     expect(res).toEqual({ status: 'busy' });
     // The empty-paid-lease state: charged, an attempt burned, and NO producer. Loud on purpose.
     expect(generateMagazineModelForServe).not.toHaveBeenCalled();
-    expect(errorLog).toHaveBeenCalledWith('[serve-model] reserve timed out — possible empty paid lease');
+    const errored = errorLog.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errored).toContain('reserve timed out');
+    expect(errored).toContain('owner=u1');   // attributable — see docKey's comment in serve-doc.ts
+    expect(errored).toContain('p1/v1');
   });
 
   it('a reserve ERROR still throws, exactly as today', async () => {
@@ -243,9 +246,12 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
     process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
     await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
     // The money signal: a refund that did not apply must be loud, not inferred from silence.
-    expect(errorLog).toHaveBeenCalledWith(
-      '[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation',
-    );
+    // The money alarm must name WHO and WHAT, or an operator has nothing to look up.
+    const errored = errorLog.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(errored).toContain('REFUND NOT APPLIED');
+    expect(errored).toContain('owner=u1');
+    expect(errored).toContain('p1/v1');
+    expect(errored).toContain('token=tok');
     expect(warnLog.mock.calls.map((c) => String(c[0])).join('\n')).toContain('REFUSED by the database');
   });
 
@@ -272,11 +278,65 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
 
     expect(settles).toBe(2);
     // The money alarm must NOT fire: for all we know the refund applied, and it probably did.
-    expect(errorLog).not.toHaveBeenCalledWith(
-      '[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation',
-    );
+    expect(errorLog.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain('REFUND NOT APPLIED');
     // But silence is not acceptable either — say plainly that the outcome is unknown.
+    const warned = warnLog.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(warned).toContain('refund outcome UNKNOWN');
+    // Name the row AND the check that resolves it. A warning an operator cannot act on is the
+    // round-1 H2 defect again: a detection that detects nothing.
+    // Attributable AND resolvable: the owner, the document, the token, and the query that answers
+    // it against the durable witness migration 0025 writes.
+    expect(warned).toContain('owner=u1');
+    expect(warned).toContain('p1/v1');
+    expect(warned).toContain('token=tok');
+    expect(warned).toContain("kind = 'serve_settle'");
+  });
+
+  // M-R3-1 (round 3): the latch is set for `error` as well as `timeout`, and nothing pinned the
+  // `error` half. A returned transport error can also have committed server-side, so it must produce
+  // the same indeterminate reading — otherwise the conservative choice is only half-made.
+  it('an ERRORED attempt, then a no-op, is INDETERMINATE — not a refusal', async () => {
+    let settles = 0;
+    const client = scriptedSupabase((fn) => {
+      if (fn === 'reserve_serve_model') return reserved();
+      settles++;
+      return settles === 1
+        ? fakeRpcBuilder({ data: null, error: { message: 'connection reset' } })
+        : fakeRpcBuilder({ data: false, error: null });
+    });
+    (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+      throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+    });
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
+    expect(settles).toBe(2);
+    expect(errorLog.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain('REFUND NOT APPLIED');
     expect(warnLog.mock.calls.map((c) => String(c[0])).join('\n')).toContain('refund outcome UNKNOWN');
+  });
+
+  // L-R3-3: an unrecognised reply is not a refusal.
+  it('a NULL settle reply is indeterminate, not a database refusal', async () => {
+    const client = scriptedSupabase((fn) =>
+      (fn === 'reserve_serve_model' ? reserved() : fakeRpcBuilder({ data: null, error: null })));
+    (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+      throw new GoogleGenerativeAIFetchError('overloaded', 503, 'Service Unavailable');
+    });
+    process.env.CLOUD_GEMINI_RELEASE_VERIFIED = 'true';
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
+    const warned = warnLog.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(warned).toContain('UNRECOGNISED');
+    expect(errorLog.mock.calls.map((c) => String(c[0])).join('\n')).not.toContain('REFUND NOT APPLIED');
+  });
+
+  // M-R3-2: the same event, logged on both terminal paths.
+  it('logs a failed KEEP settle on the THROW path too, not only on success', async () => {
+    const client = scriptedSupabase((fn) =>
+      (fn === 'reserve_serve_model' ? reserved() : fakeRpcBuilder({ data: false, error: null })));
+    (generateMagazineModelForServe as jest.Mock).mockImplementationOnce(async () => {
+      throw new Error('a plain failure — not class-A, so the charge is KEPT');
+    });
+    await expect(resolveMagazineModel(baseArgs(client, fakeBlobStore([null])))).rejects.toThrow();
+    expect(warnLog.mock.calls.map((c) => String(c[0])).join('\n')).toContain('keep-settle refused');
   });
 
   it('does NOT spend the retry on a deterministic refusal — only on a transport failure', async () => {

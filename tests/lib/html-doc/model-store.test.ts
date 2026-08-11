@@ -6,6 +6,7 @@ import { writeModelEnvelope, writeModelEnvelopeWithin, readModelEnvelope, type M
 import { localPrincipal, type Principal } from '@/lib/storage/principal';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import type { BlobStore } from '@/lib/storage/blob-store';
+import { putBudget } from '../../support/budget';
 
 let dir: string;
 let principal: Principal;
@@ -113,7 +114,7 @@ describe('writeModelEnvelopeWithin', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const hanging = storeWith(() => new Promise<void>(() => {}));
     await expect(
-      writeModelEnvelopeWithin(20, principal, BASE, ENVELOPE, hanging),
+      writeModelEnvelopeWithin(putBudget(20), principal, BASE, ENVELOPE, hanging),
     ).rejects.toMatchObject({ name: 'TimeoutError' });   // identity, not "any error"
     warn.mockRestore();
   });
@@ -128,7 +129,7 @@ describe('writeModelEnvelopeWithin', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const hanging = storeWith(() => new Promise<void>(() => {}));
     await expect(
-      writeModelEnvelopeWithin(20, principal, BASE, ENVELOPE, hanging),
+      writeModelEnvelopeWithin(putBudget(20), principal, BASE, ENVELOPE, hanging),
     ).rejects.toMatchObject({ name: 'TimeoutError' });
     const logged = warn.mock.calls.map((c) => String(c[0])).join('\n');
     warn.mockRestore();
@@ -138,14 +139,14 @@ describe('writeModelEnvelopeWithin', () => {
 
   it('resolves normally when the put completes within the budget', async () => {
     const put = jest.fn(async () => {});
-    await writeModelEnvelopeWithin(5_000, principal, BASE, ENVELOPE, storeWith(put));
+    await writeModelEnvelopeWithin(putBudget(5_000), principal, BASE, ENVELOPE, storeWith(put));
     expect(put).toHaveBeenCalledTimes(1);
   });
 
   it('validates the envelope BEFORE writing', async () => {
     const put = jest.fn(async () => {});
     await expect(
-      writeModelEnvelopeWithin(5_000, principal, BASE, { ...ENVELOPE, sourceMd: '' } as never, storeWith(put)),
+      writeModelEnvelopeWithin(putBudget(5_000), principal, BASE, { ...ENVELOPE, sourceMd: '' } as never, storeWith(put)),
     ).rejects.toThrow();
     expect(put).not.toHaveBeenCalled();   // fail loud before any write, as writeModelEnvelope does
   });

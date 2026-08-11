@@ -25,14 +25,52 @@
  * would silently inherit a serve-only change.
  */
 
+/**
+ * ── WHY THESE ARE BRANDED, AND NOT PLAIN NUMBERS ──────────────────────────────────────────────
+ *
+ * Three review rounds each found the same class of defect at the serve boundary, and each fix
+ * caught only the shape that round had measured:
+ *
+ *   round 1  the call site could be handed `{ attempts: 3, attemptTimeoutMs: 60_000, … }`
+ *            → fixed by asserting the VALUE at one call site
+ *   round 2  a different call site could be handed the literal `120_000`
+ *            → fixed by asserting the CLASS: no literals, own-constant-per-site, pinned population
+ *   round 3  a call site could be handed `SERVE_PUT_TIMEOUT_MS + SERVE_MARGIN_MS`, which contains
+ *            the expected identifier and passes a text guard while silently spending the 20s
+ *            unmodelled-work margin as enforced wait
+ *
+ * Every one of those was a new expression defeating the previous round's detector, which is the
+ * signature of patching an instrument instead of changing a shape. `review-method.md`'s escalation
+ * rule fired on exactly this pattern.
+ *
+ * So the boundary stops DETECTING wrong values and starts making them UNREPRESENTABLE. Each budget
+ * carries a phantom brand naming the call site it belongs to, and every bounded API demands its own
+ * brand. Arithmetic on branded numbers yields a plain `number`, so `A + B` no longer type-checks;
+ * an integer literal is a plain `number`, so it no longer type-checks; and one site's budget is not
+ * another's type, so a swap no longer type-checks. `tsc --noEmit` — which already runs in CI —
+ * becomes the gate, and no test has to anticipate the next expression someone writes.
+ *
+ * Aliasing (`const t = SERVE_PUT_TIMEOUT_MS`) still compiles, and should: it carries the brand
+ * because it IS the value.
+ */
+declare const budgetBrand: unique symbol;
+/** A duration that may only be spent at the call site it is branded for. */
+export type Budget<Site extends string> = number & { readonly [budgetBrand]: Site };
+
+export type ReserveRpcBudget = Budget<'reserveRpc'>;
+export type SettleRpcBudget = Budget<'settleRpc'>;
+export type CountTokensBudget = Budget<'countTokens'>;
+export type AttemptBudget = Budget<'attempt'>;
+export type PutBudget = Budget<'put'>;
+
 /** One round trip to Postgres. PROVISIONAL — revise from observed p99. */
-export const SERVE_RESERVE_RPC_TIMEOUT_MS = 5_000;
+export const SERVE_RESERVE_RPC_TIMEOUT_MS = 5_000 as ReserveRpcBudget;
 
 /** Gemini countTokens preflight. PROVISIONAL — never measured; revise from observed p99. */
-export const SERVE_COUNT_TOKENS_TIMEOUT_MS = 10_000;
+export const SERVE_COUNT_TOKENS_TIMEOUT_MS = 10_000 as CountTokensBudget;
 
 /** Per generateContent attempt, SERVE PATH ONLY (local keeps REQUEST_TIMEOUT_MS = 60s). */
-export const SERVE_ATTEMPT_TIMEOUT_MS = 50_000;
+export const SERVE_ATTEMPT_TIMEOUT_MS = 50_000 as AttemptBudget;
 
 /** Attempts on the serve path. Three does not fit the lease — that is the defect being fixed. */
 export const SERVE_ATTEMPTS = 2;
@@ -41,10 +79,10 @@ export const SERVE_ATTEMPTS = 2;
 export const SERVE_BACKOFF_TOTAL_MS = 400;
 
 /** One small-JSON upload. PROVISIONAL — revise from observed p99. */
-export const SERVE_PUT_TIMEOUT_MS = 15_000;
+export const SERVE_PUT_TIMEOUT_MS = 15_000 as PutBudget;
 
 /** One round trip to Postgres. PROVISIONAL — revise from observed p99. */
-export const SERVE_SETTLE_RPC_TIMEOUT_MS = 5_000;
+export const SERVE_SETTLE_RPC_TIMEOUT_MS = 5_000 as SettleRpcBudget;
 
 /**
  * Settle attempts the sum must pay for. The REFUND path retries once
@@ -95,13 +133,18 @@ export const SERVE_FLOOR_SECONDS = Math.ceil(SERVE_FLOOR_MS / 1000);
  * while the lease floor assumes 2 at 50s — wrong in the one configuration nobody tests.
  */
 export interface ServeBudget {
+  /** Phantom brand. An object literal cannot produce it, so the pre-fix
+   *  `{ attempts: 3, attemptTimeoutMs: 60_000, … }` no longer type-checks at the serve call site —
+   *  round-1 H1, made unrepresentable rather than merely asserted. */
+  readonly [budgetBrand]: 'serveBudget';
   attempts: number;
-  attemptTimeoutMs: number;
-  countTokensTimeoutMs: number;
+  attemptTimeoutMs: AttemptBudget;
+  countTokensTimeoutMs: CountTokensBudget;
 }
 
-export const SERVE_BUDGET: ServeBudget = {
+/** The one place the brand is minted. Every other reference to a serve budget is this value. */
+export const SERVE_BUDGET = {
   attempts: SERVE_ATTEMPTS,
   attemptTimeoutMs: SERVE_ATTEMPT_TIMEOUT_MS,
   countTokensTimeoutMs: SERVE_COUNT_TOKENS_TIMEOUT_MS,
-};
+} as ServeBudget;

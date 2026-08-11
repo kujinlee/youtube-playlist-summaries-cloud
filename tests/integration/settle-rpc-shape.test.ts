@@ -78,6 +78,49 @@ describe('settle_serve_model reply shape — the premise settleBounded reads', (
     expect(data).toBe(false);
   });
 
+  // ── Migration 0025. The reason `indeterminate` stopped being unfalsifiable. ─────────────────
+  // Three review rounds each produced a High on the settle signal, and each refined the vocabulary
+  // of the report rather than adding the missing fact: there was no durable record that a settle
+  // applied. ledger_audit held only the `release_underflow` exception, and serve_model_charge's
+  // token is overwritten by the next reserve — so after the lease window nothing could answer
+  // "did my settle land?". These assert the witness exists and is keyed by the token, which is what
+  // makes the operator instruction in the `indeterminate` log a query someone can actually run.
+  it('a SUCCESSFUL settle leaves a durable, token-keyed witness in ledger_audit', async () => {
+    const { client, playlistId, videoId } = await seededOwner();
+    const token = await reserveFor(client, playlistId, videoId);
+    expect((await client.rpc('settle_serve_model', { p_token: token, p_released: false })).data).toBe(true);
+
+    const { data, error } = await svc.from('ledger_audit')
+      .select('kind, expected_amt, note').eq('kind', 'serve_settle').like('note', `${token}:%`);
+    expect(error).toBeNull();
+    expect(data).toEqual([{ kind: 'serve_settle', expected_amt: 0, note: `${token}:false` }]);
+  });
+
+  it('a REFUSED settle leaves NO witness — absence is the answer, not ambiguity', async () => {
+    const { client } = await seededOwner();
+    const token = '11111111-2222-3333-4444-555555555555';
+    expect((await client.rpc('settle_serve_model', { p_token: token, p_released: true })).data).toBe(false);
+
+    const { data } = await svc.from('ledger_audit')
+      .select('kind').eq('kind', 'serve_settle').like('note', `${token}:%`);
+    // The witness is written past the `not found` gate, so a row exists IF AND ONLY IF this token
+    // settled. That biconditional is the whole property — without it, an empty result would be
+    // consistent with both outcomes, which is exactly the round-3 finding.
+    expect(data).toEqual([]);
+  });
+
+  it('a REFUND records the refunded amount, so the row is self-describing without a join', async () => {
+    const { client, playlistId, videoId } = await seededOwner();
+    const token = await reserveFor(client, playlistId, videoId);
+    expect((await client.rpc('settle_serve_model', { p_token: token, p_released: true })).data).toBe(true);
+
+    const { data } = await svc.from('ledger_audit')
+      .select('expected_amt, note').eq('kind', 'serve_settle').like('note', `${token}:%`);
+    expect(data).toHaveLength(1);
+    expect(data![0].note).toBe(`${token}:true`);
+    expect(data![0].expected_amt).toBeGreaterThan(0);   // the magazine estimate that was returned
+  });
+
   it('a settle for a token that never existed is refused the same way, not raised', async () => {
     const { client } = await seededOwner();
     const { data, error } = await client.rpc('settle_serve_model', {

@@ -3,6 +3,7 @@ import { MagazineModelSchema } from './types';
 import { localBlobStore } from '@/lib/storage/local/local-blob-store';
 import type { BlobStore, ReadOnlyBlobStore } from '@/lib/storage/blob-store';
 import type { Principal } from '@/lib/storage/principal';
+import type { PutBudget } from '@/lib/serve-budget';
 
 /**
  * The persisted summary-model file: the Gemini transform output plus provenance.
@@ -63,7 +64,7 @@ export async function writeModelEnvelope(
  * unbounded await this exists to remove.
  */
 export async function writeModelEnvelopeWithin(
-  timeoutMs: number,
+  timeoutMs: PutBudget,
   principal: Principal,
   base: string,
   envelope: ModelEnvelope,

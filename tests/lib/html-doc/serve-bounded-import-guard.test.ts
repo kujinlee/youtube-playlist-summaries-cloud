@@ -11,7 +11,22 @@ import { join } from 'path';
 // timeout could be changed to 120_000 — 245s of enforced work against a 161s floor — and all 2647
 // tests stayed green, because the round-1 guard checked the IDENTIFIER and never the ARGUMENT.
 //
-// So this file asserts the CLASS, not the instance:
+// ROUND-3 H-R3-1 then measured what the CLASS guard still missed: `SERVE_PUT_TIMEOUT_MS +
+// SERVE_MARGIN_MS` contains the expected identifier, so `includes()` accepted it — while silently
+// spending the 20s unmodelled-work margin as enforced wait. Three rounds, three detectors, each
+// defeated by a slightly different expression.
+//
+// ⚠ THE PRIMARY DEFENCE IS NO LONGER THIS FILE. `lib/serve-budget.ts` now brands every budget with
+// the call site it belongs to, so a literal, an arithmetic expression, an object literal and a
+// swapped constant are all COMPILE errors — verified against all four mutants. `tsc --noEmit` runs
+// in CI, so the drift is unrepresentable rather than detected.
+//
+// This file remains as a BACKSTOP, and is honest about being one. It still earns its place: it pins
+// the POPULATION of bounded call sites (a fifth one added without a brand would type-check fine if
+// its parameter were a plain number), and it catches counts, which carry no brand. What it no
+// longer has to do is anticipate the next expression someone writes.
+//
+// It asserts the CLASS, not the instance:
 //
 //   1. serve-doc.ts NAMES durations and counts; it never SPELLS them. The only numeric literals
 //      permitted in its code are 0 and 1 (an array index and a loop bound). Every timeout, attempt
@@ -98,7 +113,9 @@ describe('serve-doc holds a paid lease, so every call it makes must be the BOUND
     const code = codeOnly(readFileSync(SERVE_DOC, 'utf-8'));
     // 0 and 1 are an array index and a loop bound. Anything else in this file is a duration or an
     // attempt count, and both belong in lib/serve-budget.ts where the lease arithmetic can see them.
-    const literals = [...code.matchAll(/(?<![\w.])(\d[\d_]*)(?![\w])/g)]
+    // Every numeric-literal form JS admits, not just decimal (round-3 review L-R3-1): `1.5e5`,
+    // `0x1D4C0` and `15_000n` are all 120000-ish durations that a decimal-only pattern waves through.
+    const literals = [...code.matchAll(/(?<![\w.$])(0[xXbBoO][0-9a-fA-F_]+n?|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?n?)(?![\w])/g)]
       .map((m) => m[1])
       .filter((n) => n !== '0' && n !== '1');
     expect(literals).toEqual([]);

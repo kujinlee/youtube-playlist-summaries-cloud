@@ -1,3 +1,5 @@
+import type { ReserveRpcBudget, SettleRpcBudget } from '@/lib/serve-budget';
+
 /**
  * A Supabase RPC call with a bounded WAIT and an honest outcome.
  *
@@ -24,7 +26,9 @@ export type RpcOutcome<T> =
 
 export async function callRpcBounded<T>(
   make: (signal: AbortSignal) => PromiseLike<{ data: T; error: unknown }>,
-  timeoutMs: number,
+  // Branded: only a budget minted for one of these two call sites may be spent here, so a
+  // literal or an arithmetic expression cannot be passed at all (round-3 H-R3-1).
+  timeoutMs: ReserveRpcBudget | SettleRpcBudget,
   label: string,
 ): Promise<RpcOutcome<T>> {
   const ctrl = new AbortController();

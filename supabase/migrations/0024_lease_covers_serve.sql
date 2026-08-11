@@ -5,7 +5,7 @@
 -- rather than negotiated per request. See the spec §3.3.
 --
 -- 161 = SERVE_FLOOR_SECONDS = ceil((140_400 enforced + 20_000 margin) / 1000).
--- Pinned by tests/integration/serve-config-invariant.test.ts, which asserts EVERY floor literal in
+-- Pinned by tests/lib/serve-budget.test.ts, which asserts EVERY floor literal in
 -- this file — a literal here cannot import the constant, and pinning only the CHECK would let a
 -- retune edit one line and leave the fix-up below stranded at the old value (round-1 review M2).
 --

@@ -57,6 +57,11 @@ export async function resolveMagazineModel(args: {
 }): Promise<ResolveResult> {
   const { supabaseClient, blobStore, principal, playlistId, videoId, base, parsed, language, mdBody, signal } = args;
   const titles = parsed.sections.map((s) => s.title);
+  // `reserve_serve_model`'s own key formula (`0012_serve_model_charge.sql:53`). Every money log
+  // below carries it, because round-3 review H-R3-1 measured that not one of them named an owner,
+  // a document, a day or a token — so an operator reading `REFUND NOT APPLIED` had nothing to look
+  // up in any table. An alarm you cannot attribute is not much better than no alarm.
+  const docKey = `${playlistId}/${videoId}`;
 
   const fresh = await readFreshMagazineModel({ blobStore, principal, base, titles });
   if (fresh.status === 'ok') return { status: 'ok', model: fresh.model }; // B1 — no Gemini, no reserve
@@ -87,7 +92,9 @@ export async function resolveMagazineModel(args: {
     // TIMEOUT. The transaction is NOT rolled back, so what may exist now is an EMPTY PAID LEASE:
     // charged, an attempt burned, no producer. Retries before expiry see in_flight although nobody
     // is generating. Loud, because that is an infrastructure alarm, not a user error.
-    console.error('[serve-model] reserve timed out — possible empty paid lease');
+    console.error(
+      `[serve-model] reserve timed out for owner=${principal.id} ${docKey} — possible empty paid lease`,
+    );
     return { status: 'busy' };
   }
   const row = (reserve.data as Array<{ status: string; release_token: string | null }> | null)?.[0];   // table-return → data[0]
@@ -142,9 +149,12 @@ export async function resolveMagazineModel(args: {
     // A lost KEEP is benign — the charge is already correct and only a per-attempt token is left
     // behind — but it is still an infrastructure signal worth seeing.
     if (releaseToken) {
-      const outcome = await settleBounded(supabaseClient, releaseToken, false);
+      const outcome = await settleBounded(supabaseClient, releaseToken, false, docKey);
       if (outcome !== 'applied') {
-        console.warn(`[serve-model] keep-settle ${outcome}; the charge stands, the token was not cleared`);
+        console.warn(
+          `[serve-model] keep-settle ${outcome} for owner=${principal.id} ${docKey}; `
+          + 'the charge stands, the token was not cleared',
+        );
       }
     }
     return { status: 'ok', model };
@@ -161,13 +171,31 @@ export async function resolveMagazineModel(args: {
     // KNOW money is stranded; an alarm that also fires on "we are not sure" trains its reader to
     // ignore it, which is how the round-1 signal would have died a second death.
     if (releaseToken) {
-      const outcome = await settleBounded(supabaseClient, releaseToken, released);
-      if (released && outcome === 'refused') {
-        console.error('[serve-model] REFUND NOT APPLIED — the owner was charged for a failed generation');
-      } else if (released && outcome === 'indeterminate') {
+      const outcome = await settleBounded(supabaseClient, releaseToken, released, docKey);
+      // A KEEP that did not apply is the same event here as on the success path, and was silent on
+      // this one only because the branch below is written around `released` (round-3 M-R3-2).
+      if (!released && outcome !== 'applied') {
         console.warn(
-          '[serve-model] refund outcome UNKNOWN — a settle attempt went unanswered and may have '
-          + 'committed; reconcile against ledger_audit rather than assuming either way',
+          `[serve-model] keep-settle ${outcome} for owner=${principal.id} ${docKey}; `
+          + 'the charge stands, the token was not cleared',
+        );
+      } else if (released && outcome === 'refused') {
+        console.error(
+          `[serve-model] REFUND NOT APPLIED for owner=${principal.id} ${docKey} `
+          + `token=${releaseToken} — the owner was charged for a failed generation`,
+        );
+      } else if (released && outcome === 'indeterminate') {
+        // Name the check that ACTUALLY resolves this, and name the row. An earlier draft of this
+        // line said "reconcile against ledger_audit" — but settle_serve_model only writes
+        // ledger_audit on a release_underflow anomaly, so it is EMPTY in precisely the case this
+        // message is about. That is round-1 H2's defect in miniature: a detection pointing at
+        // nothing. A committed settle clears the token (`set reserved_cents = 0, release_token =
+        // null`, 0020_reservation_release.sql:278), so the token is the signal that exists.
+        console.warn(
+          `[serve-model] refund outcome UNKNOWN for owner=${principal.id} ${docKey} `
+          + `token=${releaseToken} — a settle attempt went unanswered and may have committed. `
+          + `RESOLVE: select * from ledger_audit where kind = 'serve_settle' and note like `
+          + `'${releaseToken}:%' — a row means it landed (migration 0025).`,
         );
       }
     }
@@ -204,7 +232,7 @@ type SettleOutcome = 'applied' | 'refused' | 'indeterminate';
  * Never throws: a failed settle must not mask the original error on the throw path.
  */
 async function settleBounded(
-  supabaseClient: SupabaseClient, token: string, released: boolean,
+  supabaseClient: SupabaseClient, token: string, released: boolean, docKey: string,
 ): Promise<SettleOutcome> {
   // An unapplied REFUND is real money left on the ledger; a lost KEEP is already correct.
   const attempts = released ? SERVE_SETTLE_ATTEMPTS : 1;
@@ -230,19 +258,32 @@ async function settleBounded(
       // tests/integration/settle-rpc-shape.test.ts: success is `true`, a no-op is `false`, and
       // neither is an error.
       if (out.data === true) return 'applied';
+      // `false` is the documented no-op. ANYTHING ELSE — `null` from postgrest's failure branch, or
+      // a shape a future client version returns — is an answer we do not recognise, and an
+      // unrecognised answer is not a refusal (round-3 review L-R3-3). Calling it one would put the
+      // loudest money alarm behind the least understood branch.
+      if (out.data !== false) {
+        console.warn(
+          `[serve-model] settle(released=${released}) returned an UNRECOGNISED value for ${docKey} `
+          + `token=${token}: ${JSON.stringify(out.data)} — treating as indeterminate`,
+        );
+        return 'indeterminate';
+      }
       // A no-op AFTER one of our own attempts went unanswered is exactly what an idempotent
       // re-settle looks like — the second call cannot distinguish "someone else's stale token" from
       // "the row my own timed-out attempt already cleared". Do not spend the retry either way: a
       // genuinely stale token will not become valid.
       if (anAttemptMayHaveCommitted) return 'indeterminate';
       console.warn(
-        `[serve-model] settle(released=${released}) REFUSED by the database — token stale, `
-        + 'duplicated, or the lease was reclaimed; nothing was settled',
+        `[serve-model] settle(released=${released}) REFUSED by the database for ${docKey} `
+        + `token=${token} — stale, duplicated, or the lease was reclaimed; nothing was settled`,
       );
       return 'refused';
     }
     anAttemptMayHaveCommitted = true;
-    console.warn(`[serve-model] settle attempt ${i + 1}/${attempts} failed: ${out.reason}`);
+    console.warn(
+      `[serve-model] settle attempt ${i + 1}/${attempts} failed for ${docKey} token=${token}: ${out.reason}`,
+    );
   }
   return 'indeterminate';   // no attempt ever answered
 }
