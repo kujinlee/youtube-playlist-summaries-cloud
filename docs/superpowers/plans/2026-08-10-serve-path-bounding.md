@@ -505,9 +505,13 @@ nobody tests. Required and positional, so omission is a compile error."
 it defines `ENVELOPE`, `principal`, `BASE` and `fakeBlobStore` — an earlier draft invented
 `validEnvelope` and `stubStore`, which do not exist (plan-review r1 Medium).
 
-`fakeBlobStore` is **local to one existing test**, not a shared fixture (plan-review r2 Medium — my
-`[VERIFIED]` tag on it was wrong). Build one the same way that test does
-(`tests/lib/html-doc/model-store.test.ts:84`), preserving `localBlobStore`'s prototype:
+**Fixtures, read from the file rather than remembered** — `[VERIFIED: tests/lib/html-doc/model-store.test.ts:10-12]`
+`principal` is declared at :10 and assigned in `beforeEach`, `BASE` is :11, `ENVELOPE` starts at :12.
+`[VERIFIED: :83]` `fakeBlobStore` exists only as a **local const inside one test** — not a shared
+fixture. (Two earlier drafts of this plan mis-cited this; the second attached a `[VERIFIED]` tag to
+the guess, which is worse than omitting one.)
+
+Build the store the same way :83 does, preserving `localBlobStore`'s prototype:
 
 ```ts
 // tests/lib/html-doc/model-store.test.ts — add, reusing ENVELOPE / principal / BASE
@@ -819,16 +823,26 @@ The moment production calls `generateMagazineModelForServe`, both files get `und
 and fail with a TypeError. Add the wrapper to each factory, delegating so the existing assertions on
 `generateMagazineModel` keep working:
 
+**Keep each file's existing `lead` fixture.** The two files differ — the mapping file generates
+`'GEN'` `[VERIFIED: serve-doc-mapping.test.ts:14-17]`, the integration file generates `'L'`
+`[VERIFIED: serve-doc-materialize.test.ts:11-14]`, and integration tests assert `'L'` at `:142`,
+`:149`, `:176`, `:266`. A single shared snippet would break all four (plan-review r3 High). Apply the
+same *shape* to each file with **that file's** value:
+
 ```ts
+// serve-doc-mapping.test.ts  → LEAD = 'GEN'
+// serve-doc-materialize.test.ts → LEAD = 'L'      (do NOT unify these)
 jest.mock('@/lib/gemini', () => {
+  const LEAD = 'GEN';                        // 'L' in the integration file
   const generateMagazineModel = jest.fn(async (sections: Array<{ title: string }>) => ({
-    sections: sections.map(() => ({ lead: 'GEN', bullets: [
+    sections: sections.map(() => ({ lead: LEAD, bullets: [
       { label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' },
     ] })),
   }));
   return {
     generateMagazineModel,
-    // The serve wrapper delegates, so tests that assert on generateMagazineModel still see the call.
+    // Delegates, so existing assertions on generateMagazineModel — including
+    // mockImplementationOnce overrides — still fire. Verified by the round-3 review.
     generateMagazineModelForServe: jest.fn((sections, language, _budget, opts) =>
       generateMagazineModel(sections, language, opts)),
   };
@@ -836,7 +850,19 @@ jest.mock('@/lib/gemini', () => {
 import { generateMagazineModel, generateMagazineModelForServe } from '@/lib/gemini';
 ```
 
-Run: `npx jest serve-doc-mapping -v` → still green (nothing calls the wrapper yet).
+**Also extend the existing `beforeEach`** in each file to clear the new mock — the mapping file's
+`[VERIFIED: :81]` currently clears only `generateMagazineModel`, so the wrapper would stay dirty
+across tests and `not.toHaveBeenCalled()` would be order-dependent (plan-review r3 Medium):
+
+```ts
+beforeEach(() => {
+  (generateMagazineModel as jest.Mock).mockClear();
+  (generateMagazineModelForServe as jest.Mock).mockClear();
+});
+```
+
+Run: `npx jest serve-doc-mapping serve-doc-materialize -v` → still green (nothing calls the wrapper
+yet). Both files, because this step touches both.
 
 - [ ] **Step 3: Write the failing tests — in the UNIT file, not the integration file**
 
@@ -846,10 +872,31 @@ harness**; `[VERIFIED: tests/integration/serve-doc-materialize.test.ts:1-40]` th
 real RPC time out on demand there. The timeout and retry tests belong in
 `tests/lib/html-doc/serve-doc-mapping.test.ts`, whose `fakeSupabase` we control.
 
+**Shrink the budget for these tests, or they race Jest's own timeout (plan-review r3 High).**
+`SERVE_RESERVE_RPC_TIMEOUT_MS` and `SERVE_SETTLE_RPC_TIMEOUT_MS` are `5_000`, and Jest's default
+per-test timeout is also 5000 ms — the repo sets no override. The reserve test would race it, and the
+settle-retry test would burn a full 5 s before retrying. Mock the budget module for this file:
+
+```ts
+jest.mock('@/lib/serve-budget', () => ({
+  ...jest.requireActual('@/lib/serve-budget'),
+  SERVE_RESERVE_RPC_TIMEOUT_MS: 20,
+  SERVE_SETTLE_RPC_TIMEOUT_MS: 20,
+}));
+```
+
+Real values stay asserted by `tests/lib/serve-budget.test.ts` (Task 1) and by the migration pin
+(Task 7); this file is testing the *plumbing*, not the numbers.
+
 ```ts
 // tests/lib/html-doc/serve-doc-mapping.test.ts — add. `principal`, `parsed`, and the fake blob
 // store already exist in this file (see its header); reuse them.
 import { fakeRpcBuilder } from '../../support/fake-rpc';
+
+// Restore the release gate or it leaks into every later test in this worker (plan-review r3 High).
+// Mirrors tests/integration/serve-doc-materialize.test.ts:275-276 and gemini-failure.test.ts:55-57.
+const prevGate = process.env.CLOUD_GEMINI_RELEASE_VERIFIED;
+afterEach(() => { process.env.CLOUD_GEMINI_RELEASE_VERIFIED = prevGate; });
 
 /** A fake whose reserve/settle behaviour is scripted per RPC name. */
 function scriptedSupabase(script: (fn: string) => ReturnType<typeof fakeRpcBuilder>): SupabaseClient {
@@ -1033,10 +1080,15 @@ it('refuses a lease shorter than the serve path can finish in', async () => {
 it('accepts exactly the floor, then restores whatever was there', async () => {
   const { data: before } = await svc.from('guardrail_config')
     .select('lease_ttl_seconds').eq('id', true).single();
-  expect((await svc.from('guardrail_config')
-    .update({ lease_ttl_seconds: SERVE_FLOOR_SECONDS }).eq('id', true)).error).toBeNull();
-  expect((await svc.from('guardrail_config')
-    .update({ lease_ttl_seconds: before!.lease_ttl_seconds }).eq('id', true)).error).toBeNull();
+  try {
+    expect((await svc.from('guardrail_config')
+      .update({ lease_ttl_seconds: SERVE_FLOOR_SECONDS }).eq('id', true)).error).toBeNull();
+  } finally {
+    // A thrown expect must NOT leave the shared singleton at the floor — this suite runs
+    // --runInBand against one DB (plan-review r3 Medium).
+    await svc.from('guardrail_config')
+      .update({ lease_ttl_seconds: before!.lease_ttl_seconds }).eq('id', true);
+  }
 });
 
 // A migration literal cannot import a TypeScript constant, so this is the ONLY thing between a
