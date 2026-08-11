@@ -33,26 +33,49 @@ function roleOf(payloadSegment: string): string | null {
 }
 
 const SCRIPT_SRC_RE = /<script\b[^>]*?\bsrc=(["'])(.*?)\1/gi;
+const HREF_RE = /\bhref=(["'])(.*?)\1/gi;
+/** Root-relative build-output paths, including ones that only ever appear inside Next.js's
+ *  inline flight payload (where they are backslash-escaped, so quotes/backslashes end the match). */
+const NEXT_CHUNK_RE = /\/_next\/static\/[A-Za-z0-9._/-]+\.js/g;
 
-/** Same-origin `<script src>` URLs in a served HTML page, absolute and de-duplicated.
+/** Every same-origin JS URL a served HTML page references — absolute, de-duplicated, in first-seen
+ *  order. Collected from `<script src>`, `href` attributes, and bare `/_next/static/**.js` paths
+ *  (which is how chunks appear inside Next.js's inline flight payload).
  *
- *  Cross-origin scripts are deliberately NOT followed: this check answers "did OUR deployment
- *  ship a secret", and fetching third-party hosts would make the result depend on someone
- *  else's uptime. (A CSP already blocks foreign scripts here; that is a separate concern.) */
+ *  MEASURED on the real deployment 2026-08-11, and the honest number is: reading the extra two
+ *  sources gains **nothing today** — `/login` yields the same 9 URLs either way, because every
+ *  `_next` path and `href` there is already a script tag. The three sources are kept because the
+ *  cost is one regex each and the failure they prevent is silent: if a future Next.js version
+ *  preloads a chunk it does not script-tag, a `<script src>`-only reader would skip it and still
+ *  print "clean". The tests pin that, so the behaviour cannot regress unnoticed.
+ *
+ *  (An earlier revision of this comment claimed 34-vs-9 and "~26% scanned". That was wrong — it
+ *  compared total occurrences against distinct URLs. Corrected rather than deleted, because a
+ *  plausible false measurement in a security check is worth a warning.)
+ *
+ *  Cross-origin scripts are deliberately NOT followed: the question is "did OUR deployment ship a
+ *  secret", and fetching third-party hosts would make the answer depend on someone else's uptime. */
 export function extractScriptUrls(html: string, baseUrl: string): string[] {
   const origin = new URL(baseUrl).origin;
   const out: string[] = [];
-  for (const m of html.matchAll(SCRIPT_SRC_RE)) {
+
+  const add = (raw: string) => {
     let abs: URL;
     try {
-      abs = new URL(m[2], baseUrl);
+      abs = new URL(raw, baseUrl);
     } catch {
-      continue;
+      return;
     }
-    if (abs.origin !== origin) continue;
+    if (abs.origin !== origin) return;
+    if (!abs.pathname.endsWith('.js')) return;
     const href = abs.toString();
     if (!out.includes(href)) out.push(href);
-  }
+  };
+
+  for (const m of html.matchAll(SCRIPT_SRC_RE)) add(m[2]);
+  for (const m of html.matchAll(HREF_RE)) add(m[2]);
+  for (const m of html.matchAll(NEXT_CHUNK_RE)) add(m[0]);
+
   return out;
 }
 
