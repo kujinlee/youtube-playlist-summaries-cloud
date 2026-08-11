@@ -883,8 +883,10 @@ beforeEach(() => {
 });
 ```
 
-Run: `npx jest serve-doc-mapping serve-doc-materialize -v` → still green (nothing calls the wrapper
-yet). Both files, because this step touches both.
+Run: `npx jest serve-doc-mapping -v` **and** `npm run test:integration -- serve-doc-materialize`
+→ both still green (nothing calls the wrapper yet). **Two commands, because bare `npx jest` cannot
+reach `tests/integration` at all** (Global Constraints) — this step edits both files, so it must
+verify both.
 
 - [ ] **Step 3: Write the failing tests — in the UNIT file, not the integration file**
 
