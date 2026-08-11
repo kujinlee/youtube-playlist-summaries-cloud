@@ -18,6 +18,14 @@
 - **Serve-path-only.** Local generation (`lib/html-doc/generate.ts:40`) must keep `GENERATE_JSON_RETRIES` (3 attempts) and `REQUEST_TIMEOUT_MS` (60 s). Every task that changes a shared function asserts the local path is unaffected.
 - **Optional parameters do not propagate** (`docs/process-checklists.md:64-68`). Where omitting a bound would silently restore the bug, the boundary gets a wrapper with a **required** parameter, never an optional field on an existing signature.
 - **Mutation-check every guard** (`docs/process-checklists.md:76-81`): delete the guard → covering tests must go red → restore. Commit the fix before mutating.
+- **Integration tests need `npm run test:integration`, never bare `npx jest`.**
+  `[VERIFIED: jest.config.ts testMatch]` covers `tests/lib`, `tests/api`, `tests/scripts`, smoke and
+  components — **not `tests/integration`**. `npx jest tests/integration/foo` selects **zero tests and
+  exits 0**, so a step written that way reports a pass having run nothing. Round 7 caught this aimed
+  at the money pin (`serve-doc-materialize.test.ts:278-303`), which is the acceptance criterion for
+  the refund rule. Integration files run via `npm run test:integration -- <pattern>`
+  (`package.json:18` → `jest --config jest.integration.config.ts --runInBand`).
+  **`tsc --noEmit` cannot catch this class** — a test that is never selected type-checks perfectly.
 - **Imports: the snippets show the symbols, the compiler owns the list.** Each task names the imports
   it needs, but four consecutive plan-gate rounds found missing or duplicated import lines in prose —
   a class `tsc` settles in one second and a markdown file cannot. **Every task therefore ends with
@@ -977,7 +985,7 @@ Run: `npx jest serve-doc-mapping -v`   ← where the new tests actually live
 Expected: FAIL — the reserve timeout does not return `busy`, and the settle is called once, not twice.
 
 Then confirm the money pin is untouched and still green:
-Run: `npx jest tests/integration/serve-doc-materialize -v` → PASS, with no edits to its assertions.
+Run: `npm run test:integration -- serve-doc-materialize` → PASS, with no edits to its assertions.
 
 - [ ] **Step 5: Write the implementation**
 
@@ -1049,7 +1057,7 @@ computation at `:130-132` — **do not touch that expression**; it is the refund
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `npx jest tests/integration/serve-doc-materialize serve-doc-mapping -v`
+Run: `npx jest serve-doc-mapping -v` **and** `npm run test:integration -- serve-doc-materialize`
 Expected: PASS — 5 new, plus the pre-existing refund and mapping tests.
 
 - [ ] **Step 7: Mutation-check the retry and the timeout branch**
@@ -1131,7 +1139,7 @@ it('the migration literal equals SERVE_FLOOR_SECONDS', () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest tests/integration/serve-config-invariant -v`
+Run: `npm run test:integration -- serve-config-invariant`
 Expected: FAIL — `30` is accepted (today's floor is `>= 1`) and the migration file is absent.
 
 - [ ] **Step 3: Write the migration**
@@ -1178,7 +1186,7 @@ alter table guardrail_config
 
 - [ ] **Step 4: Apply and run tests**
 
-Run: `npx supabase db reset && npx jest tests/integration/serve-config-invariant -v`
+Run: `npx supabase db reset && npm run test:integration -- serve-config-invariant`
 Expected: PASS (3).
 
 **Ordering note:** `db reset` wipes data other integration tests seed. Run this task's tests
