@@ -1018,13 +1018,30 @@ unapplied for eight days while every document read "merged, done".
   behaviour changes are the share tolerating version skew and the serve-path precondition — but
   **the app is not running `master`**. No PR range is listed here on purpose: it needs re-editing on
   every merge, which is the same defect as the SHA. Read `git log` and `fly status`, not this line.
-- **Prod schema is at migration `0025`**, the newest one in `supabase/migrations/`.
-  **How that was checked, because the obvious command could not run:** `supabase migration list
-  --linked` needs a platform login, and the read-only `claude_ro` role is denied on the
-  `supabase_migrations` schema. What *was* verified is that `ledger_audit_kind_note_idx` — created by
-  `0025` — exists in prod, together with `daily_cap_cents = 5000`. That proves `0025` is applied; it
-  does **not** enumerate the full list. If you have a platform login, run the real command and
-  replace this paragraph with its output.
+- **Prod schema == master, verified by enumeration 2026-08-12: 25 applied, `0001` … `0025`, and the
+  set diffed against `supabase/migrations/*.sql` is IDENTICAL** — no missing migration, no extra.
+  Latest three: `0025 settle_is_observable`, `0024 lease_covers_serve`,
+  `0023 claim_video_slot_desired_serial`. `guardrail_config.daily_cap_cents = 5000` (gate A3).
+
+  **Re-run it with no login and no token:**
+  ```
+  psql "$CLAUDE_RO_DATABASE_URL" -At \
+    -c "select version from supabase_migrations.schema_migrations order by version;"
+  ```
+  Diff that against `ls supabase/migrations/*.sql`. **Count and max are not enough** — they agree
+  while a middle migration is missing; diff the sets.
+
+  *This became possible on 2026-08-12.* `supabase migration list --linked` needs a platform login,
+  and `claude_ro` was denied on the `supabase_migrations` schema — so the one question that once went
+  eight days unanswered here ("is prod on the schema we think?") was unanswerable by the very role
+  built to answer it. Two grants fixed it permanently:
+  `grant usage on schema supabase_migrations to claude_ro;` and
+  `grant select on supabase_migrations.schema_migrations to claude_ro;`
+
+  ⚠ **What this reads is the migration LEDGER, not the schema.** It answers "does prod think it ran
+  `0025`?" A partial or hand-edited migration can leave the ledger saying yes. The stronger evidence
+  is still to probe for an object the migration creates — e.g. `ledger_audit_kind_note_idx` from
+  `0025`, which is present. The cheap check does not retire the real one.
 - **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
   trigger. Do not resume it by momentum.
 
