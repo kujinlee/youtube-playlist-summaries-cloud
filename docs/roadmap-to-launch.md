@@ -72,7 +72,7 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
     ON** in prod (local keeps them off). Real sign-in only testable once deployed (1.4).
   - Fly app **`youtube-playlist-summaries`** reserved (`fly apps create`); `fly.toml` app name + iad
     region set (PR #30).
-- [~] **1.4 Deploy + smoke test** — **CORE DONE 2026-07-22; APP LIVE at
+- [x] **1.4 Deploy + smoke test** — ✅ **COMPLETE 2026-08-11** (all A + B items; see [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md)). **CORE DONE 2026-07-22; APP LIVE at
   https://youtube-playlist-summaries.fly.dev.** Deployed (Fly iad, image 471 MB, web+worker).
   Core journey VERIFIED live: OAuth sign-in → add playlist (`/api/jobs` → durable queue) → worker →
   Gemini → stored → **rendered summary with section timestamps**. Guardrail correctly capped spend
@@ -987,9 +987,14 @@ regression test an ordinary integration test. **That has not been verified.**
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
-Current: **M1 core is DONE — the app is LIVE.** 1.1 ✅ 1.2 ✅ 1.3 ✅ (2026-07-21), 1.4 core ✅
-(2026-07-22, PR #32); 1.4 finish-up items remain in [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md).
-Update the checkboxes as steps land.
+Current: **M1 IS COMPLETE — the app is LIVE and every first-class path has been exercised against
+real infra.** 1.1 ✅ 1.2 ✅ 1.3 ✅ (2026-07-21), 1.4 core ✅ (2026-07-22, PR #32), **1.4 finish-up ✅
+(2026-08-11)** — all of A1–A3 and B1–B5 closed; see
+[`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) for the evidence and the release each
+item was verified against.
+
+**Next: M3 Acceptance** (browser-level Playwright e2e against the deployed URL). M2 Sync completed
+2026-07-19.
 
 ### ▶ NEXT ACTIONS (**refreshed 2026-08-11** — read this first on a fresh session)
 
