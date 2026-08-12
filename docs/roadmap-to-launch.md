@@ -1006,13 +1006,17 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #80**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #82**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
-  *No commit SHA here, deliberately.* This line used to name one, and it was **false the moment it
-  was written**: the PR that edits this block is the PR whose merge moves `master` past whatever SHA
-  the block names. It cannot be kept true by being careful, so the field is gone —
-  [`dev-process.md`](dev-process.md) already says *"do not chase the squash SHA — the PR number
-  exists as soon as the PR does"*, and this block was doing exactly what that forbids.
+  *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
+  held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
+  merge moves `master` past whatever SHA it names. Replacing the SHA with a PR number did not fix it
+  either — **PR #81 wrote "#80"**, the previous number, so the field was wrong again on the very
+  first merge. [`dev-process.md`](dev-process.md) already says *"do not chase the squash SHA — the PR
+  number exists as soon as the PR does"*: open the PR, then write its own number here.
+  Enforced by `scripts/check-roadmap-consistency.py`, which compares this against the PR in `HEAD`'s
+  merge subject. ⚠ That comparison only has something to compare **on `master`**, so it catches the
+  mistake on the first CI run after merge — it does not block the PR that makes it.
 - **Deployed: release v6, 2026-08-11 15:47Z** (`fly status`: web + worker both v6).
   ⚠ **`master` has moved past the deployed release.** Nothing outstanding is deploy-urgent — the
   behaviour changes are the share tolerating version skew and the serve-path precondition — but
