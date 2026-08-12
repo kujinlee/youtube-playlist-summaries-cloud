@@ -112,7 +112,7 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   on 2026-08-11 the copy still showed the serve-doc money item **ticked `[x]` as "CONFIRMED and FIXED"**
   while the checklist's B3 was failing against hosted infra. Two copies of a gate means one of them is
   lying and nobody can tell which. Status as of 2026-08-11: **B1 ✅ B2 ✅ B5 ✅ (by replacement),
-  B4 ✅ (decided *tolerate*, then passed), B3 ❌ FAILED — a real defect, see the checklist.**
+  B4 ✅ (decided *tolerate*, then passed — PR #76), B3 ❌ FAILED — a real defect, see the checklist.**
 
 ### Prod schema reconciliation — 2026-08-11
 
