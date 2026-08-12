@@ -961,26 +961,34 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
 
 ---
 
-## Serve-path absence defect — backlog #34, filed 2026-08-11 (NOT started)
+## Serve-path absence defect — backlog #34 — ✅ RESOLVED 2026-08-11 (PR #78)
 
-**Found by a gate, which is the point.** M1.4 item B3 was re-run against hosted staging with the spend
-authorised, and it FAILED — see [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) §B3 for
-the full measurement and PR #76 for the evidence trail.
+> ⚠️ **This section was written when the defect was believed live, and stayed that way after it was
+> fixed.** Filed by PR #77, resolved by PR #78 — and this heading still said *"NOT started"* until
+> 2026-08-12. `dev-process.md` requires the status to move in the same PR as the work; it was updated
+> in `backlog.md` and the M1.4 checklist and missed here. Recorded rather than silently corrected,
+> because it is the third instance of this exact shape in one week.
 
-The serve path's money guard treats `tryGet → absent` as proof the cached model is gone. Supabase
-returns a **404 for an RLS denial**, byte-identical to a genuine miss, so the guard does not fire:
-measured **6¢ → 12¢** with a second real Gemini call for a model already sitting in the bucket. The
-sync path gets this right by consulting `BlobStore.provesAbsence`; the serve path never asks.
+**What gate B3 measured, and what it did not.** `tryGet → absent` is not proof of absence on Supabase:
+an RLS-denied read returns a 404 byte-identical to a genuine miss. Driving `resolveMagazineModel`
+directly with the owner policy dropped re-reserved and re-generated — **6¢ → 12¢** with a second live
+Gemini call. **But that state is not reachable through the application.** The only caller goes through
+`loadSummaryForServe`, which reads the summary markdown with the same store and principal and fails
+closed at `409 "repair needed"`, so a permissions fault ends the request before any reserve. The B3
+harness had read the markdown with `service_role` to isolate the model read, constructing a state the
+app cannot enter. **The charge was real; the route to it was not.**
 
-**Status: filed, not started.** Blast radius is the serve path that merged this morning after seven
-review rounds, and the fix is a money-path behaviour change — it wants its own branch, its own spec
-pass on what "corroborated absence" should mean, and dual review. Full statement, fix lead, and the
-three questions to settle first: [`docs/backlog.md`](backlog.md) #34.
+**What was genuinely wrong, and is fixed (PR #78).** The blob store's comment asserted a 404 *"IS
+provable absence"* and listed RLS denial as producing something else — both false, and it quoted the
+very error string that disproves it. And the protection was **accidental**: no signature, comment or
+test carried it, and `mdBody` was optional, so a new caller could reach the charging code having never
+done the read. `mdBody` is now required, and
+`tests/integration/serve-md-unreadable-no-charge.test.ts` pins the short-circuit — mutation-verified.
 
-**Acceptance = re-run B3 green against hosted staging.** So project `neeufoxdbgbpkjukzzuc` must not be
-deleted until then, unless the fault is first shown to reproduce against local Supabase — an RLS policy
-drop is a permission change, not a transient failure, so it plausibly does, which would make the
-regression test an ordinary integration test. **That has not been verified.**
+**Acceptance did not need hosted infrastructure after all.** Gate B3's money clause tested an
+unreachable state, so it is replaced by that test, which runs in CI on every change instead of by hand
+against a live project. The staging project `neeufoxdbgbpkjukzzuc` was consequently deleted
+2026-08-12; prod was verified untouched and serving afterwards.
 
 ---
 
@@ -1006,7 +1014,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #82**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #83**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
@@ -1072,8 +1080,7 @@ FAIL. Write them as gates first; that exercise is what turned the version-skew i
 2. **For "logged out", fetch with no cookie jar** (`curl`), not an incognito window. Stronger
    guarantee, and it avoids the trap that made the 2026-07-22 A2 attempt inconclusive.
 
-**Optional cleanup, not blocking:** staging Supabase project `neeufoxdbgbpkjukzzuc` is now safe to
-delete — nothing outstanding needs it.
+*(The throwaway staging project has been deleted — see the serve-path absence section.)*
 
 **Older candidate pool below — VERIFY BEFORE STARTING. Several of these predate three merged
 slices.**
