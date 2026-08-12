@@ -106,14 +106,23 @@ the md5 first. Freeze before dispatching.
 
 Nothing is enforced, so the only question that matters is whether the thing earns its keep.
 
-> **Re-examine after 5 explainers or on 2026-09-30, whichever comes first.**
-> **RETIRE THE SKILL** unless at least one explainer has produced: a **boundary** nobody had written
-> down; a **decision that became an ADR**; a **corrected belief** — something believed about the system
-> that wasn't true; or a **defect the dual review missed**.
+> **Judged in the next general skill prune — this skill does not get its own deadline.**
+> Keep it only if an explainer has produced: a **boundary** nobody had written down; a **decision that
+> became an ADR**; a **corrected belief** — something believed about the system that wasn't true; or a
+> **defect the dual review missed**. Count them with `ls ~/explainers | wc -l`.
 
-Round 2 filed this as decorative because nothing counted the explainers. Putting them in `~/explainers/`
-fixed that by accident: `ls ~/explainers | wc -l` is the counter. Not enforced — observable, which is the
-honest bar for a thing with no gate. The date half still depends on someone looking.
+**Why not a dated gate — decided 2026-08-12, after building one and throwing it away.**
+`scripts/skill-usage-audit.py` already exists and answers *"which of my installed skills do I actually
+use, so unused ones can be trimmed"*, by sweeping every session transcript across three signals. That
+is the mechanism for this concern, it is general, and skill pruning is a **category sweep, not a
+per-skill rule**. A CI check that went red on a date for **one** skill was a second mechanism for a
+served concern — the duplicate-mechanism failure this project has a coherence table to catch, committed
+in the very document that claims to avoid it. It was built, reviewed against that rule, and deleted
+unmerged.
+
+*(Its docstring is worth reading before any prune: `superpowers:using-superpowers` has zero invocations
+and shapes every session through a SessionStart hook, so invocation count alone would call the skill
+that governs skill selection "unused".)*
 
 ### Run 1 — PR #78 (`5cbedcf`), backlog #34
 

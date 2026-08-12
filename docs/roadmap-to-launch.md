@@ -1012,11 +1012,15 @@ thing that is **not** a gate has no activation path. Reviews:
 **The founding premise is UNMEASURED** — PR #67 being 39 commits over 7 rounds shows the model was
 absent, not that the absence cost anything — so the experiment is the attempt to measure it.
 
-- [ ] **Re-examine after 5 explainers or on 2026-09-30, whichever comes first.** Count them with
-      `ls ~/explainers | wc -l`. **RETIRE the skill** unless at least one has produced: a boundary
-      nobody had written down, a decision that became an ADR, a corrected belief, or a defect the dual
-      review missed. **FAILS IF** the date passes with none of the four and the skill is still installed.
-      **VERIFIED AGAINST:** the explainers in `~/explainers/` at that date.
+- [ ] **Judge explain-diff in the next general skill prune — it does not get its own deadline.**
+      `scripts/skill-usage-audit.py` already sweeps every session transcript to answer *"which skills do
+      I actually use, so unused ones can be trimmed"*; that is the mechanism, and one skill does not get
+      a second. Keep explain-diff only if an explainer has produced: a boundary nobody had written down,
+      a decision that became an ADR, a corrected belief, or a defect the dual review missed. Count them
+      with `ls ~/explainers | wc -l`.
+      **FAILS IF** the prune keeps it with none of the four having happened.
+      *(A dated CI gate for this one skill was built on 2026-08-12 and deleted unmerged — a second
+      mechanism for a served concern.)*
 
 **Run 1 (PR #78, `5cbedcf`) produced one: [ADR-0008](adr/0008-serve-money-guard-depends-on-storage-grant-granularity.md)** — the serve
 path's money guard depends on migration `0007`'s grant being on the owner path segment, and `0007`
@@ -1055,7 +1059,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #86**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #88**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
