@@ -13,7 +13,10 @@ import { readModelEnvelope } from '@/lib/html-doc/model-store';
 const mockReadModelEnvelope = readModelEnvelope as jest.Mock;
 
 const principal = { id: 'owner-1', indexKey: 'pl-key' };
-const fakeModel = { title: 'T', dek: 'd', sections: [] } as any;
+// One model section per title. This used to be `sections: []` alongside two titles — a state no real
+// envelope can be in, and one that readTitleStableModel now (correctly) refuses, because rendering it
+// would emit blank sections. A fixture describing an impossible world hides the rule under test.
+const fakeModel = { title: 'T', dek: 'd', sections: [{ lead: 'l1' }, { lead: 'l2' }] } as any;
 const titles = ['A', 'B'];
 const roStore: ReadOnlyBlobStore = { get: async () => null };
 
@@ -99,6 +102,21 @@ describe('readTitleStableModel', () => {
     mockReadModelEnvelope.mockResolvedValue(null);
     const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
     expect(r).toEqual({ status: 'none' });
+  });
+  // Coverage check (B4 review High-2). sameTitles compares sourceSections to titles and says nothing
+  // about model.sections.length; nothing else relates them, so this state is reachable and renders a
+  // 200 with a silently blank section (render.ts pairs by index and emits '' for a missing one).
+  it('none when the model covers FEWER sections than the titles (would render blank sections)', async () => {
+    const short = { title: 'T', dek: 'd', sections: [{ lead: 'only-one' }] } as any;
+    mockReadModelEnvelope.mockResolvedValue(envelope({ model: short, generatorVersion: 'OLD' }));
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
+    expect(r).toEqual({ status: 'none' });
+  });
+  it('ok when the model covers MORE sections than the titles (surplus is never indexed)', async () => {
+    const long = { title: 'T', dek: 'd', sections: [{ lead: 'a' }, { lead: 'b' }, { lead: 'c' }] } as any;
+    mockReadModelEnvelope.mockResolvedValue(envelope({ model: long, generatorVersion: 'OLD' }));
+    const r = await readTitleStableModel({ blobStore: roStore, principal, base: 'b', titles });
+    expect(r).toEqual({ status: 'ok', model: long });
   });
 });
 

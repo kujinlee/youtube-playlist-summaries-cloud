@@ -256,7 +256,9 @@ export async function createShare(
 const WARM_MODEL_TIMEOUT_MS = 15_000;
 
 /** Best-effort warm of the owner's rendered "magazine" model so a freshly-minted share link serves
- *  immediately instead of returning 503 "not ready" (backlog #14). Hits the SAME owner-charged serve
+ *  immediately instead of returning 503 "not ready" (backlog #14). Still worth doing after the
+ *  2026-08-11 tolerate-skew change: that only covers a model that EXISTS but is version-skewed, and a
+ *  freshly-minted share on a never-served doc has no model at all. Hits the SAME owner-charged serve
  *  path a normal HTML view uses (`summaryHref`): a FRESH model is read without charging; an absent/stale
  *  model is generated, bounded by `reserve_serve_model` (per owner/doc/day lease + K attempt cap) —
  *  i.e. the same spend cap a normal owner *view* already incurs, no new or double charge.

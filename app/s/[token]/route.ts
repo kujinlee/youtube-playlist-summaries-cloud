@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import { getShareServeContext } from '@/lib/share/serve';
-import { readFreshMagazineModel } from '@/lib/html-doc/read-model';
+import { readTitleStableModel } from '@/lib/html-doc/read-model';
 import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 import { renderMagazineHtml } from '@/lib/html-doc/render';
 import { generateNonce, buildSummaryCsp } from '@/lib/html-doc/csp';
@@ -59,7 +59,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
 
   if (format === 'md') {
     // D4 money invariant: short-circuits AFTER the mdBytes read/bad-key catch but BEFORE
-    // parseSummaryMarkdown/readFreshMagazineModel — must NOT resolve a model or charge.
+    // parseSummaryMarkdown/readTitleStableModel — must NOT resolve a model or charge.
     // D12/B10b: still runs the SAME mandatory pre-response re-check the html path runs, so a
     // revoke/un-promote landing between the initial resolve (above) and this response is caught —
     // read-only, never charges.
@@ -78,8 +78,29 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const base = ctx.mdKey.replace(/\.md$/, '');
   const titles = parsed.sections.map((s) => s.title);
 
-  const model = await readFreshMagazineModel({ blobStore: readOnly, principal, base, titles });
-  if (model.status !== 'ok') return notReady(); // absent/stale — NO generation (B7/B8)
+  // TITLE-STABLE, not fresh: a version-skewed model is SERVED rather than refused (M1.4 item B4,
+  // product decision 2026-08-11 — "tolerate"). Skew is the normal state during a rolling deploy,
+  // and the old behavior's self-heal ("heals after owner next views") never fires for a share
+  // whose owner does not revisit the doc, so the link stayed broken indefinitely.
+  //
+  // What zod does and does NOT cover here — stated exactly, because the first draft of this comment
+  // overclaimed it (B4 review High-1). readModelEnvelope safeParses against the CURRENT
+  // ModelEnvelopeSchema and returns null on mismatch, so an envelope that VIOLATES the schema fails
+  // closed (missing/mistyped fields, out-of-bounds `bullets`). But the strictness is shallow:
+  // ModelEnvelopeSchema deliberately dropped `.strict()` for forward-compat (model-store.ts), and
+  // only the top-level MagazineModelSchema is strict — BulletSchema and MagazineSectionSchema are
+  // not (lib/html-doc/types.ts), so a version bump that ADDS a nested field (`section.pullQuote`,
+  // `bullet.kind`) parses fine and is silently stripped, and one that changes the MEANING of an
+  // existing field of the same type is invisible to zod entirely.
+  // So: tolerating admits the prompt half of GENERATOR_VERSION (same structure, older prose) AND
+  // the nested-additive/semantic half. That is the accepted cost of the "tolerate" decision, not a
+  // guarantee against it. What still fails closed is a schema VIOLATION, plus the two checks below.
+  //
+  // `titles` still gates positional coherence — a drifted-title model would mis-pair against the
+  // current markdown, so it is still refused. Same helper, and the same rationale, as the D5
+  // owner_over_budget path in serve-doc.ts. Still NO generation (B7/B8/B18b).
+  const model = await readTitleStableModel({ blobStore: readOnly, principal, base, titles });
+  if (model.status !== 'ok') return notReady(); // absent / title-drifted / unparsable
 
   // Mandatory pre-response re-check: closes revoke/un-promote-before-final-check (D14/B10b).
   const recheck = await getShareServeContext(svc, token);

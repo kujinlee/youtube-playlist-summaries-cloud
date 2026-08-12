@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, newUser } from './helpers/clients';
 import { seedPlaylist, seedPromotedVideo, seedSummaryBlob } from './helpers/seed'; // EXISTING helpers
 import { generateShareToken, hashShareToken } from '@/lib/share/token';
-import { writeModelEnvelope } from '@/lib/html-doc/model-store';
+import { writeModelEnvelope, MODEL_KEY } from '@/lib/html-doc/model-store';
 import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
@@ -173,12 +173,20 @@ describe('share-route', () => {
     expect(res.status).toBe(503);
   });
 
-  it('B8: valid token, materialized model is STALE (wrong generatorVersion) → 503 not-ready (never 200, never a charge)', async () => {
+  // ── B8 REVERSED BY PRODUCT DECISION 2026-08-11 (M1.4 item B4): TOLERATE version skew.
+  // This case asserted 503 from Stage 1F-b until that decision. The spec row said "not ready;
+  // heals after owner next views" — but the heal is OWNER-dependent, so a share link to a doc
+  // its owner never revisits stayed broken after every GENERATOR_VERSION bump, and skew is the
+  // normal state during a rolling deploy. The structural guarantee does NOT come from
+  // GENERATOR_VERSION: readModelEnvelope safeParses every envelope against the CURRENT
+  // ModelEnvelopeSchema and returns null on mismatch (model-store.ts), and MagazineModelSchema
+  // is .strict() — so a model whose SHAPE changed still fails closed (B8c below). What
+  // tolerating admits is only the PROMPT-change half of GENERATOR_VERSION: same structure,
+  // older prose. Titles still gate positional coherence (B8b below).
+  it('B8: valid token, model is version-SKEWED but title-stable → 200 rendered (tolerate; still never a charge)', async () => {
     const u = await newUser();
     const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
     await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
-    // Materialize a model envelope that exists but is stale — wrong generatorVersion, so
-    // isFresh() (lib/html-doc/read-model.ts) must reject it just like the absent case above.
     const serviceStore = new SupabaseBlobStore(svc, ARTIFACTS_BUCKET);
     const principal = { id: u.user.id, indexKey: playlistKey };
     await writeModelEnvelope(
@@ -187,8 +195,101 @@ describe('share-route', () => {
       {
         sourceMd: `${base}.md`,
         generatedAt: new Date().toISOString(),
+        sourceSections: ['Intro'],          // titles MATCH the MD — positionally coherent
+        generatorVersion: 'stale-vX',       // deliberately mismatched — must NOT equal GENERATOR_VERSION
+        model: {
+          sections: [
+            { lead: 'LEAD-FROM-SKEWED-MODEL', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] },
+          ],
+        },
+      },
+      serviceStore,
+    );
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
+    expect(res.status).toBe(200);
+    // Assert the SKEWED model is what got rendered — a 200 alone would also pass if the route
+    // had somehow regenerated, which is the one thing this path must never do.
+    expect(await res.text()).toContain('LEAD-FROM-SKEWED-MODEL');
+  });
+
+  it('B8b: version-skewed AND titles drifted → 503 (positional mis-pair must still fail closed)', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    const serviceStore = new SupabaseBlobStore(svc, ARTIFACTS_BUCKET);
+    const principal = { id: u.user.id, indexKey: playlistKey };
+    await writeModelEnvelope(
+      principal,
+      base,
+      {
+        sourceMd: `${base}.md`,
+        generatedAt: new Date().toISOString(),
+        sourceSections: ['A DIFFERENT SECTION'], // drifted — the model no longer pairs with the MD
+        generatorVersion: 'stale-vX',
+        model: {
+          sections: [
+            { lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] },
+          ],
+        },
+      },
+      serviceStore,
+    );
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
+    expect(res.status).toBe(503);
+  });
+
+  it('B8c: envelope whose MODEL SHAPE is invalid under the current schema → 503 (zod is the structural gate, not the version string)', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, MD);
+    const serviceStore = new SupabaseBlobStore(svc, ARTIFACTS_BUCKET);
+    const principal = { id: u.user.id, indexKey: playlistKey };
+    // Written as RAW BYTES on purpose: writeModelEnvelope validates before writing, so an
+    // invalid envelope cannot be produced through it. This is the shape-change case that
+    // tolerating version skew must NOT admit — `bullets: []` violates MagazineSectionSchema's
+    // min(3), exactly as a real model-shape change would.
+    await serviceStore.put(
+      principal,
+      MODEL_KEY(base),
+      Buffer.from(JSON.stringify({
+        sourceMd: `${base}.md`,
+        generatedAt: new Date().toISOString(),
         sourceSections: ['Intro'],
-        generatorVersion: 'stale-vX', // deliberately mismatched — must NOT equal GENERATOR_VERSION
+        generatorVersion: 'stale-vX',
+        model: { sections: [{ lead: 'L', bullets: [] }] },
+      }), 'utf-8'),
+      'application/json',
+    );
+    const token = await mintDirect(u.user.id, playlistId, videoId);
+
+    const res = await GET(new Request(`http://localhost/s/${token}`), invoke(token));
+    expect(res.status).toBe(503);
+  });
+
+  it('B8d: envelope covers FEWER sections than the markdown → 503 (never a 200 with a blank section)', async () => {
+    const u = await newUser();
+    const { playlistId, playlistKey, videoId, base } = await seedDoc(u.user.id);
+    // Two sections in the MD, but the model will carry only one.
+    const TWO_SECTION_MD = `# T\n**Channel:** C | **Duration:** 1:00\n\n## 1. Intro\nbody\n\n## 2. Second\nmore\n`;
+    await seedSummaryBlob(svc, u.user.id, playlistKey, base, TWO_SECTION_MD);
+    const serviceStore = new SupabaseBlobStore(svc, ARTIFACTS_BUCKET);
+    const principal = { id: u.user.id, indexKey: playlistKey };
+    // `sourceSections` MATCHES the parsed titles, so sameTitles() accepts — the mismatch is between
+    // sourceSections and model.sections, which no schema relates. renderMagazineHtml pairs by index
+    // and returns '' for a missing model section (render.ts:84), so without the coverage check in
+    // readTitleStableModel this served a 200 with section 2 silently blank.
+    await writeModelEnvelope(
+      principal,
+      base,
+      {
+        sourceMd: `${base}.md`,
+        generatedAt: new Date().toISOString(),
+        sourceSections: ['Intro', 'Second'],
+        generatorVersion: GENERATOR_VERSION, // fresh — so this is NOT about version skew
         model: {
           sections: [
             { lead: 'L', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] },

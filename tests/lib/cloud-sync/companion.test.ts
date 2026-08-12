@@ -37,8 +37,8 @@ describe('sender ships', () => {
 
 // ── L-R6-1 (round 6) — BOTH sides hold a model built from the WINNING body. Shipping unconditionally
 //    could DOWNGRADE the receiver: a sender on an older checkout overwrites a model isFresh() accepts
-//    with one it rejects, flipping the share from rendering to 503 and making recovery a PAID owner
-//    re-serve. When both match the winner hash the bodies are identical, so the only thing left to
+//    with one it rejects, making recovery a PAID owner re-serve. (Pre-2026-08-11 it also flipped the
+//    share from rendering to 503; the share tolerates skew now — see companion.ts L-R6-1.) When both match the winner hash the bodies are identical, so the only thing left to
 //    compare is generatorVersion — prefer the fresher, and never write when the receiver is already
 //    current.
 describe('both sides match the winner hash — generatorVersion breaks the tie', () => {
