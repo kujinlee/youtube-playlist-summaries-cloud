@@ -40,7 +40,20 @@ export async function readFreshMagazineModel(args: {
 
 /** Title-stable read (spec D5): returns the cached model iff the envelope exists AND its section
  *  titles match `titles` (generator version may differ — the version-bump case). Positionally
- *  coherent to render against current markdown. Never reserves/generates (pure blob read). */
+ *  coherent to render against current markdown. Never reserves/generates (pure blob read).
+ *
+ *  COVERAGE CHECK (added 2026-08-11, B4 review High-2): `sameTitles` compares `sourceSections` to
+ *  `titles` and says NOTHING about `model.sections.length`. Nothing enforces the two agree —
+ *  `ModelEnvelopeSchema` does not relate them and `writeModelEnvelope` does not check — so an
+ *  envelope with two `sourceSections` and one model section passes `sameTitles`. `renderMagazineHtml`
+ *  pairs by index and returns `''` for a missing model section (lib/html-doc/render.ts:84), so that
+ *  envelope renders a **200 with a silently blank section**.
+ *  `>=` rather than `===`: the requirement is that every PARSED section has a model section to pair
+ *  with. Surplus model sections are simply never indexed, and rejecting them would refuse an
+ *  otherwise-renderable document.
+ *  Deliberately NOT added to `isFresh`: that governs the OWNER path, where refusing an envelope
+ *  triggers a reserve-and-charge regeneration. Making a money path stricter is its own slice with
+ *  its own review — this one only hardens the path B4 widened. */
 export async function readTitleStableModel(args: {
   blobStore: ReadOnlyBlobStore;
   principal: Principal;
@@ -49,6 +62,8 @@ export async function readTitleStableModel(args: {
 }): Promise<{ status: 'ok'; model: MagazineModel } | { status: 'none' }> {
   const { blobStore, principal, base, titles } = args;
   const existing = await readModelEnvelope(principal, base, blobStore);
-  if (existing && sameTitles(existing, titles)) return { status: 'ok', model: existing.model };
+  if (existing && sameTitles(existing, titles) && existing.model.sections.length >= titles.length) {
+    return { status: 'ok', model: existing.model };
+  }
   return { status: 'none' };
 }

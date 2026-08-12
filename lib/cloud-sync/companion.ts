@@ -55,9 +55,16 @@ export type CompanionAction =
  *  L-R6-1 (round 6) — the ship branch could DOWNGRADE. When BOTH envelopes match winnerMdHash the
  *  bodies are identical, so the only remaining difference is generatorVersion — and shipping the
  *  sender's blind overwrites a receiver model isFresh() accepts (lib/html-doc/read-model.ts) with one
- *  it rejects. The share flips from rendering to a 503 (app/s/[token]/route.ts) and the only recovery
- *  is an owner re-serve, which reserves and charges (lib/html-doc/serve-doc.ts) — the same
- *  user-re-spend class as H1 and H-R5-1, so it is guarded rather than tolerated.
+ *  it rejects. The only recovery is an owner re-serve, which reserves and charges
+ *  (lib/html-doc/serve-doc.ts) — the same user-re-spend class as H1 and H-R5-1, so it is guarded
+ *  rather than tolerated.
+ *  ⟳ NARROWED 2026-08-11 (M1.4 item B4). This paragraph used to open the harm with "the share flips
+ *  from rendering to a 503 (app/s/[token]/route.ts)". That is no longer true: by product decision the
+ *  share now TOLERATES version skew and serves the title-stable model, so a downgraded receiver keeps
+ *  rendering. The OWNER path still calls readFreshMagazineModel, so the re-serve charge above survives
+ *  intact and this guard keeps its justification — but the harm is now "older prose plus one owner
+ *  re-serve", not "a broken share link". Half of what bought this guard has dissolved; it was not
+ *  removed, because the money half still stands on its own.
  *  Reachability is not exotic: it needs GENERATOR_VERSION skew between the local checkout and the
  *  deployed cloud image (routine whenever the deploy lags the checkout) AND the loser already holding
  *  a model built from the winner's exact body — which is the normal state after any prior sync, since
@@ -76,9 +83,11 @@ export type CompanionAction =
  *     a fresh local model is never overwritten.
  *   - copyToCloud (receiver = Supabase): the receiver's envelope carries the DEPLOYED image's version,
  *     which fails `=== GENERATOR_VERSION` here even when the cloud's own isFresh() would accept it —
- *     so the receiver-current arm does not fire and the sender may still be shipped, 503-ing a share
- *     that was rendering. That is NOT a regression (the pre-guard code shipped unconditionally too),
- *     but this guard covers only ~half the case space.
+ *     so the receiver-current arm does not fire and the sender may still be shipped, downgrading a
+ *     model the cloud was happily serving. That is NOT a regression (the pre-guard code shipped
+ *     unconditionally too), but this guard covers only ~half the case space.
+ *     (Pre-2026-08-11 this sentence ended "503-ing a share that was rendering"; the share tolerates
+ *     skew now — see L-R6-1's narrowing note — so the residue is prose age and an owner re-serve.)
  *  Closing it needs the receiver's effective GENERATOR_VERSION, which the cloud does not expose today
  *  (no version endpoint, not carried in any synced artifact). Worth noting for that future slice: the
  *  "real upgrade" arm below may never be a genuine upgrade under skew — a sender envelope fresh by the
@@ -130,9 +139,13 @@ export function decideCompanion(args: {
   //    generatorVersion drift guard still catches the common legacy drift — but a deleted paid
   //    artifact costs a Gemini transform to rebuild.
   //
-  //  - REPORT on doubt. shareNeedsOwnerServe is a report-only count (§10 row 7): "these shares may
-  //    not render until you re-serve." It spends nothing and destroys nothing, so the harmful
-  //    direction is UNDER-reporting — an anon visitor silently hitting a not-ready share. Note the
+  //  - REPORT on doubt. shareNeedsOwnerServe is a report-only count (§10 row 7). Its meaning was
+  //    "these shares may not RENDER until you re-serve"; since 2026-08-11 the share tolerates
+  //    generator-version skew, so for the skew case it now means "these shares may need a re-serve
+  //    to FRESHEN". The render-blocking reading still holds for the case this flag was built for —
+  //    a DELETED receiver model, which is absent, not skewed, and still 503s. It spends nothing and
+  //    destroys nothing, so the harmful direction is UNDER-reporting — an anon visitor silently
+  //    hitting a not-ready share. Note the
   //    receiver of a copyToCloud is always the Supabase store, which can never return `none`, so
   //    keying the flag to proof would make §10 row 7 unreportable in the direction it describes.
   const provablyStale = receiverModel.kind === 'envelope'

@@ -107,25 +107,12 @@ Turn merged code into a running app a real user can reach. Highest-leverage mile
   storage failures essentially never occur there. That is precisely the root-cause class M2a was built to
   survive, so it is untested by construction until a hosted project exists. Run these against real
   Supabase, in this order:
-  - [ ] **Round-trip.** Local-only video → sync → present in cloud; cloud-only video → sync → hydrated
-    locally with a readable MD body. Confirm blob paths are `<ownerId>/<playlistKey>/<key>` under a real
-    user JWT — the Task 12 review caught a literal `{ id: 'cloud' }` principal that Storage RLS rejects.
-  - [ ] **B1 guard, live.** Make a cloud MD blob unreadable mid-sync (revoke the Storage policy briefly,
-    or point at a key the policy denies) and confirm: the error surfaces in `report.errors`, the other
-    replica's bytes are byte-preserved, `docVersion` is not downgraded, and **no manifest baseline is
-    written** — then re-run and confirm it heals. This is the check local cannot produce.
-  - [x] **serve-doc money finding — CONFIRMED and FIXED before launch (2026-07-19).** No prod infra was
-    needed: the repo already had fault-injecting blob-store wrappers and `spend_ledger` assertions, and
-    the `null` a transient error produces is byte-identical to a 404's. Measured before the fix
-    `spend 6→12, gemini_calls=1, attempt_count=2` — a real double-charge for a model already in the
-    bucket; after, `status=busy, spend 6→6, gemini_calls=0`. Regression test:
-    `tests/integration/serve-model-unreadable.test.ts`. **Still worth re-running against hosted
-    Supabase at deploy** to confirm a real 5xx (not a simulated one) carries a non-404 `statusCode`.
-  - [ ] **M-R7-1 skew.** Deploy an image whose `GENERATOR_VERSION` differs from the local checkout, run a
-    `copyToCloud` transfer where both sides hold a model for the same body, and check whether a rendering
-    share starts returning 503.
-  - [ ] **No service-role on the sync path** in the deployed config (`scripts/check-service-confinement.ts`
-    passes against the real environment, not just local).
+  **➜ These live in [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) §B (B1–B5) and
+  nowhere else.** This file used to carry a second, differently-worded copy of all five; it drifted, and
+  on 2026-08-11 the copy still showed the serve-doc money item **ticked `[x]` as "CONFIRMED and FIXED"**
+  while the checklist's B3 was failing against hosted infra. Two copies of a gate means one of them is
+  lying and nobody can tell which. Status as of 2026-08-11: **B1 ✅ B2 ✅ B5 ✅ (by replacement),
+  B4 ✅ (decided *tolerate*, then passed — PR #76), B3 ❌ FAILED — a real defect, see the checklist.**
 
 ### Prod schema reconciliation — 2026-08-11
 

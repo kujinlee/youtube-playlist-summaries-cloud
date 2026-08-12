@@ -809,8 +809,9 @@ describe('cloud-sync §10 end-to-end scenarios', () => {
   // ── L-R6-1 (round 6) — the ship branch must never DOWNGRADE the receiver. Both sides hold a model
   //    built from the WINNING body, but the sender's was built by an older checkout (GENERATOR_VERSION
   //    skew between the local tree and the deployed cloud image). Shipping it blind would replace a
-  //    model isFresh() accepts with one it rejects, flipping the share to a 503 whose only recovery is
-  //    a PAID owner re-serve.
+  //    model isFresh() accepts with one it rejects, whose only recovery is a PAID owner re-serve.
+  //    (Pre-2026-08-11 this also flipped the share to a 503; the share tolerates version skew now, so
+  //    the surviving harm is older prose plus that owner re-serve — see companion.ts L-R6-1.)
   it('L-R6-1: a ship never overwrites a receiver model that is already generation-fresh', async () => {
     const ctx = await makeOwnerContext();
     const bodyLocalWin = '# LocalWin\n\nhigher-major local body\n';
