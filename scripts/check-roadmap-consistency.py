@@ -24,19 +24,32 @@ by people who knew it is a rule that wants to be a script.
 
 WHAT THIS CHECKS
 
-Inside the NEXT ACTIONS block, on lines carrying a forward-looking cue ("next step", "remaining",
-"blocked", ...), it extracts step identifiers — `1.4`, `3.1`, `A1`, `B3`, and ranges like `B1-B5` —
-and looks up each one's checkbox in the roadmap and the M1.4 checklist. It reports:
+Inside the NEXT ACTIONS block, in PARAGRAPHS carrying a forward-looking cue ("next step",
+"remaining", "blocked", ...), it extracts step identifiers — `1.4`, `3.1`, `A1`, `B3`, ranges like
+`B1-B5` — and looks up each one's checkbox. It reports:
 
   named_but_done        the block presents a `[x]` item as work to do          <- the recurring bug
   unresolvable          the block names an identifier that has no checkbox     <- a renamed/typo'd ref
   conflicting_marks     one identifier carries two different marks             <- duplicated listing
+  no_coverage           the block named nothing checkable, so this verified NOTHING
+
+TWO THINGS IT DELIBERATELY DOES NOT HARDCODE, because both were measured wrong on 2026-08-12:
+
+  * The identifier VOCABULARY is derived from the checkbox lines, not written into this file. Hard-
+    coded as `[AB]\\d`, a future `C` group or `T` tasks would be invisible — not flagged unknown,
+    invisible — so the check would quietly stop covering new work while still reporting green.
+  * The checklist FILES are globbed, not listed. `m1.4-finishup-checklist.md` was named explicitly at
+    first; M1.4 is now closed, and the next milestone's checklist would have been unread.
+
+The rule of thumb both follow: hardcode only what FAILS LOUDLY when it goes stale. The roadmap path
+and the `▶ NEXT ACTIONS` heading are hardcoded, and both raise `cannot_run` if they stop matching.
 
 WHAT IT CANNOT DO
 
-It matches identifiers, not meaning. A block that says "finish the sync work" with no identifier is
-invisible to it, and a cue phrase this list does not know is invisible too. It shrinks the class; it
-does not close it. Ticked-elsewhere is the specific shape that has actually bitten, twice.
+It matches identifiers, not meaning. "Finish the sync work" names nothing checkable — that is what
+`no_coverage` exists to catch, but only when the WHOLE block names nothing. A cue phrase this list
+does not know is invisible. Past-tense history sharing a paragraph with a cue is a false positive,
+pinned as such in the self-test. It shrinks the class; it does not close it.
 
 Usage:
     python3 scripts/check-roadmap-consistency.py
@@ -67,15 +80,6 @@ BLOCK_HEADING_RE = re.compile(r"^#{1,6}\s*▶\s*NEXT ACTIONS", re.M)
 #   - [~] **A1 — Download paths.** ...           -> A1
 #   - [ ] **B3 — serve-doc money re-run.** ...   -> B3
 CHECKBOX_RE = re.compile(r"^\s*-\s*\[([ xX~])\]\s*\*\*\s*(?:⚠️?\s*)?([A-Z]?\d(?:\.\d+)?[a-z]?)\b")
-
-# Identifiers as they appear in prose. Bare milestone names (M1, M3) are deliberately NOT matched:
-# they are section headings, not checkboxes, so treating them as references would be a false positive.
-# An optional `M` prefix on a DECIMAL step is consumed, though — measured 2026-08-12: the block said
-# "M3.1/3.2/3.3" and only 3.2 and 3.3 matched, because the `M` broke the word boundary before 3.1.
-# The most load-bearing reference in the block was the one the check could not see.
-IDENT_RE = re.compile(r"\b(?:M)?([AB]\d[a-z]?|\d\.\d)\b")
-# Ranges: B1-B5, A1-A3, 3.1-3.3. En dash and hyphen both occur in this repo.
-RANGE_RE = re.compile(r"\b([AB])(\d)\s*[-–—]\s*(?:[AB])?(\d)\b")
 
 # Forward-looking cues. Only lines carrying one of these are inspected, so that HISTORY
 # ("M1.3 was the blocker until 07-21") does not read as a claim about the present.
@@ -132,10 +136,43 @@ def collect_marks(sources: dict[str, str]) -> tuple[dict[str, str], list[Finding
     return marks, findings
 
 
-def expand_ranges(line: str) -> set[str]:
+# ── the prose-reference vocabulary is DERIVED FROM THE DOCUMENTS, not written here ───────────────
+#
+# It used to be hardcoded as `[AB]\d|\d\.\d`. That was correct for the week it was written and
+# silently wrong afterwards: the day a milestone introduces a `C` group or `T` tasks, the block could
+# name `C1` as the next step while `C1` sat ticked, and NOTHING would fire — not even `unresolvable`,
+# because an unmatched reference is invisible rather than unknown. A check whose vocabulary must be
+# hand-extended per milestone is a check that quietly stops covering new work, which is the exact
+# failure mode this family of scripts exists to prevent.
+#
+# So the families come from the checkbox lines themselves (`CHECKBOX_RE` already accepts any leading
+# capital). A new item family is covered the moment it has checkboxes — no edit to this file.
+#
+# Bare milestone names (M1, M3) are still NOT matched: they are section headings, not checkboxes. An
+# optional `M` prefix on a DECIMAL step IS consumed — measured 2026-08-12, the block said
+# "M3.1/3.2/3.3" and only 3.2 and 3.3 matched, because the `M` broke the word boundary before 3.1.
+def build_ident_re(marks: dict[str, str]) -> re.Pattern[str]:
+    """Prose-reference pattern for the identifier families that actually exist in the documents."""
+    prefixes = sorted({i[0] for i in marks if i[:1].isalpha()})
+    alts = [r"\d\.\d"]
+    if prefixes:
+        alts.insert(0, f"[{''.join(re.escape(c) for c in prefixes)}]\\d[a-z]?")
+    return re.compile(r"\b(?:M)?(" + "|".join(alts) + r")\b")
+
+
+def build_range_re(marks: dict[str, str]) -> re.Pattern[str]:
+    """Range pattern over the same derived families: `B1-B5`, and `C1-C4` the day C items exist."""
+    prefixes = sorted({i[0] for i in marks if i[:1].isalpha()})
+    if not prefixes:
+        return re.compile(r"(?!x)x")  # matches nothing, and says so at the point of construction
+    cls = f"[{''.join(re.escape(c) for c in prefixes)}]"
+    return re.compile(rf"\b({cls})(\d)\s*[-–—]\s*(?:{cls})?(\d)\b")
+
+
+def expand_ranges(line: str, range_re: re.Pattern[str]) -> set[str]:
     """B1-B5 -> {B1..B5}. Ranges are how the roadmap refers to whole groups."""
     out: set[str] = set()
-    for prefix, lo, hi in RANGE_RE.findall(line):
+    for prefix, lo, hi in range_re.findall(line):
         a, b = int(lo), int(hi)
         if a <= b and b - a < 20:
             out.update(f"{prefix}{n}" for n in range(a, b + 1))
@@ -220,11 +257,12 @@ def find_inconsistencies(sources: dict[str, str]) -> list[Finding]:
     #     [...](m1.4-finishup-checklist.md) (B1–B5), which close M1.4 and were
     # Cue on line 1, identifiers on line 2, nothing flagged. A check that reads a different shape
     # than the prose it audits is a green light over the wrong subject.
+    ident_re, range_re = build_ident_re(marks), build_range_re(marks)
     inspected = 0
     for unit_start, unit in _units(block):
         if not CUE_RE.search(unit):
             continue
-        idents = set(IDENT_RE.findall(unit)) | expand_ranges(unit)
+        idents = set(ident_re.findall(unit)) | expand_ranges(unit, range_re)
         inspected += len(idents)
         line_no, line = unit_start, " ".join(unit.split())
         for ident in sorted(idents):
@@ -344,6 +382,19 @@ def _self_test() -> int:
         ("a block naming a real step has coverage",
          {ROADMAP: roadmap("**The actual next step: B1** round-trip.", "- [ ] **B1 — x**")},
          "no_coverage", 0),
+        # THE POINT OF DERIVING THE VOCABULARY. A family this script has never heard of is covered
+        # the moment it has checkboxes. Hardcoded as `[AB]\d`, both of these were silent: the C
+        # reference matched nothing, so it was neither checked nor reported unknown.
+        ("a brand-new item family is covered with no edit to this script",
+         {ROADMAP: roadmap("**The actual next step: C1** the new group.", "- [x] **C1 — new work**")},
+         "named_but_done", 1),
+        ("ranges over a brand-new family expand too",
+         {ROADMAP: roadmap("Remaining: the C1–C3 checks.",
+                           "- [ ] **C1 — a**\n- [x] **C2 — b**\n- [ ] **C3 — c**")},
+         "named_but_done", 1),
+        ("a family that exists nowhere is still invisible (documented residual)",
+         {ROADMAP: roadmap("**The actual next step: Z9** unknown.", "- [ ] **B1 — x**")},
+         "unresolvable", 0),
     ]
 
     passed = 0
