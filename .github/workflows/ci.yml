@@ -98,3 +98,11 @@ jobs:
       # exists; no `except` handler returns 0) and states plainly that it does not check the rest.
       - name: Ratchet contract
         run: python3 scripts/check-ratchet-contract.py
+
+      # A money guard lives three files away from a grant that does not know it holds it up. The
+      # serve path spends on `tryGet -> absent`, which on Supabase means absent OR RLS-denied; it is
+      # safe only because the caller already read the markdown from the same folder, and that is
+      # evidence about the model ONLY while one grant covers both keys (ADR-0008). A comment in the
+      # migration would leave with the edit it should have stopped — so the grant is pinned instead.
+      - name: Storage grant pin (ADR-0008)
+        run: python3 scripts/check-storage-grant-pin.py

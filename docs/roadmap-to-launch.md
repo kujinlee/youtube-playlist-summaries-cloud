@@ -1024,9 +1024,12 @@ says nothing about it. Narrow that grant and the guard dies silently (6¢ → 12
 Filed as **backlog #35** for the migration-side anchor, which is blocked on one unverified question:
 whether editing an already-applied migration is safe here.
 
-- [ ] **backlog #35 — annotate `0007`'s policy with a pointer to ADR-0008** (or add a check that fails
-      when the `split_part` clause changes without ADR-0008 being revisited). **FAILS IF** the policy's
-      granularity can be changed with nothing in the migration, and no gate, referring to ADR-0008.
+- [x] **backlog #35 — ✅ RESOLVED 2026-08-12: the grant is PINNED, not annotated.** Measured against
+      prod: `schema_migrations` has no checksum column, but `statements` retains comments — so editing
+      `0007` would have been permissible and lossy. The deciding argument was that **a comment does not
+      fail**: it leaves with the edit it should have stopped. `scripts/check-storage-grant-pin.py` is in
+      CI, fails naming ADR-0008, and has a 6-case `--self-test`.
+      **FAILS IF** the `artifacts_owner_rw` statement's normalised digest ≠ the pinned constant.
 
 ---
 
@@ -1052,7 +1055,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #85**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #86**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose

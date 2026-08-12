@@ -74,9 +74,23 @@ Two further properties this rests on, both true today and both worth re-checking
 `lib/html-doc/serve-doc.ts` and `lib/storage/supabase/supabase-blob-store.ts` reference this ADR at the
 code that looks wrong without it.
 
-**The migration itself is NOT annotated, deliberately and incompletely.** `0007` is applied to
-production (one of 25), and whether editing an applied migration file is safe here — whether anything
-compares stored statements against the file — **was not verified**: `CLAUDE_RO_DATABASE_URL` was not
-available in the session that wrote this ADR, and "cannot run" is a failure, not a pass. Annotating the
-policy is therefore **backlog #35**, which must settle that question first. Until it does, the one
-reader most likely to break this guard is the one least likely to be warned.
+**The migration is not annotated. It is PINNED instead** — `scripts/check-storage-grant-pin.py`, run in
+CI, fails when the `artifacts_owner_rw` statement changes and names this ADR in the failure message.
+
+That was backlog #35, and the question it was blocked on has since been answered by measurement against
+prod (2026-08-12, via the read-only `claude_ro` role):
+
+- `supabase_migrations.schema_migrations` has **no checksum column** — it is `version : text`,
+  `statements : ARRAY`, `name : text` — so editing an applied migration would break nothing;
+- **but `statements` retains SQL comments.** `0007` stores 15 statements, 6 containing `--`, and the
+  `artifacts_owner_rw` statement is stored *with* its leading comment block. Editing the file would make
+  the repo's copy diverge from the record of what actually ran.
+
+So editing was permissible and lossy. The deciding argument was neither: **a comment does not fail.**
+Whoever narrows this grant edits the policy and its comment in one motion, and the warning leaves with
+the thing it was warning about. A pin fails in their CI run, in the same PR, before it merges.
+
+**What the pin cannot do**, stated because an unstated scope is assumed total: it detects that the
+policy text changed. It cannot distinguish a widening from a narrowing, or a rename from a semantic
+change — that judgement is what its failure message asks for. A reviewer who re-pins the constant
+without reading this ADR defeats it entirely, and nothing prevents that.
