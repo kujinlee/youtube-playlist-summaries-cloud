@@ -996,7 +996,7 @@ item was verified against.
 **Next: M3 Acceptance** (browser-level Playwright e2e against the deployed URL). M2 Sync completed
 2026-07-19.
 
-### ▶ NEXT ACTIONS (**refreshed 2026-08-11** — read this first on a fresh session)
+### ▶ NEXT ACTIONS (**refreshed 2026-08-12** — read this first on a fresh session)
 
 **Reconcile this block against `git log` AND against live infrastructure every time.** The
 2026-07-30 version of it was stale within days, and the entries below it still are — treat the
@@ -1005,18 +1005,36 @@ numbered engineering list as a *candidate pool*, not a current plan, and check e
 this file claimed prod was at migration `0021` when it was at `0022`, which is how `0023` came to sit
 unapplied for eight days while every document read "merged, done".
 
-**Current state (2026-08-11):**
-- **`master` = `0aac16d`**, clean, tsc clean, **2671 unit tests / 265 suites green**.
+**Current state (2026-08-12):**
+- **`master` = `3d54a14`**, clean, tsc clean, **2690 unit / 267 suites** and **491 integration** green.
 - **Prod == master.** All 25 migrations applied; **release v6 deployed 2026-08-11 15:47Z**.
+  ⚠ Master has moved since v6 (PRs #76–#79). Nothing in them is deploy-urgent — #76/#78 are behaviour
+  changes not yet live, the rest are docs — but **the app is no longer running master**. Re-read the
+  running system before assuming otherwise; that assumption cost eight days once already.
 - **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
   trigger. Do not resume it by momentum.
 
 **Blocked on the human:** nothing.
 
-**The actual next step: the B-group live checks** in
-[`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) (B1–B5), which close M1.4 and were
-untestable until hosted infra existed. Then **M3 acceptance**. Note B3/B4 spend real Gemini money and
-need a signed-in session, so they are a deliberate pass, not a background chore.
+**⭐ M1 IS COMPLETE (2026-08-11).** M1.4 closed with all of A1–A3 and B1–B5 ticked — see
+[`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) for the evidence and the release each
+item was verified against. M2 Sync completed 2026-07-19.
+
+**The actual next step: M3 Acceptance** — browser-level Playwright e2e against the deployed URL.
+⚠ **It needs a design pass before it can start:** M3.1/3.2/3.3 are the only three items the
+gate-falsifiability ratchet still flags, because none of them says what observation would make it
+FAIL. Write them as gates first; that exercise is what turned B4 from a six-week "experiment" into an
+hour of work.
+
+**Two things from closing M1.4 that change how to run M3:**
+1. **Ask what caller reaches the state you are testing.** Gate B3 "failed" against a situation the
+   application cannot enter — the harness had used `service_role` to bypass the app's own
+   short-circuit. The mechanism was real; the scenario was manufactured.
+2. **For "logged out", fetch with no cookie jar** (`curl`), not an incognito window. Stronger
+   guarantee, and it avoids the trap that made the 2026-07-22 A2 attempt inconclusive.
+
+**Optional cleanup, not blocking:** staging Supabase project `neeufoxdbgbpkjukzzuc` is now safe to
+delete — nothing outstanding needs it.
 
 **Older candidate pool below — VERIFY BEFORE STARTING. Several of these predate three merged
 slices.**
