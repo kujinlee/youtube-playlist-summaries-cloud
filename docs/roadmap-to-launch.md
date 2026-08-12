@@ -961,6 +961,29 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
 
 ---
 
+## Serve-path absence defect — backlog #34, filed 2026-08-11 (NOT started)
+
+**Found by a gate, which is the point.** M1.4 item B3 was re-run against hosted staging with the spend
+authorised, and it FAILED — see [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) §B3 for
+the full measurement and PR #76 for the evidence trail.
+
+The serve path's money guard treats `tryGet → absent` as proof the cached model is gone. Supabase
+returns a **404 for an RLS denial**, byte-identical to a genuine miss, so the guard does not fire:
+measured **6¢ → 12¢** with a second real Gemini call for a model already sitting in the bucket. The
+sync path gets this right by consulting `BlobStore.provesAbsence`; the serve path never asks.
+
+**Status: filed, not started.** Blast radius is the serve path that merged this morning after seven
+review rounds, and the fix is a money-path behaviour change — it wants its own branch, its own spec
+pass on what "corroborated absence" should mean, and dual review. Full statement, fix lead, and the
+three questions to settle first: [`docs/backlog.md`](backlog.md) #34.
+
+**Acceptance = re-run B3 green against hosted staging.** So project `neeufoxdbgbpkjukzzuc` must not be
+deleted until then, unless the fault is first shown to reproduce against local Supabase — an RLS policy
+drop is a permission change, not a transient failure, so it plausibly does, which would make the
+regression test an ordinary integration test. **That has not been verified.**
+
+---
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
