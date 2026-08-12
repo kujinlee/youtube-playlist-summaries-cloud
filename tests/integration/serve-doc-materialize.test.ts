@@ -23,6 +23,11 @@ jest.mock('@/lib/gemini', () => {
 });
 import { generateMagazineModel } from '@/lib/gemini';
 
+/** The markdown body the caller has already read. REQUIRED since 2026-08-11 (backlog #34):
+ *  supplying it asserts the caller read this document's summary markdown through the same
+ *  store and principal, which is what makes the model-absence check safe to spend on. */
+const MD_BODY = '# T\n\n## 1. Intro\nbody\n';
+
 const svc = adminClient();
 const parsed = (): ParsedSummary => ({
   title: 'T', channel: null, duration: null, url: null, lang: 'EN', videoId: 'v', tldr: null, takeaways: [],
@@ -67,7 +72,7 @@ it('materializes on miss: reserves, generates under caps, upserts, returns ok', 
   const { client } = await signInAs(u.email, u.password);
   const principal = { id: u.user.id, indexKey: playlist_key };
   const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY });
   expect(res.status).toBe('ok');
   expect(generateMagazineModel).toHaveBeenCalledTimes(1);
   const caps = (generateMagazineModel as jest.Mock).mock.calls[0][2].caps;
@@ -81,7 +86,7 @@ it('serves the cached model without a second Gemini call OR a second reserve/cha
   const { client } = await signInAs(u.email, u.password);
   const principal = { id: u.user.id, indexKey: playlist_key };
   const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
-  await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY });
   (generateMagazineModel as jest.Mock).mockClear();
   const doc_key = `${playlistId}/${videoId}`; // reserve_serve_model's v_doc_key formula (0012, line 53)
   // Force the materialize call's lease to look EXPIRED. Without this, a spurious reserve on the
@@ -92,7 +97,7 @@ it('serves the cached model without a second Gemini call OR a second reserve/cha
   // genuinely fails if the fresh-cache path ever calls reserve_serve_model.
   await svc.from('serve_model_charge').update({ lease_expires_at: '2000-01-01T00:00:00Z' })
     .eq('owner_id', u.user.id).eq('doc_key', doc_key);
-  const res2 = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  const res2 = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY });
   expect(res2.status).toBe('ok');
   expect(generateMagazineModel).not.toHaveBeenCalled();
   const { data: charge } = await svc.from('serve_model_charge').select('attempt_count')
@@ -106,7 +111,7 @@ it('at_capacity when the day is over budget — no Gemini call, no promote (B6)'
   const { client } = await signInAs(u.email, u.password);
   const principal = { id: u.user.id, indexKey: playlist_key };
   const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY });
   expect(res.status).toBe('at_capacity');
   expect(generateMagazineModel).not.toHaveBeenCalled();
   expect(await readModelEnvelope(principal, videoId, blob)).toBeNull();
@@ -117,11 +122,11 @@ it('re-materializes on drift (sourceSections mismatch) — B3', async () => {
   const { client } = await signInAs(u.email, u.password);
   const principal = { id: u.user.id, indexKey: playlist_key };
   const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
-  await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY });
   (generateMagazineModel as jest.Mock).mockClear();
   const drifted = parsed(); drifted.sections[0].title = 'Renamed'; // titles now differ from the cached sourceSections
   await svc.from('serve_model_charge').delete().neq('owner_id', '00000000-0000-0000-0000-000000000000'); // fresh day room
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: drifted, language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: drifted, language: 'en', mdBody: MD_BODY });
   expect(res.status).toBe('ok');
   expect(generateMagazineModel).toHaveBeenCalledTimes(1); // regenerated
 });
@@ -143,7 +148,7 @@ it('re-materializes on a STALE generatorVersion even when sourceSections match (
     generatorVersion: `${GENERATOR_VERSION}-STALE`,
     model: { sections: [{ lead: 'old', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
   }, blob);
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en', mdBody: MD_BODY });
   expect(res.status).toBe('ok');
   expect(generateMagazineModel).toHaveBeenCalledTimes(1);         // stale version → REGENERATED, not served from cache
   // The returned model is the freshly-generated one (mock lead 'L'), NOT the seeded stale model (lead 'old').
@@ -159,7 +164,7 @@ it('re-materializes on a STALE generatorVersion even when sourceSections match (
   // NO additional Gemini call and NO second reserve/charge. serve_model_charge still holds exactly the
   // ONE attempt from the regen above (attempt_count === 1), so the doc does not re-charge every view.
   (generateMagazineModel as jest.Mock).mockClear();
-  const res2 = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  const res2 = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en', mdBody: MD_BODY });
   expect(res2.status).toBe('ok');
   expect(generateMagazineModel).not.toHaveBeenCalled();
   const { data: charge } = await svc.from('serve_model_charge').select('attempt_count').eq('owner_id', u.user.id).single();
@@ -176,7 +181,7 @@ it('degrades a corrupt cached model file (malformed JSON) to a regenerate, never
   // partially-written blob. readModelEnvelope must swallow the JSON.parse failure and return null
   // (model-store.ts:58-63), so resolveMagazineModel treats it as a cache MISS, not a thrown error.
   await blob.put(principal, `models/${videoId}.json`, Buffer.from('{ not valid json', 'utf-8'), 'application/json');
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY });
   expect(res.status).toBe('ok');
   expect(generateMagazineModel).toHaveBeenCalledTimes(1); // corrupt cache treated as absent → regenerated, not thrown
   const persisted = await readModelEnvelope(principal, videoId, blob);
@@ -199,7 +204,7 @@ it('P5: over budget + title-stable model → { ok, stale:true }, no charge', asy
   }, blob);
   await setOwnerCap(6); await preseedBudget(u.user.id, 6);
   const before = await snapshot(u.user.id);
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en', mdBody: MD_BODY });
   expect(res).toEqual({ status: 'ok', model: expect.anything(), stale: true });
   if (res.status === 'ok') expect(res.model.sections[0].lead).toBe('old'); // the STALE model, not a regeneration
   expect(generateMagazineModel).not.toHaveBeenCalled();
@@ -212,7 +217,7 @@ it('P6: over budget + no cached model → { over_budget }', async () => {
   const principal = { id: u.user.id, indexKey: playlist_key };
   const blob = new SupabaseBlobStore(client, ARTIFACTS_BUCKET);
   await setOwnerCap(6); await preseedBudget(u.user.id, 6);
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY });
   expect(res).toEqual({ status: 'over_budget' });
   expect(generateMagazineModel).not.toHaveBeenCalled();
 });
@@ -228,7 +233,7 @@ it('P6b: over budget + titles DRIFTED → { over_budget } (not stale — avoids 
     sourceSections: ['Something Else'], generatorVersion: 'OLD', model: staleModel, // deliberately mismatched titles
   }, blob);
   await setOwnerCap(6); await preseedBudget(u.user.id, 6);
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en', mdBody: MD_BODY });
   expect(res).toEqual({ status: 'over_budget' });
   expect(generateMagazineModel).not.toHaveBeenCalled();
 });
@@ -246,7 +251,7 @@ it('P14: fresh model + owner over budget → { ok } served free (reserve never r
   }, blob);
   await setOwnerCap(6); await preseedBudget(u.user.id, 6);
   const before = await snapshot(u.user.id);
-  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  const res = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en', mdBody: MD_BODY });
   expect(res).toEqual({ status: 'ok', model: expect.anything() }); // no `stale` — fresh path (readFreshMagazineModel short-circuit)
   expect((res as { stale?: boolean }).stale).toBeUndefined();
   expect(generateMagazineModel).not.toHaveBeenCalled();
@@ -264,11 +269,11 @@ it('P13: stale served over budget; recovers to fresh (no stale) once under budge
     sourceSections: p.sections.map((s) => s.title), generatorVersion: 'OLD', model: staleModel,
   }, blob);
   await setOwnerCap(6); await preseedBudget(u.user.id, 6);
-  const stale = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  const stale = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en', mdBody: MD_BODY });
   expect(stale).toMatchObject({ status: 'ok', stale: true });
   // Clear today's over-budget state, leaving the stale envelope in place.
   await svc.from('serve_owner_budget').delete().eq('owner_id', u.user.id);
-  const fresh = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en' });
+  const fresh = await resolveMagazineModel({ supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: p, language: 'en', mdBody: MD_BODY });
   expect(fresh.status).toBe('ok');
   expect((fresh as { stale?: boolean }).stale).toBeUndefined(); // re-materialized to current version, not stale
   if (fresh.status === 'ok') expect(fresh.model.sections[0].lead).toBe('L'); // freshly-generated (mock), not the stale 'old' model
@@ -295,7 +300,7 @@ describe('Task 11: settle_serve_model on serve materialize (release rule)', () =
     });
 
     await expect(resolveMagazineModel({
-      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en',
+      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY,
     })).rejects.toThrow();
 
     expect(generateMagazineModel).toHaveBeenCalledTimes(1); // proves the reserve+attempt actually ran
@@ -319,7 +324,7 @@ describe('Task 11: settle_serve_model on serve materialize (release rule)', () =
     const day = utcDay();
 
     const res = await resolveMagazineModel({
-      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en',
+      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY,
     });
 
     expect(res.status).toBe('ok');
@@ -355,7 +360,7 @@ describe('Task 11: settle_serve_model on serve materialize (release rule)', () =
     );
 
     await expect(resolveMagazineModel({
-      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en',
+      supabaseClient: client, blobStore: blob, principal, playlistId, videoId, base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY,
     })).rejects.toThrow();
 
     expect(capturedBilling?.metered).toBe(true); // the mutation stuck on the object serve-doc passed

@@ -36,11 +36,28 @@ export class SupabaseBlobStore implements BlobStore {
     return Buffer.from(await data.arrayBuffer());
   }
 
-  /** The honest read. Supabase reports a missing object as a StorageApiError carrying
-   *  `statusCode: "404"` (verified against the live stack:
-   *  `{message:"Object not found", name:"StorageApiError", status:400, statusCode:"404"}`), so a 404
-   *  IS provable absence. Everything else — 5xx, timeout, RLS denial, a thrown network error — is
-   *  `unreadable`, and callers must not read it as "the object does not exist". */
+  /** The honest read — but read the limits below before treating `absent` as a fact.
+   *
+   *  Supabase reports a missing object as a StorageApiError carrying `statusCode: "404"`.
+   *
+   *  ⚠ CORRECTED 2026-08-11 (M1.4 gate B3). This comment used to conclude "so a 404 IS provable
+   *  absence", and listed RLS denial among the cases that come back as `unreadable`. **Both halves
+   *  are false.** Measured against hosted Supabase, an object that EXISTS but is hidden by row-level
+   *  security returns the byte-identical error to one that never existed:
+   *
+   *      exists, policy dropped  {message:"Object not found", name:"StorageApiError", status:400, statusCode:"404"}
+   *      genuinely absent        {message:"Object not found", name:"StorageApiError", status:400, statusCode:"404"}
+   *
+   *  RLS makes the row invisible, so the API cannot say more — and the original claim was verified
+   *  only against a missing object, never against a denied one. Checking one direction of a
+   *  two-directional question is how it survived.
+   *
+   *  So: `unreadable` still means "definitely could not read it" (5xx, timeout, thrown transport
+   *  error), and callers must never treat it as absence. But `absent` means only "404-shaped", which
+   *  on this backend is **absent OR denied**. It is not proof, which is why `provesAbsence` is
+   *  `false` here. A caller that spends money on `absent` must corroborate it — see the precondition
+   *  on `resolveMagazineModel` (`lib/html-doc/serve-doc.ts`), whose safety comes from an upstream
+   *  read of the same folder, not from this classification. */
   async tryGet(p: Principal, key: string): Promise<BlobRead> {
     try {
       const { data, error } = await this.b().download(this.objectKey(p, key));
