@@ -53,9 +53,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 ROADMAP = "docs/roadmap-to-launch.md"
-# Files whose checkboxes define what an identifier's state IS. The roadmap points at the checklist
-# for the A/B items, so both must be read or every A/B reference would look unresolvable.
-CHECKBOX_SOURCES = [ROADMAP, "docs/m1.4-finishup-checklist.md"]
+# Files whose checkboxes define what an identifier's state IS. GLOBBED, not listed: the roadmap
+# delegates its A/B items to a per-milestone checklist, and naming `m1.4-finishup-checklist.md`
+# explicitly would mean every future milestone's checklist is invisible until someone remembers to
+# add it — at which point the references it owns all read as `unresolvable` and the pressure is to
+# weaken the check rather than fix the list.
+CHECKLIST_GLOB = "docs/*checklist*.md"
 
 BLOCK_HEADING_RE = re.compile(r"^#{1,6}\s*▶\s*NEXT ACTIONS", re.M)
 
@@ -67,7 +70,10 @@ CHECKBOX_RE = re.compile(r"^\s*-\s*\[([ xX~])\]\s*\*\*\s*(?:⚠️?\s*)?([A-Z]?\
 
 # Identifiers as they appear in prose. Bare milestone names (M1, M3) are deliberately NOT matched:
 # they are section headings, not checkboxes, so treating them as references would be a false positive.
-IDENT_RE = re.compile(r"\b([AB]\d[a-z]?|\d\.\d)\b")
+# An optional `M` prefix on a DECIMAL step is consumed, though — measured 2026-08-12: the block said
+# "M3.1/3.2/3.3" and only 3.2 and 3.3 matched, because the `M` broke the word boundary before 3.1.
+# The most load-bearing reference in the block was the one the check could not see.
+IDENT_RE = re.compile(r"\b(?:M)?([AB]\d[a-z]?|\d\.\d)\b")
 # Ranges: B1-B5, A1-A3, 3.1-3.3. En dash and hyphen both occur in this repo.
 RANGE_RE = re.compile(r"\b([AB])(\d)\s*[-–—]\s*(?:[AB])?(\d)\b")
 
@@ -214,10 +220,12 @@ def find_inconsistencies(sources: dict[str, str]) -> list[Finding]:
     #     [...](m1.4-finishup-checklist.md) (B1–B5), which close M1.4 and were
     # Cue on line 1, identifiers on line 2, nothing flagged. A check that reads a different shape
     # than the prose it audits is a green light over the wrong subject.
+    inspected = 0
     for unit_start, unit in _units(block):
         if not CUE_RE.search(unit):
             continue
         idents = set(IDENT_RE.findall(unit)) | expand_ranges(unit)
+        inspected += len(idents)
         line_no, line = unit_start, " ".join(unit.split())
         for ident in sorted(idents):
             mark = marks.get(ident)
@@ -233,6 +241,18 @@ def find_inconsistencies(sources: dict[str, str]) -> list[Finding]:
                     f"NEXT ACTIONS presents {ident} as work to do, but its checkbox is [x]. "
                     "Update the block in the SAME PR as the tick (dev-process.md:102).",
                 ))
+
+    # COVERAGE. A check that inspected nothing must not report clean — measured 2026-08-12, this
+    # script resolved exactly TWO identifiers in a 39-paragraph block and passed, which is a green
+    # light over almost nothing. Requiring the block to name at least one identifiable step is also
+    # the right pressure on the prose: "what is next" should be answerable by pointing at a box.
+    if inspected == 0:
+        findings.append(Finding(
+            "no_coverage", "-", 0, "",
+            "NEXT ACTIONS names no identifiable step (no `A1`/`B3`/`1.4`/`3.1` inside a "
+            "forward-looking sentence), so this check verified NOTHING. Name the next step by its "
+            "identifier, or this passes without reading anything.",
+        ))
     return findings
 
 
@@ -299,11 +319,31 @@ def _self_test() -> int:
              "[`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) (B1–B5), which close\n"
              "M1.4 and were untestable until hosted infra existed.",
              "- [x] **B1 — x**\n- [x] **B5 — y**\n- [x] **1.4 Deploy**")},
-         "named_but_done", 2),
+         # B1, B5 and 1.4. It was 2 until the M-prefix fix below taught it to read "M1.4" as the
+         # step 1.4 — the count going UP here is that fix being load-bearing, not a regression.
+         "named_but_done", 3),
         ("a new bullet ends the unit, so cues do not leak across items",
          {ROADMAP: roadmap("- **Next step:** something vague\n- A note mentioning B3 in passing",
                            "- [x] **B3 — x**")},
          "named_but_done", 0),
+        # M-PREFIX. Measured on the live file 2026-08-12: "M3.1/3.2/3.3" resolved only 3.2 and 3.3,
+        # because the M broke the word boundary before 3.1 — the block's most load-bearing reference
+        # was the one identifier the check could not see.
+        ("a decimal step keeps resolving when written M3.1",
+         {ROADMAP: roadmap("**The actual next step: M3.1** e2e.", "- [x] **3.1 Playwright**")},
+         "named_but_done", 1),
+        ("a bare milestone name still does not resolve",
+         {ROADMAP: roadmap("**The actual next step: M3** and B1.", "- [ ] **B1 — x**")},
+         "unresolvable", 0),
+        # COVERAGE. Passing because it read nothing is the failure mode this whole family of scripts
+        # exists to prevent; it must not be available to this one either.
+        ("a block naming no identifiable step reports no_coverage",
+         {ROADMAP: roadmap("**The actual next step:** finish the sync work, whatever that means.",
+                           "- [ ] **B1 — x**")},
+         "no_coverage", 1),
+        ("a block naming a real step has coverage",
+         {ROADMAP: roadmap("**The actual next step: B1** round-trip.", "- [ ] **B1 — x**")},
+         "no_coverage", 0),
     ]
 
     passed = 0
@@ -322,10 +362,11 @@ def main() -> int:
         return _self_test()
 
     sources = {}
-    for rel in CHECKBOX_SOURCES:
-        p = ROOT / rel
-        if p.exists():
-            sources[rel] = p.read_text(encoding="utf-8")
+    roadmap_path = ROOT / ROADMAP
+    if roadmap_path.exists():
+        sources[ROADMAP] = roadmap_path.read_text(encoding="utf-8")
+    for p in sorted(ROOT.glob(CHECKLIST_GLOB)):
+        sources[str(p.relative_to(ROOT))] = p.read_text(encoding="utf-8")
 
     findings = find_inconsistencies(sources)
     report_only = "--report" in sys.argv
