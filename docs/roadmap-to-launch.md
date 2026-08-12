@@ -230,11 +230,33 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ## M3 — Acceptance (prove it end-to-end on the deployed app) ✅
 - [ ] **3.1 Browser-level Playwright cloud e2e** against the deployed URL — full user journey (not mocks).
+  **This is a TASK, not a gate — deliberately left with no falsifier clause.** Once the test exists the
+  test *is* the standing claim; a clause here would be either vacuous — its whole content being that a
+  failing test counts as failure — or a test-design spec smuggled into a checkbox. The thing genuinely
+  missing is **which steps the journey has**, and that belongs in the test, where it is load-bearing.
+  *(Written without the literal falsifier phrase on purpose: the detector is a regex over these lines,
+  so even quoting the phrase as a bad example silences the flag. That happened on the first draft of
+  this very note — the demonstration is left here rather than tidied away.)*
+  ⚠ `check-gate-falsifiability.py` flags this line and will keep flagging it. **Do not silence it with
+  a clause.** That is the ratchet's scope being imperfect — its own docstring records that this file
+  overloads `- [ ]` for three different meanings — and writing prose to lower a number is the failure
+  the ratchet exists to catch, arriving through the front door.
 - [ ] **3.2 Real-render / regenerate checks**: regenerate `9nh8TQRcYD0` to confirm the summary
   section-timestamp guarantee live; verify cloud dig-serve render.
-- [ ] **3.3 Final acceptance sign-off.**
+  **FAILS IF** the regenerated summary contains any `##` section without a unique, monotonically
+  increasing ▶ timestamp, **or** the cloud dig-serve render returns non-200, zero bytes, or HTML with
+  no dug content. **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`).
+  *(Why this one earns a clause and 3.1 does not: it is a MANUAL check against production, the
+  category that rots. "Confirm the guarantee live" is an activity you can perform, feel satisfied by,
+  and tick — the B5 shape. `portable-practices.md` §4 is the same lesson: A1/A2 were ticked in the
+  v3/v4 era while the app ran v6.)*
 
-**M3 done = verified the whole journey works in production.**
+**M3 done = 3.1 and 3.2 both verified against the same deployed release.**
+
+*(A third item, "3.3 Final acceptance sign-off", was deleted 2026-08-12. It had no subject and no
+observation — nothing that could be true or false — so it was ceremony, and adding a `FAILS IF:` to it
+would have meant inventing a claim for the clause to attach to. Its only real content is the line
+above.)*
 
 ---
 
@@ -1059,7 +1081,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #88**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #89**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
@@ -1109,10 +1131,12 @@ unapplied for eight days while every document read "merged, done".
 item was verified against. M2 Sync completed 2026-07-19.
 
 **The actual next step: M3 Acceptance** — browser-level Playwright e2e against the deployed URL.
-⚠ **It needs a design pass before it can start:** M3.1/3.2/3.3 are the only three items the
-gate-falsifiability ratchet still flags, because none of them says what observation would make it
-FAIL. Write them as gates first; that exercise is what turned the version-skew item from a six-week
-"experiment" into an hour of work.
+⚠ **Tidied 2026-08-12, and the tidy was much smaller than "write three gates".** Asked whether all
+three needed falsifiers, the answer was no: **3.3 was ceremony** — no subject, no observation — and is
+deleted; **3.2 is a manual check against production**, the category that rots, and now names its
+falsifier; **3.1 is a TASK, not a gate** — the test becomes the claim once written, so its journey is
+enumerated in the test rather than in a clause. The ratchet still flags 3.1 by design; **do not
+silence it.** Writing prose to lower a ratchet's number is the failure the ratchet exists to catch.
 
 > **Convention for this block:** name only work that is still open. Past items belong in the sections
 > below, because `scripts/check-roadmap-consistency.py` reads an identifier inside a forward-looking

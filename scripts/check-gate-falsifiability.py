@@ -68,8 +68,22 @@ GATE_SCOPES: dict[str, list[str] | None] = {
 # also gone: it was B4, which could not be phrased as a gate until somebody decided what version
 # skew SHOULD do (decided 2026-08-11 — tolerate).
 #    3 → 2026-08-11, after A1/A2 were re-verified against v6 and M1.4 was closed
-# Remaining 3: M3.1/3.2/3.3 acceptance, which are not yet written as gates.
-BASELINE = 3
+#    1 → 2026-08-12. Asked whether all three M3 items needed falsifiers, the answer was no.
+#        3.3 ("final acceptance sign-off") had no subject and no observation — ceremony, deleted.
+#        3.2 is a MANUAL check against production, the category that rots, and now names its
+#        falsifier. Neither was "write the clause"; one was a deletion and one was a real gate.
+#
+# THE REMAINING 1 IS 3.1, AND IT IS EXPECTED TO STAY. It is a TASK, not a gate: once the Playwright
+# e2e exists the test IS the claim, so a clause there would be vacuous or would smuggle test design
+# into a checkbox. **Do not lower this to 0 by writing one.** That is the defect this ratchet exists
+# to catch, arriving through the front door.
+#
+# ⚠ AND IT IS TRIVIALLY SILENCEABLE — measured 2026-08-12, twice, by accident. FALSIFIER_RE is a
+# regex over the item's lines, so ANY mention of the phrase clears the flag: a draft of 3.1's note
+# quoted it as an example of a bad clause, and a later draft said the item was "deliberately left
+# without a `FAILS IF:`". Both silenced it — the second inside the sentence declaring its absence.
+# The docstring already says this catches SHAPE, not TRUTH; this is how cheap that is in practice.
+BASELINE = 1
 
 FALSIFIER_RE = re.compile(r"\bFAILS?\s+IF\b", re.IGNORECASE)
 # An item phrased as an investigation has no pass condition by construction. B4 is the live example:
