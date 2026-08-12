@@ -1017,6 +1017,11 @@ absent, not that the absence cost anything — so the experiment is the attempt 
       nobody had written down, a decision that became an ADR, a corrected belief, or a defect the dual
       review missed. **FAILS IF** the date passes with none of the four and the skill is still installed.
       **VERIFIED AGAINST:** the explainers in `~/explainers/` at that date.
+      **The deadline is armed:** `scripts/check-explainer-retire-due.py` (CI) reads *this line* for the
+      date — it is not hardcoded anywhere else — warns for the 7 days before, and **fails from the day
+      after** until this box is ticked. It cannot count the explainers; CI has no access to
+      `~/explainers/`, which is why the decision stays yours. Reword this line and the check fails
+      loudly rather than passing quietly.
 
 **Run 1 (PR #78, `5cbedcf`) produced one: [ADR-0008](adr/0008-serve-money-guard-depends-on-storage-grant-granularity.md)** — the serve
 path's money guard depends on migration `0007`'s grant being on the owner path segment, and `0007`
@@ -1055,7 +1060,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #86**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #87**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose

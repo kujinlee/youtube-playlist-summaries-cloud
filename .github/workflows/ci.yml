@@ -106,3 +106,12 @@ jobs:
       # migration would leave with the edit it should have stopped — so the grant is pinned instead.
       - name: Storage grant pin (ADR-0008)
         run: python3 scripts/check-storage-grant-pin.py
+
+      # The explain-diff skill shipped on an admittedly unmeasured premise, and a dated retire
+      # condition is the only thing that made that defensible. A reviewer called that condition
+      # decorative — nothing counted the explainers, nothing fired on the date. A scheduled cloud
+      # agent was rejected: it cannot see ~/explainers/ (no access to the machine) and its repo
+      # access was unverified. This warns for a week, then fails on the day. It cannot judge the
+      # decision; it guarantees the human is asked.
+      - name: Explain-diff retire decision due
+        run: python3 scripts/check-explainer-retire-due.py

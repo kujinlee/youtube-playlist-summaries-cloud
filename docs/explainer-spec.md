@@ -111,9 +111,24 @@ Nothing is enforced, so the only question that matters is whether the thing earn
 > down; a **decision that became an ADR**; a **corrected belief** — something believed about the system
 > that wasn't true; or a **defect the dual review missed**.
 
-Round 2 filed this as decorative because nothing counted the explainers. Putting them in `~/explainers/`
-fixed that by accident: `ls ~/explainers | wc -l` is the counter. Not enforced — observable, which is the
-honest bar for a thing with no gate. The date half still depends on someone looking.
+Round 2 filed this as decorative because nothing counted the explainers and nothing fired on the date.
+Both halves are now answered, differently:
+
+- **The count** — putting the explainers in `~/explainers/` fixed that by accident:
+  `ls ~/explainers | wc -l` is the counter. Observable, not enforced, which is the honest bar for a
+  thing with no gate.
+- **The date is armed.** `scripts/check-explainer-retire-due.py` runs in CI, **reads the deadline out of
+  the roadmap checkbox itself** rather than hardcoding a second copy that could drift, warns for the 7
+  days before, and **fails from the day after** until the box is ticked. It cannot count the explainers
+  — CI has no access to that directory — and it says so in its own failure message. It guarantees the
+  question is asked, never that it is answered honestly; ticking the box without deciding is available
+  and is the one failure nothing here can catch.
+
+**A scheduled cloud agent was considered and rejected.** Cloud routines run in Anthropic's cloud with no
+access to the machine, so one could never see `~/explainers/`, and repo access for the routine was
+unverified at setup. An alarm whose ability to run is unproven is the fail-open shape this project keeps
+finding — the same reason a Codex review that could not open the Docker socket was treated as not having
+run.
 
 ### Run 1 — PR #78 (`5cbedcf`), backlog #34
 
