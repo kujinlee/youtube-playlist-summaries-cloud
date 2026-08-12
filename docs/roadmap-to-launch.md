@@ -1132,11 +1132,15 @@ item was verified against. M2 Sync completed 2026-07-19.
 
 **The actual next step: M3 Acceptance** — browser-level Playwright e2e against the deployed URL.
 ⚠ **Tidied 2026-08-12, and the tidy was much smaller than "write three gates".** Asked whether all
-three needed falsifiers, the answer was no: **3.3 was ceremony** — no subject, no observation — and is
-deleted; **3.2 is a manual check against production**, the category that rots, and now names its
-falsifier; **3.1 is a TASK, not a gate** — the test becomes the claim once written, so its journey is
-enumerated in the test rather than in a clause. The ratchet still flags 3.1 by design; **do not
-silence it.** Writing prose to lower a ratchet's number is the failure the ratchet exists to catch.
+three needed falsifiers, the answer was no. **A third, ceremonial sign-off item was deleted** — no
+subject, no observation, nothing that could be true or false. **3.2 is a manual check against
+production**, the category that rots, and now names its falsifier. **3.1 is a TASK, not a gate** — the
+test becomes the claim once written, so its journey is enumerated in the test rather than in a clause.
+The ratchet still flags 3.1 by design; **do not silence it.** Writing prose to lower a ratchet's number
+is the failure the ratchet exists to catch.
+*(The deleted item is described rather than numbered here on purpose: `check-roadmap-consistency.py`
+reads a bare identifier in this block as a claim that the work is pending, and flagged the first draft
+of this very sentence for naming an item whose checkbox no longer exists.)*
 
 > **Convention for this block:** name only work that is still open. Past items belong in the sections
 > below, because `scripts/check-roadmap-consistency.py` reads an identifier inside a forward-looking
