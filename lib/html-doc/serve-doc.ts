@@ -49,11 +49,22 @@ export async function resolveMagazineModel(args: {
   base: string;
   parsed: ParsedSummary;
   language: 'en' | 'ko';
-  /** Stage 3 (§4.2): the MD BODY this model is generated from (NOT the blob key) — hashed
-   *  into the envelope's sourceMdHash on a fresh materialize. Optional for back-compat with
-   *  callers that pre-date this signal (sourceMdHash is an optional envelope field); the
-   *  real production caller (serve-summary-core.ts) always supplies it. */
-  mdBody?: string;
+  /** The MD BODY this model is generated from (NOT the blob key). Two jobs:
+   *
+   *  1. Stage 3 (§4.2): hashed into the envelope's `sourceMdHash` on a fresh materialize.
+   *  2. **MONEY PRECONDITION (backlog #34, 2026-08-11).** Supplying it asserts that the caller has
+   *     ALREADY read this document's summary markdown successfully, through THIS `blobStore` with
+   *     THIS `principal`. That read is the only reason the absence check below can be trusted —
+   *     see the money guard.
+   *
+   *  REQUIRED as of 2026-08-11. It was optional "for back-compat with callers that pre-date this
+   *  signal", which meant a new caller could reach the charging code without ever having read the
+   *  markdown, and nothing would fail. Requiring it makes omission a compile error rather than a
+   *  silent loss of the protection. It does NOT defend against a caller that passes a body it never
+   *  read — a required parameter defends omission, never a wrong value of the right shape. What pins
+   *  the real behaviour is the `409` short-circuit test in
+   *  tests/integration/serve-md-unreadable-no-charge.test.ts. */
+  mdBody: string;
   signal?: AbortSignal;
 }): Promise<ResolveResult> {
   const { supabaseClient, blobStore, principal, playlistId, videoId, base, parsed, language, mdBody, signal } = args;
@@ -75,9 +86,26 @@ export async function resolveMagazineModel(args: {
   // the same `null` as a genuine 404, so without this probe a transient blip re-reserves and
   // re-generates: measured 6¢ → 12¢ with attempt_count 1 → 2 in
   // tests/integration/serve-model-unreadable.test.ts.
-  // `tryGet` distinguishes them (Supabase reports a missing object with statusCode "404"). On
-  // `unreadable` we return `busy` — the same transient, retryable status the single-flight branch
-  // uses — instead of paying. Absent and drifted still fall through and materialize as before.
+  // `tryGet` separates them as far as the API allows. On `unreadable` we return `busy` — the same
+  // transient, retryable status the single-flight branch uses — instead of paying. Absent and
+  // drifted still fall through and materialize as before.
+  //
+  // ⚠ WHAT MAKES THAT SAFE IS NOT THIS LINE (backlog #34, measured 2026-08-11). On Supabase,
+  // `absent` means "404-shaped", and a row hidden by RLS returns the byte-identical 404 to a missing
+  // object — so `absent` alone is NOT proof of absence, which is why `provesAbsence` is false on that
+  // store. Calling `resolveMagazineModel` on a folder we cannot read WOULD re-reserve and re-generate
+  // a model that already exists: measured 6¢ → 12¢ with a second live Gemini call.
+  //
+  // It is safe because of the `mdBody` precondition above: the caller has already read this
+  // document's markdown from the SAME folder with the SAME credential, and bails out at
+  // `409 "repair needed"` if that fails (lib/html-doc/serve-summary-core.ts:66-67). Both keys live
+  // under `${principal.id}/${principal.indexKey}/` and the storage policy grants on the first path
+  // segment alone (0007_storage_and_rpcs.sql:14), so a policy that hides the model while revealing
+  // the markdown does not exist. A permissions fault therefore ends the request upstream and never
+  // reaches this reserve.
+  //
+  // That ordering is the money guard. If you add a caller that reaches this function without that
+  // read, restore the protection explicitly — do not assume this probe carries it.
   const probe = await blobStore.tryGet(principal, MODEL_KEY(base));
   if (!probe.ok && probe.reason === 'unreadable') return { status: 'busy' };
 

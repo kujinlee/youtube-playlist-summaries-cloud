@@ -6,6 +6,11 @@ import * as digGen from '@/lib/dig/generate';
 import * as gemini from '@/lib/gemini';
 import { DIG_GENERATOR_VERSION } from '@/lib/dig/generate';
 
+/** The markdown body the caller has already read. REQUIRED since 2026-08-11 (backlog #34):
+ *  supplying it asserts the caller read this document's summary markdown through the same
+ *  store and principal, which is what makes the model-absence check safe to spend on. */
+const MD_BODY = '# T\n\n## 1. Intro\nbody\n';
+
 // Automock (not jest.spyOn) — this project's Next/SWC jest transform emits non-configurable
 // named-export bindings for these lib modules, so `jest.spyOn(namespace, 'fn')` throws
 // "Cannot redefine property" (verified: fails even on a single first-call spy, in isolation,
@@ -36,7 +41,7 @@ function fakeBundle(blobs: Record<string, Buffer>) {
 function mockLoadOk(bundle: ReturnType<typeof fakeBundle>) {
   (serveCore.loadSummaryForServe as jest.Mock).mockResolvedValue({
     ok: true, mdBytes: Buffer.from(SUMMARY_MD), mdKey: 'base.md', base: 'base', title: 'T',
-    principal: { id: 'o', indexKey: 'k' } as never, playlistId: 'pl', video: { id: 'v', language: 'en' } as never, bundle: bundle as never,
+    principal: { id: 'o', indexKey: 'k' } as never, playlistId: 'pl', video: { id: 'v', language: 'en', mdBody: MD_BODY } as never, bundle: bundle as never,
   } as never);
 }
 
@@ -101,7 +106,7 @@ describe('loadDigForServe', () => {
     await realResolveMagazineModel({
       supabaseClient: { rpc } as never, blobStore: blob as never,
       principal: { id: 'o', indexKey: 'k' } as never, playlistId: 'pl', videoId: 'v', base: 'base',
-      parsed: { title: 'T', sections: [] } as never, language: 'en',
+      parsed: { title: 'T', sections: [] } as never, language: 'en', mdBody: MD_BODY,
     }).catch(() => {}); // the default-throw is expected; we only assert the reserve was attempted
     expect(rpc).toHaveBeenCalledWith('reserve_serve_model', expect.anything());
   });

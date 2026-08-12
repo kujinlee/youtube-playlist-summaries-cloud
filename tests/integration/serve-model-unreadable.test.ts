@@ -40,6 +40,11 @@ jest.mock('@/lib/gemini', () => {
 });
 import { generateMagazineModel } from '@/lib/gemini';
 
+/** The markdown body the caller has already read. REQUIRED since 2026-08-11 (backlog #34):
+ *  supplying it asserts the caller read this document's summary markdown through the same
+ *  store and principal, which is what makes the model-absence check safe to spend on. */
+const MD_BODY = '# T\n\n## 1. Intro\nbody\n';
+
 const svc = adminClient();
 const parsed = (): ParsedSummary => ({
   title: 'T', channel: null, duration: null, url: null, lang: 'EN', videoId: 'v', tldr: null, takeaways: [],
@@ -96,7 +101,7 @@ it('a transient (unreadable, NOT absent) model read must not trigger a paid rege
   // 1. Materialize once — the model now genuinely EXISTS in the bucket, and is charged once.
   const first = await resolveMagazineModel({
     supabaseClient: client, blobStore: blob, principal, playlistId, videoId,
-    base: videoId, parsed: parsed(), language: 'en',
+    base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY,
   });
   expect(first.status).toBe('ok');
   expect(generateMagazineModel).toHaveBeenCalledTimes(1);
@@ -114,7 +119,7 @@ it('a transient (unreadable, NOT absent) model read must not trigger a paid rege
   // 2. Serve again, but the MODEL READ FAILS transiently. The bytes are still in the bucket.
   const second = await resolveMagazineModel({
     supabaseClient: client, blobStore: new UnreadableModelBlobStore(blob), principal, playlistId, videoId,
-    base: videoId, parsed: parsed(), language: 'en',
+    base: videoId, parsed: parsed(), language: 'en', mdBody: MD_BODY,
   });
 
   const after = (await svc.from('spend_ledger').select('reserved_cents, actual_cents')).data ?? [];

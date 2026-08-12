@@ -101,6 +101,10 @@ function freshEnvelopeBuffer(lead: string): Buffer {
 const baseArgs = (supabaseClient: SupabaseClient, blobStore: BlobStore) => ({
   supabaseClient, blobStore, principal,
   playlistId: 'p1', videoId: 'v1', base: 'v1', parsed: parsed(), language: 'en' as const,
+  // REQUIRED since 2026-08-11 (backlog #34): supplying the body asserts the caller already read
+  // this document's markdown through the same store and principal. That upstream read is what
+  // makes the model-absence check safe to spend on — see serve-doc.ts's money guard.
+  mdBody: '# T\n\n## 1. Intro\nbody\n',
 });
 
 beforeEach(() => {
