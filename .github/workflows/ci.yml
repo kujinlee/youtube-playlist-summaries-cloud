@@ -82,6 +82,16 @@ jobs:
       - name: Gate falsifiability ratchet
         run: python3 scripts/check-gate-falsifiability.py
 
+      # The roadmap's ▶ NEXT ACTIONS block must not name work whose checkbox is already ticked.
+      # Three occurrences: it called M1.3 "the single remaining blocker" for nine days after M1.3
+      # was ticked (2026-07-30), then named the B-group as the next step in the same commit range
+      # that closed them (2026-08-11). Both times the file was actively maintained — which is why
+      # the recency check originally proposed for this was rejected: it reads green throughout.
+      # dev-process.md:102 already requires the tick and the summary to ship together; a rule broken
+      # twice by people who know it is a rule that wants to be a script.
+      - name: Roadmap internal consistency
+        run: python3 scripts/check-roadmap-consistency.py
+
       # The ratchets' own contract, enforced rather than described. Written because the prose in
       # docs/process-checklists.md said "there are three ratchets" — from memory, and wrong by half;
       # this script found six. It checks the two rules that are statically decidable (a --self-test

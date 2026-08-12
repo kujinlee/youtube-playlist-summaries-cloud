@@ -266,7 +266,7 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
 - [ ] **README-coverage check** in `scripts/check-docs.py`: every `scripts/*.py|*.sh` and every
   `.github/workflows/*.yml` must be mentioned in `README.md`. Fixing the content by hand does not
   stop it drifting again; only the check does.
-- [ ] **Roadmap internal-consistency check** — *replaces a rejected proposal.* The original idea was
+- [x] **Roadmap internal-consistency check** — ✅ **BUILT 2026-08-12** (`scripts/check-roadmap-consistency.py`, in CI, `--self-test` 15/15). Verified against the real defect: run on master's roadmap before the fix it reports 5 findings; the first implementation matched cue and identifier on the SAME line and reported that same file CLEAN, because the sentence wraps — so it now scans paragraph units, with that exact shape pinned as a regression case. *replaces a rejected proposal.* The original idea was
   "fail if `master` moved N commits since the roadmap changed." **That would not have worked:** when
   measured on 2026-07-30 the roadmap *was* being edited regularly (PR #32 on 07-22, all M1 checkboxes
   current) — the rot was a **summary block inside an actively-maintained file**, still naming M1.3 as
@@ -1023,8 +1023,12 @@ item was verified against. M2 Sync completed 2026-07-19.
 **The actual next step: M3 Acceptance** — browser-level Playwright e2e against the deployed URL.
 ⚠ **It needs a design pass before it can start:** M3.1/3.2/3.3 are the only three items the
 gate-falsifiability ratchet still flags, because none of them says what observation would make it
-FAIL. Write them as gates first; that exercise is what turned B4 from a six-week "experiment" into an
-hour of work.
+FAIL. Write them as gates first; that exercise is what turned the version-skew item from a six-week
+"experiment" into an hour of work.
+
+> **Convention for this block:** name only work that is still open. Past items belong in the sections
+> below, because `scripts/check-roadmap-consistency.py` reads an identifier inside a forward-looking
+> sentence as a claim that it is pending — and that strictness is the point.
 
 **Two things from closing M1.4 that change how to run M3:**
 1. **Ask what caller reaches the state you are testing.** Gate B3 "failed" against a situation the
