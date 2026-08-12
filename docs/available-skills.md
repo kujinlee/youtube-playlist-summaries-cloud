@@ -1,6 +1,6 @@
 # Available Skills Reference
 
-> **Generated** 2026-06-30 · `scripts/regen-skills-doc.py`
+> **Generated** 2026-08-12 · `scripts/regen-skills-doc.py`
 > Re-run after: `/plugin install`, `/plugin update`, `/plugin enable/disable`,
 > or `npx skills@latest add/remove mattpocock/skills`.
 
@@ -41,7 +41,7 @@ The **Trigger** column in each table tells you who fires the skill and how:
 
 ---
 
-## 🔵 superpowers — `superpowers@claude-plugins-official` v6.0.3 ✅
+## 🔵 superpowers — `superpowers@claude-plugins-official` v6.2.0 ✅
 
 Core workflow skills for the gate-based dev process in `docs/dev-process.md`.
 
@@ -50,7 +50,7 @@ Core workflow skills for the gate-based dev process in `docs/dev-process.md`.
 | **brainstorming** | `superpowers:brainstorming` | `auto + /slash` | You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. |
 | **dispatching-parallel-agents** | `superpowers:dispatching-parallel-agents` | `auto + /slash` | Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies |
 | **executing-plans** | `superpowers:executing-plans` | `auto + /slash` | Use when you have a written implementation plan to execute in a separate session with review checkpoints |
-| **finishing-a-development-branch** | `superpowers:finishing-a-development-branch` | `auto + /slash` | Use when implementation is complete, all tests pass, and you need to decide how to integrate the work - guides completion of development work by prese… |
+| **finishing-a-development-branch** | `superpowers:finishing-a-development-branch` | `auto + /slash` | Use when implementation is complete, all tests pass, and you need to decide how to integrate the work |
 | **receiving-code-review** | `superpowers:receiving-code-review` | `auto + /slash` | Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires… |
 | **requesting-code-review** | `superpowers:requesting-code-review` | `auto + /slash` | Use when completing tasks, implementing major features, or before merging to verify work meets requirements |
 | **subagent-driven-development** | `superpowers:subagent-driven-development` | `auto + /slash` | Use when executing implementation plans with independent tasks in the current session |
@@ -73,6 +73,7 @@ Installed via `npx skills@latest add mattpocock/skills` — lives in `.agents/sk
 |---|---|---|---|
 | **caveman** | `caveman` | `auto + /slash` | Ultra-compressed communication mode. Cuts token usage ~75% by dropping filler, articles, and pleasantries while keeping full technical accuracy. |
 | **diagnose** | `diagnose` | `auto + /slash` | Disciplined diagnosis loop for hard bugs and performance regressions. Reproduce → minimise → hypothesise → instrument → fix → regression-test. |
+| **explain-diff** | `explain-diff` | `auto + /slash` | Build a rich, self-contained HTML explanation of a code change, branch, or PR — aimed at behaviour and decisions rather than a line-by-line walkthroug… |
 | **grill-me** | `grill-me` | `auto + /slash` | Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree. |
 | **grill-with-docs** | `grill-with-docs` | `auto + /slash` | Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT. |
 | **handoff** | `handoff` | `auto + /slash` | Compact the current conversation into a handoff document for another agent to pick up. |
@@ -221,13 +222,14 @@ Iterative agent loop — repeatedly feeds Claude a task until a "completion prom
 | **help** | `/help` | `/command` | Explain Ralph Loop plugin and available commands |
 | **ralph-loop** | `/ralph-loop` | `/command` | Start Ralph Loop in current session |
 
-### 🟣 remember — `remember@claude-plugins-official` v0.8.3 ✅
+### 🟣 remember — `remember@claude-plugins-official` v0.19.0 ✅
 
 Session continuity — saves state to `.remember/now.md` for clean resumption next session.
 
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
 | **remember** | `remember:remember` | `auto + /slash` | Save session state for clean continuation next session. |
+| **doctor** | `/doctor` | `/command` | Diagnose the Remember plugin — resolved paths, detected tools, storage mode, and whether capture is actually saving memory. |
 
 ### 🟣 security-guidance — `security-guidance@claude-plugins-official` v2.0.6 ✅
 
@@ -243,14 +245,14 @@ Create, edit, eval, and benchmark Claude Code skills.
 |---|---|---|---|
 | **skill-creator** | `skill-creator:skill-creator` | `auto + /slash` | Create new skills, modify and improve existing skills, and measure skill performance. |
 
-### 🟣 supabase — `supabase@claude-plugins-official` v0.1.11 ✅
+### 🟣 supabase — `supabase@claude-plugins-official` v0.1.14 ✅
 
 Postgres performance optimization and best practices from Supabase.
 
 | Name | Invoke | Trigger | Description |
 |---|---|---|---|
 | **supabase** | `supabase:supabase` | `auto + /slash` | Use when doing ANY task involving Supabase. |
-| **supabase-postgres-best-practices** | `supabase:supabase-postgres-best-practices` | `auto + /slash` | Postgres performance optimization and best practices from Supabase. |
+| **supabase-postgres-best-practices** | `supabase:supabase-postgres-best-practices` | `auto + /slash` | Postgres best practices maintained by Supabase, for Postgres running anywhere. |
 
 ### 🟣 typescript-lsp — `typescript-lsp@claude-plugins-official` v1.0.0 ✅
 

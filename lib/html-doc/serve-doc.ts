@@ -106,6 +106,11 @@ export async function resolveMagazineModel(args: {
   //
   // That ordering is the money guard. If you add a caller that reaches this function without that
   // read, restore the protection explicitly — do not assume this probe carries it.
+  //
+  // It also depends on a property of a MIGRATION: the grant is on the owner path segment, so it
+  // cannot reveal the markdown while hiding the model. Narrow that grant and this guard dies
+  // silently. Recorded as docs/adr/0008-serve-money-guard-depends-on-storage-grant-granularity.md,
+  // because the migration looks perfectly fine and nobody goes looking for an ADR then.
   const probe = await blobStore.tryGet(principal, MODEL_KEY(base));
   if (!probe.ok && probe.reason === 'unreadable') return { status: 'busy' };
 

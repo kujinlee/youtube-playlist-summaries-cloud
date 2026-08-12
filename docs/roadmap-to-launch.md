@@ -992,6 +992,44 @@ against a live project. The staging project `neeufoxdbgbpkjukzzuc` was consequen
 
 ---
 
+## The `explain-diff` skill — an EXPERIMENT, not a process change (2026-08-12)
+
+A skill that builds a self-contained HTML explanation of a change, aimed at **behaviour and decisions**
+rather than a line-by-line walkthrough. Design note: [`explainer-spec.md`](explainer-spec.md).
+Skill: `.agents/skills/explain-diff/`. Output: `~/explainers/` (outside the repo — no `.gitignore`
+entry, nothing to commit by accident).
+
+**Nothing is enforced. This is deliberate, and it is what two review rounds bought.** It began as a
+mandatory pre-merge gate with a PR-body record, an independently-authored quiz, a CI check and a
+renderer. Round 1 returned 26 findings, 5 Blocking — **every Blocking and High landed on the
+enforcement layer; the explainer itself drew none.** Round 2 on the stripped-down version returned 20
+more, and killed the remaining process machinery: `process-checklists.md` is not `@`-included by
+`CLAUDE.md`, and its read-trigger is *"when you are working a gate"*, so a rule routed there for a
+thing that is **not** a gate has no activation path. Reviews:
+`docs/reviews/understanding-gate-spec-v2-{codex,claude}.md`,
+`docs/reviews/explainer-spec-v3-r2-{codex,claude}.md`.
+
+**The founding premise is UNMEASURED** — PR #67 being 39 commits over 7 rounds shows the model was
+absent, not that the absence cost anything — so the experiment is the attempt to measure it.
+
+- [ ] **Re-examine after 5 explainers or on 2026-09-30, whichever comes first.** Count them with
+      `ls ~/explainers | wc -l`. **RETIRE the skill** unless at least one has produced: a boundary
+      nobody had written down, a decision that became an ADR, a corrected belief, or a defect the dual
+      review missed. **FAILS IF** the date passes with none of the four and the skill is still installed.
+      **VERIFIED AGAINST:** the explainers in `~/explainers/` at that date.
+
+**Run 1 (PR #78, `5cbedcf`) produced one: [ADR-0008](adr/0008-serve-money-guard-depends-on-storage-grant-granularity.md)** — the serve
+path's money guard depends on migration `0007`'s grant being on the owner path segment, and `0007`
+says nothing about it. Narrow that grant and the guard dies silently (6¢ → 12¢, every test green).
+Filed as **backlog #35** for the migration-side anchor, which is blocked on one unverified question:
+whether editing an already-applied migration is safe here.
+
+- [ ] **backlog #35 — annotate `0007`'s policy with a pointer to ADR-0008** (or add a check that fails
+      when the `split_part` clause changes without ADR-0008 being revisited). **FAILS IF** the policy's
+      granularity can be changed with nothing in the migration, and no gate, referring to ADR-0008.
+
+---
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
@@ -1014,7 +1052,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #83**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #84**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose

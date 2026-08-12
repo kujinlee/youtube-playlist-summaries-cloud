@@ -9,6 +9,12 @@
             "if": "Bash(git push*)",
             "command": "bash .claude/hooks/block-default-branch-push.sh",
             "statusMessage": "Checking branch rule..."
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh pr create*)",
+            "command": "bash .claude/hooks/suggest-explainer.sh",
+            "statusMessage": "Checking whether this PR wants an explainer..."
           }
         ]
       }
