@@ -57,7 +57,9 @@ export class SupabaseBlobStore implements BlobStore {
    *  on this backend is **absent OR denied**. It is not proof, which is why `provesAbsence` is
    *  `false` here. A caller that spends money on `absent` must corroborate it — see the precondition
    *  on `resolveMagazineModel` (`lib/html-doc/serve-doc.ts`), whose safety comes from an upstream
-   *  read of the same folder, not from this classification. */
+   *  read of the same folder, not from this classification. That corroboration is itself valid only
+   *  while the storage grant stays coarser than a single object —
+   *  docs/adr/0008-serve-money-guard-depends-on-storage-grant-granularity.md. */
   async tryGet(p: Principal, key: string): Promise<BlobRead> {
     try {
       const { data, error } = await this.b().download(this.objectKey(p, key));
