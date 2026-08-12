@@ -12,6 +12,21 @@ Adapted from Geoffrey Litt's `explain-diff` skill
 (https://gist.github.com/geoffreylitt/a29df1b5f9865506e8952488eac3d524), from his talk
 *Understanding is the new bottleneck*. Sections 3 and 4 below are this project's additions.
 
+## When this runs
+
+Three ways, and none of them blocks anything:
+
+- **You type `/explain-diff`.**
+- **The agent invokes it** when the description above matches — this skill does *not* set
+  `disable-model-invocation`, unlike `zoom-out`.
+- **A reminder at `gh pr create`** — `.claude/hooks/suggest-explainer.sh` (PreToolUse, always exits 0)
+  suggests it when the branch moves behaviour and no explainer exists for the current head.
+
+**Scope: whether behaviour or a boundary MOVED, not which directories were touched.** The hook decides
+this, so the rule is a script rather than a sentence. A comment-only edit to `lib/` does not qualify —
+measured on PR #84, where the path-based version of this rule fired on a change whose *Boundaries
+touched* section would have read "none".
+
 ## Aim at behaviour and decisions, not implementation
 
 **The dual adversarial review already owns implementation correctness.** Do not duplicate it. The

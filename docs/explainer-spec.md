@@ -16,7 +16,9 @@ retire it.
 | Skill | `.agents/skills/explain-diff/SKILL.md`, symlinked at `.claude/skills/explain-diff` (that directory is a symlink farm — the real tree is `.agents/skills/`) |
 | Output | `~/explainers/YYYY-MM-DD-explanation-<slug>-<short-sha>.html` — outside the repo, so no `.gitignore` entry and nothing to commit by accident |
 | Indexed | `docs/available-skills.md`, via `python3 scripts/regen-skills-doc.py` |
-| Enforcement | **none.** No gate, no CI check, no script, no required scope |
+| Trigger | `/explain-diff`; **or** agent-invoked (no `disable-model-invocation`, unlike `zoom-out`); **or** a reminder at `gh pr create` — `.claude/hooks/suggest-explainer.sh`, PreToolUse, always exits 0 |
+| Scope | **whether behaviour or a boundary MOVED**, not which directories were touched. Decided by the hook, so the rule is a script |
+| Enforcement | **none.** No gate, no CI check, no required scope. The hook suggests and never blocks |
 
 Adapted from Geoffrey Litt's `explain-diff`
 ([gist `a29df1b5`](https://gist.github.com/geoffreylitt/a29df1b5f9865506e8952488eac3d524), from the talk
@@ -87,6 +89,14 @@ a wrong shape never fails a round."*
 **Round 2's own lesson, recorded:** several of its findings were caused by round 1's fixes, which is one
 of the two consecutive rounds `docs/review-method.md:45-46` escalates on. Removal is itself an unreviewed
 design change.
+
+**The activation path exists after all — as a hook, not a document.** Round 2's Blocking said the rule
+had nowhere to live, and its own text named the answer: the repo already runs `PreToolUse` on `Bash`,
+so `gh pr create` is a machine-observable moment. `.claude/hooks/suggest-explainer.sh` fires there,
+suggests and never blocks (always exits 0), and stays quiet when an explainer already exists for the
+current head. **The scope rule went into that script rather than into prose**, which is what
+`dev-process.md` asks for — *"before adding a rule here, ask whether it can be a script"*. All four of
+its branches were exercised before it shipped, including the one that proves it can fire at all.
 
 **Method note:** in round 1 the file was edited *while both reviewers read it*. The Claude reviewer
 detected the change (451 → 475 lines) and re-anchored. Round 2 froze the file and both halves verified
