@@ -3,8 +3,9 @@
 **This project has two deliverables.** One is the product. The other is a battle-tested harness and
 the documents that make it reproducible somewhere else. This file is the second one's index.
 
-**Status: STARTED 2026-08-11, deliberately incomplete.** Everything below was measured on 2026-08-11.
-The other ~47 memory files and 623 review documents have **not** been mined yet — see *Not yet mined*.
+**Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 were measured on 2026-08-11, §8 on
+2026-08-12. The great majority of the memory files and review documents have **not** been mined yet —
+see *Not yet mined*, whose counts are re-enumerated, not recalled, whenever this file is edited.
 
 ---
 
@@ -109,11 +110,42 @@ only thing added was prose. But the counter-case matters too: a convention writt
 *then* enforced was found to be **factually wrong about its own subject** the moment the enforcement
 was built. Build the enforcement first, or at least before you believe the description.
 
+## 8. Sort findings by what they ATTACK, before fixing any of them
+
+> A lopsided distribution is telling you the **shape** is wrong. It is not telling you that you have
+> N bugs.
+
+**Measured 2026-08-12.** A dual adversarial review of a proposed pre-merge gate returned **26 findings,
+5 Blocking**. Sorted by target, every Blocking and every High landed on the **enforcement layer** — the
+mandatory scope, a score recorded in the PR body and bound to the head SHA, the CI check, a renderer,
+an override valve. The thing the whole design existed to deliver — a generated explainer document —
+drew **none**.
+
+Removing that layer **dissolved 21 of the 26**. Three were genuinely fixed and two stayed live. The
+alternative was 26 patches, and the reason that fails is worth quoting rather than paraphrasing:
+*"a local question can always be answered yes by patching… a wrong shape never fails a round."* Each
+patch would have made the gates greener while the shape stayed wrong.
+
+The sort costs minutes and needs no tooling — it is a column in a table you already have. What makes
+it work is that it asks a question no individual finding can answer: *is this design accumulating
+defects everywhere, or in one place?* Everywhere means ordinary work. **One place means that component
+is load-bearing and shouldn't be.**
+
+**And the removal is itself an unreviewed design change — re-review it.** Round 2 on the stripped-down
+version returned **20 more findings, 3 Blocking**, several of them *caused by* the removal. The
+sharpest: the surviving rule had been rehomed into a document that nothing loads at session start,
+whose stated read-trigger was a gate — and the whole point of the removal was that this was no longer
+a gate. Deleting the mechanism deleted its activation path with it, and nothing said so.
+
+**Portable:** the sort, the reading of a lopsided result, and re-reviewing the removal.
+**Local:** the gate that was removed.
+
 ---
 
 ## Not yet mined
 
-54 memory files (23 tagged as lessons), 623 review documents, 7 ADRs, and `process-rationale.md`
+**Re-enumerated 2026-08-12** (`ls | wc -l`, not recalled): **60 memory files** (23 tagged as lessons),
+**629 review documents**, **8 ADRs**, and `process-rationale.md`
 (323 lines). Apply the two filters above to those, cluster the survivors, and expect **5–8** to make
 it — most will fail filter 2, which is the correct outcome, not a disappointing one.
 
