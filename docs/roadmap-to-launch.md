@@ -1052,7 +1052,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #84**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #85**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
