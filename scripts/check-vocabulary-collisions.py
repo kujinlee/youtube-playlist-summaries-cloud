@@ -61,25 +61,31 @@ MECHANISM_STEMS = (
 # one whose stem no longer collides — so an allowlist cannot quietly outlive the
 # thing it excused. That is the difference between a ratchet and a mute button.
 ALLOWED: dict[str, str] = {
-    # ── the four collisions that cost six review rounds, recorded rather than hidden ──
-    # `video_artifacts`/`video_generations` re-implement the job queue's lease protocol:
-    # exclusivity, idempotency, expiry and an attempt bound that `jobs` already had. Every
-    # Blocking and High of rounds 7-12 lived in the seam between the two. ADR-0007 deletes
-    # the artifact half; when it lands these four entries go STALE and must be removed —
-    # which is this script reporting its own success.
-    "lease": "ADR-0007 (proposed) deletes the artifact-side lease; jobs keeps its own",
-    "token": "ADR-0007 (proposed) deletes video_artifacts.lease_token; jobs keeps its own",
-    "expires_at": "ADR-0007 (proposed) deletes video_artifacts.lease_expires_at",
-    "attempt": ("`jobs.attempts` bounds EXECUTION retries; `video_artifacts.lease_attempts`\n"
-                "            bounds PAID attempts per slot — a second money guard beside\n"
-                "            `jobs.ever_metered`. ADR-0007 keeps only the jobs one"),
+    # ── REMOVED 2026-08-12: `lease`, `token`, `expires_at`, `attempt` ──
+    # These four recorded the duplicate lease protocol that `video_artifacts`/`video_generations`
+    # had re-implemented on top of the job queue's — exclusivity, idempotency, expiry and an
+    # attempt bound `jobs` already had. Every Blocking and High of rounds 7-12 lived in that seam.
+    #
+    # ADR-0007 deleted the artifact half, and the entries went stale exactly as this block
+    # predicted they would: *"when it lands these four entries go STALE and must be removed —
+    # which is this script reporting its own success."* It reported it. Removing them is the
+    # acknowledgement; leaving them would have turned a ratchet into standing permission for the
+    # next duplication, which is the failure mode the header warns about.
+    #
+    # They went stale on 2026-08-07 (ADR-0007) and were removed on 2026-08-12. The gap exists
+    # because this checker needs a local Postgres and so is NOT in CI — nothing was watching. That
+    # is the real lesson here, and it belongs to the whole class of not-yet-in-CI schema gates
+    # (docs/dev-process.md → "Not yet in CI"), not to this entry.
     "reserv": (
         "SPLIT CONCEPT, not duplication: `jobs.reserved_cents` is a MONEY reservation\n"
         "            (spend held against a budget) while `video_artifacts.reserved_at` /\n"
         "            `video_generations.reserved_by` are WORK reservations. Same English word,\n"
         "            different mechanisms. ⚠ The work half is what ADR-0007 deletes — when it\n"
         "            lands, only jobs.reserved_cents remains and this entry should shrink to a\n"
-        "            note that the collision is gone."),
+        "            note that the collision is gone. MEASURED 2026-08-12: it has NOT landed for\n"
+        "            this stem — `reserv` still collides, so the work-reservation columns survive\n"
+        "            in the migrations even though the four lease stems above went stale. This\n"
+        "            entry stays live; do not remove it on the assumption ADR-0007 covered it."),
 }
 
 
