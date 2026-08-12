@@ -67,8 +67,9 @@ GATE_SCOPES: dict[str, list[str] | None] = {
 # copies disagreed about whether a money gate had passed. The `investigation_phrasing` finding is
 # also gone: it was B4, which could not be phrased as a gate until somebody decided what version
 # skew SHOULD do (decided 2026-08-11 — tolerate).
-# Remaining 4: M1.4 deploy/smoke, and M3.1/3.2/3.3 acceptance.
-BASELINE = 4
+#    3 → 2026-08-11, after A1/A2 were re-verified against v6 and M1.4 was closed
+# Remaining 3: M3.1/3.2/3.3 acceptance, which are not yet written as gates.
+BASELINE = 3
 
 FALSIFIER_RE = re.compile(r"\bFAILS?\s+IF\b", re.IGNORECASE)
 # An item phrased as an investigation has no pass condition by construction. B4 is the live example:
