@@ -45,9 +45,14 @@ const inactiveLinkClass =
 interface PlaylistSidebarProps {
   onNewPlaylist?: () => void;
   userId: string | null;
+  /** backlog #37: CHANGE this value to make the sidebar re-read the list. The parent owns it
+   *  because the parent is what changes the list — see the refetch effect below for why it is a
+   *  separate input rather than something this component could detect on its own. Only the fact
+   *  that it changed matters, not its value or starting point. */
+  refreshKey?: number;
 }
 
-export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSidebarProps) {
+export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: PlaylistSidebarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activePlaylistId = searchParams.get('playlist');
@@ -61,6 +66,95 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
   // same fiber's ref, not remounted.
   const backfillFiredRef = useRef(false);
 
+  // Every path that loads the list goes through `loadPlaylists` below — the [userId] mount effect,
+  // the [refreshKey] ingest refetch, the post-backfill reloads, and handleDeleted. It took three
+  // review rounds to get the concurrency right, and each round's fix produced the next round's
+  // defect, so the reasoning is recorded here rather than rediscovered.
+  //
+  // Round 1 (High) — per-effect `cancelled` booleans are not enough. Each only knows its own effect,
+  // so a slow mount fetch could resolve AFTER a fast post-ingest refetch and overwrite the new
+  // playlist with the pre-ingest list, restoring the very bug this branch removes. It is reachable
+  // because "+ New playlist" renders while the list is still loading. `PlaylistLibrary` already
+  // guards listVideos this way (CloudApp.tsx `reqSeq`); this is the same problem.
+  //
+  // Round 2 (High, twice) — one counter is not enough either, because "newest STARTED" and "newest
+  // APPLIED" diverge exactly when a load fails. Guarding only successes let a stale REJECTION raise
+  // an error, or redirect to /login, over a list a newer load had already rendered. Guarding against
+  // newest-started let a newer FAILED load permanently discard an older one that then succeeded.
+  // What governs the screen is the newest load that actually applied something.
+  //
+  // Round 3 (High) — a caller checking its own `cancelled` flag on the returned promise checks too
+  // late, because the write happens inside the helper. Cancellation is now passed IN.
+  //
+  // Three questions, asked at the moment of the write: was I superseded (appliedSeq), am I still the
+  // newest attempt (startedSeq), and does my caller still exist (isCancelled)?
+  const startedSeqRef = useRef(0);
+  const appliedSeqRef = useRef(0);
+
+  // The userId of the render happening RIGHT NOW, readable from inside an async continuation that
+  // closed over an older render. Without this the account guard below compares two values captured
+  // in the SAME stale closure — `requestedFor` and `userId` would both read 'a' after a switch to
+  // 'b', so the check could never fire. It looked like a guard and was a no-op; the leak test caught
+  // it only because the test reached the path, and the mutation run only said "untested".
+  const currentUserIdRef = useRef(userId);
+  currentUserIdRef.current = userId;
+
+  /** Fetch the list and apply it only if no NEWER load has already applied one. Returns the list
+   *  when applied, or null when this load no longer speaks for the screen — callers must read null
+   *  as "do nothing further", never as "the owner has no playlists".
+   *
+   *  `isCancelled` is the CALLER's teardown check and is consulted before the state write, not
+   *  after. Round 3 (High): this helper writes state internally, so a caller that checked its own
+   *  `cancelled` flag on the returned promise was checking too late — on an in-place account switch
+   *  (userId A→B, no remount) user A's in-flight load would render A's playlists under B's sidebar.
+   *  Sequence answers "was I superseded?", cancellation answers "does my caller still exist?", and
+   *  both have to be asked at the moment of the write.
+   *
+   *  Rejections propagate to the caller ONLY while this is still the newest load in flight; a stale
+   *  rejection resolves to null instead, because a load that has been overtaken has no standing to
+   *  put an error on screen. */
+  async function loadPlaylists(isCancelled: () => boolean = () => false): Promise<PlaylistSummary[] | null> {
+    const seq = ++startedSeqRef.current;
+    const requestedFor = userId; // whose data this is — see the account guard below
+    try {
+      const result = await listPlaylists();
+      // Round 4 (High): the ACCOUNT check belongs here, not in each effect's cleanup. Round 3 added
+      // cancellation to the mount effect and round 4 then found the identical defect in the refresh
+      // effect, whose cleanup is scoped to [refreshKey] and so never fires on a userId change. That
+      // is one instance of a class being fixed as if it were the class. Comparing the userId the
+      // request was ISSUED for against the one currently mounted covers every caller at once —
+      // mount, refresh, delete, and both backfill reloads — and keeps covering new ones.
+      //
+      // Note this is currently unreachable: sign-out does router.replace('/login'), which unmounts
+      // CloudApp, and sign-in returns through an OAuth callback, a full page load — so no mounted
+      // instance ever sees userId A→B. It is guarded anyway because reachability here is one
+      // router.refresh() or one account switcher away, and the failure mode is showing one user's
+      // library to another. The cost is a string compare.
+      if (isCancelled() || requestedFor !== currentUserIdRef.current || seq <= appliedSeqRef.current) return null;
+      appliedSeqRef.current = seq;
+      setPlaylists(result);
+      // Clear the banner ONLY if it belongs to a request this one supersedes. Round 4 (High): an
+      // unconditional clear let a slow PRE-ingest load, resolving after the post-ingest refetch had
+      // failed, erase an accurate "could not refresh" warning and leave the user looking at a list
+      // that genuinely is missing the playlist they just made — with nothing to say so. The error is
+      // therefore tagged with the sequence that produced it, and only a NEWER load may retire it.
+      if (errorSeqRef.current !== null && seq >= errorSeqRef.current) {
+        errorSeqRef.current = null;
+        setError(null);
+      }
+      return result;
+    } catch (err) {
+      if (isCancelled() || requestedFor !== currentUserIdRef.current || seq !== startedSeqRef.current) return null;
+      errorSeqRef.current = seq;
+      throw err;
+    }
+  }
+
+  /** The sequence of the load whose failure `error` currently describes, or null when no error is
+   *  showing. This is what makes the banner outlive an OLDER load that lands afterwards: staleness
+   *  is a fact about which request failed, not about wall-clock order of arrival. */
+  const errorSeqRef = useRef<number | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     // review fix: reset the one-shot guard at the START of the effect (before any check) so an
@@ -71,10 +165,9 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
     // and sessionStorage key are both re-set (see below) before this effect can run again for
     // that userId, and the effect only re-runs when userId itself changes.
     backfillFiredRef.current = false;
-    listPlaylists()
+    loadPlaylists(() => cancelled)
       .then(async (result) => {
-        if (cancelled) return;
-        setPlaylists(result);
+        if (cancelled || result === null) return; // null ⇒ superseded by a newer load
 
         if (userId === null) return; // no session ⇒ no per-user key, nothing to backfill
         const sessionKey = `backfilledTitles:${userId}`;
@@ -88,8 +181,7 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
         try {
           await backfillPlaylistTitles();
           if (cancelled) return;
-          const refreshed = await listPlaylists();
-          if (!cancelled) setPlaylists(refreshed);
+          await loadPlaylists(() => cancelled);
         } catch {
           // best-effort — keep the pre-backfill list on failure, matching the existing
           // silent-ignore pattern used elsewhere in this component (see handleArchive
@@ -110,14 +202,89 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  // backlog #37: refetch when the parent signals that IT changed the list (today: a completed
+  // ingest). Measured against prod v6 on 2026-08-12 — 3 playlists in the database, 1 in the
+  // sidebar, and a hard reload showed all 3.
+  //
+  // Why the parent has to tell us. This component is a SIBLING of the content pane inside
+  // `CloudAppBody`, and is never keyed by playlistId — so `router.push('/?playlist=<new>')` after
+  // an ingest reconciles it rather than remounting it. The mount effect above is keyed on
+  // [userId], which is stable for the whole signed-in session. Nothing observable from in here
+  // distinguishes "a playlist was just created" from any other re-render.
+  //
+  // Deliberately a SEPARATE effect from the [userId] one rather than another dependency on it:
+  // that effect also owns the once-per-session title backfill and resets `backfillFiredRef` as
+  // its first act, so folding the refetch in would re-arm the one-shot on every ingest. Two
+  // concerns, two effects.
+  //
+  // Skip while refreshKey still holds the value it had on the FIRST render — that is the initial
+  // render, which the mount effect already owns. `useRef(refreshKey)` captures that value once and
+  // ignores the argument on every later render, so this works no matter what number the parent
+  // starts its counter at (round 1, Low: the old `refreshKey === 0` sentinel silently required 0).
+  //
+  // It is also the reason this is a VALUE comparison and not a "have I run before?" flag. A run
+  // counter is not StrictMode-safe: React 18 runs effects setup→cleanup→setup on mount, so the
+  // first setup would consume the flag and the SECOND would fetch on mount anyway — dev-only, but
+  // it would make the stated contract false, and it could fire the null-title backfill below
+  // outside its intended trigger. Comparing values makes both setups skip (round 2, Low).
+  const initialRefreshKeyRef = useRef(refreshKey);
+  useEffect(() => {
+    if (refreshKey === initialRefreshKeyRef.current) return;
+    let cancelled = false;
+    (async () => {
+      const result = await loadPlaylists(() => cancelled);
+      if (cancelled || result === null) return;
+
+      // A brand-new playlist can legitimately arrive with NO title: producer.ts deliberately leaves
+      // the row untitled when the YouTube title fetch misses or throws, on the stated expectation
+      // that "the backfill route retries later". Before this branch that row was invisible, so the
+      // gap never showed. Now it renders as "Untitled playlist" — and the mount effect's backfill is
+      // once-per-session, already spent, so nothing in-session would repair it (review, Medium).
+      //
+      // So the refresh path runs its own repair. It intentionally does NOT consult (or set) the
+      // once-per-session sessionStorage key: that key throttles the unsolicited sign-in sweep, while
+      // this is a bounded response to a specific new row the user just created. It stays bounded
+      // because the effect runs exactly once per refreshKey increment, i.e. once per ingest.
+      if (userId === null || !result.some((p) => !p.playlistTitle)) return;
+      try {
+        await backfillPlaylistTitles();
+        if (!cancelled) await loadPlaylists(() => cancelled);
+      } catch {
+        // best-effort: an untitled row still renders and is still reachable.
+      }
+    })().catch(() => {
+      // Round 3 (High) — do NOT swallow this. Keeping the last good list on screen is right; doing
+      // it SILENTLY is the "quietly serves stale data" failure this project treats as the worst
+      // kind. The user just created a playlist: a sidebar that omits it with no explanation is
+      // indistinguishable from the bug this branch fixes.
+      //
+      // This is also where rounds 2 and 3 appeared to contradict each other. Round 2: a newer
+      // FAILED load must not discard an older successful one, or the sidebar strands on a spinner
+      // holding good data. Round 3: applying that older result shows pre-ingest data with no sign
+      // anything went wrong. Both hold, and they only conflicted because the render treated "show a
+      // list" and "show an error" as mutually exclusive. They are not — see the render below, which
+      // now shows the banner ABOVE whatever list we have.
+      if (!cancelled) {
+        errorSeqRef.current = startedSeqRef.current;
+        setError('Could not refresh the playlist list — it may be out of date.');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
   // T10: called from DeletePlaylistDialog.onDeleted. Refetches the list and, if the
   // deleted playlist was the active one, navigates to `/` (no `?playlist=` param) since
   // its video pane would otherwise 404/empty against a now-gone playlist.
   async function handleDeleted(deletedId: string) {
     setDeleteTarget(null);
     try {
-      const refreshed = await listPlaylists();
-      setPlaylists(refreshed);
+      // No cancellation argument: this runs from an event handler, not an effect, so there is no
+      // teardown to observe. It still shares the sequence guard, so a slow earlier load cannot
+      // resurrect the deleted row.
+      await loadPlaylists();
     } catch {
       // best-effort refetch — matches the silent-ignore pattern used by the backfill path
       // above; the row is gone server-side regardless of whether this refetch succeeds.
@@ -136,20 +303,24 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
         Playlists
       </h2>
 
+      {/* The banner sits ABOVE the list rather than replacing it (round 3). A failed refresh still
+          leaves the last good list worth showing; what it must not do is show it silently. Only the
+          "Loading…" placeholder is suppressed by an error, because a load that failed is not still
+          in progress. */}
       {error && <p className="px-2 text-sm text-[var(--danger)]">{error}</p>}
 
       {!error && playlists === null && (
         <p className="px-2 text-sm text-[var(--text-muted)]">Loading playlists…</p>
       )}
 
-      {!error && playlists !== null && playlists.length === 0 && (
+      {playlists !== null && playlists.length === 0 && (
         <div className="px-2 text-sm text-[var(--text-secondary)]">
           <p>You have no playlists yet.</p>
           <p className="mt-1 text-[var(--text-muted)]">Adding playlists comes with ingest.</p>
         </div>
       )}
 
-      {!error && playlists !== null && playlists.length > 0 && (
+      {playlists !== null && playlists.length > 0 && (
         <ul className="space-y-1">
           {playlists.map((p) => {
             const isActive = p.id === activePlaylistId;

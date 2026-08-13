@@ -309,8 +309,19 @@ sub-headings, a slide-caption callout, `▶ (2:53)` with *show summary* / *ask A
 - **[backlog #36]** — a Korean-titled video's blob key is rejected by Supabase Storage AFTER the paid
   Gemini call, destroying the summary. Repeatable; 2 of the 4 videos in the test playlist were
   Korean-titled. 🔴 money path.
-- **[backlog #37]** — a newly ingested playlist never appears in the sidebar (3 exist, 1 listed), so
-  the work is unreachable without its URL. 🟠 ranks above #36 for launch: it needs no unusual input.
+- **[backlog #37]** — a newly ingested playlist does not appear in the sidebar (3 existed, 1 listed).
+  🟠 — needs no unusual input, so it reaches every user who ingests a second playlist.
+  ✅ **FIXED, PR #91.** ⚠ **This entry as first written was wrong, and the error is the instructive
+  part.** It said the work was *"unreachable without its URL"*. It is not: a hard reload lists all
+  three, which was then measured against v6. The sidebar is a *sibling* of the content pane and is
+  never keyed by `playlistId`, so the post-ingest `router.push` reconciles it rather than remounting
+  it, and its sole `[userId]` fetch had already run at sign-in. **Client staleness, not data loss** —
+  and the two causes this entry originally proposed (a read-path/caching fault, a null-title filter)
+  were both excluded by one query showing three rows, one owner, three non-null titles. **Filed from the
+  symptom**: the 🟠 severity survived, but what the entry said the defect DID was wrong, and of its two
+  proposed mechanisms one was wrong outright and the other ("caching") was only right by accident, as
+  a guess at the server. The observation "3 exist, 1 listed" is the part that survived contact with
+  the code — which is the argument for filing observations and holding mechanisms loosely.
 
 **Cost of the run:** 606¢ reserved, ~32¢ actual — about a quarter of it burned on #36's two failures.
 
@@ -1201,7 +1212,9 @@ item was verified against. M2 Sync completed 2026-07-19.
 three needed falsifiers, the answer was no. **A third, ceremonial sign-off item was deleted** — no
 subject, no observation, nothing that could be true or false. The manual production check earned a
 falsifier, **was run the same day against v6, and PASSED — while finding two real defects**
-(backlog #36 and #37). **3.1 is a TASK, not a gate** — the test becomes the claim once written, so its
+(backlog #36 and #37; **#37 root-caused and fixed the same day in PR #91** — its severity held, but its
+description of the damage and its guessed mechanisms did not, which is recorded with the acceptance
+evidence above because *"filed from the symptom"* is a repeatable failure, not a one-off). **3.1 is a TASK, not a gate** — the test becomes the claim once written, so its
 journey is enumerated in the test rather than in a clause.
 The ratchet still flags 3.1 by design; **do not silence it.** Writing prose to lower a ratchet's number
 is the failure the ratchet exists to catch.
