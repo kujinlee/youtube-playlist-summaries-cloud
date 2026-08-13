@@ -142,10 +142,58 @@ a gate. Deleting the mechanism deleted its activation path with it, and nothing 
 
 ---
 
+## 9. If your agent generates an interactive artifact, it must be able to RUN it
+
+> An affordance the author cannot execute is an affordance nobody has tested. Not "lightly tested" —
+> **untested**, however carefully the code was read.
+
+**Measured 2026-08-12/13.** An agent skill generated a self-contained HTML document and delivered it
+as a `file://` path. A small question-capture widget was added to it — select text, type a question,
+send. It shipped **four separate defects in four rounds**, and the reader found every one:
+
+| | defect | why reading the code did not catch it |
+|---|---|---|
+| 1 | No send affordance at all — a textarea, and Enter did nothing | The code was *present and correct*; the interaction was missing |
+| 2 | The only button was squeezed to a sliver | A flex row with `flex:1` on a long hint and no `flex-shrink:0` on the button. Invisible in source, obvious on screen |
+| 3 | The Enter handler referenced a variable declared **below** it | Would have thrown on first use; caught only by re-reading, never by running |
+| 4 | "Send" wrote to a directory the agent **cannot read** | The OS denies it (`Operation not permitted`). No amount of re-reading the page reveals this |
+
+Defect 4 is the important one: **it was not in the code at all.** It was a false belief about the far
+side of a boundary — *the browser writes the file, therefore the agent reads it* — where only the near
+half was ever checked.
+
+The root cause of all four was one property: `file://` is the most isolated context a browser has, so
+the automation could not open the page. **Serving the same bytes over `http://127.0.0.1` dissolved
+the whole class**, and did it twice over:
+
+- the artifact gained a **channel** — it can `POST` to something that writes where the agent reads;
+- the agent gained **execution** — it can navigate, click, and read the DOM back.
+
+The first affordance verified after that change was verified *by clicking it* and watching the effect
+land on disk. The bytes did not change: served, it posts; opened as a bare file, it hides the control
+and falls back to the clipboard. **Progressive enhancement, so the artifact still opens untouched in
+five years with no server running.**
+
+**How to apply.** Ask, of any artifact your tooling emits: *can I execute this, or only read it?* If
+only read it, the interactive parts are unverified by construction and a human becomes your test
+suite. Serving a directory over loopback is ~350 lines and removes the constraint. Bind `127.0.0.1`
+only, resolve paths **before** checking containment, and allowlist extensions — a generated artifact
+usually quotes private source.
+
+**The generalisation, which showed up four times in one session:** a claim about the *other* side of a
+boundary is the one nothing tests. Three more instances, same shape, same night — a route's comment
+asserting what its caller guaranteed; a skill asserting that a delivery tool rendered HTML; a script's
+docstring asserting a sibling would discover it. Each was written confidently, each was false, and
+each was caught only by *running the neighbour* rather than re-reading the sentence.
+
+---
+
 ## Not yet mined
 
-**Re-enumerated 2026-08-12** (`ls | wc -l`, not recalled): **60 memory files** (23 tagged as lessons),
-**629 review documents**, **8 ADRs**, and `process-rationale.md`
+**Re-enumerated 2026-08-13** (counted, not recalled): **61 memory files**, **633 review documents**,
+**8 ADRs** (`ls docs/adr | grep -cE '^[0-9]{4}-'` — a bare `ls *.md` says 9 and is wrong, because
+`README.md` lives there; the naive count was tried first and produced exactly that error), and
+`process-rationale.md`
 (323 lines). Apply the two filters above to those, cluster the survivors, and expect **5–8** to make
 it — most will fail filter 2, which is the correct outcome, not a disappointing one.
 
