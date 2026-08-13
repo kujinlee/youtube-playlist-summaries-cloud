@@ -242,9 +242,9 @@ slide images); M2 done = full bidirectional incl. images.**
   overloads `- [ ]` for three different meanings — and writing prose to lower a number is the failure
   the ratchet exists to catch, arriving through the front door.
 - [ ] **3.2 Real-render / regenerate checks** — *subjects corrected 2026-08-12 by reading prod.*
-  **(a) Summary section-timestamp guarantee** — regenerate **`f8Hr_7FyKMQ`** (Wk02) through the app as
-  the owner. **FAILS IF** the regenerated summary contains any `##` section without a unique,
-  monotonically increasing ▶ timestamp.
+  **(a) Summary section-timestamp guarantee** — **INGEST `9nh8TQRcYD0` into the prod playlist** as the
+  owner. **FAILS IF** its generated summary contains any `##` section without a unique, monotonically
+  increasing ▶ timestamp. *(Precondition: confirm the video is still public before starting.)*
   **(b) Cloud dig-serve render** — open the one dug section in prod, **`fdquDw1IfmM`** (dug
   2026-07-23). **FAILS IF** that render returns non-200, zero bytes, or HTML with no dug content.
   **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`) — record it; a tick
@@ -253,12 +253,22 @@ slide images); M2 done = full bidirectional incl. images.**
   deployed** generator. Prod's nine summaries were generated 2026-07-22, *after* PR #21 shipped the
   guarantee on 2026-07-15, so reading an existing one is free but verifies a release that stopped
   running weeks ago: the A1/A2 staleness in [`portable-practices.md`](portable-practices.md) §4.
-  **(a) and (b) use different videos, deliberately** — `fdquDw1IfmM` is the only video in prod carrying
-  a dig, and regenerating a summary is precisely the operation the serial-coherence slice (PR #42)
-  exists to stop from orphaning paid dig blobs. Regenerate it and (b) tests the aftermath of (a).
-  *(Corrected from "regenerate `9nh8TQRcYD0`". **MEASURED 2026-08-12: that video has ZERO rows in
-  prod** — it is a LOCAL-tool video, which is where the bug was found. The clause was well-formed and
-  named a subject that cannot be reached — the B5 shape, written the same afternoon as a note about B5.
+  **INGEST, not regenerate — this is forced, not a preference.** MEASURED 2026-08-12: all 9 prod videos
+  are at DocVersion `{major:3, minor:3}`, which IS `CURRENT_DOC_VERSION` (`lib/doc-version.ts:10`);
+  `needsResummarize` is true only when `stored.major < current.major` (`:15-17`); and `enqueue_job`
+  carries `on conflict (owner_id, playlist_id, video_id, section_id, job_kind, job_version)`
+  (`0018_enqueue_dig.sql:34`). Re-requesting an existing video at the same version therefore **joins
+  the existing job** — no re-run, no re-charge. That is charge-once working as designed, not a gap.
+  A NEW work target is the only path to a real generation, which is why (a) ingests rather than
+  regenerates. It also keeps (a) away from `fdquDw1IfmM`, the only video in prod carrying a dig, whose
+  summary must not be disturbed if (b) is to test the render rather than the aftermath of (a).
+  *(This item was unrunnable TWICE in one afternoon, for two different reasons, and both are recorded
+  because the pair is the lesson. **First**: it named `9nh8TQRcYD0`, which has ZERO rows in prod — a
+  well-formed clause pointing at an unreachable subject, the B5 shape. **Second**: the correction said
+  "regenerate `f8Hr_7FyKMQ`", an operation the cloud does not offer at an unchanged DocVersion. A gate
+  needs a reachable SUBJECT and a possible OPERATION; checking the clause is falsifiable establishes
+  neither. Ingesting `9nh8TQRcYD0` satisfies both and restores the original intent — it is the video
+  the guarantee was found on.
   **Checking that a clause is falsifiable is not the same as checking that its subject exists.**
   Enumerated rather than recalled: prod holds 9 videos, 1 playlist, 1 profile, 9 completed `summary`
   jobs and exactly 1 completed `dig`. Why this item earns a falsifier and 3.1 does not: it is a MANUAL
