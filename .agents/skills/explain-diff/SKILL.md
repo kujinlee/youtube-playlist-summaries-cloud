@@ -93,6 +93,32 @@ decisions nobody had written down. Aim there.
 - **Code blocks must use `<pre><code>`, and the `pre` CSS must include `white-space: pre` or
   `pre-wrap`.** Before saving, re-read every code block in the generated source and confirm it — if
   this is wrong the browser collapses the whole block onto one line.
+
+### Design it. The first PR #91 explainer came back as "monotonously just black and white letters"
+
+That verdict (user, 2026-08-12) was fair, and nothing above had asked for anything else. Prose quality
+was specified; *visual* quality was not, so a document whose subject is CODE shipped with unhighlighted
+code. These are requirements, not taste:
+
+- **Syntax-highlight every code block.** Hand-written `<span>`s with CSS classes — keyword, string,
+  comment, call, number, type. No library: the no-network rule still binds. Unhighlighted code in a
+  code explainer is the single biggest readability loss available.
+- **Mark the load-bearing lines.** A gutter/background highlight on the two or three lines that
+  actually changed. The reader should not have to diff the block by eye.
+- **Label each block** with its `file:line` and whether it is *before*, *after*, or *unchanged*
+  context. An unlabelled block makes the reader guess which world they are in.
+- **Three typefaces, three jobs:** serif for prose, system sans for tables, chips and UI chrome, mono
+  for code and metadata. All three system fonts. Setting everything in one face is what produced the
+  wall of grey.
+- **Colour must carry meaning, not decoration.** Give the document a small palette and assign it:
+  one hue for defects, one for verified/measured claims, one for structural facts, one for decisions.
+  Reuse it in callouts, table cells and chips so a colour means the same thing everywhere.
+- **Make the narrative a diagram when it has a shape.** If the change went through N review rounds and
+  each fix caused the next defect, that is a *cascade* and belongs in boxes and arrows — in prose it
+  is invisible. Same for concurrency: race orderings want a timeline with lanes.
+- **Lead with a stat strip** — the handful of numbers that characterise the change (rounds, mutations,
+  tests, lines actually changed). It sets the reader's expectations in one glance.
+- Build every diagram from HTML/CSS. Never ASCII, and never an external image.
 - Header block at the top of the page:
 
   ```
@@ -114,11 +140,20 @@ enforces this.)*
 A path is not a deliverable. Clicking one opens the HTML *source* in an editor, which for a
 self-contained page is close to useless. Do all three:
 
-1. **Surface the rendered page.** In Claude Code that is `SendUserFile` with `display: "render"`, which
-   opens it inline in the side panel. Use whatever equivalent the harness offers; if it has none, say
-   so rather than pretending the path was enough.
-2. **Print the absolute path and a command that opens it**, so it is reachable after the session ends:
-   `open ~/explainers/<file>.html`.
+1. **Print a clickable `file://` URL on its own line. This is the primary delivery.**
+
+   ```
+   file:///Users/<you>/explainers/<file>.html
+   ```
+
+   ⚠ **Measured 2026-08-12: `SendUserFile` with `display: "render"` does NOT render this page** — the
+   user got the HTML *source* in an editor and had to ask for a URL. This document previously asserted
+   that it "opens it inline in the side panel"; that was a confident claim about someone else's
+   behaviour that nothing checked, which is the same defect class as the stale invariant comment found
+   in `app/api/playlists/backfill-titles/route.ts` the same evening. Send the file as a supplement if
+   you like, but **never in place of the URL**, and never describe it as the thing that renders.
+2. **Also run `open <file://…>`** so it lands in the browser without a click, and print the bare path
+   too, so it is reachable after the session ends: `open ~/explainers/<file>.html`.
 3. **Say in one line what to look at first and why** — e.g. *"start at §3 Boundaries touched, row 3"*.
 
 **Do not publish it anywhere hosted unless the user asks.** An explainer quotes private source and
