@@ -5,7 +5,14 @@ const envPath = path.join(process.cwd(), '.env.test.local');
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+    // STRIP SURROUNDING QUOTES. `supabase status -o env` emits `API_URL="http://127.0.0.1:54321"`,
+    // and keeping the quotes yields a URL of `"http://…"` which @supabase/supabase-js rejects with
+    // `Invalid supabaseUrl`. This was LATENT for the jest suites and invisible: next/jest loads
+    // .env.local (unquoted) before this file runs, and the assignment below is gap-filling only
+    // (`!process.env[...]`), so the quoted values never won and never had to be correct. It
+    // surfaced the moment a NON-jest runner reused this loader — Playwright, 2026-08-13, which has
+    // no next/jest and so fell straight into it.
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^"(.*)"$/, '$1');
   }
 }
 
