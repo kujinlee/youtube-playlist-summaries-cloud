@@ -364,3 +364,65 @@ it('a later successful load clears an earlier error banner (backlog #37, review 
   expect(await screen.findByRole('link', { name: 'Business' })).toBeInTheDocument();
   expect(screen.queryByText(/server exploded/i)).not.toBeInTheDocument();
 });
+
+// Round 4 (High). The banner belongs to the request that failed, not to wall-clock arrival order.
+// An unconditional setError(null) on success let a slow PRE-ingest load, landing after the
+// post-ingest refetch had already failed, erase an accurate warning — leaving the user looking at a
+// list that genuinely lacks the playlist they just made, with nothing on screen to say so.
+it('an older load landing later cannot erase a newer refresh-failure banner (backlog #37, review r4 High)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  const preIngest = [
+    { id: 'old', playlistKey: 'O', playlistUrl: 'https://youtube.com/playlist?list=O', playlistTitle: 'CS146S', createdAt: '2026-07-22T19:52:12Z' },
+  ];
+  let resolveInitial!: (v: any) => void;
+  listPlaylistsMock
+    .mockReturnValueOnce(new Promise((r) => { resolveInitial = r; }) as any) // sign-in load: stalls
+    .mockRejectedValue(new Error('refetch failed') as any);                  // post-ingest: fails
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  await openAndSubmit();
+  await waitFor(() => expect(screen.getByText(/could not refresh/i)).toBeInTheDocument());
+
+  await act(async () => { resolveInitial(preIngest); });   // the OLD load lands after the failure
+  expect(screen.getByRole('link', { name: 'CS146S' })).toBeInTheDocument();
+  expect(screen.getByText(/could not refresh/i)).toBeInTheDocument(); // warning must SURVIVE
+});
+
+// Round 4 (High), the class-level half. The refresh effect's cleanup is scoped to [refreshKey], so
+// it does NOT fire when userId changes — round 3 had fixed exactly this defect for the mount effect
+// and it survived, untouched, one effect over. The guard is therefore on the REQUEST (compare the
+// userId it was issued for against the one now mounted), which covers every caller at once.
+//
+// Unreachable in the app as it stands — sign-out unmounts CloudApp via router.replace('/login') and
+// there is no router.refresh() anywhere — but a guard without a test is a claim, and the scenario is
+// one account-switcher away. Constructed here directly.
+it('an in-flight REFRESH from the previous account cannot render under the new one (backlog #37, review r4 High)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  const aPlaylists = [
+    { id: 'a1', playlistKey: 'A', playlistUrl: 'https://youtube.com/playlist?list=A', playlistTitle: 'Alice private list', createdAt: '2026-07-01T00:00:00Z' },
+  ];
+  const bPlaylists = [
+    { id: 'b1', playlistKey: 'B', playlistUrl: 'https://youtube.com/playlist?list=B', playlistTitle: 'Bob own list', createdAt: '2026-08-01T00:00:00Z' },
+  ];
+  let resolveARefresh!: (v: any) => void;
+  let resolveBMount!: (v: any) => void;
+  listPlaylistsMock
+    .mockResolvedValueOnce([] as any)                                          // A signs in
+    .mockReturnValueOnce(new Promise((r) => { resolveARefresh = r; }) as any)  // A's post-ingest refresh: stalls
+    .mockReturnValueOnce(new Promise((r) => { resolveBMount = r; }) as any);   // B's mount load: stalls
+
+  const { rerender } = render(<CloudApp session={{ userId: 'a', email: 'a@x.com' }} />);
+  expect(await screen.findByText(/no playlists yet/i)).toBeInTheDocument();
+  await openAndSubmit();                                                       // starts A's refresh
+  await waitFor(() => expect(listPlaylistsMock).toHaveBeenCalledTimes(2));
+
+  rerender(<CloudApp session={{ userId: 'b', email: 'b@x.com' }} />);           // refresh effect does NOT tear down
+  await waitFor(() => expect(listPlaylistsMock).toHaveBeenCalledTimes(3));
+
+  await act(async () => { resolveARefresh(aPlaylists); });                      // A's data arrives under B
+  expect(screen.queryByRole('link', { name: 'Alice private list' })).not.toBeInTheDocument();
+
+  await act(async () => { resolveBMount(bPlaylists); });
+  expect(await screen.findByRole('link', { name: 'Bob own list' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Alice private list' })).not.toBeInTheDocument();
+});

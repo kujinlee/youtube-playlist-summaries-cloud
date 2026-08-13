@@ -91,6 +91,14 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
   const startedSeqRef = useRef(0);
   const appliedSeqRef = useRef(0);
 
+  // The userId of the render happening RIGHT NOW, readable from inside an async continuation that
+  // closed over an older render. Without this the account guard below compares two values captured
+  // in the SAME stale closure — `requestedFor` and `userId` would both read 'a' after a switch to
+  // 'b', so the check could never fire. It looked like a guard and was a no-op; the leak test caught
+  // it only because the test reached the path, and the mutation run only said "untested".
+  const currentUserIdRef = useRef(userId);
+  currentUserIdRef.current = userId;
+
   /** Fetch the list and apply it only if no NEWER load has already applied one. Returns the list
    *  when applied, or null when this load no longer speaks for the screen — callers must read null
    *  as "do nothing further", never as "the owner has no playlists".
@@ -107,20 +115,45 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
    *  put an error on screen. */
   async function loadPlaylists(isCancelled: () => boolean = () => false): Promise<PlaylistSummary[] | null> {
     const seq = ++startedSeqRef.current;
+    const requestedFor = userId; // whose data this is — see the account guard below
     try {
       const result = await listPlaylists();
-      if (isCancelled() || seq <= appliedSeqRef.current) return null;
+      // Round 4 (High): the ACCOUNT check belongs here, not in each effect's cleanup. Round 3 added
+      // cancellation to the mount effect and round 4 then found the identical defect in the refresh
+      // effect, whose cleanup is scoped to [refreshKey] and so never fires on a userId change. That
+      // is one instance of a class being fixed as if it were the class. Comparing the userId the
+      // request was ISSUED for against the one currently mounted covers every caller at once —
+      // mount, refresh, delete, and both backfill reloads — and keeps covering new ones.
+      //
+      // Note this is currently unreachable: sign-out does router.replace('/login'), which unmounts
+      // CloudApp, and sign-in returns through an OAuth callback, a full page load — so no mounted
+      // instance ever sees userId A→B. It is guarded anyway because reachability here is one
+      // router.refresh() or one account switcher away, and the failure mode is showing one user's
+      // library to another. The cost is a string compare.
+      if (isCancelled() || requestedFor !== currentUserIdRef.current || seq <= appliedSeqRef.current) return null;
       appliedSeqRef.current = seq;
       setPlaylists(result);
-      // Clear any banner a PREVIOUS failure left behind: we now have a good list, and the render
-      // shows both, so a stale error would otherwise sit above fresh data forever (round 3, Medium).
-      setError(null);
+      // Clear the banner ONLY if it belongs to a request this one supersedes. Round 4 (High): an
+      // unconditional clear let a slow PRE-ingest load, resolving after the post-ingest refetch had
+      // failed, erase an accurate "could not refresh" warning and leave the user looking at a list
+      // that genuinely is missing the playlist they just made — with nothing to say so. The error is
+      // therefore tagged with the sequence that produced it, and only a NEWER load may retire it.
+      if (errorSeqRef.current !== null && seq >= errorSeqRef.current) {
+        errorSeqRef.current = null;
+        setError(null);
+      }
       return result;
     } catch (err) {
-      if (isCancelled() || seq !== startedSeqRef.current) return null; // overtaken — stay silent
+      if (isCancelled() || requestedFor !== currentUserIdRef.current || seq !== startedSeqRef.current) return null;
+      errorSeqRef.current = seq;
       throw err;
     }
   }
+
+  /** The sequence of the load whose failure `error` currently describes, or null when no error is
+   *  showing. This is what makes the banner outlive an OLDER load that lands afterwards: staleness
+   *  is a fact about which request failed, not about wall-clock order of arrival. */
+  const errorSeqRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -231,7 +264,10 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
       // anything went wrong. Both hold, and they only conflicted because the render treated "show a
       // list" and "show an error" as mutually exclusive. They are not — see the render below, which
       // now shows the banner ABOVE whatever list we have.
-      if (!cancelled) setError('Could not refresh the playlist list — it may be out of date.');
+      if (!cancelled) {
+        errorSeqRef.current = startedSeqRef.current;
+        setError('Could not refresh the playlist list — it may be out of date.');
+      }
     });
     return () => {
       cancelled = true;
