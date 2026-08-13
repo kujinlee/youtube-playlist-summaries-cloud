@@ -6,16 +6,36 @@
 // before BUG-6 was fixed (title == list-id, i.e. still null in the store's schema).
 //
 // review fix (whole-branch, starvation): process ALL of the caller's null-title rows in one
-// call, not a fixed-size prefix slice. The naturally-bounded set here is the owner's own
-// null-title playlists — the sidebar (Task 5) already bounds *call frequency* to once per
-// session per user, which is the real backstop against repeated work. A prefix slice (e.g.
-// "first 200") is actively harmful: if those first N rows are permanently unfillable (their
-// YouTube playlist was deleted/made private, so fetchPlaylistTitleOrNull keeps returning
-// null), the SAME first N rows get re-selected every session forever, and any fillable row
-// sitting at position N+1 is never attempted — a permanent starvation bug that breaks the
-// "drains over sessions" contract. BACKFILL_SANITY_MAX below is kept only as a defensive
-// abuse ceiling (a single owner with a pathological number of null-title rows), not as the
-// normal-case bound.
+// call, not a fixed-size prefix slice. A prefix slice (e.g. "first 200") is actively harmful:
+// if those first N rows are permanently unfillable (their YouTube playlist was deleted/made
+// private, so fetchPlaylistTitleOrNull keeps returning null), the SAME first N rows get
+// re-selected every session forever, and any fillable row sitting at position N+1 is never
+// attempted — a permanent starvation bug that breaks the "drains over sessions" contract.
+//
+// ⚠ TWO BOUNDS, AND ONLY ONE OF THEM IS OURS (corrected 2026-08-12, backlog #37 / PR #91).
+//
+//   ROWS PER CALL — mechanical, enforced here by BACKFILL_SANITY_MAX. Holds against any caller.
+//   CALL FREQUENCY — not enforced anywhere. It is whatever the callers happen to do.
+//
+// This comment used to assert that "the sidebar already bounds call frequency to once per
+// session per user, which is the real backstop against repeated work." That became FALSE the
+// moment PlaylistSidebar grew a second trigger: its post-ingest refresh path deliberately
+// ignores the `backfilledTitles:<userId>` sessionStorage key, because a playlist that was JUST
+// created with a null title (see lib/job-queue/producer.ts — the title fetch is best-effort and
+// leaves the row untitled on a miss) would otherwise render as "Untitled playlist" for the rest
+// of the session, the sign-in sweep having already been spent.
+//
+// So the honest statement of the worst case is: one call per sign-in, PLUS one per ingest that
+// returns any null-title row, each iterating every null-title row the owner has. A permanently
+// unfillable row is therefore re-attempted on every subsequent ingest — bounded, cheap at
+// realistic scale (a handful of playlists.list calls), and preferable to the alternative, which
+// is leaving a freshly paid-for playlist untitled until the user opens a new session.
+//
+// The general point, which is why this is written out rather than deleted: a safety argument
+// that depends on what a CALLER does is a claim, not a mechanism, and nothing fails when the
+// caller changes. Four adversarial review rounds on PR #91 asked how many backfill calls a user
+// could cause and answered correctly — none of them opened this file to notice that the bound
+// it documents had stopped being provided. BACKFILL_SANITY_MAX is the part that cannot rot.
 import { cookies } from 'next/headers';
 import { getStorageBundle, getPrincipalFromSession } from '@/lib/storage/resolve';
 import { createServerSupabase, type CookieStore } from '@/lib/supabase/server';

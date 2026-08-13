@@ -1158,13 +1158,17 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #90**, clean, tsc clean, **2690 unit / 267 suites** and **491
-  integration** green (counts re-run 2026-08-12).
+- **`master` = the merge of PR #92**, clean, tsc clean, **2703 unit / 267 suites** green (unit count
+  re-run 2026-08-12 on this branch; **491 integration** is the 2026-08-12 figure and was NOT re-run —
+  this branch touches no integration surface).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
   merge moves `master` past whatever SHA it names. Replacing the SHA with a PR number did not fix it
   either — **PR #81 wrote "#80"**, the previous number, so the field was wrong again on the very
-  first merge. [`dev-process.md`](dev-process.md) already says *"do not chase the squash SHA — the PR
+  first merge. **And PR #91 simply did not touch the line at all, leaving "#90" behind and turning
+  `master` CI red on merge — the third distinct way to get this one field wrong, and the first where
+  the mistake was an omission rather than a wrong value.** A required field defends omission; this one
+  is prose, so nothing asked. Every PR that lands must edit this line. [`dev-process.md`](dev-process.md) already says *"do not chase the squash SHA — the PR
   number exists as soon as the PR does"*: open the PR, then write its own number here.
   Enforced by `scripts/check-roadmap-consistency.py`, which compares this against the PR in `HEAD`'s
   merge subject. ⚠ That comparison only has something to compare **on `master`**, so it catches the
