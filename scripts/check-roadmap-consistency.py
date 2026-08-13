@@ -77,7 +77,6 @@ CHECKLIST_GLOB = "docs/*checklist*.md"
 BLOCK_HEADING_RE = re.compile(r"^#{1,6}\s*▶\s*NEXT ACTIONS", re.M)
 
 # The state block names the PR whose merge produced the current `master`.
-STATE_PR_RE = re.compile(r"`master`\s*=\s*the merge of PR #(\d+)")
 
 # A checkbox line, capturing its mark and the leading identifier of its bolded title.
 #   - [x] **1.4 Deploy + smoke test** ...        -> 1.4
@@ -104,46 +103,21 @@ class Finding:
     detail: str
 
 
-def head_merged_pr() -> int | None:
-    """The PR number in HEAD's squash-merge subject, e.g. `... (#81)`. None if HEAD is not one."""
-    try:
-        subject = subprocess.run(["git", "log", "-1", "--pretty=%s"], cwd=ROOT,
-                                 capture_output=True, text=True, timeout=10).stdout.strip()
-    except Exception:
-        return None
-    m = re.search(r"\(#(\d+)\)\s*$", subject)
-    return int(m.group(1)) if m else None
-
-
-def check_pr_ref(roadmap_text: str, head_pr: int | None) -> tuple[list[Finding], str | None]:
-    """The block's `master = the merge of PR #N` must match the PR that actually produced HEAD.
-
-    WHY: the SHA was removed from this block because it could never stay true, and the PR number
-    replaced it — then the replacing PR wrote the PREVIOUS PR's number, so the field was wrong again
-    on the first merge. `dev-process.md` already says the PR number exists as soon as the PR does;
-    the convention is therefore **name your own PR**, and this asserts it.
-
-    LIMITATION, stated rather than implied: this compares against HEAD's merge subject, so on a
-    feature branch there is nothing to compare and it reports a NOTE instead of passing silently.
-    It therefore catches the mistake on the first CI run on `master` AFTER the merge — it does not
-    block the PR that introduces it."""
-    m = STATE_PR_RE.search(roadmap_text)
-    if not m:
-        return [Finding("cannot_run", "-", 0, "",
-                        "the state block no longer says `master` = the merge of PR #N, so the "
-                        "PR-reference check inspected NOTHING. Treat as NOT RUN.")], None
-    claimed = int(m.group(1))
-    if head_pr is None:
-        return [], (f"NOTE: HEAD is not a squash merge, so the PR reference (#{claimed}) could not be "
-                    "checked here. It is checked on the first CI run on master after merge.")
-    if claimed != head_pr:
-        return [Finding(
-            "stale_pr_ref", f"#{claimed}", 0, f"`master` = the merge of PR #{claimed}",
-            f"HEAD is the merge of PR #{head_pr}, not #{claimed}. Convention: the PR that edits this "
-            "block names ITSELF — the number exists as soon as the PR does (dev-process.md).",
-        )], None
-    return [], None
-
+# DELETED 2026-08-12 — `head_merged_pr()` and `check_pr_ref()`, which asserted that the roadmap's
+# `master = the merge of PR #N` named the PR that produced HEAD.
+#
+# The FIELD is gone, so the check has nothing to assert. It was wrong four distinct ways in a short
+# life: a raw SHA (false when written), PR #81 writing #80, PR #91 not touching it at all (master CI
+# went red), and PR #93 repeating that omission within the hour — by the author who had just written
+# the warning about it. Three of the four were omissions or copy-forwards, which is what prose cannot
+# defend against: a required parameter refuses to be left out, a paragraph cannot.
+#
+# It was also derived: `git log -1` answers "what is master?" correctly, for free, forever. The fix
+# was to delete a hand-maintained cache of a computable value rather than build a second mechanism to
+# police it — the same reasoning that had already retired this field's sibling, the PR range.
+#
+# What replaced it guards the part that is NOT derivable and DID rot silently: the test counts.
+# See scripts/check-test-counts.py, wired into CI right after `npm test`.
 
 def _strip_fences(text: str) -> list[tuple[int, str]]:
     """(line_no, line) with fenced code removed — a fence may legitimately SHOW an example block."""
@@ -278,7 +252,7 @@ def next_actions_block(text: str) -> list[tuple[int, str]] | None:
     return block
 
 
-def find_inconsistencies(sources: dict[str, str], check_pr: bool = False) -> list[Finding]:
+def find_inconsistencies(sources: dict[str, str]) -> list[Finding]:
     marks, findings = collect_marks(sources)
 
     roadmap_text = sources.get(ROADMAP)
@@ -294,12 +268,6 @@ def find_inconsistencies(sources: dict[str, str], check_pr: bool = False) -> lis
             "no '▶ NEXT ACTIONS' heading found — this check inspected NOTHING. "
             "Treat as NOT RUN, not as clean.",
         )]
-
-    if check_pr:
-        pr_findings, note = check_pr_ref(roadmap_text, head_merged_pr())
-        findings.extend(pr_findings)
-        if note:
-            print(f"  {note}")
 
     # UNITS, NOT LINES. The first version of this scanner matched cue and identifier on the SAME
     # line, and was measured green against the exact roadmap that contained the 2026-08-11 bug —
@@ -448,24 +416,6 @@ def _self_test() -> int:
          "unresolvable", 0),
     ]
 
-    # ── the PR-reference discriminator, exercised without git ────────────────────────────────────
-    pr_cases = [
-        ("block names the PR that produced HEAD", "`master` = the merge of PR #81", 81, 0),
-        ("block names the PREVIOUS PR (the mistake this exists for)",
-         "`master` = the merge of PR #80", 81, 1),
-        ("no such line at all fails loudly rather than passing",
-         "master is fine, honestly", 81, 1),
-        ("HEAD is not a merge → note, not a finding",
-         "`master` = the merge of PR #80", None, 0),
-    ]
-    pr_passed = 0
-    for name, text, head, expected in pr_cases:
-        got = len(check_pr_ref(text, head)[0])
-        if got == expected:
-            pr_passed += 1
-        else:
-            print(f"  FAIL: {name} — expected {expected} finding(s), got {got}")
-
     passed = 0
     for name, sources, kind, expected in cases:
         got = sum(1 for f in find_inconsistencies(sources) if f.kind == kind)
@@ -473,7 +423,7 @@ def _self_test() -> int:
             passed += 1
         else:
             print(f"  FAIL: {name} — expected {expected} {kind}, got {got}")
-    total, ok = len(cases) + len(pr_cases), passed + pr_passed
+    total, ok = len(cases), passed
     print(f"self-test: {ok}/{total} passed")
     return 0 if ok == total else 1
 
@@ -489,7 +439,7 @@ def main() -> int:
     for p in sorted(ROOT.glob(CHECKLIST_GLOB)):
         sources[str(p.relative_to(ROOT))] = p.read_text(encoding="utf-8")
 
-    findings = find_inconsistencies(sources, check_pr=True)
+    findings = find_inconsistencies(sources)
     report_only = "--report" in sys.argv
 
     if not findings:

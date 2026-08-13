@@ -234,9 +234,12 @@ two held by tests. Only the human-checked one was reopened. Reopen the part that
 
 ## Writing a RATCHET (added 2026-08-11)
 
-**There are SIX**, and each invented these independently, differently:
+**There are EIGHT**, and each invented these independently, differently:
 `check-arch-findings.py`, `check-guard-coverage.py`, `check-sentinel-meanings.py`,
-`check-vocabulary-collisions.py`, `check-gate-falsifiability.py`, `check-ratchet-contract.py`.
+`check-vocabulary-collisions.py`, `check-gate-falsifiability.py`, `check-ratchet-contract.py`,
+`check-storage-grant-pin.py`, `check-test-counts.py`.
+**Do not maintain this list by hand — `python3 scripts/check-ratchet-contract.py` prints it**, from
+two independent sources, and is the reason the count below was ever corrected.
 
 *This paragraph originally said "three", written from memory — it undercounted by half, and
 `scripts/check-ratchet-contract.py` is what caught it before this document merged. Which is the

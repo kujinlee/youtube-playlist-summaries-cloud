@@ -50,8 +50,21 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # --json --outputFile is what makes the counts MEASURABLE rather than asserted: the next step
+      # compares the roadmap's stated numbers against this file. Without it, the roadmap's
+      # "2703 unit / 267 suites" is a claim nobody re-reads, and it had already drifted to 2690.
       - name: Unit and component tests
-        run: npm test -- --ci
+        run: npm test -- --ci --json --outputFile=jest-results.json
+
+      # The roadmap states the size of the safety net. This makes that statement fail when it drifts.
+      # Deliberately AFTER the suite and reading its real output — a counts check that cannot see the
+      # run is a green tick over nothing, so scripts/check-test-counts.py exits non-zero when the
+      # results file is absent, malformed, or reports a failed run.
+      - name: Roadmap test counts match the suite
+        run: python3 scripts/check-test-counts.py --results jest-results.json
+
+      - name: check-test-counts self-test
+        run: python3 scripts/check-test-counts.py --self-test
 
       - name: service_role confinement guard
         run: npm run check:confinement

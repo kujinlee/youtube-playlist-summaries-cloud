@@ -137,6 +137,7 @@ copy that drifts.
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |
 | `scripts/check-docs.py` | documentation integrity |
+| `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
 
