@@ -188,6 +188,52 @@ each was caught only by *running the neighbour* rather than re-reading the sente
 
 ---
 
+## 10. A surviving mutation does not mean "add a test" — first ask whether the guard can FIRE
+
+> Two instruments both reported on this guard. One said **untested**, the other said **protected**.
+> It was neither: it was *incapable of ever being true*, and nothing either instrument measures can
+> tell that apart.
+
+**Measured 2026-08-13.** A guard was added to stop one user's data rendering under another account,
+inside an async continuation:
+
+```js
+const requestedFor = userId;               // captured when the load starts
+// …await…
+if (requestedFor !== userId) return null;  // "is it still the same account?"
+```
+
+The enclosing function is a **closure recreated on every render**. The caller held the version from
+the render where `userId === 'a'`, so after a switch to `'b'` **both operands still read `'a'`**. The
+condition could not be true. It read like a check and did nothing.
+
+**Why neither signal was enough, and this is the whole entry:**
+
+| instrument | what it reported | why that was not a lie |
+|---|---|---|
+| mutation run | *"no test fails when I delete it"* | true of an untested guard **and** of a no-op guard — the same output for two different diseases |
+| reading the code | *"this compares the right two concepts"* | also true; the names were right, the values were not |
+
+Only a test that **reached that branch** separated them. The first attempt at that test did not: an
+earlier guard short-circuited the path, so the test passed with the account check deleted. It asserted
+a real property against a code path it never entered.
+
+**How to apply.** When a mutation survives, do not jump to *"needs a test"* — that is one of two
+diagnoses and the less interesting one. First ask: **can this guard fire at all?** For any predicate
+inside an async continuation, name where each operand was captured; if both came from the same closure,
+it is decoration. Then check the test reaches the branch you think it does, not merely the outcome you
+expect — an earlier guard short-circuiting the path is indistinguishable, from the outside, from the
+later guard working.
+
+**The fix is usually to make one operand live** — a ref updated on every render, a value re-read at the
+moment of use — rather than to strengthen the comparison. A guard is only as good as the freshness of
+what it compares.
+
+Same family as §2 (*cannot run is a failure*): in all three cases a mechanism reports success while
+inspecting nothing, and the reported value is indistinguishable from the healthy one.
+
+---
+
 ## Not yet mined
 
 **Re-enumerated 2026-08-13** (counted, not recalled): **61 memory files**, **633 review documents**,
