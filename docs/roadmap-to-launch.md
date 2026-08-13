@@ -1158,21 +1158,24 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #93**, clean, tsc clean, **2703 unit / 267 suites** green (unit count
-  re-run 2026-08-12 on this branch; **491 integration** is the 2026-08-12 figure and was NOT re-run —
-  this branch touches no integration surface).
-  *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
-  held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
-  merge moves `master` past whatever SHA it names. Replacing the SHA with a PR number did not fix it
-  either — **PR #81 wrote "#80"**, the previous number, so the field was wrong again on the very
-  first merge. **And PR #91 simply did not touch the line at all, leaving "#90" behind and turning
-  `master` CI red on merge — the third distinct way to get this one field wrong, and the first where
-  the mistake was an omission rather than a wrong value.** A required field defends omission; this one
-  is prose, so nothing asked. Every PR that lands must edit this line. [`dev-process.md`](dev-process.md) already says *"do not chase the squash SHA — the PR
-  number exists as soon as the PR does"*: open the PR, then write its own number here.
-  Enforced by `scripts/check-roadmap-consistency.py`, which compares this against the PR in `HEAD`'s
-  merge subject. ⚠ That comparison only has something to compare **on `master`**, so it catches the
-  mistake on the first CI run after merge — it does not block the PR that makes it.
+- **`master` is clean** — tsc clean, **2703 unit / 267 suites** green, plus **491 integration**
+  (the 2026-08-12 figure; integration needs a live Supabase stack, does not run in CI, and is
+  therefore NOT verified by the check below — treat it as a dated note, not a live number).
+  **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`, which
+  compares them against jest's own `--json` output and fails when they drift. They are stated at all
+  so a fresh session knows the size of the safety net; before the check existed this line said 2690
+  while the suite ran 2703, and nothing noticed.
+  *For "what is `master` right now?" run `git log -1`.* ⚠ **This block used to answer that itself,
+  with a `master = the merge of PR #N` field. It is DELETED (2026-08-12) rather than enforced, and
+  the reason is worth keeping.** It was wrong four distinct ways in a short life: it held a raw SHA
+  (false the moment it was written); PR #81 replaced the SHA with a number and wrote **#80**, the
+  previous one; PR #91 did not touch it at all, so `master` CI went red on merge; and PR #93 repeated
+  that omission **within the hour, in the PR that added the warning against it.** Three of the four
+  were omissions or copy-forwards — the failure mode prose cannot defend, because a paragraph cannot
+  refuse to be skipped the way a required parameter can. The field was also *derived*: `git log`
+  always knew the answer. Deleting a hand-maintained cache of a computable value beat building a
+  second mechanism to police it, which is the same reasoning that already retired this field's
+  sibling, the PR range.
 - **Deployed: release v6, 2026-08-11 15:47Z** (`fly status`: web + worker both v6).
   ⚠ **`master` has moved past the deployed release.** Nothing outstanding is deploy-urgent — the
   behaviour changes are the share tolerating version skew and the serve-path precondition — but

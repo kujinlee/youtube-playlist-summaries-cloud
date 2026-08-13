@@ -72,3 +72,6 @@ dist/
 # __pycache__/ appears under scripts/ on every review dispatch (PR #27).
 __pycache__/
 *.pyc
+
+# jest --json output, produced by CI for scripts/check-test-counts.py and handy locally.
+jest-results.json
