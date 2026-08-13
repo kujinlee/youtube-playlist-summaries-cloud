@@ -242,9 +242,11 @@ slide images); M2 done = full bidirectional incl. images.**
   overloads `- [ ]` for three different meanings — and writing prose to lower a number is the failure
   the ratchet exists to catch, arriving through the front door.
 - [ ] **3.2 Real-render / regenerate checks** — *subjects corrected 2026-08-12 by reading prod.*
-  **(a) Summary section-timestamp guarantee** — **INGEST `9nh8TQRcYD0` into the prod playlist** as the
-  owner. **FAILS IF** its generated summary contains any `##` section without a unique, monotonically
-  increasing ▶ timestamp. *(Precondition: confirm the video is still public before starting.)*
+  **(a) Summary section-timestamp guarantee** — **INGEST ANY QUALIFYING VIDEO** as the owner, via a
+  one-video playlist. **The subject is specified by PREDICATE, not by name:** public, not already in
+  prod, and duration ≤ the live `guardrail_config.max_duration_seconds` (1800s as of 2026-08-12 —
+  read it, do not trust this number). **FAILS IF** the generated summary contains any `##` section
+  without a unique, monotonically increasing ▶ timestamp.
   **(b) Cloud dig-serve render** — open the one dug section in prod, **`fdquDw1IfmM`** (dug
   2026-07-23). **FAILS IF** that render returns non-200, zero bytes, or HTML with no dug content.
   **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`) — record it; a tick
@@ -267,8 +269,13 @@ slide images); M2 done = full bidirectional incl. images.**
   well-formed clause pointing at an unreachable subject, the B5 shape. **Second**: the correction said
   "regenerate `f8Hr_7FyKMQ`", an operation the cloud does not offer at an unchanged DocVersion. A gate
   needs a reachable SUBJECT and a possible OPERATION; checking the clause is falsifiable establishes
-  neither. Ingesting `9nh8TQRcYD0` satisfies both and restores the original intent — it is the video
-  the guarantee was found on.
+  neither. **Third**: the replacement named `9nh8TQRcYD0`, duration unverified — and an ingest attempt
+  on 2026-08-12 returned *"Queued 0 · 9 too long (>30 min)"*, rejecting the very nine videos already in
+  prod whose summaries were generated 2026-07-22. Production cannot currently re-create its own
+  content; the cap tightened after that content was made (caps are tunable by design — ADR-0004).
+  **So the item stopped naming a video.** The gate needs a NEW WORK TARGET that clears the live cap;
+  which video that is carries no meaning, and each attempt to fix the name produced a fresh way to be
+  wrong. Specify the subject by predicate, and read the cap live rather than copying it.
   **Checking that a clause is falsifiable is not the same as checking that its subject exists.**
   Enumerated rather than recalled: prod holds 9 videos, 1 playlist, 1 profile, 9 completed `summary`
   jobs and exactly 1 completed `dig`. Why this item earns a falsifier and 3.1 does not: it is a MANUAL
