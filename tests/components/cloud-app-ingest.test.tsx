@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 
 const push = jest.fn();
 const replace = jest.fn();
@@ -14,18 +14,22 @@ jest.mock('@/lib/client/api', () => {
     listPlaylists: jest.fn().mockResolvedValue([]),
     listVideos: jest.fn().mockResolvedValue({ videos: [], playlistUrl: 'https://youtube.com/playlist?list=X', playlistTitle: 'X' }),
     createIngest: jest.fn(),
+    backfillPlaylistTitles: jest.fn().mockResolvedValue({ updated: 1, attempted: 1 }),
     getJobStatus: jest.fn().mockResolvedValue({ jobs: [], rollup: { queued: 0, active: 0, completed: 0, failed: 0, dead_letter: 0, cancelled: 0, total: 0, terminal: false } }),
     ingestErrorMessage: (e: any) => `msg-${e.status}`,
     IngestError, UnauthorizedError,
   };
 });
 import CloudApp from '@/components/cloud/CloudApp';
-import { createIngest, listPlaylists } from '@/lib/client/api';
+import { createIngest, listPlaylists, backfillPlaylistTitles } from '@/lib/client/api';
 const createIngestMock = createIngest as jest.MockedFunction<typeof createIngest>;
 const listPlaylistsMock = listPlaylists as jest.MockedFunction<typeof listPlaylists>;
+const backfillPlaylistTitlesMock = backfillPlaylistTitles as jest.MockedFunction<typeof backfillPlaylistTitles>;
 
 const result = (over: any = {}) => ({ playlistId: 'p-uuid', jobs: [], challengeRequired: false, counts: { enqueued: 3, joined: 0, skipped: 3, failed: 0, quotaBlocked: 0, capBlocked: 0, tooLong: 0 }, ...over });
-beforeEach(() => { jest.clearAllMocks(); setSearchParams(''); });
+beforeEach(() => { jest.clearAllMocks(); setSearchParams(''); sessionStorage.clear();
+  listPlaylistsMock.mockReset().mockResolvedValue([]);
+  backfillPlaylistTitlesMock.mockReset().mockResolvedValue({ updated: 1, attempted: 1 }); });
 
 async function openAndSubmit() {
   fireEvent.click(await screen.findByRole('button', { name: /new playlist/i }));
@@ -62,15 +66,141 @@ it('shows a newly ingested playlist in the sidebar without a reload (backlog #37
   expect(await screen.findByRole('link', { name: 'Business' })).toBeInTheDocument();
 });
 
-it('does not refetch the sidebar when no ingest has happened (backlog #37 — the refresh is not a poll)', async () => {
+// Review (Low) killed the first version of this test: it only re-rendered with a changed search
+// param, so an implementation that ALSO polled on a timer would have passed it — no timers were
+// ever advanced. Fake timers close that hole; the rerender case is kept as the second assertion.
+it('does not refetch the sidebar on a timer within an hour, nor on plain navigation (backlog #37)', async () => {
+  jest.useFakeTimers();
+  try {
+    createIngestMock.mockResolvedValue(result() as any);
+    setSearchParams('playlist=p-uuid');
+    const { rerender } = render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+    await waitFor(() => expect(listPlaylistsMock).toHaveBeenCalledTimes(1));
+
+    await act(async () => { jest.advanceTimersByTime(60 * 60 * 1000); }); // an hour of nothing
+    expect(listPlaylistsMock).toHaveBeenCalledTimes(1);
+
+    setSearchParams('playlist=other');
+    rerender(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />); // plain navigation, no ingest
+    await act(async () => { jest.advanceTimersByTime(60 * 60 * 1000); });
+    expect(listPlaylistsMock).toHaveBeenCalledTimes(1);
+    // Honest limit (review r2, Low): this refutes an interval poll up to an hour and a
+    // navigation-triggered refetch. It cannot refute a focus/visibilitychange listener — no such
+    // event is dispatched here — so it is named for what it actually covers.
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+// Review (High). The first version of this branch guarded each effect with its own `cancelled`
+// boolean. Neither flag can see the other, so a SLOW mount fetch could resolve after a fast
+// post-ingest refetch and overwrite the new playlist with the pre-ingest list — reinstating exactly
+// the defect being fixed. Reachable because "+ New playlist" renders while the list is still
+// loading. A shared monotonic sequence is what actually forbids it.
+it('a slow initial load cannot overwrite the post-ingest list (backlog #37, review High)', async () => {
   createIngestMock.mockResolvedValue(result() as any);
-  setSearchParams('playlist=p-uuid');
-  const { rerender } = render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
-  await waitFor(() => expect(listPlaylistsMock).toHaveBeenCalledTimes(1));
-  setSearchParams('playlist=other');
-  rerender(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />); // plain navigation, no ingest
-  await waitFor(() => expect(push).not.toHaveBeenCalled());
-  expect(listPlaylistsMock).toHaveBeenCalledTimes(1);
+  const fresh = [
+    { id: 'p-uuid', playlistKey: 'X', playlistUrl: 'https://youtube.com/playlist?list=X', playlistTitle: 'Business', createdAt: '2026-08-13T00:40:51Z' },
+  ];
+  let resolveInitial!: (v: any) => void;
+  listPlaylistsMock
+    .mockReturnValueOnce(new Promise((r) => { resolveInitial = r; }) as any) // sign-in fetch: STALLS
+    .mockResolvedValue(fresh as any);                                        // post-ingest refetch
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  await openAndSubmit();                                                     // ingest while it stalls
+  expect(await screen.findByRole('link', { name: 'Business' })).toBeInTheDocument();
+
+  await act(async () => { resolveInitial([]); });                            // stale load lands LAST
+  expect(screen.getByRole('link', { name: 'Business' })).toBeInTheDocument();
+  expect(screen.queryByText(/no playlists yet/i)).not.toBeInTheDocument();
+});
+
+// Review r2 (High, direction 1). A load that has been overtaken has no standing to put an error on
+// screen. Round 1's guard covered only the success path, so a stale REJECTION still reached the
+// mount effect's catch and hid a correctly rendered list behind an error banner.
+it('a stale rejection cannot raise an error over a newer good list (backlog #37, review r2 High)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  let rejectInitial!: (e: any) => void;
+  listPlaylistsMock
+    .mockReturnValueOnce(new Promise((_r, rj) => { rejectInitial = rj; }) as any)
+    .mockResolvedValue([
+      { id: 'p-uuid', playlistKey: 'X', playlistUrl: 'https://youtube.com/playlist?list=X', playlistTitle: 'Business', createdAt: '2026-08-13T00:40:51Z' },
+    ] as any);
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  await openAndSubmit();
+  expect(await screen.findByRole('link', { name: 'Business' })).toBeInTheDocument();
+
+  await act(async () => { rejectInitial(new Error('transient network blip')); });
+  expect(screen.getByRole('link', { name: 'Business' })).toBeInTheDocument();
+  expect(screen.queryByText(/transient network blip/i)).not.toBeInTheDocument();
+  expect(replace).not.toHaveBeenCalledWith('/login');
+});
+
+// Review r2 (High, direction 2) — the mirror case, and the more dangerous one: discarding a
+// LEGITIMATE result. When the newer load fails it applies nothing, so an older in-flight load that
+// then succeeds is the best information available and must be allowed to render. Guarding against
+// "newest STARTED" stranded the sidebar on "Loading playlists…" while holding a good list.
+it('a newer failed load does not discard an older successful one (backlog #37, review r2 High)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  const existing = [
+    { id: 'old', playlistKey: 'O', playlistUrl: 'https://youtube.com/playlist?list=O', playlistTitle: 'CS146S', createdAt: '2026-07-22T19:52:12Z' },
+  ];
+  let resolveInitial!: (v: any) => void;
+  listPlaylistsMock
+    .mockReturnValueOnce(new Promise((r) => { resolveInitial = r; }) as any) // sign-in load: stalls
+    .mockRejectedValue(new Error('refetch failed') as any);                  // post-ingest: fails
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  await openAndSubmit();                                    // newer load starts, then rejects
+  await waitFor(() => expect(listPlaylistsMock).toHaveBeenCalledTimes(2));
+
+  await act(async () => { resolveInitial(existing); });     // older load succeeds afterwards
+  expect(await screen.findByRole('link', { name: 'CS146S' })).toBeInTheDocument();
+  expect(screen.queryByText(/loading playlists/i)).not.toBeInTheDocument();
+});
+
+// Review (Medium). producer.ts leaves the playlist row untitled when the YouTube title fetch misses
+// or throws, on the stated expectation that the backfill route retries later. Before this branch the
+// row was invisible so the gap never showed; now it renders, and the mount effect's backfill is
+// once-per-session and already spent. The refresh path has to run its own repair.
+it('repairs a newly ingested playlist that arrived with no title (backlog #37, review Medium)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  const base = { id: 'p-uuid', playlistKey: 'X', playlistUrl: 'https://youtube.com/playlist?list=X', createdAt: '2026-08-13T00:40:51Z' };
+  listPlaylistsMock
+    .mockResolvedValueOnce([] as any)                                    // sign-in: nothing yet
+    .mockResolvedValueOnce([{ ...base, playlistTitle: null }] as any)    // post-ingest: untitled
+    .mockResolvedValue([{ ...base, playlistTitle: 'Business' }] as any); // after backfill: named
+  sessionStorage.setItem('backfilledTitles:u', '1'); // the sign-in sweep has already been spent
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  expect(await screen.findByText(/no playlists yet/i)).toBeInTheDocument();
+  await openAndSubmit();
+
+  expect(await screen.findByRole('link', { name: 'Business' })).toBeInTheDocument();
+  expect(backfillPlaylistTitlesMock).toHaveBeenCalledTimes(1);
+});
+
+// The paired negative (review r2, Low): the test above on its own only shows a mock returned a
+// title. Holding everything constant except a FAILING backfill must leave the row untitled — that
+// is what pins the repair on the backfill call rather than on mock ordering.
+it('leaves the row untitled when the repair backfill fails (backlog #37, review r2 Low)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  const base = { id: 'p-uuid', playlistKey: 'X', playlistUrl: 'https://youtube.com/playlist?list=X', createdAt: '2026-08-13T00:40:51Z' };
+  listPlaylistsMock
+    .mockResolvedValueOnce([] as any)
+    .mockResolvedValue([{ ...base, playlistTitle: null }] as any);
+  backfillPlaylistTitlesMock.mockRejectedValue(new Error('quota exhausted') as any);
+  sessionStorage.setItem('backfilledTitles:u', '1');
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  expect(await screen.findByText(/no playlists yet/i)).toBeInTheDocument();
+  await openAndSubmit();
+
+  expect(await screen.findByRole('link', { name: 'Untitled playlist' })).toBeInTheDocument();
+  expect(backfillPlaylistTitlesMock).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText(/quota exhausted/i)).not.toBeInTheDocument();
 });
 
 it('shows the summary notice on the target playlist page (cross-playlist nav does not wipe it)', async () => {
