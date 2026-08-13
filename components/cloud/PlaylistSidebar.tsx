@@ -45,9 +45,13 @@ const inactiveLinkClass =
 interface PlaylistSidebarProps {
   onNewPlaylist?: () => void;
   userId: string | null;
+  /** backlog #37: bump to make the sidebar re-read the list. The parent owns this because the
+   *  parent is what changes the list — see the refetch effect below for why it is a separate
+   *  input rather than something this component could detect on its own. */
+  refreshKey?: number;
 }
 
-export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSidebarProps) {
+export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey = 0 }: PlaylistSidebarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activePlaylistId = searchParams.get('playlist');
@@ -109,6 +113,39 @@ export default function PlaylistSidebar({ onNewPlaylist, userId }: PlaylistSideb
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  // backlog #37: refetch when the parent signals that IT changed the list (today: a completed
+  // ingest). Measured against prod v6 on 2026-08-12 — 3 playlists in the database, 1 in the
+  // sidebar, and a hard reload showed all 3.
+  //
+  // Why the parent has to tell us. This component is a SIBLING of the content pane inside
+  // `CloudAppBody`, and is never keyed by playlistId — so `router.push('/?playlist=<new>')` after
+  // an ingest reconciles it rather than remounting it. The mount effect above is keyed on
+  // [userId], which is stable for the whole signed-in session. Nothing observable from in here
+  // distinguishes "a playlist was just created" from any other re-render.
+  //
+  // Deliberately a SEPARATE effect from the [userId] one rather than another dependency on it:
+  // that effect also owns the once-per-session title backfill and resets `backfillFiredRef` as
+  // its first act, so folding the refetch in would re-arm the one-shot on every ingest. Two
+  // concerns, two effects.
+  //
+  // `refreshKey === 0` is the initial render, which the mount effect already owns — the default
+  // in the props signature is what makes that sentinel true for every caller that never opts in.
+  useEffect(() => {
+    if (refreshKey === 0) return;
+    let cancelled = false;
+    listPlaylists()
+      .then((result) => {
+        if (!cancelled) setPlaylists(result);
+      })
+      .catch(() => {
+        // best-effort, matching handleDeleted below: the row exists server-side either way, and a
+        // failed refetch should leave the last good list on screen rather than blanking it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
 
   // T10: called from DeletePlaylistDialog.onDeleted. Refetches the list and, if the
   // deleted playlist was the active one, navigates to `/` (no `?playlist=` param) since

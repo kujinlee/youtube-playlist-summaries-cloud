@@ -20,8 +20,9 @@ jest.mock('@/lib/client/api', () => {
   };
 });
 import CloudApp from '@/components/cloud/CloudApp';
-import { createIngest } from '@/lib/client/api';
+import { createIngest, listPlaylists } from '@/lib/client/api';
 const createIngestMock = createIngest as jest.MockedFunction<typeof createIngest>;
+const listPlaylistsMock = listPlaylists as jest.MockedFunction<typeof listPlaylists>;
 
 const result = (over: any = {}) => ({ playlistId: 'p-uuid', jobs: [], challengeRequired: false, counts: { enqueued: 3, joined: 0, skipped: 3, failed: 0, quotaBlocked: 0, capBlocked: 0, tooLong: 0 }, ...over });
 beforeEach(() => { jest.clearAllMocks(); setSearchParams(''); });
@@ -37,6 +38,39 @@ it('opens the modal from the sidebar and navigates on success', async () => {
   render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
   await openAndSubmit();
   await waitFor(() => expect(push).toHaveBeenCalledWith('/?playlist=p-uuid'));
+});
+
+// backlog #37. The sidebar is a SIBLING of the content pane and is never keyed by playlistId, so
+// `router.push('/?playlist=…')` reconciles it instead of remounting it. Its only fetch is keyed on
+// [userId], which is stable for a signed-in session — so before this fix the list a user saw was
+// whatever existed at sign-in, and every playlist they ingested was invisible until a hard reload.
+// Measured against prod v6 on 2026-08-12: 3 playlists in the database, 1 in the sidebar, and a
+// reload showed all 3.
+//
+// Asserts the RENDERED LINK, not a listPlaylists call count: a call-count assertion passes on a
+// refetch whose result is thrown away, which is the same defect wearing a green tick.
+it('shows a newly ingested playlist in the sidebar without a reload (backlog #37)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  listPlaylistsMock
+    .mockResolvedValueOnce([])                    // at sign-in the owner has no playlists
+    .mockResolvedValue([                          // …and one immediately after the ingest
+      { id: 'p-uuid', playlistKey: 'X', playlistUrl: 'https://youtube.com/playlist?list=X', playlistTitle: 'Business', createdAt: '2026-08-13T00:40:51Z' },
+    ]);
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  expect(await screen.findByText(/no playlists yet/i)).toBeInTheDocument();
+  await openAndSubmit();
+  expect(await screen.findByRole('link', { name: 'Business' })).toBeInTheDocument();
+});
+
+it('does not refetch the sidebar when no ingest has happened (backlog #37 — the refresh is not a poll)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  setSearchParams('playlist=p-uuid');
+  const { rerender } = render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  await waitFor(() => expect(listPlaylistsMock).toHaveBeenCalledTimes(1));
+  setSearchParams('playlist=other');
+  rerender(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />); // plain navigation, no ingest
+  await waitFor(() => expect(push).not.toHaveBeenCalled());
+  expect(listPlaylistsMock).toHaveBeenCalledTimes(1);
 });
 
 it('shows the summary notice on the target playlist page (cross-playlist nav does not wipe it)', async () => {

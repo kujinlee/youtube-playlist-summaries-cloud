@@ -74,16 +74,27 @@ function CloudAppBody({ userId }: CloudAppBodyProps) {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [summary, setSummary] = useState<IngestResult | null>(null);
+  // backlog #37. The push below is a same-route client navigation, so the sidebar — a sibling of
+  // the content pane, not keyed by playlistId — is reconciled, never remounted, and its [userId]
+  // fetch does not re-run. Without this bump a freshly ingested playlist stayed invisible until a
+  // hard reload. Deleting was already wired for freshness (DeletePlaylistDialog → handleDeleted);
+  // ingesting never was, and that asymmetry is the whole bug.
+  const [sidebarRefreshKey, setSidebarRefreshKey] = useState(0);
 
   function onIngestSuccess(result: IngestResult) {
     setModalOpen(false);
     setSummary(result);
+    setSidebarRefreshKey((n) => n + 1);
     router.push(`/?playlist=${result.playlistId}`); // playlistId non-null here
   }
 
   return (
     <div className="flex">
-      <PlaylistSidebar onNewPlaylist={() => setModalOpen(true)} userId={userId} />
+      <PlaylistSidebar
+        onNewPlaylist={() => setModalOpen(true)}
+        userId={userId}
+        refreshKey={sidebarRefreshKey}
+      />
       {playlistId ? (
         <PlaylistLibrary playlistId={playlistId} summary={summary} setSummary={setSummary} />
       ) : (
