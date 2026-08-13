@@ -41,7 +41,7 @@ The **Trigger** column in each table tells you who fires the skill and how:
 
 ---
 
-## 🔵 superpowers — `superpowers@claude-plugins-official` v6.2.0 ✅
+## 🔵 superpowers — `superpowers@claude-plugins-official` v6.3.0 ✅
 
 Core workflow skills for the gate-based dev process in `docs/dev-process.md`.
 
@@ -222,7 +222,7 @@ Iterative agent loop — repeatedly feeds Claude a task until a "completion prom
 | **help** | `/help` | `/command` | Explain Ralph Loop plugin and available commands |
 | **ralph-loop** | `/ralph-loop` | `/command` | Start Ralph Loop in current session |
 
-### 🟣 remember — `remember@claude-plugins-official` v0.19.0 ✅
+### 🟣 remember — `remember@claude-plugins-official` v0.20.0 ✅
 
 Session continuity — saves state to `.remember/now.md` for clean resumption next session.
 
@@ -231,7 +231,7 @@ Session continuity — saves state to `.remember/now.md` for clean resumption ne
 | **remember** | `remember:remember` | `auto + /slash` | Save session state for clean continuation next session. |
 | **doctor** | `/doctor` | `/command` | Diagnose the Remember plugin — resolved paths, detected tools, storage mode, and whether capture is actually saving memory. |
 
-### 🟣 security-guidance — `security-guidance@claude-plugins-official` v2.0.6 ✅
+### 🟣 security-guidance — `security-guidance@claude-plugins-official` v2.0.7 ✅
 
 Security-focused code review and vulnerability guidance.
 
