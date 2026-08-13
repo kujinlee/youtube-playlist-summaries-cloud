@@ -245,8 +245,14 @@ slide images); M2 done = full bidirectional incl. images.**
   **(a) Summary section-timestamp guarantee** — **INGEST ANY QUALIFYING VIDEO** as the owner, via a
   one-video playlist. **The subject is specified by PREDICATE, not by name:** public, not already in
   prod, and duration ≤ the live `guardrail_config.max_duration_seconds` (1800s as of 2026-08-12 —
-  read it, do not trust this number). **FAILS IF** the generated summary contains any `##` section
-  without a unique, monotonically increasing ▶ timestamp.
+  read it, do not trust this number). **FAILS IF**, in the generated **`.md`**, any `##` section lacks a
+  ▶ whose start is unique and monotonically increasing — **or**, equivalently in the **HTML render**,
+  any section title lacks a unique, monotonically increasing clickable timestamp.
+  ⚠ **Name the surface. There is no ▶ in the rendered HTML and that is correct** — the ▶ is a markdown
+  marker; DocVersion minor 2 moved the timestamp into the section title as a muted link
+  (`lib/doc-version.ts:9`, `lib/html-doc/render.ts:91` emits `data-start`). Checking the HTML for a
+  literal ▶ reads a correct render as a failure, which is how the first version of this clause was
+  written.
   **(b) Cloud dig-serve render** — open the one dug section in prod, **`fdquDw1IfmM`** (dug
   2026-07-23). **FAILS IF** that render returns non-200, zero bytes, or HTML with no dug content.
   **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`) — record it; a tick
