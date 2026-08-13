@@ -278,3 +278,89 @@ it('Refresh is guarded against double-fire (two rapid clicks POST once)', async 
   resolve(result());
   await waitFor(() => expect(createIngestMock).toHaveBeenCalledTimes(1));
 });
+
+// ---------------------------------------------------------------------------------------------
+// Round 3 findings. Each of these covers a defect that round 2's OWN fix introduced.
+// ---------------------------------------------------------------------------------------------
+
+// Round 3 (High). `loadPlaylists` writes state internally, so a caller checking its own `cancelled`
+// flag on the returned promise checks too late. On an in-place account switch (no remount) user A's
+// in-flight load would render A's playlists under B's sidebar — a cross-account leak in the UI.
+it('an in-flight load from the previous account cannot render under the new one (backlog #37, review r3 High)', async () => {
+  const aPlaylists = [
+    { id: 'a1', playlistKey: 'A', playlistUrl: 'https://youtube.com/playlist?list=A', playlistTitle: 'Alice private list', createdAt: '2026-07-01T00:00:00Z' },
+  ];
+  const bPlaylists = [
+    { id: 'b1', playlistKey: 'B', playlistUrl: 'https://youtube.com/playlist?list=B', playlistTitle: 'Bob own list', createdAt: '2026-08-01T00:00:00Z' },
+  ];
+  // BOTH loads stall, and A resolves while B is still IN FLIGHT. That ordering is the whole point:
+  // if A resolved after B had already applied, the sequence guard alone would catch it and this
+  // test would pass with the cancellation check deleted — which is exactly what the mutation run
+  // showed on the first version of this test. Only "A lands while nothing newer has applied yet"
+  // reaches the cancellation branch.
+  let resolveA!: (v: any) => void;
+  let resolveB!: (v: any) => void;
+  listPlaylistsMock
+    .mockReturnValueOnce(new Promise((r) => { resolveA = r; }) as any) // account A: stalls
+    .mockReturnValueOnce(new Promise((r) => { resolveB = r; }) as any); // account B: also stalls
+
+  const { rerender } = render(<CloudApp session={{ userId: 'a', email: 'a@x.com' }} />);
+  rerender(<CloudApp session={{ userId: 'b', email: 'b@x.com' }} />);  // A's effect tears down here
+  await waitFor(() => expect(listPlaylistsMock).toHaveBeenCalledTimes(2));
+
+  await act(async () => { resolveA(aPlaylists); });                   // A lands, nothing applied yet
+  expect(screen.queryByRole('link', { name: 'Alice private list' })).not.toBeInTheDocument();
+
+  await act(async () => { resolveB(bPlaylists); });
+  expect(await screen.findByRole('link', { name: 'Bob own list' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Alice private list' })).not.toBeInTheDocument();
+});
+
+// Round 3 (High). Round 2 made the older result render when the newer one failed — correct, but it
+// did so SILENTLY, which is the "quietly serves stale data" mode this project treats as the worst
+// kind. The user just created a playlist; a sidebar that omits it without explanation looks exactly
+// like the bug being fixed. Both rounds are satisfied only because the banner and the list now
+// coexist: show the best data available AND say the refresh failed.
+it('a failed post-ingest refresh shows the stale list AND says so (backlog #37, review r3 High)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  listPlaylistsMock
+    .mockResolvedValueOnce([
+      { id: 'old', playlistKey: 'O', playlistUrl: 'https://youtube.com/playlist?list=O', playlistTitle: 'CS146S', createdAt: '2026-07-22T19:52:12Z' },
+    ] as any)
+    .mockRejectedValue(new Error('refetch failed') as any);
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  expect(await screen.findByRole('link', { name: 'CS146S' })).toBeInTheDocument();
+  await openAndSubmit();
+
+  expect(await screen.findByText(/could not refresh/i)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'CS146S' })).toBeInTheDocument(); // list NOT hidden by it
+});
+
+// Round 3 (Low). The stale-rejection test proves a suppressed error stays suppressed — but an
+// implementation that suppressed EVERY list error would also pass it. This is its positive twin:
+// a failure that is genuinely the newest load must still reach the user.
+it('a genuine initial load failure is still reported (backlog #37, review r3 Low)', async () => {
+  listPlaylistsMock.mockRejectedValue(new Error('server exploded') as any);
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  expect(await screen.findByText(/server exploded/i)).toBeInTheDocument();
+  expect(screen.queryByText(/loading playlists/i)).not.toBeInTheDocument();
+});
+
+// Round 3 (Medium). A banner left by an earlier failure must not sit above a list that later loaded
+// fine — the render shows both now, so nothing else would ever remove it.
+it('a later successful load clears an earlier error banner (backlog #37, review r3 Medium)', async () => {
+  createIngestMock.mockResolvedValue(result() as any);
+  listPlaylistsMock
+    .mockRejectedValueOnce(new Error('server exploded') as any)   // sign-in load fails
+    .mockResolvedValue([
+      { id: 'p-uuid', playlistKey: 'X', playlistUrl: 'https://youtube.com/playlist?list=X', playlistTitle: 'Business', createdAt: '2026-08-13T00:40:51Z' },
+    ] as any);
+
+  render(<CloudApp session={{ userId: 'u', email: 'e@x.com' }} />);
+  expect(await screen.findByText(/server exploded/i)).toBeInTheDocument();
+  await openAndSubmit();
+
+  expect(await screen.findByRole('link', { name: 'Business' })).toBeInTheDocument();
+  expect(screen.queryByText(/server exploded/i)).not.toBeInTheDocument();
+});

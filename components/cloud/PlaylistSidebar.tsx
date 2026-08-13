@@ -66,27 +66,28 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
   // same fiber's ref, not remounted.
   const backfillFiredRef = useRef(false);
 
-  // ONE monotonic sequence shared by every path that loads the list — the [userId] mount effect,
-  // the [refreshKey] ingest refetch, the post-backfill reload, and handleDeleted.
+  // Every path that loads the list goes through `loadPlaylists` below — the [userId] mount effect,
+  // the [refreshKey] ingest refetch, the post-backfill reloads, and handleDeleted. It took three
+  // review rounds to get the concurrency right, and each round's fix produced the next round's
+  // defect, so the reasoning is recorded here rather than rediscovered.
   //
-  // Per-effect `cancelled` booleans are NOT enough, and the first version of this branch used them.
-  // Each flag only knows about its own effect, so a slow mount fetch could resolve AFTER a fast
-  // post-ingest refetch and overwrite the new playlist with the pre-ingest list — restoring the very
-  // bug this branch removes. Reachable in practice because "+ New playlist" renders while the list
-  // is still loading, so an ingest can start and finish before a slow initial fetch returns.
-  // Found by adversarial review (High, docs/reviews/backlog-37-sidebar-refresh-codex.md).
+  // Round 1 (High) — per-effect `cancelled` booleans are not enough. Each only knows its own effect,
+  // so a slow mount fetch could resolve AFTER a fast post-ingest refetch and overwrite the new
+  // playlist with the pre-ingest list, restoring the very bug this branch removes. It is reachable
+  // because "+ New playlist" renders while the list is still loading. `PlaylistLibrary` already
+  // guards listVideos this way (CloudApp.tsx `reqSeq`); this is the same problem.
   //
-  // This is the same guard `PlaylistLibrary` already applies to listVideos (CloudApp.tsx `reqSeq`),
-  // for the identical reason. The `cancelled` flags stay: sequence answers "was I superseded?",
-  // cancelled answers "did my effect tear down?" — different questions, both worth asking.
-  // TWO counters, because "newest started" and "newest applied" are different questions and they
-  // diverge precisely when a load FAILS. Round 2 of review found both halves of that gap (High):
-  //   • guarding only successes let a stale REJECTION still raise `error` — or redirect to /login —
-  //     over a list a newer load had already rendered correctly;
-  //   • guarding against "newest started" meant a newer load that FAILED permanently discarded an
-  //     older in-flight load that then succeeded, stranding the sidebar on "Loading playlists…"
-  //     while holding a perfectly good result.
-  // What governs the screen is the newest load that actually APPLIED something.
+  // Round 2 (High, twice) — one counter is not enough either, because "newest STARTED" and "newest
+  // APPLIED" diverge exactly when a load fails. Guarding only successes let a stale REJECTION raise
+  // an error, or redirect to /login, over a list a newer load had already rendered. Guarding against
+  // newest-started let a newer FAILED load permanently discard an older one that then succeeded.
+  // What governs the screen is the newest load that actually applied something.
+  //
+  // Round 3 (High) — a caller checking its own `cancelled` flag on the returned promise checks too
+  // late, because the write happens inside the helper. Cancellation is now passed IN.
+  //
+  // Three questions, asked at the moment of the write: was I superseded (appliedSeq), am I still the
+  // newest attempt (startedSeq), and does my caller still exist (isCancelled)?
   const startedSeqRef = useRef(0);
   const appliedSeqRef = useRef(0);
 
@@ -94,19 +95,29 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
    *  when applied, or null when this load no longer speaks for the screen — callers must read null
    *  as "do nothing further", never as "the owner has no playlists".
    *
+   *  `isCancelled` is the CALLER's teardown check and is consulted before the state write, not
+   *  after. Round 3 (High): this helper writes state internally, so a caller that checked its own
+   *  `cancelled` flag on the returned promise was checking too late — on an in-place account switch
+   *  (userId A→B, no remount) user A's in-flight load would render A's playlists under B's sidebar.
+   *  Sequence answers "was I superseded?", cancellation answers "does my caller still exist?", and
+   *  both have to be asked at the moment of the write.
+   *
    *  Rejections propagate to the caller ONLY while this is still the newest load in flight; a stale
    *  rejection resolves to null instead, because a load that has been overtaken has no standing to
    *  put an error on screen. */
-  async function loadPlaylists(): Promise<PlaylistSummary[] | null> {
+  async function loadPlaylists(isCancelled: () => boolean = () => false): Promise<PlaylistSummary[] | null> {
     const seq = ++startedSeqRef.current;
     try {
       const result = await listPlaylists();
-      if (seq <= appliedSeqRef.current) return null;
+      if (isCancelled() || seq <= appliedSeqRef.current) return null;
       appliedSeqRef.current = seq;
       setPlaylists(result);
+      // Clear any banner a PREVIOUS failure left behind: we now have a good list, and the render
+      // shows both, so a stale error would otherwise sit above fresh data forever (round 3, Medium).
+      setError(null);
       return result;
     } catch (err) {
-      if (seq !== startedSeqRef.current) return null; // overtaken — stay silent
+      if (isCancelled() || seq !== startedSeqRef.current) return null; // overtaken — stay silent
       throw err;
     }
   }
@@ -121,7 +132,7 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
     // and sessionStorage key are both re-set (see below) before this effect can run again for
     // that userId, and the effect only re-runs when userId itself changes.
     backfillFiredRef.current = false;
-    loadPlaylists()
+    loadPlaylists(() => cancelled)
       .then(async (result) => {
         if (cancelled || result === null) return; // null ⇒ superseded by a newer load
 
@@ -137,7 +148,7 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
         try {
           await backfillPlaylistTitles();
           if (cancelled) return;
-          await loadPlaylists();
+          await loadPlaylists(() => cancelled);
         } catch {
           // best-effort — keep the pre-backfill list on failure, matching the existing
           // silent-ignore pattern used elsewhere in this component (see handleArchive
@@ -188,7 +199,7 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
     if (refreshKey === initialRefreshKeyRef.current) return;
     let cancelled = false;
     (async () => {
-      const result = await loadPlaylists();
+      const result = await loadPlaylists(() => cancelled);
       if (cancelled || result === null) return;
 
       // A brand-new playlist can legitimately arrive with NO title: producer.ts deliberately leaves
@@ -204,13 +215,23 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
       if (userId === null || !result.some((p) => !p.playlistTitle)) return;
       try {
         await backfillPlaylistTitles();
-        if (!cancelled) await loadPlaylists();
+        if (!cancelled) await loadPlaylists(() => cancelled);
       } catch {
         // best-effort: an untitled row still renders and is still reachable.
       }
     })().catch(() => {
-      // best-effort, matching handleDeleted below: the row exists server-side either way, and a
-      // failed refetch should leave the last good list on screen rather than blanking it.
+      // Round 3 (High) — do NOT swallow this. Keeping the last good list on screen is right; doing
+      // it SILENTLY is the "quietly serves stale data" failure this project treats as the worst
+      // kind. The user just created a playlist: a sidebar that omits it with no explanation is
+      // indistinguishable from the bug this branch fixes.
+      //
+      // This is also where rounds 2 and 3 appeared to contradict each other. Round 2: a newer
+      // FAILED load must not discard an older successful one, or the sidebar strands on a spinner
+      // holding good data. Round 3: applying that older result shows pre-ingest data with no sign
+      // anything went wrong. Both hold, and they only conflicted because the render treated "show a
+      // list" and "show an error" as mutually exclusive. They are not — see the render below, which
+      // now shows the banner ABOVE whatever list we have.
+      if (!cancelled) setError('Could not refresh the playlist list — it may be out of date.');
     });
     return () => {
       cancelled = true;
@@ -224,7 +245,10 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
   async function handleDeleted(deletedId: string) {
     setDeleteTarget(null);
     try {
-      await loadPlaylists(); // shares the sequence guard, so a slow earlier load cannot resurrect the row
+      // No cancellation argument: this runs from an event handler, not an effect, so there is no
+      // teardown to observe. It still shares the sequence guard, so a slow earlier load cannot
+      // resurrect the deleted row.
+      await loadPlaylists();
     } catch {
       // best-effort refetch — matches the silent-ignore pattern used by the backfill path
       // above; the row is gone server-side regardless of whether this refetch succeeds.
@@ -243,20 +267,24 @@ export default function PlaylistSidebar({ onNewPlaylist, userId, refreshKey }: P
         Playlists
       </h2>
 
+      {/* The banner sits ABOVE the list rather than replacing it (round 3). A failed refresh still
+          leaves the last good list worth showing; what it must not do is show it silently. Only the
+          "Loading…" placeholder is suppressed by an error, because a load that failed is not still
+          in progress. */}
       {error && <p className="px-2 text-sm text-[var(--danger)]">{error}</p>}
 
       {!error && playlists === null && (
         <p className="px-2 text-sm text-[var(--text-muted)]">Loading playlists…</p>
       )}
 
-      {!error && playlists !== null && playlists.length === 0 && (
+      {playlists !== null && playlists.length === 0 && (
         <div className="px-2 text-sm text-[var(--text-secondary)]">
           <p>You have no playlists yet.</p>
           <p className="mt-1 text-[var(--text-muted)]">Adding playlists comes with ingest.</p>
         </div>
       )}
 
-      {!error && playlists !== null && playlists.length > 0 && (
+      {playlists !== null && playlists.length > 0 && (
         <ul className="space-y-1">
           {playlists.map((p) => {
             const isActive = p.id === activePlaylistId;
