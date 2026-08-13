@@ -74,15 +74,33 @@ def _int(raw: str) -> int:
 
 
 def documented_counts(roadmap_text: str) -> tuple[int, int]:
-    """(unit_tests, suites) as CLAIMED by the roadmap. Raises CannotRun if it says no such thing."""
-    m = COUNTS_RE.search(roadmap_text)
-    if not m:
+    """(unit_tests, suites) as CLAIMED by the roadmap. Raises CannotRun on none — and on more than one.
+
+    AMBIGUITY IS ALSO CANNOT-RUN. The first version used `.search()`, which silently takes the FIRST
+    match in the document. Add a second `**N unit / M suites**` anywhere earlier — a historical note,
+    a changelog line, or an example inside the documentation OF THIS GATE — and it would quietly
+    start checking that number against the live suite, going red for the wrong reason or green over
+    a stale figure. Nothing would say which one it read.
+
+    Found 2026-08-13 by a reader asking "explain why" about the boundary row that warned this file now
+    carries a machine-readable contract inside prose. The warning was abstract; this is the concrete
+    instance of it, in the gate that prompted the warning.
+    """
+    matches = COUNTS_RE.findall(roadmap_text)
+    if not matches:
         raise CannotRun(
             "the roadmap state block no longer states counts as `**N unit / M suites**`, so this "
             "check inspected NOTHING. Either restore the shape or delete this gate — do not leave "
             "it green over a field it cannot find."
         )
-    return _int(m.group(1)), _int(m.group(2))
+    if len(matches) > 1:
+        found = ", ".join(f"{u}/{s}" for u, s in matches)
+        raise CannotRun(
+            f"the roadmap states counts in {len(matches)} places ({found}) and this check cannot "
+            "tell which one describes the current suite. Leave exactly ONE `**N unit / M suites**` "
+            "in the file — put any historical figure in a fenced block or reword it. Treat as NOT RUN."
+        )
+    return _int(matches[0][0]), _int(matches[0][1])
 
 
 def actual_counts(results: object) -> tuple[int, int]:
@@ -176,6 +194,10 @@ def _self_test() -> int:
     case("missing counts raises CannotRun", lambda: documented_counts("master is green, honestly"), True)
     case("unbolded counts are NOT matched (the block's shape is the contract)",
          lambda: documented_counts("2703 unit / 267 suites"), True)
+    case("TWO count statements is ambiguous, and ambiguous is cannot-run",
+         lambda: documented_counts("history: **2690 unit / 266 suites**\n\nnow: **2703 unit / 267 suites**"), True)
+    case("the single-match path still returns the pair after the ambiguity guard",
+         lambda: documented_counts("prose **2703 unit / 267 suites** prose") == (2703, 267))
 
     # actual_counts — a failed or malformed run must never yield numbers
     case("reads a successful run",
