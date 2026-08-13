@@ -241,17 +241,83 @@ slide images); M2 done = full bidirectional incl. images.**
   a clause.** That is the ratchet's scope being imperfect — its own docstring records that this file
   overloads `- [ ]` for three different meanings — and writing prose to lower a number is the failure
   the ratchet exists to catch, arriving through the front door.
-- [ ] **3.2 Real-render / regenerate checks**: regenerate `9nh8TQRcYD0` to confirm the summary
-  section-timestamp guarantee live; verify cloud dig-serve render.
-  **FAILS IF** the regenerated summary contains any `##` section without a unique, monotonically
-  increasing ▶ timestamp, **or** the cloud dig-serve render returns non-200, zero bytes, or HTML with
-  no dug content. **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`).
-  *(Why this one earns a clause and 3.1 does not: it is a MANUAL check against production, the
-  category that rots. "Confirm the guarantee live" is an activity you can perform, feel satisfied by,
-  and tick — the B5 shape. `portable-practices.md` §4 is the same lesson: A1/A2 were ticked in the
-  v3/v4 era while the app ran v6.)*
+- [x] **3.2 Real-render / regenerate checks — ✅ PASSED 2026-08-12. VERIFIED AGAINST: release v6** (web + worker, deployed 2026-08-11T15:47Z).
+  **(a) Summary section-timestamp guarantee** — **INGEST ANY QUALIFYING VIDEO** as the owner, via a
+  one-video playlist. **The subject is specified by PREDICATE, not by name:** public, not already in
+  prod, and duration ≤ the live `guardrail_config.max_duration_seconds` (1800s as of 2026-08-12 —
+  read it, do not trust this number). **FAILS IF**, in the generated **`.md`**, any `##` section lacks a
+  ▶ whose start is unique and monotonically increasing — **or**, equivalently in the **HTML render**,
+  any section title lacks a unique, monotonically increasing clickable timestamp.
+  ⚠ **Name the surface — there are THREE, and they differ.** In the **`.md`** the ▶ is a literal marker.
+  In the **summary magazine render** (`?type=summary`) there is deliberately NO ▶: DocVersion minor 2
+  moved the timestamp into the section title as a muted link (`lib/doc-version.ts:9`;
+  `lib/html-doc/render.ts:91` emits `data-start`). In the **dig-deeper render** the ▶ IS shown, as
+  `▶ (m:ss)` beside a `dig deeper ▶` link (`lib/html-doc/render-dig-deeper.ts:287`). Checking the
+  summary render for a literal ▶ reads correct output as a failure — which is how the first version of
+  this clause was written, and "there is no ▶ in the rendered HTML" was how the second overcorrected.
+  **The strongest form of this check is the dig affordance:** a section whose timestamp does not
+  resolve gets no dig button, so "every section offers `dig deeper`" tests the guarantee's PURPOSE
+  rather than its notation. VERIFIED on v6, 2026-08-12: 0:31 / 2:52 / 6:09, three sections, three dig
+  links.
+  **(b) Cloud dig-serve render** — open the one dug section in prod, **`fdquDw1IfmM`** (dug
+  2026-07-23). **FAILS IF** that render returns non-200, zero bytes, or HTML with no dug content.
+  **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`) — record it; a tick
+  without it is a claim about code that may no longer be running.
+  ⚠ **(a) spends** — a live Gemini summary call, ~8¢ — and it is the only way to test the **currently
+  deployed** generator. Prod's nine summaries were generated 2026-07-22, *after* PR #21 shipped the
+  guarantee on 2026-07-15, so reading an existing one is free but verifies a release that stopped
+  running weeks ago: the A1/A2 staleness in [`portable-practices.md`](portable-practices.md) §4.
+  **INGEST, not regenerate — this is forced, not a preference.** MEASURED 2026-08-12: all 9 prod videos
+  are at DocVersion `{major:3, minor:3}`, which IS `CURRENT_DOC_VERSION` (`lib/doc-version.ts:10`);
+  `needsResummarize` is true only when `stored.major < current.major` (`:15-17`); and `enqueue_job`
+  carries `on conflict (owner_id, playlist_id, video_id, section_id, job_kind, job_version)`
+  (`0018_enqueue_dig.sql:34`). Re-requesting an existing video at the same version therefore **joins
+  the existing job** — no re-run, no re-charge. That is charge-once working as designed, not a gap.
+  A NEW work target is the only path to a real generation, which is why (a) ingests rather than
+  regenerates. It also keeps (a) away from `fdquDw1IfmM`, the only video in prod carrying a dig, whose
+  summary must not be disturbed if (b) is to test the render rather than the aftermath of (a).
+  *(This item was unrunnable TWICE in one afternoon, for two different reasons, and both are recorded
+  because the pair is the lesson. **First**: it named `9nh8TQRcYD0`, which has ZERO rows in prod — a
+  well-formed clause pointing at an unreachable subject, the B5 shape. **Second**: the correction said
+  "regenerate `f8Hr_7FyKMQ`", an operation the cloud does not offer at an unchanged DocVersion. A gate
+  needs a reachable SUBJECT and a possible OPERATION; checking the clause is falsifiable establishes
+  neither. **Third**: the replacement named `9nh8TQRcYD0`, duration unverified — and an ingest attempt
+  on 2026-08-12 returned *"Queued 0 · 9 too long (>30 min)"*, rejecting the very nine videos already in
+  prod whose summaries were generated 2026-07-22. Production cannot currently re-create its own
+  content; the cap tightened after that content was made (caps are tunable by design — ADR-0004).
+  **So the item stopped naming a video.** The gate needs a NEW WORK TARGET that clears the live cap;
+  which video that is carries no meaning, and each attempt to fix the name produced a fresh way to be
+  wrong. Specify the subject by predicate, and read the cap live rather than copying it.
+  **Checking that a clause is falsifiable is not the same as checking that its subject exists.**
+  Enumerated rather than recalled: prod holds 9 videos, 1 playlist, 1 profile, 9 completed `summary`
+  jobs and exactly 1 completed `dig`. Why this item earns a falsifier and 3.1 does not: it is a MANUAL
+  check against production, the category that rots.)*
 
 **M3 done = 3.1 and 3.2 both verified against the same deployed release.**
+
+### What 3.2 measured, and what it found (2026-08-12, v6)
+
+**(a) PASS.** Ingested a new 4-video playlist as the owner. `9nh8TQRcYD0` generated cleanly, with
+sections at **0:31 / 2:52 / 6:09** — unique and monotonic — and **all three carrying a `dig deeper`
+link**. The dig affordance is the strongest form of this check: a section whose timestamp does not
+resolve gets no dig button, so it tests the guarantee's PURPOSE rather than its notation.
+
+**(b) PASS.** The one dug section in prod (`fdquDw1IfmM`, dug 2026-07-23) renders in full — prose,
+sub-headings, a slide-caption callout, `▶ (2:53)` with *show summary* / *ask AI*.
+
+**Two real defects, filed:**
+- **[backlog #36]** — a Korean-titled video's blob key is rejected by Supabase Storage AFTER the paid
+  Gemini call, destroying the summary. Repeatable; 2 of the 4 videos in the test playlist were
+  Korean-titled. 🔴 money path.
+- **[backlog #37]** — a newly ingested playlist never appears in the sidebar (3 exist, 1 listed), so
+  the work is unreachable without its URL. 🟠 ranks above #36 for launch: it needs no unusual input.
+
+**Cost of the run:** 606¢ reserved, ~32¢ actual — about a quarter of it burned on #36's two failures.
+
+**Why this belongs in the roadmap and not only in a review doc:** neither defect was reachable by the
+test suite, two adversarial review rounds, or six ratchets. Each required a first-run user's *sequence*
+— a non-English title, a second playlist, a rejected ingest. That is the argument for acceptance
+testing, and it is the first time this project has run one against production.
 
 *(A third item, "3.3 Final acceptance sign-off", was deleted 2026-08-12. It had no subject and no
 observation — nothing that could be true or false — so it was ceremony, and adding a `FAILS IF:` to it
@@ -1081,7 +1147,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #89**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #90**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
@@ -1133,9 +1199,10 @@ item was verified against. M2 Sync completed 2026-07-19.
 **The actual next step: M3 Acceptance** — browser-level Playwright e2e against the deployed URL.
 ⚠ **Tidied 2026-08-12, and the tidy was much smaller than "write three gates".** Asked whether all
 three needed falsifiers, the answer was no. **A third, ceremonial sign-off item was deleted** — no
-subject, no observation, nothing that could be true or false. **3.2 is a manual check against
-production**, the category that rots, and now names its falsifier. **3.1 is a TASK, not a gate** — the
-test becomes the claim once written, so its journey is enumerated in the test rather than in a clause.
+subject, no observation, nothing that could be true or false. The manual production check earned a
+falsifier, **was run the same day against v6, and PASSED — while finding two real defects**
+(backlog #36 and #37). **3.1 is a TASK, not a gate** — the test becomes the claim once written, so its
+journey is enumerated in the test rather than in a clause.
 The ratchet still flags 3.1 by design; **do not silence it.** Writing prose to lower a ratchet's number
 is the failure the ratchet exists to catch.
 *(The deleted item is described rather than numbered here on purpose: `check-roadmap-consistency.py`
