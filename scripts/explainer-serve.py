@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""Serve ~/explainers over localhost so an explainer can talk back to the session.
+
+WHY THIS EXISTS
+---------------
+`/explain-diff` writes a self-contained HTML file and opens it with `file://`. That is the most
+isolated context a browser has, and it cost two things, both measured on 2026-08-12/13:
+
+  1. NO CHANNEL. A `file://` page cannot reach the session. The first attempt at a "Send" button
+     downloaded a Markdown file instead — and `~/Downloads` turns out to be blocked from this agent
+     by macOS privacy protection (`Operation not permitted`), so the questions landed somewhere
+     unreadable. The channel was built by assuming both halves and verifying only the first.
+
+  2. NO VERIFICATION. Chrome's automation refuses `file://` URLs, so the page could not be driven,
+     clicked, or read. FOUR rounds of defects shipped in the question tray — no send affordance, a
+     button squeezed to a sliver by a flex row, an Enter handler referencing a variable declared
+     below it, and the dead download channel — and every one was found by the reader, because the
+     author could not execute the page.
+
+Over `http://127.0.0.1` both problems dissolve. The page can POST; the browser automation can drive
+it. Nothing about the HTML changes: it stays a self-contained artifact that still works from
+`file://` in five years, and its Send button falls back to the clipboard when nothing is listening.
+Progressive enhancement, not a dependency.
+
+THE ONE-CLICK URL
+-----------------
+    http://127.0.0.1:7391/latest
+
+Redirects to the most recently modified explainer. Bookmark it once; it always points at the newest
+one, so no filename ever has to be copied again. `/` lists them all, newest first.
+
+SECURITY, DELIBERATE AND NARROW
+-------------------------------
+An explainer quotes private source and internal reasoning, so:
+
+  * binds 127.0.0.1 ONLY — never 0.0.0.0, so nothing off this machine can reach it;
+  * serves ~/explainers and nothing else — every resolved path is re-checked to be inside it, so
+    `..` traversal cannot escape even if the URL parser is fooled;
+  * serves only .html/.md/.css/.js/.svg/.png;
+  * caps a POSTed question body, and appends it as data — never executes or renders it.
+
+USAGE
+-----
+    python3 scripts/explainer-serve.py            # start (no-op if already running)
+    python3 scripts/explainer-serve.py --status
+    python3 scripts/explainer-serve.py --stop
+    python3 scripts/explainer-serve.py --self-test   # 20 cases, binds no port
+
+NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
+"a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
+discovers by globbing `scripts/check-*.py`, so this file is never even read, and the claim went
+unchecked for the same reason every other claim about a neighbour's behaviour has tonight. It is a
+tool, not a gate; it keeps the two contract rules (a --self-test exists, no `except` returns 0)
+because they are good practice, not because anything enforces them here.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import http.server
+import json
+import os
+import pathlib
+import signal
+import socket
+import sys
+import urllib.parse
+from typing import Callable
+
+PORT = 7391
+HOST = "127.0.0.1"
+ROOT = pathlib.Path.home() / "explainers"
+PIDFILE = ROOT / ".serve.pid"
+QUESTIONS = ROOT / "questions.md"
+MAX_BODY = 64 * 1024
+SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
+
+
+# ── pure helpers, all covered by --self-test ─────────────────────────────────────────────────────
+
+def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
+    """Resolve a URL path inside `root`, or None if it escapes or is not a servable type.
+
+    Checked AFTER resolution, not before: a prefix test on the raw string is defeated by `..`,
+    symlinks and percent-encoding, all of which resolve() collapses first."""
+    raw = urllib.parse.unquote(url_path.split("?", 1)[0].split("#", 1)[0]).lstrip("/")
+    if not raw:
+        return None
+    candidate = (root / raw).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return None                      # escaped the root
+    if candidate.suffix.lower() not in SERVABLE:
+        return None
+    return candidate
+
+
+def explainers(root: pathlib.Path) -> list[pathlib.Path]:
+    """Explainer pages, newest first by mtime."""
+    if not root.is_dir():
+        return []
+    return sorted((p for p in root.glob("*.html") if p.is_file()),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def latest_target(root: pathlib.Path) -> str | None:
+    """The URL path /latest should redirect to, or None when there is nothing to serve."""
+    found = explainers(root)
+    return "/" + urllib.parse.quote(found[0].name) if found else None
+
+
+def index_html(root: pathlib.Path) -> str:
+    rows = []
+    for p in explainers(root):
+        when = _dt.datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        rows.append(f'<li><a href="/{urllib.parse.quote(p.name)}">{p.name}</a>'
+                    f'<span> · {when}</span></li>')
+    body = "\n".join(rows) or "<li><em>No explainers yet.</em></li>"
+    return (
+        "<!doctype html><meta charset=utf-8><title>Explainers</title>"
+        "<style>body{font:16px/1.6 ui-sans-serif,system-ui,sans-serif;max-width:52rem;"
+        "margin:3rem auto;padding:0 1rem;background:#fcfbf9;color:#191817}"
+        "@media(prefers-color-scheme:dark){body{background:#131318;color:#eceaf2}a{color:#e8a860}}"
+        "h1{font-size:1.4rem}li{margin:.4rem 0}span{color:#8a8496;font-size:.85rem}"
+        "code{background:#0001;padding:.1em .35em;border-radius:4px}</style>"
+        "<h1>Explainers</h1><p>Newest first. <code>/latest</code> always redirects to the top one — "
+        "bookmark that.</p><ul>" + body + "</ul>"
+    )
+
+
+def format_question_entry(payload: dict, now: str) -> str:
+    """A POSTed question, as the Markdown block appended to questions.md.
+
+    The payload is DATA. Nothing in it is executed, and it is written under a heading that records
+    when and from which page it arrived, so a later reader can tell questions apart."""
+    doc = str(payload.get("doc") or "(unknown explainer)")
+    text = str(payload.get("text") or "").strip() or "(empty)"
+    return f"\n---\n\n## {now} — {doc}\n\n{text}\n"
+
+
+def read_pid(pidfile: pathlib.Path) -> int | None:
+    try:
+        return int(pidfile.read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def port_busy(host: str, port: int) -> bool:
+    with socket.socket() as s:
+        s.settimeout(0.4)
+        return s.connect_ex((host, port)) == 0
+
+
+# ── the server ───────────────────────────────────────────────────────────────────────────────────
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    server_version = "explainer-serve"
+
+    def log_message(self, format: str, *args):  # noqa: A002 — name fixed by the base class
+        sys.stderr.write("  %s\n" % (format % args))
+
+    def _send(self, code: int, body: bytes, ctype: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        # The page is same-origin with this server, so no CORS header is needed — and its absence
+        # is what stops any OTHER site in the browser from reading private source through it.
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if path == "/":
+            return self._send(200, index_html(ROOT).encode(), "text/html; charset=utf-8")
+        if path == "/latest":
+            target = latest_target(ROOT)
+            if not target:
+                return self._send(404, b"no explainers yet", "text/plain; charset=utf-8")
+            self.send_response(302)
+            self.send_header("Location", target)
+            self.end_headers()
+            return
+        resolved = safe_path(path, ROOT)
+        if resolved is None or not resolved.is_file():
+            return self._send(404, b"not found", "text/plain; charset=utf-8")
+        ctype = {".html": "text/html; charset=utf-8", ".md": "text/markdown; charset=utf-8",
+                 ".css": "text/css", ".js": "text/javascript",
+                 ".svg": "image/svg+xml", ".png": "image/png"}[resolved.suffix.lower()]
+        return self._send(200, resolved.read_bytes(), ctype)
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path.split("?", 1)[0] != "/questions":
+            return self._send(404, b"not found", "text/plain; charset=utf-8")
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self._send(400, b"bad length", "text/plain; charset=utf-8")
+        if length <= 0 or length > MAX_BODY:
+            return self._send(413, b"body too large or empty", "text/plain; charset=utf-8")
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("not an object")
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            return self._send(400, b"expected a JSON object", "text/plain; charset=utf-8")
+        now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ROOT.mkdir(parents=True, exist_ok=True)
+        with QUESTIONS.open("a", encoding="utf-8") as fh:
+            fh.write(format_question_entry(payload, now))
+        return self._send(200, json.dumps({"ok": True, "file": str(QUESTIONS)}).encode(),
+                          "application/json")
+
+
+def start() -> int:
+    ROOT.mkdir(parents=True, exist_ok=True)
+    if port_busy(HOST, PORT):
+        pid = read_pid(PIDFILE)
+        print(f"already serving on http://{HOST}:{PORT}" + (f" (pid {pid})" if pid else ""))
+        print(f"  one-click:  http://{HOST}:{PORT}/latest")
+        return 0
+    pid = os.fork()
+    if pid > 0:
+        PIDFILE.write_text(str(pid))
+        for _ in range(20):
+            if port_busy(HOST, PORT):
+                break
+            import time
+            time.sleep(0.1)
+        if not port_busy(HOST, PORT):
+            print(f"FAIL: forked pid {pid} but nothing is listening on {HOST}:{PORT}. NOT RUNNING.")
+            return 1
+        print(f"serving {ROOT} on http://{HOST}:{PORT}  (pid {pid})")
+        print(f"  one-click:  http://{HOST}:{PORT}/latest")
+        print(f"  questions:  {QUESTIONS}")
+        return 0
+    os.setsid()
+    with http.server.ThreadingHTTPServer((HOST, PORT), Handler) as httpd:
+        httpd.serve_forever()
+    return 0
+
+
+def stop() -> int:
+    pid = read_pid(PIDFILE)
+    if not pid_alive(pid):
+        PIDFILE.unlink(missing_ok=True)
+        print("not running")
+        return 0
+    assert pid is not None
+    os.kill(pid, signal.SIGTERM)
+    PIDFILE.unlink(missing_ok=True)
+    print(f"stopped pid {pid}")
+    return 0
+
+
+def status() -> int:
+    running, pid = port_busy(HOST, PORT), read_pid(PIDFILE)
+    n = len(explainers(ROOT))
+    print(f"listening : {'yes' if running else 'NO'} on http://{HOST}:{PORT}")
+    print(f"pidfile   : {pid if pid else '(none)'}"
+          + ("" if pid_alive(pid) or not pid else "  ⚠ stale — that pid is gone"))
+    print(f"explainers: {n} in {ROOT}")
+    print(f"questions : {QUESTIONS}" + ("" if QUESTIONS.exists() else "  (none yet)"))
+    return 0 if running else 1
+
+
+# ── self-test ────────────────────────────────────────────────────────────────────────────────────
+
+def _self_test() -> int:
+    import tempfile
+    ok = 0
+    cases: list[tuple[str, Callable[[], object]]] = []
+
+    def case(name, fn):
+        cases.append((name, fn))
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        (root / "a.html").write_text("a")
+        (root / "b.html").write_text("b")
+        os.utime(root / "a.html", (1, 1))          # a is OLDER
+        os.utime(root / "b.html", (9_000_000, 9_000_000))
+        (root / "secret.env").write_text("nope")
+        (root / "notes.md").write_text("ok")
+
+        # path safety — the property that keeps private source private
+        case("serves a plain html name", lambda: safe_path("/a.html", root) == (root / "a.html").resolve())
+        case("serves an allowed .md", lambda: safe_path("/notes.md", root) is not None)
+        case("refuses a non-servable extension", lambda: safe_path("/secret.env", root) is None)
+        case("refuses traversal with ..", lambda: safe_path("/../../etc/passwd", root) is None)
+        case("refuses ENCODED traversal", lambda: safe_path("/%2e%2e/%2e%2e/etc/passwd", root) is None)
+        case("refuses an absolute-looking escape", lambda: safe_path("//etc/passwd", root) is None)
+        case("refuses the bare root path", lambda: safe_path("/", root) is None)
+        case("ignores a query string", lambda: safe_path("/a.html?x=1", root) is not None)
+        case("ignores a fragment", lambda: safe_path("/a.html#s3", root) is not None)
+
+        # newest-first, which is the whole point of /latest
+        case("orders newest first", lambda: [p.name for p in explainers(root)] == ["b.html", "a.html"])
+        case("/latest points at the newest", lambda: latest_target(root) == "/b.html")
+        case("index lists both", lambda: "a.html" in index_html(root) and "b.html" in index_html(root))
+
+        empty = root / "empty"
+        empty.mkdir()
+        case("/latest is None when there is nothing", lambda: latest_target(empty) is None)
+        case("index says so when empty", lambda: "No explainers yet" in index_html(empty))
+        case("explainers() on a missing dir returns []", lambda: explainers(root / "nope") == [])
+
+        # question formatting — payload is data, and a missing field must not crash
+        case("formats a question with its source",
+             lambda: "## T — d.html" in format_question_entry({"doc": "d.html", "text": "q"}, "T"))
+        case("an empty question is recorded, not dropped",
+             lambda: "(empty)" in format_question_entry({"doc": "d"}, "T"))
+        case("a missing doc is labelled, not crashed",
+             lambda: "(unknown explainer)" in format_question_entry({"text": "q"}, "T"))
+
+        # liveness helpers
+        case("pid_alive(None) is False", lambda: pid_alive(None) is False)
+        case("pid_alive on this process is True", lambda: pid_alive(os.getpid()) is True)
+
+        for name, fn in cases:
+            try:
+                result = fn()          # called EXACTLY once — a case may have side effects
+                if result:
+                    ok += 1
+                else:
+                    print(f"  FAIL: {name}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  FAIL: {name} — {type(exc).__name__}: {exc}")
+    print(f"self-test: {ok}/{len(cases)} passed")
+    return 0 if ok == len(cases) else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--stop", action="store_true")
+    ap.add_argument("--status", action="store_true")
+    ap.add_argument("--self-test", action="store_true")
+    a = ap.parse_args()
+    if a.self_test:
+        return _self_test()
+    if a.stop:
+        return stop()
+    if a.status:
+        return status()
+    return start()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

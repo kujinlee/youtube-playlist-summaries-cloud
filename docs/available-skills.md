@@ -1,6 +1,6 @@
 # Available Skills Reference
 
-> **Generated** 2026-08-12 · `scripts/regen-skills-doc.py`
+> **Generated** 2026-08-13 · `scripts/regen-skills-doc.py`
 > Re-run after: `/plugin install`, `/plugin update`, `/plugin enable/disable`,
 > or `npx skills@latest add/remove mattpocock/skills`.
 
