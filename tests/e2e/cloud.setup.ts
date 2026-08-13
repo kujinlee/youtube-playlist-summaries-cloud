@@ -46,11 +46,14 @@ if (major < 22) {
   );
 }
 
-import { AUTH_FILE, FIXTURE_FILE, type CloudFixture } from './cloud-fixture';
+import { AUTH_FILE, FIXTURE_FILE, readLedger, type CloudFixture } from './cloud-fixture';
+
 
 
 setup('create an owner, seed their library, and sign in through /dev-login', async ({ page }) => {
   const svc = adminClient();
+  // FIRST, before anything else touches the database: the baseline the whole suite is judged against.
+  const ledgerBaseline = await readLedger(svc);
   const { user, email, password } = await newUser();
 
   const listedTitle = `E2E Listed ${Date.now()}`;
@@ -125,6 +128,7 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
 
   const fixture: CloudFixture = {
     email,
+    ledgerBaseline,
     ownerId: user.id,
     listed: { playlistId: listed.playlistId, playlistKey: listed.playlistKey, title: listedTitle, videoId: video.videoId },
   };
