@@ -241,15 +241,28 @@ slide images); M2 done = full bidirectional incl. images.**
   a clause.** That is the ratchet's scope being imperfect — its own docstring records that this file
   overloads `- [ ]` for three different meanings — and writing prose to lower a number is the failure
   the ratchet exists to catch, arriving through the front door.
-- [ ] **3.2 Real-render / regenerate checks**: regenerate `9nh8TQRcYD0` to confirm the summary
-  section-timestamp guarantee live; verify cloud dig-serve render.
-  **FAILS IF** the regenerated summary contains any `##` section without a unique, monotonically
-  increasing ▶ timestamp, **or** the cloud dig-serve render returns non-200, zero bytes, or HTML with
-  no dug content. **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`).
-  *(Why this one earns a clause and 3.1 does not: it is a MANUAL check against production, the
-  category that rots. "Confirm the guarantee live" is an activity you can perform, feel satisfied by,
-  and tick — the B5 shape. `portable-practices.md` §4 is the same lesson: A1/A2 were ticked in the
-  v3/v4 era while the app ran v6.)*
+- [ ] **3.2 Real-render / regenerate checks** — *subjects corrected 2026-08-12 by reading prod.*
+  **(a) Summary section-timestamp guarantee** — regenerate **`f8Hr_7FyKMQ`** (Wk02) through the app as
+  the owner. **FAILS IF** the regenerated summary contains any `##` section without a unique,
+  monotonically increasing ▶ timestamp.
+  **(b) Cloud dig-serve render** — open the one dug section in prod, **`fdquDw1IfmM`** (dug
+  2026-07-23). **FAILS IF** that render returns non-200, zero bytes, or HTML with no dug content.
+  **VERIFIED AGAINST:** the deployed release at the time of the run (`fly status`) — record it; a tick
+  without it is a claim about code that may no longer be running.
+  ⚠ **(a) spends** — a live Gemini summary call, ~8¢ — and it is the only way to test the **currently
+  deployed** generator. Prod's nine summaries were generated 2026-07-22, *after* PR #21 shipped the
+  guarantee on 2026-07-15, so reading an existing one is free but verifies a release that stopped
+  running weeks ago: the A1/A2 staleness in [`portable-practices.md`](portable-practices.md) §4.
+  **(a) and (b) use different videos, deliberately** — `fdquDw1IfmM` is the only video in prod carrying
+  a dig, and regenerating a summary is precisely the operation the serial-coherence slice (PR #42)
+  exists to stop from orphaning paid dig blobs. Regenerate it and (b) tests the aftermath of (a).
+  *(Corrected from "regenerate `9nh8TQRcYD0`". **MEASURED 2026-08-12: that video has ZERO rows in
+  prod** — it is a LOCAL-tool video, which is where the bug was found. The clause was well-formed and
+  named a subject that cannot be reached — the B5 shape, written the same afternoon as a note about B5.
+  **Checking that a clause is falsifiable is not the same as checking that its subject exists.**
+  Enumerated rather than recalled: prod holds 9 videos, 1 playlist, 1 profile, 9 completed `summary`
+  jobs and exactly 1 completed `dig`. Why this item earns a falsifier and 3.1 does not: it is a MANUAL
+  check against production, the category that rots.)*
 
 **M3 done = 3.1 and 3.2 both verified against the same deployed release.**
 
@@ -1081,7 +1094,7 @@ this file claimed prod was at migration `0021` when it was at `0022`, which is h
 unapplied for eight days while every document read "merged, done".
 
 **Current state (2026-08-12):**
-- **`master` = the merge of PR #89**, clean, tsc clean, **2690 unit / 267 suites** and **491
+- **`master` = the merge of PR #90**, clean, tsc clean, **2690 unit / 267 suites** and **491
   integration** green (counts re-run 2026-08-12).
   *No commit SHA here, deliberately, and* ***the PR that edits this line names ITSELF***. The field
   held a SHA once: false the moment it was written, because the PR editing this block is the PR whose
