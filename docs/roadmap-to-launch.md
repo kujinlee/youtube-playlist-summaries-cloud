@@ -241,7 +241,7 @@ slide images); M2 done = full bidirectional incl. images.**
   a clause.** That is the ratchet's scope being imperfect — its own docstring records that this file
   overloads `- [ ]` for three different meanings — and writing prose to lower a number is the failure
   the ratchet exists to catch, arriving through the front door.
-- [ ] **3.2 Real-render / regenerate checks** — *subjects corrected 2026-08-12 by reading prod.*
+- [x] **3.2 Real-render / regenerate checks — ✅ PASSED 2026-08-12. VERIFIED AGAINST: release v6** (web + worker, deployed 2026-08-11T15:47Z).
   **(a) Summary section-timestamp guarantee** — **INGEST ANY QUALIFYING VIDEO** as the owner, via a
   one-video playlist. **The subject is specified by PREDICATE, not by name:** public, not already in
   prod, and duration ≤ the live `guardrail_config.max_duration_seconds` (1800s as of 2026-08-12 —
@@ -294,6 +294,30 @@ slide images); M2 done = full bidirectional incl. images.**
   check against production, the category that rots.)*
 
 **M3 done = 3.1 and 3.2 both verified against the same deployed release.**
+
+### What 3.2 measured, and what it found (2026-08-12, v6)
+
+**(a) PASS.** Ingested a new 4-video playlist as the owner. `9nh8TQRcYD0` generated cleanly, with
+sections at **0:31 / 2:52 / 6:09** — unique and monotonic — and **all three carrying a `dig deeper`
+link**. The dig affordance is the strongest form of this check: a section whose timestamp does not
+resolve gets no dig button, so it tests the guarantee's PURPOSE rather than its notation.
+
+**(b) PASS.** The one dug section in prod (`fdquDw1IfmM`, dug 2026-07-23) renders in full — prose,
+sub-headings, a slide-caption callout, `▶ (2:53)` with *show summary* / *ask AI*.
+
+**Two real defects, filed:**
+- **[backlog #36]** — a Korean-titled video's blob key is rejected by Supabase Storage AFTER the paid
+  Gemini call, destroying the summary. Repeatable; 2 of the 4 videos in the test playlist were
+  Korean-titled. 🔴 money path.
+- **[backlog #37]** — a newly ingested playlist never appears in the sidebar (3 exist, 1 listed), so
+  the work is unreachable without its URL. 🟠 ranks above #36 for launch: it needs no unusual input.
+
+**Cost of the run:** 606¢ reserved, ~32¢ actual — about a quarter of it burned on #36's two failures.
+
+**Why this belongs in the roadmap and not only in a review doc:** neither defect was reachable by the
+test suite, two adversarial review rounds, or six ratchets. Each required a first-run user's *sequence*
+— a non-English title, a second playlist, a rejected ingest. That is the argument for acceptance
+testing, and it is the first time this project has run one against production.
 
 *(A third item, "3.3 Final acceptance sign-off", was deleted 2026-08-12. It had no subject and no
 observation — nothing that could be true or false — so it was ceremony, and adding a `FAILS IF:` to it
@@ -1175,9 +1199,10 @@ item was verified against. M2 Sync completed 2026-07-19.
 **The actual next step: M3 Acceptance** — browser-level Playwright e2e against the deployed URL.
 ⚠ **Tidied 2026-08-12, and the tidy was much smaller than "write three gates".** Asked whether all
 three needed falsifiers, the answer was no. **A third, ceremonial sign-off item was deleted** — no
-subject, no observation, nothing that could be true or false. **3.2 is a manual check against
-production**, the category that rots, and now names its falsifier. **3.1 is a TASK, not a gate** — the
-test becomes the claim once written, so its journey is enumerated in the test rather than in a clause.
+subject, no observation, nothing that could be true or false. The manual production check earned a
+falsifier, **was run the same day against v6, and PASSED — while finding two real defects**
+(backlog #36 and #37). **3.1 is a TASK, not a gate** — the test becomes the claim once written, so its
+journey is enumerated in the test rather than in a clause.
 The ratchet still flags 3.1 by design; **do not silence it.** Writing prose to lower a ratchet's number
 is the failure the ratchet exists to catch.
 *(The deleted item is described rather than numbered here on purpose: `check-roadmap-consistency.py`
