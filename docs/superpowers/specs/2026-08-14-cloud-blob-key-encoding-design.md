@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v6**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v7**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 Earlier sighting: `docs/local-validation-findings.md` §BUG-4, filed P2 during local validation — it
 became 🔴 only when the acceptance run showed the failure lands *after* the Gemini charge.
@@ -82,7 +82,7 @@ genuinely enters the index: `pipeline.ts:135-138` reads raw `readdirSync` bytes 
 in as `summaryMd`. Commit `08797e4` and `tests/lib/serial-migrate-normalization.test.ts` record the
 local-side bug this already caused.
 
-**2.6 Three write entrances, not one.** `slugify` is called on exactly one of them. The other two take
+**2.6 Four write entrances, not one.** `slugify` is called on exactly one of them. The other two take
 a key **verbatim** from outside — and `pipeline.ts:135-138`/`:105` put raw `readdirSync` bytes into the
 index as `summaryMd`, so an adopted key is whatever the filesystem allowed, not slugify output:
 
@@ -261,31 +261,63 @@ the serve path returns **409 `corrupt summary key`** (`serve-summary-core.ts:56-
 > Without the fallback the key ends in a lone surrogate and `CLOUD_SUMMARY_MD_KEY.test(…) === false`;
 > with it, the summary serves 200 at `${padSerial(serial)}_${videoId}.md`.
 
-**Where the check runs — every write entrance, and there are three.** Rounds 1–5 each found the spec
-naming one fewer than exists; §3.5 previously said "the sync path" as though it had one write:
+### 3.5.1 The check is carried by a TYPE, because prose cannot count — user decision, 2026-08-14
 
-| Entrance | Site |
-|---|---|
-| Worker mint | `summary-handler.ts:96`, immediately after `baseName` |
-| Sync — additive create | `sync-run.ts:263` (`copyAdditiveVideo` → `putStaged`) |
-| Sync — **Class-A transfer** | `sync-run.ts:379-399` (`const key = winnerVideo.summaryMd` → `putStaged`/`put` → `summaryMd: key`) — **round-5 B1** |
+**This spec enumerated "every write entrance" six times and said 1, 1, 1, 1, 2, 3. The true count is
+at least four.** Rounds 1–6 each found the list short, by a different reviewer each time. That is not
+a series of oversights; it is a measurement showing a prose invariant cannot hold here, and it is the
+reason the check is a type rather than a convention.
 
-The Class-A path is the one that keeps being missed, and it is the dangerous one: `winnerVideo.summaryMd`
-is a **raw vault filename** (`pipeline.ts:135-138`/`:105` put `readdirSync` bytes straight into the index),
-so it is not `slugify` output and can be anything the filesystem allows. On master it fails loudly at
-Storage's `400`; after this slice it would store and then 409 at serve.
+```ts
+declare const cloudKeyBrand: unique symbol;
+/** A summary key PROVEN servable — `assertCloudSummaryMdKey` accepts it. */
+export type CloudSummaryKey = string & { readonly [cloudKeyBrand]: true };
 
-⚠ **On the sync entrances the fallback is not available** — the key must match the sender's, or the
-replica diverges. There, an unservable adopted key is a genuine **refusal**: `NonRetryableError`, a
-per-video entry in `report.errors`, no baseline advanced. That is the same loud failure master already
-produces, preserved deliberately.
+/** The ONLY constructor. Mint: repairs via the videoId fallback (§3.5).
+ *  Adopt: cannot repair — the key must match the sender's — so it throws. */
+export function toCloudSummaryKey(
+  candidate: string,
+  ctx: { kind: 'mint'; serial: number; videoId: string } | { kind: 'adopt' },
+): CloudSummaryKey;
+```
 
-⚠ **Mechanics on the mint path, both currently unstated.** The check runs *after* `reserveVideoSlot`
-(`summary-handler.ts:95` — the key needs the serial), so a throw there must (a) be a
-`NonRetryableError`, or a deterministic failure burns `max_attempts` holding a worker slot each cycle,
-and (b) delete the bare reserved row, mirroring the `PermanentTranscriptError` rollback at `:129-137`.
-With the fallback in place this path should not throw at all — but if it ever does, it must do so the
-way the rest of the handler does.
+The summary write path takes `CloudSummaryKey`, not `string`. Every entrance must therefore call the
+factory to obtain one, so **`tsc` enumerates the sites** — and a fifth entrance does not compile.
+That is the one thing six rounds proved cannot be done by reading.
+
+| # | Entrance | Site | Key source | Fallback |
+|---|---|---|---|---|
+| 1 | Worker mint | `summary-handler.ts:96` | `slugify(title)` | **legal** — repair |
+| 2 | Sync — additive create | `sync-run.ts:263` | sender's key, verbatim | illegal — refuse |
+| 3 | Sync — Class-A transfer | `sync-run.ts:379-399` | winner's key, verbatim | illegal — refuse |
+| 4 | Base reconciliation | `reconcile-serial.ts:282`, `:293` | `baseOf(localVideo.summaryMd)` | illegal — refuse |
+
+Entrances 2–4 take the key **verbatim from outside**, and `pipeline.ts:135-138`/`:105` put raw
+`readdirSync` bytes into the index as `summaryMd` — so an adopted key is whatever the filesystem
+allowed, not `slugify` output. Entrance **4** is the one both round-6 halves found, and it is the
+worst: it writes an unvalidated key, advertises it `promoted`, **and then deletes the old blobs**, so
+it *undoes the §3.5 repair* and destroys the servable original.
+
+**Why a fallback is illegal on 2–4:** the replica must agree with the sender about the key, so
+repairing one side would diverge them. There an unservable key is a genuine refusal —
+`NonRetryableError`, a per-video entry in `report.errors`, no baseline advanced — which is the loud
+failure master already produces, preserved deliberately.
+
+**Precedent, verified.** `lib/serve-budget.ts:81` already brands a value for exactly this reason:
+*"These mechanisms exist because a budget was FORGOTTEN three times, not because anyone tried to hide
+one."* Same disease, same cure, same repo — adopted during the #46 serve-path slice, which also took
+seven review rounds. Phase 6 findings 1 and 2 recommended giving the key an owner independently.
+
+⚠ **The escape hatch must be closed.** `as CloudSummaryKey` defeats the whole mechanism.
+`scripts/check-key-brand.py` **FAILS IF** a cast to `CloudSummaryKey` appears outside
+`toCloudSummaryKey`'s own module. The budget brand carries the identical exposure and has held, so
+this is parity, not a new risk.
+
+⚠ **Mint-path mechanics.** The factory runs *after* `reserveVideoSlot` (`summary-handler.ts:95` — the
+key needs the serial). With the fallback it should never throw there; if it ever does, it must (a) be
+a `NonRetryableError`, or a deterministic failure burns `max_attempts` holding a worker slot each
+cycle, and (b) delete the bare reserved row, mirroring the `PermanentTranscriptError` rollback at
+`:129-137`.
 
 ### 3.6 What does not change
 
@@ -363,6 +395,10 @@ block the plan or the implementation.
 | 21 | An **adopted** `summaryMd` containing a space, `~`, an emoji or an over-long component is **refused before `putStaged`**, on both sync entrances, with no baseline advanced | integration |
 | 22 | `encodeSegment('003_x\uD840.md') !== encodeSegment('003_x\uD850.md')` — lone surrogates stay distinct | unit |
 | 23 | The collision guard treats an `unreadable` receiver read as **occupied**, never as free | unit |
+| 24 | **Base reconciliation refuses an unservable remapped key before `copy()`** — the old blobs survive and the row is not advanced (entrance 4) | integration |
+| 25 | A summary write cannot be called with a bare `string` — **`tsc --noEmit` fails** on a fifth entrance that skips the factory | type test |
+| 26 | `toCloudSummaryKey(…, {kind:'adopt'})` throws on an unservable key; `{kind:'mint'}` returns the `videoId` fallback | unit |
+| 27 | A cast to `CloudSummaryKey` outside the factory's module fails the build | check script |
 | 20 | The §4 gate's SQL predicate derives from the encoder module | check script |
 
 Behaviors **16**, **17**, **19**, **21** and **23** are the falsifiers for §3.4 and §3.5. Each asserts
@@ -387,6 +423,9 @@ local stack, and 17 needs a real APFS temp dir.
 
 | Mutation | Must turn red |
 |---|---|
+| Widen the write signature from `CloudSummaryKey` back to `string` | **25** (the type test) |
+| Make `toCloudSummaryKey` return its input unvalidated | 19, 21, 24, 26 |
+| Drop the `adopt` branch's throw (repair everywhere) | 21 — replicas diverge |
 | `hash(NFC(s))` instead of `hash(s)` in the encoder | 3 |
 | The additive guard consults index rows instead of `toBlob.exists` | **17** |
 | Revert `\p{M}` in `CLOUD_SUMMARY_MD_KEY` | **16** |
