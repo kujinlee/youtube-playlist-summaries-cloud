@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v5**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v6**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 Earlier sighting: `docs/local-validation-findings.md` §BUG-4, filed P2 during local validation — it
 became 🔴 only when the acceptance run showed the failure lands *after* the Gemini charge.
@@ -106,8 +106,16 @@ encodeSegment(s):
   if SAFE.test(s) && s.length <= LIMIT:   return s
   head = leading run of [A-Za-z0-9._-] in s, truncated to 32
   ext  = trailing /\.[A-Za-z0-9]{1,8}$/ of s, else ''
-  return `${head}=h${base64url(sha256(utf8(s))).slice(0, 22)}${ext}`
+  return `${head}=h${base64url(sha256(utf16le(s))).slice(0, 22)}${ext}`
 ```
+
+> ⚠ **`utf16le`, not `utf8` — round-5 H1 measured the UTF-8 version non-injective.** Node maps every
+> unpaired surrogate to U+FFFD, so `'003_x\uD840.md'` and `'003_x\uD850.md'` have **byte-identical**
+> UTF-8 (`…78 ef bf bd 2e…`) and therefore the same hash and the same physical key. That is
+> reachable, not theoretical: `slugify`'s `.slice(0, 60)` (`lib/slugify.ts:6`) cuts UTF-16 **code
+> units**, so 59 ASCII letters followed by an astral letter — CJK Extension B, ordinary in Chinese and
+> Japanese names, and `\p{L}` so it survives the strip — yields a lone high surrogate. `utf16le` is
+> lossless on lone surrogates, so injectivity holds as stated.
 
 `003_돈-버는-방식은-정해져-있다.md` → `003_=hJ8kQ2m….md`.
 
@@ -164,11 +172,32 @@ compares keys byte-exactly, so a cloud key in one normalization does not match a
 other — the guard passes and `promote`'s `renameSync` **overwrites a paid vault summary**. APFS makes
 the two names one file. Unreachable on master; **this slice is what makes it reachable**.
 
-**Ask the filesystem, not the index.** The guard must consult `toBlob.exists(toP, key)` rather than
+**Ask the filesystem, not the index.** The guard must consult the receiver's blob store rather than
 scanning index rows: a real vault file with no index row — precisely what `recoverOrphanedVideos`
-exists to adopt — passes a row-based check, and `exists()` on the aliasing backend answers correctly
-because the filesystem resolves the alias itself. This also closes a pre-existing byte-exact instance
-of the same hole.
+exists to adopt — passes a row-based check, and the filesystem resolves the alias itself. This also
+closes a pre-existing byte-exact instance of the same hole.
+
+⚠ **Use `tryGet`, not `exists` — round-5 H2.** `exists()` is not the same question on the two
+backends. `LocalFsBlobStore.exists` is `statSync`-based with `provesAbsence = true`; but
+`SupabaseBlobStore.exists` is `get() !== null` (`supabase-blob-store.ts:78-80`) and `get` *"swallows
+EVERY failure … network, 5xx, timeout and RLS denial"* (`:29-33`), so on the cloud receiver a
+transient fault reads as **"nothing there"** and the write proceeds. That is the absent-vs-unreadable
+conflation that already cost this project a Blocking, three Highs and a live 6¢→12¢ double charge —
+arriving through a door this slice would have built.
+
+**The guard reads `tryGet` and fails CLOSED on `unreadable`:**
+
+```ts
+const occupied = await to.blob.tryGet(toP, key);
+if (occupied.ok) throw new Error(`key collision: ${key} already held`);
+if (!occupied.ok && occupied.reason === 'unreadable') throw occupied.cause;  // never treat as free
+```
+
+Both directions of the additive create are covered: on the local receiver `absent` is proof
+(`provesAbsence = true`), and on the cloud receiver `absent` is only 404-shaped — but the write that
+follows is a `putStaged` → `promote`, and **round-5 P2 measured that Supabase `move()` refuses an
+existing destination with `409`** rather than overwriting, so the cloud side cannot silently clobber
+even if the read was wrong. The destructive case is the local one, where the read is trustworthy.
 
 Nothing is canonicalized on write, on either side. No `normalizeLogicalKey` change, no ingress list,
 no canonicalizer. Every existing byte-exact comparison stays correct, because two different byte
@@ -188,18 +217,61 @@ the serve path returns **409 `corrupt summary key`** (`serve-summary-core.ts:56-
    forms, and `é` and `e`+U+0301 are the same character to every user and to APFS. **Verified safe by
    exhaustive sweep (round 4): no `\p{M}` codepoint normalizes under NFC/NFD/NFKC/NFKD into `/`, `\`,
    `%`, whitespace, a control or `.`, and ZWJ is not admitted.**
-2. **Check servability before spending.** The encoder is total, so *"is this key storable?"* has no
-   failing observation — which is why v1's precondition was correctly deleted. But Supabase's `400`
-   was incidentally enforcing a *different* constraint that **does** have one: *"would
-   `assertCloudSummaryMdKey` accept this key?"* Making everything storable dropped the only thing
-   checking it. **Assert servability at job start, before the Gemini call**, and on the sync path
-   before the blob write.
+2. **Repair an unservable key; do not refuse it.** Supabase's `400` was incidentally enforcing a
+   constraint that *does* have a failing observation — *"would `assertCloudSummaryMdKey` accept this
+   key?"* — and making everything storable dropped the only thing checking it. But the answer is a
+   **fallback, not a gate**:
 
-> ⚠ Without (2), v4 converts a loud failure into a silent one: a vault filename outside the admitted
-> class becomes a durable row advertising `status: 'promoted'`, a real object, real spend, and a 409
-> the user finds by opening the document — **which is the exact shape of backlog #36 itself.**
-> **FAILS IF:** a title yielding a key with a space, `~`, or an emoji is enqueued and no error is
-> raised before `generateSummary` is called.
+   ```
+   if (!accepts(assertCloudSummaryMdKey, `${base}.md`))  base = `${padSerial(serial)}_${videoId}`
+   ```
+
+   `videoId` is a YouTube id — always ASCII `[A-Za-z0-9_-]{11}`, always `SAFE`, always servable — so
+   the fallback cannot itself fail.
+
+> ⚠ **Round-5 H5: the refusal version was worse than the bug.** A title whose slug cannot be
+> represented — 59 ASCII letters then an astral letter, i.e. an ordinary Chinese or Japanese name —
+> fails deterministically, so *every retry fails identically*, and §1 decision 1 fixes the vault
+> filename so the user cannot edit their way out. A gate there converts *"paid and lost"* into
+> **"permanently un-ingestible"**, and §1's stated purpose (*"storable **and servable**"*) would be
+> contradicted by the spec's own outcome. **A refusal is only a fix if there is a way out.** The
+> fallback gives one: the video ingests, the money buys something the user receives, and the readable
+> slug is the only thing lost — for the rare title that cannot be represented at all.
+>
+> **This also explains three vacuous falsifiers in a row** (rounds 2, 3 and 5): the spec kept writing
+> gates for a state that should never have been a failure. Round-5 **P4** proves it exhaustively — a
+> full BMP sweep found **zero** codepoints where `slugify` output fails the guard, widened or not. The
+> mint path has no reachable refusal; it has a rare **repair**.
+>
+> **FAILS IF** (constructible, from round-5 **P5**): ingest a title of 59 ASCII letters + `U+20000`.
+> Without the fallback the key ends in a lone surrogate and `CLOUD_SUMMARY_MD_KEY.test(…) === false`;
+> with it, the summary serves 200 at `${padSerial(serial)}_${videoId}.md`.
+
+**Where the check runs — every write entrance, and there are three.** Rounds 1–5 each found the spec
+naming one fewer than exists; §3.5 previously said "the sync path" as though it had one write:
+
+| Entrance | Site |
+|---|---|
+| Worker mint | `summary-handler.ts:96`, immediately after `baseName` |
+| Sync — additive create | `sync-run.ts:263` (`copyAdditiveVideo` → `putStaged`) |
+| Sync — **Class-A transfer** | `sync-run.ts:379-399` (`const key = winnerVideo.summaryMd` → `putStaged`/`put` → `summaryMd: key`) — **round-5 B1** |
+
+The Class-A path is the one that keeps being missed, and it is the dangerous one: `winnerVideo.summaryMd`
+is a **raw vault filename** (`pipeline.ts:135-138`/`:105` put `readdirSync` bytes straight into the index),
+so it is not `slugify` output and can be anything the filesystem allows. On master it fails loudly at
+Storage's `400`; after this slice it would store and then 409 at serve.
+
+⚠ **On the sync entrances the fallback is not available** — the key must match the sender's, or the
+replica diverges. There, an unservable adopted key is a genuine **refusal**: `NonRetryableError`, a
+per-video entry in `report.errors`, no baseline advanced. That is the same loud failure master already
+produces, preserved deliberately.
+
+⚠ **Mechanics on the mint path, both currently unstated.** The check runs *after* `reserveVideoSlot`
+(`summary-handler.ts:95` — the key needs the serial), so a throw there must (a) be a
+`NonRetryableError`, or a deterministic failure burns `max_attempts` holding a worker slot each cycle,
+and (b) delete the bare reserved row, mirroring the `PermanentTranscriptError` rollback at `:129-137`.
+With the fallback in place this path should not throw at all — but if it ever does, it must do so the
+way the rest of the handler does.
 
 ### 3.6 What does not change
 
@@ -273,12 +345,22 @@ block the plan or the implementation.
 | 16 | An **NFD accented-Latin** titled video syncs and then **serves 200** with the right bytes, ledger unmoved | integration |
 | 17 | A cloud→local additive create whose key aliases an existing **vault file with no index row** throws and leaves the file untouched | integration, real FS |
 | 18 | `encodeSegment` is identity on the longest key `CLOUD_SUMMARY_MD_KEY` admits | unit |
-| 19 | A title yielding an unservable key raises **before** `generateSummary` is called, and the ledger does not move | integration |
+| 19 | A title of **59 ASCII letters + `U+20000`** ingests and the summary **serves 200** at the `${padSerial}_${videoId}.md` fallback | integration |
+| 21 | An **adopted** `summaryMd` containing a space, `~`, an emoji or an over-long component is **refused before `putStaged`**, on both sync entrances, with no baseline advanced | integration |
+| 22 | `encodeSegment('003_x\uD840.md') !== encodeSegment('003_x\uD850.md')` — lone surrogates stay distinct | unit |
+| 23 | The collision guard treats an `unreadable` receiver read as **occupied**, never as free | unit |
 | 20 | The §4 gate's SQL predicate derives from the encoder module | check script |
 
-Behaviors **16**, **17** and **19** are the falsifiers for §3.4 and §3.5. Each asserts a **user-visible
-observable** — the summary serves, the vault file survives, the money is not spent — because two
-earlier versions of this table named mechanisms instead, and both were measured vacuous.
+Behaviors **16**, **17**, **19**, **21** and **23** are the falsifiers for §3.4 and §3.5. Each asserts
+a **user-visible observable** — the summary serves, the vault file survives, the sync refuses loudly.
+
+> ⚠ **Every input above is now one round 5 proved constructible, because three earlier falsifiers were
+> not.** Round-5 **P4** swept the entire BMP and found **zero** codepoints where `slugify` output fails
+> `CLOUD_SUMMARY_MD_KEY` — widened or not — so every behavior phrased as *"a title containing a space
+> / `~` / an emoji"* tested nothing: `slugify` maps all of them to `-` before the guard sees them. The
+> only constructible mint-path input is **P5**'s astral letter at the `slice(0, 60)` boundary, and
+> behaviors 19 and 22 now use exactly that. The genuinely unservable keys arrive by **adoption**, not
+> by minting — hence behavior 21.
 
 ---
 
