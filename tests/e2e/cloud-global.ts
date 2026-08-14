@@ -20,10 +20,19 @@
  * teardown task is queued the moment the setup task STARTS, and the teardown runner sets
  * `_isTearDown`, so a failing test phase cannot skip it and a throw in here still fails the run).
  * That covers: the setup project failing, the cloud project never being scheduled, `--max-failures`,
- * `-x`, a global timeout, and SIGINT.
+ * `-x`, and SIGINT.
  *
- * It does NOT cover SIGKILL or a hard process crash — nothing in-process can. Say so rather than
- * letting "runs regardless" quietly mean "almost regardless".
+ * WHERE IT STILL MAKES NO CLAIM — round 3 caught this list being one item too generous, which is
+ * the same "asserted in a comment, not by code" failure the rest of this file is about:
+ *   · SIGKILL or a hard process crash. Nothing in-process can cover it.
+ *   · A GLOBAL TIMEOUT. `TaskRunner.run` passes the SAME `deadline` to the cleanup pass
+ *     (runner/index.js `runDeferCleanup`), and `TimeoutWatcher` resolves immediately when the
+ *     deadline has already gone by — so a run that times out races its own teardown and the ledger
+ *     read may never finish. The run still exits non-zero, but for the timeout, not for the money.
+ *   · A webServer that never starts. Plugin setup is ordered BEFORE user global setup in
+ *     `createGlobalSetupTasks`, so if `next dev` fails to come up this file does not run at all —
+ *     no baseline, and no fixture deletion either.
+ * The middle one is the one to remember: a non-zero exit is not the same as a guard that fired.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  * WHY THIS DELETES THE FIXTURE FILES (round-2 High, 2026-08-13)
@@ -33,10 +42,11 @@
  * and no database identity, so `--project=cloud --no-deps`, an interrupted setup, or a cloud-only
  * invocation would happily compare a live database against a previous run's seed.
  *
- * The fix is identity by construction rather than identity by stamp: `globalSetup` runs on EVERY
- * invocation, including partial ones, so deleting both files here means a fixture can only exist if
- * THIS run's setup project wrote it. There is no id to check because there is nothing stale to
- * check it against.
+ * The fix is identity by construction rather than identity by stamp: `globalSetup` runs on every
+ * invocation that gets as far as running tests — including partial ones — so deleting both files
+ * here means a fixture can only exist if THIS run's setup project wrote it. There is no id to check
+ * because there is nothing stale to check it against. (The one gap is a webServer that never
+ * starts, above; then nothing is deleted, but nothing runs either.)
  *
  * WHAT A PARTIAL RUN LOOKS LIKE, so nobody has to rediscover it. `--project=cloud --no-deps` now
  * fails on the FIRST rung with Playwright's own
@@ -62,6 +72,10 @@ export default async function cloudGlobalSetup() {
 
   const baseline = await readLedger();
 
+  // NOTHING GOES BETWEEN THESE TWO STATEMENTS. A throw after the baseline but before the return
+  // leaves `globalSetupResult` a non-function, and the runner only calls it `if (typeof … ===
+  // "function")` — so the guard would be silently absent with a baseline already taken. Round 3
+  // found no current path here; this comment is what keeps it that way.
   return async () => {
     const now = await readLedger();
     if (now.auditMaxId === baseline.auditMaxId && now.centsTotal === baseline.centsTotal) return;
