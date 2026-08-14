@@ -27,10 +27,14 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   outputDir: './test-results',
-  // The run-level money guard, and the reason a stale fixture cannot be read: it deletes both
-  // fixture files on every invocation that reaches it — including a partial
-  // `--project=cloud --no-deps` one. It does NOT reach that far if the webServer fails to start,
-  // because plugin setup is ordered first; cloud-global.ts has the full list of what it cannot see.
+  // The run-level money guard, and the reason a stale fixture cannot be read: ON THE CLI RUNNER it
+  // deletes both fixture files once per invocation, including a partial `--project=cloud --no-deps`
+  // one. ⚠ RUN THIS SUITE FROM THE CLI. In UI mode, `--watch` and the VS Code extension globalSetup
+  // runs once per SESSION, not per run, so the fixture survives every re-run while the database
+  // moves under it — and the money check happens only when the session closes.
+  // cloud-global.ts carries the mechanism and the full list of what the guard cannot see; this
+  // comment is deliberately a pointer rather than a second copy, because the previous version of
+  // these two sentences drifted apart and a reader could not tell which one had been updated.
   globalSetup: './tests/e2e/cloud-global.ts',
   // Local Supabase is one shared stack — parallel specs would race each other's rows.
   workers: 1,

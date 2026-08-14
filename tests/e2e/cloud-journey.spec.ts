@@ -41,7 +41,8 @@
  * backfillPlaylistTitles() whenever a listed playlist has no title, and that reaches the real
  * YouTube Data API with no ledger row of any kind. The defence is that every seeded playlist is
  * given a title immediately and BOTH updates are error-checked — see cloud.setup.ts — so no
- * null-title row is ever listed. If that check ever fails, this suite makes outbound API calls.
+ * null-title row is ever listed. Note the direction: if a check FAILS the run stops before any page
+ * loads, so nothing goes out. The hazard is the check being REMOVED, not the check going red.
  *
  * ⚠ WHAT THIS SUITE DOES NOT COVER, stated because the previous version of this note said the only
  * gap was "the magazine HTML renders in a browser" and that was wrong. Every rung opens `/` with no
@@ -137,7 +138,7 @@ test.describe.serial('cloud journey', () => {
   // The HTML render calls resolveMagazineModel, and the setup pre-seeds models/{base}.json so that
   // call finds one and returns without touching Gemini. It did not: the served document kept coming
   // back as LLM paraphrase. The seed said `sourceSections: ['2. Encoder']`; the parser splits the
-  // ordinal off the heading and keeps it in a separate field (parse.ts:53-55), so the titles
+  // ordinal off the heading and keeps it in a separate field (parse.ts:56), so the titles
   // `sameTitles` compares against (read-model.ts:16) are `['Encoder']`. Never fresh, always
   // regenerate, 6-12¢ a render.
   //

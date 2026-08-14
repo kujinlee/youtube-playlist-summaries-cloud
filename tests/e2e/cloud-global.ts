@@ -42,7 +42,9 @@
  *     read. Playwright aborts a closed context's requests; Node does not abort a handler already
  *     executing. A handler that reaches `reserve_serve_model` after the compare is money the guard
  *     did not see. Now that rung 4 is live again this is reachable in principle, though every
- *     request the rungs make is awaited.
+ *     request the RUNGS make is awaited. The app's own are not — PlaylistSidebar's mount and
+ *     post-ingest refetches, listVideos on rung 3's push, the ingest banner's probe — and none of
+ *     those reaches a money path today, which is what makes this hypothetical rather than live.
  *   · UI MODE, `--watch`, AND THE VS CODE EXTENSION — see the next section; this file does not run
  *     per run there, only per session.
  * The global timeout is the one to remember: a non-zero exit is not the same as a guard that fired.
@@ -98,6 +100,7 @@
 import '../integration/setup';
 import fs from 'node:fs';
 import { AUTH_FILE, FIXTURE_FILE, readLedger, type LedgerSnapshot } from './cloud-fixture';
+import { isLocalSupabaseUrl } from '@/lib/supabase/is-local-url';
 
 /** The run teardown, as a pure function of the baseline — see the single `return` below for why
  *  this is a named helper rather than an inline closure. */
@@ -133,11 +136,17 @@ function moneyGuard(baseline: LedgerSnapshot) {
  *  suite at a hosted project. */
 function assertLocalStack() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
-  const host = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
-  if (host === '127.0.0.1' || host === 'localhost' || host === '[::1]') return;
+  // THE SAME PREDICATE THE SECURITY GATE USES, not a lookalike. The first version of this inlined
+  // its own host list and admitted `[::1]`, which `isLocalSupabaseUrl` does not — so the "equivalent
+  // gate" this function claims to be was a THIRD copy that had already diverged from the thing it
+  // was copying. Importing it means this tracks dev-login automatically instead of drifting from it
+  // (memory: duplicate vocabulary is the observable shadow of a duplicate mechanism).
+  if (isLocalSupabaseUrl(url)) return;
   throw new Error(
     `The cloud e2e suite refuses to run against a non-local Supabase: ${url || '(unset)'}\n` +
     'It seeds users, deletes fixture files and reads the spend ledger with the service-role key.\n' +
+    'Only `localhost` and `127.0.0.1` count as local — host-exact, so `[::1]`, `0.0.0.0`,\n' +
+    '`host.docker.internal`, a compose service name and any `.local` name are all refused.\n' +
     'Start the local stack (`npx supabase start`) and let tests/integration/setup.ts supply the env.',
   );
 }
