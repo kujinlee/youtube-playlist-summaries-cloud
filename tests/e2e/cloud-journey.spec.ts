@@ -157,6 +157,25 @@ test.describe.serial('cloud journey', () => {
       `/api/html/${fx().listed.videoId}?playlist=${fx().listed.playlistId}&type=summary`,
     );
     expect(res?.status()).toBe(200);
+    // WHICH PATH SERVED THIS, not merely "something did". 200 + the seeded lead + an unmoved ledger
+    // still leaves two ways to be green: the fresh envelope was accepted (what this rung is for), or
+    // the reserve hit the cap and D5's title-stable STALE fallback served the same bytes for free
+    // (serve-doc.ts:147-150). Only the second sets X-Magazine-Stale (file-response.ts:47), so its
+    // absence is what distinguishes them. Raised as a Low by Codex round 5 and worth taking: without
+    // it this rung would pass unchanged if freshness broke again in a way that stayed cheap.
+    //
+    // ⚠ NOT MUTATION-PROVEN, and that is worth stating rather than leaving as an implied guarantee.
+    // The name is read off the producer (file-response.ts:47 sets `X-Magazine-Stale` only when
+    // `staleMarker && kind === 'html'`; Playwright lower-cases header keys), but no run has yet
+    // OBSERVED the header present, so "always undefined" and "never looked" are still
+    // indistinguishable here. Reaching it needs `reserve_serve_model` to answer `owner_over_budget`
+    // — NOT `at_capacity`, which returns 503 without consulting the stale path (serve-doc.ts:139-150)
+    // — and that needs the owner to have prior serve spend on the same day, which a freshly created
+    // e2e owner never has. Two attempts were made: a global `daily_cap_cents: 1` produced the 503,
+    // and `per_owner_serve_daily_cents: 6` still admitted the first serve (0 + 6 <= 6) and
+    // regenerated. A third would need a seeded owner-spend row, i.e. a fixture that manufactures a
+    // state the app reaches only after paying once.
+    expect(res?.headers()['x-magazine-stale']).toBeUndefined();
     await expect(page.getByText('Seeded lead for the e2e journey.')).toBeVisible();
     await expect(page.getByText(/2:12/).first()).toBeVisible();
   });
