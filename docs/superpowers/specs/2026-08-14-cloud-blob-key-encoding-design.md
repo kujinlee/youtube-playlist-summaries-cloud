@@ -1,25 +1,31 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft v1, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v2**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, filed 2026-08-12 by the first real M3 acceptance run against prod
 release v6. Earlier sighting: `docs/local-validation-findings.md` §BUG-4, filed P2 during local
 validation and correctly diagnosed there — it became 🔴 only when the acceptance run showed the
 failure lands *after* the Gemini charge.
+
+**Review trail:** round 1 dual adversarial, both halves **NOT CONVERGED** —
+[`docs/reviews/spec-blob-key-encoding-r1-codex.md`](../../reviews/spec-blob-key-encoding-r1-codex.md)
+(1 Blocking, 1 Medium, 1 Low) and
+[`docs/reviews/spec-blob-key-encoding-r1-claude.md`](../../reviews/spec-blob-key-encoding-r1-claude.md)
+(1 Blocking, 3 High, 3 Medium, 2 Low). Both found the same Blocking independently. v2 applies all ten.
 
 > **In one paragraph:** every blob key is `${padSerial(serial)}_${slugify(title)}`, and `slugify`
 > keeps any Unicode letter. Supabase Storage rejects any object key containing a non-ASCII character,
 > so a Korean-titled video's summary cannot be written — but only *after* Gemini has been called and
 > billed. This slice moves the storage-safety concern into the Supabase adapter, which maps a
 > **logical key** (what the vault, the database and the sync path speak) to a **physical key** (what
-> Storage will accept). Everything above the seam keeps speaking Unicode and is unchanged.
+> Storage will accept). Everything above the seam keeps speaking Unicode.
 
-> ⚠ **Correction carried from the design discussion.** The brainstorm concluded with "add a
-> precondition that checks storability before spending". **That guard is now deliberately NOT in this
-> design**, because the chosen encoding is *total* — no logical key can fail to encode — so the
-> precondition could never fire. An assertion that cannot fail is the defect
-> `scripts/check-gate-falsifiability.py` exists to catch, and filing one here would have been a
-> second instance of it. The protection it was meant to give is instead a **property test on the
-> encoder** (§7), which can fail and does mean something. See §9.
+> ⚠ **v1 justified its central choice with a measurement of the wrong subject, and v2 says so
+> plainly.** v1 reported "maximum object key length is 267 characters" and used it to prove that every
+> reversible encoding was impossible. The real limit is **255 characters per path *segment*** with no
+> whole-path bound (§2.2). v1's probe varied one segment under a fixed 12-character prefix, so it
+> could only ever discover a segment bound — no possible outcome of that experiment distinguished the
+> two hypotheses. Reversible encoding was in fact available. The design in §3 survives, but **for
+> different reasons**, and §2.3/§8.1 are rewritten rather than patched.
 
 ---
 
@@ -47,8 +53,6 @@ the URL is `127.0.0.1`/`localhost`, and cleans up the objects it wrote.
 
 ### 2.1 The accepted character set — the defect is far wider than "Korean"
 
-13 candidate keys, uploaded to the `artifacts` bucket:
-
 | Accepted | Rejected — `400 InvalidKey` |
 |---|---|
 | `003_hello-world.md` | `003_돈-버는-방식은-정해져-있다.md` (Hangul) |
@@ -56,56 +60,63 @@ the URL is `127.0.0.1`/`localhost`, and cleans up the objects it wrote.
 | `003_a(b)c.md` | `003_privet-привет.md` (Cyrillic) |
 | `003_a+b=c.md` | **`003_cafe-résumé-año.md` (accented Latin)** |
 | `003_a b.md` | `003_strasse-ß-ø.md` |
-| | `003_party-🎉.md`, `003_a~b.md`, `003_a%20b.md` |
+| `=hJ8kQ2m….md` (leading `=`, with ext) | `003_party-🎉.md` |
+| `=hJ8kQ2m…` (leading `=`, no ext) | `003_a~b.md` |
+| `=` as a whole segment | `003_a%20b.md` |
 
 **Every non-ASCII letter is refused, including French, Spanish, German and Portuguese.** The backlog
-filed this as "non-ASCII (Korean)"; a `résumé` in a title destroys a paid summary identically. Any
-fix scoped to Korean, or to transliteration of one script, is scoped wrong.
+filed this as "non-ASCII (Korean)"; a `résumé` in a title destroys a paid summary identically. Any fix
+scoped to Korean, or to transliteration of one script, is scoped wrong. `%` is rejected, which rules
+out percent-encoding.
 
-Also note `%` is **rejected**, which rules out percent-encoding — the obvious reversible scheme.
+The three `=`-leading rows were added in v2 (round-1 **L1**): §3.2 claims the encoder is *total*, and
+the empty-`head` branch produces exactly those shapes, so the table had to cover them rather than
+leave a universally quantified claim resting on cases it omitted. Measured: all three accepted, in
+filename *and* folder position, surviving `list()`, `download()` and `move()`.
 
-### 2.2 The length limit — 267 characters, and it fails as a 500
+### 2.2 The length limit — 255 characters per SEGMENT, and it fails as a 500
 
-Bisected: **maximum accepted object key length is 267; the first rejection is at 268.** Over-length
-does **not** produce `400 InvalidKey`. It produces:
+⚠ **This section is corrected in v2. v1 stated "maximum object key length is 267".** That number was
+`_probe36len/` (12 chars) + a 255-character segment, i.e. the segment bound wearing a path bound's
+label. Re-measured, with an experiment capable of returning the other answer:
+
+| Result | Total path length | Case |
+|---|---|---|
+| ACCEPTED | 266 | one segment of 255 |
+| REJECTED `500` | 267 | one segment of **256** |
+| **ACCEPTED** | **1014** | **4 segments × 250** |
+| ACCEPTED | 1216 | 6 segments × 200 |
+| REJECTED `500` | 278 | 2 segments, first is 256 |
+
+**The limit is 255 characters per path segment. There is no whole-path bound up to at least 1216.**
+The owner uuid, the playlist key and `_staging/<uuid>/` are separate segments and consume none of the
+filename's budget — so the "149 characters remaining" budget table in v1 described nothing real and
+is deleted.
+
+Over-length does **not** produce `400 InvalidKey`. It produces:
 
 ```
 {"statusCode":"500","error":"Internal","message":"Internal Server Error","code":"InternalError"}
 ```
 
-A `500` is indistinguishable from a transient fault, so a retrying caller will retry something that
-can never succeed. This matters on the serve path specifically, where `max_serve_attempts = 5`.
+A `500` is indistinguishable from a transient fault, so a retrying caller retries something that can
+never succeed. That hazard is real and reproduces; it matters on the serve path, where
+`max_serve_attempts = 5`.
 
-The budget this leaves for a logical key:
+### 2.3 Reversible encoding was available — v1 said otherwise, from the wrong budget
 
-| Component | Chars |
-|---|---|
-| owner uuid + `/` | 37 |
-| YouTube playlist id + `/` | 35 |
-| `_staging/` + uuid + `/` (every write is staged) | 46 |
-| **Fixed overhead** | **118** |
-| **Remaining, of 267** | **149** |
+v1 ruled out every reversible scheme against a phantom 149-character budget. Against the real
+255-per-segment ceiling, measured:
 
-> The design below is **insensitive to the exact bound** — its worst-case key is ~70 characters — so
-> a local-only measurement is sufficient to justify it. The number is recorded because it is what
-> ruled out the reversible alternatives, not because anything depends on its precise value.
+```
+base64url of a 60-char Hangul slug (180 bytes) -> 240 chars -> `003_<b64>.md` = 247 chars -> ACCEPTED
+```
 
-### 2.3 Why every reversible encoding was ruled out
-
-A 60-character Korean slug is 180 UTF-8 bytes. Encoded into the accepted charset:
-
-| Scheme | Result | Fits 149? |
-|---|---|---|
-| quoted-printable (`=HH`) | 540 | no |
-| base64url | 240 | no |
-| punycode | ~180 | no |
-| information-theoretic floor | ~135 | only with zero margin, before dig nesting |
-
-Reversibility at current slug lengths is not achievable. This is what sent the design to §3.
+Punycode (~180) fits comfortably. So reversibility was never impossible; it was **8 characters short
+of the ceiling in the worst case**. §3 still chooses hashing, but §8.1 now records that as a decision
+with reasons rather than a forced move.
 
 ### 2.4 Supabase user metadata — measured, then found unnecessary
-
-Investigated as "Approach B": store the logical name in object metadata and recover it on `list()`.
 
 | Question | Answer |
 |---|---|
@@ -114,20 +125,17 @@ Investigated as "Approach B": store the logical name in object metadata and reco
 | Does `info()` return it? | **Yes**, one call per object |
 | Do `move()` / `copy()` preserve it? | **Yes**, both |
 
-Mechanically viable. **Declined** — see §8.2 — because §3 removes the need for it entirely.
+Mechanically viable. **Declined** — see §8.2 — because §3.3 removes the need for it entirely.
 
 ### 2.5 What the local side did, and the bug it did hit
 
 `LocalFsBlobStore.abs()` is `path.join(p.indexKey, key)` — **identity, no encoding**. APFS and ext4
-accept arbitrary UTF-8 filenames, so Korean names have always worked locally. Local limits are **255
-bytes per path component**; Supabase's is **267 characters for the whole path**. Different unit,
-different scope — which is why the wall was invisible from the local side, and why the three
-Unicode-aware guards (§5) were written believing Unicode keys are legitimate. Against the only
-backend anyone had tested, they were right.
+accept arbitrary UTF-8 filenames, so Korean names have always worked locally. Local limits are 255
+bytes per component; Supabase's is 255 characters per segment — similar in shape, which is why the
+wall was invisible from the local side, and why the three Unicode-aware guards (§5) were written
+believing Unicode keys are legitimate. Against the only backend anyone had tested, they were right.
 
-The local side did hit one real bug with Korean names, and it is load-bearing here. Commit
-`08797e4`, *"fix(serial): make backfill migration converge in one pass + tolerate filename
-normalization"*:
+The local side did hit one real bug with Korean names, and it is load-bearing here. Commit `08797e4`:
 
 > The serial-number backfill could leave files unprefixed after a single `--apply`: a Korean-titled
 > file stored in a non-canonical Unicode normalization was skipped on the first pass and only renamed
@@ -137,14 +145,21 @@ Fixed by `findByNormalizedName` (`lib/serial-migrate-exec.ts:26`), whose comment
 *"`existsSync` is only NFC↔NFD tolerant on APFS (and byte-exact on Linux)."* Regression test:
 `tests/lib/serial-migrate-normalization.test.ts`, built on the Korean title `팔란티어-대체될까`.
 
-**Consequence for this design.** macOS normalizes filenames for you; Supabase Storage is a Postgres
-row with a byte-exact index and does not. Without normalization, NFC and NFD forms of one title
-produce **two different physical keys** — one video, two objects, or a read that misses an object
-that exists. A miss reads as 404-shaped, which `tryGet` classifies `absent`, which is precisely the
-conflation that already cost this project a Blocking, three Highs and a live 6¢→12¢ double charge
-(`docs/adr/0008`, `provesAbsence`). **NFC normalization is therefore part of the encoding contract,
-not a defensive extra** — and `lib/cloud-sync/content-hash.ts:12` already applies the same rule to
-content, so this makes keys consistent with bodies rather than introducing a new concept.
+**And non-canonical normalization genuinely enters the index.** `recoverOrphanedVideos` writes a raw
+`readdirSync` entry — the on-disk bytes, in whatever normalization the filesystem holds — straight in
+as `summaryMd`:
+
+```ts
+// lib/pipeline.ts:135-138
+files = fs.readdirSync(outputFolder).filter((f) => f.endsWith('.md') && !f.includes('-deep-dive'));
+// lib/pipeline.ts:105
+const summaryMd = file;
+```
+
+> An earlier draft of the v2 fix proposed simply *dropping* NFC from the encoder, on the strength of a
+> grep showing no cloud path derives a key from a directory scan. **That grep was scoped to
+> `lib/storage/supabase`, `lib/cloud-sync`, `lib/dig/cloud` and `app/api`, and missed `lib/pipeline.ts`.**
+> The narrow check was reported as a broad conclusion. §3.5 carries the fix that survives.
 
 ### 2.6 The second entrance the backlog did not name
 
@@ -156,8 +171,7 @@ const ref = await toBlob.putStaged(toP, video.summaryMd, Buffer.from(mdBody, 'ut
 
 `slugify` is never called on this path. Any existing vault summary with a non-ASCII title fails
 identically the moment it syncs to cloud. This is an **addressing-contract** defect with two
-entrances, not an ingest defect. Fixing it at the seam closes both at once; fixing it in the cloud
-ingest pipeline would have closed one.
+entrances. Fixing it at the seam closes both; fixing it in the cloud ingest pipeline would close one.
 
 ---
 
@@ -167,145 +181,196 @@ ingest pipeline would have closed one.
 
 `lib/storage/blob-store.ts` does not promise that a key is a storage path. It documents **logical
 keys**: `list()` is *"List logical keys (relative to the owner root)"*, `deletePrefix` takes a
-*"logical prefix"*. Nothing above the seam has ever been told logical and physical are the same
-string. This slice makes the Supabase adapter use that latitude; the interface is unchanged.
+*"logical prefix"*. This slice uses that latitude; the interface shape is unchanged.
 
 ### 3.2 The encoding
 
-Per **path segment**, after NFC normalization:
+Per **non-empty path segment**:
 
 ```
 SAFE  = /^[A-Za-z0-9._-]+$/          // exactly what existing keys use
-LIMIT = 96                            // per segment; far below any observed bound
+LIMIT = 255                           // the measured per-segment ceiling (§2.2)
 
 encodeSegment(s):
-  n = s.normalize('NFC')
-  if SAFE.test(n) && n.length <= LIMIT:  return n            // identity
-  head = leading run of [A-Za-z0-9._-] in n, truncated to 32
-  ext  = trailing /\.[A-Za-z0-9]{1,8}$/ of n, else ''
-  return `${head}=h${base64url(sha256(utf8(n))).slice(0, 22)}${ext}`
+  if s === '':                            return ''                // §3.2.1
+  if SAFE.test(s) && s.length <= LIMIT:   return s                 // identity
+  head = leading run of [A-Za-z0-9._-] in s, truncated to 32
+  ext  = trailing /\.[A-Za-z0-9]{1,8}$/ of s, else ''
+  return `${head}=h${base64url(sha256(utf8(NFC(s)))).slice(0, 22)}${ext}`
 ```
 
 `003_돈-버는-방식은-정해져-있다.md` → `003_=hJ8kQ2m….md`.
 
-Four properties, each of which is a test in §7:
+**`LIMIT = 255`, not v1's 96.** Round-1 **H1**: 96 is below the **131** characters the system's own
+boundary validator admits (`assert-cloud-summary-md-key.ts:14`, `/^[\p{L}\p{N}][\p{L}\p{N}_-]{0,127}\.md$/u`),
+and `assertLogicalKey` imposes no bound at all while `sync-run.ts:263` accepts a key minted on a
+machine this deploy has never seen. A 100-character ASCII key is servable today and v1 would have
+re-addressed it. Setting `LIMIT` to the measured ceiling is stronger than the reviewer's suggested
+200: it makes `{SAFE ∧ len > LIMIT}` empty *within the set of storable keys*, so the length half of
+§4's proof becomes unconditional (§4).
+
+Four properties, each a test in §7:
 
 - **Total.** Every input produces an accepted key. No logical key can be unstorable.
-- **Bounded.** Worst case is 32 + 2 + 22 + 9 = 65 characters per segment, against a 149 budget.
-- **Identity on everything that exists.** A key already made only of `SAFE` characters is emitted
-  unchanged. See §4.
-- **Injective.** The two branches cannot collide, structurally: a hashed segment contains `=`, which
-  `SAFE` forbids, so no identity-encoded segment can ever equal a hashed one. Within the hashed
-  branch, injectivity is SHA-256 over the full normalized segment (the truncated `head` is
-  decoration; it is not what distinguishes two keys).
+- **Bounded.** Worst case 32 + 2 + 22 + 9 = 65 characters, against a 255 ceiling.
+- **Identity on everything storable that exists.** See §4.
+- **Injective over NFC-normalized logical keys.** Stated precisely in §3.2.2 — v1 said "injective"
+  flatly, which contradicted its own behavior 3 (round-1 **M2**).
 
-`=` is the marker because Storage accepts it (§2.1) and `slugify` can never emit it — it maps every
-non-alphanumeric to `-`.
+#### 3.2.1 Empty segments are preserved, never encoded
 
-> **Encoding is per segment, so related keys hash independently and that is correct.** The summary
-> key's segment is `003_돈….md` while the dig prefix's segment is `003_돈…` — different strings, hence
-> different hashes. Nothing may assume the physical dig prefix is a substring of the physical summary
-> key, the way the logical ones are related. Every consumer that relies on that relationship
-> (`remap()`, `MODEL_KEY`, `pdfCacheKey`) works on **logical** keys and is unaffected; the constraint
-> is only that nothing new starts deriving one physical key from another.
+Round-1 **H3**. `SAFE` requires one *or more* characters, so `''` would take the hash branch — and
+**both** production prefix shapes split to a trailing empty segment: `''` → `['']`, and
+`dig/${base}/` → `['dig', base, '']`. Both resulting failures are silent, measured: `list` of an
+absent folder returns `[]` with no error, and `remove` of an absent object reports success with
+`removed=0`.
+
+Left unstated, that yields `deletePrefix(p, '')` silently deleting nothing when a playlist is
+removed — and since the DB rows are gone by then (`app/api/playlists/[id]/route.ts:75`), **nothing
+would ever reference those blobs again** — and `list(p, 'dig/{base}/')` returning `[]` for every
+playlist, making every paid dig section invisible product-wide.
+
+**Rule: encoding applies to non-empty segments; empty segments pass through.** A trailing `/`
+survives encoding, and `''` encodes to `''`.
+
+#### 3.2.2 Canonically-equivalent logical keys are the same logical key
+
+The encoder hashes `NFC(s)`, so NFD and NFC forms of one segment map to one physical object. That is
+deliberate — Storage is byte-exact and macOS is not (§2.5) — but it means **the map from raw logical
+keys is not injective**, and v1 asserted flat injectivity while also requiring behavior 3. The honest
+statement, which §3.5 then makes true throughout:
+
+> The encoder is injective **on NFC-normalized logical keys**. Canonically-equivalent logical keys are
+> deliberately identified, and the seam treats them as *the same logical key* everywhere.
+
+The two branches cannot collide structurally: a hashed segment contains `=`, which `SAFE` forbids.
+`=` is the marker because Storage accepts it (§2.1) and `slugify` can never emit it.
+
+> **Encoding is per segment, so related keys hash independently.** The summary key's segment is
+> `003_돈….md` while the dig prefix's segment is `003_돈…` — different strings, different hashes.
+> Nothing may assume the physical dig prefix is a substring of the physical summary key. Every
+> consumer relying on that relationship (`remap()`, `MODEL_KEY`, `pdfRelPath`) works on **logical**
+> keys and is unaffected.
 
 ### 3.3 `list()` does not invert the encoding
 
-This is the step that makes a non-reversible encoding legal, and it is the whole reason §2.3 stopped
-being a constraint.
-
-**All three production `list()` callers pass a logical prefix they already hold, and read back leaves
-that are pure ASCII:**
+All three production `list()` callers pass a logical prefix they already hold and read back leaves
+that are pure ASCII:
 
 | Caller | Prefix passed | Leaf shape |
 |---|---|---|
 | `lib/cloud-sync/reconcile-serial.ts:102` | `dig/${base}/` | `{sectionId}.r{V}.md` |
-| `lib/dig/cloud/load-dig-for-serve.ts:34` | `dig/${base}/` | `{sectionId}.r{V}.md` |
+| `lib/dig/cloud/load-dig-for-serve.ts:33` | `dig/${base}/` | `{sectionId}.r{V}.md` |
 | `app/api/videos/[id]/dig-state/route.ts:47` | `dig/${base}/` | `{sectionId}.r{V}.md` |
 
-`dig-state/route.ts:50` proves the leaf shape — it parses with `/\/(\d+)\.r\d+\.md$/`. A dig section
-is identified by an **integer** (`startSec`), never by a heading slug. The only non-ASCII component of
-these keys is `base`, and `base` arrives *in the caller's prefix*.
+`dig-state/route.ts:50` pins the leaf shape — it parses with `/\/(\d+)\.r\d+\.md$/`. A dig section is
+identified by an **integer** (`startSec`), never a heading slug. Both round-1 reviewers verified this
+table independently.
 
-So `list(p, prefix)`:
+So `list(p, prefix)`: encode the prefix, enumerate physical objects beneath it, strip the **physical**
+prefix from each result, prepend the **logical** prefix the caller supplied, return. Correct by
+construction; no inversion.
 
-1. encode `prefix` → physical prefix,
-2. enumerate physical objects beneath it,
-3. strip the **physical** prefix from each result,
-4. prepend the **logical** prefix the caller supplied,
-5. return.
-
-Correct by construction. No inversion anywhere.
-
-**Fail-closed guard.** If a returned leaf itself carries the `=h` marker, the adapter cannot name it
-and **throws**. It must never silently drop the entry: a dropped leaf is an invisible dig section,
-i.e. paid content vanishing, which is #36's own failure class re-entering through the fix. No
-production path can reach this today (only tests call `list(p, '')`), which is exactly why it needs
-to be loud if one ever does.
+**Fail-closed guard, on every segment.** Round-1 **M1**: v1 checked only the leaf, but
+`collectObjectPaths` recurses into folders (`supabase-blob-store.ts:159-165`) and the returned
+relative key can contain intermediate directory segments. A hashed *intermediate* segment would slip
+past a basename-only check, the caller would `get()` it, the adapter would hash the already-hashed
+segment, the read would 404, and `load-dig-for-serve.ts:39` would `continue` — silently dropping a
+paid dig section, which is the exact outcome the guard exists to prevent. **The marker check applies
+to every segment of the relative path the adapter is about to return, and throws.** Unreachable today
+(dig blobs are flat), which is why it must be loud if it ever becomes reachable.
 
 ### 3.4 Where the change lands
 
-`SupabaseBlobStore` only. `objectKey()` is the single funnel for `put`/`get`/`tryGet`/`delete`/
-`promote`/`putStaged`, so encoding there covers six of the eight methods:
-
-| Site | Change |
-|---|---|
-| `objectKey()` (:15) | encode each segment of `key` |
-| `deletePrefix()` (:131) | encode the prefix |
-| `list()` (:143-145) | encode the prefix; re-attach the caller's logical prefix to results; guard per §3.3 |
-| `copy()` | none — delegates to `copyBlob`, which re-enters through `tryGet`/`put` |
+`SupabaseBlobStore` — `objectKey()` (:15) is the single funnel for `put`/`get`/`tryGet`/`delete`/
+`promote`/`putStaged`; `deletePrefix` (:131) and `list` (:143-145) encode their prefix, and `list`
+re-attaches the caller's logical prefix and applies the §3.3 guard. `copy()` needs no change — it
+delegates to `copyBlob`, which re-enters through `tryGet`/`put` with logical keys (verified:
+`blob-store.ts:126-131` takes `Pick<BlobStore, 'tryGet' | 'put'>`).
 
 `LocalFsBlobStore` and `InMemoryBlobStore` implement **identity**: both back ends accept Unicode, and
-the local vault must keep its names (§1). The encoder is a pure module so all three adapters can be
-tested against the same contract.
+the vault must keep its names (§1).
 
-### 3.5 What does not change
+> Round-1 **L2**: v1 claimed "all three adapters can be tested against the same contract". False for
+> `list()` — given a non-ASCII *leaf*, local and in-memory return it while Supabase throws (§3.3).
+> **Shared contract:** `put`/`get`/`tryGet`/`copy`/`promote`/`delete` round-trips, and `list` on a
+> prefix whose leaves are ASCII. **Deliberately backend-specific:** `list` on a prefix whose leaves
+> are not ASCII.
 
-Nothing above the seam. Specifically, and deliberately:
+### 3.5 One equivalence relation, not two — the B1 fix
+
+Both round-1 reviewers found the same Blocking. If the physical layer identifies NFC/NFD variants but
+every comparison above it stays byte-exact, then `reconcileCloudBase` copies old→new (a no-op,
+because they are the same object, reported as `{ok: true, already: true}`), advances the metadata, and
+reaches its cleanup:
+
+```ts
+// lib/cloud-sync/reconcile-serial.ts:357-361
+for (const { from, to } of plan) {
+  if (to === from) continue;
+  try { await cloud.blob.delete(cloud.p, from); } catch { cleanupFailures += 1; }
+}
+```
+
+`to === from` is byte-exact, so it deletes `from` — **the object the row it just wrote now points
+at**. Summary, magazine model and every paid dig section, gone, while the function returns
+`{ok: true, action: 'relocated', cleanupFailures: 0}` and the sync report says success. Reachable via
+§2.5's `recoverOrphanedVideos` path.
+
+**Fix — make NFC canonical at the logical seam too, so "physically the same object" and "logically
+the same key" are one equivalence relation.** Four sites:
+
+1. `normalizeLogicalKey` (`blob-store.ts:96`) NFC-normalizes each segment. `copyBlob`'s short-circuit
+   then fires *before any I/O* and returns `{ok: true, already: true}` — the correct answer.
+2. `reconcileCloudBase`'s cleanup (`reconcile-serial.ts:359`) compares
+   `normalizeLogicalKey(to) === normalizeLogicalKey(from)`.
+3. `describeDivergence` (`reconcile-serial.ts:151-155`) compares NFC-normalized bases, so a
+   normalization-only difference is `agreed` and no relocation is attempted at all.
+4. The relocation plan's collision check (`reconcile-serial.ts:262-276`) holds **NFC-normalized**
+   destinations in its Set, so two sources aliasing onto one destination is `ambiguous-mapping`
+   rather than silently sequenced.
+
+### 3.6 What does not change
 
 - `lib/slugify.ts` — untouched. Vault filenames keep full-length Unicode.
-- `video.summaryMd`, `artifacts.summaryMd.key` — still the logical (possibly Unicode) name.
+- `video.summaryMd`, `artifacts.summaryMd.key` — still the logical name.
 - `lib/cloud-sync/sync-run.ts` — still copies the key verbatim; §2.6 is fixed underneath it.
-- `lib/cloud-sync/reconcile-serial.ts` `remap()` — still operates on logical keys only.
-- The three Unicode-aware guards (§5) — still correct, because they validate *logical* keys.
+- `remap()` — still operates on logical keys only.
+- The three Unicode-aware guards (§5) — still correct; they validate *logical* keys.
+- **ADR-0008's money guard survives.** Its corroboration argument depends on the MD key and the model
+  key living under the same `${p.id}/${p.indexKey}/` grant. `objectKey` encodes only `key`, so both
+  physical keys stay under that prefix (verified in round 1 by both halves).
 
 ---
 
-## 4. Why no migration is needed, and why that is provable
+## 4. Why no migration is needed, and exactly how far that is proven
 
-**The set of keys the encoding changes is exactly the set Storage would have rejected.** A key made
-only of `SAFE` characters and within `LIMIT` is emitted byte-identically; a key outside that set was
-refused at upload and therefore **is not in the bucket**. No existing object can change address.
+The encoder changes a key iff it is `¬SAFE` **or** longer than `LIMIT`. With `LIMIT = 255`:
 
-This is a proof, not an expectation — but it rests on one premise that must be **verified before
-deploy, not assumed**: that no key already in the bucket falls outside `SAFE`. Storage accepts space,
-`(`, `)`, `+`, `=` (§2.1), which `SAFE` excludes, so such a key would be re-addressed and orphaned.
-Nothing in the codebase can emit those characters, but "nothing can emit it" is a claim about the
-code, and the bucket is the subject.
+- **The length half is now vacuous within the bucket.** A segment over 255 characters was rejected at
+  upload (§2.2) and is not there. Hashing such a key is a *fix*, not a re-addressing. v1's `LIMIT = 96`
+  is what made this half unsound (round-1 **H1**).
+- **The charset half is a strict subset of "rejected" *except* for five characters.** Storage accepts
+  space, `(`, `)`, `+` and `=` (§2.1), which `SAFE` excludes. A key using one of those is storable
+  today and *would* be re-addressed.
 
-**Gate — FAILS IF:** `select name from storage.objects where bucket_id = 'artifacts'` returns any row
-having a path segment that either does not match `^[A-Za-z0-9._-]+$` **or exceeds `LIMIT` (96)
-characters**. Run against **prod** before deploy. Put the SQL in a file (`docs/plugins.md`, and the
-`claude_ro` recipe in memory).
+So the proof is: **no migration is needed iff no existing object name uses a character outside
+`SAFE`.** Nothing in the codebase can emit one — `slugify` maps every non-alphanumeric to `-`, uuids
+and `_staging` are alphanumeric — but that is a claim about the code, and the bucket is the subject.
 
-> The length half of that gate is not decoration. `encodeSegment` hashes on *either* condition, so a
-> segment that is `SAFE` but longer than `LIMIT` would also be re-addressed and orphaned. Checking
-> only the charset would have proved half of what §4 claims. Nothing in the codebase can produce one
-> — `slugify` caps at 60, so the longest emitted segment is ~67 — but that is again a claim about the
-> code, and the bucket is the subject.
+**Gate — FAILS IF:** any `storage.objects` row in `bucket_id = 'artifacts'` has a path segment
+**after the first two** that does not match `^[A-Za-z0-9._-]+$`.
+
+> Round-1 **M3(b)**: the segment predicate must skip `p.id` (owner uuid) and `p.indexKey` (playlist
+> key). `objectKey` encodes only `key` (`supabase-blob-store.ts:15-18`), so flagging those two would
+> report a Blocking for segments this change cannot re-address. The length half of v1's gate is
+> **dropped** — it is vacuous per above.
 
 ### 4.1 ⛔ The gate CANNOT RUN today — `claude_ro` is denied on schema `storage`
 
-Attempted 2026-08-14. `select … from storage.objects` as `claude_ro` returns:
-
-```
-ERROR:  permission denied for schema storage
-```
-
-**This is the same shape as the `supabase_migrations` denial** fixed on 2026-08-12: the read-only
-role built to answer questions about prod cannot reach the one object the question is about. Two
-grants fix it permanently. They require `postgres` (the schema is owned by it and `claude_ro` is not
-superuser), so **the user must run them in the Supabase SQL editor**:
+Attempted 2026-08-14: `select … from storage.objects` as `claude_ro` returns
+`ERROR: permission denied for schema storage`. Same shape as the `supabase_migrations` denial fixed
+2026-08-12. Two grants fix it permanently; they need `postgres`, so **the user must run them**:
 
 ```sql
 grant usage on schema storage to claude_ro;
@@ -315,30 +380,26 @@ grant select on storage.objects to claude_ro;
 Until then §4 is **unverified**, and this slice must not be deployed to prod on the assumption that it
 is a zero-migration change. It does **not** block writing the plan or the implementation.
 
-> ⚠ **The first version of this gate reported a false PASS, and that is worth recording.** Run without
-> `ON_ERROR_STOP=1`, `psql` printed the "VIOLATIONS (must be zero rows)" header, produced no rows
-> because the query had *errored*, and continued — output that reads exactly like a clean result. The
-> gate must therefore be run with `-v ON_ERROR_STOP=1` and its **exit code checked**, so a denial is a
-> loud failure rather than an empty success. Per the project rule: *"Cannot run" is a FAILURE, never a
-> pass.* A gate that cannot distinguish "no violations" from "I was not allowed to look" is worse than
-> no gate, because it manufactures confidence. The working runner is in the plan's task for this gate.
+> ⚠ **The first version of this gate reported a false PASS.** Run without `ON_ERROR_STOP=1`, `psql`
+> printed the "VIOLATIONS (must be zero rows)" header, produced no rows because the query had
+> *errored*, and continued — output indistinguishable from a clean result. The gate must run with
+> `-v ON_ERROR_STOP=1` and its **exit code checked**. Per the project rule: *"Cannot run" is a
+> FAILURE, never a pass.* A gate that cannot distinguish "no violations" from "I was not allowed to
+> look" manufactures confidence. (Round-1 **M3(a)** raised the same point independently.)
 
 ---
 
 ## 5. The three guards that blessed Unicode keys
 
-These are not bugs and are **not changed**, but the spec records why they exist so the next reader
-does not "fix" them:
+Not bugs, and **not changed**:
 
 - `lib/html-doc/assert-cloud-summary-md-key.ts:6` — explicitly blesses `0007_한국어.md`.
 - `lib/html-doc/build-doc-html.ts:18` — Unicode-aware "so Korean-slug filenames are admitted".
 - `lib/serial-migrate-exec.ts:26` — the NFC-normalizing directory scan.
 
-Each is internally correct and validates faithfully what `slugify` produces. What none could check is
-whether that shape is **acceptable to the system on the other side of the seam**. A validator written
-from the producer's contract always agrees with the producer; only a call to the consumer finds this
-class of defect. After this slice they are correct *and* their subject is correct: they validate
-logical keys, and logical keys really are Unicode.
+Each validates faithfully what `slugify` produces. What none could check is whether that shape is
+**acceptable to the system on the other side of the seam**. A validator written from the producer's
+contract always agrees with the producer; only a call to the consumer finds this class of defect.
 
 ---
 
@@ -346,102 +407,109 @@ logical keys, and logical keys really are Unicode.
 
 | # | Behavior | Verified by |
 |---|---|---|
-| 1 | A pure-ASCII logical key encodes to itself, byte-identically | unit + property |
-| 2 | A non-ASCII logical key encodes to an accepted physical key | unit + integration (real Storage) |
-| 3 | NFC and NFD forms of one title encode to the **same** physical key | unit |
-| 4 | Two different logical keys never share a physical key | property |
-| 5 | Every encoded segment is ≤ 65 chars, and the worst-case full path ≤ 200 | property |
+| 1 | A `SAFE` logical key ≤ `LIMIT` encodes to itself, byte-identically | unit + property |
+| 2 | A non-ASCII logical key encodes to an accepted physical key | unit + integration |
+| 3 | NFC and NFD forms of one segment encode to the **same** physical key | unit |
+| 4 | The encoder is injective **on NFC-normalized** logical keys | property |
+| 5 | Every encoded segment is ≤ 65 chars; identity segments are ≤ 255 | property |
 | 6 | `put` then `get` on a Korean key round-trips the bytes | integration |
 | 7 | `putStaged` → `promote` on a Korean key lands at the right final address | integration |
 | 8 | `list(p, 'dig/{korean base}/')` returns **logical** keys | integration |
-| 9 | `list()` throws on a leaf it cannot name, rather than dropping it | unit |
-| 10 | `deletePrefix` on a Korean base removes exactly that base's objects | integration |
-| 11 | `copy()` of a Korean-based dig blob to a new base works end to end | integration |
-| 12 | Local and in-memory adapters are identity — a Korean key stays Korean on disk | unit |
-| 13 | A Korean-titled video ingests end to end and the summary is readable | integration |
-| 14 | A Korean-titled video syncs local → cloud (§2.6) without failing | integration |
+| 9 | `list()` throws on **any segment** it cannot name, rather than dropping it | unit |
+| 10 | `deletePrefix(p, '')` removes every object under the playlist root, including non-ASCII-keyed | integration |
+| 11 | `list(p, 'dig/{base}/')` and `list(p, 'dig/{base}')` return the same set | unit |
+| 12 | `copy()` of a Korean-based dig blob to a new base works end to end | integration |
+| 13 | Local and in-memory adapters are identity — a Korean key stays Korean on disk | unit |
+| 14 | A Korean-titled video ingests end to end and the summary is readable | integration |
+| 15 | A Korean-titled video syncs local → cloud (§2.6) without failing | integration |
+| 16 | **Relocating a base that differs from local's only by normalization loses nothing** — the new key reads, the model and every dig read, and the ledger does not move | integration |
+| 17 | `encodeSegment` is identity on the longest key `CLOUD_SUMMARY_MD_KEY` admits (128-char base + `.md`) | unit |
+| 18 | The §4 gate's SQL threshold and predicate are derived from the encoder module, not typed | check script |
+
+Behavior **16** is the B1 falsifier: against v1 as written, step (a) returns `null`.
 
 ---
 
 ## 7. Testing
 
-TDD per `docs/process-checklists.md`. The encoder is a pure function, so most of this is fast and
-offline; behaviors 2, 6–8, 10, 11, 13, 14 need the live local Supabase stack.
+TDD per `docs/process-checklists.md`. The encoder is pure, so most of this is offline; behaviors 2, 6–8,
+10, 12, 14–16 need the live local Supabase stack.
 
-**Property tests carry the weight.** Behaviors 1, 4 and 5 are universally quantified — they are the
-real content of "total, bounded, identity, injective" — and a handful of examples would not establish
-them. This is also where the deleted precondition's protection actually lives (§9).
+**Property tests carry the weight** for 1, 4 and 5. Behavior 4 quantifies over **NFC-normalized**
+inputs — stating it that way is what makes it writable at all (round-1 **M2**: v1's behaviors 3 and 4
+contradicted each other, and *B1 is exactly what behavior 4 would have caught had it been stateable*).
+A separate test asserts the seam's comparison helpers agree with the encoder about which keys are the
+same — that is the §3.5 contract, and it is the real guard against B1's whole class.
 
-**Mutation testing**, per this project's standing practice: each guard must be shown to fail when
-the thing it protects is broken. Specifically — remove the NFC normalization and behavior 3 must go
-red; widen `SAFE` to include `=` and behavior 4 must go red; remove the `list()` marker guard and
-behavior 9 must go red. A guard whose mutation survives is untested, and "untested" is
-indistinguishable from "does nothing".
+**Mutation testing**, per standing practice. Remove NFC from `normalizeLogicalKey` and behavior 16 must
+go red; widen `SAFE` to include `=` and behavior 4 must go red; restrict the `list()` marker check to
+the leaf and behavior 9 must go red; encode empty segments and behaviors 10 and 11 must go red. A guard
+whose mutation survives is untested, and "untested" is indistinguishable from "does nothing".
 
-Behavior 5 asserts **200**, not the measured 267. The bound the encoder must satisfy is a property of
-the encoder; 267 is a property of today's storage-api and belongs in this document, not in the code.
-Testing against 200 leaves visible headroom and means a future storage-api that tightens the limit
-does not silently invalidate the suite.
+Behavior 5 asserts **65** and **255**, both properties of the encoder and of the measured ceiling. The
+per-segment ceiling belongs in this document and in one exported constant — not typed into the SQL
+gate (behavior 18).
 
-**Money guard.** Behaviors 13 and 14 must assert that the ledger did not move, using the pattern from
-M3.1-A (PR #98) — measure spend, do not assert an intention.
+**Money guard.** Behaviors 14–16 must assert the ledger did not move, using the M3.1-A pattern (PR #98)
+— measure spend, do not assert an intention.
 
 ---
 
 ## 8. Alternatives considered and declined
 
-### 8.1 Quoted-printable / any reversible encoding, with a length cap on the slug
+### 8.1 A reversible encoding (base64url / quoted-printable / punycode)
 
-Recommended earlier in the design discussion, then withdrawn. It requires capping non-ASCII vault
-filenames at ~24 characters (from 60) to fit the 149-character budget — a real cost to the user's
-data — and that cost bought a property (reversibility) that §3.3 then showed is not required.
+⚠ **v1 declined this as impossible. It is not** — §2.3 measures base64url of a worst-case Hangul slug
+at 247 characters against a 255 ceiling. v1's "cap non-ASCII vault filenames at ~24 characters" was
+arithmetic on a budget that does not exist, and that cost to the user's data was never real.
+
+Declined in v2 **on its merits**:
+
+- **Headroom.** 247 of 255 is 8 characters of margin, and it depends on `slugify`'s 60-character cap
+  staying at 60. Hashing is 65 characters worst case — 190 to spare — and is insensitive to that cap.
+- **Reversibility buys nothing here.** §3.3 shows `list()` never needs to invert, because the caller
+  supplies the only non-ASCII part of the answer.
+
+The cost is debuggability: a Korean video's object is no longer self-describing in the bucket. The
+`head` run keeps `003_` visible and the DB row holds the readable name.
 
 ### 8.2 Opaque keys plus Supabase user metadata
 
-Measured and viable (§2.4), and it preserves full-length vault names. Declined on three counts:
-
-1. **One extra round trip per object on every `list()`**, because `list()` does not return user
-   metadata and `info()` is per-object. One of the three callers is `load-dig-for-serve`, on the
-   deadline-bounded **money path** whose bounding took seven review rounds (#46, PR #67).
-2. **A new failure state:** an object that exists but whose name cannot be recovered — a third value
-   in the subsystem where absent-vs-unreadable has already cost a Blocking, three Highs and a live
-   double charge.
-3. **It buys nothing §3 does not.** Once `list()` re-attaches the caller's prefix, the logical name
-   never needs recovering from Storage at all.
+Measured and viable (§2.4). Declined: `list()` does not return user metadata, so recovering N names
+costs N `info()` calls — one caller is `load-dig-for-serve`, on the deadline-bounded money path whose
+bounding took seven review rounds (#46, PR #67). It also adds a new failure state (an object that
+exists but cannot be named) to the subsystem where absent-vs-unreadable has already cost a Blocking,
+three Highs and a live double charge. And §3.3 removes the need.
 
 ### 8.3 ASCII-ify `slugify` globally
 
-What the backlog first imagined. Contradicts decision 1 in §1: the slug is also the vault filename,
-so this renames the user's files, and it degrades the measured title to the slug `15`.
+Contradicts decision 1 in §1: the slug is also the vault filename, so this renames the user's files,
+and it degrades the measured title to the slug `15`.
 
 ### 8.4 Opaque stable keys addressed by `videoId`
 
-Closest to the ⏸ **parked** stable-blob-addressing work (ADR-0006/0007). It would change the address
-of **every** object in the bucket, requiring a full prod migration, and the roadmap says in terms:
-*"Do not resume it by momentum."* Named here so the overlap is recorded rather than stumbled into.
+Closest to the ⏸ **parked** stable-blob-addressing work (ADR-0006/0007). Changes the address of every
+object in the bucket, requiring a full prod migration, and the roadmap says *"Do not resume it by
+momentum."* Named so the overlap is recorded rather than stumbled into.
 
 ---
 
 ## 9. The precondition that is deliberately absent
 
-The brainstorm concluded that the highest-value change was a precondition checking storability
-*before* Gemini is called, converting a post-money failure into a pre-money one. **That reasoning was
-right about the defect and wrong about this fix.**
+v1's brainstorm concluded that the highest-value change was a precondition checking storability
+*before* Gemini is called. **That reasoning was right about the defect and wrong about this fix.**
 
-The encoding in §3.2 is **total**: every logical key produces an accepted physical key. If every
-write reaches Storage through the seam — which §3.4 establishes — then no unstorable key can exist,
-and a precondition asking "is this key storable?" has no observation that would make it fail. Per
-`docs/dev-process.md`, that is not a gate; it is a decision wearing a checkbox. Adding it would have
-been a fresh instance of the exact defect `scripts/check-gate-falsifiability.py` was built to catch,
-inside the fix for a defect found the same way.
+The encoding is **total**: every logical key produces an accepted physical key. Every write reaches
+Storage through the seam — verified in round 1 by both halves: the only `client.storage.from(` in
+non-test code is `supabase-blob-store.ts:20`, with no signed URLs, no public URLs, and no SQL touching
+`storage.objects` outside `0007_storage_and_rpcs.sql`. So no unstorable key can exist, and a
+precondition asking "is this key storable?" has no observation that would make it fail. Per
+`docs/dev-process.md` that is not a gate; adding it would have been a fresh instance of the defect
+`scripts/check-gate-falsifiability.py` exists to catch.
 
-The protection is therefore relocated, not dropped:
-
-- **totality** becomes property test 5 (behavior table §6), which *can* fail and would fail loudly if
-  someone later narrowed the encoder;
-- **the "500 looks transient" hazard** (§2.2) becomes moot on the write path, because over-length is
-  now unreachable — but it remains true of Storage generally, and is recorded here as a known
-  property rather than being fixed speculatively.
+The protection is relocated, not dropped: totality becomes property test 5, which *can* fail and would
+if someone later narrowed the encoder. (Round 1 confirmed this reasoning, conditional on M2 — behavior
+4 being stateable, which §3.2.2 now makes it.)
 
 ---
 
@@ -449,11 +517,12 @@ The protection is therefore relocated, not dropped:
 
 | Risk | Handling |
 |---|---|
-| A key already in prod uses ` `, `(`, `)`, `+` or `=`, or a segment over 96 chars, and would be re-addressed | §4 gate, run against prod **before deploy**. Blocking if it returns rows. ⛔ **Currently unrunnable** — needs two grants from the user, §4.1 |
-| The 267 bound differs on prod's storage-api version | Design is insensitive (worst case ~70 chars). Not a blocker; do not hardcode 267 in the encoder |
-| Bucket browsing gets harder for non-ASCII titles | Accepted. The `head` run keeps `003_` visible and the DB row holds the readable name |
-| SHA-256 truncated to 22 base64url chars (~132 bits) | Collision risk negligible, and scoped within one owner + playlist prefix |
-| The two dead-lettered prod jobs stay unrecovered | Accepted by decision (§1). Regenerating costs a third charge; not done automatically |
+| An existing prod key uses ` `, `(`, `)`, `+` or `=` and would be re-addressed | §4 gate before deploy. Blocking if it returns rows. ⛔ **Currently unrunnable** — needs two grants, §4.1 |
+| The 255-per-segment bound differs on prod's storage-api version | Design is insensitive (worst case 65). Do not hardcode it anywhere but the one exported constant |
+| §3.5 changes key *equality* on two money paths | Behavior 16 + the comparison-agreement test; mutation-checked. This is the highest-risk part of the slice and belongs in its own task |
+| Bucket browsing gets harder for non-ASCII titles | Accepted (§8.1). `head` keeps `003_` visible; the DB row holds the readable name |
+| SHA-256 truncated to 22 base64url chars (~132 bits) | Negligible, and scoped within one owner + playlist prefix |
+| The two dead-lettered prod jobs stay unrecovered | Accepted by decision (§1) |
 
-**Not in scope:** the render-cache addressing question (backlog #25), the parked blob-addressing
-schema, and any change to `slugify` or to vault filenames.
+**Not in scope:** render-cache addressing (backlog #25), the parked blob-addressing schema, and any
+change to `slugify` or to vault filenames.
