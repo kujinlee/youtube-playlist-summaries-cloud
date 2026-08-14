@@ -272,6 +272,53 @@ def check_backlog_ids(errors: list[str]) -> int:
     return len(seen)
 
 
+# ── the advisory count, DERIVED rather than typed ────────────────────────────────────────────────
+# `docs/roadmap-to-launch.md` states the size of the advisory list in prose: "Triage the N spec docs".
+# That is a hand-maintained cache of a number this script already computes, and it rotted exactly the
+# way the roadmap's test counts did — measured 2026-08-14, the roadmap said 19 while this script
+# printed 20, and nothing compared them.
+#
+# WHY CHECK IT RATHER THAN DELETE IT. The sibling precedent went the other way: `master = the merge of
+# PR #N` was DELETED instead of policed, because `git log` always knew the answer and no reader needed
+# the cache. This number is different in the way that matters — the roadmap item IS the triage backlog,
+# so its size is the thing a fresh session is being asked to act on, and making them run a script to
+# learn it is how an advisory list becomes an unread one.
+#
+# FAIL-CLOSED ON A MISSING ANCHOR. If the sentence is reworded so the pattern stops matching, this
+# does NOT quietly pass — a vocabulary that silently stops matching is worse than no check at all,
+# because the green tick then certifies nothing. Reword the roadmap and this fails until the pattern
+# is updated with it, which is the loud outcome.
+ADVISORY_COUNT_RE = re.compile(r"Triage the (\d+) spec docs")
+
+
+def check_advisory_count(errors: list[str], actual: int) -> None:
+    path = ROOT / "docs" / "roadmap-to-launch.md"
+    if not path.exists():
+        errors.append("roadmap-to-launch.md is missing — the advisory count cannot be checked")
+        return
+    text = path.read_text(errors="ignore")
+    matches = ADVISORY_COUNT_RE.findall(text)
+    if not matches:
+        errors.append(
+            "roadmap-to-launch.md no longer contains 'Triage the N spec docs' — the advisory-count "
+            "anchor is gone, so this check verified NOTHING. Restore the phrasing or update "
+            "ADVISORY_COUNT_RE in this script; do not leave it unmatched."
+        )
+        return
+    if len(matches) > 1:
+        errors.append(
+            f"roadmap-to-launch.md states the advisory count {len(matches)} times ({', '.join(matches)}) "
+            "— ambiguous, so this check cannot say which is authoritative. Keep exactly one."
+        )
+        return
+    stated = int(matches[0])
+    if stated != actual:
+        errors.append(
+            f"roadmap-to-launch.md says 'Triage the {stated} spec docs' but {actual} spec/plan docs "
+            f"hold decision markers with no ADR. The count is derived — update the roadmap to {actual}."
+        )
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -290,6 +337,7 @@ def main() -> int:
     print(f"ADR headings (unique)   : {headings}")
 
     unpromoted = report_unpromoted_decisions()
+    check_advisory_count(errors, len(unpromoted))
     if unpromoted:
         print(f"\nADVISORY — {len(unpromoted)} spec/plan docs hold decision markers but cite no ADR.")
         print("Not a failure: promotion is a judgment call. Criteria are in")
