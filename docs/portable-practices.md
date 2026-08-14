@@ -234,6 +234,54 @@ inspecting nothing, and the reported value is indistinguishable from the healthy
 
 ---
 
+## 11. A rule placed in the document for the wrong PHASE does not fire
+
+**Measured: seven dual review rounds, backlog #36, 2026-08-14.**
+
+The rule existed. `docs/review-method.md` had carried it since 2026-08-08: every foundational
+statement in a spec carries `[VERIFIED: file:line]` or `[ASSUMPTION]`, and *"a safety fence,
+credential, or invariant may not be designed on an `[ASSUMPTION]`."* It even anticipated the exact
+failure — *"what must never happen is a premise sitting in a table beside measured facts in the same
+voice."*
+
+That is precisely what happened, five times, and the rule never fired once. **Not because it was
+wrong, weak, or disagreed with — because of where it lived.** `review-method.md`'s read-trigger is
+*"a review round is starting."* A premise defect is committed while **writing** a spec. The author
+had no reason to open the document, and dispatching seven review rounds is not performing one.
+
+| The premise, stated as a fact | Cost | The check that would have killed it |
+|---|---|---|
+| "Storage's limit is 267 chars, whole path" | eliminated 3 alternatives, ~2 rounds | one 4-segment upload |
+| "`list()` must invert the encoding" | forced a reversible encoding, ~1 round | read the 3 callers |
+| "No path derives a key from `readdir`" | wrong fix to a Blocking | widen the grep by two directories |
+| "The store needs ASCII-safe keys" | **rounds 3–7 entirely** | read the guard's own docstring |
+| "The branded type enumerates write sites" | the whole scope decision | `tsc --noEmit`, 2 minutes |
+
+Every one was load-bearing, cheap to check, and **written as a fact rather than as a premise**. A
+fact gets believed; a premise gets audited. The reviewers caught all five — the rule works, but only
+as a net *downstream* of the mistake, never as a check *upstream* of it.
+
+**The portable lesson is not "write the rule". It is: for each rule you already have, name the phase
+in which the defect it prevents is COMMITTED, and check the rule is reachable from there.** A rule
+indexed by when it is *enforced* will be read by the enforcer, who is not the person who can still
+avoid the mistake.
+
+Two corollaries, both measured here:
+
+- **Duplicating the rule is the wrong repair; duplicating the POINTER is the right one.** Two copies
+  drift — this repo has a memory about duplicate mechanisms being the shadow of duplicate protocols.
+  The fix was one sentence in the authoring checklist that names the rule and links it.
+- **A tag that separates *read* from *believed* still misses a premise measured against the wrong
+  subject.** The 267 figure was legitimately `[VERIFIED]` — a real probe, against the real system,
+  that round. It varied one path segment under a fixed prefix, so *both* rival hypotheses predicted
+  the identical observation. **Ask of any measurement a fork rests on: could this experiment have
+  returned the other answer?** An instrument that cannot report success by construction.
+
+`scripts/check-premises.py` mechanises the visible half — it cannot tell you a premise is wrong, only
+that it is invisible. It also reports **coverage**, because on the day it was written 0 of 78 specs
+had a premises section at all, and a violation count of 0 over an empty subject is the failure mode
+in §2 of this file.
+
 ## Not yet mined
 
 **Re-enumerated 2026-08-13** (counted, not recalled): **61 memory files**, **633 review documents**,

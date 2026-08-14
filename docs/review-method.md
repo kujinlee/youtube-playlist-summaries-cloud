@@ -89,6 +89,31 @@ So every foundational statement in a spec, review brief or ADR carries a tag:
 `[ASSUMPTION]` today — the point is not that someone once checked, it is that someone checked *this*
 round.
 
+### `[VERIFIED]` also asserts the measurement was of the RIGHT SUBJECT (added 2026-08-14)
+
+The tags above separate *read* from *believed*. They do **not** catch a premise that was properly
+measured — against the live system, this round — and measures **the wrong thing**. That premise wears
+`[VERIFIED]` legitimately and is still false.
+
+**Measured, backlog #36.** A probe bisected Supabase Storage's key-length limit and reported
+*"267 characters, whole path"*. It was a 12-character prefix plus a **255-character segment**: the real
+limit is **255 per path segment**, with no whole-path bound to at least 1216. The number was recorded
+in a section titled *What was measured* and used to eliminate three design alternatives. It survived
+two rounds.
+
+The probe was not sloppy. It varied **one segment under a fixed prefix**, so *both* hypotheses —
+"255 per segment" and "267 per path" — predicted the identical observation. **No possible outcome of
+that experiment could have distinguished them.**
+
+> **So a `[VERIFIED]` tag on a measurement must answer one more question: *could this experiment have
+> returned the other answer?*** If every rival hypothesis predicts the same observation, you have
+> confirmed your framing, not your claim. Vary the thing the rival hypothesis says is irrelevant — one
+> four-segment upload would have refuted this in seconds.
+
+This is the same defect as a guard whose operands cannot disagree, and as an allowlist validator that
+only ever asks its own producer: **an instrument that cannot return the other answer reports success
+by construction.** Ask it of any number a design fork rests on.
+
 **And when a fence depends on caller behaviour, write a CONTRACT TEST at the runtime boundary.**
 Prose in a design doc is a rule that depends on remembering, which is the failure mode this whole
 document exists to remove. See `tests/lib/blob-addressing-caller-contract.test.ts`: it asserts the

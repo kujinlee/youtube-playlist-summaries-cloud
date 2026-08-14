@@ -112,6 +112,18 @@ jobs:
       - name: Ratchet contract
         run: python3 scripts/check-ratchet-contract.py
 
+      # The premise rule has existed since 2026-08-08 and did not fire once across SEVEN dual review
+      # rounds on backlog #36 — because it lives in review-method.md, read when a review STARTS, while
+      # a premise defect is committed while WRITING a spec. Five load-bearing premises were stated as
+      # facts; reviewers caught all five, each a round after the design had been built on it. This
+      # checks the artifact instead of asking the author to have read something. It reports COVERAGE
+      # because 0 violations over 0 premise sections is not the same fact as 0 over 78.
+      - name: Premise tags (Phase 1 specs)
+        run: python3 scripts/check-premises.py
+
+      - name: check-premises self-test
+        run: python3 scripts/check-premises.py --self-test
+
       # A money guard lives three files away from a grant that does not know it holds it up. The
       # serve path spends on `tryGet -> absent`, which on Supabase means absent OR RLS-denied; it is
       # safe only because the caller already read the markdown from the same folder, and that is

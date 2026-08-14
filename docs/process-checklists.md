@@ -160,6 +160,23 @@ Violating any rule below means the E2E step is not done.
 The spec is the human gate, so these are what "the spec is complete" means. Each was added because
 its absence was discovered *after* implementation.
 
+**⚠ Every foundational statement carries a premise tag — `[VERIFIED: file:line]` or `[ASSUMPTION]`,
+defined in [`review-method.md`](review-method.md) §*Premise tags*. Nothing load-bearing may rest on an
+`[ASSUMPTION]`.** The rule is not restated here; only its **read-trigger** is, and that is the entire
+point of this paragraph.
+
+> **Why it is duplicated as a pointer (added 2026-08-14, and it cost seven review rounds).** The
+> premise rule was added 2026-08-08 and lives in `review-method.md`, whose read-trigger in
+> `dev-process.md` is *"a review round is starting."* But a premise defect is committed while
+> **writing a spec**, not while reviewing one — so the person best placed to obey the rule has no
+> reason to be reading the document it lives in. Measured on backlog #36: the spec author dispatched
+> **seven** dual review rounds and never opened `review-method.md` once, because dispatching a review
+> is not performing one. Five load-bearing premises were stated as facts; reviewers caught every one,
+> each a full round after the design had been built on it.
+>
+> **A rule placed in the document for the wrong phase does not fire.** The rule worked exactly as
+> written — as a net downstream of the mistake, never as a check upstream of it.
+
    - **For projects with a frontend:** brainstorming includes wireframe + design tokens. `docs/design-spec.md` must contain a `## UI Design` section (ASCII wireframe, token table, badge/component specs) before any Tailwind or styling code is written. The gate is unchanged — user approves the full spec, which now includes the UI section.
    - **For projects that write files:** `docs/design-spec.md` must contain a `## Output File Format` section with: filename convention (with example), required frontmatter/header fields, and an annotated sample file body. No pipeline or file-writing task begins until this section is approved.
    - **For projects with a list/table UI:** `docs/design-spec.md` must enumerate every sort, filter, and grouping operation the user needs — column, direction semantics, and what undefined/missing values do. Discovering missing operations after implementation counts as a spec gap.
