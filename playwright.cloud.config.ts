@@ -19,12 +19,23 @@ import { defineConfig } from '@playwright/test';
  * tracked separately as M3.1-B. What THIS config buys is the thing a manual pass cannot:
  * it runs unattended, every time, for free.
  *
- * NO MONEY IS SPENT ANYWHERE IN THIS SUITE. Every fixture is seeded straight into the local
- * database; no Gemini call and no worker run is involved.
+ * NO MONEY IS SPENT ANYWHERE IN THIS SUITE, and `globalSetup` MEASURES that rather than asserting
+ * it — see tests/e2e/cloud-global.ts. It reads the spend ledger before any project runs and checks
+ * it again as the run's teardown, so the window covers the setup project too and survives a setup
+ * failure that stops the dependent project from ever being scheduled.
  */
 export default defineConfig({
   testDir: './tests/e2e',
   outputDir: './test-results',
+  // The run-level money guard, and the reason a stale fixture cannot be read: ON THE CLI RUNNER it
+  // deletes both fixture files once per invocation, including a partial `--project=cloud --no-deps`
+  // one. ⚠ RUN THIS SUITE FROM THE CLI. In UI mode, `--watch` and the VS Code extension globalSetup
+  // runs once per SESSION, not per run, so the fixture survives every re-run while the database
+  // moves under it — and the money check happens only when the session closes.
+  // cloud-global.ts carries the mechanism and the full list of what the guard cannot see; this
+  // comment is deliberately a pointer rather than a second copy, because the previous version of
+  // these two sentences drifted apart and a reader could not tell which one had been updated.
+  globalSetup: './tests/e2e/cloud-global.ts',
   // Local Supabase is one shared stack — parallel specs would race each other's rows.
   workers: 1,
   use: {

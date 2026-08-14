@@ -16,7 +16,10 @@
  * `DEV_LOGIN_ENABLED === 'true'` AND a local Supabase URL, and fails closed on either.
  *
  * NO MONEY IS SPENT. Everything is seeded directly into the local database; no Gemini call and no
- * worker run is involved anywhere in this suite.
+ * worker run is involved anywhere in this suite. THIS PROJECT IS INSIDE THE MEASURED WINDOW:
+ * cloud-global.ts takes the ledger baseline before any project runs, and checks it as the run's
+ * teardown even when this file fails (round-2 Blocking — the earlier `afterAll` lived in the
+ * dependent project, which Playwright skips entirely when its dependency fails).
  */
 // Side-effect import: loads .env.test.local and aliases the supabase-status names, and THROWS
 // with the exact command to run when the local stack is absent. Reused rather than re-implemented
@@ -31,6 +34,7 @@ import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import { writeModelEnvelope } from '@/lib/html-doc/model-store';
 import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
+import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 
 // CANNOT RUN IS A FAILURE. @supabase/supabase-js's realtime client needs a native WebSocket, which
 // Node has only from 22 — under 20 it dies with "Node.js 20 detected without native WebSocket
@@ -46,20 +50,38 @@ if (major < 22) {
   );
 }
 
-import { AUTH_FILE, FIXTURE_FILE, readLedger, type CloudFixture } from './cloud-fixture';
+import { AUTH_FILE, FIXTURE_FILE, type CloudFixture } from './cloud-fixture';
 
 
 
 setup('create an owner, seed their library, and sign in through /dev-login', async ({ page }) => {
   const svc = adminClient();
-  // FIRST, before anything else touches the database: the baseline the whole suite is judged against.
-  const ledgerBaseline = await readLedger(svc);
   const { user, email, password } = await newUser();
 
   const listedTitle = `E2E Listed ${Date.now()}`;
 
+  // ⚠ THIS FILE BRIEFLY PINNED `guardrail_config`, AND THAT WAS A MONEY REGRESSION. Recorded
+  // because the reasoning was plausible and wrong. The worry was that the integration suite leaves
+  // `daily_cap_cents: 3` behind (serve-model-charge.test.ts), so a render rung would "go green
+  // having proved nothing". Traced, it does not: at_capacity → 503 (serve-summary-core.ts:122) →
+  // the route returns that status, and rung 4 asserts 200 first, so it goes RED. Measured directly
+  // — a run with daily_cap_cents=1 failed rung 4 with `Received: 503`. The pin therefore converted
+  // a FREE red into a PAID red: with headroom restored the same drift reaches reserve_serve_model
+  // and calls Gemini for 6¢. It also raised the local stack's kill-switch from its 500 default
+  // (0011:28) to 5000 permanently, with nothing to restore it. A fixture widening a money control
+  // is the opposite of what this suite is for, and `at_capacity` is exactly the fail-closed brake
+  // it should be leaning on.
   const listed = await seedPlaylist(svc, user.id);
-  await svc.from('playlists').update({ playlist_title: listedTitle }).eq('id', listed.playlistId);
+  // CHECK THE ERROR. seedPlaylist inserts with a NULL playlist_title, and PlaylistSidebar's mount
+  // effect calls backfillPlaylistTitles() whenever any listed row has none — which reaches the REAL
+  // YouTube Data API (app/api/playlists/backfill-titles/route.ts), un-intercepted and invisible to
+  // the spend ledger. PostgREST does not throw when an update matches zero rows, so a silent
+  // failure here would turn a locator timeout into outbound API calls on a suite whose config
+  // promises it runs "for free".
+  const titled = await svc.from('playlists')
+    .update({ playlist_title: listedTitle }).eq('id', listed.playlistId).select('id');
+  if (titled.error) throw new Error(`could not title the seeded playlist: ${titled.error.message}`);
+  if (!titled.data?.length) throw new Error(`no playlist row ${listed.playlistId} to title`);
   const video = await seedPromotedVideo(svc, {
     ownerId: user.id,
     playlistId: listed.playlistId,
@@ -76,11 +98,10 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
   // downstream would be asserting against an empty document. Shape copied from
   // tests/integration/dig-serve-interactive.test.ts — a real parseable section (▶, en-dash range,
   // trailing `s`), not an invention, so the renderer's own parser is what is being exercised.
-  await seedSummaryBlob(
-    svc, user.id, listed.playlistKey, video.base,
+  const summaryMd =
     `# ${'A seeded video with a summary'}\n\n## 2. Encoder\n` +
-    `▶ [2:12–2:20](https://youtu.be/${video.videoId}?t=132s)\nSeeded prose for the e2e journey.\n`,
-  );
+    `▶ [2:12–2:20](https://youtu.be/${video.videoId}?t=132s)\nSeeded prose for the e2e journey.\n`;
+  await seedSummaryBlob(svc, user.id, listed.playlistKey, video.base, summaryMd);
 
   // ⚠ SEED THE MAGAZINE MODEL TOO, OR THE SUITE SPENDS REAL MONEY ON EVERY RUN.
   // MEASURED 2026-08-13: without this, opening the HTML render called resolveMagazineModel, which
@@ -96,7 +117,27 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
     {
       sourceMd: `${video.base}.md`,
       generatedAt: new Date().toISOString(),
-      sourceSections: ['2. Encoder'],
+      // DERIVED, NOT TYPED. This must equal what the serve path derives from the markdown above —
+      // `parsed.sections.map(s => s.title)` at serve-doc.ts:71 — and the transformation is not the
+      // identity: parse.ts:56 (`const title = ord ? ord[2].trim() : headingLine`) strips the leading
+      // ordinal into a separate `numeral` field, so `## 2. Encoder` yields `Encoder`.
+      //
+      // It was hand-written as `['2. Encoder']` for a week. isFresh was permanently false, every
+      // HTML render regenerated through Gemini, and the rung that would have shown it was skipped
+      // BECAUSE of the cost that caused — 24¢ went through the ledger guessing at a contract that
+      // is one line of the parser. Correcting the literal fixed the instance and left the class:
+      // two strings in one file that must agree under a rule defined in another, checked by nothing.
+      //
+      // Ask what happens when it goes stale (memory: hardcode only what fails loudly). It fails
+      // EXPENSIVELY and MUTELY — the rung says "text not visible", the guard says "the ledger
+      // moved", neither says "the seed". So it is derived. Adding a second `##` section to the
+      // markdown above now cannot silently re-arm it, which is the exact next edit backlog #44 wants.
+      //
+      // The trade, stated: the fixture can no longer catch a change in the parser. That is correct
+      // here — its job is to BE FRESH, and the parser's own contract is pinned by the unit suite and
+      // by share-route.test.ts. A tautological assertion is a defect; a tautological fixture cannot
+      // be wrong.
+      sourceSections: parseSummaryMarkdown(summaryMd).sections.map((s) => s.title),
       generatorVersion: GENERATOR_VERSION,
       model: {
         sections: [{
@@ -128,7 +169,6 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
 
   const fixture: CloudFixture = {
     email,
-    ledgerBaseline,
     ownerId: user.id,
     listed: { playlistId: listed.playlistId, playlistKey: listed.playlistKey, title: listedTitle, videoId: video.videoId },
   };

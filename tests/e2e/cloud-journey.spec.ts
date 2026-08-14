@@ -15,21 +15,47 @@
  * context. Every rung therefore does its own `goto` and establishes its own preconditions, and no
  * rung may rely on browser state another rung left behind.
  *
- * NO MONEY — AND STEP 6 PROVES IT RATHER THAN PROMISING IT.
+ * NO MONEY — AND THE RUN MEASURES IT RATHER THAN PROMISING IT.
  * An earlier version of this header asserted "no money is spent" and was FALSE: opening the HTML
  * render called resolveMagazineModel, found no model, called Gemini, and reserved 12¢ in
  * spend_ledger (measured 2026-08-13). It was caught only because the rendered prose came back as
  * LLM paraphrase instead of the seeded text — nothing in the suite was checking. The setup now
- * pre-seeds the magazine model so the serve path finds one, and the last step reads the ledger
- * before and after and fails if it moved. A cost claim that nothing measures is just a wish.
+ * pre-seeds the magazine model so the serve path finds one. A cost claim that nothing measures is
+ * just a wish.
  *
- * The one call that would reach YouTube and enqueue paid work — POST /api/jobs — is intercepted in
- * step 3, and only that call; the id it returns belongs to a row that really exists, so the refetch
- * and render are real. A deliberate, narrow exception to "not mocks", reasoned at the interception.
+ * The guard itself is NOT IN THIS FILE. It is tests/e2e/cloud-global.ts, which reads the ledger
+ * before any project runs and again as the run's teardown; read that file for why it had to leave a
+ * `test.afterAll` here to cover a setup-project failure. What it proves, precisely:
+ *   ✓ a paid SERVE is caught — migration 0025 writes a `serve_settle` audit row on every settled
+ *     serve attempt, and `ledger_audit.id` is a sequence, so max(id) only ever grows.
+ *   ✗ an enqueue reservation released normally would NOT be caught — a plain release writes no
+ *     audit row (0020 records only the `release_underflow` exception) and nets the cents to zero.
+ *     Unreachable from this journey today, because POST /api/jobs is intercepted in step 3 and
+ *     there is no cancel rung — but the guard is narrower than "no money path was reached", and
+ *     saying otherwise is how the false claim above got written in the first place.
+ *
+ * The one call that would ENQUEUE paid work — POST /api/jobs — is intercepted in step 3, and only
+ * that call; the id it returns belongs to a row that really exists, so the refetch and render are
+ * real. A deliberate, narrow exception to "not mocks", reasoned at the interception. There is a
+ * SECOND route to an external API that is not intercepted: PlaylistSidebar calls
+ * backfillPlaylistTitles() whenever a listed playlist has no title, and that reaches the real
+ * YouTube Data API with no ledger row of any kind. The defence is that every seeded playlist is
+ * given a title immediately and BOTH updates are error-checked — see cloud.setup.ts — so no
+ * null-title row is ever listed. Note the direction: if a check FAILS the run stops before any page
+ * loads, so nothing goes out. The hazard is the check being REMOVED, not the check going red.
+ *
+ * ⚠ WHAT THIS SUITE DOES NOT COVER, stated because the previous version of this note said the only
+ * gap was "the magazine HTML renders in a browser" and that was wrong. Every rung opens `/` with no
+ * query string, and CloudAppBody renders PlaylistLibrary only when `?playlist` is set
+ * (CloudApp.tsx:98) — so PlaylistLibrary, VideoList, FilterBar, IngestProgressBanner and
+ * ScopeProvider are NEVER MOUNTED here. The sidebar link is asserted visible three times and never
+ * clicked. Also untested at browser level: playlist deletion, sharing, dig-deeper serving, and PDF.
+ * Rung 4 covers the magazine render via a direct /api/html navigation, not via the UI that leads to
+ * it. Tracked as backlog #44.
  */
 import '../integration/setup';                       // env for the admin client (see cloud.setup.ts)
 import { test, expect } from '@playwright/test';
-import { readFixture, readLedger } from './cloud-fixture';
+import { readFixture } from './cloud-fixture';
 import { adminClient } from '../integration/helpers/clients';
 import { seedPlaylist } from '../integration/helpers/seed';
 
@@ -71,7 +97,12 @@ test.describe.serial('cloud journey', () => {
 
     const created = await seedPlaylist(adminClient(), fx().ownerId);
     const title = `E2E Ingested ${Date.now()}`;
-    await adminClient().from('playlists').update({ playlist_title: title }).eq('id', created.playlistId);
+    // Checked, for the reason spelled out in cloud.setup.ts: a null-title row makes the sidebar
+    // call backfillPlaylistTitles(), which hits the real YouTube Data API un-intercepted.
+    const titled = await adminClient().from('playlists')
+      .update({ playlist_title: title }).eq('id', created.playlistId).select('id');
+    expect(titled.error, 'titling the ingested playlist').toBeNull();
+    expect(titled.data ?? []).toHaveLength(1);
     await expect(page.getByRole('link', { name: title })).toHaveCount(0);   // genuinely not on screen
 
     // Only POST /api/jobs is intercepted, because a real one calls the YouTube Data API and
@@ -101,31 +132,51 @@ test.describe.serial('cloud journey', () => {
     await expect(page.getByRole('link', { name: title })).toBeVisible();
   });
 
-  // ⚠ SKIPPED, AND THE REASON IS A COST, NOT A BUG IN THE APP.
+  // ⚠ THIS RUNG WAS SKIPPED FOR A WEEK OVER A ONE-TOKEN TYPO, AND THE SKIP COMMENT IS WORTH
+  // REMEMBERING BETTER THAN THE FIX.
   //
-  // The HTML render calls resolveMagazineModel. The setup pre-seeds models/{base}.json precisely so
-  // that call finds one and returns without touching Gemini — and the blob IS written (verified in
-  // storage.objects). But the served document still comes back as LLM paraphrase, so the resolver
-  // is judging the seeded envelope STALE and regenerating: most likely `sourceSections` not
-  // matching the titles its own parser derives from the markdown, since that is the freshness
-  // input this envelope hand-rolls.
+  // The HTML render calls resolveMagazineModel, and the setup pre-seeds models/{base}.json so that
+  // call finds one and returns without touching Gemini. It did not: the served document kept coming
+  // back as LLM paraphrase. The seed said `sourceSections: ['2. Encoder']`; the parser splits the
+  // ordinal off the heading and keeps it in a separate field (parse.ts:56), so the titles
+  // `sameTitles` compares against (read-model.ts:16) are `['Encoder']`. Never fresh, always
+  // regenerate, 6-12¢ a render.
   //
-  // Each attempt to guess that contract costs 6–12¢ of real Gemini spend. Today's debugging put 24¢
-  // through the local ledger before this was understood. Iterating by trial and error on a money
-  // path is the wrong way to learn a contract, so this step stops here rather than being tuned
-  // until it goes green.
+  // The old comment here diagnosed that correctly — "most likely sourceSections not matching the
+  // titles its own parser derives" — and then declined to spend a minute confirming it, on the
+  // grounds that each ATTEMPT cost real Gemini money. 24¢ went through the local ledger guessing at
+  // a contract that is three lines in two files, next to a sibling fixture that had it right all
+  // along (share-route.test.ts:56 seeds `## 1. Intro` against :88 `['Intro']`). It then called
+  // itself "a bounded reading task, not an open question" and left it unread. The lesson is not
+  // about magazines: WHEN AN EXPERIMENT COSTS MONEY, READ THE CONTRACT FIRST — the expensive
+  // instrument is rarely the informative one.
   //
-  // WHAT IS AND IS NOT COVERED WITHOUT IT. Step 5 already proves the summary blob round-trips
-  // through the serve path and arrives byte-correct — for free, because the md path is documented
-  // never to call resolveMagazineModel (serve-summary-core.ts:28). What is missing is only "the
-  // magazine HTML renders in a browser", which M3.2 verified by hand against release v6 on
-  // 2026-08-12. Un-skip once the model-freshness contract is read from the resolver rather than
-  // guessed; that is a bounded reading task, not an open question.
-  test.skip('4 · opening a video renders its summary with a section timestamp', async ({ page }) => {
+  // Restored 2026-08-13 with the seed corrected; the run-level money guard confirms it renders for
+  // free. Found by the Claude half of the dual review, on a branch Codex had cleared four times.
+  test('4 · opening a video renders its summary with a section timestamp', async ({ page }) => {
     const res = await page.goto(
       `/api/html/${fx().listed.videoId}?playlist=${fx().listed.playlistId}&type=summary`,
     );
     expect(res?.status()).toBe(200);
+    // WHICH PATH SERVED THIS, not merely "something did". 200 + the seeded lead + an unmoved ledger
+    // still leaves two ways to be green: the fresh envelope was accepted (what this rung is for), or
+    // the reserve hit the cap and D5's title-stable STALE fallback served the same bytes for free
+    // (serve-doc.ts:147-150). Only the second sets X-Magazine-Stale (file-response.ts:47), so its
+    // absence is what distinguishes them. Raised as a Low by Codex round 5 and worth taking: without
+    // it this rung would pass unchanged if freshness broke again in a way that stayed cheap.
+    //
+    // ⚠ NOT MUTATION-PROVEN, and that is worth stating rather than leaving as an implied guarantee.
+    // The name is read off the producer (file-response.ts:47 sets `X-Magazine-Stale` only when
+    // `staleMarker && kind === 'html'`; Playwright lower-cases header keys), but no run has yet
+    // OBSERVED the header present, so "always undefined" and "never looked" are still
+    // indistinguishable here. Reaching it needs `reserve_serve_model` to answer `owner_over_budget`
+    // — NOT `at_capacity`, which returns 503 without consulting the stale path (serve-doc.ts:139-150)
+    // — and that needs the owner to have prior serve spend on the same day, which a freshly created
+    // e2e owner never has. Two attempts were made: a global `daily_cap_cents: 1` produced the 503,
+    // and `per_owner_serve_daily_cents: 6` still admitted the first serve (0 + 6 <= 6) and
+    // regenerated. A third would need a seeded owner-spend row, i.e. a fixture that manufactures a
+    // state the app reaches only after paying once.
+    expect(res?.headers()['x-magazine-stale']).toBeUndefined();
     await expect(page.getByText('Seeded lead for the e2e journey.')).toBeVisible();
     await expect(page.getByText(/2:12/).first()).toBeVisible();
   });
@@ -142,28 +193,21 @@ test.describe.serial('cloud journey', () => {
     expect(md.headers()['content-disposition'] ?? '').toMatch(/attachment/i);
   });
 
-  // NOT a rung, deliberately — an `afterAll` hook, so it runs even when an earlier rung FAILS.
-  //
-  // MEASURED 2026-08-13, and it was my own mutation that found it. To prove this assertion could
-  // fail, rung 4 (a known money path) was un-skipped: ledger_audit went 303 -> 304, so the run
-  // really did spend. But the assertion never executed — `describe.serial` aborts the remaining
-  // tests once one fails, and rung 4 failed before the money check could run. A guard that is
-  // skipped precisely when something went wrong is absent exactly when it is most needed, which is
-  // the same defect this whole file keeps finding in other places.
-  //
-  // Two Blockings from review (2026-08-13) shaped what it compares, and both are worth keeping:
-  //   (a) THE BASELINE WAS TAKEN TOO LATE — in this project's `beforeAll`, which fires only after
-  //       the `setup` project finished, so everything the setup did was already inside it. The
-  //       baseline is now read by the setup itself, before it touches anything.
-  //   (b) A SUM CAN BE NETTED TO ZERO. Summing spend_ledger proves "same total at the end", not
-  //       "no money path was reached": a reserve plus a release cancels out while Gemini was
-  //       called. `ledger_audit.id` is a sequence, so its max only grows — that is the witness that
-  //       cannot be cancelled. The cents total is kept as a weaker secondary signal.
-  test.afterAll(async () => {
-    const now = await readLedger();
-    expect(now.auditMaxId).toBe(fx().ledgerBaseline.auditMaxId);
-    expect(now.centsTotal).toBe(fx().ledgerBaseline.centsTotal);
-  });
+  // THE MONEY GUARD USED TO BE HERE, as a `test.afterAll`. Three rounds moved it, and the trail is
+  // worth keeping because each move was forced by a window the previous position could not see:
+  //   round 0 · a 6th rung        — `describe.serial` aborts the remaining tests once one fails, so
+  //                                 the check was skipped exactly when a rung had spent. Proved by
+  //                                 un-skipping rung 4, a known money path: ledger_audit 303 -> 304
+  //                                 and the assertion never ran.
+  //   round 1 · `test.afterAll`   — survives a failing rung, but the baseline was read in this
+  //                                 project's `beforeAll`, which fires only after the setup project
+  //                                 finished, so everything the setup did was already inside it.
+  //   round 2 · globalSetup       — the baseline moved into the setup project, but the ASSERTION was
+  //                                 still in this one, and Playwright skips a project whose
+  //                                 dependency failed. A setup that spent and then failed took the
+  //                                 guard down with it.
+  // It now lives in tests/e2e/cloud-global.ts, outside every project, where a failure anywhere
+  // still runs it. Do not move it back into a spec.
 
   test('6 · signing out invalidates the session, not just the URL', async ({ page }) => {
     // Review High (2026-08-13): the earlier version chained `.catch()` onto a second locator, so it
