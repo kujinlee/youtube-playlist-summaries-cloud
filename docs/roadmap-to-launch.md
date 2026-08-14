@@ -1276,10 +1276,10 @@ Eight dual review rounds plus a Phase 6 architecture review; all on disk at
 - **Round 8 is the first CONVERGED verdict** (Codex; the Claude half held on one inverted regex, now
   fixed in v9). Both halves independently went looking for the consumer that would justify the old
   allowlist and **found none**.
-- **Next:** round 9 on v9 → `writing-plans` → implementation. Then ADR-0009.
+- **Next:** round 9 on v9 → `writing-plans` → implementation. Then an ADR recording the seam decision (task #91; not yet written, so not numbered here).
 - ⛔ **Deploy is blocked on the user**, not on engineering: `claude_ro` cannot read `storage.objects`,
-  so the §4 no-migration gate cannot run. Two grants, in the spec's §4.1.
-- Phase 6 returned **8 findings**, deliberately unfiled pending user triage — see the review.
+  so the no-migration gate cannot run. Two grants; the SQL is in the spec's gate section.
+- Phase 6 returned **eight findings**, deliberately unfiled pending user triage — see that review.
 
 **Blocked on the human:** the two `claude_ro` grants (deploy gate only), Phase 6 triage, and merging.
 Previously: nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
