@@ -10,6 +10,7 @@
  * the database are wrong.
  */
 import fs from 'node:fs';
+import { adminClient } from '../integration/helpers/clients';
 
 /** NOT under test-results/: Playwright wipes outputDir at the start of every run. */
 export const AUTH_FILE = 'playwright/.auth/cloud-user.json';
@@ -17,9 +18,29 @@ export const FIXTURE_FILE = 'playwright/.auth/cloud-fixture.json';
 
 export type CloudFixture = {
   email: string;
+  /** The money witnesses read BEFORE the setup did anything — see cloud.setup.ts. The cloud
+   *  project's own `beforeAll` runs only after the setup project has finished, so a baseline taken
+   *  there silently excludes everything the setup did (review Blocking, 2026-08-13). */
+  ledgerBaseline: { auditMaxId: number; centsTotal: number };
   ownerId: string;
   listed: { playlistId: string; playlistKey: string; title: string; videoId: string };
 };
+
+/** Read the money witnesses. `ledger_audit.id` is a sequence, so max(id) only ever GROWS — it cannot
+ *  be cancelled out by a release the way a sum over spend_ledger can (review Blocking, 2026-08-13:
+ *  a reserve followed by a refund nets to zero and a sum-based assertion passes while the money path
+ *  was very much reached). The cents total is kept as a secondary, weaker signal. */
+export async function readLedger(svc = adminClient()) {
+  const [{ data: audit }, { data: ledger }] = await Promise.all([
+    svc.from('ledger_audit').select('id').order('id', { ascending: false }).limit(1),
+    svc.from('spend_ledger').select('reserved_cents, actual_cents'),
+  ]);
+  return {
+    auditMaxId: Number(audit?.[0]?.id ?? 0),
+    centsTotal: (ledger ?? []).reduce(
+      (n, r) => n + Number(r.reserved_cents ?? 0) + Number(r.actual_cents ?? 0), 0),
+  };
+}
 
 export function readFixture(): CloudFixture {
   if (!fs.existsSync(FIXTURE_FILE)) {

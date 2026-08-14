@@ -7,9 +7,13 @@
  * missing is WHICH STEPS the journey has, and that belongs in the test, where it is load-bearing".
  * This file is that list. Each `test` is one step and says what it would catch.
  *
- * Steps run in declaration order and share one page (`test.describe.serial`), because this is a
- * journey: step 3 asserts something about the state step 2 left behind. Splitting them into
- * independent tests would lose exactly the property being tested.
+ * Steps run in DECLARATION ORDER via `test.describe.serial`, and a failure stops the rest.
+ *
+ * ⚠ They do NOT share a page. An earlier version of this header said they did, and that was false —
+ * measured 2026-08-13 by comparing the page fixture across two serial tests (`SHARED_PAGE=false`).
+ * `describe.serial` orders tests and aborts the remainder on failure; it does not give them one
+ * context. Every rung therefore does its own `goto` and establishes its own preconditions, and no
+ * rung may rely on browser state another rung left behind.
  *
  * NO MONEY — AND STEP 6 PROVES IT RATHER THAN PROMISING IT.
  * An earlier version of this header asserted "no money is spent" and was FALSE: opening the HTML
@@ -25,7 +29,7 @@
  */
 import '../integration/setup';                       // env for the admin client (see cloud.setup.ts)
 import { test, expect } from '@playwright/test';
-import { readFixture } from './cloud-fixture';
+import { readFixture, readLedger } from './cloud-fixture';
 import { adminClient } from '../integration/helpers/clients';
 import { seedPlaylist } from '../integration/helpers/seed';
 
@@ -35,16 +39,6 @@ import { seedPlaylist } from '../integration/helpers/seed';
 let _fx: ReturnType<typeof readFixture> | null = null;
 const fx = () => (_fx ??= readFixture());
 
-/** Total cents the owner-facing ledger has committed today. The suite must not move this. */
-async function reservedCentsToday(): Promise<number> {
-  const { data, error } = await adminClient()
-    .from('spend_ledger').select('reserved_cents, actual_cents');
-  if (error) throw error;
-  return (data ?? []).reduce(
-    (n, r) => n + Number(r.reserved_cents ?? 0) + Number(r.actual_cents ?? 0), 0);
-}
-let ledgerAtStart = 0;
-test.beforeAll(async () => { ledgerAtStart = await reservedCentsToday(); });
 
 test.describe.serial('cloud journey', () => {
   test('1 · the signed-in root renders CloudApp, not LocalApp', async ({ page }) => {
@@ -148,20 +142,42 @@ test.describe.serial('cloud journey', () => {
     expect(md.headers()['content-disposition'] ?? '').toMatch(/attachment/i);
   });
 
-  test('6 · the whole journey moved no money', async () => {
-    // The header's cost claim, as an assertion. It has already been wrong once: before the magazine
-    // model was pre-seeded, this journey reserved 12¢ per run while the file said it spent nothing.
-    // Placed LAST so it covers every step above, and reading the same table the guardrails use.
-    expect(await reservedCentsToday()).toBe(ledgerAtStart);
+  // NOT a rung, deliberately — an `afterAll` hook, so it runs even when an earlier rung FAILS.
+  //
+  // MEASURED 2026-08-13, and it was my own mutation that found it. To prove this assertion could
+  // fail, rung 4 (a known money path) was un-skipped: ledger_audit went 303 -> 304, so the run
+  // really did spend. But the assertion never executed — `describe.serial` aborts the remaining
+  // tests once one fails, and rung 4 failed before the money check could run. A guard that is
+  // skipped precisely when something went wrong is absent exactly when it is most needed, which is
+  // the same defect this whole file keeps finding in other places.
+  //
+  // Two Blockings from review (2026-08-13) shaped what it compares, and both are worth keeping:
+  //   (a) THE BASELINE WAS TAKEN TOO LATE — in this project's `beforeAll`, which fires only after
+  //       the `setup` project finished, so everything the setup did was already inside it. The
+  //       baseline is now read by the setup itself, before it touches anything.
+  //   (b) A SUM CAN BE NETTED TO ZERO. Summing spend_ledger proves "same total at the end", not
+  //       "no money path was reached": a reserve plus a release cancels out while Gemini was
+  //       called. `ledger_audit.id` is a sequence, so its max only grows — that is the witness that
+  //       cannot be cancelled. The cents total is kept as a weaker secondary signal.
+  test.afterAll(async () => {
+    const now = await readLedger();
+    expect(now.auditMaxId).toBe(fx().ledgerBaseline.auditMaxId);
+    expect(now.centsTotal).toBe(fx().ledgerBaseline.centsTotal);
   });
 
-  test('7 · signing out returns the browser to /login', async ({ page }) => {
+  test('6 · signing out invalidates the session, not just the URL', async ({ page }) => {
+    // Review High (2026-08-13): the earlier version chained `.catch()` onto a second locator, so it
+    // could pass for the WRONG reason — a broken AccountMenu plus any unrelated control matching
+    // /account|menu|sign/i that happens to navigate would satisfy it. Exact, scoped locators instead;
+    // if the markup changes this must fail loudly rather than fall through to something else.
     await page.goto('/');
-    await page.getByRole('button', { name: new RegExp(fx().email.split('@')[0], 'i') }).click()
-      .catch(() => page.getByRole('button', { name: /account|menu|sign/i }).first().click());
-    await page.getByRole('menuitem', { name: /sign out/i }).click()
-      .catch(() => page.getByRole('button', { name: /sign out/i }).click());
+    await page.getByRole('button', { name: fx().email, exact: true }).click();
+    await page.getByRole('menu').getByRole('menuitem', { name: 'Sign out', exact: true }).click();
     await page.waitForURL('**/login');
+
+    // Landing on /login only proves a navigation happened. Coming BACK to a protected route and
+    // being bounced again is what proves the session was actually cleared.
+    await page.goto('/');
     await expect(page).toHaveURL(/\/login/);
   });
 });
