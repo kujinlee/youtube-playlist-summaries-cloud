@@ -1148,7 +1148,7 @@ item was verified against.
 **Next: M3 Acceptance** (browser-level Playwright e2e against the deployed URL). M2 Sync completed
 2026-07-19.
 
-### ▶ NEXT ACTIONS (**refreshed 2026-08-12** — read this first on a fresh session)
+### ▶ NEXT ACTIONS (**refreshed 2026-08-13** — read this first on a fresh session)
 
 **Reconcile this block against `git log` AND against live infrastructure every time.** The
 2026-07-30 version of it was stale within days, and the entries below it still are — treat the
@@ -1157,7 +1157,23 @@ numbered engineering list as a *candidate pool*, not a current plan, and check e
 this file claimed prod was at migration `0021` when it was at `0022`, which is how `0023` came to sit
 unapplied for eight days while every document read "merged, done".
 
-**Current state (2026-08-12):**
+**⭐ 2026-08-13 — M3.1-A LANDED, and M3 now waits on a decision rather than on work.**
+- **PR #98 merged (`8ba3183`): the browser-level cloud e2e runs unattended against a LOCAL stack,
+  7 rungs, and MEASURES that it spent nothing** rather than asserting it. Five dual review rounds.
+  Two Blockings: the money guard could not see a setup-project failure (a project whose dependency
+  fails is never scheduled, so its `afterAll` never exists), and the pre-seeded magazine envelope
+  could never be accepted as fresh — `sourceSections: ['2. Encoder']` against the parser's
+  `['Encoder']` — so **the suite had been paying Gemini on every render while three comments said it
+  did not**. A third defect, found by neither reviewer: `readLedger` ignored its query `error`, so an
+  unreadable ledger compared 0 == 0 and the guard reported success having read nothing.
+- **Backlog #43 closed** (rung 4 un-skipped, renders free). **#44 filed** (the main pane is never
+  mounted by any rung). **#45 filed** (round-5 residue — PR #99).
+- ⚠ **Roadmap 3.1 below is deliberately still `[ ]`.** It asks for the DEPLOYED url; what shipped is
+  local. That is backlog **#41**, and its open question is the user's: *does M3 close on A, or wait
+  for B?* Do not tick 3.1 to tidy up — the sentence "M3 done = 3.1 and 3.2 both verified against the
+  same deployed release" has to be either satisfied or amended, and amending it is a decision.
+
+**Current state (2026-08-12, still accurate except where the block above supersedes it):**
 - **`master` is clean** — tsc clean, **2703 unit / 267 suites** green, plus **491 integration**
   (the 2026-08-12 figure; integration needs a live Supabase stack, does not run in CI, and is
   therefore NOT verified by the check below — treat it as a dated note, not a live number).
@@ -1208,7 +1224,12 @@ unapplied for eight days while every document read "merged, done".
 - **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
   trigger. Do not resume it by momentum.
 
-**Blocked on the human:** nothing.
+**Blocked on the human:** ONE decision, and it is the only thing standing between here and a
+closed M3 — **backlog #41: does M3 close on M3.1-A (local, automated) or wait for M3.1-B (a
+semi-manual prod smoke)?** B can never run unattended: `/dev-login` is 404 in prod by design and
+Google OAuth cannot be driven by Playwright, so it needs a hand-captured session that expires.
+Everything else is engineering: **backlog #36 (🔴 Korean title destroys a paid summary) is the last
+launch-blocking defect.**
 
 **⭐ M1 IS COMPLETE (2026-08-11).** M1.4 closed with all of A1–A3 and B1–B5 ticked — see
 [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) for the evidence and the release each
