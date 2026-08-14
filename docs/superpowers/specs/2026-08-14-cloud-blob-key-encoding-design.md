@@ -5,8 +5,8 @@
 Earlier sighting: `docs/local-validation-findings.md` §BUG-4, filed P2 during local validation — it
 became 🔴 only when the acceptance run showed the failure lands *after* the Gemini charge.
 
-**Review trail — five dual rounds, ten halves, all NOT CONVERGED, plus a Phase 6 architecture review.**
-Full findings at `docs/reviews/spec-blob-key-encoding-r{1..5}-{codex,claude}.md` and
+**Review trail — six dual rounds, twelve halves, all NOT CONVERGED, plus a Phase 6 architecture review.**
+Full findings at `docs/reviews/spec-blob-key-encoding-r{1..6}-{codex,claude}.md` and
 `docs/reviews/architecture-review-2026-08-14.md`.
 
 | Round | Codex | Claude |
@@ -16,6 +16,13 @@ Full findings at `docs/reviews/spec-blob-key-encoding-r{1..5}-{codex,claude}.md`
 | 3 | 1B, 1M | 3B, 2H, 2M, 1L |
 | 4 | 0B, 1H | 1B, 3H, 3M, 2L |
 | 5 | 1B, 1M | 1B, 5H, 3M, 2L |
+| 6 | 1B, 2M | 1B, 1H, 3M, 2L |
+
+> **Round 6: both halves found the SAME defect independently — a fourth write entrance
+> (`reconcile-serial.ts:282`/`:293`) that writes an unvalidated key, advertises it `promoted`, and then
+> deletes the old blobs, undoing v6's own repair.** The Claude half re-measured all four of v6's
+> changes, confirmed every one, and stated it would otherwise have voted CONVERGED. v7 is the user's
+> answer to that: §3.5.1 puts the invariant in a **type**, so a fifth entrance cannot compile.
 
 > **Phase 6 fired at four non-converging rounds and returned: the architecture is sound; the churn was
 > a specification problem.** It also refuted a fix this spec had twice proposed — a shared `sameKey()`
@@ -82,20 +89,16 @@ genuinely enters the index: `pipeline.ts:135-138` reads raw `readdirSync` bytes 
 in as `summaryMd`. Commit `08797e4` and `tests/lib/serial-migrate-normalization.test.ts` record the
 local-side bug this already caused.
 
-**2.6 Four write entrances, not one.** `slugify` is called on exactly one of them. The other two take
-a key **verbatim** from outside — and `pipeline.ts:135-138`/`:105` put raw `readdirSync` bytes into the
-index as `summaryMd`, so an adopted key is whatever the filesystem allowed, not slugify output:
+**2.6 Four write entrances, not one.** `slugify` is called on exactly **one** of them. The other three
+take a key **verbatim** from outside — and `pipeline.ts:135-138`/`:105` put raw `readdirSync` bytes
+into the index as `summaryMd`, so an adopted key is whatever the filesystem allowed, not `slugify`
+output. §3.5.1 tabulates all four with their sites and fallback rules.
 
-| Entrance | Site | Key source |
-|---|---|---|
-| Worker mint | `summary-handler.ts:96` | `slugify(title)` |
-| Sync — additive create | `sync-run.ts:263` | sender's key, verbatim |
-| Sync — Class-A transfer | `sync-run.ts:379-399` | winner's key, verbatim |
+Every existing vault summary with a non-ASCII title fails on entrances 2–4 today.
 
-Every existing vault summary with a non-ASCII title fails on the latter two today. This is an
-addressing-contract defect, and the enumeration is the part that kept going wrong: the spec named one
-entrance in v1–v4 and two in v5. §3.5 tabulates all three because five rounds is enough evidence that
-prose loses count.
+**The enumeration is the part that kept going wrong**, and it is why §3.5.1 carries the invariant in a
+type rather than a list: the spec said **one** entrance in v1–v4, **two** in v5, **three** in v6, and
+the true count is at least **four**. Six rounds, six different reviewers, six short lists.
 
 ---
 
