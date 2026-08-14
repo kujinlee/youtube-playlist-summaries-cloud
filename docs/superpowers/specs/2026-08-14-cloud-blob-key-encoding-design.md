@@ -5,8 +5,9 @@
 Earlier sighting: `docs/local-validation-findings.md` §BUG-4, filed P2 during local validation — it
 became 🔴 only when the acceptance run showed the failure lands *after* the Gemini charge.
 
-**Review trail — four dual rounds, eight halves, all NOT CONVERGED.** Full findings on disk at
-`docs/reviews/spec-blob-key-encoding-r{1,2,3,4}-{codex,claude}.md`.
+**Review trail — five dual rounds, ten halves, all NOT CONVERGED, plus a Phase 6 architecture review.**
+Full findings at `docs/reviews/spec-blob-key-encoding-r{1..5}-{codex,claude}.md` and
+`docs/reviews/architecture-review-2026-08-14.md`.
 
 | Round | Codex | Claude |
 |---|---|---|
@@ -14,20 +15,22 @@ became 🔴 only when the acceptance run showed the failure lands *after* the Ge
 | 2 | 1B | 2B, 1H, 2M, 1L |
 | 3 | 1B, 1M | 3B, 2H, 2M, 1L |
 | 4 | 0B, 1H | 1B, 3H, 3M, 2L |
+| 5 | 1B, 1M | 1B, 5H, 3M, 2L |
 
-> **v5 is a REWRITE, not a fifth layer of edits.** Round 4 found nine items, and **five were stale
-> strata** left by four rounds of surgical editing — the encoder's central property stated three
-> different ways, a §7 test advertised as the primary guard that cannot fail, and two `### 3.5`
-> headings, the first being present-tense analysis of a design v4 had deleted. My own edits had become
-> the leading source of findings. Round 4 also recorded, explicitly, that the slice is **not
-> mis-scoped** — "a bounded gap, not a mis-scope".
+> **Phase 6 fired at four non-converging rounds and returned: the architecture is sound; the churn was
+> a specification problem.** It also refuted a fix this spec had twice proposed — a shared `sameKey()`
+> helper would be a *regression*, because it creates the one place an equivalence can be reintroduced.
 >
-> **Four rounds, one mistake, repeated.** v1 put a Unicode-normalization equivalence in the encoder;
-> v2 moved it to the storage seam and listed four comparison sites (round 2 found four more); v3 moved
-> it to ingress and listed three entry points (round 3 found a fourth, plus a vault-destroying path);
-> v4 deleted it. Each time I invoked *"delete the mechanism, don't patch the second instance"* and each
-> time I deleted the mechanism's **location**. The deletion is now confirmed by independent probe in
-> round 4.
+> **Rounds 1–4: one mistake, repeated.** v1 put a Unicode-normalization equivalence in the encoder; v2
+> moved it to the storage seam and listed four comparison sites (round 2 found four more); v3 moved it
+> to ingress and listed three entry points (round 3 found a fourth, plus a vault-destroying path); v4
+> deleted it, confirmed by independent probe. Each time the mechanism's **location** was deleted rather
+> than the mechanism.
+>
+> **Round 5: the fix was worse than the bug.** v5's servability *refusal* would have made a video with
+> an ordinary Chinese or Japanese name **permanently un-ingestible** (§3.5). v6 makes it a **repair**.
+> Round 5 also measured injectivity **false** — reproducibly, via lone surrogates — and found a
+> **third** write entrance, the fifth round running in which this spec named one fewer than exists.
 
 ---
 
@@ -79,9 +82,20 @@ genuinely enters the index: `pipeline.ts:135-138` reads raw `readdirSync` bytes 
 in as `summaryMd`. Commit `08797e4` and `tests/lib/serial-migrate-normalization.test.ts` record the
 local-side bug this already caused.
 
-**2.6 A second entrance.** `sync-run.ts:263` pushes the **sender's** key verbatim into the receiver's
-blob store; `slugify` is never called there. Any existing vault summary with a non-ASCII title fails
-identically on sync. This is an addressing-contract defect with two entrances.
+**2.6 Three write entrances, not one.** `slugify` is called on exactly one of them. The other two take
+a key **verbatim** from outside — and `pipeline.ts:135-138`/`:105` put raw `readdirSync` bytes into the
+index as `summaryMd`, so an adopted key is whatever the filesystem allowed, not slugify output:
+
+| Entrance | Site | Key source |
+|---|---|---|
+| Worker mint | `summary-handler.ts:96` | `slugify(title)` |
+| Sync — additive create | `sync-run.ts:263` | sender's key, verbatim |
+| Sync — Class-A transfer | `sync-run.ts:379-399` | winner's key, verbatim |
+
+Every existing vault summary with a non-ASCII title fails on the latter two today. This is an
+addressing-contract defect, and the enumeration is the part that kept going wrong: the spec named one
+entrance in v1–v4 and two in v5. §3.5 tabulates all three because five rounds is enough evidence that
+prose loses count.
 
 ---
 
