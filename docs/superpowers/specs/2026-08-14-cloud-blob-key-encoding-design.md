@@ -1,13 +1,15 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v10**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v11**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
-**Review trail — nine dual rounds plus a Phase 6 architecture review.**
+**Review trail — nine dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
 `docs/reviews/spec-blob-key-encoding-r{1..9}-{codex,claude}.md`,
+`docs/reviews/spec-blob-key-encoding-r10-codex-design.md`,
+`docs/reviews/spec-blob-key-encoding-s36-design-claude.md`,
 `docs/reviews/architecture-review-2026-08-14.md`.
 
-> ## ⛔ §3.6 IS ESCALATED FROM FIX TO REDESIGN — read this before reviewing it (round-9 M5)
+> ## ⛔ §3.6 WAS ESCALATED FROM FIX TO REDESIGN, AND THE REDESIGN RAN (round-9 M5 → round 10)
 >
 > `review-method.md:45-49`: *"if a component produces findings caused by the PREVIOUS round's fixes in
 > two consecutive rounds, it escalates from FIX to REDESIGN, and the next round is a design review —
@@ -29,7 +31,12 @@
 >
 > **§3.1–§3.5 have converged and stayed converged.** Both round-9 halves say so independently, and the
 > Claude half is explicit: *"If §3.6 did not exist I would say CONVERGED."* Do not let §3.6's churn
-> re-open them.
+> re-open them — the round-10 redesign confirmed it touches none of them.
+>
+> **The escalation paid for itself immediately.** Round 10 measured that v10's own §3.6 fix — the
+> `readdir` byte-comparison — **would have refused a video's own file on the money path**, which is
+> round-8 H1 re-entering through the credential chosen to prevent it. A fifth defect hunt would have
+> shipped it. §3.6 is now rewritten, not patched; see §3.6.0.
 
 > **v8 is much smaller than v2–v7, because a premise they all shared was false.** The user asked, on
 > reading v7: *"why does the cloud need ASCII-servable?"* It does not. Two separable constraints had
@@ -103,10 +110,18 @@ declined on merits (§6.1), not impossible as v1 claimed.
 NFC/NFD (`wx` → `EEXIST`; `rename` overwrites). Raw `readdirSync` bytes enter the index as `summaryMd`
 (`pipeline.ts:135-138`, `:105`).
 
-**2.5 Four write entrances.** `slugify` runs on exactly one; the other three take a key verbatim:
-worker mint (`summary-handler.ts:96`), additive create (`sync-run.ts:263`), Class-A transfer
-(`sync-run.ts:379-399`), base reconciliation (`reconcile-serial.ts:282`/`:293`). The spec named 1, 1,
-1, 1, 2, 3 across six rounds — see §3.4 for why that no longer matters.
+**2.5 Write entrances — the count has been wrong in every version so far.** `slugify` runs on exactly
+one; the rest take a key verbatim: worker mint (`summary-handler.ts:96`), additive create
+(`sync-run.ts:263`), Class-A transfer (`sync-run.ts:379-399`), base reconciliation
+(`reconcile-serial.ts:282`/`:293`), and — found at round 10 — `companionTransfer`'s model **write and
+DELETE** (`sync-run.ts:464`, `:475`). The spec named **1, 1, 1, 1, 2, 3, 4** across seven rounds.
+
+> **Stop treating this as a number to get right.** Two mechanisms in this spec were already deleted for
+> exactly this reason — the branded `CloudSummaryKey` (*"round 7 measured that it did not enumerate
+> them anyway"*, §3.5) and the homoglyph denylist (*"a hand-typed list cannot be complete"*, §3.4).
+> §3.4 needs no enumeration because every key is acceptable; §3.6 needs none because it is written
+> against two **patterns**, not N writers. **A rule that must be restated per writer will keep churning
+> in a codebase that keeps growing writers.**
 
 ---
 
@@ -318,112 +333,225 @@ sentence v9 wrote here was false, and it was the sentence justifying all five de
 > refusal costs nothing because nothing is durable yet. That is finding 1's *"move, do not add"*, and it
 > is one line each — not the v5 refusal, which is still deleted.
 
-### 3.6 The one real equivalence: the local filesystem
+### 3.6 Namespace ownership — REDESIGNED at round 10, after the FIX→REDESIGN escalation
 
-The additive create runs in **both** directions (`sync-run.ts:618-627`); when a video is cloud-only the
-receiver is the vault, where APFS aliases NFC/NFD and `promote`'s `renameSync` overwrites. The
-collision guard must consult the **receiver's blob store**, not index rows — a real vault file with no
-index row is exactly what `recoverOrphanedVideos` adopts — and must read `tryGet`, treating
-`unreadable` as **occupied**, because `SupabaseBlobStore.exists` is `get() !== null` and cannot prove
-absence.
+**This section was rewritten, not patched.** Rounds 6–9 each produced a §3.6 finding caused by the
+previous round's §3.6 fix. `review-method.md`'s escalation fired at round 8; round 10 was run as a
+**design review** instead of a fifth defect hunt. Both halves are on disk:
+`docs/reviews/spec-blob-key-encoding-r10-codex-design.md` and `…-s36-design-claude.md`.
 
-⚠ **Round-8 H1 — behavior 18 as written contradicts the code it governs.** `copyToLocal`
-(`sync-run.ts:386-394`) is *required* to write the winner's bytes onto the loser; a guard that makes
-it refuse breaks Class-A sync. The two writers need different rules, and v8 gave them one:
+**The two halves disagreed**, and the disagreement was adjudicated by measurement, not by preference.
 
-| Writer | Rule |
-|---|---|
-| `copyAdditiveVideo` — creating a row that does not exist | **Refuse** on an occupied alias. Nothing is owed to that key yet |
-| `copyToLocal` / `transferClassA` — replacing a row that does | **Write**, because replacing is the point. Refuse only when the occupant is a *different* logical key that merely aliases |
+#### 3.6.0 The measurement that decided it — and it invalidates v10
 
-The distinguishing question is not "is it occupied?" but **"is the occupant this same logical key?"**
+> **MEASURED.** On APFS, overwriting **through an alias preserves the existing directory entry's
+> name** and replaces only the bytes. Create `003_팔란티어.md` in NFD, then `renameSync(tmp, <NFC
+> path>)` — which is exactly `LocalFsBlobStore.put` (`local-blob-store.ts:18`) and `promote` (`:61`) —
+> and `readdir` still returns the **NFD** name while the content is the **NFC** writer's.
+> Re-verified independently by the coordinator before adjudicating.
 
-> ### ⚠ Round-9 H1 — and NEITHER primitive §3.6 previously named can answer that question
->
-> v9 named `tryGet` and, for ordering, `wx`. Measured (write target = logical key in NFD, occupant
-> created under the aliasing form):
->
-> ```
-> CASE 1 — occupant IS the same logical key (NFD).    Table says: WRITE
->    tryGet(NFD).ok = true    wx = EEXIST    readdir = [ 'NFD' ]
-> CASE 2 — occupant is a DIFFERENT logical key (NFC), merely aliasing.   Table says: REFUSE
->    tryGet(NFD).ok = true    wx = EEXIST    readdir = [ 'NFC' ]
-> ```
->
-> **Both named primitives are byte-identical across the branch the table says decides the outcome**,
-> because both resolve *through* the alias. An implementer following v9 gets `EEXIST` and must pick a
-> branch with no information — and both readings are defects this trail has already paid for: *refuse*
-> restores round-8 H1 (every Class-A transfer throws, since the destination is occupied by definition),
-> *write* clobbers the victim, which is the entire reason this section exists.
->
-> **The credential that works is `readdir`**, because APFS is normalization-**preserving**: it returns
-> the byte sequence the file was created with.
->
-> > On `EEXIST`, read the receiver directory (`fs.readdirSync(dirname)`) and compare each entry
-> > **byte-for-byte** against the logical key. An exact match ⇒ the same logical key. No exact match but
-> > the path resolves ⇒ a *different* key aliasing this one. Then apply the table.
->
-> It reaches past the `BlobStore` interface into `LocalFsBlobStore` — which is the real finding, and why
-> the next pass on this section is a design review: the interface is addressed by **logical key**, the
-> filesystem is addressed by **alias class**, and four rounds have been spent searching for a credential
-> that reconciles them without saying out loud that the interface has none.
->
-> Keep `tryGet`'s *unreadable ⇒ occupied* rule. It is right, and it answers a **different** question —
-> *"can I prove absence?"* — which the Supabase receiver cannot (`provesAbsence = false`).
->
-> Write behavior 18b's fixture with `.normalize('NFC')` / `.normalize('NFD')`, **never** as two source
-> literals: two visually identical literals in a test file are exactly the invisible-character problem
-> this spec has now hit three times.
+**Therefore the stored name is not evidence of who owns the bytes**, and the protocol produces exactly
+that state on its own money path:
 
-⚠ **Round-6 M1 / round-8 M4 — ordering, and it is not fixable by check-then-write.** Between
-`tryGet` and the write, a vault file can appear at the alias. The occupancy test and the write must be
-**one operation**. A separate check-then-write cannot be made correct here, so the spec must not ask
-for one.
+| Step | Disk | Local row |
+|---|---|---|
+| Vault holds video X, stored NFD (`recoverOrphanedVideos` adopts on-disk bytes verbatim, `pipeline.ts:104`) | **NFD** | NFD |
+| Cloud minted the same video from the YouTube title (`summary-handler.ts:96`) | — | cloud row **NFC** |
+| Class-A transfer cloud→local: `put(loser, key=NFC)`, then the record update sets `summaryMd: key` (`sync-run.ts:394`, `:399`) | **NFD** (name preserved) | **NFC** |
+| A later run reaches v10's identity test at the same key | `readdir` → NFD; key → NFC ⇒ **"a different logical key" ⇒ REFUSE** | |
 
-> ### ⚠ Round-9 H2 — but `wx` is the wrong operation to make no-clobber, and v9 named it for both writers
->
-> v9 said *"`LocalFsBlobStore` gains a no-clobber write; **both vault writers use it**."* The additive
-> writer's durable write is not a `put`. It is a three-step protocol (`sync-run.ts:261-270`):
->
-> ```ts
-> // stage → verify (readable + hashes) → promote — never advertise promoted before durable.
-> const ref = await toBlob.putStaged(toP, video.summaryMd, Buffer.from(mdBody, 'utf8'), 'text/markdown');
-> const staged = await toBlob.get(toP, ref.tempKey);
-> if (!staged || mdHash(staged.toString('utf8')) !== mdHash(mdBody)) { throw ... }
-> await toBlob.promote(ref);
-> ```
->
-> A direct `writeFileSync(dest, bytes, {flag:'wx'})` collapses all four lines into one, so **the
-> read-back hash verification disappears** — on a vault write, for a paid artifact, with the row then
-> advertising `promoted`. Nothing in v9 told the implementer to preserve it, because v9 never mentioned
-> the protocol existed.
->
-> **The spec never had to choose between them.** Measured: `linkSync` is atomic, fails `EEXIST`, and
-> sees through the NFC/NFD alias exactly as `wx` does. `renameSync` — what `promote` does today — is the
-> only one of the three that silently overwrites.
->
-> | Writer | Durable write today | No-clobber form |
-> |---|---|---|
-> | `copyAdditiveVideo` (`sync-run.ts:263-268`) | `putStaged` → verify → `promote` (rename) | **`promote` → `link` + `unlink`.** Staging and the hash verify survive unchanged |
-> | `transferClassA` (`sync-run.ts:381-394`) | `putStaged` → verify → `put` (deliberate overwrite) | **keep `put`** — see the residual window below |
->
-> §2.4 measured *"`wx` → `EEXIST`"* as a **fact about aliasing**. v9 promoted it to *the chosen write
-> primitive* without asking whether the writers' shape admits it. That promotion — a measurement doing
-> work it was not measured for — is the same move as the 255-vs-267 error, one layer up.
+That refusal is **wrong — it is the same video's own file** — and its consequence is round-8 H1
+verbatim: every Class-A transfer for that video throws, forever. **v10's fix reintroduces round 8's
+finding**, through the very credential chosen to prevent it. It arrived before implementation only
+because the escalation rule fired.
 
-> ### ⚠ Round-9 M4 — and `transferClassA` cannot have the atomicity 18c claims
->
-> On the Class-A path the destination is occupied **by definition** (`sync-run.ts:386-394`: *"a two-sided
-> Class-A transfer must OVERWRITE the loser's existing (divergent) blob"*). So `wx` returns `EEXIST`
-> every time and the real write is a separate, clobbering `put` at `:394`. That is three operations —
-> test, identify, overwrite — not one.
->
-> **Behavior 18c is therefore scoped to `copyAdditiveVideo` only.** For `transferClassA` the residual
-> window is stated rather than papered over: between the identity check and the overwrite, a *different*
-> logical key could appear at the alias and be clobbered. **Accepted**, because the alternative is
-> refusing a transfer the protocol requires to succeed, and because reaching it needs a concurrent vault
-> writer creating an aliasing filename during a sync run. Do not leave a claim of atomicity the code
-> cannot make.
+#### 3.6.1 What this problem actually is
+
+**Namespace ownership.** The sender proposes a name; the **receiver owns the namespace** and addresses
+it by *alias class*, not by byte key. It is a **resumable-create + replication** problem — and four
+rounds designed a **lock**.
+
+Two patterns wearing one table, and neither asks v10's question:
+
+| Writer | Pattern | The question it needs answered |
+|---|---|---|
+| `copyAdditiveVideo` | **idempotent create / resumable** | *"has this already been done?"* — about **content** |
+| `transferClassA` | **replication (last-writer-wins)** | *"is this address mine to overwrite?"* — about the **record** |
+
+Neither is *"which byte-form created this directory entry?"* Four rounds hunted a credential for a
+question no writer asks.
+
+**Two mechanisms already serve this concern and no earlier version mentioned either:**
+
+- **The vault already has a filename identity function, and it is NFC-equality, not byte equality** —
+  `findByNormalizedName` (`serial-migrate-exec.ts:31-45`), called by `resolveOnDisk` for exactly this
+  state (*"the index string may differ from the on-disk bytes by Unicode normalization"*, `:53-59`),
+  locked in by `tests/lib/serial-migrate-normalization.test.ts:47-53`. **Under the rule this codebase
+  already ships, v10's "different logical key that merely aliases" is not a different key at all — it
+  is the same file, found.** Two mechanisms for one concern is the shape
+  `scripts/check-vocabulary-collisions.py` exists to catch.
+- **`copyBlob`'s `already: true` clause** (`blob-store.ts:22-24`) already records the lesson v10 drops:
+  *"without it, a fail-closed `destination-exists` would deadlock every retry after a partial
+  multi-blob relocation, permanently."* v10's behaviors 18/18c refuse on `EEXIST` with no name
+  information, so a crash between `promote` (`sync-run.ts:268`) and `upsertVideo` (`:286`) — receiver
+  has the file, no row — makes every subsequent run refuse. **Today's `renameSync` self-heals that
+  window; v10 would convert it into a permanently stranded paid artifact.**
+
+**There are FOUR vault writers, not two.** §2.5 records the count as *"1, 1, 1, 1, 2, 3 across six
+rounds"*; it is now 4, and one of them is a **delete**:
+
+| # | Writer | Identity it carries |
+|---|---|---|
+| 1 | `copyAdditiveVideo` (`sync-run.ts:263-268`) | none — no receiver row yet; only the bytes |
+| 2 | `transferClassA` (`sync-run.ts:381-394`) | the loser's record, already in the caller's scope (`:781`, `:792`) |
+| 3 | `companionTransfer` → `writeModelEnvelope` (`:464`) **and `loser.blob.delete(models/${base}.json)` (`:475`)** | `base` from the winner's `summaryMd` (`:448`) |
+| 4 | `reconcile-serial.ts:282`, `:293` | the row being relocated |
+
+**This is the structural finding.** §3.6 was written as *an enumeration of writers with a rule each*,
+and this spec has already learned twice that enumeration fails here — the branded `CloudSummaryKey`
+was deleted because *"round 7 measured that it did not enumerate them anyway"* (§3.5), and the
+homoglyph denylist was replaced by NFKC folding because *"a hand-typed list cannot be complete"*
+(§3.4). **A rule restated per writer will keep churning in a codebase that keeps growing writers.**
+So: one invariant at the seam, plus one question per *pattern*.
+
+#### 3.6.2 The design — attempt the write that cannot clobber; classify only if it fails
+
+**R1 — `promote` never overwrites an existing final object. On every adapter.**
+This is not a new contract; it is **the contract already written down**, which one adapter violates:
+`model-store.ts:43` says the staged→promote protocol is *"create-if-absent"*; `SupabaseBlobStore`
+already conforms (`supabase-blob-store.ts:112-116`); `LocalFsBlobStore` does **not** (`renameSync`).
+Implement with **`link` + `unlink`** (+ `rmdir` of the now-empty `_staging/<uuid>/`, which `unlink`
+leaves behind — measured, and v10 did not mention it). **MEASURED:** `linkSync` returns `EEXIST`
+through an NFC/NFD alias *and* through a case alias, so the no-clobber property holds against the
+whole alias class.
+
+> Round-9 H2's reasoning for choosing `link` over `wx` — it preserves `putStaged` → verify → `promote`,
+> so the read-back hash check survives — **stands unchanged**. What changes is what the primitive is
+> *for*: not an occupancy test (it returns `EEXIST` and no identity), but the no-clobber durable write
+> that makes `promote` mean the same thing on both backends. This also converges two adapters that
+> disagree today — the remedy Phase 6 finding #2 named.
+
+**R2 — additive create: write first, classify only on failure.**
+
+```
+putStaged → verify staged hash          (unchanged, sync-run.ts:263-267)
+promote                                  // R1: cannot clobber, on either backend
+read back the FINAL key and hash it
+   equal to the body → SUCCESS   (we wrote it, or it was already there → crash-resume heals)
+   different         → REFUSE    (throw; the occupant is untouched)
+   unreadable        → REFUSE    (keeps v10's `unreadable ⇒ occupied` rule, which is right)
+```
+
+Three properties v10's shape does not have:
+
+1. **Ordering-proof without an atomicity claim.** Round-6 M1 said check-then-write cannot be made
+   correct. Correct — so do not check first. The write goes first and *physically cannot clobber*; the
+   read only decides how to **report**. Nothing is destroyed by losing the race, so there is no TOCTOU.
+2. **Adapter-independent.** The additive path runs in **both directions** (`sync-run.ts:618-627`).
+   v10's rule was expressed in `readdir` and `link`, which the Supabase receiver does not have — so it
+   left the local→cloud direction on today's behaviour, where `promote` treats an existing final as
+   success and the row then advertises `promoted` **over someone else's bytes** (`:279`). R2 closes
+   that hole with the same three lines.
+3. **It answers the resumability question**, which name identity structurally cannot.
+
+**R3 — Class-A transfer: the identity question is answered by the loser's RECORD.**
+`transferClassA` is required to overwrite, so R1 does not apply and it keeps `put`. The right question
+is not *"is the occupant this same logical key?"* but **"is this address the loser's own?"** — and the
+caller already holds the answer at both call sites:
+
+```ts
+if (!canonicallyEqualName(loserVideo.summaryMd, key)) {
+  const dest = await loser.blob.tryGet(loser.p, key);      // only on this branch
+  if (dest.ok || dest.reason === 'unreadable') throw …;    // occupied by something we do not own
+}
+await loser.blob.put(loser.p, key, staged, 'text/markdown');   // unchanged
+```
+
+The common path runs **no probe at all** and has no window. A legitimately re-keyed transfer still
+works, because a diverged base makes the destination a fresh address. **No atomicity is claimed**:
+round-9 M4's residual window survives, scoped honestly to the uncommon branch, and it is identical to
+today's unconditional overwrite — a strict improvement, not a fence.
+
+**R4 — one name-equality function, and it must be a SUBSET of the filesystem's relation.**
+**MEASURED** on this volume the alias relation is **canonical equivalence ∪ case folding**: NFD/NFC
+alias; `Å` U+212B and `Å` U+00C5 alias (so it is full canonical equivalence, not merely NFC/NFD);
+`Ａ` U+FF21 and `A` do **not** (so it is not NFKC); `Case.md` and `case.md` **do**.
+
+> **Being narrower than the filesystem costs availability (a loud refusal). Being wider costs data.
+> Never model the filesystem's relation exactly — it is a per-volume property, not a code property.**
+> A case-sensitive APFS volume, or Linux CI, has a different one.
+
+`a.normalize('NFC') === b.normalize('NFC')` is a **proper subset**, which is safe in both directions
+for a *refusal* decision, and it is the rule `findByNormalizedName` already ships. Lift it into one
+exported predicate and have `findByNormalizedName` call it, so the codebase has **one** vault-name
+identity function instead of two.
+
+**Which seam owns what** — the answer to *"should `BlobStore` grow an identity primitive?"* is **no**:
+
+| Question | Owner | Why |
+|---|---|---|
+| *"Are these bytes the ones I meant?"* | `BlobStore` — `tryGet` + hash, already there | content identity is the only identity a blob store has on any backend |
+| *"Is this address mine?"* | `sync-run` — the record | ownership is a fact about the record, and the record is not in the store |
+| *"Do these two names collide?"* | one vault-name module | a property of two strings; it needs no I/O |
+
+**The `BlobStore` interface never learns about Unicode, and the Supabase adapter is never asked a
+question it has no answer to.**
+
+#### 3.6.3 Why the other half's recommendation was declined
+
+The Codex half named the problem well — *"alias-aware receiver-namespace admission"* — and was right
+that sync must not reach through the seam into filesystem mechanics. Its remedy was a new **required**
+`BlobStore` method, `lookupStoredKey`, returning `{ storedKey, exact }`, with Supabase stipulated to
+return `exact: true`.
+
+Declined, because it **wraps a credential that §3.6.0 measures to be stale by construction**. Making
+the stale answer a first-class capability propagates it to every adapter and every future caller.
+R1–R4 satisfy the same "don't reach through the seam" objection differently: the seam gets a stronger
+**uniform contract** (`promote` is create-if-absent everywhere) rather than a new question.
+
+> Two further notes recorded so they are not rediscovered. **`list()` already returns `readdir` bytes**
+> (`local-blob-store.ts:76`→`:85`), so the interface was never *missing* the credential — it exposed it
+> at O(whole tree). That reframes round-9 H1: the issue was never capability, and now it is moot,
+> because the credential itself is the wrong one. And had identity been read off `list`, §3.3's
+> prefix re-attachment would make Supabase's answer **true by construction rather than by
+> observation** — a credential right for the wrong reason, the same trap as `provesAbsence`.
+
+#### 3.6.4 The accepted residual, stated rather than hidden
+
+**Content identity is not key identity.** R2 treats *"the destination already holds exactly these
+bytes"* as *"already done"*. Two different logical keys **can** hold byte-identical content, and R2
+would then let the receiver's row advertise `promoted` at a file created for another key.
+
+Accepted, for three reasons and with one escape hatch:
+
+1. **The exact credential is exact about the wrong thing** — §3.6.0 measures that the stored name stops
+   tracking ownership after the first overwrite-through-alias, and the protocol performs that overwrite
+   itself. *An exact answer to a question whose answer has decayed is worse than an approximate answer
+   to the right one, because it is trusted.*
+2. **The failure modes are not symmetric.** R2's bad case is a *shared* file — no bytes lost, divergence
+   visible next run. v10's bad cases are a *permanently stranded* video and a *false refusal on the
+   money path*.
+3. **The premise needs two summaries with identical bytes and different names.** Vault names are
+   `${padSerial(serial)}_${slugify(title)}.md`, so two different videos cannot alias without a serial
+   collision — which the serial-coherence slice exists to prevent. **⚠ `[ASSUMPTION]` — the reviewer
+   did not re-verify the serial invariant this round.** If it is weaker than believed, this reason
+   weakens; the other two do not.
+4. **Escape hatch, if a wrong "already" is judged to cost money:** on the *equal* branch additionally
+   require the occupant's `video_id` frontmatter to match (`pipeline.ts:148` — every vault summary
+   carries one). That is *more* precise than `readdir`, because it names the owner directly instead of
+   proxying it through a byte form, and it stays adapter-independent.
+
+**Second residual: R3 adds a refusal where today there is none**, so a state that used to sync (badly)
+now throws. It is per-video, caught by the caller, leaves no partial state, and self-heals once the
+address is free — but it is **operator-visible**, and the runbook must say: the receiver holds a file
+at an address its record does not claim; identify the owner and re-key or remove it.
+
+**Third, and left open deliberately: writer 3's `delete(models/${base}.json)`** (`sync-run.ts:475`) is
+a destructive, alias-resolved operation on a **paid** artifact whose `base` becomes non-ASCII under
+this change. The risk is genuinely low — `base` derives from the summary the transfer has just made
+authoritative, so the alias resolves to the same video's own model — **and that sentence is the point:
+it is now written down.** Extending R3's record test to it is the alternative if the reviewer at the
+PR disagrees.
 
 ### 3.7 Unchanged
 
@@ -484,10 +612,20 @@ pass** because an errored query printed a header and no rows.
 | 16 | **A title with a space, an emoji, or an astral letter at the `slice(60)` boundary ingests and serves 200** — no fallback, no refusal, and the vault filename stays readable | integration |
 | 17 | `nested/foo.md`, `%2f`, `／`, `℀.md`, `001_a．．b.md`, a control char, a bidi override, and a 200-char base are all **rejected** by the guard | unit |
 | 17b | Total key lengths **129, 130 and 131 are ACCEPTED** — the bound did not narrow (round-9 H3) | unit |
-| 18 | `copyAdditiveVideo` refuses an **occupied alias** (vault file, no index row) — the file survives untouched | integration, real FS |
-| 18b | The identity test is `readdir` byte-comparison: `transferClassA` **writes** when the occupant is the same logical key and refuses a *different* key that merely aliases. **Fixture forms built with `.normalize()`, never as two literals** | integration, real FS |
-| 18c | For `copyAdditiveVideo` only: the occupancy test and the durable write are **one operation** (`link`), and `putStaged` → verify → `promote` is intact — the read-back hash check still runs | integration, real FS |
-| 19 | The collision guard treats an `unreadable` receiver read as **occupied** | unit |
+| 18 | Additive create: the occupant is **byte-identical** under the aliasing form → **SUCCEEDS**, file untouched, stored name preserved. *(This is the crash-resume case v10 would have stalled on forever.)* | integration, real FS |
+| 18b | Additive create: the occupant has **different bytes** → **REFUSES**; the occupant is intact | integration, real FS |
+| 18c | Additive create on the **cloud** receiver: the final key already holds different bytes → **REFUSES** instead of advertising `promoted` over someone else's bytes | integration |
+| 18d | **`promote` never overwrites an existing final object — on all three adapters** | contract |
+| 18e | The `putStaged` → **verify (read-back hash)** → `promote` protocol still runs on the additive path | integration |
+| 18f | `promote` leaves no orphaned `_staging/<uuid>/` **directory** behind (`unlink` removes only the file) | unit |
+| 18g | Class-A: the loser's row **names this address** → **overwrites**. *(Class-A sync still works — round-8 H1 stays fixed.)* | integration |
+| 18h | Class-A: the loser's row names a **different** address and the destination is **occupied** → **REFUSES**; **unoccupied** → **writes** | integration |
+| 18i | `canonicallyEqualName` is a **proper subset** of the volume's alias relation: NFC/NFD equal; `Ａ`(U+FF21) vs `A` **not** equal; and the one identity function is shared with `findByNormalizedName` | unit |
+| 19 | The receiver-read guard treats an `unreadable` read as **occupied** | unit |
+
+**All fixtures with two normalization forms are built with `.normalize('NFC')`/`.normalize('NFD')`,
+never as two source literals** — v10's rule, kept verbatim, and now doubly motivated: this spec has
+shipped three invisible-character defects.
 | 20 | The §4 gate's SQL predicate derives from the encoder module | check script |
 | 21 | The **share** path rejects a non-servable `mdKey` before deriving `base` from it, as coarse denial (round-9 Codex M1) | integration |
 | 22 | `encodeSegment('003_x\uD840.md') !== encodeSegment('003_x\uD850.md')` — two **distinct lone surrogates** encode differently (restored; round-8 M2, still open in v9) | unit |
@@ -515,10 +653,13 @@ be reported as verified; that happens in Phase 3.
 | Narrow the length bound from 131 to 128 | **17b** | PROVISIONAL |
 | Drop the bidi-control rejection | 17 | PROVISIONAL |
 | Revert the guard to the `\p{L}\p{N}` allowlist | 15 (NFD accented Latin 409s) | PROVISIONAL |
-| Replace `link` with `rename` in the additive promote | 18c | PROVISIONAL |
-| Skip the read-back hash verify before promote | 18c | PROVISIONAL |
-| Use `tryGet` instead of `readdir` for the identity test | **18b** — measured: `tryGet` cannot distinguish the branch | PROVISIONAL |
-| Make `copyAdditiveVideo` write instead of refuse | 18 | PROVISIONAL |
+| Replace `link` with `rename` in `promote` | **18d** — contract level, so it must go red on **all three** adapters | PROVISIONAL |
+| Skip the read-back hash verify before promote | 18e | PROVISIONAL |
+| Make additive create refuse on byte-**identical** occupancy | **18** — the crash-resume regression | PROVISIONAL |
+| Make additive create succeed on byte-**different** occupancy | 18b | PROVISIONAL |
+| Skip the cloud receiver's post-promote read-back | 18c | PROVISIONAL |
+| Drop `transferClassA`'s loser-record check | 18h | PROVISIONAL |
+| Widen `canonicallyEqualName` to NFKC | 18i | PROVISIONAL |
 | Drop the guard call on the share path | 21 | PROVISIONAL |
 | Apply the `list()` marker check to the caller's prefix | 10 | PROVISIONAL |
 | Encode empty segments | 11 and 12 | PROVISIONAL |
