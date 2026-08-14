@@ -206,6 +206,20 @@ it with the Chrome tools, read it back, and drive any interactive affordance you
 button, check the DOM changed, confirm the effect landed. Shipping an unexecuted affordance is what
 produced all four rounds above.
 
+**Drive BOTH question paths, and read the event the session actually receives** — not the DOM. Two
+defects were caught this way on 2026-08-13 that no amount of re-reading would have shown:
+
+- **The ask button is a CHILD of the heading, so `h.textContent` swallows its label.** Questions
+  arrived tagged `**…had never workedask**`. A `.replace(/ask$/,'')` is not the fix — it also eats a
+  heading that legitimately ends in that word. Walk `childNodes` and skip the `.askbtn` element.
+- **One monitor per explainer means N monitors per session, and every question fires N times.** The
+  monitor watches `questions.md`, which is shared by every page, so arming a second one duplicates
+  every event rather than covering a second document. `TaskStop` the previous one first, or check
+  whether one is already armed.
+
+The check that finds both is the same one: send a probe from the heading path AND from the selection
+path, then look at the **notification text**. The DOM said "✓ Sent" in both broken cases.
+
 ## When you are done — DELIVER it, do not just name it
 
 A path is not a deliverable. Clicking one opens the HTML *source* in an editor, which for a
