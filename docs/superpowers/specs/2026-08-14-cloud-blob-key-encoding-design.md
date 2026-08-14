@@ -136,7 +136,7 @@ export function isServableSummaryKey(key: string): boolean {
   // `．．` to `..`. A hand-typed homoglyph denylist cannot be complete; NFKC closes the class.
   for (const s of [key, key.normalize('NFKC')]) {
     if (s.includes('/') || s.includes('\\') || s.includes('..')) return false;
-    if (/[ -]/.test(s)) return false;   // C0 + DEL
+    if (/[\x00-\x1f\x7f]/.test(s)) return false;   // C0 + DEL
     if (/%2f|%5c/i.test(s)) return false;                // percent-encoded separators
   }
   return true;
@@ -151,6 +151,13 @@ export function isServableSummaryKey(key: string): boolean {
 > Same footgun class as a backtick inside a double-quoted shell string, which has bitten this repo
 > twice: **a character whose meaning changes with its position, in a context where it reads as a
 > literal.**
+>
+> **And v9 shipped a third instance of the class in the very same line** (fixed here): the C0 check
+> was written with **raw control bytes** in the file rather than `\x00`-`\x1f` escapes, so it rendered
+> as `/[ -]/` — a two-character class that any reader, or any copy-paste into the implementation,
+> would have taken at face value. Invisible characters and position-sensitive ones fail identically:
+> **the source does not show what it means.** Character classes in this spec are written with escapes
+> only.
 >
 > It is a predicate now for two reasons, not one. The bug lived in the character class; and a
 > hand-typed homoglyph list **cannot be complete** — round-8 Codex measured `U+2100 ℀ → a/c`,
