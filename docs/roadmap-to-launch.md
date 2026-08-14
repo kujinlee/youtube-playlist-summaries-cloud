@@ -1264,8 +1264,8 @@ unapplied for eight days while every document read "merged, done".
 
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
 Branch `fix/cloud-blob-key-encoding`, spec **v9**, 12 commits, **Phase 1 only — zero code written**.
-Eight dual review rounds plus a Phase 6 architecture review; all on disk at
-`docs/reviews/spec-blob-key-encoding-r{1..8}-{codex,claude}.md` and
+Nine dual review rounds plus a Phase 6 architecture review; all on disk at
+`docs/reviews/spec-blob-key-encoding-r{1..9}-{codex,claude}.md` and
 `docs/reviews/architecture-review-2026-08-14.md`.
 
 - **The design collapsed at v8**, and the trigger was a user question — *"why does the cloud need
@@ -1276,7 +1276,17 @@ Eight dual review rounds plus a Phase 6 architecture review; all on disk at
 - **Round 8 is the first CONVERGED verdict** (Codex; the Claude half held on one inverted regex, now
   fixed in v9). Both halves independently went looking for the consumer that would justify the old
   allowlist and **found none**.
-- **Next:** round 9 on v9 → `writing-plans` → implementation. Then an ADR recording the seam decision (task #91; not yet written, so not numbered here).
+- **Round 9 split the same way, in the same direction** — Codex CONVERGED (0B/0H/1M/1L), Claude NOT
+  CONVERGED on three Highs. Sided with the finding-reviewer; **v10 is committed**.
+- ⛔ **§3.6 IS ESCALATED FROM FIX TO REDESIGN (round-9 M5)** and this is the load-bearing outcome.
+  `review-method.md` escalates a component after **two** consecutive rounds of fix-induced findings.
+  §3.6 is on its **fourth** — rounds 6, 7, 8 and 9 each found a defect introduced by the previous
+  round's fix to §3.6 — while §3.1–§3.5 converged and stayed converged. **The condition fired at round
+  8 and nothing acted on it.** The next §3.6 pass is a **design review of the vault write protocol**,
+  not another defect hunt. This is the second time this repo has collected the evidence for its own
+  stop condition and not acted on it; the first bought the Phase-6-at-four-rounds trigger.
+- **Next:** the §3.6 design review → `writing-plans` → implementation. Then the ADR recording the seam
+  decision (task #91; not yet written, so not numbered here).
 - ⛔ **Deploy is blocked on the user**, not on engineering: `claude_ro` cannot read `storage.objects`,
   so the no-migration gate cannot run. Two grants; the SQL is in the spec's gate section.
 - Phase 6 returned **eight findings**, deliberately unfiled pending user triage — see that review.
