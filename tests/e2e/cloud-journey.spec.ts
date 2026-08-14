@@ -34,9 +34,23 @@
  *     there is no cancel rung — but the guard is narrower than "no money path was reached", and
  *     saying otherwise is how the false claim above got written in the first place.
  *
- * The one call that would reach YouTube and enqueue paid work — POST /api/jobs — is intercepted in
- * step 3, and only that call; the id it returns belongs to a row that really exists, so the refetch
- * and render are real. A deliberate, narrow exception to "not mocks", reasoned at the interception.
+ * The one call that would ENQUEUE paid work — POST /api/jobs — is intercepted in step 3, and only
+ * that call; the id it returns belongs to a row that really exists, so the refetch and render are
+ * real. A deliberate, narrow exception to "not mocks", reasoned at the interception. There is a
+ * SECOND route to an external API that is not intercepted: PlaylistSidebar calls
+ * backfillPlaylistTitles() whenever a listed playlist has no title, and that reaches the real
+ * YouTube Data API with no ledger row of any kind. The defence is that every seeded playlist is
+ * given a title immediately and BOTH updates are error-checked — see cloud.setup.ts — so no
+ * null-title row is ever listed. If that check ever fails, this suite makes outbound API calls.
+ *
+ * ⚠ WHAT THIS SUITE DOES NOT COVER, stated because the previous version of this note said the only
+ * gap was "the magazine HTML renders in a browser" and that was wrong. Every rung opens `/` with no
+ * query string, and CloudAppBody renders PlaylistLibrary only when `?playlist` is set
+ * (CloudApp.tsx:98) — so PlaylistLibrary, VideoList, FilterBar, IngestProgressBanner and
+ * ScopeProvider are NEVER MOUNTED here. The sidebar link is asserted visible three times and never
+ * clicked. Also untested at browser level: playlist deletion, sharing, dig-deeper serving, and PDF.
+ * Rung 4 covers the magazine render via a direct /api/html navigation, not via the UI that leads to
+ * it. Tracked as backlog #44.
  */
 import '../integration/setup';                       // env for the admin client (see cloud.setup.ts)
 import { test, expect } from '@playwright/test';
@@ -82,7 +96,12 @@ test.describe.serial('cloud journey', () => {
 
     const created = await seedPlaylist(adminClient(), fx().ownerId);
     const title = `E2E Ingested ${Date.now()}`;
-    await adminClient().from('playlists').update({ playlist_title: title }).eq('id', created.playlistId);
+    // Checked, for the reason spelled out in cloud.setup.ts: a null-title row makes the sidebar
+    // call backfillPlaylistTitles(), which hits the real YouTube Data API un-intercepted.
+    const titled = await adminClient().from('playlists')
+      .update({ playlist_title: title }).eq('id', created.playlistId).select('id');
+    expect(titled.error, 'titling the ingested playlist').toBeNull();
+    expect(titled.data ?? []).toHaveLength(1);
     await expect(page.getByRole('link', { name: title })).toHaveCount(0);   // genuinely not on screen
 
     // Only POST /api/jobs is intercepted, because a real one calls the YouTube Data API and
@@ -112,27 +131,28 @@ test.describe.serial('cloud journey', () => {
     await expect(page.getByRole('link', { name: title })).toBeVisible();
   });
 
-  // ⚠ SKIPPED, AND THE REASON IS A COST, NOT A BUG IN THE APP.
+  // ⚠ THIS RUNG WAS SKIPPED FOR A WEEK OVER A ONE-TOKEN TYPO, AND THE SKIP COMMENT IS WORTH
+  // REMEMBERING BETTER THAN THE FIX.
   //
-  // The HTML render calls resolveMagazineModel. The setup pre-seeds models/{base}.json precisely so
-  // that call finds one and returns without touching Gemini — and the blob IS written (verified in
-  // storage.objects). But the served document still comes back as LLM paraphrase, so the resolver
-  // is judging the seeded envelope STALE and regenerating: most likely `sourceSections` not
-  // matching the titles its own parser derives from the markdown, since that is the freshness
-  // input this envelope hand-rolls.
+  // The HTML render calls resolveMagazineModel, and the setup pre-seeds models/{base}.json so that
+  // call finds one and returns without touching Gemini. It did not: the served document kept coming
+  // back as LLM paraphrase. The seed said `sourceSections: ['2. Encoder']`; the parser splits the
+  // ordinal off the heading and keeps it in a separate field (parse.ts:53-55), so the titles
+  // `sameTitles` compares against (read-model.ts:16) are `['Encoder']`. Never fresh, always
+  // regenerate, 6-12¢ a render.
   //
-  // Each attempt to guess that contract costs 6–12¢ of real Gemini spend. Today's debugging put 24¢
-  // through the local ledger before this was understood. Iterating by trial and error on a money
-  // path is the wrong way to learn a contract, so this step stops here rather than being tuned
-  // until it goes green.
+  // The old comment here diagnosed that correctly — "most likely sourceSections not matching the
+  // titles its own parser derives" — and then declined to spend a minute confirming it, on the
+  // grounds that each ATTEMPT cost real Gemini money. 24¢ went through the local ledger guessing at
+  // a contract that is three lines in two files, next to a sibling fixture that had it right all
+  // along (share-route.test.ts:56 seeds `## 1. Intro` against :88 `['Intro']`). It then called
+  // itself "a bounded reading task, not an open question" and left it unread. The lesson is not
+  // about magazines: WHEN AN EXPERIMENT COSTS MONEY, READ THE CONTRACT FIRST — the expensive
+  // instrument is rarely the informative one.
   //
-  // WHAT IS AND IS NOT COVERED WITHOUT IT. Step 5 already proves the summary blob round-trips
-  // through the serve path and arrives byte-correct — for free, because the md path is documented
-  // never to call resolveMagazineModel (serve-summary-core.ts:28). What is missing is only "the
-  // magazine HTML renders in a browser", which M3.2 verified by hand against release v6 on
-  // 2026-08-12. Un-skip once the model-freshness contract is read from the resolver rather than
-  // guessed; that is a bounded reading task, not an open question.
-  test.skip('4 · opening a video renders its summary with a section timestamp', async ({ page }) => {
+  // Restored 2026-08-13 with the seed corrected; the run-level money guard confirms it renders for
+  // free. Found by the Claude half of the dual review, on a branch Codex had cleared four times.
+  test('4 · opening a video renders its summary with a section timestamp', async ({ page }) => {
     const res = await page.goto(
       `/api/html/${fx().listed.videoId}?playlist=${fx().listed.playlistId}&type=summary`,
     );

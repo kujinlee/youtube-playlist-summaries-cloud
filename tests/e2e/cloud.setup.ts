@@ -59,8 +59,27 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
 
   const listedTitle = `E2E Listed ${Date.now()}`;
 
+  // PIN THE GUARDRAILS. `guardrail_config` is a singleton this stack shares with the integration
+  // suite, which writes it freely — serve-model-charge.test.ts sets daily_cap_cents to 3,
+  // DELIBERATELY below magazine_est_cents, to exercise the at-capacity branch. Left behind, every
+  // serve reserve here returns at_capacity and the render rungs go green having proved nothing
+  // about the seeded model: a pass for the wrong reason on the one rung this suite exists for.
+  const pinned = await svc.from('guardrail_config')
+    .update({ daily_cap_cents: 5000, magazine_est_cents: 6 }).eq('id', true).select('id');
+  if (pinned.error) throw new Error(`could not pin guardrail_config: ${pinned.error.message}`);
+  if (!pinned.data?.length) throw new Error('guardrail_config has no singleton row to pin');
+
   const listed = await seedPlaylist(svc, user.id);
-  await svc.from('playlists').update({ playlist_title: listedTitle }).eq('id', listed.playlistId);
+  // CHECK THE ERROR. seedPlaylist inserts with a NULL playlist_title, and PlaylistSidebar's mount
+  // effect calls backfillPlaylistTitles() whenever any listed row has none — which reaches the REAL
+  // YouTube Data API (app/api/playlists/backfill-titles/route.ts), un-intercepted and invisible to
+  // the spend ledger. PostgREST does not throw when an update matches zero rows, so a silent
+  // failure here would turn a locator timeout into outbound API calls on a suite whose config
+  // promises it runs "for free".
+  const titled = await svc.from('playlists')
+    .update({ playlist_title: listedTitle }).eq('id', listed.playlistId).select('id');
+  if (titled.error) throw new Error(`could not title the seeded playlist: ${titled.error.message}`);
+  if (!titled.data?.length) throw new Error(`no playlist row ${listed.playlistId} to title`);
   const video = await seedPromotedVideo(svc, {
     ownerId: user.id,
     playlistId: listed.playlistId,
@@ -97,7 +116,14 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
     {
       sourceMd: `${video.base}.md`,
       generatedAt: new Date().toISOString(),
-      sourceSections: ['2. Encoder'],
+      // 'Encoder', NOT '2. Encoder'. The parser splits the leading ordinal off the heading and
+      // keeps it in a separate `numeral` field — parse.ts:53-55, `title = ord ? ord[2].trim() : …`
+      // — so the titles `sameTitles` compares against (read-model.ts:16) never carry the number.
+      // Seeding '2. Encoder' made isFresh permanently FALSE, which is why the serve path
+      // regenerated through Gemini on every render and why rung 4 below was skipped as
+      // unaffordable. It was a one-token typo, not an unknown contract: share-route.test.ts:56
+      // seeds `## 1. Intro` against :88 `['Intro']` and has been right all along.
+      sourceSections: ['Encoder'],
       generatorVersion: GENERATOR_VERSION,
       model: {
         sections: [{
