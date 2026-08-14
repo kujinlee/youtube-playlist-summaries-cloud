@@ -1,16 +1,35 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v2**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v3**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, filed 2026-08-12 by the first real M3 acceptance run against prod
 release v6. Earlier sighting: `docs/local-validation-findings.md` §BUG-4, filed P2 during local
 validation and correctly diagnosed there — it became 🔴 only when the acceptance run showed the
 failure lands *after* the Gemini charge.
 
-**Review trail:** round 1 dual adversarial, both halves **NOT CONVERGED** —
-[`docs/reviews/spec-blob-key-encoding-r1-codex.md`](../../reviews/spec-blob-key-encoding-r1-codex.md)
-(1 Blocking, 1 Medium, 1 Low) and
-[`docs/reviews/spec-blob-key-encoding-r1-claude.md`](../../reviews/spec-blob-key-encoding-r1-claude.md)
-(1 Blocking, 3 High, 3 Medium, 2 Low). Both found the same Blocking independently. v2 applies all ten.
+**Review trail — two dual rounds, four halves, all four NOT CONVERGED.**
+
+| Round | Reviewer | Findings |
+|---|---|---|
+| 1 | [codex](../../reviews/spec-blob-key-encoding-r1-codex.md) | 1 Blocking, 1 Medium, 1 Low |
+| 1 | [claude](../../reviews/spec-blob-key-encoding-r1-claude.md) | 1 Blocking, 3 High, 3 Medium, 2 Low |
+| 2 | [codex](../../reviews/spec-blob-key-encoding-r2-codex.md) | 1 Blocking |
+| 2 | [claude](../../reviews/spec-blob-key-encoding-r2-claude.md) | 2 Blocking, 1 High, 2 Medium, 1 Low |
+
+> ⚠ **v3 changes the architecture, because round 2 showed v2 was patching one decision repeatedly.**
+> Five of round 2's findings — Codex's Blocking, Claude's B2, H1 and M1, plus a sixth comparison site
+> found by a mechanical sweep — are all consequences of *one* v2 choice: putting the
+> normalization-equivalence at the **storage seam**, in a system that is byte-exact everywhere above
+> it. Each round then discovered another site that had not got the memo, and the hand-enumeration
+> failed **twice** (v2 named four; round 2 found a fifth, a sixth, a seventh and an eighth).
+>
+> Per `docs/plugins.md`' own rule — *when two review rounds find the same bug shape through different
+> paths, delete the mechanism rather than patch the second instance* — v3 **moves canonicalization to
+> the ingress boundary** (§3.5). Every key that reaches cloud reasoning is canonical by construction,
+> so every existing byte-exact comparison is correct without being touched, and the encoder goes back
+> to being a pure function of raw bytes.
+>
+> **Round 3 must attack that claim specifically**, because "this dissolves five findings" is exactly
+> the kind of assertion that has been wrong before in this repo.
 
 > **In one paragraph:** every blob key is `${padSerial(serial)}_${slugify(title)}`, and `slugify`
 > keeps any Unicode letter. Supabase Storage rejects any object key containing a non-ASCII character,
@@ -196,8 +215,22 @@ encodeSegment(s):
   if SAFE.test(s) && s.length <= LIMIT:   return s                 // identity
   head = leading run of [A-Za-z0-9._-] in s, truncated to 32
   ext  = trailing /\.[A-Za-z0-9]{1,8}$/ of s, else ''
-  return `${head}=h${base64url(sha256(utf8(NFC(s)))).slice(0, 22)}${ext}`
+  return `${head}=h${base64url(sha256(utf8(s))).slice(0, 22)}${ext}`
 ```
+
+> ⚠ **v3: the encoder hashes the RAW segment. v2 hashed `NFC(s)`, and that was the root of five
+> round-2 findings.** Round-2 **M1** measured the immediate defect — the encoder *branched* on the raw
+> segment (`SAFE.test(s)`) but *hashed* the normalized one, so the two equivalence relations §3.5
+> claimed to have merged still differed, with exactly one counterexample in all of Unicode (U+212A
+> KELVIN SIGN, whose NFC form is ASCII `K`). The deeper problem is §3.5. Normalization is now handled
+> at ingress, so **everything reaching this function is already canonical** and the encoder needs no
+> opinion about Unicode at all.
+
+`SAFE ⊂ ASCII`, so `LIMIT` may be compared against `String.length` (UTF-16 code units) without a
+code-unit-vs-character discrepancy — the identity branch is only ever taken by ASCII segments, where
+the two agree. Round-2 **L1**: v2 relied on this silently, and §2.2's "255 characters" was itself
+measured with ASCII only. Non-ASCII segments never reach the length test, because `SAFE` rejects them
+first.
 
 `003_돈-버는-방식은-정해져-있다.md` → `003_=hJ8kQ2m….md`.
 
@@ -233,15 +266,21 @@ playlist, making every paid dig section invisible product-wide.
 **Rule: encoding applies to non-empty segments; empty segments pass through.** A trailing `/`
 survives encoding, and `''` encodes to `''`.
 
-#### 3.2.2 Canonically-equivalent logical keys are the same logical key
+**And a prefix must end on a segment boundary.** Round-2 **M2**: encoding is defined per segment, but
+`list` and `deletePrefix` take an arbitrary string. A prefix that stops mid-segment (`dig/ba`) would
+have `ba` encoded as though it were a whole segment, matching nothing — returning `[]` or deleting
+nothing, silently, which is H3's failure class re-entering through the door H3's fix left open.
+**`list`/`deletePrefix` assert the prefix is empty or ends in `/`**, and throw otherwise. All three
+production callers pass `dig/${base}/` (§3.3), so this is a precondition they already satisfy.
 
-The encoder hashes `NFC(s)`, so NFD and NFC forms of one segment map to one physical object. That is
-deliberate — Storage is byte-exact and macOS is not (§2.5) — but it means **the map from raw logical
-keys is not injective**, and v1 asserted flat injectivity while also requiring behavior 3. The honest
-statement, which §3.5 then makes true throughout:
+#### 3.2.2 The encoder is injective, full stop — because canonicalization happens upstream
 
-> The encoder is injective **on NFC-normalized logical keys**. Canonically-equivalent logical keys are
-> deliberately identified, and the seam treats them as *the same logical key* everywhere.
+v2 said the encoder was "injective on NFC-normalized logical keys", which is a property of a function
+composed with something the caller might not have applied. v3 makes it unconditional: **the encoder is
+injective on its input**, and §3.5 guarantees every input is already canonical.
+
+That is a strictly stronger and simpler contract, and it is what makes behavior 4 stateable as a plain
+property test rather than one quantified over a precondition the production code might not meet.
 
 The two branches cannot collide structurally: a hashed segment contains `=`, which `SAFE` forbids.
 `=` is the marker because Storage accepts it (§2.1) and `slugify` can never emit it.
@@ -317,18 +356,54 @@ at**. Summary, magazine model and every paid dig section, gone, while the functi
 `{ok: true, action: 'relocated', cleanupFailures: 0}` and the sync report says success. Reachable via
 §2.5's `recoverOrphanedVideos` path.
 
-**Fix — make NFC canonical at the logical seam too, so "physically the same object" and "logically
-the same key" are one equivalence relation.** Four sites:
+### 3.5 Canonicalize at INGRESS, not at the seam — v3's architectural change
 
-1. `normalizeLogicalKey` (`blob-store.ts:96`) NFC-normalizes each segment. `copyBlob`'s short-circuit
-   then fires *before any I/O* and returns `{ok: true, already: true}` — the correct answer.
-2. `reconcileCloudBase`'s cleanup (`reconcile-serial.ts:359`) compares
-   `normalizeLogicalKey(to) === normalizeLogicalKey(from)`.
-3. `describeDivergence` (`reconcile-serial.ts:151-155`) compares NFC-normalized bases, so a
-   normalization-only difference is `agreed` and no relocation is attempted at all.
-4. The relocation plan's collision check (`reconcile-serial.ts:262-276`) holds **NFC-normalized**
-   destinations in its Set, so two sources aliasing onto one destination is `ambiguous-mapping`
-   rather than silently sequenced.
+**v2's fix was to make the seam's equality NFC-aware and update "four sites". That was the wrong
+place, and round 2 proved it by finding four more sites:**
+
+| Site | Failure mode under v2 |
+|---|---|
+| `reconcile-serial.ts:196` — occupancy `holder` check | fails **open**: two videos' bases alias onto one physical object (Codex r2 Blocking; Claude r2 H1b) |
+| `reconcile-serial.ts:117-137` — `remap` | fails **closed**: `unmappable-key` → `sync-run.ts:756` throws → the video is stranded on **every** run, forever (Claude r2 H1a) |
+| `sync-run.ts:206` — additive collision guard | fails **open**: the guard's own comment says a key collision here *destroys a summary* via promote-as-rename (found by mechanical sweep) |
+| `reconcile-serial.ts:102` — `paidKeysUnder` prefix | correct only by a load-bearing coupling to §3.3 that was written down nowhere (Claude r2 H1c) |
+
+Hand-enumeration failed twice on the same question. A seventh site is not the finding; **the list is
+the finding.**
+
+**v3 puts canonicalization where keys ENTER cloud reasoning.** Then every comparison downstream is
+comparing two canonical values, so all eight sites are correct *without being modified*, and the
+`normalizeLogicalKey` change is dropped entirely.
+
+**The invariant:** *every key that reaches cloud reasoning is NFC.* Enforced at the boundaries where a
+key arrives from outside that world:
+
+1. **Worker persist** — `lib/job-queue/summary-handler.ts:96` mints `baseName` from `slugify(title)`,
+   whose input is a YouTube API string of unknown normalization. NFC it at mint.
+2. **Sync, sender → cloud record** — `sanitizeAdditiveVideo` and `transferClassA`
+   (`sync-run.ts:263`, `:279`, `:399`, `:430`) carry the sender's key into cloud rows and blobs.
+3. **Sync, local value → cloud reasoning** — `describeDivergence` (`reconcile-serial.ts:151-155`)
+   reads `localVideo.summaryMd`, which §2.5 shows can be raw `readdirSync` bytes. Canonicalize on
+   entry, or a normalization-only difference reports `diverged` on **every** run and relocates
+   forever.
+
+**What this does NOT change: the vault.** Canonicalization applies to the key entering the *cloud
+record*, never to a file on disk. §1 decision 1 holds — no vault file is renamed.
+
+> ⚠ **Known property, stated rather than discovered:** a cloud→local sync writes the local file under
+> the canonical key. On APFS that resolves to the existing file (macOS normalizes filenames), so a
+> vault with an NFD name gains nothing new. On a case-sensitive, non-normalizing Linux vault it would
+> create a second file. The local side already carries `findByNormalizedName`
+> (`serial-migrate-exec.ts:26`) for exactly this mismatch. Recorded as accepted, not solved.
+
+**And a script, because a rule here is unenforceable.** Round-2 H1 put it exactly: *"A hand-written
+list of four sites is not a guard; it is a snapshot that the next person to add a comparison will not
+read."* Per `docs/dev-process.md` — *before adding a rule here, ask whether it can be a script* —
+add **`scripts/check-key-canonicalization.py`**: fail if a key-valued expression
+(`summaryMd`, `baseOf(…)`, `newBase`, `oldBase`, `mdKey`) crosses into `lib/cloud-sync/` or the cloud
+metadata write path without passing the exported canonicalizer, outside an explicit allowlist.
+**FAILS IF:** a raw `cv.summaryMd === lv.summaryMd` is added to `reconcile-serial.ts` and the script
+stays green.
 
 ### 3.6 What does not change
 
@@ -336,7 +411,25 @@ the same key" are one equivalence relation.** Four sites:
 - `video.summaryMd`, `artifacts.summaryMd.key` — still the logical name.
 - `lib/cloud-sync/sync-run.ts` — still copies the key verbatim; §2.6 is fixed underneath it.
 - `remap()` — still operates on logical keys only.
-- The three Unicode-aware guards (§5) — still correct; they validate *logical* keys.
+
+> ⚠ **v2 claimed "the three Unicode-aware guards (§5) — still correct". Round-2 B1 falsified that,
+> and it was the most dangerous line in the document.** `CLOUD_SUMMARY_MD_KEY`
+> (`assert-cloud-summary-md-key.ts:14`) admits `\p{L}` and `\p{N}` only, and a combining mark is
+> `\p{Mn}` — neither. Measured: `003_café.md` **passes in NFC and fails in NFD**. So under v2 a
+> decomposed accented-Latin key became *storable but unservable*: a durable row advertising
+> `status: 'promoted'`, a real object in the bucket, real Gemini spend, and a **409 `corrupt summary
+> key`** at `serve-summary-core.ts:56-64` that the user discovers only by opening the document.
+> `resolve-summary-key.ts:16` returns `null` for the same key, so the dig path sees no summary at all.
+>
+> **On master the same input fails LOUDLY** — `upload('003_café.md')` is rejected `400 Invalid key`,
+> sync throws at `putStaged`, and the error lands in `report.errors`. v2 would have converted a loud
+> failure into a silent paid-but-unreachable summary, **which is the exact shape of backlog #36
+> itself**. Note also that Korean — the script every behavior in §6 named — is the one script where
+> this cannot appear, because Hangul jamo are `\p{Lo}`.
+>
+> **v3 fixes it in both directions:** §3.5's ingress canonicalization means the DB holds the NFC
+> representative, so the guard sees the form it admits; and as a belt, `assertCloudSummaryMdKey`
+> tests `mdKey.normalize('NFC')` so a row already written stays servable. Neither touches the vault.
 - **ADR-0008's money guard survives.** Its corroboration argument depends on the MD key and the model
   key living under the same `${p.id}/${p.indexKey}/` grant. `objectKey` encodes only `key`, so both
   physical keys stay under that prefix (verified in round 1 by both halves).
@@ -422,11 +515,20 @@ contract always agrees with the producer; only a call to the consumer finds this
 | 13 | Local and in-memory adapters are identity — a Korean key stays Korean on disk | unit |
 | 14 | A Korean-titled video ingests end to end and the summary is readable | integration |
 | 15 | A Korean-titled video syncs local → cloud (§2.6) without failing | integration |
-| 16 | **Relocating a base that differs from local's only by normalization loses nothing** — the new key reads, the model and every dig read, and the ledger does not move | integration |
+| 16 | **A video whose `summaryMd` is `003_café.md` in NFD syncs, and the summary then SERVES 200 with the right bytes, ledger unmoved** | integration |
 | 17 | `encodeSegment` is identity on the longest key `CLOUD_SUMMARY_MD_KEY` admits (128-char base + `.md`) | unit |
-| 18 | The §4 gate's SQL threshold and predicate are derived from the encoder module, not typed | check script |
+| 18 | The §4 gate's SQL predicate is derived from the encoder module, not typed | check script |
+| 19 | Two cloud rows whose bases are canonically equivalent cannot both exist — the ingress invariant makes it unrepresentable | integration |
+| 20 | A key entering `lib/cloud-sync/` without passing the canonicalizer fails the build | check script |
+| 21 | `list`/`deletePrefix` throw on a prefix that does not end on a segment boundary | unit |
+| 22 | `encodeSegment` is identity-preserving for U+212A (round-2 M1's sole counterexample): raw-branch and raw-hash agree | unit |
 
-Behavior **16** is the B1 falsifier: against v1 as written, step (a) returns `null`.
+**Behavior 16 is rewritten, and why matters.** v2's version — *"relocating a base that differs only by
+normalization loses nothing"* — was the sole falsifier for the highest-risk change, and round-2 **B2**
+showed it was **vacuous**: v2's own fix 3 made `describeDivergence` report `agreed`, so no relocation
+ran and the test exercised nothing. The mutation §7 named to prove otherwise (*remove NFC from
+`normalizeLogicalKey` → 16 goes red*) **survived**. v3's version asserts an observable the user cares
+about — the summary serves — through a path that cannot be short-circuited by the fix under test.
 
 ---
 
@@ -441,10 +543,25 @@ contradicted each other, and *B1 is exactly what behavior 4 would have caught ha
 A separate test asserts the seam's comparison helpers agree with the encoder about which keys are the
 same — that is the §3.5 contract, and it is the real guard against B1's whole class.
 
-**Mutation testing**, per standing practice. Remove NFC from `normalizeLogicalKey` and behavior 16 must
-go red; widen `SAFE` to include `=` and behavior 4 must go red; restrict the `list()` marker check to
-the leaf and behavior 9 must go red; encode empty segments and behaviors 10 and 11 must go red. A guard
-whose mutation survives is untested, and "untested" is indistinguishable from "does nothing".
+**Mutation testing**, per standing practice — **and v2's mutation list was itself defective**, which is
+why this one names the observable each mutation must break rather than the mechanism:
+
+| Mutation | Must turn red |
+|---|---|
+| Drop NFC from any one of §3.5's three ingress points | 16 (serve 200), and 19 |
+| Widen `SAFE` to include `=` | 4 (injectivity) |
+| Restrict the `list()` marker check to the leaf | 9 |
+| Encode empty segments | 10 and 11 |
+| Hash `NFC(s)` instead of `s` in the encoder | 22 (U+212A) |
+| Drop the `assertCloudSummaryMdKey` NFC belt | 16 |
+| Remove a canonicalizer call in `lib/cloud-sync/` | 20 (check script) |
+
+Round-2 **B2** is the reason for the middle column. v2's list said *"remove NFC from
+`normalizeLogicalKey` → behavior 16 goes red"*, and that mutation **survived**, because a different
+part of the same fix short-circuited the scenario before the mutated code ran. A mutation that names a
+mechanism proves nothing when a sibling mechanism hides it; a mutation that names an **observable the
+user would notice** cannot be hidden that way. A guard whose mutation survives is untested, and
+"untested" is indistinguishable from "does nothing".
 
 Behavior 5 asserts **65** and **255**, both properties of the encoder and of the measured ceiling. The
 per-segment ceiling belongs in this document and in one exported constant — not typed into the SQL
@@ -519,7 +636,8 @@ if someone later narrowed the encoder. (Round 1 confirmed this reasoning, condit
 |---|---|
 | An existing prod key uses ` `, `(`, `)`, `+` or `=` and would be re-addressed | §4 gate before deploy. Blocking if it returns rows. ⛔ **Currently unrunnable** — needs two grants, §4.1 |
 | The 255-per-segment bound differs on prod's storage-api version | Design is insensitive (worst case 65). Do not hardcode it anywhere but the one exported constant |
-| §3.5 changes key *equality* on two money paths | Behavior 16 + the comparison-agreement test; mutation-checked. This is the highest-risk part of the slice and belongs in its own task |
+| §3.5's ingress canonicalization is claimed to dissolve five round-2 findings | **Round 3 must attack this claim specifically.** "This dissolves N findings" has been wrong before here; it is an argument, not a measurement, until behaviors 16 and 19–20 exist |
+| A ninth comparison site exists that neither the sweep nor two rounds found | Behavior 20's check script is the durable answer; the enumeration is explicitly *not* trusted |
 | Bucket browsing gets harder for non-ASCII titles | Accepted (§8.1). `head` keeps `003_` visible; the DB row holds the readable name |
 | SHA-256 truncated to 22 base64url chars (~132 bits) | Negligible, and scoped within one owner + playlist prefix |
 | The two dead-lettered prod jobs stay unrecovered | Accepted by decision (§1) |
