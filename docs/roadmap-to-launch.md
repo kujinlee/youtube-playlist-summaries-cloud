@@ -1261,12 +1261,33 @@ unapplied for eight days while every document read "merged, done".
 **Backlog #36 (🔴 a non-ASCII title destroys a paid summary) is now the last launch-blocking
 defect**, and it is engineering, not a decision.
 
+**What is still open on THIS file, as opposed to in the backlog:** exactly one tracked item, **A6**,
+and it is **PARKED by user decision** (2026-08-11) along with the rest of the blob-addressing schema
+— it is *outstanding*, not *next*. Every milestone step M1–M3 is ticked. **The next work is not a
+roadmap item at all**; it is `docs/backlog.md` **#36**, then #44 and #45.
+
+⚠ **That sentence is load-bearing for CI, and it is worth knowing why.**
+`check-roadmap-consistency.py` cross-references this block against the checkboxes it summarises, so a
+block naming no identifier verifies nothing and fails. When M3 closed, that fired on a roadmap whose
+only fault was being **finished** — the next work having moved to a namespace the script does not
+model. The script now separates the two cases (finished → pass, stated; work remains but unnamed →
+fail, and it names what remains). **A6 appears above because it genuinely remains**, not to satisfy
+the check; naming a parked item as "next" would have been the dishonest way to go green, and it was
+the first thing available. See backlog **#39** — this is a second instance of its argument that the
+vocabulary is missing a word.
+
 **⭐ M1 IS COMPLETE (2026-08-11).** M1.4 closed with all of A1–A3 and B1–B5 ticked — see
 [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) for the evidence and the release each
 item was verified against. M2 Sync completed 2026-07-19.
 
-**The actual next step: M3 Acceptance** — browser-level Playwright e2e against the deployed URL.
-⚠ **Tidied 2026-08-12, and the tidy was much smaller than "write three gates".** Asked whether all
+**⭐ M3 IS ALSO COMPLETE — CLOSED 2026-08-13.** This paragraph read *"The actual next step: M3
+Acceptance — browser-level Playwright e2e against the deployed URL"* and stayed that way in the first
+draft of the closing PR, while the checkbox above it went `[x]`. **`check-roadmap-consistency.py`
+caught it in CI**, which is the third time this block has drifted (2026-07-30, 2026-08-11, and here)
+and the first time a script rather than a person noticed. **The next step is now backlog #36** — a
+non-ASCII title destroys a paid summary — which is the last launch blocker.
+
+⚠ **Historical note, kept because the reasoning outlived the item.** Asked whether all
 three needed falsifiers, the answer was no. **A third, ceremonial sign-off item was deleted** — no
 subject, no observation, nothing that could be true or false. The manual production check earned a
 falsifier, **was run the same day against v6, and PASSED — while finding two real defects**
@@ -1274,8 +1295,10 @@ falsifier, **was run the same day against v6, and PASSED — while finding two r
 description of the damage and its guessed mechanisms did not, which is recorded with the acceptance
 evidence above because *"filed from the symptom"* is a repeatable failure, not a one-off). **3.1 is a TASK, not a gate** — the test becomes the claim once written, so its
 journey is enumerated in the test rather than in a clause.
-The ratchet still flags 3.1 by design; **do not silence it.** Writing prose to lower a ratchet's number
-is the failure the ratchet exists to catch.
+The ratchet flagged 3.1 for as long as it was open, and **its baseline is now 0 because the item was
+COMPLETED, not because anyone wrote a clause** — the distinction the instruction *"do not silence it"*
+existed to protect, and it was never violated. Writing prose to lower a ratchet's number remains the
+failure the ratchet exists to catch.
 *(The deleted item is described rather than numbered here on purpose: `check-roadmap-consistency.py`
 reads a bare identifier in this block as a claim that the work is pending, and flagged the first draft
 of this very sentence for naming an item whose checkbox no longer exists.)*

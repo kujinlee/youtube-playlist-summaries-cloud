@@ -303,13 +303,31 @@ def find_inconsistencies(sources: dict[str, str]) -> list[Finding]:
     # script resolved exactly TWO identifiers in a 39-paragraph block and passed, which is a green
     # light over almost nothing. Requiring the block to name at least one identifiable step is also
     # the right pressure on the prose: "what is next" should be answerable by pointing at a box.
+    #
+    # ⚠ BUT "NAMED NOTHING" HAS TWO OPPOSITE CAUSES, and conflating them cost a red CI on 2026-08-13.
+    # When the last milestone was ticked, this fired — correctly by its own logic and wrongly in
+    # substance: the block named no step because THERE WAS NO ROADMAP STEP LEFT TO NAME. The next
+    # work had moved to `docs/backlog.md`, a namespace this script does not model. Read as a fault,
+    # the only ways to go green were to name a parked item as "next" (a lie) or to delete the check.
+    #
+    # This is the same missing-word defect backlog #39 files against the roadmap's own vocabulary:
+    # *"the model has present and absent; absent conflates deleted, renamed and never existed — it
+    # needs RETIRED."* Here, "named nothing" conflated a careless block with a finished plan. So the
+    # state is now DERIVED AND VERIFIED rather than assumed: complete means every tracked checkbox is
+    # actually ticked, not merely that nobody wrote an identifier down.
     if inspected == 0:
-        findings.append(Finding(
-            "no_coverage", "-", 0, "",
-            "NEXT ACTIONS names no identifiable step (no `A1`/`B3`/`1.4`/`3.1` inside a "
-            "forward-looking sentence), so this check verified NOTHING. Name the next step by its "
-            "identifier, or this passes without reading anything.",
-        ))
+        remaining = sorted(i for i, m in marks.items() if m in (" ", "~"))
+        if remaining:
+            findings.append(Finding(
+                "no_coverage", "-", 0, "",
+                "NEXT ACTIONS names no identifiable step (no `A1`/`B3`/`1.4`/`3.1` inside a "
+                "forward-looking sentence), so this check verified NOTHING — and work DOES remain: "
+                f"{', '.join(remaining[:8])}{' …' if len(remaining) > 8 else ''}. Name the next step "
+                "by its identifier, or this passes without reading anything.",
+            ))
+        # else: every tracked item is ticked, so naming none is the truthful state of a finished
+        # plan. Not silence — main() prints which condition was met, because a pass whose reason is
+        # invisible is indistinguishable from a check that did not run.
     return findings
 
 
@@ -414,6 +432,26 @@ def _self_test() -> int:
         ("a family that exists nowhere is still invisible (documented residual)",
          {ROADMAP: roadmap("**The actual next step: Z9** unknown.", "- [ ] **B1 — x**")},
          "unresolvable", 0),
+        # THE THIRD STATE (2026-08-13). "Named nothing" had two opposite causes and this script
+        # reported both as the same failure — measured when the last milestone was ticked and CI went
+        # red on a roadmap that was simply FINISHED. The pair below is the whole fix: identical
+        # blocks naming nothing, opposite verdicts, decided by whether work actually remains.
+        ("naming nothing FAILS while a tracked item is still open",
+         {ROADMAP: roadmap("Everything is done, roughly speaking.", "- [ ] **B1 — x**")},
+         "no_coverage", 1),
+        ("naming nothing PASSES once every tracked item is ticked",
+         {ROADMAP: roadmap("Everything is done, roughly speaking.", "- [x] **B1 — x**")},
+         "no_coverage", 0),
+        # …and an in-progress mark is OPEN, not done: `[~]` must keep the failure, or a plan can go
+        # green in the middle of its own work.
+        ("an in-progress [~] item still counts as remaining, so naming nothing FAILS",
+         {ROADMAP: roadmap("Everything is done, roughly speaking.", "- [~] **B1 — x**")},
+         "no_coverage", 1),
+        # The completion path must not become a way to dodge a REAL inconsistency: a block that names
+        # a ticked item is still wrong even when nothing remains open.
+        ("completion does not excuse naming a ticked item as next",
+         {ROADMAP: roadmap("**The actual next step: B1** do it.", "- [x] **B1 — x**")},
+         "named_but_done", 1),
     ]
 
     passed = 0
@@ -443,7 +481,17 @@ def main() -> int:
     report_only = "--report" in sys.argv
 
     if not findings:
-        print("roadmap NEXT ACTIONS is consistent with the checkboxes it summarises")
+        marks, _ = collect_marks(sources)
+        remaining = sorted(i for i, m in marks.items() if m in (" ", "~"))
+        if remaining:
+            print("roadmap NEXT ACTIONS is consistent with the checkboxes it summarises")
+            print(f"  ({len(remaining)} tracked item(s) still open: {', '.join(remaining[:8])}"
+                  f"{' …' if len(remaining) > 8 else ''})")
+        else:
+            # State the reason. "Nothing to check" and "checked and clean" must never print the same.
+            print("roadmap NEXT ACTIONS is consistent — and EVERY tracked checkbox is ticked, so a")
+            print("block naming no next step is correct rather than empty. Verified by enumeration,")
+            print("not assumed: if any tracked item were open this would be a no_coverage failure.")
         return 0
 
     print(f"{len(findings)} roadmap inconsistency finding(s):\n")
