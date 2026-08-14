@@ -294,6 +294,35 @@ characters**. Run against **prod** before deploy. Put the SQL in a file (`docs/p
 > — `slugify` caps at 60, so the longest emitted segment is ~67 — but that is again a claim about the
 > code, and the bucket is the subject.
 
+### 4.1 ⛔ The gate CANNOT RUN today — `claude_ro` is denied on schema `storage`
+
+Attempted 2026-08-14. `select … from storage.objects` as `claude_ro` returns:
+
+```
+ERROR:  permission denied for schema storage
+```
+
+**This is the same shape as the `supabase_migrations` denial** fixed on 2026-08-12: the read-only
+role built to answer questions about prod cannot reach the one object the question is about. Two
+grants fix it permanently. They require `postgres` (the schema is owned by it and `claude_ro` is not
+superuser), so **the user must run them in the Supabase SQL editor**:
+
+```sql
+grant usage on schema storage to claude_ro;
+grant select on storage.objects to claude_ro;
+```
+
+Until then §4 is **unverified**, and this slice must not be deployed to prod on the assumption that it
+is a zero-migration change. It does **not** block writing the plan or the implementation.
+
+> ⚠ **The first version of this gate reported a false PASS, and that is worth recording.** Run without
+> `ON_ERROR_STOP=1`, `psql` printed the "VIOLATIONS (must be zero rows)" header, produced no rows
+> because the query had *errored*, and continued — output that reads exactly like a clean result. The
+> gate must therefore be run with `-v ON_ERROR_STOP=1` and its **exit code checked**, so a denial is a
+> loud failure rather than an empty success. Per the project rule: *"Cannot run" is a FAILURE, never a
+> pass.* A gate that cannot distinguish "no violations" from "I was not allowed to look" is worse than
+> no gate, because it manufactures confidence. The working runner is in the plan's task for this gate.
+
 ---
 
 ## 5. The three guards that blessed Unicode keys
@@ -420,7 +449,7 @@ The protection is therefore relocated, not dropped:
 
 | Risk | Handling |
 |---|---|
-| A key already in prod uses ` `, `(`, `)`, `+` or `=` and would be re-addressed | §4 gate, run against prod **before deploy**. Blocking if it returns rows |
+| A key already in prod uses ` `, `(`, `)`, `+` or `=`, or a segment over 96 chars, and would be re-addressed | §4 gate, run against prod **before deploy**. Blocking if it returns rows. ⛔ **Currently unrunnable** — needs two grants from the user, §4.1 |
 | The 267 bound differs on prod's storage-api version | Design is insensitive (worst case ~70 chars). Not a blocker; do not hardcode 267 in the encoder |
 | Bucket browsing gets harder for non-ASCII titles | Accepted. The `head` run keeps `003_` visible and the DB row holds the readable name |
 | SHA-256 truncated to 22 base64url chars (~132 bits) | Collision risk negligible, and scoped within one owner + playlist prefix |
