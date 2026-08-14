@@ -28,7 +28,9 @@ export default defineConfig({
   testDir: './tests/e2e',
   outputDir: './test-results',
   // The run-level money guard, and the reason a stale fixture cannot be read: it deletes both
-  // fixture files on every invocation, including a partial `--project=cloud --no-deps` one.
+  // fixture files on every invocation that reaches it — including a partial
+  // `--project=cloud --no-deps` one. It does NOT reach that far if the webServer fails to start,
+  // because plugin setup is ordered first; cloud-global.ts has the full list of what it cannot see.
   globalSetup: './tests/e2e/cloud-global.ts',
   // Local Supabase is one shared stack — parallel specs would race each other's rows.
   workers: 1,

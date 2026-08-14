@@ -31,8 +31,13 @@
  *     read may never finish. The run still exits non-zero, but for the timeout, not for the money.
  *   · A webServer that never starts. Plugin setup is ordered BEFORE user global setup in
  *     `createGlobalSetupTasks`, so if `next dev` fails to come up this file does not run at all —
- *     no baseline, and no fixture deletion either.
- * The middle one is the one to remember: a non-zero exit is not the same as a guard that fired.
+ *     no baseline, and no fixture deletion either. (An existing server satisfying the probe under
+ *     `reuseExistingServer` is a plugin SUCCESS, so that path is covered normally.)
+ *   · Anything a `globalTeardown` FILE does. `createGlobalSetupTasks` lists globalTeardowns before
+ *     globalSetups and teardown tasks are `unshift`ed, so the order is: this guard, then the
+ *     globalTeardown file. Money moved there is after the final read. This config has no
+ *     globalTeardown; if one is ever added, the guard has to move after it.
+ * The global timeout is the one to remember: a non-zero exit is not the same as a guard that fired.
  *
  * ─────────────────────────────────────────────────────────────────────────────────────────────
  * WHY THIS DELETES THE FIXTURE FILES (round-2 High, 2026-08-13)
@@ -65,17 +70,11 @@
 // stack is absent. Must come before anything that builds a Supabase client.
 import '../integration/setup';
 import fs from 'node:fs';
-import { AUTH_FILE, FIXTURE_FILE, readLedger } from './cloud-fixture';
+import { AUTH_FILE, FIXTURE_FILE, readLedger, type LedgerSnapshot } from './cloud-fixture';
 
-export default async function cloudGlobalSetup() {
-  for (const stale of [AUTH_FILE, FIXTURE_FILE]) fs.rmSync(stale, { force: true });
-
-  const baseline = await readLedger();
-
-  // NOTHING GOES BETWEEN THESE TWO STATEMENTS. A throw after the baseline but before the return
-  // leaves `globalSetupResult` a non-function, and the runner only calls it `if (typeof … ===
-  // "function")` — so the guard would be silently absent with a baseline already taken. Round 3
-  // found no current path here; this comment is what keeps it that way.
+/** The run teardown, as a pure function of the baseline — see the single `return` below for why
+ *  this is a named helper rather than an inline closure. */
+function moneyGuard(baseline: LedgerSnapshot) {
   return async () => {
     const now = await readLedger();
     if (now.auditMaxId === baseline.auditMaxId && now.centsTotal === baseline.centsTotal) return;
@@ -89,4 +88,15 @@ export default async function cloudGlobalSetup() {
       'cause is a serve path finding no pre-seeded magazine model and regenerating it.',
     );
   };
+}
+
+export default async function cloudGlobalSetup() {
+  for (const stale of [AUTH_FILE, FIXTURE_FILE]) fs.rmSync(stale, { force: true });
+
+  // ONE STATEMENT, deliberately. A throw after the baseline read but before the return would leave
+  // `globalSetupResult` a non-function, and the runner only invokes it `if (typeof … ===
+  // "function")` — the guard would be silently absent with a baseline already taken. Round 3 asked
+  // for a comment forbidding an insertion there; round 4 pointed out that a comment is not a
+  // mechanism. There is now no statement gap to insert into.
+  return moneyGuard(await readLedger());
 }
