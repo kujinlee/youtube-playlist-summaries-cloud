@@ -73,17 +73,24 @@ GATE_SCOPES: dict[str, list[str] | None] = {
 #        3.2 is a MANUAL check against production, the category that rots, and now names its
 #        falsifier. Neither was "write the clause"; one was a deletion and one was a real gate.
 #
-# THE REMAINING 1 IS 3.1, AND IT IS EXPECTED TO STAY. It is a TASK, not a gate: once the Playwright
-# e2e exists the test IS the claim, so a clause there would be vacuous or would smuggle test design
-# into a checkbox. **Do not lower this to 0 by writing one.** That is the defect this ratchet exists
-# to catch, arriving through the front door.
+# THE REMAINING 1 WAS 3.1, AND IT IS NOW 0 — BY COMPLETION, NOT BY WRITING A CLAUSE. Keeping the
+# distinction is the point of this comment. 3.1 was a TASK, not a gate: once the Playwright e2e
+# exists the test IS the claim, so a clause there would have been vacuous or would have smuggled
+# test design into a checkbox. The instruction here used to be **"do not lower this to 0 by writing
+# one"**, and it was never violated. The item was ticked on 2026-08-13 (PR #98, `8ba3183`) because
+# the suite exists and runs; a ticked checkbox is not a gate, which the self-test at
+# "checked item needs no falsifier" already encodes.
+#
+# ⚠ SO 0 IS NOW LOAD-BEARING IN A WAY 1 WAS NOT: any new unfalsifiable gate fails this immediately,
+# with no slack to absorb it. That is the intended end state, and it is also the moment to re-read
+# the caveat below — the check tests SHAPE, not TRUTH, and a baseline of 0 does not change that.
 #
 # ⚠ AND IT IS TRIVIALLY SILENCEABLE — measured 2026-08-12, twice, by accident. FALSIFIER_RE is a
 # regex over the item's lines, so ANY mention of the phrase clears the flag: a draft of 3.1's note
 # quoted it as an example of a bad clause, and a later draft said the item was "deliberately left
 # without a `FAILS IF:`". Both silenced it — the second inside the sentence declaring its absence.
 # The docstring already says this catches SHAPE, not TRUTH; this is how cheap that is in practice.
-BASELINE = 1
+BASELINE = 0
 
 FALSIFIER_RE = re.compile(r"\bFAILS?\s+IF\b", re.IGNORECASE)
 # An item phrased as an investigation has no pass condition by construction. B4 is the live example:

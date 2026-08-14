@@ -228,8 +228,27 @@ slide images); M2 done = full bidirectional incl. images.**
 
 ---
 
-## M3 — Acceptance (prove it end-to-end on the deployed app) ✅
-- [ ] **3.1 Browser-level Playwright cloud e2e** against the deployed URL — full user journey (not mocks).
+## M3 — Acceptance ✅ **CLOSED 2026-08-13**
+*(The heading read "prove it end-to-end on the deployed app" and carried a ✅ while 3.1 was still
+unticked — a premature mark nobody noticed. It is legitimate now, and the wording is narrowed:
+3.2 proves the deployed app by hand, 3.1 proves the code automatically. See the amended
+"M3 done =" line below for why those are different things.)*
+- [x] **3.1 Browser-level Playwright cloud e2e** — full user journey (not mocks).
+  ✅ **DONE 2026-08-13 — PR #98 (`8ba3183`). VERIFIED AGAINST: a LOCAL Supabase stack at `8ba3183`,
+  NOT the deployed release.** 7 rungs: cloud dispatch, sidebar listing, ingest-with-no-reload
+  (backlog #37), magazine HTML render, markdown download, sign-out. Runs unattended and measures that
+  it spent nothing rather than asserting it.
+  ⚠ **THE REQUIREMENT WAS AMENDED, NOT MET — and the amendment is the honest part of this tick.**
+  This item originally read *"against the deployed URL"*. It is not, and cannot be automated that way:
+  `/dev-login` is **404 in prod by design** (`lib/supabase/dev-login.ts` fails closed unless the flag
+  is set AND the Supabase URL is local), and Google OAuth cannot be driven by Playwright. Automating a
+  prod journey would need either a security regression or a hand-captured session that expires — so it
+  could never be the unattended regression net this item exists to provide.
+  **DECIDED 2026-08-13 by the user: M3 closes on the local suite.** The deployed-URL half is not
+  abandoned; it is **backlog #41 (M3.1-B)**, a semi-manual read-only prod smoke, and it is explicitly
+  a follow-on rather than a gate. **What this tick does NOT claim:** that any journey has been driven
+  against production by machine. 3.2 is the manual evidence for the deployed release; 3.1 is the
+  automated evidence for the code.
   **This is a TASK, not a gate — deliberately left with no falsifier clause.** Once the test exists the
   test *is* the standing claim; a clause here would be either vacuous — its whole content being that a
   failing test counts as failure — or a test-design spec smuggled into a checkbox. The thing genuinely
@@ -237,10 +256,10 @@ slide images); M2 done = full bidirectional incl. images.**
   *(Written without the literal falsifier phrase on purpose: the detector is a regex over these lines,
   so even quoting the phrase as a bad example silences the flag. That happened on the first draft of
   this very note — the demonstration is left here rather than tidied away.)*
-  ⚠ `check-gate-falsifiability.py` flags this line and will keep flagging it. **Do not silence it with
-  a clause.** That is the ratchet's scope being imperfect — its own docstring records that this file
-  overloads `- [ ]` for three different meanings — and writing prose to lower a number is the failure
-  the ratchet exists to catch, arriving through the front door.
+  ⚠ `check-gate-falsifiability.py` flagged this line for as long as it was open, and its baseline was
+  **1** for exactly this item. **It is now 0 — because the task COMPLETED, not because anyone wrote a
+  clause.** That distinction is the whole reason the baseline carried a comment; the comment has been
+  updated rather than deleted, so the next person can tell a real gain from a silenced one.
 - [x] **3.2 Real-render / regenerate checks — ✅ PASSED 2026-08-12. VERIFIED AGAINST: release v6** (web + worker, deployed 2026-08-11T15:47Z).
   **(a) Summary section-timestamp guarantee** — **INGEST ANY QUALIFYING VIDEO** as the owner, via a
   one-video playlist. **The subject is specified by PREDICATE, not by name:** public, not already in
@@ -293,7 +312,16 @@ slide images); M2 done = full bidirectional incl. images.**
   jobs and exactly 1 completed `dig`. Why this item earns a falsifier and 3.1 does not: it is a MANUAL
   check against production, the category that rots.)*
 
-**M3 done = 3.1 and 3.2 both verified against the same deployed release.**
+**M3 done = 3.1 (automated, against a local stack at `8ba3183`) + 3.2 (manual, against deployed
+release v6).** ⚠ **AMENDED 2026-08-13.** It previously read *"3.1 and 3.2 both verified against the
+same deployed release"*, and that is now false in a way worth stating rather than quietly editing:
+**the two halves are verified against different things.** 3.2 exercised the running deployment by
+hand; 3.1 exercises the code, unattended, on a local stack.
+
+The gap that leaves is real and named: **no automated journey runs against production**, because none
+can — see 3.1 for why, and backlog #41 for the semi-manual smoke that covers it. The alternative was
+to leave M3 open indefinitely on a requirement that no amount of engineering could satisfy, which is
+a worse kind of dishonesty than an amended sentence.
 
 ### What 3.2 measured, and what it found (2026-08-12, v6)
 
@@ -1168,10 +1196,15 @@ unapplied for eight days while every document read "merged, done".
   unreadable ledger compared 0 == 0 and the guard reported success having read nothing.
 - **Backlog #43 closed** (rung 4 un-skipped, renders free). **#44 filed** (the main pane is never
   mounted by any rung). **#45 filed** (round-5 residue — PR #99).
-- ⚠ **Roadmap 3.1 below is deliberately still `[ ]`.** It asks for the DEPLOYED url; what shipped is
-  local. That is backlog **#41**, and its open question is the user's: *does M3 close on A, or wait
-  for B?* Do not tick 3.1 to tidy up — the sentence "M3 done = 3.1 and 3.2 both verified against the
-  same deployed release" has to be either satisfied or amended, and amending it is a decision.
+- ⭐ **M3 IS CLOSED (user decision, 2026-08-13): it closes on A.** 3.1 is ticked and the
+  "M3 done =" sentence is **amended, not quietly satisfied** — it used to require 3.1 and 3.2 against
+  *the same deployed release*, and they are not: 3.2 is manual against v6, 3.1 is automated against a
+  local stack. The gap that leaves — **no automated journey runs against production** — is named in
+  both places and carried by backlog **#41** as a follow-on, not a gate. The alternative was leaving
+  M3 open forever on a requirement nothing could satisfy: `/dev-login` is 404 in prod by design and
+  OAuth cannot be driven by Playwright.
+- **`check-gate-falsifiability.py` baseline is now 0**, lowered because 3.1 completed — not because
+  anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
 - **`master` is clean** — tsc clean, **2703 unit / 267 suites** green, plus **491 integration**
@@ -1224,12 +1257,9 @@ unapplied for eight days while every document read "merged, done".
 - **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
   trigger. Do not resume it by momentum.
 
-**Blocked on the human:** ONE decision, and it is the only thing standing between here and a
-closed M3 — **backlog #41: does M3 close on M3.1-A (local, automated) or wait for M3.1-B (a
-semi-manual prod smoke)?** B can never run unattended: `/dev-login` is 404 in prod by design and
-Google OAuth cannot be driven by Playwright, so it needs a hand-captured session that expires.
-Everything else is engineering: **backlog #36 (🔴 Korean title destroys a paid summary) is the last
-launch-blocking defect.**
+**Blocked on the human:** nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
+**Backlog #36 (🔴 a non-ASCII title destroys a paid summary) is now the last launch-blocking
+defect**, and it is engineering, not a decision.
 
 **⭐ M1 IS COMPLETE (2026-08-11).** M1.4 closed with all of A1–A3 and B1–B5 ticked — see
 [`docs/m1.4-finishup-checklist.md`](m1.4-finishup-checklist.md) for the evidence and the release each
