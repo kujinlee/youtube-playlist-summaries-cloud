@@ -15,13 +15,24 @@
  * context. Every rung therefore does its own `goto` and establishes its own preconditions, and no
  * rung may rely on browser state another rung left behind.
  *
- * NO MONEY — AND STEP 6 PROVES IT RATHER THAN PROMISING IT.
+ * NO MONEY — AND THE RUN MEASURES IT RATHER THAN PROMISING IT.
  * An earlier version of this header asserted "no money is spent" and was FALSE: opening the HTML
  * render called resolveMagazineModel, found no model, called Gemini, and reserved 12¢ in
  * spend_ledger (measured 2026-08-13). It was caught only because the rendered prose came back as
  * LLM paraphrase instead of the seeded text — nothing in the suite was checking. The setup now
- * pre-seeds the magazine model so the serve path finds one, and the last step reads the ledger
- * before and after and fails if it moved. A cost claim that nothing measures is just a wish.
+ * pre-seeds the magazine model so the serve path finds one. A cost claim that nothing measures is
+ * just a wish.
+ *
+ * The guard itself is NOT IN THIS FILE. It is tests/e2e/cloud-global.ts, which reads the ledger
+ * before any project runs and again as the run's teardown; read that file for why it had to leave a
+ * `test.afterAll` here to cover a setup-project failure. What it proves, precisely:
+ *   ✓ a paid SERVE is caught — migration 0025 writes a `serve_settle` audit row on every settled
+ *     serve attempt, and `ledger_audit.id` is a sequence, so max(id) only ever grows.
+ *   ✗ an enqueue reservation released normally would NOT be caught — a plain release writes no
+ *     audit row (0020 records only the `release_underflow` exception) and nets the cents to zero.
+ *     Unreachable from this journey today, because POST /api/jobs is intercepted in step 3 and
+ *     there is no cancel rung — but the guard is narrower than "no money path was reached", and
+ *     saying otherwise is how the false claim above got written in the first place.
  *
  * The one call that would reach YouTube and enqueue paid work — POST /api/jobs — is intercepted in
  * step 3, and only that call; the id it returns belongs to a row that really exists, so the refetch
@@ -29,7 +40,7 @@
  */
 import '../integration/setup';                       // env for the admin client (see cloud.setup.ts)
 import { test, expect } from '@playwright/test';
-import { readFixture, readLedger } from './cloud-fixture';
+import { readFixture } from './cloud-fixture';
 import { adminClient } from '../integration/helpers/clients';
 import { seedPlaylist } from '../integration/helpers/seed';
 
@@ -142,28 +153,21 @@ test.describe.serial('cloud journey', () => {
     expect(md.headers()['content-disposition'] ?? '').toMatch(/attachment/i);
   });
 
-  // NOT a rung, deliberately — an `afterAll` hook, so it runs even when an earlier rung FAILS.
-  //
-  // MEASURED 2026-08-13, and it was my own mutation that found it. To prove this assertion could
-  // fail, rung 4 (a known money path) was un-skipped: ledger_audit went 303 -> 304, so the run
-  // really did spend. But the assertion never executed — `describe.serial` aborts the remaining
-  // tests once one fails, and rung 4 failed before the money check could run. A guard that is
-  // skipped precisely when something went wrong is absent exactly when it is most needed, which is
-  // the same defect this whole file keeps finding in other places.
-  //
-  // Two Blockings from review (2026-08-13) shaped what it compares, and both are worth keeping:
-  //   (a) THE BASELINE WAS TAKEN TOO LATE — in this project's `beforeAll`, which fires only after
-  //       the `setup` project finished, so everything the setup did was already inside it. The
-  //       baseline is now read by the setup itself, before it touches anything.
-  //   (b) A SUM CAN BE NETTED TO ZERO. Summing spend_ledger proves "same total at the end", not
-  //       "no money path was reached": a reserve plus a release cancels out while Gemini was
-  //       called. `ledger_audit.id` is a sequence, so its max only grows — that is the witness that
-  //       cannot be cancelled. The cents total is kept as a weaker secondary signal.
-  test.afterAll(async () => {
-    const now = await readLedger();
-    expect(now.auditMaxId).toBe(fx().ledgerBaseline.auditMaxId);
-    expect(now.centsTotal).toBe(fx().ledgerBaseline.centsTotal);
-  });
+  // THE MONEY GUARD USED TO BE HERE, as a `test.afterAll`. Three rounds moved it, and the trail is
+  // worth keeping because each move was forced by a window the previous position could not see:
+  //   round 0 · a 6th rung        — `describe.serial` aborts the remaining tests once one fails, so
+  //                                 the check was skipped exactly when a rung had spent. Proved by
+  //                                 un-skipping rung 4, a known money path: ledger_audit 303 -> 304
+  //                                 and the assertion never ran.
+  //   round 1 · `test.afterAll`   — survives a failing rung, but the baseline was read in this
+  //                                 project's `beforeAll`, which fires only after the setup project
+  //                                 finished, so everything the setup did was already inside it.
+  //   round 2 · globalSetup       — the baseline moved into the setup project, but the ASSERTION was
+  //                                 still in this one, and Playwright skips a project whose
+  //                                 dependency failed. A setup that spent and then failed took the
+  //                                 guard down with it.
+  // It now lives in tests/e2e/cloud-global.ts, outside every project, where a failure anywhere
+  // still runs it. Do not move it back into a spec.
 
   test('6 · signing out invalidates the session, not just the URL', async ({ page }) => {
     // Review High (2026-08-13): the earlier version chained `.catch()` onto a second locator, so it

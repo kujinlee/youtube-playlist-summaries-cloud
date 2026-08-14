@@ -16,7 +16,10 @@
  * `DEV_LOGIN_ENABLED === 'true'` AND a local Supabase URL, and fails closed on either.
  *
  * NO MONEY IS SPENT. Everything is seeded directly into the local database; no Gemini call and no
- * worker run is involved anywhere in this suite.
+ * worker run is involved anywhere in this suite. THIS PROJECT IS INSIDE THE MEASURED WINDOW:
+ * cloud-global.ts takes the ledger baseline before any project runs, and checks it as the run's
+ * teardown even when this file fails (round-2 Blocking — the earlier `afterAll` lived in the
+ * dependent project, which Playwright skips entirely when its dependency fails).
  */
 // Side-effect import: loads .env.test.local and aliases the supabase-status names, and THROWS
 // with the exact command to run when the local stack is absent. Reused rather than re-implemented
@@ -46,14 +49,12 @@ if (major < 22) {
   );
 }
 
-import { AUTH_FILE, FIXTURE_FILE, readLedger, type CloudFixture } from './cloud-fixture';
+import { AUTH_FILE, FIXTURE_FILE, type CloudFixture } from './cloud-fixture';
 
 
 
 setup('create an owner, seed their library, and sign in through /dev-login', async ({ page }) => {
   const svc = adminClient();
-  // FIRST, before anything else touches the database: the baseline the whole suite is judged against.
-  const ledgerBaseline = await readLedger(svc);
   const { user, email, password } = await newUser();
 
   const listedTitle = `E2E Listed ${Date.now()}`;
@@ -128,7 +129,6 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
 
   const fixture: CloudFixture = {
     email,
-    ledgerBaseline,
     ownerId: user.id,
     listed: { playlistId: listed.playlistId, playlistKey: listed.playlistKey, title: listedTitle, videoId: video.videoId },
   };
