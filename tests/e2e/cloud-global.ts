@@ -36,8 +36,20 @@
  * The fix is identity by construction rather than identity by stamp: `globalSetup` runs on EVERY
  * invocation, including partial ones, so deleting both files here means a fixture can only exist if
  * THIS run's setup project wrote it. There is no id to check because there is nothing stale to
- * check it against. A missing fixture then produces readFixture()'s loud "run the whole config"
- * error instead of a plausible pass against week-old rows.
+ * check it against.
+ *
+ * WHAT A PARTIAL RUN LOOKS LIKE, so nobody has to rediscover it. `--project=cloud --no-deps` now
+ * fails on the FIRST rung with Playwright's own
+ *     Error reading storage state from playwright/.auth/cloud-user.json
+ * rather than readFixture()'s friendlier message, because a project's `storageState` is loaded when
+ * the browser context is created, before any test body runs. That is the intended outcome — loud,
+ * naming the exact file — but the cause is this deletion, not a broken checkout. Run the whole
+ * config: `npm run test:e2e:cloud`.
+ *
+ * Detecting the partial run here instead was TRIED AND DOES NOT WORK: `FullConfig.projects` is the
+ * declared list, not the selected one — measured 2026-08-13, it reports ["setup","cloud"] under
+ * `--project=cloud --no-deps` exactly as it does for a full run. A check built on it could never
+ * fire, which is indistinguishable from a check that does nothing.
  */
 // Side-effect import: loads .env.test.local and THROWS with the exact command to run when the local
 // stack is absent. Must come before anything that builds a Supabase client.
