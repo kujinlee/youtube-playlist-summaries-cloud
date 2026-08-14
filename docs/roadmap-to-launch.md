@@ -382,7 +382,12 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
   decision lived only in a Draft spec and was misread by the very review that reads `docs/adr/`.
 - [x] **`scripts/check-docs.py`** — ADR index drift, dangling ADR refs, broken living-doc links;
   advisory list of spec decisions never promoted. Code→ADR references went 0 → 2.
-- [ ] **Triage the 19 spec docs** holding decision markers with no ADR (the advisory list).
+- [ ] **Triage the 20 spec docs** holding decision markers with no ADR (the advisory list).
+  ⚠ **This number is DERIVED, not typed** — `check-docs.py` computes the advisory list and fails if
+  this line disagrees with it. It said **19** while the script printed **20** (2026-08-14), which is
+  the same rot the test-count check exists to prevent, in a line whose entire content is a count.
+  **Do not hand-edit it to silence a failure**; the script is the authority. If the sentence is ever
+  reworded, the check fails loudly rather than passing on an unmatched pattern.
 - [x] **Branch-rule enforcement** — `.claude/hooks/block-default-branch-push.sh` (PR #39). Denies a
   push to the default branch; allows it when no remote exists. 15 verified cases + proved live.
   The first mechanism here that *constrains* rather than reminds.
