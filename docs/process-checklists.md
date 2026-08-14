@@ -42,6 +42,7 @@ At the start of every implementation task, create the following items with `Task
 [ ] Run tests — confirm all pass
 [ ] Run full suite — confirm no regressions
 [ ] Mutation-check every new guard: remove it → tests MUST go red → restore (see below)
+[ ] Run every mutation row the SPEC nominated for this task; each stays PROVISIONAL until seen red
 [ ] Claude code review (superpowers:requesting-code-review)
 [ ] Write docs/reviews/task-N-<name>-review.md
 [ ] Codex adversarial review (codex:rescue)
@@ -277,3 +278,30 @@ the file, and prefer failing over silently covering less.
 
 **6. Never mutate repo-tracked files.** Mutate a temp copy. A harness that edits the working tree
 corrupted a concurrent reviewer's run: 23/44 vs 44/44 on the same commit.
+
+## A NOMINATED FALSIFIER is provisional until it has been run red (added 2026-08-14)
+
+A spec's mutation table nominates falsifiers: *"mutation M must turn behavior N red."* That is a
+**prediction**, and this project has shipped it as a fact repeatedly — the #36 spec alone reached a
+**third** vacuous falsifier before anyone counted (task #96, *"fix the injectivity overclaim and the
+third vacuous falsifier"*), and each was written by someone who believed the row was load-bearing.
+
+A nominated falsifier fails in exactly two ways, and you must check for both **per row**:
+
+1. **The mutation survives** — the named observable does not actually depend on the named mechanism.
+   The row then reads as coverage while proving nothing.
+2. **The input is unconstructible** — no caller can reach the state the mutation would corrupt. The
+   test can never run, so it can never go red.
+
+**The rule: a mutation row is `PROVISIONAL` until the mutation has been applied and the named
+behavior observed RED.** Mark it so in the spec. This is not a Phase 1 obligation and cannot be —
+**at spec time there are no tests to mutate.** It is a Phase 3 obligation, and it extends the existing
+Mutation-check step from *guards the task adds* to *falsifiers the spec nominated*. A spec may state
+its table; it may not state that its table is verified.
+
+**Name an observable, not a mechanism.** *"Behavior 17 admits `℀.md`"* can go red. *"The NFKC pass is
+skipped"* restates the mutation and cannot.
+
+*(Why this is not a ratchet: a script can find mutation tables, but deciding whether a named input is
+constructible requires reading the callers. `check-gate-falsifiability.py` covers the gate half of
+this shape; the mutation half stays human.)*
