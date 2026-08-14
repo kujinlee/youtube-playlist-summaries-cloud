@@ -1262,7 +1262,27 @@ unapplied for eight days while every document read "merged, done".
 - **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
   trigger. Do not resume it by momentum.
 
-**Blocked on the human:** nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
+**⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
+Branch `fix/cloud-blob-key-encoding`, spec **v9**, 12 commits, **Phase 1 only — zero code written**.
+Eight dual review rounds plus a Phase 6 architecture review; all on disk at
+`docs/reviews/spec-blob-key-encoding-r{1..8}-{codex,claude}.md` and
+`docs/reviews/architecture-review-2026-08-14.md`.
+
+- **The design collapsed at v8**, and the trigger was a user question — *"why does the cloud need
+  ASCII-servable?"* It does not. **Storable** (real, external, and solved completely by encoding at
+  the storage seam) had been welded to **single path component** (ours, a denylist concern). v5–v7
+  built a servability refusal, a `videoId` repair, a branded `CloudSummaryKey` and a manufactured
+  divergence to serve a constraint that was not real. All deleted.
+- **Round 8 is the first CONVERGED verdict** (Codex; the Claude half held on one inverted regex, now
+  fixed in v9). Both halves independently went looking for the consumer that would justify the old
+  allowlist and **found none**.
+- **Next:** round 9 on v9 → `writing-plans` → implementation. Then ADR-0009.
+- ⛔ **Deploy is blocked on the user**, not on engineering: `claude_ro` cannot read `storage.objects`,
+  so the §4 no-migration gate cannot run. Two grants, in the spec's §4.1.
+- Phase 6 returned **8 findings**, deliberately unfiled pending user triage — see the review.
+
+**Blocked on the human:** the two `claude_ro` grants (deploy gate only), Phase 6 triage, and merging.
+Previously: nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
 **Backlog #36 (🔴 a non-ASCII title destroys a paid summary) is now the last launch-blocking
 defect**, and it is engineering, not a decision.
 
