@@ -161,9 +161,20 @@ untouched in five years.
 monitor on the questions file:
 
 ```
-Monitor({ command: "tail -n 0 -F ~/explainers/questions.md 2>/dev/null | grep --line-buffered -E '^   Q: '",
-          description: "new explainer questions", persistent: true })
+Monitor({
+  command: "tail -n 0 -F ~/explainers/questions.md 2>/dev/null | awk '/^\\*\\*/{s=$0} /^   > /{q=substr($0,6)} /^   Q: /{printf \"%s | quoted: %s | %s\\n\", (s?s:\"(no section)\"), (q?substr(q,1,160):\"(nothing highlighted)\"), $0; fflush(); q=\"\"}'",
+  description: "new explainer questions, with their section and quoted passage",
+  persistent: true,
+})
 ```
+
+**The filter must carry the SECTION and the QUOTE, not just the question.** The obvious version —
+`grep -E '^   Q: '` — was tried first and shipped, and it failed on the very first real question: a
+reader asked *"how this is resolved?"* and the event contained only those four words, so the session
+had to open the file to discover which paragraph they meant. The page attaches the heading and the
+highlighted passage precisely so the question is self-contained; a filter that drops them **throws
+away the context one step after it was collected**. `awk` buffers the heading and the quote and emits
+one line carrying all three. Every stage must `fflush()`, or matches sit in a buffer unseen.
 
 Without it, `POST /questions` appends to a file **nothing is watching**, and the session only notices
 when the reader thinks to say *"read my questions"*. Measured 2026-08-13: a question sent at 16:10:13
