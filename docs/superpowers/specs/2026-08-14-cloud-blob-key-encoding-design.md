@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v12**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v13**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
 **Review trail — ten dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
@@ -201,15 +201,21 @@ sync (Phase 6 safety-argument **d**).
 /** A single path component. Rejects separators in every form, control characters,
  *  traversal, and over-long keys. Says nothing about ASCII, letters, or readability. */
 export function isServableSummaryKey(key: string): boolean {
+  if (!key.endsWith('.md')) return false;
   // CODE POINTS, not UTF-16 units — the guard this replaces counts code points (it is a /u regex),
   // and this predicate's whole subject is non-ASCII keys. 131 = that guard's exact ceiling.
   const cp = [...key];
-  if (cp.length <= 3 || cp.length > 131 || !key.endsWith('.md')) return false;
-  // Check the RAW form and the compatibility-FOLDED form. `℀` folds to `a/c`, `＼` to `\`.
-  // A hand-typed homoglyph denylist cannot be complete; NFKC closes that class.
-  for (const s of [key, key.normalize('NFKC')]) {
+  if (cp.length <= 3 || cp.length > 131) return false;
+
+  // Inspect the NAME. NEVER the glued key: folding `name + '.md'` manufactures a `..` at the
+  // joint out of one legal character (`⒈` is DIGIT ONE FULL STOP — it folds to `1.`).
+  const name = key.slice(0, -3);
+  // Raw form AND compatibility-folded form. `℀` folds to `a/c`, `＼` to `\`. A hand-typed
+  // homoglyph denylist cannot be complete; NFKC closes that class.
+  for (const s of [name, name.normalize('NFKC')]) {
+    if (s === '' || s === '.' || s === '..') return false;   // the traversals a COMPONENT can be
     if (s.includes('/') || s.includes('\\')) return false;   // separators, in every form
-    if (s === '.' || s === '..') return false;               // the only traversal a COMPONENT can be
+    if (s.includes('..')) return false;                      // traversal-shaped, inside the name
     if (/[\x00-\x1f\x7f]/.test(s)) return false;             // C0 + DEL
     if (/%2f|%5c/i.test(s)) return false;                    // percent-encoded separators
     if (/[\u202a-\u202e\u2066-\u2069]/.test(s)) return false;  // bidi overrides/isolates
@@ -246,16 +252,41 @@ export function isServableSummaryKey(key: string): boolean {
 > numbers and `-`"* — is **true and irrelevant**: the fold happens *after* `slugify`, and it turns a
 > legal `\p{N}` into a `.`.
 >
-> **The fix is to stop over-approximating the requirement.** The requirement is *a single path
-> component*; with every separator form already rejected on the line above, a `..` **inside** one
-> component cannot traverse anything — `path.join(indexKey, '003_a..b.md')` is one file. So the test
-> becomes the one `assertLogicalKey` already applies (`blob-store.ts:87-91`): is the component itself
-> `.` or `..`? For a key ending `.md` that can never fire, which is the correct answer, not a gap.
+> **The fix — and v12 got it wrong before v13 corrected it.**
 >
-> **⚠ This retires v9's rejection of `001_a．．b.md`, and that was a CHOICE (I), never a safety
-> property (P).** Stated rather than silently dropped. The narrower alternative — fold and test with
-> the trailing `.md` removed — keeps the rejection; it was declined because it preserves an
-> over-approximation whose only demonstrated effect was refusing legitimate titles.
+> v12 removed the `..` test outright, reasoning that a `..` inside one component cannot traverse
+> anything. True, but it answered the wrong question and it **widened the guard**: `001_a．．b.md`
+> became legal, a filename nobody wants and no measurement asked for.
+>
+> **The user's objection is the correct diagnosis: there is no `..` in the filename at all.** The name
+> is `003_lesson-⒈`, the extension is `.md`, and neither contains `..`. The `..` exists only in a
+> string the guard *manufactured* by folding the two together. `003_lesson-1..md` is not a filename —
+> it is scratch, scanned once and discarded.
+>
+> So v13 inspects **the name**, and the extension is not part of it:
+>
+> ```
+> name  003_lesson-⒈   →  NFKC  003_lesson-1.     no "..", accepted    ← the trailing dot IS the ⒈
+> name  001_a．．b       →  NFKC  001_a..b          "..", rejected       ← genuinely in the name
+> ```
+>
+> **`..` stays rejected, `001_a．．b.md` stays rejected, and the B1 class is accepted.** Nothing is
+> widened. `assertLogicalKey`'s component test (`blob-store.ts:87-91`) still applies to the whole
+> logical key underneath.
+>
+> **The general defect, worth carrying past this spec: the guard checked a CONCATENATION instead of
+> checking the parts.** `isServable(name + ext)` is a different question from `isServable(name)` —
+> string operations on a joined value can see patterns present in neither piece. Same family as SQL
+> injection (data glued into a query becomes syntax) and the backtick-in-a-double-quoted-shell-string
+> bug this repo has hit twice. Here the manufactured "syntax" was `..`.
+>
+> **Not fixed here, and filed separately: `slugify` could stop emitting these characters at all.**
+> MEASURED — if `slugify` normalized its input, `⒈` would become `1.`, the `.` would become `-`, and
+> the slug would be a cleaner `lesson-1`; **6,672,384 swept slug outputs are NFKC-stable**, which would
+> make the fold above a provable no-op. It is a separate slice because `slugify` is shared with the
+> local path and changes vault filenames. See `docs/backlog.md` **#46**. **It would not replace this
+> fix** — the adopt path takes vault filenames verbatim, so the guard must stay correct for input the
+> mint path does not produce.
 
 > **The length bound — round-9 H3, and it is the only place v9 was NARROWER than the code it replaces.**
 > Measured across the entire codepoint space, the current guard
@@ -845,8 +876,8 @@ pass** because an errored query printed a header and no rows.
 | 14 | **A Korean-titled video ingests and serves 200; ledger unmoved** | integration |
 | 15 | **An NFD accented-Latin title ingests and serves 200** | integration |
 | 16 | **A title with a space, an emoji, or an astral letter at the `slice(60)` boundary ingests and serves 200** — no fallback, no refusal, and the vault filename stays readable | integration |
-| 17 | `nested/foo.md`, `%2f`, `／`, `℀.md`, a control char, a bidi override, and a 200-char base are all **rejected** by the guard | unit |
-| 17c | `001_a．．b.md` is **ACCEPTED** — v9 rejected it, and that rejection was a *choice*, not a safety property. It is one path component (round-11 B1) | unit |
+| 17 | `nested/foo.md`, `%2f`, `／`, `℀.md`, `001_a．．b.md`, `001_a..b.md`, a control char, a bidi override, and a 200-char base are all **rejected** by the guard | unit |
+| 17d | The guard inspects the **name**, not `name + '.md'`: `003_lesson-1..md` (a trailing dot in the name) is **accepted**, and no folded-at-the-joint `..` can arise | unit |
 | 17b | Total key lengths **129, 130 and 131 are ACCEPTED** — the bound did not narrow (round-9 H3) | unit |
 | 18 | Additive create: the occupant is **byte-identical** under the aliasing form → **SUCCEEDS**, file untouched, stored name preserved. *(This is the crash-resume case v10 would have stalled on forever.)* | integration, real FS |
 | 18b | Additive create: the occupant has **different bytes** → **REFUSES**; the occupant is intact | integration, real FS |
@@ -907,7 +938,8 @@ be reported as verified; that happens in Phase 3.
 | Classify a read-back `absent` as `equal` | **18c2** | PROVISIONAL |
 | Use `get` instead of `tryGet` for the read-back | 18c2 (Supabase collapses every failure to `null`) | PROVISIONAL |
 | Drop the `sourceMd` check in `companionTransfer` | 18j | PROVISIONAL |
-| Restore `s.includes('..')` in the predicate | **23** (`003_lesson-⒈.md` refused) | PROVISIONAL |
+| Fold the **glued key** instead of the name (`[key, key.normalize('NFKC')]`) | **23** (`003_lesson-⒈.md` refused) — the v12 defect | PROVISIONAL |
+| Drop `s.includes('..')` from the name check | **17** (`001_a．．b.md` admitted) — the v12 over-correction | PROVISIONAL |
 | Count `key.length` instead of code points | **24** | PROVISIONAL |
 | Remove the mint guard call | 25 | PROVISIONAL |
 | Remove the adopt guard call | 26 | PROVISIONAL |
