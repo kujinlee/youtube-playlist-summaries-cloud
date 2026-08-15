@@ -1,10 +1,10 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v11**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v12**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
-**Review trail — nine dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
-`docs/reviews/spec-blob-key-encoding-r{1..9}-{codex,claude}.md`,
+**Review trail — ten dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
+`docs/reviews/spec-blob-key-encoding-r{1..9,11}-{codex,claude}.md`,
 `docs/reviews/spec-blob-key-encoding-r10-codex-design.md`,
 `docs/reviews/spec-blob-key-encoding-s36-design-claude.md`,
 `docs/reviews/architecture-review-2026-08-14.md`.
@@ -29,9 +29,31 @@
 > review of the vault write protocol** — who the writers are, what identity each carries, which
 > coordination pattern this is — not another defect hunt.
 >
-> **§3.1–§3.5 have converged and stayed converged.** Both round-9 halves say so independently, and the
-> Claude half is explicit: *"If §3.6 did not exist I would say CONVERGED."* Do not let §3.6's churn
-> re-open them — the round-10 redesign confirmed it touches none of them.
+> **⚠ CORRECTED AT ROUND 11 — "§3.1–§3.5 have converged and stayed converged" was a claim about V9,
+> and v11 printed it over v10's text.** The 131 bound, the bidi rejection, the §3.5 unservable-class
+> correction, the two new mint/adopt call sites and the share-path guard were all folded in **after**
+> round 9 and had **no** adversarial pass until round 11 — which immediately returned a **Blocking**
+> (B1), a Medium falsifying a `MEASURED` claim (M3), and a Medium finding the fix unverifiable (M4).
+>
+> The accurate statement: **§3.1–§3.3 have converged and stayed converged since v9.** §3.4 and §3.5
+> were reviewed for the first time at round 11. Do not let §3.6's churn re-open §3.1–§3.3.
+>
+> ### Escalation counter after round 11 — READ THIS BEFORE READING IT LATER
+>
+> Round 11 was §3.6's first adversarial pass **as redesigned**. Findings caused by the round-10
+> redesign: Codex's `promote`-contract Blocking, and Claude's H1, M1, M2, L1. Under
+> `review-method.md:45-49` that is **round 1 of a NEW fix cycle on §3.6** — two more like it re-arms
+> FIX→REDESIGN.
+>
+> **But they are specification-COMPLETENESS defects, not mechanism defects**, and the distinction has
+> to be recorded now, before the counter is read by someone who was not here: *what does the primitive
+> do on `EEXIST`*, *which read primitive and is the classification total*, *which branch does the
+> residual actually cover*, *which adjacent `mkdir` was dropped*. **None says R1–R4 is the wrong
+> shape** — the shape was attacked directly and held. That argues for FIX, and specifically **against**
+> a second REDESIGN.
+>
+> The genuinely load-bearing round-11 result is the correction above: **§3.4/§3.5 had never been
+> adversarially reviewed at all**, and their first pass returned a Blocking.
 >
 > **The escalation paid for itself immediately.** Round 10 measured that v10's own §3.6 fix — the
 > `readdir` byte-comparison — **would have refused a video's own file on the money path**, which is
@@ -179,19 +201,61 @@ sync (Phase 6 safety-argument **d**).
 /** A single path component. Rejects separators in every form, control characters,
  *  traversal, and over-long keys. Says nothing about ASCII, letters, or readability. */
 export function isServableSummaryKey(key: string): boolean {
-  // 131 = the CURRENT guard's ceiling, preserved deliberately — see the bound note below.
-  if (key.length <= 3 || key.length > 131 || !key.endsWith('.md')) return false;
-  // Check the RAW form and the compatibility-FOLDED form. `℀` folds to `a/c`, `＼` to `\`,
-  // `．．` to `..`. A hand-typed homoglyph denylist cannot be complete; NFKC closes that class.
+  // CODE POINTS, not UTF-16 units — the guard this replaces counts code points (it is a /u regex),
+  // and this predicate's whole subject is non-ASCII keys. 131 = that guard's exact ceiling.
+  const cp = [...key];
+  if (cp.length <= 3 || cp.length > 131 || !key.endsWith('.md')) return false;
+  // Check the RAW form and the compatibility-FOLDED form. `℀` folds to `a/c`, `＼` to `\`.
+  // A hand-typed homoglyph denylist cannot be complete; NFKC closes that class.
   for (const s of [key, key.normalize('NFKC')]) {
-    if (s.includes('/') || s.includes('\\') || s.includes('..')) return false;
-    if (/[\x00-\x1f\x7f]/.test(s)) return false;         // C0 + DEL
-    if (/%2f|%5c/i.test(s)) return false;                // percent-encoded separators
+    if (s.includes('/') || s.includes('\\')) return false;   // separators, in every form
+    if (s === '.' || s === '..') return false;               // the only traversal a COMPONENT can be
+    if (/[\x00-\x1f\x7f]/.test(s)) return false;             // C0 + DEL
+    if (/%2f|%5c/i.test(s)) return false;                    // percent-encoded separators
     if (/[\u202a-\u202e\u2066-\u2069]/.test(s)) return false;  // bidi overrides/isolates
   }
   return true;
 }
 ```
+
+> ### ⛔ Round-11 B1 — v11's `s.includes('..')` REJECTED KEYS `slugify` CAN PRODUCE
+>
+> `slugify` preserves every `\p{N}`. **MEASURED across the whole codepoint space: 21 characters**
+> survive `slugify` *and* have an NFKC form ending in `.` — `U+2488`–`U+249B` (`⒈`…`⒛`) and `U+1F100`
+> (`🄀`). As the last character of a slug, the `.md` suffix completes a `..`:
+>
+> ```
+> title  "Lesson ⒈"
+> key    003_lesson-⒈.md
+> NFKC   003_lesson-1..md          ← contains ".."
+> CURRENT guard (shipped today):   ACCEPTS
+> v11 predicate:                   REJECTS
+> ```
+>
+> Coordinator re-verified independently: exactly 21 codepoints, exactly 21 regressing keys.
+>
+> **Two Blocking consequences, and v10 created the second one by deleting its own repair.** With the
+> §3.5 mint call the summary job fails on every attempt and the v6 `videoId` repair that would have
+> rescued it was deleted in the same section — and decision ③ forbids bringing it back. Without the
+> mint call, the encoder stores the key, `persistSummary(…, 'promoted')` advertises it, and the serve
+> guard 409s **forever**.
+>
+> **Why it survived ten rounds.** §3.4's NFKC pass and §3.5's *"the mint path can produce nothing
+> unservable"* were written in different rounds and never cross-derived — `review-method.md:174-177`
+> Step 2, which this spec ran on §3.6 and not here. §3.4's premise — *"`slugify` emits only letters,
+> numbers and `-`"* — is **true and irrelevant**: the fold happens *after* `slugify`, and it turns a
+> legal `\p{N}` into a `.`.
+>
+> **The fix is to stop over-approximating the requirement.** The requirement is *a single path
+> component*; with every separator form already rejected on the line above, a `..` **inside** one
+> component cannot traverse anything — `path.join(indexKey, '003_a..b.md')` is one file. So the test
+> becomes the one `assertLogicalKey` already applies (`blob-store.ts:87-91`): is the component itself
+> `.` or `..`? For a key ending `.md` that can never fire, which is the correct answer, not a gap.
+>
+> **⚠ This retires v9's rejection of `001_a．．b.md`, and that was a CHOICE (I), never a safety
+> property (P).** Stated rather than silently dropped. The narrower alternative — fold and test with
+> the trailing `.md` removed — keeps the rejection; it was declined because it preserves an
+> over-approximation whose only demonstrated effect was refusing legitimate titles.
 
 > **The length bound — round-9 H3, and it is the only place v9 was NARROWER than the code it replaces.**
 > Measured across the entire codepoint space, the current guard
@@ -203,9 +267,23 @@ export function isServableSummaryKey(key: string): boolean {
 > length term, and §7's risk row was charset-only. The one mechanism whose entire job is *"no existing
 > key breaks"* was silent on the only way this change could break one.
 >
-> Fixed by keeping the bound at **131**, which makes the guard a **strict widening in every
-> dimension** — the property §3.4 always claimed and did not have. A behaviour that is a strict
-> widening needs no migration argument at all, which is worth more than three characters of tidiness.
+> Fixed by keeping the bound at **131**.
+>
+> **⚠ v10 then claimed this made the guard "a strict widening in every dimension". Round 11 falsified
+> that TWICE, independently — the claim is retracted, not repaired.** (a) **B1** above: 21
+> `slugify`-producible keys were rejected that the current guard accepts. (b) **M3, units**: the
+> current guard is a `/u` regex, so each atom matches one **code point**; v11 used `key.length`, i.e.
+> **UTF-16 code units**. MEASURED smallest disagreement — `'a'` + 64 astral letters + `.md` is 68 code
+> points but 132 code units: accepted today, rejected by v11. Over BMP-only keys of every length 4–143
+> there were **zero** disagreements, which is exactly why the defect survived: *the fix was right for
+> the input it was tested on.* The predicate above now counts code points.
+>
+> The lesson is about the sentence, not the bound. **"Strict widening in every dimension" is a
+> universal, and this document has now had three universals falsified** — *"every key any entrance can
+> produce is acceptable"* (§3.5), *"no unservable class the mint path can produce"* (B1), and this one.
+> A universal asserts something about inputs nobody enumerated. §3.2 asks the units question for the
+> encoder (*"`SAFE ⊂ ASCII`, so `String.length` is sound"*) and §3.4 did not ask it for the guard — on
+> a predicate whose entire subject is non-ASCII keys.
 
 > **Bidi controls — round-9 Codex Low.** `001_safe\u202Efdp.md` passed v9: it is not a separator, not
 > traversal, and no normal form of it becomes one, so the sweep below is still correct. But it renders
@@ -268,11 +346,19 @@ The containment check is a **local-filesystem** guard and is not on the cloud se
 so plainly matters because §7 asks for a security reviewer at the PR, and previous drafts sent that
 reviewer looking for a backstop that is not there.
 
-**And the guard is not uniform — round-8 Codex Medium, round-9 Codex M1 and L2.** `lib/share/serve.ts:47`
-returns `mdKey` with **no** guard call, and `app/s/[token]/route.ts:78` then derives
-`const base = ctx.mdKey.replace(/\.md$/, '')` — exactly the derivation the guard's docstring calls
-itself "the hard boundary before". v10 adds the call there (behavior 21), mapping failure to share's
-coarse denial.
+**And the guard is not uniform — round-8 Codex Medium, round-9 Codex M1, round-11 L2.**
+`lib/share/serve.ts:47` returns `mdKey` with **no** guard call, and `app/s/[token]/route.ts` derives
+`base` from it **twice** — `:69` (the md-download filename) and `:78` — exactly the derivation the
+guard's docstring calls itself "the hard boundary before". v10 cited only `:78`.
+
+**Put the call inside `getShareServeContext`, before `mdKey` is returned**, so both derivations are
+covered *by construction* rather than by enumeration — this document has now been wrong about a count
+eight times. Map failure to share's coarse denial.
+
+> Verified while there, and deliberately **not** a finding: `fileResponse` already handles a
+> newly-reachable non-ASCII `base` safely — `asciiSafe` maps everything outside printable ASCII to `_`
+> and `encodeRFC5987` percent-encodes every non-attr-char byte (`file-response.ts:5-24`). **No header
+> injection through the widened key.**
 
 > Worth stating why this is a **Low-severity fix to a Medium-severity observation**: the share path has
 > derived model keys from unguarded `mdKey`s for the app's entire life without incident. That is not an
@@ -320,6 +406,30 @@ sentence v9 wrote here was false, and it was the sentence justifying all five de
 > **The conclusion is still "delete the refusal"** — the v5 refusal rejected *unstorable* keys and
 > produced the unreadable `003_dQw4w9WgXcQ.md` filenames decision ③ rejects. What is wrong is the
 > universal, not the deletion.
+>
+> **⚠ ROUND 11 FALSIFIED THE REPLACEMENT UNIVERSAL TOO.** v10 narrowed *"there is no unservable class
+> left"* to *"no unservable class **the mint path can produce**"*. That is **also false** — see §3.4
+> B1: 21 codepoints survive `slugify` and NFKC-fold to a trailing `.`, so the mint path could produce
+> a key v11's predicate rejects. Two universals, two rounds, same section. **The honest form carries no
+> universal at all:** the encoder makes every key storable; `isServableSummaryKey` rejects a specific,
+> enumerated class; the mint and adopt call sites exist so that class is refused *before* anything is
+> durable or paid.
+>
+> **And once B1 is fixed, the mint call site is a backstop no input reaches** — MEASURED: every
+> codepoint against four title shapes, zero `slugify` outputs fail the predicate. Say that plainly
+> rather than presenting it as half the answer. It is worth keeping: it is the assertion that the
+> §3.4/§3.5 cross-derivation holds, and it goes red if either side moves.
+>
+> **Two things the call sites cost, neither previously stated:**
+>
+> - The mint guard sits **after** `reserveVideoSlot` (`summary-handler.ts:95`) and **before** the Gemini
+>   call (`:101`), so a refusal **costs no money** — good. But a throw there leaves the bare reserved
+>   row that only the `PermanentTranscriptError` path rolls back (`:126-135`): the serial is consumed
+>   and the job retries to `dead_letter`.
+> - The adopt refusal (`sync-run.ts:263`) is per-video, caught, and **advances no baseline**, so it
+>   **re-fires on every subsequent run, forever**, until a human renames the vault file. That is the
+>   right behaviour under decision ③ — the automated repair was deleted — but **the error message must
+>   name the repair**, because nothing else will.
 >
 > **But this is exactly Phase 6 finding 1**, which v9 also deleted without noticing: *"a predicate whose
 > only enforcement point is downstream of durability cannot prevent corrupt durable state; it can only
@@ -416,31 +526,91 @@ So: one invariant at the seam, plus one question per *pattern*.
 
 #### 3.6.2 The design — attempt the write that cannot clobber; classify only if it fails
 
-**R1 — `promote` never overwrites an existing final object. On every adapter.**
-This is not a new contract; it is **the contract already written down**, which one adapter violates:
-`model-store.ts:43` says the staged→promote protocol is *"create-if-absent"*; `SupabaseBlobStore`
-already conforms (`supabase-blob-store.ts:112-116`); `LocalFsBlobStore` does **not** (`renameSync`).
-Implement with **`link` + `unlink`** (+ `rmdir` of the now-empty `_staging/<uuid>/`, which `unlink`
-leaves behind — measured, and v10 did not mention it). **MEASURED:** `linkSync` returns `EEXIST`
-through an NFC/NFD alias *and* through a case alias, so the no-clobber property holds against the
-whole alias class.
+**R1 — a NEW primitive, `promoteIfAbsent`. `promote` itself is not touched.**
 
-> Round-9 H2's reasoning for choosing `link` over `wx` — it preserves `putStaged` → verify → `promote`,
-> so the read-back hash check survives — **stands unchanged**. What changes is what the primitive is
-> *for*: not an occupancy test (it returns `EEXIST` and no identity), but the no-clobber durable write
-> that makes `promote` mean the same thing on both backends. This also converges two adapters that
-> disagree today — the remedy Phase 6 finding #2 named.
+```
+promoteIfAbsent(ref): 'created' | 'already-exists'
+```
+
+**It RESOLVES when the final object exists — it does not throw** (round-11 H1). `linkSync` *does*
+throw `EEXIST` (measured), so the adapter must catch it, leave the occupant untouched, remove the
+staging temp and `rmdir` its `_staging/<uuid>/`, and return `'already-exists'`. Without that sentence
+an implementer picks the other reading, `copyAdditiveVideo` throws at `sync-run.ts:268`, **R2's whole
+classification becomes unreachable**, and the crash-resume window strands the artifact forever — the
+exact defect §3.6.1 quotes `copyBlob`'s `already: true` docstring against, re-entering through R1.
+`SupabaseBlobStore` already behaves this way, and it conforms by **silently returning**, which is the
+evidence for the intended reading.
+
+| Adapter | Implementation |
+|---|---|
+| `LocalFsBlobStore` | `mkdirSync(dirname)` — **keep it**, `promote` already does it (`:61`) and nested `dig/<base>/<n>.r<V>.md` keys need it — then `link` + `unlink` + `rmdir` |
+| `SupabaseBlobStore` | its existing `promote` body already is this (`:112-116`) |
+| `InMemoryBlobStore` | its `create-if-absent` semantics, unconditionally |
+
+**MEASURED:** `linkSync` returns `EEXIST` through an NFC/NFD alias *and* a case alias, so the
+no-clobber property holds against the whole alias class. Round-9 H2's reason for choosing `link` over
+`wx` — it preserves `putStaged` → verify → `promote`, so the read-back hash check survives — stands
+unchanged.
+
+> ### ⚠ v11 said "`promote` never overwrites, on every adapter". That was wrong three ways.
+>
+> **1. It changed a shared seam contract having verified one path.** `promote` has **four** non-test
+> callers — `sync-run.ts:268`, `summary-handler.ts:178`, `write-dig-section-blob.ts:50`,
+> `consistency.ts:37` (zero production callers) — and §3.6 reasoned about one.
+>
+> **2. The round-10 half whose other recommendation was declined had already predicted it**, in its
+> cost section: *"either `promote` grows mode/intent, or a new `promoteExclusive`/`promoteIfAbsent`
+> operation is added."* The coordinator adopted the other half's R1 and did not carry that caveat
+> across. Recorded because it is this project's own measured lesson — *dual review halves are not
+> redundant* — failing at the moment of adjudicating a dual review.
+>
+> **3. It pointed the convergence at the semantics this repo's own tripwire calls a DEFECT.**
+> `tests/lib/dig/write-dig-section-blob-promote.test.ts:58-74` is an `it.failing` tripwire for backlog
+> **#22** / architecture-review **W2**: *"a re-dug section keeps its stale body because
+> `SupabaseBlobStore.promote` is create-if-absent"* — written so the suite goes **red** when someone
+> fixes it, and `InMemoryBlobStore` models both semantics precisely so the suite does not *"bake the
+> disagreement in as a truth"*. v11's behavior 18d would have baked it in.
+>
+> **What the two round-11 halves disagreed about, and the answer.** Codex called this **Blocking —
+> R1 breaks paid regeneration**. Claude called it sound, because `summary-handler` and
+> `writeDigSectionBlob` can **only ever see Supabase**: `getWorkerStorageBundle` hard-returns
+> `new SupabaseBlobStore(...)` with no backend branch (`resolve.ts:81-86`) and is their sole non-test
+> source. **Verified by the coordinator: Claude is right — R1 broke no caller.** Their stale-regeneration
+> defect is pre-existing (#22) and unaffected.
+>
+> **So Codex was right about the remedy and wrong about the failure**, and the remedy is adopted for
+> Claude's reason instead: a spec that declares *"`promote` is create-if-absent everywhere"* converts a
+> tracked bug into a documented invariant and **forecloses fixing #22 in the natural direction** (make
+> Supabase overwrite). With `promoteIfAbsent` separate, #22's fix stays available — most likely
+> `writeDigSectionBlob` using `put`, as `model-store.ts:46-52` already does.
+>
+> **Not attributable to this change:** the orphaned `_staging/<uuid>/` directory. `renameSync` leaves
+> it too (measured). Worth fixing here; not caused here.
 
 **R2 — additive create: write first, classify only on failure.**
 
 ```
 putStaged → verify staged hash          (unchanged, sync-run.ts:263-267)
-promote                                  // R1: cannot clobber, on either backend
-read back the FINAL key and hash it
-   equal to the body → SUCCESS   (we wrote it, or it was already there → crash-resume heals)
-   different         → REFUSE    (throw; the occupant is untouched)
-   unreadable        → REFUSE    (keeps v10's `unreadable ⇒ occupied` rule, which is right)
+promoteIfAbsent                          // R1: cannot clobber, on either backend; RESOLVES on EEXIST
+tryGet(FINAL key)                        // tryGet, NOT get — see below
+   ok, hash equals the body → SUCCESS  (we wrote it, or it was already there → crash-resume heals)
+   ok, hash differs         → REFUSE   (throw; the occupant is untouched)
+   'unreadable'             → REFUSE   (keeps v10's `unreadable ⇒ occupied` rule, which is right)
+   'absent'                 → REFUSE   (a FAULT, not a resume: promoteIfAbsent reported success and
+                                         the object is not there)
 ```
+
+> **Round-11 M2 — v11 named no primitive and its classification was not total.** `BlobRead` has
+> **four** cases (`blob-store.ts:10-13`) and v11 enumerated three: **`absent` had no branch.** And an
+> implementer reaching for `get` instead of `tryGet` gets Supabase collapsing *every* failure into
+> `null` (`supabase-blob-store.ts:29-35`) — the exact defect class `tryGet`'s docstring exists to stop
+> (*"use this instead of `get` before any irreversible or billable decision"*) — on the read that
+> decides whether the row advertises `promoted`.
+>
+> **Cost (round-11 brief item 5): acceptable, and now stated.** One extra `tryGet` per **created**
+> video, not per video. `runSync` is **not** deadline-bounded — its only production entry is the CLI
+> (`scripts/cloud-sync.ts:65`). A timeout on the read-back throws *after* a durable promote, leaving
+> exactly the crash-resume state R2 heals on the next run.
 
 Three properties v10's shape does not have:
 
@@ -471,6 +641,21 @@ The common path runs **no probe at all** and has no window. A legitimately re-ke
 works, because a diverged base makes the destination a fresh address. **No atomicity is claimed**:
 round-9 M4's residual window survives, scoped honestly to the uncommon branch, and it is identical to
 today's unconditional overwrite — a strict improvement, not a fence.
+
+> **Two precisions from round-11 L3, both about what R3 does NOT establish.**
+>
+> - **`summaryMd` is optional.** The additive-hydration path reaches `copyToLocal` with a loser that
+>   has none (`sync-run.ts:701-708`). `canonicallyEqualName(null, key)` is **`false`** → take the probe
+>   branch, which finds the address free and writes.
+> - **On `copyToCloud` the loser is Supabase, where `absent` means *absent or denied*** —
+>   `provesAbsence === false` (`supabase-blob-store.ts:39-62`). R3 proceeds to overwrite on `absent`,
+>   which is exactly today's unconditional behaviour and therefore not a regression — **but the fence
+>   does not exist in that direction, and this section must not read as if it does.**
+>
+> Both call sites do hold the loser's record, verified: `copyToCloud` at `:780-782` (loser cloud,
+> record `cv` from `:613`, re-read after relocation at `:765`), `copyToLocal` at `:791-793` (loser
+> local, record `lv` from `:612`). The new signatures are
+> `transferClassA(localSide, cloudSide, lv, cv, id)` and `transferClassA(cloudSide, localSide, cv, lv, id)`.
 
 **R4 — one name-equality function, and it must be a SUBSET of the filesystem's relation.**
 **MEASURED** on this volume the alias relation is **canonical equivalence ∪ case folding**: NFD/NFC
@@ -522,36 +707,86 @@ R1–R4 satisfy the same "don't reach through the seam" objection differently: t
 bytes"* as *"already done"*. Two different logical keys **can** hold byte-identical content, and R2
 would then let the receiver's row advertise `promoted` at a file created for another key.
 
-Accepted, for three reasons and with one escape hatch:
+**It is NOT accepted any more — round 11 dissolved it. The residual does not exist.**
 
-1. **The exact credential is exact about the wrong thing** — §3.6.0 measures that the stored name stops
-   tracking ownership after the first overwrite-through-alias, and the protocol performs that overwrite
-   itself. *An exact answer to a question whose answer has decayed is worse than an approximate answer
-   to the right one, because it is trusted.*
-2. **The failure modes are not symmetric.** R2's bad case is a *shared* file — no bytes lost, divergence
-   visible next run. v10's bad cases are a *permanently stranded* video and a *false refusal on the
-   money path*.
-3. **The premise needs two summaries with identical bytes and different names.** Vault names are
-   `${padSerial(serial)}_${slugify(title)}.md`, so two different videos cannot alias without a serial
-   collision — which the serial-coherence slice exists to prevent. **⚠ `[ASSUMPTION]` — the reviewer
-   did not re-verify the serial invariant this round.** If it is weaker than believed, this reason
-   weakens; the other two do not.
-4. **Escape hatch, if a wrong "already" is judged to cost money:** on the *equal* branch additionally
-   require the occupant's `video_id` frontmatter to match (`pipeline.ts:148` — every vault summary
-   carries one). That is *more* precise than `readdir`, because it names the owner directly instead of
-   proxying it through a byte form, and it stays adapter-independent.
+v11 accepted it on three reasons, and tagged the third `[ASSUMPTION]`. Round 11 re-verified that
+assumption as the brief's highest-value item and **falsified it** — then found the conclusion survives
+on a **stronger credential the spec never cited**, at zero cost.
+
+**The falsified reason.** v11 said *"vault names are `${padSerial(serial)}_${slugify(title)}.md`, so two
+different videos cannot alias without a serial collision — which the serial-coherence slice
+prevents."* Two independent refutations:
+
+- `recoverOrphanedVideos` adopts **any** `*.md` carrying a `video_id` field and sets
+  `summaryMd = file` verbatim (`pipeline.ts:104`, `:129-160`), and the serial is not allocated but
+  **parsed** — `file.match(/^(\d+)_/)` (`:106-107`) — with **no collision check** before `upsertVideo`
+  (`:151-154`). For adopted rows the naming premise simply does not hold, and §3.5 of this same
+  document says so two sections earlier.
+- There is **no database uniqueness on `serialNumber` at all**: it lives inside `data jsonb`, and
+  `videos` constrains only `(playlist_id, video_id)` and `(playlist_id, position)`
+  (`0001_core_schema.sql:23-39`).
+
+`review-method.md:87` — *"a safety fence, credential, or invariant may not be designed on an
+`[ASSUMPTION]`"* — applied exactly here, and the tag is what made it findable.
+
+**The two credentials that actually hold, both `[VERIFIED]`:**
+
+1. **Every summary body embeds its own video id.** `summary-core.ts:101-116` writes
+   `video_id: "${videoId}"` into the frontmatter **unconditionally**, plus `**URL:** ${youtubeUrl}`;
+   and `recoverOrphanedVideos` **refuses to adopt a file that lacks one** (`pipeline.ts:148-149`).
+   Therefore **two different videos' summary bodies can never be byte-identical**, and R2's
+   content-equality test is *transitively an ownership test*. The harm needs two owners ⇒ two videos ⇒
+   different bytes.
+2. **`ensureReceiverSlot` already refuses the collision before any blob write.** It throws
+   `serial collision` when the receiver index holds the sender's `serialNumber` **or** its `summaryMd`
+   (`sync-run.ts:203-213`), and it runs at `:240` — *before* `putStaged` at `:263`. Aliasing filenames
+   must share the numeric prefix (digits do not alias under canonical equivalence or case folding), so
+   the serial half catches every aliasing collision that has a receiver row at all.
+
+**So the `video_id` escape hatch is NOT required** — the fact it would read is *already inside the
+bytes R2 compares*. Reasons 1 and 2 from v11 stand unchanged.
+
+**The falsifier that now matters, recorded because it is live:** *any producer of a vault `.md` that
+omits `video_id` frontmatter* — including a re-render or corrections path that rewrites the body.
+**Backlog #23 (corrections as deterministic `{from,to}` pairs) is exactly such a path, in flight.**
+If that falsifier ever fires, the escape hatch above is the named remedy.
 
 **Second residual: R3 adds a refusal where today there is none**, so a state that used to sync (badly)
 now throws. It is per-video, caught by the caller, leaves no partial state, and self-heals once the
 address is free — but it is **operator-visible**, and the runbook must say: the receiver holds a file
 at an address its record does not claim; identify the owner and re-key or remove it.
 
-**Third, and left open deliberately: writer 3's `delete(models/${base}.json)`** (`sync-run.ts:475`) is
-a destructive, alias-resolved operation on a **paid** artifact whose `base` becomes non-ASCII under
-this change. The risk is genuinely low — `base` derives from the summary the transfer has just made
-authoritative, so the alias resolves to the same video's own model — **and that sentence is the point:
-it is now written down.** Extending R3's record test to it is the alternative if the reviewer at the
-PR disagrees.
+**Third: writer 3's `put`/`delete` of `models/${base}.json`** (`sync-run.ts:464`, `:475`) — a
+destructive, alias-resolved operation on a **paid** artifact whose `base` becomes non-ASCII under this
+change.
+
+**⚠ v11's one-sentence acceptance was wrong, and both round-11 halves said so independently.** It
+claimed *"`base` derives from the summary the transfer has just made authoritative, so the alias
+resolves to the same video's own model."* **R3 has two success branches and that is true of only one**
+(round-11 M1):
+
+- **(a) name-match, or probe found it occupied and refused** — the sentence holds.
+- **(b) the names differ and the summary address was FREE**, so the write proceeds. **Nothing has been
+  established about `models/${base}.json`.** A reachable chain, every link documented in this repo: two
+  videos share a title (same slug); serials diverge between replicas; `reconcileCloudBase` returns
+  `agreed` *without moving* because `localVideo.serialNumber == null` (`reconcile-serial.ts:179`, the
+  adopted-row case); and the other video's `.md` was deleted by hand while its model survived — a case
+  `sync-run.ts:686-688` explicitly contemplates. The companion step then overwrites or deletes another
+  video's paid model.
+
+**The credential exists and neither the code nor v11 consults it.** The model envelope carries
+**`sourceMd`** (`model-store.ts:15-23`), which names its owner directly, while `decideCompanion` proves
+staleness by hash alone (`companion.ts:151-153`).
+
+**Decision: require it.** Before any companion ship or delete, require
+`canonicallyEqualName(receiverModel.envelope.sourceMd, ` + "`${base}.md`" + `)`. If the envelope names a
+different logical key, refuse and leave the model untouched.
+
+> **Severity, honestly:** this is **not a regression** — the same `put`/`delete` runs completely
+> unguarded today, and aliasing is not even required for the harm (a byte-exact base collision does it
+> now). What v11 added was a **claim of safety** over that path, which is worse than the silence it
+> replaced. Requiring `sourceMd` is cheap and strictly better than restating the residual, so the
+> claim is made true rather than withdrawn.
 
 ### 3.7 Unchanged
 
@@ -610,12 +845,19 @@ pass** because an errored query printed a header and no rows.
 | 14 | **A Korean-titled video ingests and serves 200; ledger unmoved** | integration |
 | 15 | **An NFD accented-Latin title ingests and serves 200** | integration |
 | 16 | **A title with a space, an emoji, or an astral letter at the `slice(60)` boundary ingests and serves 200** — no fallback, no refusal, and the vault filename stays readable | integration |
-| 17 | `nested/foo.md`, `%2f`, `／`, `℀.md`, `001_a．．b.md`, a control char, a bidi override, and a 200-char base are all **rejected** by the guard | unit |
+| 17 | `nested/foo.md`, `%2f`, `／`, `℀.md`, a control char, a bidi override, and a 200-char base are all **rejected** by the guard | unit |
+| 17c | `001_a．．b.md` is **ACCEPTED** — v9 rejected it, and that rejection was a *choice*, not a safety property. It is one path component (round-11 B1) | unit |
 | 17b | Total key lengths **129, 130 and 131 are ACCEPTED** — the bound did not narrow (round-9 H3) | unit |
 | 18 | Additive create: the occupant is **byte-identical** under the aliasing form → **SUCCEEDS**, file untouched, stored name preserved. *(This is the crash-resume case v10 would have stalled on forever.)* | integration, real FS |
 | 18b | Additive create: the occupant has **different bytes** → **REFUSES**; the occupant is intact | integration, real FS |
 | 18c | Additive create on the **cloud** receiver: the final key already holds different bytes → **REFUSES** instead of advertising `promoted` over someone else's bytes | integration |
-| 18d | **`promote` never overwrites an existing final object — on all three adapters** | contract |
+| 18c2 | Additive create when the read-back is **`absent`** → **REFUSES** (a fault, not a resume) | unit |
+| 18j | `companionTransfer` **refuses** to ship or delete `models/${base}.json` when the receiver envelope's `sourceMd` names a different logical key (round-11 M1 + Codex B2) | integration |
+| 18k | `canonicallyEqualName(null, key)` is **`false`**, so a loser with no `summaryMd` takes the probe branch (round-11 L3) | unit |
+| 18d | **`promoteIfAbsent` leaves the occupant's bytes unchanged — on all three adapters** | contract |
+| 18d2 | **`promoteIfAbsent` RESOLVES `'already-exists'` rather than throwing**, and removes the staging temp **and** its `_staging/<uuid>/` directory (round-11 H1) | contract |
+| 18d3 | `promoteIfAbsent` creates missing parent directories, so a nested `dig/<base>/<n>.r<V>.md` key works on first write (round-11 L1) | unit |
+| 18d4 | `promote` is **unchanged** — its existing callers' behaviour is byte-identical before and after this slice | contract |
 | 18e | The `putStaged` → **verify (read-back hash)** → `promote` protocol still runs on the additive path | integration |
 | 18f | `promote` leaves no orphaned `_staging/<uuid>/` **directory** behind (`unlink` removes only the file) | unit |
 | 18g | Class-A: the loser's row **names this address** → **overwrites**. *(Class-A sync still works — round-8 H1 stays fixed.)* | integration |
@@ -627,7 +869,12 @@ pass** because an errored query printed a header and no rows.
 never as two source literals** — v10's rule, kept verbatim, and now doubly motivated: this spec has
 shipped three invisible-character defects.
 | 20 | The §4 gate's SQL predicate derives from the encoder module | check script |
-| 21 | The **share** path rejects a non-servable `mdKey` before deriving `base` from it, as coarse denial (round-9 Codex M1) | integration |
+| 21 | The **share** path rejects a non-servable `mdKey` inside `getShareServeContext`, so **both** `base` derivations (`route.ts:69` and `:78`) are covered | integration |
+| 23 | **A title ending in `U+2488`–`U+249B` or `U+1F100` ingests and serves 200** — the round-11 B1 class | integration |
+| 24 | A key of 68 code points / 132 UTF-16 units (astral letters) is **ACCEPTED** — the bound counts code points (round-11 M3) | unit |
+| 25 | **The mint refuses a non-servable key** — after `reserveVideoSlot`, before the Gemini call, so no money moves | integration |
+| 26 | **The adopt refuses a non-servable key before the blob write**, and the error message names the manual repair | integration |
+| 27 | **No `slugify` output fails `isServableSummaryKey`** — the cross-derivation §3.4 and §3.5 each assumed and neither checked | property |
 | 22 | `encodeSegment('003_x\uD840.md') !== encodeSegment('003_x\uD850.md')` — two **distinct lone surrogates** encode differently (restored; round-8 M2, still open in v9) | unit |
 
 Behaviors **16** and **17** are the pair that matters: 16 says the guard stopped rejecting what it never
@@ -649,11 +896,21 @@ be reported as verified; that happens in Phase 3.
 | `hash(NFC(s))` instead of `hash(s)` in the encoder | 3 | PROVISIONAL |
 | Drop `utf16le` back to `utf8` | **22**, not 4 — see below | PROVISIONAL |
 | Widen `SAFE` to include `=` | 4 (crafted preimage — confirmed constructible and deterministic, round 9) | PROVISIONAL |
-| Skip the NFKC-folded pass in `isServableSummaryKey` | 17 (`℀.md`, `001_a．．b.md` — now listed *in* 17) | PROVISIONAL |
+| Skip the NFKC-folded pass in `isServableSummaryKey` | 17 (`℀.md`, `／` homoglyphs) | PROVISIONAL |
 | Narrow the length bound from 131 to 128 | **17b** | PROVISIONAL |
 | Drop the bidi-control rejection | 17 | PROVISIONAL |
 | Revert the guard to the `\p{L}\p{N}` allowlist | 15 (NFD accented Latin 409s) | PROVISIONAL |
-| Replace `link` with `rename` in `promote` | **18d** — contract level, so it must go red on **all three** adapters | PROVISIONAL |
+| Replace `link` with `rename` in `promoteIfAbsent` | **18d** — contract level, red on **all three** adapters | PROVISIONAL |
+| Make `promoteIfAbsent` rethrow `EEXIST` instead of resolving | **18d2** — and 18 (crash-resume) | PROVISIONAL |
+| Drop the `mkdirSync` from `promoteIfAbsent` | 18d3 | PROVISIONAL |
+| Change `promote` to create-if-absent on local | **18d4** | PROVISIONAL |
+| Classify a read-back `absent` as `equal` | **18c2** | PROVISIONAL |
+| Use `get` instead of `tryGet` for the read-back | 18c2 (Supabase collapses every failure to `null`) | PROVISIONAL |
+| Drop the `sourceMd` check in `companionTransfer` | 18j | PROVISIONAL |
+| Restore `s.includes('..')` in the predicate | **23** (`003_lesson-⒈.md` refused) | PROVISIONAL |
+| Count `key.length` instead of code points | **24** | PROVISIONAL |
+| Remove the mint guard call | 25 | PROVISIONAL |
+| Remove the adopt guard call | 26 | PROVISIONAL |
 | Skip the read-back hash verify before promote | 18e | PROVISIONAL |
 | Make additive create refuse on byte-**identical** occupancy | **18** — the crash-resume regression | PROVISIONAL |
 | Make additive create succeed on byte-**different** occupancy | 18b | PROVISIONAL |
