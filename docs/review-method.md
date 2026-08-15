@@ -62,10 +62,36 @@ being argued with.
 | **Mechanism** defects — the rule cannot be satisfied, the credential is stale, two requirements contradict | the shape is wrong | **REDESIGN.** This is what the rule is for |
 | **Branch-coverage** defects — *"the rule doesn't say what happens in case X"*, where X is a branch of code the rule GOVERNS but does not OWN | the shape is fine and under-specified | **FIX**, plus an exhaustiveness pass |
 
-**The discriminator: can a redesign remove the branch?** If the branches live in code the design merely
-governs — `decideCompanion` already has two `ship` branches, `SupabaseBlobStore.promote` already has
-three success paths — then **no redesign can delete them.** It can only fail to mention them, which is
-the defect you already have. Redesigning is then pure cost.
+**⚠ THE SYMPTOM LIST IS A PROMPT, NOT THE TEST. There is one test, and it is this:**
+
+> ### Can a redesign remove it?
+
+If a different shape would dissolve the finding, it is a mechanism defect and the redesign is owed. If
+the same finding would survive every reasonable reshaping — because it lives in code the design merely
+*governs*, or because it is a sentence that outlived the decision it described — it is not.
+
+**Measured 2026-08-14, round 13, and this is why the sentence above exists.** Applying the symptom list
+as a checklist produced a **false REDESIGN** in one reviewer and a true one in the other, on the same
+document:
+
+| Finding | Symptom matched | Redesign removes it? | Actually |
+|---|---|---|---|
+| `promoteIfAbsent` typed `Promise<void>` while two other lines still demand it *return* `'already-exists'` | *"two requirements contradict"* ✓ | **No** — it is one stale signature reference; the fix is six words | editorial |
+| `sourceMd` required as an ownership credential, but `reconcileCloudBase` byte-copies the envelope and never rewrites it, so it is **stale by construction** on the cloud path | *"a credential is stale"* ✓ | **Yes** — a different credential (`sourceMdHash`, or an invariant enforced at `remap`) dissolves it entirely | **mechanism** |
+
+Both matched a listed symptom. Only the second is a mechanism defect. **Quote the test, not the list.**
+
+**A third outcome the two-way split does not cover: STALE CROSS-REFERENCE.** *"A decision changed and
+some sentences still state the old one."* Round 13 produced four. It is neither mechanism nor
+branch-coverage, and its remedy is neither a redesign nor an exhaustiveness pass — it is:
+
+> **When a decision is reversed, grep for every place that stated the old one.** A rewritten section
+> does not rewrite its own cross-references.
+
+**The branch-coverage case, for completeness.** If the branches live in code the design merely governs
+— `decideCompanion` already has two `ship` branches, `SupabaseBlobStore.promote` already has three
+success paths — then no redesign can delete them. It can only fail to mention them, which is the defect
+you already have. Redesigning is then pure cost.
 
 **Measured 2026-08-14, backlog #36 §3.6.** The counter reached 2 across rounds 11 and 12. Every one of
 the five findings was branch-coverage; the mechanism (R1–R4) was attacked head-on in round 12 —
