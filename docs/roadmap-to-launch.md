@@ -1304,11 +1304,14 @@ Ten dual review rounds, a Phase 6 architecture review, and a round-10 DESIGN rev
 - **v12 is committed.** Every behavior it claims was executed against the predicate first.
 - **Next:** round 12 on v12 → `writing-plans` → implementation. Then the ADR recording the seam
   decision (task #91; not yet written, so not numbered here).
-- ⛔ **Deploy is blocked on the user**, not on engineering: `claude_ro` cannot read `storage.objects`,
-  so the no-migration gate cannot run. Two grants; the SQL is in the spec's gate section.
+- ✅ **The deploy blocker is GONE.** The user applied the two `claude_ro` storage grants on
+  2026-08-14, and the §4 no-migration gate **ran the same day and passed** — read-only, exit 0,
+  reachability asserted first: 19 objects, **0 rows** outside the encoder's `SAFE` class. **#36 needs
+  no migration.** The same query answered backlog #46's open question: **0** existing names would
+  change under NFKC.
 - Phase 6 returned **eight findings**, deliberately unfiled pending user triage — see that review.
 
-**Blocked on the human:** the two `claude_ro` grants (deploy gate only), Phase 6 triage, and merging.
+**Blocked on the human:** Phase 6 triage. *(The `claude_ro` grants landed 2026-08-14. Merging is not pending — #36 is Phase 1, no code, no PR.)*
 Previously: nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
 **Backlog #36 (🔴 a non-ASCII title destroys a paid summary) is now the last launch-blocking
 defect**, and it is engineering, not a decision.

@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v13**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v14**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
 **Review trail — ten dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
@@ -578,6 +578,15 @@ evidence for the intended reading.
 | `SupabaseBlobStore` | its existing `promote` body already is this (`:112-116`) |
 | `InMemoryBlobStore` | its `create-if-absent` semantics, unconditionally |
 
+> **Round-12 Low — the rollout is wider than three adapters.** Anything that `implements BlobStore` or
+> is typed as one must gain `promoteIfAbsent` or `tsc` breaks: the decorators
+> `FailPromoteBlobStore` (`tests/integration/helpers/cloud.ts:168-184`) and `UnreadableModelBlobStore`
+> (`tests/integration/serve-model-unreadable.test.ts:57-79`), and the object literal at
+> `tests/lib/storage/consistency.test.ts:38-59`. Not a data-loss path — a predictable implementation
+> interruption. **Each fault-injection wrapper must decide explicitly whether its injected `promote`
+> fault also applies to `promoteIfAbsent`**; forwarding silently is a decision, and an unexamined one
+> would quietly weaken a test that exists to prove a failure is handled.
+
 **MEASURED:** `linkSync` returns `EEXIST` through an NFC/NFD alias *and* a case alias, so the
 no-clobber property holds against the whole alias class. Round-9 H2's reason for choosing `link` over
 `wx` — it preserves `putStaged` → verify → `promote`, so the read-back hash check survives — stands
@@ -722,8 +731,18 @@ return `exact: true`.
 
 Declined, because it **wraps a credential that §3.6.0 measures to be stale by construction**. Making
 the stale answer a first-class capability propagates it to every adapter and every future caller.
-R1–R4 satisfy the same "don't reach through the seam" objection differently: the seam gets a stronger
-**uniform contract** (`promote` is create-if-absent everywhere) rather than a new question.
+R1–R4 satisfy the same "don't reach through the seam" objection differently: the seam gains a
+**new uniform primitive, `promoteIfAbsent`**, while **`promote` stays byte-identical for its existing
+callers** (behavior 18d4 is the tripwire).
+
+> ⚠ **Round-12 Medium — this paragraph said the opposite until v14, and the document therefore carried
+> two incompatible implementation instructions.** It still read *"the seam gets a stronger uniform
+> contract (`promote` is create-if-absent everywhere)"* — v11's rejected wording, left standing when
+> R1 was rewritten in v12. An implementer following **this** sentence would have changed
+> `LocalFsBlobStore.promote` from overwrite to create-if-absent and reintroduced exactly the stale
+> paid-artifact behaviour round 11 found. The lesson is narrow and repeatable: **when a decision is
+> reversed, grep for every place that stated the old one** — a rewritten section does not rewrite its
+> own cross-references.
 
 > Two further notes recorded so they are not rediscovered. **`list()` already returns `readdir` bytes**
 > (`local-blob-store.ts:76`→`:85`), so the interface was never *missing* the credential — it exposed it
@@ -847,12 +866,32 @@ for five characters** Storage accepts and `SAFE` excludes: space, `(`, `)`, `+`,
 **Gate — FAILS IF** any `storage.objects` row in `artifacts` has a path segment **after the first two**
 not matching `^[A-Za-z0-9._-]+$`.
 
-### 4.1 ⛔ The gate cannot run — `claude_ro` is denied on schema `storage`
+### 4.1 ✅ The gate RAN and PASSED — 2026-08-14, against prod
 
-Needs, from the user: `grant usage on schema storage to claude_ro;` and
-`grant select on storage.objects to claude_ro;`. Until then §4 is **unverified**; blocks deploy, not
-the plan. Run with `-v ON_ERROR_STOP=1` and check the exit code — the first runner reported a **false
-pass** because an errored query printed a header and no rows.
+The two grants (`grant usage on schema storage to claude_ro;`,
+`grant select on storage.objects to claude_ro;`) were applied by the user on **2026-08-14**, and the
+gate was executed the same day as `claude_ro`, read-only, with `-v ON_ERROR_STOP=1`, **exit code 0**:
+
+```
+objects_total                                    19
+§4 gate  (segments after the first two ∉ SAFE)   0 rows      ← PASSES
+would_change under NFKC | non_ascii | total      0 | 0 | 19
+```
+
+**No migration is needed.** Every existing object name is within `SAFE`, so the encoder changes no
+key already in the bucket.
+
+> **Reachability was asserted first**, because this gate's whole failure mode is reporting a pass it
+> could not have earned: query 0 returns the object count, and the run is only meaningful if that
+> count is non-zero. The first attempt at this gate, before the grants, reported a **false pass**
+> because an errored query printed a header and no rows.
+>
+> ⚠ **Scope, stated so the tick is not read as wider than it is.** 19 objects, `artifacts` bucket,
+> **verified against prod as of 2026-08-14 (release v6)**. It is a claim about the bucket *today*, not
+> a standing invariant — anything ingested after this date is covered by the encoder itself, which is
+> the point of the design. The non-ASCII half of the result is unsurprising (Storage rejects those
+> keys — that is backlog #36); **the load-bearing half is that none of the five characters Storage
+> accepts but `SAFE` excludes — space, `(`, `)`, `+`, `=` — appears in any existing name.**
 
 ---
 
@@ -889,6 +928,7 @@ pass** because an errored query printed a header and no rows.
 | 18d2 | **`promoteIfAbsent` RESOLVES `'already-exists'` rather than throwing**, and removes the staging temp **and** its `_staging/<uuid>/` directory (round-11 H1) | contract |
 | 18d3 | `promoteIfAbsent` creates missing parent directories, so a nested `dig/<base>/<n>.r<V>.md` key works on first write (round-11 L1) | unit |
 | 18d4 | `promote` is **unchanged** — its existing callers' behaviour is byte-identical before and after this slice | contract |
+| 18d5 | Every `BlobStore` implementer — including the two test decorators and the object fake — implements or forwards `promoteIfAbsent`, and each fault-injection wrapper states whether its injected fault applies to it | contract |
 | 18e | The `putStaged` → **verify (read-back hash)** → `promote` protocol still runs on the additive path | integration |
 | 18f | `promote` leaves no orphaned `_staging/<uuid>/` **directory** behind (`unlink` removes only the file) | unit |
 | 18g | Class-A: the loser's row **names this address** → **overwrites**. *(Class-A sync still works — round-8 H1 stays fixed.)* | integration |
@@ -989,7 +1029,7 @@ full migration.
 
 | Risk | Handling |
 |---|---|
-| An existing prod key uses ` `, `(`, `)`, `+` or `=` | §4 gate before deploy. ⛔ unrunnable — §4.1 |
+| An existing prod key uses ` `, `(`, `)`, `+` or `=` | ✅ **MEASURED 2026-08-14 against prod: none does** (§4.1). Gate ran as `claude_ro`, exit 0, 0 rows |
 | An existing prod key is **129–131 characters** | **Dissolved, not gated** — v10 keeps the bound at 131, so the guard is a strict widening in every dimension (round-9 H3). This row exists because v9 would have needed a gate the §4 SQL structurally could not provide: its predicate is a character class with no length term |
 | Widening the guard is security-relevant | It is a **denylist of separators**, strictly narrower in what it permits through than the local path already permits. The backstops are named per path in §3.4 — `assertLogicalKey` on cloud, `assertIndexRelPathWithin` on local; they are **not** the same guard. **Needs a security reviewer at the PR** |
 | A key that syncs and stores can still be unservable | Real, pre-existing, and **not closed by the encoder** — see the §3.5 correction. v10 adds the mint and adopt call sites; the `raw/` nested-`summaryMd` shape stays an open pre-existing gap with no known producer |
