@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v15**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v16**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
 **Review trail — ten dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
@@ -215,6 +215,13 @@ astral letter at the boundary yields a lone surrogate.
 > The guard's `isWellFormed()` check stays as the **backstop**: `readdir` strings are always
 > well-formed, so after this repair the class is unreachable from either entrance, and the check is the
 > assertion that this stays true.
+>
+> **⚠ Round-13 L3 — this repairs the PRODUCER, not the existing damage.** A vault file already written
+> under an ill-formed key is on disk as `003_x\ufffd.md` today. The repair stops new ones; it does not
+> rename old ones, and `canonicallyEqualName` still cannot match such a file to its row. Prod is
+> unaffected (§4.1 measured 0 non-ASCII names in 19 objects), but **a local vault is not measured** —
+> the same gap backlog #46 records. Stated here rather than left to be discovered: **forward-only, and
+> the residue is a local-vault question, not a cloud one.**
 
 **Contract:** total; bounded (65 chars); and **injective on the identity branch, collision-*resistant*
 on the hash branch** — the two branches are provably disjoint because `=` ∉ `SAFE`, but 22 base64url
@@ -515,10 +522,43 @@ sentence v9 wrote here was false, and it was the sentence justifying all five de
 > above and is already read-only, so every consequence here is live in production today. v9's error was
 > asserting the hole closed.
 >
-> **v10's answer is two call sites, not machinery.** Call `isServableSummaryKey` at the mint
-> (`summary-handler.ts:96`) and at the adopt (`sync-run.ts:263`, **before** the blob write), where a
-> refusal costs nothing because nothing is durable yet. That is finding 1's *"move, do not add"*, and it
-> is one line each — not the v5 refusal, which is still deleted.
+> **The answer is call sites, not machinery — but v10 through v15 put one of them in the WRONG PLACE.**
+> Call `isServableSummaryKey` at the mint (`summary-handler.ts:96`) and on the adopt path. That is
+> finding 1's *"move, do not add"* — not the v5 refusal, which is still deleted.
+>
+> ### ⛔ Round-13 H2 — `sync-run.ts:263` is AFTER a durable write, and the guard is routed around
+>
+> v10–v15 said the adopt guard goes at `:263` *"where a refusal costs nothing because nothing is
+> durable yet"*, and that a refusal *"re-fires on every subsequent run, forever."* **Both halves are
+> false, and the function says so twelve lines above the chosen line.**
+>
+> `ensureReceiverSlot` has already run at `:240`, and it calls `to.claimVideoSlot(...)` — on the cloud
+> store a **durable insert** (`supabase-metadata-store.ts:87`). The precedent was already written at
+> `sync-run.ts:230-235`:
+>
+> > *H-R2-1 (round 2) — this guard MUST run BEFORE `ensureReceiverSlot`, not after. Claiming the slot
+> > first left a BARE receiver row behind on the throw…*
+>
+> **And the bare row is what defeats "forever".** With a receiver row present, run 2 no longer takes
+> the additive path at all: `:618`'s `if (!lv || !cv)` is false → the two-sided branch; the B1 guard at
+> `:697` does not fire (`cv.summaryMd` is null on a bare row); `reconcileClassA` sees
+> local-has-MD / cloud-has-none → `copyToCloud` → `transferClassA`, which writes the key with a plain
+> `put` (`:394`) and sets `status: 'promoted'` (`:430`) — **with no servability guard anywhere on that
+> path.** The unservable key lands on run 2 and the serve guard 409s forever: the exact end state this
+> call site is claimed to prevent.
+>
+> **Not a regression** — today the same key lands on run 1 instead of run 2 — but **behavior 26 would
+> have gone green over an open hole**, because a one-run integration test cannot see run 2. That is
+> *"a GREEN gate that tests the wrong schema is worse than a red one"*.
+>
+> **Fix, both mechanical:**
+>
+> 1. Move the adopt guard **above** `ensureReceiverSlot`, next to the existing WB-H1 check at
+>    `sync-run.ts:236-238`. No row is created, the video stays one-sided, and the refusal genuinely
+>    re-fires every run.
+> 2. **Guard `transferClassA` too.** The Class-A path is a second entrance to the same durable state,
+>    and §2.5 already lists it as write entrance 3. Enumerating the entrances was never the problem —
+>    *guarding only the one we were thinking about* was.
 
 ### 3.6 Namespace ownership — REDESIGNED at round 10, after the FIX→REDESIGN escalation
 
@@ -656,7 +696,7 @@ promoteIfAbsent(ref): Promise<void>        // RESOLVES when the final exists; ne
 
 **It RESOLVES when the final object exists — it does not throw** (round-11 H1). `linkSync` *does*
 throw `EEXIST` (measured), so the adapter must catch it, leave the occupant untouched, remove the
-staging temp and `rmdir` its `_staging/<uuid>/`, and return `'already-exists'`. Without that sentence
+staging temp **and its `_staging/<uuid>/` tree**, and **resolve**. Without that sentence
 an implementer picks the other reading, `copyAdditiveVideo` throws at `sync-run.ts:268`, **R2's whole
 classification becomes unreachable**, and the crash-resume window strands the artifact forever — the
 exact defect §3.6.1 quotes `copyBlob`'s `already: true` docstring against, re-entering through R1.
@@ -665,7 +705,7 @@ evidence for the intended reading.
 
 | Adapter | Implementation |
 |---|---|
-| `LocalFsBlobStore` | `mkdirSync(dirname)` — **keep it**, `promote` already does it (`:61`) and nested `dig/<base>/<n>.r<V>.md` keys need it — then `link` + `unlink` + `rmdir` |
+| `LocalFsBlobStore` | `mkdirSync(dirname)` — **keep it**, `promote` already does it (`:61`) and nested `dig/<base>/<n>.r<V>.md` keys need it — then `link` + `unlink` + **`rmSync(_staging/<uuid>, {recursive:true, force:true})`** |
 | `SupabaseBlobStore` | **must change — `:112-116` is only the FIRST of three paths.** See below |
 | `InMemoryBlobStore` | its `create-if-absent` semantics, unconditionally |
 
@@ -679,9 +719,11 @@ evidence for the intended reading.
 > would quietly weaken a test that exists to prove a failure is handled.
 
 **MEASURED:** `linkSync` returns `EEXIST` through an NFC/NFD alias *and* a case alias, so the
-no-clobber property holds against the whole alias class. *(`linkSync` with a **missing source** returns
-`ENOENT`, not `EEXIST` — `promote:60` short-circuits that case today and `promoteIfAbsent` must too,
-even though R2 always stages first.)*
+no-clobber property holds against the whole alias class. *(`linkSync` with a **missing source** returns `ENOENT`, not
+`EEXIST`. `promote:60` short-circuits only the *already-promoted* case — `!exists(from) && exists(to)`
+— which is **not** the same condition, so `promoteIfAbsent` must handle bare `ENOENT` explicitly rather
+than inherit a short-circuit that does not cover it. Round-13 L1; unreachable from R2, which stages
+first.)*
 
 > **⚠ Round-12 M1 — v14 said Supabase "already behaves this way". It does not, on two counts.**
 > `:112-116` is the first short-circuit; the method continues:
@@ -930,56 +972,71 @@ address is free — but it is **operator-visible**, and the runbook must say: th
 at an address its record does not claim; identify the owner and re-key or remove it.
 
 **Third: writer 3's `put`/`delete` of `models/${base}.json`** (`sync-run.ts:464`, `:475`) — a
-destructive, alias-resolved operation on a **paid** artifact whose `base` becomes non-ASCII under this
-change.
+destructive, alias-resolved operation on a **paid** artifact.
 
-**⚠ v11's one-sentence acceptance was wrong, and both round-11 halves said so independently.** It
-claimed *"`base` derives from the summary the transfer has just made authoritative, so the alias
-resolves to the same video's own model."* **R3 has two success branches and that is true of only one**
-(round-11 M1):
-
-- **(a) name-match, or probe found it occupied and refused** — the sentence holds.
-- **(b) the names differ and the summary address was FREE**, so the write proceeds. **Nothing has been
-  established about `models/${base}.json`.** A reachable chain, every link documented in this repo: two
-  videos share a title (same slug); serials diverge between replicas; `reconcileCloudBase` returns
-  `agreed` *without moving* because `localVideo.serialNumber == null` (`reconcile-serial.ts:179`, the
-  adopted-row case); and the other video's `.md` was deleted by hand while its model survived — a case
-  `sync-run.ts:686-688` explicitly contemplates. The companion step then overwrites or deletes another
-  video's paid model.
-
-**The credential exists and neither the code nor v11 consults it.** The model envelope carries
-**`sourceMd`** (`model-store.ts:15-23`), which names its owner directly, while `decideCompanion` proves
-staleness by hash alone (`companion.ts:151-153`).
-
-**Decision: require it — stated PER OUTCOME, not per call (round-12 H2).**
-
-`decideCompanion` returns `ship` on **two** branches and only one carries a receiver envelope
-(`companion.ts:113-125`), so a rule written per *call* is unsatisfiable on the other. And that other
-branch is not an edge — `companion.ts:46` calls it the common case in its own words: *"`unknown` is the
-COMMON outcome: a cloud video that was never HTML-served has no model blob, and the Supabase backend
-cannot prove that 404."*
-
-| Receiver read | Rule | Why |
-|---|---|---|
-| **envelope present** (ship-overwrite, and every `delete` — `provablyStale` requires it, `companion.ts:151-152`) | **require** `canonicallyEqualName(envelope.sourceMd, base + '.md')`; refuse otherwise | the two destructive outcomes; the bytes name their own owner |
-| **`none`** | **ship** | nothing is being destroyed and there is no owner to contradict |
-| **`unknown`** | **ship**, as a NAMED RESIDUAL | the read failed and cannot prove absence. This is today's behaviour, so it is not a regression; and refusing here would make the ship branch **dead on the Supabase receiver**, which can never return `none` (`companion.ts:149-150` already relies on that asymmetry) |
-
-> **v14 wrote this rule per call and it would have refused in the majority case** — a receiver with no
-> model would never get one, and stickily: the Class-A body has already landed, so the next run's
-> `reconcileClassA` returns `'skip'` and the companion step never runs again (`sync-run.ts:456-462`).
-> The share stays unrenderable until an owner re-serve, **which reserves and charges.** A fix that
-> costs money in the common case, introduced by a fix.
+> ### ⛔ ROUND-13 H1 FIRED THE ESCALATION FALSIFIER HERE, AND THE CREDENTIAL IS REPLACED
 >
-> Behavior **18j** needs the same split — as written it exercises only *"names a different key"* and
-> would pass with ship-into-empty broken.
+> v12 adopted `sourceMd` as the ownership credential and v15 restated it per outcome. **It is stale by
+> construction.** `reconcileCloudBase` relocates every paid artifact by **byte copy**, envelope
+> included (`reconcile-serial.ts:98`, `:118` → `copy` → `copyBlob`). **MEASURED: that file contains
+> zero occurrences of `sourceMd` and never imports `serial-provenance`.** The **local** migration
+> rewrites it (`serial-provenance.ts:16`, asserted at `serial-migrate-exec.test.ts:201`); the cloud one
+> does not. So after a relocation the envelope at `models/<newBase>.json` still says
+> `sourceMd: "<oldBase>.md"` — permanently, until a paid re-serve — and the rule then requires
+> `canonicallyEqualName("<oldBase>.md", "<newBase>.md")` → **false** → refuse. **The credential refuses
+> the ship it exists to permit**, stickily, and recovery costs money.
+>
+> Same defect class as round 10's `readdir`: *stale by construction*. Full pass:
+> `docs/reviews/spec-blob-key-encoding-credential-design-pass.md`.
+>
+> **The question was wrong.** *"What proves `models/<base>.json` belongs to `<base>`?"* presumes the
+> fact to establish is a relationship between a file and an **address**. MEASURED asymmetry:
+>
+> ```
+> summary body    video_id: "dQw4w9WgXcQ"        summary-core.ts:103   ← an ID
+> model envelope  sourceMd:  "003_wk08-intro.md"  model-store.ts:17     ← a NAME
+> ```
+>
+> `ModelEnvelopeSchema` carries **no stable id at all**. The summary was given an identity token; the
+> model was given a **provenance** token — *what it was made from* — and then asked an **identity**
+> question. `sourceMd` is not stale by accident: **it is the wrong kind of credential**, and both
+> alternatives (rewrite at `remap`, or `sourceMdHash`) keep it name- or content-shaped.
 
-> **Severity, honestly:** this is **not a regression** — the same `put`/`delete` runs completely
-> unguarded today, and aliasing is not even required for the harm (a byte-exact base collision does it
-> now). What v11 added was a **claim of safety** over that path, which is worse than the silence it
-> replaced. Requiring `sourceMd` is cheap and strictly better than restating the residual, so the
-> claim is made true rather than withdrawn.
+**DECISION: add `videoId?: string` to `ModelEnvelopeSchema`.** Ownership becomes
+`envelope.videoId === row.videoId` — two immutable ASCII ids. Relocation cannot break it because
+nothing in the answer moves. Verified: `serve-doc.ts:174` already has `videoId` as an explicit param of
+`resolveMagazineModel` (`:48`, destructured `:70`, already used for `docKey` and the reserve RPC);
+`sync-run.ts:464` ships `decision.envelope` wholesale, so it propagates correct by construction.
+`model-store.ts:25-26` records that `.strict()` was *"intentionally removed"* so a new field cannot
+break an old reader.
 
+**Stated per outcome — with the OUTCOME of a refusal named, which v15 omitted (round-13 M2):**
+
+| Receiver envelope | Rule | On refusal |
+|---|---|---|
+| carries `videoId`, **differs** from the row's | **refuse** the ship/delete | `return { shareNeedsOwnerServe: true, error: 'companion refused: envelope videoId <x>, row <y>' }` |
+| carries `videoId`, **matches** | proceed | — |
+| **no `videoId`** (legacy) | **proceed** — cannot prove ownership. Today's behaviour, so not a regression. **Do NOT fall back to `sourceMd`**: round-13 H1 measured it stale by construction, so the fallback would reintroduce the defect for precisely the envelopes least able to survive it | — |
+| absent / unreadable / schema-invalid | `readModelEnvelope` returns `null`; no ownership claim is invented | — |
+
+> **⚠ NEVER THROW.** `companionTransfer`'s docstring (`sync-run.ts:441-443`) is explicit: *"Every
+> companion write is BEST-EFFORT and never throws (M-R6-1): the caller must still advance the
+> baseline."* An implementer reading "refuse" as "throw" is caught by the per-video `catch` at `:812`,
+> which **skips `writeVideoBaseline` at `:811`** — the baseline never advances, the run errors every
+> time, and `reconcileClassA` returns `'skip'` so nothing retries. M-R6-1's stickiness, reintroduced by
+> a word. **This is the branch-coverage class §3.6.1b predicts, found in the fix §3.6.1b shipped
+> alongside.**
+
+**Self-healing:** any re-serve rewrites the envelope through `serve-doc.ts:174` with `videoId`, so the
+7 legacy prod envelopes close without a migration.
+
+**`sourceMd` is not deleted** — it remains provenance, used by the freshness guard and the footer. It
+simply stops being asked an ownership question.
+
+**Does NOT close:** the model is still *addressed* by a mutable `base`, so relocation still happens and
+`remap` still runs. Only `videos/<videoId>/<generationId>/model.json` removes that — the **parked**
+`2026-08-03-stable-blob-addressing-design.md`. This buys the correctness without the migration; it does
+not make that work unnecessary.
 ### 3.7 Unchanged — except one line of `slugify`
 
 ⚠ **`lib/slugify.ts` is NO LONGER unchanged** (round-12 H1): its `.slice(0, 60)` must not leave an
@@ -1046,7 +1103,7 @@ key already in the bucket.
 | 1 | A `SAFE` key ≤ `LIMIT` encodes to itself byte-identically | unit + property |
 | 2 | A non-ASCII key encodes to an accepted physical key | unit + integration |
 | 3 | NFC and NFD forms encode to **different** keys, each round-tripping | unit |
-| 4 | `encodeSegment` is injective over arbitrary segments | property + crafted preimage |
+| 4 | Identity-branch and hash-branch outputs are **disjoint** (`=` ∉ `SAFE`), and the hash branch is deterministic and collision-**resistant** at its 132-bit truncation — *not* injective over an unbounded domain, which §3.2 already retracts (round-13 Codex L1) | property + crafted marker preimage |
 | 5 | Every encoded segment ≤ 65 chars; identity segments ≤ 255 | property |
 | 6 | `put` → `get` on a Korean key round-trips | integration |
 | 7 | `putStaged` → `promote` on a Korean key lands correctly | integration |
@@ -1068,16 +1125,19 @@ key already in the bucket.
 | 18b | Additive create: the occupant has **different bytes** → **REFUSES**; the occupant is intact | integration, real FS |
 | 18c | Additive create on the **cloud** receiver: the final key already holds different bytes → **REFUSES** instead of advertising `promoted` over someone else's bytes | integration |
 | 18c2 | Additive create when the read-back is **`absent`** → **REFUSES** (a fault, not a resume) | unit |
-| 18j | `companionTransfer` **refuses** to ship or delete `models/${base}.json` when the receiver envelope's `sourceMd` names a different logical key | integration |
-| 18j2 | `companionTransfer` **ships** when the receiver read is `none` or `unknown` — the branch with no envelope, and the common case (round-12 H2) | integration |
+| 18j | `companionTransfer` **refuses** ship/delete when the receiver envelope's **`videoId`** differs from the row's — and **returns an `error`, never throws**, so the baseline still advances (round-13 M2) | integration |
+| 18j2 | `companionTransfer` **ships** when the receiver read is `none` or `unknown` — no envelope, and the common case (round-12 H2) | integration |
+| 18j3 | **After a cloud base relocation, the ship still succeeds** — the credential survives `remap` (round-13 H1) | integration |
+| 18j4 | An envelope with **no `videoId`** (legacy) proceeds, and **`sourceMd` is not consulted** | integration |
+| 18j5 | `serve-doc` writes `videoId` into every new envelope | unit |
 | 18k | `canonicallyEqualName(null, key)` is **`false`**, so a loser with no `summaryMd` takes the probe branch (round-11 L3) | unit |
 | 18d | **`promoteIfAbsent` leaves the occupant's bytes unchanged — on all three adapters** | contract |
-| 18d2 | **`promoteIfAbsent` RESOLVES `'already-exists'` rather than throwing**, and removes the staging temp **and** its `_staging/<uuid>/` directory (round-11 H1) | contract |
-| 18d3 | `promoteIfAbsent` creates missing parent directories, so a nested `dig/<base>/<n>.r<V>.md` key works on first write (round-11 L1) | unit |
+| 18d2 | **`promoteIfAbsent` RESOLVES rather than throwing** on an already-existing final, and removes the staging temp **and its whole `_staging/<uuid>/` tree** (round-11 H1, round-13 M1/M3) | contract |
+| 18d3 | `promoteIfAbsent` creates missing parent directories **and leaves no `_staging/<uuid>/` tree** — staged with a **nested** `dig/<base>/<n>.r<V>.md` key, so 18d2 and 18d3 are exercised together. **MEASURED round-13 M3: a plain `rmdir` here is `ENOTEMPTY` on exactly the branch 18d3 exists to test** | unit |
 | 18d4 | `promote` is **unchanged** — its existing callers' behaviour is byte-identical before and after this slice | contract |
 | 18d5 | Every `BlobStore` implementer — including the two test decorators and the object fake — implements or forwards `promoteIfAbsent`, and each fault-injection wrapper states whether its injected fault applies to it | contract |
 | 18e | The `putStaged` → **verify (read-back hash)** → `promote` protocol still runs on the additive path | integration |
-| 18f | `promote` leaves no orphaned `_staging/<uuid>/` **directory** behind (`unlink` removes only the file) | unit |
+| 18f | **`promoteIfAbsent`** leaves no orphaned `_staging/<uuid>/` tree behind. *(Round-13 L2 / Codex M2: v15 named `promote` here, contradicting 18d4's "`promote` is unchanged" — today's `promote` leaks it too, and that pre-existing leak is out of this slice's scope.)* | unit |
 | 18g | Class-A: the loser's row **names this address** → **overwrites**. *(Class-A sync still works — round-8 H1 stays fixed.)* | integration |
 | 18h | Class-A: the loser's row names a **different** address and the destination is **occupied** → **REFUSES**; **unoccupied** → **writes** | integration |
 | 18i | `canonicallyEqualName` is a **proper subset** of the volume's alias relation: NFC/NFD equal; `Ａ`(U+FF21) vs `A` **not** equal; and the one identity function is shared with `findByNormalizedName` | unit |
@@ -1091,7 +1151,9 @@ shipped three invisible-character defects.
 | 23 | **A title ending in `U+2488`–`U+249B` or `U+1F100` ingests and serves 200** — the round-11 B1 class | integration |
 | 24 | A key of 68 code points / 132 UTF-16 units (astral letters) is **ACCEPTED** — the bound counts code points (round-11 M3) | unit |
 | 25 | **The mint refuses a non-servable key** — after `reserveVideoSlot`, before the Gemini call, so no money moves | integration |
-| 26 | **The adopt refuses a non-servable key before the blob write**, and the error message names the manual repair | integration |
+| 26 | **The adopt refuses a non-servable key before `ensureReceiverSlot`** — no receiver row is created — and the error message names the manual repair | integration |
+| 26b | **The refusal survives a SECOND run**: re-running sync does not route around it via the two-sided Class-A path (round-13 H2) | integration |
+| 26c | `transferClassA` refuses a non-servable key too — the second entrance to the same durable state | integration |
 | 27 | **No `slugify` output fails `isServableSummaryKey`** — the cross-derivation §3.4 and §3.5 each assumed and neither checked | property |
 | 22 | `encodeSegment('003_x\uD840.md') !== encodeSegment('003_x\uD850.md')` — two **distinct lone surrogates** encode differently (restored; round-8 M2, still open in v9) | unit |
 
@@ -1124,8 +1186,11 @@ be reported as verified; that happens in Phase 3.
 | Change `promote` to create-if-absent on local | **18d4** | PROVISIONAL |
 | Classify a read-back `absent` as `equal` | **18c2** | PROVISIONAL |
 | Use `get` instead of `tryGet` for the read-back | 18c2 (Supabase collapses every failure to `null`) | PROVISIONAL |
-| Drop the `sourceMd` check in `companionTransfer` (envelope-present branch) | 18j | PROVISIONAL |
-| Apply the `sourceMd` check on the `none`/`unknown` branches too | **18j2** — ship-into-empty must still ship | PROVISIONAL |
+| Drop the `videoId` check in `companionTransfer` (envelope-present branch) | 18j | PROVISIONAL |
+| Apply the check on the `none`/`unknown` branches too | **18j2** — ship-into-empty must still ship | PROVISIONAL |
+| Make the refusal **throw** instead of returning an error | 18j — and a behavior asserting the baseline advances | PROVISIONAL |
+| Fall back to `sourceMd` when `videoId` is absent | **18j3** — goes red after a relocation | PROVISIONAL |
+| Stop writing `videoId` in `serve-doc` | 18j5 | PROVISIONAL |
 | Make `promoteIfAbsent` throw on Supabase's `409` path | 18d2 | PROVISIONAL |
 | Remove the `isWellFormed()` check from the guard | **16c** | PROVISIONAL |
 | Revert `slugify`'s orphaned-surrogate trim | **16b**, and 16 (mojibake on disk) | PROVISIONAL |
@@ -1135,6 +1200,8 @@ be reported as verified; that happens in Phase 3.
 | Count `key.length` instead of code points | **24** | PROVISIONAL |
 | Remove the mint guard call | 25 | PROVISIONAL |
 | Remove the adopt guard call | 26 | PROVISIONAL |
+| Move the adopt guard back BELOW `ensureReceiverSlot` | **26b** — the bare row routes run 2 around it | PROVISIONAL |
+| Remove the `transferClassA` guard | 26c | PROVISIONAL |
 | Skip the read-back hash verify before promote | 18e | PROVISIONAL |
 | Make additive create refuse on byte-**identical** occupancy | **18** — the crash-resume regression | PROVISIONAL |
 | Make additive create succeed on byte-**different** occupancy | 18b | PROVISIONAL |
