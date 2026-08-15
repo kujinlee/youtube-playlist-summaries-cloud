@@ -245,3 +245,35 @@ it — most will fail filter 2, which is the correct outcome, not a disappointin
 
 **Do this in a session with fresh context.** Doing it at the end of a long one is precisely the
 condition under which recollection substitutes for reading.
+
+---
+
+## Prior art is a research step, not a memory (measured 2026-08-15)
+
+**Cost of not having it: thirteen adversarial review rounds and a design review, rediscovering a
+decision that was on disk in three places the whole time.** The failure was not that nobody knew — a
+reviewer had *caught* the drift and filed it. It was filed under a heading called **"Carry-forward"**
+with no destination id, and nothing carried it.
+
+Three things, in increasing order of what they cost to build:
+
+**1. A carry-forward that names no destination is not a carry-forward. It is a note.**
+Free. When you defer something, give it a backlog or task id **in the same turn**. A heading that
+says *Carry-forward* manufactures the belief that something is carrying it.
+
+**2. Search the documents before designing against an identifier — and record the search.**
+One script. Give it the key constructors, schema fields, and functions whose contract you are
+changing; rank hits by document class (ADR › spec › process › review › plan). Put the result in the
+spec, **including "searched X, found nothing"** — an unrecorded search is indistinguishable from no
+search.
+
+> ⚠ **Default to showing everything.** The first version of this project's tool filtered to
+> decision-vocabulary lines and answered *"No hits"* for a term with 80 hits — **a false negative from
+> the tool built to prevent false negatives**, caught on first use. Narrowing must be opt-in.
+
+**3. A knowledge graph over document fragments — only with derived edges.**
+The ambitious version, and the one with a trap: a hand-maintained graph over hundreds of documents
+goes stale silently and is then **worse than grep**, because it looks authoritative. Extract edges a
+script can re-derive from scratch (doc→doc, doc→`file:line`, doc→identifier, finding→destination),
+and note that the highest-value query is a **dangling edge** — *which deferrals name no destination?*
+— not a path. That is the failure above, made mechanically detectable.
