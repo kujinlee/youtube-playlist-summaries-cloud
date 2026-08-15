@@ -1264,8 +1264,10 @@ unapplied for eight days while every document read "merged, done".
 
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
 Branch `fix/cloud-blob-key-encoding`, spec **v9**, 12 commits, **Phase 1 only — zero code written**.
-Nine dual review rounds plus a Phase 6 architecture review; all on disk at
-`docs/reviews/spec-blob-key-encoding-r{1..9}-{codex,claude}.md` and
+Ten dual review rounds, a Phase 6 architecture review, and a round-10 DESIGN review; all on disk at
+`docs/reviews/spec-blob-key-encoding-r{1..9,11}-{codex,claude}.md`,
+`docs/reviews/spec-blob-key-encoding-r10-codex-design.md`,
+`docs/reviews/spec-blob-key-encoding-s36-design-claude.md` and
 `docs/reviews/architecture-review-2026-08-14.md`.
 
 - **The design collapsed at v8**, and the trigger was a user question — *"why does the cloud need
@@ -1285,7 +1287,22 @@ Nine dual review rounds plus a Phase 6 architecture review; all on disk at
   8 and nothing acted on it.** The next §3.6 pass is a **design review of the vault write protocol**,
   not another defect hunt. This is the second time this repo has collected the evidence for its own
   stop condition and not acted on it; the first bought the Phase-6-at-four-rounds trigger.
-- **Next:** the §3.6 design review → `writing-plans` → implementation. Then the ADR recording the seam
+- **Round 10 ran as a DESIGN review and paid for itself immediately** — it measured that v10's own
+  §3.6 fix (a `readdir` byte-comparison) would have refused a video's *own* file after any Class-A
+  transfer, because APFS preserves the stored name when you overwrite through an alias. §3.6 was
+  rewritten as **namespace ownership**, not patched.
+- **Round 11 — both halves NOT CONVERGED, on different Blockings, and they contradicted each other.**
+  Adjudicated by measurement. Two results worth surviving compaction:
+  - **§3.4/§3.5 had never been adversarially reviewed.** v11's header claimed *"converged and stayed
+    converged"*; that claim was about **v9**, and everything folded in after round 9 was uninspected.
+    Their first pass returned a Blocking — 21 codepoints survive `slugify` and NFKC-fold to a trailing
+    `.`, so `003_lesson-⒈.md` became `003_lesson-1..md` and the guard refused a key it accepts today.
+  - **A reviewer was right about the remedy and wrong about the failure.** `promote` is now left alone
+    and a separate `promoteIfAbsent` added — not because R1 broke a caller (it did not; verified), but
+    because declaring *"create-if-absent everywhere"* would turn **backlog #22** from a tracked bug
+    into a documented invariant.
+- **v12 is committed.** Every behavior it claims was executed against the predicate first.
+- **Next:** round 12 on v12 → `writing-plans` → implementation. Then the ADR recording the seam
   decision (task #91; not yet written, so not numbered here).
 - ⛔ **Deploy is blocked on the user**, not on engineering: `claude_ro` cannot read `storage.objects`,
   so the no-migration gate cannot run. Two grants; the SQL is in the spec's gate section.
