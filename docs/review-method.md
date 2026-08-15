@@ -48,6 +48,42 @@ tolerate patching a bad design — it rewards it.
 **Two, not three.** The stable-blob-addressing reservation hit it at round 9 and ran to round 12
 anyway; two would have cost four rounds instead of six.
 
+### ⚠ It is a HEURISTIC, not a fact — and it has one known false positive (added 2026-08-14)
+
+The counter detects *"fixes generating the next round's defects"*, which is a **proxy** for *"the shape
+is wrong."* Proxies misfire, and this one misfires in a specific, recognisable way. Say so, because a
+rule believed to be a fact gets either obeyed mechanically or quietly ignored, and both are worse than
+being argued with.
+
+**Ask what KIND of finding the fixes generated.**
+
+| The fixes keep producing | Meaning | Action |
+|---|---|---|
+| **Mechanism** defects — the rule cannot be satisfied, the credential is stale, two requirements contradict | the shape is wrong | **REDESIGN.** This is what the rule is for |
+| **Branch-coverage** defects — *"the rule doesn't say what happens in case X"*, where X is a branch of code the rule GOVERNS but does not OWN | the shape is fine and under-specified | **FIX**, plus an exhaustiveness pass |
+
+**The discriminator: can a redesign remove the branch?** If the branches live in code the design merely
+governs — `decideCompanion` already has two `ship` branches, `SupabaseBlobStore.promote` already has
+three success paths — then **no redesign can delete them.** It can only fail to mention them, which is
+the defect you already have. Redesigning is then pure cost.
+
+**Measured 2026-08-14, backlog #36 §3.6.** The counter reached 2 across rounds 11 and 12. Every one of
+the five findings was branch-coverage; the mechanism (R1–R4) was attacked head-on in round 12 —
+no-clobber measured true on both backends, the alias relation re-derived, `promote`'s caller set and
+the `resolve.ts` hard-return confirmed — and held. The round-10 design review that *did* earn its keep
+found a **mechanism** defect: a credential that was stale by construction.
+
+**Overriding is allowed. Overriding silently is not.** Record the override in the artifact, with a
+condition that would prove it wrong — e.g. *"fires to REDESIGN if the next round produces a fix-induced
+finding in this component that is a mechanism defect rather than a branch-coverage gap."* An override
+with no falsifier is the round-8 failure wearing a better argument.
+
+**And treat the recurring branch-coverage shape as its own finding.** It has one remedy, and it is not
+a design review: **for every rule, enumerate the branches of the function it governs and state the rule
+per branch.** This subsystem has already learned the same lesson one level up — §3.6 was rewritten
+against two *patterns* instead of N writers because the writer count had been wrong seven times. The
+discipline was never applied to the branches inside each pattern.
+
 **The evidence was already being collected and no rule acted on it.** The standing shape list tracks
 *"a fix that moved or reintroduced a defect"* — counted to nine, then ten, then eleven across rounds
 8–12, carried forward as **trivia in a prompt** because nothing said what to do when the number went

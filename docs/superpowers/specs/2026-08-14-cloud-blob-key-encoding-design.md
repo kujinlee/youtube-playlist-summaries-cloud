@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v14**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v15**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
 **Review trail — ten dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
@@ -174,6 +174,48 @@ encodeSegment(s):
 surrogates hash identically. Reachable: `slugify`'s `.slice(0, 60)` cuts UTF-16 code units, so an
 astral letter at the boundary yields a lone surrogate.
 
+> ### ⛔ Round-12 H1 — and it changes §3.7: `slugify` gets a ONE-LINE repair
+>
+> §2.4 says *"`LocalFsBlobStore.abs()` is `path.join(indexKey, key)` — **identity**."* **That is a
+> measurement about PATH CONSTRUCTION, and v14 read it as a claim about STORAGE.** It is false at the
+> storage layer for exactly the class §3.4 newly admits. MEASURED on APFS:
+>
+> ```
+> wrote key        "003_x\ud840.md"
+> readdir returned "003_x\ufffd.md"        ← U+FFFD REPLACEMENT CHARACTER
+> then wrote       "003_x\ud850.md"        (a DIFFERENT lone high surrogate)
+> directory now holds 1 file
+> read through key1 -> key2's body          ← key1's content is GONE
+> ```
+>
+> Node encodes every unpaired surrogate as U+FFFD on the way to a path — **the exact behaviour §3.2
+> cites as its reason to hash with `utf16le`.** §3.2 applied that lesson to the encoder and nothing
+> applied it to the filesystem. Consequences: behavior 16's *"the vault filename stays readable"*
+> asserts the opposite of what happens (it is mojibake); `canonicallyEqualName` can never match the row
+> against the on-disk name; and the Class-A path then refuses permanently — round-8 H1 again.
+>
+> **Rejecting the class in the guard is necessary but NOT sufficient — alone it is a new Blocking.**
+> MEASURED: the current shipped guard already rejects **93,231** `slugify` outputs and *every one* is
+> ill-formed UTF-16. Refusing them at the mint (§3.5) without fixing the producer makes 93,231 titles
+> permanently un-ingestible, with the `videoId` repair deleted and decision ③ forbidding its return.
+>
+> **So the producer is repaired, and it is one line:**
+>
+> ```ts
+> // lib/slugify.ts — .slice(0, 60) cuts UTF-16 code units and can split a surrogate pair.
+> const s = /* …existing… */.slice(0, 60);
+> return s.isWellFormed() ? s : s.slice(0, -1);   // drop the orphaned half
+> ```
+>
+> **MEASURED: 3,479,131 slug outputs across the full codepoint space × 4 shapes — 0 remain
+> ill-formed.** This is a **defect repair, not a naming change**: today those titles already produce
+> mojibake vault filenames. It is therefore *not* backlog #46 (the NFKC slice, which changes readable
+> names and needs its own migration argument) — it removes a broken output no one wants.
+>
+> The guard's `isWellFormed()` check stays as the **backstop**: `readdir` strings are always
+> well-formed, so after this repair the class is unreachable from either entrance, and the check is the
+> assertion that this stays true.
+
 **Contract:** total; bounded (65 chars); and **injective on the identity branch, collision-*resistant*
 on the hash branch** — the two branches are provably disjoint because `=` ∉ `SAFE`, but 22 base64url
 characters is a 132-bit truncation of SHA-256, not an injection (round-9 L6; task #96 recorded this
@@ -206,6 +248,10 @@ export function isServableSummaryKey(key: string): boolean {
   // and this predicate's whole subject is non-ASCII keys. 131 = that guard's exact ceiling.
   const cp = [...key];
   if (cp.length <= 3 || cp.length > 131) return false;
+  // Ill-formed UTF-16 (a lone surrogate) does NOT survive the local filesystem: Node encodes every
+  // unpaired surrogate as U+FFFD on the way to a path, so the vault filename becomes mojibake and two
+  // DIFFERENT lone surrogates collapse onto one file. Round-12 H1.
+  if (!key.isWellFormed()) return false;
 
   // Inspect the NAME. NEVER the glued key: folding `name + '.md'` manufactures a `..` at the
   // joint out of one legal character (`⒈` is DIGIT ONE FULL STOP — it folds to `1.`).
@@ -216,7 +262,7 @@ export function isServableSummaryKey(key: string): boolean {
     if (s === '' || s === '.' || s === '..') return false;   // the traversals a COMPONENT can be
     if (s.includes('/') || s.includes('\\')) return false;   // separators, in every form
     if (s.includes('..')) return false;                      // traversal-shaped, inside the name
-    if (/[\x00-\x1f\x7f]/.test(s)) return false;             // C0 + DEL
+    if (/[\x00-\x1f\x7f-\x9f]/.test(s)) return false;         // C0 + DEL + C1 (round-12 L1)
     if (/%2f|%5c/i.test(s)) return false;                    // percent-encoded separators
     if (/[\u202a-\u202e\u2066-\u2069]/.test(s)) return false;  // bidi overrides/isolates
   }
@@ -555,13 +601,58 @@ homoglyph denylist was replaced by NFKC folding because *"a hand-typed list cann
 (§3.4). **A rule restated per writer will keep churning in a codebase that keeps growing writers.**
 So: one invariant at the seam, plus one question per *pattern*.
 
+#### 3.6.1b ⚠ EVERY RULE IN §3.6 IS STATED PER BRANCH — the discipline v15 adds
+
+**This is the structural fix, and it targets what has actually been generating findings.** Rounds 11
+and 12 produced five §3.6 findings caused by the previous round's fixes. Every one had the same shape:
+
+| Round | Finding | Shape |
+|---|---|---|
+| 11 | H1 | *what does `promote` do on `EEXIST`?* — a branch of the primitive, unspecified |
+| 11 | M1 | R3 has **two** success branches; the residual described one |
+| 11 | M2 | `BlobRead` has **four** cases; R2 enumerated three |
+| 12 | H2 | `decideCompanion` returns `ship` on **two** branches; the rule covered one |
+| 12 | M1 | `SupabaseBlobStore.promote` has **three** success paths; the table described one |
+
+**None says the mechanism is wrong.** Round 12 attacked R1–R4 head-on — no-clobber measured true on
+both backends, the alias relation re-derived, `promote`'s caller set and the `resolve.ts` hard-return
+confirmed — and it held. What is wrong is that a rule was written against *a function* while the
+function has *branches*, and the rule silently claimed the one the author had in mind.
+
+**So: for every rule below, the branches of the function it governs are enumerated and the rule is
+stated for each.** Not prose that happens to mention them — a row per branch, with the outcome named.
+
+> This subsystem has already learned this lesson one level up: §3.6 was rewritten against **two
+> patterns** instead of N writers because the writer count had been wrong seven times running (§2.5).
+> The same discipline was simply never applied to the branches *inside* each pattern.
+>
+> **Note what this is NOT.** A redesign cannot help here, because **the branches are not owned by this
+> design** — `decideCompanion` already has two `ship` branches, `SupabaseBlobStore.promote` already has
+> three success paths, `BlobRead` already has four cases. A new shape cannot delete them; it can only
+> fail to mention them, which is the defect already in hand. See `review-method.md`, *"It is a
+> HEURISTIC, not a fact"*, for why the escalation counter reading **2** is recorded and overridden here
+> rather than obeyed or ignored.
+
+**Escalation, recorded rather than argued away:**
+
+> **FIX→REDESIGN counter for §3.6 = 2 (rounds 11, 12). OVERRIDDEN, with a falsifier.**
+> **Fires to REDESIGN if round 13 produces a fix-induced §3.6 finding that is a MECHANISM defect —
+> the rule cannot be satisfied, a credential is stale, two requirements contradict — rather than a
+> branch-coverage gap.** A branch-coverage finding in round 13 confirms this diagnosis and the remedy
+> above; a mechanism finding refutes it and the redesign is owed.
+
 #### 3.6.2 The design — attempt the write that cannot clobber; classify only if it fails
 
 **R1 — a NEW primitive, `promoteIfAbsent`. `promote` itself is not touched.**
 
 ```
-promoteIfAbsent(ref): 'created' | 'already-exists'
+promoteIfAbsent(ref): Promise<void>        // RESOLVES when the final exists; never throws EEXIST
 ```
+
+> **Round-12 M1 — v14 typed this `'created' | 'already-exists'` and no caller in this spec consumes
+> it.** R2 branches entirely on the `tryGet` read-back. The load-bearing property is
+> **resolves-rather-than-throws**; a discriminant nobody reads is decoration that invites an
+> implementer to trust the label instead of the read. Either give it a consumer or drop it — dropped.
 
 **It RESOLVES when the final object exists — it does not throw** (round-11 H1). `linkSync` *does*
 throw `EEXIST` (measured), so the adapter must catch it, leave the occupant untouched, remove the
@@ -575,7 +666,7 @@ evidence for the intended reading.
 | Adapter | Implementation |
 |---|---|
 | `LocalFsBlobStore` | `mkdirSync(dirname)` — **keep it**, `promote` already does it (`:61`) and nested `dig/<base>/<n>.r<V>.md` keys need it — then `link` + `unlink` + `rmdir` |
-| `SupabaseBlobStore` | its existing `promote` body already is this (`:112-116`) |
+| `SupabaseBlobStore` | **must change — `:112-116` is only the FIRST of three paths.** See below |
 | `InMemoryBlobStore` | its `create-if-absent` semantics, unconditionally |
 
 > **Round-12 Low — the rollout is wider than three adapters.** Anything that `implements BlobStore` or
@@ -588,7 +679,32 @@ evidence for the intended reading.
 > would quietly weaken a test that exists to prove a failure is handled.
 
 **MEASURED:** `linkSync` returns `EEXIST` through an NFC/NFD alias *and* a case alias, so the
-no-clobber property holds against the whole alias class. Round-9 H2's reason for choosing `link` over
+no-clobber property holds against the whole alias class. *(`linkSync` with a **missing source** returns
+`ENOENT`, not `EEXIST` — `promote:60` short-circuits that case today and `promoteIfAbsent` must too,
+even though R2 always stages first.)*
+
+> **⚠ Round-12 M1 — v14 said Supabase "already behaves this way". It does not, on two counts.**
+> `:112-116` is the first short-circuit; the method continues:
+>
+> ```ts
+> // supabase-blob-store.ts:117-126
+> const { error } = await this.b().move(from, to);
+> if (error) {
+>   if (await this.exists(ref.principal, ref.finalKey)) { await this.b().remove([from]).catch(() => {}); return; }
+>   throw error;                                        // <-- does NOT resolve
+> }
+> ```
+>
+> **(1) It throws where R1 requires resolve.** MEASURED: `move()` onto an occupied destination returns
+> `409 The resource already exists`, so this *is* the Supabase EEXIST path — and it resolves only if the
+> `exists()` re-check succeeds. `exists` is `get() !== null` on the one backend documented as unable to
+> prove absence (`provesAbsence = false`). A transient 5xx at that moment throws out of
+> `copyAdditiveVideo`, R2's classification never runs, and the run reports a per-video error. It
+> self-heals next run — which is why Medium, not High — **but it is round-11 H1's defect left standing
+> on the other adapter, under a sentence saying it was already handled.**
+>
+> **(2) Three success paths, one row.** `:113` short-circuit, `:117` move succeeded, `:121`
+> move-errored-but-final-present. The adapter changes; *"no change needed"* was never tenable. Round-9 H2's reason for choosing `link` over
 `wx` — it preserves `putStaged` → verify → `promote`, so the read-back hash check survives — stands
 unchanged.
 
@@ -789,9 +905,16 @@ prevents."* Two independent refutations:
    different bytes.
 2. **`ensureReceiverSlot` already refuses the collision before any blob write.** It throws
    `serial collision` when the receiver index holds the sender's `serialNumber` **or** its `summaryMd`
-   (`sync-run.ts:203-213`), and it runs at `:240` — *before* `putStaged` at `:263`. Aliasing filenames
-   must share the numeric prefix (digits do not alias under canonical equivalence or case folding), so
-   the serial half catches every aliasing collision that has a receiver row at all.
+   (`sync-run.ts:203-213`), and it runs at `:240` — *before* `putStaged` at `:263`. **Scope, because
+   v14 stated this as a universal and round-12 M2 falsified it:** the guard is a **disjunction** and
+   both disjuncts can miss. The serial half needs the *receiver* row to carry a `serialNumber`; the key
+   half is **byte** equality, which aliasing forms fail by construction. The falsifier is named in that
+   function's own comment twelve lines above (`:199-202`): *"a legacy receiver row carrying
+   `003_alpha.md` with **NO** serialNumber."* So credential 2 catches every aliasing collision **against
+   a receiver row that carries a serial**; for a legacy no-serial row it does not, and **R2's
+   byte-comparison is what refuses there** — which is why the residual stays dissolved on credential 1
+   alone. *(Cheap hardening if wanted: `canonicallyEqualName` instead of `===` in the `find` at `:206`
+   — one call, and it makes the key half alias-aware, which is what the sentence used to claim.)*
 
 **So the `video_id` escape hatch is NOT required** — the fact it would read is *already inside the
 bytes R2 compares*. Reasons 1 and 2 from v11 stand unchanged.
@@ -828,9 +951,28 @@ resolves to the same video's own model."* **R3 has two success branches and that
 **`sourceMd`** (`model-store.ts:15-23`), which names its owner directly, while `decideCompanion` proves
 staleness by hash alone (`companion.ts:151-153`).
 
-**Decision: require it.** Before any companion ship or delete, require
-`canonicallyEqualName(receiverModel.envelope.sourceMd, ` + "`${base}.md`" + `)`. If the envelope names a
-different logical key, refuse and leave the model untouched.
+**Decision: require it — stated PER OUTCOME, not per call (round-12 H2).**
+
+`decideCompanion` returns `ship` on **two** branches and only one carries a receiver envelope
+(`companion.ts:113-125`), so a rule written per *call* is unsatisfiable on the other. And that other
+branch is not an edge — `companion.ts:46` calls it the common case in its own words: *"`unknown` is the
+COMMON outcome: a cloud video that was never HTML-served has no model blob, and the Supabase backend
+cannot prove that 404."*
+
+| Receiver read | Rule | Why |
+|---|---|---|
+| **envelope present** (ship-overwrite, and every `delete` — `provablyStale` requires it, `companion.ts:151-152`) | **require** `canonicallyEqualName(envelope.sourceMd, base + '.md')`; refuse otherwise | the two destructive outcomes; the bytes name their own owner |
+| **`none`** | **ship** | nothing is being destroyed and there is no owner to contradict |
+| **`unknown`** | **ship**, as a NAMED RESIDUAL | the read failed and cannot prove absence. This is today's behaviour, so it is not a regression; and refusing here would make the ship branch **dead on the Supabase receiver**, which can never return `none` (`companion.ts:149-150` already relies on that asymmetry) |
+
+> **v14 wrote this rule per call and it would have refused in the majority case** — a receiver with no
+> model would never get one, and stickily: the Class-A body has already landed, so the next run's
+> `reconcileClassA` returns `'skip'` and the companion step never runs again (`sync-run.ts:456-462`).
+> The share stays unrenderable until an owner re-serve, **which reserves and charges.** A fix that
+> costs money in the common case, introduced by a fix.
+>
+> Behavior **18j** needs the same split — as written it exercises only *"names a different key"* and
+> would pass with ship-into-empty broken.
 
 > **Severity, honestly:** this is **not a regression** — the same `put`/`delete` runs completely
 > unguarded today, and aliasing is not even required for the harm (a byte-exact base collision does it
@@ -838,9 +980,11 @@ different logical key, refuse and leave the model untouched.
 > replaced. Requiring `sourceMd` is cheap and strictly better than restating the residual, so the
 > claim is made true rather than withdrawn.
 
-### 3.7 Unchanged
+### 3.7 Unchanged — except one line of `slugify`
 
-`lib/slugify.ts`; `summaryMd` as the logical name; the verbatim key copy in sync; `remap()`.
+⚠ **`lib/slugify.ts` is NO LONGER unchanged** (round-12 H1): its `.slice(0, 60)` must not leave an
+orphaned surrogate half. One line, a defect repair rather than a naming change — see §3.2. Everything
+else here still holds: `summaryMd` as the logical name; the verbatim key copy in sync; `remap()`.
 **ADR-0008 survives** — `objectKey` encodes only `key`, so both physical keys stay under the same
 grant.
 
@@ -914,7 +1058,9 @@ key already in the bucket.
 | 13 | Local and in-memory adapters are identity | unit |
 | 14 | **A Korean-titled video ingests and serves 200; ledger unmoved** | integration |
 | 15 | **An NFD accented-Latin title ingests and serves 200** | integration |
-| 16 | **A title with a space, an emoji, or an astral letter at the `slice(60)` boundary ingests and serves 200** — no fallback, no refusal, and the vault filename stays readable | integration |
+| 16 | **A title with a space, an emoji, or an astral letter at the `slice(60)` boundary ingests and serves 200** — no fallback, no refusal, and the vault filename stays readable **and well-formed on disk** (`readdir` returns the key byte-for-byte, no U+FFFD) | integration, real FS |
+| 16b | `slugify` never returns ill-formed UTF-16 — the orphaned surrogate half is dropped | property |
+| 16c | The guard **rejects** an ill-formed key, and C1 controls (U+0080–U+009F) as well as C0 | unit |
 | 17 | `nested/foo.md`, `%2f`, `／`, `℀.md`, `001_a．．b.md`, `001_a..b.md`, a control char, a bidi override, and a 200-char base are all **rejected** by the guard | unit |
 | 17d | The guard inspects the **name**, not `name + '.md'`: `003_lesson-1..md` (a trailing dot in the name) is **accepted**, and no folded-at-the-joint `..` can arise | unit |
 | 17b | Total key lengths **129, 130 and 131 are ACCEPTED** — the bound did not narrow (round-9 H3) | unit |
@@ -922,7 +1068,8 @@ key already in the bucket.
 | 18b | Additive create: the occupant has **different bytes** → **REFUSES**; the occupant is intact | integration, real FS |
 | 18c | Additive create on the **cloud** receiver: the final key already holds different bytes → **REFUSES** instead of advertising `promoted` over someone else's bytes | integration |
 | 18c2 | Additive create when the read-back is **`absent`** → **REFUSES** (a fault, not a resume) | unit |
-| 18j | `companionTransfer` **refuses** to ship or delete `models/${base}.json` when the receiver envelope's `sourceMd` names a different logical key (round-11 M1 + Codex B2) | integration |
+| 18j | `companionTransfer` **refuses** to ship or delete `models/${base}.json` when the receiver envelope's `sourceMd` names a different logical key | integration |
+| 18j2 | `companionTransfer` **ships** when the receiver read is `none` or `unknown` — the branch with no envelope, and the common case (round-12 H2) | integration |
 | 18k | `canonicallyEqualName(null, key)` is **`false`**, so a loser with no `summaryMd` takes the probe branch (round-11 L3) | unit |
 | 18d | **`promoteIfAbsent` leaves the occupant's bytes unchanged — on all three adapters** | contract |
 | 18d2 | **`promoteIfAbsent` RESOLVES `'already-exists'` rather than throwing**, and removes the staging temp **and** its `_staging/<uuid>/` directory (round-11 H1) | contract |
@@ -977,7 +1124,12 @@ be reported as verified; that happens in Phase 3.
 | Change `promote` to create-if-absent on local | **18d4** | PROVISIONAL |
 | Classify a read-back `absent` as `equal` | **18c2** | PROVISIONAL |
 | Use `get` instead of `tryGet` for the read-back | 18c2 (Supabase collapses every failure to `null`) | PROVISIONAL |
-| Drop the `sourceMd` check in `companionTransfer` | 18j | PROVISIONAL |
+| Drop the `sourceMd` check in `companionTransfer` (envelope-present branch) | 18j | PROVISIONAL |
+| Apply the `sourceMd` check on the `none`/`unknown` branches too | **18j2** — ship-into-empty must still ship | PROVISIONAL |
+| Make `promoteIfAbsent` throw on Supabase's `409` path | 18d2 | PROVISIONAL |
+| Remove the `isWellFormed()` check from the guard | **16c** | PROVISIONAL |
+| Revert `slugify`'s orphaned-surrogate trim | **16b**, and 16 (mojibake on disk) | PROVISIONAL |
+| Narrow the control-character class back to C0+DEL | 16c (U+0080–U+009F admitted) | PROVISIONAL |
 | Fold the **glued key** instead of the name (`[key, key.normalize('NFKC')]`) | **23** (`003_lesson-⒈.md` refused) — the v12 defect | PROVISIONAL |
 | Drop `s.includes('..')` from the name check | **17** (`001_a．．b.md` admitted) — the v12 over-correction | PROVISIONAL |
 | Count `key.length` instead of code points | **24** | PROVISIONAL |
