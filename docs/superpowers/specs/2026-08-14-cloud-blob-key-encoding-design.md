@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v16**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v17**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
 **Review trail — ten dual rounds, a Phase 6 architecture review, and a round-10 DESIGN review.**
@@ -271,7 +271,7 @@ export function isServableSummaryKey(key: string): boolean {
     if (s.includes('..')) return false;                      // traversal-shaped, inside the name
     if (/[\x00-\x1f\x7f-\x9f]/.test(s)) return false;         // C0 + DEL + C1 (round-12 L1)
     if (/%2f|%5c/i.test(s)) return false;                    // percent-encoded separators
-    if (/[\u202a-\u202e\u2066-\u2069]/.test(s)) return false;  // bidi overrides/isolates
+    if (/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(s)) return false;  // all 12 Bidi_Control
   }
   return true;
 }
@@ -369,6 +369,11 @@ export function isServableSummaryKey(key: string): boolean {
 > encoder (*"`SAFE ⊂ ASCII`, so `String.length` is sound"*) and §3.4 did not ask it for the guard — on
 > a predicate whose entire subject is non-ASCII keys.
 
+> **⚠ Round-14 L1 — v9's class covered 9 of the 12 `Bidi_Control` code points.** `U+061C`
+> (ARABIC LETTER MARK), `U+200E` (LRM) and `U+200F` (RLM) passed. The class is now the full property,
+> not a hand-picked range — the same *"enumerate vs derive"* lesson as the homoglyph denylist, arriving
+> in the fix that replaced it.
+>
 > **Bidi controls — round-9 Codex Low.** `001_safe\u202Efdp.md` passed v9: it is not a separator, not
 > traversal, and no normal form of it becomes one, so the sweep below is still correct. But it renders
 > as a different filename than it is, and this key becomes a **vault filename** on the cloud→local
@@ -551,14 +556,84 @@ sentence v9 wrote here was false, and it was the sentence justifying all five de
 > have gone green over an open hole**, because a one-run integration test cannot see run 2. That is
 > *"a GREEN gate that tests the wrong schema is worse than a red one"*.
 >
-> **Fix, both mechanical:**
+> **Fix — and v16 got the SHAPE of it wrong, which round-14 B1 then made Blocking.**
 >
-> 1. Move the adopt guard **above** `ensureReceiverSlot`, next to the existing WB-H1 check at
->    `sync-run.ts:236-238`. No row is created, the video stays one-sided, and the refusal genuinely
->    re-fires every run.
-> 2. **Guard `transferClassA` too.** The Class-A path is a second entrance to the same durable state,
->    and §2.5 already lists it as write entrance 3. Enumerating the entrances was never the problem —
->    *guarding only the one we were thinking about* was.
+> Move the adopt guard **above** `ensureReceiverSlot`, next to the existing WB-H1 check at
+> `sync-run.ts:236-238`: no row is created, the video stays one-sided, and the refusal genuinely
+> re-fires every run. **That part stands.**
+>
+> v16 then added a *second call site* on `transferClassA` and behavior 26c called it *"the **second**
+> entrance"*. §2.5 of this document enumerates **four**, and round 14 found the third writing the same
+> durable state with no guard on any version of this design — see §3.5.1 below. **The fix was the
+> pattern this document had already condemned two sections earlier.**
+
+#### 3.5.1 ⛔ ONE ENFORCEMENT POINT — the guard moves to the metadata seam (round-14 B1)
+
+**Round-14 B1, Blocking, classified `mechanism`: `reconcileCloudBase` is a THIRD route to the same
+durable state, and it DELETES the servable copy on the way.**
+
+```ts
+// reconcile-serial.ts:293-296 — the metadata phase of a base relocation
+const patch: Record<string, unknown> = {
+  serialNumber: localVideo.serialNumber,
+  summaryMd: `${newBase}.md`,
+  artifacts: { summaryMd: { key: `${newBase}.md`, status: 'promoted' } },
+```
+
+`newBase` is the **vault filename, verbatim** (`:152-154`), validated only by `assertLogicalKey`
+(`:267-268`) — which rejects a leading `/`, a `..` segment and `\0`, and says nothing about length,
+C0/C1, bidi, or the `.md` suffix. It runs at `sync-run.ts:729-757`, **before** the Class-A guard v16
+added at `:780-793`.
+
+**The producer is the one §3.5's own reachability table already names** — a hand-placed or
+externally-renamed vault file. The video is then **two-sided**, so `sync-run.ts:618`'s `if (!lv || !cv)`
+is false, `copyAdditiveVideo` is never called, and **the adopt guard is bypassed entirely**.
+`reconcileCloudBase` copies every paid blob to the unservable base, writes the row above, verifies, and
+**deletes the sources** (`:358-361`). The paid summary is then unreachable through serve, download and
+share, **with no in-product repair** — a re-serve cannot run, because the serve path refuses before it
+reserves.
+
+> **Why this is `mechanism` and not a fourth call site.** §2.5 already states the rule v16 violated:
+> *"A rule that must be restated per writer will keep churning in a codebase that keeps growing
+> writers."* That sentence retired the branded `CloudSummaryKey` and the homoglyph denylist.
+> `isServableSummaryKey` was on its **third** enumeration. And §3.4 had already applied the correct fix
+> to the share path one section earlier — *"put the call inside `getShareServeContext` … covered **by
+> construction** rather than by enumeration."* **Per-branch discipline for the rules, per-writer
+> enumeration for the guards, one section apart, in the same document.**
+
+**THE RULE: the cloud advertisement is guarded at the seam, not at the entrances.**
+
+Every sync-side entrance writes the advertisement through a `MetadataStore` method — **verified by
+enumeration, not asserted**:
+
+| Entrance | Row write | Method |
+|---|---|---|
+| `copyAdditiveVideo` | `sync-run.ts:279` | `upsertVideo` (`:286`) |
+| `transferClassA` | `sync-run.ts:399`, `:430` | `updateVideoFields` (`:432`) |
+| `reconcileCloudBase` | `reconcile-serial.ts:295-296` | `updateVideoFields` (`:324`) |
+
+> Outside the seam, and correctly so: the **mint** (`summary-handler.ts:157`) writes via the
+> `persistSummary` **RPC**, not `MetadataStore`; the **local** pipeline (`pipeline.ts:265`) is not a
+> cloud advertisement and §3.4 argues at length that the local path never needed this guard; and
+> `consistency.ts:34`/`:40` is `writeArtifact`, which has **zero production callers**.
+
+**In the Supabase adapter, refuse any patch that sets `summaryMd` or `artifacts.summaryMd.status =
+'promoted'` to a key failing `isServableSummaryKey`.** Then **the entrance count stops mattering** —
+which is the only property that has ever survived contact with this codebase.
+
+**Two placements stay outside the seam, each for a stated reason:**
+
+1. **The mint keeps its own call site**, between `reserveVideoSlot` (`summary-handler.ts:95`) and the
+   Gemini call (`:101`), because a refusal there must cost **no money** — §3.5's existing argument.
+2. **`reconcileCloudBase` refuses IN MEMORY, before the copy phase**, alongside its existing
+   `target-occupied` / `unsupported-artifacts` refusals (`:197`, `:214`). Its own stated pattern is
+   *"the smallest correct behaviour: it cannot half-move anything"* — so **no blob is copied and
+   nothing is deleted**, rather than relying on the seam to reject after the copy.
+
+**Behavior 26c's wording must stop asserting a count.** A behavior that says *"the second entrance"* is
+a claim about an enumeration, and this document has been wrong about one eight times.
+
+---
 
 ### 3.6 Namespace ownership — REDESIGNED at round 10, after the FIX→REDESIGN escalation
 
@@ -1027,6 +1102,27 @@ break an old reader.
 > a word. **This is the branch-coverage class §3.6.1b predicts, found in the fix §3.6.1b shipped
 > alongside.**
 
+> ### ⛔ Round-14 H1 + Codex M1 — v16 enumerated the envelope writers and got it wrong, TWICE OVER
+>
+> **A third production writer exists:** `lib/html-doc/generate.ts:49-60` writes an envelope with
+> `sourceMd` and **no `videoId`** — the LOCAL generate path. v16 named only `serve-doc.ts:174` and
+> `sync-run.ts:464`.
+>
+> **And worse, the sync ship ERASES the field.** `sync-run.ts:464` ships `decision.envelope` wholesale,
+> which v16 called *"correct by construction"*. It is correct only when the **sender's** envelope
+> carries `videoId`. A sender envelope written by `generate.ts` does not — so shipping it **overwrites a
+> receiver envelope that had one** with a copy that does not, silently downgrading the receiver from
+> provable ownership to the legacy branch.
+>
+> **This is the same enumeration failure as B1, on a different set** — write entrances (wrong seven
+> times), `promote` callers, and now envelope writers. Which is why the rule is stated the same way:
+>
+> **`writeModelEnvelope` requires `videoId`** — not the schema field (optional, for legacy reads) but
+> the **writer's parameter**. Then no writer can omit it, and the count stops mattering. `generate.ts`
+> has the video in scope; `serve-doc.ts` has it as an explicit param; the sync ship must **stamp the
+> receiver's `videoId`** rather than copy the sender's envelope verbatim — it is shipping a model for a
+> known video, and it knows which one.
+
 **Self-healing:** any re-serve rewrites the envelope through `serve-doc.ts:174` with `videoId`, so the
 7 legacy prod envelopes close without a migration.
 
@@ -1129,7 +1225,8 @@ key already in the bucket.
 | 18j2 | `companionTransfer` **ships** when the receiver read is `none` or `unknown` — no envelope, and the common case (round-12 H2) | integration |
 | 18j3 | **After a cloud base relocation, the ship still succeeds** — the credential survives `remap` (round-13 H1) | integration |
 | 18j4 | An envelope with **no `videoId`** (legacy) proceeds, and **`sourceMd` is not consulted** | integration |
-| 18j5 | `serve-doc` writes `videoId` into every new envelope | unit |
+| 18j5 | **Every** envelope writer writes `videoId` — `serve-doc.ts`, `generate.ts`, and the sync ship — because `writeModelEnvelope` **requires** the parameter (round-14 H1 / Codex M1) | unit |
+| 18j6 | The sync ship **stamps the receiver's `videoId`**; shipping never downgrades a receiver envelope that had one to a copy that does not | integration |
 | 18k | `canonicallyEqualName(null, key)` is **`false`**, so a loser with no `summaryMd` takes the probe branch (round-11 L3) | unit |
 | 18d | **`promoteIfAbsent` leaves the occupant's bytes unchanged — on all three adapters** | contract |
 | 18d2 | **`promoteIfAbsent` RESOLVES rather than throwing** on an already-existing final, and removes the staging temp **and its whole `_staging/<uuid>/` tree** (round-11 H1, round-13 M1/M3) | contract |
@@ -1153,7 +1250,8 @@ shipped three invisible-character defects.
 | 25 | **The mint refuses a non-servable key** — after `reserveVideoSlot`, before the Gemini call, so no money moves | integration |
 | 26 | **The adopt refuses a non-servable key before `ensureReceiverSlot`** — no receiver row is created — and the error message names the manual repair | integration |
 | 26b | **The refusal survives a SECOND run**: re-running sync does not route around it via the two-sided Class-A path (round-13 H2) | integration |
-| 26c | `transferClassA` refuses a non-servable key too — the second entrance to the same durable state | integration |
+| 26c | **The Supabase adapter refuses** any patch setting `summaryMd` / `status:'promoted'` to a non-servable key — asserted through **each** of `copyAdditiveVideo`, `transferClassA` and `reconcileCloudBase`, and stated with **no claim about how many entrances exist** | integration |
+| 26d | **A base relocation onto an unservable vault name is refused IN MEMORY**: no blob is copied, the old base is **intact**, and nothing is deleted (round-14 B1) | integration |
 | 27 | **No `slugify` output fails `isServableSummaryKey`** — the cross-derivation §3.4 and §3.5 each assumed and neither checked | property |
 | 22 | `encodeSegment('003_x\uD840.md') !== encodeSegment('003_x\uD850.md')` — two **distinct lone surrogates** encode differently (restored; round-8 M2, still open in v9) | unit |
 
@@ -1190,7 +1288,9 @@ be reported as verified; that happens in Phase 3.
 | Apply the check on the `none`/`unknown` branches too | **18j2** — ship-into-empty must still ship | PROVISIONAL |
 | Make the refusal **throw** instead of returning an error | 18j — and a behavior asserting the baseline advances | PROVISIONAL |
 | Fall back to `sourceMd` when `videoId` is absent | **18j3** — goes red after a relocation | PROVISIONAL |
-| Stop writing `videoId` in `serve-doc` | 18j5 | PROVISIONAL |
+| Stop writing `videoId` in any one writer | 18j5 | PROVISIONAL |
+| Make the sync ship copy the sender's envelope verbatim | **18j6** — the erasure | PROVISIONAL |
+| Make `writeModelEnvelope`'s `videoId` parameter optional | 18j5 — an omission becomes possible again | PROVISIONAL |
 | Make `promoteIfAbsent` throw on Supabase's `409` path | 18d2 | PROVISIONAL |
 | Remove the `isWellFormed()` check from the guard | **16c** | PROVISIONAL |
 | Revert `slugify`'s orphaned-surrogate trim | **16b**, and 16 (mojibake on disk) | PROVISIONAL |
@@ -1201,7 +1301,8 @@ be reported as verified; that happens in Phase 3.
 | Remove the mint guard call | 25 | PROVISIONAL |
 | Remove the adopt guard call | 26 | PROVISIONAL |
 | Move the adopt guard back BELOW `ensureReceiverSlot` | **26b** — the bare row routes run 2 around it | PROVISIONAL |
-| Remove the `transferClassA` guard | 26c | PROVISIONAL |
+| Remove the seam refusal in the Supabase adapter | 26c — red via **all three** entrances | PROVISIONAL |
+| Remove `reconcileCloudBase`'s in-memory refusal | **26d** — the copy-then-delete runs | PROVISIONAL |
 | Skip the read-back hash verify before promote | 18e | PROVISIONAL |
 | Make additive create refuse on byte-**identical** occupancy | **18** — the crash-resume regression | PROVISIONAL |
 | Make additive create succeed on byte-**different** occupancy | 18b | PROVISIONAL |
