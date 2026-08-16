@@ -1264,8 +1264,10 @@ unapplied for eight days while every document read "merged, done".
 
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
 Branch `fix/cloud-blob-key-encoding`, spec **v9**, 12 commits, **Phase 1 only — zero code written**.
-Ten dual review rounds, a Phase 6 architecture review, and a round-10 DESIGN review; all on disk at
-`docs/reviews/spec-blob-key-encoding-r{1..9,11}-{codex,claude}.md`,
+Fourteen dual review rounds, a Phase 6 architecture review, a round-10 DESIGN review and a scoped
+credential design pass; all on disk at
+`docs/reviews/spec-blob-key-encoding-r{1..9,11..15}-{codex,claude}.md`,
+`docs/reviews/spec-blob-key-encoding-credential-design-pass.md`,
 `docs/reviews/spec-blob-key-encoding-r10-codex-design.md`,
 `docs/reviews/spec-blob-key-encoding-s36-design-claude.md` and
 `docs/reviews/architecture-review-2026-08-14.md`.
@@ -1301,9 +1303,31 @@ Ten dual review rounds, a Phase 6 architecture review, and a round-10 DESIGN rev
     and a separate `promoteIfAbsent` added — not because R1 broke a caller (it did not; verified), but
     because declaring *"create-if-absent everywhere"* would turn **backlog #22** from a tracked bug
     into a documented invariant.
-- **v12 is committed.** Every behavior it claims was executed against the predicate first.
-- **Next:** round 12 on v12 → `writing-plans` → implementation. Then the ADR recording the seam
+- **Rounds 12–15 ran; the spec is at v17.** Reviews on disk at
+  `docs/reviews/spec-blob-key-encoding-r{12..15}-{codex,claude}.md`.
+- **The escalation rule fired, was overridden with a falsifier, the falsifier FIRED, and the debt was
+  PAID.** Round 13's H1 found the `sourceMd` ownership credential **stale by construction** —
+  `reconcileCloudBase` byte-copies the model envelope and never rewrites it, while the local migration
+  does. The owed design pass ran (`…-credential-design-pass.md`) and found the real defect: **the
+  summary carries `video_id`, the model envelope carries a NAME.** The credential is now `videoId`.
+- **Round 14 returned a Blocking**: `reconcileCloudBase` was a **third** route to the same durable
+  state and **deletes the servable copy on the way**. v17's answer was structural — **guard at the
+  metadata seam**, not at the entrances.
+- **Round 15 confirms the seam holds** (verified: no fourth path bypasses `MetadataStore`) **and finds
+  the other two "derivations" were still counts.** `writeModelEnvelope` is one of *two* writer
+  functions and the serve path is contractually barred from using it; the bidi class is a hand-typed
+  range with a comment claiming it is the Unicode property.
+- **v18 owes:** the model-write seam (`writeModelEnvelope` + `writeModelEnvelopeWithin`), the seam's
+  third data-writing method, a stated **outcome** for "refuse in the adapter" (unfixed twice), a
+  `SerialReconcileResult` variant for `reconcileCloudBase`'s refusal, and ~4 stale cross-references.
+- **The durable lesson, now in `review-method.md` and `portable-practices.md`:** *a derivation you have
+  to be right about is still a count.* Ask whether the rule can become wrong because someone adds a new
+  X without touching this code.
+- **Next:** v18 → round 16 → `writing-plans` → implementation. Then the ADR recording the seam
   decision (task #91; not yet written, so not numbered here).
+- **Tooling added 2026-08-15:** `scripts/prior-art.py` (+ a required `## Prior art` spec section) after
+  #36 spent 13 rounds rediscovering a decision that was on disk in three places. Backlog **#47** files
+  the knowledge-graph version.
 - ✅ **The deploy blocker is GONE.** The user applied the two `claude_ro` storage grants on
   2026-08-14, and the §4 no-migration gate **ran the same day and passed** — read-only, exit 0,
   reachability asserted first: 19 objects, **0 rows** outside the encoder's `SAFE` class. **#36 needs
