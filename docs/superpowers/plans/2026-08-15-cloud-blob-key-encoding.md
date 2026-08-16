@@ -25,8 +25,17 @@ export, and thirteen commands ran zero tests.
 > verbatim with file:line plus a precise prose statement of the change. Plausible-looking code that
 > has not been run is banned from this document.**
 
-**What was executed, and what it printed** (Node 22.14.0, scratch files outside the repo; no tracked
-file was modified):
+**v4 (round 3) is that rule applied to the four places v3 did not apply it: the TEST fixtures.**
+v3 executed every *production* snippet and left four test blocks — T8's, T10's, T12's and T13's —
+written rather than run. One of them was an assertion its own step said could never fire. A fixture
+that has not been run is the same defect as an implementation that has not been run, and it hides in
+a place nobody re-reads.
+
+**What was executed, and what it printed** (Node 22.14.0). Rows 1-9 were run from scratch files
+outside the repo, with no tracked file modified. The four **v4** rows could not be: they drive real
+seams through jest's `@/` resolution, so each was written as a real test file, run RED, run GREEN
+with this plan's own implementation snippets temporarily applied, and then **every temporary edit was
+reverted** — `git status` after the round shows this document alone.
 
 | Subject | Result |
 |---|---|
@@ -35,13 +44,26 @@ file was modified):
 | T4 `isServableSummaryKey` — 6 accepts, 10 rejects, the 129/130/131/132 bound, the astral key, both 17d cases, a full stride-1 `Bidi_Control` sweep | all pass; **12** Bidi_Control code points exist, 0 violations |
 | T4 against the **23 existing cases** in `tests/lib/html-doc/assert-cloud-summary-md-key.test.ts` | 5/5 accepts kept; **exactly 5** rejections flip — enumerated with dispositions in T4 Step 4 |
 | T3 `slugify` repair + behavior 16b sweep | old output IS ill-formed (the test is genuinely red first); new output well-formed, 1,536/1,536 |
-| Behavior 27 cross-derivation at **stride 1**, all four title forms | **3,479,131 iterations, 0 violations, 8.7 s** — so "over the whole codepoint space" is now earned rather than claimed |
+| Behavior 27 cross-derivation at **stride 1**, all four title forms | **4,448,256 loop iterations → 3,479,131 NON-EMPTY SLUG ASSERTIONS, 969,125 empty slugs skipped, 0 predicate violations, 8.8 s** — so "over the whole codepoint space" is now earned rather than claimed. *(Round-3 Codex M1: v3 called the 3,479,131 "iterations". Re-counted independently this round; all four numbers agree with Codex's re-run.)* |
 | T2 `objectKey` / `list` / `deletePrefix` against a fake **client** wired into a real store shape | behaviors 8, 9, 10, 12 pass; both **existing** tests in `blob-store-list.test.ts` still pass; empty-prefix case identical to today |
 | T6 `promoteIfAbsent` on **local** and **in-memory** — 18d, 18d2, 18d3, 18d4, absent-final, malformed-tempKey | all pass on both adapters |
 | T13 `scripts/check-encoder-gate-sql.py` — `--self-test` (10 cases) **and** `main()` against the real spec | self-test 10/10 exit 0; `main()` **exit 0, "the same 65 characters"**; drift → exit 1; encoder absent → exit 2 |
+| **v4 — T8** `companion-videoid.int.test.ts`, whole file, live local stack | **RED 3 failed / 4 passed** (the two 18j arms + 18j6, each for its intended reason) → **GREEN 7/7**, 3.4 s |
+| **v4 — T10** `summary-handler-guard.test.ts`, whole file, live local stack | **RED 1/2** (`err` is `null`: no guard) → **GREEN 2/2**. Also killed a vacuous ledger assertion |
+| **v4 — T12** the four cells appended to `reconcile-serial.test.ts` | **RED 3/4**, each receiving `{ok:true,action:'relocated'}` → **GREEN 4/4**. Whole-unit-suite blast radius: **exactly 1 existing case flips**, of the repo's 2,703 |
+| **v4 — T13** `additive-protocol.test.ts`, whole file | **RED 6 failed / 3 passed** — today's code overwrites the occupant and destroys the loser's artifact → **GREEN 9/9** |
 
-The one thing that could **not** be executed is the Supabase `promoteIfAbsent` adapter (it needs the
-live stack). T6 Step 4 therefore states it as a change to quoted code and removes its dependence on
+**v4 (round 3) applied the same rule to the four test-fixture blocks that had escaped it** — the
+last places in this document where a snippet was written rather than run. Each was written as a
+complete file, executed RED against today's code, then executed GREEN with this plan's own
+implementation snippets applied; the temporary implementation was then reverted, so the tree carries
+only this document. Three previously-unmeasured facts fell out of doing that, and each is in its
+task: T10's ledger assertion could not fail, T12's guard flips exactly one existing case, and
+today's companion DELETE arm really does destroy the other video's paid model.
+
+The one snippet in this document that has **still** not been run is the Supabase `promoteIfAbsent`
+adapter. Round 3 did have the live stack, so the honest statement is no longer "it cannot be run" but
+"it was not run" — T6 was outside the four fixtures round 3 was scoped to. T6 Step 4 therefore states it as a change to quoted code and removes its dependence on
 an unverified HTTP status — see the note there.
 
 ---
@@ -121,7 +143,8 @@ and adds the one production helper (`canonicallyEqualName`) they assume. Then **
 independent** except that T5 consumes T4's predicate, so T5 follows T4. T6–T8 are the model/blob
 primitives. **T9 must land before T10–T12**, because those three are all *placements* whose refusal
 semantics depend on the seam existing. T12 is last of the guards because round-18 B1 was precisely a
-T12/T9 interaction. T13 consumes T6 and T4.
+T12/T9 interaction. T13 consumes T6, T0 and **T1** (its §4 gate script reads T1's `SAFE`) — round-3
+Claude L5 counted this; v3 said "T6 and T4".
 
 ---
 
@@ -242,7 +265,7 @@ through `cloudVideoRecord` / `localVideoRecord`.
 
 - [ ] **Step 6: Give `syncDeps` a `localBlob` override — behavior 26f cannot be written without it**
 
-`tests/integration/helpers/cloud.ts:132` is verbatim today:
+`tests/integration/helpers/cloud.ts:131` is verbatim today:
 
 ```ts
     syncDeps(opts: { failCloudPromote?: boolean; failCloudModelPut?: boolean } = {}): SyncDeps {
@@ -926,14 +949,19 @@ that is a defect, not a widening.
 - [ ] **Step 5: Add the cross-derivation property test (behavior 27)** — UNIT
 
 ⚠ **Round-1/round-2 L2.** v2 named this *"over the whole codepoint space"* while striding `0x20`.
-v3 pays for the name: ⚙ **EXECUTED at stride 1, all four title forms — 3,479,131 iterations,
-0 violations, 8.7 s.** That is over jest's 5,000 ms default, so the timeout argument is REQUIRED.
+v3 pays for the name: ⚙ **EXECUTED at stride 1, all four title forms — 4,448,256 loop iterations,
+of which 3,479,131 are NON-EMPTY SLUG ASSERTIONS (969,125 empty slugs are skipped), 0 predicate
+violations, 8.8 s.** That is over jest's 5,000 ms default, so the timeout argument is REQUIRED.
+*(Round-3 Codex M1 — v3 called the 3,479,131 "iterations", which is the assertion count, not the
+loop count. The SPEC inherits the same wording; it is CLOSED, so it is not edited here — the
+correction is recorded in the Self-Review's round-3 table so it is not lost.)*
 
 ```ts
 it('behavior 27 — NO slugify output fails the predicate, over the whole codepoint space', () => {
   // The cross-derivation §3.4 and §3.5 each ASSUMED and neither checked. Stride 1 — the name
-  // says "the whole codepoint space" and this walks it. MEASURED: 3479131 iterations,
-  // 0 violations, ~8.7s on Node 22.14.0, which is why the 30s timeout below is not optional.
+  // says "the whole codepoint space" and this walks it. MEASURED: 4448256 loop iterations,
+  // 3479131 non-empty-slug assertions, 969125 empty slugs skipped, 0 violations, ~8.8s on Node
+  // 22.14.0 — which is why the 30s timeout below is not optional.
   for (let cp = 0; cp <= 0x10ffff; cp += 1) {
     if (cp >= 0xd800 && cp <= 0xdfff) continue;
     const ch = String.fromCodePoint(cp);
@@ -1209,8 +1237,8 @@ only) is not merely repaired here, it is replaced by something that already work
 **Local** — ⚙ **EXECUTED, 12/12:**
 
 ```ts
-// lib/storage/local/local-blob-store.ts — beside promote() at :58. fs/path/crypto are NAMESPACE
-// imports (:1), so every call is qualified.
+// lib/storage/local/local-blob-store.ts — beside promote() at :58. fs/path/crypto are DEFAULT
+// imports (:1) — round-3 Claude L3; every call is qualified either way, and this body was executed.
   async promoteIfAbsent(ref: StagedRef): Promise<void> {
     const stagingRoot = stagingRootOf(ref.tempKey);            // validates BEFORE any I/O
     const final = this.abs(ref.principal, ref.finalKey);       // `abs` is the class's own helper, :12
@@ -1376,7 +1404,7 @@ both were wrong). Counted by walking every non-`node_modules` `.ts`/`.tsx`, matc
 | files | 11 | 11 | **11** (3 production + 8 test) |
 
 The 8 test files, with their counts: `rerender.test.ts` 14, `model-store.test.ts` 8,
-`serve-doc-materialize.test.ts` 5, `share-route.test.ts` 4, `model-store-cloud.test.ts` 4,
+`serve-doc-materialize.test.ts` 5, `share-route.test.ts` 4, `model-store-cloud.test.ts` **3**,
 `html-download.test.ts` 2, `pdf-cloud.test.ts` 1, `e2e/cloud.setup.ts` 1. Expect `tsc` to name all
 42 the moment Step 3 lands. That is the mechanism working. *(`tests/e2e/cloud.setup.ts` is a
 Playwright file — jest never runs it, but `tsconfig.json` `include` is `**/*.ts`, so `tsc` does.)*
@@ -1463,7 +1491,7 @@ function serialize(envelope: ModelEnvelopeWrite): Buffer {
 Then change the `envelope` parameter type of `writeModelEnvelope` (`:49`) and
 `writeModelEnvelopeWithin` (`:70`) from `ModelEnvelope` to `ModelEnvelopeWrite`.
 
-- [ ] **Step 4: Run `tsc` and fix all 42 call sites** — `npx tsc --noEmit`. Expected: ~42 errors.
+- [ ] **Step 4: Run `tsc` and fix all 41 call sites** — `npx tsc --noEmit`. Expected: ~42 errors.
 
 The production sources for the value, all verified in scope:
 
@@ -1521,94 +1549,215 @@ means. Every test below uses that.
 
 - [ ] **Step 1: Write the failing tests** — INTEGRATION
 
-⛔ **Round-1 L3 / round-2 M7: no argument-less calls.** v2 wrote
-`companionTransfer(/* receiver envelope videoId: 'OTHER' */)` four times against a 4-parameter
-function. Here is the fixture, once, built from helpers that exist:
+⛔ **Round-1 L3 / round-2 M7 / round-3 Codex H1 — no argument-less calls, no undeclared symbols,
+and the import path is the one the sibling files actually use.** v3's block imported
+`./helpers/cloud` from a file under `tests/integration/cloud-sync/` (one directory too shallow) and
+used eleven symbols it never declared. Its sibling
+[`tests/integration/cloud-sync/e2e.int.test.ts:15-18`](../../../tests/integration/cloud-sync/e2e.int.test.ts)
+imports `@/tests/integration/helpers/cloud`, and so does this.
+
+⚙ **WRITTEN AND RUN against the live local stack (127.0.0.1:54321), whole file, both ways:**
+
+| Run | Result |
+|---|---|
+| **RED** — v3 code, T0 exports + T7's read-side `videoId` applied, no Step-3 guard | **3 failed / 4 passed.** 18j SHIP arm: `res.shareNeedsOwnerServe` was `false`, no error. 18j DELETE arm: `res.error` was `undefined` and the probe printed `envelope after = null` — **today's code DELETES the other video's paid model**, which is round-1 H3 measured rather than argued. 18j6: the receiver's `videoId` came back `"SENDER-WROTE-THIS"` — the sender's claim propagated |
+| **GREEN** — Step 3 applied | **7 passed / 7** in 3.4 s |
+
+**The 18j fixture is now TWO cases, because `decideCompanion` reaches the two destructive arms by
+different routes** and v3's single fixture only reached one of them. With a sender envelope whose
+`sourceMdHash` MATCHES the winner hash, `companion.ts:125` returns `ship` — so v3's comment
+("`provablyStale` … DELETES") did not describe its own fixture. The delete arm needs a sender that
+does **not** match. Both are below; the guard sits above `decideCompanion` precisely so one
+placement covers both.
 
 ```ts
-import { makeOwnerContext, prepareSyncCtx, seedCloudVideo, seedLocalVideoFull,
-         type Ctx } from './helpers/cloud';
+// tests/integration/cloud-sync/companion-videoid.int.test.ts
+//
+// §3.6.4 — `videoId` is the model-ownership credential, and it gates the ship AND the delete.
+// Behaviors 18j, 18j2, 18j3, 18j4, 18j6, 18j7.
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import {
+  makeOwnerContext, prepareSyncCtx, seedCloudVideo, seedLocalVideoFull,
+  cloudVideoRecord, localVideoRecord, type Ctx,
+} from '@/tests/integration/helpers/cloud';
+import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
+import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
+import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import { companionTransfer, type Side } from '@/lib/cloud-sync/sync-run';   // exported in T0
-import { writeModelEnvelope, readModelEnvelope, MODEL_KEY } from '@/lib/html-doc/model-store';
+import { reconcileCloudBase } from '@/lib/cloud-sync/reconcile-serial';
+import {
+  writeModelEnvelope, readModelEnvelope, type ModelEnvelopeWrite,
+} from '@/lib/html-doc/model-store';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
 import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
 
-const MD = '# T\n\n## 1. Intro\nbody\n';
-const ROW_VIDEO_ID = () => ctx.videoId;
+jest.setTimeout(30_000);
 
-/** The two Sides companionTransfer takes. Winner = local, loser = cloud. */
-function sides(ctx: Ctx): { winner: Side; loser: Side } {
+afterAll(async () => {
+  const home = os.homedir();
+  const dirs = (await fs.readdir(home)).filter((d) => d.startsWith('.cs-syncrun-'));
+  await Promise.all(dirs.map((d) => fs.rm(path.join(home, d), { recursive: true, force: true })));
+});
+
+const MD = '# T\n\n## 1. Intro\nbody\n';
+/** A schema-valid MagazineModel — the minimum MagazineModelSchema accepts (3 bullets). */
+const MODEL_FIXTURE = {
+  sections: [{
+    lead: 'lead',
+    bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }],
+  }],
+};
+
+/** The two replicas as `Side`s. `companionTransfer(winner, loser, …)` takes them in either role. */
+function sides(ctx: Ctx): { local: Side; cloud: Side } {
   return {
-    winner: { store: ctx.local, p: ctx.localPrincipal, blob: ctx.localBlob },
-    loser: { store: new SupabaseMetadataStore(ctx.userClient), p: ctx.cloudPrincipal,
-             blob: new SupabaseBlobStore(ctx.userClient, ARTIFACTS_BUCKET) },
+    local: { store: ctx.local, p: ctx.localPrincipal, blob: ctx.localBlob },
+    cloud: {
+      store: new SupabaseMetadataStore(ctx.userClient), p: ctx.cloudPrincipal,
+      blob: new SupabaseBlobStore(ctx.userClient, ARTIFACTS_BUCKET),
+    },
   };
 }
 
 /** Seed ONE side's model envelope. This is `seedEnvelope` — file-local, because
  *  `writeModelEnvelope` through that side's own store IS the seeder (the pattern at
- *  tests/integration/share-route.test.ts:78). */
-async function seedEnvelope(side: Side, base: string, over: Partial<ModelEnvelopeWrite>) {
+ *  tests/integration/share-route.test.ts:78). `videoId` is explicit: it is the subject. */
+async function seedEnvelope(
+  side: Side, base: string, videoId: string, over: Partial<ModelEnvelopeWrite> = {},
+): Promise<void> {
   await writeModelEnvelope(side.p, base, {
     sourceMd: `${base}.md`, generatedAt: new Date().toISOString(), sourceSections: ['1. Intro'],
     generatorVersion: GENERATOR_VERSION, model: MODEL_FIXTURE,
-    sourceMdHash: mdHash(MD), videoId: ctx.videoId, ...over,
-  }, side.blob);
+    sourceMdHash: mdHash(MD), videoId, ...over,
+  } as ModelEnvelopeWrite, side.blob);
 }
-```
 
-```ts
-it('behavior 18j — REFUSES ship AND delete when the envelope videoId differs from the row, and RETURNS an error', async () => {
+/** A two-sided video with the SAME MD body on both replicas, base = ctx.videoId. */
+async function twoSided(): Promise<{ ctx: Ctx; local: Side; cloud: Side; base: string }> {
+  const ctx = await makeOwnerContext();
   await prepareSyncCtx(ctx);
   await seedLocalVideoFull(ctx, { mdBody: MD });
   await seedCloudVideo(ctx, { mdBody: MD });
-  const { winner, loser } = sides(ctx);
-  const base = ctx.videoId;
-  await seedEnvelope(winner, base, {});                              // sender: matches the row
-  await seedEnvelope(loser, base, { videoId: 'OTHER', sourceMdHash: 'stale' });  // receiver: NOT ours
+  const { local, cloud } = sides(ctx);
+  return { ctx, local, cloud, base: ctx.videoId };
+}
 
-  const res = await companionTransfer(winner, loser, mdHash(MD), await localVideoRecord(ctx)!);
+// ---------------------------------------------------------------------------
+// 18j — the refusal covers BOTH destructive arms. Two fixtures, because
+// `decideCompanion` reaches them by different routes:
+//   sender envelope MATCHES the winner hash  -> 'ship'                (overwrite)
+//   sender envelope does NOT match, receiver hash present+different -> 'deleteReceiverModel'
+// A guard inside the ship arm only would leave the second one reachable (round-1 H3).
+// ---------------------------------------------------------------------------
+
+it('behavior 18j — SHIP arm: REFUSES when the envelope videoId differs from the row, and RETURNS an error', async () => {
+  const { ctx, local, cloud, base } = await twoSided();
+  await seedEnvelope(local, base, ctx.videoId);                                   // sender: ours
+  await seedEnvelope(cloud, base, 'OTHER', { sourceMdHash: 'stale' });            // receiver: NOT ours
+  const lv = (await localVideoRecord(ctx))!;
+
+  const res = await companionTransfer(local, cloud, mdHash(MD), lv);
 
   expect(res.shareNeedsOwnerServe).toBe(true);
   expect(res.error).toMatch(/envelope videoId/);
-  // The paid model survives, BYTE-IDENTICAL — this is the delete half, which round-1 H3 filed and
-  // v2 fixed only in prose. A `sourceMdHash` that is present and different is exactly what
-  // decideCompanion (companion.ts:151-153) calls `provablyStale` and DELETES.
-  const after = await readModelEnvelope(loser.p, base, loser.blob);
+  // The paid model survives, and it is still the OTHER video's.
+  const after = await readModelEnvelope(cloud.p, base, cloud.blob);
   expect(after!.videoId).toBe('OTHER');
+  expect(after!.sourceMdHash).toBe('stale');
+});
+
+it('behavior 18j — DELETE arm: the same refusal, on the path that would have destroyed the model', async () => {
+  const { ctx, local, cloud, base } = await twoSided();
+  // Sender does NOT match the winner hash -> nothing shippable; the receiver's present-but-different
+  // sourceMdHash is what decideCompanion (companion.ts:151-153) calls `provablyStale` and DELETES.
+  await seedEnvelope(local, base, ctx.videoId, { sourceMdHash: 'sender-stale' });
+  await seedEnvelope(cloud, base, 'OTHER', { sourceMdHash: 'receiver-stale' });
+  const lv = (await localVideoRecord(ctx))!;
+
+  const res = await companionTransfer(local, cloud, mdHash(MD), lv);
+
+  expect(res.error).toMatch(/envelope videoId/);
+  expect((await readModelEnvelope(cloud.p, base, cloud.blob))!.videoId).toBe('OTHER');
 });
 
 it('behavior 18j — never THROWS, so the caller still advances the baseline', async () => {
-  // …same mismatched fixture…
-  await expect(companionTransfer(winner, loser, mdHash(MD), lv)).resolves.toBeDefined();
+  const { ctx, local, cloud, base } = await twoSided();
+  await seedEnvelope(local, base, ctx.videoId);
+  await seedEnvelope(cloud, base, 'OTHER', { sourceMdHash: 'stale' });
+  const lv = (await localVideoRecord(ctx))!;
+
+  await expect(companionTransfer(local, cloud, mdHash(MD), lv)).resolves.toBeDefined();
 });
 
-it('behavior 18j2 — SHIPS when the receiver read is `none` or `unknown`', async () => {
-  // No receiver envelope at all. On the Supabase loser this is `unknown` (provesAbsence false,
-  // supabase-blob-store.ts:10); on a local loser it is `none`. Assert the SHIP by reading back.
-  for (const loserSide of [cloudLoser, localLoser]) {
-    await companionTransfer(winner, loserSide, mdHash(MD), lv);
-    expect((await readModelEnvelope(loserSide.p, base, loserSide.blob))!.videoId).toBe(ctx.videoId);
-  }
+it('behavior 18j2 — SHIPS when the receiver read is `unknown` (cloud loser) or `none` (local loser)', async () => {
+  // No receiver envelope at all. On the Supabase loser that read is `unknown` (provesAbsence is
+  // false, supabase-blob-store.ts:10); on a local loser it is `none`. Assert the SHIP by reading back.
+  const a = await twoSided();
+  await seedEnvelope(a.local, a.base, a.ctx.videoId);
+  await companionTransfer(a.local, a.cloud, mdHash(MD), (await localVideoRecord(a.ctx))!);
+  expect((await readModelEnvelope(a.cloud.p, a.base, a.cloud.blob))!.videoId).toBe(a.ctx.videoId);
+
+  const b = await twoSided();
+  await seedEnvelope(b.cloud, b.base, b.ctx.videoId);
+  await companionTransfer(b.cloud, b.local, mdHash(MD), (await cloudVideoRecord(b.ctx))!);
+  expect((await readModelEnvelope(b.local.p, b.base, b.local.blob))!.videoId).toBe(b.ctx.videoId);
 });
 
 it('behavior 18j4 — a LEGACY envelope with no videoId proceeds, and sourceMd is NOT consulted', async () => {
-  await seedEnvelope(loser, base, { videoId: undefined as never, sourceMd: 'wrong.md', sourceMdHash: 'stale' });
-  const res = await companionTransfer(winner, loser, mdHash(MD), lv);
+  const { ctx, local, cloud, base } = await twoSided();
+  await seedEnvelope(local, base, ctx.videoId);
+  await seedEnvelope(cloud, base, undefined as unknown as string,
+    { sourceMd: 'wrong.md', sourceMdHash: 'stale' });
+  const lv = (await localVideoRecord(ctx))!;
+
+  const res = await companionTransfer(local, cloud, mdHash(MD), lv);
+
   expect(res.error).toBeUndefined();
-  expect((await readModelEnvelope(loser.p, base, loser.blob))!.videoId).toBe(ctx.videoId);
+  expect((await readModelEnvelope(cloud.p, base, cloud.blob))!.videoId).toBe(ctx.videoId);
 });
 
 it('behavior 18j6 — the ship STAMPS the receiver videoId, from the ROW not the sender', async () => {
-  await seedEnvelope(winner, base, { videoId: 'SENDER-WROTE-THIS' });
-  await companionTransfer(winner, loser, mdHash(MD), lv);
-  expect((await readModelEnvelope(loser.p, base, loser.blob))!.videoId).toBe(ctx.videoId);
+  const { ctx, local, cloud, base } = await twoSided();
+  await seedEnvelope(local, base, 'SENDER-WROTE-THIS');
+  const lv = (await localVideoRecord(ctx))!;
+
+  await companionTransfer(local, cloud, mdHash(MD), lv);
+
+  expect((await readModelEnvelope(cloud.p, base, cloud.blob))!.videoId).toBe(ctx.videoId);
+});
+
+it('behavior 18j3 + 18j7 — after a cloud base relocation the ship still succeeds, and the COPIED envelope keeps its videoId', async () => {
+  const ctx = await makeOwnerContext();
+  await prepareSyncCtx(ctx);
+  // local carries serial 3 with its own base; cloud carries serial 7 -> reconcileCloudBase relocates.
+  await seedLocalVideoFull(ctx, { position: 3, summaryMd: '003_alpha.md', mdBody: MD });
+  await seedCloudVideo(ctx, { position: 7, summaryMd: '007_alpha.md', mdBody: MD });
+  const { local, cloud } = sides(ctx);
+  await seedEnvelope(cloud, '007_alpha', ctx.videoId);
+
+  const rec = await reconcileCloudBase({
+    cloud: { store: cloud.store, p: cloud.p, blob: cloud.blob },
+    cloudIndex: (await new SupabaseMetadataStore(ctx.userClient).readIndex(ctx.cloudPrincipal)).videos,
+    localVideo: (await localVideoRecord(ctx))!,
+    cloudVideo: (await cloudVideoRecord(ctx))!,
+    inFlightJob: async () => ({ ok: true, inFlight: false }),
+  });
+  expect(rec).toMatchObject({ ok: true, action: 'relocated', from: '007_alpha', to: '003_alpha' });
+
+  const copied = await readModelEnvelope(cloud.p, '003_alpha', cloud.blob);
+  expect(copied!.videoId).toBe(ctx.videoId);   // preserved by the COPY, not by the write schema
+
+  const res = await companionTransfer(local, cloud, mdHash(MD), (await localVideoRecord(ctx))!);
+  expect(res.error).toBeUndefined();
 });
 ```
 
 - [ ] **Step 2: Run to verify they fail** — INTEGRATION:
       `npm run test:integration -- tests/integration/cloud-sync/companion-videoid.int.test.ts`.
-      Expected: FAIL — no `videoId` check exists, so 18j ships and the receiver's model is destroyed.
+      **Expected, MEASURED: exactly 3 failures — the two 18j arms and 18j6 — and 4 passes.** If any
+      other case is red, the fixture is wrong, not the production code.
 
 - [ ] **Step 3: Implement the refusal ABOVE `decideCompanion`**
 
@@ -1688,36 +1837,15 @@ required at the write schema, and `decision.envelope` is the SENDER's:
 *(Behavior 18j6: the stamp comes from the ROW, so a sender envelope carrying another video's id —
 or none at all, which is what `generate.ts` writes today — cannot propagate a wrong claim.)*
 
-- [ ] **Step 4: Add behaviors 18j3 and 18j7** — INTEGRATION
+- [ ] **Step 4: behaviors 18j3 and 18j7 — the LAST `it(...)` in the Step-1 file**
 
-```ts
-it('behavior 18j3 + 18j7 — after a cloud base relocation the ship still succeeds, and the COPIED envelope keeps its videoId', async () => {
-  await prepareSyncCtx(ctx);
-  // local carries serial 3 with its own base; cloud carries serial 7 -> reconcileCloudBase relocates.
-  await seedLocalVideoFull(ctx, { position: 3, summaryMd: '003_alpha.md', mdBody: MD });
-  await seedCloudVideo(ctx, { position: 7, summaryMd: '007_alpha.md', mdBody: MD });
-  await seedEnvelope(cloudSide, '007_alpha', { videoId: ctx.videoId });
-
-  const rec = await reconcileCloudBase({
-    cloud: { store: cloudSide.store, p: cloudSide.p, blob: cloudSide.blob },
-    cloudIndex: (await new SupabaseMetadataStore(ctx.userClient).readIndex(ctx.cloudPrincipal)).videos,
-    localVideo: (await localVideoRecord(ctx))!,
-    cloudVideo: (await cloudVideoRecord(ctx))!,
-    inFlightJob: async () => ({ ok: true, inFlight: false }),
-  });
-  expect(rec).toMatchObject({ ok: true, action: 'relocated', from: '007_alpha', to: '003_alpha' });
-
-  const copied = await readModelEnvelope(cloudSide.p, '003_alpha', cloudSide.blob);
-  expect(copied!.videoId).toBe(ctx.videoId);   // preserved by the COPY, not by the write schema
-
-  const res = await companionTransfer(localSide, cloudSide, mdHash(MD), (await localVideoRecord(ctx))!);
-  expect(res.error).toBeUndefined();
-});
-```
-
-*(`reconcileCloudBase`'s five arguments are `{ cloud, cloudIndex, localVideo, cloudVideo, inFlightJob }`
-— `reconcile-serial.ts:166-174`. `InFlightJobProbe` returns `{ok:true,inFlight}` or `{ok:false,cause}`
-— `:61-64`.)*
+It is in the file above rather than a second snippet, because it needs the same `sides()` /
+`seedEnvelope()` fixture. ⚙ **It PASSES both before and after Step 3** — deliberately: it asserts
+that a cloud base RELOCATION preserves the envelope's `videoId` through the byte copy (18j7) and
+that the ship still succeeds afterwards (18j3), so it is a preservation assertion, not a red-first
+one. `reconcileCloudBase`'s five arguments are `{ cloud, cloudIndex, localVideo, cloudVideo,
+inFlightJob }` (`reconcile-serial.ts:166-174`); `InFlightJobProbe` returns `{ok:true,inFlight}` or
+`{ok:false,cause}` (`:61-64`).
 
 - [ ] **Step 5: Run and commit**
 
@@ -1905,57 +2033,181 @@ git commit -m "feat(#36): videoDataPayload is the metadata seam and refuses an u
 
 - [ ] **Step 1: Write the failing test** — INTEGRATION
 
-⛔ **Round-2 H6: `runSummaryJob` does not exist and there is no way to pass a `gemini` mock through
-the real entry point.** The only exports of `lib/job-queue/summary-handler.ts` are
-`makeSummaryHandler(serviceClient: SupabaseClient): JobHandler` (`:50`) and `MAX_DURATION_SECONDS`
-(`:27`). The repo's mocking policy (`docs/dev-process.md` — *"`lib/gemini.ts` — all Gemini calls"*)
-and the existing `tests/integration/summary-handler.test.ts:24-31` give the real driver: mock the
-**module**, then call the handler. Copy that file's `seedPlaylist`, `mockCtx`, `makePayload` and
-`makeJob` helpers — they are ~40 lines and file-local there, so they are file-local here too.
+⛔ **Round-3, both halves, Blocking — v3's test was KNOWINGLY IMPOSSIBLE.** It asserted that
+`title: 'x'.repeat(400)` rejects, and the same step then said no `slugify` output can reach that
+branch. A fake test plus a prose escape hatch, in the no-money-before-refusal path.
+
+**DECIDED this round: option (b) — an explicit, honest test-only seam. The escape hatch is deleted,
+and so is the choice.** The reasoning, so it is reviewable rather than re-opened:
+
+- **Behavior 25 is a claim about PLACEMENT, not about the predicate's verdict.** The verdict is T4's
+  subject and behavior 27 proves, over the whole codepoint space, that no title reaches the branch.
+  A unit test over `` isServableSummaryKey(`${padSerial(n)}_${slugify(t)}.md`) `` — option (a) —
+  would re-assert behavior 27 and say nothing about whether the refusal precedes the Gemini call,
+  which is the only part of this task that is about money.
+- **The seam is a `jest.mock` factory over the predicate module that `jest.requireActual`s the real
+  implementation and overrides it for ONE sentinel slug.** It needs no production change, it is
+  visible in the test file, and the repo already mocks at module level in exactly this file's
+  ancestor (`tests/integration/summary-handler.test.ts:24-25` mocks `@/lib/gemini` and
+  `@/lib/transcript-source`).
+- **A control case proves the seam is narrow** — a normal title still reaches `generateSummary`. A
+  blanket mock would make the first assertion pass for the wrong reason.
+
+⛔ **And v3's money assertion was VACUOUS — this is a second, separate defect, found by executing
+it.** `expect(await ledgerTotal()).toBe(before)` cannot fail: `spend_ledger` is moved by
+`enqueue_job` (`0011_cost_guardrails.sql:113`) and by the serve path
+(`0012_serve_model_charge.sql:86`, `0014_serve_owner_budget.sql:82`) — **never by this handler**, so
+a before/after delta around a handler call is invariant with or without the guard. It is a green
+check over the wrong subject, exactly the class this plan exists to stop. The paid call this
+placement actually prevents is the provider call, so that is what the test asserts.
+
+⛔ **Round-2 H6 still stands: `runSummaryJob` does not exist.** The only exports of
+`lib/job-queue/summary-handler.ts` are `makeSummaryHandler(serviceClient: SupabaseClient): JobHandler`
+(`:50`) and `MAX_DURATION_SECONDS` (`:27`), so the driver is: mock the modules, then call the
+handler. `seedPlaylist` / `mockCtx` / `makePayload` / `makeJob` are copied from
+`tests/integration/summary-handler.test.ts:37-95`, where they are file-local, so they are file-local
+here too.
+
+⚙ **WRITTEN AND RUN against the live local stack, both ways: RED 1 failed / 1 passed (the guard does
+not exist, so the handler completes and `err` is `null`); GREEN 2 passed / 2 with Step 3 applied.**
 
 ```ts
+// tests/integration/summary-handler-guard.test.ts
+//
+// §3.5.1 placement 1 / §3.5.1b row 2 — behavior 25: the mint refuses an unservable summary key
+// BEFORE the transcript and Gemini calls, so no paid call is made.
+//
+// ⚠ WHY THE PREDICATE IS MOCKED, AND WHAT THAT DOES NOT FAKE.
+// After T3 and T4 **no `slugify` output can reach this branch** — behavior 27 walks the whole
+// codepoint space and proves it, and `padSerial(n) + '_' + <=60 chars + '.md'` is far inside the
+// 131-code-point bound. The guard is a BACKSTOP: it exists for a future producer change or a
+// hand-written base. What behavior 25 asserts is therefore not the predicate's verdict (that is
+// T4's subject) but the guard's PLACEMENT — that the refusal happens above the paid calls.
+// The seam below is the honest way to observe that: the real predicate is used for every key
+// except one sentinel slug, so a test that claimed to drive the guard and could not is replaced
+// by one that drives it and says exactly how. The control case at the bottom proves the seam is
+// narrow — a normal title still reaches Gemini.
+import { randomUUID } from 'crypto';
+import { adminClient, newUser, signInAs } from './helpers/clients';
+import type { LeasedJob } from '@/lib/storage/job-queue';
+import { docVersionKey } from '@/lib/storage/job-queue';
+import { CURRENT_DOC_VERSION } from '@/lib/doc-version';
+import { NonRetryableError } from '@/lib/job-queue/errors';
+import type { HandlerCtx } from '@/lib/job-queue/handler-context';
+import type { IngestionPayload } from '@/lib/job-queue/ingestion-payload';
+
 jest.mock('@/lib/gemini');
 jest.mock('@/lib/transcript-source');
-import { generateSummary } from '@/lib/gemini';
+// The seam. `jest.requireActual` keeps the REAL predicate for every other key.
+jest.mock('@/lib/html-doc/assert-cloud-summary-md-key', () => {
+  const real = jest.requireActual('@/lib/html-doc/assert-cloud-summary-md-key');
+  return {
+    ...real,
+    isServableSummaryKey: (key: string) =>
+      (key.includes('unservable-by-fiat') ? false : real.isServableSummaryKey(key)),
+  };
+});
+
+import { generateSummary, extractQuickView } from '@/lib/gemini';
 import { resolveTranscriptSegments } from '@/lib/transcript-source';
+// AFTER the jest.mock calls, so the handler's own imports resolve to the mocked modules.
 import { makeSummaryHandler } from '@/lib/job-queue/summary-handler';
 
-it('behavior 25 — the mint refuses an unservable key BEFORE the Gemini call, so no money moves', async () => {
+jest.setTimeout(30_000);
+
+const admin = () => adminClient();
+
+// The four file-local helpers copied from tests/integration/summary-handler.test.ts:37-95.
+async function seedPlaylist(client: any, ownerId: string): Promise<{ playlistId: string }> {
+  const { data, error } = await client.from('playlists')
+    .insert({ owner_id: ownerId, playlist_key: `k-${randomUUID()}`, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (error) throw error;
+  return { playlistId: data.id as string };
+}
+
+const mockCtx: HandlerCtx = {
+  isCancelled: async () => false,
+  signal: new AbortController().signal,
+  setPhase: async () => {},
+  billing: { metered: false },
+};
+
+function makePayload(over: Partial<IngestionPayload> = {}): IngestionPayload {
+  return {
+    youtubeUrl: 'https://youtu.be/abc123', title: 'My Test Video', channel: 'Test Channel',
+    durationSeconds: 120, playlistIndex: 1,
+    videoPublishedAt: '2024-01-01T00:00:00.000Z', addedToPlaylistAt: '2024-01-02T00:00:00.000Z',
+    ...over,
+  };
+}
+
+function makeJob(fields: { ownerId: string; playlistId: string; videoId: string; payload: unknown }): LeasedJob {
+  return {
+    id: randomUUID(), sectionId: -1, kind: 'summary',
+    version: docVersionKey(CURRENT_DOC_VERSION), attempts: 1, leaseToken: randomUUID(), ...fields,
+  };
+}
+
+beforeEach(() => {
+  (resolveTranscriptSegments as jest.Mock).mockReset()
+    .mockResolvedValue({ segments: [{ text: 'hello world', offset: 0, duration: 5 }], source: 'captions' });
+  (generateSummary as jest.Mock).mockReset().mockResolvedValue({
+    summary: '## 1. Alpha\n▶ [0:00](u)\nAlpha body.\n---\n## Conclusion\n▶ [1:00](u)\nWrap.',
+    ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+    overallScore: 4, videoType: 'Analysis', audience: 'Intermediate', tags: ['x'],
+    tldr: 'This video explains alpha.', takeaways: ['Do alpha'],
+  });
+  (extractQuickView as jest.Mock).mockReset().mockResolvedValue({ tldr: 'f', takeaways: ['f'] });
+});
+
+it('behavior 25 — the mint refuses an unservable key BEFORE any paid call, non-retryably', async () => {
   const u = await newUser();
   const { client, userId } = await signInAs(u.email, u.password);
   const { playlistId } = await seedPlaylist(client, userId);
   const videoId = randomUUID();
-  // A title whose slug exceeds the 131-code-point servability bound is NOT reachable — slugify
-  // caps at 60 and behavior 27 proves no slugify output fails the predicate. So this fixture
-  // drives the guard the only way it is reachable: by making `baseName` itself unservable, which
-  // is what a future producer change or a hand-written serial could do. Assert the BACKSTOP.
-  const before = await ledgerTotal();
-  const handler = makeSummaryHandler(admin());
-  await expect(handler(makeJob({ ownerId: userId, playlistId, videoId,
-    payload: makePayload({ title: 'x'.repeat(400) }) }), mockCtx)).rejects.toThrow(/servable/);
 
+  const handler = makeSummaryHandler(admin());
+  const err = await handler(
+    makeJob({ ownerId: userId, playlistId, videoId, payload: makePayload({ title: 'unservable by fiat' }) }),
+    mockCtx,
+  ).then(() => null, (e) => e);
+
+  expect(err).toBeInstanceOf(NonRetryableError);       // never burn max_attempts on a name
+  expect(err.message).toMatch(/servable/);
+  // THE MONEY ASSERTION. `spend_ledger` is moved by enqueue_job (0011) and by the serve path
+  // (0012/0014) — never by this handler — so a before/after ledger delta here is invariant with
+  // or without the guard and would be a green check over the wrong subject. The paid call this
+  // placement actually prevents is the provider call itself.
+  expect(resolveTranscriptSegments).not.toHaveBeenCalled();
   expect(generateSummary).not.toHaveBeenCalled();
-  expect(resolveTranscriptSegments).not.toHaveBeenCalled();   // refused before the transcript too
-  expect(await ledgerTotal()).toBe(before);                   // the whole point of this placement
+
+  // The accepted cost, asserted rather than assumed (§3.5): a consumed serial and a BARE row —
+  // no summary is ever advertised.
+  const { data } = await admin().from('videos').select('data')
+    .eq('playlist_id', playlistId).eq('video_id', videoId).single();
+  expect((data!.data as { summaryMd?: string }).summaryMd ?? null).toBeNull();
+});
+
+it('control — the seam is NARROW: a normal title still reaches the paid call', async () => {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const { playlistId } = await seedPlaylist(client, userId);
+
+  await makeSummaryHandler(admin())(
+    makeJob({ ownerId: userId, playlistId, videoId: randomUUID(), payload: makePayload() }),
+    mockCtx,
+  );
+
+  expect(generateSummary).toHaveBeenCalled();
 });
 ```
 
-⚠ **Read the fixture note above before writing this test.** After T3 and T4, **no `slugify` output
-can reach this branch** — behavior 27 proves it over the whole codepoint space, and `padSerial` +
-`_` + a 60-char slug + `.md` is far inside the bound. So a fixture that merely uses a long *title*
-does **not** make the guard fire; `'x'.repeat(400)` slugifies to 60 characters. **The
-implementer must construct a `baseName` the predicate rejects** — the honest way is to make the
-guard's input observable: extract nothing, but assert with a title whose slug is empty *and* a serial
-that produces a name the predicate refuses, or accept that this behavior can only be driven by a
-unit-level call. **If no reachable fixture exists, say so in the test file and convert this to a
-`tests/lib/` unit test of the predicate applied to `${padSerial(n)}_${slugify(t)}.md`** — a guard
-that cannot be driven is still worth having as a backstop, but a test that claims to drive it and
-does not is worse than none. *(This is a genuine open question the plan does not settle; see the
-Self-Review's DEFERRED row.)*
-
 - [ ] **Step 2: Run to verify it fails** — INTEGRATION:
       `npm run test:integration -- tests/integration/summary-handler-guard.test.ts`.
-      Expected: FAIL — Gemini was called.
+      **Expected, MEASURED: 1 failed / 1 passed** — `expect(err).toBeInstanceOf(NonRetryableError)`
+      receives `null`, because with no guard the handler runs to completion. The control case
+      passes from the start; that is what it is for.
 
 - [ ] **Step 3: Implement**
 
@@ -1988,8 +2240,9 @@ nothing. *(v2 threw a bare `Error`, which the runner classifies as retryable.)*
 
 - [ ] **Step 4: Run and verify** — INTEGRATION:
       `npx tsc --noEmit && npm run test:integration -- tests/integration/summary-handler-guard.test.ts`.
-      Expected: PASS. **Note:** this is a **backstop** and the assertion that the §3.4/§3.5
-      cross-derivation still holds. It goes red if either side moves.
+      **Expected, MEASURED: 2 passed / 2.** The guard is a **backstop**: behavior 27 is what proves
+      no real title reaches it, and this test is what proves that when something does, the refusal
+      lands above the paid call.
 
 - [ ] **Step 5: Commit**
 
@@ -2148,57 +2401,118 @@ starting.** `newBase` has **TWO** producers (a ternary at `reconcile-serial.ts:1
 
 - [ ] **Step 1: Write the failing tests — one per cell** — UNIT
 
+⛔ **Round-1 L3 / round-2 M7 / round-3 Codex B2 — all four arms were `/* … */` placeholders.**
+They are now real, and **they do not need `InMemoryBlobStore` + a jest-mocked `MetadataStore` built
+from scratch**: `tests/lib/cloud-sync/reconcile-serial.test.ts` already defines exactly the fixture
+this needs — `vid(id, serial, slug, extra)`, `cloudReplica(videos, blobsByKey)` (a real
+`LocalFsMetadataStore` over a temp dir + an `InMemoryBlobStore`), `read`, `rowOf` and `noJobs`. The
+four cells are APPENDED to that file and reuse them, which is also why they assert observable state
+rather than `expect(cloudBlob.copy).not.toHaveBeenCalled()` — the file's existing "refuses … BEFORE
+copying anything" case (`:384-400`) already establishes that idiom.
+
+⚙ **WRITTEN AND RUN, both ways: RED 3 failed / 1 passed — and the three failures are the RIGHT ones
+(each returned `{ok:true, action:'relocated', …}`, i.e. the fixture reaches the guard's insertion
+point and today's code relocates through it); GREEN 4 passed / 4 with Step 3 applied, `tsc` clean.**
+
 ```ts
+// Appended to tests/lib/cloud-sync/reconcile-serial.test.ts — `store`, `vid`, `cloudReplica`,
+// `read`, `rowOf` and `noJobs` are that file's own helpers.
+const LONG = 'a'.repeat(124);        // `007_${LONG}.md` is exactly 131 code points — AT the bound
+const TOO_LONG = 'a'.repeat(130);    // `007_${TOO_LONG}.md` is 137 — over it
+const CLOUD_AT_BOUND = `007_${LONG}.md`;
+const CLOUD_OVER_BOUND = `007_${TOO_LONG}.md`;
+
 it('behavior 26d — servable -> UNSERVABLE: REFUSED in memory, nothing copied, old base intact', async () => {
-  const res = await reconcileCloudBase({ /* old: servable, new: unservable */ });
-  expect(res).toMatchObject({ ok: false, reason: 'unservable-base', origin: 'vault-filename' });
-  expect(cloudBlob.copy).not.toHaveBeenCalled();
-  expect(await cloudBlob.get(cloudP, `${oldBase}.md`)).not.toBeNull();
+  const cloudVideo = vid('vid00000001', 7, 'ok');
+  const cloud = await cloudReplica([cloudVideo], { '007_ok.md': 'PAID MD' });
+
+  const res = await reconcileCloudBase({
+    cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
+    localVideo: vid('vid00000001', 3, 'evil', { summaryMd: '003_nested/evil.md' }),
+    cloudVideo,
+  });
+
+  expect(res).toEqual({
+    ok: false, reason: 'unservable-base', key: '003_nested/evil.md', origin: 'vault-filename',
+  });
+  expect(await read(cloud, '003_nested/evil.md')).toBeNull();      // nothing copied
+  expect(await read(cloud, '007_ok.md')).toBe('PAID MD');          // old base intact
+  expect((await rowOf(cloud, 'vid00000001')).summaryMd).toBe('007_ok.md');
 });
 
 it('behavior 26d3 — arm B still REFUSES when the old base was servable', async () => {
-  // A servable cloud key whose renumbering by applySerial pushes it past 131 code points.
-  const res = await reconcileCloudBase({ /* cloud: 128 ASCII + .md, local serial widens it */ });
-  expect(res).toMatchObject({ ok: false, reason: 'unservable-base', origin: 'cloud-key' });
-  // NOT 'vault-filename' — there is no vault file here. Round-18 L1.
+  // The renumbering is what widens it: `007_` -> `1000_` is one code point, and the cloud key sits
+  // exactly ON the 131-code-point bound. No vault file, so `origin` must be 'cloud-key'.
+  const cloudVideo = vid('vid00000001', 7, LONG);
+  const cloud = await cloudReplica([cloudVideo], { [CLOUD_AT_BOUND]: 'PAID MD' });
+
+  const res = await reconcileCloudBase({
+    cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
+    localVideo: vid('vid00000001', 1000, 'unused', { summaryMd: null }),
+    cloudVideo,
+  });
+
+  expect(res).toEqual({
+    ok: false, reason: 'unservable-base', key: `1000_${LONG}.md`, origin: 'cloud-key',
+  });
+  expect(await read(cloud, CLOUD_AT_BOUND)).toBe('PAID MD');
 });
 
 it('behavior 26d4 — unservable -> SERVABLE: RELOCATES. A genuine repair', async () => {
-  const res = await reconcileCloudBase({ /* old: unservable, new: servable */ });
-  expect(res).toMatchObject({ ok: true, action: 'relocated' });
+  const cloudVideo = vid('vid00000001', 7, TOO_LONG);
+  const cloud = await cloudReplica([cloudVideo], { [CLOUD_OVER_BOUND]: 'PAID MD' });
+
+  const res = await reconcileCloudBase({
+    cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
+    localVideo: vid('vid00000001', 3, 'ok'),
+    cloudVideo,
+  });
+
+  expect(res).toMatchObject({ ok: true, action: 'relocated', from: `007_${TOO_LONG}`, to: '003_ok' });
+  expect(await read(cloud, '003_ok.md')).toBe('PAID MD');
 });
 
 it('behavior 26d2 — unservable -> unservable: SKIPPED, no copy, no seam write', async () => {
-  const res = await reconcileCloudBase({ /* local: serial but NO summaryMd; cloud: unservable */ });
+  const cloudVideo = vid('vid00000001', 7, TOO_LONG);
+  const cloud = await cloudReplica([cloudVideo], { [CLOUD_OVER_BOUND]: 'PAID MD' });
+
+  const res = await reconcileCloudBase({
+    cloud, cloudIndex: (await store.readIndex(cloud.p)).videos, inFlightJob: noJobs,
+    localVideo: vid('vid00000001', 3, 'unused', { summaryMd: null }),
+    cloudVideo,
+  });
+
   expect(res).toEqual({ ok: true, action: 'skipped-unservable' });
-  expect(cloudBlob.copy).not.toHaveBeenCalled();
-  expect(cloudStore.updateVideoFields).not.toHaveBeenCalled();
+  expect(await read(cloud, `003_${TOO_LONG}.md`)).toBeNull();
+  expect(await read(cloud, CLOUD_OVER_BOUND)).toBe('PAID MD');
+  expect((await rowOf(cloud, 'vid00000001')).summaryMd).toBe(CLOUD_OVER_BOUND);
 });
 ```
 
-⛔ **Round-1 L3 / round-2 M7 — the fixtures.** `reconcileCloudBase` takes exactly five arguments
-(`reconcile-serial.ts:166-174`): `{ cloud: { store, p, blob }, cloudIndex: Video[], localVideo: Video,
-cloudVideo: Video, inFlightJob: InFlightJobProbe }`. Build them with `InMemoryBlobStore` and a
-jest-mocked `MetadataStore`, and note that **`describeDivergence` must actually report divergence**
-or the function returns `{ok:true,action:'agreed'}` at `:184` before reaching the new guard. The
-four cells, spelled out — each row is `localVideo.serialNumber` / `localVideo.summaryMd` /
-`cloudVideo.summaryMd`:
+**The four cells, and the two things each one has to satisfy** — `describeDivergence` must actually
+report divergence (or the function returns `{ok:true,action:'agreed'}` at `:184` before reaching the
+guard), and the predicate's verdict on `oldBase`/`newBase` must be the one the row claims. ⚙ **Every
+verdict below was MEASURED by running the Step-3 predicate over these exact keys, not reasoned
+about:**
 
-| Cell | local serial | local summaryMd | cloud summaryMd | `oldBase` | `newBase` | expected |
+| Cell | local serial | local `summaryMd` | cloud `summaryMd` | `oldBase.md` | `newBase.md` | expected |
 |---|---|---|---|---|---|---|
-| 26d | 3 | `003_nested/evil.md` — refused by the seam, still a valid *local* name | `007_ok.md` | `007_ok` | `003_nested/evil` | refuse, origin `vault-filename` |
-| 26d3 | 3 | `null` | `` `007_${'a'.repeat(124)}.md` `` (131 cp — servable) | that base | `applySerial(...)` renumbered to 003, still 131 cp but the **key** is what widens | refuse, origin `cloud-key` |
-| 26d4 | 3 | `003_ok.md` | `007_a⒈b.md` under a length that makes it unservable | that base | `003_ok` | relocate |
-| 26d2 | 3 | `null` | an unservable key whose renumbering is also unservable | that base | renumbered | skip |
+| 26d | 3 | `003_nested/evil.md` — refused by the seam, still a valid *local* name | `007_ok.md` | `007_ok.md` **servable** (9 cp) | `003_nested/evil.md` **unservable** (contains `/`) | refuse, origin `vault-filename` |
+| 26d3 | **1000** | `null` | `` `007_${'a'.repeat(124)}.md` `` | **servable**, 131 cp — exactly the bound | `` `1000_${'a'.repeat(124)}.md` `` **unservable**, 132 cp | refuse, origin `cloud-key` |
+| 26d4 | 3 | `003_ok.md` | `` `007_${'a'.repeat(130)}.md` `` | **unservable**, 137 cp | `003_ok.md` **servable** | relocate |
+| 26d2 | 3 | `null` | `` `007_${'a'.repeat(130)}.md` `` | **unservable**, 137 cp | `` `003_${'a'.repeat(130)}.md` `` **unservable**, 137 cp | skip |
 
-*(26d3's fixture is the fiddliest: `applySerial` replaces the serial prefix, so make the cloud slug
-long enough that 003 vs 007 does not change servability but the **old** base is servable and the new
-one is not. If that turns out to be unconstructible, use origin `cloud-key` with an unservable
-CHARACTER introduced by the renumbering instead, and say so in the test — the assertion under test
-is `origin`, not the mechanism that produced it.)*
+*(26d3 was the one v3 called "the fiddliest" and left an escape hatch for. It is constructible and
+needs no invented character: `padSerial(1000)` is four digits where `padSerial(7)` is three, so the
+renumbering alone pushes a key that sits ON the bound one code point past it. The escape hatch is
+deleted.)*
 
 - [ ] **Step 2: Run to verify they fail** — UNIT:
-      `npx jest tests/lib/cloud-sync/reconcile-serial.test.ts`. Expected: FAIL — no such variants.
+      `npx jest tests/lib/cloud-sync/reconcile-serial.test.ts`. **Expected, MEASURED: 3 of the 4 new
+      cases fail and 26d4 passes** — 26d4 asserts a relocation today's code already performs, and it
+      is in the set precisely so the guard cannot be written as a blanket refusal. Each of the three
+      receives `{ok: true, action: 'relocated', …}`, which is also the proof that the fixture
+      REACHES the insertion point rather than returning `agreed` early.
 
 - [ ] **Step 3: Extend the union and implement the table**
 
@@ -2242,7 +2556,24 @@ all in scope there (`:175`, `:185-186`).
   // unservable -> servable falls through and RELOCATES: a genuine repair, and the seam accepts it.
 ```
 
-- [ ] **Step 4: The two `sync-run.ts` edits**
+- [ ] **Step 4: Dispose of the ONE existing case that flips — measured, not predicted**
+
+⚙ **MEASURED: with Step 3 applied, the whole unit suite is 1 failed / 2,706 passed of 2,707** — that
+run included the four new cells, so of the repo's own **2,703** tests (`scripts/check-test-counts.py`)
+exactly **one** fails and 2,702 pass.
+The single failure is `reconcile-serial.test.ts` *"moves a bare digDeeperMd belonging to a
+directory-qualified summary"* (`:406-425`), which seeds `summaryMd: 'raw/007_alpha.md'` and expects
+`{ok: true, action: 'relocated'}`; it now gets `skipped-unservable`.
+
+**That is the guard working, and the row must be updated rather than the guard weakened.** Both
+bases in that case contain a `/`, so both are unservable — and after T9 the seam would refuse the
+relocated row *after* every paid blob had been copied. Skipping is round-18 B1's whole point. Change
+that case's expectation to `{ok: true, action: 'skipped-unservable'}`, assert the sources are still
+intact, and note in the commit that the `raw/`-qualified layout the case documents is now reported
+by the row-derived error in Step 5(b) instead of silently relocated. **If a SECOND existing case
+fails, stop — that is a defect, not a widening.**
+
+- [ ] **Step 5: The two `sync-run.ts` edits**
 
 **(a) The refusal branch goes INSIDE the existing `!rec.ok` block, above the generic throw.**
 `sync-run.ts:739-757` is verbatim today:
@@ -2312,7 +2643,7 @@ not `'relocated'`, so control falls through to Class A exactly as it should — 
 run: this one, plus a refusal from (a). Both are true and they name different repairs; that is
 better than suppressing either.)*
 
-- [ ] **Step 5: Add 26d2's second-run assertion** — INTEGRATION
+- [ ] **Step 6: Add 26d2's second-run assertion** — INTEGRATION
 
 ```ts
 it('behavior 26d2 — the SKIP is visible on run 1 AND run 2, and copyToLocal hydrates the paid summary', async () => {
@@ -2333,7 +2664,7 @@ it('behavior 26d2 — the SKIP is visible on run 1 AND run 2, and copyToLocal hy
 **Run 2 is the whole point.** Written against run 1 only — as v2 was — this passes against the
 branch-derived version that then goes silent forever.
 
-- [ ] **Step 6: Run and commit**
+- [ ] **Step 7: Run and commit**
 
 ```bash
 npx tsc --noEmit && npm test && npm run test:integration
@@ -2351,12 +2682,232 @@ git commit -m "feat(#36): reconcileCloudBase relocates, refuses or SKIPS per the
 **Files:**
 - Modify: `lib/cloud-sync/sync-run.ts` (`copyAdditiveVideo` `:261-270`, `transferClassA` `:371-395`)
 - Create: `scripts/check-encoder-gate-sql.py`
-- Test: `tests/integration/cloud-sync/additive-protocol.int.test.ts` — **INTEGRATION** (new)
+- Test: `tests/lib/cloud-sync/additive-protocol.test.ts` — **UNIT** (new). ⚠ **Round 3 moved this
+  file out of the integration suite, and the reason is not tidiness:** every case here drives the
+  protocol against a real `LocalFsMetadataStore` + either the real `LocalFsBlobStore` (behavior 18
+  needs a real volume to alias NFC/NFD) or `InMemoryBlobStore` (18c2/19 need fault injection).
+  **Nothing in it talks to Supabase** — and `test:integration` is NOT in CI (`docs/dev-process.md`,
+  *"Not yet in CI"*), so leaving money-path guards there means CI never runs them. The Supabase half
+  of `promoteIfAbsent` is covered where it belongs: T6's contract case in
+  `tests/integration/blob-store.test.ts`.
 
 **Interfaces:** Consumes `promoteIfAbsent` + `stagingRootOf` (T6), `canonicallyEqualName` (T0),
 `copyAdditiveVideo` / `transferClassA` / `Side` (exported in T0). Produces nothing new.
 
-- [ ] **Step 1: Implement the ADDITIVE protocol in `copyAdditiveVideo`** — the step v2 left with no code
+- [ ] **Step 1: Write the failing tests — the WHOLE file, covering Steps 2 and 3** — UNIT
+
+⛔ **Round-3 Codex B3 — three of these four were `/* … */` comment-only calls on the paid-artifact
+path.** They are real now, and so are the five that cover Step 3. ⚙ **WRITTEN AND RUN, both ways:**
+
+| Run | Result |
+|---|---|
+| **RED** — today's code, T0 exports applied (this step) | **6 failed / 3 passed.** 18b/18c, 18c2 and 19 all `Resolved to value: undefined` — today's `promote()` is a rename on the local FS, so the newcomer OVERWRITES the occupant and the function returns normally. 18h (occupied), 19 (unreadable) and 18i/18k each resolved `{mdHash: …, verified: true}` — today's unconditional `put` destroys the loser's artifact. That is backlog #36's money bug, executed |
+| **GREEN** — Steps 2 + 3 applied (with T6's local + in-memory `promoteIfAbsent` and T0's `canonicallyEqualName`) | **9 passed / 9** |
+
+The three that pass RED are the ones that must not regress: behavior 18 (the aliasing resume), 18g
+(the owned overwrite) and 18h-unoccupied.
+
+⚠ **Behavior 18's assertion is `toEqual([NFC])` over the directory's `.md` files, not
+`toContain(NFC)`.** `toContain` also passes on a normalization-SENSITIVE volume, where `linkSync`
+would have created a SECOND file instead of getting `EEXIST` — which is the entire behavior under
+test. (Measured on APFS: one file, stored under the NFC name.)
+
+`seed` and `readdirNames` (round-2 H6: 0 occurrences each) are gone; the file uses
+`store.put(...)` for seeding and `fs.promises.readdir` for the on-disk name.
+
+```ts
+/**
+ * §3.6.2 — the additive-create protocol and the Class-A loser-record guard (behaviors 18, 18b,
+ * 18c, 18c2, 18g, 18h, 18i, 18k, 19).
+ *
+ * UNIT, not integration: every case here drives `copyAdditiveVideo` / `transferClassA` against a
+ * real local metadata store and either the real local FS blob store (behavior 18 needs a real
+ * volume) or `InMemoryBlobStore` (the fault injection 18c2/19 need). Nothing here talks to
+ * Supabase — the Supabase half of `promoteIfAbsent` is covered by T6's contract case in
+ * `tests/integration/blob-store.test.ts`, which is where a live stack is actually required.
+ */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { LocalFsMetadataStore } from '@/lib/storage/local/local-metadata-store';
+import { LocalFsBlobStore } from '@/lib/storage/local/local-blob-store';
+import { InMemoryBlobStore } from '@/lib/storage/testing/in-memory-blob-store';
+import { localPrincipal } from '@/lib/storage/principal';
+import { copyAdditiveVideo, transferClassA, type Side } from '@/lib/cloud-sync/sync-run';
+import type { BlobRead, BlobStore } from '@/lib/storage/blob-store';
+import type { Video } from '@/types';
+
+const store = new LocalFsMetadataStore();
+const PLAYLIST_META = { playlistUrl: 'https://www.youtube.com/playlist?list=PLX' };
+const ID = 'vid00000001';
+const KEY = '003_alpha.md';
+const WINNER_BODY = '# winner\n\nbody\n';
+
+const roots: string[] = [];
+function tmp(): string {
+  const d = fs.mkdtempSync(path.join(os.homedir(), 'additive-protocol-'));
+  roots.push(d);
+  return d;
+}
+afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true }); });
+
+function video(over: Partial<Video> = {}): Video {
+  return {
+    id: ID, serialNumber: 3, title: 'alpha', youtubeUrl: `https://youtu.be/${ID}`,
+    archived: false, summaryMd: KEY, processedAt: '2026-08-01T00:00:00.000Z',
+    artifacts: { summaryMd: { key: KEY, status: 'promoted' } },
+    ...over,
+  } as unknown as Video;
+}
+
+/** A replica: the real local metadata store over a temp dir, plus the blob store under test. */
+async function side(blob: BlobStore = new InMemoryBlobStore()): Promise<Side> {
+  const p = localPrincipal(tmp());
+  await store.setPlaylistMeta(p, PLAYLIST_META);
+  return { store, p, blob };
+}
+
+/** A loser side that already holds a row for ID, so `updateVideoFields` has something to patch. */
+async function loserSide(blob: BlobStore = new InMemoryBlobStore()): Promise<Side> {
+  const s = await side(blob);
+  await s.store.claimVideoSlot(s.p, ID, 3);
+  await s.store.upsertVideo(s.p, video({ summaryMd: null } as Partial<Video>));
+  return s;
+}
+
+/** 18c2 — the read-back reports `absent` although promoteIfAbsent resolved. Not constructible by
+ *  timing, so it is injected: everything else is the real in-memory adapter. */
+class AbsentOnReadBack extends InMemoryBlobStore {
+  async tryGet(): Promise<BlobRead> { return { ok: false, reason: 'absent' }; }
+}
+
+// ---------------------------------------------------------------------------
+// Step 1's protocol — copyAdditiveVideo
+// ---------------------------------------------------------------------------
+
+it('behavior 18 — occupant is BYTE-IDENTICAL under the aliasing form: SUCCEEDS, stored name untouched', async () => {
+  // The crash-resume case. Refusing here stalls the video forever.
+  const NFC = '003_café.md'.normalize('NFC');
+  const NFD = '003_café.md'.normalize('NFD');
+  const r = await side(new LocalFsBlobStore());
+  await r.blob.put(r.p, NFC, Buffer.from('body', 'utf8'), 'text/markdown');
+
+  await expect(copyAdditiveVideo(
+    r.store, r.p, r.blob, PLAYLIST_META, video({ summaryMd: NFD }), 'body',
+  )).resolves.toBeUndefined();
+
+  // EXACTLY one .md, under the STORED name: `toContain(NFC)` alone would also pass on a
+  // normalization-SENSITIVE volume, where the link would have created a SECOND file.
+  const md = (await fs.promises.readdir(r.p.indexKey)).filter((n) => n.endsWith('.md'));
+  expect(md).toEqual([NFC]);
+});
+
+it('behavior 18b/18c — occupant has DIFFERENT bytes: REFUSES, occupant intact', async () => {
+  const r = await side();
+  await r.blob.put(r.p, KEY, Buffer.from('occupant', 'utf8'), 'text/markdown');
+
+  await expect(copyAdditiveVideo(
+    r.store, r.p, r.blob, PLAYLIST_META, video(), 'newcomer',
+  )).rejects.toThrow(/already occupied by DIFFERENT content/);
+
+  expect((await r.blob.get(r.p, KEY))!.toString('utf8')).toBe('occupant');
+});
+
+it('behavior 18c2 — a read-back of `absent` REFUSES: that is a fault, not a resume', async () => {
+  const r = await side(new AbsentOnReadBack());
+
+  await expect(copyAdditiveVideo(
+    r.store, r.p, r.blob, PLAYLIST_META, video(), 'newcomer',
+  )).rejects.toThrow(/could not confirm/);
+});
+
+it('behavior 19 — an UNREADABLE read-back is treated as OCCUPIED, not absent', async () => {
+  const blob = new InMemoryBlobStore();
+  blob.failReads(KEY);                       // in-memory fault injection
+  const r = await side(blob);
+
+  await expect(copyAdditiveVideo(
+    r.store, r.p, r.blob, PLAYLIST_META, video(), 'newcomer',
+  )).rejects.toThrow(/could not confirm/);
+});
+
+// ---------------------------------------------------------------------------
+// Step 3's guard — transferClassA
+// ---------------------------------------------------------------------------
+
+/** The winner always advertises KEY and holds WINNER_BODY at it. */
+async function winnerSide(): Promise<Side> {
+  const w = await side();
+  await w.blob.put(w.p, KEY, Buffer.from(WINNER_BODY, 'utf8'), 'text/markdown');
+  return w;
+}
+
+it('behavior 18g — the loser row NAMES this address: overwrites', async () => {
+  const winner = await winnerSide();
+  const loser = await loserSide();
+  await loser.blob.put(loser.p, KEY, Buffer.from('loser divergent body', 'utf8'), 'text/markdown');
+
+  await expect(transferClassA(winner, loser, video(), ID, video({ summaryMd: KEY })))
+    .resolves.toBeDefined();
+
+  expect((await loser.blob.get(loser.p, KEY))!.toString('utf8')).toBe(WINNER_BODY);
+});
+
+it('behavior 18h — loser row names a DIFFERENT address, destination OCCUPIED: REFUSES', async () => {
+  const winner = await winnerSide();
+  const loser = await loserSide();
+  await loser.blob.put(loser.p, KEY, Buffer.from('someone else', 'utf8'), 'text/markdown');
+
+  await expect(transferClassA(winner, loser, video(), ID, video({ summaryMd: 'other.md' })))
+    .rejects.toThrow(/Refusing/);
+
+  expect((await loser.blob.get(loser.p, KEY))!.toString('utf8')).toBe('someone else');
+});
+
+it('behavior 18h — loser row names a DIFFERENT address, destination UNOCCUPIED: WRITES', async () => {
+  const winner = await winnerSide();
+  const loser = await loserSide();
+
+  await expect(transferClassA(winner, loser, video(), ID, video({ summaryMd: 'other.md' })))
+    .resolves.toBeDefined();
+
+  expect((await loser.blob.get(loser.p, KEY))!.toString('utf8')).toBe(WINNER_BODY);
+});
+
+it('behavior 19 — an UNREADABLE destination counts as OCCUPIED', async () => {
+  const winner = await winnerSide();
+  const blob = new InMemoryBlobStore();
+  const loser = await loserSide(blob);
+  blob.failReads(KEY);
+
+  await expect(transferClassA(winner, loser, video(), ID, video({ summaryMd: 'other.md' })))
+    .rejects.toThrow(/could not confirm/);
+});
+
+it('behavior 18i/18k — the ownership test is canonicallyEqualName, not byte equality', async () => {
+  // An NFD-form row claiming the NFC-form key is the SAME claim (18i); a null claim is not (18k).
+  const NFC = '003_café.md'.normalize('NFC');
+  const NFD = '003_café.md'.normalize('NFD');
+  const winner = await side();
+  await winner.blob.put(winner.p, NFC, Buffer.from(WINNER_BODY, 'utf8'), 'text/markdown');
+
+  const owned = await loserSide();
+  await owned.blob.put(owned.p, NFC, Buffer.from('loser divergent body', 'utf8'), 'text/markdown');
+  await expect(transferClassA(
+    winner, owned, video({ summaryMd: NFC }), ID, video({ summaryMd: NFD }),
+  )).resolves.toBeDefined();
+  expect((await owned.blob.get(owned.p, NFC))!.toString('utf8')).toBe(WINNER_BODY);
+
+  const unowned = await loserSide();
+  await unowned.blob.put(unowned.p, NFC, Buffer.from('someone else', 'utf8'), 'text/markdown');
+  await expect(transferClassA(
+    winner, unowned, video({ summaryMd: NFC }), ID, video({ summaryMd: null } as Partial<Video>),
+  )).rejects.toThrow(/Refusing/);
+  expect((await unowned.blob.get(unowned.p, NFC))!.toString('utf8')).toBe('someone else');
+});
+```
+
+- [ ] **Step 2: Implement the ADDITIVE protocol in `copyAdditiveVideo`** — the step v2 left with no code
 
 ⛔ **Round-1 H2 / round-2 M5.** v2 stated this step as one sentence of prose — no file, no line, no
 signature — for five behaviors on the money path, while the step beside it quoted real code. Here is
@@ -2408,47 +2959,6 @@ unchanged.
     // STORED name is preserved, which is what 18 asserts. Refusing here would stall the video
     // forever.
     wroteBlob = true;
-```
-
-- [ ] **Step 2: Write the failing tests for Step 1** — INTEGRATION
-
-`seed` and `readdirNames` (round-2 H6: 0 occurrences each) are replaced by things that exist:
-`putCloudBlob(ctx, key, body, contentType)` / `ctx.localBlob.put(...)` for seeding, and
-`fs.promises.readdir(ctx.playlistDataRoot)` for the on-disk name.
-
-```ts
-it('behavior 18 — occupant is BYTE-IDENTICAL under the aliasing form: SUCCEEDS, stored name untouched', async () => {
-  // The crash-resume case. Refusing here stalls the video forever.
-  const NFC = '003_café.md'.normalize('NFC');
-  const NFD = '003_café.md'.normalize('NFD');
-  await ctx.localBlob.put(ctx.localPrincipal, NFC, Buffer.from('body', 'utf8'), 'text/markdown');
-  await expect(copyAdditiveVideo(
-    ctx.local, ctx.localPrincipal, ctx.localBlob, PLAYLIST_META,
-    { ...VIDEO, summaryMd: NFD } as Video, 'body',
-  )).resolves.toBeUndefined();
-  expect(await fs.promises.readdir(ctx.playlistDataRoot)).toContain(NFC);   // the STORED name
-});
-
-it('behavior 18b/18c — occupant has DIFFERENT bytes: REFUSES, occupant intact', async () => {
-  await ctx.localBlob.put(ctx.localPrincipal, KEY, Buffer.from('occupant', 'utf8'), 'text/markdown');
-  await expect(copyAdditiveVideo(/* …same shape, mdBody 'newcomer' … */))
-    .rejects.toThrow(/already occupied by DIFFERENT content/);
-  expect((await ctx.localBlob.get(ctx.localPrincipal, KEY))!.toString('utf8')).toBe('occupant');
-});
-
-it('behavior 18c2 — a read-back of `absent` REFUSES: that is a fault, not a resume', async () => {
-  // InMemoryBlobStore with the final deleted between promoteIfAbsent and the read-back is not
-  // constructible; use a decorator whose tryGet reports absent once. Same shape as
-  // FailPromoteBlobStore (helpers/cloud.ts:168).
-  await expect(copyAdditiveVideo(/* …toBlob: absentOnReadBack(store)… */))
-    .rejects.toThrow(/could not confirm/);
-});
-
-it('behavior 19 — an UNREADABLE read-back is treated as OCCUPIED, not absent', async () => {
-  const store = new InMemoryBlobStore();
-  store.failReads(KEY);                       // in-memory fault injection, :60
-  await expect(copyAdditiveVideo(/* …toBlob: store… */)).rejects.toThrow(/could not confirm/);
-});
 ```
 
 - [ ] **Step 3: Implement the CLASS-A LOSER-RECORD GUARD — behaviors 18g / 18h / 19**
@@ -2525,40 +3035,16 @@ if (canonicallyEqualName(loserVideo?.summaryMd ?? null, key)) {
 A throw here is caught per-video at `:812-814` and advances no baseline, so the transfer is retried
 next run — which is correct: nothing was written.
 
-- [ ] **Step 4: Assert both branches** — INTEGRATION
+- [ ] **Step 4: Re-run the file — GREEN** — UNIT: `npx tsc --noEmit && npx jest tests/lib/cloud-sync/additive-protocol.test.ts`.
+      **Expected, MEASURED: 9 passed / 9.** The five `transferClassA` cases are the second half of
+      the Step-1 file, under its `Step 3's guard` heading, because they share the `side()` /
+      `loserSide()` / `video()` fixture. `loserSide()` claims a slot and upserts a row first,
+      because `updateVideoFields` is a bare UPDATE that silently affects zero rows otherwise — the
+      same hazard round-4 H1 documented for additive creates.
 
-```ts
-it('behavior 18g — the loser row NAMES this address: overwrites', async () => {
-  await expect(transferClassA(winner, loser, wv, ID, { ...lv, summaryMd: KEY })).resolves.toBeDefined();
-  expect((await loser.blob.get(loser.p, KEY))!.toString('utf8')).toBe(WINNER_BODY);
-});
-
-it('behavior 18h — loser row names a DIFFERENT address, destination OCCUPIED: REFUSES', async () => {
-  await loser.blob.put(loser.p, KEY, Buffer.from('someone else', 'utf8'), 'text/markdown');
-  await expect(transferClassA(winner, loser, wv, ID, { ...lv, summaryMd: 'other.md' }))
-    .rejects.toThrow(/Refusing/);
-  expect((await loser.blob.get(loser.p, KEY))!.toString('utf8')).toBe('someone else');
-});
-
-it('behavior 18h — loser row names a DIFFERENT address, destination UNOCCUPIED: WRITES', async () => {
-  await expect(transferClassA(winner, loser, wv, ID, { ...lv, summaryMd: 'other.md' })).resolves.toBeDefined();
-});
-
-it('behavior 19 — an UNREADABLE destination counts as OCCUPIED', async () => {
-  const store = new InMemoryBlobStore(); store.failReads(KEY);
-  await expect(transferClassA(winner, { ...loser, blob: store }, wv, ID, { ...lv, summaryMd: 'other.md' }))
-    .rejects.toThrow(/could not confirm/);
-});
-
-it('behavior 18i/18k — the ownership test is canonicallyEqualName, not byte equality', async () => {
-  // An NFD-form row claiming the NFC-form key is the SAME claim (18i); a null claim is not (18k).
-  await expect(transferClassA(winner, loser, wv, ID, { ...lv, summaryMd: KEY.normalize('NFD') }))
-    .resolves.toBeDefined();
-  await loser.blob.put(loser.p, KEY, Buffer.from('someone else', 'utf8'), 'text/markdown');
-  await expect(transferClassA(winner, loser, wv, ID, { ...lv, summaryMd: null } as Video))
-    .rejects.toThrow(/Refusing/);
-});
-```
+⚠ **Round-3 Claude M4 — the order of these steps is now tests-first.** v3 had Step 1 implement and
+Step 2 test, for eleven money-path behaviors, which is TDD inverted; the RED table in Step 1 is what
+running them first actually produced.
 
 - [ ] **Step 5: Write the §4 gate derivation script (behavior 20) — WITH A BODY, AND POINTED AT ITS SUBJECT**
 
@@ -2700,7 +3186,7 @@ exits 0 whatever happens — in this very step. And `main()` is run **by exit co
 - [ ] **Step 7: Commit**
 
 ```bash
-git add lib/cloud-sync/sync-run.ts scripts/check-encoder-gate-sql.py tests/integration/cloud-sync/
+git add lib/cloud-sync/sync-run.ts scripts/check-encoder-gate-sql.py tests/lib/cloud-sync/
 git commit -m "feat(#36): the additive-create protocol and the section-4 gate derivation (behaviors 18-19, 20)"
 ```
 
@@ -2804,12 +3290,13 @@ set -e; for c in check-docs check-roadmap-consistency check-test-counts check-pr
 
 ---
 
-## Self-Review — v3, and the disposition of every finding from both rounds
+## Self-Review — v4, and the disposition of every finding from all three rounds
 
 **The count, enumerated rather than recalled.** Counted by walking the four review documents and
 listing every finding heading: round 1 = **25** (Claude 4 Blocking + 4 High + 7 Medium + 4 Low = 19;
 Codex 4 Blocking + 2 Medium = 6). Round 2 = **33** (Claude 3 + 7 + 8 + 6 = 24; Codex 7 Blocking +
-2 High = 9). **Total 58.**
+2 High = 9). Round 3 = **6 from Codex** (3 Blocking + 1 High + 1 Medium + 1 Low) and **0 Blocking
+from Claude**, which CONVERGED. **Total 64.**
 
 **FIXED means the CODE in this document changed, not the comment.** v2's self-review marked round-1
 H3 and H4 FIXED and both were fixed only in prose — the comment said one thing and the code below it
@@ -2835,7 +3322,7 @@ one."* Every FIXED row below names the section of v3 that carries the changed co
 | C-M5 | `deletePrefix` listed, never modified | **FIXED** — T2 Step 3 shows the exact line; behavior 11's test asserts it reaches an encoded dir; **executed** |
 | C-M6 | T12's sync-run insertion point unstated; the obvious one is dead | **FIXED** — T12 Step 4(a) puts it INSIDE `if (!rec.ok)` above the generic throw at `:754`, and says why appending is dead |
 | C-M7 | Commit after a slice narrower than the blast radius | **FIXED** — T4 Step 4 runs `npm test`; every task now runs `tsc` + the suite that contains its blast radius |
-| C-L1 | T7's rollout count recalled | **FIXED** — re-counted: **42** (3 prod + 39 test) across **11** files, with the per-file breakdown and the method |
+| C-L1 | T7's rollout count recalled | **FIXED — 41** (3 prod + 38 test) across **11** files, per-file breakdown + method stated. ⚠ v4 first wrote **42**, having counted a test TITLE (`it('writeModelEnvelope overwrites…')`, `model-store-cloud.test.ts:52`) as a call — the identical error the coordinator made and corrected earlier the same day. **A call site is the identifier followed by `(` OUTSIDE a string literal, excluding imports, comments and the two definitions.** Stated here because this number has now been got wrong three times |
 | C-L2 | Sweeps described as covering, stride past 97% | **FIXED** — T1's is labelled a SAMPLE with its measured coverage; T4's behavior 27 is now **stride 1** (3,479,131 iterations, executed) with the timeout that requires |
 | C-L3 | Three test bodies un-executable, fixtures elided | **FIXED** — T8 Step 1 builds `sides()`/`seedEnvelope`; T11 and T12 use real `runSync(deps, opts)` calls; T12 Step 1 has a four-row fixture table |
 | C-L4 | T5's target file mocks the module T5 tests | **FIXED by retargeting** — T5 goes to `share-serve.test.ts`, which has no module mock and already carries `seedDoc`/`mintDirect` |
@@ -2889,13 +3376,47 @@ one."* Every FIXED row below names the section of v3 that carries the changed co
 | H1 | T12's insertion point can route the refusal behind an unconditional throw | **FIXED** — see C-M6. Codex's exact prescription is what T12 Step 4 states, except that the `skipped-unservable` arm needs no sync-run branch at all now that the report is row-derived |
 | H2 | T4 does not dispose the five flips, incl. the two NFKC does not close | **FIXED** — see C-M2 |
 
-### DEFERRED — three items, each with its reason
+### Round 3 — the halves SPLIT: Codex NOT CONVERGED (3 Blocking + 1 High + 2 lower), Claude CONVERGED (0 Blocking)
+
+Both halves re-ran v3's executable claims and both found them holding; that part is settled and was
+not touched. The dispute was one class, adjudicated by the coordinator as **real, and a WRITING
+problem rather than a reviewing one**: four test-fixture blocks that do not compose. **v4's answer
+is that all four were written, RUN, and their measured output pasted into the step.**
+
+| # | Finding | v4 disposition |
+|---|---|---|
+| C-B1 | T10's money-guard test is knowingly impossible | **FIXED** — the fixture is real (a declared seam), the prose escape hatch is DELETED, and the decision is recorded instead of deferred. RED 1/2 → GREEN 2/2 on the live stack |
+| C-B1b | *(found by executing C-B1's fix)* T10's `ledgerTotal()` assertion is VACUOUS — the handler never touches `spend_ledger` | **FIXED** — replaced by the provider-call assertions, with the migration line numbers that prove the ledger cannot move here |
+| C-B2 | T12's four cells are `/* … */` placeholders | **FIXED** — four real cells on the existing file's own helpers. RED 3/4 (each reaching `relocated`, i.e. the insertion point) → GREEN 4/4 |
+| C-B2b | *(found by executing C-B2's fix)* the guard flips ONE existing case | **FIXED** — new T12 Step 4 disposes of it; blast radius MEASURED across the whole unit suite: exactly **1** of the repo's 2,703 tests |
+| C-B3 | T13's additive-protocol tests are comment-only calls | **FIXED** — a complete file, RED 6/9 → GREEN 9/9; behavior 18's assertion strengthened so it cannot pass on a normalization-sensitive volume; the file MOVED to the unit suite, because it needs no Supabase and `test:integration` is not in CI |
+| C-H1 | T8's fixture imports the wrong path and uses ~11 undeclared symbols | **FIXED** — a complete file importing `@/tests/integration/helpers/cloud` (what its sibling `e2e.int.test.ts:15-18` uses). RED 3/7 → GREEN 7/7. **The 18j fixture became TWO cases**: v3's single one only reached the `ship` arm, and the DELETE arm — the one round-1 H3 is about — was measured deleting the other video's paid model (`envelope after = null`) |
+| C-M1 | The full-sweep count is mislabeled "iterations" | **FIXED** — re-run independently this round: **4,448,256 loop iterations / 3,479,131 non-empty slug assertions / 969,125 empty slugs skipped / 0 violations**. All four agree with Codex's re-run. ⚠ **The SPEC inherits the same wording and is NOT edited — it is closed.** Recorded here so it is not lost |
+| C-L1 | `helpers/cloud.ts:132` is off by one | **FIXED** — `:131` |
+| Cl-M4 | Task 13 inverts TDD — Step 1 implements, Step 2 tests, for eleven money-path behaviors | **FIXED** — T13's steps are reordered tests-first, which is also what produced its RED table |
+| Cl-M2 | T10 calls `ledgerTotal()`, which has 0 occurrences | **FIXED** — the T10 file declares every helper it uses; and the assertion it was serving turned out to be vacuous anyway (C-B1b) |
+| Cl-L1..L6 | 6 Lows: 9 stale `file:line` citations (one by 82), two "verbatim" blocks with comments stripped, `MODEL_KEY` characterised, T5's Files line vs its Step 3 | **L3 and L5 FIXED** (both were one line and both were verified while executing). **L1, L2, L4, L6 CARRIED FORWARD, not silently dropped** — round 3's remit was the four fixture blocks, and Claude's own verdict classes all six as *would-be-nice* with no executable consequence. They are worth a pass before dispatch |
+| — | The brief said 88 steps | **NOT A PLAN DEFECT** — v3 had **87**, counted, and the number lives only in the brief. v4 has **88**: T12 gained a step (dispose of the flipped case) and T13 kept its seven after the reorder. `python3 -c "print(sum(1 for l in open('docs/superpowers/plans/2026-08-15-cloud-blob-key-encoding.md') if l.startswith('- [ ] **Step')))"` — deliberately NOT baked into prose, because a hardcoded count that nothing checks goes stale silently |
+
+**What v4 did NOT change.** The decomposition, ordering, interfaces and behavior mapping — held for
+a third round, by both halves. No production snippet outside the four fixtures was rewritten.
+
+### DEFERRED — ONE item. Two of v3's three were CLOSED in round 3, by execution
 
 | Item | Why, and what an implementer should do |
 |---|---|
 | **The Supabase `promoteIfAbsent` adapter is the one unexecuted snippet** | It needs the live stack. Mitigation, not hope: its risky half — *"HTTP 409 means the object exists"* — was **removed**, replaced by re-reading the final, which is the recovery `promote()` at `:118-126` already ships and which is true whatever the API returns. T6 Step 5 runs the shared contract against it on the live stack; if the contract fails there, the plan is wrong and the implementer stops (Global Constraint). |
-| **T10's fixture may be unreachable** | After T3 + T4, behavior 27 proves no `slugify` output fails the predicate — which is exactly what makes the mint guard a **backstop**. A test that claims to drive it must construct a `baseName` the predicate rejects, and `'x'.repeat(400)` does not (slugify caps at 60). T10 Step 1 states this in full and gives the fallback: convert it to a unit test of the predicate over `${padSerial(n)}_${slugify(t)}.md`, and say so in the file. **This is an open question this plan does not settle** — it is written down rather than hidden inside a fixture that silently passes. |
-| **T12 behavior 26d3's fixture may not be constructible as described** | The row needs a cloud key that is servable *before* renumbering and unservable *after*, via `applySerial`. T12 Step 1's table gives the intended shape and an explicit fallback (introduce the unservable property by character rather than by length) plus the instruction to say which was used. The assertion under test is `origin === 'cloud-key'`, and both shapes reach it. |
+
+**CLOSED — ~~T10's fixture may be unreachable~~.** It is unreachable, that is now stated as a fact
+rather than a worry, and the DECISION was made: an explicit test-only seam (a `jest.mock` factory
+that `requireActual`s the real predicate and overrides one sentinel slug), plus a control case
+proving the seam is narrow. Written, run RED, run GREEN. **A second defect fell out of executing it:
+v3's `ledgerTotal()` assertion was vacuous** — see T10 Step 1.
+
+**CLOSED — ~~T12 behavior 26d3's fixture may not be constructible~~.** It is constructible with no
+invented character: `padSerial(1000)` is four digits where `padSerial(7)` is three, so renumbering a
+cloud key that sits exactly ON the 131-code-point bound pushes it one past. Measured; the fallback
+and the "say which you used" instruction are deleted.
 
 ### Type consistency, re-verified against the repo
 
