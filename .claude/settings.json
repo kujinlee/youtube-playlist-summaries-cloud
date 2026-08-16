@@ -17,6 +17,15 @@
             "statusMessage": "Checking whether this PR wants an explainer..."
           }
         ]
+      },
+      {
+        "matcher": "Agent|Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/block-implementation-before-plan-gate.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
