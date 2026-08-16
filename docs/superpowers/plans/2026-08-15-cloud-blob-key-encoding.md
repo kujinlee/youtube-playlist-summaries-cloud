@@ -165,17 +165,17 @@ negative — that is what produced v1's error on `collectObjectPaths`).
 
 | v2 said | Reality | v3 |
 |---|---|---|
-| `ledgerTotal` ❌ missing | `Ctx.spendLedgerTotal()` **exists** — `tests/integration/helpers/cloud.ts:157`, reads `spend_ledger` via the admin client | use it |
-| `readVideo` ✅ production | **collides.** `sync-run.ts:80` is module-private; the *exported* `readVideo` (`lib/storage/worker-persistence.ts`) takes `(client, playlistId, videoId)` — a different function | use `cloudVideoRecord(ctx)` / `localVideoRecord(ctx)`, which **exist** (`helpers/cloud.ts:468`, `:473`) |
+| `ledgerTotal` ❌ missing | `Ctx.spendLedgerTotal()` **exists** — `tests/integration/helpers/cloud.ts:153`, reads `spend_ledger` via the admin client | use it |
+| `readVideo` ✅ production | **collides.** `sync-run.ts:80` is module-private; the *exported* `readVideo` (`lib/storage/worker-persistence.ts`) takes `(client, playlistId, videoId)` — a different function | use `cloudVideoRecord(ctx)` / `localVideoRecord(ctx)`, which **exist** (`helpers/cloud.ts:471`, `:476`) |
 | `mintShareToken` ❌ missing | `mintDirect(ownerId, playlistId, videoId, over?)` **exists** in `tests/integration/share-serve.test.ts:17`, which is where T5's tests go | use it |
-| `seedEnvelope` ❌ missing | `writeModelEnvelope(...)` through a service-role `SupabaseBlobStore` **is** the seeder — the pattern is `share-route.test.ts:78` `seedFreshModel` | file-local helper in T8 |
+| `seedEnvelope` ❌ missing | `writeModelEnvelope(...)` through a service-role `SupabaseBlobStore` **is** the seeder — the pattern is `share-route.test.ts:79` `seedFreshModel` | file-local helper in T8 |
 | `ingestLocal` ❌ missing | not needed — see T14, which drives the real local write instead of inventing a pipeline entry point | dissolved |
 | `fakeStoreHolding` ❌ missing | needed, but v2's signature was wrong (round-2 H7): returning a `BlobStore` means `store.list` is the **fake's** list and the code under test never runs | T2-local, corrected signature |
 | `callWith` ❌ missing | needed, one consumer | file-local helper in T9 |
 | `spyStore` ❌ missing | needed, one consumer, and it must be **injectable** | Step 3 below + a file-local decorator in T11 |
 | `storeWith` ✅ | `tests/lib/html-doc/model-store.test.ts` (file-local) | unchanged |
-| `putBudget` ✅ | `tests/support/budget.ts:21` | unchanged |
-| `seedVideo` ✅ | `helpers/cloud.ts:378` | unchanged |
+| `putBudget` ✅ | `tests/support/budget.ts:18` | unchanged |
+| `seedVideo` ✅ | `helpers/cloud.ts:296` | unchanged |
 | `applySerial`, `assertLogicalKey`, `localPrincipal` ✅ production | correct — `lib/serial-filename.ts`, `lib/storage/blob-store.ts:87`, `lib/storage/principal.ts` | unchanged |
 | `collectObjectPaths` ✅ production | a **private class method** (`supabase-blob-store.ts:151`) — correct for T2's purpose and uncallable from a test | unchanged |
 | `serveSummary`, `ingest`, `runSummaryJob`, `EXPECTED_ONE_SUMMARY_COST`, `readdirNames`, `seed` | 0 occurrences each — v2's table did not list them at all (round-2 H6) | all four **dissolved** in T14/T13; see those tasks |
@@ -1391,22 +1391,31 @@ git commit -m "feat(#36): promoteIfAbsent on the BlobStore seam, all three adapt
 
 **The rule is attached to `serialize()`, not to a writer name.** There are two exported writers and a repo tripwire *forbids* merging them; v17 attached the requirement to one, and the cloud serve path — the writer that spends money — compiled unchanged.
 
-⚠ **Rollout cost, RE-COUNTED this session** (round-1 L1 said 43, v2 said 41 and called it recounted;
-both were wrong). Counted by walking every non-`node_modules` `.ts`/`.tsx`, matching
-`writeModelEnvelope(` / `writeModelEnvelopeWithin(`, skipping comment and import lines, and
-**subtracting the two declarations in `model-store.ts` itself** (`:46`, `:66`):
+⚠ **Rollout cost. THE NUMBER IS 41, and it has now been counted FIVE times** (round-1 L1: 43; v2: 41
+without stating a rule; v4's table: 42; round-4 Codex: 41; round-4 coordinator: 41). **v2's 41 was
+right.** THE RULE, which is the only reason the last two agree:
+
+> A call site is the identifier followed by `(` **outside a string literal**, excluding **imports,
+> comments, and the two declarations** in `model-store.ts` itself (`:46`, `:66`).
+
+Both halves of that rule have now claimed a victim. Omitting *string literals* produced 42 by
+counting the test title `it('writeModelEnvelope overwrites…')` at `tests/lib/model-store-cloud.test.ts:52`.
+Omitting *comments* also produced 42, by counting the prose mention of `writeModelEnvelope (plain
+put …)` inside the comment at `lib/html-doc/serve-doc.ts:158`. **Count with the rule or do not
+count.**
 
 | | v2 said | round 1 said | **counted now** |
 |---|---|---|---|
-| total call sites | 41 | 43 | **42** |
+| total call sites | 41 | 43 | **41** |
 | production | 3 | 3 | **3** — `generate.ts:50`, `serve-doc.ts:174`, `sync-run.ts:464` |
-| test | 38 | 39 | **39** |
+| test | 38 | 39 | **38** |
 | files | 11 | 11 | **11** (3 production + 8 test) |
 
 The 8 test files, with their counts: `rerender.test.ts` 14, `model-store.test.ts` 8,
 `serve-doc-materialize.test.ts` 5, `share-route.test.ts` 4, `model-store-cloud.test.ts` **3**,
-`html-download.test.ts` 2, `pdf-cloud.test.ts` 1, `e2e/cloud.setup.ts` 1. Expect `tsc` to name all
-42 the moment Step 3 lands. That is the mechanism working. *(`tests/e2e/cloud.setup.ts` is a
+`html-download.test.ts` 2, `pdf-cloud.test.ts` 1, `e2e/cloud.setup.ts` 1 — **which sums to 38, and
+that itemization is the check on the total.** Expect `tsc` to name all
+41 the moment Step 3 lands. That is the mechanism working. *(`tests/e2e/cloud.setup.ts` is a
 Playwright file — jest never runs it, but `tsconfig.json` `include` is `**/*.ts`, so `tsc` does.)*
 
 **Files:**
@@ -1491,7 +1500,7 @@ function serialize(envelope: ModelEnvelopeWrite): Buffer {
 Then change the `envelope` parameter type of `writeModelEnvelope` (`:49`) and
 `writeModelEnvelopeWithin` (`:70`) from `ModelEnvelope` to `ModelEnvelopeWrite`.
 
-- [ ] **Step 4: Run `tsc` and fix all 41 call sites** — `npx tsc --noEmit`. Expected: ~42 errors.
+- [ ] **Step 4: Run `tsc` and fix all 41 call sites** — `npx tsc --noEmit`. Expected: ~41 errors.
 
 The production sources for the value, all verified in scope:
 
@@ -1588,7 +1597,7 @@ import { ARTIFACTS_BUCKET } from '@/lib/supabase/storage-env';
 import { companionTransfer, type Side } from '@/lib/cloud-sync/sync-run';   // exported in T0
 import { reconcileCloudBase } from '@/lib/cloud-sync/reconcile-serial';
 import {
-  writeModelEnvelope, readModelEnvelope, type ModelEnvelopeWrite,
+  writeModelEnvelope, readModelEnvelope, MODEL_KEY, type ModelEnvelopeWrite,
 } from '@/lib/html-doc/model-store';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
 import { GENERATOR_VERSION } from '@/lib/html-doc/constants';
@@ -1623,7 +1632,7 @@ function sides(ctx: Ctx): { local: Side; cloud: Side } {
 
 /** Seed ONE side's model envelope. This is `seedEnvelope` — file-local, because
  *  `writeModelEnvelope` through that side's own store IS the seeder (the pattern at
- *  tests/integration/share-route.test.ts:78). `videoId` is explicit: it is the subject. */
+ *  tests/integration/share-route.test.ts:79). `videoId` is explicit: it is the subject. */
 async function seedEnvelope(
   side: Side, base: string, videoId: string, over: Partial<ModelEnvelopeWrite> = {},
 ): Promise<void> {
@@ -1632,6 +1641,30 @@ async function seedEnvelope(
     generatorVersion: GENERATOR_VERSION, model: MODEL_FIXTURE,
     sourceMdHash: mdHash(MD), videoId, ...over,
   } as ModelEnvelopeWrite, side.blob);
+}
+
+/** Seed a LEGACY envelope — one written BEFORE this slice, with no `videoId` property at all.
+ *
+ *  ⛔ **This CANNOT go through `writeModelEnvelope`, and round-4 Codex caught it trying to.**
+ *  T7 makes `serialize` run `ModelEnvelopeWriteSchema.parse`, where `videoId` is
+ *  `z.string().min(1)`. Passing `undefined as unknown as string` type-checks — `seedEnvelope`
+ *  casts `as ModelEnvelopeWrite`, so the cast swallows it — and then throws at RUNTIME inside the
+ *  parse, before writing anything. Behavior 18j4's test would have failed in its own setup.
+ *
+ *  The population 18j4 is about is exactly the one the new writer refuses to create, so the
+ *  fixture must write the bytes DIRECTLY. Note `videoId` is OMITTED, not set to `undefined`:
+ *  `JSON.stringify` drops an explicit `undefined` too, but omitting it says what is meant. */
+async function seedLegacyEnvelope(
+  side: Side, base: string, over: Record<string, unknown> = {},
+): Promise<void> {
+  const legacy = {
+    sourceMd: `${base}.md`, generatedAt: new Date().toISOString(), sourceSections: ['1. Intro'],
+    generatorVersion: GENERATOR_VERSION, model: MODEL_FIXTURE, sourceMdHash: mdHash(MD), ...over,
+  };
+  await side.blob.put(
+    side.p, MODEL_KEY(base),
+    Buffer.from(`${JSON.stringify(legacy, null, 2)}\n`, 'utf-8'), 'application/json',
+  );
 }
 
 /** A two-sided video with the SAME MD body on both replicas, base = ctx.videoId. */
@@ -1708,8 +1741,7 @@ it('behavior 18j2 — SHIPS when the receiver read is `unknown` (cloud loser) or
 it('behavior 18j4 — a LEGACY envelope with no videoId proceeds, and sourceMd is NOT consulted', async () => {
   const { ctx, local, cloud, base } = await twoSided();
   await seedEnvelope(local, base, ctx.videoId);
-  await seedEnvelope(cloud, base, undefined as unknown as string,
-    { sourceMd: 'wrong.md', sourceMdHash: 'stale' });
+  await seedLegacyEnvelope(cloud, base, { sourceMd: 'wrong.md', sourceMdHash: 'stale' });
   const lv = (await localVideoRecord(ctx))!;
 
   const res = await companionTransfer(local, cloud, mdHash(MD), lv);
@@ -3323,7 +3355,7 @@ one."* Every FIXED row below names the section of v3 that carries the changed co
 | C-M6 | T12's sync-run insertion point unstated; the obvious one is dead | **FIXED** — T12 Step 4(a) puts it INSIDE `if (!rec.ok)` above the generic throw at `:754`, and says why appending is dead |
 | C-M7 | Commit after a slice narrower than the blast radius | **FIXED** — T4 Step 4 runs `npm test`; every task now runs `tsc` + the suite that contains its blast radius |
 | C-L1 | T7's rollout count recalled | **FIXED — 41** (3 prod + 38 test) across **11** files, per-file breakdown + method stated. ⚠ v4 first wrote **42**, having counted a test TITLE (`it('writeModelEnvelope overwrites…')`, `model-store-cloud.test.ts:52`) as a call — the identical error the coordinator made and corrected earlier the same day. **A call site is the identifier followed by `(` OUTSIDE a string literal, excluding imports, comments and the two definitions.** Stated here because this number has now been got wrong three times |
-| C-L2 | Sweeps described as covering, stride past 97% | **FIXED** — T1's is labelled a SAMPLE with its measured coverage; T4's behavior 27 is now **stride 1** (3,479,131 iterations, executed) with the timeout that requires |
+| C-L2 | Sweeps described as covering, stride past 97% | **FIXED** — T1's is labelled a SAMPLE with its measured coverage; T4's behavior 27 is now **stride 1** (3,479,131 non-empty slug assertions, executed) with the timeout that requires |
 | C-L3 | Three test bodies un-executable, fixtures elided | **FIXED** — T8 Step 1 builds `sides()`/`seedEnvelope`; T11 and T12 use real `runSync(deps, opts)` calls; T12 Step 1 has a four-row fixture table |
 | C-L4 | T5's target file mocks the module T5 tests | **FIXED by retargeting** — T5 goes to `share-serve.test.ts`, which has no module mock and already carries `seedDoc`/`mintDirect` |
 | X-B1 | T1 property test cannot pass | duplicate of C-B4 — **FIXED** |
@@ -3356,7 +3388,7 @@ one."* Every FIXED row below names the section of v3 that carries the changed co
 | M7 | Elided fixtures; four calls with no arguments at all | **FIXED** — see C-L3 |
 | M8 | T5's target file mocks the module T5 tests | **FIXED** — see C-L4 |
 | L1 | T7's rollout count wrong in the "recounted" direction | **FIXED** — 42, counted, with the per-file breakdown |
-| L2 | T4's behavior 27 still overclaims | **FIXED** — stride 1, executed, 3,479,131 iterations |
+| L2 | T4's behavior 27 still overclaims | **FIXED** — stride 1, executed, 3,479,131 non-empty slug assertions |
 | L3 | Tech Stack says `ts-jest`; the config is `next/jest` (SWC) | **FIXED** — the header says `next/jest` (SWC), and H2's Global Constraint explains why it matters |
 | L4 | T7 Step 3 calls the read schema "unchanged" while changing it | **FIXED** — the comment now says a field is being ADDED, why it is `.optional()`, and why `.strict()` being off makes it safe |
 | L5 | Two stale cross-references from the Task 0 insertion | **FIXED** — the ordering rationale now says T5 follows T4; the File Structure table has rows for every file T0 creates or modifies |
