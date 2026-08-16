@@ -257,7 +257,38 @@ Blockings and a Medium, and **all of them were about where the check goes.**
 | Axis | Question | Structure it is about | What it missed here |
 |---|---|---|---|
 | **Vertical — dominance** | does every path to the guarded state pass through this point? | the **call graph** | a second writer function the rule named one of (**Blocking**); a third interface method the rule named two of |
-| **Horizontal — branch** | for every branch of the path this sits in, does the rule apply? | **control flow** | a helper called in two directions, guarded in both when only one was meant (**Blocking**) |
+| **Horizontal — branch** | for every branch **in the provenance of the value being guarded**, does the rule apply? | **control flow** | a helper called in two directions, guarded in both when only one was meant (**Blocking**); a guarded name with **two producers**, specified for one (**Blocking**) |
+
+> ### ⛔ ASK THE BRANCH QUESTION ABOUT THE OPERAND, NOT THE CALL SITE. This entry got it wrong first.
+>
+> **Measured 2026-08-15, and it cost a Blocking.** The first version of this entry — and the table it
+> describes — asked *"which side is the receiver?"*. That felt total, because the two known instances
+> were both **direction** defects. It is not the general question.
+>
+> The very next round found a **third** instance, in a row the table had marked **"One branch"** and
+> that an independent second reviewer had **verified as one branch**. Both verifications were correct
+> *about the direction*: the call site really was hard-wired to one side. But the **name the guard
+> tests** was assembled from **two different sources** one ternary apart —
+>
+> ```ts
+> const to = local.summaryMd
+>   ? baseOf(local.summaryMd)                              // arm A: a LOCAL filename
+>   : baseOf(applySerial(cloud.summaryMd, local.serial));  // arm B: the REMOTE key, renumbered
+> ```
+>
+> — and the design was written for arm A, three times over, including an operator message telling them
+> to rename a local file that on arm B **does not exist**.
+>
+> **The general question is: what are the branches of the VALUE this guard tests?** Direction is one
+> way a value can branch, and it is the conspicuous one because it appears in the signature. Provenance
+> is the one that hides, because both arms produce the same *type* and the ternary is upstream of the
+> guard.
+>
+> **The meta-lesson is the expensive part.** The table was built *specifically* to pre-empt a third
+> instance. It enumerated every placement, was independently verified, and a third instance walked
+> through it — because **the instrument asked a narrower question than the defect class it was built
+> for.** When a prophylactic fails, check whether it disagreed with the defect or merely asked
+> something adjacent.
 
 **Fixing the first does not prevent the second, and that is the entry.** The guard that failed on the
 branch axis had *already* been moved to satisfy dominance — it ran before the durable write, exactly as
@@ -298,8 +329,11 @@ earlier round imposed, so it satisfied both axes at once.
 1. When a reviewer says *"this rule is stated for one branch/writer of N"* **a second time**, stop
    fixing instances. Enumerate.
 2. Table it: one row per placement, one column for the branch set of its path, **one outcome per cell**.
-3. For each cell ask both *"does the rule apply here?"* and *"can this code observe which branch it is
-   on?"* The second question is where the expensive defects are.
+3. For each cell ask **three** things: *"does the rule apply here?"*, *"can this code observe which
+   branch it is on?"*, and — the one that costs a Blocking to learn — *"where does the value being
+   tested come from, and does it have more than one source?"* Name the operand in the table, not just
+   the call site: a row reading *"guards `newBase`, produced by A or B"* asks the question by itself,
+   where *"one branch"* answers a different one.
 4. Prefer placements the branch set cannot escape: a **private function with no external callers** for
    the dominance axis (a list of exported names is a count), and the **line that selects the branch**
    for the horizontal one.
