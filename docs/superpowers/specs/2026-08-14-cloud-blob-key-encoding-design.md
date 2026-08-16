@@ -1,11 +1,11 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v20**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** draft **v21**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
-**Review trail — sixteen dual rounds, a Phase 6 architecture review, a round-10 DESIGN review, and a
+**Review trail — seventeen dual rounds, a Phase 6 architecture review, a round-10 DESIGN review, and a
 credential design pass.**
-`docs/reviews/spec-blob-key-encoding-r{1..9,11..17}-{codex,claude}.md`,
+`docs/reviews/spec-blob-key-encoding-r{1..9,11..18}-{codex,claude}.md`,
 `docs/reviews/spec-blob-key-encoding-r10-codex-design.md`,
 `docs/reviews/spec-blob-key-encoding-s36-design-claude.md`,
 `docs/reviews/spec-blob-key-encoding-credential-design-pass.md`,
@@ -93,6 +93,47 @@ credential design pass.**
 > value with a producer §3.5.1b's rewritten table does not name. If the re-asked question holds, the
 > design has earned its exit from Phase 1; §3.1–§3.4 and §3.6 have been stable for several rounds and
 > neither half found anything new in them this round.
+
+> ## ⛔ ROUND 18: THE FALSIFIER FIRED — and this time it bought a SCRIPT, not a table
+>
+> **Both halves found the same missed producer** (`mdKey`'s `??` at `lib/share/serve.ts:47`, row 6),
+> and the Claude half additionally found a **Blocking the Codex half missed**: v20's own B1 fix left
+> the round-17 Blocking open through the seam, and added a duplicate set of paid blobs on the way.
+>
+> **The count that decides the response:**
+>
+> | round | missed producer | table version | severity |
+> |---|---|---|---|
+> | 15 | `transferClassA` runs in two directions | (no table yet) | Medium |
+> | 16 | the adopt guard runs in two directions | (no table yet) | **Blocking** |
+> | 17 | `newBase` comes from a **ternary** | v19's, asking about *direction* | **Blocking** |
+> | 18 | `mdKey` comes from a **`??`** | v20's, asking the *right* question | Medium |
+>
+> v20's table asked the **correct** question and was verified row-by-row by two reviewers, and a
+> producer still walked through it — one row from a defect the coordinator had just written *"a `??` is
+> two producers"* about, in the brief for that very round.
+>
+> **So the honest conclusion is the one the falsifier promised: hand-enumeration is the wrong
+> instrument, and what is owed is a script.** Noticing the *absence* of a branch, on a line you have
+> already read and understood, is not a task humans or models do reliably — but it has a mechanically
+> detectable signature, and **both** measured misses were a branch operator in the cited defining
+> expression.
+>
+> **`scripts/check-producer-enumeration.py`** now checks this table on every run. Writing it
+> immediately surfaced three defects nobody had filed: row 5's citation pointed at a signature
+> continuation line, row 6's at a function instead of an assignment, and row 3's natural citation
+> (`newBase = d.to!`) is a **bare alias** whose branch lives two lines inside another function — a
+> false negative the script now refuses rather than passes.
+>
+> **The design itself was not the problem in either round.** Every mechanism check either half ran
+> this round passed: the `oldBase` conjunct does not reopen round-14 B1, 26d3 is constructible, 26f's
+> rewritten observable discriminates, the 41 call sites held under recount, 18j8 is writable, and L5's
+> enumeration is complete.
+>
+> **Round 19's falsifier, and it is now aimed at something a script can settle:** fires to REDESIGN if
+> round 19 finds a missed producer **that `check-producer-enumeration.py` reports as PASSING** — i.e.
+> a defect in the instrument's coverage rather than in someone's attention. A miss in one of the three
+> `UNCHECKABLE-BY-DESIGN` parameter rows is **not** that: those are declared, not claimed.
 
 > ## ⛔ §3.6 WAS ESCALATED FROM FIX TO REDESIGN, AND THE REDESIGN RAN (round-9 M5 → round 10)
 >
@@ -620,10 +661,10 @@ sentence v9 wrote here was false, and it was the sentence justifying all five de
 >   call (`:101`), so a refusal **costs no money** — good. But a throw there leaves the bare reserved
 >   row that only the `PermanentTranscriptError` path rolls back (`:126-135`): the serial is consumed
 >   and the job retries to `dead_letter`.
-> - The adopt refusal (`sync-run.ts:236-238`, **above `ensureReceiverSlot`** — round-15 L1: this bullet
->   still said `:263`, the location round-13 H2 proved wrong three subsections below) is per-video,
->   caught, and **advances no baseline**, so it **re-fires on every subsequent run, forever**, until a
->   human renames the vault file. That is the right behaviour under decision ③ — the automated repair was
+> - The adopt refusal (**location: §3.5.1b row 4** — this bullet has now named a stale site three times,
+>   at rounds 13, 15 and 18, which is why it no longer names one at all) is per-video, caught, and
+>   **advances no baseline**, so it **re-fires on every subsequent run, forever**, until a human renames
+>   the vault file. That is the right behaviour under decision ③ — the automated repair was
 >   deleted — but **the error message must name the repair**, because nothing else will.
 >
 > **But this is exactly Phase 6 finding 1**, which v9 also deleted without noticing: *"a predicate whose
@@ -729,7 +770,7 @@ enumeration, not asserted**:
 >
 > Outside the seam, and correctly so: the **mint** (`lib/job-queue/summary-handler.ts:177`, `:179`)
 > writes via the `persistSummary` **RPC**, not `MetadataStore`; the **local** pipeline
-> (`pipeline.ts:265`) is not a cloud advertisement and §3.4 argues at length that the local path never
+> (`pipeline.ts:265` **and `:339`** — round-18 L3: this note named one write where there are two) is not a cloud advertisement and §3.4 argues at length that the local path never
 > needed this guard; and `consistency.ts:34`/`:40` is `writeArtifact`, which has **zero production
 > callers**. *(Round-15 L3: `:157` is the `summaryMd` field of the record literal, not the persist call.
 > The claim was right, the line was not.)*
@@ -825,21 +866,64 @@ defect round-12 Codex found in §3.6.3)*:
    > paid summary's last remaining route to the user — **permanently**, since no baseline advances and
    > the state reproduces itself. That is round-16 B1's harm arriving through a different door.
    >
-   > **FIX, part 1 — refuse only when the relocation would destroy a WORKING advertisement.** Guard on
-   > the old base as well as the new:
+   > ### ⛔ ROUND-18 B1 — v20's fix DID NOT FIX IT, and made the failure more expensive
    >
-   > ```ts
-   > if (isServableSummaryKey(`${oldBase}.md`) && !isServableSummaryKey(`${newBase}.md`))
-   >   return { ok: false, reason: 'unservable-base', key: `${newBase}.md`, origin };
+   > v20 scoped the in-memory refusal so arm B proceeds. **But `reconcileCloudBase` writes its row
+   > through `updateVideoFields` (`reconcile-serial.ts:324`) — which §3.5.1's own entrance table lists
+   > as going through the SEAM**, and the seam refuses unservable keys with no exemption anywhere:
+   >
+   > ```
+   > in-memory guard  → passes (v20's conjunct)
+   > :281-290         → EVERY PAID BLOB COPIED to the new base
+   > :324 the seam    → REFUSES the row write
+   > → 'metadata-failed' → throw at :756 → no baseline
+   > :771 reconcileClassA / :793 copyToLocal → STILL NEVER REACHED
    > ```
    >
-   > This **keeps** the refusal on arm B in the one case that matters: a *servable* cloud key whose
-   > renumbering pushes it past 131 code points, which `applySerial` can do by widening the prefix or
-   > adding one where the key had none.
+   > Identical harm to round-17 B1 — the paid summary unreachable through every product path — **plus a
+   > full duplicate set of paid blobs at a base nothing will ever advertise**, and an operator message
+   > that no longer names the cause. **A regression against v19 on cost:** v19 refused in memory and
+   > copied nothing.
+   >
+   > **And this document states the failure mode two lines from where v20 implemented it** — placement 2
+   > exists *"so no blob is copied and nothing is deleted, rather than relying on the seam to reject
+   > after the copy"*. **v20 made placement 2 NARROWER than the seam it front-runs, and a guard narrower
+   > than the one it front-runs is not a front-run.**
+   >
+   > **Why `mechanism`:** one rule — *an unservable key must not become a cloud advertisement* — was
+   > stated in two places with **different predicates** and no account of which wins. That is the
+   > *two mechanisms for one concern* shape this project has already paid for once.
+   >
+   > **FIX, part 1 — the conjunct discriminates refuse-vs-SKIP, not refuse-vs-proceed.** The
+   > relocation's purpose is to keep the cloud's derived-blob addresses in step with local's serial;
+   > when the resulting key **cannot be advertised at all**, there is nothing to keep in step:
+   >
+   > | old base | new base | outcome |
+   > |---|---|---|
+   > | servable | servable | **relocate** — today's normal path |
+   > | servable | unservable | **refuse** `unservable-base` — protect a working advertisement (26d3). `applySerial` can do this by widening the serial prefix past 131 code points |
+   > | unservable | servable | **relocate** — a genuine repair, and the seam accepts it. **No behavior covered this cell before round 18** (26d4) |
+   > | unservable | unservable | **SKIP** — `{ ok: true, action: 'skipped-unservable' }`. No copy, no seam write, and `reconcileClassA` → `copyToLocal` runs, which is exactly what round-17 B1 wants |
+   >
+   > **⚠ The fix gives this guard a SECOND operand (round-18 L2).** It now tests `oldBase` as well as
+   > `newBase`, and §3.5.1b row 3 names only `newBase`. `oldBase = d.from!`, aliased from
+   > `baseOf(cloudVideo.summaryMd)` (`reconcile-serial.ts:151`) — **one producer, no branch**, which is
+   > why it is safe; but a guarded operand absent from the table is exactly what the table exists to
+   > prevent. Row 3's value cell names both.
+   >
+   > **This never asks the seam to accept an unservable key, so §3.5.1b row 1 stays BLIND and stays
+   > TRUE** — the design's strongest claim, and the one v20 quietly broke. The skip must be **visible,
+   > not silent**: push the unrepaired divergence into `report.errors`, the shape
+   > `sync-run.ts:713-716` already uses for the corrections-unresolved path. A new `ok: true` action is
+   > a closed-union addition, mechanically identical to the refusal variant round-15 M3 validated.
    >
    > **FIX, part 2 — the message names the right subject per arm.** Carry the producer in the variant:
    > **`{ ok:false; reason:'unservable-base'; key: string; origin: 'vault-filename' | 'cloud-key' }`**
-   > (`origin` is `localVideo.summaryMd != null ? 'vault-filename' : 'cloud-key'`). `sync-run.ts`'s
+   > (**round-18 L1: derive `origin` from the SAME branch as `to`** — ideally by returning it from
+   > `describeDivergence` alongside `to`. v20 specified `localVideo.summaryMd != null`, which is
+   > *nullishness*, while the ternary at `:152` branches on **truthiness**: `summaryMd: ''` takes arm B
+   > in the code and would be reported `vault-filename`. Two copies of one condition that disagree on
+   > the empty string — the same read-to-the-end defect, inside the fix for a read-to-the-end defect). `sync-run.ts`'s
    > explicit branch then says either *"rename `<vault file>`"* or *"the cloud key `<key>` cannot be
    > relocated; it is unservable and has no local counterpart to rename."* **Behavior 26d gains a second
    > row for arm B**, or the `metadata-failed` mutation stays green against half the branch set.
@@ -878,8 +962,8 @@ defect round-12 Codex found in §3.6.3)*:
    > "no change to the caller" claim is DELETED** — it was true of the mechanics and false of the
    > requirement, and this is the third consecutive version to ship a rule contradicted elsewhere in the
    > same document (round-12 Codex found it in §3.6.3, round-15 H2 in the placement count).
-3. **The adopt path is guarded in the CALLER — see §3.5.1b row 4, which is the ONE place this location
-   is stated.** *(Round-17 M2: v19 moved this guard and left three sentences naming the old site
+3. **The adopt path is guarded in the CALLER. §3.5.1b row 4 is the ONE place the location is stated —
+   and v20 said that while stating it nowhere, which is round-18 M2.** *(Round-17 M2: v19 moved this guard and left three sentences naming the old site
    `sync-run.ts:236-238` — the location this same section calls unimplementable. That bullet had
    already been corrected twice, at round 13 and round 15. **The defect is not the stale line; it is
    that one location was restated in four places.** State it once, point at it three times.)* It
@@ -1001,15 +1085,28 @@ refused identically, so the count cannot matter) or **provenance-dependent** (th
 message, or the correctness of refusing differs by arm)? **Row 3's defect was being provenance-dependent
 while the table recorded it as blind.**
 
-| # | Placement | Value guarded | Producers of that value | Blind or dependent |
+| # | Placement | Value guarded — **cited at its DEFINING line** | Producers of that value | Blind or dependent |
 |---|---|---|---|---|
-| 1 | **The metadata seam** — `videoDataPayload` | `payload.summaryMd`, `payload.artifacts.summaryMd.key` | **Many, deliberately unenumerated** — every caller of the three write methods | **BLIND.** Refusing identically regardless of origin *is the seam's entire purpose*; §3.5.1's claim is that the producer count stops mattering here, and nowhere else |
-| 2 | **The mint** | `baseName` (`summary-handler.ts:96`) | **One** — `${padSerial(serial)}_${slugify(payload.title)}`, from the YouTube title | BLIND (vacuously) |
-| 3 | **`reconcileCloudBase`** (in memory) | **`newBase`** = `describeDivergence().to` (`:186`) | **TWO** (`reconcile-serial.ts:152-154`) — **arm A** `baseOf(local.summaryMd)`, a *vault filename*; **arm B** `baseOf(applySerial(cloud.summaryMd, local.serial))`, the *cloud key renumbered*, reached when the local row has a serial but **no MD** | **DEPENDENT** ← round-17 **B1**. The justification (*"a servable artifact is about to be destroyed"*) and the repair message (*"rename the vault file"*) are both true of arm A only |
-| 4 | **The adopt** | `video.summaryMd` of the one-sided video | **TWO**, and here provenance coincides with direction: the sender is local (vault name) or cloud (cloud key), per `presentIsLocal` (`sync-run.ts:620`) | **DEPENDENT** ← round-16 **B1**. Cloud receiver only |
-| 5 | **The seam refusal reaching `transferClassA`** | the winner's key written onto the loser | **TWO** — `copyToCloud` passes `(localSide, cloudSide)` (`:782`), `copyToLocal` passes `(cloudSide, localSide)` (`:793`) | **DEPENDENT** ← **26c3**, round 15. Cloud loser only |
-| 6 | **The share guard** | `mdKey` from `getShareServeContext` (`lib/share/serve.ts:13`) | **One** — the cloud row's `summaryMd` | BLIND |
-| 7 | **`serialize`** — the write-time schema | the **presence of `videoId`** on the envelope | **THREE writers**, each supplying its own: `generate.ts:50` (**local**), `serve-doc.ts:174` (cloud serve), `sync-run.ts:464` (ship) | **BLIND, deliberately** — see below |
+| 1 | **The metadata seam** — `videoDataPayload` | **PARAMETER** `v` (`lib/storage/supabase/supabase-metadata-store.ts:19`) | **Call sites, THREE** — `:119` `upsertVideo`, `:143` `updateVideoFields`, `:160` `bulkUpdateVideoFields` | **BLIND.** Refusing identically regardless of origin *is the seam's entire purpose*, and §3.5.1's claim that the producer count stops mattering holds **here and nowhere else**. ⚠ *A BLIND row must never be asked to let one producer through — round-18 B1* |
+| 2 | **The mint** | `baseName` (`lib/job-queue/summary-handler.ts:96`) | **One** — `${padSerial(serial)}_${slugify(payload.title)}`, no branch in the expression | BLIND (vacuously) |
+| 3 | **`reconcileCloudBase`** (in memory) | `to` (`lib/cloud-sync/reconcile-serial.ts:152`) — aliased to `newBase` at `:186`; **the alias is not the definition** | **TWO** — arm A `baseOf(local.summaryMd)`, a *vault filename*; arm B `baseOf(applySerial(cloud.summaryMd, local.serial))`, the *cloud key renumbered* | **DEPENDENT** ← round-17 **B1**. Justification and repair message are true of arm A only |
+| 4 | **The adopt** — ⛔ **THE GUARD LIVES AT `sync-run.ts:624-627`, ABOVE `:626`, ON THE `to = cloudSide` ARM. This row is the ONE normative statement of that location (round-17 M2, round-18 M2)** | `present` (`lib/cloud-sync/sync-run.ts:619`) — `.summaryMd` is the tested field | **TWO** — `(lv ?? cv)!`; provenance coincides with direction, `presentIsLocal` at `:620` | **DEPENDENT** ← round-16 **B1**. Cloud receiver only |
+| 5 | **The seam refusal reaching `transferClassA`** | **PARAMETER** `winnerVideo` (`lib/cloud-sync/sync-run.ts:372`) — `key = winnerVideo.summaryMd` at `:379` | **Call sites, TWO** — `:782` `copyToCloud` passes `(localSide, cloudSide, lv)`, `:793` `copyToLocal` passes `(cloudSide, localSide, cv)` | **DEPENDENT** ← **26c3**, round 15. Cloud loser only |
+| 6 | **The share guard** | `mdKey` (`lib/share/serve.ts:47`) | **TWO** — `artifact?.key ?? vid.data.summaryMd`. Arm A is `artifacts.summaryMd.key`, taken FIRST; arm B is the top-level fallback. *(Round-18 M1: this cell previously claimed a single producer, named arm B alone, and cited the function signature at `:13` instead of the assignment.)* | **BLIND** — both arms are refused identically, and the guard tests exactly the value the serve path consumes |
+| 7 | **`serialize`** — the write-time schema | **PARAMETER** `envelope` (`lib/html-doc/model-store.ts:34`) | **Call sites, THREE** — `generate.ts:50` (**local**), `serve-doc.ts:174` (cloud serve), `sync-run.ts:464` (ship) | **BLIND, deliberately** — see below |
+
+> **`scripts/check-producer-enumeration.py` CHECKS THIS TABLE, and it is the reason there is no fourth
+> hand-built version.** It resolves each row's cited `path:line`, refuses a citation that does not
+> declare the named value, refuses a **bare alias** (row 3's `newBase = d.to!` has no branch at the
+> rename — the arms are two lines inside another function), and fails any row claiming **One** whose
+> defining expression contains `?:`, `??`, `||`, `catch` or `switch`. Run it with `--self-test`: 11
+> cases, including both measured misses.
+>
+> **What it does NOT check, and this is your manual obligation:** the three **PARAMETER** rows. Their
+> producers are call sites, not arms of an expression, and the script reports them as
+> `UNCHECKABLE-BY-DESIGN` rather than passing them. It also cannot see a producer split more than one
+> call from the cited line. It catches the two shapes that were **measured**, which is the bar — not
+> completeness.
 
 **Row 7 is uniform ON PURPOSE, and that was verified rather than assumed.** The `videoId` requirement
 binds the **local** generate path too, so the question is whether local can satisfy it. It can:
@@ -1040,7 +1137,7 @@ branch, and this document's own §3.6.1b says every rule must be stated per bran
 
 | Caller | Where the refusal lands | Already durable at that moment | Net state, and does the next run re-enter cleanly? |
 |---|---|---|---|
-| `copyAdditiveVideo` — **receiver is the CLOUD** (`copyToCloud`) | **the adopt guard**, above `ensureReceiverSlot` (`sync-run.ts:236-238`) | **nothing** | Video stays one-sided. Throw → caught per-video at `:812` → `report.errors`, **no `writeVideoBaseline`** → re-fires identically every run **until a human renames the vault file** — which exists, and is the thing to rename. ✅ intended |
+| `copyAdditiveVideo` — **receiver is the CLOUD** (`copyToCloud`) | **the adopt guard — see §3.5.1b row 4** (in the caller, above the sender-side read) | **nothing** | Video stays one-sided. Throw → caught per-video at `:812` → `report.errors`, **no `writeVideoBaseline`** → re-fires identically every run **until a human renames the vault file** — which exists, and is the thing to rename. ✅ intended |
 | `copyAdditiveVideo` — **receiver is the VAULT** (`copyToLocal`) | **NOWHERE — the guard does not apply** (round-16 B1) | n/a | **Hydration SUCCEEDS**, exactly as today. §3.4 argues at length that the local path never needed this guard; decision ① says the vault wins. Refusing here would strand a paid cloud artifact whose every other route is already 409 or closed by this version, and the repair sentence would name a vault file **that does not exist** |
 | `transferClassA` | the seam, `updateVideoFields` (`:432`) | **`loser.blob.put(loser.p, key, staged, …)` already ran at `:394`** | An **orphan blob** at the unservable key on the loser. The loser's row still points at its old key, so **nothing is lost and nothing is unreachable**. Throw → `:812` → no baseline → re-fires, re-writing the same orphan each run. ⚠ **accepted residual, stated below** |
 | `reconcileCloudBase` | **in memory**, before the copy phase | **nothing** | Returns `unservable-base` → the **explicit `sync-run.ts` branch** (§3.5.1 placement 2; round-17 L1: this cell said *"generic throw"*, the residue of the claim round-16 M1 deleted) → `:812` → no baseline → re-fires. ✅ clean |
@@ -1805,7 +1902,8 @@ shipped three invisible-character defects.
 | 26c3 | **26c's `transferClassA` case is asserted on `copyToCloud`, and a `copyToLocal` variant asserts the local store is NOT guarded** — on `copyToLocal` the loser is the local store, so a test written against it would **pass vacuously** (round-15 M2.2) | integration |
 | 26c4 | **After a `transferClassA` refusal the loser's row still points at its OLD key** and the old blob reads back — the accepted residual is an orphan at the unservable key, *not* a lost or unreachable artifact (§3.5.2) | integration |
 | 26d | **ARM A — a relocation onto an unservable VAULT name is refused IN MEMORY**, and only when the **old base was servable**: no blob is copied, the old base is **intact**, nothing is deleted, the result is `{ ok:false, reason:'unservable-base', key, origin:'vault-filename' }`, **and the message names the file to rename** (round-14 B1, round-15 M3, round-17 B1) | integration |
-| 26d2 | **ARM B — the local row has a serial but NO MD, and the cloud key is ALREADY unservable → the relocation PROCEEDS**, so `reconcileClassA` → `copyToLocal` stays reachable and the paid summary can still hydrate into the vault. Nothing servable was at risk; refusing here strands the artifact permanently (round-17 **B1**) | integration |
+| 26d2 | **unservable → unservable ⇒ SKIPPED, not relocated**: `{ ok:true, action:'skipped-unservable' }`, **zero `copy` calls**, **no seam write**, the divergence appears in `report.errors`, and `reconcileClassA` → `copyToLocal` then hydrates the paid summary into the vault. *(v20 asserted the relocation PROCEEDS, which is unsatisfiable against a real `SupabaseMetadataStore`: the seam throws on the row write — round-18 **B1**.)* | integration |
+| 26d4 | **unservable → SERVABLE ⇒ RELOCATES** — a genuine repair, and the seam accepts it. **No behavior covered this cell before round 18**, so nothing would have caught a fix that skipped it too | integration |
 | 26d3 | **ARM B still refuses when the OLD base was servable** — a servable cloud key whose renumbering by `applySerial` pushes it past 131 code points — and the message says the cloud key has **no local counterpart to rename**, `origin:'cloud-key'` | integration |
 | 27 | **No `slugify` output fails `isServableSummaryKey`** — the cross-derivation §3.4 and §3.5 each assumed and neither checked | property |
 | 22 | `encodeSegment('003_x\uD840.md') !== encodeSegment('003_x\uD850.md')` — two **distinct lone surrogates** encode differently (restored; round-8 M2, still open in v9) | unit |
@@ -1869,6 +1967,9 @@ be reported as verified; that happens in Phase 3.
 | Remove `reconcileCloudBase`'s in-memory refusal | **26d** — the copy-then-delete runs | PROVISIONAL |
 | Return an existing variant (`metadata-failed`) instead of `unservable-base` | **26d** — the operator message stops naming the vault filename, which is the only actionable fact in it | PROVISIONAL |
 | **Drop the `isServableSummaryKey(oldBase)` conjunct** — refuse whenever the NEW base is unservable | **26d2** — the round-17 B1 Blocking, reproduced. Goes green against 26d alone | PROVISIONAL |
+| **Return `{ok:true}` and RELOCATE on unservable→unservable instead of SKIPPING** | **26d2** — the round-18 B1 Blocking: the copies run, then the seam refuses the row. Goes green against any assertion that only checks the return value | PROVISIONAL |
+| Skip on unservable→**servable** as well | **26d4** — the repair cell stops repairing | PROVISIONAL |
+| Make the skip SILENT (omit the `report.errors` entry) | **26d2** — a divergence that no longer heals must remain visible | PROVISIONAL |
 | Drop the `origin` field and emit one message for both arms | **26d3** — arm B is told to rename a vault file that does not exist | PROVISIONAL |
 | Widen the refusal so a servable→over-length renumbering is allowed through | **26d3** — the one case arm B must still refuse | PROVISIONAL |
 | Skip the read-back hash verify before promote | 18e | PROVISIONAL |
