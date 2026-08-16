@@ -1406,9 +1406,40 @@ credential design pass; all on disk at
   ⚠ **One claim I made to the user was wrong and is corrected here:** I said rounds 15–18 found *zero*
   design defects. Round 18's B1 was classified **`mechanism`**. It was a mechanism defect in a *fix*
   rather than in the original design — a real distinction, but not the one I stated.
-- **PHASE 2 IN PROGRESS.** `docs/superpowers/plans/2026-08-15-cloud-blob-key-encoding.md` — 15 tasks,
-  77 TDD steps. **Under dual adversarial review now**; no implementation subagent may be dispatched
-  until it converges (Post-Plan Gate, tasks #105–#109).
+- **PHASE 2 IN PROGRESS — the plan is at v3, three gate rounds run.**
+  `docs/superpowers/plans/2026-08-15-cloud-blob-key-encoding.md` — **16 tasks, 87 steps**. Reviews:
+  `docs/reviews/plan-cloud-blob-key-encoding-r{1,2,3}-{codex,claude}.md`. **No implementation subagent
+  may be dispatched until the gate clears** (tasks #105–#109; `.claude/plan-gate-pending` blocks it).
+  - **r1 — 25 findings (8 Blocking).** Root cause, singular: v1 was written from the spec and **not one
+    code snippet was checked against the code it would live in.** It named **Vitest** where the repo
+    runs **Jest 30**, dropped `p.id` (the OWNER prefix — a tenancy break) from `objectKey`, called an
+    invented `rawList`, and used **7 helpers nobody had written**. Its self-review had checked the plan
+    against *itself* and passed.
+  - **r2 — 30 findings.** v2 fixed those and introduced its own: it invented `decision.receiverEnvelope`
+    *inside the fix for r1's invented-identifier finding*. The round's key sentence: **"a DEFERRED row
+    in v2 was more reliable than a FIXED one"** — two rows marked FIXED were fixed only in a comment
+    sitting above code that still did the opposite.
+  - **r3 — the method changed, and it worked.** v3's rule: *every snippet is either EXECUTED AND
+    VERIFIED or replaced by quoted current code plus a precise statement of the change.* **Both halves
+    RE-RAN the executable claims and both held** — Claude re-ran seven, three reproducing the plan's
+    figures to the digit, two against the repo's REAL adapters (12/12, 8/8); Codex re-ran four more.
+    **Zero findings of the "does not exist / does not compile" class**, after 55 across r1+r2.
+  - **⚖ r3 SPLIT THE HALVES ON THE VERDICT ITSELF** — Codex NOT CONVERGED (3 Blocking), Claude
+    CONVERGED (0 Blocking). **Adjudicated: both right, neither implies another round.** Codex is right
+    on severity — a `/* … */` fixture on the paid-artifact path forces an engineer to invent a test
+    unaided in the one place a *wrong* test is invisible, and this project has measured that failure
+    twice. Claude is right that it is a **writing** problem, not a reviewing one: it fails at `tsc`,
+    loudly, and cannot reach production.
+  - **⏳ IN FLIGHT: v4** — four fixture blocks (T8, T10, T12, T13) written against the real helpers and
+    **executed as written**. **T10 needs a decision, not a patch**: its guard is a backstop no
+    `slugify` output can reach (behavior 27 proves it), so the plan currently holds *both* a fake test
+    and a prose escape hatch. One or the other, not both.
+  - **The instrument split this produced, and it is the reusable part:** T0–T7 fail LOUD (a test goes
+    red) → **execute them**; T8/T10/T12/T13 fail SILENT (tests stay green while a paid artifact is
+    orphaned) → **keep reviewing those**. Match the instrument to how the defect announces itself.
+  - ⚠ **Numbers corrected this round, both mine:** the codepoint sweep is **4,448,256 total loop
+    iterations / 3,479,131 NON-EMPTY SLUG ASSERTIONS** — the plan *and §3.2 of the spec* call the
+    second figure "iterations"; and the plan has **87** steps, not 88.
   ⚠ **The gate's "machine-enforceable backstop" did not exist** — `process-checklists.md:28` described
   a `PreToolUse`-on-`Agent` hook that was never built, watching a sentinel nothing ever wrote. The plan
   reached *"want me to start Task 1?"* unreviewed and **a human caught it, not the machine**. Repaired
