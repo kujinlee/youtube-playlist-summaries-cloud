@@ -1303,8 +1303,8 @@ credential design pass; all on disk at
     and a separate `promoteIfAbsent` added — not because R1 broke a caller (it did not; verified), but
     because declaring *"create-if-absent everywhere"* would turn **backlog #22** from a tracked bug
     into a documented invariant.
-- **Rounds 12–15 ran; the spec is at v18 and round 16 is DISPATCHED.** Reviews on disk at
-  `docs/reviews/spec-blob-key-encoding-r{12..15}-{codex,claude}.md`.
+- **Rounds 12–16 ran; the spec is at v19.** Reviews on disk at
+  `docs/reviews/spec-blob-key-encoding-r{12..16}-{codex,claude}.md`.
 - **The escalation rule fired, was overridden with a falsifier, the falsifier FIRED, and the debt was
   PAID.** Round 13's H1 found the `sourceMd` ownership credential **stale by construction** —
   `reconcileCloudBase` byte-copies the model envelope and never rewrites it, while the local migration
@@ -1341,11 +1341,35 @@ credential design pass; all on disk at
   **two** instances in one round. If it fires, the diagnosis is that this document keeps choosing
   enforcement points by **name** instead of by **dominance**, and a wider redesign is owed rather than a
   fourth repair.
+- **✅ ROUND 16 RAN. THE FALSIFIER DID NOT FIRE — and the two halves SPLIT on that question, which is
+  the whole reason this project runs two.** `mechanism` findings: **zero**. Both dominating points were
+  attacked head-on by independent enumeration and **held**.
+  - Both halves found `serialize` bypassed by `reconcileCloudBase`'s **byte-copy**. **Codex graded it
+    Blocking and declared the falsifier fired. Claude found the same bypass PLUS a second one Codex
+    missed** (`serial-migrate-exec.ts:141`) **and graded both Low.**
+  - **Adjudicated for Low by reading the code, not by counting verdicts** — and reached independently
+    before either half reported. Both are *transforms of an already-conforming envelope* that preserve
+    unknown fields, so neither can produce an envelope lacking `videoId` that did not already lack one:
+    a relocated legacy envelope **propagates** a legacy state rather than **introducing** one. **A copy
+    has no author to demand `videoId` from.** What survives is the *sentence* — this document's
+    **fourth** falsified universal — and a real mutation gap, now behavior **18j7**.
+  - **The one Blocking is the OPPOSITE shape: over-reach.** `copyAdditiveVideo` runs in **both**
+    directions and the adopt guard fired on both. On **cloud→local hydration** it would refuse to write
+    an already-unservable name **into the vault**, closing the last route to a paid artifact whose other
+    routes are 409 today or closed by this same version — and contradicting user decision ① *"the vault
+    wins"*. **v19 scopes the guard to the CLOUD receiver** and adds behavior **26e**, without which the
+    regression is invisible because behavior 26 passes whichever direction it is written against.
+  - Uncomfortable and recorded: v18 asked that direction question for `transferClassA` (**26c3**) and
+    **not** for `copyAdditiveVideo` one row above **in the same table**.
+- **⛔ ROUND 17's FALSIFIER IS ARMED, in the same spirit:** fires to REDESIGN on another finding of the
+  form *"a placement is stated for one branch/direction of the path it sits on"*. **26c3** was the
+  first, **B1** the second.
 - **The durable lesson, now in `review-method.md` and `portable-practices.md`:** *a derivation you have
   to be right about is still a count.* Ask whether the rule can become wrong because someone adds a new
   X without touching this code.
-- **Next:** round 16 verdict → (v19 if needed) → `writing-plans` → implementation. Then the ADR
-  recording the seam decision (task #91; not yet written, so not numbered here).
+- **Next:** round 17 (the last gate before Phase 2, unless it finds a mechanism defect) →
+  `writing-plans` → implementation. Then the ADR recording the seam decision (task #91; not yet
+  written, so not numbered here).
 - **The only tracked ROADMAP step still open is `A6`, and it stays PARKED** by the user decision of
   2026-08-11 (blob-addressing schema). Nothing in #36 unparks it — v17 explicitly records that the
   model is still *addressed* by a mutable base, and that only
