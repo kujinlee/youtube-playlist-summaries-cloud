@@ -1325,6 +1325,11 @@ credential design pass; all on disk at
   X without touching this code.
 - **Next:** v18 → round 16 → `writing-plans` → implementation. Then the ADR recording the seam
   decision (task #91; not yet written, so not numbered here).
+- **The only tracked ROADMAP step still open is `A6`, and it stays PARKED** by the user decision of
+  2026-08-11 (blob-addressing schema). Nothing in #36 unparks it — v17 explicitly records that the
+  model is still *addressed* by a mutable base, and that only
+  `videos/<videoId>/<generationId>/model.json` (the parked 2026-08-03 spec) removes that. **`A6` is
+  outstanding, not next.**
 - **Tooling added 2026-08-15:** `scripts/prior-art.py` (+ a required `## Prior art` spec section) after
   #36 spent 13 rounds rediscovering a decision that was on disk in three places. Backlog **#47** files
   the knowledge-graph version.
