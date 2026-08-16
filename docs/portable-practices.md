@@ -4,8 +4,9 @@
 the documents that make it reproducible somewhere else. This file is the second one's index.
 
 **Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 were measured on 2026-08-11, §8 on
-2026-08-12. The great majority of the memory files and review documents have **not** been mined yet —
-see *Not yet mined*, whose counts are re-enumerated, not recalled, whenever this file is edited.
+2026-08-12, §10 on 2026-08-13, §11 on 2026-08-15. The great majority of the memory files and review
+documents have **not** been mined yet — see *Not yet mined*, whose counts are re-enumerated, not
+recalled, whenever this file is edited.
 
 ---
 
@@ -231,6 +232,74 @@ what it compares.
 
 Same family as §2 (*cannot run is a failure*): in all three cases a mechanism reports success while
 inspecting nothing, and the reported value is indistinguishable from the healthy one.
+
+---
+
+## 11. A rule has two halves — what it asserts and WHERE it applies. Enumerate placements × branches
+
+> Seventeen adversarial rounds. The predicate itself has been stable since round 12. **Everything since
+> has been about placement** — and placement fails on two axes that look like one.
+
+**Measured 2026-08-14 → 08-15**, across four review rounds of a single spec. A `key is servable`
+predicate was correct and uncontested; every finding was about *where the check goes*.
+
+### The two axes, and they are orthogonal
+
+| Axis | Question | Structure it is about | What it missed here |
+|---|---|---|---|
+| **Vertical — dominance** | does every path to the guarded state pass through this point? | the **call graph** | a second writer function the rule named one of (**Blocking**); a third interface method the rule named two of |
+| **Horizontal — branch** | for every branch of the path this sits in, does the rule apply? | **control flow** | a helper called in two directions, guarded in both when only one was meant (**Blocking**) |
+
+**Fixing the first does not prevent the second, and that is the entry.** The guard that failed on the
+branch axis had *already* been moved to satisfy dominance — it ran before the durable write, exactly as
+an earlier round demanded. **A rule can sit above every writer and still be wrong on one case.**
+
+### The trigger: the SECOND instance, not the third
+
+The two branch-axis defects were the same shape **one table row apart**, found a round apart — one
+graded Medium, the next graded Blocking. The response to a *recurring* shape is not a better fix; it is
+enumerating the whole domain of that shape. Here that was a table: **7 placements × the branches of the
+path each sits in.** Four had exactly one branch; three had two or three.
+
+**Write the trivial rows.** The four single-branch rows cost one line each and are what makes the table
+a ratchet rather than an observation: the next reader does not re-derive them, and a placement added
+later has a visibly empty cell. *"All branches"* is a valid answer and must still be written down.
+
+### The failure mode it catches that reviewing does not
+
+Filling in every cell forces a question a review never asks: **"how would the code even know?"**
+
+Run before dispatching the next round, the table immediately found that the previous round's
+**Blocking fix could not be written**. The rule said *"apply the guard only when the receiver is the
+cloud"* — but the function it sat in received the receiver as an **interface** both implementations
+satisfy, so the direction was simply absent from its scope. Recovering it meant sniffing the concrete
+type, which silently misclassifies any future third implementation.
+
+**The fix was not the rule. It was moving the rule to where the branch is chosen** — the caller, which
+had already computed the direction. That placement was also *strictly earlier* than the constraint an
+earlier round imposed, so it satisfied both axes at once.
+
+> **For a direction-dependent rule, the dominating point is the line that CHOOSES the direction** — not
+> the function downstream that has already lost the information. Same principle as putting an invariant
+> in the one private function every writer funnels through, applied to control flow instead of the call
+> graph.
+
+### How to apply
+
+1. When a reviewer says *"this rule is stated for one branch/writer of N"* **a second time**, stop
+   fixing instances. Enumerate.
+2. Table it: one row per placement, one column for the branch set of its path, **one outcome per cell**.
+3. For each cell ask both *"does the rule apply here?"* and *"can this code observe which branch it is
+   on?"* The second question is where the expensive defects are.
+4. Prefer placements the branch set cannot escape: a **private function with no external callers** for
+   the dominance axis (a list of exported names is a count), and the **line that selects the branch**
+   for the horizontal one.
+
+**Cost and limits, stated honestly.** The table is ~10 lines of spec, and the next adversarial round
+verified it row by row against the code and found no third instance — but it did find that the move it
+prompted left **stale references to the old location** in the surrounding prose, which is its own
+recurring tax. Do this when the shape has recurred or the rule is money- or safety-relevant. Not for
+every rule; a table nobody needed is the same clutter as an unread rule.
 
 ---
 
