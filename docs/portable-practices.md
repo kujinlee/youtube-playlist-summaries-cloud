@@ -4,7 +4,7 @@
 the documents that make it reproducible somewhere else. This file is the second one's index.
 
 **Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 were measured on 2026-08-11, §8 on
-2026-08-12, §10 on 2026-08-13, §11 on 2026-08-15. The great majority of the memory files and review
+2026-08-12, §10 on 2026-08-13, §11 and §12 on 2026-08-15. The great majority of the memory files and review
 documents have **not** been mined yet — see *Not yet mined*, whose counts are re-enumerated, not
 recalled, whenever this file is edited.
 
@@ -343,6 +343,59 @@ verified it row by row against the code and found no third instance — but it d
 prompted left **stale references to the old location** in the surrounding prose, which is its own
 recurring tax. Do this when the shape has recurred or the rule is money- or safety-relevant. Not for
 every rule; a table nobody needed is the same clutter as an unread rule.
+
+---
+
+## 12. Late-round defects are mostly caused by the previous round's FIX — and the fixes that cause them ADD a branch
+
+> Four consecutive review rounds. Findings introduced by the immediately preceding round's own fixes:
+> **2, then 3, then 4, then 5.** The review had stopped measuring the artifact and started measuring
+> its own repairs.
+
+**Measured 2026-08-15**, rounds 15–18 of one spec, counted from the review documents (each states its
+own causation per finding, so this is enumerated, not recalled):
+
+| round | findings | caused by the previous round's fixes |
+|---|---|---|
+| 15 | 8 | **2** |
+| 16 | 5 | **3** clear + 1 partial |
+| 17 | 7 | **4** |
+| 18 | 6 | **5** |
+
+Absolute count rises every round. By round 18 a *single* finding predated that round's own repairs.
+
+### The sub-pattern: which fixes generate the next round's defect
+
+Both fix-induced **Blocking** findings in the sequence came from repairs that **added a conditional
+exception** to an existing guard:
+
+| round | the repair | what it added | next round |
+|---|---|---|---|
+| 16 → 17 | scope a guard to one of two receivers | a condition on *which side* | **Blocking** — the guarded value had two producers, and the design covered one |
+| 17 → 18 | add an `oldBase` conjunct so one case passes | a condition on *which case* | **Blocking** — the case that now passed the first guard was refused by a second guard downstream, after the expensive work |
+
+**An exception is a branch, and a branch is what the next reviewer misses.** Both repairs were correct
+about the case they named and wrong about the case they created.
+
+### How to apply
+
+1. **Track causation per finding, not just severity.** Every finding gets a *"caused by this version's
+   own fixes: yes/no"*. It costs one line and it is the only way the trend above is visible — a
+   severity curve alone shows decay and reads as convergence.
+2. **When the fix-induced share is rising, the marginal round is buying less.** That is a signal to
+   change instrument (a script, a test, execution) rather than to run the same round again.
+3. **Prefer a repair that REMOVES a path over one that adds an exception.** Ask of any fix: *does this
+   introduce a new case, or delete one?* If it introduces one, name the case it creates, not just the
+   case it fixes — and check what the next guard downstream does with it.
+
+> ⚠ **Point 3 is a HEURISTIC derived from n=2, not a measured law, and it is labelled that way on
+> purpose.** The remove-a-path repair that replaced the second Blocking above has **not yet been
+> validated** — no round has reviewed it, and no test has run it. **Falsifier:** if that repair
+> produces a defect of its own, point 3 is wrong and points 1–2 stand independently of it.
+
+Related: **§8** reads the finding distribution to diagnose a wrong *shape*; this reads the same
+distribution to diagnose an *exhausted review*. Same instrument, opposite conclusion — check which
+question you are asking before acting on either.
 
 ---
 
