@@ -1303,7 +1303,7 @@ credential design pass; all on disk at
     and a separate `promoteIfAbsent` added — not because R1 broke a caller (it did not; verified), but
     because declaring *"create-if-absent everywhere"* would turn **backlog #22** from a tracked bug
     into a documented invariant.
-- **Rounds 12–15 ran; the spec is at v17.** Reviews on disk at
+- **Rounds 12–15 ran; the spec is at v18 and round 16 is DISPATCHED.** Reviews on disk at
   `docs/reviews/spec-blob-key-encoding-r{12..15}-{codex,claude}.md`.
 - **The escalation rule fired, was overridden with a falsifier, the falsifier FIRED, and the debt was
   PAID.** Round 13's H1 found the `sourceMd` ownership credential **stale by construction** —
@@ -1317,14 +1317,35 @@ credential design pass; all on disk at
   the other two "derivations" were still counts.** `writeModelEnvelope` is one of *two* writer
   functions and the serve path is contractually barred from using it; the bidi class is a hand-typed
   range with a comment claiming it is the Unicode property.
-- **v18 owes:** the model-write seam (`writeModelEnvelope` + `writeModelEnvelopeWithin`), the seam's
-  third data-writing method, a stated **outcome** for "refuse in the adapter" (unfixed twice), a
-  `SerialReconcileResult` variant for `reconcileCloudBase`'s refusal, and ~4 stale cross-references.
+- **v18 SHIPPED (`c9910f8`) and it made the SAME move twice** — both remaining "derivations" now
+  attach to a **private function with no caller outside its module**, so the rule is satisfied by
+  *construction* rather than by remembering:
+  - `serialize()` (`lib/html-doc/model-store.ts:34`) — the only path from an envelope to bytes, so it
+    covers `writeModelEnvelopeWithin` (the **cloud serve path**, the writer v17 missed and the one that
+    spends money). A write-time schema requires `videoId`; the **read** schema keeps it optional so the
+    7 legacy prod envelopes still parse without a migration.
+  - `videoDataPayload()` (`supabase-metadata-store.ts:19`, renamed from `stripComputed`) — the only
+    constructor of what lands in `videos.data`, so it covers `bulkUpdateVideoFields`. **The rename is
+    load-bearing**, not cosmetic: `stripComputed` reads as optional hygiene, so a future writer skipping
+    it looks harmless.
+  - Plus: **three** placements outside the seam (v17 said two while four other places described a third),
+    a new §3.5.2 stating what a refusal LEAVES BEHIND per caller (asked at round 13, asked again at
+    round 15, unfixed twice), the `'unservable-base'` result variant, `/\p{Bidi_Control}/u` so the
+    sentence claiming a property derivation becomes true, and the 3 stale cross-references.
+  - Behaviors **+7**, mutations **+6** — two of which reproduce v17's own defects. One row is marked
+    **UNMUTATABLE on purpose**: the mutation the bidi *claim* needs is a Unicode release, which no suite
+    can run, so it is recorded as a stated limit rather than a row that passes.
+- **⛔ ROUND 16 CARRIES AN ARMED FALSIFIER.** Round 15's Claude half overrode the FIX→REDESIGN
+  escalation **narrowly**, on this condition: it fires to REDESIGN if round 16 produces a **third**
+  finding of the form *"the derivation does not reach writer/method/caller N"*. Round 15 already had
+  **two** instances in one round. If it fires, the diagnosis is that this document keeps choosing
+  enforcement points by **name** instead of by **dominance**, and a wider redesign is owed rather than a
+  fourth repair.
 - **The durable lesson, now in `review-method.md` and `portable-practices.md`:** *a derivation you have
   to be right about is still a count.* Ask whether the rule can become wrong because someone adds a new
   X without touching this code.
-- **Next:** v18 → round 16 → `writing-plans` → implementation. Then the ADR recording the seam
-  decision (task #91; not yet written, so not numbered here).
+- **Next:** round 16 verdict → (v19 if needed) → `writing-plans` → implementation. Then the ADR
+  recording the seam decision (task #91; not yet written, so not numbered here).
 - **The only tracked ROADMAP step still open is `A6`, and it stays PARKED** by the user decision of
   2026-08-11 (blob-addressing schema). Nothing in #36 unparks it — v17 explicitly records that the
   model is still *addressed* by a mutable base, and that only
