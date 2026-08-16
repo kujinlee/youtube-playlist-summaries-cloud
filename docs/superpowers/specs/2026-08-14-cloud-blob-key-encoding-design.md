@@ -837,9 +837,78 @@ defect round-12 Codex found in §3.6.3)*:
    > direction question for `transferClassA` — behavior **26c3** exists precisely because a test written
    > against `copyToLocal` would pass vacuously — and **did not ask it one row above**, for
    > `copyAdditiveVideo`, in the same table. The question was in hand and applied to one of two rows.
+   >
+   > ### ⚠ WHERE the scoped guard goes — because `copyAdditiveVideo` CANNOT TELL which side it is on
+   >
+   > Found by the coordinator's own placement×branch sweep before round 17 was dispatched, not by a
+   > reviewer. **"Apply the guard only when the receiver is the cloud" is not implementable at
+   > `sync-run.ts:236-238` as the function stands**, and a fix that cannot be written is not a fix:
+   >
+   > ```ts
+   > // sync-run.ts:221-225 — the whole signature. No side, no discriminant, no flag.
+   > async function copyAdditiveVideo(
+   >   to: MetadataStore, toP: Principal, toBlob: BlobStore,
+   >   playlistMeta: { playlistUrl: string; playlistTitle?: string },
+   >   video: Video, mdBody: string | null,
+   > ): Promise<void>
+   > ```
+   >
+   > A `MetadataStore` is an interface; both implementations satisfy it. Recovering the direction inside
+   > the function would mean sniffing the concrete type — a pattern this document has rejected
+   > elsewhere, and one that silently misclassifies any future third store.
+   >
+   > **THE GUARD GOES IN THE CALLER, at `sync-run.ts:624-627`, on the `to = cloudSide` arm only.**
+   > `presentIsLocal` is already computed there, so the direction is *known where the branch is taken*
+   > rather than reconstructed where it is not:
+   >
+   > ```ts
+   > const to: Side = presentIsLocal ? cloudSide : localSide;   // :625 — the branch, already here
+   > ```
+   >
+   > **This also strengthens round-13 H2's constraint rather than weakening it.** That finding requires
+   > the refusal to happen *before* `ensureReceiverSlot` (`:240`). Guarding in the caller refuses before
+   > `copyAdditiveVideo` is entered **at all**, which is strictly earlier — no receiver row, no staged
+   > blob, no partial state, nothing to roll back.
+   >
+   > **And it puts the guard where the design says guards belong.** §3.5.1's whole thesis is that a rule
+   > belongs at the point that *dominates* the thing it governs. For a **direction-dependent** rule, the
+   > dominating point is the line that **chooses the direction** — not the function that has already
+   > lost the information.
 
 **Behavior 26c's wording must stop asserting a count.** A behavior that says *"the second entrance"* is
 a claim about an enumeration, and this document has been wrong about one eight times.
+
+#### 3.5.1b EVERY PLACEMENT × EVERY BRANCH OF THE PATH IT SITS ON
+
+The prophylactic round-16's Claude half asked for, run **before** round 17 rather than waiting to be
+told a third time. Round 16's Blocking and behavior **26c3** were the same defect — *a placement stated
+for one branch of a path that has two* — found one round apart, one table row apart. **The cheap
+question is: for each placement, what branches does the function it sits in actually have?**
+
+| # | Placement | Sits in | Branches of that path | Guard applies to |
+|---|---|---|---|---|
+| 1 | **The metadata seam** — `videoDataPayload` | `SupabaseMetadataStore` (3 write methods) | **One.** The adapter *is* the cloud store; local is a different implementation of the same interface | all 3 methods ✅ |
+| 2 | **The mint** | `summary-handler.ts:96` | **One.** The worker only ever runs against Supabase | ✅ |
+| 3 | **`reconcileCloudBase`** (in memory) | `reconcile-serial.ts:166`, called `sync-run.ts:730` | **One.** `cloud: cloudSide` is hard-wired at `:731`; it relocates the **cloud** base to match the local | ✅ |
+| 4 | **The adopt** | ~~`copyAdditiveVideo`~~ → **the caller**, `sync-run.ts:624-627` | **TWO** — `to` is `cloudSide` or `localSide` per `presentIsLocal` (`:620`) | **cloud receiver only** ← round-16 **B1** |
+| 5 | **The seam refusal reaching `transferClassA`** | `sync-run.ts:782` / `:793` | **TWO** — `copyToCloud` passes `(localSide, cloudSide)`, `copyToLocal` passes `(cloudSide, localSide)` | cloud loser only ← **26c3**, found round 15 |
+| 6 | **The share guard** | inside `getShareServeContext`, `lib/share/serve.ts:13` | **One.** Share tokens are a cloud-only feature | ✅ |
+| 7 | **`serialize`** — the write-time schema | `model-store.ts:34` | **THREE callers, two of them cloud, one LOCAL**: `generate.ts:50` (local), `serve-doc.ts:174` (cloud serve), `sync-run.ts:464` (ship) | **all three — deliberately** ✅ |
+
+**Row 7 is the one that could have been a third instance, and it is not — VERIFIED, not assumed.** The
+`videoId` requirement is stated once and binds the **local** generate path too, so the obvious question
+is whether local can satisfy it. It can: `runHtmlDoc(videoId: string, …)` takes it as its **first
+parameter** (`generate.ts:12`), and `writeModelEnvelope` is called at `:50` with `video` already
+resolved from the index at `:23`. **The requirement is uniform across the branch set on purpose** — a
+model envelope means the same thing on both sides, and an envelope that cannot say which video it
+belongs to is the defect round-13 H1 opened. Rows 4 and 5 differ precisely because *servability of a
+cloud key* is meaningless in the vault, which is decision ①.
+
+> **The rule this table encodes, and the one worth carrying to the next spec:** a placement is not
+> specified until you have named **which branch of its path it applies to** — including when the answer
+> is *"all of them"*. Rows 1, 2, 3 and 6 have one branch, so the question is trivial and the answer is
+> still written down. Rows 4, 5 and 7 have two or three, and **two of those three were found by
+> reviewers, a round apart, as separate defects.**
 
 #### 3.5.2 What a refusal LEAVES BEHIND, per caller (round-13 M2, round-15 M2 — unfixed twice)
 
@@ -1582,6 +1651,7 @@ shipped three invisible-character defects.
 | 25 | **The mint refuses a non-servable key** — after `reserveVideoSlot`, before the Gemini call, so no money moves | integration |
 | 26 | **The adopt refuses a non-servable key before `ensureReceiverSlot` — on `copyToCloud`** — no receiver row is created — and the error message names the manual repair (the vault file to rename, which in this direction exists) | integration |
 | 26e | **A cloud→local additive hydration of an unservable key SUCCEEDS** — the vault is not guarded (§3.4, decision ①), so a paid cloud artifact whose other routes 409 can still be recovered as a file. **Without this row the round-16 B1 regression is invisible**, because 26 alone passes whichever direction it is written against | integration |
+| 26f | **The adopt guard is in the CALLER** (`sync-run.ts:624-627`), not inside `copyAdditiveVideo` — asserted by the refusal happening with **no `ensureReceiverSlot` call at all**, which is strictly earlier than round-13 H2 requires. `copyAdditiveVideo`'s signature carries no side discriminant, so a guard inside it could only sniff the concrete store type (§3.5.1) | integration |
 | 26b | **The refusal survives a SECOND run**: re-running sync does not route around it via the two-sided Class-A path (round-13 H2) | integration |
 | 26c | **The Supabase adapter refuses** any patch setting `summaryMd` / `status:'promoted'` to a non-servable key — asserted through **each** of `copyAdditiveVideo`, `transferClassA` (on **`copyToCloud`**; see 26c3) and `reconcileCloudBase`, and stated with **no claim about how many entrances exist** | integration |
 | 26c2 | **The refusal holds for `bulkUpdateVideoFields` too** — the third data-writing adapter method, which no version before v18 covered. It is reached because the guard lives in `videoDataPayload`, not because the method was added to a list (round-15 M1) | integration |
@@ -1641,6 +1711,7 @@ be reported as verified; that happens in Phase 3.
 | Remove the mint guard call | 25 | PROVISIONAL |
 | Remove the adopt guard call | 26 | PROVISIONAL |
 | **Apply the adopt guard in BOTH directions** | **26e** — the round-16 B1 Blocking, reproduced as a mutation. Goes green against 26 alone | PROVISIONAL |
+| Move the adopt guard back INSIDE `copyAdditiveVideo` (sniffing the store type for the direction) | **26f** — and it misclassifies any future third `MetadataStore` implementation, silently | PROVISIONAL |
 | Move the adopt guard back BELOW `ensureReceiverSlot` | **26b** — the bare row routes run 2 around it | PROVISIONAL |
 | Remove the seam refusal from `videoDataPayload` | 26c — red via **all three** entrances **and** 26c2 | PROVISIONAL |
 | Guard `upsertVideo` + `updateVideoFields` only, leaving `bulkUpdateVideoFields` unguarded | **26c2** — v17's exact defect, reproduced as a mutation | PROVISIONAL |
