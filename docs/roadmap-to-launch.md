@@ -1303,8 +1303,8 @@ credential design pass; all on disk at
     and a separate `promoteIfAbsent` added — not because R1 broke a caller (it did not; verified), but
     because declaring *"create-if-absent everywhere"* would turn **backlog #22** from a tracked bug
     into a documented invariant.
-- **Rounds 12–16 ran; the spec is at v19.** Reviews on disk at
-  `docs/reviews/spec-blob-key-encoding-r{12..16}-{codex,claude}.md`.
+- **Rounds 12–17 ran; the spec is at v20.** Reviews on disk at
+  `docs/reviews/spec-blob-key-encoding-r{12..17}-{codex,claude}.md`.
 - **The escalation rule fired, was overridden with a falsifier, the falsifier FIRED, and the debt was
   PAID.** Round 13's H1 found the `sourceMd` ownership credential **stale by construction** —
   `reconcileCloudBase` byte-copies the model envelope and never rewrites it, while the local migration
@@ -1361,15 +1361,41 @@ credential design pass; all on disk at
     regression is invisible because behavior 26 passes whichever direction it is written against.
   - Uncomfortable and recorded: v18 asked that direction question for `transferClassA` (**26c3**) and
     **not** for `copyAdditiveVideo` one row above **in the same table**.
-- **⛔ ROUND 17's FALSIFIER IS ARMED, in the same spirit:** fires to REDESIGN on another finding of the
-  form *"a placement is stated for one branch/direction of the path it sits on"*. **26c3** was the
-  first, **B1** the second.
+- **⛔ ROUND 17 RAN. THE FALSIFIER FIRED — and the REDESIGN was of the INSTRUMENT, not the design.**
+  Armed on *"a placement is stated for one branch/direction of the path it sits on"*; **26c3** was the
+  first instance, round-16 **B1** the second.
+  - **The halves split again, opposite to round 16.** Codex **CONVERGED** (1 Low) and verified §3.5.1b
+    row by row. Claude returned **NOT CONVERGED** with a **Blocking**, and was right — confirmed at
+    `reconcile-serial.ts:150-155` **before** the finding was read.
+  - **The third instance landed in a row the table called "One branch"** and that Codex independently
+    verified as one branch. **Both were correct about the DIRECTION** (`cloud: cloudSide` is hard-wired);
+    the *value* `newBase` has **two producers**, one ternary apart, and the design was written for one.
+    On the other arm the refusal protects nothing and permanently blocks the paid summary's last route.
+  - **§3.5.1b is REBUILT against the guarded VALUE**, not the receiver: every row now names the value
+    and every producer of it, classified **BLIND** (all producers refused identically) or **DEPENDENT**
+    (justification/message/correctness differ per arm). Row 3's defect was being dependent while
+    recorded as blind.
+  - **The design is NOT redesigned**, and the reasoning is in the spec: zero `mechanism` findings for
+    the second round running, and the credential, the seam and both dominating points held for the
+    third consecutive round. **This is the SECOND escalation narrowed rather than honoured literally —
+    recorded explicitly, because a rule overridden twice without comment is retired in practice. The
+    user was notified and can reverse it.**
+  - Also folded: M1 (behavior 26f could not discriminate — the mutant produced the same observation),
+    M2 (the adopt location was restated in **four** places, three stale; stated once now), and four
+    Lows including the `ModelEnvelopeWriteSchema` rollout cost — **41 call sites, ~20 literals**.
+  - **Carried forward as the round's most useful artifact:** rounds 14 and 16 **both** quoted the full
+    three-line ternary and both glossed it as *"the vault filename"*. **Pasting is not reading**, and a
+    ternary is the cheapest place for a second branch to hide.
+- **⛔ ROUND 18's FALSIFIER targets the REBUILT INSTRUMENT:** fires to REDESIGN if it finds a **fourth**
+  instance under the *operand* question — a guarded value with a producer §3.5.1b's rewritten table does
+  not name. If the re-asked question holds, **#36 exits Phase 1**.
 - **The durable lesson, now in `review-method.md` and `portable-practices.md`:** *a derivation you have
   to be right about is still a count.* Ask whether the rule can become wrong because someone adds a new
   X without touching this code.
-- **Next:** round 17 (the last gate before Phase 2, unless it finds a mechanism defect) →
-  `writing-plans` → implementation. Then the ADR recording the seam decision (task #91; not yet
-  written, so not numbered here).
+- **Next:** round 18, aimed at §3.5.1b's rewritten table and B1's fix — **not** a general re-review;
+  §3.1–§3.4 and §3.6 have been stable for several rounds and round 17 found nothing new in them. Then
+  `writing-plans` → implementation, and the ADR recording the seam decision (task #91; not yet written,
+  so not numbered here).
 - **The only tracked ROADMAP step still open is `A6`, and it stays PARKED** by the user decision of
   2026-08-11 (blob-addressing schema). Nothing in #36 unparks it — v17 explicitly records that the
   model is still *addressed* by a mutable base, and that only
