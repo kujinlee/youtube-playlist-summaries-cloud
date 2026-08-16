@@ -25,6 +25,31 @@ in T8, T10 and T13 and agrees.
 
 ---
 
+## 1b. Verification of the Claude half — and it earns the dual-review rule again
+
+The Claude half took far longer and landed after this file's first draft, which is why §4 carried a
+wrong sentence for one commit. Its verdict: **NOT CONVERGED**, 2 Blocking / 1 High / 1 Medium / 4 Low.
+
+| Claude finding | Verdict | Overlap |
+|---|---|---|
+| **Blocking 1 — T8 18j4, the legacy envelope cannot be seeded once T7 lands** | ✅ **CONFIRMED** | **Same as Codex, found independently.** Two reviewers converging on one Blocking from different directions is the strongest signal this round produced |
+| **Blocking 2 — T12 Step 6's `ctx` is undeclared, AND THE OBVIOUS REPAIR IS WRONG** | ✅ **CONFIRMED** | Codex found the missing `ctx`; **only Claude saw that a shared `beforeEach` would be a NEW bug**, because each `makeOwnerContext()` mints a new user. The coordinator hit the same trap and avoided it while writing T11's header — three parties, one conclusion |
+| **High 1 — T13 behavior 18 asserts a property of the VOLUME, in the suite CI runs** | ✅ **CONFIRMED, and it is the best finding of the round** | **Neither Codex nor the coordinator found this.** Verified here: `.github/workflows/ci.yml:27,57` runs `npm test` on `ubuntu-latest`; `jest.config.ts` `testMatch` collects `tests/lib/**`, which is where T13 deliberately moved this file *so that CI would run it*; and this Mac measures APFS as normalization-INSENSITIVE (`linkSync` → `EEXIST`, one file). On ext4 the link succeeds, two files exist, and `toEqual([NFC])` is red. ⚠ The ext4 half is **reasoned, not measured** — no ext4 volume was available here |
+| **Medium 1 — the rollout count is both 42 and 41** | ✅ CONFIRMED | Same as Codex and the coordinator. Three independent parties, one answer: **41** |
+| **Low 1 — the wrong noun is repeated elsewhere** | ✅ CONFIRMED | Same as Codex |
+| **Low 2 — round 3's citation fix took; four neighbours did not** | ✅ CONFIRMED | **The held-back lead — see §4.** Found one the coordinator missed |
+| **Low 3 — two "verbatim today" quotes silently elide comment blocks** | ✅ CONFIRMED as stated | Neither other party found it. Every code line and their order are accurate; the plan marks elisions explicitly elsewhere, so an unmarked one reads as a discrepancy |
+| **Low 4 — no step adds the `isServableSummaryKey` import to the two files that call it** | ✅ CONFIRMED | Neither other party found it. `tsc` catches it in seconds, hence Low — but T10 bothers to note which imports *already* exist, which makes omitting the one that does not conspicuous |
+
+**Score for the dual-review rule.** Codex-only would have shipped a plan whose money-path test goes
+red in CI on merge (High 1), with two unmarked non-verbatim quotes and a missing import step.
+Claude-only would have shipped the wrong severity on the file-header Blocking, since Claude scoped
+it to T12 as well and neither half traced it to T11 or swept the class. **Each half caught something
+the other could not, on the same commit, from the same prompt.** That is the third time this project
+has measured it (`docs/reviews/` passim, and the `dual-review-halves-are-not-redundant` memory).
+
+---
+
 ## 2. Re-attribution: the T12 Blocking belongs to T11, and the class is four files wide
 
 Codex read Task 12 in isolation, saw `tests/integration/cloud-sync/adopt-guard.int.test.ts` in its
@@ -125,7 +150,14 @@ existing final via upsert…')`); only the directory was elided — the file is 
 ## 4. Held back from both halves — Task 0's inventory citations
 
 Not put in the round-4 prompt, deliberately, so that finding it would measure whether a reviewer
-checks citations mechanically or by eye. **Neither half found it.**
+checks citations mechanically or by eye.
+
+⚠ **CORRECTION.** An earlier draft of this section said *"neither half found it."* **That was written
+while the Claude half was still running, and it is wrong.** The Claude half found it independently —
+its **LOW 2**, *"round 3's line-reference fix took; four neighbours in the same table did not"* — and
+found one the coordinator's sweep MISSED: the `Ctx` interface's declaration of `syncDeps`, cited at
+`:66`, which is a mid-docstring line; the declaration is at `:69`. Codex did not find it.
+**Total: SEVEN wrong citations, from two sweeps that each missed something the other caught.**
 
 Round 3 (Codex, Low) found ONE citation in Task 0's inventory table wrong: `helpers/cloud.ts:132`
 should be `:131`. v4 fixed that one and rechecked none of the others.
@@ -140,6 +172,7 @@ should be `:131`. v4 fixed that one and rechecked none of the others.
 | `seedVideo` — `helpers/cloud.ts:378` | **296** | **−82** |
 | `seedFreshModel` — `share-route.test.ts:78` | 79 | +1 (points at the doc comment) |
 | `putBudget` — `tests/support/budget.ts:21` | 18 | −3 |
+| `Ctx.syncDeps` declaration — `helpers/cloud.ts:66` | 69 | −3 — **found by the Claude half, missed here** |
 
 The other thirteen are correct, including every `sync-run.ts` export offset (`:40`, `:51`, `:62`,
 `:221`, `:371`, `:444`, `:547`), `model-store.ts:46/:66`, `blob-store.ts:87`,

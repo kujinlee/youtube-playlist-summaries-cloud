@@ -280,7 +280,7 @@ through `cloudVideoRecord` / `localVideoRecord`.
 ```
 
 **The change:** add `localBlob?: BlobStore` to the `opts` type (and to the `Ctx` interface's
-declaration of `syncDeps` at `:66`), and return `localBlob: opts.localBlob ?? localBlobStore`.
+declaration of `syncDeps` at `:69`), and return `localBlob: opts.localBlob ?? localBlobStore`.
 Nothing else moves. Behavior 26f asserts a NEGATIVE — that the sender's blob store was never read —
 which is unobservable unless the test can supply the sender's store.
 
@@ -2845,6 +2845,31 @@ const ID = 'vid00000001';
 const KEY = '003_alpha.md';
 const WINNER_BODY = '# winner\n\nbody\n';
 
+/** Does this volume ALIAS the NFC and NFD spellings of one name (APFS/HFS+), or keep them as two
+ *  distinct files (ext4)? MEASURED per run, never assumed — see behavior 18. `EEXIST` from
+ *  `linkSync` is the aliasing signal; any OTHER errno is a real fault and must not be silently
+ *  read as "sensitive volume", which would turn a broken environment into a passing test.
+ *
+ *  ⚠ The probe MUST use an NFC/NFD pair of the SAME name. Two differently-spelled ASCII filenames
+ *  measure nothing: they would always link, and the probe would report every volume sensitive. */
+function volumeAliasesNfcNfd(): boolean {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'nfc-probe-'));
+  try {
+    const nfc = path.join(d, 'probe-café.md'.normalize('NFC'));
+    const nfd = path.join(d, 'probe-café.md'.normalize('NFD'));
+    fs.writeFileSync(nfc, 'x');
+    try {
+      fs.linkSync(nfc, nfd);
+      return false;                                       // two files -> SENSITIVE (ext4)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'EEXIST') return true;   // aliased (APFS/HFS+)
+      throw e;
+    }
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+}
+
 const roots: string[] = [];
 function tmp(): string {
   const d = fs.mkdtempSync(path.join(os.homedir(), 'additive-protocol-'));
@@ -2900,8 +2925,22 @@ it('behavior 18 — occupant is BYTE-IDENTICAL under the aliasing form: SUCCEEDS
 
   // EXACTLY one .md, under the STORED name: `toContain(NFC)` alone would also pass on a
   // normalization-SENSITIVE volume, where the link would have created a SECOND file.
-  const md = (await fs.promises.readdir(r.p.indexKey)).filter((n) => n.endsWith('.md'));
-  expect(md).toEqual([NFC]);
+  //
+  // ⚠ ROUND-4 CLAUDE HIGH-1 — but which outcome is correct is a property of the VOLUME, and this
+  // file is collected by the UNIT config (`jest.config.ts` testMatch `tests/lib/**`), which CI runs
+  // on ubuntu-latest — ext4 (`.github/workflows/ci.yml:27,57`). Hard-coding `[NFC]` passes on the
+  // implementer's Mac and goes RED in CI: exactly the gate T13 moved this file into so that it
+  // would be run. So probe, do not assume.
+  const md = (await fs.promises.readdir(r.p.indexKey)).filter((n) => n.endsWith('.md')).sort();
+  if (volumeAliasesNfcNfd()) {
+    expect(md).toEqual([NFC]);                    // APFS/HFS+: the link hit the existing inode
+  } else {
+    // ext4: the two spellings are simply two different names, so there was never an aliased
+    // occupant to resume over. The copy still had to SUCCEED — that much is asserted above — but
+    // THE CRASH-RESUME PATH THIS BEHAVIOR EXISTS TO TEST IS NOT EXERCISED HERE. A green run on a
+    // normalization-sensitive volume is not evidence that resume works; read it as "not applicable".
+    expect(md).toEqual([NFC, NFD].sort());
+  }
 });
 
 it('behavior 18b/18c — occupant has DIFFERENT bytes: REFUSES, occupant intact', async () => {
