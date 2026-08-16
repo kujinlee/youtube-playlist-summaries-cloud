@@ -51,6 +51,32 @@ are appends and correctly show no header. That is not a defect.
 **So four new integration files have no imports, no `ctx` lifecycle and no `beforeEach` anywhere in
 the plan.** Each is a step that cannot be executed as written: **Blocking**.
 
+### Writing T11's header surfaced two more defects in the same block
+
+Neither was reported by any of the four rounds, because T11 was never in a round's scope:
+
+- **`ctx` was used free in all four tests, and a `beforeEach` would have been the WRONG fix.** The
+  repo idiom is per-test — `sync-run.int.test.ts:25,48` and `e2e.int.test.ts` each open with
+  `const ctx = await makeOwnerContext();`, because every call mints a new user and a shared `ctx`
+  would leak state across tests. Writing the header naively would have introduced a fixture bug.
+- **`RecordingBlobStore` is invented** — used once at 26f (plan:2341) and defined nowhere. That is
+  the **fourth** invented identifier in this plan's history, after `rawList` (v1) and
+  `receiverEnvelope` (v2). It is now written out, modelled on `FailPromoteBlobStore`
+  (`tests/integration/helpers/cloud.ts:168`), including full-surface delegation and `copy` routed
+  through `this` — a narrower decorator would silently change the store the code under test sees.
+
+### T14 — a helper described in prose instead of written
+
+`ingestViaHandler({ title })` is the task's most complex helper: it creates a user, signs in, seeds
+a playlist, builds the job, and runs `makeSummaryHandler(admin())(job, mockCtx)`. The plan gives it
+**one paragraph of prose and no code**, which is exactly what the plan's own governing rule forbids
+("code blocks required for code steps"). All five tests in T14 call it. **Blocking**, same class.
+
+*(Checked and CLEARED: T14 appears to call `ingestLocal`, `serveSummary`, `ledgerTotal` and
+`EXPECTED_ONE_SUMMARY_COST` — the identifiers Task 0 declares dissolved. It does not. Those occur
+only in the "v2 called" column of T14's own disposition table, explaining what was replaced. A
+mechanical scan flagged it; reading it cleared it.)*
+
 ### Why this was missed twice
 
 Round 3 named **four** incomplete fixture blocks. v4 fixed **those four**. Round 3 named **one**

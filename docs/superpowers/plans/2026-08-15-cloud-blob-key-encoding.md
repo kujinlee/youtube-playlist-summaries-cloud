@@ -2308,10 +2308,74 @@ a paid cloud artifact (round-16 B1). **The guard goes in the caller**, where `pr
 `runSync(deps: SyncDeps, opts: { playlistKey?: string } = {})` (`:547-549`), and every per-video
 throw is caught at `:812-814`. All four tests below assert `report.errors`, and 26b re-runs.
 
+⛔ **Round-4 coordinator, THREE defects in the block that follows, none of which any of the four
+review rounds reported — T11 was never in a round's scope.** They are fixed below; they are recorded
+because the shape matters more than the fix:
+
+1. **The file had no header anywhere in the plan.** It is marked `(new)` above, and neither T11 nor
+   T12 showed a single `import`. Round 3 named four *other* incomplete blocks and v4 fixed exactly
+   those four — the sample, not the population. Four new integration files were affected; this is one.
+2. **`ctx` was used free.** The repo idiom is NOT a shared `beforeEach` — `sync-run.int.test.ts:25,48`
+   and `e2e.int.test.ts` both open **each** test with `const ctx = await makeOwnerContext();`, because
+   every call mints a NEW user and a shared one would leak state between tests.
+3. **`RecordingBlobStore` was invented** — used once at 26f and defined nowhere. That is the fourth
+   invented identifier in this plan's history (`rawList` in v1, `receiverEnvelope` in v2). It is
+   written out below, modelled on `FailPromoteBlobStore` (`helpers/cloud.ts:168`), which is the
+   nearest real decorator in the tree.
+
 ```ts
+// tests/integration/cloud-sync/adopt-guard.int.test.ts
+//
+// Backlog #36, plan T11 + T12 — the adopt guard (T11) and reconcileCloudBase's four-cell table
+// (T12, appended in that task). Runs against real local FS <-> local Supabase under an
+// authenticated USER session, never service-role.
+//
+// Money invariant: every behavior here REFUSES before a paid artifact is read or copied, so no
+// test in this file may move the ledger.
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import {
+  makeOwnerContext, prepareSyncCtx, seedCloudVideo, seedLocalVideoFull,
+  cloudVideoRecord, localBlobBytes,
+} from '@/tests/integration/helpers/cloud';
+import { runSync } from '@/lib/cloud-sync/sync-run';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { copyBlob, type BlobStore, type CopyResult, type StagedRef } from '@/lib/storage/blob-store';
+import type { Principal } from '@/lib/storage/principal';
+
+jest.setTimeout(30_000);
+
+afterAll(async () => {
+  const home = os.homedir();
+  const dirs = (await fs.readdir(home)).filter((d) => d.startsWith('.cs-syncrun-'));
+  await Promise.all(dirs.map((d) => fs.rm(path.join(home, d), { recursive: true, force: true })));
+});
+
+/** Records every `get` key and otherwise delegates. 26f asserts a NEGATIVE — that the sender blob
+ *  was never read — so the instrument must distinguish "not called" from "called, returned nothing";
+ *  a jest mock returning `null` cannot. Full-surface delegation, and `copy` routes through `this`,
+ *  both copied from `FailPromoteBlobStore` (`tests/integration/helpers/cloud.ts:168-185`) so the
+ *  decorator cannot silently narrow the store the code under test sees. */
+class RecordingBlobStore implements BlobStore {
+  constructor(private inner: BlobStore, private onGet: (key: string) => void) {}
+  get provesAbsence(): boolean | undefined { return this.inner.provesAbsence; }
+  put(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.put(p, key, bytes, ct); }
+  get(p: Principal, key: string) { this.onGet(key); return this.inner.get(p, key); }
+  tryGet(p: Principal, key: string) { this.onGet(key); return this.inner.tryGet(p, key); }
+  exists(p: Principal, key: string) { return this.inner.exists(p, key); }
+  delete(p: Principal, key: string) { return this.inner.delete(p, key); }
+  putStaged(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.putStaged(p, key, bytes, ct); }
+  promote(ref: StagedRef): Promise<void> { return this.inner.promote(ref); }
+  deletePrefix(p: Principal, prefix: string) { return this.inner.deletePrefix(p, prefix); }
+  list(p: Principal, prefix: string) { return this.inner.list(p, prefix); }
+  copy(p: Principal, from: string, to: string): Promise<CopyResult> { return copyBlob(this, p, from, to); }
+}
+
 const EVIL = 'nested/evil.md';
 
 it('behavior 26 — local->cloud adopt of an unservable key REFUSES, creates no receiver row, and names the repair', async () => {
+  const ctx = await makeOwnerContext();
   await prepareSyncCtx(ctx);
   await seedLocalVideoFull(ctx, { summaryMd: EVIL, mdBody: '# body\n' });   // local-only video
   const report = await runSync(ctx.syncDeps(), { playlistKey: ctx.playlistKey });
@@ -2325,6 +2389,7 @@ it('behavior 26 — local->cloud adopt of an unservable key REFUSES, creates no 
 it('behavior 26e — cloud->local hydration of an unservable key SUCCEEDS', async () => {
   // The vault is NOT guarded (§3.4, decision ①). Without this row the round-16 B1 regression is
   // invisible, because behavior 26 alone passes whichever direction it is written against.
+  const ctx = await makeOwnerContext();
   await prepareSyncCtx(ctx);
   await seedCloudVideo(ctx, { summaryMd: EVIL, mdBody: '# body\n' });       // cloud-only video
   const report = await runSync(ctx.syncDeps(), { playlistKey: ctx.playlistKey });
@@ -2333,6 +2398,7 @@ it('behavior 26e — cloud->local hydration of an unservable key SUCCEEDS', asyn
 });
 
 it('behavior 26f — the guard runs ABOVE the sender read: no `get` on the sender blob store', async () => {
+  const ctx = await makeOwnerContext();
   await prepareSyncCtx(ctx);
   await seedLocalVideoFull(ctx, { summaryMd: EVIL, mdBody: '# body\n' });
   // A recording decorator, file-local, same shape as FailPromoteBlobStore (helpers/cloud.ts:168).
@@ -2344,6 +2410,7 @@ it('behavior 26f — the guard runs ABOVE the sender read: no `get` on the sende
 });
 
 it('behavior 26b — the refusal SURVIVES a second run; it is not routed around', async () => {
+  const ctx = await makeOwnerContext();
   await prepareSyncCtx(ctx);
   await seedLocalVideoFull(ctx, { summaryMd: EVIL, mdBody: '# body\n' });
   const first = await runSync(ctx.syncDeps(), { playlistKey: ctx.playlistKey });
@@ -2678,7 +2745,10 @@ better than suppressing either.)*
 - [ ] **Step 6: Add 26d2's second-run assertion** — INTEGRATION
 
 ```ts
+// ⚠ APPENDED to the file T11 creates — `EVIL`, the imports, the `RecordingBlobStore` decorator and
+//    the `afterAll` cleanup are all already in it. T11 runs BEFORE T12; do not recreate the file.
 it('behavior 26d2 — the SKIP is visible on run 1 AND run 2, and copyToLocal hydrates the paid summary', async () => {
+  const ctx = await makeOwnerContext();
   await prepareSyncCtx(ctx);
   await seedLocalVideoFull(ctx, { position: 3, summaryMd: null });        // serial, no vault file
   await seedCloudVideo(ctx, { position: 7, summaryMd: EVIL, mdBody: '# paid\n' });
