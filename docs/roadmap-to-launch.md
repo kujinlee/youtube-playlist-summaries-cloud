@@ -1263,7 +1263,7 @@ unapplied for eight days while every document read "merged, done".
   trigger. Do not resume it by momentum.
 
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
-Branch `fix/cloud-blob-key-encoding`, spec **v9**, 12 commits, **Phase 1 only — zero code written**.
+Branch `fix/cloud-blob-key-encoding`, spec **v21 — ✅ APPROVED 2026-08-15, PHASE 1 CLOSED**. Still **zero implementation code**: Phase 2 (the plan) is under its own dual adversarial review.
 Fourteen dual review rounds, a Phase 6 architecture review, a round-10 DESIGN review and a scoped
 credential design pass; all on disk at
 `docs/reviews/spec-blob-key-encoding-r{1..9,11..15}-{codex,claude}.md`,
@@ -1303,8 +1303,8 @@ credential design pass; all on disk at
     and a separate `promoteIfAbsent` added — not because R1 broke a caller (it did not; verified), but
     because declaring *"create-if-absent everywhere"* would turn **backlog #22** from a tracked bug
     into a documented invariant.
-- **Rounds 12–17 ran; the spec is at v20.** Reviews on disk at
-  `docs/reviews/spec-blob-key-encoding-r{12..17}-{codex,claude}.md`.
+- **Rounds 12–18 ran; the spec closed at v21.** Reviews on disk at
+  `docs/reviews/spec-blob-key-encoding-r{12..18}-{codex,claude}.md`.
 - **The escalation rule fired, was overridden with a falsifier, the falsifier FIRED, and the debt was
   PAID.** Round 13's H1 found the `sourceMd` ownership credential **stale by construction** —
   `reconcileCloudBase` byte-copies the model envelope and never rewrites it, while the local migration
@@ -1392,10 +1392,31 @@ credential design pass; all on disk at
 - **The durable lesson, now in `review-method.md` and `portable-practices.md`:** *a derivation you have
   to be right about is still a count.* Ask whether the rule can become wrong because someone adds a new
   X without touching this code.
-- **Next:** round 18, aimed at §3.5.1b's rewritten table and B1's fix — **not** a general re-review;
-  §3.1–§3.4 and §3.6 have been stable for several rounds and round 17 found nothing new in them. Then
-  `writing-plans` → implementation, and the ADR recording the seam decision (task #91; not yet written,
-  so not numbered here).
+- **✅ ROUND 18 RAN, THE FALSIFIER FIRED A SECOND TIME, AND IT BOUGHT A SCRIPT.** Both halves found
+  `mdKey`'s `??` (§3.5.1b row 6); the Claude half additionally found a **Blocking** the Codex half
+  missed — v20's own B1 fix left the round-17 Blocking open *through the seam*, and copied every paid
+  blob on the way. Four hand-built producer tables, four missed producers, the fourth one row from a
+  defect the brief had just warned about. **`scripts/check-producer-enumeration.py` now checks the
+  table** — it refuses an alias citation, a citation that names no definition, and any row claiming ONE
+  whose defining expression holds `?:`/`??`/`||`/`catch`/`switch`. `--self-test`: 11 cases.
+- **PHASE 1 CLOSED 2026-08-15.** The stopping argument, measured rather than felt: the spec grew
+  **1356 → 2025 lines across rounds 15–18** while findings shifted almost entirely to its own
+  bookkeeping — fix-induced findings went **2 → 3 → 4 → 5**, and by round 18 exactly **one** finding
+  predated that round's own repairs. Written up as `portable-practices.md` **§12**.
+  ⚠ **One claim I made to the user was wrong and is corrected here:** I said rounds 15–18 found *zero*
+  design defects. Round 18's B1 was classified **`mechanism`**. It was a mechanism defect in a *fix*
+  rather than in the original design — a real distinction, but not the one I stated.
+- **PHASE 2 IN PROGRESS.** `docs/superpowers/plans/2026-08-15-cloud-blob-key-encoding.md` — 15 tasks,
+  77 TDD steps. **Under dual adversarial review now**; no implementation subagent may be dispatched
+  until it converges (Post-Plan Gate, tasks #105–#109).
+  ⚠ **The gate's "machine-enforceable backstop" did not exist** — `process-checklists.md:28` described
+  a `PreToolUse`-on-`Agent` hook that was never built, watching a sentinel nothing ever wrote. The plan
+  reached *"want me to start Task 1?"* unreviewed and **a human caught it, not the machine**. Repaired
+  in `7f26074`, 8 test cases including negative controls.
+- **Then:** implementation → the ADR recording the seam decision (task #91 — **not yet written, so
+  deliberately not numbered here**; `check-docs.py` fails on a reference to an ADR that does not
+  exist, and caught exactly that when this line first said otherwise) → PR. **Merging stays a
+  human gate.**
 - **The only tracked ROADMAP step still open is `A6`, and it stays PARKED** by the user decision of
   2026-08-11 (blob-addressing schema). Nothing in #36 unparks it — v17 explicitly records that the
   model is still *addressed* by a mutable base, and that only
