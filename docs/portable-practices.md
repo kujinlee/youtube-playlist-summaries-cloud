@@ -237,11 +237,20 @@ inspecting nothing, and the reported value is indistinguishable from the healthy
 
 ## 11. A rule has two halves — what it asserts and WHERE it applies. Enumerate placements × branches
 
-> Seventeen adversarial rounds. The predicate itself has been stable since round 12. **Everything since
-> has been about placement** — and placement fails on two axes that look like one.
+> Seventeen adversarial rounds on one spec. **Since round 14, every finding has been about placement**
+> — and placement fails on two axes that look like one.
 
-**Measured 2026-08-14 → 08-15**, across four review rounds of a single spec. A `key is servable`
-predicate was correct and uncontested; every finding was about *where the check goes*.
+**Measured 2026-08-14 → 08-15**, across rounds 14–17 of a single spec. The rule being placed was a
+`key is servable` predicate. It *was* contested — round 14 found its bidi class covered 9 of 12 code
+points — but that was the last finding about what it asserts. Rounds 15, 16 and 17 produced two
+Blockings and a Medium, and **all of them were about where the check goes.**
+
+> ⚠ **The two sentences above were WRONG in the first draft of this entry, and the error is worth
+> keeping.** It claimed the predicate had been *"stable since round 12"* and *"correct and
+> uncontested"*. Both were written from recall, in a file whose own header says three
+> descriptions-from-memory were wrong on the day it was created. Caught within the hour by re-reading
+> the predicate, whose inline comments cite the rounds that changed it. **Enumerate; do not recall** —
+> including in the entry that is telling you to enumerate.
 
 ### The two axes, and they are orthogonal
 
