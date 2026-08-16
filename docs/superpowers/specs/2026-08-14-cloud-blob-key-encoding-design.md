@@ -1,6 +1,6 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
-**Status:** draft **v21**, awaiting user approval. **Branch:** `fix/cloud-blob-key-encoding`.
+**Status:** ✅ **APPROVED v21, 2026-08-15 — PHASE 1 CLOSED.** Implementation planning is next; the plan is `docs/superpowers/plans/`. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 
 **Review trail — seventeen dual rounds, a Phase 6 architecture review, a round-10 DESIGN review, and a
