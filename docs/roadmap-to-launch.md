@@ -1262,6 +1262,34 @@ unapplied for eight days while every document read "merged, done".
 - **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
   trigger. Do not resume it by momentum.
 
+**⭐⭐ 2026-08-17 — DECIDED BY THE USER: SHIP THE ENCODER ALONE. The plan is SPLIT.**
+
+**PR 1 = T1, T2, T14, T15 — four of sixteen tasks.** The other twelve come off the launch path and
+are re-filed on their own merits. Do NOT run plan review round 6.
+
+**Why, in one line each — all three verified, not taken on report:**
+- The **encoder alone fixes #36**. The shipped serve guard `assert-cloud-summary-md-key.ts:14`
+  ALREADY ACCEPTS the failing key `003_돈-…-다이제스트.md` (38 code points, measured). The failure is
+  the Storage upload in `supabase-blob-store.ts:15-18`, which throws before `persistSummary`.
+- **The approved spec says so itself**, §3.4 (line 558), written 2026-08-14 — three days before
+  anyone acted on it: *"Korean already passes the current allowlist… The Korean case is fixed by the
+  encoder; the guard fixes a different, adjacent set."*
+- **The other twelve fix a class filed as a bug NOWHERE.** `docs/backlog.md` has no entry for it and
+  no incident is recorded. Its only entry point is `recoverOrphanedVideos` (`lib/pipeline.ts:129`),
+  which `readdirSync`es the vault and adopts filenames verbatim — so it needs a human to place or
+  rename a file by hand. That route is open on `master` today and the encoder neither opens nor
+  widens it.
+
+**Why the plan stopped being iterated (Phase 6, 2026-08-17).** Five rounds, none converged, 103
+findings: **exactly ONE was about design** and 45 were transcription — identifiers and counts that
+did not survive being hand-copied into markdown. 23% of all findings, and **60% of round 5's**, were
+defects introduced by the previous round's own fixes. The plan is a 3,905-line document, 57% inside
+code fences, holding 1,581 lines of TypeScript no compiler ever sees. Round 5's Blocking was a
+`TS2420` — a defect the plan itself assigns to `tsc`. `review-method.md` escalates FIX→REDESIGN at
+two consecutive fix-induced rounds; that threshold was crossed at round 2.
+
+**Two things to fold in regardless — see NEXT ACTIONS.**
+
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
 Branch `fix/cloud-blob-key-encoding`, spec **v21 — ✅ APPROVED 2026-08-15, PHASE 1 CLOSED**. Still **zero implementation code**: Phase 2 (the plan) is under its own dual adversarial review.
 Fourteen dual review rounds, a Phase 6 architecture review, a round-10 DESIGN review and a scoped
