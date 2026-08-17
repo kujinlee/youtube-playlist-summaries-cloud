@@ -97,14 +97,25 @@ Every task's requirements implicitly include this section. Values are copied ver
   | `lib/storage/supabase/supabase-metadata-store.ts` (T9) | no import | a new named import |
   | `lib/share/serve.ts` (T5) | no import | a new named import |
   | `lib/cloud-sync/reconcile-serial.ts` (T12) | no import | a new named import |
-  | `lib/html-doc/serve-summary-core.ts` | **already imports `assertCloudSummaryMdKey`** from that module | **EXTEND the existing named import** — do not add a second import statement from the same path |
 
   ```ts
   import { isServableSummaryKey } from '@/lib/html-doc/assert-cloud-summary-md-key';
   ```
-  `tsc` catches an omission in seconds, which is why this is a Low and not a Blocking. It is written
-  down anyway because the *last* row is the one that bites: adding a duplicate import from a path a
-  file already imports is a lint error, not a missing symbol, and reads as a different problem.
+
+  **FIVE files, SEVEN call sites** — `sync-run.ts` and `reconcile-serial.ts` have two each. `tsc`
+  catches an omission in seconds, which is why this is a Low; it is written down because it is one
+  rule with several instances and the reported finding named only two of them.
+
+  ⛔ **Round-5 Claude Medium 2 — a SIXTH row was here and it was wrong.** It listed
+  `lib/html-doc/serve-summary-core.ts` as *"already imports `assertCloudSummaryMdKey`, so EXTEND the
+  named import"*, and called it "the one that actually bites". **That file never calls the predicate
+  at all.** It calls `assertCloudSummaryMdKey(mdKey)` (`:61`), which T4 rewrites to delegate to
+  `isServableSummaryKey` internally — so it gets the new behavior for free and needs no import.
+  Following the row literally would have added a dead import to the one file the constraint singled
+  out. Two lessons, both already in this document's history: **a sweep can over-include as easily as
+  under-include**, and the row asserted as most load-bearing got the least checking.
+  *(For the record, had the intent been "files importing from that module", the sweep ALSO missed
+  `lib/dig/cloud/resolve-summary-key.ts` — which likewise needs no change.)*
 - **⛔ THE TWO SUITES TAKE DIFFERENT COMMANDS.** `jest.config.ts` `testMatch` is `tests/lib/**`,
   `tests/api/**`, `tests/scripts/**`, `tests/smoke.test.ts`, `tests/components/**` — it **excludes
   `tests/integration/`**, which lives in `jest.integration.config.ts` with the `globalSetup` that
@@ -2021,8 +2032,10 @@ git commit -m "feat(#36): videoId is the model-ownership credential, gating ship
 the smallest change that makes it work with the idiom instead of against it.
 
 *(Checked, not assumed: `ctx.userClient` and `ctx.cloudPrincipal` both exist — `Ctx` declares them at
-`tests/integration/helpers/cloud.ts:44` and `:59`. They were the two most likely inventions in this
-block and they are real.)*
+`tests/integration/helpers/cloud.ts:44` and `:58`. They were the two most likely inventions in this
+block and they are real. ⚠ Round-5 Claude Low 1: this cited `:59`; the declaration is `:58`. That is
+the eighth wrong `path:line` citation found in this plan, which is why `scripts/check-doc-citations.py`
+is filed rather than argued about.)*
 
 ```ts
 // tests/integration/metadata-seam.test.ts
@@ -2065,7 +2078,14 @@ async function callWith(
 it.each(['upsertVideo', 'updateVideoFields', 'bulkUpdateVideoFields'] as const)(
   'behaviors 26c + 26c2 — %s REFUSES a patch advertising an unservable key', async (method) => {
     const ctx = await makeOwnerContext();
-    await prepareSyncCtx(ctx);
+    // ⛔ Round-5 Claude Blocking 1: `prepareSyncCtx` alone is NOT ENOUGH, and v5d used it here.
+    //    It sets ctx.cloudPrincipal but inserts NO playlist row, and all three adapter methods run
+    //    `requirePlaylistId(p)` as their FIRST statement (`supabase-metadata-store.ts:116,139,157`),
+    //    which throws `playlist not found` BEFORE the argument carrying the guard is evaluated. The
+    //    test would go green on the wrong error — `.rejects.toThrow(/not a servable summary key/)`
+    //    would FAIL, but for a reason that looks like the guard is missing. `seedCloudVideo` creates
+    //    the playlist AND the video row `upsertVideo` updates, and calls `prepareSyncCtx` itself.
+    await seedCloudVideo(ctx);
     await expect(callWith(ctx, method, {
       summaryMd: 'nested/evil.md',
       artifacts: { summaryMd: { key: 'nested/evil.md', status: 'promoted' } },
@@ -2074,7 +2094,7 @@ it.each(['upsertVideo', 'updateVideoFields', 'bulkUpdateVideoFields'] as const)(
 
 it('behavior 26c — a Korean key is ACCEPTED', async () => {
   const ctx = await makeOwnerContext();
-  await prepareSyncCtx(ctx);
+  await seedCloudVideo(ctx);          // playlist + video row, per Blocking 1 above
   await expect(callWith(ctx, 'updateVideoFields', {
     summaryMd: '003_한국어.md',
     artifacts: { summaryMd: { key: '003_한국어.md', status: 'promoted' } },
@@ -3026,8 +3046,15 @@ const WINNER_BODY = '# winner\n\nbody\n';
  *
  *  ⚠ The probe MUST use an NFC/NFD pair of the SAME name. Two differently-spelled ASCII filenames
  *  measure nothing: they would always link, and the probe would report every volume sensitive. */
-function volumeAliasesNfcNfd(): boolean {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'nfc-probe-'));
+//  ⛔ ROUND-5 CLAUDE MEDIUM 1: `base` is a PARAMETER because the first version probed
+//     `os.tmpdir()` while behavior 18 writes under `tmp()` → `os.homedir()`. That replaced the
+//     assumption "the volume is APFS" with "TMPDIR and HOME have the same normalization semantics"
+//     — a second unstated assumption in the same place. It happened to be true on the author's
+//     machine (both measured aliasing, both on /dev/disk1s1), which is the worst case: right by
+//     luck, not by construction. CLAUDE.md's rule is that a check only beats a claim when it reads
+//     the thing the claim is about, so this now probes THE DIRECTORY JUST WRITTEN TO.
+function volumeAliasesNfcNfd(base: string): boolean {
+  const d = fs.mkdtempSync(path.join(base, 'nfc-probe-'));
   try {
     const nfc = path.join(d, 'probe-café.md'.normalize('NFC'));
     const nfd = path.join(d, 'probe-café.md'.normalize('NFD'));
@@ -3106,7 +3133,7 @@ it('behavior 18 — occupant is BYTE-IDENTICAL under the aliasing form: SUCCEEDS
   // implementer's Mac and goes RED in CI: exactly the gate T13 moved this file into so that it
   // would be run. So probe, do not assume.
   const md = (await fs.promises.readdir(r.p.indexKey)).filter((n) => n.endsWith('.md')).sort();
-  if (volumeAliasesNfcNfd()) {
+  if (volumeAliasesNfcNfd(r.p.indexKey)) {     // the very directory the assertion reads
     expect(md).toEqual([NFC]);                    // APFS/HFS+: the link hit the existing inode
   } else {
     // ext4: the two spellings are simply two different names, so there was never an aliased
