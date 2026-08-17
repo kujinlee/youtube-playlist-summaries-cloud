@@ -399,6 +399,58 @@ question you are asking before acting on either.
 
 ---
 
+## 13. Code inside a document is never run — either EXECUTE it, or QUOTE the real thing
+
+**Measured 2026-08-17, on a 16-task implementation plan that took five adversarial review rounds and
+converged in none of them.** 103 findings. Exactly **one** concerned design. **Forty-five were
+transcription** — identifiers that resolved nowhere, imports from modules that did not re-export
+them, counts contradicting their own itemisation. Not one of those would have survived a compiler.
+
+The plan was 3,905 lines, **57% of it inside code fences**, holding 1,581 lines of TypeScript across
+26 test-shaped blocks. None of it was ever compiled, linted or import-resolved, because a markdown
+document is not a file any tool reads. The clinching exhibit: round 5's Blocking was a class missing
+an interface member — a `TS2420` — in a plan whose own rules require `tsc --noEmit` on every task.
+**A review round was spent on a defect the document itself assigns to the compiler.**
+
+### The rule
+
+> **Every code snippet is either (a) EXECUTED AND VERIFIED, or (b) the CURRENT code quoted verbatim
+> plus a precise statement of the change — and the "executed" marker names the commit it was
+> executed against.**
+
+Adopted mid-slice, after two rounds had produced **four invented identifiers** — names present in
+the plan and absent from the codebase.
+
+**The third clause is not decoration, and it is why this entry exists rather than the shorter
+version.** Executed-or-quoted makes a snippet true *when written* and says nothing about staleness.
+Round 5 found `EXECUTED` markers standing above blocks that later rounds had edited underneath them —
+the project's own rule (§4 here: *a tick records that something was verified, never what against*)
+firing on the instrument built to prevent exactly this. Naming the commit is what makes the marker
+falsifiable.
+
+### The generalisation, which is bigger than the rule
+
+A review method usually classifies a fix-induced defect by what it says about the **subject**:
+a mechanism is wrong (redesign), a branch was missed (fix), a reference went stale (update). Those
+categories cannot see this failure, because it is not about the subject at all — **it is about the
+MEDIUM the subject is written in.** Ask the method's own test — *"can a redesign remove it?"* — of
+*"a class in a markdown block does not implement its interface"* and the answer is no, so the method
+says FIX, forever, one identifier at a time.
+
+> **When the fixes keep producing defects a compiler or a test runner would have caught, the remedy
+> is neither redesign nor more rounds — it is moving the content into a file the machine can read.**
+
+The tell is quantitative and cheap to watch: **track what share of each round's findings are defects
+introduced by the previous round's fixes.** Here it rose 0% → 24% → 35% → 42% → **60%**. A review
+converging on its own repairs is not a tail; it is a generator.
+
+### What to do instead
+
+Keep the document for what a document is good at — behaviour mapping, ordering, insertion points
+with verbatim quotes, recorded decisions, each task's RED expectation. Put the code in a scaffold
+branch that compiles. If a snippet must live inline, it is quoted current code plus the change, and
+the elisions are **marked and counted** — an unmarked `…` hides exactly the line the reader needs.
+
 ## Not yet mined
 
 **Re-enumerated 2026-08-13** (counted, not recalled): **61 memory files**, **633 review documents**,
