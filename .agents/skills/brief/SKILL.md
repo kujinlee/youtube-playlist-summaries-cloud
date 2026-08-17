@@ -78,10 +78,34 @@ Before designing anything, answer these. They decide what the page contains:
 
 ## Step 3 — build the page
 
-**Load the `artifact-design` skill first** (required before writing any Artifact), then publish with
-the `Artifact` tool. A hosted URL needs no local server, unlike `explainer-serve.py` — and note the
-Artifact CSP blocks all external requests, so an explain-diff-style "Ask" button cannot work here.
-The reader is already inside a Claude surface; they can just ask.
+**Load the `artifact-design` skill first** — it governs the visual craft. Then write the content as
+a fragment (a `<title>`, one `<style>…</style>`, then body markup — no `<html>`/`<head>`/`<body>`)
+and compose it with:
+
+```bash
+python3 scripts/brief-compose.py --content <fragment.html> --slug <slug> --title "<title>"
+python3 scripts/explainer-serve.py            # no-op if already running
+# then: http://127.0.0.1:7391/latest
+```
+
+**The output goes to `~/explainers/`, NOT to an Artifact, and the reason is the Ask tray.**
+
+An Artifact is hosted under a CSP that blocks every external request, localhost included — so the
+`POST /questions` channel cannot exist there. Served from `explainer-serve.py` it works: hover a
+heading or select text → **ask** → the question lands in `~/explainers/questions.md` with its
+section and quoted passage, **and the monitor already watching that file wakes the session.** The
+reader gets an answer without leaving the page. That closed loop is the whole point of a briefing
+someone reads while deciding.
+
+`brief-compose.py` lifts the tray — 13 CSS rules, the markup, ~6KB of JS — **verbatim from an
+existing explainer**. Never retype it. It took four rounds of shipped defects to get right
+(`explainer-serve.py`'s docstring records them), and hand-copying working code between documents is
+the exact failure this project measured on 2026-08-17: 45 of 97 review findings were identifiers,
+imports and counts that did not survive a copy. The script fails loudly and writes nothing if it
+cannot find a tray to lift, or if the composed page has lost it.
+
+*Optionally* also publish an Artifact for a shareable read-only URL — but it has no Ask, so the
+served page is the one to hand over.
 
 Sections, in this order:
 
@@ -121,16 +145,30 @@ Then ask the decision question directly, in one sentence.
 - **Unfamiliar code** → `zoom-out`. That maps modules and callers.
 - **This** → the state of a body of work and what it needs from the human.
 
+## Answering the questions that come back
+
+When the monitor delivers a question, answer it **in the page**, not only in chat — a briefing whose
+answers live in the transcript has the problem it was built to solve. Add the answer under the
+relevant section, recompose, and say in chat that the page is updated. `/latest` always points at
+the newest file, so the reader's bookmark never changes.
+
 ## Known gaps in this draft
 
-Written 2026-08-17 as a working draft, deliberately shipped before it is good. Refinement is filed
-in the backlog. Known weak points, recorded so they are not rediscovered:
+Written 2026-08-17, deliberately shipped before it is good. Refinement is backlog **#50**. Known
+weak points, recorded so they are not rediscovered:
 
-- **No self-test.** The four ratchets in `scripts/` each have `--self-test`; this has nothing that
-  proves it read what it claims to have read.
+- ~~No self-test~~ — **closed the same day**: `scripts/brief-compose.py --self-test`, 14 cases,
+  including that it refuses to write when no tray can be lifted.
 - **The ground-truth command list is hardcoded** and will drift as the repo changes. Per
   `hardcode-only-what-fails-loudly`: a missing file fails loudly, a *renamed* one fails silently by
   returning nothing. Report empty results rather than skipping them.
-- **No staleness bound.** The page is true at its footer timestamp and says nothing about how fast
-  it decays.
-- **Unmeasured on a project with no decision pending** — the shape it produces then is untested.
+- **Staleness is per-figure, not per-page** — measured on the very first invocation, which quoted a
+  plan at 3,906 lines that had become 3,905 an hour earlier. A ratchet exit code decays in minutes;
+  a review count decays in days. The footer timestamp covers the page as a whole and says nothing
+  about which numbers rot fastest. **Consider marking volatile figures inline.**
+- **Unmeasured on a project with no decision pending** — the shape it produces then is untested, and
+  the risk is that it manufactures a decision to fill the slot.
+- **The composed page is never opened by its author.** `brief-compose.py` checks the tray survives
+  composition, but nothing drives the page. `explainer-serve.py` exists precisely so a page CAN be
+  driven by browser automation — using that to click **ask** once would close the last gap between
+  "the markup is present" and "the button works".
