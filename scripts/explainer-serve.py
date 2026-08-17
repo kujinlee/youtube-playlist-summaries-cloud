@@ -129,13 +129,55 @@ def index_html(root: pathlib.Path) -> str:
     )
 
 
+def _raises(fn, exc: type[BaseException]) -> bool:
+    """True when `fn()` raises `exc`. Used by the self-test to assert a REFUSAL — asserting that
+    something fails is the only way to prove a guard is not vacuous."""
+    try:
+        fn()
+    except exc:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+def question_text(payload: dict) -> str | None:
+    """The question itself, or None when the payload carries none.
+
+    FAIL LOUD, ADDED 2026-08-17. This used to substitute "(empty)" and return 200, on the reasoning
+    that recording an empty question beats dropping one. The instinct was right; the implementation
+    told the SENDER it had succeeded.
+
+    Measured that day: a POST with the keys `question`/`section` instead of `doc`/`text` returned
+    `{"ok": true}` and appended a block reading "(empty)". The caller had no way to learn its words
+    were gone. If the tray's JS ever drifts on a key name — a rename, a refactor, a hand-written
+    client — every question vanishes while the UI says "✓ Sent".
+
+    That is the shape CLAUDE.md files hardest against: *"cannot run" is a FAILURE, never a pass* —
+    here, in the one channel whose entire job is carrying the user's words back.
+
+    Rejecting loses nothing: the tray only clears its textarea on a 2xx (`if (!r.ok) throw`), so on
+    a 400 the question stays on screen with an error beside it. The user keeps their text AND
+    learns. That is strictly better than a silent "(empty)" in a file nobody re-reads."""
+    text = payload.get("text")
+    if not isinstance(text, str):
+        return None
+    text = text.strip()
+    return text or None
+
+
 def format_question_entry(payload: dict, now: str) -> str:
     """A POSTed question, as the Markdown block appended to questions.md.
 
     The payload is DATA. Nothing in it is executed, and it is written under a heading that records
-    when and from which page it arrived, so a later reader can tell questions apart."""
+    when and from which page it arrived, so a later reader can tell questions apart.
+
+    Assumes `question_text(payload)` already returned non-None; raises if not, so a future caller
+    cannot reintroduce the silent "(empty)" by skipping the check."""
+    text = question_text(payload)
+    if text is None:
+        raise ValueError("refusing to format a question with no text")
     doc = str(payload.get("doc") or "(unknown explainer)")
-    text = str(payload.get("text") or "").strip() or "(empty)"
     return f"\n---\n\n## {now} — {doc}\n\n{text}\n"
 
 
@@ -214,6 +256,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 raise ValueError("not an object")
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             return self._send(400, b"expected a JSON object", "text/plain; charset=utf-8")
+        # Reject rather than record "(empty)" — see question_text(). The 400 body names the key,
+        # because the measured failure was a caller sending the RIGHT question under the WRONG name.
+        if question_text(payload) is None:
+            got = ", ".join(sorted(str(k) for k in payload)) or "(no keys)"
+            body = (f'expected a non-empty "text" field; got: {got}. '
+                    'Nothing was recorded — resend with {"doc": "<page>", "text": "<question>"}.')
+            return self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
         now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         ROOT.mkdir(parents=True, exist_ok=True)
         with QUESTIONS.open("a", encoding="utf-8") as fh:
@@ -318,8 +367,29 @@ def _self_test() -> int:
         # question formatting — payload is data, and a missing field must not crash
         case("formats a question with its source",
              lambda: "## T — d.html" in format_question_entry({"doc": "d.html", "text": "q"}, "T"))
-        case("an empty question is recorded, not dropped",
-             lambda: "(empty)" in format_question_entry({"doc": "d"}, "T"))
+        # ⟲ REPLACED 2026-08-17. This case used to assert the opposite:
+        #     case("an empty question is recorded, not dropped",
+        #          lambda: "(empty)" in format_question_entry({"doc": "d"}, "T"))
+        # It encoded a fail-open. "Recorded, not dropped" was the right instinct about the FILE and
+        # the wrong answer for the CALLER, who got 200 either way. The tray keeps its textarea on a
+        # non-2xx, so rejecting loses no text and gains a visible error.
+        case("a payload with no text yields None",
+             lambda: question_text({"doc": "d"}) is None)
+        case("a whitespace-only question yields None",
+             lambda: question_text({"doc": "d", "text": "   \n\t "}) is None)
+        case("a non-string text yields None",
+             lambda: question_text({"doc": "d", "text": 42}) is None)
+        case("THE MEASURED BUG: right question, wrong key name, yields None",
+             lambda: question_text({"question": "why?", "section": "s"}) is None)
+        case("a real question survives, stripped",
+             lambda: question_text({"text": "  why?  "}) == "why?")
+        case("format_question_entry REFUSES an empty question",
+             lambda: _raises(lambda: format_question_entry({"doc": "d"}, "T"), ValueError))
+        # A case here grepped this file for the literal "(empty)" to prove the sentinel was gone.
+        # It failed — on the docstring that EXPLAINS the sentinel's removal. A check whose subject
+        # is "this string does not appear" cannot tell a live value from prose about it, so it
+        # penalises documenting the very fix it guards. The behaviour is already pinned by the five
+        # cases above, which test what the code DOES rather than what it says. Removed, not weakened.
         case("a missing doc is labelled, not crashed",
              lambda: "(unknown explainer)" in format_question_entry({"text": "q"}, "T"))
 
