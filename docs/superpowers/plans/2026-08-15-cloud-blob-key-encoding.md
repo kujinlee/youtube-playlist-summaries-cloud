@@ -85,6 +85,26 @@ Every task's requirements implicitly include this section. Values are copied ver
 - **Node 22+** is required (`String.prototype.isWellFormed`, Unicode property escapes). CI runs Node 22.
 - **No migration.** §4's gate ran against prod on 2026-08-14: 19 objects, 0 rows outside `SAFE`. Nothing in this plan rewrites an existing object key.
 - **Decision ① — the vault wins.** Local filenames keep their Unicode. **No guard is ever installed on the local path.** A guard that refuses to write a name *into the vault* is the inverse of this decision and caused round-16 B1.
+- **⚠ EVERY task that CALLS `isServableSummaryKey` must also ADD ITS IMPORT.** Round-4 Claude Low 4:
+  no step said to. It is exported from `lib/html-doc/assert-cloud-summary-md-key.ts` (T4). Stated here
+  rather than in five steps, because it is one rule and five instances — Low 4 named two of the five,
+  and the sweep below is the reason this is a global constraint:
+
+  | File that will call it | State today | What the task must add |
+  |---|---|---|
+  | `lib/job-queue/summary-handler.ts` (T10) | no import | a new named import |
+  | `lib/cloud-sync/sync-run.ts` (T11, T12) | no import | a new named import |
+  | `lib/storage/supabase/supabase-metadata-store.ts` (T9) | no import | a new named import |
+  | `lib/share/serve.ts` (T5) | no import | a new named import |
+  | `lib/cloud-sync/reconcile-serial.ts` (T12) | no import | a new named import |
+  | `lib/html-doc/serve-summary-core.ts` | **already imports `assertCloudSummaryMdKey`** from that module | **EXTEND the existing named import** — do not add a second import statement from the same path |
+
+  ```ts
+  import { isServableSummaryKey } from '@/lib/html-doc/assert-cloud-summary-md-key';
+  ```
+  `tsc` catches an omission in seconds, which is why this is a Low and not a Blocking. It is written
+  down anyway because the *last* row is the one that bites: adding a duplicate import from a path a
+  file already imports is a lint error, not a missing symbol, and reads as a different problem.
 - **⛔ THE TWO SUITES TAKE DIFFERENT COMMANDS.** `jest.config.ts` `testMatch` is `tests/lib/**`,
   `tests/api/**`, `tests/scripts/**`, `tests/smoke.test.ts`, `tests/components/**` — it **excludes
   `tests/integration/`**, which lives in `jest.integration.config.ts` with the `globalSetup` that
@@ -265,7 +285,8 @@ through `cloudVideoRecord` / `localVideoRecord`.
 
 - [ ] **Step 6: Give `syncDeps` a `localBlob` override — behavior 26f cannot be written without it**
 
-`tests/integration/helpers/cloud.ts:131` is verbatim today:
+`tests/integration/helpers/cloud.ts:131` today, **with every elision MARKED and counted** — round-4
+Claude Low 3 found this one carrying a bare `…`:
 
 ```ts
     syncDeps(opts: { failCloudPromote?: boolean; failCloudModelPut?: boolean } = {}): SyncDeps {
@@ -275,9 +296,15 @@ through `cloudVideoRecord` / `localVideoRecord`.
       if (opts.failCloudModelPut) cloudBlob = new FailModelPutBlobStore(cloudBlob);
       return {
         local: localMetadataStore,
-        …
+        // …1 line elided (:138): `cloud,`
         localBlob: localBlobStore,
+        // …5 lines elided (:141-145): `cloudBlob,`, a 2-line comment, `inFlightJob:`,
+        //   `dataRoots: [ctx.tempDataRoot],` and `ownerId: userId,`
+      };
 ```
+
+⚠ **The elided lines matter to this edit specifically**: `localBlob` is the THIRD key, not the last,
+so the change below is a substitution inside the object literal, not an append to its tail.
 
 **The change:** add `localBlob?: BlobStore` to the `opts` type (and to the `Ctx` interface's
 declaration of `syncDeps` at `:69`), and return `localBlob: opts.localBlob ?? localBlobStore`.
@@ -2798,13 +2825,17 @@ fails, stop — that is a defect, not a widening.**
 - [ ] **Step 5: The two `sync-run.ts` edits**
 
 **(a) The refusal branch goes INSIDE the existing `!rec.ok` block, above the generic throw.**
-`sync-run.ts:739-757` is verbatim today:
+`sync-run.ts:739-757` today, **code verbatim with its two comment blocks elided and MARKED** —
+round-4 Claude Low 3: this was labelled "verbatim" while silently dropping them, and the plan marks
+elisions explicitly elsewhere, so an unmarked one reads as a discrepancy against the file:
 
 ```ts
         if (!rec.ok) {
+          // …2-line comment (:740-741): these two mean the cloud moved underneath this run…
           if (rec.reason === 'metadata-unverified' || rec.reason === 'verification-unreadable') {
             await refreshCloudSnapshot();
           }
+          // …4-line comment (:745-748): backlog #17 — a deferral, not a fault…
           if (rec.reason === 'job-in-flight') {
             throw new Error(
               `base reconciliation deferred for ${id}: a summary/dig job is still in flight for this ` +
