@@ -667,8 +667,70 @@ ends in `/`, and `ownerRoot.length + physicalPrefix.length` lands exactly on the
 
 - [ ] **Step 5: Write the integration tests (needs the local Supabase stack)** — INTEGRATION
 
+⛔ **Round-4 coordinator: this file had no header, and its setup was PROSE** ("Assert in `beforeAll`
+that…", "`LOCAL_P` is `localPrincipal(<a mkdtemp dir>)`"). Written out below. ⚠ **And the prose named
+the WRONG environment variable:** it said `process.env.SUPABASE_URL`, which **nothing ever sets** —
+`tests/integration/setup.ts:23` populates `NEXT_PUBLIC_SUPABASE_URL` from `API_URL`, and
+`SUPABASE_URL` appears in no env file and no config. A prod-safety guard reading an unset variable is
+the failure mode this project already has a rule for: *"cannot run" is a FAILURE, never a pass.* The
+guard below reads the variable that exists and **throws when it is absent**, so an unset environment
+can never be mistaken for a safe one.
+
 ```ts
 // tests/integration/blob-encoding.test.ts
+//
+// Backlog #36, plan T2 — the encoder wired into SupabaseBlobStore, against a live LOCAL Supabase
+// stack. Behaviors 6, 7, 11, 13.
+// Run via: npm run test:integration -- blob-encoding
+// Requires: stack up + .env.test.local present (see tests/integration/setup.ts).
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import { newUser, signInAs } from './helpers/clients';
+import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { InMemoryBlobStore } from '@/lib/storage/testing/in-memory-blob-store';
+import { localPrincipal } from '@/lib/storage/principal';
+import type { Principal } from '@/lib/storage/principal';
+import type { BlobStore } from '@/lib/storage/blob-store';
+
+jest.setTimeout(20_000);
+
+// PROD GUARD. Fail-closed: an ABSENT url is a failure, not a pass. `NEXT_PUBLIC_SUPABASE_URL` is
+// the name setup.ts actually sets (`:23`); `SUPABASE_URL` is set by nothing in this repo.
+beforeAll(() => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL is unset — treat this as NOT RUN, never as safe');
+  if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(url)) {
+    throw new Error(`refusing to run against a non-local stack: ${url}`);
+  }
+});
+
+let blob: BlobStore;
+let P: Principal;
+let LOCAL_P: Principal;
+const tmpRoots: string[] = [];
+
+beforeEach(async () => {
+  // A fresh isolated user per test, JWT-scoped — the idiom at tests/integration/blob-store.test.ts:17.
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  blob = new SupabaseBlobStore(client, 'artifacts');
+  P = { id: userId, indexKey: `k-${userId.slice(0, 8)}` } as Principal;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'blob-encoding-'));
+  tmpRoots.push(dir);
+  LOCAL_P = localPrincipal(dir);
+});
+
+// Clean up: the local dirs here, and every remote object under each test's playlist root. The
+// per-test user is disposable, but the objects are not — deletePrefix('') is the store's own sweep.
+afterEach(async () => {
+  try { await blob.deletePrefix(P, ''); } catch { /* a test may already have swept it */ }
+});
+afterAll(async () => {
+  await Promise.all(tmpRoots.map((d) => fs.rm(d, { recursive: true, force: true })));
+});
+
 const KOREAN = '003_한국어.md';
 
 it('behavior 6 — put then get round-trips a Korean key', async () => {
@@ -696,8 +758,12 @@ it('behavior 13 — the local and in-memory adapters are IDENTITY', async () => 
 });
 ```
 
-Assert in `beforeAll` that `process.env.SUPABASE_URL` contains `127.0.0.1` or `localhost` and
-**throw otherwise**. Clean up every object created. `LOCAL_P` is `localPrincipal(<a mkdtemp dir>)`.
+The prod guard, the per-test user, `LOCAL_P` and the cleanup are all in the block above as code —
+not described. ⚠ Note `Principal` is imported from `@/lib/storage/principal`, **not** from
+`blob-store.ts`: `blob-store.ts` imports that type but does not re-export it (its exports are
+`BlobStatus`, `StagedRef`, `BlobRead`, `CopyResult`, `BlobStore`, `ReadOnlyBlobStore`,
+`assertLogicalKey`, `normalizeLogicalKey`, `copyBlob`). The coordinator's first draft of this block
+got that wrong — the same invented-import class this round has been correcting.
 
 - [ ] **Step 6: Run and commit**
 
@@ -1908,7 +1974,34 @@ git commit -m "feat(#36): videoId is the model-ownership credential, gating ship
 
 - [ ] **Step 1: Write the failing tests** — INTEGRATION
 
-`callWith` is file-local — one consumer, and it needs this file's own `ctx`:
+⛔ **Round-4 coordinator: this file had no header either, and `callWith` closed over a module-level
+`ctx` that the repo's per-test idiom does not provide.** `ctx` is created inside each `it`
+(`sync-run.int.test.ts:25,48`) because every `makeOwnerContext()` mints a new user, so a closed-over
+`ctx` is either `undefined` or shared state. **`callWith` now takes `ctx` as its first parameter** —
+the smallest change that makes it work with the idiom instead of against it.
+
+*(Checked, not assumed: `ctx.userClient` and `ctx.cloudPrincipal` both exist — `Ctx` declares them at
+`tests/integration/helpers/cloud.ts:44` and `:59`. They were the two most likely inventions in this
+block and they are real.)*
+
+```ts
+// tests/integration/metadata-seam.test.ts
+//
+// Backlog #36, plan T9 — the metadata seam refuses to ADVERTISE an unservable summary key.
+// Behaviors 26c, 26c2, 26c3, 26c4. Against a live local Supabase stack, RLS-scoped user session.
+// Run via: npm run test:integration -- metadata-seam
+import {
+  makeOwnerContext, prepareSyncCtx, seedCloudVideo, seedLocalVideoFull,
+  cloudVideoRecord, localBlobBytes, type Ctx,
+} from '@/tests/integration/helpers/cloud';
+import { SupabaseMetadataStore } from '@/lib/storage/supabase/supabase-metadata-store';
+import { runSync } from '@/lib/cloud-sync/sync-run';
+import type { Video } from '@/types';
+
+jest.setTimeout(30_000);
+```
+
+`callWith` is file-local — one consumer, and it takes the calling test's own `ctx`:
 
 ```ts
 /** Drive one of the three data-writing adapter methods with a patch. The three take different
@@ -1916,6 +2009,7 @@ git commit -m "feat(#36): videoId is the model-ownership credential, gating ship
  *  bulkUpdateVideoFields takes (p, [{videoId, fields}])), which is why this exists — behaviors 26c
  *  and 26c2 assert that ALL THREE refuse, and that is only meaningful if each is really called. */
 async function callWith(
+  ctx: Ctx,
   method: 'upsertVideo' | 'updateVideoFields' | 'bulkUpdateVideoFields',
   fields: Record<string, unknown>,
 ): Promise<void> {
@@ -1930,14 +2024,18 @@ async function callWith(
 ```ts
 it.each(['upsertVideo', 'updateVideoFields', 'bulkUpdateVideoFields'] as const)(
   'behaviors 26c + 26c2 — %s REFUSES a patch advertising an unservable key', async (method) => {
-    await expect(callWith(method, {
+    const ctx = await makeOwnerContext();
+    await prepareSyncCtx(ctx);
+    await expect(callWith(ctx, method, {
       summaryMd: 'nested/evil.md',
       artifacts: { summaryMd: { key: 'nested/evil.md', status: 'promoted' } },
     })).rejects.toThrow(/not a servable summary key/);
   });
 
 it('behavior 26c — a Korean key is ACCEPTED', async () => {
-  await expect(callWith('updateVideoFields', {
+  const ctx = await makeOwnerContext();
+  await prepareSyncCtx(ctx);
+  await expect(callWith(ctx, 'updateVideoFields', {
     summaryMd: '003_한국어.md',
     artifacts: { summaryMd: { key: '003_한국어.md', status: 'promoted' } },
   })).resolves.toBeUndefined();
@@ -1952,12 +2050,30 @@ it('behavior 26c3 — a Class-A transfer to the CLOUD is refused; to LOCAL it is
   // sync-run.ts:812-814 and pushed onto report.errors. Asserting `.rejects` here is unsatisfiable
   // (round-2 H4), and the "fix" an implementer would reach for — letting the throw escape the
   // per-video catch — aborts the whole playlist, which is the behavior :812 exists to prevent.
-  const cloudward = await runSync(ctx.syncDeps(), { playlistKey: ctx.playlistKey });   // local wins
+  //
+  // ⚠ The "…re-seed" line here was a PROSE ELLIPSIS inside test code until round 4 — a placeholder
+  //   in the one test whose whole point is that the two DIRECTIONS differ. Written out now. The two
+  //   arms need two contexts: the winner is decided by mdGeneratedAt, and rewriting one ctx's
+  //   timestamps mid-test makes which arm ran unreadable in a failure.
+  const a = await makeOwnerContext();
+  await prepareSyncCtx(a);
+  // LOCAL is newer -> local wins -> the cloud is the RECEIVER -> the seam must refuse.
+  await seedLocalVideoFull(a, { summaryMd: 'nested/evil.md', mdBody: '# body\n',
+    mdGeneratedAt: '2026-02-02T00:00:00.000Z' });
+  await seedCloudVideo(a, { summaryMd: `${a.videoId}.md`, mdBody: '# old\n',
+    mdGeneratedAt: '2026-01-01T00:00:00.000Z' });
+  const cloudward = await runSync(a.syncDeps(), { playlistKey: a.playlistKey });
   expect(cloudward.errors).toContainEqual(expect.objectContaining({
-    videoId: ctx.videoId, message: expect.stringMatching(/not a servable summary key/),
+    videoId: a.videoId, message: expect.stringMatching(/not a servable summary key/),
   }));
 
-  // …re-seed so the CLOUD is the winner (newer mdGeneratedAt), then:
+  // CLOUD is newer -> cloud wins -> the VAULT is the receiver -> NOT guarded (§3.4, decision ①).
+  const ctx = await makeOwnerContext();
+  await prepareSyncCtx(ctx);
+  await seedCloudVideo(ctx, { summaryMd: 'nested/evil.md', mdBody: '# body\n',
+    mdGeneratedAt: '2026-02-02T00:00:00.000Z' });
+  await seedLocalVideoFull(ctx, { summaryMd: `${ctx.videoId}.md`, mdBody: '# old\n',
+    mdGeneratedAt: '2026-01-01T00:00:00.000Z' });
   const localward = await runSync(ctx.syncDeps(), { playlistKey: ctx.playlistKey });
   expect(localward.errors).not.toContainEqual(expect.objectContaining({
     message: expect.stringMatching(/not a servable summary key/),
@@ -1966,6 +2082,13 @@ it('behavior 26c3 — a Class-A transfer to the CLOUD is refused; to LOCAL it is
 });
 
 it('behavior 26c4 — after the refusal the cloud row still points at its OLD key', async () => {
+  const ctx = await makeOwnerContext();
+  await prepareSyncCtx(ctx);
+  // Same seeding as 26c3's FIRST arm: local newer + unservable, so the cloud is the refused receiver.
+  await seedLocalVideoFull(ctx, { summaryMd: 'nested/evil.md', mdBody: '# body\n',
+    mdGeneratedAt: '2026-02-02T00:00:00.000Z' });
+  await seedCloudVideo(ctx, { summaryMd: `${ctx.videoId}.md`, mdBody: '# old\n',
+    mdGeneratedAt: '2026-01-01T00:00:00.000Z' });
   const before = await cloudVideoRecord(ctx);
   await runSync(ctx.syncDeps(), { playlistKey: ctx.playlistKey });
   expect((await cloudVideoRecord(ctx))!.summaryMd).toBe(before!.summaryMd);
@@ -3352,14 +3475,141 @@ v2's inventory did not list any of them. v3 drives the real code instead of inve
 
 - [ ] **Step 1: Write the tests** — INTEGRATION
 
+⛔ **Round-4 coordinator: this file had no header, and `ingestViaHandler` — which ALL FIVE tests
+below call — was one paragraph of prose.** The plan's own rule requires a code block for a code step,
+and this is the most complex helper in the task: it drives the real cloud ingest. Both are written
+out now. Two things were checked rather than assumed while doing it:
+
+- **`ctx.spendLedgerTotal()` is a WHOLE-TABLE sum**, not owner-scoped — it selects
+  `reserved_cents,actual_cents` from `spend_ledger` through the **admin** client with no filter
+  (`tests/integration/helpers/cloud.ts:153-161`). So asserting it unmoved across an ingest performed
+  by a *different* user is meaningful, not vacuous. That was the worry; measuring dissolved it.
+- **Because it is whole-table, T14 does not need a `Ctx` at all.** ⚠ This NARROWS Task 0's row
+  (*"`ledgerTotal` → use `Ctx.spendLedgerTotal()`"*), and the narrowing is stated rather than made
+  silently: `makeOwnerContext()` seeds a local vault root and a synced cloud playlist that T14 never
+  touches, purely to reach a sum that needs only `adminClient`. A six-line file-local `ledgerTotal()`
+  is the honest dependency. Task 0's row answered "does a helper exist?"; it did not ask whether this
+  task needs the rest of what carries it.
+
 ```ts
+// tests/integration/korean-title-e2e.test.ts
+//
+// Backlog #36, plan T14 — the end-to-end keystone: a title in ANY language ingests and then SERVES.
+// Behaviors 14, 15, 16, 23. Drives the REAL cloud ingest (makeSummaryHandler) and the REAL serve
+// seam (loadSummaryForServe); invents no entry points. Gemini and transcript resolution are mocked
+// at the lib boundary — the project's mocking policy — so nothing meters.
+//
+// Money invariant: the ledger must not move. Asserted directly in behavior 14.
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { randomUUID } from 'crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { adminClient, newUser, signInAs } from './helpers/clients';
+import type { LeasedJob } from '@/lib/storage/job-queue';
+import { docVersionKey } from '@/lib/storage/job-queue';
+import { CURRENT_DOC_VERSION } from '@/lib/doc-version';
+import { padSerial } from '@/lib/serial-filename';
+import { slugify } from '@/lib/slugify';
+import { localBlobStore } from '@/lib/storage/local/local-blob-store';
+import { localPrincipal } from '@/lib/storage/principal';
+import { loadSummaryForServe } from '@/lib/html-doc/serve-summary-core';
+import type { HandlerCtx } from '@/lib/job-queue/handler-context';
+import type { IngestionPayload } from '@/lib/job-queue/ingestion-payload';
+
+jest.mock('@/lib/gemini');
+jest.mock('@/lib/transcript-source');
+
+import { generateSummary, extractQuickView } from '@/lib/gemini';
+import { resolveTranscriptSegments } from '@/lib/transcript-source';
+// AFTER the jest.mock calls, so the handler's own imports resolve to the mocked modules.
+import { makeSummaryHandler } from '@/lib/job-queue/summary-handler';
+
+jest.setTimeout(30_000);
+
+const admin = () => adminClient();
+
+/** WHOLE-TABLE spend total — the same query `Ctx.spendLedgerTotal()` runs
+ *  (`tests/integration/helpers/cloud.ts:153-161`), without dragging in a Ctx this file never uses. */
+async function ledgerTotal(): Promise<number> {
+  const { data, error } = await admin().from('spend_ledger').select('reserved_cents,actual_cents');
+  if (error) throw error;
+  return (data ?? []).reduce((s, r) => s + (r.reserved_cents ?? 0) + (r.actual_cents ?? 0), 0);
+}
+
+// The four fixtures below are lifted from tests/integration/summary-handler.test.ts — `mockCtx`
+// (:46), GEMINI_SUMMARY_RESPONSE (:53), SEGMENTS (:64), resetGeminiMocks (:66), makePayload (:72),
+// makeJob (:85) and seedPlaylist (:37). SIX helpers, not the five the prose claimed.
+const mockCtx: HandlerCtx = {
+  isCancelled: async () => false,
+  signal: new AbortController().signal,
+  setPhase: async () => {},
+  billing: { metered: false },
+};
+
+const GEMINI_SUMMARY_RESPONSE = {
+  summary: '## 1. Alpha\n▶ [0:00](u)\nAlpha body.\n---\n## Conclusion\n▶ [1:00](u)\nWrap.',
+  ratings: { usefulness: 4, depth: 4, originality: 4, recency: 4, completeness: 4 },
+  overallScore: 4, videoType: 'Analysis', audience: 'Intermediate', tags: ['x'],
+  tldr: 'This video explains alpha.', takeaways: ['Do alpha'],
+};
+const SEGMENTS = [{ text: 'hello world', offset: 0, duration: 5 }];
+
+beforeEach(() => {
+  (resolveTranscriptSegments as jest.Mock).mockReset()
+    .mockResolvedValue({ segments: SEGMENTS, source: 'captions' });
+  (generateSummary as jest.Mock).mockReset().mockResolvedValue(GEMINI_SUMMARY_RESPONSE);
+  (extractQuickView as jest.Mock).mockReset()
+    .mockResolvedValue({ tldr: 'fallback', takeaways: ['fallback'] });
+});
+
+function makePayload(over: Partial<IngestionPayload> = {}): IngestionPayload {
+  return {
+    youtubeUrl: 'https://youtu.be/abc123', title: 'My Test Video', channel: 'Test Channel',
+    durationSeconds: 120, playlistIndex: 1,
+    videoPublishedAt: '2024-01-01T00:00:00.000Z', addedToPlaylistAt: '2024-01-02T00:00:00.000Z',
+    ...over,
+  };
+}
+
+function makeJob(f: {
+  ownerId: string; playlistId: string; videoId: string; payload: unknown;
+}): LeasedJob {
+  return {
+    id: randomUUID(), sectionId: -1, kind: 'summary',
+    version: docVersionKey(CURRENT_DOC_VERSION), attempts: 1, leaseToken: randomUUID(), ...f,
+  };
+}
+
+/** Create a user, sign in, seed a playlist, and run the REAL summary handler for `title`.
+ *  Returns the coordinates the serve seam needs. This is the whole point of T14: `slugify`,
+ *  `padSerial`, `putStaged`, `promote` and `persist_summary` all run for real. */
+async function ingestViaHandler(
+  { title }: { title: string },
+): Promise<{ videoId: string; playlistId: string; userId: string; client: SupabaseClient }> {
+  const u = await newUser();
+  const { client, userId } = await signInAs(u.email, u.password);
+  const playlistKey = `k-${randomUUID()}`;
+  const { data, error } = await client.from('playlists')
+    .insert({ owner_id: userId, playlist_key: playlistKey, playlist_url: `https://x/${randomUUID()}` })
+    .select('id').single();
+  if (error) throw error;
+  const playlistId = data.id as string;
+  const videoId = randomUUID();
+  await makeSummaryHandler(admin())(
+    makeJob({ ownerId: userId, playlistId, videoId, payload: makePayload({ title }) }),
+    mockCtx,
+  );
+  return { videoId, playlistId, userId, client };
+}
+
 it('behavior 14 — a KOREAN-titled video ingests and SERVES, and the ledger is unmoved', async () => {
-  const before = await ctx.spendLedgerTotal();
+  const before = await ledgerTotal();
   const { videoId, playlistId, userId, client } = await ingestViaHandler({ title: '한국어 강의' });
   const load = await loadSummaryForServe(client, { videoId, playlistId, userId });
   expect(load.ok).toBe(true);                     // today: { ok:false, status:409 }
   expect((load as { mdKey: string }).mdKey).toMatch(/^\d{3,}_.*\.md$/);
-  expect(await ctx.spendLedgerTotal()).toBe(before);   // Gemini is mocked; nothing may meter
+  expect(await ledgerTotal()).toBe(before);            // Gemini is mocked; nothing may meter
 });
 
 it('behavior 15 — an NFD accented-Latin title ingests and serves', async () => {
@@ -3398,9 +3648,10 @@ it('behavior 23 — a title ending in the U+2488..U+249B or U+1F100 class ingest
 });
 ```
 
-`ingestViaHandler({ title })` is file-local: create a user, sign in, seed a playlist, build the job
-with `makeJob`/`makePayload`, run `makeSummaryHandler(admin())(job, mockCtx)`, and return the
-coordinates. All five helpers are lifted from `tests/integration/summary-handler.test.ts:36-95`.
+`ingestViaHandler({ title })` is written out in the block above, not described. The lifted fixtures
+are cited there at their individual lines in `tests/integration/summary-handler.test.ts` rather than
+as a range — v4's "`:36-95`, five helpers" was both an approximation and a miscount (there are six,
+and `makeJob` ends at `:95` only if you stop mid-function).
 
 - [ ] **Step 2: Run, verify green, commit** — INTEGRATION
 
