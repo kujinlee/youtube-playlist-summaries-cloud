@@ -298,8 +298,11 @@ Claude Low 3 found this one carrying a bare `…`:
         local: localMetadataStore,
         // …1 line elided (:138): `cloud,`
         localBlob: localBlobStore,
-        // …5 lines elided (:141-145): `cloudBlob,`, a 2-line comment, `inFlightJob:`,
+        // …6 lines elided (:140-145): `cloudBlob,`, a 2-line comment, `inFlightJob:`,
         //   `dataRoots: [ctx.tempDataRoot],` and `ownerId: userId,`
+        //   (round-5 Codex Low: the coordinator's own count said 5 lines at :141-145 — it listed
+        //    `cloudBlob,` in the description but dropped :140 from the range. An elision mark whose
+        //    count is wrong is the same class of defect as the unmarked elision it replaced.)
       };
 ```
 
@@ -720,17 +723,27 @@ import { InMemoryBlobStore } from '@/lib/storage/testing/in-memory-blob-store';
 import { localPrincipal } from '@/lib/storage/principal';
 import type { Principal } from '@/lib/storage/principal';
 import type { BlobStore } from '@/lib/storage/blob-store';
+import { isLocalSupabaseUrl } from '@/lib/supabase/is-local-url';
 
 jest.setTimeout(20_000);
 
-// PROD GUARD. Fail-closed: an ABSENT url is a failure, not a pass. `NEXT_PUBLIC_SUPABASE_URL` is
-// the name setup.ts actually sets (`:23`); `SUPABASE_URL` is set by nothing in this repo.
+// PROD GUARD, in two independent parts.
+//
+//  (a) ABSENT is a FAILURE, not a pass. `NEXT_PUBLIC_SUPABASE_URL` is the name setup.ts actually
+//      sets (`:23`); `SUPABASE_URL` is set by nothing in this repo (round-4 coordinator).
+//  (b) LOCAL is decided by PARSED HOST, never by a string prefix. ⛔ Round-5 Codex High: the
+//      coordinator's own first version of this guard used
+//      `/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/`, which MEASURABLY passes
+//      `https://localhost:54321@project.supabase.co` — userinfo before the `@` — whose real
+//      hostname is `project.supabase.co`. A prefix test cannot parse a URL.
+//      `isLocalSupabaseUrl` (`lib/supabase/is-local-url.ts:7`) ALREADY does this correctly,
+//      host-exact and fail-closed, and was written for the dev-login gate (#13). It existed the
+//      whole time. Reuse beats re-deriving a guard, and this is the second time in this slice that
+//      not looking for the existing helper cost a defect (see T0's dissolved "missing helpers").
 beforeAll(() => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url) throw new Error('NEXT_PUBLIC_SUPABASE_URL is unset — treat this as NOT RUN, never as safe');
-  if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(url)) {
-    throw new Error(`refusing to run against a non-local stack: ${url}`);
-  }
+  if (!isLocalSupabaseUrl(url)) throw new Error(`refusing to run against a non-local stack: ${url}`);
 });
 
 let blob: BlobStore;
@@ -2517,6 +2530,13 @@ class RecordingBlobStore implements BlobStore {
   delete(p: Principal, key: string) { return this.inner.delete(p, key); }
   putStaged(p: Principal, key: string, bytes: Buffer, ct: string) { return this.inner.putStaged(p, key, bytes, ct); }
   promote(ref: StagedRef): Promise<void> { return this.inner.promote(ref); }
+  // ⛔ Round-5 Codex Blocking: this member was MISSING. T6 adds `promoteIfAbsent` as a REQUIRED
+  //    `BlobStore` member (plan T6 Step 1, the interface edit), and T6 lands BEFORE T11 — so
+  //    `implements BlobStore` here would fail `tsc` at T11's own commit. The decorator was modelled
+  //    on `FailPromoteBlobStore` (`helpers/cloud.ts:168`), which is correct for the interface as it
+  //    exists TODAY and stale for the one this plan is building. **Modelling on current code is not
+  //    the same as modelling on the code the task runs against.**
+  promoteIfAbsent(ref: StagedRef): Promise<void> { return this.inner.promoteIfAbsent(ref); }
   deletePrefix(p: Principal, prefix: string) { return this.inner.deletePrefix(p, prefix); }
   list(p: Principal, prefix: string) { return this.inner.list(p, prefix); }
   copy(p: Principal, from: string, to: string): Promise<CopyResult> { return copyBlob(this, p, from, to); }
