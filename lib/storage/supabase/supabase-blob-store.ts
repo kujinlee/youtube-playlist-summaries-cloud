@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { BlobRead, BlobStore, CopyResult, StagedRef } from '@/lib/storage/blob-store';
 import { assertLogicalKey, copyBlob } from '@/lib/storage/blob-store';
+import { encodeSegment } from '@/lib/storage/supabase/encode-segment';
 import type { Principal } from '@/lib/storage/principal';
 
 export class SupabaseBlobStore implements BlobStore {
@@ -11,10 +12,16 @@ export class SupabaseBlobStore implements BlobStore {
 
   constructor(private client: SupabaseClient, private bucket: string) {}
 
-  /** Server-side owner prefix — never a client absolute path. */
+  /** Server-side owner prefix — never a client absolute path.
+   *
+   *  The KEY is encoded per segment (logical Unicode → physical ASCII, ADR-0009); `p.id` and
+   *  `p.indexKey` are NOT. That asymmetry is load-bearing: ADR-0008's serve money guard depends on
+   *  the storage grant staying coarser than a single object, which holds only while both the
+   *  encoded and unencoded forms of a key live under the same owner prefix. */
   private objectKey(p: Principal, key: string): string {
     assertLogicalKey(key);
-    return `${p.id}/${p.indexKey}/${key}`;
+    const physical = key.split('/').map(encodeSegment).join('/');
+    return `${p.id}/${p.indexKey}/${physical}`;
   }
 
   private b() { return this.client.storage.from(this.bucket); }
@@ -128,7 +135,8 @@ export class SupabaseBlobStore implements BlobStore {
 
   async deletePrefix(p: Principal, prefix: string): Promise<void> {
     assertLogicalKey(prefix);
-    const root = `${p.id}/${p.indexKey}/${prefix}`.replace(/\/$/, '');
+    const physicalPrefix = prefix.split('/').map(encodeSegment).join('/');
+    const root = `${p.id}/${p.indexKey}/${physicalPrefix}`.replace(/\/$/, '');
     const objectPaths = await this.collectObjectPaths(root);
     for (let i = 0; i < objectPaths.length; i += 1000) {
       const batch = objectPaths.slice(i, i + 1000);
@@ -137,12 +145,28 @@ export class SupabaseBlobStore implements BlobStore {
     }
   }
 
+  /** Returns LOGICAL keys, by re-attaching the caller's own prefix rather than decoding what came
+   *  back from Storage. `encodeSegment` is one-way, and this is what makes that legal: the caller
+   *  already knows the logical prefix it asked for, so only the REMAINDER has to be readable. */
   async list(p: Principal, prefix: string): Promise<string[]> {
     assertLogicalKey(prefix);
+    const norm = prefix === '' || prefix.endsWith('/') ? prefix : `${prefix}/`;
     const ownerRoot = `${p.id}/${p.indexKey}/`;
-    const dirPath = `${ownerRoot}${prefix}`.replace(/\/$/, '');
+    const physicalPrefix = norm.split('/').map(encodeSegment).join('/');
+    const dirPath = `${ownerRoot}${physicalPrefix}`.replace(/\/$/, '');
     const full = await this.collectObjectPaths(dirPath); // returns full object paths (or [] if absent)
-    return full.map((f) => f.slice(ownerRoot.length)); // strip owner root → logical key
+    return full.map((f) => {
+      const remainder = f.slice(ownerRoot.length + physicalPrefix.length); // the LEAF only
+      // The `=h` marker guard applies to the REMAINDER ONLY — never the caller's own prefix, or a
+      // logical key legitimately containing `=` strands a video every run (spec 3.3, behavior 10).
+      if (remainder.split('/').some((seg) => seg.includes('=h'))) {
+        throw new Error(
+          `list: physical segment ${JSON.stringify(remainder)} cannot be mapped back to a logical `
+          + `key. The caller supplies the prefix; leaves must be SAFE (spec 3.3, premise P4).`,
+        );
+      }
+      return norm + remainder; // re-attach the caller's LOGICAL prefix
+    });
   }
 
   /** Recursively walks a Supabase Storage "directory" (non-recursive `.list`, paginated at
