@@ -1288,7 +1288,53 @@ code fences, holding 1,581 lines of TypeScript no compiler ever sees. Round 5's 
 `TS2420` — a defect the plan itself assigns to `tsc`. `review-method.md` escalates FIX→REDESIGN at
 two consecutive fix-induced rounds; that threshold was crossed at round 2.
 
-**Two things to fold in regardless — see NEXT ACTIONS.**
+**Two things to fold in regardless — see NEXT ACTIONS.** ✅ **BOTH DONE 2026-08-17.** The
+EXECUTED-or-QUOTED rule was rescued into `docs/portable-practices.md` §13 (`8051120`) before the plan
+was shelved, and the §4 prod gate was re-run as a merge step (below).
+
+---
+
+**✅ 2026-08-17 — PR 1 IS BUILT. Four tasks, all four green, awaiting the human merge gate.**
+
+| | |
+|---|---|
+| T1 | `lib/storage/supabase/encode-segment.ts` — the segment encoder, 10 unit tests |
+| T2 | wired into `objectKey`, `deletePrefix`, `list` — 6 unit + 4 live-stack integration tests |
+| T14 | end-to-end: a title in any language ingests and serves — 6 tests |
+| T15 | ADR-0009, this tick, backlog #36, and the §4 prod gate re-run |
+
+**Gates, by exit code.** `tsc --noEmit` clean · unit **2719 passed / 268 suites** · integration
+**519 passed, 3 skipped, 0 failed** · all four ratchets exit 0.
+
+**The §4 no-migration gate was RE-RUN, not inherited.** 2026-08-17, prod, read-only as `claude_ro`,
+SQL in a file, `ON_ERROR_STOP=1`, exit 0. Reachability asserted first: **19 objects** (non-zero, so
+the run means something) → **0** segments outside `SAFE`, and 0 for each of the five characters
+Storage accepts but `SAFE` excludes (space `(` `)` `+` `=`). Still 19, same as 2026-08-14 — nothing
+has been ingested since. **No migration is needed.**
+
+**Four defects were found by RUNNING the plan rather than reading it** — all in T14, whose helper had
+never been executed:
+
+1. **The predicted failure was wrong.** The plan asserted a `409` from the serve guard. Measured: the
+   ingest THROWS at `putStaged` with `Invalid key`, `persist_summary` never runs, and serve is never
+   reached — the end state is a **404** at `serve-summary-core.ts:51`. The guard never fires. That is
+   the scope finding, confirmed from the other direction.
+2. **`STORAGE_BACKEND` was never set**, so the serve seam built the LOCAL bundle and read the cloud
+   playlist key as a filesystem path. The save/set/restore idiom already existed in two sibling suites.
+3. **The vault case asserted a fix that is not in this PR** — `slugify`'s astral-surrogate slice (T3,
+   deferred). Split out and asserted as STILL BROKEN rather than deleted.
+4. **Two of the four e2e behaviors do not discriminate.** 15 and 16 pass with *or* without the
+   encoder, because `slugify` strips the emoji, the space and NFD's combining acute before Storage
+   ever sees them. Kept as regression guards, documented as not evidence.
+
+**One pre-existing flake, proven not ours.** `tests/lib/storage/claim-video-slot-desired-serial.test.ts`
+reproduces at ~1 in 5 on a **clean, stashed tree**: `local-metadata-store.test.ts:13` sweeps every
+`$HOME` entry starting with `lms-`, which includes the other suite's `lms-serial-` dirs, and jest runs
+them in parallel workers. Also `tests/integration/pdf-put-atomicity.test.ts` is the one integration
+file doing N rounds of concurrent live-Storage I/O on Jest's **default 5 s** timeout; it timed out once
+under full-suite load and passed on re-run. Neither is filed yet — the user decides what gets filed.
+
+**Merging is the human gate.**
 
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
 Branch `fix/cloud-blob-key-encoding`, spec **v21 — ✅ APPROVED 2026-08-15, PHASE 1 CLOSED**. Still **zero implementation code**: Phase 2 (the plan) is under its own dual adversarial review.
