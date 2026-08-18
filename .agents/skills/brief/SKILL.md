@@ -168,7 +168,22 @@ weak points, recorded so they are not rediscovered:
   about which numbers rot fastest. **Consider marking volatile figures inline.**
 - **Unmeasured on a project with no decision pending** — the shape it produces then is untested, and
   the risk is that it manufactures a decision to fill the slot.
-- **The composed page is never opened by its author.** `brief-compose.py` checks the tray survives
-  composition, but nothing drives the page. `explainer-serve.py` exists precisely so a page CAN be
-  driven by browser automation — using that to click **ask** once would close the last gap between
-  "the markup is present" and "the button works".
+- ~~**The composed page is never opened by its author.**~~ — **partly closed 2026-08-18.** The page
+  was driven in a real browser to verify live reload (below): loaded, changed on disk, observed to
+  reload itself, and the no-reload-while-typing guard confirmed with a 53-character draft in the box.
+  ⚠ **Still not driven: the `ask` button itself.** The tray's markup is asserted present by
+  `brief-compose.py`, and the channel is exercised end-to-end by the reader — but the author has
+  never clicked Send. That is the remaining half of the "markup is present" vs "the button works" gap.
+
+- **⭐ The page now RELOADS ITSELF when an answer is posted** (2026-08-18, backlog #50a). No manual
+  refresh: `explainer-serve.py` serves `GET /_rev?p=<page>` and **injects** a small poller into every
+  HTML it sends. So an answer added to a section appears where the question was asked.
+  **Three things worth knowing before touching it:**
+  - It is **injected by the server, not written into the page**. The tray is lifted verbatim
+    page-to-page by `brief-compose.py`; putting the poller there would reach only pages generated
+    afterwards and would repeat the hand-copied-code failure this file already warns about. Nothing
+    in `brief-compose.py` changed.
+  - `file://` gets nothing, deliberately. The artifact stays self-contained and works in five years;
+    live reload is a property of being **served**.
+  - It **will not reload while `#qbox` holds a draft or has focus**, and it preserves scroll across
+    the reload. A reader mid-question is the one person a reload would hurt most.
