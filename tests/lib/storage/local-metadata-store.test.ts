@@ -7,11 +7,23 @@ import { localPrincipal } from '@/lib/storage/principal';
 const store = new LocalFsMetadataStore();
 // assertOutputFolder requires the path to be within home directory (macOS os.tmpdir()
 // resolves outside home); create isolated sub-dirs under home instead.
-function tmp() { return fs.mkdtempSync(path.join(os.homedir(), 'lms-')); }
+//
+// ⛔ DELETE WHAT YOU CREATED — never sweep $HOME by prefix. MEASURED 2026-08-17, ~1 run in 5:
+// this cleanup used to be `readdirSync(os.homedir()).filter(d => d.startsWith('lms-'))`, and
+// `'lms-serial-x9f2'.startsWith('lms-')` is TRUE — so it deleted the LIVE temp directories of
+// tests/lib/storage/claim-video-slot-desired-serial.test.ts, which uses the `lms-serial-` prefix.
+// Jest runs test files in parallel worker processes, so the two overlap and the victim's next
+// readIndex died on ENOENT at lib/index-store.ts:85. A prefix is a claim on a NAMESPACE, and this
+// file only owns the directories it made. Tracking them cannot silently widen; a prefix can, and
+// the next `lms-…` test file would have been eaten too.
+const created: string[] = [];
+function tmp() {
+  const dir = fs.mkdtempSync(path.join(os.homedir(), 'lms-mds-'));
+  created.push(dir);
+  return dir;
+}
 afterEach(() => {
-  // clean up any lms- dirs left under home by this test run
-  const dirs = fs.readdirSync(os.homedir()).filter(d => d.startsWith('lms-'));
-  for (const d of dirs) fs.rmSync(path.join(os.homedir(), d), { recursive: true, force: true });
+  while (created.length) fs.rmSync(created.pop()!, { recursive: true, force: true });
 });
 
 test('readIndex on an empty folder returns the empty index shape', async () => {

@@ -22,11 +22,19 @@ import type { Video } from '@/types';
 
 const store = new LocalFsMetadataStore();
 // assertOutputFolder requires the path to sit inside $HOME (macOS os.tmpdir() resolves outside it).
-function tmp() { return fs.mkdtempSync(path.join(os.homedir(), 'lms-serial-')); }
+//
+// ⛔ DELETE WHAT YOU CREATED — never sweep $HOME by prefix. This file was the VICTIM of that bug
+// (local-metadata-store.test.ts swept `lms-`, which matches this file's `lms-serial-`), and it
+// carried the same latent bug itself: sweeping `lms-serial-` would eat any future `lms-serial-…`
+// test's live directories. Fixed on both sides, because fixing only the collision leaves the class.
+const created: string[] = [];
+function tmp() {
+  const dir = fs.mkdtempSync(path.join(os.homedir(), 'lms-serial-'));
+  created.push(dir);
+  return dir;
+}
 afterEach(() => {
-  for (const d of fs.readdirSync(os.homedir()).filter((x) => x.startsWith('lms-serial-'))) {
-    fs.rmSync(path.join(os.homedir(), d), { recursive: true, force: true });
-  }
+  while (created.length) fs.rmSync(created.pop()!, { recursive: true, force: true });
 });
 
 describe('claimVideoSlot — desired serial (local adapter)', () => {
