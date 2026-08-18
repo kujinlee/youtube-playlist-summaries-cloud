@@ -204,6 +204,59 @@ def port_busy(host: str, port: int) -> bool:
         return s.connect_ex((host, port)) == 0
 
 
+def revision(p: pathlib.Path) -> str:
+    """A cheap identity for a file's CONTENT, for change detection. mtime alone is not enough —
+    a rewrite within the same clock tick would look unchanged — so size is included."""
+    st = p.stat()
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
+# The live-reload client. INJECTED BY THE SERVER at send time, never written into the page.
+#
+# WHY INJECTED RATHER THAN AUTHORED INTO THE HTML. The question tray is lifted verbatim from one
+# explainer into the next by scripts/brief-compose.py. Putting this there would reach only pages
+# generated AFTERWARDS, and would re-enter the hand-copied-code failure this project measured on
+# 2026-08-17 (45 of 97 review findings were identifiers and counts that did not survive a copy).
+# The server already reads and sends the bytes, so it can add this at send time: every page gets
+# it, including the ones already on disk, and brief-compose.py does not change at all.
+#
+# It is also why `file://` still behaves exactly as before — nothing injects there. The file stays
+# a self-contained artifact that works in five years; live reload is a property of being SERVED.
+RELOAD_JS = """
+<script>
+(function () {
+  var here = location.pathname, mine = null, KEY = 'explainer-scroll:' + here;
+  // Restore the reading position saved just before the last auto-reload.
+  try {
+    var y = sessionStorage.getItem(KEY);
+    if (y !== null) { sessionStorage.removeItem(KEY); window.scrollTo(0, parseInt(y, 10) || 0); }
+  } catch (e) {}
+  function busyTyping() {
+    // NEVER reload out from under a half-typed question. The tray's textarea is #qbox; if it holds
+    // text or has focus, the reader is mid-thought and a reload would silently eat it.
+    var box = document.getElementById('qbox');
+    if (!box) return false;
+    return document.activeElement === box || (box.value || '').trim().length > 0;
+  }
+  function poll() {
+    fetch('/_rev?p=' + encodeURIComponent(here), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (rev) {
+        if (rev === null) return;                 // page gone or not servable — stay put
+        if (mine === null) { mine = rev; return; }  // first sample establishes the baseline
+        if (rev === mine || busyTyping()) return;
+        try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+        location.reload();
+      })
+      .catch(function () {});                     // server stopped: keep showing the page, keep trying
+  }
+  setInterval(poll, 2000);
+  poll();
+})();
+</script>
+"""
+
+
 # ── the server ───────────────────────────────────────────────────────────────────────────────────
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -233,13 +286,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Location", target)
             self.end_headers()
             return
+        if path == "/_rev":
+            # Change detection for the injected live-reload client. Goes through safe_path, so it
+            # can only ever report on a file this server would already serve — it is not a stat()
+            # oracle for the filesystem.
+            qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            target = safe_path((qs.get("p") or [""])[0], ROOT)
+            if target is None or not target.is_file():
+                return self._send(404, b"no such page", "text/plain; charset=utf-8")
+            return self._send(200, revision(target).encode(), "text/plain; charset=utf-8")
         resolved = safe_path(path, ROOT)
         if resolved is None or not resolved.is_file():
             return self._send(404, b"not found", "text/plain; charset=utf-8")
         ctype = {".html": "text/html; charset=utf-8", ".md": "text/markdown; charset=utf-8",
                  ".css": "text/css", ".js": "text/javascript",
                  ".svg": "image/svg+xml", ".png": "image/png"}[resolved.suffix.lower()]
-        return self._send(200, resolved.read_bytes(), ctype)
+        body = resolved.read_bytes()
+        if resolved.suffix.lower() == ".html":
+            body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
+        return self._send(200, body, ctype)
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path.split("?", 1)[0] != "/questions":
@@ -396,6 +461,46 @@ def _self_test() -> int:
         # liveness helpers
         case("pid_alive(None) is False", lambda: pid_alive(None) is False)
         case("pid_alive on this process is True", lambda: pid_alive(os.getpid()) is True)
+
+        # live reload — change detection, and the injected client.
+        # ⚠ IN ITS OWN SUBDIRECTORY, NOT `root`. The first draft put rev.html straight in root and
+        # broke "orders newest first", because explainers() globs root/*.html and the fixture became
+        # a third page. An instrument must not perturb the fixtures its neighbours assert on — the
+        # same lesson the mutation harness taught this repo when it rewrote tracked files.
+        rev_dir = root / "revfix"
+        rev_dir.mkdir()
+        rev_file = rev_dir / "rev.html"
+        rev_file.write_text("one")
+        os.utime(rev_file, (5_000, 5_000))
+        rev_before = revision(rev_file)
+        case("revision is stable when nothing changes",
+             lambda: revision(rev_file) == rev_before)
+
+        def _rewrite_same_mtime_different_size():
+            # THE REASON SIZE IS IN THE REVISION. A rewrite inside one clock tick has an identical
+            # mtime; without size the page would never learn an answer had been posted.
+            rev_file.write_text("one-plus-more")
+            os.utime(rev_file, (5_000, 5_000))          # force the mtime back to identical
+            return revision(rev_file) != rev_before
+        case("revision changes on a same-mtime rewrite (size is load-bearing)",
+             _rewrite_same_mtime_different_size)
+
+        def _rewrite_later():
+            rev_file.write_text("two")
+            os.utime(rev_file, (9_999, 9_999))
+            return revision(rev_file) != rev_before
+        case("revision changes when the file is rewritten later", _rewrite_later)
+
+        # The client is a STRING constant, so its guards can be asserted without a browser. These
+        # are shape checks, not behaviour — the behaviour was driven in a real browser on 2026-08-18.
+        case("reload client guards the half-typed question (#qbox)",
+             lambda: "qbox" in RELOAD_JS and "busyTyping" in RELOAD_JS)
+        case("reload client preserves scroll across the reload",
+             lambda: "sessionStorage" in RELOAD_JS and "scrollY" in RELOAD_JS)
+        case("reload client establishes a baseline before it can reload",
+             lambda: "mine === null" in RELOAD_JS)
+        case("reload client asks /_rev, the only endpoint added",
+             lambda: "/_rev?p=" in RELOAD_JS)
 
         for name, fn in cases:
             try:
