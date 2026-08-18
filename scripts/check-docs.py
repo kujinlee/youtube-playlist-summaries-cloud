@@ -272,6 +272,40 @@ def check_backlog_ids(errors: list[str]) -> int:
     return len(seen)
 
 
+# ⟳ 2026-08-18 — A CLOSED ITEM MUST NOT STILL LEAD WITH AN OPEN-SEVERITY MARKER.
+#
+# The leading 🔴/🟠/🟡/🟢 records severity AT FILING. It is not live state, and nothing ever
+# downgraded it on close — so scanning the backlog for red reported blockers that did not exist.
+#
+# THIS CHECK EXISTS BECAUSE THE PROSE VERSION DEMONSTRABLY FAILED. On 2026-08-17 the convention was
+# written at the top of the table ("on close, replace the marker with ✅ and keep the original in
+# parentheses") and two rows were corrected by hand. The next day this check found **three more** —
+# #43, #46, #50 — that the hand pass had simply not looked at. A convention catches what someone
+# happens to read; a script catches what is there. That is the whole argument in `dev-process.md`:
+# *"Before adding a rule here, ask whether it can be a script."* This one could be.
+#
+# FAILS IF: a row's Status cell marks it closed (contains ✅) while its Item cell still begins with
+# a bare severity marker. The trigger is deliberately narrow — ✅ is the explicit close signal this
+# file already uses, so an item merely *mentioning* a merge elsewhere cannot produce a false red.
+def check_backlog_closed_markers(errors: list[str]) -> None:
+    path = ROOT / "docs/backlog.md"
+    if not path.exists():
+        return                      # absence is already reported by check_backlog_ids
+    severity = "🔴🟠🟡🟢"
+    for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+        if not re.match(r"^\|\s*\d+\s*\|", line):
+            continue
+        cells = line.split("|")
+        if len(cells) < 4:
+            continue
+        num, item, status = cells[1].strip(), cells[2].strip(), cells[-2].strip()
+        if "✅" in status and item[:1] in severity:
+            errors.append(
+                f"docs/backlog.md:{i}: item #{num} is CLOSED (its Status cell has ✅) but still "
+                f"leads with {item[:1]} — a severity scan will count it as open. Write "
+                f"`✅ (was {item[:1]})` instead, keeping the original severity in parentheses.")
+
+
 # ── the advisory count, DERIVED rather than typed ────────────────────────────────────────────────
 # `docs/roadmap-to-launch.md` states the size of the advisory list in prose: "Triage the N spec docs".
 # That is a hand-maintained cache of a number this script already computes, and it rotted exactly the
@@ -326,6 +360,7 @@ def main() -> int:
     check_adr_index(errors)
     check_line_budgets(errors)
     backlog_ids = check_backlog_ids(errors)
+    check_backlog_closed_markers(errors)
     headings = check_duplicate_headings(errors)
     code_refs = check_adr_references(errors)
     links = check_living_links(errors)
