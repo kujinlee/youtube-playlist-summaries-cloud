@@ -28,6 +28,14 @@ import { adminClient, newUser, signInAs } from './helpers/clients';
 import { seedPlaylist } from './helpers/seed';
 import { getStorageBundle, getPrincipalFromSession } from '@/lib/storage/resolve';
 
+// This file does 14 writes + 56 reads (ROUNDS × READS_PER_ROUND, below) against LIVE Supabase
+// Storage, deliberately overlapped — 70 network round trips. It had no timeout of its own, so it
+// ran on Jest's 5 s default: comfortable alone, and MEASURED to exceed it once inside the full
+// ~235 s, 73-suite integration run on 2026-08-17. It is the heaviest I/O test in the suite and was
+// the only one that had not raised its budget; 16 sibling integration files already do.
+// ⚠ Raise this if ROUNDS or READS_PER_ROUND grow — the budget is a function of them.
+jest.setTimeout(30_000);
+
 // getStorageBundle({ supabaseClient }) / getPrincipalFromSession select the Supabase path only
 // when STORAGE_BACKEND==='supabase' — same pattern as sibling *-cloud integration tests.
 const priorBackend = process.env.STORAGE_BACKEND;
