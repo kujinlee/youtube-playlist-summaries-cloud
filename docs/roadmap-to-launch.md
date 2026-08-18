@@ -1212,13 +1212,19 @@ unapplied for eight days while every document read "merged, done".
   anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
-- **`master` is clean** — tsc clean, **2703 unit / 267 suites** green, plus **491 integration**
-  (the 2026-08-12 figure; integration needs a live Supabase stack, does not run in CI, and is
-  therefore NOT verified by the check below — treat it as a dated note, not a live number).
-  **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`, which
-  compares them against jest's own `--json` output and fails when they drift. They are stated at all
-  so a fresh session knows the size of the safety net; before the check existed this line said 2690
-  while the suite ran 2703, and nothing noticed.
+- **`master` is clean** — tsc clean, **2719 unit / 268 suites** green, plus **522 integration**
+  (519 passed + 3 skipped, measured 2026-08-17 against a live local stack; integration does not run
+  in CI and is therefore NOT verified by the check below — treat it as a dated note, not a live
+  number). **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`,
+  which compares them against jest's own `--json` output and fails when they drift. They are stated
+  at all so a fresh session knows the size of the safety net; before the check existed this line
+  said 2690 while the suite ran 2703, and nothing noticed.
+  > ⚠ **The check is fail-closed on an ABSENT results file, but has no FRESHNESS bound — measured
+  > 2026-08-17.** Locally it exited **0** on this very drift, because a `jest-results.json` left at
+  > the repo root from **2026-08-13** reported the same 2,703/267 the roadmap claimed. A stale
+  > snapshot and a stale document agreed, and the gate read them as consistent. CI caught it only
+  > because CI has no leftover file and regenerates one every run. **Run it as CI does —
+  > `npm test -- --ci --json --outputFile=jest-results.json` first — or you are checking a memory.**
   *For "what is `master` right now?" run `git log -1`.* ⚠ **This block used to answer that itself,
   with a `master = the merge of PR #N` field. It is DELETED (2026-08-12) rather than enforced, and
   the reason is worth keeping.** It was wrong four distinct ways in a short life: it held a raw SHA
