@@ -42,6 +42,7 @@ At the start of every implementation task, create the following items with `Task
 [ ] Run tests — confirm all pass
 [ ] Run full suite — confirm no regressions
 [ ] Mutation-check every new guard: remove it → tests MUST go red → restore (see below)
+[ ] Run every mutation row the SPEC nominated for this task; each stays PROVISIONAL until seen red
 [ ] Claude code review (superpowers:requesting-code-review)
 [ ] Write docs/reviews/task-N-<name>-review.md
 [ ] Codex adversarial review (codex:rescue)
@@ -152,6 +153,51 @@ Violating any rule below means the E2E step is not done.
 - **Conditional rendering — fixtures must cover null and non-null.** For any nullable prop (e.g. `summaryPdf`, `deepDiveMd`), the E2E fixture set must include at least one video where the prop is `null` and one where it is set.
 
 ---
+
+---
+
+## PRIOR ART is a required spec section (added 2026-08-15)
+
+**Measured cost of not having it: thirteen review rounds and a design review, rediscovering a decision
+that was already on disk in three places.**
+
+The model blob was originally keyed by `id` (`2026-07-02-stage-1c-supabase-adapters-design.md:160`).
+The address drifted to `base`. A reviewer **caught the drift** and filed it Minor, under a
+*"Carry-forward → Task 7"* heading (`task-1f-a-6-materialize-helper.md:19`), where nothing carried it.
+The correct destination was then independently re-derived in full
+(`2026-08-03-stable-blob-addressing-design.md:179-184`) and parked. Backlog #36 then spent rounds
+1–13 arriving at the same place, and paid for it with a High on a money path.
+
+**Nobody searched. Three references, all present the whole time.**
+
+### The rule
+
+> **Before designing against any identifier, run `python3 scripts/prior-art.py <identifiers>` and put
+> what it returns — including "searched X, found nothing" — in the spec's `## Prior art` section.**
+
+Give it the names the design will touch: the key constructors, the schema fields, the functions whose
+contract you are changing. The output is ranked by document class, because a decision in an ADR or a
+spec outranks the same word in a test transcript.
+
+- **`--self-test`** asserts it still finds all three #36 references, and that a nonsense term returns
+  nothing (so the matcher cannot pass vacuously).
+- **It shows every hit by default.** Its first version defaulted to decision-vocabulary lines only and
+  answered *"No hits"* for `MODEL_KEY` — a **false negative from the tool built to prevent false
+  negatives.** Narrowing is opt-in via `--decisions`.
+
+### And the reason it went wrong in the first place
+
+> **A "carry-forward" that names no destination is not a carry-forward. It is a note.**
+
+`task-1f-a-6`'s item said *"Task 7 must ensure `base` derives from `videoId`"* — no task id, no backlog
+id, nothing that would surface it again. When you defer something, give it an id in
+`docs/backlog.md` or the task list **in the same turn**, exactly as
+[`dev-process.md`](dev-process.md) already requires for discovered work. A heading called
+*Carry-forward* creates the belief that something is carrying it.
+
+*(Why that finding looked Minor is worth keeping too: its own sentence says **"In tests
+`base===videoId`"**. A fixture that sets two distinct values equal cannot observe them diverging —
+the same defect class as round-11 M3, "right for the input it was tested on".)*
 
 ---
 
@@ -277,3 +323,30 @@ the file, and prefer failing over silently covering less.
 
 **6. Never mutate repo-tracked files.** Mutate a temp copy. A harness that edits the working tree
 corrupted a concurrent reviewer's run: 23/44 vs 44/44 on the same commit.
+
+## A NOMINATED FALSIFIER is provisional until it has been run red (added 2026-08-14)
+
+A spec's mutation table nominates falsifiers: *"mutation M must turn behavior N red."* That is a
+**prediction**, and this project has shipped it as a fact repeatedly — the #36 spec alone reached a
+**third** vacuous falsifier before anyone counted (task #96, *"fix the injectivity overclaim and the
+third vacuous falsifier"*), and each was written by someone who believed the row was load-bearing.
+
+A nominated falsifier fails in exactly two ways, and you must check for both **per row**:
+
+1. **The mutation survives** — the named observable does not actually depend on the named mechanism.
+   The row then reads as coverage while proving nothing.
+2. **The input is unconstructible** — no caller can reach the state the mutation would corrupt. The
+   test can never run, so it can never go red.
+
+**The rule: a mutation row is `PROVISIONAL` until the mutation has been applied and the named
+behavior observed RED.** Mark it so in the spec. This is not a Phase 1 obligation and cannot be —
+**at spec time there are no tests to mutate.** It is a Phase 3 obligation, and it extends the existing
+Mutation-check step from *guards the task adds* to *falsifiers the spec nominated*. A spec may state
+its table; it may not state that its table is verified.
+
+**Name an observable, not a mechanism.** *"Behavior 17 admits `℀.md`"* can go red. *"The NFKC pass is
+skipped"* restates the mutation and cannot.
+
+*(Why this is not a ratchet: a script can find mutation tables, but deciding whether a named input is
+constructible requires reading the callers. `check-gate-falsifiability.py` covers the gate half of
+this shape; the mutation half stays human.)*

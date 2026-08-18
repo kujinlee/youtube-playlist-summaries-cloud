@@ -136,6 +136,7 @@ copy that drifts.
 | `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated |
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |
+| `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
 | `scripts/check-docs.py` | documentation integrity |
 | `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |

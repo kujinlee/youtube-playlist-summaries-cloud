@@ -1212,13 +1212,19 @@ unapplied for eight days while every document read "merged, done".
   anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
-- **`master` is clean** — tsc clean, **2703 unit / 267 suites** green, plus **491 integration**
-  (the 2026-08-12 figure; integration needs a live Supabase stack, does not run in CI, and is
-  therefore NOT verified by the check below — treat it as a dated note, not a live number).
-  **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`, which
-  compares them against jest's own `--json` output and fails when they drift. They are stated at all
-  so a fresh session knows the size of the safety net; before the check existed this line said 2690
-  while the suite ran 2703, and nothing noticed.
+- **`master` is clean** — tsc clean, **2719 unit / 268 suites** green, plus **522 integration**
+  (519 passed + 3 skipped, measured 2026-08-17 against a live local stack; integration does not run
+  in CI and is therefore NOT verified by the check below — treat it as a dated note, not a live
+  number). **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`,
+  which compares them against jest's own `--json` output and fails when they drift. They are stated
+  at all so a fresh session knows the size of the safety net; before the check existed this line
+  said 2690 while the suite ran 2703, and nothing noticed.
+  > ⚠ **The check is fail-closed on an ABSENT results file, but has no FRESHNESS bound — measured
+  > 2026-08-17.** Locally it exited **0** on this very drift, because a `jest-results.json` left at
+  > the repo root from **2026-08-13** reported the same 2,703/267 the roadmap claimed. A stale
+  > snapshot and a stale document agreed, and the gate read them as consistent. CI caught it only
+  > because CI has no leftover file and regenerates one every run. **Run it as CI does —
+  > `npm test -- --ci --json --outputFile=jest-results.json` first — or you are checking a memory.**
   *For "what is `master` right now?" run `git log -1`.* ⚠ **This block used to answer that itself,
   with a `master = the merge of PR #N` field. It is DELETED (2026-08-12) rather than enforced, and
   the reason is worth keeping.** It was wrong four distinct ways in a short life: it held a raw SHA
@@ -1262,7 +1268,292 @@ unapplied for eight days while every document read "merged, done".
 - **The blob-addressing schema is ⏸ PARKED by user decision** — see that section for the unpark
   trigger. Do not resume it by momentum.
 
-**Blocked on the human:** nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
+**⭐⭐ 2026-08-17 — DECIDED BY THE USER: SHIP THE ENCODER ALONE. The plan is SPLIT.**
+
+**PR 1 = T1, T2, T14, T15 — four of sixteen tasks.** The other twelve come off the launch path and
+are re-filed on their own merits. Do NOT run plan review round 6.
+
+**Why, in one line each — all three verified, not taken on report:**
+- The **encoder alone fixes #36**. The shipped serve guard `assert-cloud-summary-md-key.ts:14`
+  ALREADY ACCEPTS the failing key `003_돈-…-다이제스트.md` (38 code points, measured). The failure is
+  the Storage upload in `supabase-blob-store.ts:15-18`, which throws before `persistSummary`.
+- **The approved spec says so itself**, §3.4 (line 558), written 2026-08-14 — three days before
+  anyone acted on it: *"Korean already passes the current allowlist… The Korean case is fixed by the
+  encoder; the guard fixes a different, adjacent set."*
+- **The other twelve fix a class filed as a bug NOWHERE.** `docs/backlog.md` has no entry for it and
+  no incident is recorded. Its only entry point is `recoverOrphanedVideos` (`lib/pipeline.ts:129`),
+  which `readdirSync`es the vault and adopts filenames verbatim — so it needs a human to place or
+  rename a file by hand. That route is open on `master` today and the encoder neither opens nor
+  widens it.
+
+**Why the plan stopped being iterated (Phase 6, 2026-08-17).** Five rounds, none converged, 103
+findings: **exactly ONE was about design** and 45 were transcription — identifiers and counts that
+did not survive being hand-copied into markdown. 23% of all findings, and **60% of round 5's**, were
+defects introduced by the previous round's own fixes. The plan is a 3,905-line document, 57% inside
+code fences, holding 1,581 lines of TypeScript no compiler ever sees. Round 5's Blocking was a
+`TS2420` — a defect the plan itself assigns to `tsc`. `review-method.md` escalates FIX→REDESIGN at
+two consecutive fix-induced rounds; that threshold was crossed at round 2.
+
+**Two things to fold in regardless — see NEXT ACTIONS.** ✅ **BOTH DONE 2026-08-17.** The
+EXECUTED-or-QUOTED rule was rescued into `docs/portable-practices.md` §13 (`8051120`) before the plan
+was shelved, and the §4 prod gate was re-run as a merge step (below).
+
+---
+
+**✅ 2026-08-17 — PR 1 IS BUILT. Four tasks, all four green, awaiting the human merge gate.**
+
+| | |
+|---|---|
+| T1 | `lib/storage/supabase/encode-segment.ts` — the segment encoder, 10 unit tests |
+| T2 | wired into `objectKey`, `deletePrefix`, `list` — 6 unit + 4 live-stack integration tests |
+| T14 | end-to-end: a title in any language ingests and serves — 6 tests |
+| T15 | ADR-0009, this tick, backlog #36, and the §4 prod gate re-run |
+
+**Gates, by exit code.** `tsc --noEmit` clean · unit **2719 passed / 268 suites** · integration
+**519 passed, 3 skipped, 0 failed** · all four ratchets exit 0.
+
+**The §4 no-migration gate was RE-RUN, not inherited.** 2026-08-17, prod, read-only as `claude_ro`,
+SQL in a file, `ON_ERROR_STOP=1`, exit 0. Reachability asserted first: **19 objects** (non-zero, so
+the run means something) → **0** segments outside `SAFE`, and 0 for each of the five characters
+Storage accepts but `SAFE` excludes (space `(` `)` `+` `=`). Still 19, same as 2026-08-14 — nothing
+has been ingested since. **No migration is needed.**
+
+**Four defects were found by RUNNING the plan rather than reading it** — all in T14, whose helper had
+never been executed:
+
+1. **The predicted failure was wrong.** The plan asserted a `409` from the serve guard. Measured: the
+   ingest THROWS at `putStaged` with `Invalid key`, `persist_summary` never runs, and serve is never
+   reached — the end state is a **404** at `serve-summary-core.ts:51`. The guard never fires. That is
+   the scope finding, confirmed from the other direction.
+2. **`STORAGE_BACKEND` was never set**, so the serve seam built the LOCAL bundle and read the cloud
+   playlist key as a filesystem path. The save/set/restore idiom already existed in two sibling suites.
+3. **The vault case asserted a fix that is not in this PR** — `slugify`'s astral-surrogate slice (T3,
+   deferred). Split out and asserted as STILL BROKEN rather than deleted.
+4. **Two of the four e2e behaviors do not discriminate.** 15 and 16 pass with *or* without the
+   encoder, because `slugify` strips the emoji, the space and NFD's combining acute before Storage
+   ever sees them. Kept as regression guards, documented as not evidence.
+
+**One pre-existing flake, proven not ours.** `tests/lib/storage/claim-video-slot-desired-serial.test.ts`
+reproduces at ~1 in 5 on a **clean, stashed tree**: `local-metadata-store.test.ts:13` sweeps every
+`$HOME` entry starting with `lms-`, which includes the other suite's `lms-serial-` dirs, and jest runs
+them in parallel workers. Also `tests/integration/pdf-put-atomicity.test.ts` is the one integration
+file doing N rounds of concurrent live-Storage I/O on Jest's **default 5 s** timeout; it timed out once
+under full-suite load and passed on re-run. Neither is filed yet — the user decides what gets filed.
+
+**The Post-Plan Gate sentinel was CLEARED AS SUPERSEDED, not as satisfied** — `.claude/plan-gate-pending`
+(gitignored, local) said *"clears when the dual adversarial review of this plan converges"*. It never
+converged and now never will: the user's decision retires the plan from the launch path, so the gate's
+subject no longer exists. Recorded the way M3's closure was (`6aefeaa`) — amend the requirement, do
+not tick it. **What replaced it as the quality gate for this PR:** the code is real, `tsc` reads it,
+the suites run it, and every behavioral claim here was mutation-checked by reverting the seam. That is
+strictly more than a sixth review round of prose would have produced — round 5's own Blocking was a
+`TS2420` the compiler finds in under a second.
+
+**Merging is the human gate.**
+
+**⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
+Branch `fix/cloud-blob-key-encoding`, spec **v21 — ✅ APPROVED 2026-08-15, PHASE 1 CLOSED**. Still **zero implementation code**: Phase 2 (the plan) is under its own dual adversarial review.
+Fourteen dual review rounds, a Phase 6 architecture review, a round-10 DESIGN review and a scoped
+credential design pass; all on disk at
+`docs/reviews/spec-blob-key-encoding-r{1..9,11..15}-{codex,claude}.md`,
+`docs/reviews/spec-blob-key-encoding-credential-design-pass.md`,
+`docs/reviews/spec-blob-key-encoding-r10-codex-design.md`,
+`docs/reviews/spec-blob-key-encoding-s36-design-claude.md` and
+`docs/reviews/architecture-review-2026-08-14.md`.
+
+- **The design collapsed at v8**, and the trigger was a user question — *"why does the cloud need
+  ASCII-servable?"* It does not. **Storable** (real, external, and solved completely by encoding at
+  the storage seam) had been welded to **single path component** (ours, a denylist concern). v5–v7
+  built a servability refusal, a `videoId` repair, a branded `CloudSummaryKey` and a manufactured
+  divergence to serve a constraint that was not real. All deleted.
+- **Round 8 is the first CONVERGED verdict** (Codex; the Claude half held on one inverted regex, now
+  fixed in v9). Both halves independently went looking for the consumer that would justify the old
+  allowlist and **found none**.
+- **Round 9 split the same way, in the same direction** — Codex CONVERGED (0B/0H/1M/1L), Claude NOT
+  CONVERGED on three Highs. Sided with the finding-reviewer; **v10 is committed**.
+- ⛔ **§3.6 IS ESCALATED FROM FIX TO REDESIGN (round-9 M5)** and this is the load-bearing outcome.
+  `review-method.md` escalates a component after **two** consecutive rounds of fix-induced findings.
+  §3.6 is on its **fourth** — rounds 6, 7, 8 and 9 each found a defect introduced by the previous
+  round's fix to §3.6 — while §3.1–§3.5 converged and stayed converged. **The condition fired at round
+  8 and nothing acted on it.** The next §3.6 pass is a **design review of the vault write protocol**,
+  not another defect hunt. This is the second time this repo has collected the evidence for its own
+  stop condition and not acted on it; the first bought the Phase-6-at-four-rounds trigger.
+- **Round 10 ran as a DESIGN review and paid for itself immediately** — it measured that v10's own
+  §3.6 fix (a `readdir` byte-comparison) would have refused a video's *own* file after any Class-A
+  transfer, because APFS preserves the stored name when you overwrite through an alias. §3.6 was
+  rewritten as **namespace ownership**, not patched.
+- **Round 11 — both halves NOT CONVERGED, on different Blockings, and they contradicted each other.**
+  Adjudicated by measurement. Two results worth surviving compaction:
+  - **§3.4/§3.5 had never been adversarially reviewed.** v11's header claimed *"converged and stayed
+    converged"*; that claim was about **v9**, and everything folded in after round 9 was uninspected.
+    Their first pass returned a Blocking — 21 codepoints survive `slugify` and NFKC-fold to a trailing
+    `.`, so `003_lesson-⒈.md` became `003_lesson-1..md` and the guard refused a key it accepts today.
+  - **A reviewer was right about the remedy and wrong about the failure.** `promote` is now left alone
+    and a separate `promoteIfAbsent` added — not because R1 broke a caller (it did not; verified), but
+    because declaring *"create-if-absent everywhere"* would turn **backlog #22** from a tracked bug
+    into a documented invariant.
+- **Rounds 12–18 ran; the spec closed at v21.** Reviews on disk at
+  `docs/reviews/spec-blob-key-encoding-r{12..18}-{codex,claude}.md`.
+- **The escalation rule fired, was overridden with a falsifier, the falsifier FIRED, and the debt was
+  PAID.** Round 13's H1 found the `sourceMd` ownership credential **stale by construction** —
+  `reconcileCloudBase` byte-copies the model envelope and never rewrites it, while the local migration
+  does. The owed design pass ran (`…-credential-design-pass.md`) and found the real defect: **the
+  summary carries `video_id`, the model envelope carries a NAME.** The credential is now `videoId`.
+- **Round 14 returned a Blocking**: `reconcileCloudBase` was a **third** route to the same durable
+  state and **deletes the servable copy on the way**. v17's answer was structural — **guard at the
+  metadata seam**, not at the entrances.
+- **Round 15 confirms the seam holds** (verified: no fourth path bypasses `MetadataStore`) **and finds
+  the other two "derivations" were still counts.** `writeModelEnvelope` is one of *two* writer
+  functions and the serve path is contractually barred from using it; the bidi class is a hand-typed
+  range with a comment claiming it is the Unicode property.
+- **v18 SHIPPED (`c9910f8`) and it made the SAME move twice** — both remaining "derivations" now
+  attach to a **private function with no caller outside its module**, so the rule is satisfied by
+  *construction* rather than by remembering:
+  - `serialize()` (`lib/html-doc/model-store.ts:34`) — the only path from an envelope to bytes, so it
+    covers `writeModelEnvelopeWithin` (the **cloud serve path**, the writer v17 missed and the one that
+    spends money). A write-time schema requires `videoId`; the **read** schema keeps it optional so the
+    7 legacy prod envelopes still parse without a migration.
+  - `videoDataPayload()` (`supabase-metadata-store.ts:19`, renamed from `stripComputed`) — the only
+    constructor of what lands in `videos.data`, so it covers `bulkUpdateVideoFields`. **The rename is
+    load-bearing**, not cosmetic: `stripComputed` reads as optional hygiene, so a future writer skipping
+    it looks harmless.
+  - Plus: **three** placements outside the seam (v17 said two while four other places described a third),
+    a new §3.5.2 stating what a refusal LEAVES BEHIND per caller (asked at round 13, asked again at
+    round 15, unfixed twice), the `'unservable-base'` result variant, `/\p{Bidi_Control}/u` so the
+    sentence claiming a property derivation becomes true, and the 3 stale cross-references.
+  - Behaviors **+7**, mutations **+6** — two of which reproduce v17's own defects. One row is marked
+    **UNMUTATABLE on purpose**: the mutation the bidi *claim* needs is a Unicode release, which no suite
+    can run, so it is recorded as a stated limit rather than a row that passes.
+- **⛔ ROUND 16 CARRIES AN ARMED FALSIFIER.** Round 15's Claude half overrode the FIX→REDESIGN
+  escalation **narrowly**, on this condition: it fires to REDESIGN if round 16 produces a **third**
+  finding of the form *"the derivation does not reach writer/method/caller N"*. Round 15 already had
+  **two** instances in one round. If it fires, the diagnosis is that this document keeps choosing
+  enforcement points by **name** instead of by **dominance**, and a wider redesign is owed rather than a
+  fourth repair.
+- **✅ ROUND 16 RAN. THE FALSIFIER DID NOT FIRE — and the two halves SPLIT on that question, which is
+  the whole reason this project runs two.** `mechanism` findings: **zero**. Both dominating points were
+  attacked head-on by independent enumeration and **held**.
+  - Both halves found `serialize` bypassed by `reconcileCloudBase`'s **byte-copy**. **Codex graded it
+    Blocking and declared the falsifier fired. Claude found the same bypass PLUS a second one Codex
+    missed** (`serial-migrate-exec.ts:141`) **and graded both Low.**
+  - **Adjudicated for Low by reading the code, not by counting verdicts** — and reached independently
+    before either half reported. Both are *transforms of an already-conforming envelope* that preserve
+    unknown fields, so neither can produce an envelope lacking `videoId` that did not already lack one:
+    a relocated legacy envelope **propagates** a legacy state rather than **introducing** one. **A copy
+    has no author to demand `videoId` from.** What survives is the *sentence* — this document's
+    **fourth** falsified universal — and a real mutation gap, now behavior **18j7**.
+  - **The one Blocking is the OPPOSITE shape: over-reach.** `copyAdditiveVideo` runs in **both**
+    directions and the adopt guard fired on both. On **cloud→local hydration** it would refuse to write
+    an already-unservable name **into the vault**, closing the last route to a paid artifact whose other
+    routes are 409 today or closed by this same version — and contradicting user decision ① *"the vault
+    wins"*. **v19 scopes the guard to the CLOUD receiver** and adds behavior **26e**, without which the
+    regression is invisible because behavior 26 passes whichever direction it is written against.
+  - Uncomfortable and recorded: v18 asked that direction question for `transferClassA` (**26c3**) and
+    **not** for `copyAdditiveVideo` one row above **in the same table**.
+- **⛔ ROUND 17 RAN. THE FALSIFIER FIRED — and the REDESIGN was of the INSTRUMENT, not the design.**
+  Armed on *"a placement is stated for one branch/direction of the path it sits on"*; **26c3** was the
+  first instance, round-16 **B1** the second.
+  - **The halves split again, opposite to round 16.** Codex **CONVERGED** (1 Low) and verified §3.5.1b
+    row by row. Claude returned **NOT CONVERGED** with a **Blocking**, and was right — confirmed at
+    `reconcile-serial.ts:150-155` **before** the finding was read.
+  - **The third instance landed in a row the table called "One branch"** and that Codex independently
+    verified as one branch. **Both were correct about the DIRECTION** (`cloud: cloudSide` is hard-wired);
+    the *value* `newBase` has **two producers**, one ternary apart, and the design was written for one.
+    On the other arm the refusal protects nothing and permanently blocks the paid summary's last route.
+  - **§3.5.1b is REBUILT against the guarded VALUE**, not the receiver: every row now names the value
+    and every producer of it, classified **BLIND** (all producers refused identically) or **DEPENDENT**
+    (justification/message/correctness differ per arm). Row 3's defect was being dependent while
+    recorded as blind.
+  - **The design is NOT redesigned**, and the reasoning is in the spec: zero `mechanism` findings for
+    the second round running, and the credential, the seam and both dominating points held for the
+    third consecutive round. **This is the SECOND escalation narrowed rather than honoured literally —
+    recorded explicitly, because a rule overridden twice without comment is retired in practice. The
+    user was notified and can reverse it.**
+  - Also folded: M1 (behavior 26f could not discriminate — the mutant produced the same observation),
+    M2 (the adopt location was restated in **four** places, three stale; stated once now), and four
+    Lows including the `ModelEnvelopeWriteSchema` rollout cost — **41 call sites, ~20 literals**.
+  - **Carried forward as the round's most useful artifact:** rounds 14 and 16 **both** quoted the full
+    three-line ternary and both glossed it as *"the vault filename"*. **Pasting is not reading**, and a
+    ternary is the cheapest place for a second branch to hide.
+- **⛔ ROUND 18's FALSIFIER targets the REBUILT INSTRUMENT:** fires to REDESIGN if it finds a **fourth**
+  instance under the *operand* question — a guarded value with a producer §3.5.1b's rewritten table does
+  not name. If the re-asked question holds, **#36 exits Phase 1**.
+- **The durable lesson, now in `review-method.md` and `portable-practices.md`:** *a derivation you have
+  to be right about is still a count.* Ask whether the rule can become wrong because someone adds a new
+  X without touching this code.
+- **✅ ROUND 18 RAN, THE FALSIFIER FIRED A SECOND TIME, AND IT BOUGHT A SCRIPT.** Both halves found
+  `mdKey`'s `??` (§3.5.1b row 6); the Claude half additionally found a **Blocking** the Codex half
+  missed — v20's own B1 fix left the round-17 Blocking open *through the seam*, and copied every paid
+  blob on the way. Four hand-built producer tables, four missed producers, the fourth one row from a
+  defect the brief had just warned about. **`scripts/check-producer-enumeration.py` now checks the
+  table** — it refuses an alias citation, a citation that names no definition, and any row claiming ONE
+  whose defining expression holds `?:`/`??`/`||`/`catch`/`switch`. `--self-test`: 11 cases.
+- **PHASE 1 CLOSED 2026-08-15.** The stopping argument, measured rather than felt: the spec grew
+  **1356 → 2025 lines across rounds 15–18** while findings shifted almost entirely to its own
+  bookkeeping — fix-induced findings went **2 → 3 → 4 → 5**, and by round 18 exactly **one** finding
+  predated that round's own repairs. Written up as `portable-practices.md` **§12**.
+  ⚠ **One claim I made to the user was wrong and is corrected here:** I said rounds 15–18 found *zero*
+  design defects. Round 18's B1 was classified **`mechanism`**. It was a mechanism defect in a *fix*
+  rather than in the original design — a real distinction, but not the one I stated.
+- **PHASE 2 IN PROGRESS — the plan is at v3, three gate rounds run.**
+  `docs/superpowers/plans/2026-08-15-cloud-blob-key-encoding.md` — **16 tasks, 87 steps**. Reviews:
+  `docs/reviews/plan-cloud-blob-key-encoding-r{1,2,3}-{codex,claude}.md`. **No implementation subagent
+  may be dispatched until the gate clears** (tasks #105–#109; `.claude/plan-gate-pending` blocks it).
+  - **r1 — 25 findings (8 Blocking).** Root cause, singular: v1 was written from the spec and **not one
+    code snippet was checked against the code it would live in.** It named **Vitest** where the repo
+    runs **Jest 30**, dropped `p.id` (the OWNER prefix — a tenancy break) from `objectKey`, called an
+    invented `rawList`, and used **7 helpers nobody had written**. Its self-review had checked the plan
+    against *itself* and passed.
+  - **r2 — 30 findings.** v2 fixed those and introduced its own: it invented `decision.receiverEnvelope`
+    *inside the fix for r1's invented-identifier finding*. The round's key sentence: **"a DEFERRED row
+    in v2 was more reliable than a FIXED one"** — two rows marked FIXED were fixed only in a comment
+    sitting above code that still did the opposite.
+  - **r3 — the method changed, and it worked.** v3's rule: *every snippet is either EXECUTED AND
+    VERIFIED or replaced by quoted current code plus a precise statement of the change.* **Both halves
+    RE-RAN the executable claims and both held** — Claude re-ran seven, three reproducing the plan's
+    figures to the digit, two against the repo's REAL adapters (12/12, 8/8); Codex re-ran four more.
+    **Zero findings of the "does not exist / does not compile" class**, after 55 across r1+r2.
+  - **⚖ r3 SPLIT THE HALVES ON THE VERDICT ITSELF** — Codex NOT CONVERGED (3 Blocking), Claude
+    CONVERGED (0 Blocking). **Adjudicated: both right, neither implies another round.** Codex is right
+    on severity — a `/* … */` fixture on the paid-artifact path forces an engineer to invent a test
+    unaided in the one place a *wrong* test is invisible, and this project has measured that failure
+    twice. Claude is right that it is a **writing** problem, not a reviewing one: it fails at `tsc`,
+    loudly, and cannot reach production.
+  - **⏳ IN FLIGHT: v4** — four fixture blocks (T8, T10, T12, T13) written against the real helpers and
+    **executed as written**. **T10 needs a decision, not a patch**: its guard is a backstop no
+    `slugify` output can reach (behavior 27 proves it), so the plan currently holds *both* a fake test
+    and a prose escape hatch. One or the other, not both.
+  - **The instrument split this produced, and it is the reusable part:** T0–T7 fail LOUD (a test goes
+    red) → **execute them**; T8/T10/T12/T13 fail SILENT (tests stay green while a paid artifact is
+    orphaned) → **keep reviewing those**. Match the instrument to how the defect announces itself.
+  - ⚠ **Numbers corrected this round, both mine:** the codepoint sweep is **4,448,256 total loop
+    iterations / 3,479,131 NON-EMPTY SLUG ASSERTIONS** — the plan *and §3.2 of the spec* call the
+    second figure "iterations"; and the plan has **87** steps, not 88.
+  ⚠ **The gate's "machine-enforceable backstop" did not exist** — `process-checklists.md:28` described
+  a `PreToolUse`-on-`Agent` hook that was never built, watching a sentinel nothing ever wrote. The plan
+  reached *"want me to start Task 1?"* unreviewed and **a human caught it, not the machine**. Repaired
+  in `7f26074`, 8 test cases including negative controls.
+- **Then:** implementation → the ADR recording the seam decision (task #91 — **not yet written, so
+  deliberately not numbered here**; `check-docs.py` fails on a reference to an ADR that does not
+  exist, and caught exactly that when this line first said otherwise) → PR. **Merging stays a
+  human gate.**
+- **The only tracked ROADMAP step still open is `A6`, and it stays PARKED** by the user decision of
+  2026-08-11 (blob-addressing schema). Nothing in #36 unparks it — v17 explicitly records that the
+  model is still *addressed* by a mutable base, and that only
+  `videos/<videoId>/<generationId>/model.json` (the parked 2026-08-03 spec) removes that. **`A6` is
+  outstanding, not next.**
+- **Tooling added 2026-08-15:** `scripts/prior-art.py` (+ a required `## Prior art` spec section) after
+  #36 spent 13 rounds rediscovering a decision that was on disk in three places. Backlog **#47** files
+  the knowledge-graph version.
+- ✅ **The deploy blocker is GONE.** The user applied the two `claude_ro` storage grants on
+  2026-08-14, and the §4 no-migration gate **ran the same day and passed** — read-only, exit 0,
+  reachability asserted first: 19 objects, **0 rows** outside the encoder's `SAFE` class. **#36 needs
+  no migration.** The same query answered backlog #46's open question: **0** existing names would
+  change under NFKC.
+- Phase 6 returned **eight findings**, deliberately unfiled pending user triage — see that review.
+
+**Blocked on the human:** Phase 6 triage. *(The `claude_ro` grants landed 2026-08-14. Merging is not pending — #36 is Phase 1, no code, no PR.)*
+Previously: nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
 **Backlog #36 (🔴 a non-ASCII title destroys a paid summary) is now the last launch-blocking
 defect**, and it is engineering, not a decision.
 

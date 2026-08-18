@@ -4,8 +4,9 @@
 the documents that make it reproducible somewhere else. This file is the second one's index.
 
 **Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 were measured on 2026-08-11, §8 on
-2026-08-12. The great majority of the memory files and review documents have **not** been mined yet —
-see *Not yet mined*, whose counts are re-enumerated, not recalled, whenever this file is edited.
+2026-08-12, §10 on 2026-08-13, §11 and §12 on 2026-08-15. The great majority of the memory files and review
+documents have **not** been mined yet — see *Not yet mined*, whose counts are re-enumerated, not
+recalled, whenever this file is edited.
 
 ---
 
@@ -234,6 +235,222 @@ inspecting nothing, and the reported value is indistinguishable from the healthy
 
 ---
 
+## 11. A rule has two halves — what it asserts and WHERE it applies. Enumerate placements × branches
+
+> Seventeen adversarial rounds on one spec. **Since round 14, every finding has been about placement**
+> — and placement fails on two axes that look like one.
+
+**Measured 2026-08-14 → 08-15**, across rounds 14–17 of a single spec. The rule being placed was a
+`key is servable` predicate. It *was* contested — round 14 found its bidi class covered 9 of 12 code
+points — but that was the last finding about what it asserts. Rounds 15, 16 and 17 produced two
+Blockings and a Medium, and **all of them were about where the check goes.**
+
+> ⚠ **The two sentences above were WRONG in the first draft of this entry, and the error is worth
+> keeping.** It claimed the predicate had been *"stable since round 12"* and *"correct and
+> uncontested"*. Both were written from recall, in a file whose own header says three
+> descriptions-from-memory were wrong on the day it was created. Caught within the hour by re-reading
+> the predicate, whose inline comments cite the rounds that changed it. **Enumerate; do not recall** —
+> including in the entry that is telling you to enumerate.
+
+### The two axes, and they are orthogonal
+
+| Axis | Question | Structure it is about | What it missed here |
+|---|---|---|---|
+| **Vertical — dominance** | does every path to the guarded state pass through this point? | the **call graph** | a second writer function the rule named one of (**Blocking**); a third interface method the rule named two of |
+| **Horizontal — branch** | for every branch **in the provenance of the value being guarded**, does the rule apply? | **control flow** | a helper called in two directions, guarded in both when only one was meant (**Blocking**); a guarded name with **two producers**, specified for one (**Blocking**) |
+
+> ### ⛔ ASK THE BRANCH QUESTION ABOUT THE OPERAND, NOT THE CALL SITE. This entry got it wrong first.
+>
+> **Measured 2026-08-15, and it cost a Blocking.** The first version of this entry — and the table it
+> describes — asked *"which side is the receiver?"*. That felt total, because the two known instances
+> were both **direction** defects. It is not the general question.
+>
+> The very next round found a **third** instance, in a row the table had marked **"One branch"** and
+> that an independent second reviewer had **verified as one branch**. Both verifications were correct
+> *about the direction*: the call site really was hard-wired to one side. But the **name the guard
+> tests** was assembled from **two different sources** one ternary apart —
+>
+> ```ts
+> const to = local.summaryMd
+>   ? baseOf(local.summaryMd)                              // arm A: a LOCAL filename
+>   : baseOf(applySerial(cloud.summaryMd, local.serial));  // arm B: the REMOTE key, renumbered
+> ```
+>
+> — and the design was written for arm A, three times over, including an operator message telling them
+> to rename a local file that on arm B **does not exist**.
+>
+> **The general question is: what are the branches of the VALUE this guard tests?** Direction is one
+> way a value can branch, and it is the conspicuous one because it appears in the signature. Provenance
+> is the one that hides, because both arms produce the same *type* and the ternary is upstream of the
+> guard.
+>
+> **The meta-lesson is the expensive part.** The table was built *specifically* to pre-empt a third
+> instance. It enumerated every placement, was independently verified, and a third instance walked
+> through it — because **the instrument asked a narrower question than the defect class it was built
+> for.** When a prophylactic fails, check whether it disagreed with the defect or merely asked
+> something adjacent.
+
+**Fixing the first does not prevent the second, and that is the entry.** The guard that failed on the
+branch axis had *already* been moved to satisfy dominance — it ran before the durable write, exactly as
+an earlier round demanded. **A rule can sit above every writer and still be wrong on one case.**
+
+### The trigger: the SECOND instance, not the third
+
+The two branch-axis defects were the same shape **one table row apart**, found a round apart — one
+graded Medium, the next graded Blocking. The response to a *recurring* shape is not a better fix; it is
+enumerating the whole domain of that shape. Here that was a table: **7 placements × the branches of the
+path each sits in.** Four had exactly one branch; three had two or three.
+
+**Write the trivial rows.** The four single-branch rows cost one line each and are what makes the table
+a ratchet rather than an observation: the next reader does not re-derive them, and a placement added
+later has a visibly empty cell. *"All branches"* is a valid answer and must still be written down.
+
+### The failure mode it catches that reviewing does not
+
+Filling in every cell forces a question a review never asks: **"how would the code even know?"**
+
+Run before dispatching the next round, the table immediately found that the previous round's
+**Blocking fix could not be written**. The rule said *"apply the guard only when the receiver is the
+cloud"* — but the function it sat in received the receiver as an **interface** both implementations
+satisfy, so the direction was simply absent from its scope. Recovering it meant sniffing the concrete
+type, which silently misclassifies any future third implementation.
+
+**The fix was not the rule. It was moving the rule to where the branch is chosen** — the caller, which
+had already computed the direction. That placement was also *strictly earlier* than the constraint an
+earlier round imposed, so it satisfied both axes at once.
+
+> **For a direction-dependent rule, the dominating point is the line that CHOOSES the direction** — not
+> the function downstream that has already lost the information. Same principle as putting an invariant
+> in the one private function every writer funnels through, applied to control flow instead of the call
+> graph.
+
+### How to apply
+
+1. When a reviewer says *"this rule is stated for one branch/writer of N"* **a second time**, stop
+   fixing instances. Enumerate.
+2. Table it: one row per placement, one column for the branch set of its path, **one outcome per cell**.
+3. For each cell ask **three** things: *"does the rule apply here?"*, *"can this code observe which
+   branch it is on?"*, and — the one that costs a Blocking to learn — *"where does the value being
+   tested come from, and does it have more than one source?"* Name the operand in the table, not just
+   the call site: a row reading *"guards `newBase`, produced by A or B"* asks the question by itself,
+   where *"one branch"* answers a different one.
+4. Prefer placements the branch set cannot escape: a **private function with no external callers** for
+   the dominance axis (a list of exported names is a count), and the **line that selects the branch**
+   for the horizontal one.
+
+**Cost and limits, stated honestly.** The table is ~10 lines of spec, and the next adversarial round
+verified it row by row against the code and found no third instance — but it did find that the move it
+prompted left **stale references to the old location** in the surrounding prose, which is its own
+recurring tax. Do this when the shape has recurred or the rule is money- or safety-relevant. Not for
+every rule; a table nobody needed is the same clutter as an unread rule.
+
+---
+
+## 12. Late-round defects are mostly caused by the previous round's FIX — and the fixes that cause them ADD a branch
+
+> Four consecutive review rounds. Findings introduced by the immediately preceding round's own fixes:
+> **2, then 3, then 4, then 5.** The review had stopped measuring the artifact and started measuring
+> its own repairs.
+
+**Measured 2026-08-15**, rounds 15–18 of one spec, counted from the review documents (each states its
+own causation per finding, so this is enumerated, not recalled):
+
+| round | findings | caused by the previous round's fixes |
+|---|---|---|
+| 15 | 8 | **2** |
+| 16 | 5 | **3** clear + 1 partial |
+| 17 | 7 | **4** |
+| 18 | 6 | **5** |
+
+Absolute count rises every round. By round 18 a *single* finding predated that round's own repairs.
+
+### The sub-pattern: which fixes generate the next round's defect
+
+Both fix-induced **Blocking** findings in the sequence came from repairs that **added a conditional
+exception** to an existing guard:
+
+| round | the repair | what it added | next round |
+|---|---|---|---|
+| 16 → 17 | scope a guard to one of two receivers | a condition on *which side* | **Blocking** — the guarded value had two producers, and the design covered one |
+| 17 → 18 | add an `oldBase` conjunct so one case passes | a condition on *which case* | **Blocking** — the case that now passed the first guard was refused by a second guard downstream, after the expensive work |
+
+**An exception is a branch, and a branch is what the next reviewer misses.** Both repairs were correct
+about the case they named and wrong about the case they created.
+
+### How to apply
+
+1. **Track causation per finding, not just severity.** Every finding gets a *"caused by this version's
+   own fixes: yes/no"*. It costs one line and it is the only way the trend above is visible — a
+   severity curve alone shows decay and reads as convergence.
+2. **When the fix-induced share is rising, the marginal round is buying less.** That is a signal to
+   change instrument (a script, a test, execution) rather than to run the same round again.
+3. **Prefer a repair that REMOVES a path over one that adds an exception.** Ask of any fix: *does this
+   introduce a new case, or delete one?* If it introduces one, name the case it creates, not just the
+   case it fixes — and check what the next guard downstream does with it.
+
+> ⚠ **Point 3 is a HEURISTIC derived from n=2, not a measured law, and it is labelled that way on
+> purpose.** The remove-a-path repair that replaced the second Blocking above has **not yet been
+> validated** — no round has reviewed it, and no test has run it. **Falsifier:** if that repair
+> produces a defect of its own, point 3 is wrong and points 1–2 stand independently of it.
+
+Related: **§8** reads the finding distribution to diagnose a wrong *shape*; this reads the same
+distribution to diagnose an *exhausted review*. Same instrument, opposite conclusion — check which
+question you are asking before acting on either.
+
+---
+
+## 13. Code inside a document is never run — either EXECUTE it, or QUOTE the real thing
+
+**Measured 2026-08-17, on a 16-task implementation plan that took five adversarial review rounds and
+converged in none of them.** 103 findings. Exactly **one** concerned design. **Forty-five were
+transcription** — identifiers that resolved nowhere, imports from modules that did not re-export
+them, counts contradicting their own itemisation. Not one of those would have survived a compiler.
+
+The plan was 3,905 lines, **57% of it inside code fences**, holding 1,581 lines of TypeScript across
+26 test-shaped blocks. None of it was ever compiled, linted or import-resolved, because a markdown
+document is not a file any tool reads. The clinching exhibit: round 5's Blocking was a class missing
+an interface member — a `TS2420` — in a plan whose own rules require `tsc --noEmit` on every task.
+**A review round was spent on a defect the document itself assigns to the compiler.**
+
+### The rule
+
+> **Every code snippet is either (a) EXECUTED AND VERIFIED, or (b) the CURRENT code quoted verbatim
+> plus a precise statement of the change — and the "executed" marker names the commit it was
+> executed against.**
+
+Adopted mid-slice, after two rounds had produced **four invented identifiers** — names present in
+the plan and absent from the codebase.
+
+**The third clause is not decoration, and it is why this entry exists rather than the shorter
+version.** Executed-or-quoted makes a snippet true *when written* and says nothing about staleness.
+Round 5 found `EXECUTED` markers standing above blocks that later rounds had edited underneath them —
+the project's own rule (§4 here: *a tick records that something was verified, never what against*)
+firing on the instrument built to prevent exactly this. Naming the commit is what makes the marker
+falsifiable.
+
+### The generalisation, which is bigger than the rule
+
+A review method usually classifies a fix-induced defect by what it says about the **subject**:
+a mechanism is wrong (redesign), a branch was missed (fix), a reference went stale (update). Those
+categories cannot see this failure, because it is not about the subject at all — **it is about the
+MEDIUM the subject is written in.** Ask the method's own test — *"can a redesign remove it?"* — of
+*"a class in a markdown block does not implement its interface"* and the answer is no, so the method
+says FIX, forever, one identifier at a time.
+
+> **When the fixes keep producing defects a compiler or a test runner would have caught, the remedy
+> is neither redesign nor more rounds — it is moving the content into a file the machine can read.**
+
+The tell is quantitative and cheap to watch: **track what share of each round's findings are defects
+introduced by the previous round's fixes.** Here it rose 0% → 24% → 35% → 42% → **60%**. A review
+converging on its own repairs is not a tail; it is a generator.
+
+### What to do instead
+
+Keep the document for what a document is good at — behaviour mapping, ordering, insertion points
+with verbatim quotes, recorded decisions, each task's RED expectation. Put the code in a scaffold
+branch that compiles. If a snippet must live inline, it is quoted current code plus the change, and
+the elisions are **marked and counted** — an unmarked `…` hides exactly the line the reader needs.
+
 ## Not yet mined
 
 **Re-enumerated 2026-08-13** (counted, not recalled): **61 memory files**, **633 review documents**,
@@ -245,3 +462,35 @@ it — most will fail filter 2, which is the correct outcome, not a disappointin
 
 **Do this in a session with fresh context.** Doing it at the end of a long one is precisely the
 condition under which recollection substitutes for reading.
+
+---
+
+## Prior art is a research step, not a memory (measured 2026-08-15)
+
+**Cost of not having it: thirteen adversarial review rounds and a design review, rediscovering a
+decision that was on disk in three places the whole time.** The failure was not that nobody knew — a
+reviewer had *caught* the drift and filed it. It was filed under a heading called **"Carry-forward"**
+with no destination id, and nothing carried it.
+
+Three things, in increasing order of what they cost to build:
+
+**1. A carry-forward that names no destination is not a carry-forward. It is a note.**
+Free. When you defer something, give it a backlog or task id **in the same turn**. A heading that
+says *Carry-forward* manufactures the belief that something is carrying it.
+
+**2. Search the documents before designing against an identifier — and record the search.**
+One script. Give it the key constructors, schema fields, and functions whose contract you are
+changing; rank hits by document class (ADR › spec › process › review › plan). Put the result in the
+spec, **including "searched X, found nothing"** — an unrecorded search is indistinguishable from no
+search.
+
+> ⚠ **Default to showing everything.** The first version of this project's tool filtered to
+> decision-vocabulary lines and answered *"No hits"* for a term with 80 hits — **a false negative from
+> the tool built to prevent false negatives**, caught on first use. Narrowing must be opt-in.
+
+**3. A knowledge graph over document fragments — only with derived edges.**
+The ambitious version, and the one with a trap: a hand-maintained graph over hundreds of documents
+goes stale silently and is then **worse than grep**, because it looks authoritative. Extract edges a
+script can re-derive from scratch (doc→doc, doc→`file:line`, doc→identifier, finding→destination),
+and note that the highest-value query is a **dangling edge** — *which deferrals name no destination?*
+— not a path. That is the failure above, made mechanically detectable.
