@@ -1236,10 +1236,14 @@ unapplied for eight days while every document read "merged, done".
   always knew the answer. Deleting a hand-maintained cache of a computable value beat building a
   second mechanism to police it, which is the same reasoning that already retired this field's
   sibling, the PR range.
-- **Deployed: release v6, 2026-08-11 15:47Z** (`fly status`: web + worker both v6).
-  ⚠ **`master` has moved past the deployed release.** Nothing outstanding is deploy-urgent — the
-  behaviour changes are the share tolerating version skew and the serve-path precondition — but
-  **the app is not running `master`**. No PR range is listed here on purpose: it needs re-editing on
+- **Deployed: release v7, 2026-08-18 04:35Z** (`fly status`: web + worker both v7). Shipped the #36
+  encoder and everything else on `master` at `324ec77`. Prod schema was checked against
+  `supabase/migrations/*.sql` first — 25 migrations, identical, and this change needed none.
+  **Verified live, not merely released:** the original failing Korean-titled video re-ingests,
+  serves, and its physical key now carries the encoder's `=h` marker. See the #36 block below.
+  *(Previous: v6, 2026-08-11 15:47Z. The historical "VERIFIED AGAINST: release v6" ticks elsewhere in
+  this file are about v6 and stay that way — a tick records what it was verified against.)*
+  ⚠ **Re-check this line whenever `master` moves.** No PR range is listed here on purpose: it needs re-editing on
   every merge, which is the same defect as the SHA. Read `git log` and `fly status`, not this line.
 - **Prod schema == master, verified by enumeration 2026-08-12: 25 applied, `0001` … `0025`, and the
   set diffed against `supabase/migrations/*.sql` is IDENTICAL** — no missing migration, no extra.
@@ -1349,7 +1353,49 @@ the suites run it, and every behavioral claim here was mutation-checked by rever
 strictly more than a sixth review round of prose would have produced — round 5's own Blocking was a
 `TS2420` the compiler finds in under a second.
 
-**Merging is the human gate.**
+---
+
+**⭐⭐ 2026-08-17 — MERGED, DEPLOYED, AND VERIFIED AGAINST PRODUCTION. #36 is closed for real.**
+
+| Step | Evidence |
+|---|---|
+| Merged | PR **#104**, squash **`324ec77`**, master CI green, branch deleted |
+| Deployed | Fly release **v7** (up from v6, 11 Aug) — web + worker both on 7, `started` |
+| Prod schema | 25 migrations, **identical** to master; this change needed none |
+| Post-deploy security | `/dev-login` → **404** in prod, as it must be (#13) |
+| Verified | the **original failing video**, re-run on v7 |
+
+**The verification re-ran the ORIGINAL failure rather than a stand-in**, which is the only reason it
+means anything. Video `wr4nCMUy1dk` — `돈 버는 방식은 정해져 있다, 수익 모델 15종 다이제스트` — had
+died in production **twice** with `Invalid key`, both jobs carrying `ever_metered = t`: the money had
+already moved. Its English-titled sibling in the same playlist, ingested in the same minute,
+`completed`. The variable was isolated for us by the bug itself.
+
+On v7 that same video **`completed`**, appears in the library tagged **KO**, and its summary
+**serves**. The decisive observable is not "a summary appeared" — it is the physical key now sitting
+in the bucket:
+
+```
+5a1df936-…-57f81f1b2333/PLXX3HKP5ZNN0XbVDK0IkjESRuJFcJRxYR/003_=hc00SCQvLFMd1mWqZ8dodvO.md
+└──── owner, NOT encoded ────┘└──── playlist key, NOT encoded ────┘└─── filename, ENCODED ───┘
+```
+
+That is the encoder's own signature: `003_` head preserved, `=h` marker, 22 base64url digest
+characters, `.md` intact. **And the owner prefix is untouched** — the asymmetry ADR-0009 specifies,
+which is precisely what keeps ADR-0008's serve-path money guard alive. Encode the prefix and the
+storage grant splits, the guard silently dies, and you get a 6¢→12¢ double charge with every test
+still green. **Until this run that was a claim in a document; it is now a fact in the bucket.**
+Objects carrying the marker went **0 → 1**.
+
+**Money, read before and after as `claude_ro`:** `spend_ledger` **2,142 → 2,292 = +150¢ reserved**,
+one new row. `actual_cents` remains 0 — the known-deferred settle slice, not a miscount. The ~8¢ real
+Flash cost is this project's *earlier* measurement and was **not** re-measured here; do not cite this
+run as its source.
+
+> **Why this step existed at all.** "Merged" is not "working", and this project has already paid for
+> that conflation — prod ran eight days behind on a migration while everything on disk looked
+> correct. The end-to-end test proves the *code*; it runs against a local stack. Only production
+> proves production. See `docs/portable-practices.md` §13 for the companion rule this slice bought.
 
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
 Branch `fix/cloud-blob-key-encoding`, spec **v21 — ✅ APPROVED 2026-08-15, PHASE 1 CLOSED**. Still **zero implementation code**: Phase 2 (the plan) is under its own dual adversarial review.
@@ -1552,15 +1598,30 @@ credential design pass; all on disk at
   change under NFKC.
 - Phase 6 returned **eight findings**, deliberately unfiled pending user triage — see that review.
 
-**Blocked on the human:** Phase 6 triage. *(The `claude_ro` grants landed 2026-08-14. Merging is not pending — #36 is Phase 1, no code, no PR.)*
-Previously: nothing. The M3 question was answered 2026-08-13 — **M3 closes on A.**
-**Backlog #36 (🔴 a non-ASCII title destroys a paid summary) is now the last launch-blocking
-defect**, and it is engineering, not a decision.
+**Blocked on the human: NOTHING.** ⭐ **Updated 2026-08-17 — backlog #36 is CLOSED**: merged
+(PR #104), deployed (v7), and verified against production with the original failing video. It was
+the last launch-blocking defect, and there is no successor. Phase 6's eight findings remain unfiled
+pending triage, but they are **follow-ups, not blockers**.
+
+*(Superseded, kept so the trail reads honestly: this block previously said "Blocked on the human:
+Phase 6 triage… Merging is not pending — #36 is Phase 1, no code, no PR." True when written; the
+code, the PR, the merge, the deploy and the prod verification all landed on 2026-08-17.)*
 
 **What is still open on THIS file, as opposed to in the backlog:** exactly one tracked item, **A6**,
 and it is **PARKED by user decision** (2026-08-11) along with the rest of the blob-addressing schema
 — it is *outstanding*, not *next*. Every milestone step M1–M3 is ticked. **The next work is not a
-roadmap item at all**; it is `docs/backlog.md` **#36**, then #44 and #45.
+roadmap item at all**; it is `docs/backlog.md` **#44** and **#45**, plus the two undecided items
+below — none of which gates a launch.
+
+**Two decisions parked for the user, neither blocking (2026-08-17):**
+- **Should `scripts/check-test-counts.py` enforce FRESHNESS on its results file?** It is fail-closed
+  on an *absent* `jest-results.json` but not a *stale* one. Measured: a four-day-old file reported
+  exactly the counts the roadmap claimed, so a stale snapshot and a stale document agreed and the
+  gate exited 0. CI caught it only because CI regenerates the file every run.
+- **Do the two pre-existing test flakes get filed?** `claim-video-slot-desired-serial` reproduces at
+  ~1 in 5 on a clean tree (`local-metadata-store.test.ts:13` sweeps every `$HOME` entry starting
+  `lms-`, which swallows the other suite's `lms-serial-` dirs across parallel jest workers); and
+  `pdf-put-atomicity` runs N rounds of concurrent live-Storage I/O on Jest's **default 5 s** timeout.
 
 ⚠ **That sentence is load-bearing for CI, and it is worth knowing why.**
 `check-roadmap-consistency.py` cross-references this block against the checkboxes it summarises, so a
