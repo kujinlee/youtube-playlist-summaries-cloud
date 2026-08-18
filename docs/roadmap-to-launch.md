@@ -1334,6 +1334,15 @@ them in parallel workers. Also `tests/integration/pdf-put-atomicity.test.ts` is 
 file doing N rounds of concurrent live-Storage I/O on Jest's **default 5 s** timeout; it timed out once
 under full-suite load and passed on re-run. Neither is filed yet — the user decides what gets filed.
 
+**The Post-Plan Gate sentinel was CLEARED AS SUPERSEDED, not as satisfied** — `.claude/plan-gate-pending`
+(gitignored, local) said *"clears when the dual adversarial review of this plan converges"*. It never
+converged and now never will: the user's decision retires the plan from the launch path, so the gate's
+subject no longer exists. Recorded the way M3's closure was (`6aefeaa`) — amend the requirement, do
+not tick it. **What replaced it as the quality gate for this PR:** the code is real, `tsc` reads it,
+the suites run it, and every behavioral claim here was mutation-checked by reverting the seam. That is
+strictly more than a sixth review round of prose would have produced — round 5's own Blocking was a
+`TS2420` the compiler finds in under a second.
+
 **Merging is the human gate.**
 
 **⭐ 2026-08-14 — backlog #36 IS IN PROGRESS. Read this before picking anything up.**
