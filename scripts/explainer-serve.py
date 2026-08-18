@@ -250,6 +250,23 @@ RELOAD_JS = """
       })
       .catch(function () {});                     // server stopped: keep showing the page, keep trying
   }
+  // ⛔ AN INTERVAL ALONE IS NOT ENOUGH, AND THE FIRST VERSION SHIPPED WITH ONLY AN INTERVAL.
+  // MEASURED 2026-08-18, reported by the reader: the page did not refresh and they reloaded by hand.
+  // Chrome throttles setInterval in a HIDDEN tab to roughly once a minute, and harder after a few
+  // minutes hidden. That is not an edge case here — it is the ONLY case that matters. The reader is
+  // by definition not looking at this page while an answer is being written: they asked, switched to
+  // the session, and came back. So the moment the answer lands is the moment the timer is throttled.
+  //
+  // The author's own test was invalid in exactly that way — it drove a FOREGROUND tab, the one
+  // condition the real use never has. It passed, and the feature was broken for the actual reader.
+  //
+  // So: poll the instant the tab becomes visible or regains focus. That is precisely when a stale
+  // page is about to be read, and it makes the interval a backstop rather than the mechanism.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') poll();
+  });
+  window.addEventListener('focus', poll);
+  window.addEventListener('pageshow', poll);   // back/forward cache restore
   setInterval(poll, 2000);
   poll();
 })();
@@ -501,6 +518,15 @@ def _self_test() -> int:
              lambda: "mine === null" in RELOAD_JS)
         case("reload client asks /_rev, the only endpoint added",
              lambda: "/_rev?p=" in RELOAD_JS)
+        # ⛔ THE DEFECT THE FIRST VERSION SHIPPED WITH. An interval alone is throttled to ~1/min in a
+        # HIDDEN tab, which is the only state that matters here: the reader asks, switches away, and
+        # comes back. Reported by the reader 2026-08-18 — "I had to manually refresh".
+        case("reload client polls when the tab BECOMES VISIBLE, not on a timer alone",
+             lambda: "visibilitychange" in RELOAD_JS and "visibilityState === 'visible'" in RELOAD_JS)
+        case("reload client polls on window focus",
+             lambda: "addEventListener('focus'" in RELOAD_JS)
+        case("reload client polls on pageshow (bfcache restore)",
+             lambda: "'pageshow'" in RELOAD_JS)
 
         for name, fn in cases:
             try:
