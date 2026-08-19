@@ -305,11 +305,12 @@ CELL_SPLIT = re.compile(r"(?<!\\)\|")
 # FAILS IF: an item row's column count differs from the header of the table it is in; a blank line
 # splits a table between two item rows; an item row appears outside any table; or NO item rows are
 # found at all (fail-closed — a rename or a restructure must not read as a clean pass).
-def check_backlog_table_shape(errors: list[str]) -> int:
-    path = ROOT / "docs/backlog.md"
-    if not path.exists():
-        return 0                    # absence is already reported by check_backlog_ids
-    lines = path.read_text(errors="ignore").splitlines()
+def backlog_shape_errors(lines: list[str], label: str = "docs/backlog.md") -> tuple[list[str], int]:
+    """PURE — takes lines, returns (errors, rows_seen). Split out so `--self-test` can drive it with
+    synthetic tables instead of the real file; a check whose only proof lives in a scratchpad
+    mutation script decays the moment that file is deleted."""
+    errors: list[str] = []
+    ok_lines: set[int] = set()      # rows whose Status cell is provably where we think it is
     expected: int | None = None     # column count of the table currently open
     header_line = 0
     rows = 0
@@ -327,22 +328,24 @@ def check_backlog_table_shape(errors: list[str]) -> int:
             num = cells[1].strip()
             if expected is None:
                 errors.append(
-                    f"docs/backlog.md:{i}: item #{num} is not inside any table — no header/delimiter "
+                    f"{label}:{i}: item #{num} is not inside any table — no header/delimiter "
                     f"row precedes it, so GitHub renders it as a paragraph of literal `|` text.")
             elif len(cells) != expected:
                 errors.append(
-                    f"docs/backlog.md:{i}: item #{num} has {len(cells) - 2} columns but the table "
+                    f"{label}:{i}: item #{num} has {len(cells) - 2} columns but the table "
                     f"opened at line {header_line} declares {expected - 2}. Either a cell is missing "
                     f"or a literal `|` inside a cell is unescaped — write it as `\\|`. A row with a "
                     f"missing Status column makes check_backlog_closed_markers read the ITEM cell "
                     f"instead, which is how #46 and #50 were marked closed while still open.")
+            else:
+                ok_lines.add(i)
             prev_was_row = True
             continue
         if not line:
             nxt = lines[i].strip() if i < len(lines) else ""
             if prev_was_row and re.match(r"^\|\s*\d+\s*\|", nxt):
                 errors.append(
-                    f"docs/backlog.md:{i}: a BLANK LINE sits between two item rows. In GFM that ENDS "
+                    f"{label}:{i}: a BLANK LINE sits between two item rows. In GFM that ENDS "
                     f"the table — every row below it renders as a paragraph of literal `|` text. "
                     f"Delete the blank line.")
             expected = None
@@ -351,8 +354,17 @@ def check_backlog_table_shape(errors: list[str]) -> int:
         prev_was_row = False
     if rows == 0:
         errors.append(
-            "docs/backlog.md: no `| N |` item rows were found, so this check verified NOTHING. "
+            f"{label}: no `| N |` item rows were found, so this check verified NOTHING. "
             "Treat it as NOT RUN and fix the pattern, do not accept the pass.")
+    return errors, rows, ok_lines
+
+
+def check_backlog_table_shape(errors: list[str]) -> int:
+    path = ROOT / "docs/backlog.md"
+    if not path.exists():
+        return 0                    # absence is already reported by check_backlog_ids
+    found, rows, _ = backlog_shape_errors(path.read_text(errors="ignore").splitlines())
+    errors.extend(found)
     return rows
 
 
@@ -371,13 +383,23 @@ def check_backlog_table_shape(errors: list[str]) -> int:
 # FAILS IF: a row's Status cell marks it closed (contains ✅) while its Item cell still begins with
 # a bare severity marker. The trigger is deliberately narrow — ✅ is the explicit close signal this
 # file already uses, so an item merely *mentioning* a merge elsewhere cannot produce a false red.
-def check_backlog_closed_markers(errors: list[str]) -> None:
-    path = ROOT / "docs/backlog.md"
-    if not path.exists():
-        return                      # absence is already reported by check_backlog_ids
+def backlog_marker_errors(
+    lines: list[str], ok_lines: set[int], label: str = "docs/backlog.md"
+) -> list[str]:
+    """PURE — see `backlog_shape_errors`. The self-test drives this with the exact two-column row
+    that made it close #46 and #50 while both were open."""
+    errors: list[str] = []
     severity = "🔴🟠🟡🟢"
-    for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
+    for i, line in enumerate(lines, 1):
         if not re.match(r"^\|\s*\d+\s*\|", line):
+            continue
+        if i not in ok_lines:
+            # ⭐ THE FIX, not a defensive skip. This check reads the Status cell POSITIONALLY, so on
+            # a row whose column count does not match its table there is no Status cell to read —
+            # `cells[-2]` is whatever happens to be last. That is exactly how an inline ✅ in the
+            # ITEM cell of a two-column row closed #46 and #50 while both were open. The shape
+            # error is already reported by backlog_shape_errors; emitting marker ADVICE about an
+            # unparseable row on top of it would send the reader to fix the wrong thing.
             continue
         # CELL_SPLIT, not `line.split("|")` — an escaped `\|` inside a cell is a literal, and three
         # rows contain one. `cells[-2]` is only the Status cell while the row's SHAPE is correct;
@@ -388,9 +410,19 @@ def check_backlog_closed_markers(errors: list[str]) -> None:
         num, item, status = cells[1].strip(), cells[2].strip(), cells[-2].strip()
         if "✅" in status and item[:1] in severity:
             errors.append(
-                f"docs/backlog.md:{i}: item #{num} is CLOSED (its Status cell has ✅) but still "
+                f"{label}:{i}: item #{num} is CLOSED (its Status cell has ✅) but still "
                 f"leads with {item[:1]} — a severity scan will count it as open. Write "
                 f"`✅ (was {item[:1]})` instead, keeping the original severity in parentheses.")
+    return errors
+
+
+def check_backlog_closed_markers(errors: list[str]) -> None:
+    path = ROOT / "docs/backlog.md"
+    if not path.exists():
+        return                      # absence is already reported by check_backlog_ids
+    lines = path.read_text(errors="ignore").splitlines()
+    _, _, ok_lines = backlog_shape_errors(lines)      # shape errors are reported by their own check
+    errors.extend(backlog_marker_errors(lines, ok_lines))
 
 
 # ── the advisory count, DERIVED rather than typed ────────────────────────────────────────────────
@@ -440,6 +472,76 @@ def check_advisory_count(errors: list[str], actual: int) -> None:
         )
 
 
+
+# ── --self-test ─────────────────────────────────────────────────────────────────────────────────
+# The backlog checks above were originally proved by a mutation script living in a scratchpad
+# directory, which is proof with an expiry date. `docs/backlog.md` #49 states the rule this project
+# already arrived at: a ratchet must carry its own `--self-test`. These cases drive the two PURE
+# functions with synthetic tables, so they run in milliseconds and touch nothing.
+#
+# Case `regression #46/#50` is the defect that actually shipped, written as a test.
+
+HDR6 = ["| # | Item | Touches | Size | Bundle | Status |",
+        "|---|------|---------|------|--------|--------|"]
+HDR3 = ["| # | Item | Status |", "|---|------|--------|"]
+ROW6 = "| 1 | 🟡 **thing** | `lib/x.ts` | S | (cloud) | **OPEN** |"
+
+
+def _shape(lines: list[str]) -> list[str]:
+    return backlog_shape_errors(lines, "T")[0]
+
+
+def _markers(lines: list[str]) -> list[str]:
+    _, _, ok = backlog_shape_errors(lines, "T")
+    return backlog_marker_errors(lines, ok, "T")
+
+
+def self_test() -> int:
+    cases: list[tuple[str, bool]] = []
+
+    def case(name: str, ok: bool) -> None:
+        cases.append((name, ok))
+
+    # ── shape ────────────────────────────────────────────────────────────────────────────────
+    case("a well-formed table passes", not _shape(HDR6 + [ROW6, ROW6.replace("| 1 |", "| 2 |")]))
+    case("a blank line between rows is caught",
+         any("BLANK LINE" in e for e in _shape(HDR6 + [ROW6, "", ROW6.replace("| 1 |", "| 2 |")])))
+    case("a row missing a column is caught",
+         any("columns" in e for e in _shape(HDR6 + ["| 1 | 🟡 **thing** | S | (cloud) | **OPEN** |"])))
+    case("an UNESCAPED pipe inside a cell is caught",
+         any("columns" in e for e in _shape(HDR6 + [ROW6.replace("`lib/x.ts`", "`a | b`")])))
+    case("an ESCAPED pipe inside a cell passes",
+         not _shape(HDR6 + [ROW6.replace("`lib/x.ts`", "`a \\| b`")]))
+    case("a row before any header is caught",
+         any("not inside any table" in e for e in _shape([ROW6])))
+    case("no item rows at all FAILS CLOSED",
+         any("verified NOTHING" in e for e in _shape(HDR6)))
+    case("a second table with its own column count passes",
+         not _shape(HDR6 + [ROW6] + [""] + HDR3 + ["| 9 | ✅ (was 🟡) **x** | ✅ **DONE** |"]))
+
+    # ── closed markers ───────────────────────────────────────────────────────────────────────
+    closed = "| 1 | 🟡 **thing** | `lib/x.ts` | S | (cloud) | ✅ **DONE — PR #1** |"
+    case("a CLOSED row still leading with a severity marker is caught",
+         any("is CLOSED" in e for e in _markers(HDR6 + [closed])))
+    case("`✅ (was 🟡)` on a closed row passes",
+         not _markers(HDR6 + [closed.replace("| 🟡 **thing**", "| ✅ (was 🟡) **thing**")]))
+    case("an OPEN row leading with a severity marker passes", not _markers(HDR6 + [ROW6]))
+
+    # ⭐ the defect that shipped on 2026-08-18 and closed two open items
+    two_col = "| 46 | 🟢 **thing** — **✅ PROD MEASURED 2026-08-14** — still open |"
+    case("regression #46/#50 — an inline ✅ in a MALFORMED row is not read as a closure",
+         not _markers(HDR6 + [two_col]))
+    case("regression #46/#50 — that same row IS reported as a shape error",
+         any("columns" in e for e in _shape(HDR6 + [two_col])))
+
+    failed = [n for n, ok in cases if not ok]
+    for name, ok in cases:
+        print(f"  {'✓' if ok else '✗'} {name}")
+    print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
+    return 1 if failed else 0
+
+
+
 def main() -> int:
     errors: list[str] = []
 
@@ -482,4 +584,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(self_test() if "--self-test" in sys.argv else main())
