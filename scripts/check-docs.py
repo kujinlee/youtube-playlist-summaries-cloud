@@ -272,6 +272,90 @@ def check_backlog_ids(errors: list[str]) -> int:
     return len(seen)
 
 
+# Split a markdown table row on its STRUCTURAL pipes only. A `\|` inside a cell is an escaped
+# literal, not a column boundary — `str.split("|")` cannot tell the difference, and three rows in
+# `docs/backlog.md` contain one (a psql ACL dump, a TypeScript union, a `X | None` annotation).
+CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+
+# ⟳ 2026-08-19 — THE BACKLOG TABLE MUST ACTUALLY BE A TABLE, AND EVERY ROW MUST HAVE ITS COLUMNS.
+#
+# MEASURED against GitHub's own renderer (`gh api -X POST /markdown`, mode `gfm`) on 2026-08-19:
+# `docs/backlog.md` produced **36** `<tr>` for **54** item rows, and items **#35–#53** — every row
+# filed since 2026-08-12 — rendered as PARAGRAPHS of literal pipe-delimited text. Cause: two stray
+# blank lines inside the Items table. In GFM a blank line TERMINATES a table, and a following
+# `| … |` line with no delimiter row after it is just prose. Nothing failed; it simply looked wrong
+# to anyone reading the backlog on GitHub, which is where it is read.
+#
+# ⭐ WHY THIS IS A SCRIPT AND NOT A STYLE NOTE. Five rows (#46–#50) carried only TWO of the six
+# columns — everything, including status, crammed into the Item cell. `check_backlog_closed_markers`
+# below reads the Status cell as `cells[-2]`, which for a two-column row IS the Item cell. So an
+# inline ✅ written for something else ("**✅ PROD MEASURED 2026-08-14**", "**(a) ✅ DONE — auto-refresh
+# SHIPPED**") was read as a whole-row closure, and on 2026-08-18 commit `7e2e434` duly re-marked #46
+# and #50 as CLOSED. **Neither was closed.** `lib/slugify.ts` has no `normalize`/NFKC call to this
+# day, and the `/brief` skill still lists an open *Known gaps* section. Two of the three rows that
+# commit "fixed" were false positives, and the wrong state then propagated into a severity triage and
+# a status briefing before anyone re-derived it.
+#
+# That is CLAUDE.md's own rule failing inside this file's neighbour: *"A script beats a claim only
+# when it reads the thing the claim is about. A green check over the wrong subject is an assertion in
+# better packaging."* The subject moved — the cell it read stopped being the Status cell — and
+# nothing said so. This check makes that impossible: the shape is verified before the content is.
+#
+# FAILS IF: an item row's column count differs from the header of the table it is in; a blank line
+# splits a table between two item rows; an item row appears outside any table; or NO item rows are
+# found at all (fail-closed — a rename or a restructure must not read as a clean pass).
+def check_backlog_table_shape(errors: list[str]) -> int:
+    path = ROOT / "docs/backlog.md"
+    if not path.exists():
+        return 0                    # absence is already reported by check_backlog_ids
+    lines = path.read_text(errors="ignore").splitlines()
+    expected: int | None = None     # column count of the table currently open
+    header_line = 0
+    rows = 0
+    prev_was_row = False
+    for i, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if re.fullmatch(r"\|[\s:|-]+\|", line) and line.count("-") >= 3:
+            expected = len(CELL_SPLIT.split(line))
+            header_line = i - 1
+            prev_was_row = False
+            continue
+        if re.match(r"^\|\s*\d+\s*\|", line):
+            rows += 1
+            cells = CELL_SPLIT.split(line)
+            num = cells[1].strip()
+            if expected is None:
+                errors.append(
+                    f"docs/backlog.md:{i}: item #{num} is not inside any table — no header/delimiter "
+                    f"row precedes it, so GitHub renders it as a paragraph of literal `|` text.")
+            elif len(cells) != expected:
+                errors.append(
+                    f"docs/backlog.md:{i}: item #{num} has {len(cells) - 2} columns but the table "
+                    f"opened at line {header_line} declares {expected - 2}. Either a cell is missing "
+                    f"or a literal `|` inside a cell is unescaped — write it as `\\|`. A row with a "
+                    f"missing Status column makes check_backlog_closed_markers read the ITEM cell "
+                    f"instead, which is how #46 and #50 were marked closed while still open.")
+            prev_was_row = True
+            continue
+        if not line:
+            nxt = lines[i].strip() if i < len(lines) else ""
+            if prev_was_row and re.match(r"^\|\s*\d+\s*\|", nxt):
+                errors.append(
+                    f"docs/backlog.md:{i}: a BLANK LINE sits between two item rows. In GFM that ENDS "
+                    f"the table — every row below it renders as a paragraph of literal `|` text. "
+                    f"Delete the blank line.")
+            expected = None
+            prev_was_row = False
+            continue
+        prev_was_row = False
+    if rows == 0:
+        errors.append(
+            "docs/backlog.md: no `| N |` item rows were found, so this check verified NOTHING. "
+            "Treat it as NOT RUN and fix the pattern, do not accept the pass.")
+    return rows
+
+
 # ⟳ 2026-08-18 — A CLOSED ITEM MUST NOT STILL LEAD WITH AN OPEN-SEVERITY MARKER.
 #
 # The leading 🔴/🟠/🟡/🟢 records severity AT FILING. It is not live state, and nothing ever
@@ -295,7 +379,10 @@ def check_backlog_closed_markers(errors: list[str]) -> None:
     for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
         if not re.match(r"^\|\s*\d+\s*\|", line):
             continue
-        cells = line.split("|")
+        # CELL_SPLIT, not `line.split("|")` — an escaped `\|` inside a cell is a literal, and three
+        # rows contain one. `cells[-2]` is only the Status cell while the row's SHAPE is correct;
+        # check_backlog_table_shape above is what makes that true rather than hoped.
+        cells = CELL_SPLIT.split(line)
         if len(cells) < 4:
             continue
         num, item, status = cells[1].strip(), cells[2].strip(), cells[-2].strip()
@@ -360,12 +447,14 @@ def main() -> int:
     check_adr_index(errors)
     check_line_budgets(errors)
     backlog_ids = check_backlog_ids(errors)
+    backlog_rows = check_backlog_table_shape(errors)
     check_backlog_closed_markers(errors)
     headings = check_duplicate_headings(errors)
     code_refs = check_adr_references(errors)
     links = check_living_links(errors)
 
     print(f"backlog items (unique)  : {backlog_ids}")
+    print(f"backlog rows, shape OK  : {backlog_rows}")
     print(f"ADRs                    : {len(adr_files())}")
     print(f"ADR refs from source    : {code_refs}")
     print(f"living-doc links checked: {links}")
