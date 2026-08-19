@@ -61,6 +61,30 @@ And the artifacts of the work itself: `docs/reviews/` for the subject, any spec 
 **Run the repo's own ratchets** and report exit codes, not their prose output:
 `check-docs`, `check-roadmap-consistency`, `check-test-counts`, `check-producer-enumeration`.
 
+**Then read the RUNNING SYSTEM, and compare it to what the roadmap claims.** This is the third
+layer, and every check above is blind to it — the ratchets compare documents to documents, and
+`check-roadmap-consistency` compares the roadmap to *itself*.
+
+```bash
+flyctl releases --app youtube-playlist-summaries | head -3   # what is actually live
+grep -n 'Deployed: release' docs/roadmap-to-launch.md        # what the roadmap says is live
+```
+
+**A mismatch is the finding.** Measured 2026-08-18: the roadmap said `v6` while `master` carried a
+merged money-path fix — *merged ≠ deployed* — and the precedent that makes this non-negotiable is
+production once running **eight days behind on a migration** while every file on disk looked correct.
+
+> ⚠ **Why this is a skill step and NOT a gate.** It was nearly built as
+> `check-deploy-freshness.py`, which would have needed the deploy SHA hand-recorded in the roadmap
+> (a manual step — the exact class that rots) and would have fired on every docs-only commit (noise,
+> which gets gates disabled). **The capability was never missing; only the trigger was.** Detection
+> is one command, and the moment it matters is the moment someone is about to trust the roadmap —
+> which is precisely when a briefing is being written. Before adding a script, ask whether the check
+> already exists and merely lacks a moment to run.
+>
+> Bound honestly: this catches **version** drift (live release vs the claim), not **commit** drift
+> (a release built from a stale tree). Version drift is what has actually happened, twice.
+
 **Reconcile the three layers against git.** Where they disagree, the disagreement IS a finding — say
 so on the page. Checkboxes are a claim; git is the truth.
 
