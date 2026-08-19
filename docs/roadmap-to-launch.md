@@ -2,9 +2,14 @@
 
 > ## ▶ Start here
 >
-> **This file is 1,796 lines and most of it is history.** The block that says *"read this first on a
-> fresh session"* — `▶ NEXT ACTIONS` — is at **66%** of the way down, which is not where a reader
-> arrives. Search for `▶ NEXT ACTIONS` to reach it. Two things before you do:
+> **This file is long and most of it is history.** The block that says *"read this first on a fresh
+> session"* — `▶ NEXT ACTIONS` — sits about **two thirds of the way down**, which is not where a
+> reader arrives. Search for `▶ NEXT ACTIONS` to reach it. Two things before you do:
+>
+> *(This paragraph stated an exact line count for about ninety seconds. Adding this block changed it,
+> so the number was wrong in the commit that introduced it — in the very box arguing that state
+> should be derived rather than recorded. A count nobody can check while reading is a cache; a
+> fraction survives the file growing.)*
 >
 > **1 — Derive current state; do not read it out of this file.** These pages have twice recorded
 > state that was already false: the deploy line said `v6` while a merged money-path fix sat
