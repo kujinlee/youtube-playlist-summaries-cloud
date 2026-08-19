@@ -1,5 +1,34 @@
 # Roadmap to Launch — Cloud App
 
+> ## ▶ Start here
+>
+> **This file is 1,796 lines and most of it is history.** The block that says *"read this first on a
+> fresh session"* — `▶ NEXT ACTIONS` — is at **66%** of the way down, which is not where a reader
+> arrives. Search for `▶ NEXT ACTIONS` to reach it. Two things before you do:
+>
+> **1 — Derive current state; do not read it out of this file.** These pages have twice recorded
+> state that was already false: the deploy line said `v6` while a merged money-path fix sat
+> undeployed, and prod ran **eight days** behind on a migration while every document read
+> *"merged, done"*.
+>
+> ```bash
+> git log --oneline -10                                       # what is merged
+> flyctl releases --app youtube-playlist-summaries | head -3   # what is actually deployed
+> for s in check-docs check-roadmap-consistency check-test-counts check-producer-enumeration; do
+>   python3 scripts/$s.py >/dev/null 2>&1; echo "$s -> $?"; done
+> ```
+>
+> ⚠ `check-test-counts` has **no freshness bound** — it will pass against a stale
+> `jest-results.json`. Run `npm test -- --ci --json --outputFile=jest-results.json` first, or you are
+> checking a memory.
+>
+> **2 — `▶ NEXT ACTIONS` is a candidate pool, not a plan.** Check every entry against `git log`
+> before picking it up.
+>
+> **All three launch milestones (M1 Deploy, M2 Sync, M3 Acceptance) are closed** — each heading below
+> carries its own status. Remaining work lives in [`docs/backlog.md`](backlog.md), where **every open
+> row carries a severity marker** as of 2026-08-19.
+
 The path from "all capabilities merged" to "a running, unified product." Created 2026-07-17, after the
 reservation-release money-path slice merged (PR #22). This is the **milestone** roadmap (not the
 per-feature dev backlog — that's `docs/backlog.md`, which covers local-app style enhancements).

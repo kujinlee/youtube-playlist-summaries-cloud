@@ -48,11 +48,62 @@ import tempfile
 ROOT = pathlib.Path.home() / "explainers"
 TRAY_MARKERS = ('id="tray"', 'id="qbox"', "/questions")
 # The tray script styles a status chip through these; the content page may not define them.
+#
+# `--rule` IS DECLARED SEPARATELY, ON `html`, AND THAT IS LOAD-BEARING (fixed 2026-08-19).
+# It is the one name in this shim that a content page may ALSO define, and the shim is spliced
+# AFTER the page's own CSS (see `compose`), so a plain `:root { --rule: … }` here would clobber it.
+# The previous attempt to express "default unless the page set it" was `--rule: var(--rule, #d3d9e2)`
+# — a custom property referring to ITSELF, which CSS makes invalid at computed-value time. It did not
+# fall back; it yielded NO VALUE, so every `border: 1px solid var(--rule)` in the tray was discarded.
+# MEASURED 2026-08-19 on a served page: `--rule` computed to the empty string and `#qbox` — the box
+# the reader types into — had `border-top-width: 0px; border-style: none`. It had been that way on
+# every page this script ever produced, and a missing hairline reads as a design choice, not a bug.
+#
+# Declaring it on `html` (specificity 0,0,1) instead of `:root` (0,1,0) makes it a REAL default:
+# a page that defines `--rule` wins on specificity no matter the source order, and a page that does
+# not gets #d3d9e2. The other names never collide, so they stay on `:root`.
+# `--self-test` asserts no custom property in this shim references itself.
+#
+# THE SHIM WAS ALSO INCOMPLETE, which is the same defect one level out (found 2026-08-19 while
+# fixing the above). Measured on a served page, the lifted tray referenced SIX names that resolved
+# to nothing: `--structure`, `--structure-br`, `--structure-bg`, `--bg`, `--good`, `--defect`.
+# `#tray`'s `border-top: 2px solid var(--structure)` and `#qbox`'s background were both dead. Fixing
+# only `--rule` — the one I happened to look at — would have been the instance-not-class error.
+# `assert_shimmed` below now makes any FUTURE unshimmed name fail the compose loudly instead.
 SHIM = """
   :root { --verified: var(--good, #2f7d63); --verified-br: var(--good, #2f7d63);
           --fg3: var(--ink-faint, #7a8695); --fg2: var(--ink-soft, #4a5563);
-          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); --rule: var(--rule, #d3d9e2); }
+          --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
+  html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
+         --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
 """
+
+
+def referenced_vars(css: str) -> set[str]:
+    """Custom properties the CSS reads with NO inline fallback — `var(--x)`, not `var(--x, y)`."""
+    return {m.group(1) for m in re.finditer(r"var\(\s*(--[\w-]+)\s*\)", css)}
+
+
+def declared_vars(css: str) -> set[str]:
+    return {m.group(1) for m in re.finditer(r"(--[\w-]+)\s*:", css)}
+
+
+def assert_shimmed(tray_css: str, content_css: str) -> None:
+    """Every name the tray reads must resolve, or the tray renders with pieces silently missing.
+
+    This is the guard that was absent. A `var(--x)` naming nothing is not a CSS error — the
+    declaration is simply dropped, so a border or a background vanishes and the page still looks
+    deliberate. Nothing could have caught it by reading; it took measuring computed styles in a
+    browser. Now a tray that grows a new dependency fails the compose instead of shipping.
+    """
+    missing = sorted(referenced_vars(tray_css) - declared_vars(SHIM) - declared_vars(content_css))
+    if missing:
+        raise SystemExit(
+            "brief-compose: the tray reads custom properties nothing defines: "
+            + ", ".join(missing)
+            + "\n  Each would silently drop its declaration (no error, just a missing border or"
+            "\n  colour). Add a default to SHIM in this file, or define it in the content fragment."
+        )
 
 
 def find_source(explicit: str | None, root: pathlib.Path = ROOT) -> pathlib.Path:
@@ -105,6 +156,7 @@ def compose(content: str, title: str, css: str, markup: str, script: str) -> str
         raise SystemExit("brief-compose: --content must contain a <style>…</style> block")
     head, body = content.split("</style>", 1)
     head = re.sub(r"<title>.*?</title>", "", head, flags=re.S)
+    assert_shimmed(css, head)
     styled = head + SHIM + "\n/* ---- Ask tray, extracted verbatim ---- */\n" + css + "\n</style>"
     return (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
@@ -170,6 +222,52 @@ def self_test() -> int:
     case("composed doc carries the tray", has_tray(doc))
     case("composed doc has exactly one title", doc.count("<title>") == 1)
     case("shim defines --verified", "--verified" in doc)
+
+    # ── the shim must never define a custom property in terms of ITSELF ─────────────────────────
+    # `--rule: var(--rule, #d3d9e2)` shipped for months. CSS makes a self-referential custom
+    # property invalid at computed-value time — it does NOT fall back, it resolves to nothing — so
+    # every `border: 1px solid var(--rule)` in the lifted tray was silently discarded. MEASURED
+    # 2026-08-19: `#qbox` computed `border-style: none`. Nothing could have noticed, because a
+    # missing hairline looks like a design choice. This case is the falsifier that was missing.
+    self_refs = [m for m in re.findall(r"(--[\w-]+)\s*:\s*var\(\s*(--[\w-]+)", SHIM) if m[0] == m[1]]
+    case("shim has no self-referential custom property", not self_refs)
+    # `--rule` is the one name a content page may also define, and the shim is spliced AFTER the
+    # page's CSS — so it must be declared at LOWER specificity to remain a default rather than an
+    # override. `html` is 0,0,1; `:root` is 0,1,0.
+    case("shim declares --rule on `html`, not `:root`", "html { --rule:" in SHIM)
+    case("the :root block does not declare --rule", "--rule" not in SHIM.split("html {")[0])
+    # NOT a guard on the cascade — this one survives the self-reference mutation, so it proves only
+    # that compose does not STRIP a content page's own --rule. The cascade itself is not testable
+    # here (it needs a layout engine); it was verified in a real browser on 2026-08-19 by reading
+    # the computed value of `--rule` and `#qbox`'s border on the served page.
+    themed = "<title>x</title><style>:root{--rule:#abcdef}</style><div>hi</div>"
+    case("compose preserves a content page's own --rule declaration",
+         "--rule:#abcdef" in compose(themed, "T", css, markup, script))
+
+    # ── assert_shimmed: an unresolvable var() must FAIL the compose, not ship a missing border ───
+    case("referenced_vars ignores names that carry an inline fallback",
+         referenced_vars("a{color:var(--x)}b{color:var(--y, #fff)}") == {"--x"})
+    orphan = (
+        "<style>#tray{border-top:2px solid var(--nobody-defines-this)}\n"
+        "#qbox{c:3}\n.askbtn{d:4}\nbody{e:5}</style>"
+        '<div id="tray"><div class="inner"><textarea id="qbox"></textarea></div></div>'
+        "<script>fetch('/questions')</script>"
+    )
+    ocss, omk, osc = extract_tray(orphan)
+    try:
+        compose("<title>x</title><style>:root{--good:#0f0}</style><div>hi</div>", "T", ocss, omk, osc)
+        case("compose REFUSES a tray var nothing defines", False)
+    except SystemExit as e:
+        case("compose REFUSES a tray var nothing defines", "--nobody-defines-this" in str(e))
+    try:
+        compose("<title>x</title><style>:root{--nobody-defines-this:#123}</style><div>hi</div>",
+                "T", ocss, omk, osc)
+        case("…unless the CONTENT page defines it", True)
+    except SystemExit:
+        case("…unless the CONTENT page defines it", False)
+    case("shim covers the names the real tray needs",
+         {"--structure", "--structure-br", "--structure-bg", "--bg", "--good", "--defect"}
+         <= declared_vars(SHIM))
 
     case("has_tray rejects a page with no tray", not has_tray("<html><body>nope</body></html>"))
 
