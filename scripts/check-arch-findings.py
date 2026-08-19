@@ -97,15 +97,27 @@ def match_count(
             continue
         try:
             for i, line in enumerate(p.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
-                if skip_comments:
-                    stripped = line.lstrip()
-                    if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
-                        continue
-                if rx.search(line):
+                if line_counts(line, rx, skip_comments):
                     hits.append(f"{rel}:{i}")
         except OSError:
             continue
     return hits
+
+
+def line_counts(line: str, rx: "re.Pattern[str]", skip_comments: bool) -> bool:
+    """PURE — does this ONE line count as a hit? Extracted 2026-08-19 for `--self-test`.
+
+    The comment skip is not cosmetic, and `match_count`'s docstring records why: the FIRST run of
+    this script reported finding #2/2a as REGRESSED because `sync-run.ts:329` is a *comment
+    explaining* that promote() is create-if-absent — the one site that had already fixed the bug was
+    counted as a site still exhibiting it. A ratchet that counts its own fix as a regression is a
+    ratchet someone switches off, so this behaviour is now a test rather than a docstring.
+    """
+    if skip_comments:
+        stripped = line.lstrip()
+        if stripped.startswith(("//", "*", "/*")):
+            return False
+    return bool(rx.search(line))
 
 
 def glob_files(pattern: str) -> list[str]:
@@ -290,6 +302,68 @@ METRICS: list[Metric] = [
 SYMBOL = {"PASS": "PASS", "OPEN": "OPEN", "REGRESSED": "REGRESSED"}
 
 
+
+# ── --self-test ─────────────────────────────────────────────────────────────────────────────────
+# Added 2026-08-19 (task #54). Unlike its three siblings this ratchet never needed a database — it
+# simply predates `check-ratchet-contract.py`. The two statically decidable behaviours are the
+# per-line hit rule (`line_counts`) and the baseline/target classification (`Metric.run`), and both
+# have a measured defect behind them, so both are tested rather than described.
+
+def self_test() -> int:
+    cases: list[tuple[str, bool]] = []
+
+    def case(name: str, ok: bool) -> None:
+        cases.append((name, ok))
+
+    rx = re.compile(r"STORAGE_BACKEND")
+
+    # ⭐ the defect that shipped in this script's FIRST run
+    for prefix, label in (("//", "line comment"), ("*", "jsdoc continuation"), ("/*", "block open")):
+        case(f"a {label} mentioning the pattern is NOT counted",
+             not line_counts(f"  {prefix} we no longer read STORAGE_BACKEND here", rx, True))
+    case("real code IS counted", line_counts("  const b = process.env.STORAGE_BACKEND", rx, True))
+    case("skip_comments=False counts the comment too",
+         line_counts("  // STORAGE_BACKEND", rx, False))
+    case("a line not matching the pattern is never counted",
+         not line_counts("  const x = 1", rx, True))
+    case("a string that merely CONTAINS a comment marker is still counted",
+         line_counts("  const s = 'https://x' + STORAGE_BACKEND", rx, True))
+
+    # Metric.run — the baseline/target classification, all three verdicts, both directions
+    def metric(cur: int, baseline: int, target: int, lower: bool = True) -> str:
+        return Metric("#t", "t", "test", baseline=baseline, target=target,
+                      probe=lambda: ["x"] * cur, lower_is_better=lower).run()
+
+    case("hitting the target is PASS", metric(0, 12, 0) == "PASS")
+    case("between target and baseline is OPEN", metric(5, 12, 0) == "OPEN")
+    case("sitting exactly ON the baseline is OPEN, not REGRESSED", metric(12, 12, 0) == "OPEN")
+    case("worse than the baseline is REGRESSED", metric(13, 12, 0) == "REGRESSED")
+    case("lower_is_better=False — more is better, so fewer is REGRESSED",
+         metric(1, 2, 5, lower=False) == "REGRESSED")
+    case("lower_is_better=False — reaching the target is still PASS",
+         metric(5, 2, 5, lower=False) == "PASS")
+    case("lower_is_better=False — above baseline but short of target is OPEN",
+         metric(3, 2, 5, lower=False) == "OPEN")
+
+    # the shipped config must be internally consistent
+    case("every metric has a distinct finding/metric id pair",
+         len({(m.finding, m.metric_id) for m in METRICS}) == len(METRICS))
+    # ⚠ A "must stay at N" REGRESSION GUARD (target == baseline) is legitimate — #3/3a and #3/3b
+    # both assert a file still exists. But it is only safe with lower_is_better=False. With the
+    # default True, `cur < baseline` classifies as OPEN, not REGRESSED, so DELETING the guarded
+    # file would leave main() returning 0 and the guard silently disarmed. Both shipped metrics
+    # set it correctly; this case is what keeps the next one from not.
+    case("a target == baseline guard is never lower_is_better (deletion would read as OPEN)",
+         all(m.lower_is_better is False for m in METRICS if m.target == m.baseline))
+
+    failed = [n for n, ok in cases if not ok]
+    for name, ok in cases:
+        print(f"  {'✓' if ok else '✗'} {name}")
+    print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
+    return 1 if failed else 0
+
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--strict", action="store_true", help="exit 1 unless every metric PASSes")
@@ -346,4 +420,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(
+        self_test() if "--self-test" in sys.argv else main())

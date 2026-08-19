@@ -238,30 +238,37 @@ def mutation_labels() -> list[str]:
     return []
 
 
-def main() -> int:
-    live = catalog_guards()
-    if not live:
-        print("no guards found — the catalog query returned nothing, which is itself a failure")
-        return 2
-    labels = mutation_labels()
-    if not labels:
-        print("no mutation labels parsed — the coverage check would pass vacuously")
-        return 2
+def evaluate(
+    live: set[str],
+    labels: list[str],
+    guards: dict | None = None,
+    covered_by: dict | None = None,
+    exempt=None,
+) -> list[str]:
+    """PURE — catalog guard names + mutation labels in, problems out. No database, no filesystem.
+
+    Split out of main() 2026-08-19 so `--self-test` can drive the RULE without a live Postgres.
+    That coupling is the whole reason this ratchet had no self-test: its only entry point needed
+    docker, so "test it" read as "stand up a database". The rule never needed the container.
+    """
+    guards = GUARDS if guards is None else guards
+    covered_by = COVERED_BY if covered_by is None else covered_by
+    exempt = MUTATION_EXEMPT if exempt is None else exempt
     problems: list[str] = []
 
-    for name in sorted(live - set(GUARDS)):
+    for name in sorted(live - set(guards)):
         problems.append(
             f"UNCLASSIFIED  {name}\n"
             f"              A new guard reached the schema without a SHAPE/SEQUENCE decision.\n"
             f"              Ask: what does it do when the caller is merely SECOND?")
 
-    for name in sorted(set(GUARDS) - live):
+    for name in sorted(set(guards) - live):
         problems.append(
             f"STALE         {name}\n"
             f"              Classified here but no longer in the schema — delete the entry.")
 
-    for name in sorted(live & set(GUARDS)):
-        kind, note = GUARDS[name]
+    for name in sorted(live & set(guards)):
+        kind, note = guards[name]
         if kind not in RECONCILING:
             if kind != "SHAPE":
                 problems.append(
@@ -272,16 +279,98 @@ def main() -> int:
             problems.append(
                 f"UNJUSTIFIED   {name}\n"
                 f"              {kind} guards must record HOW the second caller is reconciled.")
-        if name in MUTATION_EXEMPT:
+        if name in exempt:
             continue
         # Match the guard against mutation LABELS, never the file body (round 8 M1).
-        wanted = COVERED_BY.get(name, (name,))
+        wanted = covered_by.get(name, (name,))
         for token in wanted:
             if not any(token in label for label in labels):
                 problems.append(
                     f"UNMUTATED     {name}\n"
                     f"              No mutation label contains {token!r}. Its reconciler is a claim,\n"
                     f"              not a tested behaviour — add one to mutate-schema.py.")
+    return problems
+
+
+
+# ── --self-test ─────────────────────────────────────────────────────────────────────────────────
+# Added 2026-08-19 (task #54). `check-ratchet-contract.py` has listed this script as missing a
+# --self-test since 2026-08-11. See `evaluate` for why it stayed missing.
+
+def self_test() -> int:
+    cases: list[tuple[str, bool]] = []
+
+    def case(name: str, ok: bool) -> None:
+        cases.append((name, ok))
+
+    SHAPE = {"g_shape": ("SHAPE", "")}
+    SEQ = {"g_seq": ("SEQUENCE", "loser re-reads and retries")}
+
+    case("a classified SHAPE guard with no mutation is fine",
+         not evaluate({"g_shape"}, [], SHAPE, {}, set()))
+    case("a guard in the schema but not classified is caught",
+         any("UNCLASSIFIED" in x for x in evaluate({"g_shape", "g_new"}, [], SHAPE, {}, set())))
+    case("the UNCLASSIFIED message asks the SEQUENCE question",
+         any("merely SECOND" in x for x in evaluate({"g_new"}, [], {}, {}, set())))
+    case("a classified guard no longer in the schema is STALE",
+         any("STALE" in x for x in evaluate(set(), [], SHAPE, {}, set())))
+    case("an unknown kind is caught",
+         any("UNKNOWN KIND" in x for x in evaluate({"g"}, [], {"g": ("SHAPEY", "")}, {}, set())))
+
+    # a reconciling guard must say HOW, and must be mutation-covered
+    case("a SEQUENCE guard with no reconciliation note is UNJUSTIFIED",
+         any("UNJUSTIFIED" in x
+             for x in evaluate({"g_seq"}, ["g_seq"], {"g_seq": ("SEQUENCE", "")}, {}, set())))
+    case("a SEQUENCE guard with no matching mutation label is UNMUTATED",
+         any("UNMUTATED" in x for x in evaluate({"g_seq"}, ["unrelated"], SEQ, {}, set())))
+    case("a SEQUENCE guard WITH a matching mutation label passes",
+         not evaluate({"g_seq"}, ["mutate g_seq: drop it"], SEQ, {}, set()))
+    case("SHAPE(reconciled) is treated as reconciling too",
+         any("UNMUTATED" in x
+             for x in evaluate({"g"}, [], {"g": ("SHAPE(reconciled)", "note")}, {}, set())))
+
+    # the two escape hatches must actually work, or people will stop trusting them
+    case("MUTATION_EXEMPT suppresses only the mutation requirement",
+         not evaluate({"g_seq"}, [], SEQ, {}, {"g_seq"}))
+    case("COVERED_BY lets a differently-named mutation label satisfy a guard",
+         not evaluate({"g_seq"}, ["mutate the alias"], SEQ, {"g_seq": ("alias",)}, set()))
+    case("COVERED_BY requires EVERY listed token, not just one",
+         any("UNMUTATED" in x for x in
+             evaluate({"g_seq"}, ["has one"], SEQ, {"g_seq": ("one", "two")}, set())))
+
+    # ⭐ the round-8 M1 defect, written as a test: coverage was once checked against the whole
+    # mutate-schema.py FILE BODY, so a guard name surviving in a COMMENT satisfied the ratchet.
+    # `labels` is now the parsed label list, so a name that is not a label cannot satisfy it.
+    # The label list is what `mutation_labels()` parses with `ast` — a guard name surviving only in
+    # a COMMENT or inside a mutation's SQL body never reaches it, so it cannot satisfy coverage.
+    case("round-8 M1 — a guard name present but NOT as a label does not count",
+         any("UNMUTATED" in x for x in evaluate({"g_seq"}, ["an unrelated mutation"], SEQ, {}, set())))
+
+    # the shipped config must be internally consistent
+    case("every COVERED_BY key is a classified guard", all(k in GUARDS for k in COVERED_BY))
+    case("every MUTATION_EXEMPT key is a classified guard",
+         all(k in GUARDS for k in MUTATION_EXEMPT))
+    case("every classified kind is SHAPE or a known reconciling kind",
+         all(k[0] == "SHAPE" or k[0] in RECONCILING for k in GUARDS.values()))
+
+    failed = [n for n, ok in cases if not ok]
+    for name, ok in cases:
+        print(f"  {'✓' if ok else '✗'} {name}")
+    print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
+    return 1 if failed else 0
+
+
+
+def main() -> int:
+    live = catalog_guards()
+    if not live:
+        print("no guards found — the catalog query returned nothing, which is itself a failure")
+        return 2
+    labels = mutation_labels()
+    if not labels:
+        print("no mutation labels parsed — the coverage check would pass vacuously")
+        return 2
+    problems = evaluate(live, labels)
 
     seq = sorted(n for n in live & set(GUARDS) if GUARDS[n][0] in RECONCILING)
     print(f"guards in schema: {len(live)}   "
@@ -301,4 +390,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(self_test() if "--self-test" in sys.argv else main())
