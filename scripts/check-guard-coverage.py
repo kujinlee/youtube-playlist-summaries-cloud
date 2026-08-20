@@ -38,6 +38,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from subject_status import subject_banner
+
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing"
 SCHEMA = SPEC / "schema"
@@ -362,6 +364,8 @@ def self_test() -> int:
 
 
 def main() -> int:
+    for _line in subject_banner(SCHEMA, Path(__file__)):
+        print(_line)
     live = catalog_guards()
     if not live:
         print("no guards found — the catalog query returned nothing, which is itself a failure")

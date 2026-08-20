@@ -37,6 +37,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from subject_status import subject_banner
+
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema"
 CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
@@ -253,6 +255,8 @@ def self_test() -> int:
 
 
 def main() -> int:
+    for _line in subject_banner(SCHEMA, Path(__file__)):
+        print(_line)
     live = nullable_columns()
     if not live:
         print("no nullable columns found — the query returned nothing, itself a failure")
