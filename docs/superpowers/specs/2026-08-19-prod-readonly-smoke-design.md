@@ -61,11 +61,33 @@ one config cannot serve two applications that dispatch on a runtime env var.
 | File | Responsibility |
 |---|---|
 | `playwright.prod.config.ts` | targets the deployed URL. **No `webServer`** — it starts nothing |
+| `tests/e2e/prod-fixture.ts` | the read-only reads: anchor, ledger, session state, the NOT-RUN message |
 | `tests/e2e/prod-global.ts` | the four pre-flights and the money bracket, outside every project |
 | `tests/e2e/prod-smoke.spec.ts` | the six checks |
+| `tests/e2e/supabase-prod-ca-2021.crt` | Supabase's private root CA, pinned (see §3.1). Public cert, not a secret |
 | `scripts/capture-prod-session.mjs` | headed real-Chrome capture of `playwright/.auth/prod.json` |
 
-`npm run test:e2e:prod` and `npm run prod:session`.
+`npm run test:e2e:prod` and `npm run prod:session`. One new devDependency: **`pg`** — the read-only
+credential is a Postgres connection string, and there is no other way to use it from Node. Dev-only,
+so it does not ship in the container.
+
+### 3.1 TLS to the pooler — pinned, not bypassed
+
+Not foreseen at design time and found by running it. The pooler presents a chain rooted in a
+**private** CA (`Supabase Root 2021 CA`, self-signed), which Node's default trust store rightly
+rejects. The first fix written was `rejectUnauthorized: false`; that is **wrong** and was replaced —
+it accepts *any* certificate, on a connection carrying a database credential.
+
+The root is instead downloaded from Supabase's published URL over **public** TLS and vendored, so
+trust is anchored in the public web PKI rather than in whatever the pooler presented the first time
+we looked (trust-on-first-use would be circular).
+
+⚠ **`sslmode=` must be stripped from the connection string, and the reason generalises.** With
+`sslmode=require` present, pg's connection-string parsing builds its own `ssl` config and
+**overrides** the object passed alongside it — the pinned CA was supplied and silently ignored.
+Worse, pg 8 maps `require` to a **non-verifying** connection, so the credential URL as issued was
+never verifying the server at all. Pinning is therefore a real improvement over the status quo, not
+a formality.
 
 **Why the guard lives in `globalSetup` and not in a hook:** settled already by
 `tests/e2e/cloud-global.ts:8-35` — a project whose dependency failed is never run, so a guard inside
@@ -184,11 +206,14 @@ render only when it is provably free.
 
 ## 8. Acceptance
 
-- [ ] `npm run test:e2e:prod` with **no** session file reports **NOT RUN** and exits non-zero —
-      verified by running it, not by reading it.
-- [ ] With `SUPABASE_SERVICE_ROLE_KEY` exported, the suite **refuses** and names P2.
-- [ ] Checks 1, 5 and 6 pass against live prod with no session present.
-- [ ] With a captured session, all six pass and the ledger is provably unmoved.
+- [x] `npm run test:e2e:prod` with **no** session file reports **NOT RUN** and exits non-zero —
+      verified by running it, not by reading it. **3 failed (2, 3, 4), each naming the missing
+      session and the command that fixes it; 3 passed.**
+- [x] With `SUPABASE_SERVICE_ROLE_KEY` exported, the suite **refuses** and names P2. **Verified.**
+- [x] Checks 1, 5 and 6 pass against live prod with no session present. **Verified 2026-08-19
+      against release v7**: `release=v7 · anchor=wr4nCMUy1dk in "Business" · ledger=audit 2, 2298¢`.
+- [ ] With a captured session, all six pass and the ledger is provably unmoved. **Blocked on the
+      human — this is the only outstanding item.**
 - [ ] Mutation check: breaking each check's assertion turns **that named check** red — not merely a
       non-zero exit.
 - [ ] The roadmap's 3.1 note and backlog #41 are updated in the same PR as the code.
