@@ -35,12 +35,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # Existing debt, MEASURED 2026-08-11 (not estimated — the first estimate was wrong by half).
-# Discovery finds SIX ratchets; four predate the contract and have no --self-test:
+# Discovery found SIX ratchets; four predated the contract and had no --self-test:
 #   check-arch-findings.py, check-guard-coverage.py, check-sentinel-meanings.py,
 #   check-vocabulary-collisions.py
 # The prose being enforced originally said "there are three" — written from memory, undercounted by
 # half, and this script is what caught it. Ratchet so the NEXT one cannot skip; lower as they gain one.
-BASELINE = 4
+#
+# ⟳ 2026-08-19 — 4 → 0. All four gained a --self-test (task #54), 56 cases, mutation-tested 16/16.
+# THE REASON THEY WENT WITHOUT ONE FOR EIGHT DAYS IS WORTH KEEPING: three of the four read the
+# catalog through `docker exec … psql`, so their only entry point needed a live Postgres and "give
+# it a self-test" read as "stand up a database". It never happened. The fix was not a database —
+# it was noticing that the RULE and the FETCH are different things, and only the fetch needed the
+# container. Each now has a pure `evaluate()` the cases drive directly.
+#
+# This is now a HARD FLOOR: at 0, the next ratchet without a --self-test fails immediately.
+BASELINE = 0
 
 SELF_TEST_RE = re.compile(r"--self.test", re.IGNORECASE)
 RATCHET_DOCSTRING_RE = re.compile(r"\bratchet\b", re.IGNORECASE)

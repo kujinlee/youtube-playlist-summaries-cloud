@@ -50,7 +50,7 @@ TABLES = ("video_artifacts", "video_generations", "workspace_videos",
 MEANINGS: dict[tuple[str, str], str] = {
     # ── video_artifacts ─────────────────────────────────────────────────────────
     ("video_artifacts", "generation_id"):
-        "CONFLATED — see CONJUNCTION_OK; the render-addressing slice removes this",
+        "this artifact is free and its address may be overwritten",   # ⚠ justified in CONJUNCTION_OK
     ("video_artifacts", "source_generation_id"):
         "this artifact was not derived from another generation",
     ("video_artifacts", "start_sec"):        "this artifact does not describe a time span",
@@ -132,34 +132,132 @@ def nullable_columns() -> set[tuple[str, str]]:
 CONJUNCTION = re.compile(r"\b(and|or)\b", re.IGNORECASE)
 
 
-def main() -> int:
-    live = nullable_columns()
-    if not live:
-        print("no nullable columns found — the query returned nothing, itself a failure")
-        return 2
+def evaluate(
+    live: set[tuple[str, str]],
+    meanings: dict[tuple[str, str], str] | None = None,
+    conjunction_ok: dict[tuple[str, str], str] | None = None,
+) -> list[str]:
+    """PURE — nullable columns in, problems out. No database, no filesystem.
+
+    Split out of main() 2026-08-19 so `--self-test` can drive the RULE without a live Postgres,
+    which is the only reason this ratchet had none: its sole entry point needed docker, so
+    "test it" read as "stand up a database". The rule never needed the container; the FETCH did.
+    """
+    meanings = MEANINGS if meanings is None else meanings
+    conjunction_ok = CONJUNCTION_OK if conjunction_ok is None else conjunction_ok
     problems: list[str] = []
 
-    for t, c in sorted(live - set(MEANINGS)):
+    for t, c in sorted(live - set(meanings)):
         problems.append(
             f"UNDOCUMENTED  {t}.{c}\n"
             f"              A nullable column with no recorded meaning. Write ONE sentence:\n"
             f"              what does NULL mean here? If it needs two clauses, it is two columns.")
 
-    for t, c in sorted(set(MEANINGS) - live):
+    for t, c in sorted(set(meanings) - live):
         problems.append(f"STALE         {t}.{c}\n"
                         f"              Documented here but no longer nullable — delete the entry.")
 
-    for key in sorted(live & set(MEANINGS)):
-        meaning = MEANINGS[key]
+    # ⟳ 2026-08-19 — A JUSTIFICATION CANNOT OUTLIVE THE THING IT EXCUSED.
+    #
+    # Its sibling `check-vocabulary-collisions.py` has always failed on a stale ALLOWED entry
+    # ("that is the difference between a ratchet and a mute button"). This script had no such rule,
+    # and its ONE entry had already gone unreachable: the meaning for video_artifacts.generation_id
+    # had been reworded to "CONFLATED — see CONJUNCTION_OK", which contains no conjunction, so the
+    # search below `continue`d before ever consulting the allowlist. The conflation was still live
+    # (backlog #25 is open) — the GUARD had been disarmed by an edit to the text it inspects, which
+    # is this project's most-repeated defect shape. Found 2026-08-19 by this script's own new
+    # --self-test consistency case, not by reading it.
+    for key in sorted(set(conjunction_ok)):
+        if key not in meanings:
+            problems.append(
+                f"ORPHAN JUST.  {key[0]}.{key[1]}\n"
+                f"              Justified in CONJUNCTION_OK but absent from MEANINGS — it excuses\n"
+                f"              a meaning that no longer exists. Delete the entry.")
+        elif not CONJUNCTION.search(meanings[key]):
+            problems.append(
+                f"STALE JUST.   {key[0]}.{key[1]}\n"
+                f"              Justified in CONJUNCTION_OK, but its meaning contains no\n"
+                f"              conjunction, so the rule it excuses can never fire. Either the\n"
+                f"              conflation is gone (delete the entry) or the meaning stopped\n"
+                f"              admitting it (restore the conjunction). An unreachable\n"
+                f"              justification is a mute button, not a ratchet.")
+
+    for key in sorted(live & set(meanings)):
+        meaning = meanings[key]
         if not CONJUNCTION.search(meaning):
             continue
-        if key in CONJUNCTION_OK:
+        if key in conjunction_ok:
             continue
         problems.append(
             f"CONFLATED?    {key[0]}.{key[1]}\n"
             f"              \"{meaning}\"\n"
             f"              The meaning contains a conjunction, which usually means NULL is\n"
             f"              carrying two facts. Split the column, or justify it in CONJUNCTION_OK.")
+    return problems
+
+
+
+# ── --self-test ─────────────────────────────────────────────────────────────────────────────────
+# Added 2026-08-19 (task #54). `check-ratchet-contract.py` has listed this script as missing a
+# --self-test since 2026-08-11. See `evaluate` for why it stayed missing.
+
+def self_test() -> int:
+    cases: list[tuple[str, bool]] = []
+
+    def case(name: str, ok: bool) -> None:
+        cases.append((name, ok))
+
+    K = ("jobs", "error")
+    OK = {K: "this job has not failed"}
+
+    case("a documented, single-clause meaning passes", not evaluate({K}, OK, {}))
+    case("a nullable column with NO recorded meaning is caught",
+         any("UNDOCUMENTED" in x for x in evaluate({K, ("jobs", "novel")}, OK, {})))
+    case("a documented column that is no longer nullable is STALE",
+         any("STALE" in x for x in evaluate(set(), OK, {})))
+
+    conj = {K: "this job has not failed and has not been retried"}
+    case("a conjunction in the meaning is caught",
+         any("CONFLATED?" in x for x in evaluate({K}, conj, {})))
+    case("a JUSTIFIED conjunction is silent", not evaluate({K}, conj, {K: "known conflation"}))
+    case("the report quotes the meaning back at the reader",
+         any("has not been retried" in x for x in evaluate({K}, conj, {})))
+    case("'or' is a conjunction too",
+         any("CONFLATED?" in x for x in evaluate({K}, {K: "no result or no error"}, {})))
+
+    # CONJUNCTION uses \b — a word merely CONTAINING 'and'/'or' must not trip it, or the rule
+    # would fire on ordinary English ("brand", "record") and get muted rather than obeyed.
+    for word in ("this job carries no brand", "this job has no record"):
+        case(f"a word containing a conjunction does not trip it: {word.split()[-1]!r}",
+             not evaluate({K}, {K: word}, {}))
+
+    # the shipped config must be internally consistent, or the check is arguing with itself
+    case("every CONJUNCTION_OK key is also documented in MEANINGS",
+         all(k in MEANINGS for k in CONJUNCTION_OK))
+    case("every CONJUNCTION_OK entry actually contains a conjunction to justify",
+         all(CONJUNCTION.search(MEANINGS[k]) for k in CONJUNCTION_OK if k in MEANINGS))
+
+    # the general rule that the shipped-config case above is one instance of
+    case("a justification whose meaning has NO conjunction is caught as STALE",
+         any("STALE JUST." in x for x in evaluate({K}, OK, {K: "why"})))
+    case("a justification for a meaning that does not exist is an ORPHAN",
+         any("ORPHAN JUST." in x for x in evaluate({K}, OK, {("t", "gone"): "why"})))
+    case("a LIVE justification is still silent", not evaluate({K}, conj, {K: "known conflation"}))
+
+    failed = [n for n, ok in cases if not ok]
+    for name, ok in cases:
+        print(f"  {'✓' if ok else '✗'} {name}")
+    print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
+    return 1 if failed else 0
+
+
+
+def main() -> int:
+    live = nullable_columns()
+    if not live:
+        print("no nullable columns found — the query returned nothing, itself a failure")
+        return 2
+    problems = evaluate(live)
 
     print(f"nullable columns: {len(live)}   documented: {len(live & set(MEANINGS))}   "
           f"justified conjunctions: {len(CONJUNCTION_OK)}")
@@ -178,4 +276,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(self_test() if "--self-test" in sys.argv else main())

@@ -117,26 +117,32 @@ def columns() -> list[tuple[str, str]]:
     return cols
 
 
-def main() -> int:
-    cols = columns()
-    if not cols:
-        print("no columns found — the query returned nothing, itself a failure")
-        return 2
+def evaluate(
+    cols: list[tuple[str, str]],
+    stems: tuple[str, ...] = MECHANISM_STEMS,
+    allowed: dict[str, str] | None = None,
+) -> tuple[dict[str, list[str]], list[str]]:
+    """PURE — catalog rows in, (collisions, problems) out. No database, no filesystem.
 
+    Split out of main() 2026-08-19 so `--self-test` can drive the RULE without a live Postgres.
+    That was the whole reason this ratchet had no self-test: its only entry point needed docker.
+    The rule and the fetch are different things, and only one of them needed the container.
+    """
+    allowed = ALLOWED if allowed is None else allowed
     collisions: dict[str, list[str]] = {}
-    for stem in MECHANISM_STEMS:
+    for stem in stems:
         hits = [f"{t}.{c}" for t, c in cols if stem in c]
         if len({h.split(".")[0] for h in hits}) > 1:
             collisions[stem] = sorted(hits)
 
     problems = []
-    for stem in sorted(set(ALLOWED) - set(collisions)):
+    for stem in sorted(set(allowed) - set(collisions)):
         problems.append(
             f"STALE JUSTIFICATION  '{stem}' no longer collides — delete its ALLOWED entry.\n"
             "                     The duplication it excused is gone; leaving the entry turns a\n"
             "                     ratchet into standing permission for the next one.")
     for stem, hits in sorted(collisions.items()):
-        if stem in ALLOWED:
+        if stem in allowed:
             continue
         tables = sorted({h.split(".")[0] for h in hits})
         problems.append(
@@ -145,6 +151,78 @@ def main() -> int:
             + "                     Two tables modelling one protocol. Either one of them is\n"
               "                     redundant, or they are different concepts sharing a word —\n"
               "                     and if it is the second, say which in ALLOWED.")
+    return collisions, problems
+
+
+
+# ── --self-test ─────────────────────────────────────────────────────────────────────────────────
+# Added 2026-08-19 (task #54). `check-ratchet-contract.py` has named this script as missing a
+# --self-test since 2026-08-11, and the reason it stayed missing is worth recording: the only entry
+# point needed a live Postgres, so "test it" read as "stand up a database". It never did. Splitting
+# `evaluate` out of `main` makes the RULE testable without the FETCH — the container was never
+# needed to check the rule, only to learn the columns.
+
+def self_test() -> int:
+    cases: list[tuple[str, bool]] = []
+
+    def case(name: str, ok: bool) -> None:
+        cases.append((name, ok))
+
+    STEMS = ("lease", "token")
+
+    # one table only -> not a collision
+    c, p = evaluate([("jobs", "lease_token"), ("jobs", "lease_expires_at")], STEMS, {})
+    case("a stem on ONE table is not a collision", not c and not p)
+
+    # two tables -> collision, unjustified
+    two = [("jobs", "lease_token"), ("video_artifacts", "lease_expires_at")]
+    c, p = evaluate(two, STEMS, {})
+    case("a stem on TWO tables is a collision", "lease" in c)
+    case("an unjustified collision is a problem",
+         any("DUPLICATE MECHANISM" in x and "'lease'" in x for x in p))
+    case("the problem names both tables",
+         any("jobs" in x and "video_artifacts" in x for x in p))
+
+    # justified -> silent
+    # NOTE: justify ONLY the stem that collides. An earlier draft of this case also justified
+    # `token`, which does not collide in this fixture — and the check correctly reported it STALE.
+    # The fixture was wrong, not the rule; kept as a comment because it is the behaviour under test.
+    _, p = evaluate(two, STEMS, {"lease": "different concepts"})
+    case("a justified collision produces no problem", not p)
+
+    # a justification whose stem no longer collides -> STALE
+    _, p = evaluate([("jobs", "lease_token")], ("lease",), {"lease": "was justified"})
+    case("a STALE justification is caught",
+         any("STALE JUSTIFICATION" in x for x in p))
+    case("a stale justification cannot be silently outlived",
+         any("standing permission" in x for x in p))
+
+    # the same stem twice on ONE table is still one table
+    _, p = evaluate([("jobs", "lease_a"), ("jobs", "lease_b")], ("lease",), {})
+    case("two columns on the same table are not two mechanisms", not p)
+
+    # substring matching is intentional: `reserv` must match reserved_at AND reserved_cents
+    c, _ = evaluate([("jobs", "reserved_cents"), ("video_artifacts", "reserved_at")], ("reserv",), {})
+    case("a stem matches by SUBSTRING, not whole word", "reserv" in c)
+
+    # the shipped config must itself be self-consistent: every ALLOWED stem is a known stem
+    case("every ALLOWED entry names a stem this script actually scans",
+         all(s in MECHANISM_STEMS for s in ALLOWED))
+
+    failed = [n for n, ok in cases if not ok]
+    for name, ok in cases:
+        print(f"  {'✓' if ok else '✗'} {name}")
+    print(f"\n{len(cases) - len(failed)}/{len(cases)} passed")
+    return 1 if failed else 0
+
+
+
+def main() -> int:
+    cols = columns()
+    if not cols:
+        print("no columns found — the query returned nothing, itself a failure")
+        return 2
+    collisions, problems = evaluate(cols)
 
     print(f"columns scanned: {len(cols)}   mechanism stems: {len(MECHANISM_STEMS)}   "
           f"collisions: {len(collisions)}   justified: {len(ALLOWED)}")
@@ -164,4 +242,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(self_test() if "--self-test" in sys.argv else main())
