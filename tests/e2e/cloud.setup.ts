@@ -41,6 +41,10 @@ import { parseSummaryMarkdown } from '@/lib/html-doc/parse';
 // support" from deep inside a constructor, which reads like a library bug rather than a local
 // setup problem. Measured 2026-08-13. CI already pins 22 (.github/workflows/ci.yml); this makes the
 // same requirement true of a laptop, and says so in one sentence.
+/** Declared once and published in the fixture, so the library spec asserts on the string that was
+ *  actually seeded rather than a second copy that can drift out of step with this one. */
+const SEEDED_VIDEO_TITLE = 'A seeded video with a summary';
+
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 22) {
   throw new Error(
@@ -90,8 +94,12 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
     // looks nothing like "your fixture is malformed". Same constraint the integration fixtures
     // call out (dig-serve-interactive.test.ts:32).
     videoId: `e2e${Date.now().toString(36)}`,
-    title: 'A seeded video with a summary',
+    title: SEEDED_VIDEO_TITLE,
     position: 1,
+    // REQUIRED for the library pane to show this row at all — see the note in seed.ts. A promoted
+    // video with a summary always carries a score in reality, so a fixture without one is not a
+    // simpler fixture, it is an unreachable state.
+    overallScore: 4.5,
   });
   // A KEY IS NOT A SUMMARY. seedPromotedVideo writes `artifacts.summaryMd.key`; the bytes live in
   // the blob store and the serve path get()s them. Without this upload every render assertion
@@ -169,8 +177,12 @@ setup('create an owner, seed their library, and sign in through /dev-login', asy
 
   const fixture: CloudFixture = {
     email,
+    password,
     ownerId: user.id,
-    listed: { playlistId: listed.playlistId, playlistKey: listed.playlistKey, title: listedTitle, videoId: video.videoId },
+    listed: {
+      playlistId: listed.playlistId, playlistKey: listed.playlistKey, title: listedTitle,
+      videoId: video.videoId, videoTitle: SEEDED_VIDEO_TITLE,
+    },
   };
   fs.writeFileSync(FIXTURE_FILE, JSON.stringify(fixture, null, 2));
 });

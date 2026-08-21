@@ -1,57 +1,85 @@
-import { test, expect } from '@playwright/test';
-
 /**
- * Stage 2a — Task 16: Cloud library E2E (browser-level).
+ * Backlog #44 — the main pane, in a real browser. THE HALF OF THE CLOUD APP NO TEST HAD RENDERED.
  *
- * STATUS: describe.skip — documented harness gap (see below), NOT a passing test.
+ *     npm run test:e2e:cloud            (needs Node >= 22 and a running local Supabase)
  *
- * The cloud flow is already covered end-to-end below the browser layer:
- *   - Per-route integration tests against a REAL Supabase stack with `signInAs`
- *     (tests/integration/{playlists-route,videos-route-cloud,quickview-route-cloud,
- *      review-route-cloud,annotations-rpc,archive-route-cloud,middleware-2a}.test.ts)
- *   - Component tests for every cloud component (tests/components/{cloud-app,
- *     playlist-sidebar,account-menu,login-page,page-dispatch,client-api}.test.tsx)
+ * WHAT WAS UNCOVERED, and why that was easy to miss. `CloudAppBody` renders `PlaylistLibrary` only
+ * when `?playlist` is present (components/cloud/CloudApp.tsx:98). Every rung of cloud-journey opens
+ * `/` with no query string, so `PlaylistLibrary`, `VideoList`, `FilterBar`, `IngestProgressBanner`
+ * and `ScopeProvider` were NEVER MOUNTED by any browser-level test. The sidebar link was asserted
+ * visible three times and never clicked — so "the link leads to a working library" was, until this
+ * file, an assumption. The video the setup works hardest to seed was read over HTTP by rung 5 and
+ * never displayed.
  *
- * What this browser E2E adds — and the harness it REQUIRES (the remaining work):
- *   1. A SECOND Playwright web server running the dev server with
- *      `STORAGE_BACKEND=supabase` on a distinct port, plus a `projects: [{ name:'cloud',
- *      use:{ baseURL } }]` entry in playwright.config.ts. (The default project runs the
- *      LOCAL app; without this the spec would hit LocalApp, not CloudApp — plan T16/H4.)
- *   2. An authenticated browser session: seed a user + playlist + videos via the admin
- *      client (mirror tests/integration/helpers/seed.ts), sign in via Supabase to obtain
- *      the session cookies, and inject them into the Playwright context
- *      (`storageState` or `context.addCookies`) so middleware.ts admits the cloud routes.
+ * ⚠ THIS FILE REPLACES A `describe.skip` STUB, AND THE STUB IS THE MORE INTERESTING ARTEFACT.
+ * Written for Stage 2a task 16, it did not assert anything; it listed the harness it would need —
+ * "a SECOND Playwright web server with STORAGE_BACKEND=supabase on a distinct port" and "an
+ * authenticated browser session ... storageState". Both were built later, in
+ * `playwright.cloud.config.ts` and `cloud.setup.ts`. **The blockers were removed and the skip
+ * stayed**, because nothing connects "the thing you were waiting for now exists" back to the file
+ * that was waiting. A skip carrying its own preconditions still needs someone to re-read it.
  *
- * Un-skip and implement the two harness pieces above to activate. The steps below are the
- * intended assertions (kept as documentation of the flow to verify).
+ * SCOPE IS DELIBERATELY NARROW — mount the pane, see the seeded video, open it. Not sort, rate,
+ * archive, delete or share (the old stub named all of those). Those are covered below the browser
+ * layer by per-route integration tests and per-component tests; what was missing was proof that the
+ * pane MOUNTS AND RENDERS REAL DATA at all. Widening this file is a separate decision with its own
+ * cost, and #44 asked for the rung, not the suite.
+ *
+ * NO MONEY. Nothing here reaches a paid call: the library lists videos via the videos route and the
+ * document is opened as `format=md`, which returns before `resolveAndParse`
+ * (app/api/html/[id]/route.ts:75-82, "D4 money invariant"). The run-level guard in
+ * tests/e2e/cloud-global.ts measures that rather than trusting this paragraph.
  */
-test.describe.skip('cloud library flow (requires STORAGE_BACKEND=supabase web server + seeded session)', () => {
-  test('sign in → list playlists → open → sort → rate → clear → archive → show-archive', async ({ page }) => {
-    // Preconditions (harness): authenticated session cookies set; one seeded playlist with videos.
+import '../integration/setup';
+import { test, expect } from '@playwright/test';
+import { readFixture } from './cloud-fixture';
+
+// Lazily, for the reason cloud-journey.spec.ts:62-66 records: Playwright collects spec files before
+// the setup project runs, so a module-scope read fails with ENOENT and reads as a missing file
+// rather than an ordering mistake.
+let _fx: ReturnType<typeof readFixture> | null = null;
+const fx = () => (_fx ??= readFixture());
+
+test.describe('cloud library — the main pane', () => {
+  test('1 · clicking the sidebar link mounts the library and renders the seeded video', async ({ page }) => {
     await page.goto('/');
 
-    // Sidebar lists the seeded playlist; clicking it navigates to /?playlist=<uuid>.
-    const playlistLink = page.getByRole('link', { name: /ML Talks/i });
-    await expect(playlistLink).toBeVisible();
-    await playlistLink.click();
-    await expect(page).toHaveURL(/\?playlist=[0-9a-f-]{36}/);
+    // The empty state must be on screen FIRST. Without this the test could pass against an app that
+    // renders the library unconditionally — it would be asserting the destination without ever
+    // establishing that a navigation happened. "Absent at first paint" has to be made true, not
+    // assumed (the same lesson cloud-journey rung 3 records about the sidebar).
+    const pane = page.getByRole('region', { name: 'Cloud library' });
+    await expect(pane).toContainText(/pick a playlist from the sidebar/i);
+    await expect(page.getByRole('table', { name: 'Video list' })).toHaveCount(0);
 
-    // Video list renders.
-    await expect(page.getByRole('row')).not.toHaveCount(0);
+    await page.getByRole('link', { name: fx().listed.title }).click();
 
-    // Sort by a column (header click).
-    await page.getByRole('button', { name: /^Title/i }).click();
+    // The URL contract CloudAppBody dispatches on. Asserting the pane alone would not distinguish
+    // "the library mounted" from "the link went somewhere else that happens to look similar".
+    await expect(page).toHaveURL(new RegExp(`\\?playlist=${fx().listed.playlistId}`));
 
-    // Rate a video via StarRating, then clear it.
-    await page.getByRole('button', { name: /rate 4/i }).first().click();
-    await expect(page.getByText(/USE.*4/i).first()).toBeVisible();
-    await page.getByRole('button', { name: /clear rating/i }).first().click();
+    // The pane, then the data. A mounted-but-empty library is the failure this is really hunting:
+    // it is what a broken owner scope, a bad RLS policy or a silently failing fetch all look like,
+    // and every one of them still paints the section element.
+    await expect(page.getByRole('table', { name: 'Video list' })).toBeVisible();
+    await expect(pane.getByText(fx().listed.videoTitle)).toBeVisible();
+    await expect(pane).not.toContainText(/no videos here yet/i);
+  });
 
-    // Archive a video, then reveal via Show Archive toggle.
-    await page.getByRole('button', { name: /archive/i }).first().click();
-    await page.getByRole('checkbox', { name: /show archive/i }).check();
-    await expect(page.getByText(/archived/i).first()).toBeVisible();
+  test('2 · the library reached by clicking serves the seeded document', async ({ page }) => {
+    // #44's third clause — "and opens it". Rung 5 of cloud-journey fetches this document by URL,
+    // which proves the ROUTE answers; it does not prove a user who clicked their way here can
+    // reach it. This starts from the click, so the ids under test are the ones the PAGE produced,
+    // not ones a test constructed.
+    await page.goto('/');
+    await page.getByRole('link', { name: fx().listed.title }).click();
+    await expect(page.getByRole('table', { name: 'Video list' })).toBeVisible();
 
-    // Annotation persistence would be re-verified via the admin client or a reload here.
+    const res = await page.request.get(
+      `/api/html/${fx().listed.videoId}` +
+      `?playlist=${fx().listed.playlistId}&type=summary&format=md&download=1`,
+    );
+    expect(res.status()).toBe(200);
+    expect(await res.text()).toContain('Seeded prose for the e2e journey');
   });
 });

@@ -56,7 +56,7 @@
 import '../integration/setup';                       // env for the admin client (see cloud.setup.ts)
 import { test, expect } from '@playwright/test';
 import { readFixture } from './cloud-fixture';
-import { adminClient } from '../integration/helpers/clients';
+import { adminClient, newUser } from '../integration/helpers/clients';
 import { seedPlaylist } from '../integration/helpers/seed';
 
 // Lazily, NOT at module scope: Playwright evaluates every spec file during collection, which
@@ -209,13 +209,38 @@ test.describe.serial('cloud journey', () => {
   // It now lives in tests/e2e/cloud-global.ts, outside every project, where a failure anywhere
   // still runs it. Do not move it back into a spec.
 
-  test('6 · signing out invalidates the session, not just the URL', async ({ page }) => {
+  // ⚠ THIS RUNG USES ITS OWN THROWAWAY USER, AND THE REASON IS A MEASURED PROPERTY OF signOut().
+  //
+  // It used to run in the shared `page`, whose storageState every spec in the `cloud` project
+  // loads — so signing out killed the session for everything that ran afterwards. File order is
+  // alphabetical, so `cloud-library.spec.ts` inherited a corpse and failed with "element(s) not
+  // found" against a page that had silently redirected to /login. Invisible while this was the
+  // only spec file; it surfaced the moment a second one existed (2026-08-20).
+  //
+  // ⭐ THE FIRST FIX — a fresh browser CONTEXT for the same owner — DID NOT WORK, and that is the
+  // part worth remembering. `supabase.auth.signOut()` (AccountMenu.tsx:50) is called with no
+  // options, and its default scope is GLOBAL: it revokes every refresh token the USER holds, not
+  // just this browser's. So "sign out in an isolated context" is not isolation at all — the blast
+  // radius is the account, and no amount of context hygiene narrows it.
+  //
+  // Fixing it by RENAMING files to control order would have preserved exactly the invisible
+  // coupling that caused it. A throwaway user has no shared state to destroy.
+  test('6 · signing out invalidates the session, not just the URL', async ({ browser }) => {
+    const throwaway = await newUser();               // its own account: signOut's blast radius is the USER
+    const ctx = await browser.newContext();          // NO storageState — deliberately not the shared one
+    const page = await ctx.newPage();
+    await page.goto('/dev-login');
+    await page.getByPlaceholder('Email').fill(throwaway.email);
+    await page.getByPlaceholder('Password').fill(throwaway.password);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL((u) => !u.pathname.startsWith('/dev-login'));
+    try {
     // Review High (2026-08-13): the earlier version chained `.catch()` onto a second locator, so it
     // could pass for the WRONG reason — a broken AccountMenu plus any unrelated control matching
     // /account|menu|sign/i that happens to navigate would satisfy it. Exact, scoped locators instead;
     // if the markup changes this must fail loudly rather than fall through to something else.
     await page.goto('/');
-    await page.getByRole('button', { name: fx().email, exact: true }).click();
+    await page.getByRole('button', { name: throwaway.email, exact: true }).click();
     await page.getByRole('menu').getByRole('menuitem', { name: 'Sign out', exact: true }).click();
     await page.waitForURL('**/login');
 
@@ -223,5 +248,8 @@ test.describe.serial('cloud journey', () => {
     // being bounced again is what proves the session was actually cleared.
     await page.goto('/');
     await expect(page).toHaveURL(/\/login/);
+    } finally {
+      await ctx.close();
+    }
   });
 });
