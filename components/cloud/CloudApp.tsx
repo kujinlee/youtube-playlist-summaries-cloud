@@ -268,7 +268,24 @@ function PlaylistLibrary({ playlistId, summary, setSummary }: PlaylistLibraryPro
     .filter((v) => filters.language === 'all' || v.language === filters.language)
     .filter((v) => filters.videoType === 'all' || v.videoType === filters.videoType)
     .filter((v) => filters.audience === 'all' || v.audience === filters.audience)
-    .filter((v) => v.overallScore >= filters.minScore)
+    // ⚠ backlog #55. This read `v.overallScore >= filters.minScore`, and `undefined >= 0` is FALSE
+    // in JavaScript — so a video with no AI score yet was dropped even at the "All scores" default,
+    // and `VideoList`'s empty branch then told the user to adjust filters that were not the problem.
+    //
+    // IT IS REACHABLE ON EVERY INGEST, not a theoretical state: `claimVideoSlot` INSERTs the row
+    // (`0007_storage_and_rpcs.sql:35`, called at `lib/pipeline.ts:235`) and `overallScore` only
+    // arrives with `upsertVideo` after the summary is generated. So while `IngestProgressBanner`
+    // promises work is happening, the videos it is promising were invisible.
+    //
+    // ⭐ THE CORRECT BEHAVIOUR WAS ALREADY WRITTEN, ONE FILTER BELOW, FOR THE SIBLING FIELD —
+    // "unscored: shown dimmed, not hidden". `personalScore` got it; `overallScore` was left as a
+    // bare comparison. This makes the two consistent rather than inventing a new rule.
+    // DECIDED with the user 2026-08-21: show pending videos, do not hide them.
+    .filter((v) => {
+      if (filters.minScore === 0) return true;
+      if (v.overallScore === undefined) return true;  // unscored: shown dimmed, not hidden
+      return v.overallScore >= filters.minScore;
+    })
     .filter((v) => {
       if (filters.minPersonalScore === 0) return true;
       if (v.personalScore === undefined) return true; // unscored: shown dimmed, not hidden
