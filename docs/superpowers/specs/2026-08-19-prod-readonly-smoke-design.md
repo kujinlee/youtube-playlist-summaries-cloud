@@ -192,7 +192,19 @@ render only when it is provably free.
 4. **The spike proves Google does not refuse the browser at the identifier step. It does not prove a
    sign-in completes** — Google can still object after the password. Only the capture itself settles
    that, and it needs the human.
-5. ⚠ **UNVERIFIED COUPLING, and check 4 rests on it.** The check compares the *served* markdown
+5. ✅ **RESOLVED 2026-08-21 ON THE FIRST AUTHENTICATED RUN — and the real defect was one level more
+   basic than this bound predicted.** The two sources are not two versions of the same thing:
+   **`videos.data->>'summaryMd'` is the blob's KEY** (`003_돈-버는-…-다이제스트.md`), not the
+   markdown. Check 4 was looking for a *filename* inside a document, and duly failed. The needle is
+   now `data->>'title'`, **observed** in the served response (6,010 bytes, HTTP 200) rather than
+   inferred from a column name, plus a size floor so a short error envelope cannot pass.
+   ⚠ **The lesson is not "the bound was wrong" — it is that naming a risk is not the same as
+   checking it.** `tests/integration/helpers/seed.ts` states plainly that `summaryMd` is *"the
+   top-level key the route get()s"*. That comment was read during design and then designed against
+   as if it said the opposite. A flagged assumption still has to be *measured*; flagging it only
+   guarantees you notice when it breaks. Original text follows.
+
+   ⚠ **UNVERIFIED COUPLING, and check 4 rests on it.** The check compares the *served* markdown
    against `videos.data->>'summaryMd'` in the database. The route serves `load.mdBytes`, which comes
    from **Supabase Storage** (`route.ts:78`), while the anchor query reads a **column**. Nothing in
    this session established that those two are the same text, and it could not be: reading the blob
@@ -212,8 +224,16 @@ render only when it is provably free.
 - [x] With `SUPABASE_SERVICE_ROLE_KEY` exported, the suite **refuses** and names P2. **Verified.**
 - [x] Checks 1, 5 and 6 pass against live prod with no session present. **Verified 2026-08-19
       against release v7**: `release=v7 · anchor=wr4nCMUy1dk in "Business" · ledger=audit 2, 2298¢`.
-- [ ] With a captured session, all six pass and the ledger is provably unmoved. **Blocked on the
-      human — this is the only outstanding item.**
+- [x] With a captured session, **5 of 6 pass against production, 2026-08-21** — checks 2, 3, 4, 5
+      and 6 green, ledger provably unmoved at teardown. Check 1 is red and correct: `flyctl`
+      auth expired mid-session, so it reports **NOT RUN**, which is the behaviour this spec
+      asked for. Restore with `flyctl auth login` for 6/6.
+- [x] ⚠ **The capture is harder than §1 assumed, and the workaround is now the procedure.**
+      Google **rejected** the Playwright-launched browser after the identifier step
+      (`accounts.google.com/v3/signin/rejected`) — the spike had explicitly bounded itself to
+      the identifier step and that bound was the operative one. What works: launch a NORMAL
+      Chrome with a dedicated profile and a debug port, sign in by hand, attach over CDP and
+      export. The profile persists, so Google is involved once rather than per capture.
 - [ ] Mutation check: breaking each check's assertion turns **that named check** red — not merely a
       non-zero exit.
 - [ ] The roadmap's 3.1 note and backlog #41 are updated in the same PR as the code.

@@ -117,11 +117,13 @@ test.describe('M3.1-B · production read-only smoke', () => {
     // proves the bucket, its grants and the storage credentials are right in the DEPLOYED
     // environment — a class the local suite cannot test.
     //
-    // ⚠ UNVERIFIED COUPLING (spec §7.5): the needle comes from the `videos.data->>'summaryMd'`
-    // COLUMN while the route serves bytes from STORAGE. Nothing has established those are the same
-    // text — it could not be, since reading the blob needs a session and claude_ro cannot read
-    // storage.objects. If this fails on its first authenticated run, decide whether the two sources
-    // genuinely differ BEFORE weakening the assertion, and write the answer into the spec.
+    // ⚠ THE SPEC'S §7.5 COUPLING IS NOW RESOLVED — AND THE REAL DEFECT WAS MORE BASIC THAN FLAGGED.
+    // The spec warned that the needle came from a COLUMN while the route serves bytes from STORAGE,
+    // and that the two might differ. Measured 2026-08-21 on the first authenticated run: they are
+    // not two versions of the same thing at all. `data->>'summaryMd'` is the blob's KEY
+    // (`003_돈-버는-…-다이제스트.md`), so check 4 was looking for a FILENAME inside a document.
+    // The needle is now `data->>'title'`, which was OBSERVED in the response (6,010 bytes, HTTP 200)
+    // rather than inferred from a column name.
     const anchor = anchorOrNotRun();
     const ctx = await signedIn(browser);
     try {
@@ -131,8 +133,12 @@ test.describe('M3.1-B · production read-only smoke', () => {
       );
       expect(res.status(), 'markdown download status').toBe(200);
       expect(res.headers()['content-disposition'] ?? '', 'download disposition').toMatch(/attachment/i);
-      expect(await res.text(), 'served markdown does not contain the summary the database holds')
-        .toContain(anchor.summaryNeedle);
+      const body = await res.text();
+      // A size floor as well as a match: a 200 carrying an error envelope is short, and
+      // `{"error":"not found"}` would satisfy neither, but the floor states the intent plainly.
+      expect(body.length, 'served document is implausibly small for a summary').toBeGreaterThan(500);
+      expect(body, "served markdown is not this video's document")
+        .toContain(anchor.videoTitle);
     } finally { await ctx.close(); }
   });
 
