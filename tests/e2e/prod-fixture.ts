@@ -109,31 +109,45 @@ export type Anchor = {
   playlistId: string;
   playlistTitle: string;
   videoId: string;
-  /** First non-empty line of the summary markdown, trimmed — the needle check 4 looks for. */
-  summaryNeedle: string;
+  /** The video's TITLE — the needle check 4 looks for in the served document.
+   *
+   *  ⚠ IT IS NOT THE SUMMARY TEXT, AND THE FIRST VERSION OF THIS ASSUMED IT WAS.
+   *  `videos.data->>'summaryMd'` is the STORAGE KEY (`003_돈-버는-…-다이제스트.md`), not the
+   *  markdown — `tests/integration/helpers/seed.ts` says so in a comment ("top-level key the route
+   *  get()s") and it was read and then designed against as if it were content. Check 4 duly failed
+   *  on its first authenticated run against prod, 2026-08-21, looking for a filename inside a
+   *  document. The spec had flagged a coupling risk here; the real defect was one level more basic.
+   *
+   *  VERIFIED 2026-08-21 against the deployed app: the served markdown for `wr4nCMUy1dk`
+   *  (6,010 bytes, HTTP 200) contains this exact title. So the needle is now a value that was
+   *  OBSERVED in the response, not one inferred from a column name. */
+  videoTitle: string;
 };
 
 /** The newest video that ALREADY has a summary, plus its playlist. Ordered deterministically so a
  *  failure is reproducible; `limit 1` because the smoke needs one real subject, not a survey. */
 export async function readAnchor(): Promise<Anchor | null> {
   return withClient(async (c) => {
-    const r = await c.query<{ id: string; playlist_title: string; video_id: string; md: string }>(
-      `select p.id, p.playlist_title, v.video_id, v.data->>'summaryMd' as md
+    const r = await c.query<{ id: string; playlist_title: string; video_id: string; title: string }>(
+      // `summaryMd` non-empty is the proof a summary EXISTS (it is that blob's key); `title` is the
+      // value actually asserted on. Two different columns doing two different jobs — conflating
+      // them is what broke check 4.
+      `select p.id, p.playlist_title, v.video_id, v.data->>'title' as title
          from public.videos v
          join public.playlists p on p.id = v.playlist_id
         where coalesce(v.data->>'summaryMd', '') <> ''
+          and coalesce(v.data->>'title', '')     <> ''
           and coalesce(p.playlist_title, '')     <> ''
         order by v.updated_at desc, v.video_id
         limit 1`,
     );
     const row = r.rows[0];
     if (!row) return null;
-    const needle = (row.md.split('\n').find((l) => l.trim() !== '') ?? '').trim();
     return {
       playlistId: row.id,
       playlistTitle: row.playlist_title,
       videoId: row.video_id,
-      summaryNeedle: needle,
+      videoTitle: row.title.trim(),
     };
   });
 }
