@@ -53,9 +53,17 @@ export default function VideoRow({ video, rank, outputFolder = '', baseOutputFol
   // opacity-40 must NOT be on the <tr> — it creates a CSS stacking context that
   // propagates to the absolutely-positioned VideoMenu, making it unclickable.
   // Apply it per-cell instead, exempting the menu container.
+  // backlog #55: a cloud video whose summary has not been generated yet is PENDING, and now that
+  // it is shown rather than silently filtered out (CloudApp.tsx) it must LOOK unfinished — a row
+  // that is visually identical to a finished one, with a blank score, reads as a bug.
+  //
+  // ⚠ `=== false` DELIBERATELY, NOT `!== true`. `summaryReady` is computed by the cloud metadata
+  // store from `artifacts.summaryMd.status`; for LOCAL videos it is absent entirely, and `!== true`
+  // would dim every row in the local app. Explicit false means "the cloud said not ready".
+  const pending = video.summaryReady === false;
   const cellDim = video.archived
     ? 'opacity-40'
-    : (dimUnscored ? 'opacity-50' : '');
+    : (dimUnscored || pending ? 'opacity-50' : '');
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -153,7 +161,10 @@ export default function VideoRow({ video, rank, outputFolder = '', baseOutputFol
             colorClass={LANG_COLOR[video.language] ?? ''}
           />
         </td>
-        <td className={`px-3 py-2 text-sm tabular-nums font-mono text-right text-zinc-200 ${cellDim}`} aria-label="Overall">{overallScore}</td>
+        {/* backlog #55: `{overallScore}` alone rendered an EMPTY cell for a pending video — the
+            score is genuinely absent until the summary completes, and a blank cell is
+            indistinguishable from a rendering fault. An em-dash says "not yet" out loud. */}
+        <td className={`px-3 py-2 text-sm tabular-nums font-mono text-right text-zinc-200 ${cellDim}`} aria-label="Overall">{overallScore ?? '—'}</td>
 
         {/* My Score */}
         <td className={`px-3 py-2 ${cellDim}`} aria-label="My Score">

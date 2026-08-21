@@ -1246,7 +1246,7 @@ unapplied for eight days while every document read "merged, done".
   anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
-- **`master` is clean** — tsc clean, **2719 unit / 268 suites** green, plus **522 integration**
+- **`master` is clean** — tsc clean, **2722 unit / 268 suites** green, plus **522 integration**
   (519 passed + 3 skipped, measured 2026-08-17 against a live local stack; integration does not run
   in CI and is therefore NOT verified by the check below — treat it as a dated note, not a live
   number). **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`,
@@ -1347,7 +1347,7 @@ was shelved, and the §4 prod gate was re-run as a merge step (below).
 | T14 | end-to-end: a title in any language ingests and serves — 6 tests |
 | T15 | ADR-0009, this tick, backlog #36, and the §4 prod gate re-run |
 
-**Gates, by exit code.** `tsc --noEmit` clean · unit **2719 passed / 268 suites** · integration
+**Gates, by exit code.** `tsc --noEmit` clean · unit **2722 passed / 268 suites** · integration
 **519 passed, 3 skipped, 0 failed** · all four ratchets exit 0.
 
 **The §4 no-migration gate was RE-RUN, not inherited.** 2026-08-17, prod, read-only as `claude_ro`,
