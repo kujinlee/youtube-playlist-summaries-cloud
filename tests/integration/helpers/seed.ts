@@ -24,7 +24,7 @@ export async function seedPromotedVideo(
   svc: SupabaseClient,
   opts: { ownerId: string; playlistId: string; videoId?: string; base?: string;
           status?: 'promoted' | 'committed'; position?: number; title?: string;
-          durationSeconds?: number; youtubeUrl?: string },
+          durationSeconds?: number; youtubeUrl?: string; overallScore?: number },
 ): Promise<{ videoId: string; base: string }> {
   const videoId = opts.videoId ?? `v-${randomUUID()}`;
   const base = opts.base ?? videoId;
@@ -47,6 +47,13 @@ export async function seedPromotedVideo(
       durationSeconds: opts.durationSeconds ?? 600,
       youtubeUrl: opts.youtubeUrl ?? `https://youtu.be/${videoId}`,
       ...(opts.title !== undefined ? { title: opts.title } : {}), // optional: download-filename tests (C2/C8)
+      // ⚠ OPTIONAL, AND OMITTING IT MAKES THE VIDEO INVISIBLE IN THE BROWSER — measured 2026-08-20.
+      // CloudApp.tsx:271 filters with `v.overallScore >= filters.minScore`, and `undefined >= 0` is
+      // FALSE, so an unscored video is dropped even at the "All scores" default. Every route-level
+      // fixture was fine without it (routes never filter), which is exactly why no test noticed
+      // until one finally rendered the list. Left undefaulted so existing callers keep their exact
+      // shape; pass it whenever a fixture has to survive the UI.
+      ...(opts.overallScore !== undefined ? { overallScore: opts.overallScore } : {}),
     },
   });
   if (error) throw error;

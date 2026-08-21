@@ -20,8 +20,20 @@ export const FIXTURE_FILE = 'playwright/.auth/cloud-fixture.json';
 
 export type CloudFixture = {
   email: string;
+  /** The owner's `/dev-login` password, so a spec that must END signed out can mint its OWN session
+   *  instead of destroying the shared one — see the sign-out rung in cloud-journey.spec.ts. Written
+   *  to `playwright/.auth/`, which is gitignored and already holds a live session token, so this is
+   *  not a new exposure class. Local stack only: `/dev-login` fails closed against any non-local
+   *  Supabase URL (lib/supabase/dev-login.ts). */
+  password: string;
   ownerId: string;
-  listed: { playlistId: string; playlistKey: string; title: string; videoId: string };
+  /** `title` is the PLAYLIST's title (the sidebar link); `videoTitle` is the seeded video's row
+   *  label in the library pane. Both are written here rather than re-typed in a spec, per this
+   *  file's own rule — a spec carrying its own copy of a seeded string agrees with itself even
+   *  when the seed has moved. */
+  listed: {
+    playlistId: string; playlistKey: string; title: string; videoId: string; videoTitle: string;
+  };
 };
 
 export type LedgerSnapshot = { auditMaxId: number; centsTotal: number };
