@@ -78,6 +78,45 @@ fly scale count web=1 worker=1        # ensure exactly one always-on worker mach
 fly logs                              # watch both process groups boot
 ```
 
+## Step 3b — THE GATE. Run the prod smoke, and do not call the release good until it is green
+
+```bash
+npm run test:e2e:prod        # ~13s, free, read-only. 6 checks. Red = the release is not good.
+```
+
+**This is a gate, not a suggestion** — decided with the user 2026-08-19, first green against release
+**v7** on 2026-08-21. It is the only thing that drives the DEPLOYED application by machine: the local
+`test:e2e:cloud` suite runs against a local stack and would stay green while production was entirely
+broken. What this catches is the deployment being wrong while the code is right — a missing secret,
+an env var set differently, a storage grant that differs between local and hosted.
+
+| # | It fails if |
+|---|---|
+| 1 | the live release cannot be named (`flyctl` missing/logged out ⇒ **NOT RUN**, a different verdict) |
+| 2 | `/` bounces to `/login` with a live session, or serves the LOCAL app — the first-deploy bug |
+| 3 | the sidebar does not list the playlist the database says exists |
+| 4 | the markdown download is not that video's document |
+| 5 | `/dev-login` is not 404, **or** prod email/password sign-in is no longer disabled |
+| 6 | the production spend ledger moved during the run |
+
+⚠ **Check 5 supersedes the hand-rolled `curl` in Step 4** — it asserts the same `/dev-login` 404
+*and* the Supabase Auth side that the note below correctly calls the real boundary. The `curl`
+is kept because it needs no session and is useful when you only want that one fact.
+
+⚠ **"NOT RUN" is a FAILURE, never a pass.** Any pre-flight that cannot reach its subject says so and
+exits non-zero — a missing session, an unreadable ledger, no anchor row. Do not read a red run as
+"probably fine".
+
+⚠ **Do NOT `source .env.local` first.** It exports `SUPABASE_SERVICE_ROLE_KEY` and pre-flight **P2
+refuses to start** — the suite must never hold a write credential. It reads the one variable it needs
+(`CLAUDE_RO_DATABASE_URL`) out of that file itself.
+
+**If the session has expired** (`session=missing` or `expired` in the banner), recapture it — see
+[`docs/superpowers/specs/2026-08-19-prod-readonly-smoke-design.md`](superpowers/specs/2026-08-19-prod-readonly-smoke-design.md)
+§8. ⚠ `npm run prod:session` does **not** work: Google rejects the Playwright-launched browser after
+the identifier step. Launch a normal Chrome with a dedicated profile and `--remote-debugging-port`,
+sign in by hand, then attach over CDP. The profile persists, so Google is a one-time step.
+
 ## Step 4 — Smoke test (M1.4)
 On the live URL: sign in → add a playlist → generate a summary → view it → download (MD + PDF) → share.
 Watch `fly logs` for the worker claiming/among completing the job. Fix any cloud-run blockers, then tick

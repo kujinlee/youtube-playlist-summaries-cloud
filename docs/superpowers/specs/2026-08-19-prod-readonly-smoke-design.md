@@ -244,5 +244,9 @@ render only when it is provably free.
 
 1. **The session capture itself** (`npm run prod:session`) — needs the user at the keyboard. Nothing
    else in this spec is blocked on it; checks 1, 5 and 6 plus all four pre-flights run without it.
-2. **Where the gate is written down.** It has to appear in the deploy procedure, or it is a gate in
-   name only.
+2. ✅ **DONE 2026-08-21 — `docs/deploy.md` Step 3b.** The gate is in the deploy runbook, between
+   `fly deploy` and the manual smoke, with its six failure conditions, the NOT-RUN rule, the
+   `.env.local`/P2 trap and the session-recapture pointer.
+   ⚠ **It was NOT written down for the first two hours after it went green, and the user had to
+   ask.** This item existed precisely to prevent that, and it did not — reading a note is not
+   acting on one. Same shape as backlog #48, one turn after #48 was closed.
