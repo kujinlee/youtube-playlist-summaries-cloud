@@ -172,6 +172,13 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (56, "Render the launch roadmap as a standing page like this one, deriving its ticks from "
              "git rather than trusting them, so “where are we overall” stops being a hand "
              "reconciliation."),
+        (57, "A page over the 690 review documents, surfacing the one number that predicts a "
+             "runaway review — how much of each round was caused by the last round's fixes — while "
+             "it can still change a decision."),
+        (58, "Every gate in one place: what it is, what it last returned, and which have never "
+             "failed — because a gate that cannot fail is the one to distrust."),
+        (59, "The decisions, with what superseded them and where they are cited. Two ADRs are "
+             "still <em>proposed</em>, and one of those governs six items in group 1."),
      ]),
     ("Process, tooling and bookkeeping",
      "Instruments and habits. Cheap individually; they are what stops the expensive items above "
