@@ -195,6 +195,297 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
 ]
 
 
+# ─── ANSWERS to questions asked FROM the page, keyed by group number ────────────────────────────
+#
+# The Ask tray means a reader can question this page and have the session answer. An answer that
+# lives only in the chat transcript has the problem the page was built to solve — it is gone by
+# tomorrow, and the next reader asks the same thing. So answers land HERE, beside the claim that
+# prompted them, and survive every regeneration.
+ANSWERS: dict[int, list[tuple[str, str]]] = {
+    1: [(
+        "Once a stable blob address is used — the YouTube videoId, say — doesn't a title change "
+        "become a simple property change, with no summary or dig blob lost?",
+
+        "<p>Yes, and that is already the decided design — but the videoId <em>alone</em> is not "
+        "enough, and the ADR rejects that exact narrower form in its own list of options.</p>"
+
+        "<p><b>Today</b> a summary's key is built from <code>&lt;serial&gt;_&lt;slug&gt;</code>: a "
+        "per-replica serial number and a title-derived slug, both mutable. That is the cause rather "
+        "than a symptom — <code>lib/serial-filename.ts</code> builds the base, and "
+        "<code>lib/cloud-sync/reconcile-serial.ts</code> exists only to repair the divergence it "
+        "creates.</p>"
+
+        "<p><b>ADR-0006</b> replaces it with "
+        "<code>&lt;workspaceId&gt;/videos/&lt;videoId&gt;/&lt;generationId&gt;/…</code> — built only "
+        "from values that never change. A title change then updates a display attribute and moves "
+        "nothing; <code>serialNumber</code> and <code>slug</code> are demoted to display attributes, "
+        "with a manifest mapping each logical slot to the blob currently authoritative.</p>"
+
+        "<p><b>Why not videoId on its own.</b> ADR-0006 considered it and rejected it: without the "
+        "generation dimension a regeneration still overwrites in place, so two concurrent writers "
+        "can still destroy each other's paid work, and there is nothing to compensate <em>from</em> "
+        "after a failed interleaving. That is item <a href=\"#i19\">#19</a> — the one thing stable "
+        "naming does not fix.</p>"
+
+        "<p><b>So the six split.</b> The orphaning half of <a href=\"#i17\">#17</a>, "
+        "<a href=\"#i20\">#20</a> and <a href=\"#i21\">#21</a> dissolves under a stable address. "
+        "<a href=\"#i19\">#19</a> and <a href=\"#i22\">#22</a> need the generation dimension and the "
+        "manifest, not just a stable name.</p>"
+
+        "<p><b>Why it is still open.</b> Not a missing idea — ADR-0006 is still "
+        "<code>status: proposed</code>, and the schema slice was <b>parked on 2026-08-11</b> to "
+        "return to the launch roadmap. The price it names is garbage collection: immutable "
+        "generations accumulate, and the manifest is what makes a mark-and-sweep possible at all.</p>"
+    ), (
+        "So we need a proper order of fixes — some of these become obsolete once the main ones are "
+        "fixed?",
+
+        "<p>Yes, and the backlog already knows it: <b>16 of the 55 rows</b> carry dependency "
+        "language — <em>supersedes, dissolves, moot, blocked by, folds into</em> — but only in "
+        "prose, where no ordering is visible and nothing can act on it.</p>"
+
+        "<p><b>Quoted, not paraphrased.</b> <a href=\"#i20\">#20</a> and <a href=\"#i21\">#21</a> "
+        "each say: <em>“let ADR-0006's manifest dissolve it … check the third option first; this "
+        "may be work the stable-blob-addressing slice deletes rather than work to do.”</em> "
+        "<a href=\"#i22\">#22</a>: <em>“When the manifest slice dissolves this, these go red — that "
+        "is the signal to close #22.”</em> <a href=\"#i52\">#52</a>: <em>“Blocked on unparking blob "
+        "addressing.”</em> <a href=\"#i15\">#15</a>: <em>“Supersedes the need for #14's lazy-warm "
+        "once shipped.”</em></p>"
+
+        "<p><b>It has already happened once.</b> ADR-0006 turned most of a five-round conditional-"
+        "write spec into work that was <em>moot rather than deferred</em> — that phrase is in "
+        "<a href=\"#i17\">#17</a>'s own status cell. Twelve review rounds of a design that the next "
+        "decision deleted.</p>"
+
+        "<p><b>So for group 1 the order is not a preference, it is a fact.</b> Do the addressing "
+        "slice first: <a href=\"#i20\">#20</a>, <a href=\"#i21\">#21</a> and most of "
+        "<a href=\"#i17\">#17</a> are then <em>deleted</em> rather than done. Only "
+        "<a href=\"#i19\">#19</a> and <a href=\"#i22\">#22</a> survive it. Fixing #20 or #21 first "
+        "means writing a guard for an address that is about to stop existing.</p>"
+
+        "<p><b>What is missing is structure, not knowledge.</b> The Size cell records the "
+        "<em>gate</em> — design, decision — and this page derives the \"waiting on\" column from it. "
+        "Nothing records <em>dissolved by</em> or <em>blocked by</em>, so no view can order the list "
+        "or grey out an item whose prerequisite is unstarted. <b>Proposed, not done:</b> a "
+        "<code>Depends</code> field per row, which this page would render as an ordering and as a "
+        "\"do not start yet\" marker. That changes the canonical table, so it is your call.</p>"
+    ), (
+        "Express the dependencies between groups, so work starts at the root-cause items.",
+
+        "<p>Agreed. Two places it can live, and they differ in blast radius rather than in what you "
+        "would see on this page. <b>Neither is built — this is the decision, written down.</b></p>"
+
+        "<p><b>A — a <code>DEPENDS</code> map in the generator.</b> Same contract as the grouping "
+        "above: hand-written prose, mechanically complete. Each entry is "
+        "<code>item → (blocker, relation)</code> where the relation is <em>dissolved-by</em>, "
+        "<em>blocked-by</em> or <em>folds-into</em>. The build refuses if a referenced item does "
+        "not exist, is already closed, or forms a cycle. Renders as a <em>“#20 — do not start: the "
+        "addressing slice deletes this”</em> marker, and sorts roots above the work they gate. "
+        "<b>Touches nothing outside this page</b>, and is deleted by deleting a dict.</p>"
+
+        "<p><b>B — a <code>Depends</code> column in <code>docs/backlog.md</code>.</b> The data lives "
+        "with the data, so GitHub readers and every future instrument see it too, not just this "
+        "page. Costs a change to the canonical table. <b>Checked, not assumed:</b> a seventh column "
+        "inserted before <em>Status</em> was driven through both backlog ratchets — the shape check "
+        "passes and the marker check still reads the true Status cell, correctly flagging a "
+        "synthetic closed-but-still-red row. So it is safe; it is just wider.</p>"
+
+        "<p><b>Recommendation: A first, then promote to B.</b> The vocabulary is the part most "
+        "likely to be wrong — whether <em>dissolved-by</em> and <em>blocked-by</em> are really "
+        "different relations, and whether a relation belongs to an item or to a whole group. Getting "
+        "that wrong in the generator costs one commit; getting it wrong in the canonical table costs "
+        "a migration of every row plus whatever has started reading the column. The grouping above "
+        "started the same way and has held.</p>"
+
+        "<p><b>One thing A cannot do</b>, and it is the reason B exists: a dependency that only this "
+        "page knows is invisible to anyone reading <code>docs/backlog.md</code> on GitHub — which is "
+        "where the backlog is normally read. Treat A as the prototype, not the destination.</p>"
+    )],
+}
+
+
+# ─── DEPENDENCIES — what has to happen before what ──────────────────────────────────────────────
+#
+# Asked for 2026-08-22: "express dependencies among groups of backlogs so that work starts at the
+# root-cause items." Three things came out of deriving it, and each shaped what is below.
+#
+# 1. THE ROOT OF GROUP 1 IS NOT A BACKLOG ITEM. #20 and #21 both say the stable-addressing slice
+#    "may delete this rather than leave work to do" — and that slice is a PARKED DECISION
+#    (ADR-0006, status: proposed), not a row. A dependency field restricted to `#NN` could not
+#    express the single most important ordering fact in the list. Hence named roots.
+#
+# 2. A BARE `#47` IS AMBIGUOUS. #52 says "Blocked on unparking blob addressing (task #47)" — that is
+#    TASK 47. BACKLOG 47 is the knowledge graph, unrelated. Encoding a bare number would have
+#    recorded a false edge. This is backlog #39 ("the identifier IS the position") biting early, so
+#    roots are namespaced strings and item references are validated against the open set.
+#
+# 3. REGEX EXTRACTION IS NOT VIABLE. A sweep for dependency words hit 13 rows, about half of them
+#    false: #4's "fold into any markdown-touching bundle" is a batching hint, #46's "fold into path
+#    syntax" is about characters, #27's "superseded" is about blob generations. So this map is
+#    hand-written and mechanically validated — the same contract as GROUPS.
+ROOTS: dict[str, dict[str, str]] = {
+    "adr-0006-addressing": dict(
+        label="The stable-addressing slice",
+        detail="ADR-0006 — <code>status: proposed</code>, and the schema slice was parked on "
+               "2026-08-11 to return to the launch roadmap. Not a backlog row: a decision waiting "
+               "to be unparked. Blob keys stop being built from a mutable serial and slug.",
+    ),
+}
+
+# label, what it means for the reader, css class, sort rank (lower starts sooner)
+RELATIONS: dict[str, tuple[str, str, str, int]] = {
+    "survives": ("survives it", "The root does not fix this. Real work either way — safe to start "
+                 "now.", "live", 1),
+    "partly-dissolved-by": ("mostly deleted by", "Most of this goes when the root lands; a named "
+                            "residue survives.", "part", 2),
+    "blocked-by": ("blocked by", "Cannot start until the root lands.", "block", 3),
+    "dissolved-by": ("deleted by", "This disappears when the root lands. Starting it means "
+                     "building a guard for an address that is about to stop existing.", "kill", 4),
+}
+
+# item → (relation, root key, optional note)
+DEPENDS: dict[int, tuple[str, str, str]] = {
+    19: ("survives", "adr-0006-addressing",
+         "needs the generation dimension, not just a stable name"),
+    17: ("partly-dissolved-by", "adr-0006-addressing",
+         "residue: <code>persist_summary</code> merge semantics"),
+    52: ("blocked-by", "adr-0006-addressing", "blocked on unparking, per its own status cell"),
+    20: ("dissolved-by", "adr-0006-addressing", ""),
+    21: ("dissolved-by", "adr-0006-addressing", ""),
+    22: ("dissolved-by", "adr-0006-addressing", ""),
+}
+
+
+def depends_errors(depends: dict, roots: dict, open_nums: set[int]) -> list[str]:
+    """PURE. Same posture as `coverage_errors`: the prose may be wrong, the graph may not be
+    incoherent. A dependency that says DO NOT START must not be pointing at nothing."""
+    errors = []
+    for item, (rel, root, _note) in sorted(depends.items()):
+        if item not in open_nums:
+            errors.append(f"#{item} has a dependency but is not an open item")
+        if rel not in RELATIONS:
+            errors.append(f"#{item}: unknown relation {rel!r} (known: {sorted(RELATIONS)})")
+        if root in roots:
+            continue
+        if root.isdigit():
+            if int(root) not in open_nums:
+                errors.append(f"#{item} depends on #{root}, which is not an open item")
+            elif int(root) == item:
+                errors.append(f"#{item} depends on itself")
+        else:
+            errors.append(f"#{item} names root {root!r}, which is not in ROOTS")
+    # item → item edges could cycle; named roots cannot. Walk only the numeric ones.
+    for start in depends:
+        seen, cur = {start}, depends[start][1]
+        while cur.isdigit() and int(cur) in depends:
+            nxt = int(cur)
+            if nxt in seen:
+                errors.append(f"dependency cycle through #{nxt}")
+                break
+            seen.add(nxt)
+            cur = depends[nxt][1]
+    return sorted(set(errors))
+
+
+def dependency_svg(by_num: dict) -> str:
+    """The dependency graph as INLINE SVG, laid out from DEPENDS so it cannot disagree with the
+    markers beside each item.
+
+    WHY NOT MERMAID HERE. Mermaid needs a renderer, and this page inherits the explain-diff rule —
+    self-contained, no CDN, still readable in five years. Vendoring mermaid would put ~1MB of
+    library into a 419KB page to draw seven nodes. The mermaid SOURCE is emitted below the diagram
+    instead, because that is the part worth having: it renders wherever mermaid already works —
+    GitHub, an ADR, a PR body — as `docs/superpowers/specs/2026-08-10-serve-path-deadline-design.md`
+    already does."""
+    ROW, PAD, RX, RW, IX, IW = 46, 26, 14, 200, 392, 290
+    out = []
+    for rk, root in ROOTS.items():
+        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk),
+                      key=lambda n: (dep_rank(n), n))
+        if not kids:
+            continue
+        h = max(140, len(kids) * ROW + PAD * 2)
+        mid = h / 2
+        rows = []
+        for i, n in enumerate(kids):
+            rel = DEPENDS[n][0]
+            lbl, _why, css, _ = RELATIONS[rel]
+            y = PAD + i * ROW + ROW / 2
+            # Strip markdown before it reaches an SVG label too — `transferClassA` in #19's title
+            # rendered its backticks literally. Truncate to what the box can actually hold: 290px
+            # of box minus the 52px id gutter, at ~6.2px per character.
+            clean = re.sub(r"[*`]", "", by_num[n]["title"])
+            title = html.escape(clean[:36] + ("…" if len(clean) > 36 else ""))
+            # a cubic from the root's right edge to the item's left edge; flat when aligned
+            rows.append(
+                f'<path class="e e-{css}" d="M{RX+RW} {mid} C{RX+RW+70} {mid}, {IX-70} {y}, {IX} {y}"/>'
+                # label sits just LEFT of its own node, right-aligned — one per row. Placed at the
+                # curve midpoint they collided into an unreadable stack, all six within ~40px.
+                # y-16, not y-6: at y-6 the incoming curve passed straight through the text
+                # and "DELETED BY" read as struck through. Above the box top, the row is clear.
+                f'<text class="elabel e-{css}" x="{IX-10}" y="{y-16}" '
+                f'text-anchor="end">{lbl}</text>'
+                f'<a href="#i{n}"><rect class="n n-{css}" x="{IX}" y="{y-15}" width="{IW}" '
+                f'height="30" rx="3"/>'
+                f'<text class="nid" x="{IX+12}" y="{y+4}">#{n}</text>'
+                f'<text class="ntitle" x="{IX+52}" y="{y+4}">{title}</text></a>')
+        out.append(
+            f'<figure class="depmap">'
+            # The root's full statement lives HERE and nowhere else. Removing the duplicate panel
+            # first deleted it outright — the page said "start here" and never said what the thing
+            # was. The count check below is what caught that, one edit after it caught the copy.
+            f'<p class="rootdetail"><b>{html.escape(root["label"])}</b> — {root["detail"]}</p>'
+            f'<svg viewBox="0 0 {IX+IW+12} {h}" role="img" '
+            f'aria-label="Dependency map: {html.escape(root["label"])} and the {len(kids)} items it '
+            f'governs"><rect class="n n-root" x="{RX}" y="{mid-26}" width="{RW}" height="52" '
+            f'rx="3"/><text class="rootlbl" x="{RX+RW/2}" y="{mid-4}" text-anchor="middle">'
+            f'{html.escape(root["label"])}</text>'
+            f'<text class="rootsub" x="{RX+RW/2}" y="{mid+14}" text-anchor="middle">'
+            f'start here · parked</text>' + "".join(rows) + '</svg>'
+            f'<figcaption>Arrows read <em>root → item</em>: what the addressing slice does to each '
+            f'item if it lands. Click a box to jump to the entry.</figcaption></figure>')
+    return "".join(out)
+
+
+def dependency_mermaid(by_num: dict) -> str:
+    """The same graph as mermaid source, for pasting where mermaid renders.
+
+    ⚠ NOT RENDERED HERE — mermaid is not installed and this page cannot fetch it, so this string is
+    emitted from the same data as the SVG above but its rendering is unverified. `#` is kept out of
+    node labels on purpose: mermaid reads `#nnn;` as an entity, and a label is not worth the risk."""
+    lines = ["flowchart LR"]
+    for rk, root in ROOTS.items():
+        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk),
+                      key=lambda n: (dep_rank(n), n))
+        if not kids:
+            continue
+        rid = re.sub(r"[^a-zA-Z0-9]", "_", rk)
+        lines.append(f'  {rid}(["{root["label"]} — start here"])')
+        for n in kids:
+            rel = DEPENDS[n][0]
+            # Strip markdown before it reaches a mermaid label: a backtick opens a markdown-string
+            # in mermaid, and `transferClassA` in #19's title leaked one through. Quotes too.
+            raw = re.sub(r"[*`]", "", by_num[n]["title"]).replace('"', "'")
+            title = raw[:44] + ("…" if len(raw) > 44 else "")
+            lines.append(f'  {rid} -->|{RELATIONS[rel][0]}| item{n}["item {n} · {title}"]')
+        for n in kids:
+            lines.append(f'  class item{n} {DEPENDS[n][0].replace("-", "_")};')
+    lines += [
+        "  classDef survives fill:#0f7268,stroke:#0f7268,color:#fff;",
+        "  classDef partly_dissolved_by fill:#a8690b,stroke:#a8690b,color:#fff;",
+        "  classDef blocked_by fill:#6b7686,stroke:#6b7686,color:#fff;",
+        "  classDef dissolved_by fill:#ad3a22,stroke:#ad3a22,color:#fff;",
+    ]
+    return "\n".join(lines)
+
+
+def dep_rank(num: int) -> int:
+    """Sort key inside a group: no dependency first, then survives, …, deleted-by last. The whole
+    point of the ordering is that what may evaporate sinks below what has to be done regardless."""
+    d = DEPENDS.get(num)
+    return RELATIONS[d[0]][3] if d else 0
+
+
 def waiting_on(size: str) -> tuple[str, str]:
     """What the item is blocked on, derived from the Size cell — which is where this project already
     records it (`M + design`, `S (decision) + S (impl)`). Not a second source of truth."""
@@ -413,6 +704,17 @@ def card(r: dict) -> str:
                  f'{_ago(h["last"])}</span>')
         attrs = f' data-first="{h["first"]}" data-changed="{h["last"]}"'
 
+    # The same dependency marker rides on the card, not only in the group table — a deep link
+    # (#i20) lands here, and "do not start this" is the one thing that must not be left behind.
+    dep = ""
+    if r["num"] in DEPENDS:
+        rel, root, note = DEPENDS[r["num"]]
+        lbl, why, css, _ = RELATIONS[rel]
+        rootname = ROOTS[root]["label"] if root in ROOTS else f"#{root}"
+        dep = (f'<div class="depbox d-{css}"><b>{lbl} {html.escape(rootname.lower())}</b>'
+               f'<span>{html.escape(why)}</span>' + (f'<span>{note}</span>' if note else "")
+               + '</div>')
+
     diff = ""
     if h and h.get("prev") is not None:
         diff = (f'<details class="diffbox"><summary>what changed in this entry</summary>'
@@ -424,6 +726,7 @@ def card(r: dict) -> str:
   <div class="body">
     <div class="titleline"><span class="badge" hidden></span><h3>{md(r['title'])}</h3>{flag}</div>
     <div class="meta">{meta}{stamp}</div>
+    {dep}
     <details><summary>the full entry, as filed</summary>
       <div class="prose">{md(r['body'])}</div>
       <div class="status"><b>Status cell</b>{md(r['status'])}</div>
@@ -451,9 +754,13 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
     flagged = [r for r in rows if r["warned"]]
     by_num = {r["num"]: r for r in rows}
 
-    errors = coverage_errors(GROUPS, {r["num"] for r in open_rows})
+    open_nums = {r["num"] for r in open_rows}
+    errors = coverage_errors(GROUPS, open_nums)
     if errors:
         raise ShapeError("GROUPS does not cover the open set — " + "; ".join(errors))
+    errors = depends_errors(DEPENDS, ROOTS, open_nums)
+    if errors:
+        raise ShapeError("DEPENDS is incoherent — " + "; ".join(errors))
 
     order = {"crit": 0, "high": 1, "med": 2, "low": 3, "none": 4}
     open_rows.sort(key=lambda r: (order[r["sev"]], r["num"]))
@@ -461,20 +768,70 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
 
     gate_of, groups_html = {}, ""
     for gi, (title, framing, items) in enumerate(GROUPS, 1):
+        # ORDERED, not as listed. Items that survive the root — or have no root — come first;
+        # anything the root deletes sinks to the bottom, because that is work you should not start.
+        ordered = sorted(items, key=lambda it: (dep_rank(it[0]), it[0]))
+
+        used_roots = {DEPENDS[n][1] for n, _ in ordered if n in DEPENDS}
+        starthere = ""
+        for rk in sorted(used_roots):
+            if rk not in ROOTS:
+                continue
+            tally = {}
+            for n, _ in ordered:
+                if n in DEPENDS and DEPENDS[n][1] == rk:
+                    tally.setdefault(DEPENDS[n][0], []).append(n)
+            bits = " · ".join(
+                f'<b>{len(v)}</b> {RELATIONS[k][0]}'
+                + " (" + ", ".join(f'<a href="#i{n}">#{n}</a>' for n in sorted(v)) + ")"
+                for k, v in sorted(tally.items(), key=lambda kv: RELATIONS[kv[0]][3]))
+            # ⟲ 2026-08-22, reported from the page: "the stable-addressing slice appears twice."
+            # It did — this panel used to repeat the root's title AND its whole ADR paragraph,
+            # which the map above already carries. The full statement belongs in ONE place; what a
+            # group needs locally is only "which root governs my items, and what does it do to
+            # them", plus a way back to the picture. Especially for group 5, whose single blocked
+            # item sits far below the map.
+            starthere += (f'<p class="rootref"><a href="#order">the stable-addressing slice</a>'
+                          f' governs these — {bits}</p>')
+
         trs = ""
-        for n, line in items:
+        for n, line in ordered:
             r = by_num[n]
             cls, label = waiting_on(r["size"])
             gate_of[n] = cls
-            trs += (f'<tr><td class="mono"><a href="#i{n}">#{n}</a>'
+            mark = ""
+            if n in DEPENDS:
+                rel, root, note = DEPENDS[n]
+                lbl, why, css, _ = RELATIONS[rel]
+                rootname = ROOTS[root]["label"] if root in ROOTS else f"#{root}"
+                mark = (f'<span class="dep d-{css}" title="{html.escape(why)}">{lbl} '
+                        f'{html.escape(rootname.lower())}</span>'
+                        + (f'<span class="depnote">{note}</span>' if note else ""))
+            trs += (f'<tr class="{"dep-row" if n in DEPENDS else ""}">'
+                    f'<td class="mono"><a href="#i{n}">#{n}</a>'
                     f'<span class="dot s-{r["sev"]}" title="filed as {SEV_NAME[r["sev"]]} severity">'
-                    f'</span></td><td>{line}</td>'
+                    f'</span></td><td>{line}{mark}</td>'
                     f'<td class="gate g-{cls}">{label}</td></tr>')
-        groups_html += (f'<section class="grp"><h3><span class="gn">{gi}</span>{title}'
-                        f'<span class="cnt">{len(items)}</span></h3>'
-                        f'<p class="framing">{framing}</p>'
+        qa = "".join(
+            f'<details class="qa"><summary><span class="qmark">asked</span>{q}</summary>'
+            f'<div class="qabody">{a}</div></details>' for q, a in ANSWERS.get(gi, []))
+        # ⚠ The number and the count are SIBLINGS of the h3, not children — for the same reason
+        # the item badge is. MEASURED: a question asked from this heading arrived tagged
+        # "1Paid work can be lost when a video's address changes6". Third instance of one defect
+        # (askbtn, then .badge/.flag, now .gn/.cnt), so the rule is now stated where headings are
+        # built: NOTHING but the heading's own words goes inside an h2 or h3 on this page.
+        groups_html += (f'<section class="grp"><div class="grphead"><span class="gn">{gi}</span>'
+                        f'<h3>{title}</h3><span class="cnt">{len(items)}</span></div>'
+                        f'<p class="framing">{framing}</p>{starthere}{qa}'
                         f'<div class="tw"><table class="glist"><tbody>{trs}</tbody></table></div>'
                         f'</section>')
+    depmap = (dependency_svg(by_num) +
+              '<details class="mmd"><summary>the same graph as mermaid source</summary>'
+              '<p>For pasting where mermaid already renders — GitHub, an ADR, a PR body. This page '
+              'draws its own diagram instead: it may not fetch a renderer, and vendoring one would '
+              'add about a megabyte to draw seven nodes.</p>'
+              f'<pre><code>{html.escape(dependency_mermaid(by_num))}</code></pre></details>')
+
     gates = {k: sum(1 for n in gate_of if gate_of[n] == k)
              for k in ("design", "decision", "study", "work")}
 
@@ -489,14 +846,19 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
         f'<tr><td class="mono"><a href="#i{r["num"]}">#{r["num"]}</a></td>'
         f'<td class="what">{plain(r["title"])}</td>'
         f'<td class="why">{md(r["status"])}</td></tr>' for r in flagged)
-    callout = (f'<div class="callout"><h3>{len(flagged)} rows carry a warning in their own Status '
-               f'cell</h3><p>These are the rows the backlog itself flags as mis-recorded, half done, '
-               f'or read wrongly by an earlier pass. Nothing is inferred — the &#9888; is written in '
-               f'the file. Read one of these before trusting any summary of it, including this '
-               f'page&#39;s severity stripe.</p>'
+    # COLLAPSED BY DEFAULT (2026-08-22). Reproducing seven Status cells in full is the right content
+    # — the truncated version cut mid-sentence in the one table whose job is to say what is wrong —
+    # but at full length it pushed the actual backlog below the fold on every visit. A <details>
+    # keeps both: the headline and the count are always visible, the evidence is one click away.
+    # The count is the part that decides whether to look, so it must never be behind the click.
+    callout = (f'<details class="callout"><summary><span class="warncount">{len(flagged)}</span>'
+               f'rows carry a warning in their own Status cell'
+               f'<span class="hint">read these before trusting any summary of them</span></summary>'
+               f'<p>The rows the backlog itself flags as mis-recorded, half done, or read wrongly by '
+               f'an earlier pass. Nothing is inferred — the &#9888; is written in the file.</p>'
                f'<div class="tw"><table class="warn"><thead><tr><th>#</th><th>Item</th>'
                f'<th>What its status says</th></tr></thead><tbody>{flagrows}</tbody></table></div>'
-               f'</div>') if flagged else ""
+               f'</details>') if flagged else ""
 
     return f"""<title>Backlog — every item, in plain sight</title>
 <style>
@@ -504,7 +866,7 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
   --ink:#12161c; --ink-2:#39424f; --ink-3:#6b7686; --ink-faint:#6b7686;
   --ground:#f7f6f3; --panel:#ffffff; --card:#ffffff; --line:#dfdcd5; --line-2:#eceae5;
   --measured:#0f7268; --problem:#ad3a22; --structural:#3d5a86;
-  --pending:#a8690b; --pending-bg:#fdf4e3;
+  --pending:#a8690b; --pending-bg:#fdf4e3; --ink-soft:#39424f; --good:#0f7268;
   --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
   --sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
   --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
@@ -513,19 +875,19 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
   --ink:#e7e9ee; --ink-2:#a9b2c0; --ink-3:#7a8494; --ink-faint:#7a8494;
   --ground:#101318; --panel:#171b22; --card:#171b22; --line:#2a3039; --line-2:#20252d;
   --measured:#4fc9b8; --problem:#f0836a; --structural:#8fb0e0;
-  --pending:#eab464; --pending-bg:#251d10;
+  --pending:#eab464; --pending-bg:#251d10; --ink-soft:#a9b2c0; --good:#4fc9b8;
 }}}}
 :root[data-theme="dark"]{{
   --ink:#e7e9ee; --ink-2:#a9b2c0; --ink-3:#7a8494; --ink-faint:#7a8494;
   --ground:#101318; --panel:#171b22; --card:#171b22; --line:#2a3039; --line-2:#20252d;
   --measured:#4fc9b8; --problem:#f0836a; --structural:#8fb0e0;
-  --pending:#eab464; --pending-bg:#251d10;
+  --pending:#eab464; --pending-bg:#251d10; --ink-soft:#a9b2c0; --good:#4fc9b8;
 }}
 :root[data-theme="light"]{{
   --ink:#12161c; --ink-2:#39424f; --ink-3:#6b7686; --ink-faint:#6b7686;
   --ground:#f7f6f3; --panel:#ffffff; --card:#ffffff; --line:#dfdcd5; --line-2:#eceae5;
   --measured:#0f7268; --problem:#ad3a22; --structural:#3d5a86;
-  --pending:#a8690b; --pending-bg:#fdf4e3;
+  --pending:#a8690b; --pending-bg:#fdf4e3; --ink-soft:#39424f; --good:#0f7268;
 }}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
@@ -549,19 +911,98 @@ h2{{font-family:var(--sans);font-size:.78rem;text-transform:uppercase;letter-spa
 .stat.done{{border-left-color:var(--measured)}} .stat.done .n{{color:var(--measured)}}
 
 .grp{{margin:0 0 2rem}}
-.grp h3{{font-family:var(--serif);font-size:1.18rem;font-weight:400;margin:0 0 .35rem;
-         display:flex;align-items:baseline;gap:.6rem;text-wrap:balance}}
+.grphead{{display:flex;align-items:baseline;gap:.6rem;margin:0 0 .35rem}}
+.grp h3{{font-family:var(--serif);font-size:1.18rem;font-weight:400;margin:0;
+         text-wrap:balance;flex:1;min-width:0}}
 .gn{{font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);border:1px solid var(--line);
      border-radius:2px;padding:.05rem .4rem;flex:none;align-self:center}}
 .cnt{{margin-left:auto;font-family:var(--mono);font-size:.75rem;color:var(--ink-faint);flex:none;
       align-self:center}}
 .framing{{font-family:var(--serif);font-size:.95rem;color:var(--ink-2);margin:0 0 .7rem;
           max-width:44rem}}
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}}
+#tray #qbox::placeholder{{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}}
+#tray #qbox:focus{{outline:2px solid var(--structural);outline-offset:1px}}
+.qa{{border:1px solid var(--line);border-left:3px solid var(--structural);border-radius:2px;
+     background:var(--panel);padding:.5rem .8rem;margin:0 0 .8rem;max-width:46rem}}
+.qa > summary{{font-family:var(--serif);font-size:.92rem;color:var(--ink);cursor:pointer;
+     list-style:none;border-bottom:0;display:flex;gap:.5rem;align-items:baseline}}
+.qa > summary::-webkit-details-marker{{display:none}}
+.qmark{{font-family:var(--sans);font-size:.6rem;font-weight:700;text-transform:uppercase;
+     letter-spacing:.09em;color:var(--structural);border:1px solid var(--structural);
+     border-radius:2px;padding:.05rem .3rem;flex:none;align-self:center}}
+.qabody{{font-family:var(--serif);font-size:.92rem;line-height:1.65;color:var(--ink-2);
+     margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--line-2)}}
+.qabody p{{margin:.55rem 0}}
+.qabody code{{font-family:var(--mono);font-size:.85em;background:var(--line-2);
+     padding:.05rem .25rem;border-radius:2px}}
+.qabody a{{color:var(--structural)}}
 table.glist{{border-top:1px solid var(--line)}}
 table.glist td{{font-size:.92rem;line-height:1.5}}
 table.glist td:first-child{{width:4.6rem}}
 table.glist td:nth-child(2){{font-family:var(--serif);color:var(--ink-2)}}
 table.glist tr:hover td{{background:var(--panel)}}
+.mapo{{font-family:var(--serif);font-size:1.18rem;font-weight:400;margin:2rem 0 .35rem}}
+.depmap{{margin:0 0 .8rem;max-width:46rem}}
+.depmap svg{{width:100%;height:auto;display:block}}
+.depmap .n{{fill:var(--panel);stroke:var(--line);stroke-width:1}}
+.depmap .n-root{{fill:var(--panel);stroke:var(--structural);stroke-width:2}}
+.depmap .n-kill{{stroke:var(--problem)}} .depmap .n-part{{stroke:var(--pending)}}
+.depmap .n-block{{stroke:var(--ink-3)}} .depmap .n-live{{stroke:var(--measured)}}
+.depmap .e{{fill:none;stroke-width:1.5;opacity:.85}}
+.depmap .e-kill{{stroke:var(--problem);stroke-dasharray:4 3}}
+.depmap .e-part{{stroke:var(--pending);stroke-dasharray:6 3}}
+.depmap .e-block{{stroke:var(--ink-3);stroke-dasharray:2 3}}
+.depmap .e-live{{stroke:var(--measured)}}
+.depmap .elabel{{font-family:var(--sans);font-size:9.5px;letter-spacing:.04em;
+     text-transform:uppercase;fill:var(--ink-3)}}
+.depmap .elabel.e-kill{{fill:var(--problem)}} .depmap .elabel.e-part{{fill:var(--pending)}}
+.depmap .elabel.e-live{{fill:var(--measured)}}
+.depmap .nid{{font-family:var(--mono);font-size:11px;fill:var(--ink-3)}}
+.depmap .ntitle{{font-family:var(--sans);font-size:11.5px;fill:var(--ink)}}
+.depmap .rootlbl{{font-family:var(--serif);font-size:13px;fill:var(--ink);font-weight:600}}
+.depmap .rootsub{{font-family:var(--sans);font-size:9px;fill:var(--structural);
+     text-transform:uppercase;letter-spacing:.09em}}
+.depmap a{{cursor:pointer}} .depmap a:hover .n{{fill:var(--line-2)}}
+.depmap figcaption{{font-family:var(--serif);font-size:.82rem;color:var(--ink-3);margin-top:.4rem}}
+.mmd{{margin:0 0 1.4rem;max-width:46rem}}
+.mmd > summary{{font-size:.76rem;color:var(--ink-3);cursor:pointer;list-style:none;
+     border-bottom:1px dashed var(--line);display:inline-block}}
+.mmd > summary::-webkit-details-marker{{display:none}}
+.mmd p{{font-family:var(--serif);font-size:.85rem;color:var(--ink-2);margin:.5rem 0}}
+.mmd pre{{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:2px;
+     padding:.7rem .85rem;font-family:var(--mono);font-size:.72rem;line-height:1.5;
+     white-space:pre;color:var(--ink-2)}}
+.depmap .rootdetail{{font-family:var(--serif);font-size:.9rem;color:var(--ink-2);
+      margin:0 0 .8rem;max-width:44rem}}
+.depmap .rootdetail b{{color:var(--ink)}}
+.rootref{{font-family:var(--sans);font-size:.78rem;color:var(--ink-3);margin:0 0 .7rem;
+      padding-left:.7rem;border-left:2px solid var(--structural);max-width:46rem}}
+.rootref b{{font-family:var(--mono);color:var(--ink)}}
+.rootref a{{color:var(--structural)}}
+.dep{{display:inline-block;font-family:var(--sans);font-size:.62rem;font-weight:700;
+      text-transform:uppercase;letter-spacing:.07em;border-radius:2px;padding:.05rem .35rem;
+      margin-left:.45rem;white-space:nowrap;cursor:help;vertical-align:.08em}}
+.depnote{{font-family:var(--sans);font-size:.72rem;color:var(--ink-3);margin-left:.4rem}}
+.d-kill{{background:var(--problem);color:var(--ground)}}
+.d-part{{background:var(--pending);color:var(--ground)}}
+.d-block{{background:var(--ink-3);color:var(--ground)}}
+.d-live{{background:var(--measured);color:var(--ground)}}
+tr.dep-row td{{opacity:.92}}
+.depbox{{display:flex;flex-wrap:wrap;gap:.2rem .6rem;align-items:baseline;margin:.4rem 0 0;
+      padding:.35rem .6rem;border-radius:2px;font-size:.78rem;background:var(--line-2)}}
+.depbox b{{font-family:var(--sans);font-size:.62rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.07em;border-radius:2px;padding:.05rem .35rem;color:var(--ground)}}
+.depbox span{{font-family:var(--serif);color:var(--ink-2)}}
+.depbox.d-kill b{{background:var(--problem)}} .depbox.d-part b{{background:var(--pending)}}
+.depbox.d-block b{{background:var(--ink-3)}} .depbox.d-live b{{background:var(--measured)}}
 .dot{{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;margin-left:.4rem;
       vertical-align:.05em}}
 .dot.s-high,.dot.s-crit{{background:var(--problem)}}
@@ -658,8 +1099,20 @@ summary:hover{{color:var(--ink-2)}}
 .status b{{font-family:var(--sans);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;
            color:var(--ink-faint);display:block;margin-bottom:.2rem}}
 .callout{{background:var(--pending-bg);border:1px solid var(--pending);border-left-width:3px;
-          border-radius:2px;padding:1rem 1.15rem;margin:0 0 1rem}}
-.callout h3{{font-family:var(--sans);font-size:.9rem;margin:0 0 .5rem;color:var(--pending)}}
+          border-radius:2px;padding:.7rem 1.15rem;margin:0 0 1rem}}
+.callout > summary{{font-family:var(--sans);font-size:.9rem;color:var(--pending);cursor:pointer;
+        list-style:none;display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;
+        border-bottom:0;font-weight:600}}
+.callout > summary::-webkit-details-marker{{display:none}}
+/* A disclosure needs to LOOK like one, or a collapsed section reads as the whole section. */
+.callout > summary::after{{content:"▸ show";font-weight:400;font-size:.72rem;margin-left:auto;
+        text-transform:uppercase;letter-spacing:.07em;opacity:.85}}
+.callout[open] > summary::after{{content:"▾ hide"}}
+.callout[open] > summary{{margin-bottom:.3rem}}
+.warncount{{font-family:var(--mono);font-size:1rem;font-variant-numeric:tabular-nums;
+        border:1px solid var(--pending);border-radius:2px;padding:0 .35rem;flex:none}}
+.hint{{font-family:var(--serif);font-weight:400;font-size:.82rem;color:var(--ink-3);
+        font-style:italic}}
 .callout p{{font-family:var(--serif);font-size:.93rem;margin:.4rem 0 .8rem;color:var(--ink-2)}}
 .tw{{overflow-x:auto}}
 table{{border-collapse:collapse;width:100%;font-size:.84rem}}
@@ -701,6 +1154,13 @@ truth, which is why it is reproduced verbatim inside every card.</p>
 part of the page written by hand — but it refuses to build if the groups do not cover every open
 item exactly once, so an item can be described badly here and still never go missing. Each number
 opens its full entry below.</p>
+
+<h3 class="mapo" id="order">The order to start in</h3>
+<p class="framing">Every dependency recorded, drawn from the same data as the markers beside each
+item. A root is not always a backlog row — the one below is a parked decision, which is why it
+could not be expressed by pointing at an item number.</p>
+{depmap}
+
 {groups_html}
 
 <h2>Every row, as filed</h2>
@@ -962,6 +1422,44 @@ def self_test() -> int:
          and waiting_on("M (study)")[0] == "study"
          and waiting_on("XS")[0] == "work")
 
+    # ── the dependency graph ────────────────────────────────────────────────────────────────────
+    R = {"root-a": {"label": "A", "detail": "d"}}
+    case("a clean graph produces no errors",
+         lambda: depends_errors({1: ("survives", "root-a", "")}, R, {1}) == [])
+    case("an unknown relation is refused",
+         lambda: "unknown relation" in " ".join(
+             depends_errors({1: ("vanishes", "root-a", "")}, R, {1})))
+    case("a dependency on a CLOSED item is refused",
+         lambda: "not an open item" in " ".join(
+             depends_errors({1: ("blocked-by", "7", "")}, R, {1})))
+    case("a dependency ON a closed item is refused even with a valid relation",
+         lambda: depends_errors({1: ("blocked-by", "2", "")}, R, {1, 2}) == [])
+    case("an item that is not open cannot carry a dependency",
+         lambda: "not an open item" in " ".join(
+             depends_errors({9: ("survives", "root-a", "")}, R, {1})))
+    # ⭐ The trap that made named roots necessary. #52 says "blocked on unparking blob addressing
+    # (task #47)" — TASK 47, while BACKLOG 47 is the knowledge graph. A bare number would have
+    # silently recorded an edge to the wrong item; an unknown root name cannot.
+    case("an unknown root NAME is refused rather than guessed",
+         lambda: "not in ROOTS" in " ".join(
+             depends_errors({1: ("survives", "task-47", "")}, R, {1})))
+    case("self-dependency is refused",
+         lambda: "depends on itself" in " ".join(
+             depends_errors({1: ("blocked-by", "1", "")}, R, {1})))
+    case("a two-item cycle is caught",
+         lambda: "cycle" in " ".join(depends_errors(
+             {1: ("blocked-by", "2", ""), 2: ("blocked-by", "1", "")}, R, {1, 2})))
+    case("dep_rank puts un-blocked work before work the root deletes",
+         lambda: dep_rank(19) < dep_rank(17) < dep_rank(52) < dep_rank(20))
+    case("an item with no dependency sorts first of all",
+         lambda: dep_rank(999) == 0 and dep_rank(999) < dep_rank(19))
+    # ⭐ measures the SHIPPED graph, not a fixture — same posture as the GROUPS coverage case
+    case("DEPENDS is coherent against the REAL backlog", lambda: depends_errors(
+        DEPENDS, ROOTS,
+        {r["num"] for r in parse(BACKLOG.read_text().splitlines()) if not r["closed"]}) == [])
+    case("every relation used by DEPENDS is defined",
+         lambda: all(rel in RELATIONS for rel, _, _ in DEPENDS.values()))
+
     # ── change history ──────────────────────────────────────────────────────────────────────────
     V = [("a", 100, "| 1 | alpha |\n| 2 | beta |"),
          ("b", 200, "| 1 | alpha |\n| 2 | beta CHANGED |"),
@@ -988,6 +1486,36 @@ def self_test() -> int:
     # if the walk collapsed them the page would silently report nothing has ever changed.
     case("first and last are NOT the same field",
          lambda: h[2]["first"] == 100 and h[2]["last"] == 200)
+
+    # ── the page says each thing ONCE ───────────────────────────────────────────────────────────
+    # ⟲ Added 2026-08-22 after a reader reported "the stable-addressing slice appears twice in this
+    # page". It did: the global map and the per-group panel each carried the root's full statement.
+    # Duplication is invisible to the author — you write the second copy on purpose — so it needs a
+    # count, not a convention.
+    _page = build([dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())],
+                  "sha", "2026-01-01 00:00", "stamp")
+    for _rk, _root in ROOTS.items():
+        case(f"the full statement of root {_rk!r} appears exactly once",
+             lambda d=_root["detail"]: _page.count(d) == 1)
+    case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
+    case("every group's root reference links to the map, which exists",
+         lambda: 'id="order"' in _page and _page.count('href="#order"') >= 1)
+
+    # ── the mermaid export ──────────────────────────────────────────────────────────────────────
+    _rows = {r["num"]: r for r in parse(BACKLOG.read_text().splitlines())}
+    _mmd = dependency_mermaid(_rows)
+    case("mermaid export declares a flowchart", lambda: _mmd.startswith("flowchart LR"))
+    case("mermaid has one edge per dependency",
+         lambda: _mmd.count("-->") == len(DEPENDS))
+    # ⚠ a backtick opens a markdown-string in mermaid; #19's title contains one
+    case("no markdown survives into a mermaid label",
+         lambda: all(c not in _mmd.split("classDef")[0] for c in "`*"))
+    case("no unescaped quote can close a mermaid label early",
+         lambda: all(ln.count('"') % 2 == 0 for ln in _mmd.splitlines()))
+    case("every mermaid node id is a bare identifier",
+         lambda: all(re.match(r"^\s+\w+", ln) for ln in _mmd.splitlines()[1:] if ln.strip()))
+    case("the svg and the mermaid describe the SAME edge count",
+         lambda: dependency_svg(_rows).count('class="e e-') == _mmd.count("-->"))
 
     case("word_diff marks a deletion and an insertion",
          lambda: "<del>old</del>" in word_diff("the old text", "the new text")
