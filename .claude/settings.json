@@ -45,6 +45,11 @@
             "type": "command",
             "command": "bash .claude/hooks/check-schema-gates.sh",
             "statusMessage": "Checking schema gate reminder..."
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/regen-backlog-page.sh",
+            "statusMessage": "Refreshing the backlog view..."
           }
         ]
       }
