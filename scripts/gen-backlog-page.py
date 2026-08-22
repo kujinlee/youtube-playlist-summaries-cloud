@@ -195,6 +195,51 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
 ]
 
 
+# ─── ANSWERS to questions asked FROM the page, keyed by group number ────────────────────────────
+#
+# The Ask tray means a reader can question this page and have the session answer. An answer that
+# lives only in the chat transcript has the problem the page was built to solve — it is gone by
+# tomorrow, and the next reader asks the same thing. So answers land HERE, beside the claim that
+# prompted them, and survive every regeneration.
+ANSWERS: dict[int, list[tuple[str, str]]] = {
+    1: [(
+        "Once a stable blob address is used — the YouTube videoId, say — doesn't a title change "
+        "become a simple property change, with no summary or dig blob lost?",
+
+        "<p>Yes, and that is already the decided design — but the videoId <em>alone</em> is not "
+        "enough, and the ADR rejects that exact narrower form in its own list of options.</p>"
+
+        "<p><b>Today</b> a summary's key is built from <code>&lt;serial&gt;_&lt;slug&gt;</code>: a "
+        "per-replica serial number and a title-derived slug, both mutable. That is the cause rather "
+        "than a symptom — <code>lib/serial-filename.ts</code> builds the base, and "
+        "<code>lib/cloud-sync/reconcile-serial.ts</code> exists only to repair the divergence it "
+        "creates.</p>"
+
+        "<p><b>ADR-0006</b> replaces it with "
+        "<code>&lt;workspaceId&gt;/videos/&lt;videoId&gt;/&lt;generationId&gt;/…</code> — built only "
+        "from values that never change. A title change then updates a display attribute and moves "
+        "nothing; <code>serialNumber</code> and <code>slug</code> are demoted to display attributes, "
+        "with a manifest mapping each logical slot to the blob currently authoritative.</p>"
+
+        "<p><b>Why not videoId on its own.</b> ADR-0006 considered it and rejected it: without the "
+        "generation dimension a regeneration still overwrites in place, so two concurrent writers "
+        "can still destroy each other's paid work, and there is nothing to compensate <em>from</em> "
+        "after a failed interleaving. That is item <a href=\"#i19\">#19</a> — the one thing stable "
+        "naming does not fix.</p>"
+
+        "<p><b>So the six split.</b> The orphaning half of <a href=\"#i17\">#17</a>, "
+        "<a href=\"#i20\">#20</a> and <a href=\"#i21\">#21</a> dissolves under a stable address. "
+        "<a href=\"#i19\">#19</a> and <a href=\"#i22\">#22</a> need the generation dimension and the "
+        "manifest, not just a stable name.</p>"
+
+        "<p><b>Why it is still open.</b> Not a missing idea — ADR-0006 is still "
+        "<code>status: proposed</code>, and the schema slice was <b>parked on 2026-08-11</b> to "
+        "return to the launch roadmap. The price it names is garbage collection: immutable "
+        "generations accumulate, and the manifest is what makes a mark-and-sweep possible at all.</p>"
+    )],
+}
+
+
 def waiting_on(size: str) -> tuple[str, str]:
     """What the item is blocked on, derived from the Size cell — which is where this project already
     records it (`M + design`, `S (decision) + S (impl)`). Not a second source of truth."""
@@ -470,9 +515,12 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
                     f'<span class="dot s-{r["sev"]}" title="filed as {SEV_NAME[r["sev"]]} severity">'
                     f'</span></td><td>{line}</td>'
                     f'<td class="gate g-{cls}">{label}</td></tr>')
+        qa = "".join(
+            f'<details class="qa"><summary><span class="qmark">asked</span>{q}</summary>'
+            f'<div class="qabody">{a}</div></details>' for q, a in ANSWERS.get(gi, []))
         groups_html += (f'<section class="grp"><h3><span class="gn">{gi}</span>{title}'
                         f'<span class="cnt">{len(items)}</span></h3>'
-                        f'<p class="framing">{framing}</p>'
+                        f'<p class="framing">{framing}</p>{qa}'
                         f'<div class="tw"><table class="glist"><tbody>{trs}</tbody></table></div>'
                         f'</section>')
     gates = {k: sum(1 for n in gate_of if gate_of[n] == k)
@@ -562,6 +610,20 @@ h2{{font-family:var(--sans);font-size:.78rem;text-transform:uppercase;letter-spa
       align-self:center}}
 .framing{{font-family:var(--serif);font-size:.95rem;color:var(--ink-2);margin:0 0 .7rem;
           max-width:44rem}}
+.qa{{border:1px solid var(--line);border-left:3px solid var(--structural);border-radius:2px;
+     background:var(--panel);padding:.5rem .8rem;margin:0 0 .8rem;max-width:46rem}}
+.qa > summary{{font-family:var(--serif);font-size:.92rem;color:var(--ink);cursor:pointer;
+     list-style:none;border-bottom:0;display:flex;gap:.5rem;align-items:baseline}}
+.qa > summary::-webkit-details-marker{{display:none}}
+.qmark{{font-family:var(--sans);font-size:.6rem;font-weight:700;text-transform:uppercase;
+     letter-spacing:.09em;color:var(--structural);border:1px solid var(--structural);
+     border-radius:2px;padding:.05rem .3rem;flex:none;align-self:center}}
+.qabody{{font-family:var(--serif);font-size:.92rem;line-height:1.65;color:var(--ink-2);
+     margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--line-2)}}
+.qabody p{{margin:.55rem 0}}
+.qabody code{{font-family:var(--mono);font-size:.85em;background:var(--line-2);
+     padding:.05rem .25rem;border-radius:2px}}
+.qabody a{{color:var(--structural)}}
 table.glist{{border-top:1px solid var(--line)}}
 table.glist td{{font-size:.92rem;line-height:1.5}}
 table.glist td:first-child{{width:4.6rem}}
