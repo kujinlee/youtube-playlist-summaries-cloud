@@ -269,6 +269,37 @@ ANSWERS: dict[int, list[tuple[str, str]]] = {
         "or grey out an item whose prerequisite is unstarted. <b>Proposed, not done:</b> a "
         "<code>Depends</code> field per row, which this page would render as an ordering and as a "
         "\"do not start yet\" marker. That changes the canonical table, so it is your call.</p>"
+    ), (
+        "Express the dependencies between groups, so work starts at the root-cause items.",
+
+        "<p>Agreed. Two places it can live, and they differ in blast radius rather than in what you "
+        "would see on this page. <b>Neither is built — this is the decision, written down.</b></p>"
+
+        "<p><b>A — a <code>DEPENDS</code> map in the generator.</b> Same contract as the grouping "
+        "above: hand-written prose, mechanically complete. Each entry is "
+        "<code>item → (blocker, relation)</code> where the relation is <em>dissolved-by</em>, "
+        "<em>blocked-by</em> or <em>folds-into</em>. The build refuses if a referenced item does "
+        "not exist, is already closed, or forms a cycle. Renders as a <em>“#20 — do not start: the "
+        "addressing slice deletes this”</em> marker, and sorts roots above the work they gate. "
+        "<b>Touches nothing outside this page</b>, and is deleted by deleting a dict.</p>"
+
+        "<p><b>B — a <code>Depends</code> column in <code>docs/backlog.md</code>.</b> The data lives "
+        "with the data, so GitHub readers and every future instrument see it too, not just this "
+        "page. Costs a change to the canonical table. <b>Checked, not assumed:</b> a seventh column "
+        "inserted before <em>Status</em> was driven through both backlog ratchets — the shape check "
+        "passes and the marker check still reads the true Status cell, correctly flagging a "
+        "synthetic closed-but-still-red row. So it is safe; it is just wider.</p>"
+
+        "<p><b>Recommendation: A first, then promote to B.</b> The vocabulary is the part most "
+        "likely to be wrong — whether <em>dissolved-by</em> and <em>blocked-by</em> are really "
+        "different relations, and whether a relation belongs to an item or to a whole group. Getting "
+        "that wrong in the generator costs one commit; getting it wrong in the canonical table costs "
+        "a migration of every row plus whatever has started reading the column. The grouping above "
+        "started the same way and has held.</p>"
+
+        "<p><b>One thing A cannot do</b>, and it is the reason B exists: a dependency that only this "
+        "page knows is invisible to anyone reading <code>docs/backlog.md</code> on GitHub — which is "
+        "where the backlog is normally read. Treat A as the prototype, not the destination.</p>"
     )],
 }
 
