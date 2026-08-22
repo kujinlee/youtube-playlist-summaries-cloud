@@ -489,14 +489,19 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
         f'<tr><td class="mono"><a href="#i{r["num"]}">#{r["num"]}</a></td>'
         f'<td class="what">{plain(r["title"])}</td>'
         f'<td class="why">{md(r["status"])}</td></tr>' for r in flagged)
-    callout = (f'<div class="callout"><h3>{len(flagged)} rows carry a warning in their own Status '
-               f'cell</h3><p>These are the rows the backlog itself flags as mis-recorded, half done, '
-               f'or read wrongly by an earlier pass. Nothing is inferred — the &#9888; is written in '
-               f'the file. Read one of these before trusting any summary of it, including this '
-               f'page&#39;s severity stripe.</p>'
+    # COLLAPSED BY DEFAULT (2026-08-22). Reproducing seven Status cells in full is the right content
+    # — the truncated version cut mid-sentence in the one table whose job is to say what is wrong —
+    # but at full length it pushed the actual backlog below the fold on every visit. A <details>
+    # keeps both: the headline and the count are always visible, the evidence is one click away.
+    # The count is the part that decides whether to look, so it must never be behind the click.
+    callout = (f'<details class="callout"><summary><span class="warncount">{len(flagged)}</span>'
+               f'rows carry a warning in their own Status cell'
+               f'<span class="hint">read these before trusting any summary of them</span></summary>'
+               f'<p>The rows the backlog itself flags as mis-recorded, half done, or read wrongly by '
+               f'an earlier pass. Nothing is inferred — the &#9888; is written in the file.</p>'
                f'<div class="tw"><table class="warn"><thead><tr><th>#</th><th>Item</th>'
                f'<th>What its status says</th></tr></thead><tbody>{flagrows}</tbody></table></div>'
-               f'</div>') if flagged else ""
+               f'</details>') if flagged else ""
 
     return f"""<title>Backlog — every item, in plain sight</title>
 <style>
@@ -658,8 +663,20 @@ summary:hover{{color:var(--ink-2)}}
 .status b{{font-family:var(--sans);font-size:.62rem;text-transform:uppercase;letter-spacing:.09em;
            color:var(--ink-faint);display:block;margin-bottom:.2rem}}
 .callout{{background:var(--pending-bg);border:1px solid var(--pending);border-left-width:3px;
-          border-radius:2px;padding:1rem 1.15rem;margin:0 0 1rem}}
-.callout h3{{font-family:var(--sans);font-size:.9rem;margin:0 0 .5rem;color:var(--pending)}}
+          border-radius:2px;padding:.7rem 1.15rem;margin:0 0 1rem}}
+.callout > summary{{font-family:var(--sans);font-size:.9rem;color:var(--pending);cursor:pointer;
+        list-style:none;display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;
+        border-bottom:0;font-weight:600}}
+.callout > summary::-webkit-details-marker{{display:none}}
+/* A disclosure needs to LOOK like one, or a collapsed section reads as the whole section. */
+.callout > summary::after{{content:"▸ show";font-weight:400;font-size:.72rem;margin-left:auto;
+        text-transform:uppercase;letter-spacing:.07em;opacity:.85}}
+.callout[open] > summary::after{{content:"▾ hide"}}
+.callout[open] > summary{{margin-bottom:.3rem}}
+.warncount{{font-family:var(--mono);font-size:1rem;font-variant-numeric:tabular-nums;
+        border:1px solid var(--pending);border-radius:2px;padding:0 .35rem;flex:none}}
+.hint{{font-family:var(--serif);font-weight:400;font-size:.82rem;color:var(--ink-3);
+        font-style:italic}}
 .callout p{{font-family:var(--serif);font-size:.93rem;margin:.4rem 0 .8rem;color:var(--ink-2)}}
 .tw{{overflow-x:auto}}
 table{{border-collapse:collapse;width:100%;font-size:.84rem}}
