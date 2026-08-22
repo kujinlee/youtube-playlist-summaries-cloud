@@ -236,6 +236,39 @@ ANSWERS: dict[int, list[tuple[str, str]]] = {
         "<code>status: proposed</code>, and the schema slice was <b>parked on 2026-08-11</b> to "
         "return to the launch roadmap. The price it names is garbage collection: immutable "
         "generations accumulate, and the manifest is what makes a mark-and-sweep possible at all.</p>"
+    ), (
+        "So we need a proper order of fixes — some of these become obsolete once the main ones are "
+        "fixed?",
+
+        "<p>Yes, and the backlog already knows it: <b>16 of the 55 rows</b> carry dependency "
+        "language — <em>supersedes, dissolves, moot, blocked by, folds into</em> — but only in "
+        "prose, where no ordering is visible and nothing can act on it.</p>"
+
+        "<p><b>Quoted, not paraphrased.</b> <a href=\"#i20\">#20</a> and <a href=\"#i21\">#21</a> "
+        "each say: <em>“let ADR-0006's manifest dissolve it … check the third option first; this "
+        "may be work the stable-blob-addressing slice deletes rather than work to do.”</em> "
+        "<a href=\"#i22\">#22</a>: <em>“When the manifest slice dissolves this, these go red — that "
+        "is the signal to close #22.”</em> <a href=\"#i52\">#52</a>: <em>“Blocked on unparking blob "
+        "addressing.”</em> <a href=\"#i15\">#15</a>: <em>“Supersedes the need for #14's lazy-warm "
+        "once shipped.”</em></p>"
+
+        "<p><b>It has already happened once.</b> ADR-0006 turned most of a five-round conditional-"
+        "write spec into work that was <em>moot rather than deferred</em> — that phrase is in "
+        "<a href=\"#i17\">#17</a>'s own status cell. Twelve review rounds of a design that the next "
+        "decision deleted.</p>"
+
+        "<p><b>So for group 1 the order is not a preference, it is a fact.</b> Do the addressing "
+        "slice first: <a href=\"#i20\">#20</a>, <a href=\"#i21\">#21</a> and most of "
+        "<a href=\"#i17\">#17</a> are then <em>deleted</em> rather than done. Only "
+        "<a href=\"#i19\">#19</a> and <a href=\"#i22\">#22</a> survive it. Fixing #20 or #21 first "
+        "means writing a guard for an address that is about to stop existing.</p>"
+
+        "<p><b>What is missing is structure, not knowledge.</b> The Size cell records the "
+        "<em>gate</em> — design, decision — and this page derives the \"waiting on\" column from it. "
+        "Nothing records <em>dissolved by</em> or <em>blocked by</em>, so no view can order the list "
+        "or grey out an item whose prerequisite is unstarted. <b>Proposed, not done:</b> a "
+        "<code>Depends</code> field per row, which this page would render as an ordering and as a "
+        "\"do not start yet\" marker. That changes the canonical table, so it is your call.</p>"
     )],
 }
 
@@ -518,8 +551,13 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
         qa = "".join(
             f'<details class="qa"><summary><span class="qmark">asked</span>{q}</summary>'
             f'<div class="qabody">{a}</div></details>' for q, a in ANSWERS.get(gi, []))
-        groups_html += (f'<section class="grp"><h3><span class="gn">{gi}</span>{title}'
-                        f'<span class="cnt">{len(items)}</span></h3>'
+        # ⚠ The number and the count are SIBLINGS of the h3, not children — for the same reason
+        # the item badge is. MEASURED: a question asked from this heading arrived tagged
+        # "1Paid work can be lost when a video's address changes6". Third instance of one defect
+        # (askbtn, then .badge/.flag, now .gn/.cnt), so the rule is now stated where headings are
+        # built: NOTHING but the heading's own words goes inside an h2 or h3 on this page.
+        groups_html += (f'<section class="grp"><div class="grphead"><span class="gn">{gi}</span>'
+                        f'<h3>{title}</h3><span class="cnt">{len(items)}</span></div>'
                         f'<p class="framing">{framing}</p>{qa}'
                         f'<div class="tw"><table class="glist"><tbody>{trs}</tbody></table></div>'
                         f'</section>')
@@ -557,7 +595,7 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
   --ink:#12161c; --ink-2:#39424f; --ink-3:#6b7686; --ink-faint:#6b7686;
   --ground:#f7f6f3; --panel:#ffffff; --card:#ffffff; --line:#dfdcd5; --line-2:#eceae5;
   --measured:#0f7268; --problem:#ad3a22; --structural:#3d5a86;
-  --pending:#a8690b; --pending-bg:#fdf4e3;
+  --pending:#a8690b; --pending-bg:#fdf4e3; --ink-soft:#39424f; --good:#0f7268;
   --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
   --sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
   --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
@@ -566,19 +604,19 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
   --ink:#e7e9ee; --ink-2:#a9b2c0; --ink-3:#7a8494; --ink-faint:#7a8494;
   --ground:#101318; --panel:#171b22; --card:#171b22; --line:#2a3039; --line-2:#20252d;
   --measured:#4fc9b8; --problem:#f0836a; --structural:#8fb0e0;
-  --pending:#eab464; --pending-bg:#251d10;
+  --pending:#eab464; --pending-bg:#251d10; --ink-soft:#a9b2c0; --good:#4fc9b8;
 }}}}
 :root[data-theme="dark"]{{
   --ink:#e7e9ee; --ink-2:#a9b2c0; --ink-3:#7a8494; --ink-faint:#7a8494;
   --ground:#101318; --panel:#171b22; --card:#171b22; --line:#2a3039; --line-2:#20252d;
   --measured:#4fc9b8; --problem:#f0836a; --structural:#8fb0e0;
-  --pending:#eab464; --pending-bg:#251d10;
+  --pending:#eab464; --pending-bg:#251d10; --ink-soft:#a9b2c0; --good:#4fc9b8;
 }}
 :root[data-theme="light"]{{
   --ink:#12161c; --ink-2:#39424f; --ink-3:#6b7686; --ink-faint:#6b7686;
   --ground:#f7f6f3; --panel:#ffffff; --card:#ffffff; --line:#dfdcd5; --line-2:#eceae5;
   --measured:#0f7268; --problem:#ad3a22; --structural:#3d5a86;
-  --pending:#a8690b; --pending-bg:#fdf4e3;
+  --pending:#a8690b; --pending-bg:#fdf4e3; --ink-soft:#39424f; --good:#0f7268;
 }}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
@@ -602,14 +640,25 @@ h2{{font-family:var(--sans);font-size:.78rem;text-transform:uppercase;letter-spa
 .stat.done{{border-left-color:var(--measured)}} .stat.done .n{{color:var(--measured)}}
 
 .grp{{margin:0 0 2rem}}
-.grp h3{{font-family:var(--serif);font-size:1.18rem;font-weight:400;margin:0 0 .35rem;
-         display:flex;align-items:baseline;gap:.6rem;text-wrap:balance}}
+.grphead{{display:flex;align-items:baseline;gap:.6rem;margin:0 0 .35rem}}
+.grp h3{{font-family:var(--serif);font-size:1.18rem;font-weight:400;margin:0;
+         text-wrap:balance;flex:1;min-width:0}}
 .gn{{font-family:var(--mono);font-size:.78rem;color:var(--ink-faint);border:1px solid var(--line);
      border-radius:2px;padding:.05rem .4rem;flex:none;align-self:center}}
 .cnt{{margin-left:auto;font-family:var(--mono);font-size:.75rem;color:var(--ink-faint);flex:none;
       align-self:center}}
 .framing{{font-family:var(--serif);font-size:.95rem;color:var(--ink-2);margin:0 0 .7rem;
           max-width:44rem}}
+/* ── THE ASK BOX ─────────────────────────────────────────────────────────────────────────────
+   MEASURED 2026-08-22 on the served page: `#qbox` computed `color: rgb(231,233,238)` over
+   `background: rgb(255,255,255)` — near-white text on a white field, reported as "font color is
+   too light". The tray is LIFTED verbatim by brief-compose.py and spliced AFTER this block, so a
+   plain `#qbox` rule here loses the cascade; two ids win without touching the lifted code.
+   Both sides are pinned, because fixing only the colour leaves the pair theme-dependent. */
+#tray #qbox{{color:var(--ink);background:var(--card);border-color:var(--line);
+     caret-color:var(--ink);-webkit-text-fill-color:var(--ink)}}
+#tray #qbox::placeholder{{color:var(--ink-3);opacity:1;-webkit-text-fill-color:var(--ink-3)}}
+#tray #qbox:focus{{outline:2px solid var(--structural);outline-offset:1px}}
 .qa{{border:1px solid var(--line);border-left:3px solid var(--structural);border-radius:2px;
      background:var(--panel);padding:.5rem .8rem;margin:0 0 .8rem;max-width:46rem}}
 .qa > summary{{font-family:var(--serif);font-size:.92rem;color:var(--ink);cursor:pointer;
