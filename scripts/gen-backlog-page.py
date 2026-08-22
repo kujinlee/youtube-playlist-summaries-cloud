@@ -430,7 +430,12 @@ def dependency_svg(by_num: dict) -> str:
                 f'<text class="nid" x="{IX+12}" y="{y+4}">#{n}</text>'
                 f'<text class="ntitle" x="{IX+52}" y="{y+4}">{title}</text></a>')
         out.append(
-            f'<figure class="depmap"><svg viewBox="0 0 {IX+IW+12} {h}" role="img" '
+            f'<figure class="depmap">'
+            # The root's full statement lives HERE and nowhere else. Removing the duplicate panel
+            # first deleted it outright — the page said "start here" and never said what the thing
+            # was. The count check below is what caught that, one edit after it caught the copy.
+            f'<p class="rootdetail"><b>{html.escape(root["label"])}</b> — {root["detail"]}</p>'
+            f'<svg viewBox="0 0 {IX+IW+12} {h}" role="img" '
             f'aria-label="Dependency map: {html.escape(root["label"])} and the {len(kids)} items it '
             f'governs"><rect class="n n-root" x="{RX}" y="{mid-26}" width="{RW}" height="52" '
             f'rx="3"/><text class="rootlbl" x="{RX+RW/2}" y="{mid-4}" text-anchor="middle">'
@@ -780,11 +785,14 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
                 f'<b>{len(v)}</b> {RELATIONS[k][0]}'
                 + " (" + ", ".join(f'<a href="#i{n}">#{n}</a>' for n in sorted(v)) + ")"
                 for k, v in sorted(tally.items(), key=lambda kv: RELATIONS[kv[0]][3]))
-            starthere += (f'<div class="root"><div class="rootline">'
-                          f'<span class="rootmark">start here</span>'
-                          f'<b>{ROOTS[rk]["label"]}</b></div>'
-                          f'<p class="rootdetail">{ROOTS[rk]["detail"]}</p>'
-                          f'<p class="roottally">{bits}</p></div>')
+            # ⟲ 2026-08-22, reported from the page: "the stable-addressing slice appears twice."
+            # It did — this panel used to repeat the root's title AND its whole ADR paragraph,
+            # which the map above already carries. The full statement belongs in ONE place; what a
+            # group needs locally is only "which root governs my items, and what does it do to
+            # them", plus a way back to the picture. Especially for group 5, whose single blocked
+            # item sits far below the map.
+            starthere += (f'<p class="rootref"><a href="#order">the stable-addressing slice</a>'
+                          f' governs these — {bits}</p>')
 
         trs = ""
         for n, line in ordered:
@@ -972,17 +980,13 @@ table.glist tr:hover td{{background:var(--panel)}}
 .mmd pre{{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:2px;
      padding:.7rem .85rem;font-family:var(--mono);font-size:.72rem;line-height:1.5;
      white-space:pre;color:var(--ink-2)}}
-.root{{background:var(--panel);border:1px solid var(--structural);border-left-width:3px;
-      border-radius:2px;padding:.6rem .85rem;margin:0 0 .8rem;max-width:46rem}}
-.rootline{{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}}
-.rootline b{{font-family:var(--serif);font-size:1rem;font-weight:600;color:var(--ink)}}
-.rootmark{{font-family:var(--sans);font-size:.6rem;font-weight:700;text-transform:uppercase;
-      letter-spacing:.1em;color:var(--ground);background:var(--structural);border-radius:2px;
-      padding:.1rem .4rem;flex:none;align-self:center}}
-.rootdetail{{font-family:var(--serif);font-size:.88rem;color:var(--ink-2);margin:.4rem 0 .3rem}}
-.roottally{{font-family:var(--sans);font-size:.78rem;color:var(--ink-3);margin:0}}
-.roottally b{{font-family:var(--mono);color:var(--ink)}}
-.roottally a{{color:var(--structural)}}
+.depmap .rootdetail{{font-family:var(--serif);font-size:.9rem;color:var(--ink-2);
+      margin:0 0 .8rem;max-width:44rem}}
+.depmap .rootdetail b{{color:var(--ink)}}
+.rootref{{font-family:var(--sans);font-size:.78rem;color:var(--ink-3);margin:0 0 .7rem;
+      padding-left:.7rem;border-left:2px solid var(--structural);max-width:46rem}}
+.rootref b{{font-family:var(--mono);color:var(--ink)}}
+.rootref a{{color:var(--structural)}}
 .dep{{display:inline-block;font-family:var(--sans);font-size:.62rem;font-weight:700;
       text-transform:uppercase;letter-spacing:.07em;border-radius:2px;padding:.05rem .35rem;
       margin-left:.45rem;white-space:nowrap;cursor:help;vertical-align:.08em}}
@@ -1151,7 +1155,7 @@ part of the page written by hand — but it refuses to build if the groups do no
 item exactly once, so an item can be described badly here and still never go missing. Each number
 opens its full entry below.</p>
 
-<h3 class="mapo">The order to start in</h3>
+<h3 class="mapo" id="order">The order to start in</h3>
 <p class="framing">Every dependency recorded, drawn from the same data as the markers beside each
 item. A root is not always a backlog row — the one below is a parked decision, which is why it
 could not be expressed by pointing at an item number.</p>
@@ -1482,6 +1486,20 @@ def self_test() -> int:
     # if the walk collapsed them the page would silently report nothing has ever changed.
     case("first and last are NOT the same field",
          lambda: h[2]["first"] == 100 and h[2]["last"] == 200)
+
+    # ── the page says each thing ONCE ───────────────────────────────────────────────────────────
+    # ⟲ Added 2026-08-22 after a reader reported "the stable-addressing slice appears twice in this
+    # page". It did: the global map and the per-group panel each carried the root's full statement.
+    # Duplication is invisible to the author — you write the second copy on purpose — so it needs a
+    # count, not a convention.
+    _page = build([dict(r, hist=None) for r in parse(BACKLOG.read_text().splitlines())],
+                  "sha", "2026-01-01 00:00", "stamp")
+    for _rk, _root in ROOTS.items():
+        case(f"the full statement of root {_rk!r} appears exactly once",
+             lambda d=_root["detail"]: _page.count(d) == 1)
+    case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
+    case("every group's root reference links to the map, which exists",
+         lambda: 'id="order"' in _page and _page.count('href="#order"') >= 1)
 
     # ── the mermaid export ──────────────────────────────────────────────────────────────────────
     _rows = {r["num"]: r for r in parse(BACKLOG.read_text().splitlines())}
