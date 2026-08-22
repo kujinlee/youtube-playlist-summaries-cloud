@@ -304,6 +304,96 @@ ANSWERS: dict[int, list[tuple[str, str]]] = {
 }
 
 
+# ─── DEPENDENCIES — what has to happen before what ──────────────────────────────────────────────
+#
+# Asked for 2026-08-22: "express dependencies among groups of backlogs so that work starts at the
+# root-cause items." Three things came out of deriving it, and each shaped what is below.
+#
+# 1. THE ROOT OF GROUP 1 IS NOT A BACKLOG ITEM. #20 and #21 both say the stable-addressing slice
+#    "may delete this rather than leave work to do" — and that slice is a PARKED DECISION
+#    (ADR-0006, status: proposed), not a row. A dependency field restricted to `#NN` could not
+#    express the single most important ordering fact in the list. Hence named roots.
+#
+# 2. A BARE `#47` IS AMBIGUOUS. #52 says "Blocked on unparking blob addressing (task #47)" — that is
+#    TASK 47. BACKLOG 47 is the knowledge graph, unrelated. Encoding a bare number would have
+#    recorded a false edge. This is backlog #39 ("the identifier IS the position") biting early, so
+#    roots are namespaced strings and item references are validated against the open set.
+#
+# 3. REGEX EXTRACTION IS NOT VIABLE. A sweep for dependency words hit 13 rows, about half of them
+#    false: #4's "fold into any markdown-touching bundle" is a batching hint, #46's "fold into path
+#    syntax" is about characters, #27's "superseded" is about blob generations. So this map is
+#    hand-written and mechanically validated — the same contract as GROUPS.
+ROOTS: dict[str, dict[str, str]] = {
+    "adr-0006-addressing": dict(
+        label="The stable-addressing slice",
+        detail="ADR-0006 — <code>status: proposed</code>, and the schema slice was parked on "
+               "2026-08-11 to return to the launch roadmap. Not a backlog row: a decision waiting "
+               "to be unparked. Blob keys stop being built from a mutable serial and slug.",
+    ),
+}
+
+# label, what it means for the reader, css class, sort rank (lower starts sooner)
+RELATIONS: dict[str, tuple[str, str, str, int]] = {
+    "survives": ("survives it", "The root does not fix this. Real work either way — safe to start "
+                 "now.", "live", 1),
+    "partly-dissolved-by": ("mostly deleted by", "Most of this goes when the root lands; a named "
+                            "residue survives.", "part", 2),
+    "blocked-by": ("blocked by", "Cannot start until the root lands.", "block", 3),
+    "dissolved-by": ("deleted by", "This disappears when the root lands. Starting it means "
+                     "building a guard for an address that is about to stop existing.", "kill", 4),
+}
+
+# item → (relation, root key, optional note)
+DEPENDS: dict[int, tuple[str, str, str]] = {
+    19: ("survives", "adr-0006-addressing",
+         "needs the generation dimension, not just a stable name"),
+    17: ("partly-dissolved-by", "adr-0006-addressing",
+         "residue: <code>persist_summary</code> merge semantics"),
+    52: ("blocked-by", "adr-0006-addressing", "blocked on unparking, per its own status cell"),
+    20: ("dissolved-by", "adr-0006-addressing", ""),
+    21: ("dissolved-by", "adr-0006-addressing", ""),
+    22: ("dissolved-by", "adr-0006-addressing", ""),
+}
+
+
+def depends_errors(depends: dict, roots: dict, open_nums: set[int]) -> list[str]:
+    """PURE. Same posture as `coverage_errors`: the prose may be wrong, the graph may not be
+    incoherent. A dependency that says DO NOT START must not be pointing at nothing."""
+    errors = []
+    for item, (rel, root, _note) in sorted(depends.items()):
+        if item not in open_nums:
+            errors.append(f"#{item} has a dependency but is not an open item")
+        if rel not in RELATIONS:
+            errors.append(f"#{item}: unknown relation {rel!r} (known: {sorted(RELATIONS)})")
+        if root in roots:
+            continue
+        if root.isdigit():
+            if int(root) not in open_nums:
+                errors.append(f"#{item} depends on #{root}, which is not an open item")
+            elif int(root) == item:
+                errors.append(f"#{item} depends on itself")
+        else:
+            errors.append(f"#{item} names root {root!r}, which is not in ROOTS")
+    # item → item edges could cycle; named roots cannot. Walk only the numeric ones.
+    for start in depends:
+        seen, cur = {start}, depends[start][1]
+        while cur.isdigit() and int(cur) in depends:
+            nxt = int(cur)
+            if nxt in seen:
+                errors.append(f"dependency cycle through #{nxt}")
+                break
+            seen.add(nxt)
+            cur = depends[nxt][1]
+    return sorted(set(errors))
+
+
+def dep_rank(num: int) -> int:
+    """Sort key inside a group: no dependency first, then survives, …, deleted-by last. The whole
+    point of the ordering is that what may evaporate sinks below what has to be done regardless."""
+    d = DEPENDS.get(num)
+    return RELATIONS[d[0]][3] if d else 0
+
+
 def waiting_on(size: str) -> tuple[str, str]:
     """What the item is blocked on, derived from the Size cell — which is where this project already
     records it (`M + design`, `S (decision) + S (impl)`). Not a second source of truth."""
@@ -522,6 +612,17 @@ def card(r: dict) -> str:
                  f'{_ago(h["last"])}</span>')
         attrs = f' data-first="{h["first"]}" data-changed="{h["last"]}"'
 
+    # The same dependency marker rides on the card, not only in the group table — a deep link
+    # (#i20) lands here, and "do not start this" is the one thing that must not be left behind.
+    dep = ""
+    if r["num"] in DEPENDS:
+        rel, root, note = DEPENDS[r["num"]]
+        lbl, why, css, _ = RELATIONS[rel]
+        rootname = ROOTS[root]["label"] if root in ROOTS else f"#{root}"
+        dep = (f'<div class="depbox d-{css}"><b>{lbl} {html.escape(rootname.lower())}</b>'
+               f'<span>{html.escape(why)}</span>' + (f'<span>{note}</span>' if note else "")
+               + '</div>')
+
     diff = ""
     if h and h.get("prev") is not None:
         diff = (f'<details class="diffbox"><summary>what changed in this entry</summary>'
@@ -533,6 +634,7 @@ def card(r: dict) -> str:
   <div class="body">
     <div class="titleline"><span class="badge" hidden></span><h3>{md(r['title'])}</h3>{flag}</div>
     <div class="meta">{meta}{stamp}</div>
+    {dep}
     <details><summary>the full entry, as filed</summary>
       <div class="prose">{md(r['body'])}</div>
       <div class="status"><b>Status cell</b>{md(r['status'])}</div>
@@ -560,9 +662,13 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
     flagged = [r for r in rows if r["warned"]]
     by_num = {r["num"]: r for r in rows}
 
-    errors = coverage_errors(GROUPS, {r["num"] for r in open_rows})
+    open_nums = {r["num"] for r in open_rows}
+    errors = coverage_errors(GROUPS, open_nums)
     if errors:
         raise ShapeError("GROUPS does not cover the open set — " + "; ".join(errors))
+    errors = depends_errors(DEPENDS, ROOTS, open_nums)
+    if errors:
+        raise ShapeError("DEPENDS is incoherent — " + "; ".join(errors))
 
     order = {"crit": 0, "high": 1, "med": 2, "low": 3, "none": 4}
     open_rows.sort(key=lambda r: (order[r["sev"]], r["num"]))
@@ -570,14 +676,46 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
 
     gate_of, groups_html = {}, ""
     for gi, (title, framing, items) in enumerate(GROUPS, 1):
+        # ORDERED, not as listed. Items that survive the root — or have no root — come first;
+        # anything the root deletes sinks to the bottom, because that is work you should not start.
+        ordered = sorted(items, key=lambda it: (dep_rank(it[0]), it[0]))
+
+        used_roots = {DEPENDS[n][1] for n, _ in ordered if n in DEPENDS}
+        starthere = ""
+        for rk in sorted(used_roots):
+            if rk not in ROOTS:
+                continue
+            tally = {}
+            for n, _ in ordered:
+                if n in DEPENDS and DEPENDS[n][1] == rk:
+                    tally.setdefault(DEPENDS[n][0], []).append(n)
+            bits = " · ".join(
+                f'<b>{len(v)}</b> {RELATIONS[k][0]}'
+                + " (" + ", ".join(f'<a href="#i{n}">#{n}</a>' for n in sorted(v)) + ")"
+                for k, v in sorted(tally.items(), key=lambda kv: RELATIONS[kv[0]][3]))
+            starthere += (f'<div class="root"><div class="rootline">'
+                          f'<span class="rootmark">start here</span>'
+                          f'<b>{ROOTS[rk]["label"]}</b></div>'
+                          f'<p class="rootdetail">{ROOTS[rk]["detail"]}</p>'
+                          f'<p class="roottally">{bits}</p></div>')
+
         trs = ""
-        for n, line in items:
+        for n, line in ordered:
             r = by_num[n]
             cls, label = waiting_on(r["size"])
             gate_of[n] = cls
-            trs += (f'<tr><td class="mono"><a href="#i{n}">#{n}</a>'
+            mark = ""
+            if n in DEPENDS:
+                rel, root, note = DEPENDS[n]
+                lbl, why, css, _ = RELATIONS[rel]
+                rootname = ROOTS[root]["label"] if root in ROOTS else f"#{root}"
+                mark = (f'<span class="dep d-{css}" title="{html.escape(why)}">{lbl} '
+                        f'{html.escape(rootname.lower())}</span>'
+                        + (f'<span class="depnote">{note}</span>' if note else ""))
+            trs += (f'<tr class="{"dep-row" if n in DEPENDS else ""}">'
+                    f'<td class="mono"><a href="#i{n}">#{n}</a>'
                     f'<span class="dot s-{r["sev"]}" title="filed as {SEV_NAME[r["sev"]]} severity">'
-                    f'</span></td><td>{line}</td>'
+                    f'</span></td><td>{line}{mark}</td>'
                     f'<td class="gate g-{cls}">{label}</td></tr>')
         qa = "".join(
             f'<details class="qa"><summary><span class="qmark">asked</span>{q}</summary>'
@@ -589,7 +727,7 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
         # built: NOTHING but the heading's own words goes inside an h2 or h3 on this page.
         groups_html += (f'<section class="grp"><div class="grphead"><span class="gn">{gi}</span>'
                         f'<h3>{title}</h3><span class="cnt">{len(items)}</span></div>'
-                        f'<p class="framing">{framing}</p>{qa}'
+                        f'<p class="framing">{framing}</p>{starthere}{qa}'
                         f'<div class="tw"><table class="glist"><tbody>{trs}</tbody></table></div>'
                         f'</section>')
     gates = {k: sum(1 for n in gate_of if gate_of[n] == k)
@@ -709,6 +847,33 @@ table.glist td{{font-size:.92rem;line-height:1.5}}
 table.glist td:first-child{{width:4.6rem}}
 table.glist td:nth-child(2){{font-family:var(--serif);color:var(--ink-2)}}
 table.glist tr:hover td{{background:var(--panel)}}
+.root{{background:var(--panel);border:1px solid var(--structural);border-left-width:3px;
+      border-radius:2px;padding:.6rem .85rem;margin:0 0 .8rem;max-width:46rem}}
+.rootline{{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}}
+.rootline b{{font-family:var(--serif);font-size:1rem;font-weight:600;color:var(--ink)}}
+.rootmark{{font-family:var(--sans);font-size:.6rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.1em;color:var(--ground);background:var(--structural);border-radius:2px;
+      padding:.1rem .4rem;flex:none;align-self:center}}
+.rootdetail{{font-family:var(--serif);font-size:.88rem;color:var(--ink-2);margin:.4rem 0 .3rem}}
+.roottally{{font-family:var(--sans);font-size:.78rem;color:var(--ink-3);margin:0}}
+.roottally b{{font-family:var(--mono);color:var(--ink)}}
+.roottally a{{color:var(--structural)}}
+.dep{{display:inline-block;font-family:var(--sans);font-size:.62rem;font-weight:700;
+      text-transform:uppercase;letter-spacing:.07em;border-radius:2px;padding:.05rem .35rem;
+      margin-left:.45rem;white-space:nowrap;cursor:help;vertical-align:.08em}}
+.depnote{{font-family:var(--sans);font-size:.72rem;color:var(--ink-3);margin-left:.4rem}}
+.d-kill{{background:var(--problem);color:var(--ground)}}
+.d-part{{background:var(--pending);color:var(--ground)}}
+.d-block{{background:var(--ink-3);color:var(--ground)}}
+.d-live{{background:var(--measured);color:var(--ground)}}
+tr.dep-row td{{opacity:.92}}
+.depbox{{display:flex;flex-wrap:wrap;gap:.2rem .6rem;align-items:baseline;margin:.4rem 0 0;
+      padding:.35rem .6rem;border-radius:2px;font-size:.78rem;background:var(--line-2)}}
+.depbox b{{font-family:var(--sans);font-size:.62rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.07em;border-radius:2px;padding:.05rem .35rem;color:var(--ground)}}
+.depbox span{{font-family:var(--serif);color:var(--ink-2)}}
+.depbox.d-kill b{{background:var(--problem)}} .depbox.d-part b{{background:var(--pending)}}
+.depbox.d-block b{{background:var(--ink-3)}} .depbox.d-live b{{background:var(--measured)}}
 .dot{{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;margin-left:.4rem;
       vertical-align:.05em}}
 .dot.s-high,.dot.s-crit{{background:var(--problem)}}
@@ -1120,6 +1285,44 @@ def self_test() -> int:
          and waiting_on("S (decision) + S (impl)")[0] == "decision"
          and waiting_on("M (study)")[0] == "study"
          and waiting_on("XS")[0] == "work")
+
+    # ── the dependency graph ────────────────────────────────────────────────────────────────────
+    R = {"root-a": {"label": "A", "detail": "d"}}
+    case("a clean graph produces no errors",
+         lambda: depends_errors({1: ("survives", "root-a", "")}, R, {1}) == [])
+    case("an unknown relation is refused",
+         lambda: "unknown relation" in " ".join(
+             depends_errors({1: ("vanishes", "root-a", "")}, R, {1})))
+    case("a dependency on a CLOSED item is refused",
+         lambda: "not an open item" in " ".join(
+             depends_errors({1: ("blocked-by", "7", "")}, R, {1})))
+    case("a dependency ON a closed item is refused even with a valid relation",
+         lambda: depends_errors({1: ("blocked-by", "2", "")}, R, {1, 2}) == [])
+    case("an item that is not open cannot carry a dependency",
+         lambda: "not an open item" in " ".join(
+             depends_errors({9: ("survives", "root-a", "")}, R, {1})))
+    # ⭐ The trap that made named roots necessary. #52 says "blocked on unparking blob addressing
+    # (task #47)" — TASK 47, while BACKLOG 47 is the knowledge graph. A bare number would have
+    # silently recorded an edge to the wrong item; an unknown root name cannot.
+    case("an unknown root NAME is refused rather than guessed",
+         lambda: "not in ROOTS" in " ".join(
+             depends_errors({1: ("survives", "task-47", "")}, R, {1})))
+    case("self-dependency is refused",
+         lambda: "depends on itself" in " ".join(
+             depends_errors({1: ("blocked-by", "1", "")}, R, {1})))
+    case("a two-item cycle is caught",
+         lambda: "cycle" in " ".join(depends_errors(
+             {1: ("blocked-by", "2", ""), 2: ("blocked-by", "1", "")}, R, {1, 2})))
+    case("dep_rank puts un-blocked work before work the root deletes",
+         lambda: dep_rank(19) < dep_rank(17) < dep_rank(52) < dep_rank(20))
+    case("an item with no dependency sorts first of all",
+         lambda: dep_rank(999) == 0 and dep_rank(999) < dep_rank(19))
+    # ⭐ measures the SHIPPED graph, not a fixture — same posture as the GROUPS coverage case
+    case("DEPENDS is coherent against the REAL backlog", lambda: depends_errors(
+        DEPENDS, ROOTS,
+        {r["num"] for r in parse(BACKLOG.read_text().splitlines()) if not r["closed"]}) == [])
+    case("every relation used by DEPENDS is defined",
+         lambda: all(rel in RELATIONS for rel, _, _ in DEPENDS.values()))
 
     # ── change history ──────────────────────────────────────────────────────────────────────────
     V = [("a", 100, "| 1 | alpha |\n| 2 | beta |"),
