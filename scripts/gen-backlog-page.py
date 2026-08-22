@@ -387,6 +387,93 @@ def depends_errors(depends: dict, roots: dict, open_nums: set[int]) -> list[str]
     return sorted(set(errors))
 
 
+def dependency_svg(by_num: dict) -> str:
+    """The dependency graph as INLINE SVG, laid out from DEPENDS so it cannot disagree with the
+    markers beside each item.
+
+    WHY NOT MERMAID HERE. Mermaid needs a renderer, and this page inherits the explain-diff rule —
+    self-contained, no CDN, still readable in five years. Vendoring mermaid would put ~1MB of
+    library into a 419KB page to draw seven nodes. The mermaid SOURCE is emitted below the diagram
+    instead, because that is the part worth having: it renders wherever mermaid already works —
+    GitHub, an ADR, a PR body — as `docs/superpowers/specs/2026-08-10-serve-path-deadline-design.md`
+    already does."""
+    ROW, PAD, RX, RW, IX, IW = 46, 26, 14, 200, 392, 290
+    out = []
+    for rk, root in ROOTS.items():
+        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk),
+                      key=lambda n: (dep_rank(n), n))
+        if not kids:
+            continue
+        h = max(140, len(kids) * ROW + PAD * 2)
+        mid = h / 2
+        rows = []
+        for i, n in enumerate(kids):
+            rel = DEPENDS[n][0]
+            lbl, _why, css, _ = RELATIONS[rel]
+            y = PAD + i * ROW + ROW / 2
+            # Strip markdown before it reaches an SVG label too — `transferClassA` in #19's title
+            # rendered its backticks literally. Truncate to what the box can actually hold: 290px
+            # of box minus the 52px id gutter, at ~6.2px per character.
+            clean = re.sub(r"[*`]", "", by_num[n]["title"])
+            title = html.escape(clean[:36] + ("…" if len(clean) > 36 else ""))
+            # a cubic from the root's right edge to the item's left edge; flat when aligned
+            rows.append(
+                f'<path class="e e-{css}" d="M{RX+RW} {mid} C{RX+RW+70} {mid}, {IX-70} {y}, {IX} {y}"/>'
+                # label sits just LEFT of its own node, right-aligned — one per row. Placed at the
+                # curve midpoint they collided into an unreadable stack, all six within ~40px.
+                # y-16, not y-6: at y-6 the incoming curve passed straight through the text
+                # and "DELETED BY" read as struck through. Above the box top, the row is clear.
+                f'<text class="elabel e-{css}" x="{IX-10}" y="{y-16}" '
+                f'text-anchor="end">{lbl}</text>'
+                f'<a href="#i{n}"><rect class="n n-{css}" x="{IX}" y="{y-15}" width="{IW}" '
+                f'height="30" rx="3"/>'
+                f'<text class="nid" x="{IX+12}" y="{y+4}">#{n}</text>'
+                f'<text class="ntitle" x="{IX+52}" y="{y+4}">{title}</text></a>')
+        out.append(
+            f'<figure class="depmap"><svg viewBox="0 0 {IX+IW+12} {h}" role="img" '
+            f'aria-label="Dependency map: {html.escape(root["label"])} and the {len(kids)} items it '
+            f'governs"><rect class="n n-root" x="{RX}" y="{mid-26}" width="{RW}" height="52" '
+            f'rx="3"/><text class="rootlbl" x="{RX+RW/2}" y="{mid-4}" text-anchor="middle">'
+            f'{html.escape(root["label"])}</text>'
+            f'<text class="rootsub" x="{RX+RW/2}" y="{mid+14}" text-anchor="middle">'
+            f'start here · parked</text>' + "".join(rows) + '</svg>'
+            f'<figcaption>Arrows read <em>root → item</em>: what the addressing slice does to each '
+            f'item if it lands. Click a box to jump to the entry.</figcaption></figure>')
+    return "".join(out)
+
+
+def dependency_mermaid(by_num: dict) -> str:
+    """The same graph as mermaid source, for pasting where mermaid renders.
+
+    ⚠ NOT RENDERED HERE — mermaid is not installed and this page cannot fetch it, so this string is
+    emitted from the same data as the SVG above but its rendering is unverified. `#` is kept out of
+    node labels on purpose: mermaid reads `#nnn;` as an entity, and a label is not worth the risk."""
+    lines = ["flowchart LR"]
+    for rk, root in ROOTS.items():
+        kids = sorted((n for n, (_, r, _) in DEPENDS.items() if r == rk),
+                      key=lambda n: (dep_rank(n), n))
+        if not kids:
+            continue
+        rid = re.sub(r"[^a-zA-Z0-9]", "_", rk)
+        lines.append(f'  {rid}(["{root["label"]} — start here"])')
+        for n in kids:
+            rel = DEPENDS[n][0]
+            # Strip markdown before it reaches a mermaid label: a backtick opens a markdown-string
+            # in mermaid, and `transferClassA` in #19's title leaked one through. Quotes too.
+            raw = re.sub(r"[*`]", "", by_num[n]["title"]).replace('"', "'")
+            title = raw[:44] + ("…" if len(raw) > 44 else "")
+            lines.append(f'  {rid} -->|{RELATIONS[rel][0]}| item{n}["item {n} · {title}"]')
+        for n in kids:
+            lines.append(f'  class item{n} {DEPENDS[n][0].replace("-", "_")};')
+    lines += [
+        "  classDef survives fill:#0f7268,stroke:#0f7268,color:#fff;",
+        "  classDef partly_dissolved_by fill:#a8690b,stroke:#a8690b,color:#fff;",
+        "  classDef blocked_by fill:#6b7686,stroke:#6b7686,color:#fff;",
+        "  classDef dissolved_by fill:#ad3a22,stroke:#ad3a22,color:#fff;",
+    ]
+    return "\n".join(lines)
+
+
 def dep_rank(num: int) -> int:
     """Sort key inside a group: no dependency first, then survives, …, deleted-by last. The whole
     point of the ordering is that what may evaporate sinks below what has to be done regardless."""
@@ -730,6 +817,13 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
                         f'<p class="framing">{framing}</p>{starthere}{qa}'
                         f'<div class="tw"><table class="glist"><tbody>{trs}</tbody></table></div>'
                         f'</section>')
+    depmap = (dependency_svg(by_num) +
+              '<details class="mmd"><summary>the same graph as mermaid source</summary>'
+              '<p>For pasting where mermaid already renders — GitHub, an ADR, a PR body. This page '
+              'draws its own diagram instead: it may not fetch a renderer, and vendoring one would '
+              'add about a megabyte to draw seven nodes.</p>'
+              f'<pre><code>{html.escape(dependency_mermaid(by_num))}</code></pre></details>')
+
     gates = {k: sum(1 for n in gate_of if gate_of[n] == k)
              for k in ("design", "decision", "study", "work")}
 
@@ -847,6 +941,37 @@ table.glist td{{font-size:.92rem;line-height:1.5}}
 table.glist td:first-child{{width:4.6rem}}
 table.glist td:nth-child(2){{font-family:var(--serif);color:var(--ink-2)}}
 table.glist tr:hover td{{background:var(--panel)}}
+.mapo{{font-family:var(--serif);font-size:1.18rem;font-weight:400;margin:2rem 0 .35rem}}
+.depmap{{margin:0 0 .8rem;max-width:46rem}}
+.depmap svg{{width:100%;height:auto;display:block}}
+.depmap .n{{fill:var(--panel);stroke:var(--line);stroke-width:1}}
+.depmap .n-root{{fill:var(--panel);stroke:var(--structural);stroke-width:2}}
+.depmap .n-kill{{stroke:var(--problem)}} .depmap .n-part{{stroke:var(--pending)}}
+.depmap .n-block{{stroke:var(--ink-3)}} .depmap .n-live{{stroke:var(--measured)}}
+.depmap .e{{fill:none;stroke-width:1.5;opacity:.85}}
+.depmap .e-kill{{stroke:var(--problem);stroke-dasharray:4 3}}
+.depmap .e-part{{stroke:var(--pending);stroke-dasharray:6 3}}
+.depmap .e-block{{stroke:var(--ink-3);stroke-dasharray:2 3}}
+.depmap .e-live{{stroke:var(--measured)}}
+.depmap .elabel{{font-family:var(--sans);font-size:9.5px;letter-spacing:.04em;
+     text-transform:uppercase;fill:var(--ink-3)}}
+.depmap .elabel.e-kill{{fill:var(--problem)}} .depmap .elabel.e-part{{fill:var(--pending)}}
+.depmap .elabel.e-live{{fill:var(--measured)}}
+.depmap .nid{{font-family:var(--mono);font-size:11px;fill:var(--ink-3)}}
+.depmap .ntitle{{font-family:var(--sans);font-size:11.5px;fill:var(--ink)}}
+.depmap .rootlbl{{font-family:var(--serif);font-size:13px;fill:var(--ink);font-weight:600}}
+.depmap .rootsub{{font-family:var(--sans);font-size:9px;fill:var(--structural);
+     text-transform:uppercase;letter-spacing:.09em}}
+.depmap a{{cursor:pointer}} .depmap a:hover .n{{fill:var(--line-2)}}
+.depmap figcaption{{font-family:var(--serif);font-size:.82rem;color:var(--ink-3);margin-top:.4rem}}
+.mmd{{margin:0 0 1.4rem;max-width:46rem}}
+.mmd > summary{{font-size:.76rem;color:var(--ink-3);cursor:pointer;list-style:none;
+     border-bottom:1px dashed var(--line);display:inline-block}}
+.mmd > summary::-webkit-details-marker{{display:none}}
+.mmd p{{font-family:var(--serif);font-size:.85rem;color:var(--ink-2);margin:.5rem 0}}
+.mmd pre{{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:2px;
+     padding:.7rem .85rem;font-family:var(--mono);font-size:.72rem;line-height:1.5;
+     white-space:pre;color:var(--ink-2)}}
 .root{{background:var(--panel);border:1px solid var(--structural);border-left-width:3px;
       border-radius:2px;padding:.6rem .85rem;margin:0 0 .8rem;max-width:46rem}}
 .rootline{{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}}
@@ -1025,6 +1150,13 @@ truth, which is why it is reproduced verbatim inside every card.</p>
 part of the page written by hand — but it refuses to build if the groups do not cover every open
 item exactly once, so an item can be described badly here and still never go missing. Each number
 opens its full entry below.</p>
+
+<h3 class="mapo">The order to start in</h3>
+<p class="framing">Every dependency recorded, drawn from the same data as the markers beside each
+item. A root is not always a backlog row — the one below is a parked decision, which is why it
+could not be expressed by pointing at an item number.</p>
+{depmap}
+
 {groups_html}
 
 <h2>Every row, as filed</h2>
@@ -1350,6 +1482,22 @@ def self_test() -> int:
     # if the walk collapsed them the page would silently report nothing has ever changed.
     case("first and last are NOT the same field",
          lambda: h[2]["first"] == 100 and h[2]["last"] == 200)
+
+    # ── the mermaid export ──────────────────────────────────────────────────────────────────────
+    _rows = {r["num"]: r for r in parse(BACKLOG.read_text().splitlines())}
+    _mmd = dependency_mermaid(_rows)
+    case("mermaid export declares a flowchart", lambda: _mmd.startswith("flowchart LR"))
+    case("mermaid has one edge per dependency",
+         lambda: _mmd.count("-->") == len(DEPENDS))
+    # ⚠ a backtick opens a markdown-string in mermaid; #19's title contains one
+    case("no markdown survives into a mermaid label",
+         lambda: all(c not in _mmd.split("classDef")[0] for c in "`*"))
+    case("no unescaped quote can close a mermaid label early",
+         lambda: all(ln.count('"') % 2 == 0 for ln in _mmd.splitlines()))
+    case("every mermaid node id is a bare identifier",
+         lambda: all(re.match(r"^\s+\w+", ln) for ln in _mmd.splitlines()[1:] if ln.strip()))
+    case("the svg and the mermaid describe the SAME edge count",
+         lambda: dependency_svg(_rows).count('class="e e-') == _mmd.count("-->"))
 
     case("word_diff marks a deletion and an insertion",
          lambda: "<del>old</del>" in word_diff("the old text", "the new text")
