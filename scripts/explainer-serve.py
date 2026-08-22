@@ -26,8 +26,27 @@ THE ONE-CLICK URL
 -----------------
     http://127.0.0.1:7391/latest
 
-Redirects to the most recently modified explainer. Bookmark it once; it always points at the newest
-one, so no filename ever has to be copied again. `/` lists them all, newest first.
+Redirects to the most recently modified DATED explainer. Bookmark it once; it always points at the
+newest one, so no filename ever has to be copied again. `/` lists them all, newest first.
+
+STANDING PAGES — a fixed url for a page that is rewritten, not re-created
+------------------------------------------------------------------------
+    http://127.0.0.1:7391/backlog-table        ← scripts/gen-backlog-page.py
+
+Some pages are not a snapshot of a moment but a live view of something in the repo, regenerated in
+place. They are recognised by their filename carrying NO date, and they get two things:
+
+  * an extensionless url — `/backlog-table` serves `backlog-table.html` (one rule, not a route per
+    page, and it goes through the same `safe_path`, so it can reach nothing new);
+  * exclusion from `/latest`. This is the load-bearing half. A standing page is rewritten whenever
+    its source changes, so it is almost always the newest file on disk — and without this rule
+    regenerating it would silently steal the bookmark that is meant to point at the newest brief.
+
+They still appear on `/`, and the injected live-reload client still refreshes an open tab when the
+file is rewritten — so regenerating the backlog view updates a tab someone is already reading.
+
+ONE PORT, NOT TWO. A second server for standing pages would be a second process to remember to
+start, and a reboot already stops this one. The paths do not collide.
 
 SECURITY, DELIBERATE AND NARROW
 -------------------------------
@@ -44,7 +63,7 @@ USAGE
     python3 scripts/explainer-serve.py            # start (no-op if already running)
     python3 scripts/explainer-serve.py --status
     python3 scripts/explainer-serve.py --stop
-    python3 scripts/explainer-serve.py --self-test   # 20 cases, binds no port
+    python3 scripts/explainer-serve.py --self-test   # 47 cases, binds no port
 
 NOT a ratchet, and deliberately not claiming to be. An earlier draft of this docstring said it was
 "a ratchet in the sense scripts/check-ratchet-contract.py means" — which was FALSE: that script
@@ -61,6 +80,7 @@ import http.server
 import json
 import os
 import pathlib
+import re
 import signal
 import socket
 import sys
@@ -104,10 +124,44 @@ def explainers(root: pathlib.Path) -> list[pathlib.Path]:
                   key=lambda p: p.stat().st_mtime, reverse=True)
 
 
+# A STANDING page is one whose filename carries no date: `backlog-table.html`, not
+# `2026-08-21-brief-….html`. It has a fixed URL and is rewritten in place whenever its source
+# changes, so it is always the newest file on disk — which is exactly why it must be kept OUT of
+# /latest. Without this, regenerating the backlog view silently steals the bookmark that is supposed
+# to point at the newest brief, and the reader finds out by opening it.
+DATED = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
+
+def is_standing(p: pathlib.Path) -> bool:
+    return not DATED.match(p.name)
+
+
 def latest_target(root: pathlib.Path) -> str | None:
-    """The URL path /latest should redirect to, or None when there is nothing to serve."""
-    found = explainers(root)
+    """The URL path /latest should redirect to, or None when there is nothing to serve.
+
+    Dated pages only — see DATED above."""
+    found = [p for p in explainers(root) if not is_standing(p)]
     return "/" + urllib.parse.quote(found[0].name) if found else None
+
+
+def resolve_page(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
+    """The file a GET should serve, or None. `safe_path` first; then, for an EXTENSIONLESS path,
+    the same name with `.html` — so `/backlog-table` serves `backlog-table.html`.
+
+    One rule, not a route per page: a new standing page needs no change here. Both attempts go
+    through `safe_path`, so the fallback cannot reach anything the direct path could not.
+
+    Existence is checked HERE, unlike in `safe_path`, whose job is containment only. Returning a
+    path to a file that is not there would make `/anything` look resolvable and push the real
+    decision onto every caller."""
+    hit = safe_path(url_path, root)
+    if hit is not None and hit.is_file():
+        return hit
+    bare = url_path.split("?", 1)[0].split("#", 1)[0]
+    if "." in bare.rsplit("/", 1)[-1]:
+        return None                      # it HAD an extension; the fallback is not a second chance
+    alt = safe_path(bare + ".html", root)
+    return alt if alt is not None and alt.is_file() else None
 
 
 def index_html(root: pathlib.Path) -> str:
@@ -196,6 +250,30 @@ def pid_alive(pid: int | None) -> bool:
         return True
     except OSError:
         return False
+
+
+SERVE_LOG = ".serve.log"        # inside ROOT, and deliberately not a servable extension
+
+
+def detach_streams() -> None:
+    """Give the daemon its own stdio, so it can never be wedged by the pipe it was born on.
+
+    ⚠ MEASURED 2026-08-21, three times in a row. `os.fork()` leaves the child holding whatever
+    stdout the parent had. Started from a tool that pipes stdout and then stops reading, the child
+    survives, keeps LISTENING — so `port_busy()` returns True and `--status` reports it healthy —
+    and then blocks forever on the first request, because `BaseHTTPRequestHandler.log_message`
+    writes an access line before the response. Every probe returned an empty reply against a socket
+    that was demonstrably bound.
+
+    That is the fail-open shape this repo keeps meeting: the instrument that reports health was
+    reading a proxy (is the port bound?) rather than the thing claimed (does it answer?). Rather
+    than teach `--status` to make a real request, remove the failure — a daemon has no business
+    holding its parent's pipe."""
+    log = os.open(str(ROOT / SERVE_LOG), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    null = os.open(os.devnull, os.O_RDONLY)
+    os.dup2(null, 0)
+    os.dup2(log, 1)
+    os.dup2(log, 2)
 
 
 def port_busy(host: str, port: int) -> bool:
@@ -312,7 +390,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if target is None or not target.is_file():
                 return self._send(404, b"no such page", "text/plain; charset=utf-8")
             return self._send(200, revision(target).encode(), "text/plain; charset=utf-8")
-        resolved = safe_path(path, ROOT)
+        resolved = resolve_page(path, ROOT)
         if resolved is None or not resolved.is_file():
             return self._send(404, b"not found", "text/plain; charset=utf-8")
         ctype = {".html": "text/html; charset=utf-8", ".md": "text/markdown; charset=utf-8",
@@ -376,6 +454,7 @@ def start() -> int:
         print(f"  questions:  {QUESTIONS}")
         return 0
     os.setsid()
+    detach_streams()
     with http.server.ThreadingHTTPServer((HOST, PORT), Handler) as httpd:
         httpd.serve_forever()
     return 0
@@ -437,8 +516,54 @@ def _self_test() -> int:
 
         # newest-first, which is the whole point of /latest
         case("orders newest first", lambda: [p.name for p in explainers(root)] == ["b.html", "a.html"])
-        case("/latest points at the newest", lambda: latest_target(root) == "/b.html")
+        # ⟲ 2026-08-21: this case used to read `latest_target(root) == "/b.html"`, and it broke the
+        # moment /latest learned to skip undated pages — `a.html`/`b.html` are undated, so BOTH are
+        # standing. The old assertion is now covered, with real dated names, by the ⭐ case below;
+        # what this one now pins is the other half of the same rule.
+        case("/latest ignores a directory of undated pages entirely",
+             lambda: latest_target(root) is None)
         case("index lists both", lambda: "a.html" in index_html(root) and "b.html" in index_html(root))
+
+        # STANDING pages: a fixed URL that must not disturb /latest. `a.html` and `b.html` above are
+        # themselves undated, so name the dated ones explicitly rather than relying on those.
+        dated = root / "dated"
+        dated.mkdir()
+        (dated / "2026-08-20-brief-old.html").write_text("old")
+        (dated / "2026-08-21-brief-new.html").write_text("new")
+        (dated / "backlog-table.html").write_text("standing")
+        os.utime(dated / "2026-08-20-brief-old.html", (1, 1))
+        os.utime(dated / "2026-08-21-brief-new.html", (2, 2))
+        os.utime(dated / "backlog-table.html", (9_000_000, 9_000_000))   # NEWEST on disk
+        case("a dated filename is not standing",
+             lambda: not is_standing(dated / "2026-08-21-brief-new.html"))
+        case("an undated filename is standing", lambda: is_standing(dated / "backlog-table.html"))
+        case("⭐ regenerating a standing page does NOT steal /latest",
+             lambda: latest_target(dated) == "/2026-08-21-brief-new.html")
+        case("a standing page is still listed on the index",
+             lambda: "backlog-table.html" in index_html(dated))
+        case("⭐ /backlog-table resolves to backlog-table.html",
+             lambda: resolve_page("/backlog-table", dated) == (dated / "backlog-table.html").resolve())
+        case("an extensionless path for a file that does not exist is None",
+             lambda: resolve_page("/no-such-page", dated) is None)
+        case("the .html form still works directly",
+             lambda: resolve_page("/backlog-table.html", dated) == (dated / "backlog-table.html").resolve())
+        case("the fallback does NOT rescue a rejected extension",
+             lambda: resolve_page("/secret.env", root) is None)
+        case("the fallback cannot be used to traverse",
+             lambda: resolve_page("/../../etc/hosts", dated) is None)
+
+        # the daemon's own log lives in ROOT and must never be reachable over http
+        (root / SERVE_LOG).write_text("access lines")
+        case("the daemon's log is inside ROOT but NOT servable",
+             lambda: (root / SERVE_LOG).is_file() and safe_path("/" + SERVE_LOG, root) is None)
+        case("the daemon's log is not mistaken for an explainer",
+             lambda: SERVE_LOG not in [p.name for p in explainers(root)])
+
+        standing_only = root / "standing"
+        standing_only.mkdir()
+        (standing_only / "backlog-table.html").write_text("s")
+        case("/latest is None when only standing pages exist",
+             lambda: latest_target(standing_only) is None)
 
         empty = root / "empty"
         empty.mkdir()

@@ -3,6 +3,13 @@
 Triaged feedback for enhancing the current version. Captured 2026-06-19.
 Sequence/bundles below; `#8` is explicitly **someday** (vision, not near-term).
 
+> **Reading this as a list rather than a document:** `python3 scripts/gen-backlog-page.py` renders
+> every row below as a filterable page at **http://127.0.0.1:7391/backlog-table** (serve it with
+> `python3 scripts/explainer-serve.py`). It opens with the open items grouped in plain English by
+> *what they are* — which is the one thing this table cannot show, because severity ordering splits
+> the six items that are all the same root cause. Counts there are derived from this file on every
+> run, never from memory, and the grouping fails loudly rather than quietly omitting a new item.
+
 ## Items
 
 > **Severity markers — read this before scanning for red.** A leading 🔴/🟠/🟡/🟢 records severity
