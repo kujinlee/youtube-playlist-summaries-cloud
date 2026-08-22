@@ -451,6 +451,115 @@ with verbatim quotes, recorded decisions, each task's RED expectation. Put the c
 branch that compiles. If a snippet must live inline, it is quoted current code plus the change, and
 the elisions are **marked and counted** — an unmarked `…` hides exactly the line the reader needs.
 
+## 14. Running the artifact is half of it — the rendered result needs ASSERTIONS, not a look
+
+> **§9 got you a page you can execute. This is the next failure: you execute it, you look at it, and
+> you still ship the defect — because "looks fine" is a judgement the author makes once, and the
+> generator repeats it forever.**
+
+**Measured 2026-08-21/22, on a generated HTML page rebuilt on every edit to its source.** The
+`http://127.0.0.1` server from §9 was already in place, so the page *was* driven in a real browser
+and screenshotted repeatedly. Nine rendering defects shipped anyway across the PRs that built it
+(`gh pr view 131 --json commits`, plus its two predecessors) — and **five of them were reported by
+the reader**, after screenshots the author had already looked at:
+
+| found by | defect |
+|---|---|
+| reader | input text at **2.28:1** against its own background — a palette shim resolving `var(--x, fallback)` to a static value for the *other* theme, because the page never defined `--x` |
+| reader | a summary table 2,533px tall, pushing the actual content two screens down |
+| reader | one column truncated mid-sentence while its neighbour collapsed to a word per line |
+| reader | a heading leaking two adjacent spans into every question sent from it |
+| reader | the same statement rendered twice on one page |
+| author, by driving it | six edge labels stacked illegibly; a title overflowing its box; markdown rendered literally; a connector striking through its own label |
+
+**The author's four were found by driving the page. The reader's five were found by *using* it.**
+Screenshotting is not a substitute for either — the whole point is that a screenshot was taken and
+the defect was in it.
+
+### The rule
+
+> **Every visual complaint becomes an observation that can fail. A judgement you make once about a
+> generated artifact must become an assertion, or the generator will reproduce it.**
+
+Four of the nine translate directly, and cheaply:
+
+| complaint | assertion |
+|---|---|
+| "the labels collide" | count intersecting `getBoundingClientRect()` pairs; expect 0 |
+| "the text overflows its box" | child's right edge vs parent's; expect inside |
+| "that line is struck through" | `elementFromPoint` at the label's centre; expect not a `path` |
+| "this appears twice" | `built_page.count(statement) == 1` |
+
+### The bound, which is the part worth copying
+
+**Only the last one persisted here, and that is the honest state of it.** `grep -c
+'elementFromPoint\|getBoundingClientRect' scripts/gen-backlog-page.py` → **0**. The three geometry
+checks were live console probes: they verified one build and will never run again, because the
+generator's self-test is Python and cannot render. The duplication check survived only because it is
+a **string count over the built output**, which needs no browser.
+
+> **A probe run once is verification. An assertion that persists is a regression net. Do not report
+> the first as if it were the second** — a rendered artifact regenerated on every source change is
+> precisely where a one-off check decays to nothing.
+
+Structural properties (counts, presence, links resolving) can be asserted with no browser at all and
+should be, immediately. Geometry needs a headless browser in the test suite; if that is not worth
+building, say so — do not let the console probe stand in for it.
+
+---
+
+## 15. Hand-written prose inside a generated document is fine — if its COMPLETENESS is mechanical
+
+> **The prose may be wrong. Its coverage may not be.** Interpretation is often the most valuable
+> content in a generated artifact; the failure mode is not that it is badly worded, it is that it
+> silently stops covering the data it summarises.
+
+**Measured 2026-08-21/22.** A generated page rendered 55 records, 41 of them open, and its most
+useful section was hand-written: one plain-English line per open record, grouped by what each *is*
+rather than by its severity marker — because severity ordering hid the fact that six of the
+high-severity records were one problem wearing six numbers. That grouping is interpretation. Nothing
+can check that it is *right*.
+
+What can be checked is that it is *complete*, and that turns out to be the property that matters:
+
+```
+coverage_errors(GROUPS, open_ids)  →  ['open items missing from GROUPS: [99]']
+```
+
+The build **refuses to write the page** unless the hand-written groups cover the derived set exactly
+once — no missing record, no record that has since closed, no duplicate. Filing a new record makes
+the generator fail until someone writes a line for it. That is the intended cost: **a loud stop
+beats a quiet omission**, in a document whose entire job is to answer *"what is left?"*.
+
+The same contract was applied a second time, to a hand-written dependency graph: unknown relation,
+unknown root, dependency on a closed record, self-dependency and cycles are all refusals.
+
+### Prove the check is not vacuous, in both directions
+
+A completeness check is itself prose until something makes it fail. Mutating the generator in place:
+
+```
+statement DELETED     → FAIL … appears exactly once   54/55
+statement DUPLICATED  → FAIL … appears exactly once   54/55
+restored                                              55/55
+```
+
+**The `== 1` form caught a defect in each direction within one edit of the other.** A reader reported
+a statement rendered twice; removing the duplicate deleted the statement *entirely*, and the check
+caught that on the next run. A convention — *"don't repeat yourself"* — would have read as satisfied
+by the empty page. This is §3 (*a gate states the observation that would make it FAIL*) applied to a
+document rather than a deploy.
+
+### What NOT to do
+
+Do not try to derive the interpretation. A regex sweep for dependency vocabulary over the same 55
+records returned **13 hits, about half of them false** — *"fold into any markdown-touching bundle"*
+is a batching hint, *"fold into path syntax"* is about characters, *"superseded"* was about storage
+generations. **A derived relation that is wrong is worse than none**, because it is asserted with the
+authority of a script. Hand-write the interpretation; mechanise only the coverage.
+
+---
+
 ## Not yet mined
 
 **Re-enumerated 2026-08-13** (counted, not recalled): **61 memory files**, **633 review documents**,
@@ -462,6 +571,16 @@ it — most will fail filter 2, which is the correct outcome, not a disappointin
 
 **Do this in a session with fresh context.** Doing it at the end of a long one is precisely the
 condition under which recollection substitutes for reading.
+
+### Named candidates, with their evidence status
+
+A candidate listed here has *not* passed the two filters. It is parked because its evidence is not
+currently re-derivable by command, which is the same standard §14 and §15 were held to.
+
+| candidate | evidence status | what would qualify it |
+|---|---|---|
+| **Do not infer a property the source already states.** A flag meaning *"this row's status says the work landed but carries no ✅"* was derived by pattern-match and fired on **three rows that were all genuinely open** — each merely *described* a wrong closure. It was replaced by reading the ⚠ the source file already writes by hand. | ⚠ **Weak — recall-dependent.** The heuristic was deleted in the same session; the only surviving record is a comment in `scripts/gen-backlog-page.py` (`parse()`). No command reproduces the false positives. | Recover the three row ids and the exact predicate from PR #128's diff, then state it as an instance of §1 (*a script beats a claim only when it reads the thing the claim is about*) rather than a section of its own. |
+| **A dependency field restricted to item ids cannot name a root that is not an item.** The root of a six-item cluster was a parked ADR, not a row; and one existing reference, `blocked on … (task #47)`, pointed at a *task* id while a same-numbered *backlog* id existed and was unrelated. | ⚠ **Partial.** The design and its self-test survive in `scripts/gen-backlog-page.py` (`ROOTS`, `depends_errors`); the ambiguous reference is quotable from `docs/backlog.md`. Not yet shown to generalise beyond one tracker. | A second instance from a different tracker or repo. Until then it is an instance of the identifier-stability problem, not a practice. |
 
 ---
 
