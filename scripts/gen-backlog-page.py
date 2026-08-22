@@ -169,6 +169,9 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (49, "A checker that resolves every <code>file:line</code> a spec cites — eight were wrong "
              "in a single document."),
         (50, "Refine the <code>/brief</code> skill — the page this one is a sibling of."),
+        (56, "Render the launch roadmap as a standing page like this one, deriving its ticks from "
+             "git rather than trusting them, so “where are we overall” stops being a hand "
+             "reconciliation."),
      ]),
     ("Process, tooling and bookkeeping",
      "Instruments and habits. Cheap individually; they are what stops the expensive items above "
