@@ -227,6 +227,76 @@ def md(text: str) -> str:
     return out
 
 
+# ─── change history, read out of git rather than tracked separately ─────────────────────────────
+#
+# WHY GIT AND NOT A SNAPSHOT FILE. "What changed since I last looked?" needs a BEFORE. The obvious
+# implementation writes a copy of the backlog beside the page and diffs against it — a second
+# record of the same facts, which can drift from the first and has no answer for "changed when".
+# `docs/backlog.md` has been version-controlled since 2026-06-20; every edit is already recorded,
+# with a timestamp. Reading that history cannot disagree with the file, because it IS the file.
+#
+# MEASURED: 55 versions, ~1,930 row-instances, 1.0 s for the whole walk.
+#
+# A row is matched by its ITEM NUMBER and compared as raw text. Deliberately looser than `parse` —
+# older versions of the file have a different column layout, and a history walk that refused to
+# read them would report "no history" for the very items that have been around longest.
+ROW = re.compile(r"^\|\s*(\d+)\s*\|(.*)$")
+
+
+def rows_of(text: str) -> dict[int, str]:
+    """Item number → its row's raw text, for one version of the file."""
+    out = {}
+    for line in text.splitlines():
+        m = ROW.match(line)
+        if m:
+            out[int(m.group(1))] = m.group(2).rstrip()
+    return out
+
+
+def changes_from_versions(versions: Sequence[tuple[str, int, str]]) -> dict[int, dict]:
+    """PURE. Versions OLDEST FIRST as (sha, unix_ts, file_text) → per item:
+
+        first   when the item first appeared
+        last    when its row last differed from the version before it
+        sha     the commit that change landed in
+        prev    the row's text immediately BEFORE that change, or None if it never changed
+
+    An item that vanishes and returns is treated as new again — rare, and "new again" is the more
+    useful reading of a re-filed number than a silent join across the gap."""
+    hist: dict[int, dict] = {}
+    prev_version: dict[int, str] = {}
+    for sha, ts, text in versions:
+        cur = rows_of(text)
+        for num, text_now in cur.items():
+            if num not in prev_version:
+                hist[num] = dict(first=ts, last=ts, sha=sha, prev=None)
+            elif prev_version[num] != text_now:
+                h = hist.setdefault(num, dict(first=ts, last=ts, sha=sha, prev=None))
+                h.update(last=ts, sha=sha, prev=prev_version[num])
+        prev_version = cur
+    return hist
+
+
+def word_diff(before: str, after: str) -> str:
+    """Word-level diff as HTML — deletions struck through, insertions marked.
+
+    Diffs the PLAIN text, not the markdown. Diffing the source and then converting would splice
+    `<del>` through the middle of an emphasis run and produce broken tags; the diff view trades
+    formatting for correctness, which is the right way round for something read only when someone
+    already wants the detail."""
+    import difflib
+    a, b = re.sub(r"[*`]", "", before).split(), re.sub(r"[*`]", "", after).split()
+    out = []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag in ("delete", "replace"):
+            out.append("<del>" + html.escape(" ".join(a[i1:i2])) + "</del>")
+        if tag in ("insert", "replace"):
+            out.append("<ins>" + html.escape(" ".join(b[j1:j2])) + "</ins>")
+        if tag == "equal":
+            out.append(html.escape(" ".join(a[i1:i2])))
+    return " ".join(out)
+
+
 class ShapeError(Exception):
     """A row whose column count disagrees with its table's header. Raised, never skipped — the
     Status cell would be somewhere other than where this code thinks it is, and reading the wrong
@@ -276,6 +346,34 @@ def parse(lines: Sequence[str]) -> list[dict]:
     return rows
 
 
+def attach_history(rows: list[dict], working_text: str) -> None:
+    """Hang each row's change history off it, in place. Impure by design — it shells out to git.
+
+    THE WORKING COPY IS THE LAST VERSION. An edit that has not been committed is still a change the
+    reader wants to see; keying only off commits would show the page as unchanged immediately after
+    the edit that changed it, which is the exact staleness this feature exists to remove. It is
+    appended only when it actually differs from HEAD, so a clean tree produces no phantom entry."""
+    log = subprocess.run(["git", "-C", str(REPO), "log", "--format=%H %ct", "--",
+                          "docs/backlog.md"], capture_output=True, text=True)
+    entries = [ln.split() for ln in log.stdout.splitlines() if ln.strip()]
+    versions: list[tuple[str, int, str]] = []
+    for sha, ts in reversed(entries):                       # git logs newest first; walk forwards
+        blob = subprocess.run(["git", "-C", str(REPO), "show", f"{sha}:docs/backlog.md"],
+                              capture_output=True, text=True)
+        if blob.returncode == 0:
+            versions.append((sha, int(ts), blob.stdout))
+    if versions and versions[-1][2] != working_text:
+        versions.append(("working", int(BACKLOG.stat().st_mtime), working_text))
+
+    hist = changes_from_versions(versions)
+    live = rows_of(working_text)
+    for r in rows:
+        h = hist.get(r["num"])
+        # `raw` is the CURRENT row text, so the diff compares like with like — the same
+        # whole-row form `prev` was captured in, not the parsed-out body.
+        r["hist"] = dict(h, raw=live.get(r["num"], "")) if h else None
+
+
 def coverage_errors(groups: list, open_nums: set[int]) -> list[str]:
     """PURE. The grouping is prose; this is the part that cannot be wrong silently."""
     grouped = [n for _, _, items in groups for n, _ in items]
@@ -303,18 +401,46 @@ def card(r: dict) -> str:
         for lbl, val in (("was ", r["was"]), ("touches ", r["touches"]),
                          ("size ", r["size"]), ("bundle ", r["bundle"]))
         if val and val not in {"—", "-"})
+
+    h = r.get("hist")
+    # ⚠ VISIBLE, not silent. An item whose history could not be reconstructed — renumbered, or the
+    # table restructured under it — must say so. Rendering it as "unchanged" would be the same
+    # class of lie as a check that passes because it could not run.
+    if h is None:
+        stamp, attrs = '<span class="age unknown">history unavailable</span>', ' data-nohist="1"'
+    else:
+        stamp = (f'<span class="age" data-first="{h["first"]}" data-last="{h["last"]}">'
+                 f'{_ago(h["last"])}</span>')
+        attrs = f' data-first="{h["first"]}" data-changed="{h["last"]}"'
+
+    diff = ""
+    if h and h.get("prev") is not None:
+        diff = (f'<details class="diffbox"><summary>what changed in this entry</summary>'
+                f'<div class="diff">{word_diff(h["prev"], h["raw"])}</div></details>')
+
     return f"""
-<article class="item" data-sev="{sev}" data-state="{'closed' if r['closed'] else 'open'}" id="i{r['num']}">
+<article class="item" data-sev="{sev}" data-state="{'closed' if r['closed'] else 'open'}"{attrs} id="i{r['num']}">
   <div class="num"><a href="#i{r['num']}">#{r['num']}</a></div>
   <div class="body">
-    <h3>{md(r['title'])}{flag}</h3>
-    <div class="meta">{meta}</div>
+    <div class="titleline"><span class="badge" hidden></span><h3>{md(r['title'])}</h3>{flag}</div>
+    <div class="meta">{meta}{stamp}</div>
     <details><summary>the full entry, as filed</summary>
       <div class="prose">{md(r['body'])}</div>
       <div class="status"><b>Status cell</b>{md(r['status'])}</div>
+      {diff}
     </details>
   </div>
 </article>"""
+
+
+def _ago(ts: int, now: int | None = None) -> str:
+    """Human distance, computed at BUILD time. The page also recomputes nothing — a static page
+    that says "2 days ago" a week later is lying, so the absolute date rides along in the title."""
+    import datetime
+    when = datetime.datetime.fromtimestamp(ts)
+    days = (datetime.datetime.now() - when).days if now is None else (now - ts) // 86400
+    rel = "today" if days <= 0 else ("yesterday" if days == 1 else f"{days}d ago")
+    return f'<time datetime="{when:%Y-%m-%d}" title="{when:%Y-%m-%d %H:%M}">{rel}</time>'
 
 
 def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
@@ -456,6 +582,39 @@ button.f:hover{{border-color:var(--ink-3)}}
 button.f[aria-pressed="true"]{{background:var(--ink);color:var(--ground);border-color:var(--ink)}}
 button.f:focus-visible{{outline:2px solid var(--structural);outline-offset:2px}}
 
+.seen{{border:1px solid var(--line);border-left:3px solid var(--structural);border-radius:2px;
+       background:var(--panel);padding:.6rem .9rem;margin:0 0 .8rem}}
+.seenline{{display:flex;flex-wrap:wrap;gap:.5rem .9rem;align-items:center;font-size:.82rem}}
+.seenline b{{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3)}}
+#seencounts{{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}}
+.since{{margin-left:auto;font-size:.72rem;color:var(--ink-3);display:flex;gap:.35rem;
+        align-items:center}}
+.since select{{font:inherit;font-size:.78rem;background:var(--card);color:var(--ink);
+               border:1px solid var(--line);border-radius:2px;padding:.1rem .3rem}}
+button.f[disabled]{{opacity:.4;cursor:default}}
+.badge{{font-family:var(--sans);font-size:.6rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:.09em;border-radius:2px;padding:.1rem .35rem;flex:none;align-self:center;
+        color:var(--ground)}}
+.badge.b-new{{background:var(--structural)}}
+.badge.b-updated{{background:var(--pending)}}
+.badge.b-closed{{background:var(--measured)}}
+.item[data-fresh="1"]{{box-shadow:inset 3px 0 0 var(--structural)}}
+.age{{font-size:.7rem;color:var(--ink-faint);font-family:var(--mono);white-space:nowrap;
+      align-self:center}}
+.age.unknown{{color:var(--pending)}}
+.age time{{border-bottom:1px dotted var(--line);cursor:help}}
+.diffbox{{margin-top:.8rem;padding-top:.7rem;border-top:1px solid var(--line-2)}}
+.diff{{font-family:var(--serif);font-size:.9rem;line-height:1.7;color:var(--ink-3);margin-top:.6rem;
+       max-width:44rem}}
+.diff del{{background:rgba(173,58,34,.14);color:var(--problem);text-decoration:line-through;
+           text-decoration-thickness:1px;padding:.02rem .1rem;border-radius:2px}}
+.diff ins{{background:rgba(15,114,104,.14);color:var(--measured);text-decoration:none;
+           padding:.02rem .1rem;border-radius:2px}}
+@media (prefers-color-scheme:dark){{
+  .diff del{{background:rgba(240,131,106,.16)}} .diff ins{{background:rgba(79,201,184,.14)}}
+}}
+:root[data-theme="dark"] .diff del{{background:rgba(240,131,106,.16)}}
+:root[data-theme="dark"] .diff ins{{background:rgba(79,201,184,.14)}}
 .item{{display:flex;gap:.9rem;background:var(--card);border:1px solid var(--line);border-radius:2px;
        padding:.85rem 1rem;margin-bottom:.5rem;border-left:3px solid var(--line)}}
 .item[data-sev="crit"],.item[data-sev="high"]{{border-left-color:var(--problem)}}
@@ -467,11 +626,18 @@ button.f:focus-visible{{outline:2px solid var(--structural);outline-offset:2px}}
       font-variant-numeric:tabular-nums}}
 .num a{{color:inherit;text-decoration:none}} .num a:hover{{color:var(--ink)}}
 .body{{flex:1;min-width:0}}
-.item h3{{font-family:var(--sans);font-size:.98rem;font-weight:600;margin:0 0 .35rem;line-height:1.35}}
+/* The badge and the ⚠ flag are SIBLINGS of the h3, never children of it — the Ask tray reads a
+   heading by walking its childNodes and skipping only `.askbtn`, so anything else living inside
+   an h3 is silently prepended to the question the reader sends. That exact defect is recorded in
+   the explain-diff skill ("…had never workedask"); putting a badge in there would reintroduce it
+   under a new class name. */
+.titleline{{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.35rem}}
+.item h3{{font-family:var(--sans);font-size:.98rem;font-weight:600;margin:0;line-height:1.35;
+          flex:1;min-width:0}}
 .flag{{font-family:var(--sans);font-size:.62rem;font-weight:600;text-transform:uppercase;
        letter-spacing:.08em;color:var(--pending);background:var(--pending-bg);
-       border:1px solid var(--pending);border-radius:100px;padding:.05rem .45rem;margin-left:.5rem;
-       white-space:nowrap;vertical-align:.1em}}
+       border:1px solid var(--pending);border-radius:100px;padding:.05rem .45rem;flex:none;
+       align-self:center;white-space:nowrap}}
 .meta{{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.2rem}}
 .chip{{font-size:.72rem;color:var(--ink-3);border:1px solid var(--line-2);border-radius:2px;
        padding:.05rem .4rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
@@ -538,6 +704,24 @@ opens its full entry below.</p>
 {groups_html}
 
 <h2>Every row, as filed</h2>
+
+<div class="seen" id="seen" hidden>
+  <div class="seenline">
+    <b id="seentitle">Since your last visit</b>
+    <span id="seencounts"></span>
+    <label class="since">baseline
+      <select id="sincesel">
+        <option value="visit" selected>last visit</option>
+        <option value="7">7 days</option>
+        <option value="30">30 days</option>
+        <option value="0">everything</option>
+      </select>
+    </label>
+    <button class="f" id="onlychanged" aria-pressed="false">show only these</button>
+    <button class="f" id="marks">mark all as seen</button>
+  </div>
+</div>
+
 <div class="bar" role="group" aria-label="Filter items">
   <b>show</b>
   <button class="f" data-k="state" data-v="open" aria-pressed="true">open</button>
@@ -606,6 +790,102 @@ high {by_sev['high']}, med {by_sev['med']}, low {by_sev['low']}, unmarked {by_se
     }}
   }}
   apply();
+
+  // ── "since your last visit" ────────────────────────────────────────────────────────────────
+  //
+  // The baseline is PER READER, and this page is static with no server-side notion of who is
+  // looking, so it lives in localStorage. A first visit sets the baseline to now and says so
+  // rather than flooring the reader with 41 NEW badges — the honest reading of "since your last
+  // visit" when there has not been one.
+  var KEY = 'backlog-table:lastSeen';
+  var seen = document.getElementById('seen');
+  var counts = document.getElementById('seencounts');
+  var title = document.getElementById('seentitle');
+  var sel = document.getElementById('sincesel');
+  var only = document.getElementById('onlychanged');
+  var mark = document.getElementById('marks');
+  var newest = 0;
+  items.forEach(function(el){{
+    var c = +(el.dataset.changed || 0);
+    if (c > newest) newest = c;
+  }});
+
+  var stored = parseInt(localStorage.getItem(KEY) || '', 10);
+  var firstVisit = !(stored > 0);
+  if (firstVisit) {{ stored = Math.floor(Date.now()/1000); localStorage.setItem(KEY, String(stored)); }}
+
+  function baseline(){{
+    var v = sel.value;
+    if (v === 'visit') return stored;
+    if (v === '0') return 0;
+    return Math.floor(Date.now()/1000) - (+v) * 86400;
+  }}
+
+  function classify(){{
+    var since = baseline(), n = 0, c = 0, u = 0, unknown = 0;
+    items.forEach(function(el){{
+      var b = el.querySelector('.badge');
+      if (el.dataset.nohist) {{ unknown++; el.dataset.fresh = '0'; b.hidden = true; return; }}
+      var first = +el.dataset.first, chg = +el.dataset.changed;
+      var label = null;
+      if (first > since) {{ label = 'new'; n++; }}
+      else if (chg > since) {{
+        if (el.dataset.state === 'closed') {{ label = 'closed'; c++; }}
+        else {{ label = 'updated'; u++; }}
+      }}
+      el.dataset.fresh = label ? '1' : '0';
+      b.hidden = !label;
+      if (label) {{ b.textContent = label; b.className = 'badge b-' + label; }}
+    }});
+    var parts = [];
+    if (n) parts.push(n + ' new');
+    if (c) parts.push(c + ' closed');
+    if (u) parts.push(u + ' updated');
+    title.textContent = firstVisit && sel.value === 'visit'
+      ? 'First visit — baseline set to now'
+      : (sel.value === 'visit' ? 'Since your last visit' : 'Since ' +
+         (sel.value === '0' ? 'the beginning' : sel.value + ' days ago'));
+    counts.textContent = parts.length ? parts.join('  ·  ')
+      : (firstVisit && sel.value === 'visit'
+         ? 'changes will be highlighted from now on'
+         : 'nothing has changed');
+    if (unknown) counts.textContent += '  ·  ' + unknown + ' with no history';
+    only.disabled = !parts.length;
+    seen.hidden = false;
+    if (only.getAttribute('aria-pressed') === 'true' && !parts.length) {{
+      only.setAttribute('aria-pressed', 'false');
+    }}
+    apply();
+  }}
+
+  // Folded into the existing filter rather than bolted beside it — two independent hide/show
+  // passes over the same elements is how one of them ends up silently winning.
+  var baseApply = apply;
+  apply = function(){{
+    baseApply();
+    if (only.getAttribute('aria-pressed') !== 'true') return;
+    var n = 0;
+    items.forEach(function(el){{
+      if (!el.hidden && el.dataset.fresh !== '1') el.hidden = true;
+      if (!el.hidden) n++;
+    }});
+    document.getElementById('none').hidden = n > 0;
+  }};
+
+  sel.addEventListener('change', classify);
+  only.addEventListener('click', function(){{
+    only.setAttribute('aria-pressed', String(only.getAttribute('aria-pressed') !== 'true'));
+    apply();
+  }});
+  mark.addEventListener('click', function(){{
+    stored = Math.max(newest, Math.floor(Date.now()/1000));
+    localStorage.setItem(KEY, String(stored));
+    firstVisit = false;
+    sel.value = 'visit';
+    only.setAttribute('aria-pressed', 'false');
+    classify();
+  }});
+  classify();
 }})();
 </script>
 """
@@ -682,6 +962,43 @@ def self_test() -> int:
          and waiting_on("M (study)")[0] == "study"
          and waiting_on("XS")[0] == "work")
 
+    # ── change history ──────────────────────────────────────────────────────────────────────────
+    V = [("a", 100, "| 1 | alpha |\n| 2 | beta |"),
+         ("b", 200, "| 1 | alpha |\n| 2 | beta CHANGED |"),
+         ("c", 300, "| 1 | alpha |\n| 2 | beta CHANGED |\n| 3 | gamma |")]
+    h = changes_from_versions(V)
+
+    case("rows_of keys a version by item number",
+         lambda: rows_of("| 7 | x |\nnot a row\n| 8 | y |") == {7: " x |", 8: " y |"})
+    case("an untouched item's last-change is its first appearance",
+         lambda: h[1]["first"] == 100 and h[1]["last"] == 100)
+    case("an untouched item has no previous text to diff",
+         lambda: h[1]["prev"] is None)
+    case("a changed item records WHEN and in which commit",
+         lambda: h[2]["last"] == 200 and h[2]["sha"] == "b")
+    case("a changed item keeps the text it changed FROM",
+         lambda: h[2]["prev"] == " beta |")
+    case("an item added later is first-seen at its own version, not the file's",
+         lambda: h[3]["first"] == 300 and h[3]["last"] == 300)
+    case("a later version that changes nothing moves no timestamps",
+         lambda: changes_from_versions(V + [("d", 400, V[-1][2])])[2]["last"] == 200)
+    case("history of an empty file is empty, not an error",
+         lambda: changes_from_versions([]) == {})
+    # An item can only be reported NEW or UPDATED if `first` and `last` differ where they should;
+    # if the walk collapsed them the page would silently report nothing has ever changed.
+    case("first and last are NOT the same field",
+         lambda: h[2]["first"] == 100 and h[2]["last"] == 200)
+
+    case("word_diff marks a deletion and an insertion",
+         lambda: "<del>old</del>" in word_diff("the old text", "the new text")
+         and "<ins>new</ins>" in word_diff("the old text", "the new text"))
+    case("word_diff leaves untouched words unmarked",
+         lambda: word_diff("same words here", "same words here") == "same words here")
+    case("word_diff escapes html in BOTH sides",
+         lambda: "<script>" not in word_diff("<script>a</script>", "<script>b</script>"))
+    case("word_diff strips markdown rather than splicing tags through it",
+         lambda: "**" not in word_diff("**bold** a", "**bold** b"))
+
     # ⭐ The one case that measures the SHIPPED grouping rather than a fixture. If an item is filed
     # or closed and GROUPS is not updated, this fails here — before anyone opens the page.
     real = parse(BACKLOG.read_text().splitlines())
@@ -725,11 +1042,21 @@ def main() -> int:
         return subprocess.run(["git", "-C", str(REPO), *a],
                               capture_output=True, text=True).stdout.strip()
 
-    rows = parse(BACKLOG.read_text().splitlines())
-    fragment = build(rows, git("rev-parse", "--short", "HEAD"),
-                     git("log", "-1", "--format=%cI", "--", "docs/backlog.md")[:16].replace("T", " "),
-                     subprocess.run(["date", "+%Y-%m-%d %H:%M %Z"],
-                                    capture_output=True, text=True).stdout.strip())
+    # A refusal here is a NORMAL outcome — filing an item causes it — so it reports as a message a
+    # person can act on, not a traceback. The hook that surfaces this prints the last few lines.
+    try:
+        text = BACKLOG.read_text()
+        rows = parse(text.splitlines())
+        attach_history(rows, text)
+        fragment = build(rows, git("rev-parse", "--short", "HEAD"),
+                         git("log", "-1", "--format=%cI", "--",
+                             "docs/backlog.md")[:16].replace("T", " "),
+                         subprocess.run(["date", "+%Y-%m-%d %H:%M %Z"],
+                                        capture_output=True, text=True).stdout.strip())
+    except ShapeError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        print("Nothing was written; the existing page is left as it was.", file=sys.stderr)
+        return 1
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     open_n = sum(1 for r in rows if not r["closed"])
