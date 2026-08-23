@@ -107,16 +107,31 @@ live body, and stamping for a body it did not publish is worse than the silence 
   optional layer-3 fields that inherit the same way; M1 files those as a new row.
 - **Gate:** dual adversarial review; branch + PR.
 
-### M2 — Corrections as deterministic `{from,to}` pairs ◀ **THE WORK STARTS HERE** (decided 2026-08-22)
+### M2 — Corrections work in the cloud ◀ **THE WORK STARTS HERE**
 
-Backlog #23 proper. An LLM authors the pairs (~50 output tokens); application is deterministic,
-word-boundary, case-preserving, and **never lets the model rewrite the document** — headings are an
-identity anchor (spec §4.2.1) and a reworded heading orphans paid digs.
+⟳ **REWRITTEN 2026-08-23. The `{from,to}` pairs design this entry used to describe was REJECTED, and
+the two facts justifying it were both wrong.** Kept short here; the reasoning is in
+`docs/superpowers/specs/2026-08-22-corrections-in-cloud-design.md` §0–§1.
 
-- Includes re-authoring the **99 existing free-form corrections** and recomputing their hash.
-- **Kills:** #23 entirely. Unblocks spec §5.2.2 — without it a generation costs a whole-document
-  Gemini round trip to publish.
-- **Needs its own spec first** (status cell says so).
+- *"Unaffordable by construction"* → **≈0.6¢** per generation. Wasteful, not unaffordable.
+- *"A reworded heading orphans paid digs"* → **overstated**. The dig blob is keyed on `startSec`;
+  titles are identity in two fallbacks only.
+- And pairs **cannot express** *"reword this section"*, so against a requirement of behavioural
+  parity with local they are a feature restriction rather than an improvement.
+
+**So `fixSummary` stays** and the work is making it reachable from cloud. Three Phase-1 rounds
+(26 → 33 findings, all NOT CONVERGED, Phase 6 fired) established that this is **three slices**:
+
+| | | State |
+|---|---|---|
+| **A** | the attended cloud route — the feature | **specced**, `…-corrections-in-cloud-design.md`. Post-hoc spend recording, no reservation protocol (user decision 2026-08-23) |
+| **B** | the unattended correction, in the worker | backlog **#60** — **blocked on #22** |
+| **C** | reserve/settle, `correction_est_cents`, the `cap-soundness` extension, the duration ratchet | backlog **#61** — a money-path slice |
+
+- **Next action:** slice A's spec has round-3 residue to fold, then `writing-plans`.
+- **Kills:** #23's representation clause, **rejected** rather than deferred. ⚠ It does **not** kill
+  #23's own optimisation request — the occurrence check is descoped, see spec §1.2.
+- **No 99-correction migration.** The field keeps its type, so nothing needs re-authoring.
 
 ### M3 — Discharge the design gate (smaller than it looks)
 
