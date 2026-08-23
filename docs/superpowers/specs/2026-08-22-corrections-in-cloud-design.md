@@ -28,10 +28,17 @@ apply. That is one line, it has no input classes to enumerate, and it cannot pro
 prose. Each round found another case the paragraphs missed. That is a representation problem, not a
 convergence problem, and the fix is deletion rather than a sixth revision.
 
-⚠ **Your original optimisation survives in its dominant form.** You asked not to pay when the
-misspelling is already gone. The overwhelmingly common version of "gone" is *the corrections field is
-empty*, and that case is handled by a guard that already exists in the code
-(`route.ts:63`). What is deleted is the half that tried to parse prose.
+⚠ **The user's original optimisation does NOT survive, and v3's earlier wording claiming otherwise
+was wrong.** The request was: *"if current text do not include specified misspelling, do not correct
+(save gemini trip)"* — a check on whether the **misspelling occurs in the text**. That is exactly the
+deleted feature. The surviving guard is a different, weaker thing: it skips when the corrections
+**field is empty**, which is not the same case and was already in the code.
+
+**So this is a scope reduction, not a simplification of the same behaviour**, and it needs the user's
+assent rather than a reassuring paraphrase. The trade being proposed: pay ≈0.6¢ per generation for a
+video whose corrections no longer match, in exchange for deleting the rule class that produced four
+false-negative Blockings across three rounds. A false negative silently discards a correction the
+user typed; the 0.6¢ does not.
 
 ---
 
@@ -120,10 +127,19 @@ abort check at `:170`**, before staging.
 ## 4. When the correction runs
 
 ```
-fixSummary runs  ⟺  effective corrections are non-empty after trimming.
+fixSummary runs  ⟺  the APPLY INPUT is non-empty after trimming.
+
+apply input =  attended   → the request's corrections        (today's `trimmedCorrections`)
+               unattended → the stored corrections, re-read immediately before applying (§5.1)
 ```
 
-That is the whole rule, and it is **exactly the guard that exists today** at `route.ts:63`
+⚠ **v3's first wording said "effective corrections" here and was wrong** — `effective` is the
+*stamping* input (`route.ts:77-79`), and an implementer following it literally would reinstate the
+paid bare press that §5.1 exists to reject, contradicting
+`tests/api/regenerate.test.ts:113-116`. The apply input and the stamp input are different values and
+the spec must never use one word for both.
+
+On the attended path this is **exactly the guard that exists today** at `route.ts:63`
 (`trimmedCorrections ? await fixSummary(…) : stripped`). There are no terms to extract, no clauses to
 parse, and no way to produce a false negative.
 
