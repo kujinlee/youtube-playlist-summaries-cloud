@@ -24,18 +24,19 @@ publication is **append-only** and `current` is a **view** computed by ranking g
 
 ## Measured starting position (2026-08-22, commit `9211f74`)
 
-Every figure here came from a command run when this file was written. Re-derive before trusting.
+**Each row carries the command that produced it** — round 1 of review found a figure that did not
+reproduce, and the defect was the missing command, not the number. Re-run before trusting.
 
-| Fact | Value |
-|---|---|
-| Spec-local schema | 4 files, 4,108 lines, at `…/2026-08-03-stable-blob-addressing/schema/` |
-| Schema shipped as migrations | **none** — highest shipped is `0025_settle_is_observable.sql` |
-| `generation_id` in `lib/`, `app/`, `worker/`, `supabase/` | **zero references** (only 2 ratchet scripts + 1 contract test) |
-| App code addressing blobs by `base`/`summaryMd` | **192 call sites across 40 files** |
-| Spec convergence | rounds 1–9 all NOT CONVERGED; round 10 marked mandatory |
-| ADR-0006 status | `proposed` |
-| Unit suite | 2,722 tests / 268 suites, green |
-| Production | Fly `v7` (2026-08-18), holds **paid** Gemini content |
+| Fact | Value | Command |
+|---|---|---|
+| Spec-local schema | 4 files, 4,108 lines | `wc -l docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/*.sql` |
+| Schema shipped as migrations | **none** — highest is `0025_settle_is_observable.sql` | `ls -1 supabase/migrations/*.sql \| tail -1` |
+| `generation_id` in shipped code | **zero references** (2 ratchet scripts + 1 contract test only) | `grep -rli "generation_id" --exclude-dir=node_modules --exclude-dir=docs .` |
+| Blob addressing by `base`/`summaryMd` | **40 files**; call-site count varies with the pattern — 192 for the three-term grep below, 203 for a broader one. Treat the file count as the figure. | `grep -rln "summaryMd\|baseName\|baseOf(" lib/ app/ worker/ components/ --include=*.ts --include=*.tsx \| wc -l` |
+| Spec convergence | rounds **1,2,3,4,7,8,10,12,13,14,15,16,17** all NOT CONVERGED. **r17 does not ask for r18** — see M3 | `ls -1 docs/reviews/spec-blob-addressing-r*-coordinator.md` |
+| ADR-0006 status | `proposed` | `head -3 docs/adr/0006-*.md` |
+| Unit suite | 2,722 tests / 268 suites, green | `npm test -- --ci --json --outputFile=jest-results.json` |
+| Production | Fly `v7` (2026-08-18), holds **paid** Gemini content | `flyctl releases --app youtube-playlist-summaries` |
 
 **Read this table as the reason the work is large:** the design is finished and the product is
 entirely un-migrated. T1–T4 are marked complete because they were implemented *against the
@@ -71,9 +72,15 @@ The cloud worker omits `mdGeneratedAt` and `mdCorrectionsHash`; local sets both
 (`0021:117`) preserves whatever the previous writer left, so the row's provenance can describe a
 body that is no longer there. Make the worker stamp its own.
 
-- **No schema. No migration. One object literal plus tests.**
-- **Kills:** backlog #19's live harm; backlog #23 clause (a).
-- **Does not kill:** #23 clause (b) — carrying corrections forward is still unaffordable.
+⟳ **Corrected after round 1.** The stamp must be **conditional**: `SupabaseBlobStore.promote` is
+create-if-absent (`supabase-blob-store.ts:120-123`), so the worker's bytes often never become the
+live body, and stamping for a body it did not publish is worse than the silence it replaces.
+
+- **No schema. No migration.** One guarded stamp plus tests.
+- **Kills:** **backlog #23 clause (a)** — for `mdCorrectionsHash`. *(v1 credited this to #19; wrong
+  row. #19 is the `transferClassA` content race and has no corrections half.)*
+- **Does not kill:** #23 clause (b), the affordability redesign — that is M2. Nor the five other
+  optional layer-3 fields that inherit the same way; M1 files those as a new row.
 - **Gate:** dual adversarial review; branch + PR.
 
 ### M2 — Corrections as deterministic `{from,to}` pairs
@@ -87,16 +94,25 @@ identity anchor (spec §4.2.1) and a reworded heading orphans paid digs.
   Gemini round trip to publish.
 - **Needs its own spec first** (status cell says so).
 
-### M3 — Converge the design
+### M3 — Discharge the design gate (smaller than it looks)
 
-Spec round 10 (mandatory; rounds 1–9 all NOT CONVERGED), then ADR-0006 → `accepted`.
+⟳ **Corrected after round 1.** This milestone previously read *"run spec round 10"*, taken from a
+memory note rather than the review directory. Seventeen rounds have run. The latest
+(`docs/reviews/spec-blob-addressing-r17-coordinator.md:3`) does **not** ask for an eighteenth:
 
-- **Point round 10 at the ranking that computes `current`.** Append-only moves the entire
-  correctness burden there: the spec claims the result is *"identical for every reader, on every
-  replica, forever"*, which holds only if the ordering is **total and deterministic** — and
-  `mdGeneratedAt`, the field M1 is about, is exactly the kind of key that ties.
-- **Kills:** whatever round 10 dissolves. Historically this has been the highest-yield step —
-  §14 q8 dissolved most of a five-round CAS spec.
+> *"apply round 17's findings, then stop reviewing this document and start task #36. Blockings across
+> rounds ran 4 → 3 → 1 → 1, and the residue is specification-of-implementation rather than
+> decision-making. **The next genuine test is the migration, not round 18.**"*
+
+So M3 is: **apply r17's residue, then set ADR-0006 to `accepted`.** No new review round.
+
+- ~~Point the next round at the ranking that computes `current`.~~ **Withdrawn — refuted by the
+  schema.** `video_summary_current` (`…/schema/04_artifacts.sql:695-782`) already orders by
+  corrections-currency, then `doc_version_major`, then the card's `mdGeneratedAt`, then
+  `produced_at`, then `generation_id` — which is unique per generation, so the ordering is already
+  **total**. The `mdGeneratedAt` rung was introduced by round 5 finding B3 and revisited in round 15.
+  The concern was three rounds behind the document.
+- **Kills:** whatever r17's residue dissolves.
 - **Gate:** Phase 1 exit. Human approval on the ADR status change.
 
 ### M4 — Promote the schema
@@ -142,8 +158,9 @@ Backfill every existing video into a generation row with its card attached; §8 
 
 ## What is deliberately NOT in this roadmap
 
-- **Any work item for backlog #19.** There is nothing to build for it. Its corrections half is M1,
-  its addressing half is M5. It is a symptom and should be re-filed as such, not worked.
+- **Any work item for backlog #19.** There is nothing to build for it. Its addressing half dissolves
+  at M5; the corrections defect that looks like it is **#23 clause (a)**, a different row. #19 is a
+  symptom and should be re-filed as such, not worked.
 - **Un-entangling the rest of the backlog.** That is the milestone contract's job, one boundary at
   a time.
 
@@ -152,6 +169,12 @@ Backfill every existing video into a generation row with its card attached; §8 
 Surfaced 2026-08-22 while investigating #19; none filed yet, all misleading as they stand:
 
 1. `scripts/gen-backlog-page.py:358` — `DEPENDS[19]` says `survives`; under §5.2 it is `dissolved-by`.
-2. Same file, `ROOTS` — the root is drawn with no parents; #23 gates it (roadmap :1018).
+2. Same file — the root is drawn with no parents, but #23 gates it (roadmap :1018). ⚠ **This edge
+   cannot be expressed**: `DEPENDS` is `item → (relation, root, note)` and `ROOTS` has no parent
+   field, so there is no way to say a root is blocked by an item. Record it as prose in the root's
+   `detail` and file the structural gap separately — do **not** reverse the arrow.
 3. `docs/backlog.md` #17 — still describes *"publication is a conditional update on one row"*, the
    CAS design round 4 deleted.
+4. **This roadmap itself carried two:** the convergence row was seven rounds stale, and M3's one
+   technical instruction was refuted by the schema it pointed at. Both were caught by round 1, not
+   by any script. Both are fixed above.
