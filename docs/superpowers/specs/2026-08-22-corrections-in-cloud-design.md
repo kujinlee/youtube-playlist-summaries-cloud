@@ -241,11 +241,17 @@ the **only unbounded input to a paid call** — a 200 KB blob is a real request.
 client's 1,000, enforced where it binds.
 
 **DECIDED here, not deferred to the plan (r4 M5) — the two halves are not independent.**
-`sync-run.ts:358` and the review route (`:147`) already write `corrections` through
-`updateVideoAnnotations` with **no length check**, and the local index caps nothing, so **a
->1,000-char value can already exist** and can arrive from a local replica after this ships. v4 framed
-"cap here or also at sync" as two free choices; it is one coupled choice, and getting it wrong strands
-a row.
+`sync-run.ts:358` writes `corrections` through `updateVideoAnnotations` with **no length check**, and
+the local index caps nothing, so **a >1,000-char value can already exist** and can arrive from a local
+replica after this ships. v4 framed "cap here or also at sync" as two free choices; it is one coupled
+choice, and getting it wrong strands a row.
+
+> ⚠ **CORRECTED (r4 H5).** An earlier draft of this paragraph also named
+> `app/api/videos/[id]/review/route.ts:147` as a corrections writer. **It is not.** `:147` calls
+> `updateVideoAnnotations`, but `validateBody` (`:16-18`) admits only `personalScore` and
+> `personalNote`, and the `set`/`clear` at `:135-145` are built from those two alone. **The complete
+> set of `corrections` writers is two:** `regenerate/route.ts:56,58` and `sync-run.ts:358`. Enumerating
+> them is what §4.3 depends on, so the error mattered beyond this sentence.
 
 > **The cap applies to the incoming request only.** Enforcing it at the `updateVideoAnnotations` seam
 > would make a *sync* fail on data it did not create — worse, and slice B/C territory.
@@ -389,6 +395,36 @@ corrections baked in, so stamping `mdHash('')` there would wrongly mark a still-
 stale."* True while this route is the only way corrections reach a row. **Sync breaks it** — and sync
 is the world slice A ships into.
 
+**The mechanism, enumerated (r4 H5).** There are exactly **two** writers of `corrections`:
+
+| Writer | Regenerates the MD? | Touches `mdCorrectionsHash`? |
+|---|---|---|
+| `regenerate/route.ts:56,58` | yes | yes (`:88`) |
+| **`sync-run.ts:358`** — Class-B reconciliation | **no** | **no** — the `mdCorrectionsHash` references in that file (`:317`, `:402`, `:523`, `:542`) are all on Class-A paths |
+
+So the loss is not hypothetical and not a slip:
+
+1. The user edits corrections **C1 → C2** locally. No regenerate.
+2. Sync writes **C2** to the cloud row (`sync-run.ts:358`) and does **no** MD work.
+3. `reconcileClassA` correctly reports **`needsRegen: true`** — the body reflects C1.
+4. **One bare press stamps `mdHash(C2)`** → `needsRegen: false`, **permanently**. Nothing ever
+   re-derives currency from the body, so C2 is never applied and never flagged again.
+
+**Two ways to reach step 4, and neither is a fat finger.** The panel sends the **raw** textarea value
+(`CorrectionsPanel.tsx:52` — `JSON.stringify({ outputFolder, corrections })`, no trim), so
+select-all + space sends `"  "`, which trims to falsy. And §5.3 already concedes any authenticated
+client can POST `{ outputFolder }` with no `corrections` key at all.
+
+⚠ **Severity: Blocking for slice A, though the `:77-79` rule pre-dates it.** On `master` the defect is
+dormant on cloud — `VideoMenu.tsx:181` gates the panel out of cloud mode and the route 500s there
+anyway, so a sync-delivered pending correction has no cloud press to extinguish it. **Slice A is what
+supplies the press.** It converts a dormant local edge case into live data loss on the cloud.
+
+⚠ **And the r3-H6 fix installed a §7 row this defect PASSES.** That row asserts `needsRegen` goes
+true → false after a correction; step 4 produces exactly that transition. Round 3 replaced a falsifier
+a *correct* implementation failed with one the *defect* satisfies — a fix that moved the blind spot
+rather than closing it. §7 now carries the row neither version could express.
+
 > **Requirement.** Write `mdCorrectionsHash` **only when `fixSummary` ran**, as
 > `mdHash(request corrections)`. On a bare press, omit the field entirely: the stored value already
 > describes what the body reflects, whatever that is. `:77-79` tries to *derive* the truth; leaving it
@@ -512,7 +548,8 @@ Assert at the consumer.
 | A run is bounded | the request to Gemini | `maxOutputTokens` and `thinkingBudget` present; over-cap input rejected **before** any call |
 | Structure survives | the parsed document | H2 sequence and `▶` tuples byte-identical pre/post |
 | …and the reader sees the correction | the **served magazine HTML** | contains the corrected prose, not the cached gists — i.e. the envelope was deleted |
-| A correction makes the row current | the **sync decision** | `reconcileClassA`'s `needsRegen` goes **true → false** for that video. **Fails if the stamp is missing** |
+| An **applying** press makes the row current | the **sync decision** | `reconcileClassA`'s `needsRegen` goes **true → false**. **Fails if the stamp is missing** |
+| ⚠ A **bare** press does NOT | the **sync decision** | on a video whose `needsRegen` is `true` — corrections delivered by `sync-run.ts:358`, body never regenerated — a bare press leaves it **`true`**. **This is the row neither r3 version could express, and the row the r3-H6 fix let the defect pass.** Reach the press both ways: whitespace-only (the panel sends the raw value, `CorrectionsPanel.tsx:52`) and a POST with no `corrections` key |
 | A no-correction press disturbs nothing | the **sync decision** | **all six `ClassASignals` fields** (`backfill.ts:8-16`) byte-identical before and after: `summaryMdKey`, `mdHash`, `docVersionMajor`, `mdGeneratedAt`, **`mdCorrectionsHash`** (§4.3 — it must NOT move), `backfilled`. Plus every `annotationsEditedAt` entry |
 | …and the one thing it **does** disturb is bounded | `deriveHumanSnapshot` | `updatedAt` moves (§4.2, unavoidable). Assert the blast radius: a field **with** a real `annotationsEditedAt` is unaffected; only `backfilled: true` fields take the new provisional. **This is the row that fails if §4.2's acceptance stops holding** |
 | An oversized corrections field never reaches Gemini | the route | rejected 400 **before** any call; no ledger movement |
