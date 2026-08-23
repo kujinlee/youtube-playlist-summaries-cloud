@@ -1,321 +1,344 @@
-# Corrections in the cloud — design spec
+# Corrections in the cloud — design spec (v2)
 
-**Backlog:** #23. **Status:** design approved 2026-08-22 (section by section). **Phase:** 1 complete
-on approval of this document; next is `writing-plans`.
+**Backlog:** #23. **Status:** v2, after round-1 dual adversarial review returned NOT CONVERGED from
+both halves (26 findings: `docs/reviews/spec-corrections-in-cloud-r1-{codex,claude}.md`).
+**Phase:** 1.
 
 **Goal.** Make user corrections work on the cloud path with the same felt behaviour as local, and
 stop the video row claiming corrections it never applied.
 
-**One-sentence architecture.** Two pure modules — an applicability predicate and an apply pipeline —
-called from two thin places: the existing regenerate route (made storage-agnostic) and the summary
-handler. One core, so the attended and unattended paths cannot drift.
+**Architecture.** Two pure modules — an applicability predicate and an apply pipeline — called from
+two thin places: the regenerate route (given a real cloud branch) and the summary handler. One core,
+so the attended and unattended paths cannot drift.
 
 ---
 
-## 1. The measured starting position
+## 0. What v1 got wrong
 
-Every figure below was produced by a command on 2026-08-22. Re-derive before trusting.
+v1 was reviewed and failed. Recording the failures because five of six share one shape.
+
+| v1 claimed | Measured |
+|---|---|
+| Exposure is bounded at ≤0.6¢ | `fixSummary` has **zero** `maxOutputTokens` and **zero** `thinkingBudget` refs. Not a bound. 1.7–2.3¢ with retries |
+| Metering through the ledger is non-negotiable | `fixSummary(mdContent, corrections, retries, baseDelayMs)` takes **no billing latch**. Unimplementable as specified |
+| The applicability rule skips only on proof | **It inverts on the empty case** — no corrections → no terms → skip condition false → *run* |
+| Making the route storage-agnostic is two `fs` calls | The route cannot execute under Supabase at all (§3.3) |
+| §8's gap is inherited, not introduced | The unattended path would **pay** for a correction on a body `promote` discards |
+| The panel's help text renders with curly quotes | Outer quotes are curly; the quotes **around the terms** are straight (`&apos;`) |
+
+**The shape:** claims about what a function does or bounds, written without opening it. Same shape
+as both M1 rounds. **Every load-bearing claim in v2 cites `file:line`.**
+
+---
+
+## 1. Measured starting position
+
+Produced by command on 2026-08-22/23. Re-derive before trusting.
 
 | Fact | Value | How |
 |---|---|---|
-| Code paths that apply corrections | **one** — `app/api/videos/[id]/regenerate/route.ts:63` | `grep -rn fixSummary lib/ app/ worker/ components/` |
-| …reachable from cloud | **none** — the route reads/writes with `fs.promises` (`:50`, `:69`) | same |
-| `corrections` in the cloud worker | **0 occurrences** in `lib/job-queue/summary-handler.ts` | `grep -c` |
-| The corrections UI | local-gated — *"Local-mode only … Absent/'' in cloud mode"* (`components/VideoRow.tsx:19`); nothing in `components/cloud/` | `grep -rn` |
-| Gemini calls per correction | **two** — `fixSummary` (`:63`), `extractQuickView` (`:66`) | `grep -n` |
-| Mean summary size | **7,288 chars** (n=10, 6,247–8,961) | `wc -c` over `yps-sync-test/*/raw/0*.md`, excluding dig-deeper |
-| Cost of one correction | **≈0.6¢** — ~1,822 out × 250¢/1M + ~1,900 in × 30¢/1M, plus ~0.08¢ quick-view | `lib/gemini-cost.ts:33,35` + the sizes above |
-| Route's storage seam | **half migrated** — `getStorageBundle` used for metadata (`:35`), raw `fs` for the body | `grep -c` |
+| Apply paths | one — `app/api/videos/[id]/regenerate/route.ts:63` | `grep -rn fixSummary lib/ app/ worker/ components/` |
+| …reachable from cloud | none — `fs.promises` at `:50`, `:69` | same |
+| `corrections` in the worker | **0** in `lib/job-queue/summary-handler.ts` | `grep -c` |
+| Corrections UI | local-gated (`components/VideoRow.tsx:19`); nothing in `components/cloud/` | `grep -rn` |
+| Gemini calls per correction | two — `:63`, `:66` | `grep -n` |
+| Mean summary size | 7,288 chars (n=10, 6,247–8,961) | `wc -c` over `~/code/agentic-ai-docs/yps-sync-test/*/raw/0*.md` (⚠ **outside this repo**; a reviewer could not reproduce it) |
+| Typical correction cost | ≈0.6¢ | `lib/gemini-cost.ts:33,35` + sizes above |
+| **Worst-case correction cost** | **unbounded today** — no output cap, up to 3 attempts | `awk` over `fixSummary`, 0 matches for `maxOutputTokens\|thinkingBudget` |
+| Summary job reservation | **`summary_est_cents` default 150** — *"WORST-CASE one-run upper bound from ENFORCED token caps"* | `supabase/migrations/0011_cost_guardrails.sql:29` |
+| Per-call Gemini timeout | 60,000 ms | `lib/gemini.ts:105` |
+| Route `maxDuration` | none on this route; only `app/api/quick-view/backfill/route.ts:10` sets one | `grep -rn maxDuration app/` |
 
-⚠ **Token counts use a ~4 chars/token approximation.** The price constants are the repo's own; the
-conversion is a rule of thumb. Treat 0.6¢ as an order of magnitude, not a quoted price.
+⚠ Token counts use ~4 chars/token. Treat cent figures as order-of-magnitude.
+**Not verified:** the row's "99 existing free-form corrections" — no `psql`; `pg` cannot verify
+Supabase's TLS chain.
 
-**Not verified:** backlog #23's *"99 existing free-form corrections"*. No `psql` on the dev machine,
-and `pg` cannot verify Supabase's TLS chain. This sizes a migration, not this design.
+### 1.1 Corrections to backlog #23 — restated precisely
 
-### 1.1 What the filed row gets wrong
+v1 overcorrected. The accurate statements:
 
-Two claims in `docs/backlog.md` #23 did not survive checking. **Both should be corrected in the row
-when this ships.**
+1. *"Carry-forward is unaffordable by construction"* → **wrong**. ≈0.6¢ typical. Wasteful, not
+   unaffordable. (Worst case is unbounded, but that is a missing cap, not an inherent cost.)
+2. *"A reworded heading orphans paid digs"* → **overstated, not simply wrong.** A reworded heading
+   **alone** does not orphan a dig while `startSec` is stable: the blob key uses `startSec`
+   (`lib/dig/cloud/dig-blob-key.ts:13-23`) and enqueue validates by it
+   (`enqueue-dig-core.ts:33-39`). What it **does** do is drop the magazine gists for *every* section
+   (`sameTitles` is positional and all-or-nothing, `read-model.ts:12-24`), and it removes the
+   title fallback (`dig-merge.ts:120-155`) that exists precisely to survive `startSec` drift. **If
+   both move, orphaning is real.** §4.2.1 records that generation-scoping dissolves the dependency;
+   until then the title is load-bearing.
 
-1. *"Carry-forward is unaffordable by construction."* Measured at **0.6¢ per generation**. It is
-   wasteful — thousands of output tokens to change two words — not unaffordable.
-2. *"A reworded heading orphans paid digs."* Stronger than §4.2.1 supports. The dig **blob address**
-   is anchored on `startSec` (`dig-blob-key.ts`, `enqueue-dig-core.ts:34`) and job dedupe on the
-   numeric `section_id`. Titles are identity in two **fallbacks** only — the dig→section step-2
-   fallback (`dig-merge.ts:81`) and magazine-gist trust (`sameTitles`). The real measured cost of a
-   reworded heading is that it drops the magazine gists for *every* section, because `sameTitles` is
-   positional and all-or-nothing. §4.2.1 also records that generation-scoping dissolves it entirely:
-   *"titles stop being identity and go back to being text."*
-
-Also worth stating because it misleads every reader: **"regenerate" is a misnomer.** The route
-contains zero references to `summaryCore`, `generateSummary` or `resolveTranscriptSegments`. It
-hands Gemini a finished document and receives it edited. It **corrects**; it never re-derives from a
-transcript. This spec uses *correct* throughout and keeps the existing URL only for compatibility.
+**And "regenerate" is a misnomer.** The route contains zero references to `summaryCore`,
+`generateSummary` or `resolveTranscriptSegments`. It **corrects** an existing document. This spec
+says *correct*; the URL stays for compatibility.
 
 ---
 
 ## 2. Decisions
 
-| # | Question | Decision | Why |
-|---|---|---|---|
-| 1 | How much of #23? | **Corrections work everywhere**, not representation-only | Only version that makes spec §5.2.2 satisfiable |
-| 2 | Pairs or the existing rewrite? | **Keep `fixSummary`** | Pairs cannot express *"reword this section"* or *"the name is misspelled three ways"*. Against a parity requirement they are a feature restriction |
-| 3 | Property of the video, or an action? | **Property of the video** | Every generation applies whatever is stored, attended or not — so a doc-version bump can no longer silently discard corrections |
-| 4 | Spend on a correction that cannot apply? | **No — deterministic short-circuit** | Transcripts improve; re-applying a correction for a misspelling that is gone is waste |
-| 5 | Where does the attended path live? | **A synchronous route**, not a third job kind — and per §6, **without a lease** | Local is synchronous; parity requires it |
-| 6 | Structure? | **Two pure modules, two thin callers** | The attended and unattended paths must not be able to disagree |
-| 7 | The unattended stamp when `promote` skips? | **Bounded dependency, stated not solved** | Gating the card is what made M1 incoherent twice |
+| # | Question | Decision |
+|---|---|---|
+| 1 | Scope | Corrections work everywhere — not representation-only |
+| 2 | Pairs or the existing rewrite? | Keep `fixSummary`; pairs cannot express non-substitution instructions |
+| 3 | Property of the video, or an action? | **Property of the video** |
+| 4 | Spend on a correction that cannot apply? | No — deterministic short-circuit (§4) |
+| 5 | Attended path | A synchronous route, no lease (§6) |
+| 6 | Structure | Two pure modules, two thin callers |
+| 7 | Unattended stamp when `promote` skips | Do not spend, do not stamp (§8) — **changed in v2** |
+| 8 | **Capping and metering `fixSummary`** | **In scope** (user decision, 2026-08-23) — §6 |
 
 ---
 
-## 3. Architecture
+## 3. Components
 
 ### 3.1 `lib/corrections/applicable.ts` — new, pure
 
-No I/O, no Gemini, no storage. Given the corrections text and the text to search, returns whether an
-apply is needed and which terms were searched.
-
-**It must not be able to throw.** If a shape can make it throw, that shape is a bug in the module,
-not a runtime condition for callers to handle.
+No I/O. Must not be able to throw. §4 defines it.
 
 ### 3.2 `lib/corrections/apply-core.ts` — new, store-agnostic
 
-The pipeline currently inline at `route.ts:60-68`: `stripQuickViewCallout` → `fixSummary` →
-`extractQuickView` → `insertQuickViewCallout`. Takes a document string, returns
-`{ content, tldr, takeaways }`. Same shape and rationale as `lib/ingestion/summary-core.ts`, which
-exists *"so the cloud worker and the local pipeline share one ingestion core"*.
+`stripQuickViewCallout` → `fixSummary` → `extractQuickView` → `insertQuickViewCallout`.
 
-### 3.3 `app/api/videos/[id]/regenerate/route.ts` — modified
+**Signature must carry `tags`.** `insertQuickViewCallout(fixed, tldr, takeaways, video.tags ?? [])`
+(`route.ts:67`) — v1's stated signature dropped it, which would delete the callout's Concepts line
+from every corrected document. Input: `{ md, corrections, tags }`. Output:
+`{ content, tldr, takeaways }`.
 
-Becomes fully storage-agnostic. It already resolves the metadata store through `getStorageBundle`
-(`:35`); only the body bypasses the seam, so the change is replacing two `fs` calls (`:50`, `:69`)
-with `blobStore.get` / `blobStore.put`. **Local behaviour and the response shape stay identical**, so
-`CorrectionsPanel` needs no change other than becoming reachable in cloud mode.
+### 3.3 `app/api/videos/[id]/regenerate/route.ts` — modified, and this is real work
+
+v1 said "replace two `fs` calls". **False.** The route cannot execute under Supabase:
+
+- `CorrectionsPanel` POSTs `{ outputFolder, corrections }` (`:52`); the route rejects a missing
+  `outputFolder` (`:20-21`) and calls `getPrincipal(outputFolder)` (`:30`) — cloud has no
+  `outputFolder`.
+- `getStorageBundle()` with no Supabase client throws on the Supabase backend
+  (`lib/storage/resolve.ts:51-57`), and that call is at `:35`, **outside the try block**.
+
+**The cloud branch must be specified, mirroring the existing cloud routes:** `?playlist=<uuid>`,
+`createServerSupabase`, `getUser`, `resolveOwnedPlaylistKey`, `getPrincipalFromSession`,
+`getStorageBundle({ supabaseClient })`. The client becomes scope-aware and must **reject
+`outputFolder` in cloud mode** rather than ignoring it. Local behaviour and the local response shape
+are unchanged.
+
+**`maxDuration` must be set explicitly.** Per-call timeout is 60 s (`gemini.ts:105`) and `fixSummary`
+allows 3 attempts, so the chain's own bound is ~180 s before `extractQuickView`. v1's "10–30 seconds"
+was an order of magnitude low. The plan sets a route `maxDuration` consistent with the capped worst
+case, or reduces the retry count on this path — and states which.
 
 ### 3.4 `lib/job-queue/summary-handler.ts` — modified
 
-After `summaryCore` returns and **before** the blob is staged, run the same predicate and the same
-core against the fresh markdown. The corrected content is what gets staged and promoted; the card
-fields come from the corrected extraction.
+After `summaryCore`, **after the abort check at `:170`** (v1 put it before, so a correction could run
+on a job whose lease was already lost), and **before** staging.
 
 ### 3.5 Why correction stays out of `summaryCore`
 
-`summaryCore` turns transcripts into documents; correction consumes a document that already exists.
-Folding them together would delete the cheap path — every spelling fix would re-fetch a transcript
-and re-summarize, costing orders of magnitude more and re-rolling prose the user did not ask to
-change.
+`summaryCore` turns transcripts into documents; correction consumes one. Folding them together
+deletes the cheap path.
 
 ---
 
-## 4. The applicability check
+## 4. The applicability check — rewritten
 
-Deterministic. **No LLM** — a model in the guard would make the skip decision non-deterministic and
-add a failure mode to the thing whose only job is avoiding a failure-prone call.
+v1's rule inverted on the empty case. v2 is an **ordered decision procedure**, not three overlapping
+bullets.
 
-**Extraction.** Split the corrections text on `;` and newlines into clauses. Per clause:
+```
+1. effective corrections is empty or whitespace-only
+     → NOTHING TO APPLY. No Gemini. No blob write. Not a "skip" — a different outcome (§4.1).
+2. otherwise, split on ';' and newlines into clauses. For each clause, in order:
+     a. contains an arrow (→ or ->)  → take quoted tokens LEFT of the first arrow.
+                                       If there are none, the clause is IRREDUCIBLE.
+     b. contains quoted tokens        → take all of them.
+     c. otherwise                     → IRREDUCIBLE.
+3. any clause IRREDUCIBLE                        → RUN.
+4. no terms extracted (all clauses empty of terms) → RUN.
+5. any term occurs in body or card (case-insensitive) → RUN.
+6. otherwise                                     → SKIP.
+```
 
-- Contains an arrow (`→` or `->`) → take quoted tokens **left** of it. In `Fix 'Clawcode' → 'Claude
-  Code'` the term is `Clawcode`; searching for the corrected form would be backwards, since finding
-  it is evidence the work is already done.
-- Quotes but no arrow → take every quoted token.
-- **No quoted tokens** → the clause is **irreducible**.
+Rule 2a's "if there are none, irreducible" resolves v1's overlap: a clause with an arrow but no
+quotes matched both bullet 1 and bullet 3, and the two readings disagreed on whether to spend.
 
-Quote matching accepts **ASCII and curly pairs**. The panel's help text renders with curly quotes and
-macOS substitutes smart quotes inside a textarea, so an ASCII-only matcher would mark almost every
-real clause irreducible and the optimisation would silently never fire.
+**Quote matching** accepts ASCII `'` `"` and curly `‘ ’ “ ”`. ⚠ **v1's stated reason was wrong** —
+the panel's example uses straight quotes (`&apos;`, `CorrectionsPanel.tsx:97`); only the surrounding
+prose quotes are curly. The real reason is macOS smart substitution in a textarea, which the spec
+should say rather than citing the help text.
 
-**The rule.** Skip **iff** at least one term was extracted **and** every clause was reducible **and**
-no term occurs. Anything else runs.
+**Apostrophes.** `don't` contains a `'`. A naive paired-quote scan pairs it with the next apostrophe
+and extracts nonsense — which would then not occur in the document and could produce a **false
+SKIP**, silently discarding a real correction. Mitigation: a single `'` not followed by a closing
+`'` on the same clause **makes the clause irreducible** (fail toward running). The plan carries
+explicit cases for `don't`, `it's`, and a possessive inside a quoted term.
 
-**One irreducible clause forces the run for the whole set.** We never skip on a corrections text we
-could not fully reduce.
+**Search body and card.** The body can be clean while `tldr`/`takeaways` still carry the misspelling.
 
-**Search is case-insensitive**, which errs toward running.
+### 4.1 Three outcomes, not two
 
-**Search body and card.** The body can be clean while `tldr`/`takeaways` still carry the misspelling,
-because the card was extracted from an older body. A skip means no re-extraction, so searching the
-body alone would leave the error visible on the card permanently.
+`nothing-to-apply` (rule 1) is distinct from `skip` (rule 6):
 
-**The skip is honest.** If no term occurs, the document already satisfies what the corrections ask
-for, so stamping `mdCorrectionsHash` as current is true. Because an irreducible clause never skips,
-we never stamp for a document we could not reason about.
+| Outcome | Gemini | Blob | `mdCorrectionsHash` |
+|---|---|---|---|
+| nothing-to-apply | no | no | set to the empty-corrections constant if it differs |
+| skip | no | no | set to `mdHash(effective)` if it differs |
+| run | yes | yes | set to `mdHash(effective)` |
 
-**Known limitation, accepted:** a term occurring only inside a fenced code block or a URL triggers an
-unnecessary run. Costs 0.6¢, errs safe.
+Both no-write outcomes are **honest**: with no corrections, or with none that occur, the document
+already satisfies what is asked of it.
 
 ---
 
 ## 5. Data flow
 
-### 5.1 Effective corrections — unchanged
+### 5.1 Effective corrections — and the rule v1 conflated
 
-The existing three-way rule (`route.ts:78-80`) stands: a non-empty parameter wins; `''` means
-cleared; **absent means the stored value**, because a bare correction pass must keep prior
-corrections baked in rather than marking a still-corrected document stale.
+The three-way rule at `route.ts:78-80` is the **stamping** rule: what the hash describes. v1 also
+fed it to the apply core, but today only the **request's** corrections reach `fixSummary` (`:63`
+passes `trimmedCorrections`, not `effectiveCorrections`). Those differ on a bare correction pass:
+the stamp says "the stored corrections are baked in", the apply does nothing.
 
-**The unattended path has no request, so it is permanently in the third arm.** Effective corrections
-are always "whatever is stored on the row". That is the existing rule's default, not a new case.
+**v2 makes the apply input explicit and equal to the stamp input.** Both use effective corrections.
+This is a deliberate behaviour change on the local bare-pass path — a bare pass now re-applies stored
+corrections rather than only claiming them — and it is what decision 3 requires. **The plan must
+carry a test for it**, because two existing local tests encode the current behaviour.
 
-### 5.2 Attended (local and cloud, one code path)
+⚠ **Staleness.** In the unattended path, corrections are read at `:84` and applied minutes later
+after Gemini. A Class-B sync landing in between means we apply a stale set and stamp the stale hash.
+v1 called this read "free" and did not name the risk. **Bounded, not fixed:** re-read corrections
+immediately before applying and stamp what was actually applied.
 
-1. Panel POSTs corrections.
-2. Resolve principal and storage bundle.
-3. **Persist corrections first**, before any Gemini call (today's `:52-59`) — a failure must never
-   lose what the user typed.
-4. Read the body through `blobStore.get`.
-5. Compute effective corrections.
-6. Applicability check against body **and** card.
-7. **Skip** → update `mdCorrectionsHash` **only if it differs**; return existing `tldr`/`takeaways`;
-   no Gemini, no blob write.
+### 5.2 Attended
 
-   ⚠ **A skip must NOT stamp `mdGeneratedAt`** — caught in self-review. That field records when the
-   *body* was generated, and on a skip no body was generated. Stamping it would claim a generation
-   that did not happen, and `deriveClassASignals` (`backfill.ts:13`) feeds it straight into the
-   recency tiebreak, so a false stamp would let an unchanged cloud body win against a genuinely
-   newer local one. The body is unchanged, so **every** body-describing signal must be left alone;
-   only the corrections-currency claim moves, because only that claim became true.
-8. **Run** → apply-core → `blobStore.put` → update `tldr`, `takeaways`, `summaryHtml: null`, and both
-   stamps.
-9. Respond in the shape the panel already consumes, **plus** a discriminator (§7).
+1. Panel POSTs. 2. Resolve scope, principal, storage bundle (§3.3). 3. **Persist corrections first**
+(`:52-59`). 4. Read body. 5. Compute effective corrections. 6. §4 procedure. 7/8. Per §4.1.
+9. Respond with the shape the panel consumes **plus** the outcome discriminator (§7).
 
-### 5.3 Unattended (summary handler)
+⚠ **Clearing corrections must work on Supabase.** `corrections: undefined` is dropped by JSON
+serialization, so `updateVideoFields(p, id, { corrections: undefined })` (`:58`) is a no-op on the
+Supabase backend — and the route then stamps `mdHash('')` over a row that still holds corrections.
+The plan specifies an explicit clear (a null sentinel the store understands) and tests it against
+both backends.
 
-1. `summaryCore` produces `core.mdContent`.
-2. Stored corrections come from `existing`, already fetched at `:84` for the idempotency skip — free.
-3. Applicability check against the fresh markdown and the fresh card.
-4. Run or skip.
-5. The resulting content is staged and promoted; card fields come from the corrected extraction.
+**What a no-write outcome must NOT touch.** v1 listed one field; the enumeration is:
 
-Correction happens **before** publication. That is what spec §5.2.2 means by *"a generation is not
-publishable until corrections are applied"*.
+| Field | On a no-write outcome |
+|---|---|
+| `mdCorrectionsHash` | **the only intended write** |
+| `mdGeneratedAt` | **must not move** — no body was generated. `deriveClassASignals` (`backfill.ts:13`) feeds it to the recency tiebreak; a false stamp lets an unchanged cloud body beat a newer local one |
+| `summaryHtml`, `tldr`, `takeaways`, `docVersion`, `processedAt` | must not move — the body did not change |
+| `annotationsEditedAt.corrections` | **moved by step 3, before the outcome is known.** That is correct — the user *did* edit corrections — but the spec must say so, because it is a Class-B write on a path that otherwise claims to write nothing |
+| **`updated_at`** | ⚠ **bumped unconditionally by `merge_video_data`** (`0021:89`), and `deriveHumanSnapshot` reads `updatedAt ?? processedAt` as the provisional timestamp (`backfill.ts:21`). A no-write outcome can therefore make an old `personalNote` look newly edited to sync. **The plan must either use a narrow RPC that does not bump `updated_at`, or prove every affected row has a real `annotationsEditedAt`** |
 
----
+### 5.3 Unattended
 
-## 6. Concurrency, money, failure
-
-**No lease, no migration.** Two concurrent corrections of one video produce two `fixSummary` calls
-from the same body and the same corrections, converging on the same result. The cost is money, not
-corruption: **≤0.6¢ per duplicate**, behind a button the panel already disables while busy
-(`CorrectionsPanel.tsx:124`).
-
-**Why not a lease.** The ledger bounds *total* exposure; a lease bounds *duplicate* exposure — a
-sub-cent quantity. Adding a second mechanism beside one that already bounds the aggregate is the
-"two mechanisms for one concern" shape this project has measured before. And a lease is not cheap
-reuse: #46 took seven review rounds, and its defects were *the lease being shorter than the work it
-covers* and *settle not being observable*. It remains additive if duplicate traffic ever shows up.
-
-⚠ **The counter a reviewer should press:** a proxy timeout followed by a user retry is a realistic
-duplicate, not just two tabs — two Gemini calls on a 7k-char document is plausibly 10–30 seconds.
-The trade is accepted because outcomes converge and the ledger sees the spend.
-
-**Metering is non-negotiable.** Every paid Gemini call in cloud today runs inside a job handler with
-`ctx.billing`. A route does not get that for free. The correction route **must** record spend through
-the same ledger, or we have created a paid surface the guardrails cannot see — a worse problem than
-double-spending.
-
-**Failure modes:**
-
-| Failure | State left | Verdict |
-|---|---|---|
-| `fixSummary` throws after its 2 internal retries | corrections persisted, body and stamps untouched | Safe — row stays stale, next attempt retries |
-| `extractQuickView` throws after `fixSummary` succeeded | nothing written | Safe, **wasteful** — discards a paid call |
-| Blob write fails | nothing written, both calls paid | Same waste |
-
-The `extractQuickView` waste is avoidable by writing the body before re-extracting the card — and
-that is **rejected**: it splits one write into two and creates a window where the body is corrected
-and the card is not, which is a smaller instance of the card/body incoherence this area exists to
-remove.
+1. `summaryCore` → `core.mdContent`. 2. **Abort check** (`:170`). 3. **Publication pre-check (§8).**
+4. Re-read corrections (§5.1). 5. §4 procedure. 6. Stage and promote the result.
 
 ---
 
-## 7. The skip needs a visible answer
+## 6. Money — capping, metering, and the lease
 
-An unattended skip is silent, correctly — nobody is watching. An **attended** skip is a button press
-that changes nothing, which reads as a bug.
+**In scope by decision 8.** v1 asserted metering as a requirement without a mechanism; v2 makes it
+tasks.
 
-The route returns a discriminated result — `applied` vs `nothing-to-apply`, with the terms it
-searched for — and the panel reports it. This is the only UI surface this design adds beyond making
-the panel reachable in cloud mode.
+**6.1 `fixSummary` gains a cap and a latch.** Today it has neither. It takes
+`opts?: { signal?, billing?: BillingLatch, maxOutputTokens?, thinkingBudget? }`, mirroring
+`generateJson` (`lib/gemini.ts:264`). The cap is derived from the measured maximum (8,961 chars)
+with headroom; `assertNotTruncated` already guards this path, so a cap that is too tight fails loudly
+rather than silently truncating a paid document.
+
+⚠ **This changes the local path too.** A document longer than the cap that previously succeeded will
+now fail. That is the cost of the decision, and the plan states the chosen cap and its headroom.
+
+**6.2 A correction estimate constant.** `guardrail_config` gains `correction_est_cents`, sized as a
+worst-case upper bound from the enforced caps — the same construction as `summary_est_cents`
+(`0011:29`), whose comment is explicit that 150 is *"WORST-CASE … from ENFORCED token caps"*. This is
+what makes §9's "the ledger moves by the expected amount" writable at all.
+
+**6.3 The unattended path spends inside the summary job's reservation.** Two extra paid calls inside
+a job whose 150¢ reservation is a **proof derived from caps** invalidates that proof unless they are
+accounted for. The plan either raises `summary_est_cents` by `correction_est_cents` or demonstrates
+the capped correction fits existing headroom — **and says which, with the arithmetic.**
+
+**6.4 No lease — re-decided on corrected facts.** The exposure that matters was never duplicate
+corrections; it is an attended correction racing the summary worker. Both write the same blob key,
+and the worker's generation is the 150¢ side. **The mitigation is the §8 publication pre-check plus
+`If-None-Match`-style ordering, not a lease** — and if that proves insufficient in the plan, a lease
+returns as an explicit task rather than an assumption.
+
+⚠ The panel's disabled button does **not** bound callers once the route is cloud-enabled: the route
+is reachable by any authenticated client. The bound is the ledger and the caps, not the UI.
 
 ---
 
-## 8. The bounded dependency — stated, not solved
+## 7. The outcome discriminator
 
-In the unattended path the corrected body only becomes real if the generation publishes.
-`SupabaseBlobStore.promote` is create-if-absent (`:120-123`), so when the final key is occupied — the
-common case on a re-summarize — **the worker's corrected body is discarded and the old body stays
-live.** Stamping `mdCorrectionsHash` as current there describes a document we did not write.
+An unattended no-write is silent, correctly. An **attended** one is a button press that changes
+nothing, which reads as a bug. The route returns `applied` / `skipped` / `nothing-to-apply` with the
+searched terms, and the panel reports it. This is the only UI surface beyond making the panel
+reachable in cloud mode.
 
-**That is backlog #22, and this spec does not fix it.**
+---
 
-Gating the card on publication is exactly what made M1 incoherent across two review rounds: ten
-sibling card fields stay unconditional, and `deriveClassASignals` falls back to `processedAt`
-(`backfill.ts:13`) — which the worker stamps unconditionally — so the silence never reaches the
-consumer. Re-importing that problem would repeat a failure already paid for twice.
+## 8. Publication pre-check — v1's §8 was wrong
 
-**The boundary, precisely:**
+v1 said the unattended gap was inherited. It is not: v1 would have **paid** for a correction on a
+body that `promote` discards, then written a card describing it.
 
-- The **attended** path is fully honest. It writes with `put`, which overwrites unconditionally.
-- The **unattended** path's honesty is bounded by whether the generation publishes.
-- That gap is #22, and **M5 closes it** by making publication a property of the generation rather
-  than a race on one key.
+`SupabaseBlobStore.promote` is create-if-absent (`:120-123`). **If the final key already exists, the
+generation cannot publish** — so before spending anything on correction, the handler checks
+`blobStore.exists(principal, finalKey)`. If it exists: **do not correct, do not stamp.**
 
-Shipping this leaves the unattended stamp no *more* honest than today in the promote-skipped case,
-while the attended path becomes fully honest and corrections start working in cloud at all.
+This is a **spend guard, not a stamping rule** — which is why it avoids what made M1 incoherent. It
+does not attempt to gate the card on publication; it declines to buy something that cannot be
+delivered.
+
+**Residual, stated:** an occupied key means the whole generation is wasted, not just the correction.
+That is backlog #22 and M5 closes it. This spec makes the correction not add to the waste.
+
+⚠ **The unattended path does not stamp `mdCorrectionsHash` today** — `summary-handler.ts` contains
+zero `corrections` references. v2 adds that stamp; §9's assertions cover it.
 
 ---
 
 ## 9. Falsifiers
 
-**The rule: assert at the consumer, not the mechanism.** Both M1 versions passed tests that measured
-the payload while the consumer never saw the change.
+**Assert at the consumer.** Both M1 versions passed tests measuring the payload while the consumer
+never saw the change.
 
 | Claim | Consumer | Assertion |
 |---|---|---|
-| Corrections work in cloud, attended | the stored body | POST → the blob holds corrected text, not the original |
-| Corrections survive an unattended re-summarize | the published body | doc-version bump → the new body has them applied |
-| The skip saves money | **the spend ledger** | zero movement, zero Gemini calls |
-| The apply spends | the spend ledger | moves by the expected amount |
-| The skip is honest | `reconcileClassA`'s decision | after a skip, sync does not read the cloud body as corrections-stale |
-| An irreducible clause always runs | Gemini call count | `"make it less formal"` → exactly one apply |
-| Local is unchanged | existing local tests | pass untouched; panel response shape identical |
-| **One core, no drift** | both entry points | same corrections + same document through each → **byte-identical output** |
+| Cloud attended correction works | the stored body | POST → blob holds corrected text |
+| …and the card | `tldr`/`takeaways` **and the callout's Concepts line** | all three reflect the corrected document |
+| Unattended corrections survive a version bump | the **published** body and card | both corrected |
+| Empty corrections cost nothing | the spend ledger | **zero** movement, zero Gemini calls — the v1 inversion |
+| A skip costs nothing | the spend ledger | zero movement |
+| A run spends a bounded amount | the ledger | moves by `correction_est_cents`, and the actual is ≤ the cap |
+| An occupied final key costs nothing | the ledger | zero movement — §8 |
+| An irreducible clause runs | the **body**, not the call count | the document changes; call-count alone is a mechanism assertion |
+| A no-write outcome disturbs nothing | the **sync decision** | `reconcileClassA` returns the same action before and after; `updated_at`-driven `deriveHumanSnapshot` unchanged for untouched fields |
+| One core, no drift | both entry points | same inputs → byte-identical output **and** the output is correct, not merely equal |
+| Local is unchanged | existing local tests | pass, except the two encoding the bare-pass behaviour §5.1 deliberately changes |
 
-The last one makes §3's structural claim falsifiable rather than a comment.
+**Tiers.** Predicate: unit, many cases — quote styles, apostrophes (`don't`, `it's`), arrow without
+quotes, irreducible poisoning the set, empty, whitespace-only, term only in the card. Apply-core:
+unit, Gemini mocked at `lib/gemini.ts`. Route, ledger, clearing-on-Supabase: integration.
 
-**Tiers.** The predicate is pure → many unit cases: quote styles including curly, arrow forms,
-multi-clause, an irreducible clause poisoning the set, a term present only in the card. Apply-core is
-unit with Gemini mocked at `lib/gemini.ts`, this project's stated mocking boundary. Route and ledger
-assertions are integration. Real Gemini is never called.
+**Negative tests assert which error**, not that something threw.
 
-**Negative tests must assert *which* error**, not that something threw — a test catching "any error"
-passes on a typo in the code under test.
-
-**No characterization test for §8.** Backlog #22 already has an `it.failing` tripwire
-(`summary-handler-promote-divergence.test.ts:148`) whose comment bans re-asserting current behaviour
-as expected. A second test saying "this is fine for now" would leave M5 with two tests demanding
-opposite outcomes — the Blocking that killed M1 v1.
+**No characterization test for §8's residual.** Backlog #22 already has an `it.failing` tripwire
+(`summary-handler-promote-divergence.test.ts:148`) whose comment bans re-asserting current behaviour.
 
 ---
 
 ## 10. Out of scope
 
-- **Deterministic `{from,to}` pairs.** Rejected: they cannot express non-substitution instructions,
-  so they would narrow what the user can ask for. #23's representation clause should be closed as
-  *rejected with reasons*, not deferred.
-- **Backlog #22 / the unattended stamp.** §8.
-- **A durable correction lease.** §6, additive later.
-- **Re-authoring existing free-form corrections.** No migration: the field keeps its type and
-  meaning. This is a consequence of keeping `fixSummary` — the representation does not change, so
-  nothing needs converting.
-- **A real two-sided interleaving test.** Needs a live stack; belongs with M5.
+- Deterministic `{from,to}` pairs — **rejected with reasons**, not deferred.
+- Backlog #22 itself. §8 stops adding to it.
+- Re-authoring existing corrections — no migration; the field keeps its type.
+- A real two-sided interleaving test — needs a live stack; M5.
 
----
+## 11. Follow-ups
 
-## 11. Follow-ups this creates
-
-1. Correct backlog #23's two unsupported claims (§1.1) and record the representation clause as
-   rejected.
-2. Rename in prose: this operation *corrects*, it does not *regenerate*. The URL stays.
-3. If the ledger later shows duplicate correction traffic, revisit §6.
+1. Correct backlog #23 per §1.1 and record the representation clause as rejected.
+2. The measured-sizes row cites a path **outside this repo**; move a fixture in or restate.
+3. If the ledger shows duplicate correction traffic, revisit §6.4.
