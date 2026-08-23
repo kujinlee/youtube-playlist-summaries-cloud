@@ -1,65 +1,49 @@
-# Corrections in the cloud — design spec (v3)
+# Slice A — corrections work in the cloud, attended path
 
-**Backlog:** #23. **Phase:** 1.
-**History:** v1 → round 1 (26 findings, both halves NOT CONVERGED) → v2 → round 2 (33 findings, both
-halves NOT CONVERGED) → **v3**. Reviews: `docs/reviews/spec-corrections-in-cloud-r{1,2}-{codex,claude}.md`.
+**Backlog:** #23. **Phase:** 1. **Scope:** the user-initiated cloud correction, and nothing else.
 
-**Goal.** Corrections work on the cloud path with the same felt behaviour as local, and the row stops
-claiming corrections it never applied.
+**History.** v1 → r1 (26 findings) → v2 → r2 (33) → v3 → r3 (Codex 2B/2H/2M/2L, Claude 3B/7H/8M/10L).
+All three rounds NOT CONVERGED from both halves, firing `docs/dev-process.md`'s Phase 6 trigger.
+**Both halves independently concluded the document was three slices, not one.** This is slice A.
+Reviews: `docs/reviews/spec-corrections-in-cloud-r{1,2,3}-{codex,claude}.md`.
+
+> **Decided 2026-08-23 (user).** Decompose. Slice A ships with **post-hoc spend recording and no
+> reservation protocol** — a third option neither reviewer named. v3's error was choosing "metered",
+> specifying the mechanism, and omitting the amount: *"the worst of both"*.
+
+**Goal.** A cloud user edits corrections, presses the button, and gets a corrected summary — the same
+behaviour as local.
 
 ---
 
-## 0. v3 deletes two optimisations, and that is the whole change
+## 0. The other two slices
 
-Round 2 produced 33 findings. Counting them by subject rather than severity showed something the
-severity counts hid: **two optional cleverness features generated over half of them, and both had
-produced false-negative Blockings** — the worst failure class in this design, because a false
-negative silently discards a user's correction.
-
-| Deleted | Why it existed | What it cost |
+| Slice | Contents | Where it went |
 |---|---|---|
-| **Term extraction** — parse the corrections prose, search the document, skip if no term occurs | Save ~0.6¢ when a misspelling is already gone | 2 Blockings (apostrophe mis-pairing in both parities), plus the empty-clause, trailing-`;`, multi-arrow, whitespace and punctuation cases. Every round found another input class the prose had not covered |
-| **Publication pre-check** — `exists(finalKey)` before spending | Avoid paying to correct a body `promote` will discard | 2 Blockings. `exists()` is `get() !== null` and `get()` maps *every* error to `null` (`supabase-blob-store.ts:34-43,85-87`), so it cannot prove absence — the repo's own documented trap — and it is TOCTOU in the other direction |
+| **B — unattended correction** | worker integration, the pre-apply re-read, the `mdCorrectionsHash` stamp on a generated body | `docs/backlog.md` #60. **Blocked on #22**: `promote` is create-if-absent, so a corrected body can be discarded while the row claims it. A failure inside the job also discards a completed ~115¢ generation, which needs containment slice A does not |
+| **C — money instruments** | reserve/settle RPCs, `correction_est_cents`, `correctionWorstCents()`, the `cap-soundness` extension, the `max_duration_seconds ≤ 4,332s` ratchet | `docs/backlog.md` #61. A money-path slice; this repo's record for those is five to seven rounds (`serve-path-bounding`, PR #67) |
 
-**What remains is the feature.** The rule is now: run the correction when there are corrections to
-apply. That is one line, it has no input classes to enumerate, and it cannot produce a false negative.
-
-**The lesson, recorded because it recurred four rounds running:** I was designing a tokenizer in
-prose. Each round found another case the paragraphs missed. That is a representation problem, not a
-convergence problem, and the fix is deletion rather than a sixth revision.
-
-⚠ **The user's original optimisation does NOT survive, and v3's earlier wording claiming otherwise
-was wrong.** The request was: *"if current text do not include specified misspelling, do not correct
-(save gemini trip)"* — a check on whether the **misspelling occurs in the text**. That is exactly the
-deleted feature. The surviving guard is a different, weaker thing: it skips when the corrections
-**field is empty**, which is not the same case and was already in the code.
-
-**So this is a scope reduction, not a simplification of the same behaviour**, and it needs the user's
-assent rather than a reassuring paraphrase. The trade being proposed: pay ≈0.6¢ per generation for a
-video whose corrections no longer match, in exchange for deleting the rule class that produced four
-false-negative Blockings across three rounds. A false negative silently discards a correction the
-user typed; the 0.6¢ does not.
+**Three round-3 findings die with this split** and are not addressed here because they belong to B
+and C: the falsifier asserting unattended survival (r3 B2), the structural-validation throw
+discarding a generation (r3 B3), and the missing `correction_est_cents` (r3 H1 — with post-hoc
+recording there is no estimate to name).
 
 ---
 
 ## 1. Measured position
 
-Commands run 2026-08-22/23. Re-derive before trusting.
-
 | Fact | Value | Source |
 |---|---|---|
 | Apply paths | one — `app/api/videos/[id]/regenerate/route.ts:63` | `grep -rn fixSummary` |
 | …reachable from cloud | none — `fs.promises` at `:50`, `:69` | same |
-| `corrections` in the worker | **0** in `lib/job-queue/summary-handler.ts` | `grep -c` |
-| Corrections UI gate | `components/VideoMenu.tsx:49` (comment) and `:188` (the control) | `grep -n` |
-| Storage seam already used | `getStorageBundle()` at `route.ts:36` — **metadata only** | `grep -n` |
-| Effective-corrections rule | `route.ts:77-79` | `grep -n` |
-| Today's no-corrections behaviour | `fixSummary` skipped, **`extractQuickView` still runs** (`:63`, `:66`) | read |
-| Mean summary size | 7,288 **bytes** (n=10, 6,247–8,961) — ⚠ `wc -c` is bytes, and the fixture path is **outside this repo**, so a reviewer could not reproduce it. **Not used for any decision in v3** | `wc -c` |
-| Summary worst-case run | **115¢** at the live 1800s cap | recomputed from `lib/gemini-cost.ts` |
-| Reservation | `summary_est_cents` default **150¢** | `supabase/migrations/0011_cost_guardrails.sql:29` |
-| Live duration cap | **1800s** | same file `:33` |
-| `withCaps` | `lib/gemini.ts:36`, used at `:326` and `:433` — **not by `fixSummary`** | `grep -n` |
+| Storage seam already used | `getStorageBundle()` at `:36` — **metadata only** | `grep -n` |
+| Corrections UI gate | `components/VideoMenu.tsx:49` (comment), `:188` (control) | `grep -n` |
+| Apply guard today | `route.ts:63` — `trimmedCorrections ? fixSummary(…) : stripped` | read |
+| Quick-view today | `:66`, **unconditional** | read |
+| Stamping rule | `:77-79` — a **different** quantity from the apply input | read |
+| `withCaps` | `lib/gemini.ts:36`; used by `generateSummary` `:326` and `extractQuickView` `:433`; **not by `fixSummary`** | `grep -n` |
+| Per-call Gemini timeout | 60,000 ms | `lib/gemini.ts:105` |
+| Typical correction cost | ≈0.6¢ | `lib/gemini-cost.ts:33,35` |
 
 **Not verified:** the row's "99 existing free-form corrections" — no `psql`; `pg` cannot verify
 Supabase's TLS chain.
@@ -67,239 +51,180 @@ Supabase's TLS chain.
 ### 1.1 Corrections to backlog #23
 
 1. *"Unaffordable by construction"* → **wrong**. ≈0.6¢ typical.
-2. *"A reworded heading orphans paid digs"* → **overstated**. A reworded heading alone does not
-   orphan a dig while `startSec` is stable (`lib/dig/cloud/dig-blob-key.ts:13-23`,
-   `enqueue-dig-core.ts:33-39`). It **does** drop the magazine gists for every section
-   (`read-model.ts:12-24`, positional and all-or-nothing) and remove the title fallback
-   (`dig-merge.ts:120-155`) that exists to survive `startSec` drift. **If both move, orphaning is
-   real.** ⚠ v2 quoted only the bullet that supported this design; §4.2.1's *other* bullet — that
-   `fixSummary`'s heading-pinning is deliberately relied upon so titles-constant-prose-changed serves
-   stale gists — cuts the other way and is included here.
+2. *"A reworded heading orphans paid digs"* → **overstated**. A reworded heading alone does not orphan
+   a dig while `startSec` is stable (`dig-blob-key.ts:13-23`, `enqueue-dig-core.ts:33-39`). It **does**
+   drop the magazine gists for every section (`read-model.ts:12-24`) and remove the title fallback
+   (`dig-merge.ts:120-155`). **If both move, orphaning is real.**
 
-**"Regenerate" is a misnomer.** Zero references to `summaryCore`, `generateSummary` or
+⚠ **§3's structural validation is justified by that second clause and must not overstate it.** The
+reason to validate is the *measured* cost — gist invalidation, and the fallback disappearing — not
+the retracted "orphans paid digs".
+
+**"Regenerate" is a misnomer**: zero references to `summaryCore`, `generateSummary` or
 `resolveTranscriptSegments`. It corrects an existing document.
 
----
+### 1.2 What the user asked for, and what this does not do
 
-## 2. Decisions
-
-| # | Decision |
-|---|---|
-| 1 | Corrections work everywhere |
-| 2 | Keep `fixSummary` — pairs cannot express non-substitution instructions |
-| 3 | Corrections are a property of the video (unattended applies stored) |
-| 4 | ~~Deterministic applicability check~~ — **deleted in v3, §0** |
-| 5 | Attended path is a synchronous route |
-| 6 | Two pure modules, two thin callers |
-| 7 | ~~`exists()` publication pre-check~~ — **deleted in v3, §0** |
-| 8 | Capping and metering `fixSummary` are in scope |
+⚠ The original request was *"if current text do not include specified misspelling, do not correct"* —
+a check on whether the misspelling **occurs in the text**. **That feature is not in this slice.** Three
+rounds of trying to specify it produced four false-negative Blockings, and a false negative silently
+discards a correction the user typed. What remains skips only when the corrections **field is empty**.
+The accepted trade: ≈0.6¢ per press on a video whose corrections no longer match.
 
 ---
 
-## 3. Components
+## 2. Components
 
-**`lib/corrections/apply-core.ts`** — `stripQuickViewCallout` → `fixSummary` → **structural
-validation** → `extractQuickView` → `insertQuickViewCallout`. Input `{ md, corrections, tags }`,
-output `{ content, tldr, takeaways }`. **`tags` is required** — `route.ts:67` passes
-`video.tags ?? []`, and dropping it deletes the callout's Concepts line.
+**`lib/corrections/apply-core.ts`** — new, store-agnostic.
+`stripQuickViewCallout` → `fixSummary` → **structural validation** → `extractQuickView` →
+`insertQuickViewCallout`. In `{ md, corrections, tags, signal }`, out `{ content, tldr, takeaways }`.
 
-⚠ **Structural validation is new and not optional.** `generateSummary` repairs section timestamps via
-`ensureSectionTimestamps` (`lib/gemini.ts:390-402`); `fixSummary` only *asks* the model to preserve
-structure (`:479-489`). Since §1.1 establishes that heading and `▶` stability is load-bearing for dig
-anchoring, the corrected document is validated for the same invariants before it is written. A
-failure is an error, not a silent write.
+- **`tags` is required.** `route.ts:67` passes `video.tags ?? []`; dropping it deletes the callout's
+  Concepts line.
+- ⚠ **`signal` is required.** v3 lost it, leaving the abort check as a point test in front of ~181 s
+  of uncancellable paid work.
 
-**No `applicable.ts`.** Deleted with the optimisation.
+**Structural validation — specified as a comparison, not as "the same invariants".** v3 said the
+latter, which is the deleted prose-rule relocated. The check is exact:
+
+> Parse the pre-correction document (after callout strip) and the post-correction document with
+> `lib/html-doc/parse.ts`. **Throw** unless: the H2 sequence is identical in count, order and exact
+> text; every section's `▶` timestamp tuple `(startSec, endSec)` is identical; the H1 and frontmatter
+> are present. No repair — `generateSummary` repairs (`ensureSectionTimestamps`, `gemini.ts:390-402`)
+> because it authored the structure; correction did not, so a structural change means the model
+> disobeyed and the result is discarded.
+
+On this slice a throw costs one correction (≈0.6¢). *(Inside the summary job it would cost a
+completed generation — that containment problem is slice B's.)*
 
 **`app/api/videos/[id]/regenerate/route.ts`** — gains a real cloud branch. It cannot execute under
 Supabase today: the panel sends `outputFolder` (`CorrectionsPanel.tsx:52`), the route rejects its
 absence (`:20-21`) and calls `getPrincipal(outputFolder)` (`:30`), and `getStorageBundle()` at `:36`
-throws without a client — **outside the try block**. The cloud branch takes `?playlist=<uuid>`,
-`createServerSupabase`, `getUser`, `resolveOwnedPlaylistKey`, `getPrincipalFromSession`,
-`getStorageBundle({ supabaseClient })`, and rejects `outputFolder` in cloud mode. An explicit
-`maxDuration` is set (§6.4).
+throws without a client — **outside the try block**, so it 500s rather than returning an error.
 
-**`lib/job-queue/summary-handler.ts`** — applies stored corrections after `summaryCore`, **after the
-abort check at `:170`**, before staging.
+The cloud branch: `?playlist=<uuid>`, `createServerSupabase`, `getUser`, `resolveOwnedPlaylistKey`,
+`getPrincipalFromSession`, `getStorageBundle({ supabaseClient })`; rejects `outputFolder` in cloud
+mode; the resolution moves **inside** the try.
+
+**`components/CorrectionsPanel.tsx` / `VideoMenu.tsx`** — reachable in cloud mode, scope-aware body,
+and the §6 discriminator rendered.
 
 ---
 
-## 4. When the correction runs
+## 3. When it runs
 
 ```
-fixSummary runs  ⟺  the APPLY INPUT is non-empty after trimming.
-
-apply input =  attended   → the request's corrections        (today's `trimmedCorrections`)
-               unattended → the stored corrections, re-read immediately before applying (§5.1)
+fixSummary runs  ⟺  the request's corrections are non-empty after trimming.
 ```
 
-⚠ **v3's first wording said "effective corrections" here and was wrong** — `effective` is the
-*stamping* input (`route.ts:77-79`), and an implementer following it literally would reinstate the
-paid bare press that §5.1 exists to reject, contradicting
-`tests/api/regenerate.test.ts:113-116`. The apply input and the stamp input are different values and
-the spec must never use one word for both.
+Exactly today's guard at `route.ts:63`. **The apply input is the request's corrections; the stamp
+input is the `:77-79` effective value. They are different quantities and this spec never uses one
+word for both** — v3's thesis sentence conflated them and would have reinstated a paid bare press.
 
-On the attended path this is **exactly the guard that exists today** at `route.ts:63`
-(`trimmedCorrections ? await fixSummary(…) : stripped`). There are no terms to extract, no clauses to
-parse, and no way to produce a false negative.
-
-**`extractQuickView` is unchanged on the attended path — it runs either way**, as it does today at
-`:66`. v2 proposed skipping it, which would have removed the local quick-view refresh and broken
-seven existing tests across two files. On the unattended path the card comes from `summaryCore`, so
-it runs only when a correction was applied.
-
-**Whitespace-only corrections** are trimmed to empty and therefore do not run. Clearing behaviour is
-§5.3.
+**`extractQuickView` runs either way**, as at `:66` today. Removing it on a bare press would delete
+the local quick-view refresh; **18 tests across `tests/api/regenerate.test.ts` and
+`tests/lib/cloud-sync/regenerate-stamp.test.ts` cover this path** (2 suites, 18 tests — counted, not
+estimated; v2 said two and v3 said seven, both wrong).
 
 ---
 
-## 5. Data flow
+## 4. Write hygiene
 
-### 5.1 Which corrections are applied
-
-**Attended: the request's corrections — unchanged from today.** v2 changed this to *effective*
-corrections, which would have made a bare button press re-run a paid full-document rewrite of stored
-free-form text. That is a UX change nobody asked for, and `tests/api/regenerate.test.ts:113-116`
-pins the current behaviour.
-
-**Unattended: the stored corrections**, because decision 3 says corrections are a property of the
-video. This is the only place the two differ, and it is where decision 3 actually bites.
-
-The stamping rule at `route.ts:77-79` is unchanged and remains **separate from the apply input** —
-v2 conflated them.
-
-⚠ **Staleness.** The unattended path reads corrections at `:84` and applies them minutes later. A
-Class-B sync landing in between means applying a stale set. **Re-read immediately before applying and
-stamp what was actually applied.**
-
-### 5.2 What a no-correction pass must not touch
-
-| Field | On a pass with no corrections |
+| Field | On a press with no corrections |
 |---|---|
-| `tldr`, `takeaways`, `summaryHtml` | **updated** — quick-view still runs (§4); this is today's behaviour |
-| `mdCorrectionsHash` | set per the `route.ts:77-79` rule |
-| `mdGeneratedAt` | ⚠ **must not move if the body did not change.** `deriveClassASignals` (`backfill.ts:13`) feeds it to the recency tiebreak; a false stamp lets an unchanged cloud body beat a newer local one |
-| `annotationsEditedAt.corrections` | ⚠ **only when the corrections text actually changed.** `route.ts:52-59` writes it on every request; a no-op press must not beat a real remote edit in Class-B reconciliation |
-| **`updated_at`** | ⚠ `merge_video_data` bumps it unconditionally (`0021:89`), and `deriveHumanSnapshot` reads `updatedAt ?? processedAt` (`backfill.ts:21`), so a metadata-only write can make an old `personalNote` look newly edited. **The plan uses a narrow RPC that does not bump it, or proves every affected row has a real `annotationsEditedAt`** |
+| `tldr`, `takeaways`, `summaryHtml` | **updated** — quick-view runs; today's behaviour |
+| `mdCorrectionsHash` | per the `:77-79` rule |
+| `mdGeneratedAt` | ⚠ **must not move** — the body did not change. `deriveClassASignals` (`backfill.ts:13`) feeds it to the recency tiebreak; a false stamp lets an unchanged cloud body beat a newer local one |
+| `annotationsEditedAt.corrections` | ⚠ **only when the corrections text actually changed.** Today `:52-59` writes it on every non-empty or explicit-clear request; a no-op press must not beat a real remote edit in Class-B reconciliation |
+| **`updated_at`** | ⚠ `merge_video_data` bumps it unconditionally (`0021:89`), and `deriveHumanSnapshot` reads `updatedAt ?? processedAt` (`backfill.ts:21`), so a metadata-only write can make an old `personalNote` look newly edited. **Use a narrow RPC that does not bump it, or prove every affected row has a real `annotationsEditedAt`** |
 
-### 5.3 Clearing corrections
-
-`corrections: undefined` is dropped by JSON serialization, so `updateVideoFields(p, id, { corrections:
-undefined })` (`:58`) is a **no-op on Supabase** — and the route then stamps `mdHash('')` over a row
-that still holds corrections. The plan uses **the store's own documented clear surface**, not an
-invented sentinel, and tests it against both backends.
+**Clearing.** `corrections: undefined` is dropped by JSON serialization, so
+`updateVideoFields(p, id, { corrections: undefined })` (`:58`) is a **no-op on Supabase**, and the
+route then stamps `mdHash('')` over a row that still holds corrections. Use the store's own clear
+surface — named in the plan, not invented here — and test against both backends.
 
 ---
 
-## 6. Money — with the arithmetic, not a deferral
+## 5. Money — capped, recorded, not reserved
 
-**6.1 The cap.** `fixSummary` gains `maxOutputTokens = MAX_SUMMARY_OUTPUT_TOKENS` (8192,
-`lib/gemini-cost.ts:16`) and `thinkingBudget: 0`, **applied through `withCaps`**
-(`lib/gemini.ts:36`) rather than as loose options — v2 said "mirroring `generateJson`", but
-`generateJson` reaches the caps via `withCaps` at `:326`, and `fixSummary` does not use it at all.
-Coupling them there keeps the two settings the cost proof depends on from drifting apart.
+**5.1 Caps.** `fixSummary` gains `maxOutputTokens = MAX_SUMMARY_OUTPUT_TOKENS` (8192,
+`gemini-cost.ts:16`), `thinkingBudget: 0` and `signal`, **applied through `withCaps`**
+(`gemini.ts:36`). v3 said "mirroring `generateJson`"; in fact `generateSummary` builds a capped model
+via `withCaps` at `:326` and passes it in — `generateJson` has no cap parameters of its own.
 
-⚠ **The cap is derived from the enforced summary output cap, not from a byte sample.** A corrected
-document cannot need more output than a generated one. v2's 8,961-byte basis was unreproducible,
-outside the repo, and measured in bytes.
+The cap comes from the enforced summary output cap: a corrected document cannot need more output than
+a generated one.
 
-⚠ **An over-cap document must fail before it is paid for, not after three attempts.** `fixSummary`
-retries twice on a truncated response (`:492-505`), so a document that cannot fit would cost three
-full passes and then throw — and on the unattended path that failure kills the whole generation.
-**The plan checks the input against the cap before the first call and fails fast.**
+⚠ **Preflight before the first call.** `fixSummary` retries twice on truncation (`:492-505`), so an
+over-cap document would cost three full passes and then throw. Check the input against the cap first
+and fail before paying.
 
-⚠ **`thinkingBudget: 0` is a quality risk on this task, NOT VERIFIED.** The repo has live gates for
-its billing behaviour (`tests/integration/gemini-live-gates.test.ts`) but nothing about correction
-quality with thinking disabled. The plan runs a fixture eval before this ships.
+⚠ **`thinkingBudget: 0` is a quality risk on this task — NOT VERIFIED.** Live gates exist for its
+billing behaviour (`tests/integration/gemini-live-gates.test.ts`), nothing for correction quality.
+Run a fixture eval before enabling.
 
-**6.2 The arithmetic — the reservation holds.**
+**5.2 Post-hoc recording, no reservation.** The route records **actual** spend to the ledger after the
+call returns. No reserve RPC, no settle semantics, no idempotency key, no `correction_est_cents`.
 
-| | ¢ |
-|---|---|
-| Summary worst case at the live 1800s cap | 115 |
-| `summary_est_cents` | 150 |
-| **Slack** | **35** |
-| Correction worst case: 3 × capped `fixSummary` + 3 × quick-view | **17.4** |
+**Why this and not full metering:** a reservation protocol is what makes this a money-path slice, and
+this repo's record for those is five to seven rounds. Recording gives the guardrails visibility —
+the daily cap and per-owner budget see the spend on the *next* decision — for a fraction of the work.
 
-**17.4 < 35, so `summary_est_cents` does not rise.**
+⚠ **The accepted risk, named rather than buried:** one un-preauthorised call per press. It is bounded
+by the §5.1 cap, attributable to an authenticated user action, and visible in the ledger immediately
+afterwards. It is **not** pre-authorised, so a burst can exceed a cap before the cap sees it. If the
+ledger shows that happening, slice C exists.
 
-⚠ **The fit is a function of `max_duration_seconds`.** It holds while that value is **≤ 4,416s
-(~74 min)**; at 5,400s the slack is 10.8¢ and the correction no longer fits. The live default is
-1800s. **This wants a ratchet, not a comment** — a check that fails if the configured duration
-exceeds the bound the reservation was proved against.
+**5.3 No lease.** Duplicate presses converge on the same content; the cost is duplicate spend, now
+visible. The route is reachable by any authenticated client once cloud-enabled — the panel's disabled
+button is not the bound.
 
-⚠ **`tests/integration/cap-soundness.test.ts:20` becomes a green gate over the wrong subject** once
-corrections run inside the job, because it asserts a bound that no longer covers all the job's paid
-calls. **It must be extended in the same change**, or it will pass while proving less than it claims.
-
-**6.3 The attended path needs a ledger, and it does not have one.** `fixSummary` takes no billing
-latch; the route is not a job handler and has no `ctx.billing`. Adding the latch (§6.1) is necessary
-but not sufficient — the plan specifies **route-side reserve / settle / release**, following the
-serve path's shape, and a test that fails if `fixSummary` is called without a latch.
-
-**6.4 No lease.** Duplicate corrections converge on the same result; the exposure is bounded by the
-caps and the ledger, not by the UI — the route is reachable by any authenticated client once
-cloud-enabled. `maxDuration` is set from the capped worst case: per-call timeout is 60s
-(`gemini.ts:105`) with up to 3 attempts, so the chain's bound is ~180s before quick-view.
+**5.4 `maxDuration`.** Set explicitly. Per-call timeout 60 s (`gemini.ts:105`) × up to 3 attempts for
+`fixSummary`, plus `extractQuickView`'s own retries. The plan states the number and the retry counts
+it was derived from.
 
 ---
 
-## 7. The outcome discriminator
+## 6. The outcome discriminator
 
 The route returns `applied` or `no-corrections`, and the panel reports it, so a press that changes
-nothing does not read as a bug. Unattended is silent, correctly.
+nothing does not read as a bug.
 
 ---
 
-## 8. What this does not fix
-
-**An occupied final key still discards the whole generation** — `promote` is create-if-absent
-(`supabase-blob-store.ts:120-123`). The correction is wasted along with the summary that produced it.
-
-v2 tried to pre-empt this with `exists()` and got two Blockings for it (§0). **v3 does not predict
-publication.** The waste is bounded by the same #22 that already wastes the summary, and M5 closes it
-by making publication a property of the generation.
-
-⚠ **The unattended path does not stamp `mdCorrectionsHash` today** (zero `corrections` references in
-`summary-handler.ts`). v3 adds it, and that stamp inherits #22's honesty gap in the promote-skipped
-case. Stated, not solved — gating the card is what made the M1 plan incoherent across two rounds.
-
----
-
-## 9. Falsifiers
+## 7. Falsifiers
 
 Assert at the consumer.
 
 | Claim | Consumer | Assertion |
 |---|---|---|
-| Cloud attended correction works | the stored body | POST → blob holds corrected text |
+| Cloud correction works | the stored blob | POST → holds corrected text, not the original |
 | …and the card | `tldr`, `takeaways`, **and the Concepts line** | all three reflect the corrected document |
-| Unattended corrections survive a version bump | the **published** body and card | both corrected |
-| Empty corrections cost nothing **in `fixSummary`** | the spend ledger | no `fixSummary` charge — quick-view still runs, per §4 |
-| A run spends a bounded amount | the ledger | ≤ the capped worst case, and `fixSummary` was called with a latch |
-| Structure survives correction | the parsed document | headings and `▶` timestamps unchanged; dig anchoring intact |
-| A no-correction pass disturbs nothing extra | the **sync decision** | `reconcileClassA` unchanged; `annotationsEditedAt` unmoved when the text did not change |
-| Local is unchanged | the seven existing tests in `tests/api/regenerate.test.ts` and `tests/lib/cloud-sync/regenerate-stamp.test.ts` | **all pass unmodified** — v3 preserves attended semantics precisely so this holds |
-| One core, no drift | both entry points | same inputs → identical **and correct** output |
-| The cap bound still covers the job | `cap-soundness.test.ts` | extended to include the correction calls; fails if they are unbounded |
+| Empty corrections cost nothing in `fixSummary` | the ledger | no `fixSummary` charge; quick-view still runs |
+| A run is recorded | the ledger | moves by the **actual** spend, after the call |
+| A run is bounded | the request to Gemini | `maxOutputTokens` and `thinkingBudget` present; over-cap input rejected **before** any call |
+| Structure survives | the parsed document | H2 sequence and `▶` tuples byte-identical pre/post |
+| A no-correction press disturbs nothing extra | the **sync decision** | `reconcileClassA` unchanged; `annotationsEditedAt` unmoved when the text did not change |
+| Clearing works on Supabase | the stored row | corrections actually absent afterwards, both backends |
+| Abort works | the in-flight call | aborting mid-correction cancels it rather than paying to completion |
+| Local is unchanged | **18 tests, 2 suites** | all pass unmodified |
 
-**Negative tests assert which error.** No characterization test for §8 — backlog #22's `it.failing`
-tripwire (`summary-handler-promote-divergence.test.ts:148`) already owns that, and its comment bans
-re-asserting current behaviour.
+**Negative tests assert which error.** Slice A adds **no** assertion about unattended behaviour — that
+is slice B's, and backlog #22's `it.failing` tripwire
+(`summary-handler-promote-divergence.test.ts:148`) already owns the scenario.
 
 ---
 
-## 10. Out of scope
+## 8. Out of scope
 
-- `{from,to}` pairs — **rejected with reasons**.
-- Term-extraction skip and the publication pre-check — **deleted, §0**.
-- Backlog #22.
-- No **data** migration; the `corrections` field keeps its type. ⚠ There **is** a schema change: §5.2
-  may need a narrow RPC, and §6.2's duration ratchet may need config.
-- A live two-sided interleaving test — M5.
+- The unattended path — **slice B**, backlog #60.
+- Reserve/settle, `correction_est_cents`, the `cap-soundness` extension, the duration ratchet —
+  **slice C**, backlog #61.
+- `{from,to}` pairs — rejected with reasons.
+- The occurrence check the user originally asked for — §1.2.
+- No **data** migration. A schema change may still be needed for §4's narrow RPC.
 
-## 11. Follow-ups
+## 9. Follow-ups
 
-1. Correct backlog #23 per §1.1; record the representation clause as rejected.
-2. Move a summary fixture into the repo, or drop the size row — it is currently unreproducible.
-3. The `max_duration_seconds ≤ 4,416s` bound needs a ratchet.
+1. Correct backlog #23 per §1.1; record the representation clause as rejected and §1.2 as descoped.
+2. Move a summary fixture into the repo — the size row cited a path outside it and was unreproducible.
