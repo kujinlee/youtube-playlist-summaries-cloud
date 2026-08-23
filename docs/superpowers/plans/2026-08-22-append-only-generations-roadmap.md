@@ -63,9 +63,33 @@ cross-references than the fix would have taken.
 
 ## Milestones
 
-### M1 — The honest card ✅ plan written
+### M1 — The honest card ⛔ RE-SCOPED AND DEFERRED 2026-08-22 (user decision)
 
-**Plan:** `docs/superpowers/plans/2026-08-22-m1-honest-card.md`
+**Do not execute `docs/superpowers/plans/2026-08-22-m1-honest-card.md`.** It is retained as the
+record of why, not as instructions.
+
+**What happened.** Two dual-adversarial rounds, and each killed the *mechanism* rather than the
+details — v1 stamped unconditionally (wrong: `promote` is create-if-absent, so the bytes usually
+never land); v2 stamped conditionally (wrong: the consumer reads
+`video.mdGeneratedAt ?? video.processedAt`, `backfill.ts:13`, and `processedAt` is stamped
+unconditionally anyway, so the silence reaches nobody). Blockings went **2 → 3** across the rounds —
+the opposite of a convergence curve. Reviews: `docs/reviews/plan-append-only-m1-r{1,2}-{codex,claude}.md`.
+
+**The root cause is scope, not defects.** M1 was framed as *"the two omitted fields"*. The real
+shape is that **all twelve card fields are written unconditionally for a body that may never have
+been published.** Gating two of twelve is a symptom patch, and the coherent version is a money-path
+change: withholding `docVersion` stops the idempotency skip firing
+(`summary-handler.ts:86-92`), so the next attempt re-runs Gemini and charges again.
+
+**Where its content goes.** The coherent version — *"the card is written as a unit, gated on
+publication"* — would also close backlog #22's row-lies-about-`docVersion` half. It is a real slice
+needing its own spec, and it is **superseded by M5** (a generation carries card and body
+inseparably, §5.2), so it should only be revived if M5 slips badly. Nothing is lost by deferring it;
+the live harm it targeted has been live for months and M5 dissolves it properly.
+
+**The measured lesson, for the next milestone plan:** both rounds' fixes were *"certified complete
+by tests that measure the mechanism instead of the outcome"* (round-2 reviewer). A test that proves
+the payload changed is not a test that proves the consumer sees it. **Assert at the consumer.**
 
 The cloud worker omits `mdGeneratedAt` and `mdCorrectionsHash`; local sets both
 (`lib/pipeline.ts:271-272`). Because the payload is silent, `persist_summary`'s layer-2
@@ -83,7 +107,7 @@ live body, and stamping for a body it did not publish is worse than the silence 
   optional layer-3 fields that inherit the same way; M1 files those as a new row.
 - **Gate:** dual adversarial review; branch + PR.
 
-### M2 — Corrections as deterministic `{from,to}` pairs
+### M2 — Corrections as deterministic `{from,to}` pairs ◀ **THE WORK STARTS HERE** (decided 2026-08-22)
 
 Backlog #23 proper. An LLM authors the pairs (~50 output tokens); application is deterministic,
 word-boundary, case-preserving, and **never lets the model rewrite the document** — headings are an
