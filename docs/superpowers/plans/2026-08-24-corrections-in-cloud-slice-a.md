@@ -50,6 +50,18 @@ All three may ship in **one PR**; the order must hold *within* it. T10 has no de
 *(T10 was originally scheduled after T4. Promoted here 2026-08-24 rather than left as a note inside
 Task 10, because a coupling written inside a task is a coupling that gets scheduled around.)*
 
+**Two more edges, same shape, found at the Post-Plan Gate (2026-08-24):**
+
+| Order | What it prevents | Cost of getting it wrong |
+|---|---|---|
+| **T8 before T11** | T11 deletes the cloud gate at `VideoMenu.tsx:181` (`{!cloudMode && video.summaryMd && (`), making the corrections panel reachable in cloud mode. T8 is what makes the route work there | Ship 11 first and **every cloud user who presses the button gets a 500** — `getStorageBundle()` at `route.ts:36` sits OUTSIDE the try and throws without a client |
+| **T7 before T8** | T7 creates `MAX_CORRECTIONS_CHARS` in `lib/corrections/apply-core.ts`; T8's `serveCloud` imports it | **It does not compile** |
+
+So the full graph is `T1 → T2 → T5 → T7 → T8 → {T9, T11}`, with `T3` and `T10` both before `T4`, and
+`T12` last. Numbering already happens to satisfy all of it — **which was equally true of T10 before
+it turned out to be wrong.** That is why the graph is written down and why T12 now carries a script
+that checks it (step 4) rather than a convention that asks the scheduler to remember.
+
 **T9's migration adds NO task-order constraint** — it touches neither `isFresh`, the body write nor
 the serve path, and depends only on T5 and T8, which already precede it. It adds a **release-order**
 constraint at a different layer (apply `0026` → re-check anon exposure against prod → deploy the
@@ -95,7 +107,7 @@ two here would blunt the one thing this section is for.
 
 ## Out of the 12 — must not be forgotten
 
-Four things the spec asks for that are **not** tasks. Each is recorded here because a plan that omits
+Six things the spec asks for that are **not** tasks. Each is recorded here because a plan that omits
 them silently reads as complete. Tracked as task **#130**.
 
 | | Why it is not one of the 12 |
@@ -104,6 +116,8 @@ them silently reads as complete. Tracked as task **#130**.
 | **Count the already-drifted envelopes before (e) ships** (§2) | Not code. §2 gates a staged rollout on this number. Read-only via `CLAUDE_RO_DATABASE_URL`: envelopes whose `sourceMdHash` is present and differs from the current body hash. ⚠ Per `separate-the-rule-from-the-fetch`: the *logic* does not need a database even though the *fetch* does — do not let the credential requirement make the whole thing untestable. **No repo-side proxy exists and cannot be improvised:** `sourceMdHash` began being written 2026-07-17 (`c591603`) and `GENERATOR_VERSION` last changed 2026-07-10 (`e6470ad`), so the existing `generatorVersion` conjunct has invalidated **nothing** since — the population is unbounded from the repo and only the count bounds it |
 | **Does a cloud rendered-HTML BLOB cache exist at all?** (§8.1 item 2) | Code, but unassigned — and it is a *question* before it is a task. T8 nulls the `summaryHtml` **index field**; nobody has checked for a cached rendered **artifact**, and (e) does not cover one because it has no tie to the body hash. **This is the same "what else touches this?" class as both round-4 Blockings** |
 | **Panel copy for the structural-validation throw and for abort** (§8.1 item 3) | Code, but unassigned. T11 covers the 413 and `no-corrections` only. Two of the four new failure classes have no specified message |
+| **A fixture eval of correction quality with `thinkingBudget: 0`** (§5.1, line 701) | ⚠ **Added at the Post-Plan Gate.** The spec marks this **NOT VERIFIED** and says *"Run a fixture eval before enabling"*. T5 enables it, and T5's step 8 mutation asserts it is **present** — so the plan turns an open question into shipped behaviour and reports green about it. Not code: it is a quality comparison someone has to judge |
+| **§9's two follow-ups** | Correct backlog #23 per §1.1 (the "unaffordable" and "orphans paid digs" retractions), and move a summary fixture into the repo — §9 item 2 notes the size row cited a path **outside** the repo. Both are docs work with no task |
 
 ---
 
@@ -162,9 +176,18 @@ import {
   StructuralValidationError,
 } from '@/lib/corrections/structural-validation';
 
+// ⚠ THIS IS THE REAL DOCUMENT SHAPE, not an invented one — assembled per
+// lib/ingestion/summary-core.ts:101-116: frontmatter (tags list, QUOTED video_id, lang uppercase,
+// score) / blank / H1 / blank / meta line / blank / `---` / blank / body. An earlier draft used an
+// unquoted `video_id` and no tags block; the parser tolerates both (parse.ts:5 strips optional
+// quotes), so the tests would have passed against a document that this pipeline never produces.
 const DOC = `---
-video_id: abc12345678
+tags:
+  - video-summary
+  - en
+video_id: "abc12345678"
 lang: EN
+score: 4.2
 ---
 
 # A Title
@@ -1006,7 +1029,10 @@ describe('fixSummary caps and cancellation', () => {
   it('forwards the signal to generateContent', async () => {
     const ac = new AbortController();
     await fixSummary('md', 'c', { signal: ac.signal });
-    expect(mockGenerateContent).toHaveBeenCalledWith('md' && expect.any(String), expect.objectContaining({ signal: ac.signal }));
+    expect(mockGenerateContent).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: ac.signal }),
+    );
   });
 
   it('throws AbortError from the loop-top guard without calling Gemini when already aborted', async () => {
@@ -1017,14 +1043,31 @@ describe('fixSummary caps and cancellation', () => {
     expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 
-  it('aborts DURING the backoff instead of sleeping it out and paying again', async () => {
+  // ⚠ THIS TEST MUST DISTINGUISH THE SLEEP FROM THE LOOP GUARD. An earlier draft asserted only
+  // `AbortError` + one call, which BOTH abort sites satisfy — so the `abortableSleep` mutation in
+  // Task 12's table would have survived and been recorded as caught. The separator is that
+  // abortableSleep's onAbort calls clearTimeout (gemini.ts:139) and a bare setTimeout does not, so
+  // the pending timer count is what tells them apart.
+  it('an abort DURING the backoff rejects the sleep and clears its timer', async () => {
+    jest.useFakeTimers();
     const ac = new AbortController();
-    mockGenerateContent.mockImplementationOnce(async () => { throw new Error('transient'); });
-    const p = fixSummary('md', 'c', { signal: ac.signal });
-    await Promise.resolve();
+    mockGenerateContent.mockRejectedValueOnce(new Error('transient'));
+    const p = fixSummary('md', 'c', { signal: ac.signal }, 1, 400);
+    await Promise.resolve(); await Promise.resolve();   // let attempt 1 reject and the sleep start
+    expect(jest.getTimerCount()).toBe(1);               // we are genuinely IN the backoff
     ac.abort();
     await expect(p).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+    expect(jest.getTimerCount()).toBe(0);               // cleared — only abortableSleep does this
     expect(mockGenerateContent).toHaveBeenCalledTimes(1);   // no second PAID attempt
+    jest.useRealTimers();
+  });
+
+  it('an abort BEFORE the first call is caught by the loop-top guard, with no Gemini call', async () => {
+    const ac = new AbortController();
+    ac.abort();
+    await expect(fixSummary('md', 'c', { signal: ac.signal }))
+      .rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
+    expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 });
 
@@ -1291,10 +1334,36 @@ Update the existing `applyCorrection` call in `app/api/videos/[id]/regenerate/ro
 route wiring has landed; otherwise the route still calls `fixSummary` directly at `:63` and that call
 becomes `await fixSummary(stripped, trimmedCorrections, { signal: request.signal })`.
 
-- [ ] **Step 7: Run the tests and confirm they pass**
+- [ ] **Step 7: Migrate the SIX existing `fixSummary` callers — they break, and `tsc` covers them**
 
-Run: `npx jest tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts`
-Expected: PASS.
+⚠ **Do this before running anything.** `grep -rn "fixSummary(" --include=*.ts .` returns eight call
+sites: the route (`route.ts:63`, handled by T8), the definition, and **six existing tests** that this
+task's signature change breaks. `tsconfig.json:25-28` has `"include": ["**/*.ts", "**/*.tsx"]`, so
+`npx tsc --noEmit` typechecks them — steps 10's "no type errors" is false until these are migrated.
+Two of them also break at **runtime**, because the return is now an object.
+
+In `tests/lib/gemini.test.ts`, `describe('fixSummary')` at `:533`:
+
+| Line | Now | Becomes |
+|---|---|---|
+| `:542` | `const result = await fixSummary(MARKDOWN, CORRECTIONS);`<br>`expect(result).toBe(corrected);` | `const result = await fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal });`<br>`expect(result.text).toBe(corrected);` |
+| `:550` | `await fixSummary(MARKDOWN, CORRECTIONS);` | `await fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal });` |
+| `:561` | `fixSummary(MARKDOWN, CORRECTIONS, 2, 0)` | `fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal }, 2, 0)` |
+| `:568` | `fixSummary(MARKDOWN, CORRECTIONS, 2, 0)` | `fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal }, 2, 0)` |
+| `:579` | `const result = await fixSummary(MARKDOWN, CORRECTIONS, 2, 0);`<br>`expect(result).toBe('full corrected doc');` | `const result = await fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal }, 2, 0);`<br>`expect(result.text).toBe('full corrected doc');` |
+| `:589` | `fixSummary(MARKDOWN, CORRECTIONS)` | `fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal })` |
+
+Their mocked responses carry no `usageMetadata`, so `usage` is `null` in all six — which is the
+intended reading, not a gap: those fixtures never reported usage and must not now claim zero cost.
+
+⚠ **Keep them.** They cover truncation-retry, the `.cause` chain and the missing-key guard, and
+`tests/lib/gemini-fix-summary.test.ts` (this task's new file) does **not** duplicate them — the new
+file covers caps, cancellation and usage only.
+
+- [ ] **Step 8: Run the tests and confirm they pass**
+
+Run: `npx jest tests/lib/gemini.test.ts tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts`
+Expected: PASS — including the six migrated cases.
 
 - [ ] **Step 8: Mutation-check the caps object**
 
@@ -1315,14 +1384,39 @@ If it passes, an unmeasured call is being reported as free. Restore `: null` and
 - [ ] **Step 10: Typecheck and run the full suite**
 
 Run: `npx tsc --noEmit && npx jest`
-Expected: no type errors; all suites pass.
+Expected: no type errors; all suites pass. **If `tsc` reports errors in `tests/lib/gemini.test.ts`,
+step 7 was skipped** — that file is inside `tsconfig.json`'s `**/*.ts` include.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add lib/gemini.ts lib/gemini-cost.ts lib/corrections/apply-core.ts tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts
+git add lib/gemini.ts lib/gemini-cost.ts lib/corrections/apply-core.ts tests/lib/gemini.test.ts tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts
 git commit -m "feat(#23): fixSummary gains caps, signal x3, a preflight, and measured usage"
 ```
+
+#### ⚠ What this task does NOT make cancellable, stated rather than implied
+
+`applyCorrection` requires a `signal` and makes **two** paid Gemini calls. Only the first accepts one.
+
+```ts
+// lib/gemini.ts:425-429 — the second paid call, verified 2026-08-24
+export async function extractQuickView(
+  summaryMarkdown: string,
+  caps?: CloudGeminiCaps,
+  billing?: BillingLatch,
+): Promise<{ tldr: string; takeaways: string[] }>
+```
+
+**There is no `signal` parameter**, and internally it calls `generateJson` without passing one — so an
+abort during quick-view extraction runs to completion and is paid for. §5.4 budgets 181.2 s for that
+phase; that is the window a cancelled request cannot escape.
+
+**Slice A does not fix this**, and the plan states it rather than letting the required `signal` imply
+coverage it does not have. Extending `extractQuickView` to take `{ signal, caps, billing }` and
+forwarding to `generateJson` (which already accepts `opts.signal` at `:273`) is a four-line change to
+a function with **six existing callers** — `grep -rn "extractQuickView(" --include=*.ts .` before
+attempting it. Filed as slice-A residue on backlog **#61**; add it to §7's abort falsifier as a stated
+limit: *"aborting mid-**correction** cancels; aborting mid-**quick-view** does not."*
 
 ---
 
@@ -1702,8 +1796,7 @@ The route cannot execute under Supabase today. The panel sends `outputFolder`
 **Interfaces:**
 - Consumes:
   - `createServerSupabase(cookieStore: CookieStore)` and `type CookieStore` from `lib/supabase/server`
-  - `resolveOwnedPlaylistKey(supabase: SupabaseClient, playlistId: string, userId: string): Promise<string | null>` from `lib/storage/serve-playlist`
-  - `getPrincipalFromSession(session: { userId: string | null }, indexKey: string): Principal` from `lib/storage/resolve:93`
+  - **`loadSummaryForServe(supabase: SupabaseClient, a: { videoId: string; playlistId: string; userId: string }): Promise<LoadResult>`** — `lib/html-doc/serve-summary-core.ts:34`. On `ok: true` it yields `{ mdBytes, mdKey, base, title, principal, playlistId, video, bundle }`; on failure `{ ok: false, status, error }` with the status already chosen (404 / 503 / 409). **This replaces hand-rolling `resolveOwnedPlaylistKey` + `getPrincipalFromSession` + `getStorageBundle` + the blob read** — see the ⚠ in step 4.
   - `getStorageBundle(ctx?: { supabaseClient?: SupabaseClient }): StorageBundle` from `lib/storage/resolve:51`
   - `applyCorrection`, `CORRECTION_CAPS`, `MAX_CORRECTIONS_CHARS` from `lib/corrections/apply-core` (Tasks 2, 5, 7)
   - `blobStore.get(p, key): Promise<Buffer | null>` and `blobStore.put(p, key, bytes, contentType): Promise<void>` from `lib/storage/blob-store.ts:68-69`
@@ -1729,18 +1822,15 @@ Create `tests/api/regenerate-cloud.test.ts`:
 ```ts
 jest.mock('../../lib/gemini');
 jest.mock('../../lib/supabase/server');
-jest.mock('../../lib/storage/serve-playlist');
-jest.mock('../../lib/storage/resolve', () => ({
-  ...jest.requireActual('../../lib/storage/resolve'),
-  getStorageBundle: jest.fn(),
-  getPrincipalFromSession: jest.fn(() => ({ id: 'owner-1', indexKey: 'pl-key' })),
-}));
+// The route now delegates the whole load to loadSummaryForServe, so THAT is the seam to mock —
+// mocking resolveOwnedPlaylistKey/getStorageBundle would be mocking functions the route no
+// longer calls directly.
+jest.mock('../../lib/html-doc/serve-summary-core');
 jest.mock('next/headers', () => ({ cookies: jest.fn(async () => ({})) }));
 
 import { POST } from '../../app/api/videos/[id]/regenerate/route';
 import * as serverSupabase from '../../lib/supabase/server';
-import * as servePlaylist from '../../lib/storage/serve-playlist';
-import * as resolve from '../../lib/storage/resolve';
+import * as serveCore from '../../lib/html-doc/serve-summary-core';
 import * as gemini from '../../lib/gemini';
 
 const PLAYLIST_ID = '11111111-2222-3333-4444-555555555555';
@@ -1764,7 +1854,6 @@ Clawcode.
 `;
 
 const mockPut = jest.fn();
-const mockGet = jest.fn();
 const mockUpdateVideoFields = jest.fn();
 const mockUpdateVideoAnnotations = jest.fn();
 
@@ -1783,19 +1872,29 @@ beforeEach(() => {
   jest.mocked(serverSupabase.createServerSupabase).mockReturnValue({
     auth: { getUser: async () => ({ data: { user: { id: 'owner-1' } } }) },
   } as any);
-  jest.mocked(servePlaylist.resolveOwnedPlaylistKey).mockResolvedValue('pl-key');
-  mockGet.mockResolvedValue(Buffer.from(MD, 'utf-8'));
   mockPut.mockResolvedValue(undefined);
   mockUpdateVideoAnnotations.mockResolvedValue({ found: true });
-  jest.mocked(resolve.getStorageBundle).mockReturnValue({
-    metadataStore: {
-      readIndex: async () => ({ videos: [{ id: VIDEO_ID, summaryMd: 'a.md', tags: ['ai'] }] }),
-      updateVideoFields: mockUpdateVideoFields,
-      updateVideoAnnotations: mockUpdateVideoAnnotations,
+  jest.mocked(serveCore.loadSummaryForServe).mockResolvedValue({
+    ok: true,
+    mdBytes: Buffer.from(MD, 'utf-8'),
+    mdKey: 'a.md',
+    base: 'a',
+    title: 'T',
+    principal: { id: 'owner-1', indexKey: 'pl-key' },
+    playlistId: PLAYLIST_ID,
+    video: { id: VIDEO_ID, summaryMd: 'a.md', tags: ['ai'] },
+    bundle: {
+      metadataStore: {
+        updateVideoFields: mockUpdateVideoFields,
+        updateVideoAnnotations: mockUpdateVideoAnnotations,
+      },
+      blobStore: { put: mockPut },
     },
-    blobStore: { get: mockGet, put: mockPut },
   } as any);
-  jest.mocked(gemini.fixSummary).mockResolvedValue(MD.replace('Clawcode', 'Claude Code'));
+  jest.mocked(gemini.fixSummary).mockResolvedValue({
+    text: MD.replace('Clawcode', 'Claude Code'),
+    usage: { promptTokens: 10_000, outputTokens: 4_000 },
+  });
   jest.mocked(gemini.extractQuickView).mockResolvedValue({ tldr: 'New.', takeaways: ['P'] });
 });
 
@@ -1819,17 +1918,21 @@ describe('regenerate — cloud branch', () => {
     expect((await res.json()).error).toBe('outputFolder not valid on this backend');
   });
 
-  it('404s when the playlist is not owned by the caller', async () => {
-    jest.mocked(servePlaylist.resolveOwnedPlaylistKey).mockResolvedValue(null);
-    expect((await post({ corrections: 'fix' })).status).toBe(404);
-  });
-
-  it('409s repair-needed when the markdown blob cannot be read — never "empty, correct it anyway"', async () => {
-    mockGet.mockResolvedValue(null);
+  // The loader owns owner-resolution, the artifact status gate, key validation and the blob read.
+  // These cases assert the route SURFACES its verdict rather than re-deciding — a route that
+  // hand-rolled the load would pass the 404 and silently drop the other three.
+  it.each([
+    ['not owned',                    { ok: false, status: 404, error: 'not found' },        404],
+    ['artifact still committed',     { ok: false, status: 503, error: 'not ready, retry' }, 503],
+    ['artifact not promoted',        { ok: false, status: 404, error: 'not found' },        404],
+    ['corrupt summary key',          { ok: false, status: 409, error: 'corrupt summary key' }, 409],
+    ['blob unreadable',              { ok: false, status: 409, error: 'repair needed' },    409],
+  ])('surfaces the loader verdict for %s, and never calls Gemini', async (_label, verdict, status) => {
+    jest.mocked(serveCore.loadSummaryForServe).mockResolvedValue(verdict as any);
     const res = await post({ corrections: 'fix' });
-    expect(res.status).toBe(409);
-    expect((await res.json()).code).toBe('repair-needed');
+    expect(res.status).toBe(status);
     expect(jest.mocked(gemini.fixSummary)).not.toHaveBeenCalled();
+    expect(mockPut).not.toHaveBeenCalled();
   });
 
   it('writes the corrected body with blobStore.put — never putStaged/promote', async () => {
@@ -1911,26 +2014,27 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
   // EVERYTHING BELOW IS INSIDE THE TRY. On the local branch `getStorageBundle()` sits OUTSIDE it
   // (route.ts:36 before this task), so a missing client 500s instead of returning an error.
   try {
-    assertVideoId(videoId);
-    const playlistKey = await resolveOwnedPlaylistKey(supabase, playlistId, user.id); // owner-asserted
-    if (!playlistKey) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    // ⚠ CALL THE EXISTING LOADER — DO NOT HAND-ROLL THIS. An earlier draft transcribed the auth
+    // skeleton from `review/route.ts:106-152` and reproduced only the owner check and the blob
+    // read. `review/route.ts` writes annotations and never touches a blob, so it carries none of
+    // the guards a blob read needs. `loadSummaryForServe` (serve-summary-core.ts:34) is the read
+    // path, and it does ALL of this in one call:
+    //
+    //   resolveOwnedPlaylistKey → 404      getPrincipalFromSession + getStorageBundle
+    //   readIndex + video lookup → 404     artifacts.summaryMd.status === 'committed' → 503
+    //   status !== 'promoted' → 404        key = artifact.key ?? video.summaryMd, else 404
+    //   assertCloudSummaryMdKey → 409      blobStore.get → null → 409 'repair needed'
+    //
+    // The status gate is the one a hand-rolled version drops, and it matters MORE here than on the
+    // serve path: correcting a `committed` artifact writes to a blob a worker promotion is still
+    // finalizing. The `!mdBytes` → 409 guard is also its (blobStore.get collapses RLS denials and
+    // transport faults into the same null as a genuine 404, blob-store.ts:57-66 — treating null as
+    // "no content" would hand Gemini an empty string and overwrite a real document).
+    const load = await loadSummaryForServe(supabase, { videoId, playlistId, userId: user.id });
+    if (!load.ok) return NextResponse.json({ error: load.error }, { status: load.status });
 
-    const principal = getPrincipalFromSession({ userId: user.id }, playlistKey);
-    const { metadataStore: store, blobStore } = getStorageBundle({ supabaseClient: supabase });
-
-    const index = await store.readIndex(principal);
-    const video = index.videos.find((v) => v.id === videoId);
-    if (!video) return NextResponse.json({ error: 'video not found' }, { status: 404 });
-    if (!video.summaryMd) return NextResponse.json({ error: 'no summary file for this video' }, { status: 422 });
-
-    const mdBytes = await blobStore.get(principal, video.summaryMd);
-    // A failed read is NOT an empty document. blobStore.get collapses RLS denials and transport
-    // faults into the same null as a genuine 404 (blob-store.ts:57-66), so treating null as "no
-    // content" would hand Gemini an empty string and overwrite a real document with its correction.
-    // Same 409 the serve path returns (serve-summary-core.ts:66-67).
-    if (!mdBytes) {
-      return NextResponse.json({ error: 'repair needed', code: 'repair-needed' }, { status: 409 });
-    }
+    const { principal, bundle, video, mdKey, mdBytes } = load;
+    const { metadataStore: store, blobStore } = bundle;
     const mdContent = mdBytes.toString('utf-8');
 
     const trimmedCorrections = typeof corrections === 'string' ? corrections.trim() : undefined;
@@ -1960,7 +2064,10 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
       // create-if-absent (supabase-blob-store.ts:120-123): the key never changes on a correction, so
       // the final object always exists and the corrected body would be silently discarded while the
       // row was stamped `promoted`. That is backlog #22, and it applies to slice A too.
-      await blobStore.put(principal, video.summaryMd, Buffer.from(applied.content, 'utf-8'), 'text/markdown');
+      // `mdKey` from loadSummaryForServe, NOT `video.summaryMd`: the loader prefers
+      // `artifacts.summaryMd.key` and falls back to the top-level field, so writing to
+      // `video.summaryMd` could target a blob the artifact record does not govern.
+      await blobStore.put(principal, mdKey, Buffer.from(applied.content, 'utf-8'), 'text/markdown');
     } else {
       // Bare press or explicit clear: quick-view still refreshes (spec §3), but NOTHING is written to
       // the blob — the prose did not change and a rewritten callout would move the body hash, which
@@ -2004,8 +2111,7 @@ Add these imports at the top of the file:
 ```ts
 import { cookies } from 'next/headers';
 import { createServerSupabase, type CookieStore } from '../../../../../lib/supabase/server';
-import { resolveOwnedPlaylistKey } from '../../../../../lib/storage/serve-playlist';
-import { getPrincipalFromSession } from '../../../../../lib/storage/resolve';
+import { loadSummaryForServe } from '../../../../../lib/html-doc/serve-summary-core';
 import { applyCorrection, CORRECTION_CAPS } from '../../../../../lib/corrections/apply-core';
 ```
 
@@ -2092,12 +2198,36 @@ Create `tests/integration/record-correction-spend.int.test.ts`:
 
 ```ts
 // NEEDS A LIVE POSTGRES. global-setup.ts applies migrations and refuses to run if it cannot.
-import { adminClient, newUser, signInAs, userClient } from './helpers/clients';
-import { correctionActualCents } from '@/lib/gemini-cost';
-import { MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS } from '@/lib/gemini-cost';
+// ⚠ SIGNATURES VERIFIED against tests/integration/helpers/clients.ts 2026-08-24. An earlier draft
+// wrote these from an import line and got all three wrong:
+//   newUser(): Promise<{ user: { id: string }; email: string; password: string }>   — NOT a uuid
+//   signInAs(email, password): Promise<{ client, userId }>                          — TWO args
+//   anonSession(): Promise<{ client, userId }>                                      — `userClient` does not exist
+import { adminClient, newUser, signInAs, anonSession } from './helpers/clients';
+import {
+  correctionActualCents, MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS,
+} from '@/lib/gemini-cost';
 
 const svc = adminClient();
 const utcDay = () => new Date().toISOString().slice(0, 10);
+
+/** Sign in as a fresh user and return the RLS-scoped client. Two calls, because newUser does not
+ *  sign anybody in and signInAs needs the credentials it minted. */
+async function freshUserClient() {
+  const { email, password } = await newUser();
+  const { client, userId } = await signInAs(email, password);
+  return { client, userId };
+}
+
+// ⚠ spend_ledger is GLOBAL and SHARED WITH EVERY OTHER INTEGRATION SUITE. 10+ files call
+// ensureGuardrailHeadroom (helpers/clients.ts:45) precisely because this row accumulates across a
+// run. These tests add real cents to it, so they restore what they moved — otherwise a later suite
+// fails on a cap this file consumed, three files away, depending on execution order.
+let ledgerAtStart = 0;
+beforeAll(async () => { ledgerAtStart = await ledger(); });
+afterAll(async () => {
+  await svc.from('spend_ledger').update({ actual_cents: ledgerAtStart }).eq('day', utcDay());
+});
 
 const ledger = async () =>
   (await svc.from('spend_ledger').select('actual_cents').eq('day', utcDay()).maybeSingle()).data?.actual_cents ?? 0;
@@ -2106,18 +2236,16 @@ const ceiling = async () =>
   (await svc.from('guardrail_config').select('correction_max_cents').eq('id', true).single()).data!.correction_max_cents;
 
 it('adds the reported cents to TODAY row of the global ledger', async () => {
-  const ownerId = await newUser();
   const before = await ledger();
-  const client = await signInAs(ownerId);
+  const { client } = await freshUserClient();
   const { error } = await client.rpc('record_correction_spend', { p_cents: 3 });
   expect(error).toBeNull();
   expect(await ledger()).toBe(before + 3);
 });
 
 it('REJECTS a value above the ceiling — it does not silently clamp', async () => {
-  const ownerId = await newUser();
   const before = await ledger();
-  const client = await signInAs(ownerId);
+  const { client } = await freshUserClient();
   const { error } = await client.rpc('record_correction_spend', { p_cents: (await ceiling()) + 1 });
   // Assert WHICH error. A test that accepts any error passes on a typo in the function name.
   expect(error?.message).toMatch(/correction spend \d+ exceeds ceiling \d+/);
@@ -2125,15 +2253,13 @@ it('REJECTS a value above the ceiling — it does not silently clamp', async () 
 });
 
 it('accepts exactly the ceiling — the boundary is inclusive', async () => {
-  const ownerId = await newUser();
-  const client = await signInAs(ownerId);
+  const { client } = await freshUserClient();
   const { error } = await client.rpc('record_correction_spend', { p_cents: await ceiling() });
   expect(error).toBeNull();
 });
 
 it('rejects a negative amount — the ledger only moves one way', async () => {
-  const ownerId = await newUser();
-  const client = await signInAs(ownerId);
+  const { client } = await freshUserClient();
   const { error } = await client.rpc('record_correction_spend', { p_cents: -5 });
   expect(error?.message).toMatch(/correction spend -5 exceeds ceiling|violates check constraint/);
 });
@@ -2151,9 +2277,15 @@ it('the ceiling covers the worst case §5.1 can actually produce', async () => {
 });
 
 it('anon cannot execute it', async () => {
-  const anon = userClient(null);
-  const { error } = await anon.rpc('record_correction_spend', { p_cents: 1 });
+  const { client } = await anonSession();
+  const { error } = await client.rpc('record_correction_spend', { p_cents: 1 });
   expect(error).not.toBeNull();
+});
+
+it('rejects NULL rather than falling through to a not-null violation', async () => {
+  const { client } = await freshUserClient();
+  const { error } = await client.rpc('record_correction_spend', { p_cents: null });
+  expect(error?.message).toMatch(/record_correction_spend: p_cents is required/);
 });
 ```
 
@@ -2194,7 +2326,24 @@ begin
     raise exception 'record_correction_spend: authentication required';
   end if;
 
+  -- NULL IS NOT A SMALL NUMBER. Without this, `p_cents > v_cap` yields NULL, `if NULL then` is
+  -- FALSE, and the row falls through to the insert — where `actual_cents int not null` (0011:15)
+  -- raises a constraint violation the operator has to decode. Fail with the reason, not the symptom.
+  if p_cents is null then
+    raise exception 'record_correction_spend: p_cents is required';
+  end if;
+
   select correction_max_cents into v_cap from guardrail_config where id = true;
+
+  -- ⚠ FAIL CLOSED ON A MISSING CONFIG ROW. This is the guard's own "what would I see if it were
+  -- silently doing nothing?" case, and the answer without this check is "nothing at all": no row
+  -- means v_cap is NULL, both comparisons below evaluate to NULL, the `if` is FALSE, and ANY amount
+  -- is accepted. The guard does not fail — it evaporates. guardrail_config is a singleton seeded by
+  -- 0011:36, but service_role holds DELETE on it (0011:35), and "unlikely" is not the standard for
+  -- the only bound on a global money resource.
+  if v_cap is null then
+    raise exception 'record_correction_spend: guardrail_config missing — refusing to record unbounded spend';
+  end if;
 
   -- REJECT, never clamp. A silent truncation turns an accounting bug into invisible
   -- under-reporting: the ledger would look right while the real spend drifted above it. Loud is
@@ -2243,6 +2392,23 @@ branch and the guard is untested — fix the test, not the migration.
 Restore with `update guardrail_config set correction_max_cents = 25 where id = true;` and re-run;
 expected PASS.
 
+**Second mutation — the one the first cannot reach.** Raising the ceiling proves the *comparison*
+works. It says nothing about the case where `v_cap` is NULL and the comparison is skipped entirely.
+Delete the config row inside a transaction so the fail-closed branch is exercised and nothing is
+left broken:
+
+```sql
+begin;
+  delete from guardrail_config where id = true;
+  -- now run: npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts
+rollback;
+```
+
+Expected: **FAIL** on *adds the reported cents to TODAY row* with
+`guardrail_config missing — refusing to record unbounded spend`. If instead the test **passes**, the
+`v_cap is null` guard is absent and the clamp silently accepts any amount — which is
+indistinguishable from having no clamp.
+
 - [ ] **Step 6: Call it from the route — and do NOT let a failed recording fail the request**
 
 In `serveCloud` (Task 8), **inside** the `if (trimmedCorrections) { … }` block, immediately after the
@@ -2289,9 +2455,16 @@ describe('spend recording (spec §5.2)', () => {
     expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: 2 });
   });
 
-  it('records NOTHING on a bare press — no correction, no spend', async () => {
+  // ⚠ THE TITLE OF THIS TEST USED TO SAY "no correction, no spend". THAT WAS FALSE.
+  // `extractQuickView` is a paid Gemini call (lib/gemini.ts:425) and §3 requires it to run on every
+  // press, so a bare press DOES spend — slice A simply cannot see it, because Task 5 measures
+  // `fixSummary` only and `extractQuickView` returns no usage. What this asserts is the narrow,
+  // true thing: no CORRECTION spend is recorded. The quick-view spend on a bare press is
+  // UNRECORDED AND KNOWN, not absent — see the note under this describe block.
+  it('records no CORRECTION spend on a bare press (the quick-view call is unmeasured, not free)', async () => {
     await post({});
     expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
+    expect(jest.mocked(gemini.extractQuickView)).toHaveBeenCalledTimes(1);   // it DID run, and it DID cost
   });
 
   it('does not record 0 when usage was unmeasured', async () => {
@@ -2364,6 +2537,40 @@ Expected: no type errors; all suites pass.
 git add supabase/migrations/0026_record_correction_spend.sql app/api/videos/[id]/regenerate/route.ts tests/integration/record-correction-spend.int.test.ts tests/api/regenerate-cloud.test.ts
 git commit -m "feat(#23): record a correction's actual spend through one clamped RPC"
 ```
+
+#### ⚠ What this task records, and what it misses — stated because a partial ledger reads as a complete one
+
+**Slice A records the `fixSummary` call and nothing else.** A correction makes **two** paid Gemini
+calls, and only one is measured:
+
+| Call | Paid? | Measured? | Why |
+|---|---|---|---|
+| `fixSummary` | yes | **yes** — Task 5 reads `usageMetadata` | signature is ours to change |
+| `extractQuickView` (`lib/gemini.ts:425`) | **yes** | **no** | returns `{ tldr, takeaways }` only; nothing in the repo has ever read its usage |
+
+Two consequences, both real and neither visible in the ledger:
+
+1. **Every correction under-reports** by the quick-view call's cost.
+2. **A bare press spends and records nothing at all** — §3 requires `extractQuickView` to run
+   unconditionally, so a press that applies no correction still buys an extraction. There is no
+   `record_correction_spend` call on that path because there is no measured amount to pass.
+
+This is not a defect introduced here; it is the boundary of what Task 5 can measure without changing
+a function with six callers. **It is written down so nobody reads a moving ledger as a complete one.**
+Filed as slice-A residue on backlog **#61** alongside the `signal` gap: both are the same
+`extractQuickView` signature, and one change closes both.
+
+#### ⛔ The aggregate bound is NOT designed here — blocked on task #129
+
+Both halves of the Post-Plan Gate independently found that a per-call ceiling does not stop one
+account from exhausting the **global** daily cap: `daily_cap_cents` defaults to 500 (`0011:28`) and
+this ceiling is 25, so ~20 direct `POST /rest/v1/rpc/record_correction_spend` calls fill it for every
+user, at zero real spend. The clamp bounds the size of one report; nothing bounds the number of them.
+
+**#129 has been reopened with that information and no option has been chosen. Do not invent a bound
+here.** The candidates on the table are a per-owner daily counter mirroring `serve_model_charge`'s
+`unique (owner_id, doc_key, day)` (`0012:13`), moving the RPC off the session client entirely, or
+accepting the reservation protocol that slice C already owns. Each is a different slice boundary.
 
 #### ⚠ Deploy-order coupling — a RELEASE constraint, not a task-order one
 
@@ -2524,8 +2731,11 @@ git commit -m "fix(#23): serve the stale model on attempts_exhausted and at_capa
 Create `tests/components/CorrectionsPanel.test.tsx`:
 
 ```tsx
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+// ⚠ `@testing-library/user-event` IS NOT A DEPENDENCY — verified against package.json 2026-08-24
+// (only @testing-library/{dom,jest-dom,react} are installed). Every existing component test drives
+// interaction with fireEvent inside act + fake timers; see tests/components/AskGeminiMenuItem.test.tsx:2,53.
+// Follow that idiom rather than adding a dependency for one file.
+import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import CorrectionsPanel from '@/components/CorrectionsPanel';
 import { ScopeProvider, type Scope } from '@/lib/client/scope';
 
@@ -2547,7 +2757,7 @@ it('posts ?playlist=<uuid> and NO outputFolder in cloud mode', async () => {
     new Response(JSON.stringify({ outcome: 'applied', tldr: 't', takeaways: [] }), { status: 200 }),
   );
   renderIn(CLOUD, 'fix X');
-  await userEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /regenerate/i })); });
   const [url, init] = jest.mocked(global.fetch).mock.calls[0];
   expect(String(url)).toContain(`?playlist=${CLOUD.mode === 'cloud' ? CLOUD.playlistId : ''}`);
   expect(JSON.parse(String(init!.body))).toEqual({ corrections: 'fix X' });
@@ -2558,7 +2768,7 @@ it('posts outputFolder and no query string in local mode', async () => {
     new Response(JSON.stringify({ outcome: 'applied', tldr: 't', takeaways: [] }), { status: 200 }),
   );
   renderIn(LOCAL, 'fix X');
-  await userEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /regenerate/i })); });
   const [url, init] = jest.mocked(global.fetch).mock.calls[0];
   expect(String(url)).not.toContain('?playlist=');
   expect(JSON.parse(String(init!.body))).toEqual({ outputFolder: '/tmp/out', corrections: 'fix X' });
@@ -2569,7 +2779,7 @@ it('reports no-corrections so a press that changed nothing does not read as a bu
     new Response(JSON.stringify({ outcome: 'no-corrections', tldr: 't', takeaways: [] }), { status: 200 }),
   );
   renderIn(CLOUD, '');
-  await userEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /regenerate/i })); });
   await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/no corrections to apply/i));
 });
 
@@ -2578,7 +2788,7 @@ it('shows the over-cap message, not a generic failure', async () => {
     new Response(JSON.stringify({ error: 'This summary is too long to correct', code: 'summary-too-large' }), { status: 413 }),
   );
   renderIn(CLOUD, 'fix X');
-  await userEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /regenerate/i })); });
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/too long to correct/i));
 });
 ```
@@ -2700,7 +2910,7 @@ import { stripQuickViewCallout, insertQuickViewCallout } from '@/lib/quick-view-
 
 const env = (over: Record<string, unknown> = {}) => ({
   sourceMd: 'x.md', generatedAt: 'now', sourceSections: ['A'],
-  generatorVersion: GENERATOR_VERSION, model: { sections: [{ lead: 'l', bullets: [] }] },
+  generatorVersion: GENERATOR_VERSION, model: { sections: [{ lead: 'l', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
   ...over,
 } as any);
 
@@ -2751,8 +2961,12 @@ Create `tests/integration/corrections-cloud.int.test.ts`. It uses the existing h
 ```ts
 // NOT RUN WITHOUT A LIVE STACK. global-setup.ts applies migrations and refuses to run if it cannot.
 // A skipped money assertion reporting green is worse than a red one — do NOT add describe.skip here.
+// ⚠ SIGNATURES VERIFIED 2026-08-24 against helpers/clients.ts and helpers/seed.ts. An earlier
+// draft wrote these from an import line: newUser() returns an OBJECT, signInAs takes (email,
+// password), and `userClient` does not exist. seedSummaryBlob already uploads the MD at the exact
+// key the route reads — do not hand-roll a blob.put + merge_video_data pair for it.
 import { adminClient, newUser, signInAs } from './helpers/clients';
-import { seedPlaylist, seedPromotedVideo } from './helpers/seed';
+import { seedPlaylist, seedPromotedVideo, seedSummaryBlob } from './helpers/seed';
 import { POST } from '@/app/api/videos/[id]/regenerate/route';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
 import { mdHash } from '@/lib/cloud-sync/content-hash';
@@ -2791,17 +3005,21 @@ Clawcode is great.
 /** Seeds an owned playlist + promoted video and puts MD at the video's summaryMd key, so the route
  *  has a real body to read through the SAME principal it will write with. */
 async function seedCorrectable() {
-  const ownerId = await newUser();
+  const { user, email, password } = await newUser();
+  const ownerId = user.id;
   const { playlistId, playlistKey } = await seedPlaylist(svc, ownerId);
-  const { videoId } = await seedPromotedVideo(svc, { ownerId, playlistId });
+  // seedPromotedVideo already writes artifacts.summaryMd = { key: `${base}.md`, status: 'promoted' }
+  // and the top-level summaryMd — exactly what loadSummaryForServe's status gate and key preference
+  // read. Pass `status: 'committed'` to exercise the 503 finalizing-window case.
+  const { videoId, base } = await seedPromotedVideo(svc, { ownerId, playlistId });
+  await seedSummaryBlob(svc, ownerId, playlistKey, base, MD);
+  await svc.rpc('merge_video_data', {
+    p_playlist_id: playlistId, p_video_id: videoId, p_fields: { tags: ['ai', 'rag'] },
+  });
+  const { client } = await signInAs(email, password);
   const principal = { id: ownerId, indexKey: playlistKey };
   const blob = new SupabaseBlobStore(svc);
-  const key = `${videoId}.md`;
-  await blob.put(principal, key, Buffer.from(MD, 'utf-8'), 'text/markdown');
-  await svc.rpc('merge_video_data', {
-    p_playlist_id: playlistId, p_video_id: videoId, p_fields: { summaryMd: key, tags: ['ai', 'rag'] },
-  });
-  return { ownerId, playlistId, playlistKey, videoId, principal, blob, key };
+  return { ownerId, email, password, client, playlistId, playlistKey, videoId, base, principal, blob, key: `${base}.md` };
 }
 
 function press(videoId: string, playlistId: string, body: Record<string, unknown>) {
@@ -2818,7 +3036,6 @@ afterAll(() => { delete process.env.STORAGE_BACKEND; });
 
 it('§7 cloud correction works — the stored blob holds the corrected text, not the original', async () => {
   const s = await seedCorrectable();
-  await signInAs(s.ownerId);
   const res = await press(s.videoId, s.playlistId, { corrections: 'Clawcode -> Claude Code' });
   expect(res.status).toBe(200);
   const stored = (await s.blob.get(s.principal, s.key))!.toString('utf-8');
@@ -2828,7 +3045,6 @@ it('§7 cloud correction works — the stored blob holds the corrected text, not
 
 it('§7 and the card — tldr, takeaways AND the Concepts line reflect the corrected document', async () => {
   const s = await seedCorrectable();
-  await signInAs(s.ownerId);
   await press(s.videoId, s.playlistId, { corrections: 'Clawcode -> Claude Code' });
   const { data } = await svc.from('videos').select('data').eq('video_id', s.videoId).single();
   expect(data!.data.tldr).toBe('Corrected TL;DR.');
@@ -2839,7 +3055,6 @@ it('§7 and the card — tldr, takeaways AND the Concepts line reflect the corre
 
 it('§7 clearing works on Supabase — corrections are absent afterwards', async () => {
   const s = await seedCorrectable();
-  await signInAs(s.ownerId);
   await press(s.videoId, s.playlistId, { corrections: 'something' });
   await press(s.videoId, s.playlistId, { corrections: '' });
   const { data } = await svc.from('videos').select('data').eq('video_id', s.videoId).single();
@@ -2848,7 +3063,6 @@ it('§7 clearing works on Supabase — corrections are absent afterwards', async
 
 it('§7 clearing an ALREADY-EMPTY field issues no call, so annotationsEditedAt does not move', async () => {
   const s = await seedCorrectable();
-  await signInAs(s.ownerId);
   const before = (await svc.from('videos').select('data').eq('video_id', s.videoId).single()).data!.data;
   await press(s.videoId, s.playlistId, { corrections: '' });
   const after = (await svc.from('videos').select('data').eq('video_id', s.videoId).single()).data!.data;
@@ -2861,12 +3075,11 @@ it('§7 a BARE press on a needsRegen=true video leaves it TRUE', async () => {
   await svc.rpc('update_video_annotations', {
     p_playlist_id: s.playlistId, p_video_id: s.videoId, p_set: { corrections: 'C2' }, p_clear: [],
   });
-  await signInAs(s.ownerId);
   const cur = mdHash('C2');
   const read = async () => {
     const { data } = await svc.from('videos').select('data').eq('video_id', s.videoId).single();
     const body = (await s.blob.get(s.principal, s.key))!.toString('utf-8');
-    return deriveClassASignals({ ...data!.data, id: s.videoId } as never, body);
+    return deriveClassASignals({ ...data!.data, id: s.videoId } as Video, body);
   };
   const beforeDecision = reconcileClassA({ local: await read(), cloud: await read(), reconciledCorrectionsHash: cur });
   expect(beforeDecision.needsRegen).toBe(true);
@@ -2880,7 +3093,6 @@ it('§7 a BARE press on a needsRegen=true video leaves it TRUE', async () => {
 
 it('§7 an oversized corrections field never reaches Gemini — 400, and no Gemini call', async () => {
   const s = await seedCorrectable();
-  await signInAs(s.ownerId);
   const res = await press(s.videoId, s.playlistId, { corrections: 'x'.repeat(1001) });
   expect(res.status).toBe(400);
   expect((await res.json()).code).toBe('corrections-too-long');
@@ -2900,13 +3112,17 @@ const PRE = '# T\n\n## 1. Intro\nbefore\n';
 const POST = '# T\n\n## 1. Intro\nafter\n';
 
 it('§7 the reader sees the correction — a changed body regenerates on the next owner serve', async () => {
-  const ownerId = await newUser();
+  const { user, email, password } = await newUser();
+  const ownerId = user.id;
   const s = await seed(ownerId);
-  await signInAs(ownerId);
+  await signInAs(email, password);
   const principal = { id: ownerId, indexKey: s.playlist_key };
   await writeModelEnvelope(principal, s.videoId, {
     sourceMd: `${s.videoId}.md`, generatedAt: 'then', sourceSections: ['Intro'],
-    generatorVersion: GENERATOR_VERSION, model: { sections: [{ lead: 'OLD', bullets: [] }] } as never,
+    // 3 bullets minimum: MagazineSectionSchema is .min(3) (types.ts:42) and writeModelEnvelope
+    // PARSES before writing (model-store.ts:35), so `bullets: []` throws rather than seeding.
+    generatorVersion: GENERATOR_VERSION,
+    model: { sections: [{ lead: 'OLD', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
     sourceMdHash: mdHash(PRE),          // the PRE-correction body
   }, new SupabaseBlobStore(svc));
 
@@ -2918,23 +3134,25 @@ it('§7 the reader sees the correction — a changed body regenerates on the nex
 });
 
 it('§7 …and fires ONCE — a second serve of the same corrected body calls Gemini no more', async () => {
-  const ownerId = await newUser();
+  const { user, email, password } = await newUser();
+  const ownerId = user.id;
   const s = await seed(ownerId);
-  await signInAs(ownerId);
+  await signInAs(email, password);
   await resolveMagazineModel({ ...baseArgs(s), parsed: parsed(), mdBody: POST });
   await resolveMagazineModel({ ...baseArgs(s), parsed: parsed(), mdBody: POST });
   expect(generateMagazineModel).toHaveBeenCalledTimes(1);   // no regeneration loop
 });
 
 it('§7 a legacy envelope with NO sourceMdHash serves from cache and moves no money', async () => {
-  const ownerId = await newUser();
+  const { user, email, password } = await newUser();
+  const ownerId = user.id;
   const s = await seed(ownerId);
-  await signInAs(ownerId);
+  await signInAs(email, password);
   const principal = { id: ownerId, indexKey: s.playlist_key };
   await writeModelEnvelope(principal, s.videoId, {
     sourceMd: `${s.videoId}.md`, generatedAt: 'then', sourceSections: ['Intro'],
     generatorVersion: GENERATOR_VERSION,
-    model: { sections: [{ lead: 'LEGACY', bullets: [] }] } as never,
+    model: { sections: [{ lead: 'LEGACY', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
     // sourceMdHash deliberately OMITTED — pre-2026-07-17 envelope.
   }, new SupabaseBlobStore(svc));
   const ledgerBefore = (await svc.from('spend_ledger').select('*').eq('day', utcDay()).maybeSingle()).data;
@@ -2976,24 +3194,86 @@ mutation survives is untested, which is indistinguishable from "does nothing".
 | Make the bare-press write unconditional again | `regenerate.test.ts` → *does NOT write the file on a bare press* |
 | Restore `mdCorrectionsHash: mdHash(effectiveCorrections)` unconditionally | `regenerate-stamp.test.ts` → *a bare regenerate omits mdCorrectionsHash entirely* |
 | Pass `undefined` as `withCaps`' second argument | `gemini-fix-summary.test.ts` → *applies maxOutputTokens and thinkingBudget:0* |
-| Drop the loop-top abort guard in `fixSummary` | `gemini-fix-summary.test.ts` → *aborts DURING the backoff* |
-| Replace `abortableSleep` with `new Promise(setTimeout)` | `gemini-fix-summary.test.ts` → *aborts DURING the backoff* |
+| Drop the loop-top abort guard in `fixSummary` | `gemini-fix-summary.test.ts` → *an abort BEFORE the first call is caught by the loop-top guard, with no Gemini call* |
+| Replace `abortableSleep` with `new Promise(setTimeout)` | `gemini-fix-summary.test.ts` → *an abort DURING the backoff rejects the sleep and clears its timer*. ⚠ It must fail on `expect(jest.getTimerCount()).toBe(0)` — **not** on the `AbortError` assertion, which the loop guard satisfies on its own. If it fails for the other reason, the test is not isolating this site |
 | Drop the read-before-write comparison in the route | `regenerate.test.ts` → *issues NO call when the incoming text equals the stored text* |
 | Swap `blobStore.put` for `writeArtifact` | `regenerate-cloud.test.ts` → *writes the corrected body with blobStore.put* |
 | Remove `attempts_exhausted` from the stale fallback | `serve-doc-mapping.test.ts` → *serves the title-stable model when attempts are exhausted* |
 
-- [ ] **Step 4: Record the result**
+- [ ] **Step 4: Add the forward-reference guard, so ordering stops depending on who reads carefully**
+
+Three reviewers each found an ordering edge the other two missed — the coordinator found `T3 → T4`,
+this reviewer found `T10 → T4`, then `T8 → T11` and `T7 → T8` at the gate. That is the definition of
+something a script should own. **A convention catches what you read; a script catches what is there.**
+
+Create `scripts/check-plan-task-order.py`:
+
+```python
+#!/usr/bin/env python3
+"""Fail if a task Consumes a symbol no EARLIER task Produces.
+
+Reads the plan's `### Task N:` blocks and their `- Consumes:` / `- Produces:` bullets, extracts
+`identifiers` in backticks, and reports any Consume whose only Producer is a LATER task. That is a
+forward reference: the plan compiles in the reader's head and not on disk.
+
+Deliberately NOT a general dependency solver. It answers one question — "is anything used before it
+exists?" — which is the question three humans got wrong.
+"""
+import re, sys
+from pathlib import Path
+
+PLAN = Path(__file__).resolve().parent.parent / "docs/superpowers/plans/2026-08-24-corrections-in-cloud-slice-a.md"
+
+def main() -> int:
+    text = PLAN.read_text()
+    blocks = re.split(r"^### Task (\d+):", text, flags=re.M)[1:]
+    tasks = [(int(blocks[i]), blocks[i + 1]) for i in range(0, len(blocks), 2)]
+
+    produces, consumes = {}, {}
+    for num, body in tasks:
+        interfaces = body.split("**Interfaces:**")[1].split("- [ ]")[0] if "**Interfaces:**" in body else ""
+        for line in interfaces.splitlines():
+            names = set(re.findall(r"`([A-Za-z_][A-Za-z0-9_]*)`", line))
+            if line.strip().startswith("- Produces") or (produces_open and line.startswith("  ")):
+                produces.setdefault(num, set()).update(names)
+            if line.strip().startswith("- Consumes"):
+                consumes.setdefault(num, set()).update(names)
+            produces_open = line.strip().startswith("- Produces")
+
+    failed = False
+    for num, wanted in sorted(consumes.items()):
+        for sym in sorted(wanted):
+            owners = [t for t, p in produces.items() if sym in p]
+            if owners and all(t > num for t in owners):
+                print(f"FORWARD REFERENCE: Task {num} consumes `{sym}`, produced only by Task {min(owners)}")
+                failed = True
+    print("❌ forward reference(s) found" if failed else "✅ no forward references")
+    return 1 if failed else 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+Run: `python3 scripts/check-plan-task-order.py`
+Expected: `✅ no forward references`.
+
+⚠ **Self-test it before trusting it.** Temporarily move T7's `MAX_CORRECTIONS_CHARS` bullet from T7's
+Produces into T9's, then re-run: it must print
+`FORWARD REFERENCE: Task 8 consumes MAX_CORRECTIONS_CHARS, produced only by Task 9`. Restore.
+A ratchet that has never been seen to fail is a ratchet nobody has tested.
+
+- [ ] **Step 5: Record the result**
 
 Write the mutation table above into the PR body with a PASS/FAIL column filled in from what you
 actually observed, and state plainly which integration tests were **NOT RUN** and why. A tick that
 does not say what it was verified against is not evidence.
 
-- [ ] **Step 5: Full suite, typecheck, commit**
+- [ ] **Step 6: Full suite, typecheck, commit**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.
 
 ```bash
-git add tests/lib/corrections/falsifiers.test.ts tests/integration/corrections-cloud.int.test.ts
+git add tests/lib/corrections/falsifiers.test.ts tests/integration/corrections-cloud.int.test.ts scripts/check-plan-task-order.py
 git commit -m "test(#23): spec §7 falsifiers at the consumer, plus the mutation-check table"
 ```
