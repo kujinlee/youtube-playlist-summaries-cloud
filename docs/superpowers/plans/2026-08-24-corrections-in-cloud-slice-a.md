@@ -1815,7 +1815,7 @@ collapses RLS denials and transport faults into the same `null` as a genuine 404
 (`blob-store.ts:57-66`, `provesAbsence`). Return **409 `repair-needed`**, matching
 `serve-summary-core.ts:66-67`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/api/regenerate-cloud.test.ts`:
 
@@ -1955,13 +1955,13 @@ describe('regenerate — cloud branch', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails for the right reason**
+- [x] **Step 2: Run the test and confirm it fails for the right reason**
 
 Run: `npx jest tests/api/regenerate-cloud.test.ts`
 Expected: FAIL — every case returns 400 `outputFolder is required`, because `POST` has no cloud
 branch yet.
 
-- [ ] **Step 3: Split `POST` into two handlers**
+- [x] **Step 3: Split `POST` into two handlers**
 
 Replace the top of `app/api/videos/[id]/regenerate/route.ts` (the current `export async function POST`
 through the end of its body) with a dispatcher, and move the existing body verbatim into
@@ -1978,7 +1978,7 @@ export async function POST(request: Request, { params }: Params) {
 }
 ```
 
-- [ ] **Step 4: Write `serveCloud`**
+- [x] **Step 4: Write `serveCloud`**
 
 Append to the same file:
 
@@ -2115,7 +2115,7 @@ import { loadSummaryForServe } from '../../../../../lib/html-doc/serve-summary-c
 import { applyCorrection, CORRECTION_CAPS } from '../../../../../lib/corrections/apply-core';
 ```
 
-- [ ] **Step 5: Add the same `outcome` field to the local branch**
+- [x] **Step 5: Add the same `outcome` field to the local branch**
 
 In `serveLocal`'s success response, add `outcome` so both branches return the §6 discriminator:
 
@@ -2129,18 +2129,18 @@ In `serveLocal`'s success response, add `outcome` so both branches return the §
     });
 ```
 
-- [ ] **Step 6: Run both route suites and confirm they pass**
+- [x] **Step 6: Run both route suites and confirm they pass**
 
 Run: `npx jest tests/api/regenerate.test.ts tests/api/regenerate-cloud.test.ts tests/lib/cloud-sync/regenerate-stamp.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Grep-guard against the wrong write**
+- [x] **Step 7: Grep-guard against the wrong write**
 
 Run: `grep -n "writeArtifact\|putStaged\|promote" app/api/videos/\[id\]/regenerate/route.ts`
 Expected: **no output.** If any of the three appears, the correction can be silently discarded — stop
 and re-read Step 4's comment.
 
-- [ ] **Step 8: Typecheck and run the full suite, then commit**
+- [x] **Step 8: Typecheck and run the full suite, then commit**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.

@@ -10,6 +10,10 @@ import { mdHash } from '../../../../../lib/cloud-sync/content-hash';
 import type { Video } from '../../../../../types';
 import { MAX_CORRECTIONS_CHARS } from '../../../../../lib/corrections/apply-core';
 import { NonRetryableError } from '../../../../../lib/job-queue/errors';
+import { cookies } from 'next/headers';
+import { createServerSupabase, type CookieStore } from '../../../../../lib/supabase/server';
+import { loadSummaryForServe } from '../../../../../lib/html-doc/serve-summary-core';
+import { applyCorrection, CORRECTION_CAPS } from '../../../../../lib/corrections/apply-core';
 
 /** Bounds THE WORK, not THE REQUEST. Derived in spec §5.4 from three phases — a 10 s countTokens
  *  preflight plus two Gemini phases of 3 × 60 s + 1.2 s backoff each = 372.4 s — leaving ~48 s for
@@ -23,8 +27,16 @@ export const maxDuration = 420;
 
 type Params = { params: Promise<{ id: string }> };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(request: Request, { params }: Params) {
   const { id: videoId } = await params;
+  const backend = process.env.STORAGE_BACKEND ?? 'local';
+  if (backend === 'supabase') return serveCloud(request, videoId);
+  return serveLocal(request, videoId);
+}
+
+async function serveLocal(request: Request, videoId: string): Promise<Response> {
 
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const outputFolder = body?.outputFolder;
@@ -145,6 +157,7 @@ export async function POST(request: Request, { params }: Params) {
     await store.updateVideoFields(principal, videoId, patch);
 
     return NextResponse.json({
+      outcome: trimmedCorrections ? 'applied' : 'no-corrections',
       tldr,
       takeaways,
       corrections: trimmedCorrections,
@@ -157,6 +170,128 @@ export async function POST(request: Request, { params }: Params) {
     // would tell the user to try again forever. Matched on the NonRetryableError class AND the
     // message prefix that assertCorrectionInputWithinCap emits, so an unrelated NonRetryableError
     // from elsewhere in the graph still reports 500.
+    if (err instanceof NonRetryableError && err.message.startsWith('correction input ')) {
+      return NextResponse.json(
+        { error: 'This summary is too long to correct', code: 'summary-too-large' },
+        { status: 413 },
+      );
+    }
+    return NextResponse.json({ error: errorSummary(err) }, { status: 500 });
+  }
+}
+
+async function serveCloud(request: Request, videoId: string): Promise<Response> {
+  const { searchParams } = new URL(request.url);
+
+  const cookieStore = (await cookies()) as unknown as CookieStore;
+  const supabase = createServerSupabase(cookieStore);
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'authentication required' }, { status: 401 });
+
+  const playlistId = searchParams.get('playlist');
+  if (!playlistId || !UUID_RE.test(playlistId)) {
+    return NextResponse.json({ error: 'invalid playlist' }, { status: 400 }); // before any DB call
+  }
+
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (body && 'outputFolder' in body) {
+    return NextResponse.json({ error: 'outputFolder not valid on this backend' }, { status: 400 });
+  }
+  const corrections = body?.corrections;
+  if (corrections !== undefined && typeof corrections !== 'string') {
+    return NextResponse.json({ error: 'corrections must be a string' }, { status: 400 });
+  }
+  if (typeof corrections === 'string' && [...corrections].length > MAX_CORRECTIONS_CHARS) {
+    return NextResponse.json(
+      { error: `corrections must be ${MAX_CORRECTIONS_CHARS} characters or fewer`, code: 'corrections-too-long' },
+      { status: 400 },
+    );
+  }
+
+  // EVERYTHING BELOW IS INSIDE THE TRY. On the local branch `getStorageBundle()` sits OUTSIDE it,
+  // so a missing client 500s instead of returning an error.
+  try {
+    // ⚠ CALL THE EXISTING LOADER — DO NOT HAND-ROLL THIS. An earlier draft transcribed the auth
+    // skeleton from `review/route.ts:106-152` and reproduced only the owner check and the blob
+    // read. `review/route.ts` writes annotations and never touches a blob, so it carries none of
+    // the guards a blob read needs. `loadSummaryForServe` (serve-summary-core.ts:34) is the read
+    // path, and it does ALL of this in one call:
+    //
+    //   resolveOwnedPlaylistKey → 404      getPrincipalFromSession + getStorageBundle
+    //   readIndex + video lookup → 404     artifacts.summaryMd.status === 'committed' → 503
+    //   status !== 'promoted' → 404        key = artifact.key ?? video.summaryMd, else 404
+    //   assertCloudSummaryMdKey → 409      blobStore.get → null → 409 'repair needed'
+    //
+    // The status gate is the one a hand-rolled version drops, and it matters MORE here than on the
+    // serve path: correcting a `committed` artifact writes to a blob a worker promotion is still
+    // finalizing. The `!mdBytes` → 409 guard is also its (blobStore.get collapses RLS denials and
+    // transport faults into the same null as a genuine 404, blob-store.ts:57-66 — treating null as
+    // "no content" would hand Gemini an empty string and overwrite a real document).
+    const load = await loadSummaryForServe(supabase, { videoId, playlistId, userId: user.id });
+    if (!load.ok) return NextResponse.json({ error: load.error }, { status: load.status });
+
+    const { principal, bundle, video, mdKey, mdBytes } = load;
+    const { metadataStore: store, blobStore } = bundle;
+    const mdContent = mdBytes.toString('utf-8');
+
+    const trimmedCorrections = typeof corrections === 'string' ? corrections.trim() : undefined;
+    const storedCorrections = video.corrections ?? '';
+    if (trimmedCorrections && trimmedCorrections !== storedCorrections) {
+      const { found } = await store.updateVideoAnnotations(principal, videoId, { corrections: trimmedCorrections }, []);
+      if (!found) return NextResponse.json({ error: 'video not found' }, { status: 404 });
+    } else if (corrections === '' && storedCorrections !== '') {
+      const { found } = await store.updateVideoAnnotations(principal, videoId, {}, ['corrections']);
+      if (!found) return NextResponse.json({ error: 'video not found' }, { status: 404 });
+    }
+
+    let tldr: string;
+    let takeaways: string[];
+
+    if (trimmedCorrections) {
+      const applied = await applyCorrection({
+        md: mdContent,
+        corrections: trimmedCorrections,
+        tags: video.tags ?? [],
+        signal: request.signal,
+        caps: CORRECTION_CAPS,
+      });
+      tldr = applied.tldr;
+      takeaways = applied.takeaways;
+      // `put`, NEVER writeArtifact. writeArtifact goes putStaged → promote, and promote is
+      // create-if-absent (supabase-blob-store.ts:120-123): the key never changes on a correction, so
+      // the final object always exists and the corrected body would be silently discarded while the
+      // row was stamped `promoted`. That is backlog #22, and it applies to slice A too.
+      // `mdKey` from loadSummaryForServe, NOT `video.summaryMd`: the loader prefers
+      // `artifacts.summaryMd.key` and falls back to the top-level field, so writing to
+      // `video.summaryMd` could target a blob the artifact record does not govern.
+      await blobStore.put(principal, mdKey, Buffer.from(applied.content, 'utf-8'), 'text/markdown');
+    } else {
+      // Bare press or explicit clear: quick-view still refreshes (spec §3), but NOTHING is written to
+      // the blob — the prose did not change and a rewritten callout would move the body hash, which
+      // under §2 option (e) books a ~6¢ magazine regeneration for a press that applied nothing.
+      const qv = await extractQuickView(stripQuickViewCallout(mdContent), CORRECTION_CAPS);
+      tldr = qv.tldr;
+      takeaways = qv.takeaways;
+    }
+
+    const patch: Partial<Video> = { tldr, takeaways, summaryHtml: null };
+    if (trimmedCorrections) {
+      patch.mdGeneratedAt = new Date().toISOString();
+      patch.mdCorrectionsHash = mdHash(trimmedCorrections);
+    } else if (corrections === '') {
+      patch.mdCorrectionsHash = mdHash('');
+    }
+    await store.updateVideoFields(principal, videoId, patch);
+
+    return NextResponse.json({
+      outcome: trimmedCorrections ? 'applied' : 'no-corrections',
+      tldr,
+      takeaways,
+      corrections: trimmedCorrections,
+      summaryHtml: null,
+    });
+  } catch (err) {
+    logError(`regenerate:cloud:${videoId}`, err);
     if (err instanceof NonRetryableError && err.message.startsWith('correction input ')) {
       return NextResponse.json(
         { error: 'This summary is too long to correct', code: 'summary-too-large' },
