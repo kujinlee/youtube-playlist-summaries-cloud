@@ -1144,6 +1144,15 @@ make it safe. Held during implementation and now also held by `blockedBy` edges 
 
 ### ⚠ Before this can merge — all four need a live stack, none has run
 
+> **Why they did not run, stated precisely, because the first two attempts to state it were wrong.**
+> The Docker CLI is installed and Docker Desktop's process is running, but the **daemon API is
+> wedged**: `docker info` and `docker ps` both hang indefinitely. Port 54322 *accepts TCP* — Docker
+> Desktop's port-forwarder keeps listening after the container behind it stops answering — so
+> `nc -z` reports OPEN while `supabase migration up` times out connecting to
+> `host=127.0.0.1 user=postgres`. **A port that accepts a handshake is not a database.**
+> `global-setup.ts` then refused to run, which is exactly the behaviour the 0023 incident bought.
+> Fix: restart the Docker daemon, then re-run all four.
+
 - [ ] `tests/integration/record-correction-spend.int.test.ts` (8 cases) — **the money path.**
       The SQL in `0026_record_correction_spend.sql` **has never been executed.**
 - [ ] The three T9 mutations: the per-owner bound (the **ledger** half must go red), the ceiling,
