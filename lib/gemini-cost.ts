@@ -128,3 +128,12 @@ export function digWorstCents(): number {
   const totalCents = (inputCentsPerPass + outputCentsPerPass) * DIG_GENERATE_MAX_PASSES;
   return Math.ceil(totalCents);
 }
+
+/** Whole cents (rounded up) for one correction call, from MEASURED token counts — not an estimate.
+ *  Uses the same dated prices as every other figure in this file, so a price change moves all of
+ *  them together rather than leaving this one behind. */
+export function correctionActualCents(usage: { promptTokens: number; outputTokens: number }): number {
+  return Math.ceil(
+    (usage.promptTokens * PRICE_IN_PER_1M_CENTS + usage.outputTokens * PRICE_OUT_PER_1M_CENTS) / 1e6,
+  );
+}

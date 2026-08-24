@@ -17,24 +17,39 @@ export function sameTitles(
     envelope.sourceSections.every((t, i) => t === titles[i]);
 }
 
+/**
+ * OWNER-path freshness: refusing an envelope here triggers a reserve-and-charge regeneration
+ * (serve-doc.ts:112-151), so every conjunct is a money decision.
+ *
+ * `sourceMdHash` (spec §2, option (e), 2026-08-23). ABSENT means "cannot prove stale" and stays
+ * fresh — the same reading decideCompanion gives the same field (companion.ts:151-152). Only a
+ * PRESENT hash that disagrees with the current body invalidates. That closes #46 §3.5.1's accepted
+ * residual, and its tripwire in tests/lib/html-doc/read-model.test.ts was retired with this change.
+ */
 export function isFresh(
-  envelope: { sourceSections: string[]; generatorVersion?: string },
+  envelope: { sourceSections: string[]; generatorVersion?: string; sourceMdHash?: string },
   titles: string[],
+  currentMdHash: string,
 ): boolean {
-  return sameTitles(envelope, titles) && envelope.generatorVersion === GENERATOR_VERSION;
+  return sameTitles(envelope, titles)
+    && envelope.generatorVersion === GENERATOR_VERSION
+    && (envelope.sourceMdHash === undefined || envelope.sourceMdHash === currentMdHash);
 }
 
 /** Read-only, generation-free: returns the cached model iff present AND fresh; otherwise
- *  not_ready. Never reserves spend or generates a model (no charging RPC, no LLM call). */
+ *  not_ready. Never reserves spend or generates a model (no charging RPC, no LLM call).
+ *  `currentMdHash` is REQUIRED — an optional one would let a new caller silently reinstate the
+ *  hash-blind behaviour this exists to remove. */
 export async function readFreshMagazineModel(args: {
   blobStore: ReadOnlyBlobStore;
   principal: Principal;
   base: string;
   titles: string[];
+  currentMdHash: string;
 }): Promise<{ status: 'ok'; model: MagazineModel } | { status: 'not_ready' }> {
-  const { blobStore, principal, base, titles } = args;
+  const { blobStore, principal, base, titles, currentMdHash } = args;
   const existing = await readModelEnvelope(principal, base, blobStore);
-  if (existing && isFresh(existing, titles)) return { status: 'ok', model: existing.model };
+  if (existing && isFresh(existing, titles, currentMdHash)) return { status: 'ok', model: existing.model };
   return { status: 'not_ready' };
 }
 

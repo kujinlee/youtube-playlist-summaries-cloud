@@ -5,6 +5,10 @@ jest.mock('../../lib/pipeline', () => ({
   stripQuickViewCallout: jest.fn((s: string) => s),
   insertQuickViewCallout: jest.fn((_md: string, tldr: string, takeaways: string[]) => `CALLOUT:${tldr}:${takeaways.join(',')}`),
 }));
+jest.mock('../../lib/storage/resolve', () => ({
+  ...jest.requireActual('../../lib/storage/resolve'),
+  getStorageBundle: jest.fn(),
+}));
 jest.mock('fs', () => ({
   ...jest.requireActual('fs'),
   promises: {
@@ -17,6 +21,8 @@ import { POST } from '../../app/api/videos/[id]/regenerate/route';
 import * as indexStore from '../../lib/index-store';
 import * as gemini from '../../lib/gemini';
 import * as fs from 'fs';
+import * as resolve from '../../lib/storage/resolve';
+import { NonRetryableError } from '../../lib/job-queue/errors';
 
 const mockReadIndex = jest.mocked(indexStore.readIndex);
 const mockAssertOutputFolder = jest.mocked(indexStore.assertOutputFolder);
@@ -26,6 +32,8 @@ const mockFixSummary = jest.mocked(gemini.fixSummary);
 const mockExtractQuickView = jest.mocked(gemini.extractQuickView);
 const mockReadFile = jest.mocked(fs.promises.readFile);
 const mockWriteFile = jest.mocked(fs.promises.writeFile);
+const mockUpdateVideoAnnotations = jest.fn();
+const mockGetStorageBundle = jest.mocked(resolve.getStorageBundle);
 
 const OUTPUT_FOLDER = '/tmp/out';
 const VIDEO_ID = 'testVideoId1';
@@ -65,7 +73,23 @@ beforeEach(() => {
   mockReadIndex.mockReturnValue(baseIndex as any);
   mockReadFile.mockResolvedValue(MD_CONTENT as any);
   mockWriteFile.mockResolvedValue(undefined);
-  mockFixSummary.mockResolvedValue(MD_CONTENT);
+  mockUpdateVideoAnnotations.mockResolvedValue({ found: true });
+  // DELEGATE to the real local bundle and stub ONLY updateVideoAnnotations. The plan replaced the
+  // whole metadataStore with { readIndex: mockReadIndex, updateVideoFields: mockUpdateVideoFields,
+  // … }, which silently changes updateVideoFields' arguments from (OUTPUT_FOLDER, id, patch) —
+  // what the local adapter passes down to index-store — to (principal, id, patch), breaking every
+  // existing assertion in this file. Keeping the real adapter means those keep testing what they
+  // always tested.
+  const realBundle = jest.requireActual('../../lib/storage/resolve').getStorageBundle();
+  mockGetStorageBundle.mockReturnValue({
+    ...realBundle,
+    metadataStore: {
+      readIndex: (...a: unknown[]) => (realBundle.metadataStore.readIndex as (...x: unknown[]) => unknown)(...a),
+      updateVideoFields: (...a: unknown[]) => (realBundle.metadataStore.updateVideoFields as (...x: unknown[]) => unknown)(...a),
+      updateVideoAnnotations: mockUpdateVideoAnnotations,
+    },
+  } as unknown as ReturnType<typeof resolve.getStorageBundle>);
+  mockFixSummary.mockResolvedValue({ text: MD_CONTENT, usage: null });
   mockExtractQuickView.mockResolvedValue({
     tldr: 'This video teaches X.',
     takeaways: ['Point one', 'Point two'],
@@ -102,7 +126,14 @@ describe('POST /api/videos/[id]/regenerate', () => {
   it('calls fixSummary when corrections are provided', async () => {
     const corrections = "Fix 'Clawcode' → 'Claude Code'";
     await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections });
-    expect(mockFixSummary).toHaveBeenCalledWith(MD_CONTENT, corrections);
+    // Third argument added by T5. Asserted as a real AbortSignal rather than `expect.anything()`:
+    // the whole point of making `opts` required is that the route forwards the REQUEST's signal, and
+    // `anything()` would pass on `{}`.
+    expect(mockFixSummary).toHaveBeenCalledWith(
+      MD_CONTENT,
+      corrections,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('does not call fixSummary when corrections is empty string', async () => {
@@ -115,13 +146,17 @@ describe('POST /api/videos/[id]/regenerate', () => {
     expect(mockFixSummary).not.toHaveBeenCalled();
   });
 
-  it('saves corrections to index before Gemini call', async () => {
+  it('saves corrections before the Gemini call', async () => {
     const corrections = 'Fix spelling';
     await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections });
-    // updateVideoFields for corrections should be called before fixSummary
-    const updateCalls = mockUpdateVideoFields.mock.invocationCallOrder;
+    // Watches updateVideoAnnotations, not updateVideoFields: T6 moved the corrections write to the
+    // annotations surface, so the FIRST updateVideoFields call is now the post-Gemini currency
+    // stamp — this assertion inverted and caught it. The property under test is unchanged and still
+    // worth pinning: the user's text is durable before anything paid runs, so a Gemini failure
+    // cannot lose what they typed.
+    const annotationCalls = mockUpdateVideoAnnotations.mock.invocationCallOrder;
     const fixCalls = mockFixSummary.mock.invocationCallOrder;
-    expect(updateCalls[0]).toBeLessThan(fixCalls[0]);
+    expect(annotationCalls[0]).toBeLessThan(fixCalls[0]);
   });
 
   it('returns 200 with new tldr, takeaways on success', async () => {
@@ -170,5 +205,121 @@ describe('POST /api/videos/[id]/regenerate', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual(expect.objectContaining({ summaryHtml: null }));
+  });
+});
+
+describe('bare press does not rewrite the file (spec §2, r5 B1)', () => {
+  it('writes the file when corrections were applied', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix Clawcode' });
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT write the file on a bare press (no corrections key)', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER });
+    expect(mockFixSummary).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write the file on a whitespace-only press', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '   ' });
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write the file on an explicit clear', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '' });
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('still refreshes tldr/takeaways on a bare press — quick-view stays unconditional', async () => {
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER });
+    expect(mockExtractQuickView).toHaveBeenCalledTimes(1);
+    expect((await res.json()).tldr).toBe('This video teaches X.');
+  });
+});
+
+describe('corrections are written through updateVideoAnnotations (spec §4.1)', () => {
+  it('SETS corrections when the incoming text differs from the stored text', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix Clawcode' });
+    expect(mockUpdateVideoAnnotations).toHaveBeenCalledWith(
+      expect.anything(), VIDEO_ID, { corrections: 'fix Clawcode' }, [],
+    );
+  });
+
+  it('CLEARS via the clear array, never via corrections: undefined', async () => {
+    mockReadIndex.mockReturnValue({ ...baseIndex, videos: [{ ...baseVideo, corrections: 'old' }] } as any);
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '' });
+    expect(mockUpdateVideoAnnotations).toHaveBeenCalledWith(
+      expect.anything(), VIDEO_ID, {}, ['corrections'],
+    );
+  });
+
+  it('issues NO call when the incoming text equals the stored text', async () => {
+    mockReadIndex.mockReturnValue({ ...baseIndex, videos: [{ ...baseVideo, corrections: 'same' }] } as any);
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'same' });
+    expect(mockUpdateVideoAnnotations).not.toHaveBeenCalled();
+  });
+
+  it('issues NO call when clearing an ALREADY-EMPTY field', async () => {
+    mockReadIndex.mockReturnValue({ ...baseIndex, videos: [{ ...baseVideo, corrections: undefined }] } as any);
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '' });
+    expect(mockUpdateVideoAnnotations).not.toHaveBeenCalled();
+  });
+
+  it('404s when the annotations write reports the row was not found', async () => {
+    mockUpdateVideoAnnotations.mockResolvedValue({ found: false });
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('video not found');
+  });
+
+  it('does NOT reach Gemini when the annotations write 404s', async () => {
+    // Added beyond the plan: the 404 is a PRE-Gemini guard, and a test asserting only the status
+    // would pass on an implementation that returned 404 AFTER paying for the correction.
+    mockUpdateVideoAnnotations.mockResolvedValue({ found: false });
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(mockFixSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('input bounds (spec §2, §5.1)', () => {
+  it('rejects corrections over 1,000 characters with 400 and a distinguishable code', async () => {
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'x'.repeat(1001) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: expect.any(String), code: 'corrections-too-long' });
+    expect(mockFixSummary).not.toHaveBeenCalled();
+  });
+
+  it('accepts corrections of exactly 1,000 characters — the boundary is inclusive', async () => {
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'x'.repeat(1000) });
+    expect(res.status).toBe(200);
+  });
+
+  it('counts code points, so 1,000 emoji are accepted', async () => {
+    // 1,000 astral code points are 2,000 UTF-16 units. A `.length` check would reject this, and the
+    // browser's maxLength (which counts UTF-16) would have accepted it — bricking a correction the
+    // client let the user type. Direction matters: never stricter than the client.
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '🙂'.repeat(1000) });
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 413 summary-too-large when the preflight refuses the document, NOT 500', async () => {
+    mockFixSummary.mockRejectedValue(new NonRetryableError('correction input 9000 tokens exceeds cap 8192'));
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(res.status).toBe(413);
+    expect((await res.json()).code).toBe('summary-too-large');
+  });
+
+  it('still returns 500 for an ordinary Gemini failure — the 413 is not a catch-all', async () => {
+    mockFixSummary.mockRejectedValue(new Error('Gemini summary fix failed: 503'));
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(res.status).toBe(500);
+  });
+
+  it('a NonRetryableError from ELSEWHERE is still a 500, not a 413', async () => {
+    // Beyond the plan. The 413 is matched on class AND message prefix; a test that only proves the
+    // 413 fires cannot tell that guard apart from `err instanceof NonRetryableError` alone.
+    mockFixSummary.mockRejectedValue(new NonRetryableError('cloud magazine caps missing magazineInputTokens'));
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(res.status).toBe(500);
   });
 });

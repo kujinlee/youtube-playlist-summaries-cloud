@@ -27,27 +27,36 @@ function envelope(over: Partial<any> = {}) {
 
 describe('isFresh', () => {
   it('true when titles match and version matches', () => {
-    expect(isFresh(envelope(), titles)).toBe(true);
+    expect(isFresh(envelope(), titles, 'hash-X')).toBe(true);
   });
   it('false when a title differs', () => {
-    expect(isFresh(envelope({ sourceSections: ['A', 'C'] }), titles)).toBe(false);
+    expect(isFresh(envelope({ sourceSections: ['A', 'C'] }), titles, 'hash-X')).toBe(false);
   });
   it('false when generatorVersion differs', () => {
-    expect(isFresh(envelope({ generatorVersion: 'old' }), titles)).toBe(false);
+    expect(isFresh(envelope({ generatorVersion: 'old' }), titles, 'hash-X')).toBe(false);
   });
 
-  // KNOWN GAP, accepted in the serve-bounding spec §3.5.1 (#46).
-  it('treats an envelope with a STALE sourceMdHash as fresh when titles match', () => {
-    // The accepted residual: writeModelEnvelopeWithin bounds our WAIT, not the upload, so a put
-    // that timed out can still land later and overwrite a newer model — and it is then served
-    // indefinitely whenever the section titles did not change (the common case for a prose-only
-    // edit). The fix is content addressing (backlog #25), NOT a change here.
-    //
-    // Note what is being pinned: the hash is the ONLY difference from the passing case above.
-    //
-    // WHEN THIS GOES RED: someone made isFresh hash-aware. That is a MONEY decision — prose-only
-    // edits would then force paid regeneration — so read §3.5.1 before deleting this test.
-    expect(isFresh(envelope({ sourceMdHash: 'hash-of-OLD-markdown' }), titles)).toBe(true);
+  // WAS: a tripwire asserting isFresh IGNORES sourceMdHash, installed by the serve-path-deadline
+  // work (#46 §3.5.1) which accepted the stale-model residual because no detection mechanism
+  // existed. That residual is CLOSED here. The decision is
+  // docs/superpowers/specs/2026-08-22-corrections-in-cloud-design.md §2, "DECIDED 2026-08-23 (user)
+  // — option (e)", reviewed in docs/reviews/spec-corrections-in-cloud-r5-{codex,claude}.md.
+  // The money consequence is intended and stated there: a prose-only edit now forces one paid
+  // regeneration on the next OWNER serve. The share path is untouched (readTitleStableModel).
+  it('false when sourceMdHash is present and does not match the current body', () => {
+    expect(isFresh(envelope({ sourceMdHash: 'hash-of-OLD-markdown' }), titles, 'hash-of-NEW-markdown'))
+      .toBe(false);
+  });
+
+  it('true when sourceMdHash matches the current body', () => {
+    expect(isFresh(envelope({ sourceMdHash: 'hash-X' }), titles, 'hash-X')).toBe(true);
+  });
+
+  // ABSENT means CANNOT PROVE STALE, exactly as decideCompanion reads the same field
+  // (companion.ts:151-152: `sourceMdHash !== undefined`). Pre-2026-07-17 envelopes predate the
+  // field; invalidating them would mass-regenerate a population nobody has counted.
+  it('true when sourceMdHash is ABSENT — absent cannot prove stale', () => {
+    expect(isFresh(envelope(), titles, 'any-hash-at-all')).toBe(true);
   });
 });
 
@@ -56,7 +65,7 @@ describe('readFreshMagazineModel', () => {
 
   it('returns ok with the model when a fresh envelope exists', async () => {
     mockReadModelEnvelope.mockResolvedValue(envelope());
-    const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles });
+    const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles, currentMdHash: 'hash-X' });
     expect(r).toEqual({ status: 'ok', model: fakeModel });
     // Arg-passthrough: prove the helper forwards (principal, base, blobStore) unchanged
     // rather than swallowing or reordering them (the mock otherwise hides this).
@@ -65,13 +74,13 @@ describe('readFreshMagazineModel', () => {
 
   it('returns not_ready when the envelope is absent', async () => {
     mockReadModelEnvelope.mockResolvedValue(null);
-    const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles });
+    const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles, currentMdHash: 'hash-X' });
     expect(r).toEqual({ status: 'not_ready' });
   });
 
   it('returns not_ready when the envelope is stale (version bump)', async () => {
     mockReadModelEnvelope.mockResolvedValue(envelope({ generatorVersion: 'old' }));
-    const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles });
+    const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles, currentMdHash: 'hash-X' });
     expect(r).toEqual({ status: 'not_ready' });
   });
 });

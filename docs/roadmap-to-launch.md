@@ -1127,6 +1127,60 @@ one are honest wishes, not plans — mark them so rather than pretending they ar
 
 ---
 
+## Corrections in the cloud, slice A — backlog #23 — ⏳ IMPLEMENTED, NOT MERGED, NOT DEPLOYED
+
+Added 2026-08-24. Spec + plan merged in **PR #133** (`ae1fa4a`); the implementation is on
+`feat/corrections-in-cloud-slice-a`, 12 tasks in 12 commits.
+
+**What it does:** a cloud user edits corrections, presses the button, and gets a corrected summary —
+the behaviour local has always had. Two user decisions shape it: **(e)** magazine staleness is
+*derived* from the `sourceMdHash` the envelope already carried, so nothing is deleted and the share
+path is untouched; **(b′)** spend is recorded behind a per-owner-per-day bound, ceiling 12¢ × N 8 =
+96¢ = 19% of the global daily cap, because the two limits multiply.
+
+**The ordering that cost review rounds to find:** `T3 → T10 → T4`. T4 arms a mechanism; T3 and T10
+make it safe. Held during implementation and now also held by `blockedBy` edges and by
+`scripts/check-plan-task-order.py` (compile-order half only — the chain itself is semantic).
+
+### ✅ All four gates RAN on 2026-08-24 — the migration is executed, not asserted
+
+| Gate | Result |
+|---|---|
+| `tests/integration/record-correction-spend.int.test.ts` | ✅ **9/9** (the falsifier split into two independent tests — see below) |
+| The three T9 mutations | ✅ **3/3 caught** |
+| `tests/integration/corrections-cloud.int.test.ts` | ✅ **7/7** |
+| `scripts/check-anon-exposure.py --local` | ✅ pass; catalog confirms `anon` EXECUTE = **false** |
+
+`0026` has executed: `correction_spend` exists, the RPC exists, `guardrail_config` reads
+`ceiling=12 N=8`. Unit suite 2,808 / 274, `tsc` 0.
+
+**Four defects found, all in the TESTS, none in the production code** — every one an instrument
+measuring something other than its subject: `anonSession()` mints an *authenticated* user (so the
+`anon` test never touched the role); `cookies()` outside a request scope killed 7/7 before any
+assertion; a missing `beforeEach(clearAllMocks)` made `not.toHaveBeenCalled()` count the whole
+file's history; and `psql -f /tmp/…` reads the **container's** filesystem, so mutation M1 never
+applied while printing `Tests: 8 passed` — indistinguishable from a surviving mutation.
+
+**⚠ And the finding the plan predicted:** under M1 the combined falsifier failed on the *rejection*
+assertion, so jest stopped and **the ledger assertion was never evaluated** — the containment claim
+that (b′) exists to make was resting on a line no mutation reached. Split into two independent
+tests; under M1 both now fail, HALF TWO reading `Expected 96 / Received 108` = (N+1) × ceiling.
+
+**Still owed before deploy:** `scripts/check-anon-exposure.py` against **prod**, *after* `0026` is
+applied there. A prod run beforehand reports on the old catalog. Release order unchanged: apply
+`0026` → re-check anon exposure against prod → deploy the image.
+
+### Owed, and tracked rather than implied
+
+- Three serve-path §7 rows could not be written: the plan named five helpers in
+  `serve-doc-materialize.test.ts` and **only two exist** (task #130)
+- Panel copy for the structural-validation throw and for abort (task #130)
+- `extractQuickView` takes no `signal` and reports no usage, so a correction is **uncancellable for
+  ~181 s** in its second phase and **under-reports** by the quick-view cost — backlog **#61**
+- Whether a cloud rendered-HTML **blob** cache exists at all (task #130)
+
+---
+
 ## Serve-path absence defect — backlog #34 — ✅ RESOLVED 2026-08-11 (PR #78)
 
 > ⚠️ **This section was written when the defect was believed live, and stayed that way after it was
@@ -1246,7 +1300,7 @@ unapplied for eight days while every document read "merged, done".
   anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
-- **`master` is clean** — tsc clean, **2722 unit / 268 suites** green, plus **522 integration**
+- **`master` is clean** — tsc clean, **2808 unit / 274 suites** green, plus **522 integration**
   (519 passed + 3 skipped, measured 2026-08-17 against a live local stack; integration does not run
   in CI and is therefore NOT verified by the check below — treat it as a dated note, not a live
   number). **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`,
@@ -1347,7 +1401,7 @@ was shelved, and the §4 prod gate was re-run as a merge step (below).
 | T14 | end-to-end: a title in any language ingests and serves — 6 tests |
 | T15 | ADR-0009, this tick, backlog #36, and the §4 prod gate re-run |
 
-**Gates, by exit code.** `tsc --noEmit` clean · unit **2722 passed / 268 suites** · integration
+**Gates, by exit code.** `tsc --noEmit` clean · unit **2808 passed / 274 suites** · integration
 **519 passed, 3 skipped, 0 failed** · all four ratchets exit 0.
 
 **The §4 no-migration gate was RE-RUN, not inherited.** 2026-08-17, prod, read-only as `claude_ro`,

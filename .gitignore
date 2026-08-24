@@ -82,3 +82,9 @@ playwright/.auth/
 # Post-Plan Gate sentinel — transient, per-working-copy. Armed by
 # .claude/hooks/check-plan-gate.sh, cleared at Post-Plan Gate 5/5.
 .claude/plan-gate-pending
+
+# Session-local execution state, armed by .claude/hooks/block-idle-stop.sh. Names the plan being
+# executed and the last blocked step-count; both are per-machine, per-session. The PLAN's checkboxes
+# are the durable, committed record of progress — these two files only decide when to interrupt.
+.claude/executing-plan
+.claude/executing-plan.state

@@ -178,7 +178,7 @@ export default function VideoMenu({ video, outputFolder, baseOutputFolder, onArc
             : <button type="button" onClick={() => { onSavePdf(video.id, 'dig-deeper'); onClose(); }} className={itemClass}>Save dig-deeper PDF</button>}
         </li>
       )}
-      {!cloudMode && video.summaryMd && (
+      {video.summaryMd && (
         <li role="none">
           <button
             type="button"

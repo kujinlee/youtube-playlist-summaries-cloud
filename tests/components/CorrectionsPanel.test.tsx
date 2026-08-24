@@ -2,6 +2,13 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import CorrectionsPanel from '@/components/CorrectionsPanel';
+import { ScopeProvider, type Scope } from '@/lib/client/scope';
+
+// T11 dropped the `outputFolder` PROP; the panel reads the scope instead. These existing cases
+// keep exercising the LOCAL path, so they get a local ScopeProvider and their assertions are
+// unchanged — the payload they check is still { outputFolder, corrections }.
+const LOCAL: Scope = { mode: 'local', outputFolder: '/tmp/out', baseOutputFolder: '/tmp' };
+const CLOUD: Scope = { mode: 'cloud', playlistId: '11111111-2222-3333-4444-555555555555' };
 
 const VIDEO_ID      = 'abc123';
 const OUTPUT_FOLDER = '/tmp/out';
@@ -28,13 +35,14 @@ function renderPanel({
   onSuccess?: jest.Mock;
 } = {}) {
   render(
-    <CorrectionsPanel
-      videoId={VIDEO_ID}
-      outputFolder={OUTPUT_FOLDER}
-      initialCorrections={initialCorrections}
-      onClose={onClose}
-      onSuccess={onSuccess}
-    />,
+    <ScopeProvider scope={LOCAL}>
+      <CorrectionsPanel
+        videoId={VIDEO_ID}
+        initialCorrections={initialCorrections}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />
+    </ScopeProvider>,
   );
   return { onClose, onSuccess };
 }
@@ -56,15 +64,16 @@ describe('CorrectionsPanel', () => {
     it('portals the overlay to <body> so it is not an invalid <div> child of <tbody>', () => {
       // Mirrors the real mount site: VideoRow renders this inside VideoList's <table><tbody>.
       render(
-        <table><tbody data-testid="tbody"><tr><td>
-          <CorrectionsPanel
-            videoId={VIDEO_ID}
-            outputFolder={OUTPUT_FOLDER}
-            initialCorrections={undefined}
-            onClose={jest.fn()}
-            onSuccess={jest.fn()}
-          />
-        </td></tr></tbody></table>,
+        <ScopeProvider scope={LOCAL}>
+          <table><tbody data-testid="tbody"><tr><td>
+            <CorrectionsPanel
+              videoId={VIDEO_ID}
+              initialCorrections={undefined}
+              onClose={jest.fn()}
+              onSuccess={jest.fn()}
+            />
+          </td></tr></tbody></table>
+        </ScopeProvider>,
       );
       const backdrop = screen.getByTestId('corrections-backdrop');
       // Portaled to document.body — NOT nested inside the table (which caused the hydration error).
@@ -182,5 +191,76 @@ describe('CorrectionsPanel', () => {
       fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
       await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
     });
+  });
+});
+
+// ── T11: scope-awareness and the §6 outcome discriminator ─────────────────────────────────────
+// ⚠ `@testing-library/user-event` IS NOT A DEPENDENCY — verified against package.json 2026-08-24.
+// This file's existing idiom (fireEvent inside act) is followed rather than adding one for a
+// handful of clicks.
+describe('scope-awareness (T11)', () => {
+  function renderIn(scope: Scope, initial?: string, onClose = jest.fn()) {
+    render(
+      <ScopeProvider scope={scope}>
+        <CorrectionsPanel videoId="v1" initialCorrections={initial} onClose={onClose} onSuccess={() => {}} />
+      </ScopeProvider>,
+    );
+    return { onClose };
+  }
+
+  async function press() {
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /regenerate/i })); });
+  }
+
+  function respond(body: Record<string, unknown>, ok = true, status = 200) {
+    fetchMock.mockResolvedValue({ ok, status, json: () => Promise.resolve(body) } as unknown as Response);
+  }
+
+  it('posts ?playlist=<uuid> and NO outputFolder in cloud mode', async () => {
+    respond({ outcome: 'applied', tldr: 't', takeaways: [] });
+    renderIn(CLOUD, 'fix X');
+    await press();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('?playlist=11111111-2222-3333-4444-555555555555');
+    expect(JSON.parse(String(init.body))).toEqual({ corrections: 'fix X' });
+  });
+
+  it('posts outputFolder and no query string in local mode', async () => {
+    respond({ outcome: 'applied', tldr: 't', takeaways: [] });
+    renderIn(LOCAL, 'fix X');
+    await press();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).not.toContain('?playlist=');
+    expect(JSON.parse(String(init.body))).toEqual({ outputFolder: '/tmp/out', corrections: 'fix X' });
+  });
+
+  it('reports no-corrections so a press that changed nothing does not read as a bug', async () => {
+    respond({ outcome: 'no-corrections', tldr: 't', takeaways: [] });
+    renderIn(CLOUD, '');
+    await press();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/no corrections to apply/i));
+  });
+
+  it('KEEPS THE PANEL OPEN on no-corrections — otherwise the discriminator is unreachable', async () => {
+    // The plan added the status line and left the unconditional onClose(). The panel would unmount
+    // and the message would never render. This asserts the behaviour the message depends on.
+    respond({ outcome: 'no-corrections', tldr: 't', takeaways: [] });
+    const { onClose } = renderIn(CLOUD, '');
+    await press();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('still closes on an applied correction — the changed summary is its own feedback', async () => {
+    respond({ outcome: 'applied', tldr: 't', takeaways: [] });
+    const { onClose } = renderIn(CLOUD, 'fix X');
+    await press();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows the over-cap message, not a generic failure', async () => {
+    respond({ error: 'This summary is too long to correct', code: 'summary-too-large' }, false, 413);
+    renderIn(CLOUD, 'fix X');
+    await press();
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/too long to correct/i));
   });
 });

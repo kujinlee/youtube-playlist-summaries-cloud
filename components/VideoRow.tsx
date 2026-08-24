@@ -199,7 +199,6 @@ export default function VideoRow({ video, rank, outputFolder = '', baseOutputFol
       {showCorrections && (
         <CorrectionsPanel
           videoId={video.id}
-          outputFolder={outputFolder}
           initialCorrections={video.corrections}
           onClose={() => setShowCorrections(false)}
           onSuccess={(patch) => onAnnotationChange(video.id, patch)}
