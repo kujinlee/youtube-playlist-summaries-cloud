@@ -65,7 +65,7 @@ beforeEach(() => {
   mockReadIndex.mockReturnValue(baseIndex as any);
   mockReadFile.mockResolvedValue(MD_CONTENT as any);
   mockWriteFile.mockResolvedValue(undefined);
-  mockFixSummary.mockResolvedValue(MD_CONTENT);
+  mockFixSummary.mockResolvedValue({ text: MD_CONTENT, usage: null });
   mockExtractQuickView.mockResolvedValue({
     tldr: 'This video teaches X.',
     takeaways: ['Point one', 'Point two'],
@@ -102,7 +102,14 @@ describe('POST /api/videos/[id]/regenerate', () => {
   it('calls fixSummary when corrections are provided', async () => {
     const corrections = "Fix 'Clawcode' → 'Claude Code'";
     await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections });
-    expect(mockFixSummary).toHaveBeenCalledWith(MD_CONTENT, corrections);
+    // Third argument added by T5. Asserted as a real AbortSignal rather than `expect.anything()`:
+    // the whole point of making `opts` required is that the route forwards the REQUEST's signal, and
+    // `anything()` would pass on `{}`.
+    expect(mockFixSummary).toHaveBeenCalledWith(
+      MD_CONTENT,
+      corrections,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('does not call fixSummary when corrections is empty string', async () => {

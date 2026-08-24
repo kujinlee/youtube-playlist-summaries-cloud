@@ -74,7 +74,7 @@ beforeEach(() => {
   mockReadIndex.mockReturnValue(baseIndex as any);
   mockReadFile.mockResolvedValue(MD_CONTENT as any);
   mockWriteFile.mockResolvedValue(undefined);
-  mockFixSummary.mockResolvedValue(MD_CONTENT);
+  mockFixSummary.mockResolvedValue({ text: MD_CONTENT, usage: null });
   mockExtractQuickView.mockResolvedValue({
     tldr: 'This video teaches X.',
     takeaways: ['Point one', 'Point two'],

@@ -61,7 +61,9 @@ export async function POST(request: Request, { params }: Params) {
 
     // Apply text corrections if provided (works on prose only — callout is stripped first)
     const stripped = stripQuickViewCallout(mdContent);
-    const fixed = trimmedCorrections ? await fixSummary(stripped, trimmedCorrections) : stripped;
+    const fixed = trimmedCorrections
+      ? (await fixSummary(stripped, trimmedCorrections, { signal: request.signal })).text
+      : stripped;
 
     // Re-extract tldr/takeaways from corrected content and re-insert callout
     const { tldr, takeaways } = await extractQuickView(fixed);

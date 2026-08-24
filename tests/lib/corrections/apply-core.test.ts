@@ -37,7 +37,7 @@ const CORRECTED = BODY.replace('Clawcode', 'Claude Code');
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockFixSummary.mockResolvedValue(CORRECTED);
+  mockFixSummary.mockResolvedValue({ text: CORRECTED, usage: null });
   mockExtractQuickView.mockResolvedValue({ tldr: 'New TL;DR.', takeaways: ['New point'] });
 });
 
@@ -75,7 +75,7 @@ describe('applyCorrection', () => {
   });
 
   it('throws StructuralValidationError and never calls extractQuickView when structure moved', async () => {
-    mockFixSummary.mockResolvedValue(BODY.replace('## 1. Intro', '## 1. Introduction'));
+    mockFixSummary.mockResolvedValue({ text: BODY.replace('## 1. Intro', '## 1. Introduction'), usage: null });
     await expect(applyCorrection({
       md: BODY, corrections: 'x', tags: [], signal: new AbortController().signal,
     })).rejects.toThrow(expect.objectContaining({ reason: 'section-title' }));
@@ -83,9 +83,31 @@ describe('applyCorrection', () => {
   });
 
   it('surfaces StructuralValidationError as its own class', async () => {
-    mockFixSummary.mockResolvedValue(BODY.replace('## 1. Intro', '## 1. Introduction'));
+    mockFixSummary.mockResolvedValue({ text: BODY.replace('## 1. Intro', '## 1. Introduction'), usage: null });
     await expect(applyCorrection({
       md: BODY, corrections: 'x', tags: [], signal: new AbortController().signal,
     })).rejects.toBeInstanceOf(StructuralValidationError);
+  });
+});
+
+describe('actual spend is measured, not estimated', () => {
+  it('prices the real token counts', async () => {
+    mockFixSummary.mockResolvedValue({
+      text: CORRECTED,
+      usage: { promptTokens: 10_000, outputTokens: 4_000 },
+    });
+    const r = await applyCorrection({
+      md: BODY, corrections: 'x', tags: [], signal: new AbortController().signal,
+    });
+    // 10_000 * 30/1e6 + 4_000 * 250/1e6 = 0.3 + 1.0 = 1.3¢ → ceil 2
+    expect(r.actualCents).toBe(2);
+  });
+
+  it('reports null rather than zero when the SDK returned no usageMetadata', async () => {
+    mockFixSummary.mockResolvedValue({ text: CORRECTED, usage: null });
+    const r = await applyCorrection({
+      md: BODY, corrections: 'x', tags: [], signal: new AbortController().signal,
+    });
+    expect(r.actualCents).toBeNull();
   });
 });

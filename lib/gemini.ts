@@ -98,6 +98,35 @@ export async function assertMagazineInputWithinCap(
   }
 }
 
+/** countTokens preflight for the correction path (mirrors assertMagazineInputWithinCap). The
+ *  correction's output is the whole assembled document, so the OUTPUT cap is the right bound to
+ *  check the input against: an input already over it cannot come back under it.
+ *
+ *  Why a preflight at all: fixSummary retries twice on truncation, so an over-cap document would
+ *  cost three full paid passes and then throw. */
+export async function assertCorrectionInputWithinCap(
+  model: Pick<GenerativeModel, 'countTokens'>,
+  prompt: string,
+  generationConfig: GenerationConfig,
+  caps: CloudGeminiCaps,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<void> {
+  const { totalTokens } = await model.countTokens(
+    {
+      generateContentRequest: { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig },
+    },
+    {
+      ...(opts?.signal ? { signal: opts.signal } : {}),
+      ...(opts?.timeoutMs ? { timeout: opts.timeoutMs } : {}),
+    },
+  );
+  if (totalTokens > caps.summaryOutputTokens) {
+    throw new NonRetryableError(
+      `correction input ${totalTokens} tokens exceeds cap ${caps.summaryOutputTokens}`,
+    );
+  }
+}
+
 // Resolved model constants (post-`??`) — exported so the cost guard test can assert
 // resolved model == priced model without re-deriving the env-resolution expression.
 export const SUMMARY_MODEL = process.env.GEMINI_SUMMARY_MODEL ?? 'gemini-2.5-flash';
@@ -467,14 +496,25 @@ ${summaryMarkdown}
  * stripping any existing Quick Reference callout before calling this
  * function, and re-inserting it afterwards.
  */
+/** What one Gemini call actually consumed, as the SDK reported it. */
+export interface GeminiUsage { promptTokens: number; outputTokens: number }
+
 export async function fixSummary(
   mdContent: string,
   corrections: string,
+  // REQUIRED third parameter. `signal` optional here would let a caller silently restore an
+  // uncancellable ~181 s paid call; `caps` stays optional because the LOCAL pipeline passes none by
+  // design (withCaps returns `base` unchanged when caps is undefined, :41).
+  opts: { signal: AbortSignal; caps?: CloudGeminiCaps },
   retries = 2,
   baseDelayMs = 400,
-): Promise<string> {
+): Promise<{ text: string; usage: GeminiUsage | null }> {
   const client = new GoogleGenerativeAI(getApiKey());
-  const model = client.getGenerativeModel({ model: SUMMARY_MODEL });
+  const model = client.getGenerativeModel({
+    model: SUMMARY_MODEL,
+    // The caps OBJECT is argument TWO — that is what decides whether any cap is applied at all.
+    generationConfig: withCaps({}, opts.caps, opts.caps?.summaryOutputTokens ?? 0),
+  });
 
   const prompt = `You are editing a video summary document. Apply the correction instructions below to the document and return the complete corrected document. Rules:
 - Only fix the text as instructed — do NOT add, remove, or restructure any sections
@@ -492,17 +532,35 @@ ${mdContent}
   // than silently persisting a half-corrected document (this path returns text, not JSON).
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    // (1 of 3) Loop-top abort guard — generateJson has this; without it an abort during the
+    // backoff below is not noticed until the NEXT paid call has already been issued.
+    if (opts.signal.aborted) throw new DOMException('aborted', 'AbortError');
     try {
-      const result = await model.generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS });
+      // (2 of 3) Forward the signal to the call itself.
+      const result = await model.generateContent(prompt, {
+        timeout: REQUEST_TIMEOUT_MS,
+        signal: opts.signal,
+      });
       assertNotTruncated(result);
       const corrected = result.response.text().trim();
       if (!corrected) throw new Error('Gemini returned empty content');
-      return corrected;
+      const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
+      // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
+      // facts, and collapsing them would understate spend exactly where it matters.
+      const usage = um && um.promptTokenCount != null && um.candidatesTokenCount != null
+        ? { promptTokens: um.promptTokenCount, outputTokens: um.candidatesTokenCount }
+        : null;
+      return { text: corrected, usage };
     } catch (err) {
+      // Preserve AbortError identity unwrapped so the caller can distinguish cancellation from a
+      // real failure (same rule as generateSummary's catch).
+      if ((err as { name?: string })?.name === 'AbortError') throw err;
       lastErr = err;
       if (attempt < retries) {
         console.warn(`[gemini-retry] fix-summary: attempt ${attempt + 1} failed (${err instanceof Error ? err.message : String(err)}); retrying…`);
-        if (baseDelayMs > 0) await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+        // (3 of 3) Interruptible backoff. A bare setTimeout waits out up to 1.2 s of sleep it
+        // cannot cancel, then issues another paid attempt.
+        if (baseDelayMs > 0) await abortableSleep(baseDelayMs * 2 ** attempt, opts.signal);
       }
     }
   }

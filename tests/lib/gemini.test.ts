@@ -539,15 +539,15 @@ describe('fixSummary', () => {
     mockGenerateContent.mockResolvedValueOnce({
       response: { text: () => corrected },
     });
-    const result = await fixSummary(MARKDOWN, CORRECTIONS);
-    expect(result).toBe(corrected);
+    const result = await fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal });
+    expect(result.text).toBe(corrected);
   });
 
   it('includes correction instructions in the prompt sent to Gemini', async () => {
     mockGenerateContent.mockResolvedValueOnce({
       response: { text: () => 'corrected content' },
     });
-    await fixSummary(MARKDOWN, CORRECTIONS);
+    await fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal });
     const [prompt] = mockGenerateContent.mock.calls[0] as [string];
     expect(prompt).toContain(CORRECTIONS);
     expect(prompt).toContain(MARKDOWN);
@@ -558,14 +558,14 @@ describe('fixSummary', () => {
     mockGenerateContent.mockResolvedValue({
       response: { text: () => '' },
     });
-    await expect(fixSummary(MARKDOWN, CORRECTIONS, 2, 0)).rejects.toThrow('Gemini summary fix failed');
+    await expect(fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal }, 2, 0)).rejects.toThrow('Gemini summary fix failed');
   });
 
   it('wraps Gemini API errors with a clear message', async () => {
     const apiError = new Error('network error');
     // mockRejectedValue (not Once) so every retry fails identically and .cause is the original error.
     mockGenerateContent.mockRejectedValue(apiError);
-    const err = await fixSummary(MARKDOWN, CORRECTIONS, 2, 0).catch((e) => e);
+    const err = await fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal }, 2, 0).catch((e) => e);
     expect(err.message).toMatch(/Gemini summary fix failed/);
     expect(err.cause).toBe(apiError);
   });
@@ -576,9 +576,9 @@ describe('fixSummary', () => {
       .mockResolvedValueOnce({ response: { candidates: [{ finishReason: 'MAX_TOKENS' }], text: () => 'truncated half-corrected doc' } })
       .mockResolvedValueOnce({ response: { candidates: [{ finishReason: 'STOP' }], text: () => 'full corrected doc' } });
 
-    const result = await fixSummary(MARKDOWN, CORRECTIONS, 2, 0);
+    const result = await fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal }, 2, 0);
 
-    expect(result).toBe('full corrected doc');
+    expect(result.text).toBe('full corrected doc');
     expect(mockGenerateContent).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('[gemini-retry] fix-summary'));
     warn.mockRestore();
@@ -586,7 +586,7 @@ describe('fixSummary', () => {
 
   it('throws when GEMINI_API_KEY is not set', async () => {
     delete process.env.GEMINI_API_KEY;
-    await expect(fixSummary(MARKDOWN, CORRECTIONS)).rejects.toThrow('GEMINI_API_KEY is not set');
+    await expect(fixSummary(MARKDOWN, CORRECTIONS, { signal: new AbortController().signal })).rejects.toThrow('GEMINI_API_KEY is not set');
   });
 });
 
