@@ -3287,13 +3287,37 @@ mutation survives is untested, which is indistinguishable from "does nothing".
 | Swap `blobStore.put` for `writeArtifact` | `regenerate-cloud.test.ts` → *writes the corrected body with blobStore.put* |
 | Remove `attempts_exhausted` from the stale fallback | `serve-doc-mapping.test.ts` → *serves the title-stable model when attempts are exhausted* |
 
-- [ ] **Step 4: Add the forward-reference guard, so ordering stops depending on who reads carefully**
+- [x] **Step 4: Add the forward-reference guard, so ordering stops depending on who reads carefully**
 
 Three reviewers each found an ordering edge the other two missed — the coordinator found `T3 → T4`,
 this reviewer found `T10 → T4`, then `T8 → T11` and `T7 → T8` at the gate. That is the definition of
 something a script should own. **A convention catches what you read; a script catches what is there.**
 
-Create `scripts/check-plan-task-order.py`:
+> ✅ **DONE 2026-08-24, PULLED FORWARD out of T12 — before T2, not after T12.**
+> A guard scheduled as the last step of the last task lands after every ordering it guards has
+> already been executed. It lints a markdown file and depends on no code task, so there was never a
+> reason for it to be last. `scripts/check-plan-task-order.py`, **16 self-test cases**, green on this
+> plan.
+>
+> **Three defects in the listing below, all measured when it was run:**
+> 1. `produces_open` is read before assignment on the first iteration → `NameError`, always.
+> 2. It is recomputed per line, so only the line *immediately* after `- Produces:` is captured —
+>    every sub-bullet after the first is dropped. Task 1 alone would have lost two of three symbols.
+> 3. `` re.findall(r"`([A-Za-z_][A-Za-z0-9_]*)`") `` matches only a backtick span that is *entirely*
+>    a bare identifier, so every symbol written as a full signature is invisible. It would have
+>    printed ✅ while seeing almost nothing — the worst outcome available to a ratchet.
+>
+> The shipped version also drops bare lowercase prose words (`` `opts` ``, `` `ok` ``), which
+> produced two false positives on the first real run, and treats a symbol already exported by the
+> working tree as pre-existing — a task may consume `fixSummary`'s *current* signature while T5
+> rewrites it, and that is not a forward reference.
+>
+> ⚠ **What it does NOT cover, and this is the part that matters:** `T3 → T10 → T4` is a **semantic**
+> constraint. T4 arms a mechanism T3 and T10 make safe; neither produces a symbol T4 consumes, so no
+> identifier parser can see it. That half is held by this plan's *Hard ordering constraints* section
+> and by `blockedBy` edges on tasks #134/#141 → #135. **Do not cite this script as owning the chain.**
+
+The original listing, kept for the record — **do not resurrect it**:
 
 ```python
 #!/usr/bin/env python3
@@ -3342,11 +3366,14 @@ if __name__ == "__main__":
 ```
 
 Run: `python3 scripts/check-plan-task-order.py`
-Expected: `✅ no forward references`.
+Expected: `✅ no forward references`. **Observed 2026-08-24:** `11 tasks produce, 12 consume — ✅ no
+forward references`.
 
-⚠ **Self-test it before trusting it.** Temporarily move T7's `MAX_CORRECTIONS_CHARS` bullet from T7's
-Produces into T9's, then re-run: it must print
-`FORWARD REFERENCE: Task 8 consumes MAX_CORRECTIONS_CHARS, produced only by Task 9`. Restore.
+⚠ **Self-test it before trusting it.** The shipped version carries `--self-test` (16 cases) rather
+than asking a human to hand-move a bullet and remember to restore it — an instrument that edits the
+artifact it measures is how this repo got two reviewers disagreeing on the same commit
+(`an-instrument-that-edits-the-repo-corrupts-its-peers`). Three of the sixteen cases exist only
+because the listing above got them wrong.
 A ratchet that has never been seen to fail is a ratchet nobody has tested.
 
 - [ ] **Step 5: Record the result**
