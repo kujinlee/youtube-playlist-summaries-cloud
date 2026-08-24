@@ -34,6 +34,7 @@ Clawcode.
 const mockPut = jest.fn();
 const mockUpdateVideoFields = jest.fn();
 const mockUpdateVideoAnnotations = jest.fn();
+const mockRpc = jest.fn();
 
 function post(body: Record<string, unknown>, qs = `?playlist=${PLAYLIST_ID}`) {
   return POST(
@@ -49,7 +50,9 @@ beforeEach(() => {
   process.env.STORAGE_BACKEND = 'supabase';
   jest.mocked(serverSupabase.createServerSupabase).mockReturnValue({
     auth: { getUser: async () => ({ data: { user: { id: 'owner-1' } } }) },
+    rpc: mockRpc,
   } as never);
+  mockRpc.mockResolvedValue({ error: null });
   mockPut.mockResolvedValue(undefined);
   mockUpdateVideoAnnotations.mockResolvedValue({ found: true });
   jest.mocked(serveCore.loadSummaryForServe).mockResolvedValue({
@@ -183,5 +186,49 @@ describe('regenerate — cloud branch', () => {
     const res = await post({ corrections: 'fix X' });
     expect(res.status).toBe(413);
     expect((await res.json()).code).toBe('summary-too-large');
+  });
+});
+
+describe('spend recording (spec §5.2)', () => {
+  it('records the measured cents after a successful correction', async () => {
+    await post({ corrections: 'fix Clawcode' });
+    // beforeEach mocks usage { promptTokens: 10_000, outputTokens: 4_000 } -> 2c
+    expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: 2 });
+  });
+
+  it('records the spend AFTER the blob write, never before', async () => {
+    // Beyond the plan. Post-hoc means post-hoc: recording before the write would book spend for a
+    // correction that might not become durable. Call order is the only thing that shows it.
+    await post({ corrections: 'fix Clawcode' });
+    expect(mockPut.mock.invocationCallOrder[0]).toBeLessThan(mockRpc.mock.invocationCallOrder[0]);
+  });
+
+  // ⚠ THE TITLE OF THIS TEST USED TO SAY "no correction, no spend". THAT WAS FALSE.
+  // extractQuickView is a paid Gemini call (lib/gemini.ts:425) and §3 requires it on every press,
+  // so a bare press DOES spend — slice A simply cannot see it. What this asserts is the narrow true
+  // thing: no CORRECTION spend is recorded.
+  it('records no CORRECTION spend on a bare press (the quick-view call is unmeasured, not free)', async () => {
+    await post({});
+    expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
+    expect(jest.mocked(gemini.extractQuickView)).toHaveBeenCalledTimes(1);   // it DID run, and it DID cost
+  });
+
+  it('does not record 0 when usage was unmeasured', async () => {
+    jest.mocked(gemini.fixSummary).mockResolvedValue({ text: MD, usage: null });
+    await post({ corrections: 'fix X' });
+    expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
+  });
+
+  it('still returns 200 when the ledger write fails — the correction landed', async () => {
+    mockRpc.mockResolvedValue({ error: { message: 'ceiling exceeded' } });
+    const res = await post({ corrections: 'fix X' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).outcome).toBe('applied');
+  });
+
+  it('still returns 200 when the owner hit their daily bound', async () => {
+    mockRpc.mockResolvedValue({ error: { message: 'owner daily correction limit 8 reached' } });
+    const res = await post({ corrections: 'fix X' });
+    expect(res.status).toBe(200);   // the correction happened; only the bookkeeping was refused
   });
 });

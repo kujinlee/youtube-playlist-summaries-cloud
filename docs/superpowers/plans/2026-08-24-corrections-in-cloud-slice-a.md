@@ -2219,7 +2219,7 @@ invent a token.
 
 ⚠ Depends on T5 and T8. **No task-order edge against `T3 → T10 → T4`** — see the note at the end.
 
-- [ ] **Step 1: Write the failing test — BOTH halves of the falsifier**
+- [x] **Step 1: Write the failing test — BOTH halves of the falsifier**
 
 ⚠ **The old falsifier ("a single over-ceiling call is rejected") would have PASSED the broken
 design.** It proved each lie was small and said nothing about how many there could be. The row that
@@ -2346,7 +2346,7 @@ Run: `npx jest --config jest.integration.config.ts tests/integration/record-corr
 Expected: FAIL — PostgREST reports `Could not find the function public.record_correction_spend`.
 If the suite refuses to start, the local Postgres is down: **that is NOT RUN, not a pass.**
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 ⚠ **Patterns below are transcribed from `0012_serve_model_charge.sql`, opened 2026-08-24 — not from
 memory.** Three of them are not what you would guess: the owner is **derived**, never a parameter;
@@ -2514,7 +2514,7 @@ Expected: **FAIL** with `guardrail_config missing — refusing to record unbound
 **pass**, the `v_cap is null` guard is absent and the clamp silently accepts any amount — which is
 indistinguishable from having no clamp.
 
-- [ ] **Step 7: Call it from the route — and do NOT let a failed recording fail the request**
+- [x] **Step 7: Call it from the route — and do NOT let a failed recording fail the request**
 
 In `serveCloud` (Task 8), **inside** the `if (trimmedCorrections) { … }` block, immediately after the
 `blobStore.put`:
@@ -2545,7 +2545,7 @@ In `serveCloud` (Task 8), **inside** the `if (trimmedCorrections) { … }` block
       }
 ```
 
-- [ ] **Step 8: Write the route-side tests**
+- [x] **Step 8: Write the route-side tests**
 
 Append to `tests/api/regenerate-cloud.test.ts` (add `rpc: jest.fn()` to the mocked Supabase client
 and `mockRpc.mockResolvedValue({ error: null })` in `beforeEach`):
@@ -2603,7 +2603,7 @@ Before the migration is applied to prod, a prod run reports on the **old** catal
 that means nothing about this function. Run `--local` now, and **again against prod after the
 migration is applied** — that second run gates the release. Record which target each run read.
 
-- [ ] **Step 10: Schema gates — read this before running anything**
+- [x] **Step 10: Schema gates — read this before running anything**
 
 ⚠ **`scripts/check-schema-gates.sh` is the WRONG instrument for this migration.** Measured
 2026-08-24: it is pinned to `SPEC="docs/superpowers/specs/2026-08-03-stable-blob-addressing"`
@@ -2627,7 +2627,7 @@ better packaging"* (CLAUDE.md).
 schema gates"*). Run them locally before asking for a merge, and say in the PR which ran and against
 what.
 
-- [ ] **Step 11: Typecheck, full unit suite, commit**
+- [x] **Step 11: Typecheck, full unit suite, commit**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.

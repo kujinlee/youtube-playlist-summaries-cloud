@@ -265,6 +265,30 @@ async function serveCloud(request: Request, videoId: string): Promise<Response> 
       // `artifacts.summaryMd.key` and falls back to the top-level field, so writing to
       // `video.summaryMd` could target a blob the artifact record does not govern.
       await blobStore.put(principal, mdKey, Buffer.from(applied.content, 'utf-8'), 'text/markdown');
+
+      // Record ACTUAL spend, after the call returned (spec §5.2). Post-hoc, not pre-authorised:
+      // the guardrails see this on the NEXT decision, which is the accepted trade.
+      //
+      // ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST. The money is already spent and the corrected
+      // body is already durable in storage; a 500 here would report failure for work that landed and
+      // invite the user to press again — paying twice to fix a bookkeeping error. That includes
+      // hitting the per-owner daily bound: the correction still happened and the user still gets it.
+      // Log loudly instead. Same rule as the envelope-invalidation failure the spec settled in §2.
+      if (applied.actualCents != null) {
+        const { error: spendError } = await supabase.rpc('record_correction_spend', {
+          p_cents: applied.actualCents,
+        });
+        if (spendError) {
+          console.error(
+            `[correction-spend] FAILED to record owner=${principal.id} video=${videoId} `
+            + `cents=${applied.actualCents}: ${spendError.message}`,
+          );
+        }
+      } else {
+        // null is "the SDK reported no usage", NOT "free" (Task 5). Recording 0 would be a lie the
+        // ledger cannot distinguish from a genuinely free call.
+        console.warn(`[correction-spend] UNMEASURED owner=${principal.id} video=${videoId}`);
+      }
     } else {
       // Bare press or explicit clear: quick-view still refreshes (spec §3), but NOTHING is written to
       // the blob — the prose did not change and a rewritten callout would move the body hash, which
