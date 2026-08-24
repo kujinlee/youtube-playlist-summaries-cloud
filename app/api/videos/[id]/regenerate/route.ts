@@ -50,13 +50,30 @@ export async function POST(request: Request, { params }: Params) {
     const mdPath = path.join(outputFolder, video.summaryMd);
     let mdContent = await fs.promises.readFile(mdPath, 'utf-8');
 
-    // Save corrections to index before the Gemini call so a subsequent
-    // page-refresh shows the latest corrections even if Gemini fails.
+    // Save corrections BEFORE the Gemini call so a page refresh shows the latest text even if
+    // Gemini fails.
+    //
+    // updateVideoAnnotations, not updateVideoFields (spec §4.1). Two reasons:
+    //  - `updateVideoFields(p, id, { corrections: undefined })` is a NO-OP on Supabase — `undefined`
+    //    is dropped by JSON serialization before merge_video_data ever sees it, after which the
+    //    route stamped mdHash('') over a row that still held corrections.
+    //  - the RPC enforces the allowlist and `owner_id = auth.uid()` in SQL, and returns { found }.
+    //
+    // READ BEFORE WRITE, and issue NO CALL when nothing changed. Both backends stamp
+    // annotationsEditedAt for every Class-B key set OR cleared (0021:33-43;
+    // local-metadata-store.ts:139-159), so "only when it changed" cannot live in the store. A no-op
+    // press must not beat a real remote edit in Class-B reconciliation — including the
+    // clear-an-already-empty case, which would otherwise stamp an edit that did not happen.
     const trimmedCorrections = typeof corrections === 'string' ? corrections.trim() : undefined;
-    if (trimmedCorrections) {
-      await store.updateVideoFields(principal, videoId, { corrections: trimmedCorrections });
-    } else if (corrections === '') {
-      await store.updateVideoFields(principal, videoId, { corrections: undefined });
+    const storedCorrections = video.corrections ?? '';
+    if (trimmedCorrections && trimmedCorrections !== storedCorrections) {
+      const { found } = await store.updateVideoAnnotations(
+        principal, videoId, { corrections: trimmedCorrections }, [],
+      );
+      if (!found) return NextResponse.json({ error: 'video not found' }, { status: 404 });
+    } else if (corrections === '' && storedCorrections !== '') {
+      const { found } = await store.updateVideoAnnotations(principal, videoId, {}, ['corrections']);
+      if (!found) return NextResponse.json({ error: 'video not found' }, { status: 404 });
     }
 
     // Apply text corrections if provided (works on prose only — callout is stripped first)

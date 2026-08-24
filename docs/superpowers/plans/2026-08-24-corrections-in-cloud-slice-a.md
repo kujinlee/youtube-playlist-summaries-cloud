@@ -1448,7 +1448,7 @@ stamp an edit that did not happen.
   `lib/storage/supabase/supabase-metadata-store.ts:269`.
 - Produces: no new exports.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/api/regenerate.test.ts`. Add the store mock beside the existing ones — the route
 reaches the annotations surface through `getStorageBundle().metadataStore`:
@@ -1517,13 +1517,13 @@ mockGetStorageBundle.mockReturnValue({
 } as any);
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail for the right reason**
+- [x] **Step 2: Run the tests and confirm they fail for the right reason**
 
 Run: `npx jest tests/api/regenerate.test.ts`
 Expected: FAIL — `expect(jest.fn()).toHaveBeenCalledWith(…)` reports zero calls, because the route
 still uses `updateVideoFields`.
 
-- [ ] **Step 3: Replace the corrections write**
+- [x] **Step 3: Replace the corrections write**
 
 In `app/api/videos/[id]/regenerate/route.ts`, replace lines 52-59 with:
 
@@ -1555,12 +1555,12 @@ In `app/api/videos/[id]/regenerate/route.ts`, replace lines 52-59 with:
     }
 ```
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
 Run: `npx jest tests/api/regenerate.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Prove it on BOTH backends**
+- [x] **Step 5: Prove it on BOTH backends**
 
 A test that only proves this on one backend proves nothing about the seam. Add to
 `tests/lib/storage/metadata-store-parity.test.ts` (create it if absent):
@@ -1583,12 +1583,12 @@ Run: `npx jest tests/lib/storage/metadata-store-parity.test.ts`
 Expected: PASS. The Supabase half of this parity is an integration test (needs a live Postgres) —
 add it to `tests/integration/` and note in the PR that it was **NOT RUN** locally if no stack is up.
 
-- [ ] **Step 6: Typecheck and run the full suite**
+- [x] **Step 6: Typecheck and run the full suite**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/api/videos/[id]/regenerate/route.ts tests/api/regenerate.test.ts tests/lib/storage/metadata-store-parity.test.ts
