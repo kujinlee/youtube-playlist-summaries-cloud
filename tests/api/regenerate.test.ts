@@ -22,6 +22,7 @@ import * as indexStore from '../../lib/index-store';
 import * as gemini from '../../lib/gemini';
 import * as fs from 'fs';
 import * as resolve from '../../lib/storage/resolve';
+import { NonRetryableError } from '../../lib/job-queue/errors';
 
 const mockReadIndex = jest.mocked(indexStore.readIndex);
 const mockAssertOutputFolder = jest.mocked(indexStore.assertOutputFolder);
@@ -277,5 +278,48 @@ describe('corrections are written through updateVideoAnnotations (spec §4.1)', 
     mockUpdateVideoAnnotations.mockResolvedValue({ found: false });
     await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
     expect(mockFixSummary).not.toHaveBeenCalled();
+  });
+});
+
+describe('input bounds (spec §2, §5.1)', () => {
+  it('rejects corrections over 1,000 characters with 400 and a distinguishable code', async () => {
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'x'.repeat(1001) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: expect.any(String), code: 'corrections-too-long' });
+    expect(mockFixSummary).not.toHaveBeenCalled();
+  });
+
+  it('accepts corrections of exactly 1,000 characters — the boundary is inclusive', async () => {
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'x'.repeat(1000) });
+    expect(res.status).toBe(200);
+  });
+
+  it('counts code points, so 1,000 emoji are accepted', async () => {
+    // 1,000 astral code points are 2,000 UTF-16 units. A `.length` check would reject this, and the
+    // browser's maxLength (which counts UTF-16) would have accepted it — bricking a correction the
+    // client let the user type. Direction matters: never stricter than the client.
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '🙂'.repeat(1000) });
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 413 summary-too-large when the preflight refuses the document, NOT 500', async () => {
+    mockFixSummary.mockRejectedValue(new NonRetryableError('correction input 9000 tokens exceeds cap 8192'));
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(res.status).toBe(413);
+    expect((await res.json()).code).toBe('summary-too-large');
+  });
+
+  it('still returns 500 for an ordinary Gemini failure — the 413 is not a catch-all', async () => {
+    mockFixSummary.mockRejectedValue(new Error('Gemini summary fix failed: 503'));
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(res.status).toBe(500);
+  });
+
+  it('a NonRetryableError from ELSEWHERE is still a 500, not a 413', async () => {
+    // Beyond the plan. The 413 is matched on class AND message prefix; a test that only proves the
+    // 413 fires cannot tell that guard apart from `err instanceof NonRetryableError` alone.
+    mockFixSummary.mockRejectedValue(new NonRetryableError('cloud magazine caps missing magazineInputTokens'));
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix X' });
+    expect(res.status).toBe(500);
   });
 });

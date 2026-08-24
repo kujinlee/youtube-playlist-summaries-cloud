@@ -8,6 +8,18 @@ import { stripQuickViewCallout, insertQuickViewCallout } from '../../../../../li
 import { logError, errorSummary } from '../../../../../lib/dev-logger';
 import { mdHash } from '../../../../../lib/cloud-sync/content-hash';
 import type { Video } from '../../../../../types';
+import { MAX_CORRECTIONS_CHARS } from '../../../../../lib/corrections/apply-core';
+import { NonRetryableError } from '../../../../../lib/job-queue/errors';
+
+/** Bounds THE WORK, not THE REQUEST. Derived in spec §5.4 from three phases — a 10 s countTokens
+ *  preflight plus two Gemini phases of 3 × 60 s + 1.2 s backoff each = 372.4 s — leaving ~48 s for
+ *  the blob read, the blob write and the metadata RPC.
+ *
+ *  ⚠ NOTHING ON THIS DEPLOYMENT ENFORCES IT. Next's own docs call maxDuration an output annotation
+ *  ("Deployment platforms CAN use maxDuration from the Next.js build output"), and this app ships
+ *  `output: 'standalone'` (next.config.ts:11) running `node server.js` under Fly, where no adapter
+ *  consumes it. Kept because it is correct-by-portability and free. */
+export const maxDuration = 420;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -24,6 +36,16 @@ export async function POST(request: Request, { params }: Params) {
 
   if (corrections !== undefined && typeof corrections !== 'string') {
     return NextResponse.json({ error: 'corrections must be a string' }, { status: 400 });
+  }
+
+  // Corrections are the ONLY unbounded input to a paid call on this route. The 1,000 limit lives in
+  // the browser (CorrectionsPanel.tsx:105) and §5.3 concedes any authenticated client can reach this
+  // handler, so enforce it where it binds. Code points, not UTF-16 units — see MAX_CORRECTIONS_CHARS.
+  if (typeof corrections === 'string' && [...corrections].length > MAX_CORRECTIONS_CHARS) {
+    return NextResponse.json(
+      { error: `corrections must be ${MAX_CORRECTIONS_CHARS} characters or fewer`, code: 'corrections-too-long' },
+      { status: 400 },
+    );
   }
 
   let principal;
@@ -130,6 +152,17 @@ export async function POST(request: Request, { params }: Params) {
     });
   } catch (err) {
     logError(`regenerate:${videoId}`, err);
+    // The preflight refusal is a CLIENT-side fact about this document, not a server fault: the
+    // summary is larger than the correction cap can accept and no retry will change that. A 500
+    // would tell the user to try again forever. Matched on the NonRetryableError class AND the
+    // message prefix that assertCorrectionInputWithinCap emits, so an unrelated NonRetryableError
+    // from elsewhere in the graph still reports 500.
+    if (err instanceof NonRetryableError && err.message.startsWith('correction input ')) {
+      return NextResponse.json(
+        { error: 'This summary is too long to correct', code: 'summary-too-large' },
+        { status: 413 },
+      );
+    }
     return NextResponse.json({ error: errorSummary(err) }, { status: 500 });
   }
 }

@@ -1640,7 +1640,7 @@ implicit.
     pointing at this constant.
   - Error response bodies gain a `code` field: `{ error: string; code: 'corrections-too-long' | 'summary-too-large' }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/api/regenerate.test.ts`:
 
@@ -1680,12 +1680,12 @@ describe('input bounds (spec §2, §5.1)', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails for the right reason**
+- [x] **Step 2: Run the test and confirm it fails for the right reason**
 
 Run: `npx jest tests/api/regenerate.test.ts`
 Expected: FAIL — the over-length case returns 200 (no cap exists) and the preflight case returns 500.
 
-- [ ] **Step 3: Export the constant**
+- [x] **Step 3: Export the constant**
 
 Add to `lib/corrections/apply-core.ts`:
 
@@ -1697,7 +1697,7 @@ Add to `lib/corrections/apply-core.ts`:
 export const MAX_CORRECTIONS_CHARS = 1000;
 ```
 
-- [ ] **Step 4: Add `maxDuration` and the length check to the route**
+- [x] **Step 4: Add `maxDuration` and the length check to the route**
 
 At the top of `app/api/videos/[id]/regenerate/route.ts`, after the imports:
 
@@ -1737,7 +1737,7 @@ Add the import:
 import { MAX_CORRECTIONS_CHARS } from '../../../../../lib/corrections/apply-core';
 ```
 
-- [ ] **Step 5: Map the preflight refusal to 413**
+- [x] **Step 5: Map the preflight refusal to 413**
 
 Replace the `catch` at `:97-100`:
 
@@ -1765,12 +1765,12 @@ Add the import:
 import { NonRetryableError } from '../../../../../lib/job-queue/errors';
 ```
 
-- [ ] **Step 6: Run the tests and confirm they pass**
+- [x] **Step 6: Run the tests and confirm they pass**
 
 Run: `npx jest tests/api/regenerate.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Typecheck and run the full suite, then commit**
+- [x] **Step 7: Typecheck and run the full suite, then commit**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.

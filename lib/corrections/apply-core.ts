@@ -18,6 +18,12 @@ export const CORRECTION_CAPS: CloudGeminiCaps = {
   summaryOutputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
 };
 
+/** Server-side bound on the corrections field, matching the client's maxLength
+ *  (CorrectionsPanel.tsx:105) and enforced where it BINDS. Counted in Unicode CODE POINTS
+ *  (`[...s].length`), not UTF-16 units: the browser counts UTF-16, so this is marginally more
+ *  permissive and a correction the browser accepted is never refused by the server. */
+export const MAX_CORRECTIONS_CHARS = 1000;
+
 /** STATED, never inherited. Inheriting REQUEST_TIMEOUT_MS (60 s, gemini.ts:105) would push §5.4's
  *  worst case to 422.4 s — over the 420 s maxDuration. This is a token count, not a generation. */
 export const CORRECTION_PREFLIGHT_TIMEOUT_MS = 10_000;
