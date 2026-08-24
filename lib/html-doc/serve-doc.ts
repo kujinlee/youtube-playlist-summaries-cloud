@@ -141,14 +141,27 @@ export async function resolveMagazineModel(args: {
       const now = await readFreshMagazineModel({ blobStore, principal, base, titles });
       return now.status === 'ok' ? now : { status: 'busy' };
     }
-    case 'attempts_exhausted': return { status: 'attempts_exhausted' };
-    case 'at_capacity': return { status: 'at_capacity' };
+    // CAPACITY answers, not authorization answers: the owner is entitled to this document, we just
+    // cannot regenerate it right now. Serving the stale-but-readable render beats a 503 — the same
+    // trade backlog #57 made for the share path, and the reason option (e) invalidates rather than
+    // deletes. Without this, a correction can take a page that was unconditionally 200 and make it
+    // 503 for the rest of the UTC day (attempts are keyed (owner, doc, day), K=5 —
+    // 0012_serve_model_charge.sql:13,21,80).
+    //
+    // `denied` is deliberately NOT here: it is an authorization answer, and serving a cached render
+    // to someone we just refused would leak the document.
+    //
+    // Spec D5 owns the `owner_over_budget` arm; r5 H1 added the other two to the same branch.
+    case 'attempts_exhausted':
+    case 'at_capacity':
     case 'owner_over_budget': {
-      // Spec D5: serve the title-stable stale rendering instead of failing; else 503.
       const staleRead = await readTitleStableModel({ blobStore, principal, base, titles });
-      return staleRead.status === 'ok'
-        ? { status: 'ok', model: staleRead.model, stale: true }
-        : { status: 'over_budget' };
+      if (staleRead.status === 'ok') return { status: 'ok', model: staleRead.model, stale: true };
+      return reserveStatus === 'owner_over_budget'
+        ? { status: 'over_budget' }
+        : reserveStatus === 'at_capacity'
+          ? { status: 'at_capacity' }
+          : { status: 'attempts_exhausted' };
     }
     case 'reserved': break;
     default: throw new Error(`reserve_serve_model: unexpected status ${String(reserveStatus)}`);

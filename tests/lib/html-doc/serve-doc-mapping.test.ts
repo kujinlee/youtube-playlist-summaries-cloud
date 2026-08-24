@@ -372,3 +372,78 @@ describe('resolveMagazineModel — bounded RPCs (#46)', () => {
     expect(settles).toBe(1);   // a lost keep is benign; only a lost refund is money
   });
 });
+
+// ── r5 H1 — a stale-but-readable model beats a 503 ────────────────────────────────────────────
+//
+// ⚠ The plan wrote these against `mockReserve` / `mockReadTitleStableModel` / `FAKE_MODEL` /
+// `baseArgs()` — a module-mock harness this file does not have and never had. This file scripts
+// FAKES: `fakeSupabase(status)` and a per-call `get` queue, and `readTitleStableModel` is REAL,
+// reading through that queue. Written against the real harness instead, which also makes the tests
+// stronger: they exercise the actual title-stable read rather than a mock of it.
+//
+// A "stale but readable" envelope = titles still match, generator version does not. That is exactly
+// the asymmetry option (e) relies on: isFresh rejects it, readTitleStableModel accepts it.
+function staleEnvelopeBuffer(lead: string): Buffer {
+  return Buffer.from(JSON.stringify({
+    sourceMd: 'v.md',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    sourceSections: ['Intro'],              // titles MATCH -> title-stable
+    generatorVersion: 'v0-superseded',      // version DIFFERS -> not fresh
+    model: { sections: [{ lead, bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] },
+  }), 'utf-8');
+}
+
+const STALE_MODEL = { sections: [{ lead: 'OLD', bullets: [{ label: 'a', text: 'x' }, { label: 'b', text: 'y' }, { label: 'c', text: 'z' }] }] };
+
+describe('a stale-but-readable model beats a 503 (r5 H1)', () => {
+  it('serves the title-stable model when attempts are exhausted', async () => {
+    // get#1: readFreshMagazineModel sees the stale envelope and rejects it (version differs).
+    // get#2: the new fallback's readTitleStableModel sees the same envelope and accepts it.
+    const blobStore = fakeBlobStore([staleEnvelopeBuffer('OLD'), staleEnvelopeBuffer('OLD')]);
+    const res = await resolveMagazineModel(baseArgs(fakeSupabase('attempts_exhausted'), blobStore));
+    expect(res).toEqual({ status: 'ok', model: STALE_MODEL, stale: true });
+    expect(generateMagazineModel).not.toHaveBeenCalled();
+  });
+
+  it('serves the title-stable model at capacity', async () => {
+    const blobStore = fakeBlobStore([staleEnvelopeBuffer('OLD'), staleEnvelopeBuffer('OLD')]);
+    const res = await resolveMagazineModel(baseArgs(fakeSupabase('at_capacity'), blobStore));
+    expect(res).toEqual({ status: 'ok', model: STALE_MODEL, stale: true });
+    expect(generateMagazineModel).not.toHaveBeenCalled();
+  });
+
+  it('still reports attempts_exhausted when there is genuinely no model to serve', async () => {
+    const blobStore = fakeBlobStore([null, null]);
+    const res = await resolveMagazineModel(baseArgs(fakeSupabase('attempts_exhausted'), blobStore));
+    expect(res).toEqual({ status: 'attempts_exhausted' });
+    expect(blobStore.getMock).toHaveBeenCalledTimes(2); // proves the fallback read actually happened
+  });
+
+  it('still reports at_capacity when there is genuinely no model to serve', async () => {
+    const blobStore = fakeBlobStore([null, null]);
+    const res = await resolveMagazineModel(baseArgs(fakeSupabase('at_capacity'), blobStore));
+    expect(res).toEqual({ status: 'at_capacity' });
+  });
+
+  it('does NOT reach for a stale model on `denied` — that is an authorization answer, not a capacity one', async () => {
+    // A readable stale envelope IS available; serving it to a caller we just refused would leak the
+    // document. Proven by the get count: only the initial fresh-read, no fallback read.
+    const blobStore = fakeBlobStore([staleEnvelopeBuffer('OLD'), staleEnvelopeBuffer('OLD')]);
+    const res = await resolveMagazineModel(baseArgs(fakeSupabase('denied'), blobStore));
+    expect(res).toEqual({ status: 'denied' });
+    expect(blobStore.getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('owner_over_budget keeps its existing stale fallback', async () => {
+    const blobStore = fakeBlobStore([staleEnvelopeBuffer('OLD'), staleEnvelopeBuffer('OLD')]);
+    const res = await resolveMagazineModel(baseArgs(fakeSupabase('owner_over_budget'), blobStore));
+    expect(res).toEqual({ status: 'ok', model: STALE_MODEL, stale: true });
+  });
+
+  it('owner_over_budget with no readable model still reports over_budget, not at_capacity', async () => {
+    // The three statuses share one branch now; this pins that the fall-through still discriminates.
+    const blobStore = fakeBlobStore([null, null]);
+    const res = await resolveMagazineModel(baseArgs(fakeSupabase('owner_over_budget'), blobStore));
+    expect(res).toEqual({ status: 'over_budget' });
+  });
+});
