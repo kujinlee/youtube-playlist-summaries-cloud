@@ -42,13 +42,13 @@ behaviour as local.
 | Slice | Contents | Where it went |
 |---|---|---|
 | **B — unattended correction** | worker integration, the pre-apply re-read, the `mdCorrectionsHash` stamp on a generated body | `docs/backlog.md` #60. **Blocked on #22**: `promote` is create-if-absent, so a corrected body can be discarded while the row claims it. A failure inside the job also discards a completed ~115¢ generation, which needs containment slice A does not |
+| **C — money instruments** | reserve/settle RPCs, `correction_est_cents`, `correctionWorstCents()`, the `cap-soundness` extension, the `max_duration_seconds ≤ 4,332s` ratchet | `docs/backlog.md` #61. A money-path slice; this repo's record for those is five to seven rounds (`serve-path-bounding`, PR #67) |
 
 ⚠ **The create-if-absent hazard is AVOIDED in slice A, not absent from it (r4 B2).** Slice A writes
-the same body to the same key through the same store, and the row above previously read as though the
-hazard lived only in B — *"an active misdirection introduced by the split"*. A stays safe **only
+the same body to the same key through the same store, and the B row above previously read as though
+the hazard lived only in B — *"an active misdirection introduced by the split"*. A stays safe **only
 because §2 requires `put` rather than `writeArtifact`**. What B additionally faces, and A does not, is
 the *publication* problem (`promote` inside a job it does not control) and the ~115¢ containment.
-| **C — money instruments** | reserve/settle RPCs, `correction_est_cents`, `correctionWorstCents()`, the `cap-soundness` extension, the `max_duration_seconds ≤ 4,332s` ratchet | `docs/backlog.md` #61. A money-path slice; this repo's record for those is five to seven rounds (`serve-path-bounding`, PR #67) |
 
 **Three round-3 findings die with this split** and are not addressed here because they belong to B
 and C: the falsifier asserting unattended survival (r3 B2), the structural-validation throw
@@ -166,7 +166,7 @@ the share path** decided to keep.
 
 | Reader | Used by | Checks |
 |---|---|---|
-| `readFreshMagazineModel` → `isFresh` (`read-model.ts:20-25`) | owner serve — regenerate-or-not | `sameTitles` **&& `generatorVersion`** |
+| `readFreshMagazineModel` → `isFresh` (`read-model.ts:20-25`) | owner serve — regenerate-or-not | **today:** `sameTitles` **&& `generatorVersion`**. (e) adds the guarded `sourceMdHash` conjunct below |
 | `readTitleStableModel` (`:57-69`) | **share path + over-budget fallback** | `sameTitles` && section count — **ignores `generatorVersion`** |
 
 So an invalidation that acts on the **owner** predicate alone regenerates correctly while leaving the
@@ -191,9 +191,10 @@ const provablyStale = receiverModel.kind === 'envelope'
   && receiverModel.envelope.sourceMdHash !== undefined;
 ```
 
-**`isFresh` simply never adopted it**, and three separate places in the tree already say so:
-`read-model.ts:54-56`, and `model-store.ts:84` — *"`isFresh` ignores sourceMdHash, so a clobbered
-model is served indefinitely whenever the section titles are unchanged."*
+**`isFresh` simply never adopted it**, and **four** places in the tree already say so:
+`read-model.ts:54-56`; `model-store.ts:84` — *"`isFresh` ignores sourceMdHash, so a clobbered model is
+served indefinitely whenever the section titles are unchanged"*; `companion.ts:41-46`; and
+§3.5.1 of the serve-path-deadline spec (below).
 
 > **Requirement.** `isFresh` gains one conjunct, guarded the way `decideCompanion` guards it:
 >
@@ -219,6 +220,84 @@ the body**, not stored beside it. The correction path writes the corrected markd
 
 The §2 requirements about delete ordering, delete failure and `delete` idempotence are **withdrawn** —
 they were answering a question this design does not ask.
+
+##### ⚠ There is a TRIPWIRE on this change, and it was planted deliberately
+
+`tests/lib/html-doc/read-model.test.ts:39-51` is a test whose only purpose is to go red when someone
+does exactly this:
+
+```
+// KNOWN GAP, accepted in the serve-bounding spec §3.5.1 (#46).
+// WHEN THIS GOES RED: someone made isFresh hash-aware. That is a MONEY decision — prose-only
+// edits would then force paid regeneration — so read §3.5.1 before deleting this test.
+expect(isFresh(envelope({ sourceMdHash: 'hash-of-OLD-markdown' }), titles)).toBe(true);
+```
+
+**Read as instructed.** `docs/superpowers/specs/2026-08-10-serve-path-deadline-design.md` §3.5.1
+tabled *"Make `isFresh` compare `sourceMdHash`"* as option 1 of 3 and did **not** choose it:
+
+> *"Closes it, but changes serve-path **caching**, not timeouts … Flipping that is a **money**
+> decision needing its own reasoning, not a rider on a timeout fix."*
+
+**That is a routing instruction, not a prohibition** — and it is satisfied here. §3.5.1 declined to
+make the change *as a rider on a timeout fix*; this is a dedicated decision with a user sign-off and
+its own review round. `read-model.ts:54-56` says the same thing in the same words: *"its own slice
+with its own review."* **This is that slice.** The tripwire did its job: it forced this paragraph to
+exist.
+
+⚠ **But §3.5.1's stated reason mis-cites the code it rests on.** It says *"`companion.ts:43` indicates
+ignoring the hash is deliberate."* `companion.ts:41-46` says the opposite — it lists the
+titles-and-version-only check under *"round 4 … was wrong in both directions"*:
+
+> *"the claimed safety net **does not exist**: the serve path's drift guard … compares section TITLES
+> and generatorVersion, never sourceMdHash, so a prose-only MD change … is served as fresh forever."*
+
+That is a **complaint about** the behaviour, not a defence of it. The decision was sound on its own
+terms — don't ride a money change on a timeout fix — but the supporting citation should not be
+inherited without re-reading it. (Same failure this project records as *quote the code, don't
+characterise it*.)
+
+##### The cost §3.5.1 named, which v(e)-as-first-written understated
+
+§3.5.1's parenthetical is the substantive part and it survives: *"it stops a prose-only MD edit
+forcing a paid regeneration."* **Corrections are not the only prose-only edit.** Under (e), **any**
+body change from **any** source makes the model stale and the next owner serve pay:
+
+| Source of a prose-only body change | Under (e) |
+|---|---|
+| A cloud correction (this slice) | regenerates — **intended** |
+| A **sync** copying a newer body cloud-ward | regenerates — correct, but recurring, and **not** counted in this spec's cost model |
+| The `model-store.ts:79-85` late-write clobber | regenerates — the bug §3.5.1 routed to backlog #25 |
+
+So this is **not** the one-time wave the section below describes. It is a **standing per-body-change
+cost**. Every one of those regenerations is *correct* — the model really is stale, and the status quo
+is serving wrong gists — but "correct" is not "free", and the spec must not present a recurring cost
+as a migration blip.
+
+⚠ **NOT VERIFIED — the `decideCompanion` interaction.** `sync-run.ts:464` already ships or deletes the
+receiver's envelope on a sync, keyed on the same `sourceMdHash`. So the sync row above may already be
+handled before any serve, making the marginal cost smaller than stated — or the two mechanisms may
+double up. **Two mechanisms now read one field for related-but-different purposes**, which is the
+shape `scripts/check-vocabulary-collisions.py` watches for. The plan resolves this before the
+`isFresh` change lands; it is not resolved here.
+
+##### Test callers — the claim above is about PRODUCTION callers only
+
+`readFreshMagazineModel` and `isFresh` have two production callers. **They have four direct test
+callers**, and one of them is the tripwire:
+
+`tests/lib/html-doc/read-model.test.ts:30, 40, 59, 68, 74`.
+
+The plan must: delete or invert the `:40` tripwire **with a comment pointing at this section**; and add
+current / stale / **absent** `sourceMdHash` cases for both `isFresh` and `readFreshMagazineModel`.
+
+⚠ **Fixture precondition for every §7 row in this block, or the falsifiers lie.** Existing fixtures
+build envelopes **without** `sourceMdHash` (`read-model.test.ts:24-25`), and under the guarded
+conjunct a legacy envelope is correctly **still fresh**. A test author who seeds a "corrected
+document" with a legacy-style envelope will watch a *correct* implementation fail. Every row asserting
+regeneration must seed `sourceMdHash = mdHash(preCorrectionBody)`, mutate the body, then assert: first
+owner serve regenerates **once** and persists `sourceMdHash = mdHash(correctedBody)`; second owner
+serve is **free**.
 
 ##### What it costs, stated honestly
 
