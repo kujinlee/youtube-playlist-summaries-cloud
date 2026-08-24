@@ -2,7 +2,9 @@
 // ⚠ SIGNATURES VERIFIED against tests/integration/helpers/clients.ts 2026-08-24:
 //   newUser(): Promise<{ user: { id }, email, password }>   signInAs(email, password): Promise<{ client, userId }>
 //   anonSession(): Promise<{ client, userId }>              — `userClient` does not exist
-import { adminClient, newUser, signInAs, anonSession } from './helpers/clients';
+// ✅ EXECUTED 2026-08-24 against a live local stack: 9/9, plus all three step-5/6 mutations caught.
+import { createClient } from '@supabase/supabase-js';
+import { adminClient, newUser, signInAs } from './helpers/clients';
 import {
   correctionActualCents, MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS,
 } from '@/lib/gemini-cost';
@@ -31,25 +33,39 @@ afterAll(async () => {
   await svc.from('spend_ledger').update({ actual_cents: ledgerAtStart }).eq('day', utcDay());
 });
 
-// ── THE FALSIFIER THAT MATTERS ────────────────────────────────────────────────────────────────
-it('bounds ONE owner to N calls/day AND the global ledger to N x ceiling', async () => {
+// ── THE FALSIFIER THAT MATTERS, IN TWO INDEPENDENT TESTS ──────────────────────────────────────
+//
+// ⚠ THESE WERE ONE TEST, AND THAT HID THE HALF THAT MATTERS. Measured 2026-08-24 by running the
+// plan's own step-5 mutation (delete `where correction_spend.calls < v_max_calls`): the combined
+// test failed on the REJECTION assertion — the (N+1)th call now succeeds, so `results[N]` is null
+// and `.message` is undefined — and jest stops at the first failing expect. THE LEDGER ASSERTION
+// WAS NEVER EVALUATED. The plan says in as many words that if only the rejection half fails, the
+// test is not proving containment; that is exactly what happened, so the containment claim was
+// resting on a line the mutation never reached. Split, neither half can mask the other.
+async function exhaustOneOwner() {
   const { correction_max_cents: ceiling, correction_max_calls_per_owner_day: N } = await cfg();
   const { client } = await freshUserClient();
   const before = await ledger();
-
-  const results = [];
+  const errors = [];
   for (let i = 0; i < N + 1; i++) {
-    results.push((await client.rpc('record_correction_spend', { p_cents: ceiling })).error);
+    errors.push((await client.rpc('record_correction_spend', { p_cents: ceiling })).error);
   }
+  return { ceiling, N, before, errors };
+}
 
-  // HALF ONE: exactly N succeed, and the (N+1)th is refused by NAME.
-  expect(results.slice(0, N).every((e) => e === null)).toBe(true);
-  expect(results[N]?.message).toMatch(/owner daily correction limit \d+ reached/);
+it('HALF ONE — exactly N calls succeed and the (N+1)th is refused BY NAME', async () => {
+  const { N, errors } = await exhaustOneOwner();
+  expect(errors.slice(0, N).every((e) => e === null)).toBe(true);
+  expect(errors[N]?.message).toMatch(/owner daily correction limit \d+ reached/);
+});
 
-  // HALF TWO: the GLOBAL ledger moved by at most N x ceiling. This is the assertion the previous
-  // design would have failed — it is what "one account cannot exhaust everyone's cap" means.
+it('HALF TWO — the GLOBAL ledger moves by at most N x ceiling, a minority of the daily cap', async () => {
+  // This is what "one account cannot exhaust everyone's cap" MEANS, and it is the assertion the
+  // pre-(b′) design would have failed. It must be reachable independently of HALF ONE.
+  const { ceiling, N, before } = await exhaustOneOwner();
   expect(await ledger() - before).toBe(N * ceiling);
-  expect(N * ceiling).toBeLessThan(500 / 2);   // and that is a minority of daily_cap_cents (0011:28)
+  const { data } = await svc.from('guardrail_config').select('daily_cap_cents').eq('id', true).single();
+  expect(N * ceiling).toBeLessThan(data!.daily_cap_cents / 2);
 });
 
 it('a SECOND owner is unaffected by the first owner hitting the limit', async () => {
@@ -89,9 +105,28 @@ it('rejects NULL rather than falling through to a not-null violation', async () 
   expect(error?.message).toMatch(/p_cents is required/);
 });
 
-it('anon cannot execute it', async () => {
-  const { client } = await anonSession();
-  expect((await client.rpc('record_correction_spend', { p_cents: 1 })).error).not.toBeNull();
+it('the anon ROLE cannot execute it', async () => {
+  // ⚠ NOT `anonSession()`. MEASURED 2026-08-24: that helper calls signInAnonymously(), which mints a
+  // REAL Supabase user whose Postgres role is `authenticated` — so it is granted EXECUTE, correctly,
+  // and the assertion failed while the migration was right. `anon` the POSTGRES ROLE and `anon` the
+  // anonymously-signed-in USER are different things sharing a word.
+  //
+  // What `revoke ... from anon` governs is the role, which you reach by using the anon key with NO
+  // session at all. Verified independently in the catalog:
+  //   has_function_privilege('anon', 'record_correction_spend(int)', 'EXECUTE') = false
+  //   has_function_privilege('authenticated', …)                               = true
+  //
+  // That an anonymously-signed-in ACCOUNT can call this is the residual §5.2 states and accepts:
+  // it reaches parity with reserve_serve_model, which grants anon deliberately. Closing it is
+  // slice C.
+  const client = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+  const { error } = await client.rpc('record_correction_spend', { p_cents: 1 });
+  expect(error).not.toBeNull();
+  expect(error!.message).toMatch(/permission denied|not find the function/i);
 });
 
 // CAP SOUNDNESS. The ceiling is a config number; the caps it must cover are TypeScript constants,

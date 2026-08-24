@@ -1,8 +1,8 @@
 // NOT RUN WITHOUT A LIVE STACK. global-setup.ts applies migrations and refuses to run if it cannot.
 // A skipped money assertion reporting green is worse than a red one — do NOT add describe.skip here.
 //
-// ⚠ NEVER EXECUTED AS OF 2026-08-24: Docker was down on the machine that wrote this, so these
-// assertions are PREDICTIONS about a live stack, not measurements of one. Run before merge.
+// ✅ EXECUTED 2026-08-24 against a live local stack: 7/7. (The header previously said these were
+// unrun predictions — they are now measurements.)
 //
 // ⚠ SIGNATURES VERIFIED 2026-08-24 by opening helpers/clients.ts and helpers/seed.ts:
 //   newUser() -> { user: { id }, email, password }        signInAs(email, password) -> { client, userId }
@@ -10,7 +10,26 @@
 //   seedPromotedVideo(svc, { ownerId, playlistId, ... }) -> { videoId, base }
 //   seedSummaryBlob(svc, ownerId, playlistKey, base, md) -> void   — uploads at the EXACT key the
 //   route reads, so do not hand-roll a blob.put + merge_video_data pair for it.
+// ⚠ MOCK ONLY NEXT'S REQUEST PLUMBING, NEVER THE DATABASE. Measured 2026-08-24: without this the
+// whole file failed 7/7 with `cookies() was called outside a request scope` — calling a route
+// handler directly from jest gives it no Next request context, so `cookies()` throws before any
+// assertion is reached and NOTHING about the correction path is exercised. The unit suite mocks
+// next/headers for exactly this reason; the integration file inherited the omission.
+//
+// `createServerSupabase` is redirected to the REAL signed-in client for the seeded owner, so auth,
+// RLS, the loader, the blob write and the ledger are all genuine. Only the cookie->client step is
+// replaced, because that step is Next's, not ours.
+jest.mock('next/headers', () => ({ cookies: jest.fn(async () => ({})) }));
+jest.mock('@/lib/supabase/server', () => ({
+  ...jest.requireActual('@/lib/supabase/server'),
+  createServerSupabase: jest.fn(() => currentOwnerClient),
+}));
+
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, newUser, signInAs } from './helpers/clients';
+
+/** The signed-in client the mocked createServerSupabase hands back. Set by seedCorrectable(). */
+let currentOwnerClient: SupabaseClient;
 import { seedPlaylist, seedPromotedVideo, seedSummaryBlob } from './helpers/seed';
 import { POST } from '@/app/api/videos/[id]/regenerate/route';
 import { SupabaseBlobStore } from '@/lib/storage/supabase/supabase-blob-store';
@@ -59,6 +78,7 @@ async function seedCorrectable() {
     p_playlist_id: playlistId, p_video_id: videoId, p_fields: { tags: ['ai', 'rag'] },
   });
   const { client } = await signInAs(email, password);
+  currentOwnerClient = client;          // what the route will receive from createServerSupabase
   const principal = { id: ownerId, indexKey: playlistKey };
   const blob = new SupabaseBlobStore(svc, ARTIFACTS_BUCKET);
   return { ownerId, email, password, client, playlistId, playlistKey, videoId, base, principal, blob, key: `${base}.md` };
@@ -74,6 +94,13 @@ function press(videoId: string, playlistId: string, body: Record<string, unknown
 }
 
 beforeAll(() => { process.env.STORAGE_BACKEND = 'supabase'; });
+
+// ⚠ WITHOUT THIS, `expect(fixSummary).not.toHaveBeenCalled()` MEASURES THE WHOLE FILE'S HISTORY.
+// Measured 2026-08-24: the bare-press row failed with "Received number of calls: 3" — the three
+// corrections applied by the tests ABOVE it. Both remaining failures were this, and neither said
+// anything about the behaviour under test. `clearAllMocks` clears usage data only; the
+// implementations from the jest.mock factory survive (that would be `resetAllMocks`).
+beforeEach(() => { jest.clearAllMocks(); });
 afterAll(() => { delete process.env.STORAGE_BACKEND; });
 
 it('§7 cloud correction works — the stored blob holds the corrected text, not the original', async () => {
