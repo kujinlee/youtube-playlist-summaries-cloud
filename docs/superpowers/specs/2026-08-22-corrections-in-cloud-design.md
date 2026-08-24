@@ -152,7 +152,68 @@ likely — the one thing that used to break the cache by accident is now forbidd
 > stricter is its own slice with its own review."* **The false premise made the better option
 > invisible** — the same shape of error as §4.1's.
 
-#### ⚠ DECIDED (e) — BUT THE IMPLEMENTATION HAS AN OPEN BLOCKING FROM ROUND 5. DO NOT PLAN THIS BLOCK YET.
+#### ✅ DECIDED (e), and r5's Blocking is CLOSED by measurement — a bare press must not rewrite the file
+
+> **r5 B1 is resolved, and the fix is a deletion.** The Blocking was: a bare press rewrites the body
+> with a fresh non-deterministic callout, moving the hash and booking ~6¢ for a press that applied
+> nothing. **Requirement: `route.ts:69` writes the file only when `fixSummary` ran.**
+>
+> **Measured, not argued** (`docs/reviews/spec-corrections-in-cloud-r5-bare-press-write.md`, run in a
+> detached worktree):
+>
+> | Question | Answer | Proof |
+> |---|---|---|
+> | Can a callout change affect the model? | **No.** `insertQuickViewCallout` splices at the `\n\n---\n` metadata divider (`quick-view-callout.ts:33-34`), which is before the first `##`, and `parseSections` **discards the preamble** (`parse.ts:45`). Two docs differing only in callout parse to byte-identical sections | executed probe |
+> | Does any test assert the write? | **No.** `mockWriteFile` appears 4 times across both suites — declaration and `mockResolvedValue`, **never an `expect`** (`regenerate.test.ts:28,67`; `regenerate-stamp.test.ts:36,76`) | read |
+> | What fails if the write is skipped? | **Nothing. 268 suites / 2,722 tests pass** with the guard applied | executed |
+>
+> **So under unguarded (e), a callout-only change books ~6¢ to recompute a model from byte-identical
+> inputs.** That is the whole defect, and skipping the write removes it at the source: the hash never
+> moves, so there is nothing to invalidate.
+>
+> ⚠ **§3's justification was true of the CALL, not the WRITE.** It said *"18 tests cover this path"* —
+> they cover `extractQuickView` running. `extractQuickView` still runs unconditionally and the response
+> still carries fresh `tldr`/`takeaways`. Only the file write becomes conditional.
+>
+> ⚠ **Accepted consequence, named.** On a bare press the card shows the new TL;DR while the magazine
+> page, PDF, share page and `format=md` download keep the old callout. **Bounded:** the prose did not
+> change, so the "new" TL;DR is a fresh sample of unchanged text, not a correction; and
+> `summaryHtml: null` still fires, so no third state appears. **The inverse is true today** — with the
+> write, the file gets a new callout while the model keeps pre-correction gists. Neither is coherent at
+> all times; this one costs nothing.
+>
+> **A divergence-free variant exists and is NOT chosen here:** make a bare press a genuine no-op
+> (skip the row update too). It would need its own measurement — the suite was run against skipping
+> the *write* only — so it is a plan option, not a decision.
+>
+> **Rejected alternative — hash the callout-stripped prose for freshness.** Exact (a prose-scoped guard
+> skips 100% of bare presses and never skips a real correction, *without* depending on model
+> determinism) but it changes what `sourceMdHash` **means** for every writer, so every existing
+> envelope mismatches at once — a universal one-time regeneration instead of a drifted-only one.
+> *When to write* and *what the hash covers* are separable; only the first needed deciding.
+
+##### Round 5's other findings — folded, and one still open
+
+> **r5-claude H1 — the paying owner is left worse off than the anonymous reader.** Of the five non-ok
+> statuses at `serve-summary-core.ts:118-125`, only `over_budget` has a stale fallback; `busy`,
+> `attempts_exhausted` (K=5/UTC-day, `0012:21`), `at_capacity` and `denied` return 503/404 **with a
+> readable model in the bucket**. ⚠ **OPEN — the plan must extend the `readTitleStableModel` fallback
+> to the other statuses, or state why not.** (e) makes this reachable where it was not before.
+>
+> **r5-claude H3 — "#57 stands" was stated unconditionally and is scoped to the correction path.**
+> `companion.ts:151-153` already deletes receiver envelopes on this signal, so a *local* correction
+> already breaks the cloud share link via sync **today**. (e) still beats (a); the claim is now bounded.
+>
+> ⚠ **r5 Medium — no test fixture anywhere sets `sourceMdHash`, so the whole suite passes unchanged
+> under the new conjunct.** (e) would ship with **zero** regression coverage. The §7 mutation-check is
+> the only thing between it and a silent no-op — treat it as mandatory, not optional.
+>
+> **Cleared by r5:** `mdHash` is stable (`canonicalizeMd`, `content-hash.ts:9-13`) — no per-serve loop.
+> Polarity vs `decideCompanion` is consistent and sync cannot ship a mismatched envelope. **The local
+> path is entirely unaffected — nothing local calls `isFresh`.** Caller counts confirmed: `isFresh` 1,
+> `readFreshMagazineModel` 2.
+
+##### ✅ The CHOICE stands — option (e), 2026-08-23 (user)
 
 > **Round 5 (scoped to this block): NOT CONVERGED from both halves.** Codex 1B/1H/1M/1L,
 > Claude 1B/3H/5M/3L. Both say (e) is the **right shape** — neither sends the *choice* back. The
@@ -438,7 +499,8 @@ estimated; v2 said two and v3 said seven, both wrong).
 
 | Field | On a press with no corrections |
 |---|---|
-| `tldr`, `takeaways`, `summaryHtml` | **updated** — quick-view runs; today's behaviour |
+| `tldr`, `takeaways`, `summaryHtml` | **updated in the ROW** — quick-view still runs unconditionally |
+| the markdown **file** | ⚠ **NOT rewritten** — see §2. Writing it would move the body hash and book ~6¢ for a press that applied nothing (r5 B1) |
 | `mdCorrectionsHash` | ⚠ **left untouched — do NOT recompute. See §4.3** |
 | `mdGeneratedAt` | ⚠ **must not move** — the body did not change. `deriveClassASignals` (`backfill.ts:13`) feeds it to the recency tiebreak; a false stamp lets an unchanged cloud body beat a newer local one |
 | `annotationsEditedAt.corrections` | ⚠ **only when the corrections text actually changed.** Today `:54-59` writes on every non-empty or explicit-clear request; a no-op press must not beat a real remote edit in Class-B reconciliation |
@@ -714,7 +776,7 @@ Assert at the consumer.
 | The deferred charge is real and bounded | the ledger | the next owner serve of a corrected doc moves ~6¢ **once**; a second serve moves **nothing** (guards against a regenerate loop — both writers build fresh envelopes, `serve-doc.ts:174-182`, `generate.ts:50-60`) |
 | An **applying** press makes the row current | the **sync decision** | `reconcileClassA`'s `needsRegen` goes **true → false**. **Fails if the stamp is missing** |
 | ⚠ A **bare** press does NOT | the **sync decision** | on a video whose `needsRegen` is `true` — corrections delivered by `sync-run.ts:358`, body never regenerated — a bare press leaves it **`true`**. **This is the row neither r3 version could express, and the row the r3-H6 fix let the defect pass.** Reach the press both ways: whitespace-only (the panel sends the raw value, `CorrectionsPanel.tsx:52`) and a POST with no `corrections` key |
-| A no-correction press disturbs nothing | the **sync decision** | **all six `ClassASignals` fields** (`backfill.ts:8-16`) byte-identical before and after: `summaryMdKey`, `mdHash`, `docVersionMajor`, `mdGeneratedAt`, **`mdCorrectionsHash`** (§4.3 — it must NOT move), `backfilled`. Plus every `annotationsEditedAt` entry |
+| A no-correction press disturbs nothing | the **sync decision** | **all six `ClassASignals` fields** (`backfill.ts:8-16`) byte-identical before and after: `summaryMdKey`, `mdHash`, `docVersionMajor`, `mdGeneratedAt`, **`mdCorrectionsHash`** (§4.3), `backfilled`. `mdHash` holds **because §2 skips the file write** — before that guard this row was false, since the callout was rewritten every press (r5 B1). Plus every `annotationsEditedAt` entry |
 | …and the one thing it **does** disturb is bounded | `deriveHumanSnapshot` | `updatedAt` moves (§4.2, unavoidable). Assert the blast radius: a field **with** a real `annotationsEditedAt` is unaffected; only `backfilled: true` fields take the new provisional. **This is the row that fails if §4.2's acceptance stops holding** |
 | An oversized corrections field never reaches Gemini | the route | rejected 400 **before** any call; no ledger movement |
 | An already-long stored value does not brick the button | the route + panel | a row holding >1,000 chars from sync/local yields the §2 error path, not a 500 — and the panel says how to clear it |
