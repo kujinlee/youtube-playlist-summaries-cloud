@@ -75,11 +75,11 @@ Task 10, because a coupling written inside a task is a coupling that gets schedu
 | 2 | `apply-core` pipeline | `tags`/`signal` dropped, or ordering wrong |
 | 3 | **Bare press stops rewriting the file, and stops recomputing `mdCorrectionsHash`** | the §4.3 defect survives, or the write guard is wrong |
 | 4 | **(e): `isFresh` learns `sourceMdHash`** + retire the tripwire + fixtures | absent-hash not treated as *cannot prove stale*, or no mutation-check |
-| 5 | `fixSummary` caps + signal ×3 + preflight | caps object missing → uncapped call |
+| 5 | `fixSummary` caps + signal ×3 + preflight + usage capture | caps object missing → uncapped call; or unmeasured usage reported as `0` rather than `null` |
 | 6 | Corrections written via `updateVideoAnnotations`, read-before-write | the stamp moves on a no-op, or the Supabase clear is still a no-op |
 | 7 | Server-side length cap + 413 over-cap refusal + `maxDuration` | an already-long row is bricked, or the refusal is a 500 |
 | 8 | The cloud branch | `writeArtifact` used instead of `put`, or resolution outside the try |
-| 9 | Post-hoc spend recording | records an estimate rather than actual, or records before the call |
+| 9 | ⛔ The spend sink — **BLOCKED on task #129** | it records an estimate rather than actual, or the implementer picked an option the user owns |
 | 10 | r5 H1 — stale fallback for the other non-ok statuses | the owner's page 503s with a readable model in the bucket |
 | 11 | UI reachable in cloud + outcome discriminator | a no-op press reads as a bug |
 | 12 | Falsifiers + mutation-check | a falsifier passes on a wrong implementation |
@@ -94,26 +94,35 @@ them silently reads as complete. Tracked as task **#130**.
 | | Why it is not one of the 12 |
 |---|---|
 | **What actually bounds the request in prod** (§5.4) | Not code. `maxDuration = 420` is kept for portability but is **inert** on this deployment — standalone output under Fly, no adapter reads it. The real bound (Fly proxy / idle timeout / client `fetch`) is **NOT VERIFIED** and needs a live run against the deployed app |
-| **Count the already-drifted envelopes before (e) ships** (§2) | Not code. §2 gates a staged rollout on this number. Read-only via `CLAUDE_RO_DATABASE_URL`: envelopes whose `sourceMdHash` is present and differs from the current body hash. ⚠ Per `separate-the-rule-from-the-fetch`: the *logic* does not need a database even though the *fetch* does — do not let the credential requirement make the whole thing untestable |
+| **Count the already-drifted envelopes before (e) ships** (§2) | Not code. §2 gates a staged rollout on this number. Read-only via `CLAUDE_RO_DATABASE_URL`: envelopes whose `sourceMdHash` is present and differs from the current body hash. ⚠ Per `separate-the-rule-from-the-fetch`: the *logic* does not need a database even though the *fetch* does — do not let the credential requirement make the whole thing untestable. **No repo-side proxy exists and cannot be improvised:** `sourceMdHash` began being written 2026-07-17 (`c591603`) and `GENERATOR_VERSION` last changed 2026-07-10 (`e6470ad`), so the existing `generatorVersion` conjunct has invalidated **nothing** since — the population is unbounded from the repo and only the count bounds it |
 | **Does a cloud rendered-HTML BLOB cache exist at all?** (§8.1 item 2) | Code, but unassigned — and it is a *question* before it is a task. T8 nulls the `summaryHtml` **index field**; nobody has checked for a cached rendered **artifact**, and (e) does not cover one because it has no tie to the body hash. **This is the same "what else touches this?" class as both round-4 Blockings** |
 | **Panel copy for the structural-validation throw and for abort** (§8.1 item 3) | Code, but unassigned. T11 covers the 413 and `no-corrections` only. Two of the four new failure classes have no specified message |
 
 ---
 
-## ⏸ Deferred structural edit — do NOT apply until task #129 is answered
+## ⚠ Usage capture lives in T5 — and one answer to #129 removes it entirely
 
-The coordinator asked for T9's usage-capture steps to be folded into T5, on the grounds that
-`fixSummary`'s return type is T5's deliverable and T5 should not ship a signature T9 immediately
-rewrites. **That instruction is withdrawn until #129 resolves**, because it is only correct under one
-of the three options:
+**State: the fold is APPLIED.** T5 owns `fixSummary`'s signature, the `usage` return,
+`correctionActualCents` and `ApplyCorrectionResult.actualCents`. T9 is the sink alone.
 
-| #129 answer | What happens to usage capture |
+*(This supersedes a "⏸ deferred — do not apply" note that briefly stood here. Two conflicting
+instructions reached this document within minutes of each other and a plan cannot hold both; the fold
+is applied because measuring is not the blocked half. The note's actual insight is kept below, and
+one edit reverses this if the coordinator meant the withdrawal.)*
+
+The reason to fold: measuring spend changes `fixSummary`'s return type, which is T5's deliverable.
+Split, T5 ships `Promise<string>` for T9 to immediately rewrite and both test files get edited twice.
+
+**The reason that could unwind it — worth stating, because it is not obvious:**
+
+| #129 answer | What happens to usage capture in T5 |
 |---|---|
-| **(b) accept one narrow RPC migration** | Fold it into T5 as originally instructed — slice A keeps both halves |
-| **(a) move recording to slice C (#61)** | Usage capture leaves slice A **entirely**. Folding it into T5 would be actively wrong |
-| **(c) log-only** | Fold into T5, but T9's sink becomes a structured log line, not a ledger write |
+| **(2) accept one narrow RPC migration** | Stays in T5. Slice A keeps both halves |
+| **(3) log-only** | Stays in T5. Only T9's sink changes — a structured log line, not a ledger write |
+| **(1) move recording to slice C (#61)** | ⚠ **Take it back out.** With no consumer in slice A, `actualCents` is dead code and `usage` is a return-type change nothing reads. Delete T5's steps 5, 9 and the two `apply-core` spend tests, and drop `actualCents` from `ApplyCorrectionResult` |
 
-Folding now would have to be undone in two of the three cases.
+So: **applied now, and option (1) is the one answer that requires undoing it.** Do not start T5 with
+#129 open unless you are prepared to revisit those three edits.
 
 ---
 
@@ -1113,9 +1122,12 @@ export async function assertCorrectionInputWithinCap(
 
 - [ ] **Step 4: Rewrite `fixSummary`**
 
-Replace `lib/gemini.ts:470-511` in full:
+Replace `lib/gemini.ts:470-511` in full, and add the usage type beside it:
 
 ```ts
+/** What one Gemini call actually consumed, as the SDK reported it. */
+export interface GeminiUsage { promptTokens: number; outputTokens: number }
+
 export async function fixSummary(
   mdContent: string,
   corrections: string,
@@ -1125,7 +1137,7 @@ export async function fixSummary(
   opts: { signal: AbortSignal; caps?: CloudGeminiCaps },
   retries = 2,
   baseDelayMs = 400,
-): Promise<string> {
+): Promise<{ text: string; usage: GeminiUsage | null }> {
   const client = new GoogleGenerativeAI(getApiKey());
   const model = client.getGenerativeModel({
     model: SUMMARY_MODEL,
@@ -1161,7 +1173,13 @@ ${mdContent}
       assertNotTruncated(result);
       const corrected = result.response.text().trim();
       if (!corrected) throw new Error('Gemini returned empty content');
-      return corrected;
+      const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
+      // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
+      // facts, and collapsing them would understate spend exactly where it matters.
+      const usage = um && um.promptTokenCount != null && um.candidatesTokenCount != null
+        ? { promptTokens: um.promptTokenCount, outputTokens: um.candidatesTokenCount }
+        : null;
+      return { text: corrected, usage };
     } catch (err) {
       // Preserve AbortError identity unwrapped so the caller can distinguish cancellation from a
       // real failure (same rule as generateSummary's catch).
@@ -1180,7 +1198,22 @@ ${mdContent}
 }
 ```
 
-- [ ] **Step 5: Wire the caps, the signal and the preflight into `apply-core`**
+- [ ] **Step 5: Price the measured usage**
+
+Add to `lib/gemini-cost.ts`, beside the other cost helpers:
+
+```ts
+/** Whole cents (rounded up) for one correction call, from MEASURED token counts — not an estimate.
+ *  Uses the same dated prices as every other figure in this file, so a price change moves all of
+ *  them together rather than leaving this one behind. */
+export function correctionActualCents(usage: { promptTokens: number; outputTokens: number }): number {
+  return Math.ceil(
+    (usage.promptTokens * PRICE_IN_PER_1M_CENTS + usage.outputTokens * PRICE_OUT_PER_1M_CENTS) / 1e6,
+  );
+}
+```
+
+- [ ] **Step 6: Wire the caps, the signal, the preflight and the measurement into `apply-core`**
 
 In `lib/corrections/apply-core.ts`, add these imports and exports at the top:
 
@@ -1188,7 +1221,7 @@ In `lib/corrections/apply-core.ts`, add these imports and exports at the top:
 import { fixSummary, extractQuickView, assertCorrectionInputWithinCap, SUMMARY_MODEL } from '@/lib/gemini';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { MAX_TRANSCRIBE_INPUT_TOKENS, MAX_TRANSCRIBE_OUTPUT_TOKENS, MAX_TRANSCRIPT_INPUT_BYTES,
-  MAX_SUMMARY_OUTPUT_TOKENS } from '@/lib/gemini-cost';
+  MAX_SUMMARY_OUTPUT_TOKENS, correctionActualCents } from '@/lib/gemini-cost';
 import type { CloudGeminiCaps } from '@/lib/gemini-cost';
 
 /** Caps for the paid correction transform. Only `summaryOutputTokens` is load-bearing; the rest
@@ -1230,14 +1263,32 @@ export async function applyCorrection(input: ApplyCorrectionInput): Promise<Appl
     );
   }
 
-  const fixed = await fixSummary(stripped, input.corrections, { signal: input.signal, caps: input.caps });
+  const { text: fixed, usage } = await fixSummary(
+    stripped, input.corrections, { signal: input.signal, caps: input.caps },
+  );
   assertStructurePreserved(stripped, fixed);
   const { tldr, takeaways } = await extractQuickView(fixed, input.caps);
   return {
     content: insertQuickViewCallout(fixed, tldr, takeaways, input.tags),
     tldr,
     takeaways,
+    // Counts fixSummary only. extractQuickView's usage is NOT included — the SDK reports it on a
+    // different call and nothing in this repo reads it yet; adding it is a separate measurement, not
+    // an assumption to bury here.
+    actualCents: usage ? correctionActualCents(usage) : null,
   };
+}
+```
+
+And widen the result type:
+
+```ts
+export interface ApplyCorrectionResult {
+  content: string;
+  tldr: string;
+  takeaways: string[];
+  /** null means "the SDK reported no usage", NOT "free". */
+  actualCents: number | null;
 }
 ```
 
@@ -1245,12 +1296,12 @@ Update the existing `applyCorrection` call in `app/api/videos/[id]/regenerate/ro
 route wiring has landed; otherwise the route still calls `fixSummary` directly at `:63` and that call
 becomes `await fixSummary(stripped, trimmedCorrections, { signal: request.signal })`.
 
-- [ ] **Step 6: Run the tests and confirm they pass**
+- [ ] **Step 7: Run the tests and confirm they pass**
 
 Run: `npx jest tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Mutation-check the caps object**
+- [ ] **Step 8: Mutation-check the caps object**
 
 Change the `withCaps` call in `fixSummary` to `withCaps({}, undefined, opts.caps?.summaryOutputTokens ?? 0)`.
 Run: `npx jest tests/lib/gemini-fix-summary.test.ts`
@@ -1258,16 +1309,24 @@ Expected: **FAIL** on `applies maxOutputTokens and thinkingBudget:0 when a caps 
 This is the exact defect the test exists for — a diff that names the constant and caps nothing.
 Restore `opts.caps` and re-run; expected PASS.
 
-- [ ] **Step 8: Typecheck and run the full suite**
+- [ ] **Step 9: Mutation-check the null-not-zero rule**
+
+Change the usage fallback in `fixSummary` from `: null` to
+`: { promptTokens: 0, outputTokens: 0 }`.
+Run: `npx jest tests/lib/gemini-fix-summary.test.ts`
+Expected: **FAIL** on `returns usage: null — NOT zero — when the SDK reported no usageMetadata`.
+If it passes, an unmeasured call is being reported as free. Restore `: null` and re-run; expected PASS.
+
+- [ ] **Step 10: Typecheck and run the full suite**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add lib/gemini.ts lib/corrections/apply-core.ts tests/lib/gemini-fix-summary.test.ts
-git commit -m "feat(#23): fixSummary gains a caps object, a signal in three places, and a preflight"
+git add lib/gemini.ts lib/gemini-cost.ts lib/corrections/apply-core.ts tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts
+git commit -m "feat(#23): fixSummary gains caps, signal x3, a preflight, and measured usage"
 ```
 
 ---
@@ -1992,180 +2051,104 @@ git commit -m "feat(#23): cloud branch for the correction route, body written wi
 
 ---
 
-### Task 9: Post-hoc spend recording
+### Task 9: The spend sink
 
-⛔ **BLOCKED ON A DECISION — read this before starting. Do not invent an RPC.**
+⛔ **BLOCKED ON TASK #129 — a user decision. Do not implement any of the three options, and do not
+invent an RPC.** Everything that *can* be built without that decision — measuring the number — moved
+into **Task 5** on 2026-08-24, because it changes `fixSummary`'s return type and belongs with the
+signature it changes. What is left here is the sink alone, and the sink is the blocked half.
 
 Spec §5.2 says *"The route records **actual** spend to the ledger after the call returns."* Measured
-2026-08-24, **there is no mechanism to do that and creating one is out of scope:**
+2026-08-24: **there is no mechanism to do that, and building one is outside slice A's own scope.**
 
 | Fact | Evidence |
 |---|---|
-| `spend_ledger.actual_cents` has **no writer** anywhere — no SQL, no TypeScript | `grep -rn actual_cents supabase/migrations/` returns six hits, all *reads* inside cap arithmetic (`0011:114`, `0011:187`, `0012:88`, `0014:84`, `0018:63`, `0020:246`). `0011:15` says the column is *"inert in 1D; written by the deferred reconcile"* — that reconcile does not exist |
-| The route cannot write it directly | `spend_ledger` grants are `service_role` only (`0011:18`), and this route runs on the user's session client |
+| `spend_ledger.actual_cents` has **no writer** anywhere — no SQL, no TypeScript | `grep -rn actual_cents supabase/migrations/` returns seven hits, every one a *read* inside cap arithmetic (`0011:114`, `0011:187`, `0012:88`, `0014:84`, `0018:63`, `0020:246`). `0011:15` calls the column *"inert in 1D; written by the deferred reconcile"* — that reconcile does not exist |
+| The route cannot write it directly | `spend_ledger` grants are `service_role` only (`0011:18`); this route runs on the user's session client |
 | Using `service_role` here fails CI | `.github/workflows/ci.yml:69` runs `scripts/check-service-confinement.ts` — *"static guard: service_role stays out of request paths"* |
 | Adding an RPC is a migration | spec §8: **"No migration — …"**. Slice A adds no schema change |
-| There is also no **source** for the number | `grep -rn usageMetadata lib/` returns nothing. No code anywhere reads Gemini token usage, and `fixSummary` discards `result` after `result.response.text()` |
 
 **Three ways forward. The user picks; the implementer does not.**
 
 1. **Move recording to slice C** (`docs/backlog.md` #61), which already owns the money instruments.
-   Slice A then ships capped-but-unrecorded, and §5.2 changes to say so. Smallest, and consistent
-   with the slice boundary that was drawn to keep A off the money path.
-2. **Accept one migration** for a single `record_correction_spend(p_cents int)` RPC. Contradicts §8's
-   "no migration of any kind", which is currently load-bearing in the spec's own scope list.
-3. **Log-only.** No ledger write; a structured line the operator can grep and a follow-up filed. The
+   Slice A ships capped-but-unrecorded and §5.2 changes to say so. Smallest, and consistent with the
+   boundary that was drawn to keep A off the money path.
+2. **Accept one narrow migration** for a single `record_correction_spend(p_cents int)` RPC.
+   Contradicts §8's "no migration of any kind", which is load-bearing in the spec's own scope list —
+   but note what the user rejected was the *reservation protocol*, not a schema change as such.
+3. **Log-only.** No ledger write; a structured line an operator can grep, plus a filed follow-up. The
    guardrails gain nothing — the daily cap still cannot see the spend — so §5.2's stated benefit
-   ("the daily cap and per-owner budget see the spend on the *next* decision") does **not** hold.
+   (*"the daily cap and per-owner budget see the spend on the next decision"*) does **not** hold.
+   Choosing this means saying so in §5.2 rather than leaving the sentence standing.
 
-**Steps 1–4 below implement the parts that are unblocked under ANY of the three** — capturing the
-number. Step 5 is the sink and is gated on the decision.
-
-**Files:**
-- Modify: `lib/gemini.ts` (`fixSummary` returns usage alongside the text)
-- Modify: `lib/corrections/apply-core.ts` (surface usage on the result)
-- Test: `tests/lib/corrections/apply-core.test.ts`
+**Files:** none until the decision lands. Under option 3, `app/api/videos/[id]/regenerate/route.ts`.
 
 **Interfaces:**
-- Consumes: `PRICE_IN_PER_1M_CENTS = 30` and `PRICE_OUT_PER_1M_CENTS = 250` from
-  `lib/gemini-cost.ts:33,35`.
-- Produces:
-  - `interface GeminiUsage { promptTokens: number; outputTokens: number }`
-  - `fixSummary(...): Promise<{ text: string; usage: GeminiUsage | null }>` — ⚠ **this changes Task
-    5's return type.** `usage` is `null` when the SDK response carries no `usageMetadata`; a null is
-    reported, never silently treated as zero.
-  - `ApplyCorrectionResult` gains `actualCents: number | null`
-  - `correctionActualCents(usage: GeminiUsage): number` in `lib/gemini-cost.ts`
+- Consumes: `ApplyCorrectionResult.actualCents: number | null` from **Task 5**. `null` means *the SDK
+  reported no usage*, never *free* — whatever the sink turns out to be must preserve that
+  distinction rather than coercing to `0`.
+- Produces: nothing until the decision lands.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: ⛔ Confirm task #129 is decided before writing any code**
 
-Append to `tests/lib/corrections/apply-core.test.ts`:
+If #129 is still open, **stop and report**. Do not pick an option to unblock yourself; the three have
+different costs and the choice is the user's. This step exists because "the implementer chose while
+waiting" is how a deferred money decision becomes a shipped one.
 
-```ts
-describe('actual spend is measured, not estimated', () => {
-  it('prices the real token counts', async () => {
-    mockFixSummary.mockResolvedValue({
-      text: CORRECTED,
-      usage: { promptTokens: 10_000, outputTokens: 4_000 },
-    });
-    const r = await applyCorrection({
-      md: BODY, corrections: 'x', tags: [], signal: new AbortController().signal,
-    });
-    // 10_000 * 30/1e6 + 4_000 * 250/1e6 = 0.3 + 1.0 = 1.3¢ → ceil 2
-    expect(r.actualCents).toBe(2);
-  });
+- [ ] **Step 2: Implement the chosen option**
 
-  it('reports null rather than zero when the SDK returned no usageMetadata', async () => {
-    mockFixSummary.mockResolvedValue({ text: CORRECTED, usage: null });
-    const r = await applyCorrection({
-      md: BODY, corrections: 'x', tags: [], signal: new AbortController().signal,
-    });
-    expect(r.actualCents).toBeNull();   // "could not measure" is NOT "cost nothing"
-  });
-});
-```
+Under **option 1**, there is nothing to build: delete this task, amend spec §5.2 to say recording
+lands in slice C, and move on.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+Under **option 2**, the migration and its RPC are work this plan does not contain. Stop and re-plan
+that task properly — a money-path RPC written as an improvised step is exactly the shape this repo's
+five-to-seven-round history is made of.
 
-Run: `npx jest tests/lib/corrections/apply-core.test.ts`
-Expected: FAIL — `r.actualCents` is `undefined`.
-
-- [ ] **Step 3: Return usage from `fixSummary`**
-
-In `lib/gemini.ts`, add the type and change the success path of the loop written in Task 5:
-
-```ts
-export interface GeminiUsage { promptTokens: number; outputTokens: number }
-```
-
-```ts
-      assertNotTruncated(result);
-      const corrected = result.response.text().trim();
-      if (!corrected) throw new Error('Gemini returned empty content');
-      const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
-      // null, never 0. "The SDK did not report usage" and "this call cost nothing" are different
-      // facts, and collapsing them would understate spend exactly where it matters.
-      const usage = um && um.promptTokenCount != null && um.candidatesTokenCount != null
-        ? { promptTokens: um.promptTokenCount, outputTokens: um.candidatesTokenCount }
-        : null;
-      return { text: corrected, usage };
-```
-
-and the declared return type to `Promise<{ text: string; usage: GeminiUsage | null }>`.
-
-- [ ] **Step 4: Price it and surface it**
-
-Add to `lib/gemini-cost.ts`:
-
-```ts
-/** Whole cents (rounded up) for one correction call, from MEASURED token counts. Uses the same
- *  dated prices as every other estimate here so a price change moves all of them together. */
-export function correctionActualCents(usage: { promptTokens: number; outputTokens: number }): number {
-  return Math.ceil(
-    (usage.promptTokens * PRICE_IN_PER_1M_CENTS + usage.outputTokens * PRICE_OUT_PER_1M_CENTS) / 1e6,
-  );
-}
-```
-
-In `lib/corrections/apply-core.ts`, update the call site and the result:
-
-```ts
-export interface ApplyCorrectionResult {
-  content: string;
-  tldr: string;
-  takeaways: string[];
-  /** null means "the SDK reported no usage", NOT "free". */
-  actualCents: number | null;
-}
-```
-
-```ts
-  const { text: fixed, usage } = await fixSummary(stripped, input.corrections, { signal: input.signal, caps: input.caps });
-  assertStructurePreserved(stripped, fixed);
-  const { tldr, takeaways } = await extractQuickView(fixed, input.caps);
-  return {
-    content: insertQuickViewCallout(fixed, tldr, takeaways, input.tags),
-    tldr,
-    takeaways,
-    actualCents: usage ? correctionActualCents(usage) : null,
-  };
-```
-
-Run: `npx jest tests/lib/corrections/apply-core.test.ts tests/lib/gemini-fix-summary.test.ts`
-Expected: PASS (update the Task 5 tests' `mockResolvedValue` to the new `{ text, usage }` shape).
-
-- [ ] **Step 5: ⛔ THE SINK — do not implement until the user has chosen**
-
-Under **option 3 (log-only)** this is the whole step, and it is what the plan can specify today.
-It goes **inside** `serveCloud`'s `if (trimmedCorrections) { … }` block from Task 8, immediately after
-the `blobStore.put` — `applied` is scoped to that block, and a bare press has no spend to report:
+Under **option 3**, this is the whole change. It goes **inside** `serveCloud`'s
+`if (trimmedCorrections) { … }` block from Task 8, immediately after the `blobStore.put` — `applied`
+is scoped to that block, and a bare press has no spend to report:
 
 ```ts
     // Spend visibility, spec §5.2. NOT a ledger write: spend_ledger.actual_cents has no writer
     // (0011:15 "inert in 1D; written by the deferred reconcile" — which does not exist), the table
     // is service_role-only (0011:18), and service_role is statically barred from request paths
     // (.github/workflows/ci.yml:69). Adding an RPC is a migration, which §8 excludes from slice A.
-    // Tracked as the slice-A residue on backlog #61.
+    // The guardrails CANNOT see this spend — that is the accepted cost of option 3, not an oversight.
     console.info(
       `[correction-spend] owner=${principal.id} video=${videoId} cents=${applied.actualCents ?? 'unmeasured'}`,
     );
 ```
 
-Under **option 1** delete this step and amend §5.2. Under **option 2** the migration and its RPC are
-a task this plan does not contain — stop and re-plan rather than improvising one here.
+- [ ] **Step 3: Under option 3, prove the log distinguishes unmeasured from free**
 
-- [ ] **Step 6: Typecheck, full suite, commit**
+```ts
+it('logs `unmeasured`, not 0, when the SDK reported no usage', async () => {
+  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
+  jest.mocked(gemini.fixSummary).mockResolvedValue({ text: MD, usage: null });
+  await press(VIDEO_ID, PLAYLIST_ID, { corrections: 'fix X' });
+  expect(spy).toHaveBeenCalledWith(expect.stringContaining('cents=unmeasured'));
+});
+```
+
+Run: `npx jest tests/api/regenerate-cloud.test.ts`
+Expected: PASS.
+
+- [ ] **Step 4: Typecheck, full suite, commit**
 
 Run: `npx tsc --noEmit && npx jest`
 
 ```bash
-git add lib/gemini.ts lib/gemini-cost.ts lib/corrections/apply-core.ts tests/lib/corrections/apply-core.test.ts tests/lib/gemini-fix-summary.test.ts
-git commit -m "feat(#23): measure a correction's actual spend; ledger sink blocked on a decision"
+git add app/api/videos/[id]/regenerate/route.ts tests/api/regenerate-cloud.test.ts
+git commit -m "feat(#23): correction spend visibility (option 3 — log-only, guardrails unaware)"
 ```
 
 ---
 
 ### Task 10: Give the owner's page a stale fallback on the other non-ok statuses (r5 H1)
+
+⚠ **Schedule this BEFORE Task 4** — see the hard ordering constraints at the top. T4 is what makes
+these statuses reachable for a corrected document; this task is what stops them costing the owner
+their page for a day.
 
 Before Task 4, a corrected document was `isFresh === true`, so `serve-doc.ts:78-79` short-circuited
 and the owner got **200 every time**. After Task 4 the same document falls into the reserve path on
