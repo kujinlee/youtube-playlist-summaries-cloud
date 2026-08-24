@@ -166,7 +166,7 @@ This task is a pure comparator — no I/O, no Gemini, no storage.
   - `function assertStructurePreserved(before: string, after: string): void` — returns `void`,
     throws `StructuralValidationError` otherwise.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/lib/corrections/structural-validation.test.ts`:
 
@@ -254,12 +254,12 @@ describe('assertStructurePreserved', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails for the right reason**
+- [x] **Step 2: Run the test and confirm it fails for the right reason**
 
 Run: `npx jest tests/lib/corrections/structural-validation.test.ts`
 Expected: FAIL — `Cannot find module '@/lib/corrections/structural-validation'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `lib/corrections/structural-validation.ts`:
 
@@ -343,17 +343,17 @@ export function assertStructurePreserved(before: string, after: string): void {
 }
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `npx jest tests/lib/corrections/structural-validation.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 Run: `npx tsc --noEmit`
 Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/corrections/structural-validation.ts tests/lib/corrections/structural-validation.test.ts
@@ -396,7 +396,7 @@ callout's Concepts line (`route.ts:67` passes `video.tags ?? []`). `signal` beca
 lets a caller silently restore an uncancellable ~181 s paid call — a required parameter makes
 omission a compile error.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/lib/corrections/apply-core.test.ts`:
 
@@ -484,12 +484,12 @@ describe('applyCorrection', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails for the right reason**
+- [x] **Step 2: Run the test and confirm it fails for the right reason**
 
 Run: `npx jest tests/lib/corrections/apply-core.test.ts`
 Expected: FAIL — `Cannot find module '@/lib/corrections/apply-core'`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `lib/corrections/apply-core.ts`:
 
@@ -538,17 +538,17 @@ export async function applyCorrection(input: ApplyCorrectionInput): Promise<Appl
 }
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `npx jest tests/lib/corrections/apply-core.test.ts`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Typecheck and run the full suite**
+- [x] **Step 5: Typecheck and run the full suite**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/corrections/apply-core.ts tests/lib/corrections/apply-core.test.ts
@@ -596,7 +596,7 @@ bare press permanently discards a pending correction (spec §4.3).
 | `corrections: ""` (explicit clear) | no | **no** | `mdHash("")` — unchanged behaviour, imperfect and accepted (spec §4.3) | **omitted** |
 | absent, or `"  "` (bare press) | no | **no** | **omitted** | **omitted** |
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/api/regenerate.test.ts` (the file's existing mocks, `post()` helper and `beforeEach`
 at `:1-74` already give you `mockWriteFile`, `mockUpdateVideoFields` and `mockFixSummary`):
@@ -648,14 +648,14 @@ corrections', …)` at `:98` with this, and rename it:
   });
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail for the right reasons**
+- [x] **Step 2: Run the tests and confirm they fail for the right reasons**
 
 Run: `npx jest tests/api/regenerate.test.ts tests/lib/cloud-sync/regenerate-stamp.test.ts`
 Expected: FAIL — the three "does NOT write" cases report
 `expect(jest.fn()).not.toHaveBeenCalled()` with 1 call, and the stamp case reports the patch
 *does* have property `mdCorrectionsHash`.
 
-- [ ] **Step 3: Make the write conditional**
+- [x] **Step 3: Make the write conditional**
 
 In `app/api/videos/[id]/regenerate/route.ts`, replace line 69:
 
@@ -678,7 +678,7 @@ with:
     }
 ```
 
-- [ ] **Step 4: Make the stamp conditional**
+- [x] **Step 4: Make the stamp conditional**
 
 Replace lines 71-89 (the `effectiveCorrections` block and the `updateVideoFields` call) with:
 
@@ -711,17 +711,17 @@ Add the `Video` type import at the top of the file, beside the existing imports:
 import type { Video } from '../../../../../types';
 ```
 
-- [ ] **Step 5: Run the tests and confirm they pass**
+- [x] **Step 5: Run the tests and confirm they pass**
 
 Run: `npx jest tests/api/regenerate.test.ts tests/lib/cloud-sync/regenerate-stamp.test.ts`
 Expected: PASS. `regenerate.test.ts` gains 5 tests; `regenerate-stamp.test.ts` still has 4.
 
-- [ ] **Step 6: Typecheck and run the full suite**
+- [x] **Step 6: Typecheck and run the full suite**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/api/videos/[id]/regenerate/route.ts tests/api/regenerate.test.ts tests/lib/cloud-sync/regenerate-stamp.test.ts
@@ -758,7 +758,7 @@ fresh forever and serves pre-correction gists. Option (e) adds one conjunct, gua
   the `owner_over_budget` fallback (`serve-doc.ts:147-151`). Leaving it alone is what keeps backlog
   **#57 — tolerate version skew on the share path** standing. Do not touch it in this task.
 
-- [ ] **Step 1: Retire the tripwire and write the new cases**
+- [x] **Step 1: Retire the tripwire and write the new cases**
 
 `tests/lib/html-doc/read-model.test.ts:39-51` is a **deliberate guard against this exact change**.
 Its comment says *"WHEN THIS GOES RED: someone made isFresh hash-aware. That is a MONEY decision —
@@ -807,13 +807,13 @@ and the three `readFreshMagazineModel` calls at `:59`, `:68` and `:74`:
     const r = await readFreshMagazineModel({ blobStore: roStore, principal, base: 'b', titles, currentMdHash: 'hash-X' });
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail for the right reason**
+- [x] **Step 2: Run the tests and confirm they fail for the right reason**
 
 Run: `npx jest tests/lib/html-doc/read-model.test.ts`
 Expected: FAIL — TypeScript reports `Expected 2 arguments, but got 3` for `isFresh`, and the
 mismatch case returns `true` where `false` is expected.
 
-- [ ] **Step 3: Add the conjunct**
+- [x] **Step 3: Add the conjunct**
 
 In `lib/html-doc/read-model.ts`, replace `isFresh` (`:20-25`) and `readFreshMagazineModel`'s body
 (`:29-39`) with:
@@ -856,7 +856,7 @@ export async function readFreshMagazineModel(args: {
 }
 ```
 
-- [ ] **Step 4: Pass the hash at both call sites**
+- [x] **Step 4: Pass the hash at both call sites**
 
 In `lib/html-doc/serve-doc.ts`, immediately after `const titles = parsed.sections.map((s) => s.title);`
 (`:71`) add:
@@ -880,12 +880,12 @@ and `:141`:
       const now = await readFreshMagazineModel({ blobStore, principal, base, titles, currentMdHash });
 ```
 
-- [ ] **Step 5: Run the tests and confirm they pass**
+- [x] **Step 5: Run the tests and confirm they pass**
 
 Run: `npx jest tests/lib/html-doc/read-model.test.ts`
 Expected: PASS. The `isFresh` describe block now has 6 tests.
 
-- [ ] **Step 6: Mutation-check — prove the conjunct is load-bearing**
+- [x] **Step 6: Mutation-check — prove the conjunct is load-bearing**
 
 ⚠ **This step is not optional.** No fixture anywhere in `tests/` sets `sourceMdHash`
 (`grep -rn sourceMdHash tests/` returns only this file and two comments), so every pre-existing
@@ -907,13 +907,13 @@ Now restore the conjunct and re-run:
 Run: `npx jest tests/lib/html-doc/read-model.test.ts`
 Expected: PASS.
 
-- [ ] **Step 7: Typecheck and run the full suite**
+- [x] **Step 7: Typecheck and run the full suite**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass. If any other suite fails here it has found a caller the
 `lib/`+`app/`+`components/` grep did not — read it before changing it.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add lib/html-doc/read-model.ts lib/html-doc/serve-doc.ts tests/lib/html-doc/read-model.test.ts
@@ -972,7 +972,7 @@ constructed and passed as argument two.
 
 Wire only #2 and an abort still runs the backoff to completion and issues another **paid** call.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/lib/gemini-fix-summary.test.ts`:
 
@@ -1116,14 +1116,14 @@ describe('actual spend is measured, not estimated', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails for the right reason**
+- [x] **Step 2: Run the test and confirm it fails for the right reason**
 
 Run: `npx jest tests/lib/gemini-fix-summary.test.ts`
 Expected: FAIL — TypeScript reports `Argument of type '{ signal: AbortSignal; }' is not assignable
 to parameter of type 'number'` (the current third parameter is `retries`), and
 `Cannot find module '@/lib/corrections/apply-core'` exports `CORRECTION_CAPS`.
 
-- [ ] **Step 3: Add the preflight to `lib/gemini.ts`**
+- [x] **Step 3: Add the preflight to `lib/gemini.ts`**
 
 Insert immediately after `assertMagazineInputWithinCap` ends at `:99`:
 
@@ -1158,7 +1158,7 @@ export async function assertCorrectionInputWithinCap(
 }
 ```
 
-- [ ] **Step 4: Rewrite `fixSummary`**
+- [x] **Step 4: Rewrite `fixSummary`**
 
 Replace `lib/gemini.ts:470-511` in full, and add the usage type beside it:
 
@@ -1236,7 +1236,7 @@ ${mdContent}
 }
 ```
 
-- [ ] **Step 5: Price the measured usage**
+- [x] **Step 5: Price the measured usage**
 
 Add to `lib/gemini-cost.ts`, beside the other cost helpers:
 
@@ -1251,7 +1251,7 @@ export function correctionActualCents(usage: { promptTokens: number; outputToken
 }
 ```
 
-- [ ] **Step 6: Wire the caps, the signal, the preflight and the measurement into `apply-core`**
+- [x] **Step 6: Wire the caps, the signal, the preflight and the measurement into `apply-core`**
 
 In `lib/corrections/apply-core.ts`, add these imports and exports at the top:
 
@@ -1334,7 +1334,7 @@ Update the existing `applyCorrection` call in `app/api/videos/[id]/regenerate/ro
 route wiring has landed; otherwise the route still calls `fixSummary` directly at `:63` and that call
 becomes `await fixSummary(stripped, trimmedCorrections, { signal: request.signal })`.
 
-- [ ] **Step 7: Migrate the SIX existing `fixSummary` callers — they break, and `tsc` covers them**
+- [x] **Step 7: Migrate the SIX existing `fixSummary` callers — they break, and `tsc` covers them**
 
 ⚠ **Do this before running anything.** `grep -rn "fixSummary(" --include=*.ts .` returns eight call
 sites: the route (`route.ts:63`, handled by T8), the definition, and **six existing tests** that this
@@ -1360,12 +1360,12 @@ intended reading, not a gap: those fixtures never reported usage and must not no
 `tests/lib/gemini-fix-summary.test.ts` (this task's new file) does **not** duplicate them — the new
 file covers caps, cancellation and usage only.
 
-- [ ] **Step 8: Run the tests and confirm they pass**
+- [x] **Step 8: Run the tests and confirm they pass**
 
 Run: `npx jest tests/lib/gemini.test.ts tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts`
 Expected: PASS — including the six migrated cases.
 
-- [ ] **Step 8: Mutation-check the caps object**
+- [x] **Step 8: Mutation-check the caps object**
 
 Change the `withCaps` call in `fixSummary` to `withCaps({}, undefined, opts.caps?.summaryOutputTokens ?? 0)`.
 Run: `npx jest tests/lib/gemini-fix-summary.test.ts`
@@ -1373,7 +1373,7 @@ Expected: **FAIL** on `applies maxOutputTokens and thinkingBudget:0 when a caps 
 This is the exact defect the test exists for — a diff that names the constant and caps nothing.
 Restore `opts.caps` and re-run; expected PASS.
 
-- [ ] **Step 9: Mutation-check the null-not-zero rule**
+- [x] **Step 9: Mutation-check the null-not-zero rule**
 
 Change the usage fallback in `fixSummary` from `: null` to
 `: { promptTokens: 0, outputTokens: 0 }`.
@@ -1381,13 +1381,13 @@ Run: `npx jest tests/lib/gemini-fix-summary.test.ts`
 Expected: **FAIL** on `returns usage: null — NOT zero — when the SDK reported no usageMetadata`.
 If it passes, an unmeasured call is being reported as free. Restore `: null` and re-run; expected PASS.
 
-- [ ] **Step 10: Typecheck and run the full suite**
+- [x] **Step 10: Typecheck and run the full suite**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass. **If `tsc` reports errors in `tests/lib/gemini.test.ts`,
 step 7 was skipped** — that file is inside `tsconfig.json`'s `**/*.ts` include.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add lib/gemini.ts lib/gemini-cost.ts lib/corrections/apply-core.ts tests/lib/gemini.test.ts tests/lib/gemini-fix-summary.test.ts tests/lib/corrections/apply-core.test.ts
@@ -2710,7 +2710,7 @@ anonymous reader and left the paying owner worse off; this task completes the ar
 - Produces: no signature change. `ResolveResult`'s `ok` arm already carries `stale?: boolean`
   (`serve-doc.ts:36`), so the caller needs no change.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/lib/html-doc/serve-doc-mapping.test.ts`:
 
@@ -2744,12 +2744,12 @@ describe('a stale-but-readable model beats a 503 (r5 H1)', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `npx jest tests/lib/html-doc/serve-doc-mapping.test.ts`
 Expected: FAIL — the first two cases receive `{ status: 'attempts_exhausted' }` / `{ status: 'at_capacity' }`.
 
-- [ ] **Step 3: Extend the fallback**
+- [x] **Step 3: Extend the fallback**
 
 Replace `lib/html-doc/serve-doc.ts:144-151`:
 
@@ -2776,12 +2776,12 @@ Replace `lib/html-doc/serve-doc.ts:144-151`:
     }
 ```
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
 Run: `npx jest tests/lib/html-doc/serve-doc-mapping.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Typecheck, full suite, commit**
+- [x] **Step 5: Typecheck, full suite, commit**
 
 Run: `npx tsc --noEmit && npx jest`
 
