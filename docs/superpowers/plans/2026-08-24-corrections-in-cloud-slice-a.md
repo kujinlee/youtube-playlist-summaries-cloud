@@ -79,7 +79,7 @@ two here would blunt the one thing this section is for.
 | `lib/gemini.ts` | **Modify.** `fixSummary` gains `caps`, `signal` (three sites), and an exported input-preflight | T5 |
 | `app/api/videos/[id]/regenerate/route.ts` | **Modify.** Conditional file write + conditional stamp (T3); annotations surface (T6); length cap + 413 (T7); cloud branch (T8); spend recording (T9) | T3, T6, T7, T8, T9 |
 | `lib/html-doc/read-model.ts` | **Modify.** `isFresh` + `readFreshMagazineModel` gain `currentMdHash` | T4 |
-| `supabase/migrations/0026_record_correction_spend.sql` | **Create.** The slice's only schema change (§8 overridden for this one case, 2026-08-24). Adds `guardrail_config.correction_max_cents` and a `SECURITY DEFINER` RPC that **rejects** above the ceiling rather than clamping. `revoke … from anon` is load-bearing, not decoration | T9 |
+| `supabase/migrations/0026_record_correction_spend.sql` | **Create.** The slice's only schema change (§8 overridden for this one case, 2026-08-24). Adds the `correction_spend` per-owner-per-day counter (mirroring `serve_model_charge`, `0012:7-18`), two `guardrail_config` bounds, and a `SECURITY DEFINER` RPC that **rejects** rather than clamping. `revoke … from anon` is load-bearing, not decoration | T9 |
 | `lib/html-doc/serve-doc.ts` | **Modify.** Pass `mdHash(mdBody)` at both call sites; extend the stale fallback (r5 H1) | T4, T10 |
 | `components/CorrectionsPanel.tsx`, `components/VideoMenu.tsx` | **Modify.** Reachable in cloud mode; render the outcome discriminator | T11 |
 | `tests/lib/html-doc/read-model.test.ts` | **Modify.** Retire the §3.5.1 tripwire with a pointer; add current/stale/**absent** `sourceMdHash` cases | T4 |
@@ -98,7 +98,7 @@ two here would blunt the one thing this section is for.
 | 6 | Corrections written via `updateVideoAnnotations`, read-before-write | the stamp moves on a no-op, or the Supabase clear is still a no-op |
 | 7 | Server-side length cap + 413 over-cap refusal + `maxDuration` | an already-long row is bricked, or the refusal is a 500 |
 | 8 | The cloud branch | `writeArtifact` used instead of `put`, or resolution outside the try |
-| 9 | Record the spend — one clamped RPC (migration `0026`) | the RPC trusts a caller-supplied cents value, so one account can exhaust the global daily cap; or it clamps silently instead of rejecting; or it arrives anon-callable |
+| 9 | Record the spend — one RPC bounded **per owner per day** (migration `0026`) | the bound is per-call only, so one account still exhausts the *global* cap; or `ceiling × N` is not a minority of `daily_cap_cents`; or it clamps silently instead of rejecting; or it arrives anon-callable |
 | 10 | r5 H1 — stale fallback for the other non-ok statuses | the owner's page 503s with a readable model in the bucket |
 | 11 | UI reachable in cloud + outcome discriminator | a no-op press reads as a bug |
 | 12 | Falsifiers + mutation-check | a falsifier passes on a wrong implementation |
@@ -2152,27 +2152,55 @@ git commit -m "feat(#23): cloud branch for the correction route, body written wi
 
 ---
 
-### Task 9: Record the spend — one narrow RPC
+### Task 9: Record the spend — one narrow RPC, bounded per owner per day
 
-✅ **Task #129 answered 2026-08-24: option (b).** Spec §5.2 carries the decision block and §8's
-no-migration bullet is **overridden for this one case**. What the user rejected was the *reservation
-protocol*; reserve/settle stays in slice C (`docs/backlog.md` #61).
+✅ **Task #129 answered 2026-08-24, then AMENDED the same day: option (b′).** Spec §5.2 carries both.
+§8's no-migration bullet is overridden for this one migration. Reserve/settle stays in slice C.
 
-⚠ **The obvious implementation is a cross-tenant denial of service, and it is what you will write
-if you skim this.** `spend_ledger` is **global — one row per UTC day** (`0011:11`), not per-owner. An
-RPC that accepts an arbitrary cents amount from any authenticated caller therefore lets **one account
-exhaust the daily cap for every user**. "Take a cents parameter and add it" is unsafe.
+#### Why the per-call ceiling alone was wrong, and why the fix is two numbers rather than one
 
-**Design, and why this shape rather than the other one §5.2 allows.** §5.2 permits either *(i)* the
-RPC takes token counts and prices them itself, or *(ii)* it takes cents and clamps to a configured
-ceiling. **This plan takes (ii)**, because (i) requires the per-million prices to exist in SQL as
-well as in `gemini-cost.ts:33,35` — two sources of truth for one number, which is precisely the
-duplicate-vocabulary defect `scripts/check-vocabulary-collisions.py` exists to catch. The ceiling is
-one new column; the prices stay where they already are.
+The first version of this task clamped each call to a ceiling and stopped there. **Both halves of the
+Post-Plan Gate independently found the hole**, from different directions: `spend_ledger` is
+**global — one row per UTC day** (`0011:11`), so a per-call ceiling bounds *the size of one lie, not
+the number of them*. `daily_cap_cents` defaults to **500** (`0011:28`), the ceiling was 25, so twenty
+`POST /rest/v1/rpc/record_correction_spend` calls exhaust the cap for **every** user, at zero real
+spend — and then every `enqueue_job`, `reserve_serve_model` and dig enqueue fails
+`reserved + actual + est <= daily_cap` for the rest of the day.
 
-**Idempotency is deliberately absent.** This records spend that has *already happened*, so a
-duplicate call **over-reports** rather than double-charging. Over-count is the safe direction on a
-guardrail. Do not invent a token — a reviewer who expects one should read this paragraph.
+⚠ **A per-owner call bound does not fix that by itself either — the two limits multiply, and this
+was measured before the numbers below were chosen.** The obvious N to copy is
+`max_serve_attempts = 5`… or 20, to match the exhaustion count. But the quantity that reaches the
+global ledger is **ceiling × N**:
+
+| ceiling | N (calls/owner/day) | max one owner can add to the global ledger | as a share of the 500¢ cap |
+|---|---|---|---|
+| 25 | 20 | 500¢ | **100% — the original defect, unchanged** |
+| 25 | 8 | 200¢ | 40% — one account still takes most of the day |
+| **12** | **8** | **96¢** | **19% — shipped** |
+
+**So the ceiling comes down too, and it is now derived rather than guessed.** The measured worst case
+for a correction is `correctionActualCents({ 8192+4000, 8192 })` = **3¢ per capped pass**, ×3 passes
+(`fixSummary` retries twice, `gemini.ts:473`) = **9¢**. A ceiling of 12 covers it with headroom and
+nothing more — and Task 9's cap-soundness test asserts that cover mechanically, so the caps and the
+ceiling cannot drift apart silently. (The earlier 25 was unexplained, which my own gate flagged as L2;
+at N=8 every unexplained cent costs 8× as much globally.)
+
+#### The general lesson, worth more than the fix
+
+**Record-without-reserve has a floor it cannot get under on a *shared* ledger.** The unforgeable
+answer is a token issued before the call and settled after — which is the reservation protocol, i.e.
+slice C. (b) was never a third option beside "reserve" and "nothing"; on a global ledger it was
+reserve-shaped all along. What ships here is a bound that makes the damage **self-inflicted** rather
+than cross-tenant.
+
+⚠ **Residual, stated rather than buried:** many anonymous accounts can still aggregate toward the
+global cap. **That vector already exists for `reserve_serve_model`**, which is granted to `anon` as
+well as `authenticated` (`0012`, final line) — so this reaches **parity** with the existing money
+paths rather than adding a class of exposure. Closing it is slice C's job.
+
+**Idempotency is still deliberately absent.** This records spend that *already happened*, so a
+duplicate over-reports rather than double-charging, and over-count is the safe direction. Do not
+invent a token.
 
 **Files:**
 - Create: `supabase/migrations/0026_record_correction_spend.sql`
@@ -2181,28 +2209,30 @@ guardrail. Do not invent a token — a reviewer who expects one should read this
 - Test: `tests/api/regenerate-cloud.test.ts` (the route half)
 
 **Interfaces:**
-- Consumes: `ApplyCorrectionResult.actualCents: number | null` from **Task 5**. `null` means *the SDK
-  reported no usage*, never *free* — the route must not coerce it to `0`.
-- Consumes: the cloud branch and its `applied` binding from **Task 8**.
+- Consumes: `ApplyCorrectionResult.actualCents: number | null` from **Task 5** (`null` = the SDK
+  reported no usage, never "free"); the cloud branch and its `applied` binding from **Task 8**.
 - Produces:
-  - SQL: `record_correction_spend(p_cents int) returns void`
-  - SQL: `guardrail_config.correction_max_cents int not null default 25 check (correction_max_cents >= 1)`
+  - SQL table `correction_spend (owner_id, day, calls, cents)`, `unique (owner_id, day)`
+  - SQL `record_correction_spend(p_cents int) returns void`
+  - `guardrail_config.correction_max_cents int not null default 12`
+  - `guardrail_config.correction_max_calls_per_owner_day int not null default 8`
 
-⚠ **Depends on T5 and T8. Independent of the `T3 → T10 → T4` chain** — nothing here touches
-`isFresh`, the body write or the serve path. See "Deploy-order coupling" at the end of this task,
-which is a *release* constraint, not a task-order one.
+⚠ Depends on T5 and T8. **No task-order edge against `T3 → T10 → T4`** — see the note at the end.
 
-- [ ] **Step 1: Write the failing RPC test**
+- [ ] **Step 1: Write the failing test — BOTH halves of the falsifier**
+
+⚠ **The old falsifier ("a single over-ceiling call is rejected") would have PASSED the broken
+design.** It proved each lie was small and said nothing about how many there could be. The row that
+matters asserts both: N+1 calls from one owner are rejected, **and** the global ledger moved by at
+most N × ceiling. A test with only the rejection half re-creates the hole the gate just found.
 
 Create `tests/integration/record-correction-spend.int.test.ts`:
 
 ```ts
 // NEEDS A LIVE POSTGRES. global-setup.ts applies migrations and refuses to run if it cannot.
-// ⚠ SIGNATURES VERIFIED against tests/integration/helpers/clients.ts 2026-08-24. An earlier draft
-// wrote these from an import line and got all three wrong:
-//   newUser(): Promise<{ user: { id: string }; email: string; password: string }>   — NOT a uuid
-//   signInAs(email, password): Promise<{ client, userId }>                          — TWO args
-//   anonSession(): Promise<{ client, userId }>                                      — `userClient` does not exist
+// ⚠ SIGNATURES VERIFIED against tests/integration/helpers/clients.ts 2026-08-24:
+//   newUser(): Promise<{ user: { id }, email, password }>   signInAs(email, password): Promise<{ client, userId }>
+//   anonSession(): Promise<{ client, userId }>              — `userClient` does not exist
 import { adminClient, newUser, signInAs, anonSession } from './helpers/clients';
 import {
   correctionActualCents, MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS,
@@ -2211,81 +2241,102 @@ import {
 const svc = adminClient();
 const utcDay = () => new Date().toISOString().slice(0, 10);
 
-/** Sign in as a fresh user and return the RLS-scoped client. Two calls, because newUser does not
- *  sign anybody in and signInAs needs the credentials it minted. */
+const ledger = async () =>
+  (await svc.from('spend_ledger').select('actual_cents').eq('day', utcDay()).maybeSingle()).data?.actual_cents ?? 0;
+
+const cfg = async () => (await svc.from('guardrail_config')
+  .select('correction_max_cents, correction_max_calls_per_owner_day').eq('id', true).single()).data!;
+
 async function freshUserClient() {
   const { email, password } = await newUser();
   const { client, userId } = await signInAs(email, password);
   return { client, userId };
 }
 
-// ⚠ spend_ledger is GLOBAL and SHARED WITH EVERY OTHER INTEGRATION SUITE. 10+ files call
-// ensureGuardrailHeadroom (helpers/clients.ts:45) precisely because this row accumulates across a
-// run. These tests add real cents to it, so they restore what they moved — otherwise a later suite
-// fails on a cap this file consumed, three files away, depending on execution order.
+// spend_ledger is GLOBAL and shared with every other integration suite — 10+ files call
+// ensureGuardrailHeadroom (helpers/clients.ts:45) precisely because it accumulates across a run.
+// Restore what these tests move, or a later suite fails on a cap this file consumed.
 let ledgerAtStart = 0;
 beforeAll(async () => { ledgerAtStart = await ledger(); });
 afterAll(async () => {
   await svc.from('spend_ledger').update({ actual_cents: ledgerAtStart }).eq('day', utcDay());
 });
 
-const ledger = async () =>
-  (await svc.from('spend_ledger').select('actual_cents').eq('day', utcDay()).maybeSingle()).data?.actual_cents ?? 0;
-
-const ceiling = async () =>
-  (await svc.from('guardrail_config').select('correction_max_cents').eq('id', true).single()).data!.correction_max_cents;
-
-it('adds the reported cents to TODAY row of the global ledger', async () => {
-  const before = await ledger();
+// ── THE FALSIFIER THAT MATTERS ────────────────────────────────────────────────────────────────
+it('bounds ONE owner to N calls/day AND the global ledger to N x ceiling', async () => {
+  const { correction_max_cents: ceiling, correction_max_calls_per_owner_day: N } = await cfg();
   const { client } = await freshUserClient();
-  const { error } = await client.rpc('record_correction_spend', { p_cents: 3 });
-  expect(error).toBeNull();
-  expect(await ledger()).toBe(before + 3);
+  const before = await ledger();
+
+  const results = [];
+  for (let i = 0; i < N + 1; i++) {
+    results.push((await client.rpc('record_correction_spend', { p_cents: ceiling })).error);
+  }
+
+  // HALF ONE: exactly N succeed, and the (N+1)th is refused by NAME.
+  expect(results.slice(0, N).every((e) => e === null)).toBe(true);
+  expect(results[N]?.message).toMatch(/owner daily correction limit \d+ reached/);
+
+  // HALF TWO: the GLOBAL ledger moved by at most N x ceiling. This is the assertion the previous
+  // design would have failed — it is what "one account cannot exhaust everyone's cap" means.
+  expect(await ledger() - before).toBe(N * ceiling);
+  expect(N * ceiling).toBeLessThan(500 / 2);   // and that is a minority of daily_cap_cents (0011:28)
 });
 
+it('a SECOND owner is unaffected by the first owner hitting the limit', async () => {
+  const { correction_max_cents: ceiling, correction_max_calls_per_owner_day: N } = await cfg();
+  const a = await freshUserClient();
+  for (let i = 0; i < N + 1; i++) await a.client.rpc('record_correction_spend', { p_cents: ceiling });
+  const b = await freshUserClient();
+  const { error } = await b.client.rpc('record_correction_spend', { p_cents: 1 });
+  expect(error).toBeNull();   // the bound is PER OWNER; A cannot deny B
+});
+
+// ── the per-call ceiling, still correct and still necessary ───────────────────────────────────
 it('REJECTS a value above the ceiling — it does not silently clamp', async () => {
+  const { correction_max_cents: ceiling } = await cfg();
   const before = await ledger();
   const { client } = await freshUserClient();
-  const { error } = await client.rpc('record_correction_spend', { p_cents: (await ceiling()) + 1 });
-  // Assert WHICH error. A test that accepts any error passes on a typo in the function name.
+  const { error } = await client.rpc('record_correction_spend', { p_cents: ceiling + 1 });
   expect(error?.message).toMatch(/correction spend \d+ exceeds ceiling \d+/);
-  expect(await ledger()).toBe(before);   // nothing was written — not even a truncated amount
+  expect(await ledger()).toBe(before);   // nothing written — not even a truncated amount
 });
 
 it('accepts exactly the ceiling — the boundary is inclusive', async () => {
+  const { correction_max_cents: ceiling } = await cfg();
   const { client } = await freshUserClient();
-  const { error } = await client.rpc('record_correction_spend', { p_cents: await ceiling() });
-  expect(error).toBeNull();
+  expect((await client.rpc('record_correction_spend', { p_cents: ceiling })).error).toBeNull();
 });
 
 it('rejects a negative amount — the ledger only moves one way', async () => {
   const { client } = await freshUserClient();
   const { error } = await client.rpc('record_correction_spend', { p_cents: -5 });
-  expect(error?.message).toMatch(/correction spend -5 exceeds ceiling|violates check constraint/);
-});
-
-// CAP SOUNDNESS. The ceiling is a number in a config table; the caps it must cover are TypeScript
-// constants. Nothing ties them together, so this asserts the tie mechanically rather than trusting
-// whoever last changed MAX_SUMMARY_OUTPUT_TOKENS to remember this row exists.
-it('the ceiling covers the worst case §5.1 can actually produce', async () => {
-  const worstOnePass = correctionActualCents({
-    promptTokens: MAX_SUMMARY_OUTPUT_TOKENS + PROMPT_SCHEMA_OVERHEAD_TOKENS,
-    outputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
-  });
-  const worst = worstOnePass * 3;   // fixSummary retries twice (gemini.ts:473)
-  expect(await ceiling()).toBeGreaterThanOrEqual(worst);
-});
-
-it('anon cannot execute it', async () => {
-  const { client } = await anonSession();
-  const { error } = await client.rpc('record_correction_spend', { p_cents: 1 });
-  expect(error).not.toBeNull();
+  expect(error?.message).toMatch(/correction spend -5 exceeds ceiling/);
 });
 
 it('rejects NULL rather than falling through to a not-null violation', async () => {
   const { client } = await freshUserClient();
   const { error } = await client.rpc('record_correction_spend', { p_cents: null });
-  expect(error?.message).toMatch(/record_correction_spend: p_cents is required/);
+  expect(error?.message).toMatch(/p_cents is required/);
+});
+
+it('anon cannot execute it', async () => {
+  const { client } = await anonSession();
+  expect((await client.rpc('record_correction_spend', { p_cents: 1 })).error).not.toBeNull();
+});
+
+// CAP SOUNDNESS. The ceiling is a config number; the caps it must cover are TypeScript constants,
+// and nothing ties them together. Assert the tie mechanically rather than trusting whoever next
+// changes MAX_SUMMARY_OUTPUT_TOKENS to remember this row exists.
+it('the ceiling covers the worst case §5.1 can produce, and N x ceiling stays a minority of the cap', async () => {
+  const { correction_max_cents: ceiling, correction_max_calls_per_owner_day: N } = await cfg();
+  const worst = correctionActualCents({
+    promptTokens: MAX_SUMMARY_OUTPUT_TOKENS + PROMPT_SCHEMA_OVERHEAD_TOKENS,
+    outputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
+  }) * 3;                                     // fixSummary retries twice (gemini.ts:473)
+  expect(ceiling).toBeGreaterThanOrEqual(worst);
+  const { data } = await svc.from('guardrail_config').select('daily_cap_cents').eq('id', true).single();
+  expect(N * ceiling).toBeLessThan(data!.daily_cap_cents / 2);
 });
 ```
 
@@ -2293,77 +2344,130 @@ it('rejects NULL rather than falling through to a not-null violation', async () 
 
 Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
 Expected: FAIL — PostgREST reports `Could not find the function public.record_correction_spend`.
-If instead the whole suite refuses to start, the local Postgres is not up: **that is NOT RUN, not a
-pass.** Bring the stack up before continuing.
+If the suite refuses to start, the local Postgres is down: **that is NOT RUN, not a pass.**
 
 - [ ] **Step 3: Write the migration**
+
+⚠ **Patterns below are transcribed from `0012_serve_model_charge.sql`, opened 2026-08-24 — not from
+memory.** Three of them are not what you would guess: the owner is **derived**, never a parameter;
+the counter table is `force row level security` with **service_role-only** grants and no policy; and
+the bound is an `on conflict … do update … where` arbiter read through `get diagnostics row_count`,
+because a `select`-then-`if` would race two concurrent presses past the limit.
 
 Create `supabase/migrations/0026_record_correction_spend.sql`:
 
 ```sql
 -- supabase/migrations/0026_record_correction_spend.sql
--- Slice A (spec §5.2, decision 2026-08-24). ONE narrow RPC so an attended correction's ACTUAL spend
--- reaches the global ledger. This is NOT the reservation protocol — no reserve, no settle, no token.
--- Reserve/settle remains slice C (backlog #61).
+-- Slice A (spec §5.2, decided 2026-08-24, amended same day to (b′)). ONE narrow RPC so an attended
+-- correction's ACTUAL spend reaches the global ledger, bounded PER OWNER PER DAY so one account can
+-- only degrade its own budget. NOT the reservation protocol — no lease, no token, no
+-- pre-authorisation. Reserve/settle remains slice C (backlog #61).
 
--- (0) The ceiling. spend_ledger is GLOBAL — one row per UTC day (0011:11), not per-owner — so an RPC
---     that accepted any cents value would let one account exhaust the daily cap for everyone. The
---     ceiling is the guard; the caller is not trusted. Default 25¢ against a measured worst case of
---     ~8¢ for three capped fixSummary passes; the integration test asserts the cover mechanically so
---     this number cannot go stale silently when the token caps change.
+-- (0) Per-owner-per-day counter. Mirrors serve_model_charge (0012:7-18): force-RLS, service_role
+--     grants only, no anon/authenticated policy — writable ONLY inside the definer RPC below.
+--     FK targets profiles(id), as every owner_id in this schema does.
+create table correction_spend (
+  owner_id uuid not null references profiles(id) on delete cascade,
+  day date not null,                                        -- (now() at time zone 'utc')::date
+  calls int not null default 0 check (calls >= 0),
+  cents int not null default 0 check (cents >= 0),
+  unique (owner_id, day)
+);
+alter table correction_spend enable row level security;
+alter table correction_spend force row level security;
+grant select, insert, update, delete on correction_spend to service_role;
+
+-- (1) The two bounds, and they are chosen TOGETHER. What reaches the global ledger from one owner
+--     is ceiling x N, so tuning either alone re-opens the hole:
+--       25 x 20 = 500c = 100% of daily_cap_cents (0011:28) -- the original defect
+--       12 x  8 =  96c =  19%                              -- shipped
+--     The ceiling is DERIVED: a capped correction pass costs 3c
+--     (correctionActualCents({8192+4000, 8192})), fixSummary retries twice, so the worst case is 9c.
+--     12 covers it with headroom and nothing more; the cap-soundness test asserts that cover so the
+--     two cannot drift apart silently.
 alter table guardrail_config
-  add column correction_max_cents int not null default 25 check (correction_max_cents >= 1);
+  add column correction_max_cents int not null default 12 check (correction_max_cents >= 1);
+alter table guardrail_config
+  add column correction_max_calls_per_owner_day int not null default 8
+    check (correction_max_calls_per_owner_day >= 1);
 
--- (1) record_correction_spend. SECURITY DEFINER because spend_ledger is service_role-only
---     (0011:18) and the caller is a session-scoped `authenticated` user.
+-- (2) record_correction_spend. SECURITY DEFINER because spend_ledger and correction_spend are both
+--     service_role-only and the caller is a session-scoped `authenticated` user.
+--     ⚠ auth.uid() is derived INTERNALLY — owner is NEVER a parameter (0012:26-28).
 create or replace function record_correction_spend(p_cents int)
   returns void language plpgsql security definer set search_path = public as $$
 declare
-  v_cap int;
+  v_owner uuid := auth.uid();
   v_day date := (now() at time zone 'utc')::date;
+  v_cap int;
+  v_max_calls int;
+  v_claimed int;
 begin
-  if auth.uid() is null then
+  if v_owner is null then
     raise exception 'record_correction_spend: authentication required';
   end if;
 
   -- NULL IS NOT A SMALL NUMBER. Without this, `p_cents > v_cap` yields NULL, `if NULL then` is
-  -- FALSE, and the row falls through to the insert — where `actual_cents int not null` (0011:15)
-  -- raises a constraint violation the operator has to decode. Fail with the reason, not the symptom.
+  -- FALSE, and the row falls through to an `actual_cents int not null` violation (0011:15) the
+  -- operator then has to decode. Fail with the reason, not the symptom.
   if p_cents is null then
     raise exception 'record_correction_spend: p_cents is required';
   end if;
 
-  select correction_max_cents into v_cap from guardrail_config where id = true;
+  select correction_max_cents, correction_max_calls_per_owner_day
+    into v_cap, v_max_calls
+    from guardrail_config where id = true;
 
   -- ⚠ FAIL CLOSED ON A MISSING CONFIG ROW. This is the guard's own "what would I see if it were
-  -- silently doing nothing?" case, and the answer without this check is "nothing at all": no row
-  -- means v_cap is NULL, both comparisons below evaluate to NULL, the `if` is FALSE, and ANY amount
-  -- is accepted. The guard does not fail — it evaporates. guardrail_config is a singleton seeded by
-  -- 0011:36, but service_role holds DELETE on it (0011:35), and "unlikely" is not the standard for
-  -- the only bound on a global money resource.
-  if v_cap is null then
+  -- silently doing nothing?" case, and without this the answer is "nothing at all": no row means
+  -- v_cap is NULL, every comparison below is NULL, each `if` is FALSE, and ANY amount is accepted.
+  -- The guard does not fail — it evaporates. guardrail_config is a singleton seeded by 0011:36, but
+  -- service_role holds DELETE on it (0011:35), and "unlikely" is not the standard for the only
+  -- bound on a global money resource.
+  if v_cap is null or v_max_calls is null then
     raise exception 'record_correction_spend: guardrail_config missing — refusing to record unbounded spend';
   end if;
 
-  -- REJECT, never clamp. A silent truncation turns an accounting bug into invisible
-  -- under-reporting: the ledger would look right while the real spend drifted above it. Loud is
-  -- the whole point — this is the only place an inflated report can be caught.
+  -- PER-CALL CEILING. Still correct, still necessary, and NOT sufficient on its own — see the
+  -- header. REJECT, never clamp: a silent truncation turns an accounting bug into invisible
+  -- under-reporting, and this is the only place an inflated report can be caught.
   if p_cents < 0 or p_cents > v_cap then
     raise exception 'record_correction_spend: correction spend % exceeds ceiling %', p_cents, v_cap;
   end if;
 
-  -- NO IDEMPOTENCY TOKEN, deliberately. This records spend that ALREADY happened, so a duplicate
-  -- call over-reports rather than double-charging, and over-count is the safe direction here.
-  insert into spend_ledger (day, actual_cents) values (v_day, p_cents)
-    on conflict (day) do update
-      set actual_cents = spend_ledger.actual_cents + excluded.actual_cents,
-          updated_at = now();
+  -- PER-OWNER-PER-DAY BOUND, CHECKED BEFORE THE GLOBAL LEDGER IS TOUCHED.
+  -- Conditional-UPDATE arbiter, exactly as reserve_serve_model claims its lease (0012:59-66): the
+  -- predicate lives in the `where` of the DO UPDATE and the verdict is row_count. A `select` then
+  -- an `if` would let two concurrent presses both read calls = N-1 and both proceed.
+  -- The INSERT path is unconditional, so call 1 always lands; the UPDATE fires while calls < N.
+  -- Exactly N succeed and the (N+1)th claims nothing.
+  insert into correction_spend (owner_id, day, calls, cents)
+    values (v_owner, v_day, 1, p_cents)
+  on conflict (owner_id, day) do update
+    set calls = correction_spend.calls + 1,
+        cents = correction_spend.cents + excluded.cents
+    where correction_spend.calls < v_max_calls;
+  get diagnostics v_claimed = row_count;
+
+  if v_claimed = 0 then
+    raise exception 'record_correction_spend: owner daily correction limit % reached', v_max_calls;
+  end if;
+
+  -- Only now the GLOBAL ledger. NO IDEMPOTENCY TOKEN, deliberately: this records spend that ALREADY
+  -- happened, so a duplicate over-reports rather than double-charging, and over-count is the safe
+  -- direction. (insert-then-conditional-update mirrors 0012:85-88.)
+  insert into spend_ledger (day) values (v_day) on conflict do nothing;
+  update spend_ledger
+     set actual_cents = actual_cents + p_cents, updated_at = now()
+   where day = v_day;
 end $$;
 
--- (2) GRANTS. `revoke ... from public` removes the PUBLIC pseudo-role and NOT the named role `anon`
+-- (3) GRANTS. `revoke ... from public` removes the PUBLIC pseudo-role and NOT the named role `anon`
 --     — Supabase grants anon EXECUTE at CREATE FUNCTION time via pg_default_acl, so the explicit
---     anon revoke below is load-bearing, not decoration. Measured on prod 2026-08-11 (backlog #33):
+--     anon revoke is load-bearing, not decoration. Measured on prod 2026-08-11 (backlog #33):
 --     26 of 30 public functions were anon-executable exactly because that line was omitted.
+--     (reserve_serve_model deliberately DOES grant anon — the share path needs it. This one does
+--     not: only a signed-in owner corrects a document.)
 revoke all on function record_correction_spend(int) from public;
 revoke all on function record_correction_spend(int) from anon;
 grant execute on function record_correction_spend(int) to authenticated;
@@ -2372,44 +2476,45 @@ grant execute on function record_correction_spend(int) to authenticated;
 - [ ] **Step 4: Apply it and confirm the tests pass**
 
 Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
-Expected: PASS, 6 tests. (`global-setup.ts` applies pending migrations — PR #46.)
+Expected: PASS, 8 tests. (`global-setup.ts` applies pending migrations — PR #46.)
 
-- [ ] **Step 5: Mutation-check the ceiling**
+- [ ] **Step 5: Mutation-check the PER-OWNER bound — the ledger half must go red**
 
-⚠ **The ceiling is the guard. Ask of it: what would I see if it were silently doing nothing?** The
-answer is "every test still green", which is why this step is not optional.
-
-Raise it out of range so the rejection can never fire:
+⚠ **This is the mutation that matters, and the assertion that must fail is the LEDGER one.** Remove
+the per-owner predicate so the bound never fires:
 
 ```sql
-update guardrail_config set correction_max_cents = 2147483647 where id = true;
+-- in the DO UPDATE, delete:  where correction_spend.calls < v_max_calls
 ```
 
 Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
-Expected: **FAIL** on *REJECTS a value above the ceiling*. If it passes, the test is not reaching the
-branch and the guard is untested — fix the test, not the migration.
+Expected: **FAIL** on *bounds ONE owner to N calls/day AND the global ledger to N x ceiling* — and
+specifically on `expect(await ledger() - before).toBe(N * ceiling)`, which will read
+`(N+1) * ceiling`. **If only the rejection assertion fails, the test is not proving containment**,
+which is the exact weakness that let the previous design through. Restore and re-run; expect PASS.
 
-Restore with `update guardrail_config set correction_max_cents = 25 where id = true;` and re-run;
-expected PASS.
+- [ ] **Step 6: Mutation-check the per-call ceiling and the fail-closed branch**
 
-**Second mutation — the one the first cannot reach.** Raising the ceiling proves the *comparison*
-works. It says nothing about the case where `v_cap` is NULL and the comparison is skipped entirely.
-Delete the config row inside a transaction so the fail-closed branch is exercised and nothing is
-left broken:
+Two more, each isolating a different guard.
+
+**(a) The ceiling.** `update guardrail_config set correction_max_cents = 2147483647 where id = true;`
+Expected: **FAIL** on *REJECTS a value above the ceiling*. Restore to 12; re-run; PASS.
+
+**(b) The missing-config branch** — the case (a) cannot reach, because raising a number still leaves
+a number. Inside a transaction so nothing is left broken:
 
 ```sql
 begin;
   delete from guardrail_config where id = true;
-  -- now run: npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts
+  -- run the suite here
 rollback;
 ```
 
-Expected: **FAIL** on *adds the reported cents to TODAY row* with
-`guardrail_config missing — refusing to record unbounded spend`. If instead the test **passes**, the
-`v_cap is null` guard is absent and the clamp silently accepts any amount — which is
+Expected: **FAIL** with `guardrail_config missing — refusing to record unbounded spend`. If the tests
+**pass**, the `v_cap is null` guard is absent and the clamp silently accepts any amount — which is
 indistinguishable from having no clamp.
 
-- [ ] **Step 6: Call it from the route — and do NOT let a failed recording fail the request**
+- [ ] **Step 7: Call it from the route — and do NOT let a failed recording fail the request**
 
 In `serveCloud` (Task 8), **inside** the `if (trimmedCorrections) { … }` block, immediately after the
 `blobStore.put`:
@@ -2420,8 +2525,9 @@ In `serveCloud` (Task 8), **inside** the `if (trimmedCorrections) { … }` block
       //
       // ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST. The money is already spent and the corrected
       // body is already durable in storage; a 500 here would report failure for work that landed and
-      // invite the user to press again — paying twice to fix a bookkeeping error. Log loudly instead.
-      // Same reasoning as the envelope-invalidation failure rule the spec settled in §2.
+      // invite the user to press again — paying twice to fix a bookkeeping error. That includes
+      // hitting the per-owner daily bound: the correction still happened and the user still gets it.
+      // Log loudly instead. Same rule as the envelope-invalidation failure the spec settled in §2.
       if (applied.actualCents != null) {
         const { error: spendError } = await supabase.rpc('record_correction_spend', {
           p_cents: applied.actualCents,
@@ -2439,28 +2545,23 @@ In `serveCloud` (Task 8), **inside** the `if (trimmedCorrections) { … }` block
       }
 ```
 
-- [ ] **Step 7: Write the route-side tests**
+- [ ] **Step 8: Write the route-side tests**
 
 Append to `tests/api/regenerate-cloud.test.ts` (add `rpc: jest.fn()` to the mocked Supabase client
-returned by `createServerSupabase`, and `mockRpc.mockResolvedValue({ error: null })` in `beforeEach`):
+and `mockRpc.mockResolvedValue({ error: null })` in `beforeEach`):
 
 ```ts
 describe('spend recording (spec §5.2)', () => {
   it('records the measured cents after a successful correction', async () => {
-    jest.mocked(gemini.fixSummary).mockResolvedValue({
-      text: MD.replace('Clawcode', 'Claude Code'),
-      usage: { promptTokens: 10_000, outputTokens: 4_000 },
-    });
     await post({ corrections: 'fix Clawcode' });
+    // beforeEach mocks usage { promptTokens: 10_000, outputTokens: 4_000 } -> 2c
     expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: 2 });
   });
 
   // ⚠ THE TITLE OF THIS TEST USED TO SAY "no correction, no spend". THAT WAS FALSE.
-  // `extractQuickView` is a paid Gemini call (lib/gemini.ts:425) and §3 requires it to run on every
-  // press, so a bare press DOES spend — slice A simply cannot see it, because Task 5 measures
-  // `fixSummary` only and `extractQuickView` returns no usage. What this asserts is the narrow,
-  // true thing: no CORRECTION spend is recorded. The quick-view spend on a bare press is
-  // UNRECORDED AND KNOWN, not absent — see the note under this describe block.
+  // extractQuickView is a paid Gemini call (lib/gemini.ts:425) and §3 requires it on every press,
+  // so a bare press DOES spend — slice A simply cannot see it. What this asserts is the narrow true
+  // thing: no CORRECTION spend is recorded.
   it('records no CORRECTION spend on a bare press (the quick-view call is unmeasured, not free)', async () => {
     await post({});
     expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
@@ -2479,114 +2580,100 @@ describe('spend recording (spec §5.2)', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).outcome).toBe('applied');
   });
+
+  it('still returns 200 when the owner hit their daily bound', async () => {
+    mockRpc.mockResolvedValue({ error: { message: 'owner daily correction limit 8 reached' } });
+    const res = await post({ corrections: 'fix X' });
+    expect(res.status).toBe(200);   // the correction happened; only the bookkeeping was refused
+  });
 });
 ```
 
 Run: `npx jest tests/api/regenerate-cloud.test.ts`
 Expected: PASS.
 
-- [ ] **Step 8: Prove the new function is not anon-callable**
+- [ ] **Step 9: Prove the new function is not anon-callable**
 
-Run: `python3 scripts/check-anon-exposure.py`
-Expected: exit 0, with `record_correction_spend` absent from the exposed list.
+Run: `python3 scripts/check-anon-exposure.py --local`
+Expected: exit 0, `record_correction_spend` absent from the exposed list.
 
-⚠ **This script reads PRODUCTION by default** (`CLAUDE_RO_DATABASE_URL`) and its own docstring
-explains why: local and prod *disagree* — 5 vs 10 anon-executable definer functions, measured
-2026-08-21. So before the migration is applied to prod this run tells you about the **old** catalog,
-which is a pass that means nothing about the new function. Run `--local` now for the pre-merge
-signal, and run it again **against prod after the migration is applied** — that second run is the
-one that gates the release. Record which target each run read.
+⚠ **This script reads PRODUCTION by default** (`CLAUDE_RO_DATABASE_URL`), and its docstring explains
+why: local and prod *disagree* — 5 vs 10 anon-executable definer functions, measured 2026-08-21.
+Before the migration is applied to prod, a prod run reports on the **old** catalog, which is a pass
+that means nothing about this function. Run `--local` now, and **again against prod after the
+migration is applied** — that second run gates the release. Record which target each run read.
 
-- [ ] **Step 9: Schema gates — read this before running anything**
+- [ ] **Step 10: Schema gates — read this before running anything**
 
-⚠ **`scripts/check-schema-gates.sh` is the WRONG instrument for this migration, and running it would
-be a green check over the wrong subject.** Measured 2026-08-24: it is scoped to
-`docs/superpowers/specs/2026-08-03-stable-blob-addressing` —
+⚠ **`scripts/check-schema-gates.sh` is the WRONG instrument for this migration.** Measured
+2026-08-24: it is pinned to `SPEC="docs/superpowers/specs/2026-08-03-stable-blob-addressing"`
+(`check-schema-gates.sh:19`), and gates 1–3 read that spec's `schema/*.sql` —
+`check-guard-coverage.py:45` sets `SCHEMA = SPEC / "schema"`. **It never opens
+`supabase/migrations/`**, and that schema is parked (2026-08-11). Running it here would exercise a
+different schema and report green about it: *"a green check over the wrong subject is an assertion in
+better packaging"* (CLAUDE.md).
 
-```
-SPEC="docs/superpowers/specs/2026-08-03-stable-blob-addressing"     # check-schema-gates.sh:21
-run "1/6  schema + assertions"   "$SPEC/verify-schema.sh"
-run "2/6  mutation suite"        "$SPEC/mutate-schema.py"
-SCHEMA = SPEC / "schema"                                            # check-guard-coverage.py:44-46
-```
-
-Gates 1, 2 and 3 read that spec's `schema/*.sql`, **not** `supabase/migrations/`. That schema is also
-PARKED (2026-08-11). Running the suite here would exercise a different schema entirely and report
-green about it — the failure this repo's own CLAUDE.md names: *"a green check over the wrong subject
-is an assertion in better packaging, and more dangerous than prose."*
-
-**What to run instead — each named because it actually reads this migration or its effects:**
+**Run these instead — each reads this migration or its effects:**
 
 | Gate | Command | Reads |
 |---|---|---|
-| The RPC behaves | `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts` | the applied migration, live |
-| The ceiling is load-bearing | Step 5's mutation | the applied migration, live |
+| The RPC behaves, both bounds | `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts` | the applied migration, live |
+| The per-owner bound is load-bearing | Step 5's mutation | the applied migration, live |
+| The ceiling and fail-closed branch are load-bearing | Step 6's two mutations | the applied migration, live |
 | anon cannot call it | `python3 scripts/check-anon-exposure.py` (`--local`, then prod after deploy) | the live catalog |
 | Docs integrity | `python3 scripts/check-docs.py` | the repo |
 
-⚠ **None of these is in CI** (`docs/dev-process.md`, *"Not yet in CI: `test:integration` … and the
-schema gates (need a live Postgres)"*). They must be run **locally before asking for a merge**, and
-the PR body must say which ran and against what.
+⚠ **None of these is in CI** (`docs/dev-process.md`: *"Not yet in CI: `test:integration` … and the
+schema gates"*). Run them locally before asking for a merge, and say in the PR which ran and against
+what.
 
-- [ ] **Step 10: Typecheck, full unit suite, commit**
+- [ ] **Step 11: Typecheck, full unit suite, commit**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.
 
 ```bash
 git add supabase/migrations/0026_record_correction_spend.sql app/api/videos/[id]/regenerate/route.ts tests/integration/record-correction-spend.int.test.ts tests/api/regenerate-cloud.test.ts
-git commit -m "feat(#23): record a correction's actual spend through one clamped RPC"
+git commit -m "feat(#23): record correction spend, bounded per owner per day"
 ```
 
-#### ⚠ What this task records, and what it misses — stated because a partial ledger reads as a complete one
+#### ⚠ What this task records, and what it misses
 
 **Slice A records the `fixSummary` call and nothing else.** A correction makes **two** paid Gemini
-calls, and only one is measured:
+calls and only one is measured:
 
 | Call | Paid? | Measured? | Why |
 |---|---|---|---|
 | `fixSummary` | yes | **yes** — Task 5 reads `usageMetadata` | signature is ours to change |
-| `extractQuickView` (`lib/gemini.ts:425`) | **yes** | **no** | returns `{ tldr, takeaways }` only; nothing in the repo has ever read its usage |
+| `extractQuickView` (`lib/gemini.ts:425`) | **yes** | **no** | returns `{ tldr, takeaways }` only; nothing in the repo reads its usage |
 
-Two consequences, both real and neither visible in the ledger:
+So every correction under-reports by the quick-view cost, and **a bare press spends and records
+nothing at all**. Not introduced here — it is the boundary of what Task 5 can measure without
+changing a function with six callers. Written down so nobody reads a moving ledger as a complete one.
+Filed as slice-A residue on backlog **#61** alongside the `signal` gap: same signature, one change
+closes both.
 
-1. **Every correction under-reports** by the quick-view call's cost.
-2. **A bare press spends and records nothing at all** — §3 requires `extractQuickView` to run
-   unconditionally, so a press that applies no correction still buys an extraction. There is no
-   `record_correction_spend` call on that path because there is no measured amount to pass.
+#### Ordering: no new task-order edge, one widened release edge
 
-This is not a defect introduced here; it is the boundary of what Task 5 can measure without changing
-a function with six callers. **It is written down so nobody reads a moving ledger as a complete one.**
-Filed as slice-A residue on backlog **#61** alongside the `signal` gap: both are the same
-`extractQuickView` signature, and one change closes both.
+**No task-order edge.** `correction_spend` and the two `guardrail_config` columns are created and
+consumed entirely within T9; no other task references them. T9's existing dependencies (T5 for
+`actualCents`, T8 for the `serveCloud` block) are unchanged, and nothing here touches `isFresh`, the
+body write or the serve path — so `T3 → T10 → T4` is unaffected.
 
-#### ⛔ The aggregate bound is NOT designed here — blocked on task #129
+⚠ **And a limitation of the guard, stated rather than assumed:** `scripts/check-plan-task-order.py`
+(T12 step 4) compares **identifiers in `Consumes`/`Produces` blocks**. A SQL object named only inside
+a step's code fence is invisible to it. It would **not** have caught a task using `correction_spend`
+before T9 creates it. That is acceptable here — the object has exactly one consumer, in the same
+task — but do not read a green run as coverage of SQL dependencies.
 
-Both halves of the Post-Plan Gate independently found that a per-call ceiling does not stop one
-account from exhausting the **global** daily cap: `daily_cap_cents` defaults to 500 (`0011:28`) and
-this ceiling is 25, so ~20 direct `POST /rest/v1/rpc/record_correction_spend` calls fill it for every
-user, at zero real spend. The clamp bounds the size of one report; nothing bounds the number of them.
-
-**#129 has been reopened with that information and no option has been chosen. Do not invent a bound
-here.** The candidates on the table are a per-owner daily counter mirroring `serve_model_charge`'s
-`unique (owner_id, doc_key, day)` (`0012:13`), moving the RPC off the session client entirely, or
-accepting the reservation protocol that slice C already owns. Each is a different slice boundary.
-
-#### ⚠ Deploy-order coupling — a RELEASE constraint, not a task-order one
-
-This does not affect the `T3 → T10 → T4` chain; nothing here touches `isFresh`, the body write or
-the serve path. It creates a different coupling, at a different layer, and the constraints section at
-the top is deliberately not the place for it:
-
-**The migration must be applied to prod BEFORE the image that calls the RPC is deployed.** In the
-window between a deploy and a migration, `serveCloud` calls a function that does not exist. Step 6's
-log-and-continue rule is what keeps that from being expensive — the correction still lands and the
-user still gets 200 — but the spend goes unrecorded for the whole window and only the log says so.
-This repo has the scar: prod ran **8 days behind on a migration** without anyone noticing
-(`context-compaction-protocol`), which is exactly how that window gets long.
-
-Release order: **apply `0026` → re-run `scripts/check-anon-exposure.py` against prod → deploy the
-image.** Put those three in the PR description in that order.
+**The release edge widens.** The migration now creates a **table** and two config columns as well as
+a function, so the ordering is unchanged in shape and larger in consequence: **apply `0026` →
+re-run `scripts/check-anon-exposure.py` against prod → deploy the image.** Between a deploy and an
+un-applied migration, `serveCloud` calls a function that does not exist — step 7's log-and-continue
+rule is what keeps that from being expensive, but the spend goes unrecorded for the whole window and
+only the log says so. This repo ran **8 days behind on a migration** without noticing
+(`context-compaction-protocol`), which is how that window gets long. Put those three steps, in that
+order, in the PR description.
 
 ---
 
