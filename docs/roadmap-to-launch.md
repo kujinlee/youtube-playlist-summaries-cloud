@@ -1166,9 +1166,8 @@ assertion, so jest stopped and **the ledger assertion was never evaluated** — 
 that (b′) exists to make was resting on a line no mutation reached. Split into two independent
 tests; under M1 both now fail, HALF TWO reading `Expected 96 / Received 108` = (N+1) × ceiling.
 
-**Still owed before deploy:** `scripts/check-anon-exposure.py` against **prod**, *after* `0026` is
-applied there. A prod run beforehand reports on the old catalog. Release order unchanged: apply
-`0026` → re-check anon exposure against prod → deploy the image.
+**✅ DISCHARGED 2026-08-24.** `0026` applied to prod → anon-exposure re-run against prod (exit 0)
+→ deployed as **release v8**. Nothing owed before deploy remains; the release order was followed.
 
 ### Owed, and tracked rather than implied
 
@@ -1324,7 +1323,7 @@ unapplied for eight days while every document read "merged, done".
   always knew the answer. Deleting a hand-maintained cache of a computable value beat building a
   second mechanism to police it, which is the same reasoning that already retired this field's
   sibling, the PR range.
-- **Deployed: release v7, 2026-08-18 04:35Z** (`fly status`: web + worker both v7). Shipped the #36
+- **Deployed: release v8, 2026-08-24 21:18Z** (`fly status`: web `28654674b19d78` and worker `7811d65df64328` BOTH on version 8, both started; `GET /` → 307, the expected auth redirect). Shipped backlog **#23 slice A — corrections in the cloud** (PRs #134 + #135) from master `a4f906a`. Migration **`0026` applied to prod first**, then `check-anon-exposure.py` re-run against prod (exit 0, `subject: PRODUCTION`), and the prod catalog read directly: `record_correction_spend` exists, `anon` EXECUTE **false**, `authenticated` **true**, `correction_spend` present, `ceiling=12 N=8`. That order is load-bearing — a prod anon check *before* the migration reads a catalog without the function in it and passes about nothing.
   encoder and everything else on `master` at `324ec77`. Prod schema was checked against
   `supabase/migrations/*.sql` first — 25 migrations, identical, and this change needed none.
   **Verified live, not merely released:** the original failing Korean-titled video re-ingests,
