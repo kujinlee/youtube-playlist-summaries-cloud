@@ -74,6 +74,48 @@ describe('assertStructurePreserved', () => {
       .toThrow(expect.objectContaining({ reason: 'section-timestamp' }));
   });
 
+  /**
+   * MEASURED IN PRODUCTION 2026-08-24, on the first successful live correction (release v9). The
+   * model applied the requested fix AND silently corrupted one character of a `▶` URL:
+   *
+   *     before  ▶ [9:23–13:23](https://www.youtube.com/watch?v=E3U-AquW5hs&t=563s)
+   *     after   ▶ [9:23–13:23](https://www.youtube.com=watch?v=E3U-AquW5hs&t=563s)
+   *
+   * **The validator accepted it and the broken link is durable in a paid document.** `startSec` is
+   * parsed out of `&t=563s` and `endSec` out of the `[9:23–13:23]` label; both survived, so the two
+   * fields the guard compared were identical while the line around them was not.
+   *
+   * Backlog #23 specifies this validator as "H2 sequence + `▶` tuples **byte-identical** pre/post".
+   * The implementation compared two PARSED NUMBERS instead — correct about the tuple it named,
+   * blind to the rest of the line it claimed to guard. `label` and `url` were already on the parsed
+   * shape (parse.ts:39), so the fix is to compare what was always there.
+   */
+  it('rejects a corrupted ▶ URL whose parsed seconds are UNCHANGED — the prod case', () => {
+    const after = DOC.replace('www.youtube.com/watch?v=abc12345678&t=300s',
+                              'www.youtube.com=watch?v=abc12345678&t=300s');
+    expect(after).not.toEqual(DOC);
+    // Both seconds are untouched: t=300s still parses to 300, the label still says 5:00–10:00.
+    // Nothing but a byte comparison of the line can see this.
+    expect(() => assertStructurePreserved(DOC, after))
+      .toThrow(expect.objectContaining({ reason: 'section-timestamp' }));
+  });
+
+  it('rejects a reworded ▶ LABEL whose seconds still parse the same', () => {
+    // `endSec` comes from splitting the label on the en dash, so `5:00–10:00` → `5:00 – 10:00`
+    // parses to the same numbers while the rendered text differs.
+    const after = DOC.replace('[5:00–10:00]', '[5:00 – 10:00]');
+    expect(after).not.toEqual(DOC);
+    expect(() => assertStructurePreserved(DOC, after))
+      .toThrow(expect.objectContaining({ reason: 'section-timestamp' }));
+  });
+
+  it('still accepts a document whose ▶ lines are untouched', () => {
+    // The guard against over-tightening: the prose rewrite above must keep passing, and does,
+    // because nothing on the ▶ line changed.
+    const after = DOC.replace('Original prose two.', 'Corrected prose two.');
+    expect(() => assertStructurePreserved(DOC, after)).not.toThrow();
+  });
+
   it('rejects a dropped H1 with reason missing-h1', () => {
     const after = DOC.replace('# A Title\n', '');
     expect(() => assertStructurePreserved(DOC, after))

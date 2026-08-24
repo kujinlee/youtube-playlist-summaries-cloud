@@ -73,5 +73,18 @@ export function assertStructurePreserved(before: string, after: string): void {
         `section ${i} ▶ tuple changed: (${ta.startSec},${ta.endSec}) → (${tb.startSec},${tb.endSec})`,
       );
     }
+    // ⚠ COMPARE THE LINE, NOT ONLY THE NUMBERS PARSED OUT OF IT. Backlog #23 specifies "▶ tuples
+    // byte-identical pre/post"; comparing startSec/endSec alone is weaker than that, and the gap
+    // was not theoretical. MEASURED in production 2026-08-24 on the first successful live
+    // correction: the model changed `www.youtube.com/watch` to `www.youtube.com=watch` on one ▶
+    // line. `&t=563s` and the `[9:23–13:23]` label were untouched, so both compared fields matched
+    // and a broken link went into a paid document. `label` and `url` were already on the parsed
+    // shape (parse.ts:39) — this compares what was there all along.
+    if (ta !== null && tb !== null && (ta.label !== tb.label || ta.url !== tb.url)) {
+      throw new StructuralValidationError(
+        'section-timestamp',
+        `section ${i} ▶ line changed: "[${ta.label}](${ta.url})" → "[${tb.label}](${tb.url})"`,
+      );
+    }
   }
 }

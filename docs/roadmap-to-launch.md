@@ -1299,7 +1299,7 @@ unapplied for eight days while every document read "merged, done".
   anyone wrote a clause. Any new unfalsifiable gate now fails immediately, with no slack.
 
 **Current state (2026-08-12, still accurate except where the block above supersedes it):**
-- **`master` is clean** — tsc clean, **2816 unit / 274 suites** green, plus **522 integration**
+- **`master` is clean** — tsc clean, **2819 unit / 274 suites** green, plus **522 integration**
   (519 passed + 3 skipped, measured 2026-08-17 against a live local stack; integration does not run
   in CI and is therefore NOT verified by the check below — treat it as a dated note, not a live
   number). **The unit counts above are verified on every CI run** by `scripts/check-test-counts.py`,
