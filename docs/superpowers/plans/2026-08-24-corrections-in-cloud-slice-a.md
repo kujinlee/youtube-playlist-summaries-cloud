@@ -2985,7 +2985,7 @@ mutation-checks that stop a green suite from certifying a no-op.
 none is running, the run must **fail loudly and say NOT RUN** — a skipped money assertion that
 reports green is worse than a red one.
 
-- [ ] **Step 1: Write the unit-level falsifiers**
+- [x] **Step 1: Write the unit-level falsifiers**
 
 Create `tests/lib/corrections/falsifiers.test.ts`:
 
@@ -3382,7 +3382,7 @@ Write the mutation table above into the PR body with a PASS/FAIL column filled i
 actually observed, and state plainly which integration tests were **NOT RUN** and why. A tick that
 does not say what it was verified against is not evidence.
 
-- [ ] **Step 6: Full suite, typecheck, commit**
+- [x] **Step 6: Full suite, typecheck, commit**
 
 Run: `npx tsc --noEmit && npx jest`
 Expected: no type errors; all suites pass.
