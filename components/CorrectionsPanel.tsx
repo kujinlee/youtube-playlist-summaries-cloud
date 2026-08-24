@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Video } from '@/types';
+import { useScope } from '@/lib/client/scope';
 
 type Patch = Partial<Pick<Video, 'corrections' | 'tldr' | 'takeaways' | 'summaryHtml'>>;
 
 interface CorrectionsPanelProps {
   videoId: string;
-  outputFolder: string;
   initialCorrections: string | undefined;
   onClose: () => void;
   onSuccess: (patch: Patch) => void;
@@ -16,14 +16,15 @@ interface CorrectionsPanelProps {
 
 export default function CorrectionsPanel({
   videoId,
-  outputFolder,
   initialCorrections,
   onClose,
   onSuccess,
 }: CorrectionsPanelProps) {
+  const scope = useScope();
   const [corrections, setCorrections] = useState(initialCorrections ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [outcome, setOutcome] = useState<'applied' | 'no-corrections' | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-focus textarea on mount
@@ -45,11 +46,18 @@ export default function CorrectionsPanel({
     if (busy) return;
     setBusy(true);
     setError('');
+    setOutcome(null);
     try {
-      const res = await fetch(`/api/videos/${encodeURIComponent(videoId)}/regenerate`, {
+      const qs = scope.mode === 'cloud' ? `?playlist=${encodeURIComponent(scope.playlistId)}` : '';
+      // The cloud branch REJECTS outputFolder (it is a local filesystem concept), so send one or the
+      // other — never both.
+      const payload = scope.mode === 'cloud'
+        ? { corrections }
+        : { outputFolder: scope.outputFolder, corrections };
+      const res = await fetch(`/api/videos/${encodeURIComponent(videoId)}/regenerate${qs}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ outputFolder, corrections }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
       if (!res.ok) {
@@ -62,7 +70,15 @@ export default function CorrectionsPanel({
         takeaways: data.takeaways as string[] | undefined,
         summaryHtml: (data.summaryHtml ?? null) as string | null,
       });
-      onClose();
+      // ⚠ THE PANEL STAYS OPEN ON A NO-OP, and this is not what the plan wrote. The plan added a
+      // `role="status"` line to the panel while leaving the unconditional `onClose()` below — the
+      // panel unmounts, so that message could never be seen and the §6 discriminator would exist in
+      // the DOM tree of nothing. A no-op press is exactly the case the discriminator is FOR: the
+      // reader needs to be told nothing was applied, which requires something still on screen.
+      // An applied correction closes as before; there the changed summary is its own feedback.
+      const settled = data.outcome === 'no-corrections' ? 'no-corrections' : 'applied';
+      setOutcome(settled);
+      if (settled === 'applied') onClose();
     } catch {
       setError('Regeneration failed');
     } finally {
@@ -102,12 +118,17 @@ export default function CorrectionsPanel({
           value={corrections}
           onChange={(e) => setCorrections(e.target.value)}
           rows={5}
-          maxLength={1000}
+          maxLength={1000}   /* mirrored server-side as MAX_CORRECTIONS_CHARS (lib/corrections/apply-core.ts) */
           disabled={busy}
           className="w-full rounded bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:opacity-50"
           placeholder="e.g. Fix 'Clawcode' → 'Claude Code'; fix 'Ant Throw Pick' → 'Anthropic'"
         />
         {error && <p role="alert" className="text-xs text-red-400 mt-1">{error}</p>}
+        {outcome === 'no-corrections' && (
+          <p role="status" className="text-xs text-zinc-400 mt-1">
+            No corrections to apply — the quick reference was refreshed.
+          </p>
+        )}
         <div className="flex justify-end gap-2 mt-3">
           <button
             type="button"

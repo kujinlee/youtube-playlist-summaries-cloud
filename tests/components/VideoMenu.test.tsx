@@ -111,11 +111,18 @@ const fullVideo = {
   docVersion: { major: 3, minor: 3 },
 };
 
-it('cloud mode: shows only "Watch on YouTube" and Archive/Unarchive', () => {
+it('cloud mode: Watch on YouTube, Archive/Unarchive, and Edit corrections', () => {
   renderMenu(<VideoMenu {...props} video={fullVideo as any} />, CLOUD_SCOPE);
 
   expect(screen.getByRole('link', { name: /Watch on YouTube/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^Archive$/i })).toBeInTheDocument();
+
+  // CHANGED 2026-08-24 by slice A T11 (backlog #23). "Edit corrections" was gated out of cloud mode
+  // because the route could not execute under Supabase — getStorageBundle() threw without a client.
+  // T8 gave it a cloud branch, so the gate is now the only thing standing between a cloud user and
+  // a working feature. This assertion moved from queryByText(...).toBeNull() to getByText, which is
+  // the whole point of the task; the rest of the cloud-hidden list is unchanged and still guarded.
+  expect(screen.getByText(/Edit corrections/i)).toBeInTheDocument();
 
   expect(screen.queryByText(/Ask Gemini/i)).toBeNull();
   expect(screen.queryByText(/Open in Obsidian/i)).toBeNull();
@@ -123,7 +130,6 @@ it('cloud mode: shows only "Watch on YouTube" and Archive/Unarchive', () => {
   expect(screen.queryByText(/Re-summarize/i)).toBeNull();
   expect(screen.queryByText(/Save summary PDF/i)).toBeNull();
   expect(screen.queryByText(/Save dig-deeper PDF/i)).toBeNull();
-  expect(screen.queryByText(/Edit corrections/i)).toBeNull();
 });
 
 it('cloud mode: Archive/Unarchive still calls onArchive + onClose', () => {

@@ -2813,7 +2813,7 @@ git commit -m "fix(#23): serve the stale model on attempts_exhausted and at_capa
   and error bodies `{ error: string; code?: 'corrections-too-long' | 'summary-too-large' | 'repair-needed' }`.
 - Produces: `CorrectionsPanel` drops its `outputFolder` prop and reads the scope itself.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/components/CorrectionsPanel.test.tsx`:
 
@@ -2880,12 +2880,12 @@ it('shows the over-cap message, not a generic failure', async () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `npx jest tests/components/CorrectionsPanel.test.tsx`
 Expected: FAIL — TypeScript reports the missing required `outputFolder` prop.
 
-- [ ] **Step 3: Make the panel scope-aware**
+- [x] **Step 3: Make the panel scope-aware**
 
 In `components/CorrectionsPanel.tsx`, remove `outputFolder` from `CorrectionsPanelProps`, add
 `import { useScope } from '@/lib/client/scope';`, and replace `handleRegenerate`'s fetch (`:49-53`):
@@ -2931,7 +2931,7 @@ And annotate the `maxLength` at `:105`:
           maxLength={1000}   {/* mirrored server-side as MAX_CORRECTIONS_CHARS (lib/corrections/apply-core.ts) */}
 ```
 
-- [ ] **Step 4: Update the two call sites**
+- [x] **Step 4: Update the two call sites**
 
 `components/VideoRow.tsx:199-207` — drop the prop:
 
@@ -2950,12 +2950,12 @@ And annotate the `maxLength` at `:105`:
       {video.summaryMd && (
 ```
 
-- [ ] **Step 5: Run the tests and confirm they pass**
+- [x] **Step 5: Run the tests and confirm they pass**
 
 Run: `npx jest tests/components/CorrectionsPanel.test.tsx`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 6: Typecheck, full suite, commit**
+- [x] **Step 6: Typecheck, full suite, commit**
 
 Run: `npx tsc --noEmit && npx jest`
 
