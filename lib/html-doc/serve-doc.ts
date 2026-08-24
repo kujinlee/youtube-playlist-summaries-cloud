@@ -69,13 +69,17 @@ export async function resolveMagazineModel(args: {
 }): Promise<ResolveResult> {
   const { supabaseClient, blobStore, principal, playlistId, videoId, base, parsed, language, mdBody, signal } = args;
   const titles = parsed.sections.map((s) => s.title);
+  // The body hash the envelope's own `sourceMdHash` is compared against (spec §2, option (e)).
+  // Same function, same input shape as the write at :181, so an unchanged document hashes equal
+  // on every serve: canonicalizeMd folds CRLF, trailing newlines and NFC (content-hash.ts:9-13).
+  const currentMdHash = mdHash(mdBody);
   // `reserve_serve_model`'s own key formula (`0012_serve_model_charge.sql:53`). Every money log
   // below carries it, because round-3 review H-R3-1 measured that not one of them named an owner,
   // a document, a day or a token — so an operator reading `REFUND NOT APPLIED` had nothing to look
   // up in any table. An alarm you cannot attribute is not much better than no alarm.
   const docKey = `${playlistId}/${videoId}`;
 
-  const fresh = await readFreshMagazineModel({ blobStore, principal, base, titles });
+  const fresh = await readFreshMagazineModel({ blobStore, principal, base, titles, currentMdHash });
   if (fresh.status === 'ok') return { status: 'ok', model: fresh.model }; // B1 — no Gemini, no reserve
 
   // ── MONEY GUARD — never spend on an UNPROVABLE read.
@@ -138,7 +142,7 @@ export async function resolveMagazineModel(args: {
     case 'denied': return { status: 'denied' };
     case 'in_flight': {
       // Single-flight: another attempt holds the lease. Serve the model if it landed meanwhile, else busy.
-      const now = await readFreshMagazineModel({ blobStore, principal, base, titles });
+      const now = await readFreshMagazineModel({ blobStore, principal, base, titles, currentMdHash });
       return now.status === 'ok' ? now : { status: 'busy' };
     }
     // CAPACITY answers, not authorization answers: the owner is entitled to this document, we just
