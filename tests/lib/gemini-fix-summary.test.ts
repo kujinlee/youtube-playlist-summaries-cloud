@@ -109,3 +109,91 @@ describe('fixSummary reports what the call actually used', () => {
     expect(r.usage).toBeNull();   // "could not measure" is not "cost nothing"
   });
 });
+
+/**
+ * MEASURED IN PRODUCTION 2026-08-24, on the first live press of the shipped feature. The fixtures
+ * below are the ACTUAL leading bytes of eight real `gemini-2.5-flash` rolls against a real summary,
+ * not invented shapes:
+ *
+ *     ```\n---\ntags:            5 rolls
+ *     ```markdown\n---\ntags:    1 roll
+ *     ---\ntags:                 2 rolls
+ *
+ * So the model wraps the returned document in a markdown code fence roughly three times in four —
+ * unsurprisingly, since a document that opens with `---` looks like YAML and the fence is how a
+ * chat model says "this is a document". `assertStructurePreserved` then rejects it on
+ * `missing-frontmatter`, the whole paid correction is discarded, and the user gets a 500.
+ *
+ * The correction itself was applied correctly in 8 rolls out of 8. Only the packaging was wrong.
+ *
+ * WHY THIS BELONGS IN fixSummary AND NOT IN THE VALIDATOR. A fence around the entire response is a
+ * TRANSPORT artifact of the chat interface — it is not part of the document the caller asked for,
+ * and every caller of fixSummary would otherwise have to strip it. Loosening the validator instead
+ * would be the wrong repair: it exists precisely to refuse documents it cannot vouch for, and it
+ * did its job here, naming the reason exactly enough to diagnose this in one sampling run.
+ *
+ * WHY THE SUITE MISSED IT. Every existing test mocks this boundary, and a person writing a fixture
+ * writes the bare document. The tests asserted the contract we imagined; production had the other
+ * one. That is the class Phase 4 verification exists to catch and unit tests structurally cannot.
+ */
+describe('fixSummary unwraps a whole-response code fence — measured prod behaviour', () => {
+  const DOC = '---\ntags:\n  - video-summary\n---\n\n# Title\n\nBody text.';
+
+  it('strips a bare ``` fence wrapping the entire document (5 of 8 prod rolls)', async () => {
+    mockGenerateContent.mockResolvedValue(ok('```\n' + DOC + '\n```'));
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+    expect(r.text).toBe(DOC);
+    expect(r.text.startsWith('---\n')).toBe(true);   // what the validator actually asks
+  });
+
+  it('strips a ```markdown info-string fence (1 of 8 prod rolls)', async () => {
+    mockGenerateContent.mockResolvedValue(ok('```markdown\n' + DOC + '\n```'));
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+    expect(r.text).toBe(DOC);
+  });
+
+  it('strips a ~~~ fence too — the other fence character markdown allows', async () => {
+    mockGenerateContent.mockResolvedValue(ok('~~~\n' + DOC + '\n~~~'));
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+    expect(r.text).toBe(DOC);
+  });
+
+  it('leaves an unwrapped document EXACTLY alone (2 of 8 prod rolls)', async () => {
+    mockGenerateContent.mockResolvedValue(ok(DOC));
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+    expect(r.text).toBe(DOC);
+  });
+
+  // The three cases below are why this is a narrow unwrap and not a `replace(/```/g, '')`.
+  it('does NOT touch a fenced code block INSIDE the document', async () => {
+    const withCode = DOC + '\n\n```bash\nnpm test\n```\n\nTrailing prose.';
+    mockGenerateContent.mockResolvedValue(ok(withCode));
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+    expect(r.text).toBe(withCode);
+  });
+
+  it('does NOT strip when only the OPENING fence is present — that is not a wrapper', async () => {
+    // Asymmetric means the response is something else (truncation, a code block that opens the
+    // document). Stripping one side would corrupt it, and the validator refusing is then correct.
+    const openOnly = '```\n' + DOC;
+    mockGenerateContent.mockResolvedValue(ok(openOnly));
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+    expect(r.text).toBe(openOnly);
+  });
+
+  it('does NOT strip when the two fences use DIFFERENT characters', async () => {
+    const mismatched = '```\n' + DOC + '\n~~~';
+    mockGenerateContent.mockResolvedValue(ok(mismatched));
+    const r = await fixSummary('md', 'c', { signal: new AbortController().signal });
+    expect(r.text).toBe(mismatched);
+  });
+
+  it('treats an EMPTY fenced block as empty content, not as a document', async () => {
+    // The empty-content check must see through the wrapper. Otherwise '```\n\n```' is a non-empty
+    // string, passes the check, and reaches the validator as a document with no frontmatter —
+    // reporting a structural failure for what is really an empty response.
+    mockGenerateContent.mockResolvedValue(ok('```\n\n```'));
+    await expect(fixSummary('md', 'c', { signal: new AbortController().signal }, 0))
+      .rejects.toThrow(/empty content/);
+  });
+});
