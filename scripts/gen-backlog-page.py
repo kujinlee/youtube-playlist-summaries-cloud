@@ -105,6 +105,10 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "follow it — the database row carries no stable identity to hang it on."),
         (25, "Rendered pages and PDFs have no identity of their own either. Two designs for one "
              "have already been refuted, so this needs a fresh pass."),
+        (60, "Corrections you type never reach a summary the background worker regenerates on its "
+             "own — and the row claims they were applied. Fixing it is blocked by the same "
+             "overwrite problem as the items above: the corrected version can be thrown away while "
+             "the record still says it exists."),
      ]),
     ("Anonymous users hold more database access than intended",
      "All measured in production, and none of it currently reachable through the web API — but the "
@@ -124,6 +128,10 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "workspace. Decide whether cleanup is ever allowed to release it."),
         (28, "If reserving budget times out, 6¢ is stranded permanently and an attempt is burned. "
              "Introduced by the serve-path work this month."),
+        (61, "Cloud corrections will record what they spent <em>after</em> the call rather than "
+             "reserving it first — a deliberate choice to keep the first slice shippable. This "
+             "adds the reservation, and a check that the spending bound still covers everything "
+             "the job pays for once corrections run inside it."),
      ]),
     ("Sync",
      "One item, and its symptom is silence rather than an error.", [
