@@ -499,6 +499,37 @@ ${summaryMarkdown}
 /** What one Gemini call actually consumed, as the SDK reported it. */
 export interface GeminiUsage { promptTokens: number; outputTokens: number }
 
+/**
+ * Remove a code fence that wraps the ENTIRE response, and nothing else.
+ *
+ * MEASURED IN PRODUCTION 2026-08-24, on the first live press of the correction feature: of eight
+ * `gemini-2.5-flash` rolls on one real summary, five opened with ```` ```\n---\ntags: ````, one with
+ * ```` ```markdown\n---\n ````, and two with the bare document. The corrected text was right in all
+ * eight — only the packaging differed. Unwrapped, `assertStructurePreserved` rejects six of them on
+ * `missing-frontmatter` and the paid correction is discarded, so the feature failed about three
+ * times in four while charging for every attempt.
+ *
+ * It is not mysterious that the model does this: the document opens with `---`, which reads as YAML,
+ * and a fence is how a chat model marks "the whole of this is a document". The fence is therefore a
+ * TRANSPORT artifact, and the seam that turns a model response into text is where it belongs — not
+ * in `assertStructurePreserved`, which is right to refuse a document it cannot vouch for.
+ *
+ * DELIBERATELY NARROW, because the payload is markdown and markdown contains fences. It unwraps
+ * only when the first line is a lone fence (optionally with an info string) AND the last line is a
+ * lone fence OF THE SAME CHARACTER. An asymmetric or mismatched pair is left intact: that is not a
+ * wrapper, it is a truncated response or a document that genuinely opens with a code block, and
+ * stripping one side would corrupt it.
+ */
+export function unwrapFencedDocument(text: string): string {
+  const lines = text.split('\n');
+  if (lines.length < 2) return text;
+  const open = lines[0].match(/^(```|~~~)[^\n`~]*$/);
+  if (!open) return text;
+  const close = lines[lines.length - 1].trim();
+  if (close !== open[1]) return text;
+  return lines.slice(1, -1).join('\n').trim();
+}
+
 export async function fixSummary(
   mdContent: string,
   corrections: string,
@@ -542,7 +573,9 @@ ${mdContent}
         signal: opts.signal,
       });
       assertNotTruncated(result);
-      const corrected = result.response.text().trim();
+      // Unwrap BEFORE the empty check: '```\n\n```' is a non-empty string but an empty response,
+      // and letting it through would report a structural failure for what is really nothing back.
+      const corrected = unwrapFencedDocument(result.response.text().trim());
       if (!corrected) throw new Error('Gemini returned empty content');
       const um = (result.response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
       // null, NEVER 0. "The SDK did not report usage" and "this call cost nothing" are different
