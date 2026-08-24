@@ -1142,30 +1142,33 @@ path is untouched; **(b′)** spend is recorded behind a per-owner-per-day bound
 make it safe. Held during implementation and now also held by `blockedBy` edges and by
 `scripts/check-plan-task-order.py` (compile-order half only — the chain itself is semantic).
 
-### ⚠ Before this can merge — all four need a live stack, none has run
+### ✅ All four gates RAN on 2026-08-24 — the migration is executed, not asserted
 
-> **Why they did not run, stated precisely, because the first two attempts to state it were wrong.**
-> The Docker CLI is installed and Docker Desktop's process is running, but the **daemon API is
-> wedged**: `docker info` and `docker ps` both hang indefinitely. Port 54322 *accepts TCP* — Docker
-> Desktop's port-forwarder keeps listening after the container behind it stops answering — so
-> `nc -z` reports OPEN while `supabase migration up` times out connecting to
-> `host=127.0.0.1 user=postgres`. **A port that accepts a handshake is not a database.**
-> `global-setup.ts` then refused to run, which is exactly the behaviour the 0023 incident bought.
-> Fix: restart the Docker daemon, then re-run all four.
+| Gate | Result |
+|---|---|
+| `tests/integration/record-correction-spend.int.test.ts` | ✅ **9/9** (the falsifier split into two independent tests — see below) |
+| The three T9 mutations | ✅ **3/3 caught** |
+| `tests/integration/corrections-cloud.int.test.ts` | ✅ **7/7** |
+| `scripts/check-anon-exposure.py --local` | ✅ pass; catalog confirms `anon` EXECUTE = **false** |
 
-- [ ] `tests/integration/record-correction-spend.int.test.ts` (8 cases) — **the money path.**
-      The SQL in `0026_record_correction_spend.sql` **has never been executed.**
-- [ ] The three T9 mutations: the per-owner bound (the **ledger** half must go red), the ceiling,
-      and the missing-config branch
-- [ ] `tests/integration/corrections-cloud.int.test.ts` (7 cases) — written, never run
-- [ ] `python3 scripts/check-anon-exposure.py --local`, **and again against prod after `0026` is
-      applied** — a prod run beforehand reports on the old catalog
+`0026` has executed: `correction_spend` exists, the RPC exists, `guardrail_config` reads
+`ceiling=12 N=8`. Unit suite 2,808 / 274, `tsc` 0.
 
-**Release order, and it binds the deploy not the schedule:** apply `0026` → re-run the anon-exposure
-check against prod → deploy the image. Between a deploy and an un-applied migration, `serveCloud`
-calls a function that does not exist; the log-and-continue rule keeps that cheap, but the spend goes
-unrecorded for the whole window and only the log says so. This repo ran **8 days behind on a
-migration** without noticing.
+**Four defects found, all in the TESTS, none in the production code** — every one an instrument
+measuring something other than its subject: `anonSession()` mints an *authenticated* user (so the
+`anon` test never touched the role); `cookies()` outside a request scope killed 7/7 before any
+assertion; a missing `beforeEach(clearAllMocks)` made `not.toHaveBeenCalled()` count the whole
+file's history; and `psql -f /tmp/…` reads the **container's** filesystem, so mutation M1 never
+applied while printing `Tests: 8 passed` — indistinguishable from a surviving mutation.
+
+**⚠ And the finding the plan predicted:** under M1 the combined falsifier failed on the *rejection*
+assertion, so jest stopped and **the ledger assertion was never evaluated** — the containment claim
+that (b′) exists to make was resting on a line no mutation reached. Split into two independent
+tests; under M1 both now fail, HALF TWO reading `Expected 96 / Received 108` = (N+1) × ceiling.
+
+**Still owed before deploy:** `scripts/check-anon-exposure.py` against **prod**, *after* `0026` is
+applied there. A prod run beforehand reports on the old catalog. Release order unchanged: apply
+`0026` → re-check anon exposure against prod → deploy the image.
 
 ### Owed, and tracked rather than implied
 

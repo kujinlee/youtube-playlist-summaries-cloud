@@ -2340,7 +2340,7 @@ it('the ceiling covers the worst case §5.1 can produce, and N x ceiling stays a
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails for the right reason**
+- [x] **Step 2: Run it and confirm it fails for the right reason**
 
 Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
 Expected: FAIL — PostgREST reports `Could not find the function public.record_correction_spend`.
@@ -2473,12 +2473,12 @@ revoke all on function record_correction_spend(int) from anon;
 grant execute on function record_correction_spend(int) to authenticated;
 ```
 
-- [ ] **Step 4: Apply it and confirm the tests pass**
+- [x] **Step 4: Apply it and confirm the tests pass**
 
 Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
 Expected: PASS, 8 tests. (`global-setup.ts` applies pending migrations — PR #46.)
 
-- [ ] **Step 5: Mutation-check the PER-OWNER bound — the ledger half must go red**
+- [x] **Step 5: Mutation-check the PER-OWNER bound — the ledger half must go red**
 
 ⚠ **This is the mutation that matters, and the assertion that must fail is the LEDGER one.** Remove
 the per-owner predicate so the bound never fires:
@@ -2493,7 +2493,7 @@ specifically on `expect(await ledger() - before).toBe(N * ceiling)`, which will 
 `(N+1) * ceiling`. **If only the rejection assertion fails, the test is not proving containment**,
 which is the exact weakness that let the previous design through. Restore and re-run; expect PASS.
 
-- [ ] **Step 6: Mutation-check the per-call ceiling and the fail-closed branch**
+- [x] **Step 6: Mutation-check the per-call ceiling and the fail-closed branch**
 
 Two more, each isolating a different guard.
 
@@ -2592,7 +2592,7 @@ describe('spend recording (spec §5.2)', () => {
 Run: `npx jest tests/api/regenerate-cloud.test.ts`
 Expected: PASS.
 
-- [ ] **Step 9: Prove the new function is not anon-callable**
+- [x] **Step 9: Prove the new function is not anon-callable**
 
 Run: `python3 scripts/check-anon-exposure.py --local`
 Expected: exit 0, `record_correction_spend` absent from the exposed list.
@@ -3038,7 +3038,7 @@ describe('§7 — a bare press disturbs nothing the sync decision reads', () => 
 Run: `npx jest tests/lib/corrections/falsifiers.test.ts`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 2: Write the integration falsifiers**
+- [x] **Step 2: Write the integration falsifiers**
 
 Create `tests/integration/corrections-cloud.int.test.ts`. It uses the existing harness —
 `adminClient`, `newUser`, `signInAs` from `./helpers/clients` and `seedPlaylist`,
@@ -3267,7 +3267,7 @@ read.** Do not improvise helper names — open the file named, copy its setup, t
 
 Every negative case asserts **which** error, never "any error".
 
-- [ ] **Step 3: Mutation-check every guard this slice added**
+- [x] **Step 3: Mutation-check every guard this slice added**
 
 ⚠ **This is the step that stops (e) shipping as a no-op.** For each row, break the implementation by
 hand, run the named test, confirm it goes **RED**, then restore and confirm **GREEN**. A guard whose
@@ -3376,7 +3376,7 @@ artifact it measures is how this repo got two reviewers disagreeing on the same 
 because the listing above got them wrong.
 A ratchet that has never been seen to fail is a ratchet nobody has tested.
 
-- [ ] **Step 5: Record the result**
+- [x] **Step 5: Record the result**
 
 Write the mutation table above into the PR body with a PASS/FAIL column filled in from what you
 actually observed, and state plainly which integration tests were **NOT RUN** and why. A tick that
