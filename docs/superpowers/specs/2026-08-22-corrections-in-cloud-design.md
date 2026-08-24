@@ -721,6 +721,35 @@ call returns.
 > **What the user rejected was the RESERVATION PROTOCOL, not a schema change.** One RPC is in scope;
 > reserve/settle remains slice C.
 >
+> #### ✅ AMENDED 2026-08-24 (user) — option (b′): the bound is PER-OWNER-PER-DAY, not per call
+>
+> **The first version of this decision was wrong and the Post-Plan Gate caught it — both halves,
+> independently, from different directions.** I identified the cross-tenant DoS below and then
+> specified a **per-call ceiling** against it. A per-call ceiling bounds *the size of one lie, not the
+> number of them*. Measured: `daily_cap_cents` defaults to **500** (`0011:28`) against a ceiling of
+> 25, so **twenty calls exhaust the global daily cap** from any authenticated account — including an
+> anonymous one — at **zero real spend**. Every `enqueue_job`, `reserve_serve_model` and dig enqueue
+> then fails `reserved + actual + est <= daily_cap` for the rest of the UTC day.
+>
+> **The general lesson, worth more than the fix:** *record-without-reserve has a floor it cannot get
+> under on a **shared** ledger.* The unforgeable answer is a token issued before the call and settled
+> after — which is the reservation protocol, i.e. slice C. So (b) was never a third option beside
+> "reserve" and "nothing"; on a global ledger it was reserve-shaped all along.
+>
+> **What ships instead.** A per-owner-per-day bound, mirroring the pattern already proven in this
+> repo: `serve_model_charge`'s `unique (owner_id, doc_key, day)` (`0012:13`). The RPC checks that
+> bound **before** touching `spend_ledger`, so an account can only degrade **its own** budget.
+> Still **not** a reservation protocol — no lease, no token, no pre-authorisation — so it stays inside
+> slice A.
+>
+> ⚠ **Residual, stated rather than buried:** many anonymous accounts could still aggregate toward the
+> global cap. **That vector already exists for `reserve_serve_model`**, so this reaches **parity**
+> with the existing money paths rather than adding a class of exposure. Closing it is slice C's job.
+>
+> **The falsifier that matters is no longer about one call.** It is: *N+1 calls from one owner in one
+> UTC day are rejected, and the global ledger has moved by at most N × ceiling.* A test that only
+> proves a single over-ceiling call is rejected would have passed the broken design.
+
 > #### ⚠ The naive version of this RPC is a cross-tenant denial of service
 >
 > `spend_ledger` is **global — one row per UTC day** (`0011:11`), not per-owner. An RPC that accepts
