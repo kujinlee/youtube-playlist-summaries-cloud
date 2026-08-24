@@ -707,7 +707,41 @@ correction, on a request this route never sees. §1's ≈0.6¢ is the *correctio
 are real; neither is the whole. §7 asserts the deferred charge fires **once** and not repeatedly.
 
 **5.2 Post-hoc recording, no reservation.** The route records **actual** spend to the ledger after the
-call returns. No reserve RPC, no settle semantics, no idempotency key, no `correction_est_cents`.
+call returns.
+
+> ### ✅ DECIDED 2026-08-24 (user) — option (b): accept ONE narrow RPC. §8's no-migration bullet is overridden here.
+>
+> **v(e) could not be built as written.** `spend_ledger.actual_cents` has **no writer anywhere** —
+> seven references across `0011`, `0012`, `0014`, `0018`, `0020`, every one a *read* in cap
+> arithmetic. `0011:15` credits *"the deferred reconcile"*, which does not exist. The table is
+> `service_role`-only (`0011:18`, *"no client access (global infra)"*), the route runs on the user's
+> session client, and `.github/workflows/ci.yml:69` statically bars `service_role` from request
+> paths. Nothing anywhere reads `usageMetadata`, so there was no source for the number either.
+>
+> **What the user rejected was the RESERVATION PROTOCOL, not a schema change.** One RPC is in scope;
+> reserve/settle remains slice C.
+>
+> #### ⚠ The naive version of this RPC is a cross-tenant denial of service
+>
+> `spend_ledger` is **global — one row per UTC day** (`0011:11`), not per-owner. An RPC that accepts
+> an arbitrary cents amount from an authenticated caller therefore lets **one account exhaust the
+> daily cap for every user**. "Take a cents parameter and add it" is the obvious implementation and it
+> is unsafe.
+>
+> **Requirements on the migration, all load-bearing:**
+> 1. **Server-side clamp.** The RPC takes the Gemini token counts and computes cents itself from
+>    `guardrail_config`, or takes cents and clamps to a new configured ceiling. A value above the
+>    ceiling is **rejected and logged**, never silently truncated — a silent clamp turns an
+>    accounting bug into invisible under-reporting.
+> 2. **`revoke all on function … from public`, then grant to `authenticated` only.** Supabase grants
+>    anon EXECUTE **at CREATE time**; omitting the revoke makes it anon-callable by default. The new
+>    function must pass `scripts/check-anon-exposure.py`.
+> 3. `SECURITY DEFINER`, `set search_path = public`, shaped like the existing reserve RPCs.
+> 4. **Idempotency is NOT required** — this records what was already spent, so a duplicate call
+>    over-reports rather than double-charging. State that rather than inventing a token.
+>
+> **The ceiling is the real guard, not the caller.** Ask of it: *what would I see if it were silently
+> doing nothing?* The falsifier is a call above the ceiling that must be rejected, mutation-checked. No reserve RPC, no settle semantics, no idempotency key, no `correction_est_cents`.
 
 **Why this and not full metering:** a reservation protocol is what makes this a money-path slice, and
 this repo's record for those is five to seven rounds. Recording gives the guardrails visibility —
@@ -803,6 +837,7 @@ is slice B's, and backlog #22's `it.failing` tripwire
   in-request was option (c) and blows §5.4's budget.
 - **`readTitleStableModel` and the share path** — deliberately untouched by (e), which is the point
   of it. Anything that changes what an anonymous visitor sees belongs to backlog **#57**, not here.
+- ⚠ **SUPERSEDED for the ledger RPC — see §5.2's 2026-08-24 decision. Slice A now ships exactly ONE migration.** The bullet below still governs everything else, and its reasoning about `updated_at` stands.
 - **No migration — but on a narrower argument than v4 gave (r4 B1).** v4 said *"§4.1 settles it —
   `update_video_annotations` already excludes `updated_at`"*. **That premise was false**, and §4.1 now
   carries the correction. The conclusion survives on a different footing: §4.2 **accepts** the

@@ -50,6 +50,12 @@ All three may ship in **one PR**; the order must hold *within* it. T10 has no de
 *(T10 was originally scheduled after T4. Promoted here 2026-08-24 rather than left as a note inside
 Task 10, because a coupling written inside a task is a coupling that gets scheduled around.)*
 
+**T9's migration adds NO task-order constraint** — it touches neither `isFresh`, the body write nor
+the serve path, and depends only on T5 and T8, which already precede it. It adds a **release-order**
+constraint at a different layer (apply `0026` → re-check anon exposure against prod → deploy the
+image), which lives at the end of Task 9 because it binds the deploy, not the schedule. Mixing the
+two here would blunt the one thing this section is for.
+
 ---
 
 ## File Structure
@@ -61,6 +67,7 @@ Task 10, because a coupling written inside a task is a coupling that gets schedu
 | `lib/gemini.ts` | **Modify.** `fixSummary` gains `caps`, `signal` (three sites), and an exported input-preflight | T5 |
 | `app/api/videos/[id]/regenerate/route.ts` | **Modify.** Conditional file write + conditional stamp (T3); annotations surface (T6); length cap + 413 (T7); cloud branch (T8); spend recording (T9) | T3, T6, T7, T8, T9 |
 | `lib/html-doc/read-model.ts` | **Modify.** `isFresh` + `readFreshMagazineModel` gain `currentMdHash` | T4 |
+| `supabase/migrations/0026_record_correction_spend.sql` | **Create.** The slice's only schema change (§8 overridden for this one case, 2026-08-24). Adds `guardrail_config.correction_max_cents` and a `SECURITY DEFINER` RPC that **rejects** above the ceiling rather than clamping. `revoke … from anon` is load-bearing, not decoration | T9 |
 | `lib/html-doc/serve-doc.ts` | **Modify.** Pass `mdHash(mdBody)` at both call sites; extend the stale fallback (r5 H1) | T4, T10 |
 | `components/CorrectionsPanel.tsx`, `components/VideoMenu.tsx` | **Modify.** Reachable in cloud mode; render the outcome discriminator | T11 |
 | `tests/lib/html-doc/read-model.test.ts` | **Modify.** Retire the §3.5.1 tripwire with a pointer; add current/stale/**absent** `sourceMdHash` cases | T4 |
@@ -79,7 +86,7 @@ Task 10, because a coupling written inside a task is a coupling that gets schedu
 | 6 | Corrections written via `updateVideoAnnotations`, read-before-write | the stamp moves on a no-op, or the Supabase clear is still a no-op |
 | 7 | Server-side length cap + 413 over-cap refusal + `maxDuration` | an already-long row is bricked, or the refusal is a 500 |
 | 8 | The cloud branch | `writeArtifact` used instead of `put`, or resolution outside the try |
-| 9 | ⛔ The spend sink — **BLOCKED on task #129** | it records an estimate rather than actual, or the implementer picked an option the user owns |
+| 9 | Record the spend — one clamped RPC (migration `0026`) | the RPC trusts a caller-supplied cents value, so one account can exhaust the global daily cap; or it clamps silently instead of rejecting; or it arrives anon-callable |
 | 10 | r5 H1 — stale fallback for the other non-ok statuses | the owner's page 503s with a readable model in the bucket |
 | 11 | UI reachable in cloud + outcome discriminator | a no-op press reads as a bug |
 | 12 | Falsifiers + mutation-check | a falsifier passes on a wrong implementation |
@@ -100,29 +107,17 @@ them silently reads as complete. Tracked as task **#130**.
 
 ---
 
-## ⚠ Usage capture lives in T5 — and one answer to #129 removes it entirely
+## Usage capture lives in T5, the sink in T9 — settled
 
-**State: the fold is APPLIED.** T5 owns `fixSummary`'s signature, the `usage` return,
-`correctionActualCents` and `ApplyCorrectionResult.actualCents`. T9 is the sink alone.
+**Task #129 is answered: option (b), one narrow RPC.** T5 owns `fixSummary`'s signature, the `usage`
+return, `correctionActualCents` and `ApplyCorrectionResult.actualCents`. T9 owns the migration and the
+call. Slice A keeps both halves, and there is no longer a branch under which this split is wrong —
+the earlier "move recording to slice C" option, which was the one answer that would have made
+`actualCents` dead code here, is closed.
 
-*(This supersedes a "⏸ deferred — do not apply" note that briefly stood here. Two conflicting
-instructions reached this document within minutes of each other and a plan cannot hold both; the fold
-is applied because measuring is not the blocked half. The note's actual insight is kept below, and
-one edit reverses this if the coordinator meant the withdrawal.)*
-
-The reason to fold: measuring spend changes `fixSummary`'s return type, which is T5's deliverable.
-Split, T5 ships `Promise<string>` for T9 to immediately rewrite and both test files get edited twice.
-
-**The reason that could unwind it — worth stating, because it is not obvious:**
-
-| #129 answer | What happens to usage capture in T5 |
-|---|---|
-| **(2) accept one narrow RPC migration** | Stays in T5. Slice A keeps both halves |
-| **(3) log-only** | Stays in T5. Only T9's sink changes — a structured log line, not a ledger write |
-| **(1) move recording to slice C (#61)** | ⚠ **Take it back out.** With no consumer in slice A, `actualCents` is dead code and `usage` is a return-type change nothing reads. Delete T5's steps 5, 9 and the two `apply-core` spend tests, and drop `actualCents` from `ApplyCorrectionResult` |
-
-So: **applied now, and option (1) is the one answer that requires undoing it.** Do not start T5 with
-#129 open unless you are prepared to revisit those three edits.
+Why they are split at all: measuring changes `fixSummary`'s return type, which is T5's deliverable;
+recording is a schema change with its own reviewer's gate. Split there, a reviewer can reject the RPC
+without rejecting the measurement.
 
 ---
 
@@ -2051,96 +2046,340 @@ git commit -m "feat(#23): cloud branch for the correction route, body written wi
 
 ---
 
-### Task 9: The spend sink
+### Task 9: Record the spend — one narrow RPC
 
-⛔ **BLOCKED ON TASK #129 — a user decision. Do not implement any of the three options, and do not
-invent an RPC.** Everything that *can* be built without that decision — measuring the number — moved
-into **Task 5** on 2026-08-24, because it changes `fixSummary`'s return type and belongs with the
-signature it changes. What is left here is the sink alone, and the sink is the blocked half.
+✅ **Task #129 answered 2026-08-24: option (b).** Spec §5.2 carries the decision block and §8's
+no-migration bullet is **overridden for this one case**. What the user rejected was the *reservation
+protocol*; reserve/settle stays in slice C (`docs/backlog.md` #61).
 
-Spec §5.2 says *"The route records **actual** spend to the ledger after the call returns."* Measured
-2026-08-24: **there is no mechanism to do that, and building one is outside slice A's own scope.**
+⚠ **The obvious implementation is a cross-tenant denial of service, and it is what you will write
+if you skim this.** `spend_ledger` is **global — one row per UTC day** (`0011:11`), not per-owner. An
+RPC that accepts an arbitrary cents amount from any authenticated caller therefore lets **one account
+exhaust the daily cap for every user**. "Take a cents parameter and add it" is unsafe.
 
-| Fact | Evidence |
-|---|---|
-| `spend_ledger.actual_cents` has **no writer** anywhere — no SQL, no TypeScript | `grep -rn actual_cents supabase/migrations/` returns seven hits, every one a *read* inside cap arithmetic (`0011:114`, `0011:187`, `0012:88`, `0014:84`, `0018:63`, `0020:246`). `0011:15` calls the column *"inert in 1D; written by the deferred reconcile"* — that reconcile does not exist |
-| The route cannot write it directly | `spend_ledger` grants are `service_role` only (`0011:18`); this route runs on the user's session client |
-| Using `service_role` here fails CI | `.github/workflows/ci.yml:69` runs `scripts/check-service-confinement.ts` — *"static guard: service_role stays out of request paths"* |
-| Adding an RPC is a migration | spec §8: **"No migration — …"**. Slice A adds no schema change |
+**Design, and why this shape rather than the other one §5.2 allows.** §5.2 permits either *(i)* the
+RPC takes token counts and prices them itself, or *(ii)* it takes cents and clamps to a configured
+ceiling. **This plan takes (ii)**, because (i) requires the per-million prices to exist in SQL as
+well as in `gemini-cost.ts:33,35` — two sources of truth for one number, which is precisely the
+duplicate-vocabulary defect `scripts/check-vocabulary-collisions.py` exists to catch. The ceiling is
+one new column; the prices stay where they already are.
 
-**Three ways forward. The user picks; the implementer does not.**
+**Idempotency is deliberately absent.** This records spend that has *already happened*, so a
+duplicate call **over-reports** rather than double-charging. Over-count is the safe direction on a
+guardrail. Do not invent a token — a reviewer who expects one should read this paragraph.
 
-1. **Move recording to slice C** (`docs/backlog.md` #61), which already owns the money instruments.
-   Slice A ships capped-but-unrecorded and §5.2 changes to say so. Smallest, and consistent with the
-   boundary that was drawn to keep A off the money path.
-2. **Accept one narrow migration** for a single `record_correction_spend(p_cents int)` RPC.
-   Contradicts §8's "no migration of any kind", which is load-bearing in the spec's own scope list —
-   but note what the user rejected was the *reservation protocol*, not a schema change as such.
-3. **Log-only.** No ledger write; a structured line an operator can grep, plus a filed follow-up. The
-   guardrails gain nothing — the daily cap still cannot see the spend — so §5.2's stated benefit
-   (*"the daily cap and per-owner budget see the spend on the next decision"*) does **not** hold.
-   Choosing this means saying so in §5.2 rather than leaving the sentence standing.
-
-**Files:** none until the decision lands. Under option 3, `app/api/videos/[id]/regenerate/route.ts`.
+**Files:**
+- Create: `supabase/migrations/0026_record_correction_spend.sql`
+- Modify: `app/api/videos/[id]/regenerate/route.ts` (`serveCloud`, inside the applied-correction block)
+- Test: `tests/integration/record-correction-spend.int.test.ts` (create)
+- Test: `tests/api/regenerate-cloud.test.ts` (the route half)
 
 **Interfaces:**
 - Consumes: `ApplyCorrectionResult.actualCents: number | null` from **Task 5**. `null` means *the SDK
-  reported no usage*, never *free* — whatever the sink turns out to be must preserve that
-  distinction rather than coercing to `0`.
-- Produces: nothing until the decision lands.
+  reported no usage*, never *free* — the route must not coerce it to `0`.
+- Consumes: the cloud branch and its `applied` binding from **Task 8**.
+- Produces:
+  - SQL: `record_correction_spend(p_cents int) returns void`
+  - SQL: `guardrail_config.correction_max_cents int not null default 25 check (correction_max_cents >= 1)`
 
-- [ ] **Step 1: ⛔ Confirm task #129 is decided before writing any code**
+⚠ **Depends on T5 and T8. Independent of the `T3 → T10 → T4` chain** — nothing here touches
+`isFresh`, the body write or the serve path. See "Deploy-order coupling" at the end of this task,
+which is a *release* constraint, not a task-order one.
 
-If #129 is still open, **stop and report**. Do not pick an option to unblock yourself; the three have
-different costs and the choice is the user's. This step exists because "the implementer chose while
-waiting" is how a deferred money decision becomes a shipped one.
+- [ ] **Step 1: Write the failing RPC test**
 
-- [ ] **Step 2: Implement the chosen option**
-
-Under **option 1**, there is nothing to build: delete this task, amend spec §5.2 to say recording
-lands in slice C, and move on.
-
-Under **option 2**, the migration and its RPC are work this plan does not contain. Stop and re-plan
-that task properly — a money-path RPC written as an improvised step is exactly the shape this repo's
-five-to-seven-round history is made of.
-
-Under **option 3**, this is the whole change. It goes **inside** `serveCloud`'s
-`if (trimmedCorrections) { … }` block from Task 8, immediately after the `blobStore.put` — `applied`
-is scoped to that block, and a bare press has no spend to report:
+Create `tests/integration/record-correction-spend.int.test.ts`:
 
 ```ts
-    // Spend visibility, spec §5.2. NOT a ledger write: spend_ledger.actual_cents has no writer
-    // (0011:15 "inert in 1D; written by the deferred reconcile" — which does not exist), the table
-    // is service_role-only (0011:18), and service_role is statically barred from request paths
-    // (.github/workflows/ci.yml:69). Adding an RPC is a migration, which §8 excludes from slice A.
-    // The guardrails CANNOT see this spend — that is the accepted cost of option 3, not an oversight.
-    console.info(
-      `[correction-spend] owner=${principal.id} video=${videoId} cents=${applied.actualCents ?? 'unmeasured'}`,
-    );
+// NEEDS A LIVE POSTGRES. global-setup.ts applies migrations and refuses to run if it cannot.
+import { adminClient, newUser, signInAs, userClient } from './helpers/clients';
+import { correctionActualCents } from '@/lib/gemini-cost';
+import { MAX_SUMMARY_OUTPUT_TOKENS, PROMPT_SCHEMA_OVERHEAD_TOKENS } from '@/lib/gemini-cost';
+
+const svc = adminClient();
+const utcDay = () => new Date().toISOString().slice(0, 10);
+
+const ledger = async () =>
+  (await svc.from('spend_ledger').select('actual_cents').eq('day', utcDay()).maybeSingle()).data?.actual_cents ?? 0;
+
+const ceiling = async () =>
+  (await svc.from('guardrail_config').select('correction_max_cents').eq('id', true).single()).data!.correction_max_cents;
+
+it('adds the reported cents to TODAY row of the global ledger', async () => {
+  const ownerId = await newUser();
+  const before = await ledger();
+  const client = await signInAs(ownerId);
+  const { error } = await client.rpc('record_correction_spend', { p_cents: 3 });
+  expect(error).toBeNull();
+  expect(await ledger()).toBe(before + 3);
+});
+
+it('REJECTS a value above the ceiling — it does not silently clamp', async () => {
+  const ownerId = await newUser();
+  const before = await ledger();
+  const client = await signInAs(ownerId);
+  const { error } = await client.rpc('record_correction_spend', { p_cents: (await ceiling()) + 1 });
+  // Assert WHICH error. A test that accepts any error passes on a typo in the function name.
+  expect(error?.message).toMatch(/correction spend \d+ exceeds ceiling \d+/);
+  expect(await ledger()).toBe(before);   // nothing was written — not even a truncated amount
+});
+
+it('accepts exactly the ceiling — the boundary is inclusive', async () => {
+  const ownerId = await newUser();
+  const client = await signInAs(ownerId);
+  const { error } = await client.rpc('record_correction_spend', { p_cents: await ceiling() });
+  expect(error).toBeNull();
+});
+
+it('rejects a negative amount — the ledger only moves one way', async () => {
+  const ownerId = await newUser();
+  const client = await signInAs(ownerId);
+  const { error } = await client.rpc('record_correction_spend', { p_cents: -5 });
+  expect(error?.message).toMatch(/correction spend -5 exceeds ceiling|violates check constraint/);
+});
+
+// CAP SOUNDNESS. The ceiling is a number in a config table; the caps it must cover are TypeScript
+// constants. Nothing ties them together, so this asserts the tie mechanically rather than trusting
+// whoever last changed MAX_SUMMARY_OUTPUT_TOKENS to remember this row exists.
+it('the ceiling covers the worst case §5.1 can actually produce', async () => {
+  const worstOnePass = correctionActualCents({
+    promptTokens: MAX_SUMMARY_OUTPUT_TOKENS + PROMPT_SCHEMA_OVERHEAD_TOKENS,
+    outputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
+  });
+  const worst = worstOnePass * 3;   // fixSummary retries twice (gemini.ts:473)
+  expect(await ceiling()).toBeGreaterThanOrEqual(worst);
+});
+
+it('anon cannot execute it', async () => {
+  const anon = userClient(null);
+  const { error } = await anon.rpc('record_correction_spend', { p_cents: 1 });
+  expect(error).not.toBeNull();
+});
 ```
 
-- [ ] **Step 3: Under option 3, prove the log distinguishes unmeasured from free**
+- [ ] **Step 2: Run it and confirm it fails for the right reason**
+
+Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
+Expected: FAIL — PostgREST reports `Could not find the function public.record_correction_spend`.
+If instead the whole suite refuses to start, the local Postgres is not up: **that is NOT RUN, not a
+pass.** Bring the stack up before continuing.
+
+- [ ] **Step 3: Write the migration**
+
+Create `supabase/migrations/0026_record_correction_spend.sql`:
+
+```sql
+-- supabase/migrations/0026_record_correction_spend.sql
+-- Slice A (spec §5.2, decision 2026-08-24). ONE narrow RPC so an attended correction's ACTUAL spend
+-- reaches the global ledger. This is NOT the reservation protocol — no reserve, no settle, no token.
+-- Reserve/settle remains slice C (backlog #61).
+
+-- (0) The ceiling. spend_ledger is GLOBAL — one row per UTC day (0011:11), not per-owner — so an RPC
+--     that accepted any cents value would let one account exhaust the daily cap for everyone. The
+--     ceiling is the guard; the caller is not trusted. Default 25¢ against a measured worst case of
+--     ~8¢ for three capped fixSummary passes; the integration test asserts the cover mechanically so
+--     this number cannot go stale silently when the token caps change.
+alter table guardrail_config
+  add column correction_max_cents int not null default 25 check (correction_max_cents >= 1);
+
+-- (1) record_correction_spend. SECURITY DEFINER because spend_ledger is service_role-only
+--     (0011:18) and the caller is a session-scoped `authenticated` user.
+create or replace function record_correction_spend(p_cents int)
+  returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_cap int;
+  v_day date := (now() at time zone 'utc')::date;
+begin
+  if auth.uid() is null then
+    raise exception 'record_correction_spend: authentication required';
+  end if;
+
+  select correction_max_cents into v_cap from guardrail_config where id = true;
+
+  -- REJECT, never clamp. A silent truncation turns an accounting bug into invisible
+  -- under-reporting: the ledger would look right while the real spend drifted above it. Loud is
+  -- the whole point — this is the only place an inflated report can be caught.
+  if p_cents < 0 or p_cents > v_cap then
+    raise exception 'record_correction_spend: correction spend % exceeds ceiling %', p_cents, v_cap;
+  end if;
+
+  -- NO IDEMPOTENCY TOKEN, deliberately. This records spend that ALREADY happened, so a duplicate
+  -- call over-reports rather than double-charging, and over-count is the safe direction here.
+  insert into spend_ledger (day, actual_cents) values (v_day, p_cents)
+    on conflict (day) do update
+      set actual_cents = spend_ledger.actual_cents + excluded.actual_cents,
+          updated_at = now();
+end $$;
+
+-- (2) GRANTS. `revoke ... from public` removes the PUBLIC pseudo-role and NOT the named role `anon`
+--     — Supabase grants anon EXECUTE at CREATE FUNCTION time via pg_default_acl, so the explicit
+--     anon revoke below is load-bearing, not decoration. Measured on prod 2026-08-11 (backlog #33):
+--     26 of 30 public functions were anon-executable exactly because that line was omitted.
+revoke all on function record_correction_spend(int) from public;
+revoke all on function record_correction_spend(int) from anon;
+grant execute on function record_correction_spend(int) to authenticated;
+```
+
+- [ ] **Step 4: Apply it and confirm the tests pass**
+
+Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
+Expected: PASS, 6 tests. (`global-setup.ts` applies pending migrations — PR #46.)
+
+- [ ] **Step 5: Mutation-check the ceiling**
+
+⚠ **The ceiling is the guard. Ask of it: what would I see if it were silently doing nothing?** The
+answer is "every test still green", which is why this step is not optional.
+
+Raise it out of range so the rejection can never fire:
+
+```sql
+update guardrail_config set correction_max_cents = 2147483647 where id = true;
+```
+
+Run: `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts`
+Expected: **FAIL** on *REJECTS a value above the ceiling*. If it passes, the test is not reaching the
+branch and the guard is untested — fix the test, not the migration.
+
+Restore with `update guardrail_config set correction_max_cents = 25 where id = true;` and re-run;
+expected PASS.
+
+- [ ] **Step 6: Call it from the route — and do NOT let a failed recording fail the request**
+
+In `serveCloud` (Task 8), **inside** the `if (trimmedCorrections) { … }` block, immediately after the
+`blobStore.put`:
 
 ```ts
-it('logs `unmeasured`, not 0, when the SDK reported no usage', async () => {
-  const spy = jest.spyOn(console, 'info').mockImplementation(() => {});
-  jest.mocked(gemini.fixSummary).mockResolvedValue({ text: MD, usage: null });
-  await press(VIDEO_ID, PLAYLIST_ID, { corrections: 'fix X' });
-  expect(spy).toHaveBeenCalledWith(expect.stringContaining('cents=unmeasured'));
+      // Record ACTUAL spend, after the call returned (spec §5.2). Post-hoc, not pre-authorised:
+      // the guardrails see this on the NEXT decision, which is the accepted trade.
+      //
+      // ⚠ A FAILED RECORDING MUST NOT FAIL THE REQUEST. The money is already spent and the corrected
+      // body is already durable in storage; a 500 here would report failure for work that landed and
+      // invite the user to press again — paying twice to fix a bookkeeping error. Log loudly instead.
+      // Same reasoning as the envelope-invalidation failure rule the spec settled in §2.
+      if (applied.actualCents != null) {
+        const { error: spendError } = await supabase.rpc('record_correction_spend', {
+          p_cents: applied.actualCents,
+        });
+        if (spendError) {
+          console.error(
+            `[correction-spend] FAILED to record owner=${principal.id} video=${videoId} `
+            + `cents=${applied.actualCents}: ${spendError.message}`,
+          );
+        }
+      } else {
+        // null is "the SDK reported no usage", NOT "free" (Task 5). Recording 0 would be a lie the
+        // ledger cannot distinguish from a genuinely free call.
+        console.warn(`[correction-spend] UNMEASURED owner=${principal.id} video=${videoId}`);
+      }
+```
+
+- [ ] **Step 7: Write the route-side tests**
+
+Append to `tests/api/regenerate-cloud.test.ts` (add `rpc: jest.fn()` to the mocked Supabase client
+returned by `createServerSupabase`, and `mockRpc.mockResolvedValue({ error: null })` in `beforeEach`):
+
+```ts
+describe('spend recording (spec §5.2)', () => {
+  it('records the measured cents after a successful correction', async () => {
+    jest.mocked(gemini.fixSummary).mockResolvedValue({
+      text: MD.replace('Clawcode', 'Claude Code'),
+      usage: { promptTokens: 10_000, outputTokens: 4_000 },
+    });
+    await post({ corrections: 'fix Clawcode' });
+    expect(mockRpc).toHaveBeenCalledWith('record_correction_spend', { p_cents: 2 });
+  });
+
+  it('records NOTHING on a bare press — no correction, no spend', async () => {
+    await post({});
+    expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
+  });
+
+  it('does not record 0 when usage was unmeasured', async () => {
+    jest.mocked(gemini.fixSummary).mockResolvedValue({ text: MD, usage: null });
+    await post({ corrections: 'fix X' });
+    expect(mockRpc).not.toHaveBeenCalledWith('record_correction_spend', expect.anything());
+  });
+
+  it('still returns 200 when the ledger write fails — the correction landed', async () => {
+    mockRpc.mockResolvedValue({ error: { message: 'ceiling exceeded' } });
+    const res = await post({ corrections: 'fix X' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).outcome).toBe('applied');
+  });
 });
 ```
 
 Run: `npx jest tests/api/regenerate-cloud.test.ts`
 Expected: PASS.
 
-- [ ] **Step 4: Typecheck, full suite, commit**
+- [ ] **Step 8: Prove the new function is not anon-callable**
+
+Run: `python3 scripts/check-anon-exposure.py`
+Expected: exit 0, with `record_correction_spend` absent from the exposed list.
+
+⚠ **This script reads PRODUCTION by default** (`CLAUDE_RO_DATABASE_URL`) and its own docstring
+explains why: local and prod *disagree* — 5 vs 10 anon-executable definer functions, measured
+2026-08-21. So before the migration is applied to prod this run tells you about the **old** catalog,
+which is a pass that means nothing about the new function. Run `--local` now for the pre-merge
+signal, and run it again **against prod after the migration is applied** — that second run is the
+one that gates the release. Record which target each run read.
+
+- [ ] **Step 9: Schema gates — read this before running anything**
+
+⚠ **`scripts/check-schema-gates.sh` is the WRONG instrument for this migration, and running it would
+be a green check over the wrong subject.** Measured 2026-08-24: it is scoped to
+`docs/superpowers/specs/2026-08-03-stable-blob-addressing` —
+
+```
+SPEC="docs/superpowers/specs/2026-08-03-stable-blob-addressing"     # check-schema-gates.sh:21
+run "1/6  schema + assertions"   "$SPEC/verify-schema.sh"
+run "2/6  mutation suite"        "$SPEC/mutate-schema.py"
+SCHEMA = SPEC / "schema"                                            # check-guard-coverage.py:44-46
+```
+
+Gates 1, 2 and 3 read that spec's `schema/*.sql`, **not** `supabase/migrations/`. That schema is also
+PARKED (2026-08-11). Running the suite here would exercise a different schema entirely and report
+green about it — the failure this repo's own CLAUDE.md names: *"a green check over the wrong subject
+is an assertion in better packaging, and more dangerous than prose."*
+
+**What to run instead — each named because it actually reads this migration or its effects:**
+
+| Gate | Command | Reads |
+|---|---|---|
+| The RPC behaves | `npx jest --config jest.integration.config.ts tests/integration/record-correction-spend.int.test.ts` | the applied migration, live |
+| The ceiling is load-bearing | Step 5's mutation | the applied migration, live |
+| anon cannot call it | `python3 scripts/check-anon-exposure.py` (`--local`, then prod after deploy) | the live catalog |
+| Docs integrity | `python3 scripts/check-docs.py` | the repo |
+
+⚠ **None of these is in CI** (`docs/dev-process.md`, *"Not yet in CI: `test:integration` … and the
+schema gates (need a live Postgres)"*). They must be run **locally before asking for a merge**, and
+the PR body must say which ran and against what.
+
+- [ ] **Step 10: Typecheck, full unit suite, commit**
 
 Run: `npx tsc --noEmit && npx jest`
+Expected: no type errors; all suites pass.
 
 ```bash
-git add app/api/videos/[id]/regenerate/route.ts tests/api/regenerate-cloud.test.ts
-git commit -m "feat(#23): correction spend visibility (option 3 — log-only, guardrails unaware)"
+git add supabase/migrations/0026_record_correction_spend.sql app/api/videos/[id]/regenerate/route.ts tests/integration/record-correction-spend.int.test.ts tests/api/regenerate-cloud.test.ts
+git commit -m "feat(#23): record a correction's actual spend through one clamped RPC"
 ```
+
+#### ⚠ Deploy-order coupling — a RELEASE constraint, not a task-order one
+
+This does not affect the `T3 → T10 → T4` chain; nothing here touches `isFresh`, the body write or
+the serve path. It creates a different coupling, at a different layer, and the constraints section at
+the top is deliberately not the place for it:
+
+**The migration must be applied to prod BEFORE the image that calls the RPC is deployed.** In the
+window between a deploy and a migration, `serveCloud` calls a function that does not exist. Step 6's
+log-and-continue rule is what keeps that from being expensive — the correction still lands and the
+user still gets 200 — but the spend goes unrecorded for the whole window and only the log says so.
+This repo has the scar: prod ran **8 days behind on a migration** without anyone noticing
+(`context-compaction-protocol`), which is exactly how that window gets long.
+
+Release order: **apply `0026` → re-run `scripts/check-anon-exposure.py` against prod → deploy the
+image.** Put those three in the PR description in that order.
 
 ---
 
