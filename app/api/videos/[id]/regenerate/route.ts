@@ -7,6 +7,7 @@ import { fixSummary, extractQuickView } from '../../../../../lib/gemini';
 import { stripQuickViewCallout, insertQuickViewCallout } from '../../../../../lib/pipeline';
 import { logError, errorSummary } from '../../../../../lib/dev-logger';
 import { mdHash } from '../../../../../lib/cloud-sync/content-hash';
+import type { Video } from '../../../../../types';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -66,27 +67,41 @@ export async function POST(request: Request, { params }: Params) {
     const { tldr, takeaways } = await extractQuickView(fixed);
     const updatedContent = insertQuickViewCallout(fixed, tldr, takeaways, video.tags ?? []);
 
-    await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
+    // WRITE ONLY WHEN A CORRECTION WAS APPLIED (spec §2, round-5 Blocking). On a bare press
+    // `fixed === stripped`, so the prose is unchanged — but `extractQuickView` above is a
+    // non-deterministic LLM call and `insertQuickViewCallout` splices its output into the hashed
+    // region, so writing would move `mdHash(body)`. Under §2's option (e) that invalidates the
+    // magazine model and books a ~6¢ regeneration for a press that applied nothing. Measured: the
+    // callout sits in the preamble `parseSections` discards (parse.ts:45-47), so it can change no
+    // input the model is built from — the regeneration would recompute an identical result.
+    if (trimmedCorrections) {
+      await fs.promises.writeFile(mdPath, updatedContent, 'utf-8');
+    }
 
-    // Stage 3 (§5.1/§5.7, former-Blocking §5.3): stamp this regenerated MD as
-    // corrections-current. The corrections THIS MD now reflects mirrors the conditional
-    // update above: param non-empty → trimmedCorrections; param === '' → cleared to '';
-    // param absent/whitespace-only (neither branch fires) → the UNCHANGED stored value —
-    // a bare regenerate keeps prior corrections baked in, so stamping mdHash('') there
-    // would wrongly mark a still-corrected MD as stale.
-    const effectiveCorrections = trimmedCorrections
-      ? trimmedCorrections
-      : corrections === '' ? '' : (video.corrections ?? '');
+    // Stage 3 (§5.1/§5.7) + spec §4.3. Stamp corrections-currency ONLY when fixSummary actually ran,
+    // and stamp it against the REQUEST's corrections — the quantity that was applied.
+    //
+    // The old rule (`:77-79`) fell back to the STORED value on a bare press, which flipped a
+    // corrections-stale row to current with no Gemini call. `mdCorrectionsHash` is the sole input to
+    // reconcileClassA's currency predicate (reconcile-class-a.ts:8), and sync-run.ts:358 writes
+    // `corrections` without touching the body, so one bare press permanently discarded a pending
+    // correction. Omitting the field preserves whatever the row already claimed.
+    //
+    // An explicit clear still stamps mdHash('') — unchanged, imperfect (the body may still carry
+    // previously applied corrections) and out of scope for slice A.
+    //
+    // NOTE: this write carries MD-currency fields, not a Class-B key, so it must NOT bump
+    // annotationsEditedAt (the earlier updateVideoFields({ corrections }) call above is the
+    // Class-B write that stamps annotationsEditedAt.corrections).
+    const patch: Partial<Video> = { tldr, takeaways, summaryHtml: null };
+    if (trimmedCorrections) {
+      patch.mdGeneratedAt = new Date().toISOString();   // the body DID change
+      patch.mdCorrectionsHash = mdHash(trimmedCorrections);
+    } else if (corrections === '') {
+      patch.mdCorrectionsHash = mdHash('');
+    }
 
-    // Update index with refreshed quick-view data; clear stale HTML cache. NOTE: this write
-    // carries MD-currency fields, not a Class-B key, so it must NOT bump annotationsEditedAt
-    // (the earlier updateVideoFields({ corrections }) call above is the Class-B write that
-    // stamps annotationsEditedAt.corrections).
-    await store.updateVideoFields(principal, videoId, {
-      tldr, takeaways, summaryHtml: null,
-      mdGeneratedAt: new Date().toISOString(),
-      mdCorrectionsHash: mdHash(effectiveCorrections),
-    });
+    await store.updateVideoFields(principal, videoId, patch);
 
     return NextResponse.json({
       tldr,

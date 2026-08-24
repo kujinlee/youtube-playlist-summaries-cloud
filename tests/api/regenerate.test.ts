@@ -172,3 +172,32 @@ describe('POST /api/videos/[id]/regenerate', () => {
     expect(body).toEqual(expect.objectContaining({ summaryHtml: null }));
   });
 });
+
+describe('bare press does not rewrite the file (spec §2, r5 B1)', () => {
+  it('writes the file when corrections were applied', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: 'fix Clawcode' });
+    expect(mockWriteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT write the file on a bare press (no corrections key)', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER });
+    expect(mockFixSummary).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write the file on a whitespace-only press', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '   ' });
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('does NOT write the file on an explicit clear', async () => {
+    await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '' });
+    expect(mockWriteFile).not.toHaveBeenCalled();
+  });
+
+  it('still refreshes tldr/takeaways on a bare press — quick-view stays unconditional', async () => {
+    const res = await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER });
+    expect(mockExtractQuickView).toHaveBeenCalledTimes(1);
+    expect((await res.json()).tldr).toBe('This video teaches X.');
+  });
+});

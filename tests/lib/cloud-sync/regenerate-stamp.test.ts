@@ -95,28 +95,26 @@ describe('regenerate route — currency stamping', () => {
     );
   });
 
-  it('a bare regenerate (no corrections param) stamps against the UNCHANGED stored corrections', async () => {
+  it('a bare regenerate omits mdCorrectionsHash entirely (spec §4.3)', async () => {
     await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER });
-    expect(mockUpdateVideoFields).toHaveBeenLastCalledWith(
-      OUTPUT_FOLDER,
-      VIDEO_ID,
-      expect.objectContaining({
-        mdCorrectionsHash: mdHash('old corrections'),
-        mdGeneratedAt: expect.any(String),
-      }),
-    );
+    const patch = mockUpdateVideoFields.mock.calls.at(-1)![2] as Record<string, unknown>;
+    expect(patch).not.toHaveProperty('mdCorrectionsHash');
+    expect(patch).not.toHaveProperty('mdGeneratedAt');
+    // The stored value already describes what the body reflects. :77-79 tried to DERIVE that truth
+    // and got it wrong when sync-run.ts:358 delivered corrections the body never saw; leaving the
+    // field alone PRESERVES it and needs no assumption.
   });
 
-  it('an explicit clear (corrections === "") stamps against empty corrections', async () => {
+  it('an explicit clear stamps mdCorrectionsHash but NOT mdGeneratedAt (spec §4.3)', async () => {
     await post(VIDEO_ID, { outputFolder: OUTPUT_FOLDER, corrections: '' });
-    expect(mockUpdateVideoFields).toHaveBeenLastCalledWith(
-      OUTPUT_FOLDER,
-      VIDEO_ID,
-      expect.objectContaining({
-        mdCorrectionsHash: mdHash(''),
-        mdGeneratedAt: expect.any(String),
-      }),
-    );
+    const patch = mockUpdateVideoFields.mock.calls.at(-1)![2] as Record<string, unknown>;
+    expect(patch.mdCorrectionsHash).toBe(mdHash(''));
+    // CHANGED 2026-08-24 with the T3 write guard, and NOT anticipated by the plan — whose own
+    // three-case table already said mdGeneratedAt is omitted on a clear, but which only listed the
+    // bare-press test as needing an edit. A clear runs no fixSummary and now writes no file, so the
+    // body did not change; stamping "the MD was generated at" would assert a generation that never
+    // happened. The corrections-currency claim is separate and still moves.
+    expect(patch).not.toHaveProperty('mdGeneratedAt');
   });
 
   it('the currency-stamp call does not also carry a Class-B key (it is a separate write)', async () => {
