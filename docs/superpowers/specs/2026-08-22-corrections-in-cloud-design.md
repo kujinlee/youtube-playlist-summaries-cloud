@@ -152,7 +152,46 @@ likely — the one thing that used to break the cache by accident is now forbidd
 > stricter is its own slice with its own review."* **The false premise made the better option
 > invisible** — the same shape of error as §4.1's.
 
-#### ✅ DECIDED 2026-08-23 (user) — option (e): invalidation is DERIVED from `sourceMdHash`, nothing is deleted and nothing is written
+#### ⚠ DECIDED (e) — BUT THE IMPLEMENTATION HAS AN OPEN BLOCKING FROM ROUND 5. DO NOT PLAN THIS BLOCK YET.
+
+> **Round 5 (scoped to this block): NOT CONVERGED from both halves.** Codex 1B/1H/1M/1L,
+> Claude 1B/3H/5M/3L. Both say (e) is the **right shape** — neither sends the *choice* back. The
+> defects are in how it lands.
+>
+> **r5-claude B1 — (e) charges once per PRESS, not once per CORRECTION.** `route.ts:66-69` rewrites
+> the markdown on **every** press, re-inserting a callout built from a fresh, non-deterministic
+> `extractQuickView` — which §3 requires to run unconditionally. `serve-summary-core.ts:101` hashes
+> the **full** body, callout included. So a **bare press, which applies nothing, moves the hash and
+> books a ~6¢ magazine regeneration.** Verified here. It also means §7's row asserting `mdHash`
+> byte-identical on a bare press contradicts §4's table saying `tldr`/`takeaways` are updated —
+> before (e) that was bookkeeping; now it is money.
+>
+> **r5-claude H1 — (e) moves the owner's own page into the reserve state machine.** Of the five
+> non-ok statuses at `serve-summary-core.ts:118-125`, only `over_budget` has a stale fallback;
+> `busy`, `attempts_exhausted` (K=5/UTC-day, `0012:21`), `at_capacity` and `denied` return 503/404
+> **with a readable model in the bucket**. The block protected the anonymous reader and left the
+> paying owner worse off.
+>
+> **r5-claude H3 — "#57 stands" is scoped to the correction path.** `companion.ts:151-153` already
+> deletes receiver envelopes on this signal, so a *local* correction already breaks the cloud share
+> link via sync **today**. (e) still beats (a); the claim was just stated unconditionally.
+>
+> **Cleared:** `mdHash` is stable (`canonicalizeMd`, `content-hash.ts:9-13`) — no per-serve loop.
+> Polarity vs `decideCompanion` is consistent and sync cannot ship a mismatched envelope. The **local
+> path is entirely unaffected** — nothing local calls `isFresh`. (e) does deliver corrected gists.
+> `isFresh` has 1 production caller, `readFreshMagazineModel` 2, as claimed.
+>
+> ⚠ **No test fixture anywhere sets `sourceMdHash`, so the whole suite passes unchanged under the new
+> conjunct.** (e) would ship with **zero** regression coverage; the mutation-check is the only thing
+> between it and a silent no-op.
+>
+> **The root cause is not in (e).** It is that §3 makes `extractQuickView` unconditional, so a press
+> that applies nothing still rewrites the body. Any body-derived freshness signal will fire on that.
+> **Resolving it is a fork the spec has not settled** — see the note below — and it is deliberately
+> left open rather than guessed at, because this block has now taken three attempts and produced a
+> Blocking each time.
+
+##### ✅ The CHOICE stands — option (e), 2026-08-23 (user): invalidation is DERIVED from `sourceMdHash`, nothing is deleted and nothing is written
 
 Round 4 (r4 H1/H2) measured that **deleting the envelope is the worst available option**, and that it
 reverses a decision already on record. The envelope is not a private owner cache: it is the **only**
