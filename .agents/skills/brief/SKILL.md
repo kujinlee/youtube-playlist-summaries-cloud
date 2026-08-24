@@ -103,33 +103,13 @@ Before designing anything, answer these. They decide what the page contains:
 ## Step 3 — build the page
 
 **Load the `artifact-design` skill first** — it governs the visual craft. Then write the content as
-a fragment (a `<title>`, one `<style>…</style>`, then body markup — no `<html>`/`<head>`/`<body>`)
-and compose it with:
+a fragment (a `<title>`, one `<style>…</style>`, then body markup — no `<html>`/`<head>`/`<body>`).
 
-```bash
-python3 scripts/brief-compose.py --content <fragment.html> --slug <slug> --title "<title>"
-python3 scripts/explainer-serve.py            # no-op if already running
-# then: http://127.0.0.1:7391/latest
-```
-
-**The output goes to `~/explainers/`, NOT to an Artifact, and the reason is the Ask tray.**
-
-An Artifact is hosted under a CSP that blocks every external request, localhost included — so the
-`POST /questions` channel cannot exist there. Served from `explainer-serve.py` it works: hover a
-heading or select text → **ask** → the question lands in `~/explainers/questions.md` with its
-section and quoted passage, **and the monitor already watching that file wakes the session.** The
-reader gets an answer without leaving the page. That closed loop is the whole point of a briefing
-someone reads while deciding.
-
-`brief-compose.py` lifts the tray — 13 CSS rules, the markup, ~6KB of JS — **verbatim from an
-existing explainer**. Never retype it. It took four rounds of shipped defects to get right
-(`explainer-serve.py`'s docstring records them), and hand-copying working code between documents is
-the exact failure this project measured on 2026-08-17: 45 of 97 review findings were identifiers,
-imports and counts that did not survive a copy. The script fails loudly and writes nothing if it
-cannot find a tray to lift, or if the composed page has lost it.
-
-*Optionally* also publish an Artifact for a shareable read-only URL — but it has no Ask, so the
-served page is the one to hand over.
+**For everything after that, follow [`../shared/explainer-delivery.md`](../shared/explainer-delivery.md)** —
+composing with `brief-compose.py`, `explainer-serve.py`, why the page is served rather than published
+as an Artifact (the CSP blocks the Ask channel), arming the Monitor push loop, verifying the tray,
+and delivering `/latest`. It is the ONE description of that loop, shared with `explain-diff` and
+`explain-findings`; extracted 2026-08-24 so a third page-producing skill did not become a third copy.
 
 Sections, in this order:
 
@@ -171,10 +151,8 @@ Then ask the decision question directly, in one sentence.
 
 ## Answering the questions that come back
 
-When the monitor delivers a question, answer it **in the page**, not only in chat — a briefing whose
-answers live in the transcript has the problem it was built to solve. Add the answer under the
-relevant section, recompose, and say in chat that the page is updated. `/latest` always points at
-the newest file, so the reader's bookmark never changes.
+Answer **in the page**, not only in chat — see `../shared/explainer-delivery.md` §6. A briefing whose
+answers live in the transcript has the problem it was built to solve.
 
 ## Known gaps in this draft
 
