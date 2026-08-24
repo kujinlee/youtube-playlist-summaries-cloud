@@ -17,8 +17,10 @@ server-side cap (§4.1, §2), and ten citation drifts — all ten of r3's line r
 > existed. Both are corrected in place below — §4.1 (the `updated_at` trigger) and §2 (the blob write
 > protocol) — along with H1–H4 and M1–M6.
 >
-> **One decision is left open for the user: the magazine envelope, in §2.** It reverses a recorded
-> decision (backlog #57) and changes what a *public* share URL serves, so it is not mine to make.
+> **The one decision that needed the user — the magazine envelope — is SETTLED: option (e), 2026-08-23.**
+> Invalidation is **derived** from the envelope's existing `sourceMdHash` via one conjunct in
+> `isFresh`; nothing is deleted and the correction path writes no envelope at all. The share path and
+> the over-budget fallback are untouched, so backlog #57 stands. Full reasoning and costs in §2.
 >
 > **Two of the four rounds' worst errors were the same shape, and neither was a wrong line number.**
 > §4.1 cited a function correctly and missed the trigger *underneath* it; §2 cited `isFresh` correctly
@@ -150,63 +152,96 @@ likely — the one thing that used to break the cache by accident is now forbidd
 > stricter is its own slice with its own review."* **The false premise made the better option
 > invisible** — the same shape of error as §4.1's.
 
-#### ⛔ OPEN DECISION — this is the one thing in slice A that needs the user
+#### ✅ DECIDED 2026-08-23 (user) — option (e): invalidation is DERIVED from `sourceMdHash`, nothing is deleted and nothing is written
 
-Round 4 (r4 H1) measured that **deleting the envelope is the worst of the three options**, and that it
-reverses a decision already on record.
+Round 4 (r4 H1/H2) measured that **deleting the envelope is the worst available option**, and that it
+reverses a decision already on record. The envelope is not a private owner cache: it is the **only**
+input the anonymous share path can render from (`app/s/[token]/route.ts:102-103`, a generate-free leaf
+by design) **and** the fallback the owner path serves when the per-owner budget is exhausted
+(`serve-doc.ts:147-151`). Deleting it turns a **working public share link** into `notReady()` because
+someone made a private edit, and removes the degradation path backlog **#57 — tolerate version skew on
+the share path** decided to keep.
 
-The envelope is not a private owner cache. It is the **only** input the anonymous share path can
-render from (`app/s/[token]/route.ts:102-103`, a generate-free leaf by design), **and** the fallback
-the owner path serves when the per-owner budget is exhausted (`serve-doc.ts:147-151`, *"serve the
-title-stable stale rendering instead of failing"*).
+**The asymmetry that decides this.** There are two readers, and only one is strict:
 
-> **Failure scenario for the delete.** An owner shares a summary; the link is live. They apply a
-> one-word correction. Every visitor to that public URL now gets `notReady()` — **a working shared
-> link broken by a private edit** — until the owner opens the document and pays for a magazine
-> regeneration. If their serve budget is exhausted when they do, the fallback finds no envelope and
-> returns 503 where it previously served a readable page. **The delete removes the degradation path
-> as well as the cache.** Backlog **#57 — tolerate version skew on the share path** decided
-> explicitly to *serve the stale model*; deleting destroys the artifact that decision depends on.
-
-| | Option | Cost |
+| Reader | Used by | Checks |
 |---|---|---|
-| **(a)** | Delete the envelope | Breaks live share links; removes the over-budget fallback; reverses #57. Deferred ~6¢ regeneration on the next owner serve |
-| **(b)** | Add `sourceMdHash` to `isFresh` | Fixes the **whole class**, not just corrections. Same deferred ~6¢. Share path keeps serving (stale, per #57). **But it is the money-path change `read-model.ts:54-56` scopes to its own slice with its own review** |
-| **(c)** | Regenerate the model in place, during the correction | No stale window, no broken link. Adds a third paid call to the request and blows §5.4's budget |
-| **(d)** | **Ship A with no invalidation at all**; file the staleness | Keeps slice A strictly off the money path — its whole reason for existing. Costs nothing, breaks nothing, reverses nothing. But the magazine then serves pre-correction gists **certainly** rather than *sometimes*, and the reader's main surface shows text the user just paid to change |
+| `readFreshMagazineModel` → `isFresh` (`read-model.ts:20-25`) | owner serve — regenerate-or-not | `sameTitles` **&& `generatorVersion`** |
+| `readTitleStableModel` (`:57-69`) | **share path + over-budget fallback** | `sameTitles` && section count — **ignores `generatorVersion`** |
 
-**Recommendation: (b), scoped narrowly — with (d) as the honest fallback.**
+So an invalidation that acts on the **owner** predicate alone regenerates correctly while leaving the
+share path and the over-budget fallback untouched. That is option (e).
 
-(b) is the only option that leaves the share path working, matches #57 instead of reversing it, and
-fixes the whole staleness class rather than the corrections instance of it. The `read-model.ts:54-56`
-note guards against making a money path **stricter**, and (b) does exactly that — so the note applies
-to it squarely, not incidentally.
+##### The mechanism already exists, and it is `sourceMdHash` — not a new marker
 
-⚠ **The argument against (b), stated at full strength:** that note was written deliberately, by this
-project, about this predicate. Overriding it inside a slice that was carved out *specifically to stay
-off the money path* is the same move that produced three non-converging rounds — scope creeping back
-in through a fix. If that argument wins, **(d)** is better than (a): it ships the feature, changes no
-money path, breaks no share link, and files a defect that already exists rather than pretending the
-slice fixed it.
+An earlier draft of (e) proposed adding an `invalidated` marker to the envelope. **Rejected**: it
+would be a *second* vocabulary for one concern, which is what
+`scripts/check-vocabulary-collisions.py` exists to catch and what
+`docs/backlog.md`'s two-mechanisms lesson records as *"the observable shadow of a duplicate
+protocol."*
 
-**(a) is not recommended under any reading** — it is the only option that takes a working public URL
-and breaks it.
+`sourceMdHash` is **already this codebase's staleness oracle**. `ModelEnvelopeSchema` has carried it
+since Stage 3 (`model-store.ts:23`), both generators write it (`serve-doc.ts:181`,
+`generate.ts:59`), and `decideCompanion` already keys on it — including the exact
+absent-means-unprovable guard this needs:
 
-**Until this is settled, the requirement below is provisional:**
+```ts
+// lib/cloud-sync/companion.ts — the sync path settled this already
+const provablyStale = receiverModel.kind === 'envelope'
+  && receiverModel.envelope.sourceMdHash !== undefined;
+```
 
-> After a successful correction the caller invalidates the model envelope. Under (a) that is
-> `blobStore.delete(principal, MODEL_KEY(base))` — `MODEL_KEY` at `model-store.ts:32`, `delete` at
-> `blob-store.ts:71`. **Ordering: body write first, then invalidate** — a reader in between sees
-> corrected prose with stale gists, which is the pre-existing state, whereas the reverse serves
-> original prose with no model at all. **On invalidation failure: log the owner/video/key and still
-> return `applied`** — the correction is durable and the user's press succeeded; a 500 would report
-> failure for work that landed. The residual staleness is the pre-existing bad state, not a new one.
-> ⚠ `BlobStore.delete` (`blob-store.ts:71`) carries no documented absent-key behaviour, unlike
-> `deletePrefix` (`:74-76`); the plan confirms it on both adapters or tolerates a throw.
+**`isFresh` simply never adopted it**, and three separate places in the tree already say so:
+`read-model.ts:54-56`, and `model-store.ts:84` — *"`isFresh` ignores sourceMdHash, so a clobbered
+model is served indefinitely whenever the section titles are unchanged."*
 
-**Whichever option wins, a correction implies a deferred magazine charge on the next owner serve.**
-§1's ≈0.6¢ and §5's post-hoc recording both omit it, and §7's ledger falsifier cannot see it because
-it lands on a later request.
+> **Requirement.** `isFresh` gains one conjunct, guarded the way `decideCompanion` guards it:
+>
+> ```ts
+> sameTitles(envelope, titles)
+>   && envelope.generatorVersion === GENERATOR_VERSION
+>   && (envelope.sourceMdHash === undefined || envelope.sourceMdHash === currentMdHash)
+> ```
+>
+> `readFreshMagazineModel` takes `currentMdHash`. **Both call sites already have the body:**
+> `serve-doc.ts:78` and `:141` sit inside `resolveModel`, whose `mdBody: string` is a **required**
+> param (`:67`, destructured `:70`). No other caller exists in `lib/`, `app/` or `components/`.
+
+##### What the correction path does: nothing
+
+**This is the property that makes (e) better than what was pitched.** Invalidation is **derived from
+the body**, not stored beside it. The correction path writes the corrected markdown and stops:
+
+- no envelope read, no envelope write, **no read-modify-write race**;
+- no ordering question between body write and invalidation, because there is no second write;
+- no failure semantics for a delete that no longer happens;
+- `BlobStore.delete`'s undocumented absent-key behaviour stops mattering.
+
+The §2 requirements about delete ordering, delete failure and `delete` idempotence are **withdrawn** —
+they were answering a question this design does not ask.
+
+##### What it costs, stated honestly
+
+- **A deferred ~6¢ magazine regeneration on the next owner serve** of a corrected document. §1's
+  ≈0.6¢ and §5's post-hoc recording both omit it, and §7's ledger falsifier cannot see it because it
+  lands on a later request. §7 carries a row for it.
+- **It makes a money path stricter** — precisely what `read-model.ts:54-56` reserves for "its own
+  slice with its own review". That note is honoured, not overridden: this *is* that review, and the
+  change is landing with the guard the note's own sibling path already uses.
+- ⚠ **NOT VERIFIED — the one-time regeneration wave.** Every *already-drifted* document (envelope
+  `sourceMdHash` present and not matching its current body, for any reason — the `model-store.ts:84`
+  clobber, a prose-only resummarize) becomes stale the moment this ships, and pays ~6¢ on its next
+  owner serve. **Bounded**: once per document, never recurring, and each one is a document that has
+  been silently serving wrong gists. **Unmeasured**: the population size is unknown.
+  **Plan task — measure before shipping**, read-only via `claude_ro`: count envelopes whose
+  `sourceMdHash` is present and differs from the current body hash. If that number is large, the
+  rollout is staged rather than the design changed.
+- Legacy envelopes with **no** `sourceMdHash` are untouched — absent means *cannot prove stale*, so
+  nothing mass-invalidates.
+
+**Bonus, not scope creep:** this fixes the whole staleness class, not the corrections instance of it —
+including the clobber `model-store.ts:79-85` accepted specifically because it would be *"visible in
+production rather than inferred."*
 
 **`app/api/videos/[id]/regenerate/route.ts`** — gains a real cloud branch. It cannot execute under
 Supabase today: the panel sends `outputFolder` (`CorrectionsPanel.tsx:52`), the route rejects its
@@ -485,6 +520,12 @@ repo's only precedent (`assertMagazineInputWithinCap`, `gemini.ts:77-101`) is a 
 billing behaviour (`tests/integration/gemini-live-gates.test.ts`), nothing for correction quality.
 Run a fixture eval before enabling.
 
+⚠ **A correction has a SECOND, deferred cost that lands on a later request.** §2's option (e) makes a
+corrected document's magazine model stale, so the next **owner** serve regenerates it — ~6¢, once per
+correction, on a request this route never sees. §1's ≈0.6¢ is the *correction's* cost, not the
+*correction's total* cost, and §5.2's post-hoc recording cannot observe the second half. Both numbers
+are real; neither is the whole. §7 asserts the deferred charge fires **once** and not repeatedly.
+
 **5.2 Post-hoc recording, no reservation.** The route records **actual** spend to the ledger after the
 call returns. No reserve RPC, no settle semantics, no idempotency key, no `correction_est_cents`.
 
@@ -547,7 +588,12 @@ Assert at the consumer.
 | A run is recorded | the ledger | moves by the **actual** spend, after the call |
 | A run is bounded | the request to Gemini | `maxOutputTokens` and `thinkingBudget` present; over-cap input rejected **before** any call |
 | Structure survives | the parsed document | H2 sequence and `▶` tuples byte-identical pre/post |
-| …and the reader sees the correction | the **served magazine HTML** | contains the corrected prose, not the cached gists — i.e. the envelope was deleted |
+| …and the reader sees the correction | the **served magazine HTML** (owner) | after a correction the owner serve regenerates and the HTML contains **corrected gists**, not the cached ones. Mutation-check it: revert the `sourceMdHash` conjunct and this must fail |
+| …without breaking the share link | the **anonymous `/s/<token>` render** | still returns **200 with a readable page** immediately after a correction — `readTitleStableModel` is untouched. **This is the row that fails if anyone reintroduces the delete** |
+| …and without breaking the over-budget path | `serve-doc.ts:147-151` | with the owner budget exhausted **and** a corrected body, the stale-but-readable render is still served, not a 503 |
+| A legacy envelope is not invalidated | the owner serve | an envelope with **no** `sourceMdHash` serves from cache and **moves no money** — absent means *cannot prove stale* |
+| The correction path writes no envelope | the blob store | after a correction, `MODEL_KEY(base)` is **byte-identical** — invalidation is derived, and a write here would mean the read-modify-write design crept back |
+| The deferred charge is real and bounded | the ledger | the next owner serve of a corrected doc moves ~6¢ **once**; a second serve moves **nothing** (guards against a regenerate loop — both writers build fresh envelopes, `serve-doc.ts:174-182`, `generate.ts:50-60`) |
 | An **applying** press makes the row current | the **sync decision** | `reconcileClassA`'s `needsRegen` goes **true → false**. **Fails if the stamp is missing** |
 | ⚠ A **bare** press does NOT | the **sync decision** | on a video whose `needsRegen` is `true` — corrections delivered by `sync-run.ts:358`, body never regenerated — a bare press leaves it **`true`**. **This is the row neither r3 version could express, and the row the r3-H6 fix let the defect pass.** Reach the press both ways: whitespace-only (the panel sends the raw value, `CorrectionsPanel.tsx:52`) and a POST with no `corrections` key |
 | A no-correction press disturbs nothing | the **sync decision** | **all six `ClassASignals` fields** (`backfill.ts:8-16`) byte-identical before and after: `summaryMdKey`, `mdHash`, `docVersionMajor`, `mdGeneratedAt`, **`mdCorrectionsHash`** (§4.3 — it must NOT move), `backfilled`. Plus every `annotationsEditedAt` entry |
@@ -572,6 +618,11 @@ is slice B's, and backlog #22's `it.failing` tripwire
   **slice C**, backlog #61.
 - `{from,to}` pairs — rejected with reasons.
 - The occurrence check the user originally asked for — §1.2.
+- **Regenerating the magazine model inside the correction request.** §2's option (e) invalidates;
+  the *regeneration* happens on the next owner serve, through the existing paid path. Doing it
+  in-request was option (c) and blows §5.4's budget.
+- **`readTitleStableModel` and the share path** — deliberately untouched by (e), which is the point
+  of it. Anything that changes what an anonymous visitor sees belongs to backlog **#57**, not here.
 - **No migration — but on a narrower argument than v4 gave (r4 B1).** v4 said *"§4.1 settles it —
   `update_video_annotations` already excludes `updated_at`"*. **That premise was false**, and §4.1 now
   carries the correction. The conclusion survives on a different footing: §4.2 **accepts** the
@@ -594,8 +645,12 @@ is slice B's, and backlog #22's `it.failing` tripwire
    failed blob read must never become *"empty document — correct it anyway"*. (This is the repo's
    measured `rls-denial-is-indistinguishable-from-absence` hazard on a paid path.)
 2. **`summaryHtml` in cloud.** `route.ts:86` writes `summaryHtml: null`. Whether the cloud branch does
-   the same, and whether a rendered-HTML blob needs removing alongside the model envelope, is
-   unstated — and couples to the §2 open decision.
+   the same, and whether a rendered-HTML blob needs invalidating too, is unstated. ⚠ **§2's (e) does
+   NOT cover it** — (e) derives *model* freshness from `sourceMdHash`; a separately cached rendered
+   HTML has no such tie to the body, so if one exists in cloud it can go stale in exactly the way (e)
+   just fixed for the model. The plan establishes whether a cloud rendered-HTML cache exists at all
+   before deciding — this is a "what else touches this?" question of the kind that produced both of
+   round 4's Blockings.
 3. **What the panel shows for each new failure class** — structural-validation throw, 413 over-cap,
    400 over-length, abort. §6's discriminator covers `applied` / `no-corrections` only.
 
