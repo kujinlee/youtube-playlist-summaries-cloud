@@ -43,10 +43,35 @@ if ! python3 "$REPO/scripts/check-live-schema.py" --database "$DB" --expect-pres
   exit 2
 fi
 
-ASSERTIONS=$(awk '/@RE-RUNNABLE/{p=1;next} /@MIGRATION-ONLY/{p=0;next} p' "$ASSERT")
-if [ -z "$(printf '%s' "$ASSERTIONS" | tr -d '[:space:]')" ]; then
-  echo "CANNOT RUN — no @RE-RUNNABLE block found in 05_assert.sql. An empty assertion set must" >&2
-  echo "never report success. Task 8 Step 1 adds the markers. Treat this as NOT RUN." >&2
+# ⟳ r3 HIGH (codex) — THE SELECTOR WAS STILL FAIL-OPEN, TWICE, AND MY OWN PROOF MISSED BOTH.
+# The r2 fix added a stop condition, and I demonstrated it with a synthetic file whose traps were
+# real markers on comment lines. Codex executed two shapes that test did not cover, and BOTH
+# reported "RE-RUNNABLE subset passed":
+#
+#   1. A marker-only block with no SQL:            -- @RE-RUNNABLE
+#                                                  -- comment, no assertion
+#      -> `$ASSERTIONS` is non-empty (it holds comment text), the emptiness guard passes, psql runs
+#         the seed and nothing else, and ASSERTIONS_OK prints. Success over zero assertions.
+#
+#   2. A marker inside a STRING LITERAL:           select '@MIGRATION-ONLY' as marker;
+#                                                  select 1/0 as should_have_failed;
+#      -> the old pattern matched anywhere on the line, so selection stopped at the literal and the
+#         failing assertion was never sent.
+#
+# Both fixes below are structural, not pattern tweaks:
+#   * a marker only counts ON A COMMENT LINE, so SQL text can never steer the selector;
+#   * the block must contain at least one NON-COMMENT line, so comments alone cannot stand in for
+#     assertions.
+ASSERTIONS=$(awk '
+  /^[[:space:]]*--.*@RE-RUNNABLE/    { p = 1; next }
+  /^[[:space:]]*--.*@MIGRATION-ONLY/ { p = 0; next }
+  p' "$ASSERT")
+
+EXECUTABLE=$(printf '%s\n' "$ASSERTIONS" | grep -v '^[[:space:]]*--' | tr -d '[:space:]')
+if [ -z "$EXECUTABLE" ]; then
+  echo "CANNOT RUN — no @RE-RUNNABLE block with EXECUTABLE SQL in $ASSERT." >&2
+  echo "Comments alone are not assertions: a marked block containing only comments would otherwise" >&2
+  echo "run the seed and report success over zero assertions. Treat this as NOT RUN." >&2
   exit 2
 fi
 

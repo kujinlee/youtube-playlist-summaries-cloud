@@ -268,12 +268,26 @@ attention. Step 5 below is the actual gate.
 
 - [ ] **Step 5: Prove no site was missed — the search is the deliverable**
 
+⟳ **r3 HIGH (codex) — THIS GATE CONTRADICTED THE PREDICATE THREE PARAGRAPHS ABOVE IT.** It used to
+be a bare `grep -rn "corrections"` expecting **no output**, while Step 4 had just established that
+**11 code lines reading `videos.data->>'corrections'` MUST BE KEPT.** Measured on the same file, the
+same day: `must_go=32`, `must_stay=11`. So the gate as written could only be satisfied by deleting
+valid assertions. **The gate must use the sweep's own predicate, not a broader one:**
+
 ```bash
-grep -rn "corrections" docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/ \
-  | grep -v "corrections_hash_of\|no_corrections_hash\|^.*:-- "
+S=docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema
+grep -rn "corrections_hash\|sync_corrections_to_workspace_video\|corrections from workspace_videos\|wv\.corrections" \
+  "$S"/ | grep -v ":[[:space:]]*--" | grep -v "corrections_hash_of\|no_corrections_hash"
 ```
 
-Expected: **no output**. Anything remaining is a column reference to a column that no longer exists.
+Expected: **no output**. Anything remaining is a reference to a column or function that no longer
+exists. ⚠ A bare `grep corrections` here is **wrong** and will stay wrong: ADR-0011 removes
+`workspace_videos.corrections*`, **not** corrections.
+
+⚠ **Fourth instance today of *fixed at one of two sites*** — and this one was self-inflicted within
+the hour, by the very edit that introduced the must-keep predicate. The rule again, because writing
+it down has not yet been enough: **a fix that adds a requirement must grep for its callers in the
+same edit** — and a *predicate* is a requirement, so its gate is a caller.
 ⚠ If `corrections_hash_of()` / `no_corrections_hash()` now have zero callers, **leave them defined and
 say so in the commit** — deleting them is a separate decision with its own blast radius (`0021`
 shares the canonicalization).

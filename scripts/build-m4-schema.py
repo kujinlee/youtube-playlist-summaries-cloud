@@ -73,10 +73,41 @@ def trigger_rx(name: str) -> re.Pattern[str]:
 def strip_comments(sql: str) -> str:
     """Drop `--` comments so assertions read CODE, not prose about code.
 
-    Bound: naive. It would also cut a `--` inside a string literal; the spec has none, and an
-    over-eager cut can only make an assertion stricter, never blind it.
+    ⟳ r3 LOW (codex) — THE NAIVE VERSION WAS WRONG IN THE DANGEROUS DIRECTION, and its own docstring
+    said the opposite. It claimed "an over-eager cut can only make an assertion stricter, never blind
+    it". MEASURED, the counter-example:
+
+        strip_comments("select '--' || wv.corrections_hash;")  ->  "select '"
+        assert_end_state(... that line ...)                    ->  []      # BLIND
+
+    A `--` inside a string literal truncated the line before the offending reference, so the
+    end-state predicate could not see it. That is exactly the blinding the comment ruled out.
+
+    This version tracks single-quoted strings (with `''` escaping) and only honours `--` outside
+    one. Codex found no such line in today's schema, so this closes residual risk rather than a live
+    bad build — but the predicate is the verdict, and a verdict that can be blinded by a quote is
+    not one.
     """
-    return "\n".join(line.split("--")[0] for line in sql.splitlines())
+    out = []
+    for line in sql.splitlines():
+        in_str = False
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if in_str:
+                if ch == "'":
+                    # '' inside a string is an escaped quote, not a terminator
+                    if i + 1 < len(line) and line[i + 1] == "'":
+                        i += 1
+                    else:
+                        in_str = False
+            elif ch == "'":
+                in_str = True
+            elif ch == "-" and i + 1 < len(line) and line[i + 1] == "-":
+                break
+            i += 1
+        out.append(line[:i])
+    return "\n".join(out)
 
 
 def apply_edits(s03: str, s04: str) -> tuple[str, str, list[str], list[str]]:
@@ -222,6 +253,19 @@ def self_test() -> int:
           assert_end_state(s03 + s04 + "\nselect public.corrections_hash_of('x');"), [])
     check("end state REJECTS a missing backfill",
           any("backfill is missing" in b for b in assert_end_state("select 1;")), True)
+
+    # ⟳ r3 LOW (codex) — a `--` inside a STRING LITERAL used to truncate the line before the
+    # offending reference, blinding the predicate. Verbatim from the review.
+    check("strip_comments does NOT cut at a -- inside a string literal",
+          strip_comments("select '--' || wv.corrections_hash;"),
+          "select '--' || wv.corrections_hash;")
+    check("end state REJECTS a residual reference hidden behind a quoted --",
+          any("corrections_hash is still referenced" in b for b in
+              assert_end_state(s03 + s04 + "\nselect '--' || wv.corrections_hash;")), True)
+    check("strip_comments STILL cuts a real trailing comment",
+          strip_comments("select 1; -- wv.corrections_hash was removed"), "select 1; ")
+    check("strip_comments handles an escaped '' inside a string",
+          strip_comments("select 'it''s -- fine'; -- gone"), "select 'it''s -- fine'; ")
 
     # an anchor that matches an unexpected NUMBER of times is an error, never a silent skip
     _, _, _, errors3 = apply_edits(PRE + PRE_FN + PRE, PRE_04)
