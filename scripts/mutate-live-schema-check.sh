@@ -60,8 +60,17 @@ if ! docker exec -i "$CONTAINER" sh -c \
   echo "CANNOT RUN — could not clone the live schema into the scratch db. Treat this as NOT RUN." >&2
   exit 2
 fi
-if ! { cat "$SPEC"/01_workspaces.sql "$SPEC"/03_generations.sql "$SPEC"/04_artifacts.sql; } \
-     | docker exec -i "$CONTAINER" psql -U postgres -d "$SCRATCH" -tAq -v ON_ERROR_STOP=1 >/dev/null 2>&1; then
+# ⛔ NOT `cat 01 03 04`. MEASURED 2026-08-25 — that is what this harness used to do, and it built a
+# PRE-ADR-0011 schema: `sync_corrections_to_workspace_video()` plus both `videos_corrections_sync_*`
+# triggers, none of which M4 ships. The gate was therefore being mutation-proven against a schema
+# that will never exist, and the rollback left all three behind while the gate reported ABSENT.
+# `build-m4-schema.py` applies Tasks 1-2 and ASSERTS the end state.
+if ! python3 ./scripts/build-m4-schema.py --quiet --out /tmp/m4-mutation-schema.sql; then
+  echo "CANNOT RUN — could not build the post-ADR-0011 schema. Treat this as NOT RUN." >&2
+  exit 2
+fi
+if ! docker exec -i "$CONTAINER" psql -U postgres -d "$SCRATCH" -tAq -v ON_ERROR_STOP=1 \
+     < /tmp/m4-mutation-schema.sql >/dev/null 2>&1; then
   echo "CANNOT RUN — the spec did not apply to the cloned schema. Treat this as NOT RUN." >&2
   exit 2
 fi
@@ -76,6 +85,29 @@ echo "     surviving live-table triggers, for the record:"
 psql_scratch -c "select '       '||t.tgname from pg_trigger t join pg_class c on c.oid=t.tgrelid
                   where not t.tgisinternal and c.relname in ('profiles','playlists','videos','jobs')
                   order by 1;" 2>/dev/null
+
+echo "═══ mutation 3 ⭐ the ADR-0011 RESIDUE: a Task 1 that never landed ═══"
+# MEASURED 2026-08-25: with the raw spec applied, the rollback left three objects behind and
+# `--expect-absent` reported ABSENT — because the gate's inventory is post-ADR-0011 and could not
+# see them. `--expect-present` must now REJECT this schema: it is not a valid M4.
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "drop database if exists ${SCRATCH}_raw (force);" >/dev/null 2>&1
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "create database ${SCRATCH}_raw;" >/dev/null 2>&1
+docker exec -i "$CONTAINER" sh -c \
+  "pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges | psql -U postgres -d ${SCRATCH}_raw -q" \
+  >/dev/null 2>&1
+if { cat "$SPEC"/01_workspaces.sql "$SPEC"/03_generations.sql "$SPEC"/04_artifacts.sql; } \
+   | docker exec -i "$CONTAINER" psql -U postgres -d "${SCRATCH}_raw" -tAq -v ON_ERROR_STOP=1 \
+   >/dev/null 2>&1; then
+  python3 ./scripts/check-live-schema.py --database "${SCRATCH}_raw" --expect-present \
+    >/dev/null 2>&1 && r=pass || r=fail
+  report "pre-ADR-0011 schema -> --expect-present FAILS (sync fn + 2 triggers)" fail "$r"
+else
+  echo "  ✗ could not build the raw pre-ADR-0011 schema — treat mutation 3 as NOT RUN"; fail=1
+fi
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "drop database if exists ${SCRATCH}_raw (force);" >/dev/null 2>&1
 
 echo
 if [ "$fail" -eq 0 ]; then

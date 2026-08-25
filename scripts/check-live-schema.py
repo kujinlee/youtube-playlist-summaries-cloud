@@ -3,7 +3,7 @@
 
     python3 scripts/check-live-schema.py --expect-absent    # before 0027, or after 0028
     python3 scripts/check-live-schema.py --expect-present   # after 0027
-    python3 scripts/check-live-schema.py --self-test        # 10 cases
+    python3 scripts/check-live-schema.py --self-test        # prints its own case count
 
 WHY THIS EXISTS
 ---------------
@@ -67,6 +67,32 @@ EXPECTED = {"tables": set(M4_TABLES), "columns": set(M4_COLUMNS),
             "triggers": set(M4_LIVE_TRIGGERS), "functions": set(M4_FUNCTIONS),
             "types": set(M4_TYPES)}
 
+# ⚠ OBJECTS ADR-0011 DELETED. These must NEVER exist, in EITHER polarity.
+# -----------------------------------------------------------------------------------------------
+# MEASURED 2026-08-25. The proof harness built M4 from the spec files WITHOUT Tasks 1-2 applied,
+# reversed it with the rollback script, and this gate reported **ABSENT — as expected**. Three
+# M4-created objects were still sitting in the catalog:
+#
+#     + fn:sync_corrections_to_workspace_video()
+#     + trg:videos.videos_corrections_sync_ins_trg
+#     + trg:videos.videos_corrections_sync_upd_trg
+#
+# The sets above are the POST-ADR-0011 inventory, so the gate was structurally blind to anything
+# ADR-0011 deleted. Task 6 builds 0027 by `cat`-ing the spec files: if Task 1 is skipped or lands
+# partially, 0027 creates these three, the rollback never names them, and this gate blesses the
+# residue — the same shape as the `cascade` case this gate exists to catch, one layer over.
+#
+# A surviving `videos_corrections_sync_*` trigger is not cosmetic: it fires on every video insert
+# and update, calling `public.workspace_videos.corrections`, a column ADR-0011 removes.
+#
+# BOUND HONESTLY: this covers only kinds the catalog query below reads. It is a check on Task 1's
+# completeness, not a general "nothing unexpected exists" assertion.
+ADR0011_REMOVED = {
+    "triggers": {"videos_corrections_sync_ins_trg", "videos_corrections_sync_upd_trg"},
+    "functions": {"sync_corrections_to_workspace_video"},
+    "columns": {"workspace_videos.corrections", "workspace_videos.corrections_hash"},
+}
+
 # One query per kind. `\echo` markers delimit the sections; no backticks anywhere — psql performs
 # shell command substitution on backquotes inside meta-command arguments, exactly as bash does
 # (measured 2026-08-25: it printed `sh: public: not found` into the middle of a measurement).
@@ -75,8 +101,13 @@ CATALOG_SQL = r"""
 select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind = 'r';
 \echo ---COLUMNS---
+-- the derived workspace_id columns, PLUS the two ADR-0011 deleted from workspace_videos, so a
+-- half-applied Task 1 is visible rather than silently tolerated.
 select table_name || '.' || column_name from information_schema.columns
- where table_schema = 'public' and column_name = 'workspace_id';
+ where table_schema = 'public'
+   and (column_name = 'workspace_id'
+        or (table_name = 'workspace_videos'
+            and column_name in ('corrections', 'corrections_hash')));
 \echo ---TRIGGERS---
 select t.tgname from pg_trigger t join pg_class c on c.oid = t.tgrelid
   join pg_namespace n on n.oid = c.relnamespace
@@ -90,13 +121,27 @@ select t.typname from pg_type t join pg_namespace n on n.oid = t.typnamespace
 """
 
 
+def forbidden(found: dict[str, set[str]]) -> dict[str, set[str]]:
+    """Objects ADR-0011 deleted that are nonetheless present. PURE.
+
+    Checked in BOTH polarities: their presence means Task 1 did not fully land, whether M4 is
+    supposed to be up or down.
+    """
+    return {kind: found.get(kind, set()) & names
+            for kind, names in ADR0011_REMOVED.items()
+            if found.get(kind, set()) & names}
+
+
 def verdict(found: dict[str, set[str]], mode: str) -> bool:
     """PURE. True = pass.
 
     `found` maps kind -> the names actually present in the live catalog.
     absent : NOTHING of M4 may remain, in ANY kind.
     present: EVERY M4 object must be there, in every kind.
+    BOTH   : nothing ADR-0011 deleted may exist.
     """
+    if forbidden(found):
+        return False
     if mode == "absent":
         return all(not (found.get(k, set()) & EXPECTED[k]) for k in KINDS)
     return all(EXPECTED[k] <= found.get(k, set()) for k in KINDS)
@@ -182,6 +227,22 @@ def self_test() -> int:
           residue({**none, "functions": {"slot_kind"}}, "absent") == {"functions": {"slot_kind"}},
           True)
 
+    # ⭐ THE MEASURED BLIND SPOT — this gate reported ABSENT over a database still carrying all
+    # three objects below, because they are not in the post-ADR-0011 inventory it checks.
+    sync_fn = {**none, "functions": {"sync_corrections_to_workspace_video"}}
+    sync_trg = {**none, "triggers": {"videos_corrections_sync_ins_trg"}}
+    check("absent FAILS when the ADR-0011 sync FUNCTION survives", verdict(sync_fn, "absent"), False)
+    check("absent FAILS when an ADR-0011 sync TRIGGER survives", verdict(sync_trg, "absent"), False)
+    check("PRESENT also FAILS on an ADR-0011 object — a half-applied Task 1 is not a valid M4",
+          verdict({**all_, "functions": all_["functions"] | {"sync_corrections_to_workspace_video"}},
+                  "present"), False)
+    check("present FAILS when workspace_videos.corrections_hash was never dropped",
+          verdict({**all_, "columns": all_["columns"] | {"workspace_videos.corrections_hash"}},
+                  "present"), False)
+    check("forbidden NAMES the offending object",
+          forbidden(sync_trg) == {"triggers": {"videos_corrections_sync_ins_trg"}}, True)
+    check("forbidden is EMPTY on a clean post-ADR-0011 schema", forbidden(all_) == {}, True)
+
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 
@@ -222,7 +283,25 @@ def main() -> int:
               f"{len(EXPECTED['types'])} type)")
         return 0
 
+    gone = forbidden(found)
+    if gone:
+        print("FAILED — objects ADR-0011 DELETED are present. Task 1 did not fully land, so 0027\n"
+              "carries objects the rollback never names and this gate used to bless:\n",
+              file=sys.stderr)
+        for kind in sorted(gone):
+            for name in sorted(gone[kind]):
+                print(f"  ✗ adr-0011-removed {kind[:-1]}: {name}", file=sys.stderr)
+        if "triggers" in gone:
+            print("\n⚠ A surviving corrections-sync trigger fires on EVERY video insert and update,\n"
+                  "  calling workspace_videos.corrections — a column ADR-0011 removes.",
+                  file=sys.stderr)
+        if not residue(found, mode):
+            return 1
+        print(file=sys.stderr)
+
     bad = residue(found, mode)
+    if not bad:
+        return 1
     word = "SURVIVING" if mode == "absent" else "MISSING"
     print(f"FAILED — expected M4 {mode.upper()}, but these objects are {word}:\n", file=sys.stderr)
     for kind in KINDS:
