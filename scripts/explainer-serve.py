@@ -95,6 +95,13 @@ QUESTIONS = ROOT / "questions.md"
 MAX_BODY = 64 * 1024
 SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
 
+# OPTIONAL second read-only root, for pages that want to link at the SOURCE they were derived from.
+# Off unless `EXPLAINER_DOCS_ROOT` names a directory, so this file stays project-independent — it
+# still knows nothing about any particular repo, only that it may be pointed at one (backlog #40).
+# Reached at /src/<path>; confinement is `safe_path`, the same helper the primary root uses, so
+# there is ONE path-escape implementation rather than a second one written under time pressure.
+SRC_ROOT_ENV = "EXPLAINER_DOCS_ROOT"
+
 
 # ── pure helpers, all covered by --self-test ─────────────────────────────────────────────────────
 
@@ -114,6 +121,41 @@ def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     if candidate.suffix.lower() not in SERVABLE:
         return None
     return candidate
+
+
+def src_root() -> pathlib.Path | None:
+    """The optional source root, or None when unset or not a directory. PURE given the env."""
+    v = os.environ.get(SRC_ROOT_ENV, "").strip()
+    if not v:
+        return None
+    p = pathlib.Path(v).expanduser()
+    return p if p.is_dir() else None
+
+
+def source_shell(rel: str, text: str) -> str:
+    """A readable, themed view of a source file.
+
+    Deliberately NOT a markdown renderer. These documents carry tables, nested blockquotes and
+    struck-through corrections whose meaning is the point; a half-renderer would silently drop the
+    parts that matter most. Monospace and honest beats rich and wrong — and `?raw=1` is one click
+    away for anything that wants the bytes.
+    """
+    esc = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<title>{rel}</title><style>
+:root{{--bg:#f6f5f2;--ink:#1a1c22;--faint:#838a9b;--rule:#ddd9d0;--accent:#3f4bb8}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#14151a;--ink:#eceef4;--faint:#7d8496;
+  --rule:#2e313b;--accent:#8f9bf0}}}}
+body{{background:var(--bg);color:var(--ink);margin:0;
+  font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}}
+header{{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--rule);
+  padding:.7rem 1.2rem;display:flex;gap:1rem;align-items:baseline;flex-wrap:wrap}}
+header b{{font-weight:600}} header a{{color:var(--accent)}} header .f{{color:var(--faint)}}
+pre{{margin:0;padding:1.2rem;white-space:pre-wrap;word-wrap:break-word;tab-size:2}}
+</style></head><body>
+<header><b>{rel}</b><span class="f">{len(text.splitlines())} lines</span>
+<a href="?raw=1">raw</a><a href="/goals">goals</a><a href="/">index</a></header>
+<pre>{esc}</pre></body></html>"""
 
 
 def explainers(root: pathlib.Path) -> list[pathlib.Path]:
@@ -390,6 +432,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if target is None or not target.is_file():
                 return self._send(404, b"no such page", "text/plain; charset=utf-8")
             return self._send(200, revision(target).encode(), "text/plain; charset=utf-8")
+        if path.startswith("/src/"):
+            root = src_root()
+            if root is None:
+                return self._send(404, (f"no source root — start the server with "
+                                        f"{SRC_ROOT_ENV}=<dir>").encode(),
+                                  "text/plain; charset=utf-8")
+            target = safe_path(path[len("/src/"):], root)
+            if target is None or not target.is_file():
+                return self._send(404, b"no such source file", "text/plain; charset=utf-8")
+            text = target.read_text(errors="replace")
+            if "raw=1" in (self.path.split("?", 1)[1] if "?" in self.path else ""):
+                return self._send(200, text.encode(), "text/plain; charset=utf-8")
+            rel = str(target.relative_to(root.resolve()))
+            return self._send(200, source_shell(rel, text).encode(), "text/html; charset=utf-8")
         resolved = resolve_page(path, ROOT)
         if resolved is None or not resolved.is_file():
             return self._send(404, b"not found", "text/plain; charset=utf-8")

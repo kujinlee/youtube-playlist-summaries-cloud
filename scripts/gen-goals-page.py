@@ -284,7 +284,7 @@ CSS = """
   footer{border-top:1px solid var(--rule);padding-top:1.1rem;display:flex;flex-direction:column;
          gap:.6rem;font-size:.82rem;color:var(--ink-faint)}
   .legend{max-width:70ch}
-  a{color:var(--structure)}
+  a{color:var(--structure)}\n  a.n{text-decoration:none;border-bottom:1px solid transparent}\n  a.n:hover{border-bottom-color:var(--structure);color:var(--structure)}\n  a.chip{text-decoration:none}\n  a.chip:hover{border-color:var(--structure)}
   :focus-visible{outline:2px solid var(--structure);outline-offset:2px}
 """
 
@@ -320,8 +320,9 @@ def render_goal(a: dict) -> str:
                 bits.append(f'<span class="amend">+{n} amended</span>')
             head = adr["status"].split("—")[0].split("(")[0].strip() or "no status"
             tail = (" " + " ".join(bits)) if bits else ""
-            parts.append(f'<span class="chip {cls}" title="{esc(adr["status"])}">'
-                         f'ADR-{adr["num"]} · {esc(head)}{tail}</span>')
+            parts.append(f'<a class="chip {cls}" href="/src/docs/adr/{esc(adr["file"])}" '
+                         f'title="{esc(adr["status"])}">'
+                         f'ADR-{adr["num"]} · {esc(head)}{tail}</a>')
     else:
         parts.append('<span class="chip">no ADR recorded</span>')
     parts.append("</div></div>")
@@ -333,7 +334,8 @@ def render_goal(a: dict) -> str:
             parts.append(f'<span class="rung {m["state"]}" title="{esc(m["title"])}">'
                          f'{esc(m["id"])}</span>')
         parts.append("</div>")
-        parts.append(f'<span class="doc t">spine: {esc(a["spine"]["name"])}</span>')
+        parts.append(f'<span class="doc t">spine: '
+                     f'<a href="/src/{esc(a["spine"]["rel"])}">{esc(a["spine"]["name"])}</a></span>')
     else:
         parts.append('<span class="absent">No milestone plan — this goal has no spine to '
                      "read state from.</span>")
@@ -348,7 +350,8 @@ def render_goal(a: dict) -> str:
 
     parts.append('<div class="band"><span class="blab">Documents</span><div class="docs">')
     for d in a["docs"]:
-        parts.append(f'<div class="doc"><span class="n">{esc(d["name"])}</span>'
+        parts.append(f'<div class="doc"><a class="n" href="/src/{esc(d["rel"])}">'
+                     f'{esc(d["name"])}</a>'
                      f'<span class="t">{esc(d["kind"])} · {esc(d["touched"] or "—")}</span>'
                      f'<span class="g">{inline_md(d["goal"])}</span></div>')
     parts.append("</div></div></article>")

@@ -10,6 +10,11 @@ once allocated, does not change, so nothing here can silently go stale. Do **not
 progress, or "what's next" columns: for state, follow the anchor to `docs/roadmap-to-launch.md` and
 `docs/backlog.md`. A central file that holds state drifts, and this project has measured that twice.
 
+⚠ **Start the server with `EXPLAINER_DOCS_ROOT=<repo>` or the document links 404** —
+`EXPLAINER_DOCS_ROOT=$PWD python3 scripts/explainer-serve.py`. The page links every document,
+spine and ADR at `/src/<repo-relative-path>`; without that root the server has nothing to
+serve them from and says so in the 404 rather than failing mysteriously.
+
 **Rendered** by `scripts/gen-goals-page.py` as the standing page at
 **http://127.0.0.1:7391/goals** — one card per goal, everything on it derived from this file,
 the headers, `docs/adr/`, the milestone spines and `git log`. Rebuilt by
