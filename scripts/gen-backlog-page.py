@@ -201,6 +201,11 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
      "from recurring.", [
         (16, "After a deploy, a browser tab left open keeps running the old JavaScript with no "
              "“refresh available” prompt."),
+        (64, "A feature's documents don't say which decision they belong to, so the plan for a goal "
+             "can be un-findable by that goal's own name — measured: an hour lost re-deriving a "
+             "roadmap that already existed, reaching a conclusion it had already corrected. Attach "
+             "the ADR number and one anchor name to every spec and plan, enforce it in check-docs, "
+             "and render one pinned page per decision."),
         (29, "A guard-coverage checker only inspects the parked schema, so the guards in real "
              "migrations are invisible to it."),
         (38, "Extract the sidebar's load/refresh state machine into a hook — a reviewer, asked "
