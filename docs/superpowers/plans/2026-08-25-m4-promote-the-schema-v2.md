@@ -54,7 +54,15 @@
 ## Task 1: Remove corrections from `workspace_videos` (ADR-0011)
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/03_generations.sql:52,61,89-95,183-185,227-236,253-262`
+- Modify: `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/03_generations.sql`
+
+⛔ **EDIT BY CONTENT ANCHOR, NEVER BY LINE NUMBER.** ⟳ *r1 B4 (claude) / H1 (codex), coordinator-verified.*
+The citations `:52,:61,:89-95,:183-185,:227-236,:253-262` are all correct **against the file as it
+stands** — and Step 2 deletes two lines, so every later one shifts by −2 (89→87, 183→181, 227→225,
+253→251) **before the step that uses it**. A task cannot address a file its own earlier steps move.
+Each step below therefore quotes the text to find. ⚠ This is ADR-0006's lesson one layer up: *an
+address derived from something that moves is not an address* — which is the very goal this plan
+delivers.
 
 **Interfaces:**
 - Consumes: nothing.
@@ -64,13 +72,22 @@
 
 ```bash
 cd docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema
-grep -c "corrections" 03_generations.sql          # expect 20
+grep -c "corrections" 03_generations.sql          # expect 50 (⟳ r1: a draft said 20,
+                                                  # which was a COMMENT-FILTERED count pasted
+                                                  # into an unfiltered command)
 grep -c "^create trigger" 03_generations.sql      # expect 10
 ```
 
 - [ ] **Step 2: Drop the two columns**
 
-In `03_generations.sql`, delete line 52 (`  corrections        text,`) and line 61 (`  corrections_hash   text not null default no_corrections_hash(),`). Add above the `create table workspace_videos`:
+In `03_generations.sql`, delete the two lines that read **exactly**:
+
+```sql
+  corrections        text,
+  corrections_hash   text not null default no_corrections_hash(),
+```
+
+Both sit inside `create table workspace_videos (…)`. Add immediately above that `create table`:
 
 ```sql
 -- ⟳ ADR-0011 (2026-08-25) — CORRECTIONS ARE PER-PLAYLIST AND DO NOT LIVE HERE.
@@ -81,7 +98,8 @@ In `03_generations.sql`, delete line 52 (`  corrections        text,`) and line 
 
 - [ ] **Step 3: Simplify the backfill**
 
-Replace lines 89-95 with:
+Find the statement beginning `insert into workspace_videos (workspace_id, video_id, corrections,`
+and replace it, through its terminating `;` (the `order by … desc;` line), with:
 
 ```sql
 insert into workspace_videos (workspace_id, video_id)
@@ -92,7 +110,9 @@ insert into workspace_videos (workspace_id, video_id)
 
 - [ ] **Step 4: Simplify the derive trigger's upsert**
 
-Replace lines 183-185 with:
+Inside `resolve_workspace_from_playlist()`, find the block beginning
+`insert into public.workspace_videos (workspace_id, video_id, corrections,` and replace it,
+through `on conflict (workspace_id, video_id) do nothing;`, with:
 
 ```sql
     insert into public.workspace_videos (workspace_id, video_id)
@@ -102,7 +122,14 @@ Replace lines 183-185 with:
 
 - [ ] **Step 5: Delete the sync function and its two triggers**
 
-Delete `sync_corrections_to_workspace_video()` and its `revoke` (lines 227-236) and both `create trigger videos_corrections_sync_*` blocks (lines 253-262), including their explanatory comments.
+Delete, by name rather than by line:
+
+1. the whole `create function sync_corrections_to_workspace_video() returns trigger … $$;` body;
+2. the line `revoke all on function sync_corrections_to_workspace_video() from public, anon, authenticated;`;
+3. both `create trigger videos_corrections_sync_ins_trg` and `…_upd_trg` statements;
+4. the comment block between them that explains the round-9 clobber defect — it documents a
+   mechanism that no longer exists, and a comment outliving its subject is how this repo's
+   ratchets end up explaining themselves with objects nobody can find.
 
 - [ ] **Step 6: Verify the removal by counting, and that the file still parses**
 
@@ -136,7 +163,8 @@ git commit -F /tmp/t1-msg.txt   # subject: "feat(M4): ADR-0011 — corrections l
 ## Task 2: Move the corrections-currency comparison to the reader
 
 **Files:**
-- Modify: `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/04_artifacts.sql:717,777`
+- Modify: `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/04_artifacts.sql` (two ranking sites)
+- Modify: `…/schema/05_assert.sql` — ⟳ *r1 B3: 52 corrections references, no task touched them*
 
 **Interfaces:**
 - Consumes: Task 1's `workspace_videos` (no `corrections_hash`).
@@ -175,13 +203,43 @@ cd docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema
 
 Expected: `ALL_OK`, exit 0. This is the first point at which the post-ADR-0011 schema is known to execute.
 
-- [ ] **Step 4: Prove no third site was missed**
+- [ ] **Step 4: Sweep `05_assert.sql` — ⛔ ADR-0011 IS IMPLEMENTED AT TWO OF THREE SITES WITHOUT THIS**
+
+⟳ **r1 B3, BOTH halves.** The first draft edited `03` and `04` and left the assertion harness alone;
+Task 8 said it gets *"classification comments only"*. But `05_assert.sql` holds **52** `corrections`
+references — it asserts the dropped columns, inserts into them, updates them, and inventories the
+deleted sync function:
 
 ```bash
-grep -rn "corrections_hash" docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/
+grep -c "corrections" docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/05_assert.sql
+# 52. Every one of them breaks the moment Task 1 lands.
 ```
 
-Expected: only the two **function definitions** in `03` (`corrections_hash_of`, `no_corrections_hash`) — no column reference anywhere. ⚠ If those functions now have zero callers, **leave them defined and say so in the commit**; deleting them is a separate decision with its own blast radius (`0021` and the sync path reference the same canonicalization).
+Sites to remove, by content:
+
+| What | Where it was measured |
+|---|---|
+| `workspace_videos where corrections_hash is null` | `05_assert.sql:62` |
+| `insert into workspace_videos (… corrections_hash)` | `:119` |
+| `update workspace_videos set corrections_hash` | `:819-821` |
+| anti-drift assertions reading `wv.corrections_hash, wv.corrections` | `:899-905` |
+| the `sync_corrections_to_workspace_video` inventory entry | `:1315-1319` |
+
+**Delete the assertions whose subject ADR-0011 removed.** Do **not** rewrite them to assert something
+else — an assertion retargeted to keep it alive is how a suite ends up testing what is easy rather
+than what matters.
+
+- [ ] **Step 5: Prove no site was missed — the search is the deliverable**
+
+```bash
+grep -rn "corrections" docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/ \
+  | grep -v "corrections_hash_of\|no_corrections_hash\|^.*:-- "
+```
+
+Expected: **no output**. Anything remaining is a column reference to a column that no longer exists.
+⚠ If `corrections_hash_of()` / `no_corrections_hash()` now have zero callers, **leave them defined and
+say so in the commit** — deleting them is a separate decision with its own blast radius (`0021`
+shares the canonicalization).
 
 - [ ] **Step 5: Commit**
 
@@ -218,15 +276,26 @@ def self_test() -> int:
         print(("  ✓ " if ok else "  ✗ ") + label)
         failures += 0 if ok else 1
 
-    check("absent verdict when no objects", verdict(set(), set(), "absent"), True)
-    check("absent verdict FAILS when a table survives",
-          verdict({"workspaces"}, set(), "absent"), False)
-    check("present verdict needs ALL five tables",
-          verdict({"workspaces"}, set(), "present"), False)
-    check("present verdict needs the columns too",
-          verdict(set(M4_TABLES), set(), "present"), False)
-    check("present verdict passes when complete",
-          verdict(set(M4_TABLES), set(M4_COLUMNS), "present"), True)
+    NONE = {"tables": set(), "columns": set(), "triggers": set(), "functions": set(), "types": set()}
+    ALL = {"tables": set(M4_TABLES), "columns": set(M4_COLUMNS), "triggers": set(M4_LIVE_TRIGGERS),
+           "functions": set(M4_FUNCTIONS), "types": set(M4_TYPES)}
+
+    check("absent verdict when nothing remains", verdict(NONE, "absent"), True)
+    check("absent FAILS when a table survives",
+          verdict({**NONE, "tables": {"workspaces"}}, "absent"), False)
+    # ⭐ THE CASE THAT MATTERS — the measured post-`cascade` state: no tables, no columns, but the
+    # live-table triggers alive and calling a table that is gone. Signup is dead here.
+    check("absent FAILS on the cascade residue (triggers alive, tables gone)",
+          verdict({**NONE, "triggers": {"profiles_ensure_workspace_trg"}}, "absent"), False)
+    check("absent FAILS when a function survives",
+          verdict({**NONE, "functions": {"record_artifact"}}, "absent"), False)
+    check("absent FAILS when the enum survives",
+          verdict({**NONE, "types": {"artifact_kind"}}, "absent"), False)
+    check("present needs ALL five tables",
+          verdict({**ALL, "tables": {"workspaces"}}, "present"), False)
+    check("present needs the triggers too",
+          verdict({**ALL, "triggers": set()}, "present"), False)
+    check("present passes when complete", verdict(ALL, "present"), True)
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0
 ```
@@ -263,20 +332,40 @@ CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 M4_TABLES = ("workspaces", "workspace_videos", "video_generations",
              "video_artifacts", "video_artifact_sources")
 M4_COLUMNS = ("playlists.workspace_id", "videos.workspace_id", "jobs.workspace_id")
+# ⟳ r1 B7 (codex) / B2 (claude) — TABLES AND COLUMNS ARE NOT ENOUGH TO PROVE ABSENCE.
+# MEASURED: `drop table workspaces cascade` removes every table and column while leaving all SEVEN
+# live-table triggers alive, still calling `public.workspaces`. On that database signup is dead and
+# the first version of this gate returned EXIT 0. A gate that blesses an outage is worse than none.
+M4_LIVE_TRIGGERS = ("profiles_ensure_workspace_trg",
+                    "playlists_resolve_workspace_ins_trg", "playlists_resolve_workspace_upd_trg",
+                    "videos_resolve_workspace_ins_trg", "videos_resolve_workspace_upd_trg",
+                    "jobs_resolve_workspace_ins_trg", "jobs_resolve_workspace_upd_trg")
+M4_FUNCTIONS = ("ensure_workspace_for_profile", "resolve_workspace_from_playlist", "record_artifact",
+                "video_generations_freeze", "forbid_collecting_current", "video_artifacts_append_only",
+                "video_artifacts_generation_complete", "video_artifact_sources_append_only",
+                "video_artifact_sources_insert_once", "art_summary_has_no_source", "slot_kind",
+                "corrections_hash_of", "no_corrections_hash")
+M4_TYPES = ("artifact_kind",)
 
-TABLE_SQL = ("select c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace "
-             "where n.nspname='public' and c.relkind='r' and c.relname = any(%s);")
-COLUMN_SQL = ("select table_name||'.'||column_name from information_schema.columns "
-              "where table_schema='public' and column_name='workspace_id' "
-              "and table_name in ('playlists','videos','jobs');")
 
+def verdict(found: dict[str, set[str]], mode: str) -> bool:
+    """PURE. True = pass. `found` maps kind -> names present in the live catalog.
 
-def verdict(tables: set[str], columns: set[str], mode: str) -> bool:
-    """PURE. True = pass."""
+    Kinds: 'tables', 'columns', 'triggers', 'functions', 'types' — ALL FIVE, because M4 creates all
+    five and `drop table` removes only two of them.
+    """
+    expected = {"tables": set(M4_TABLES), "columns": set(M4_COLUMNS),
+                "triggers": set(M4_LIVE_TRIGGERS), "functions": set(M4_FUNCTIONS),
+                "types": set(M4_TYPES)}
     if mode == "absent":
-        return not tables and not columns
-    return set(M4_TABLES) <= tables and set(M4_COLUMNS) <= columns
+        # NOTHING of M4 may remain, in any kind.
+        return all(not (found.get(k, set()) & expected[k]) for k in expected)
+    return all(expected[k] <= found.get(k, set()) for k in expected)
 ```
+
+⚠ **`--expect-absent` must fail on a PARTIAL teardown, which is the state a failed `0028` leaves.**
+That is the whole point: the first version checked two kinds, and the case it could not see is the
+case that kills the product.
 
 - [ ] **Step 4: Run the self-test to verify it passes**
 
@@ -299,13 +388,39 @@ SQL
 
 Then in the same session run `--expect-absent` and expect **exit 1**. ⚠ Roll back and re-verify the stack is untouched — `an-instrument-that-edits-the-repo-corrupts-its-peers`.
 
-- [ ] **Step 7: Wire it in as gate 7/7 and commit**
+- [ ] **Step 7: Wire it in — ⚠ THE EXPECTED STATE IS A PARAMETER, NOT A CONSTANT**
 
-In `scripts/check-schema-gates.sh`, after line 46:
+⟳ **r1 B1 (codex) / B6 (claude).** The first draft hard-wired `--expect-absent` into
+`check-schema-gates.sh`. But Task 9 Step 3 runs that same suite **after `0027` is applied**, and
+`check-schema-gates.sh:22-27` fails on any non-zero — so the milestone's "all green" was
+**structurally unsatisfiable**. A gate asserting *absence* cannot sit in a checklist run when the
+thing is *present*.
+
+**This is the same defect as v5's B2, which was fixed this morning** — asserting a polarity without
+asking what the gate observes at that moment. Fixing the instance did not fix the class. The class
+fix is: **make the expected state something the caller must supply**, so omitting it is an error.
+
+In `scripts/check-schema-gates.sh`, take the phase from the environment and **refuse to guess**:
 
 ```bash
-run "7/8  live catalog matches expectation"           python3 ./scripts/check-live-schema.py --expect-absent
+# M4_PHASE is REQUIRED once 0027 exists: `pre` (0027 not applied) or `post` (applied).
+# ⛔ No default. A default is how a gate silently answers the wrong question.
+if [ -f supabase/migrations/0027_stable_blob_addressing.sql ] && [ -z "${M4_PHASE:-}" ]; then
+  echo "CANNOT RUN — 0027 exists, so this suite needs M4_PHASE=pre|post to know which polarity to"
+  echo "assert. Refusing to guess. Treat this as NOT RUN." >&2
+  exit 2
+fi
+case "${M4_PHASE:-pre}" in
+  pre)  LIVE_FLAG=--expect-absent  ;;
+  post) LIVE_FLAG=--expect-present ;;
+  *)    echo "M4_PHASE must be pre or post, got '$M4_PHASE'" >&2; exit 2 ;;
+esac
+run "7/8  live catalog matches M4_PHASE=${M4_PHASE:-pre}"  python3 ./scripts/check-live-schema.py "$LIVE_FLAG"
 ```
+
+⚠ Gates 1 and 2 have the **same** problem in the opposite direction — they rebuild from source and so
+can only run `pre`. Task 4 Step 2 gives them a cannot-run branch; that branch and this parameter must
+tell the same story, or the suite contradicts itself.
 
 ```bash
 git add scripts/check-live-schema.py scripts/check-schema-gates.sh
@@ -464,34 +579,97 @@ grep -c "execute p_sql\|delete from profiles" supabase/migrations/0027_stable_bl
 
 Expected: `0`. **A non-zero result means the arbitrary-SQL executor and the profile deleter are queued for production.** Add this as a permanent guard in Task 7's gate list.
 
-- [ ] **Step 3: Write `0028`, reversing in dependency order**
+- [ ] **Step 3: Write `0028` — ⛔ THE ORDER BELOW IS LOAD-BEARING AND WAS MEASURED**
+
+⟳ **r1 B1/B2, both halves, and the coordinator reproduced it.** The previous draft of this step was
+wrong twice over and the second failure was catastrophic. **Read this before writing a line:**
+
+| What was tried | What Postgres did |
+|---|---|
+| drop `video_artifacts_current` first | `ERROR: cannot drop … view video_generations_collectable depends on it` `[04:918 selects 04:728]` |
+| reorder the views, then drop the columns | `ERROR: cannot drop column workspace_id … trigger playlists_resolve_workspace_upd_trg depends on it` — a column-list trigger `[03:201-203]` is a hard dependency |
+| **`drop table workspaces cascade`** — *the fix Postgres' own `HINT` suggests on both errors* | ⛔ **ALL SEVEN workspace triggers SURVIVE**, still referencing `public.workspaces`. Measured signup: `ERROR: relation "public.workspaces" does not exist` in `ensure_workspace_for_profile()` via `handle_new_user()`. **No user can sign up; playlist creation and every enqueue break identically.** |
+
+⛔ **NEVER USE `cascade` IN `0028`.** Postgres will recommend it twice and it produces a live outage
+rather than a rollback. If a drop fails, the order is wrong — fix the order.
+
+**The inventory `0027` creates (derived, not listed): 44 objects** — 5 tables, 3 views, 14 functions,
+15 triggers, 1 enum, 3 indexes, 5 policies. After ADR-0011: **13 functions, 13 triggers.**
+
+**The distinction that makes this writable:** triggers on M4's **own** tables die with `drop table`.
+The **7 on LIVE tables survive** and must be named.
 
 ```sql
 -- 0028 — reverse 0027. ⚠ NOT `supabase migration down`, which RESETS (drop-and-recreate) and
 -- accepts --linked; this is a forward migration that happens to undo.
 --
--- LOSSLESS, and here is the falsifiable claim: every column and row 0027 creates is a function of
--- state that predates it, and no caller writes any of it. `workspace_videos` holds only
--- (workspace_id, video_id), both derived (ADR-0011 removed the one column that was not).
--- ⛔ THIS PROPERTY EXPIRES AT M5, the moment `record_artifact` gets a caller. Re-verify with
--- Task 9's repo-wide grep before running this after M5.
+-- LOSSLESS, falsifiably: every column and row 0027 creates is a function of state that predates it,
+-- and no caller writes any of it. `workspace_videos` holds only (workspace_id, video_id), both
+-- derived (ADR-0011 removed the one column that was not).
+-- ⛔ EXPIRES AT M5, the moment `record_artifact` gets a caller. Re-verify with Task 9 Step 2's grep.
+-- ⛔ NO `cascade`, ANYWHERE. See the table above: it leaves live-table triggers pointing at dropped
+--    tables and kills signup. A failed drop means a wrong order, not a missing `cascade`.
 begin;
-drop view if exists video_artifacts_current;
+
+-- 1. LIVE-TABLE TRIGGERS FIRST. Their tables survive, so nothing else removes them, and the
+--    column drops in step 5 fail while the `_upd_` ones still list the column.
+drop trigger if exists profiles_ensure_workspace_trg        on profiles;
+drop trigger if exists playlists_resolve_workspace_ins_trg  on playlists;
+drop trigger if exists playlists_resolve_workspace_upd_trg  on playlists;
+drop trigger if exists videos_resolve_workspace_ins_trg     on videos;
+drop trigger if exists videos_resolve_workspace_upd_trg     on videos;
+drop trigger if exists jobs_resolve_workspace_ins_trg       on jobs;
+drop trigger if exists jobs_resolve_workspace_upd_trg       on jobs;
+
+-- 2. VIEWS, in REVERSE creation order — collectable (:918) reads artifacts_current (:728).
 drop view if exists video_generations_collectable;
+drop view if exists video_artifacts_current;
 drop view if exists video_summary_current;
+
+-- 3. the FK that points videos at workspace_videos
 alter table videos drop constraint if exists videos_workspace_video_fk;
+
+-- 4. M4's own tables. Their triggers, indexes and policies go with them.
 drop table if exists video_artifact_sources;
 drop table if exists video_artifacts;
 drop table if exists video_generations;
 drop table if exists workspace_videos;
+
+-- 5. the derived columns (now that no trigger lists them)
 alter table playlists drop column if exists workspace_id;
 alter table videos    drop column if exists workspace_id;
 alter table jobs      drop column if exists workspace_id;
+
+-- 6. the tenancy root, last of the tables
 drop table if exists workspaces;
+
+-- 7. FUNCTIONS — now unreferenced. 13 after ADR-0011.
+drop function if exists ensure_workspace_for_profile();
+drop function if exists resolve_workspace_from_playlist();
+drop function if exists record_artifact(uuid, text, text, artifact_kind, jsonb, text, text);
+drop function if exists video_generations_freeze();
+drop function if exists forbid_collecting_current();
+drop function if exists video_artifacts_append_only();
+drop function if exists video_artifacts_generation_complete();
+drop function if exists video_artifact_sources_append_only();
+drop function if exists video_artifact_sources_insert_once();
+drop function if exists art_summary_has_no_source();
+drop function if exists slot_kind(artifact_kind);
+drop function if exists corrections_hash_of(text);
+drop function if exists no_corrections_hash();
+
+-- 8. the enum, last — functions above reference it in their signatures
+drop type if exists artifact_kind;
 commit;
 ```
 
-⚠ Enumerate every view, trigger and function `0027` creates before finalising this — the list above is the shape, and **round 5 measured that the drop order is expressible without `cascade` on the first attempt**, which is the property to preserve.
+⚠ **Verify every function signature against the schema before running** — `drop function` needs the
+argument types, and a wrong signature makes the statement a silent no-op under `if exists`. Enumerate
+with:
+
+```bash
+grep -hnE "^create (or replace )?function" docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/0{1,3,4}*.sql
+```
 
 - [ ] **Step 4: Apply `0027` locally and assert with the LIVE gate**
 
@@ -568,7 +746,7 @@ git commit -F /tmp/t7-msg.txt
 **Files:**
 - Create: `scripts/run-schema-assertions.sh`
 - Create: `docs/superpowers/specs/m4/seed-assertion-corpus.sql`
-- Modify: `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/05_assert.sql` (classification comments only)
+- Modify: `…/schema/05_assert.sql` (classification comments; the ADR-0011 sweep happens in Task 2 Step 4)
 - Modify: `scripts/check-schema-gates.sh`
 
 **Interfaces:**
@@ -595,9 +773,16 @@ git commit -F /tmp/t7-msg.txt
 -- ⚠ Runs INSIDE a transaction the caller rolls back. It must never persist.
 -- ⚠ It must exercise the DERIVE path (plain inserts), not write workspace_id directly — that is
 -- the behaviour :1843-1859 asserts, and pre-filling the column would make it pass vacuously.
+-- ⟳ r1 B5 (codex) — THE FIRST DRAFT COULD NOT INSERT A SINGLE ROW.
+-- `profiles.id` references `auth.users(id)` (0001_core_schema.sql:3), so a profile cannot exist
+-- without an auth user; and `playlists.playlist_url` is `not null` (0001:14) and was omitted.
+insert into auth.users (id, instance_id, aud, role, email)
+  values ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000',
+          'authenticated', 'authenticated', 'seed@example.test');
 insert into profiles (id, is_anonymous) values ('00000000-0000-0000-0000-0000000000a1', false);
-insert into playlists (id, owner_id, playlist_key)
-  values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1', 'SEED_PL');
+insert into playlists (id, owner_id, playlist_key, playlist_url)
+  values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1',
+          'SEED_PL', 'https://youtube.com/playlist?list=SEED_PL');
 insert into videos (playlist_id, owner_id, video_id, position, data)
   values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1',
           'seedvid001', 0, '{"id":"seedvid001","title":"seed"}'::jsonb);
@@ -625,8 +810,20 @@ if ! python3 "$REPO/scripts/check-live-schema.py" --expect-present >/dev/null 2>
   exit 2
 fi
 
+# ⟳ r1 B5 (claude) / B6 (codex) — THE FIRST SELECTOR WAS FAIL-OPEN.
+# `awk '/@RE-RUNNABLE/{p=1} p'` has no stop condition: on today's unmarked file it selects NOTHING,
+# psql runs an empty script, ASSERTIONS_OK prints, and the gate reports "passed" having asserted
+# nothing at all. Once markers exist it captures everything after the FIRST one, including later
+# @MIGRATION-ONLY blocks. Both failures are silent.
+ASSERTIONS=$(awk '/@RE-RUNNABLE/{p=1;next} /@MIGRATION-ONLY/{p=0;next} p' \
+               "$REPO/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/05_assert.sql")
+if [ -z "$(printf '%s' "$ASSERTIONS" | tr -d '[:space:]')" ]; then
+  echo "CANNOT RUN — no @RE-RUNNABLE block found in 05_assert.sql. An empty assertion set must"
+  echo "never report success. Treat this as NOT RUN." >&2
+  exit 2
+fi
 SQL=$(printf 'begin;\n'; cat "$REPO/docs/superpowers/specs/m4/seed-assertion-corpus.sql";
-      awk '/@RE-RUNNABLE/{p=1} p' "$REPO/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/05_assert.sql";
+      printf '%s' "$ASSERTIONS";
       printf '\n\\echo ASSERTIONS_OK\nrollback;\n')
 OUT=$(printf '%s' "$SQL" | docker exec -i "$CONTAINER" \
         psql -U postgres -d postgres -v ON_ERROR_STOP=1 2>&1)
