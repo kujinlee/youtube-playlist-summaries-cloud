@@ -1,5 +1,8 @@
 # Render addressing — design brief (NOT a design)
 
+> **Anchor:** `stable-blob-addressing` — **ADR:** 0006, 0007
+> **Goal:** Render addressing, split out of the addressing design on 2026-08-09 after two proposals were refuted in two rounds. A brief, not a design.
+
 **Status: awaiting Phase 1 brainstorming.** Split out of ADR-0007 by user decision, 2026-08-09, after
 two proposed designs were refuted in two consecutive adversarial rounds.
 

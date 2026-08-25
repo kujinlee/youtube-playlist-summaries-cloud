@@ -1,5 +1,8 @@
 # Conditional Write on `persist_summary` — Design Spec
 
+> **Anchor:** `stable-blob-addressing` — **ADR:** 0006, 0007
+> **Goal:** Two concurrent writers cannot leave a row whose card and body came from different runs. Superseded by ADR-0007's append-only log.
+
 **Status:** v4 — all round-3 Blockings resolved; **round 4 pending** (the gate is a full round with no
 new Blocking/High, which has not yet happened)
 **Backlog:** #17 (durable fix; partial mitigation shipped as PR #45) · **Task:** #19

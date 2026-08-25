@@ -1,5 +1,8 @@
 # Stage 1F-b — Share Tokens (anonymous read of one summary doc, cloud)
 
+> **Anchor:** `share-and-download` — **ADR:** 0003
+> **Goal:** An owner mints a capability link that lets anyone read one summary without logging in or spending the owner's money.
+
 **Status:** ✅ **design CONVERGED (v4)** — v1 dual review (1 Blocking / 3 High / 5 Medium) → v2; round-2 re-review (1 new High + 3 Medium) → v3; **round-3 re-review returned 0 new Blocking / 0 new High from both passes (CONVERGED)** → this v4 folds in the round-3 Lows + one Codex type finding (near-free; gate already met at v3). **Next: user spec-approval → `writing-plans`.** **Branch:** `feat/stage-1f-b-share-tokens`.
 **Review trail:** `docs/reviews/spec-1f-b-{codex,claude}-v1.md`, `-v2-rereview.md`, `-v3-rereview.md`.
 

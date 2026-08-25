@@ -1,5 +1,8 @@
 # Share pre-warm (backlog #14) — implementation plan
 
+> **Anchor:** `share-and-download` — **ADR:** 0003
+> **Goal:** A freshly minted share link serves immediately instead of returning 503 'not ready'.
+
 **Goal:** A freshly-minted share link serves immediately instead of returning 503 "not ready".
 
 **Approach:** When a share token is created, warm the owner's rendered "magazine" model by hitting

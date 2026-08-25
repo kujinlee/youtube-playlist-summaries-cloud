@@ -1,5 +1,8 @@
 # Serve path — make the absence protection enforced instead of accidental (backlog #34)
 
+> **Anchor:** `serve-money-guard` — **ADR:** 0008
+> **Goal:** The serve path stops trusting an absence it cannot prove, so a missing model cannot be charged for twice.
+
 **Status:** draft v2, awaiting user approval. **Branch:** `fix/serve-path-proven-absence`.
 **Origin:** M1.4 gate **B3**, 2026-08-11. Evidence: PR #76 and
 [`docs/m1.4-finishup-checklist.md`](../../m1.4-finishup-checklist.md) §B3.

@@ -1,5 +1,8 @@
 # Slice A — Corrections in the Cloud (Attended Path) Implementation Plan
 
+> **Anchor:** `corrections-in-cloud` — **ADR:** none
+> **Goal:** A cloud user edits corrections, presses the button, and gets a corrected summary - the same behaviour as local.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A cloud user edits corrections, presses the button, and gets a corrected summary — the same behaviour as local.

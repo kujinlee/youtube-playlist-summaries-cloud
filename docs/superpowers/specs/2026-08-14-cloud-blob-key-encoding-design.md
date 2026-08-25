@@ -1,5 +1,8 @@
 # Cloud blob keys — encode at the storage seam so a title in any language can be stored (backlog #36)
 
+> **Anchor:** `cloud-blob-key-encoding` — **ADR:** 0009
+> **Goal:** A video titled in any language can be stored and served from cloud storage, without renaming vault files.
+
 **Status:** ✅ **APPROVED v21, 2026-08-15 — PHASE 1 CLOSED.** Implementation planning is next; the plan is `docs/superpowers/plans/`. **Branch:** `fix/cloud-blob-key-encoding`.
 **Origin:** backlog **#36** 🔴, found 2026-08-12 by the first real M3 acceptance run against prod v6.
 

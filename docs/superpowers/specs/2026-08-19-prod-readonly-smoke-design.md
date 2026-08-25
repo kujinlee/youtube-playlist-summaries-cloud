@@ -1,5 +1,8 @@
 # M3.1-B — a read-only production smoke against the deployed URL
 
+> **Anchor:** `prod-smoke` — **ADR:** none
+> **Goal:** After every deploy, prove by machine that the deployed application serves the real application.
+
 **Backlog:** #41 🟠 · **Roadmap:** the untaken half of 3.1 · **Status:** design approved by the user
 2026-08-19, spec awaiting review.
 

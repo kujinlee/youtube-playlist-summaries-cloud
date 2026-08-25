@@ -1,5 +1,8 @@
 # Cloud Blob Key Encoding Implementation Plan (backlog #36)
 
+> **Anchor:** `cloud-blob-key-encoding` — **ADR:** 0009
+> **Goal:** A video titled in any language can be stored and served from cloud storage, without migrating anything already in the bucket.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a video with a title in any language be stored **and served** from the cloud, without changing vault filenames and without migrating anything already in the bucket.

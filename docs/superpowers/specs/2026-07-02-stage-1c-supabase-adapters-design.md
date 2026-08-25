@@ -1,5 +1,8 @@
 # Stage 1C — Supabase Adapters (MetadataStore + BlobStore)
 
+> **Anchor:** `cloud-publishing` — **ADR:** 0001, 0005
+> **Goal:** The metadata store and blob store have Supabase implementations behind the same seams as local.
+
 **Date:** 2026-07-02
 **Status:** Draft v2 — hardened after grill (terminology) + Codex adversarial review (`docs/reviews/stage-1c-supabase-adapters-spec-codex.md`, 4 Blocking / 5 High / 2 Medium, all resolved below). Ready for implementation plan.
 **Parent architecture:** `docs/superpowers/specs/2026-07-01-cloud-publishing-architecture-design.md` (§4.1, §7, §10 item 1C, §130).

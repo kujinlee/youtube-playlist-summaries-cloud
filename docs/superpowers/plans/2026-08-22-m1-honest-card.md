@@ -1,5 +1,8 @@
 # M1 — The Honest Card: Implementation Plan (v2)
 
+> **Anchor:** `stable-blob-addressing` — **ADR:** 0006, 0007
+> **Goal:** The cloud worker's card describes the body it actually published. M1 of the stable-addressing spine; re-scoped and deferred 2026-08-22.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the cloud summary worker stamp `mdGeneratedAt`/`mdCorrectionsHash` **when, and only
