@@ -138,6 +138,32 @@ MD_FENCE = re.compile(r"^```[^\n]*$")
 MD_TABLE_SEP = re.compile(r"^\|[\s:|-]+\|$")
 
 
+SAFE_HREF = re.compile(r"^(?:https?:|mailto:|[/#?.]|[^:]*$)", re.I)
+
+
+def safe_href(url: str) -> str:
+    """A link target, or '#' if its scheme is not one a document may navigate to.
+
+    NOT hypothetical, and not defended by "it is loopback-only": rendering this repo's OWN documents
+    was enough to produce clickable `javascript:` hrefs, with no attacker involved. They are XSS
+    fixtures belonging to the deep-dive HTML export design, and that spec's acceptance criterion is
+    literally *"renders without an executable href"* — so this viewer was failing the test specified
+    by the document it renders.
+
+    ⟳ COUNTED PROPERLY, because the first count was wrong. A grep found 3 and I cited
+    `2026-06-09-deep-dive-html-export.md:109`, which is INSIDE a fenced block and therefore never
+    became a link. Tracking fences instead found **6 live ones outside code fences** — 4 in
+    `docs/reviews/`, plus `2026-06-24-section-dig-deeper-screenshots.md:204` and
+    `2026-06-09-deep-dive-html-export-design.md:180`. A grep that cannot see fences miscounts in
+    both directions at once.
+
+    Counted 2026-08-25 so the allowlist breaks nothing real: 140 relative, 51 `https:`, 3
+    `javascript:`. Quotes are escaped upstream in `md_render`, which independently closes the
+    attribute break-out (`[x](a"onmouseover=…)`); this closes the scheme half.
+    """
+    return url if SAFE_HREF.match(url) else "#"
+
+
 def md_cells(row: str) -> list[str]:
     """Split a table row on UNESCAPED pipes, then unescape.
 
@@ -159,7 +185,8 @@ def md_inline(s: str) -> str:
         return f"\x00{len(held) - 1}\x00"
 
     s = re.sub(r"`([^`]+)`", hold, s)
-    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2">\1</a>', s)
+    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)",
+               lambda m: f'<a href="{safe_href(m.group(2))}">{m.group(1)}</a>', s)
     s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
     s = re.sub(r"~~([^~]+)~~", r"<del>\1</del>", s)
     s = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<em>\1</em>", s)
@@ -168,7 +195,9 @@ def md_inline(s: str) -> str:
 
 def md_render(text: str) -> str:
     """Markdown -> HTML for the measured subset. Escapes ONCE, then renders blocks."""
-    return md_blocks(text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    esc = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+               .replace('"', "&quot;").replace("'", "&#39;"))
+    return md_blocks(esc)
 
 
 def md_blocks(esc: str) -> str:
@@ -899,6 +928,15 @@ def _self_test() -> int:
         case("md: strikethrough", lambda: "<del>old</del>" in md_render("~~old~~"))
         case("md: code span", lambda: "<code>a b</code>" in md_render("`a b`"))
         case("md: link", lambda: '<a href="/x">t</a>' in md_render("[t](/x)"))
+        case("md: javascript: href is neutered",
+             lambda: 'href="#"' in md_render("[x](javascript:alert(1))"))
+        case("md: data: href is neutered",
+             lambda: 'href="#"' in md_render("[x](data:text/html,<script>)"))
+        case("md: https and relative survive",
+             lambda: 'href="https://a.example/b"' in md_render("[a](https://a.example/b)")
+                     and 'href="./x.md"' in md_render("[a](./x.md)"))
+        case("md: quote cannot break the href attribute",
+             lambda: "onmouseover=" not in md_render('[x](a"onmouseover=alert(1))').split(">")[0])
         case("md: table", lambda: "<th>a</th>" in md_render("| a |\n|---|\n| 1 |"))
         case("md: ESCAPED pipe is not a column",
              lambda: md_render("| a | b |\n|---|---|\n| x \\| y | z |").count("<td>") == 2)
