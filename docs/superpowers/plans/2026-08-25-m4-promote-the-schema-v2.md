@@ -646,7 +646,8 @@ drop table if exists workspaces;
 -- 7. FUNCTIONS — now unreferenced. 13 after ADR-0011.
 drop function if exists ensure_workspace_for_profile();
 drop function if exists resolve_workspace_from_playlist();
-drop function if exists record_artifact(uuid, text, text, artifact_kind, jsonb, text, text);
+drop function if exists record_artifact(uuid, text, text, text, artifact_kind, text, text,
+                                        int, int, text, jsonb, int, timestamptz);
 drop function if exists video_generations_freeze();
 drop function if exists forbid_collecting_current();
 drop function if exists video_artifacts_append_only();
@@ -654,7 +655,7 @@ drop function if exists video_artifacts_generation_complete();
 drop function if exists video_artifact_sources_append_only();
 drop function if exists video_artifact_sources_insert_once();
 drop function if exists art_summary_has_no_source();
-drop function if exists slot_kind(artifact_kind);
+drop function if exists slot_kind(text);
 drop function if exists corrections_hash_of(text);
 drop function if exists no_corrections_hash();
 
@@ -663,13 +664,27 @@ drop type if exists artifact_kind;
 commit;
 ```
 
-⚠ **Verify every function signature against the schema before running** — `drop function` needs the
-argument types, and a wrong signature makes the statement a silent no-op under `if exists`. Enumerate
-with:
+⛔ **A WRONG `drop function` SIGNATURE IS A SILENT NO-OP UNDER `if exists`** — the statement
+succeeds, the function survives, and nothing reports it. ⟳ *Coordinator, before round 2: my own
+first draft got **two of thirteen** wrong.* `slot_kind` takes **`text`**, not `artifact_kind`
+`[03:…  create function slot_kind(p_slot text)]`; and `record_artifact` takes **13** parameters
+`[04_artifacts.sql, create function record_artifact(…)]`, not the 7 I first wrote. Both would have
+left a function behind while `0028` reported success — the same shape as the gate that blessed the
+cascade residue.
+
+**Do not eyeball this. Derive it, then assert it:**
 
 ```bash
-grep -hnE "^create (or replace )?function" docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/0{1,3,4}*.sql
+# every signature, as Postgres itself renders it — this is the form `drop function` needs
+docker exec -i supabase_db_youtube-playlist-summaries-cloud psql -U postgres -d postgres -tAq -c \
+  "select p.proname||'('||pg_get_function_identity_arguments(p.oid)||')'
+     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' order by 1;"
 ```
+
+**And the falsifier that makes the no-op impossible to miss:** after `0028`, `check-live-schema.py
+--expect-absent` reports any surviving function by name (Task 3's `M4_FUNCTIONS`). If a signature is
+wrong, that gate goes red — which is exactly why the gate had to grow past tables and columns.
 
 - [ ] **Step 4: Apply `0027` locally and assert with the LIVE gate**
 
