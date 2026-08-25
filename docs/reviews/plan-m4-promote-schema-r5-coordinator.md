@@ -109,3 +109,30 @@ ones than it closes.
 warn** rather than abort on a corrections collision, on the grounds that the pre-M4 state is already
 divergent (corrections live per-playlist in `videos.data` with no sync at all). That decision
 independently dissolves half of B3 and belongs in whatever supersedes v5.
+
+---
+
+## ⚠ BUILD DRIFT — THIS REVIEW IS ALREADY STALE, AND SAYING SO IS THE POINT
+
+**Both halves reviewed `6bf3726` (v5). HEAD is now `dc9d650` (v5.1)**, which landed the corrections
+decision above while this adjudication was being written. *"A tick says **that** something was
+verified, never **what against** — and the subject moves."* It moved within the hour.
+
+Re-checked against `dc9d650`, finding by finding:
+
+| Finding | Status at `dc9d650` | Basis |
+|---|---|---|
+| **B1** — T9's lossless property is false | **STANDS, and v5.1 STRENGTHENS it.** Corrections are free text (`types/index.ts:74` is `z.string().optional()`), so an orphaned row cannot be *derived* from anything — not merely "not currently derived". `0028` drops the only copy | READ |
+| **B2** — T9's gate asserts the opposite of what is observable | **STANDS, untouched.** v5.1 changed T1/T2/T4, not T9's gate | READ |
+| **B3 first horn** — abort guard vs seeding instruction are mutually exclusive | **DISSOLVED.** No abort-on-collision language survives; the guard records (`:51-55`, `:154`, `:273`) | `grep -n "abort"` over the plan |
+| **B3 second horn** — the assertion passes while a paid correction is discarded | ⛔ **STILL OPEN.** `05_assert.sql:65-70` still compares **counts**; no compare-**values** fix exists anywhere in the plan. This is r3 H3, now three rounds old | `grep` found only the count-shaped query at `:141` |
+
+**So the score changes from 3 Blocking to 2½, and Phase 6 still fires** — the condition was met by
+B1 and B2 alone, neither of which v5.1 touches.
+
+⚠ **A REVISION LANDED BETWEEN A REVIEW AND ITS ADJUDICATION, AND THAT IS ITSELF THE PATTERN.** v5.1
+is good work and its decision is the user's, so this is not a complaint about the change. It is a
+note about the shape: **the document under review moved while the review was being adjudicated**, and
+without this section the next reader would take "3 Blocking" as a fact about the current file. It is
+not. The half-life of a review here is measured in minutes, which is one more argument for Phase 6
+over a v6 — a design review is about a structure, and structures survive edits that findings do not.
