@@ -131,6 +131,7 @@ copy that drifts.
 |---|---|
 | `.claude/hooks/block-default-branch-push.sh` | no push to the default branch (escape: `ALLOW_DEFAULT_BRANCH_PUSH=1`) |
 | `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
+| `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt whenever one of its FIVE sources changes — it is derived, so it is never edited by hand (`/goals`; ADR-0010) |
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
 | `scripts/check-schema-gates.sh` | **one command for all six schema gates** — run this, not the pieces |
 | `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated |
