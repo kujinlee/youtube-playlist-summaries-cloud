@@ -43,7 +43,7 @@
 |---|---|
 | `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/03_generations.sql` | **Modify** — remove corrections per ADR-0011 (Task 1) |
 | `…/schema/04_artifacts.sql` | **Modify** — corrections-currency ranking moves to the reader (Task 2) |
-| `scripts/check-live-schema.py` | **Create** — the live-catalog gate; the only instrument that can confirm M4-β happened (Task 3) |
+| `scripts/check-live-schema.py` | **Created** — the live-catalog gate. ⚠ It names **29 of 161** objects (**18%**) — see the coverage warning in Task 3 (Task 3) |
 | `supabase/migrations/0027_stable_blob_addressing.sql` | **Create** — the three spec files, one transaction (Task 6) |
 | `supabase/rollback/rollback_0027_stable_blob_addressing.sql` | **Created** `322d411` — the reverse, PROVEN by execution. ⛔ NOT a migration (Task 6 Step 3) |
 | `scripts/check-guard-coverage.py`, `check-sentinel-meanings.py`, `check-vocabulary-collisions.py` | **Modify** — inventories, after Task 1 removes objects (Task 5) |
@@ -333,6 +333,40 @@ written to catch. `ADR0011_REMOVED` now fails in **both** polarities, and mutati
 
 ⚠ **`--expect-absent` must fail on a PARTIAL teardown, which is the state a failed rollback leaves.**
 That is the whole point: the case the first version could not see is the case that kills the product.
+
+### ⛔ COVERAGE: THE GATE NAMES 29 OF 161 OBJECTS (18%) — r3 B2, UNRESOLVED
+
+⟳ *r3 Blocking (claude), coordinator-verified by deriving the number from `EXPECTED` itself.*
+
+| Kind | Named | Of |
+|---|---|---|
+| tables | 5 | 5 |
+| columns | 3 | 70 |
+| triggers | **7** | **14** |
+| functions | 13 | 13 |
+| types | 1 | 1 |
+| views · indexes · policies · constraints | **0** | 3 · 12 · 5 · 38 |
+
+**MEASURED consequence:** `--expect-present` returns *"M4 is PRESENT as expected"*, **exit 0**, over a
+database with **all seven of M4's own-table triggers dropped** — every append-only, freeze and
+immutability guard gone. `M4_LIVE_TRIGGERS` holds only the seven on *live* tables, by design, because
+the gate was built to catch rollback residue. Nothing else names the other seven.
+
+**Why that is Blocking rather than a nice-to-have:** this file's own row above used to call it *"the
+only instrument that can confirm M4-β happened"*, and Task 9 Step 7 makes it the sole production
+check — while §4's one-transaction property, the thing that would make a partial apply impossible,
+is itself listed **NOT VERIFIED**. A gate asserting a claim four times wider than what it reads is
+the `a-checklist-item-can-be-an-unfalsifiable-guard` shape.
+
+**⚠ NOT FIXED HERE — this is a design fork, and it belongs to the human:**
+
+| Option | Cost |
+|---|---|
+| **(a)** Diff the live catalog against the objects `build-m4-schema.py` emits — full 161, derived not hand-listed | the honest fix; needs a manifest step and makes the gate depend on the builder |
+| **(b)** Keep the 29-object gate, drop the sufficiency claim, and verify `db push --linked`'s one-transaction property so a partial apply is genuinely impossible | cheaper; leaves the gate narrow but no longer over-claiming |
+
+Recommendation: **(a)**, because (b) rests on a property currently marked NOT VERIFIED, and the
+inventory is already derived by execution — the manifest is nearly free.
 
 - [ ] **Step 6: Re-run both, and record the counts against a commit**
 

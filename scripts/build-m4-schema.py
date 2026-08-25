@@ -110,6 +110,44 @@ def strip_comments(sql: str) -> str:
     return "\n".join(out)
 
 
+def table_body(code: str, table: str) -> str | None:
+    """The column list of `create table <table> ( … )`, by PAREN DEPTH. PURE.
+
+    ⟳ The first version of this used the regex `create table X\\s*\\((.*?)\\n\\);`, which passed
+    against the real spec — because that file happens to close the block on its own line — and
+    failed on a fixture closing `primary key (a, b));`. That is this repo's most-repeated defect
+    written into the very check meant to catch it: **a pattern that matches what I READ, not what is
+    THERE.** Depth counting has no such preference.
+
+    Expects comment-stripped input, so `--` text cannot contribute parens.
+    """
+    start = code.find(f"create table {table}")
+    if start == -1:
+        return None
+    open_paren = code.find("(", start)
+    if open_paren == -1:
+        return None
+    depth, in_str, i = 0, False, open_paren
+    while i < len(code):
+        ch = code[i]
+        if in_str:
+            if ch == "'":
+                if i + 1 < len(code) and code[i + 1] == "'":
+                    i += 1
+                else:
+                    in_str = False
+        elif ch == "'":
+            in_str = True
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return code[open_paren + 1:i]
+        i += 1
+    return None
+
+
 def apply_edits(s03: str, s04: str) -> tuple[str, str, list[str], list[str]]:
     """Apply Tasks 1-2. Returns (s03, s04, log, errors). PURE."""
     log: list[str] = []
@@ -146,6 +184,27 @@ def assert_end_state(sql: str) -> list[str]:
         bad.append("sync_corrections_to_workspace_video() still exists — ADR-0011 deletes it")
     if "videos_corrections_sync_" in code:
         bad.append("a videos_corrections_sync_* trigger still exists — ADR-0011 deletes both")
+
+    # ⛔ r3 B1 (claude) — THE PREDICATE WAS BLIND TO BOTH COLUMN EDITS, WHICH IS HALF ITS JOB.
+    # The reference filter below excludes any line containing `no_corrections_hash`. The column it
+    # must catch is:
+    #
+    #     corrections_hash   text not null default no_corrections_hash(),
+    #
+    # — whose own DEFAULT contains that string, so the guard could never see it. MEASURED: drift the
+    # anchor by ONE SPACE and this script exits 0, reports `already`, and emits the ADR-0011 column
+    # straight into 0027. The bare `corrections text,` column was unguarded outright.
+    #
+    # A column DEFINITION is not a reference, so it needs its own assertion over the table block
+    # rather than a smarter line filter.
+    body = table_body(code, "workspace_videos")
+    if body is None:
+        bad.append("could not find the `create table workspace_videos (…)` block to check")
+    else:
+        for ln in body.splitlines():
+            if "corrections" in ln:
+                bad.append("workspace_videos still DEFINES a corrections column, which ADR-0011 "
+                           f"removes: {ln.strip()[:90]}")
 
     residual = [ln.strip() for ln in code.splitlines()
                 if "corrections_hash" in ln
@@ -266,6 +325,23 @@ def self_test() -> int:
           strip_comments("select 1; -- wv.corrections_hash was removed"), "select 1; ")
     check("strip_comments handles an escaped '' inside a string",
           strip_comments("select 'it''s -- fine'; -- gone"), "select 'it''s -- fine'; ")
+
+    # ⛔ r3 B1 (claude) — THE TWO COLUMN EDITS WERE UNGUARDED, which is half this predicate's job.
+    # MEASURED: drift the corrections_hash anchor by one space and the script exited 0, reported
+    # `already`, and emitted the ADR-0011 column into 0027.
+    drifted = PRE.replace(
+        "  corrections_hash   text not null default no_corrections_hash(),",
+        "  corrections_hash    text not null default no_corrections_hash(),")
+    d03, d04, _, derr = apply_edits(drifted + PRE_FN, PRE_04)
+    check("a DRIFTED corrections_hash anchor still reports no anchor error", derr, [])
+    check("…but the END STATE rejects it — the column survived",
+          any("still DEFINES a corrections column" in b for b in assert_end_state(d03 + d04)), True)
+    drifted_a = PRE.replace("  corrections        text,", "  corrections   text,")
+    a03, a04, _, _ = apply_edits(drifted_a + PRE_FN, PRE_04)
+    check("a DRIFTED bare corrections anchor is caught by the end state too",
+          any("still DEFINES a corrections column" in b for b in assert_end_state(a03 + a04)), True)
+    check("a missing workspace_videos block is a failure, not a silent pass",
+          any("could not find" in b for b in assert_end_state("select 1;")), True)
 
     # an anchor that matches an unexpected NUMBER of times is an error, never a silent skip
     _, _, _, errors3 = apply_edits(PRE + PRE_FN + PRE, PRE_04)

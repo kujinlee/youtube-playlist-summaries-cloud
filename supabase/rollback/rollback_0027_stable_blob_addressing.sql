@@ -96,4 +96,22 @@ drop function if exists no_corrections_hash();
 
 -- 8. the enum, last — functions above reference it in their signatures
 drop type if exists artifact_kind;
+
+-- 9. ⛔ THE LEDGER ENTRY. Without this the database is reversed but the CLI still believes 0027 is
+--    applied, so `supabase migration up` is a SILENT NO-OP and the stack stays un-migrated while
+--    every command reports success. ⟳ r3 B3 (claude): neither this file nor the plan mentioned
+--    `schema_migrations` at all (grep count 0 in both), and Task 6 Step 6 — "re-apply 0027 so the
+--    branch is left in the migrated state" — depended entirely on that re-apply working.
+--
+--    Presence in this table IS what marks a migration applied: measured this session, deleting the
+--    rows for two throwaway migrations is what made them re-appliable.
+--
+--    `if exists` on the schema, because a database that never ran the CLI has no such table.
+do $$
+begin
+  if exists (select 1 from information_schema.tables
+              where table_schema = 'supabase_migrations' and table_name = 'schema_migrations') then
+    delete from supabase_migrations.schema_migrations where version = '0027';
+  end if;
+end $$;
 commit;
