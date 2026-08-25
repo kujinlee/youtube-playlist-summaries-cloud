@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Does the DEPLOYED schema match what M4 claims — a RATCHET on the SUBJECT axis.
 
-    python3 scripts/check-live-schema.py --expect-absent    # before 0027, or after 0028
+    python3 scripts/check-live-schema.py --expect-absent    # before 0027, or after the rollback
     python3 scripts/check-live-schema.py --expect-present   # after 0027
     python3 scripts/check-live-schema.py --self-test        # prints its own case count
 
@@ -9,241 +9,173 @@ WHY THIS EXISTS
 ---------------
 `docs/reviews/architecture-review-2026-08-25.md` finding 3: **five of the six schema gates never read
 a live database.** They REBUILD the schema from the spec files inside their own rolled-back
-transaction — `verify-schema.sh:10`, `check-guard-coverage.py:195-206`, and the same shape in
-`check-sentinel-meanings.py` and `check-vocabulary-collisions.py`. Only `check-docs.py` touches no
-database at all.
+transaction. So the existing suite answers *"is the SPEC internally consistent?"* and cannot answer
+*"did the migration APPLY?"* — the wrong question for the one milestone whose purpose is making the
+spec execute. That is the **SUBJECT** axis: built-from-source vs introspected-from-live.
 
-So the existing suite answers *"is the SPEC internally consistent?"* and cannot answer *"did the
-migration APPLY?"* — the wrong question for the one milestone whose purpose is making the spec
-execute. r3 B2 named the *path* axis and the *transport* axis; this is the third, the **SUBJECT**
-axis: built-from-source vs introspected-from-live.
+⭐ WHY IT CHECKS A DERIVED MANIFEST AND NOT A HAND-WRITTEN LIST
+--------------------------------------------------------------
+⟳ **r3 B2 (claude), 2026-08-25. User chose option (a).** This gate used to carry five hand-written
+tuples naming **29 of 161** objects — **18%**. Zero views, zero indexes, zero policies, zero
+constraints, 3 of 70 columns, and **7 of 14 triggers**, because the trigger tuple deliberately held
+only the seven on *live* tables.
 
-⚠ WHY IT CHECKS FIVE KINDS AND NOT TWO
---------------------------------------
-The first draft checked tables and columns. MEASURED 2026-08-25, in a rolled-back transaction:
-`drop table workspaces cascade` — the fix Postgres' own HINT recommends — removes every M4 table and
-column while leaving ALL SEVEN live-table triggers alive, still calling `public.workspaces`. On that
-database a real signup fails with `relation "public.workspaces" does not exist` inside
-`ensure_workspace_for_profile()`, so nobody can sign up — and the two-kind gate returned **exit 0**.
+MEASURED: it reported **"M4 is PRESENT as expected", exit 0**, over a database with **all seven of
+M4's own-table triggers dropped** — every append-only, freeze and immutability guard gone. The plan
+called it *"the only instrument that can confirm M4-β happened"*, and Task 9 makes it the sole
+production check, while the one-transaction property that would make a partial apply impossible is
+itself marked NOT VERIFIED. **A gate asserting a claim four times wider than what it reads.**
 
-A gate that blesses an outage is worse than no gate. Absence must be proved across every kind M4
-creates, because `drop table` removes only two of them.
+It now compares against `docs/superpowers/specs/m4/live-manifest.txt`, which
+`scripts/gen-m4-manifest.py` derives **by executing the schema and reading the catalog** — so the
+expected set cannot drift from what Postgres actually creates, and nothing is covered "by being
+remembered". `--check` on the generator is the staleness ratchet.
 
 FAILS IF
 --------
-`--expect-absent` and ANY M4 object survives in any kind; `--expect-present` and any is missing; or
-the database is unreachable (exit 2 — treat as NOT RUN).
+`--expect-absent` and ANY manifest object survives; `--expect-present` and any is missing; an
+ADR-0011-removed object exists in either polarity; the manifest is missing or empty; or the database
+is unreachable (exit 2 — treat as NOT RUN).
 """
 from __future__ import annotations
 
 import argparse
-import subprocess
+import os
 import sys
 
-CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from m4_catalog import by_kind, label, read_catalog, summarise  # noqa: E402
 
-# Post-ADR-0011. Counts verified against the schema, not the prose:
-#   5 tables · 3 columns · 7 live-table triggers · 13 functions · 1 enum
-M4_TABLES = ("workspaces", "workspace_videos", "video_generations",
-             "video_artifacts", "video_artifact_sources")
-M4_COLUMNS = ("playlists.workspace_id", "videos.workspace_id", "jobs.workspace_id")
-# Triggers on M4's OWN tables die with `drop table`. These seven sit on LIVE tables — profiles,
-# playlists, videos, jobs — whose tables survive, so nothing else removes them. They are the ones
-# that turn a botched rollback into an outage.
-M4_LIVE_TRIGGERS = ("profiles_ensure_workspace_trg",
-                    "playlists_resolve_workspace_ins_trg", "playlists_resolve_workspace_upd_trg",
-                    "videos_resolve_workspace_ins_trg", "videos_resolve_workspace_upd_trg",
-                    "jobs_resolve_workspace_ins_trg", "jobs_resolve_workspace_upd_trg")
-M4_FUNCTIONS = ("ensure_workspace_for_profile", "resolve_workspace_from_playlist", "record_artifact",
-                "video_generations_freeze", "forbid_collecting_current",
-                "video_artifacts_append_only", "video_artifacts_generation_complete",
-                "video_artifact_sources_append_only", "video_artifact_sources_insert_once",
-                "art_summary_has_no_source", "slot_kind", "corrections_hash_of",
-                "no_corrections_hash")
-M4_TYPES = ("artifact_kind",)
-
-KINDS = ("tables", "columns", "triggers", "functions", "types")
-EXPECTED = {"tables": set(M4_TABLES), "columns": set(M4_COLUMNS),
-            "triggers": set(M4_LIVE_TRIGGERS), "functions": set(M4_FUNCTIONS),
-            "types": set(M4_TYPES)}
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MANIFEST = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "live-manifest.txt")
 
 # ⚠ OBJECTS ADR-0011 DELETED. These must NEVER exist, in EITHER polarity.
-# -----------------------------------------------------------------------------------------------
-# MEASURED 2026-08-25. The proof harness built M4 from the spec files WITHOUT Tasks 1-2 applied,
-# reversed it with the rollback script, and this gate reported **ABSENT — as expected**. Three
-# M4-created objects were still sitting in the catalog:
-#
-#     + fn:sync_corrections_to_workspace_video()
-#     + trg:videos.videos_corrections_sync_ins_trg
-#     + trg:videos.videos_corrections_sync_upd_trg
-#
-# The sets above are the POST-ADR-0011 inventory, so the gate was structurally blind to anything
-# ADR-0011 deleted. Task 6 builds 0027 by `cat`-ing the spec files: if Task 1 is skipped or lands
-# partially, 0027 creates these three, the rollback never names them, and this gate blesses the
-# residue — the same shape as the `cascade` case this gate exists to catch, one layer over.
-#
-# A surviving `videos_corrections_sync_*` trigger is not cosmetic: it fires on every video insert
-# and update, calling `public.workspace_videos.corrections`, a column ADR-0011 removes.
-#
-# BOUND HONESTLY: this covers only kinds the catalog query below reads. It is a check on Task 1's
-# completeness, not a general "nothing unexpected exists" assertion.
+# MEASURED 2026-08-25: with M4 built from the spec WITHOUT Tasks 1-2 applied, the rollback left
+# these three behind and this gate reported "ABSENT — as expected", because the manifest describes
+# the POST-ADR-0011 schema and so cannot mention anything ADR-0011 deletes. Their presence means
+# Task 1 did not fully land; a surviving `videos_corrections_sync_*` trigger fires on every video
+# write, calling a column that no longer exists.
 ADR0011_REMOVED = {
-    "triggers": {"videos_corrections_sync_ins_trg", "videos_corrections_sync_upd_trg"},
-    "functions": {"sync_corrections_to_workspace_video"},
-    "columns": {"workspace_videos.corrections", "workspace_videos.corrections_hash"},
+    "trg:videos.videos_corrections_sync_ins_trg",
+    "trg:videos.videos_corrections_sync_upd_trg",
+    "fn:sync_corrections_to_workspace_video()",
+    "col:workspace_videos.corrections",
+    "col:workspace_videos.corrections_hash",
 }
 
-# One query per kind. `\echo` markers delimit the sections; no backticks anywhere — psql performs
-# shell command substitution on backquotes inside meta-command arguments, exactly as bash does
-# (measured 2026-08-25: it printed `sh: public: not found` into the middle of a measurement).
-CATALOG_SQL = r"""
-\echo ---TABLES---
-select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
- where n.nspname = 'public' and c.relkind = 'r';
-\echo ---COLUMNS---
--- the derived workspace_id columns, PLUS the two ADR-0011 deleted from workspace_videos, so a
--- half-applied Task 1 is visible rather than silently tolerated.
-select table_name || '.' || column_name from information_schema.columns
- where table_schema = 'public'
-   and (column_name = 'workspace_id'
-        or (table_name = 'workspace_videos'
-            and column_name in ('corrections', 'corrections_hash')));
-\echo ---TRIGGERS---
-select t.tgname from pg_trigger t join pg_class c on c.oid = t.tgrelid
-  join pg_namespace n on n.oid = c.relnamespace
- where not t.tgisinternal and n.nspname = 'public';
-\echo ---FUNCTIONS---
-select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'public';
-\echo ---TYPES---
-select t.typname from pg_type t join pg_namespace n on n.oid = t.typnamespace
- where n.nspname = 'public' and t.typtype = 'e';
-"""
+
+def load_manifest(path: str = MANIFEST) -> set[str]:
+    """The derived expected object set. Raises FileNotFoundError / ValueError, never guesses."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"no manifest at {path}. Generate it: python3 scripts/gen-m4-manifest.py")
+    with open(path) as f:
+        objs = {ln.strip() for ln in f if ln.strip() and not ln.startswith("#")}
+    if not objs:
+        raise ValueError(
+            f"the manifest at {path} is EMPTY. An empty expected set makes --expect-present pass\n"
+            "over any database at all, which is the failure this gate exists to prevent.")
+    return objs
 
 
-def forbidden(found: dict[str, set[str]]) -> dict[str, set[str]]:
-    """Objects ADR-0011 deleted that are nonetheless present. PURE.
-
-    Checked in BOTH polarities: their presence means Task 1 did not fully land, whether M4 is
-    supposed to be up or down.
-    """
-    return {kind: found.get(kind, set()) & names
-            for kind, names in ADR0011_REMOVED.items()
-            if found.get(kind, set()) & names}
-
-
-def verdict(found: dict[str, set[str]], mode: str) -> bool:
+# ---------------------------------------------------------------- pure verdict
+def verdict(live: set[str], manifest: set[str], mode: str) -> bool:
     """PURE. True = pass.
 
-    `found` maps kind -> the names actually present in the live catalog.
-    absent : NOTHING of M4 may remain, in ANY kind.
-    present: EVERY M4 object must be there, in every kind.
-    BOTH   : nothing ADR-0011 deleted may exist.
+    present: every manifest object is live.
+    absent : no manifest object is live.
+    BOTH   : nothing ADR-0011 removed is live.
     """
-    if forbidden(found):
+    if live & ADR0011_REMOVED:
         return False
     if mode == "absent":
-        return all(not (found.get(k, set()) & EXPECTED[k]) for k in KINDS)
-    return all(EXPECTED[k] <= found.get(k, set()) for k in KINDS)
+        return not (live & manifest)
+    return manifest <= live
 
 
-def residue(found: dict[str, set[str]], mode: str) -> dict[str, set[str]]:
-    """What is wrong, per kind — so a failure names the objects. PURE."""
-    if mode == "absent":
-        return {k: found.get(k, set()) & EXPECTED[k] for k in KINDS
-                if found.get(k, set()) & EXPECTED[k]}
-    return {k: EXPECTED[k] - found.get(k, set()) for k in KINDS
-            if EXPECTED[k] - found.get(k, set())}
+def residue(live: set[str], manifest: set[str], mode: str) -> set[str]:
+    """What is wrong — so a failure NAMES the objects. PURE."""
+    return (live & manifest) if mode == "absent" else (manifest - live)
 
 
-def parse_catalog(out: str) -> dict[str, set[str]]:
-    """Split psql output on the ---KIND--- markers. PURE."""
-    found: dict[str, set[str]] = {k: set() for k in KINDS}
-    marker_to_kind = {"---TABLES---": "tables", "---COLUMNS---": "columns",
-                      "---TRIGGERS---": "triggers", "---FUNCTIONS---": "functions",
-                      "---TYPES---": "types"}
-    current: str | None = None
-    for line in out.splitlines():
-        line = line.strip()
-        if line in marker_to_kind:
-            current = marker_to_kind[line]
-        elif line and current:
-            found[current].add(line)
-    return found
+def forbidden(live: set[str]) -> set[str]:
+    """ADR-0011-removed objects that are nonetheless present. PURE."""
+    return live & ADR0011_REMOVED
 
 
-def read_catalog(database: str = "postgres") -> dict[str, set[str]]:
-    """Reads the LIVE database. Raises RuntimeError if it cannot be reached.
-
-    ⚠ `--database` EXISTS SO THIS GATE CAN BE MUTATION-TESTED. This function opens its OWN
-    connection, so it cannot see an uncommitted transaction in another session — which means the
-    obvious "create the object in a rolled-back transaction, then run the gate" proof is impossible
-    (measured; it was a real finding against an earlier draft of this gate's own plan). The only
-    honest way to prove the gate goes RED is to build the state for real in a SCRATCH database and
-    point the gate at it. `scripts/mutate-live-schema-check.sh` does exactly that.
-    """
-    p = subprocess.run(
-        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", database, "-tAq"],
-        input=CATALOG_SQL, capture_output=True, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(p.stderr.strip() or "psql failed with no message")
-    return parse_catalog(p.stdout)
+def report(objs: set[str], prefix: str) -> list[str]:
+    """Group and format offending objects for stderr. PURE."""
+    lines = []
+    for kind, items in by_kind(objs).items():
+        lines.append(f"  {len(items)} {label(kind, len(items))}:")
+        for o in items[:12]:
+            lines.append(f"      {prefix} {o}")
+        if len(items) > 12:
+            lines.append(f"      … and {len(items) - 12} more")
+    return lines
 
 
 # ---------------------------------------------------------------- self-test
 def self_test() -> int:
     cases = failures = 0
 
-    def check(label: str, got: bool, want: bool) -> None:
+    def check(label_: str, got: object, want: object) -> None:
         nonlocal cases, failures
         cases += 1
         ok = got == want
-        print(("  ✓ " if ok else "  ✗ ") + label)
+        print(("  ✓ " if ok else f"  ✗ [{got!r} != {want!r}] ") + label_)
         failures += 0 if ok else 1
 
-    none: dict[str, set[str]] = {k: set() for k in KINDS}
-    all_: dict[str, set[str]] = {k: set(EXPECTED[k]) for k in KINDS}
+    M = {"table:workspaces", "table:video_generations", "view:video_artifacts_current",
+         "col:playlists.workspace_id", "trg:profiles.profiles_ensure_workspace_trg",
+         "trg:video_artifacts.video_artifacts_append_only_trg",
+         "fn:record_artifact(uuid)", "type:artifact_kind", "idx:va_pkey",
+         "pol:workspaces.ws_owner", "con:videos.videos_workspace_video_fk"}
+    none: set[str] = set()
 
-    check("absent passes when nothing remains", verdict(none, "absent"), True)
-    check("absent FAILS when a table survives",
-          verdict({**none, "tables": {"workspaces"}}, "absent"), False)
-    # ⭐ THE CASE THAT MATTERS — the measured post-cascade state. No tables, no columns, but the
-    # live-table triggers alive and calling a dropped table. Signup is dead here, and the two-kind
-    # version of this gate returned exit 0.
-    check("absent FAILS on the cascade residue (triggers alive, tables gone)",
-          verdict({**none, "triggers": {"profiles_ensure_workspace_trg"}}, "absent"), False)
-    check("absent FAILS when a function survives — a wrong drop signature is a SILENT no-op",
-          verdict({**none, "functions": {"record_artifact"}}, "absent"), False)
-    check("absent FAILS when the enum survives",
-          verdict({**none, "types": {"artifact_kind"}}, "absent"), False)
+    check("absent passes when nothing remains", verdict(none, M, "absent"), True)
+    check("absent FAILS when a table survives", verdict({"table:workspaces"}, M, "absent"), False)
     check("absent IGNORES unrelated objects",
-          verdict({**none, "tables": {"profiles", "playlists"}}, "absent"), True)
-    check("present passes when complete", verdict(all_, "present"), True)
-    check("present FAILS on a partial apply (one table)",
-          verdict({**all_, "tables": {"workspaces"}}, "present"), False)
-    check("present FAILS when the triggers are missing",
-          verdict({**all_, "triggers": set()}, "present"), False)
-    check("residue NAMES the surviving object",
-          residue({**none, "functions": {"slot_kind"}}, "absent") == {"functions": {"slot_kind"}},
-          True)
+          verdict({"table:profiles", "idx:profiles_pkey"}, M, "absent"), True)
+    check("present passes when complete", verdict(set(M), M, "present"), True)
 
-    # ⭐ THE MEASURED BLIND SPOT — this gate reported ABSENT over a database still carrying all
-    # three objects below, because they are not in the post-ADR-0011 inventory it checks.
-    sync_fn = {**none, "functions": {"sync_corrections_to_workspace_video"}}
-    sync_trg = {**none, "triggers": {"videos_corrections_sync_ins_trg"}}
-    check("absent FAILS when the ADR-0011 sync FUNCTION survives", verdict(sync_fn, "absent"), False)
-    check("absent FAILS when an ADR-0011 sync TRIGGER survives", verdict(sync_trg, "absent"), False)
+    # ⭐ THE MEASURED B2 CASE — every own-table guard trigger dropped. The old gate returned 0 here.
+    no_guard = set(M) - {"trg:video_artifacts.video_artifacts_append_only_trg"}
+    check("present FAILS when an OWN-TABLE guard trigger is missing (r3 B2)",
+          verdict(no_guard, M, "present"), False)
+    for kind, obj in (("view", "view:video_artifacts_current"), ("index", "idx:va_pkey"),
+                      ("policy", "pol:workspaces.ws_owner"),
+                      ("constraint", "con:videos.videos_workspace_video_fk"),
+                      ("column", "col:playlists.workspace_id")):
+        check(f"present FAILS when a {kind} is missing — the old gate named ZERO of these",
+              verdict(set(M) - {obj}, M, "present"), False)
+
+    check("absent FAILS on the cascade residue (a live-table trigger alive, tables gone)",
+          verdict({"trg:profiles.profiles_ensure_workspace_trg"}, M, "absent"), False)
+    check("absent FAILS when a function survives — a wrong drop signature is a SILENT no-op",
+          verdict({"fn:record_artifact(uuid)"}, M, "absent"), False)
+    check("absent FAILS when the enum survives", verdict({"type:artifact_kind"}, M, "absent"), False)
+
+    sync = {"fn:sync_corrections_to_workspace_video()"}
+    check("absent FAILS when the ADR-0011 sync function survives", verdict(sync, M, "absent"), False)
     check("PRESENT also FAILS on an ADR-0011 object — a half-applied Task 1 is not a valid M4",
-          verdict({**all_, "functions": all_["functions"] | {"sync_corrections_to_workspace_video"}},
-                  "present"), False)
-    check("present FAILS when workspace_videos.corrections_hash was never dropped",
-          verdict({**all_, "columns": all_["columns"] | {"workspace_videos.corrections_hash"}},
-                  "present"), False)
-    check("forbidden NAMES the offending object",
-          forbidden(sync_trg) == {"triggers": {"videos_corrections_sync_ins_trg"}}, True)
-    check("forbidden is EMPTY on a clean post-ADR-0011 schema", forbidden(all_) == {}, True)
+          verdict(set(M) | sync, M, "present"), False)
+    check("forbidden NAMES the offending object", forbidden(sync), sync)
+    check("forbidden is EMPTY on a clean schema", forbidden(set(M)), set())
+
+    check("residue NAMES what is MISSING in present mode",
+          residue(no_guard, M, "present"), {"trg:video_artifacts.video_artifacts_append_only_trg"})
+    check("residue NAMES what SURVIVED in absent mode",
+          residue({"table:workspaces"}, M, "absent"), {"table:workspaces"})
+
+    # an empty manifest must never be treated as "everything is fine"
+    check("an EMPTY manifest would make present vacuous — load_manifest must reject it, so the\n"
+          "     verdict function is never asked", verdict(none, set(), "present"), True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
+    if failures == 0:
+        print("⚠ the last case documents WHY load_manifest raises on an empty file: the pure\n"
+              "  verdict cannot distinguish 'nothing expected' from 'all present'.")
     return 1 if failures else 0
 
 
@@ -255,9 +187,10 @@ def main() -> int:
     g.add_argument("--expect-present", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--database", default="postgres",
-                    help="target database; used by the mutation harness to point at a "
-                         "scratch DB, because this gate opens its own connection and so "
-                         "cannot be proved red inside someone else's transaction")
+                    help="target database; used by the mutation harness to point at a scratch DB, "
+                         "because this gate opens its own connection and so cannot be proved red "
+                         "inside someone else's transaction")
+    ap.add_argument("--manifest", default=MANIFEST)
     a = ap.parse_args()
 
     if a.self_test:
@@ -270,49 +203,41 @@ def main() -> int:
 
     mode = "absent" if a.expect_absent else "present"
     try:
-        found = read_catalog(a.database)
-    except (RuntimeError, FileNotFoundError) as e:
-        print(f"CANNOT RUN — could not read the live catalog: {e}\nTreat this as NOT RUN.",
-              file=sys.stderr)
+        manifest = load_manifest(a.manifest)
+        live = read_catalog(a.database)
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        print(f"CANNOT RUN — {e}\nTreat this as NOT RUN.", file=sys.stderr)
         return 2
 
-    if verdict(found, mode):
-        print(f"live schema: M4 is {mode.upper()} as expected "
-              f"({len(EXPECTED['tables'])} tables, {len(EXPECTED['columns'])} columns, "
-              f"{len(EXPECTED['triggers'])} live triggers, {len(EXPECTED['functions'])} functions, "
-              f"{len(EXPECTED['types'])} type)")
+    if verdict(live, manifest, mode):
+        print(f"live schema: M4 is {mode.upper()} as expected — checked all {len(manifest)} "
+              f"objects ({summarise(manifest)})")
         return 0
 
-    gone = forbidden(found)
+    gone = forbidden(live)
     if gone:
-        print("FAILED — objects ADR-0011 DELETED are present. Task 1 did not fully land, so 0027\n"
-              "carries objects the rollback never names and this gate used to bless:\n",
-              file=sys.stderr)
-        for kind in sorted(gone):
-            for name in sorted(gone[kind]):
-                print(f"  ✗ adr-0011-removed {kind[:-1]}: {name}", file=sys.stderr)
-        if "triggers" in gone:
-            print("\n⚠ A surviving corrections-sync trigger fires on EVERY video insert and update,\n"
-                  "  calling workspace_videos.corrections — a column ADR-0011 removes.",
-                  file=sys.stderr)
-        if not residue(found, mode):
-            return 1
+        print("FAILED — objects ADR-0011 DELETED are present, so Task 1 did not fully land and\n"
+              "0027 carries objects the rollback never names:\n", file=sys.stderr)
+        for line in report(gone, "✗"):
+            print(line, file=sys.stderr)
         print(file=sys.stderr)
 
-    bad = residue(found, mode)
-    if not bad:
-        return 1
-    word = "SURVIVING" if mode == "absent" else "MISSING"
-    print(f"FAILED — expected M4 {mode.upper()}, but these objects are {word}:\n", file=sys.stderr)
-    for kind in KINDS:
-        if kind in bad:
-            for name in sorted(bad[kind]):
-                print(f"  ✗ {kind[:-1]}: {name}", file=sys.stderr)
-    if mode == "absent" and "triggers" in bad:
-        print("\n⚠ A SURVIVING LIVE-TABLE TRIGGER MEANS THE PRODUCT IS DOWN, not merely untidy — it\n"
-              "  still calls tables that are gone. Signup, playlist creation and enqueue all fail.\n"
-              "  This is the state `drop table … cascade` produces. Do not use cascade in 0028.",
-              file=sys.stderr)
+    bad = residue(live, manifest, mode)
+    if bad:
+        word = "SURVIVING" if mode == "absent" else "MISSING"
+        print(f"FAILED — expected M4 {mode.upper()}; {len(bad)} of {len(manifest)} objects are "
+              f"{word}:\n", file=sys.stderr)
+        for line in report(bad, "✗"):
+            print(line, file=sys.stderr)
+        if mode == "absent" and any(o.startswith("trg:") for o in bad):
+            print("\n⚠ A SURVIVING TRIGGER ON A LIVE TABLE MEANS THE PRODUCT IS DOWN, not merely\n"
+                  "  untidy — it still calls tables that are gone. Signup, playlist creation and\n"
+                  "  enqueue all fail. This is the state `drop table … cascade` produces.",
+                  file=sys.stderr)
+        if mode == "present":
+            print("\n⚠ A PARTIALLY APPLIED M4 IS THE DANGEROUS STATE: the guard triggers are what\n"
+                  "  make the artifact tables append-only. A schema with the tables and without\n"
+                  "  their guards accepts writes the design forbids.", file=sys.stderr)
     return 1
 
 
