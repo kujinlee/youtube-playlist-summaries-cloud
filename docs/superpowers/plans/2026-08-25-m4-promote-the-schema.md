@@ -77,12 +77,20 @@ what the gates can do.
 - [ ] **T0 — Correct the spine, before any SQL. ⚠ MUST BE FIRST**
       Fix the M4 entry in the spine: it is not inert, it is one transaction, and it excludes
       `05_assert.sql`. A plan that corrects a document at the end leaves a window where the wrong
-      sentence is the one on `master`. **Gate:** `check-docs` 0. No code.
+      sentence is the one on `master`.
+      ⚠ **Gate — and v4 got this wrong twice.** ⟳ *r3 M1 said T0's gate cannot fail for T0's
+      subject; v4 did not fix it, and r4-codex caught the same thing again.* `check-docs.py:447-472`
+      only checks the advisory count in `roadmap-to-launch.md` — **it never reads the M4 spine.**
+      The gate for T0 is therefore a **quoted diff**: the spine's M4 entry must contain the words
+      *one transaction* and *not inert*, and must not contain *lands inert*. Grep for those three
+      strings. A gate that cannot fail for its own subject is the thing this plan keeps writing.
 
 - [x] **T1 — ✅ MEASURED AGAINST PRODUCTION 2026-08-25, read-only as `claude_ro`**
       Subject named before the verdict: `db=postgres user=claude_ro server=aws-0-us-east-1.pooler…`,
-      `videos.workspace_id_exists=0` (confirming this is the pre-M4 world). SQL in a file; 0 write
-      statements; `psql` exit 0.
+      `videos.workspace_id_exists=0` (confirming this is the pre-M4 world). SQL in a file — now **committed** at `docs/superpowers/specs/m4/t1-blast-radius.sql` so the
+      measurement is re-runnable; 0 write statements; `psql` exit 0. ⟳ *r4-codex Low: v4 said
+      "in a file" while the file was in `/tmp`. Codex independently re-ran the measurement and
+      matched every figure — but a query nobody else can run is a claim, not a measurement.*
 
       | Question | Answer | Query |
       |---|---|---|
@@ -155,7 +163,13 @@ what the gates can do.
       jobs=15` — 30 rows across the three tables — so the rewrite and the `NOT NULL` promotions are
       a matter of seconds and a maintenance window would cost more than it buys. **Set an explicit
       `lock_timeout` (start at `5s`) and `statement_timeout`, and let the migration ABORT rather than
-      queue behind a long-running worker transaction.** ⚠ Re-measure at M4-β: this decision is a
+      queue behind a long-running worker transaction.**
+      ⟳ **r4-codex Medium — the inference was overstated and is corrected here.** 30 rows bounds the
+      **work after the locks are acquired**; it says nothing about **time to acquire
+      `ACCESS EXCLUSIVE`** on three tables a live worker writes to. So the position is *"try without
+      a maintenance window, abort safely, and have a pause-the-worker runbook for the case where
+      lock acquisition fails"* — **not** *"a maintenance window is unnecessary"*. **Write that
+      runbook as part of T5**; a strategy whose failure branch is undefined is half a strategy. ⚠ Re-measure at M4-β: this decision is a
       function of the row counts, and it flips if they grow by orders of magnitude.
 
 - [ ] **T6 — M4-α, then M4-β**
