@@ -284,7 +284,7 @@ CSS = """
   footer{border-top:1px solid var(--rule);padding-top:1.1rem;display:flex;flex-direction:column;
          gap:.6rem;font-size:.82rem;color:var(--ink-faint)}
   .legend{max-width:70ch}
-  a{color:var(--structure)}\n  a.n{text-decoration:none;border-bottom:1px solid transparent}\n  a.n:hover{border-bottom-color:var(--structure);color:var(--structure)}\n  a.chip{text-decoration:none}\n  a.chip:hover{border-color:var(--structure)}
+  a{color:var(--structure)}\n  a.n{color:var(--structure);text-decoration:underline;text-underline-offset:3px;\n      text-decoration-color:color-mix(in srgb,var(--structure) 45%,transparent)}\n  a.n:hover{text-decoration-color:var(--structure)}\n  a.chip{text-decoration:none}\n  a.chip:hover{border-color:var(--structure)}
   :focus-visible{outline:2px solid var(--structure);outline-offset:2px}
 """
 

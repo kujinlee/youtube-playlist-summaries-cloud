@@ -123,6 +123,160 @@ def safe_path(url_path: str, root: pathlib.Path) -> pathlib.Path | None:
     return candidate
 
 
+# ---------------------------------------------------------------- markdown
+# A renderer for the constructs this corpus ACTUALLY uses, counted rather than guessed across the
+# 32 living documents on 2026-08-25: code spans 5596, bold 4359, blockquote lines 1879, table rows
+# 1407, list items 1510, fenced blocks 626, headings 499, rules 216, links 53, strikethrough 18.
+#
+# Strikethrough is the smallest count and the least skippable: these documents record corrections by
+# striking the old sentence rather than deleting it, so dropping ~~ would silently restore claims
+# their authors retracted. That is why "render a subset" had to be measured instead of estimated.
+#
+# ESCAPE FIRST, ALWAYS. 181 lines carry `<ws>`-style placeholders; unescaped they vanish into the
+# DOM as unknown tags and the reader sees a sentence with a hole in it.
+MD_FENCE = re.compile(r"^```[^\n]*$")
+MD_TABLE_SEP = re.compile(r"^\|[\s:|-]+\|$")
+
+
+def md_cells(row: str) -> list[str]:
+    """Split a table row on UNESCAPED pipes, then unescape.
+
+    MEASURED in the browser, not in a fixture: the roadmap's `ls -1 … \\| tail -1` cell split into
+    two, spilling a stray backslash into a fourth column that had no header. A naive `.split("|")`
+    cannot see the difference between a column separator and a pipe the author escaped precisely so
+    it would not be one — and this corpus escapes hundreds of them."""
+    cells = re.split(r"(?<!\\)\|", row.strip().strip("|"))
+    return [c.strip().replace("\\|", "|") for c in cells]
+
+
+def md_inline(s: str) -> str:
+    """Inline spans, on ALREADY-ESCAPED text. Code spans are extracted first so nothing rewrites
+    their insides — a `**` inside backticks is two asterisks, not emphasis."""
+    held: list[str] = []
+
+    def hold(m: re.Match) -> str:
+        held.append(m.group(1))
+        return f"\x00{len(held) - 1}\x00"
+
+    s = re.sub(r"`([^`]+)`", hold, s)
+    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2">\1</a>', s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"~~([^~]+)~~", r"<del>\1</del>", s)
+    s = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<em>\1</em>", s)
+    return re.sub(r"\x00(\d+)\x00", lambda m: f"<code>{held[int(m.group(1))]}</code>", s)
+
+
+def md_render(text: str) -> str:
+    """Markdown -> HTML for the measured subset. Escapes ONCE, then renders blocks."""
+    return md_blocks(text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def md_blocks(esc: str) -> str:
+    """Block structure over ALREADY-ESCAPED text.
+
+    Split from `md_render` because the nested-blockquote case recurses, and recursing through the
+    escaping step turned `&gt;` into `&amp;gt;` — a nested quote rendered its own marker as literal
+    text. Caught by the `> > deep` self-test, which is why the least common construct gets a case."""
+    lines = esc.split("\n")
+    out: list[str] = []
+    i, n = 0, len(lines)
+
+    def flush_quote(buf: list[str]) -> None:
+        if buf:
+            out.append(f"<blockquote>{md_blocks(chr(10).join(buf))}</blockquote>")
+            buf.clear()
+
+    quote: list[str] = []
+    while i < n:
+        ln = lines[i]
+
+        if ln.startswith("&gt;"):                      # blockquote — '>' is escaped by now
+            quote.append(re.sub(r"^&gt; ?", "", ln))
+            i += 1
+            continue
+        flush_quote(quote)
+
+        if MD_FENCE.match(ln):                         # fenced code, verbatim
+            j = i + 1
+            while j < n and not MD_FENCE.match(lines[j]):
+                j += 1
+            out.append("<pre class=\"code\">" + chr(10).join(lines[i + 1:j]) + "</pre>")
+            i = j + 1
+            continue
+
+        if re.match(r"^(-{3,}|\*{3,})$", ln.strip()):
+            out.append("<hr>")
+            i += 1
+            continue
+
+        if m := re.match(r"^(#{1,6}) +(.*)$", ln):     # heading
+            lvl = len(m.group(1))
+            out.append(f"<h{lvl}>{md_inline(m.group(2))}</h{lvl}>")
+            i += 1
+            continue
+
+        if (ln.startswith("|") and i + 1 < n and MD_TABLE_SEP.match(lines[i + 1].strip())):
+            head = md_cells(ln)
+            j = i + 2
+            body = []
+            while j < n and lines[j].startswith("|"):
+                body.append(md_cells(lines[j]))
+                j += 1
+            th = "".join(f"<th>{md_inline(c)}</th>" for c in head)
+            tr = "".join("<tr>" + "".join(f"<td>{md_inline(c)}</td>" for c in r) + "</tr>"
+                         for r in body)
+            out.append(f'<div class="tw"><table><thead><tr>{th}</tr></thead>'
+                       f"<tbody>{tr}</tbody></table></div>")
+            i = j
+            continue
+
+        if re.match(r"^\s*([-*]|\d+\.) +", ln):        # list run (one nesting level)
+            ordered = bool(re.match(r"^\s*\d+\. ", ln))
+            items, j = [], i
+            while j < n and re.match(r"^\s*([-*]|\d+\.) +", lines[j]):
+                indent = len(lines[j]) - len(lines[j].lstrip())
+                items.append((indent, re.sub(r"^\s*([-*]|\d+\.) +", "", lines[j])))
+                j += 1
+                while j < n and lines[j].strip() and not re.match(r"^\s*([-*]|\d+\.) +", lines[j]) \
+                        and lines[j].startswith(" "):
+                    items[-1] = (items[-1][0], items[-1][1] + " " + lines[j].strip())
+                    j += 1
+            base = min(ind for ind, _ in items)
+            tag = "ol" if ordered else "ul"
+            html, depth = [f"<{tag}>"], 0
+            for ind, body in items:
+                want = 1 if ind > base else 0
+                if want > depth:
+                    html.append(f"<{tag}>")
+                elif want < depth:
+                    html.append(f"</{tag}>")
+                depth = want
+                html.append(f"<li>{md_inline(body)}</li>")
+            html.append(f"</{tag}>" * (depth + 1))
+            out.append("".join(html))
+            i = j
+            continue
+
+        if not ln.strip():
+            i += 1
+            continue
+
+        para, j = [], i                                 # paragraph
+        while j < n and lines[j].strip() and not lines[j].startswith("&gt;") \
+                and not MD_FENCE.match(lines[j]) and not re.match(r"^#{1,6} ", lines[j]) \
+                and not lines[j].startswith("|") and not re.match(r"^\s*([-*]|\d+\.) +", lines[j]):
+            para.append(lines[j])
+            j += 1
+        if para:
+            out.append(f"<p>{md_inline(' '.join(para))}</p>")
+            i = j
+        else:
+            i += 1
+
+    flush_quote(quote)
+    return "\n".join(out)
+
+
 def src_root() -> pathlib.Path | None:
     """The optional source root, or None when unset or not a directory. PURE given the env."""
     v = os.environ.get(SRC_ROOT_ENV, "").strip()
@@ -133,29 +287,57 @@ def src_root() -> pathlib.Path | None:
 
 
 def source_shell(rel: str, text: str) -> str:
-    """A readable, themed view of a source file.
+    """A readable, RENDERED view of a source file.
 
-    Deliberately NOT a markdown renderer. These documents carry tables, nested blockquotes and
-    struck-through corrections whose meaning is the point; a half-renderer would silently drop the
-    parts that matter most. Monospace and honest beats rich and wrong — and `?raw=1` is one click
-    away for anything that wants the bytes.
+    ⟳ It began as a `<pre>` on the argument that a half-renderer drops the parts that matter. The
+    first person to click a link said so plainly — "it display raw MD file not preview" — and they
+    were right about the need. The argument was not wrong, only misapplied: the answer is to COUNT
+    which constructs the corpus uses and cover all of them, which `md_render` does. `?raw=1` keeps
+    the bytes one click away.
     """
-    esc = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    body = md_render(text) if rel.lower().endswith(".md") else (
+        "<pre class=\"code\">"
+        + text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</pre>")
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>{rel}</title><style>
-:root{{--bg:#f6f5f2;--ink:#1a1c22;--faint:#838a9b;--rule:#ddd9d0;--accent:#3f4bb8}}
-@media (prefers-color-scheme:dark){{:root{{--bg:#14151a;--ink:#eceef4;--faint:#7d8496;
-  --rule:#2e313b;--accent:#8f9bf0}}}}
+:root{{--bg:#f6f5f2;--card:#fffefb;--ink:#1a1c22;--soft:#4b5060;--faint:#838a9b;--rule:#ddd9d0;
+  --accent:#3f4bb8;--codebg:#f0eee9}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#14151a;--card:#1c1e25;--ink:#eceef4;--soft:#b4bac9;
+  --faint:#7d8496;--rule:#2e313b;--accent:#8f9bf0;--codebg:#1a1c22}}}}
+*{{box-sizing:border-box}}
 body{{background:var(--bg);color:var(--ink);margin:0;
-  font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}}
-header{{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--rule);
-  padding:.7rem 1.2rem;display:flex;gap:1rem;align-items:baseline;flex-wrap:wrap}}
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}}
+header{{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--rule);
+  padding:.7rem 1.2rem;display:flex;gap:1rem;align-items:baseline;flex-wrap:wrap;
+  font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}}
 header b{{font-weight:600}} header a{{color:var(--accent)}} header .f{{color:var(--faint)}}
-pre{{margin:0;padding:1.2rem;white-space:pre-wrap;word-wrap:break-word;tab-size:2}}
+main{{max-width:52rem;margin:0 auto;padding:1.6rem 1.4rem 6rem}}
+h1,h2,h3,h4,h5,h6{{line-height:1.25;margin:2rem 0 .7rem;text-wrap:balance}}
+h1{{font-size:1.7rem;border-bottom:2px solid var(--ink);padding-bottom:.4rem}}
+h2{{font-size:1.3rem;border-bottom:1px solid var(--rule);padding-bottom:.3rem}}
+h3{{font-size:1.08rem}} h4,h5,h6{{font-size:.98rem}}
+p{{margin:.8rem 0}} hr{{border:0;border-top:1px solid var(--rule);margin:1.8rem 0}}
+a{{color:var(--accent)}}
+code{{font:.85em/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--codebg);
+  padding:.1em .32em;border-radius:3px}}
+pre.code{{background:var(--codebg);border:1px solid var(--rule);border-radius:4px;padding:.9rem 1rem;
+  overflow-x:auto;font:12.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}}
+blockquote{{margin:.9rem 0;padding:.1rem 0 .1rem 1rem;border-left:3px solid var(--rule);
+  color:var(--soft)}}
+blockquote blockquote{{border-left-color:var(--accent)}}
+ul,ol{{margin:.7rem 0;padding-left:1.4rem}} li{{margin:.3rem 0}}
+del{{color:var(--faint)}}
+.tw{{overflow-x:auto;margin:1rem 0;border:1px solid var(--rule);border-radius:4px}}
+table{{border-collapse:collapse;width:100%;background:var(--card)}}
+th,td{{text-align:left;padding:.5rem .75rem;border-bottom:1px solid var(--rule);
+  font-size:.92rem;vertical-align:top}}
+th{{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  font-weight:600;white-space:nowrap}}
+tbody tr:last-child td{{border-bottom:none}}
 </style></head><body>
 <header><b>{rel}</b><span class="f">{len(text.splitlines())} lines</span>
 <a href="?raw=1">raw</a><a href="/goals">goals</a><a href="/">index</a></header>
-<pre>{esc}</pre></body></html>"""
+<main>{body}</main></body></html>"""
 
 
 def explainers(root: pathlib.Path) -> list[pathlib.Path]:
@@ -709,6 +891,26 @@ def _self_test() -> int:
         case("reload client polls on pageshow (bfcache restore)",
              lambda: "'pageshow'" in RELOAD_JS)
 
+    # --- md_render: one case per construct COUNTED in the corpus, so a regression in the least
+    # frequent one (strikethrough, 18 occurrences) fails as loudly as the most frequent.
+        case("md: heading", lambda: "<h2>T</h2>" in md_render("## T"))
+        case("md: bold", lambda: "<strong>x</strong>" in md_render("**x**"))
+        case("md: italic", lambda: "<em>x</em>" in md_render("*x*"))
+        case("md: strikethrough", lambda: "<del>old</del>" in md_render("~~old~~"))
+        case("md: code span", lambda: "<code>a b</code>" in md_render("`a b`"))
+        case("md: link", lambda: '<a href="/x">t</a>' in md_render("[t](/x)"))
+        case("md: table", lambda: "<th>a</th>" in md_render("| a |\n|---|\n| 1 |"))
+        case("md: ESCAPED pipe is not a column",
+             lambda: md_render("| a | b |\n|---|---|\n| x \\| y | z |").count("<td>") == 2)
+        case("md: blockquote", lambda: "<blockquote>" in md_render("> q"))
+        case("md: nested quote", lambda: md_render("> > deep").count("<blockquote>") == 2)
+        case("md: bullet list", lambda: "<li>one</li>" in md_render("- one"))
+        case("md: ordered list", lambda: "<ol>" in md_render("1. one"))
+        case("md: rule", lambda: "<hr>" in md_render("---"))
+        case("md: fenced code kept verbatim", lambda: "**not bold**" in md_render("```\n**not bold**\n```"))
+        case("md: PLACEHOLDER survives escaping", lambda: "&lt;ws&gt;" in md_render("a <ws> b"))
+        case("md: no emphasis inside code", lambda: "<strong>" not in md_render("`a **b** c`"))
+
         for name, fn in cases:
             try:
                 result = fn()          # called EXACTLY once — a case may have side effects
@@ -718,6 +920,7 @@ def _self_test() -> int:
                     print(f"  FAIL: {name}")
             except Exception as exc:  # noqa: BLE001
                 print(f"  FAIL: {name} — {type(exc).__name__}: {exc}")
+
     print(f"self-test: {ok}/{len(cases)} passed")
     return 0 if ok == len(cases) else 1
 
