@@ -43,7 +43,7 @@
 |---|---|
 | `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/03_generations.sql` | **Modify** — remove corrections per ADR-0011 (Task 1) |
 | `…/schema/04_artifacts.sql` | **Modify** — corrections-currency ranking moves to the reader (Task 2) |
-| `scripts/check-live-schema.py` | **Created** — the live-catalog gate. ⚠ It names **29 of 161** objects (**18%**) — see the coverage warning in Task 3 (Task 3) |
+| `scripts/check-live-schema.py` + `gen-m4-manifest.py` + `m4_catalog.py` | **Created** — the live-catalog gate. Checks **all 161** objects against a manifest DERIVED BY EXECUTION (r3 B2, option (a)) |
 | `supabase/migrations/0027_stable_blob_addressing.sql` | **Create** — the three spec files, one transaction (Task 6) |
 | `supabase/rollback/rollback_0027_stable_blob_addressing.sql` | **Created** `322d411` — the reverse, PROVEN by execution. ⛔ NOT a migration (Task 6 Step 3) |
 | `scripts/check-guard-coverage.py`, `check-sentinel-meanings.py`, `check-vocabulary-collisions.py` | **Modify** — inventories, after Task 1 removes objects (Task 5) |
@@ -334,39 +334,60 @@ written to catch. `ADR0011_REMOVED` now fails in **both** polarities, and mutati
 ⚠ **`--expect-absent` must fail on a PARTIAL teardown, which is the state a failed rollback leaves.**
 That is the whole point: the case the first version could not see is the case that kills the product.
 
-### ⛔ COVERAGE: THE GATE NAMES 29 OF 161 OBJECTS (18%) — r3 B2, UNRESOLVED
+### ✅ COVERAGE: r3 B2 RESOLVED — the gate checks all 161 objects, from a DERIVED manifest
 
-⟳ *r3 Blocking (claude), coordinator-verified by deriving the number from `EXPECTED` itself.*
+⟳ *r3 Blocking (claude). **User chose option (a), 2026-08-25.***
+
+**What was wrong.** The gate carried five hand-written tuples naming **29 of 161** objects — **18%**:
 
 | Kind | Named | Of |
 |---|---|---|
-| tables | 5 | 5 |
-| columns | 3 | 70 |
+| tables · functions · types | 5 · 13 · 1 | 5 · 13 · 1 |
+| columns | 3 | **70** |
 | triggers | **7** | **14** |
-| functions | 13 | 13 |
-| types | 1 | 1 |
-| views · indexes · policies · constraints | **0** | 3 · 12 · 5 · 38 |
+| views · indexes · policies · constraints | **0 · 0 · 0 · 0** | 3 · 12 · 5 · 38 |
 
-**MEASURED consequence:** `--expect-present` returns *"M4 is PRESENT as expected"*, **exit 0**, over a
-database with **all seven of M4's own-table triggers dropped** — every append-only, freeze and
-immutability guard gone. `M4_LIVE_TRIGGERS` holds only the seven on *live* tables, by design, because
-the gate was built to catch rollback residue. Nothing else names the other seven.
+MEASURED: it reported *"M4 is PRESENT as expected"*, **exit 0**, over a database with **all seven of
+M4's own-table guard triggers dropped** — every append-only, freeze and immutability guard. That is
+the dangerous state, not a tidy one: the tables exist and accept writes the design forbids.
 
-**Why that is Blocking rather than a nice-to-have:** this file's own row above used to call it *"the
-only instrument that can confirm M4-β happened"*, and Task 9 Step 7 makes it the sole production
-check — while §4's one-transaction property, the thing that would make a partial apply impossible,
-is itself listed **NOT VERIFIED**. A gate asserting a claim four times wider than what it reads is
-the `a-checklist-item-can-be-an-unfalsifiable-guard` shape.
+**The fix — the manifest is DERIVED BY EXECUTION, never parsed and never remembered.**
 
-**⚠ NOT FIXED HERE — this is a design fork, and it belongs to the human:**
+```bash
+python3 scripts/gen-m4-manifest.py           # clone pre-M4 → apply → `after EXCEPT before`
+python3 scripts/gen-m4-manifest.py --check   # staleness ratchet: fails if the schema moved
+```
 
-| Option | Cost |
+It writes `docs/superpowers/specs/m4/live-manifest.txt` — **161 lines, one `kind:name` per object**
+— and `check-live-schema.py` compares a live catalog against exactly that set. Comparison is set
+algebra: `present` is `MANIFEST ⊆ live`, `absent` is `MANIFEST ∩ live = ∅`.
+
+⛔ **Why not parse the SQL.** That reproduces the defect being fixed. The old inventory was
+hand-written, and separately `grep -c "^create trigger"` undercounts by one because
+`art_summary_has_no_source_trg` is a **`create constraint trigger`**. Every reader of the text
+inherits that class of error; the catalog does not.
+
+⛔ **The generator fails closed on a baseline that already has M4.** The manifest is a *diff*; if
+`0027` is already applied, `after EXCEPT before` is empty or partial and it would write a manifest
+that passes over any database at all — the exact failure this finding is about.
+
+**Proven, not asserted** — `scripts/mutate-live-schema-check.sh`, **5/5 caught**:
+
+| Mutation | Result |
 |---|---|
-| **(a)** Diff the live catalog against the objects `build-m4-schema.py` emits — full 161, derived not hand-listed | the honest fix; needs a manifest step and makes the gate depend on the builder |
-| **(b)** Keep the 29-object gate, drop the sufficiency claim, and verify `db push --linked`'s one-transaction property so a partial apply is genuinely impossible | cheaper; leaves the gate narrow but no longer over-claiming |
+| empty database | `--expect-absent` passes |
+| M4 applied | `--expect-present` passes |
+| `drop table … cascade` residue | `--expect-absent` **FAILS** (live-table triggers survive) |
+| pre-ADR-0011 schema | `--expect-present` **FAILS** (sync fn + 2 triggers) |
+| ⭐⭐ **all seven own-table guards dropped** | `--expect-present` **FAILS** — *the case the 29-object gate blessed with exit 0* |
 
-Recommendation: **(a)**, because (b) rests on a property currently marked NOT VERIFIED, and the
-inventory is already derived by execution — the manifest is nearly free.
+Self-test **20 cases**, five of which assert a *view / index / policy / constraint / column* is
+missing — kinds the old gate named **zero** of.
+
+⚠ **What this does NOT do.** It compares against the manifest generated from *this* repo's pre-M4
+baseline. It is not a proof that `db push --linked` is atomic — §4's one-transaction property is
+still **NOT VERIFIED**, and remains the other half of option (b). What changed is that a partial
+apply is now *detectable*, where before it was not.
 
 - [ ] **Step 6: Re-run both, and record the counts against a commit**
 

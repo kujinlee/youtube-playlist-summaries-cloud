@@ -86,6 +86,42 @@ psql_scratch -c "select '       '||t.tgname from pg_trigger t join pg_class c on
                   where not t.tgisinternal and c.relname in ('profiles','playlists','videos','jobs')
                   order by 1;" 2>/dev/null
 
+echo "═══ mutation 4 ⭐⭐ r3 B2: DROP EVERY OWN-TABLE GUARD TRIGGER, --expect-present must go RED ═══"
+# THE CASE THE 29-OBJECT GATE COULD NOT SEE. `M4_LIVE_TRIGGERS` named only the seven triggers on
+# LIVE tables, so a database with every append-only / freeze / immutability guard dropped reported
+# "M4 is PRESENT as expected", exit 0. The manifest names all 14.
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "drop database if exists ${SCRATCH}_guard (force);" >/dev/null 2>&1
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "create database ${SCRATCH}_guard;" >/dev/null 2>&1
+docker exec -i "$CONTAINER" sh -c \
+  "pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges | psql -U postgres -d ${SCRATCH}_guard -q" \
+  >/dev/null 2>&1
+python3 ./scripts/build-m4-schema.py --quiet --out /tmp/m4-guard-mutation.sql >/dev/null 2>&1
+docker exec -i "$CONTAINER" psql -U postgres -d "${SCRATCH}_guard" -tAq -v ON_ERROR_STOP=1 \
+  < /tmp/m4-guard-mutation.sql >/dev/null 2>&1
+
+python3 ./scripts/check-live-schema.py --database "${SCRATCH}_guard" --expect-present \
+  >/dev/null 2>&1 && r=pass || r=fail
+report "M4 applied to the guard scratch db -> --expect-present passes" pass "$r"
+
+docker exec -i "$CONTAINER" psql -U postgres -d "${SCRATCH}_guard" -tAq >/dev/null 2>&1 <<'SQL'
+drop trigger if exists video_generations_freeze_trg              on video_generations;
+drop trigger if exists forbid_collecting_current_trg             on video_generations;
+drop trigger if exists video_artifacts_append_only_trg           on video_artifacts;
+drop trigger if exists video_artifacts_generation_complete_trg   on video_artifacts;
+drop trigger if exists video_artifact_sources_append_only_trg    on video_artifact_sources;
+drop trigger if exists video_artifact_sources_insert_once_trg    on video_artifact_sources;
+drop trigger if exists art_summary_has_no_source_trg             on video_artifact_sources;
+SQL
+python3 ./scripts/check-live-schema.py --database "${SCRATCH}_guard" --expect-present \
+  >/dev/null 2>&1 && r=pass || r=fail
+report "ALL SEVEN own-table guards dropped -> --expect-present FAILS" fail "$r"
+echo "     tables and columns are all still there; only the guards are gone —"
+echo "     that is precisely the state the 29-object gate blessed with exit 0."
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "drop database if exists ${SCRATCH}_guard (force);" >/dev/null 2>&1
+
 echo "═══ mutation 3 ⭐ the ADR-0011 RESIDUE: a Task 1 that never landed ═══"
 # MEASURED 2026-08-25: with the raw spec applied, the rollback left three objects behind and
 # `--expect-absent` reported ABSENT — because the gate's inventory is post-ADR-0011 and could not
