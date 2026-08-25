@@ -66,7 +66,19 @@ delivers.
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: a `workspace_videos` with columns `(workspace_id, video_id)` only; `corrections_hash_of(text)` and `no_corrections_hash()` **remain defined** (Task 2 keeps a caller); triggers on `videos` reduce from 4 to 2.
+- Produces: a `workspace_videos` with columns `(workspace_id, video_id)` only; triggers on `videos` reduce from 4 to 2.
+
+⚠ **CORRECTION, MEASURED 2026-08-25.** This line used to read *"`corrections_hash_of(text)` and
+`no_corrections_hash()` **remain defined** (Task 2 keeps a caller)"*. **The parenthetical is false.**
+Grepping the built post-ADR-0011 SQL for `corrections_hash_of` outside its own definition returns
+**nothing** — Task 2 removes the last call site, and the only remaining reference is
+`corrections_hash_of` calling `no_corrections_hash` inside itself.
+
+They do remain *defined*, so the sentence's main clause and `M4_FUNCTIONS` (13) are both right, and
+the rollback drops them. But `0027` ships **two functions with no caller**. They are `revoke`d from
+`public, anon, authenticated`, so this is dead code rather than exposure. **Open, and deliberately
+not decided here:** drop them from the spec (a 13→11 change rippling through four inventories), or
+keep them for M5. ⚠ Flagged for round 3 — *not* filed.
 
 - [ ] **Step 1: Confirm the starting state, so the diff is a measurement not a hope**
 
@@ -215,19 +227,44 @@ grep -c "corrections" docs/superpowers/specs/2026-08-03-stable-blob-addressing/s
 # 52. Every one of them breaks the moment Task 1 lands.
 ```
 
-Sites to remove, by content:
+⛔ **DO NOT WORK FROM A HAND LIST. THE PREDICATE IS THE DELIVERABLE.** ⟳ *r2 B5 (codex) / H2
+(claude), and the coordinator's re-measurement made it worse than reported.* A five-row table here
+named `:62`, `:119`, `:819-821`, `:899-905`, `:1315-1319` and was cited as the sweep. r2 found it
+missed `:1913,:1915`. **Measured 2026-08-25: it misses far more than two.**
 
-| What | Where it was measured |
+**The distinction that makes the sweep tractable — and that a bare `grep corrections` destroys:**
+
+> ADR-0011 removes `workspace_videos.corrections` and `.corrections_hash`. **It does not remove
+> corrections.** They stay in `videos.data`, per-playlist. So assertions reading
+> `data->>'corrections'` are still valid and **must be kept**.
+
+```bash
+S=docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema
+# MUST GO — the removed columns and the deleted function. MEASURED: 32 code lines.
+grep -n "corrections_hash\|sync_corrections_to_workspace_video\|corrections from workspace_videos\|wv\.corrections" \
+  $S/05_assert.sql | grep -v ":\s*--"
+# MUST STAY — corrections in videos.data, which ADR-0011 keeps. MEASURED: 11 code lines.
+grep -n "corrections" $S/05_assert.sql | grep -v ":\s*--" \
+  | grep -v "corrections_hash\|sync_corrections_to_workspace_video\|corrections from workspace_videos\|wv\.corrections"
+```
+
+| | Measured |
 |---|---|
-| `workspace_videos where corrections_hash is null` | `05_assert.sql:62` |
-| `insert into workspace_videos (… corrections_hash)` | `:119` |
-| `update workspace_videos set corrections_hash` | `:819-821` |
-| anti-drift assertions reading `wv.corrections_hash, wv.corrections` | `:899-905` |
-| the `sync_corrections_to_workspace_video` inventory entry | `:1315-1319` |
+| `corrections` anywhere in `05_assert.sql` | **52** |
+| …on code lines (not comments) | **43** |
+| …naming a REMOVED object → delete | **32** |
+| …reading `videos.data` → **keep** | **11** |
+| named by the old hand list | **5 ranges** |
 
-**Delete the assertions whose subject ADR-0011 removed.** Do **not** rewrite them to assert something
-else — an assertion retargeted to keep it alive is how a suite ends up testing what is easy rather
-than what matters.
+**Delete the assertions whose subject ADR-0011 removed** — including the whole round-9 block at
+`:1908-1917`, which asserts that a second playlist cannot clobber `workspace_videos.corrections`, a
+behaviour that no longer exists in a schema without that column. Do **not** rewrite them to assert
+something else; an assertion retargeted to keep it alive is how a suite ends up testing what is easy
+rather than what matters.
+
+⚠ **The lesson, because it is this repo's most expensive recurring one:** *a convention catches what
+you READ; a script catches what is THERE.* A hand list in a plan is a snapshot of one person's
+attention. Step 5 below is the actual gate.
 
 - [ ] **Step 5: Prove no site was missed — the search is the deliverable**
 
@@ -510,11 +547,34 @@ wrong twice over and the second failure was catastrophic. **Read this before wri
 ⛔ **NEVER USE `cascade` IN THE ROLLBACK.** Postgres will recommend it twice and it produces a live outage
 rather than a rollback. If a drop fails, the order is wrong — fix the order.
 
-**The inventory `0027` creates (derived, not listed): 44 objects** — 5 tables, 3 views, 14 functions,
-15 triggers, 1 enum, 3 indexes, 5 policies. After ADR-0011: **13 functions, 13 triggers.**
+### The inventory, MEASURED — 161 catalog objects
 
-**The distinction that makes this writable:** triggers on M4's **own** tables die with `drop table`.
-The **7 on LIVE tables survive** and must be named.
+⟳ *r2-claude M4.* The previous figure ("44 objects … 13 triggers") was **derived by grep and wrong**.
+This one is a catalog diff: the post-ADR-0011 schema applied to a clone of the live pre-M4 database,
+`after EXCEPT before`.
+
+| Kind | Adds | |
+|---|---|---|
+| tables + views | **8** | 5 tables, 3 views |
+| columns | **70** | including the 3 derived `workspace_id` |
+| triggers | **14** | ⚠ **not 13** |
+| functions | **13** | |
+| enum | **1** | |
+| indexes | **12** | |
+| policies | **5** | |
+| constraints | **38** | |
+| **total** | **161** | |
+
+⚠ **WHY THE TRIGGER COUNT WAS OFF BY ONE, because the cause generalises.** `grep -c "^create
+trigger"` returns **13**; the catalog holds **14**. The missing one is
+`art_summary_has_no_source_trg`, declared as **`create constraint trigger`** `[04_artifacts.sql]`. A
+constraint trigger is still a trigger, so **any inventory built by grepping `create trigger`
+systematically misses every one of them.** The count that matters is the catalog's.
+
+**The distinction that makes the rollback writable:** the 14 split **7 / 7**. The seven on M4's
+**own** tables (`video_generations` ×2, `video_artifacts` ×2, `video_artifact_sources` ×3) die with
+`drop table`. The **seven on LIVE tables** — `profiles`, `playlists` ×2, `videos` ×2, `jobs` ×2 —
+survive, and must be named. Those seven are `M4_LIVE_TRIGGERS` in `check-live-schema.py`.
 
 ### ⛔ IT IS NOT A MIGRATION, AND IT IS ALREADY WRITTEN
 
@@ -793,10 +853,20 @@ Expected: no matches. **Record the command and its count** — this is the rollb
 - [ ] **Step 3: M4-α — apply to the local stack, seeded per Task 8, and run every gate**
 
 ```bash
-./scripts/check-schema-gates.sh          # 9 checks, 0-8: 05_assert guard, the six, live-catalog, assertions
+M4_PHASE=post ./scripts/check-schema-gates.sh   # 9 checks, 0-8; see the caller warning below
 python3 scripts/check-anon-exposure.py --local
 npm run test:integration
 ```
+
+⛔ **`M4_PHASE=post` IS REQUIRED HERE, AND OMITTING IT IS AN `exit 2`, NOT A FAILURE YOU WOULD
+NOTICE.** ⟳ *r2 B3 (codex) / B1 (claude).* Task 3 Step 7 made the suite **refuse to guess** once
+`0027` exists — the right design, and it left every existing caller unchanged. By this step `0027`
+does exist, so a bare invocation prints `CANNOT RUN` and stops.
+
+⚠ **This was the THIRD instance in one day of *fixed at one of two sites*** — after v5's `:120`
+maintenance-window residue and the `05_assert` sweep. The counter-practice, stated so it is
+mechanical: **a fix that adds a requirement must grep for its callers in the same edit.** The two
+callers in this plan are here and the milestone gate list; both now carry the variable.
 
 - [ ] **Step 4: Set the anon-exposure baseline against the PRE-M4 production world**
 
@@ -859,8 +929,10 @@ T10 ── any time  ┘             ╚═▶ ⚡ UNSEEDED M4-α FIRES on every
 
 ## Gates for the milestone
 
-1. `./scripts/check-schema-gates.sh` — **nine checks, numbered 0-8, all green**: the `05_assert`
-   guard (0), the six originals (1-6), the live-catalog gate (7), the re-runnable assertions (8).
+1. `M4_PHASE=post ./scripts/check-schema-gates.sh` — **nine checks, numbered 0-8, all green**: the
+   `05_assert` guard (0), the six originals (1-6), the live-catalog gate (7), the re-runnable
+   assertions (8). ⛔ **The variable is not optional once `0027` exists** — without it the suite
+   exits 2 by design (Task 3 Step 7). Before `0027`, use `M4_PHASE=pre`.
 2. `check-live-schema.py --expect-present` after `0027`; `--expect-absent` after the rollback.
 3. `npm run test:integration` green **against a named commit**; unavailable stack ⇒ non-zero, *treat as NOT RUN*.
 4. `check-anon-exposure.py --prod` at M4-β (the gate); `--local` is a smoke test.
