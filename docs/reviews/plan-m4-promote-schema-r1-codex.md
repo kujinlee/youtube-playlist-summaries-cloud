@@ -1,5 +1,7 @@
 <!-- codex-review: model=gpt-5.5 -->
 
+**REVIEW GAP:** claude — not invoked. A session-level instruction said not to spawn subagents unless asked; I resolved that against `docs/plugins.md` and then failed to act on my own resolution. Not unavailability. The missing half ran as round 3 (`plan-m4-promote-schema-r3-claude.md`), which does not retroactively make this round dual-reviewed.
+
 Verified: the headline claim is true. `01_workspaces.sql:36-48` adds `workspace_id` to `playlists`, `videos`, and `jobs`, backfills each, then sets each `NOT NULL`.
 
 **Blocking**

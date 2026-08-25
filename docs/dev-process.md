@@ -139,6 +139,7 @@ copy that drifts.
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |
 | `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
 | `scripts/check-docs.py` | documentation integrity |
+| `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason — never blocks when a reviewer cannot run, only when nobody says so (`--self-test`: 14 cases) |
 | `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to, by a name that survives a rename (ADR-0010; registry `docs/anchors.md`; `--self-test`: 15 cases) |
 | `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; page-producing skills cite it, never restate it (`--self-test`: 8 cases) |
 | `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |

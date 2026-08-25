@@ -1,5 +1,7 @@
 <!-- codex-review: model=gpt-5.5 -->
 
+**REVIEW GAP:** claude — not invoked. A session-level instruction said not to spawn subagents unless asked; I resolved that against `docs/plugins.md` and then failed to act on my own resolution. Not unavailability. The missing half ran as round 3 (`plan-m4-promote-schema-r3-claude.md`), which does not retroactively make this round dual-reviewed.
+
 **Blocking**
 - `docs/superpowers/plans/2026-08-25-m4-promote-the-schema.md:136-147` hides a rewrite behind “re-point.” Gate 1 currently concatenates spec SQL inside one rollback transaction (`docs/superpowers/specs/2026-08-03-stable-blob-addressing/verify-schema.sh:8-10`). Gate 2 is worse: it mutates two named spec files (`mutate-schema.py:25-27`), copies the spec schema plus verifier into temp (`mutate-schema.py:875-884`), then runs that copied verifier. A migration gate that applies committed files sequentially is not a path change; it is a new harness with different failure modes and new equivalence obligations. v2 still states “Must read: the migrations” as if this is mechanical.
 
