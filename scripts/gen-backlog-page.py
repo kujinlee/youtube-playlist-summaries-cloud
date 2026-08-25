@@ -132,6 +132,14 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "reserving it first — a deliberate choice to keep the first slice shippable. This "
              "adds the reservation, and a check that the spending bound still covers everything "
              "the job pays for once corrections run inside it."),
+        (62, "A correction that FAILS still pays Gemini, and nothing records it — so neither the "
+             "per-person daily limit nor the overall spending cap ever sees that money. Measured "
+             "in production: the spend table was empty after a real failed press. Corrections can "
+             "be made to fail on purpose, so this is a way to spend past a limit rather than an "
+             "accounting rounding error."),
+        (63, "When a correction fails, the person who was just charged sees the internal error "
+             "text rather than anything they can act on. The friendly-message mechanism already "
+             "exists a few lines away in the same function."),
      ]),
     ("Sync",
      "One item, and its symptom is silence rather than an error.", [
