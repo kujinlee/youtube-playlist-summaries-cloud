@@ -105,6 +105,17 @@ jobs:
       - name: Roadmap internal consistency
         run: python3 scripts/check-roadmap-consistency.py
 
+      # A feature's documents must say which GOAL they belong to, by a name that survives a rename.
+      # Written after an hour was lost re-deriving a roadmap that existed: the feature spans three
+      # vocabularies after two honest renames, and membership by keyword returns 7 of 162 specs and
+      # plans while missing one the roadmap names in its own fifth line. A convention would catch
+      # what someone reads; this catches what is there (ADR-0010).
+      - name: Anchor headers
+        run: python3 scripts/check-anchors.py
+
+      - name: check-anchors self-test
+        run: python3 scripts/check-anchors.py --self-test
+
       # The ratchets' own contract, enforced rather than described. Written because the prose in
       # docs/process-checklists.md said "there are three ratchets" — from memory, and wrong by half;
       # this script found six. It checks the two rules that are statically decidable (a --self-test

@@ -1,5 +1,8 @@
 # Slice A — corrections work in the cloud, attended path
 
+> **Anchor:** `corrections-in-cloud` — **ADR:** none
+> **Goal:** A cloud user corrects a summary and gets the same result a local user would.
+
 **Backlog:** #23. **Phase:** 1. **Scope:** the user-initiated cloud correction, and nothing else.
 
 **History.** v1 → r1 (26 findings) → v2 → r2 (33) → v3 → r3 (Codex 2B/2H/2M/2L, Claude 3B/7H/8M/10L)

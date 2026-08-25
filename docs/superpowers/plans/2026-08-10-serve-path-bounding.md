@@ -1,5 +1,8 @@
 # Serve-Path Bounding Implementation Plan
 
+> **Anchor:** `serve-path-bounding` — **ADR:** none
+> **Goal:** The serve path's work is bounded, and its lease outlives the work it protects.
+
 > ## STATUS 2026-08-11 — COMPLETE. 8/8 tasks + 7 dual adversarial review rounds. PR open; MERGING IS A HUMAN GATE.
 >
 > `tsc --noEmit` clean · unit **265 suites / 2671 tests** · full integration **67 suites / 487 tests**,

@@ -201,11 +201,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
      "from recurring.", [
         (16, "After a deploy, a browser tab left open keeps running the old JavaScript with no "
              "“refresh available” prompt."),
-        (64, "A feature's documents don't say which decision they belong to, so the plan for a goal "
-             "can be un-findable by that goal's own name — measured: an hour lost re-deriving a "
-             "roadmap that already existed, reaching a conclusion it had already corrected. Attach "
-             "the ADR number and one anchor name to every spec and plan, enforce it in check-docs, "
-             "and render one pinned page per decision."),
         (29, "A guard-coverage checker only inspects the parked schema, so the guards in real "
              "migrations are invisible to it."),
         (38, "Extract the sidebar's load/refresh state machine into a hook — a reviewer, asked "
@@ -355,7 +350,7 @@ ANSWERS: dict[int, list[tuple[str, str]]] = {
 #    syntax" is about characters, #27's "superseded" is about blob generations. So this map is
 #    hand-written and mechanically validated — the same contract as GROUPS.
 ROOTS: dict[str, dict[str, str]] = {
-    "adr-0006-addressing": dict(
+    "stable-blob-addressing": dict(
         label="The stable-addressing slice",
         detail="ADR-0006 — <code>status: proposed</code>, and the schema slice was parked on "
                "2026-08-11 to return to the launch roadmap. Not a backlog row: a decision waiting "
@@ -376,14 +371,14 @@ RELATIONS: dict[str, tuple[str, str, str, int]] = {
 
 # item → (relation, root key, optional note)
 DEPENDS: dict[int, tuple[str, str, str]] = {
-    19: ("survives", "adr-0006-addressing",
+    19: ("survives", "stable-blob-addressing",
          "needs the generation dimension, not just a stable name"),
-    17: ("partly-dissolved-by", "adr-0006-addressing",
+    17: ("partly-dissolved-by", "stable-blob-addressing",
          "residue: <code>persist_summary</code> merge semantics"),
-    52: ("blocked-by", "adr-0006-addressing", "blocked on unparking, per its own status cell"),
-    20: ("dissolved-by", "adr-0006-addressing", ""),
-    21: ("dissolved-by", "adr-0006-addressing", ""),
-    22: ("dissolved-by", "adr-0006-addressing", ""),
+    52: ("blocked-by", "stable-blob-addressing", "blocked on unparking, per its own status cell"),
+    20: ("dissolved-by", "stable-blob-addressing", ""),
+    21: ("dissolved-by", "stable-blob-addressing", ""),
+    22: ("dissolved-by", "stable-blob-addressing", ""),
 }
 
 

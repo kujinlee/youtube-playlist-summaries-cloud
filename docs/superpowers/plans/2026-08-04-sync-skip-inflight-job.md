@@ -1,5 +1,8 @@
 # A3 refuses to relocate a video with an in-flight job (backlog #17, partial)
 
+> **Anchor:** `cloud-sync` — **ADR:** 0002
+> **Goal:** Sync refuses to relocate a video while a job is in flight against it.
+
 **Scope: the cheap guard, not the full fence.** Closes the *wide* window in the worker-vs-sync race —
 the minutes a job spends in transcription + Gemini. **It does not eliminate the race.** Measured, not
 assumed: the copy phase between the probe and the metadata write is N sequential blob round-trips

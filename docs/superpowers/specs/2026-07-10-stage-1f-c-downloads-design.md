@@ -1,5 +1,8 @@
 # Stage 1F-c — Downloads (MD + rendered HTML), owner + share-token (cloud)
 
+> **Anchor:** `share-and-download` — **ADR:** 0003
+> **Goal:** A summary can be downloaded as raw markdown or self-contained HTML, by the owner or a share-token holder.
+
 **Status:** ✅ **design CONVERGED (v4)** — v1 dual review (1 Blocking/2 High/2 Med/3 Low) → v2; round-2 re-review (0 new Blocking, 2 new High reconciliation defects) → v3; **round-3 re-review returned 0 new Blocking / 0 new High / 0 new Medium from both passes (CONVERGED)** → v4 folds the one cosmetic Low. **Next: user spec-approval → `writing-plans`.** **Branch:** `feat/stage-1f-c-downloads`.
 **Review trail:** `docs/reviews/spec-1f-c-{codex,claude}-v1.md`, `-v2-rereview.md`, `-v3-rereview.md`.
 

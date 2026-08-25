@@ -1,5 +1,8 @@
 # Append-Only Generations — Milestone Roadmap
 
+> **Anchor:** `stable-blob-addressing` — **ADR:** 0006, 0007
+> **Goal:** A blob's address stops moving when a title or a serial number changes. THIS IS THE MILESTONE SPINE (M1-M7) for that goal.
+
 > **This is a SPINE, not an executable plan.** It names the milestones and what each one makes
 > moot. Each milestone gets its own detailed plan under `docs/superpowers/plans/` before it starts;
 > only M1 has one today (`2026-08-22-m1-honest-card.md`). Do not execute from this file.

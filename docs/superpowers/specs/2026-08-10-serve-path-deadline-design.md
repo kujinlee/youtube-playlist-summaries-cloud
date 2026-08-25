@@ -1,5 +1,8 @@
 # Bounding the Serve Path — Design Spec
 
+> **Anchor:** `serve-path-bounding` — **ADR:** none
+> **Goal:** The serve path's work is bounded, and its lease outlives the work it protects.
+
 **Status:** **v6** — rounds 5 and 6 applied to the v4 redesign. v1–v3 are superseded, not amended.
 **Proceeding to Phase 2 (writing-plans)**, where the plan carries its own dual adversarial review to
 convergence (`dev-process.md:82`). See §7.5 for why that, and not a seventh spec round.

@@ -1,5 +1,8 @@
 # Stage 3 — Cloud Sync (local ↔ cloud reconciliation) — Design Spec
 
+> **Anchor:** `cloud-sync` — **ADR:** 0002
+> **Goal:** The local vault and the cloud replica reconcile without either destroying the other's work.
+
 **Status:** **v10 — CONVERGED** (dual adversarial review, 2026-07-17). Final round: **opus CONVERGED (0 B/H/M)**
 + **Codex 0 Blocking/0 High** (2 Medium dispositioned: the §12.3 recompute contradiction FIXED; the
 carried-scalar-staleness Medium dispositioned as accepted **R9** per opus's deeper trace showing carry-verbatim
