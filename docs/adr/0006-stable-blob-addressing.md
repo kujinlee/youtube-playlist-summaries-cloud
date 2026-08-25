@@ -1,5 +1,12 @@
 ---
-status: proposed — supersedes ADR-0002 if accepted
+status: accepted 2026-08-24 (M3) — supersedes ADR-0002's REJECTION of video-level shared summaries
+  only; 0002's (playlist_id, owner_id) cross-tenant guard stands. Phase 1 is CLOSED: eighteen design
+  reviews, and round 17's coordinator asked for no round 18 — "the next genuine test is the migration,
+  not round 18" (docs/reviews/spec-blob-addressing-r17-coordinator.md:121-123), Blockings 4 → 3 → 1 → 1.
+  ⚠ ACCEPTED IS NOT IMPLEMENTED. The schema has never run: 0 of 26 migrations define
+  video_artifacts/video_generations, and prod holds 0 such tables. The next milestone is M4 (promote
+  the schema as migrations 0027+) in
+  docs/superpowers/plans/2026-08-22-append-only-generations-roadmap.md
 ---
 
 # Blob addresses are derived from immutable identity, not from display attributes
