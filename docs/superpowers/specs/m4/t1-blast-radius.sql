@@ -44,12 +44,41 @@ select 'playlists=' || (select count(*) from playlists)::text
     || ' videos='    || (select count(*) from videos)::text
     || ' jobs='      || (select count(*) from jobs)::text as blast_radius;
 
-\echo === pgcrypto digest available? (M4 introduces prod's first dependency) ===
-select 'pgcrypto_installed=' ||
-       (select count(*) from pg_extension where extname='pgcrypto')::text
-    || ' digest_callable=' ||
-       (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-         where p.proname='digest')::text as pgcrypto;
+\echo === pgcrypto: the NAMESPACE is the question, not the count ===
+-- ⟳ ROUND 4 M4 — THIS USED TO COUNT ROWS AND COULD NOT FAIL. It was
+--   `count(*) from pg_proc p join pg_namespace n ... where proname='digest'`
+-- with `n` joined and NEVER USED, so it printed `digest_callable=2` identically whether pgcrypto sat
+-- somewhere resolvable or somewhere it did not. The schema says why that matters in its own voice
+-- (03_generations.sql:30-35): Supabase installs pgcrypto into `extensions`, NOT `public`, and
+-- `corrections_hash_of` resolves it through a pinned `set search_path = public, extensions` (03:39).
+-- That function is on the ingest path of EVERY `insert into videos` (03:185) and on the
+-- post-payment corrections write (03:232).
+-- FAILS IF: pgcrypto, or either `digest` overload, is in a schema outside that pinned search_path.
+select 'pgcrypto_schema=' || coalesce(
+         (select extnamespace::regnamespace::text from pg_extension where extname='pgcrypto'),
+         'NOT-INSTALLED') as pgcrypto_ns;
+select 'digest_schemas=' || coalesce(string_agg(distinct n.nspname, ','), 'NONE') as digest_ns
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where p.proname = 'digest';
+-- ⚠ NO BACKTICKS IN \echo. psql performs shell command substitution on backquotes inside
+-- meta-command arguments, exactly as bash does inside double quotes. Measured 2026-08-25: writing
+-- the schema names in backticks here made psql run them, printing `sh: public: not found` into the
+-- middle of the measurement. Same root cause as the --prompt-file / --body-file rule in
+-- docs/plugins.md; a THIRD interpreter that eats backquotes.
+\echo --- the assertion: any schema outside public/extensions is a RED T1 ---
+select case
+         when not exists (select 1 from pg_extension where extname='pgcrypto')
+           then 'FAIL: pgcrypto not installed'
+         when exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where p.proname='digest' and n.nspname not in ('public','extensions'))
+           then 'FAIL: a digest() lives outside corrections_hash_of''s pinned search_path'
+         when not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where p.proname='digest' and n.nspname in ('public','extensions'))
+           then 'FAIL: no digest() is reachable on the pinned search_path'
+         else 'PASS: pgcrypto resolvable from corrections_hash_of'
+       end as pgcrypto_verdict;
 
 \echo === does any video already sit in 2+ playlists ACROSS owners (future risk shape) ===
 select 'video_ids_in_multiple_playlists=' || count(*)::text as shape
