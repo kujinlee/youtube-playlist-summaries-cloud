@@ -115,10 +115,13 @@ what the gates can do.
       playlist `[:42]`. Grouping by `owner_id` is therefore the correct pre-M4 translation of the
       post-M4 key, and getting that wrong would have answered a different question.
 
-      ⭐ **What the numbers change:** 30 rows total across the three tables. **T5's lock window is
-      seconds, not minutes** — which makes option (b), a stated `lock_timeout`, clearly the cheaper
-      of the two, and removes the case for a maintenance window at this data size. Re-measure before
-      M4-β; these figures decay with every ingest.
+      ⭐ **What the numbers change:** 30 rows total across the three tables. **T5's work *after* the
+      locks are acquired is seconds, not minutes** — which makes option (b), a stated `lock_timeout`,
+      clearly the cheaper of the two. ⚠ **It does NOT bound lock ACQUISITION, and therefore does not
+      retire the maintenance window — see T5.** *(⟳ r4-claude: this block asserted that it did, which
+      is the sentence T5 `:167-173` had already retracted. Two copies of one inference, one of them
+      corrected — the defect shape `true-about-the-name-silent-about-the-layer` names.)* Re-measure
+      before M4-β; these figures decay with every ingest.
 
 - [ ] **T2 — `0027_stable_blob_addressing.sql` — THREE files, ONE transaction**
       Promote `01_workspaces.sql`, `03_generations.sql`, `04_artifacts.sql` — **not**
