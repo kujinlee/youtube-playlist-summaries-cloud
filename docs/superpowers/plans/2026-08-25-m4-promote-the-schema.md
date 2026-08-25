@@ -48,7 +48,11 @@ select distinct on (workspace_id, video_id) …, nullif(data->>'corrections', ''
 
 **One video in two playlists of one workspace, with different corrections in each, keeps ONE and
 drops the other.** ✅ **MEASURED 0 in production 2026-08-25 (T1) — but zero because no video is
-in two playlists yet, not because corrections agree.** T2 carries an in-transaction assertion. `distinct on` picks a row; the ordering only prefers *non-empty* over empty, never
+in two playlists yet, not because corrections agree.** ⟳ **v5.1: T2's in-transaction guard RECORDS
+the collision and lets the migration proceed — it does NOT abort**, because the pre-M4 state it
+replaces is *already* incoherent (corrections are per-playlist and unsynced), so aborting would block
+a fix on the grounds that the fix is lossy. See T1 for the full reasoning and for why union is
+unavailable (`corrections` is free text; backlog #23 would change that). `distinct on` picks a row; the ordering only prefers *non-empty* over empty, never
 one correction over another. Corrections are user-authored and, since M2 slice A, **paid**. No gate
 in v1–v3 would have reported it.
 
@@ -146,9 +150,43 @@ what the gates can do.
       **because the precondition does not exist yet** — no video sits in two playlists at all
       (`multi_row_groups = 0`). It is *not* zero because two corrections happened to agree. Adding
       one video to a second playlist is an ordinary user action, and it makes the count able to move.
-      **So H3 is closed for a migration run TODAY and is not closed as a property.** T2 keeps a guard:
-      the migration asserts the count is still zero **inside the same transaction**, immediately
-      before the `workspace_videos` backfill, and aborts if it is not.
+      **So H3 is closed for a migration run TODAY and is not closed as a property.** T2 keeps a guard,
+      **and v5.1 changed what that guard DOES — it RECORDS, it does not abort.** See the decision
+      immediately below.
+
+      ⭐ **DECIDED 2026-08-25 (user) — THE COLLISION GUARD WARNS AND RECORDS; IT MUST NOT ABORT.**
+      The reasoning that changed it, and it is the strongest argument anyone has made on this point:
+
+      - **The status quo is ALREADY incoherent.** Pre-M4, corrections live per-playlist in
+        `videos.data` with **no sync between rows**. Correct a video in playlist A, open it from
+        playlist B, and the correction is not there. **M4 does not create the divergence — it is the
+        first thing that resolves it**, and resolving it means some value wins.
+      - So an **abort** blocks a fix on the grounds that the fix is lossy, **while the state it
+        replaces is lossy too**. That is the wrong instrument. `a-checklist-item-can-be-an-
+        unfalsifiable-guard` has a sibling: *a guard that fails closed against an improvement*.
+      - **Losing a correction silently is the defect. Losing it legibly is acceptable.**
+
+      **So T2's guard emits a row per collided `(workspace_id, video_id)` — the group key, the
+      competing values, and which one won — and the migration PROCEEDS.**
+
+      ⚠ **WHY NOT UNION, which would dissolve the question entirely: `corrections` is FREE TEXT.**
+      MEASURED 2026-08-25: `types/index.ts:74` is `corrections: z.string().optional()`; the column is
+      `corrections text` `[03_generations.sql:52]`; the hash takes
+      `corrections_hash_of(p_corrections text)` `[:37]`; and real local values are opaque strings
+      (`fix-v2`, `B`). **There is nothing to merge on.** Backlog **#23** (*corrections as deterministic
+      `{from,to}` pairs*) is the **target representation, not today's** — and if it lands, union
+      becomes a two-line `select` and this guard can be deleted outright. **Re-open this decision when
+      #23 ships.**
+
+      ⚠ **What generation-addressing does and does NOT cover.** Summaries, dig sections and assets are
+      generation-addressed — concurrent writes land as separate `video_generations` rows and both are
+      retained, so there is genuinely no collision there. **`corrections` has no generation
+      dimension**: it is one mutable `text` column, written by a plain
+      `update … set corrections = …` `[03:227-234]`, so last write wins. The two live on opposite
+      sides of the same schema, and the append-only argument does not reach this column.
+      ⚠ Also note the collision is **one owner**, not two users — `workspaces.id = profiles.id` is 1:1
+      `[01_workspaces.sql:33]`, so it is one person who corrected the same video differently in two of
+      their own playlists.
 
       **The prospective `workspace_id` is `owner_id`** — `workspaces.id = profiles.id` `[:33]`,
       `playlists.workspace_id` resolves by `owner_id` `[:37]`, `videos.workspace_id` from its
@@ -231,6 +269,11 @@ what the gates can do.
       ⛔ **T4's seeding must CONSTRUCT that case deliberately** — two `videos` rows, one `owner_id`,
       one `video_id`, two *different* non-empty corrections — or M4-α will report a green assertion
       that never evaluated anything. Copying production shape reproduces production's *blind spot*.
+      ⟳ **v5.1 — the constructed case now tests a DIFFERENT thing, and it matters more.** Since the
+      guard records rather than aborts, the seed no longer proves "the migration refuses"; it proves
+      **the collision report is emitted, names the right group, and states which value won**. A
+      warn-path that nobody has triggered is worth less than an abort nobody has triggered, because
+      its output is the entire deliverable. **Assert the report's CONTENT, not just its existence.**
       ⟳ **r4-claude M1 — AND THE RE-RUNNABLE HOME NEEDS A SECOND ANSWER, FOR A *DRIFTED* DATABASE.**
       v4 said *"whichever home is chosen, `check-schema-gates.sh` runs it"* — i.e. repeatedly, against
       whatever state the DB is in. But the backfill assertion's own precondition, three lines above it,
@@ -395,6 +438,16 @@ content, and three of the four options are defensible:
 | **(b) Clear on delete, keep the row** | blank `corrections` but keep the shared body | same content loss, less structural churn |
 | **(c) Keep and DOCUMENT it as a feature** | "your corrections survive removing and re-adding a video" | free, arguably the nicest behaviour — but it must be **stated**, or it is a surprise |
 | **(d) Keep and say nothing** | today's accidental behaviour | ⛔ **rejected** — an unstated behaviour on a paid path is how this repo defines a defect |
+
+⚠ **v5.1 — THE ORPHAN IS UNRECONSTRUCTABLE, WHICH RAISES THE STAKES ON THIS DECISION AND ON T9.**
+`corrections` is **free text** (`types/index.ts:74`, `03_generations.sql:52` — MEASURED 2026-08-25),
+and the sync is one-way `videos → workspace_videos` `[03:227-234]`. So once the `videos` rows are
+deleted, the orphaned `workspace_videos.corrections` value exists **nowhere else and cannot be
+derived from anything**. Consequences, both load-bearing:
+- option **(a)** does not merely "destroy paid corrections" — it destroys them **irrecoverably**;
+- **T9's lossless-rollback proof fails on exactly this row.** `0028` would drop a table holding the
+  only copy of paid content. ⟳ *This is the counterexample behind r5's Blocking; the two findings are
+  one defect seen from opposite ends, and v5 filed them separately without noticing.*
 
 **Recommendation: (c).** It preserves content the user paid for, it costs nothing to implement, and
 the defect is entirely that nobody wrote it down. ⚠ **It needs one guard either way:** no gate in
