@@ -32,7 +32,8 @@ select distinct on (workspace_id, video_id) …, nullif(data->>'corrections', ''
 ```
 
 **One video in two playlists of one workspace, with different corrections in each, keeps ONE and
-drops the other.** `distinct on` picks a row; the ordering only prefers *non-empty* over empty, never
+drops the other.** ✅ **MEASURED 0 in production 2026-08-25 (T1) — but zero because no video is
+in two playlists yet, not because corrections agree.** T2 carries an in-transaction assertion. `distinct on` picks a row; the ordering only prefers *non-empty* over empty, never
 one correction over another. Corrections are user-authored and, since M2 slice A, **paid**. No gate
 in v1–v3 would have reported it.
 
@@ -78,21 +79,38 @@ what the gates can do.
       `05_assert.sql`. A plan that corrects a document at the end leaves a window where the wrong
       sentence is the one on `master`. **Gate:** `check-docs` 0. No code.
 
-- [ ] **T1 — Measure the blast radius against PRODUCTION, read-only**
-      ⚠ *This task, and only this task, is read-only. M4-β writes — see T6.* ⟳ *r3 M5: v3 stated the
-      read-only rule as though it governed all of M4.*
-      Each figure lands in this file **with the query that produced it**.
-      - Row counts: `profiles`, `playlists`, `videos`, `jobs`.
-      - **THE CONTENT-DESTRUCTION FALSIFIER (r3 H3) — the one that matters:** how many
-        `(workspace_id, video_id)` groups have **more than one distinct non-empty**
-        `data->>'corrections'`? **Zero closes the risk by measurement. Non-zero means M4-β destroys
-        paid user content**, and the plan needs a merge step before it goes further.
-      - Orphans that defeat `SET NOT NULL`: `videos` whose `playlist_id` resolves to no `playlists`
-        row; `playlists` whose `owner_id` resolves to no `profiles` row; `jobs` likewise.
-        ⟳ *r2 High: `jobs.playlist_id` IS `not null` `[VERIFIED: 0009:4]` — v1 reasoned from a stale
-        schema fact.*
-      - Whether `pgcrypto`'s `digest` is available in prod. ⟳ *r3 M4: M4 introduces production's
-        first dependency on it, on the ingest path and on a post-payment write.*
+- [x] **T1 — ✅ MEASURED AGAINST PRODUCTION 2026-08-25, read-only as `claude_ro`**
+      Subject named before the verdict: `db=postgres user=claude_ro server=aws-0-us-east-1.pooler…`,
+      `videos.workspace_id_exists=0` (confirming this is the pre-M4 world). SQL in a file; 0 write
+      statements; `psql` exit 0.
+
+      | Question | Answer | Query |
+      |---|---|---|
+      | **CONFLICTING corrections groups (r3 H3)** | **0** | `group by owner_id, video_id … having count(distinct data->>'corrections') > 1` |
+      | videos carrying a non-empty corrections value | 1 | `where coalesce(data->>'corrections','') <> ''` |
+      | same video twice under one prospective workspace | **0** | `group by owner_id, video_id having count(*) > 1` |
+      | a video in 2+ playlists at all | **0** | `group by video_id having count(distinct playlist_id) > 1` |
+      | orphans that defeat `SET NOT NULL` | **0 / 0 / 0** | three `left join … is null` counts |
+      | rows the `NOT NULL` promotions rewrite | `playlists=3 videos=12 jobs=15` | `count(*)` each |
+      | `pgcrypto` / `digest` in prod | installed=1, callable=2 | `pg_extension`, `pg_proc` |
+
+      ⚠ **READ WHY IT IS ZERO, NOT JUST THAT IT IS.** The conflicting-corrections count is zero
+      **because the precondition does not exist yet** — no video sits in two playlists at all
+      (`multi_row_groups = 0`). It is *not* zero because two corrections happened to agree. Adding
+      one video to a second playlist is an ordinary user action, and it makes the count able to move.
+      **So H3 is closed for a migration run TODAY and is not closed as a property.** T2 keeps a guard:
+      the migration asserts the count is still zero **inside the same transaction**, immediately
+      before the `workspace_videos` backfill, and aborts if it is not.
+
+      **The prospective `workspace_id` is `owner_id`** — `workspaces.id = profiles.id` `[:33]`,
+      `playlists.workspace_id` resolves by `owner_id` `[:37]`, `videos.workspace_id` from its
+      playlist `[:42]`. Grouping by `owner_id` is therefore the correct pre-M4 translation of the
+      post-M4 key, and getting that wrong would have answered a different question.
+
+      ⭐ **What the numbers change:** 30 rows total across the three tables. **T5's lock window is
+      seconds, not minutes** — which makes option (b), a stated `lock_timeout`, clearly the cheaper
+      of the two, and removes the case for a maintenance window at this data size. Re-measure before
+      M4-β; these figures decay with every ingest.
 
 - [ ] **T2 — `0027_stable_blob_addressing.sql` — THREE files, ONE transaction**
       Promote `01_workspaces.sql`, `03_generations.sql`, `04_artifacts.sql` — **not**
@@ -133,9 +151,12 @@ what the gates can do.
 - [ ] **T5 — Pick ONE production strategy for the migration window. ⚠ NOT "either/or"**
       ⟳ **r3 H2: Codex r2's lock finding survived v3 unaddressed, and the consequence was never
       stated — the app and worker stall for the whole M4-β window.**
-      Choose (a) **stop the worker and put the app in maintenance** for a measured window, or
-      (b) **prove the migration completes inside a stated `lock_timeout`** against T1's row counts.
-      Write down which, with the number. An agent cannot execute a disjunction.
+      ⟳ **DECIDED by T1's measurement: option (b).** Production holds `playlists=3 videos=12
+      jobs=15` — 30 rows across the three tables — so the rewrite and the `NOT NULL` promotions are
+      a matter of seconds and a maintenance window would cost more than it buys. **Set an explicit
+      `lock_timeout` (start at `5s`) and `statement_timeout`, and let the migration ABORT rather than
+      queue behind a long-running worker transaction.** ⚠ Re-measure at M4-β: this decision is a
+      function of the row counts, and it flips if they grow by orders of magnitude.
 
 - [ ] **T6 — M4-α, then M4-β**
       **M4-α:** apply `0027` to the **local** Supabase stack, seeded per T4; run all six gates plus
