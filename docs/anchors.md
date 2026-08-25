@@ -10,6 +10,11 @@ once allocated, does not change, so nothing here can silently go stale. Do **not
 progress, or "what's next" columns: for state, follow the anchor to `docs/roadmap-to-launch.md` and
 `docs/backlog.md`. A central file that holds state drifts, and this project has measured that twice.
 
+**Rendered** by `scripts/gen-goals-page.py` as the standing page at
+**http://127.0.0.1:7391/goals** — one card per goal, everything on it derived from this file,
+the headers, `docs/adr/`, the milestone spines and `git log`. Rebuilt by
+`.claude/hooks/regen-goals-page.sh` whenever any of those changes.
+
 Enforced by `scripts/check-anchors.py` (`--self-test`). An anchor that no document claims is a
 failure, not a placeholder — allocate the name when the first document needs it.
 
