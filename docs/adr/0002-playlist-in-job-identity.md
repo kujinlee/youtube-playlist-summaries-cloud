@@ -1,5 +1,10 @@
 ---
-status: accepted
+status: accepted — PARTLY SUPERSEDED by ADR-0006 (accepted 2026-08-24). Only this ADR's REJECTION of
+  video-level shared summaries falls: it was rejected on COST ("a fundamental storage re-architecture"),
+  not on correctness, and that re-architecture is now the decision. Everything else here STANDS — in
+  particular the composite (playlist_id, owner_id) cross-tenant injection guard, which any future
+  re-keying must preserve. Whether to actually TAKE the cross-playlist saving is a separate decision
+  and has not been made.
 ---
 
 # Playlist is part of a job's identity (per-playlist summaries, not shared)

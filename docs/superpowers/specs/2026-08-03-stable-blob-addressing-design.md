@@ -885,15 +885,38 @@ argument `blob-store.ts:53-55` makes for `tryGet`.
 >   reading the sweeper would collect a live staging blob mid-promote, and the entire pre-migration
 >   corpus on its first run. One rule, two consumers, and only one of them can take it neat.
 > - **"Record exists" entails "key known"**, so the blob probe finally has an argument.
-> - A crash before recording leaves **nothing** — no bytes, no row, no orphan — so spending again is
->   correct rather than a double-charge.
+> - ~~A crash before recording leaves **nothing** — no bytes, no row, no orphan — so spending again is
+>   correct rather than a double-charge.~~
+>
+>   ⟳ **FALSE SINCE ADR-0007, corrected 2026-08-24 (round 17 H4 — M3).** This sentence was true only
+>   *because* the record-first order above put a `pending` row down before the bytes. **ADR-0007
+>   deletes `pending`**, so the row can no longer precede the bytes: a crash *after* the blob write
+>   leaves paid bytes at a generation-derived key **no later attempt can name** — each attempt mints a
+>   fresh id — and the next attempt spends again. That is the 6¢ → 12¢ shape this very rule was
+>   rewritten to remove, reintroduced by the deletion.
+>
+>   **Bounded, and named rather than hidden:** `summary_max_attempts` = 1 and `max_serve_attempts` = 5
+>   `[VERIFIED: 0012_serve_model_charge.sql:21]`, so the residual is at most one extra paid call per
+>   attempt bound — the same class as the reclaim residual ADR-0007's concern table already carries.
+>   **The orphan is covered by §8's grace period, REINSTATED by ADR-0007 — specified, not implemented.**
+>   ⚠ Nothing in `lib/ worker/ app/ scripts/` sweeps orphans today, and `BlobStore` exposes no object
+>   age, so this residual is *stated* rather than *mitigated* until the implementing slice lands.
+>
+>   **bytes ⊆ records survives; this bullet did not.** Six rounds passed before anyone asked what else
+>   the record-first order was load-bearing for — the answer was two things, and only one was named.
 >
 > **Rule 19 restated around DETERMINACY, not absence:** *a spend requires a determinate negative from
 > every layer that could hold the artifact; an indeterminate answer from any layer is `busy`.*
 >
 > **Two knock-ons, recorded rather than left to be discovered.** (a) §8's grace period was justified by
-> *"a blob written but not yet published is unreferenced"* — **that state no longer exists**, so the
-> grace period now covers only the orphan root set. (b) A generation id must be chosen *before* its
+> *"a blob written but not yet published is unreferenced"* — ~~**that state no longer exists**, so the
+> grace period now covers only the orphan root set~~. ⟳ **REVERSED 2026-08-24 (M3): that state RETURNS
+> under ADR-0007.** Deleting `pending` means the bytes are again written before any row references
+> them, so §8's grace period is **reinstated in full** as an age predicate on orphan blobs, not
+> narrowed to the orphan root set. Its length is the implementing slice's number and must exceed the
+> worst-case paid call, computed from `SUMMARY_MAX_PASSES`, `TRANSCRIBE_MAX_PASSES`,
+> `MAGAZINE_MAX_PASSES` **and `DIG_GENERATE_MAX_PASSES`** `[VERIFIED: lib/gemini-cost.ts:51]`.
+> (b) A generation id must be chosen *before* its
 > content, which rules out content-hash ids for anything on a spend path; §4.1 already recommends UUIDs
 > there and content hashes only for free re-renders, so the two agree — but §4.1 must say *why*.
 

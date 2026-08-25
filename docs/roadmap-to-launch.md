@@ -712,7 +712,8 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
 > **[`docs/superpowers/plans/2026-08-22-append-only-generations-roadmap.md`](superpowers/plans/2026-08-22-append-only-generations-roadmap.md)**
 > is the milestone spine (M1–M7) for this goal, and **state lives there, not here.** This section is
 > the *history and evidence*; that file is *what happens next*. The anchor for the whole feature is
-> **ADR-0006** — `status: proposed`, and **M3 is what makes it `accepted`.**
+> **ADR-0006** — ✅ **`accepted` 2026-08-24 (M3), with ADR-0007**; ADR-0002 is partly superseded.
+> Phase 1 is CLOSED, and **accepted is not implemented** — the schema has still never run. Next: **M4**.
 >
 > ⚠ Added 2026-08-24 after an hour was lost re-deriving a roadmap that already existed, and reaching
 > a conclusion that document had already corrected in itself. Two causes, and only one is naming: the
@@ -740,6 +741,11 @@ must be closed FIRST** in that case — ADR-0007 deleted the only per-kind attem
 path, so shipping without that decision silently promotes a summary from 1 paid attempt to 5.
 
 ### Re-measured 2026-08-24 — three facts the milestone spine does not carry
+
+⟳ **Fact 2's gate closed later the same day.** M3 discharged it: ADR-0006 and ADR-0007 are
+`accepted`, no round 18 was run, and the ONE live residue — §5.1's now-false *"a crash before
+recording leaves nothing"* — is corrected in the design spec. Eight of round 17's nine findings
+were already folded into ADR-0007 by `efee284`/`1a7c076`, verified by reading rather than re-applied.
 
 Derived by command in one sitting, not read out of this file. **Everything else about state — what
 each milestone kills, what is next — belongs to the spine linked above and is deliberately not

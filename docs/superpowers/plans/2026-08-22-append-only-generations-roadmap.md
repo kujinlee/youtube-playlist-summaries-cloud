@@ -56,7 +56,7 @@ in shipped code.
 | Highest migration | `0025_settle_is_observable` | **`0026_record_correction_spend`** (26 files, **0** defining `video_artifacts`/`video_generations`) | M2 slice A |
 | Unit suite | 2,722 / 268 | **2,819 / 274** | M2 slice A |
 | Production | Fly `v7` (2026-08-18) | **Fly `v10`** (2026-08-24) | M2 slice A, then two fixes found by pressing it live |
-| ADR-0006 status | `proposed` | `proposed` — **unchanged, and it is the gate** | M3 is what changes it |
+| ADR-0006 status | `proposed` | ✅ **`accepted`** (later the same day, M3) | M3 discharged the gate |
 
 ⚠ **`0026` is taken, so M4's "migrations `0026+`" now means `0027+`.** Corrected in M4 below.
 
@@ -166,7 +166,28 @@ evade the per-owner bound) and **#63** (the validator's raw string reaches the c
   #23's own optimisation request — the occurrence check is descoped, see spec §1.2.
 - **No 99-correction migration.** The field keeps its type, so nothing needs re-authoring.
 
-### M3 — Discharge the design gate (smaller than it looks) ◀ **THE WORK RESUMES HERE**
+### M3 — Discharge the design gate — ✅ **DONE 2026-08-24**
+
+**ADR-0006 and ADR-0007 are both `accepted`.** Phase 1 is closed; no round 18 was run, per round 17's
+own recommendation.
+
+⭐ **What M3 turned out to be, measured rather than assumed.** Eight of round 17's nine findings
+(B1, H1, H2, H3, M1, M2, M3, L1) were **already folded into ADR-0007** by `efee284` and the
+implementation slice `1a7c076` — verified by reading the ADR for each finding's marker, not by
+re-applying them. **Exactly one residue was live**, and ADR-0007 named it precisely: H4's knock-on in
+the *design spec*, not the ADR. §5.1's rule 19 still asserted *"a crash before recording leaves
+nothing — no bytes, no row, no orphan — so spending again is correct rather than a double-charge"*,
+which `pending`'s deletion makes **false**; and knock-on (a) still said §8's grace period was narrowed
+because *"that state no longer exists"*, when the deletion makes that state **return**. Both are
+corrected in place, struck through rather than rewritten, with the residual bounded and named
+(`summary_max_attempts` = 1, `max_serve_attempts` = 5) and the mitigation honestly labelled
+**specified, not implemented**.
+
+**The lesson for M4-M7:** a finding assigned to "the same slice" lands in whichever document the
+sentence lives in — and ADR-0007 said *design spec §5.1*, which is not where anyone was looking.
+Read the finding's own words for the file, rather than assuming the ADR is the target.
+
+#### The record of how M3 was scoped, kept because it is what made it small
 
 ⟳ **Corrected after round 1.** This milestone previously read *"run spec round 10"*, taken from a
 memory note rather than the review directory. Seventeen rounds have run. The latest
@@ -176,7 +197,7 @@ memory note rather than the review directory. Seventeen rounds have run. The lat
 > rounds ran 4 → 3 → 1 → 1, and the residue is specification-of-implementation rather than
 > decision-making. **The next genuine test is the migration, not round 18.**"*
 
-So M3 is: **apply r17's residue, then set ADR-0006 to `accepted`.** No new review round.
+So M3 was: **apply r17's residue, then set ADR-0006 to `accepted`.** No new review round. ✅ Both done.
 
 - ~~Point the next round at the ranking that computes `current`.~~ **Withdrawn — refuted by the
   schema.** `video_summary_current` (`…/schema/04_artifacts.sql:695-782`) already orders by
@@ -184,10 +205,12 @@ So M3 is: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revie
   `produced_at`, then `generation_id` — which is unique per generation, so the ordering is already
   **total**. The `mdGeneratedAt` rung was introduced by round 5 finding B3 and revisited in round 15.
   The concern was three rounds behind the document.
-- **Kills:** whatever r17's residue dissolves.
-- **Gate:** Phase 1 exit. Human approval on the ADR status change.
+- **Killed:** ADR-0006 `proposed` → `accepted`; ADR-0007 with it (its status said the two stand or
+  fall together); **ADR-0002 becomes PARTLY superseded** — only its *rejection* of video-level
+  shared summaries falls, and its `(playlist_id, owner_id)` cross-tenant guard STANDS.
+- **Gate:** Phase 1 exit. ✅ Human approval given 2026-08-24.
 
-### M4 — Promote the schema
+### M4 — Promote the schema ◀ **THE WORK RESUMES HERE**
 
 The four spec `schema/*.sql` files become migrations **`0027+`** (⟳ was `0026+`; `0026` was taken by
 `record_correction_spend` in M2 slice A). `05_assert.sql` gets a home in CI or

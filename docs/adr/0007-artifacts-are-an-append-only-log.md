@@ -1,6 +1,12 @@
 ---
-status: proposed — supersedes the reservation protocol of ADR-0006's spec (handoff item 4).
-  DEPENDS ON ADR-0006 BEING ACCEPTED; ADR-0006 is itself `proposed`, so the two stand or fall together
+status: accepted 2026-08-24 (M3) — supersedes the reservation protocol of ADR-0006's spec (handoff
+  item 4). Its stated dependency is now DISCHARGED: ADR-0006 was accepted the same day, and this ADR
+  said the two stand or fall together. Its own five design reviews (13-17) are all answered below.
+  ⚠ ACCEPTED IS NOT IMPLEMENTED for the schema half — the coordination implementation landed in
+  `1a7c076`, but the schema it edits has never run as a migration. The ONE residue round 17 assigned
+  to a later slice, §5.1's now-false "a crash before recording leaves nothing", was corrected in the
+  design spec on 2026-08-24; the orphan it names is covered by §8's grace period, which remains
+  SPECIFIED AND UNIMPLEMENTED (no sweeper exists; `BlobStore` exposes no object age).
 revised: 2026-08-09. Rounds 13, 14, 15, 16, 17 — five DESIGN reviews, all answered here.
   SCOPE: COORDINATION ONLY. Render addressing was SPLIT OUT (user decision) to
   docs/superpowers/specs/2026-08-09-render-addressing-brief.md (backlog #25) after two designs were
