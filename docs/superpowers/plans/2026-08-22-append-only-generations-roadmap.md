@@ -42,6 +42,21 @@ reproduce, and the defect was the missing command, not the number. Re-run before
 entirely un-migrated. T1–T4 are marked complete because they were implemented *against the
 spec-local schema*, which has never touched a database.
 
+### ⟳ Re-measured 2026-08-24, commit `aaf3422` — four rows moved
+
+The table above is a dated snapshot and is kept as one; this is the delta. **Nothing that makes the
+work large changed** — the schema is still un-migrated and `generation_id` still has zero references
+in shipped code.
+
+| Fact | 2026-08-22 | 2026-08-24 | Why it moved |
+|---|---|---|---|
+| Highest migration | `0025_settle_is_observable` | **`0026_record_correction_spend`** (26 files, **0** defining `video_artifacts`/`video_generations`) | M2 slice A |
+| Unit suite | 2,722 / 268 | **2,819 / 274** | M2 slice A |
+| Production | Fly `v7` (2026-08-18) | **Fly `v10`** (2026-08-24) | M2 slice A, then two fixes found by pressing it live |
+| ADR-0006 status | `proposed` | `proposed` — **unchanged, and it is the gate** | M3 is what changes it |
+
+⚠ **`0026` is taken, so M4's "migrations `0026+`" now means `0027+`.** Corrected in M4 below.
+
 ---
 
 ## The milestone contract
@@ -107,7 +122,7 @@ live body, and stamping for a body it did not publish is worse than the silence 
   optional layer-3 fields that inherit the same way; M1 files those as a new row.
 - **Gate:** dual adversarial review; branch + PR.
 
-### M2 — Corrections work in the cloud ◀ **THE WORK STARTS HERE**
+### M2 — Corrections work in the cloud — ✅ **SLICE A SHIPPED 2026-08-24**
 
 ⟳ **REWRITTEN 2026-08-23. The `{from,to}` pairs design this entry used to describe was REJECTED, and
 the two facts justifying it were both wrong.** Kept short here; the reasoning is in
@@ -124,16 +139,31 @@ the two facts justifying it were both wrong.** Kept short here; the reasoning is
 
 | | | State |
 |---|---|---|
-| **A** | the attended cloud route — the feature | **specced**, `…-corrections-in-cloud-design.md`. Post-hoc spend recording, no reservation protocol (user decision 2026-08-23) |
+| **A** | the attended cloud route — the feature | ✅ **SHIPPED 2026-08-24** — all 12 tasks, PR #134; prod **v8 → v10** |
 | **B** | the unattended correction, in the worker | backlog **#60** — **blocked on #22** |
 | **C** | reserve/settle, `correction_est_cents`, the `cap-soundness` extension, the duration ratchet | backlog **#61** — a money-path slice |
 
-- **Next action:** slice A's spec has round-3 residue to fold, then `writing-plans`.
+**⭐ Slice A shipped, and pressing it live found two defects 2,808 green tests could not.** Both are
+worth carrying into every later milestone:
+
+- **The model fenced the corrected document in ```markdown in 6 of 8 real rolls** — invisible because
+  *every* test mocks `lib/gemini.ts`. Fixed at the transport seam (`unwrapFencedDocument`, PR #138).
+  The lesson is the memory `a-mocked-boundary-tests-the-contract-you-imagined`: **sample the real
+  call before believing a green suite about a model's output.**
+- **The structural validator compared `▶` timestamps by count, not by bytes**, so a rewritten
+  timestamp URL passed (PR #139). M5 and M6 both move documents; a validator that admits a corrupted
+  one is worse than none.
+
+Also filed from the live press, and **not** blockers for M3: backlog **#62** (a failed correction can
+evade the per-owner bound) and **#63** (the validator's raw string reaches the client).
+
+- **Next action:** **M3** — apply round 17's residue and set ADR-0006 `accepted`. Slices B and C stay
+  backlog rows; neither gates M3.
 - **Kills:** #23's representation clause, **rejected** rather than deferred. ⚠ It does **not** kill
   #23's own optimisation request — the occurrence check is descoped, see spec §1.2.
 - **No 99-correction migration.** The field keeps its type, so nothing needs re-authoring.
 
-### M3 — Discharge the design gate (smaller than it looks)
+### M3 — Discharge the design gate (smaller than it looks) ◀ **THE WORK RESUMES HERE**
 
 ⟳ **Corrected after round 1.** This milestone previously read *"run spec round 10"*, taken from a
 memory note rather than the review directory. Seventeen rounds have run. The latest
@@ -156,7 +186,8 @@ So M3 is: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revie
 
 ### M4 — Promote the schema
 
-The four spec `schema/*.sql` files become migrations `0026+`. `05_assert.sql` gets a home in CI or
+The four spec `schema/*.sql` files become migrations **`0027+`** (⟳ was `0026+`; `0026` was taken by
+`record_correction_spend` in M2 slice A). `05_assert.sql` gets a home in CI or
 `scripts/check-schema-gates.sh`. No application caller yet — the schema lands inert.
 
 - **Carries task #45's coupling:** the `doc_key` re-key must ship with the `inflight_uq` deletion.

@@ -12,6 +12,54 @@
 
 ---
 
+## ⚠ STATUS 2026-08-24 — PARTIALLY SHIPPED, THEN SHELVED. THE CHECKBOXES BELOW LIE.
+
+**Every step box in this document is unticked (0 of 88), and that is wrong in both directions.**
+Four tasks shipped nine days ago; twelve never started. The boxes were never maintained after
+PR #104, so reading them as progress reads *"nothing was done"* — the opposite of the truth for the
+half that is live in production.
+
+Derived 2026-08-24 from what exists on `master`, not from these boxes. **`--exclude-dir=docs`
+matters and is not a detail**: `isServableSummaryKey` appears in 22 files *including* this plan and
+its spec, and in **zero** outside them. A reference count that includes the document making the
+claim measures the claim, not the code.
+
+| Task | Evidence on `master` | State |
+|---|---|---|
+| T1 the segment encoder | `lib/storage/supabase/encode-segment.ts` exists | **SHIPPED** |
+| T2 wire it into `SupabaseBlobStore` | `encodeSegment` referenced in 2 files | **SHIPPED** |
+| T14 end-to-end, #36 actually fixed | the failing Korean video re-ran live on release v7 | **SHIPPED** |
+| T15 ADR-0009 + close-out | `docs/adr/0009-logical-unicode-physical-ascii.md` exists | **SHIPPED** |
+| T4 `isServableSummaryKey` | **0 files** outside `docs/` reference it | not started |
+| T6 `promoteIfAbsent` | **0 files** outside `docs/` reference it | not started |
+| T9 `videoDataPayload` | **0 files** outside `docs/` reference it | not started |
+| T0, T3, T5, T7, T8, T10–T13 | no artifact on `master` | not started |
+
+```bash
+# the command behind the three "not started" rows
+grep -rl "isServableSummaryKey" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=docs .
+```
+
+All four shipped in **PR #104 (`324ec77`), release v7** — *"the encoder ships alone"*.
+
+**So the plan's own architecture only half-landed.** Its Architecture line above describes *"two
+independent halves"*: the encoder, and the **servability guard** (`isServableSummaryKey` installed at
+dominating points). Half one is in production. **Half two does not exist**, and nothing in the repo
+said so until now.
+
+⚠ **THIS IS NOT THE STABLE-ID PLAN, and it is easy to mistake for one.** Its goal line is explicit:
+*"without changing vault filenames and **without migrating anything already in the bucket**."* It
+makes a mutable name *storable*; it does not make an address *immutable*. For stable blob identity
+the plan of record is
+[`2026-08-22-append-only-generations-roadmap.md`](2026-08-22-append-only-generations-roadmap.md),
+anchored on **ADR-0006**.
+
+**Before resuming any task here**, re-derive its state from `master` the way the table above did.
+Nine days of drift produced a document confidently wrong about its own progress; that is the failure
+mode, not the tasks.
+
+---
+
 ## ⛔ THE RULE THIS VERSION WAS WRITTEN UNDER
 
 Two review rounds produced **55 findings**. The plan's **decomposition, ordering, interfaces and

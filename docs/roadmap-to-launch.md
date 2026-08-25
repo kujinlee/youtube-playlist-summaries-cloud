@@ -703,11 +703,26 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
 
 ## Stable blob addressing / manifest — ⏸ **PARKED 2026-08-11 (user decision)**
 
+> ### ▶ THE PLAN OF RECORD IS NOT THIS SECTION
+>
+> **[`docs/superpowers/plans/2026-08-22-append-only-generations-roadmap.md`](superpowers/plans/2026-08-22-append-only-generations-roadmap.md)**
+> is the milestone spine (M1–M7) for this goal, and **state lives there, not here.** This section is
+> the *history and evidence*; that file is *what happens next*. The anchor for the whole feature is
+> **ADR-0006** — `status: proposed`, and **M3 is what makes it `accepted`.**
+>
+> ⚠ Added 2026-08-24 after an hour was lost re-deriving a roadmap that already existed, and reaching
+> a conclusion that document had already corrected in itself. Two causes, and only one is naming: the
+> search was **truncated** (`ls … | head -20` over an 82-file directory, target at position 80), and
+> the plan is named for its **mechanism** — *append-only generations* — while the goal is *stable
+> blob addressing*. Backlog **#64** carries the resulting anchor-name rule.
+
 **⏸ STATUS — PARKED, not abandoned, and not blocked.** Design is done and merged: **ADR-0006**,
 **ADR-0007** (`efee284`) and the coordination implementation (`1a7c076`), behind seventeen adversarial
 review rounds. What is *not* done is the migration: **the schema has never run and holds zero rows** —
-`video_artifacts`/`video_generations` appear in no migration (prod and master both end at `0025`), and
-it lives only at `docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/`.
+`video_artifacts`/`video_generations` appear in no migration (**re-measured 2026-08-24: 0 of 26
+migrations define them; prod and master both end at `0026`**, not `0025` — slice A added
+`0026_record_correction_spend.sql`), and it lives only at
+`docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/`.
 
 *Why park:* everything it currently fixes is a defect **in itself**, not in the running product, and
 the roadmap's stated goal is M3 acceptance. The remaining risk sits entirely in first contact with
@@ -719,6 +734,40 @@ coupling), backlog #25 (render addressing), #26 (attempt ceiling), #27 (GC reten
 next slice, or when a real caller is about to reach `record_artifact` for a paid kind. **Backlog #26
 must be closed FIRST** in that case — ADR-0007 deleted the only per-kind attempt bound on the money
 path, so shipping without that decision silently promotes a summary from 1 paid attempt to 5.
+
+### Re-measured 2026-08-24 — three facts the milestone spine does not carry
+
+Derived by command in one sitting, not read out of this file. **Everything else about state — what
+each milestone kills, what is next — belongs to the spine linked above and is deliberately not
+repeated here.**
+
+**1 — The problem is still live, at four derivation sites.** The spine counts *files* (40); these are
+the places the address is actually **built** from mutable data:
+
+| Site | What it does |
+|---|---|
+| `lib/pipeline.ts:245` | `baseName = <padSerial(serialNumber)>_<baseSlug>` — **both halves move** |
+| `lib/job-queue/summary-handler.ts:96,172` | rebuilds the same expression, and it becomes the key |
+| `lib/dig/cloud/dig-blob-key.ts:22` | `dig/<base>/<sectionId>.r<N>.md` — a rename moves every dig blob |
+| `lib/cloud-sync/reconcile-serial.ts` | **exists only to chase the key when it moves** |
+
+**2 — Every open checkbox below is a REVIEW ROUND, and five of the six describe rounds that already
+ran.** All six §15 design prerequisites closed 2026-08-05/06. The unticked entries at rounds 7, 8, 13
+and 14 are *narrative* left unticked, not work outstanding — which is exactly how they mislead.
+
+⟳ **Correction (2026-08-24, same day).** An earlier draft of this block counted those boxes and
+concluded *"seventeen rounds never converged, so more review is futile."* **That was wrong**, and the
+document it should have been read against says so: round 17's coordinator asks for **no round 18** —
+*"the next genuine test is the migration, not round 18"*
+(`docs/reviews/spec-blob-addressing-r17-coordinator.md:3`), with Blockings across rounds running
+**4 → 3 → 1 → 1**. Counting stale checkboxes to characterise a review history is the same trap this
+section documents about itself, one level up.
+
+**3 — The two red ratchets are about THIS, and only this.** `scripts/check-guard-coverage.py:44` and
+`scripts/check-sentinel-meanings.py:43` both read
+`docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/` — the **parked spec DDL**, never
+the shipped schema. They can say nothing about the running product. Red since the park; **not** a
+`master` regression.
 
 **Why it exists:** every hard defect of the last three weeks reduces to one sentence — *the blob
 address is derived from mutable data* (`base = <serial>_<slug>`, and both halves move). Spec:
