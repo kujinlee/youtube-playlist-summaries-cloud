@@ -76,6 +76,29 @@ SHIM = """
           --fg: var(--ink, #151b23); --bg2: var(--card, #fff); }
   html { --rule: #d3d9e2; --bg: #ffffff; --good: #2f7d63; --defect: #a3323c;
          --structure: #33607a; --structure-br: #33607a; --structure-bg: #eaf0f4; }
+  /* Older names the CIRCULATING tray still reads. They are part of its de-facto contract, not any
+     one page's invention — every recent fragment has been re-declaring them privately to get past
+     assert_shimmed, which is the shim under-covering rather than the pages being wrong. Aliased to
+     the canonical name so there is still ONE source per concept. */
+  :root { --ink-3: var(--ink-faint, #7a8695); --line: var(--rule, #d3d9e2);
+          --structural: var(--structure, #33607a);
+          --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  /* Dark defaults for a fragment that declares NO palette. On `html` (specificity 0,0,1) so any
+     fragment `:root` (0,1,0) still wins in both directions. A fragment that declares a LIGHT-only
+     palette in `:root` overrides this and stays light — it asked for that; the shim only supplies
+     what nobody supplied. */
+  @media (prefers-color-scheme: dark) {
+    html { --rule: #38353f; --bg: #16151a; --card: #1d1c22; --ink: #eceaf0;
+           --ink-soft: #c8c5cf; --ink-faint: #928e9c; --good: #6fcf9a; --defect: #f0937c;
+           --structure: #82b4ee; --structure-br: #2b4666; --structure-bg: #131f2e; }
+  }
+  /* PAINT THE PAGE. Nothing did, and `--bg` above was therefore decoration: a fragment that did
+     not set its own body background composed to the browser default white with black text, while
+     its cards were correctly dark. MEASURED 2026-08-24.
+     `:where()` contributes ZERO specificity, which is the whole reason this is safe to add — SHIM
+     is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
+     page that already paints itself. This one is always losable. */
+  :where(html, body) { background: var(--bg); color: var(--fg); }
 """
 
 
@@ -222,6 +245,25 @@ def self_test() -> int:
     case("composed doc carries the tray", has_tray(doc))
     case("composed doc has exactly one title", doc.count("<title>") == 1)
     case("shim defines --verified", "--verified" in doc)
+
+    # ── the shim must give a fragment that declares NOTHING a correct page in BOTH themes ───────
+    # MEASURED 2026-08-24: a brief fragment that set no `body` background composed to a page with
+    # `background: rgba(0,0,0,0)` and black text — the browser default white — while every card in
+    # it was correctly dark. Two causes, both here: the shim declared `--bg: #ffffff` with NO dark
+    # counterpart, and NOTHING ever applied `--bg` to the page. The reader saw a white page and
+    # nothing errored. The three previous pages each happened to paint themselves, so the gap was
+    # invisible until a fragment trusted the shim.
+    case("shim declares dark defaults", "prefers-color-scheme: dark" in SHIM)
+    case("shim's dark block redefines --bg", bool(
+        re.search(r"prefers-color-scheme: dark.*?--bg\s*:", SHIM, re.S)))
+    case("shim paints the page from --bg", bool(
+        re.search(r"body[^{]*\{[^}]*background:\s*var\(--bg\)", SHIM)))
+    # ⚠ SHIM is concatenated AFTER the fragment's CSS, so an ordinary `body{…}` rule here would
+    # OVERRIDE every page that paints itself. `:where()` contributes zero specificity, so the
+    # default is always losable — the one form that can be added without breaking existing pages.
+    case("the paint rule is zero-specificity (:where), so a fragment still wins",
+         ":where(" in SHIM and bool(re.search(r":where\([^)]*body", SHIM)))
+    case("--bg is not self-referential", not re.search(r"--bg:\s*var\(\s*--bg", SHIM))
 
     # ── the shim must never define a custom property in terms of ITSELF ─────────────────────────
     # `--rule: var(--rule, #d3d9e2)` shipped for months. CSS makes a self-referential custom
