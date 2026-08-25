@@ -7,7 +7,7 @@
 
 **Goal:** Promote `01_workspaces.sql`, `03_generations.sql` and `04_artifacts.sql` into a single reversible migration `0027`, applied first to a local stack and then to production, with a rollback and a behavioural gate that both actually run.
 
-**Architecture:** One migration file, one transaction. The three spec files are concatenated in dependency order; `05_assert.sql` is never a migration. A companion `0028` reverses it. Correctness is established by six schema gates (rewritten to read a **live** catalog, not to rebuild from source), the integration suite, and a live-catalog assertion.
+**Architecture:** One migration file, one transaction. The three spec files are concatenated in dependency order; `05_assert.sql` is never a migration. A companion **rollback script** reverses it — a manual repair tool, never a migration (Task 6 Step 3). Correctness is established by six schema gates (rewritten to read a **live** catalog, not to rebuild from source), the integration suite, and a live-catalog assertion.
 
 **Tech Stack:** PostgreSQL 15 (Supabase), Supabase CLI 2.115.0, Python 3 ratchets, Jest (`--runInBand`) for integration.
 
@@ -27,7 +27,7 @@
 
 `docs/superpowers/plans/2026-08-25-m4-promote-the-schema.md` (v5.1) — five revisions, five non-converging review rounds, eleven Blocking/High findings. `docs/reviews/architecture-review-2026-08-25.md` established that nine of the eleven were one defect, and **ADR-0011 dissolves it**. Four findings (r3 H3, r4 M2, r5 B1, r5 B3) require no fix in this plan because the state they describe cannot occur.
 
-**Carried forward, because they survive ADR-0011:** the gate repairs, the named apply command, the `0028` rollback, the `test:integration` gate, and the architecture review's finding 3.
+**Carried forward, because they survive ADR-0011:** the gate repairs, the named apply command, the rollback script, the `test:integration` gate, and the architecture review's finding 3.
 
 ## Global Constraints
 
@@ -45,7 +45,7 @@
 | `…/schema/04_artifacts.sql` | **Modify** — corrections-currency ranking moves to the reader (Task 2) |
 | `scripts/check-live-schema.py` | **Create** — the live-catalog gate; the only instrument that can confirm M4-β happened (Task 3) |
 | `supabase/migrations/0027_stable_blob_addressing.sql` | **Create** — the three spec files, one transaction (Task 6) |
-| `supabase/migrations/0028_rollback_stable_blob_addressing.sql` | **Create** — the reverse (Task 6) |
+| `supabase/rollback/rollback_0027_stable_blob_addressing.sql` | **Created** `322d411` — the reverse, PROVEN by execution. ⛔ NOT a migration (Task 6 Step 3) |
 | `scripts/check-guard-coverage.py`, `check-sentinel-meanings.py`, `check-vocabulary-collisions.py` | **Modify** — inventories, after Task 1 removes objects (Task 5) |
 | `docs/superpowers/specs/2026-08-03-stable-blob-addressing/verify-schema.sh`, `mutate-schema.py` | **Modify** — read the migration, not the spec dir (Task 4) |
 
@@ -262,131 +262,37 @@ git commit -F /tmp/t2-msg.txt
 
 **Why this exists (architecture review, finding 3):** five of the six existing gates never read a live database — they *rebuild* the schema from spec files inside a rolled-back transaction (`verify-schema.sh:10`, `check-guard-coverage.py:195-206`). So the suite asks *"is the SPEC consistent?"*, never *"does the DEPLOYED schema match it?"* — the wrong question for the one milestone whose purpose is making the spec execute. **This is a third axis after r3 B2's *path* and *transport*: the SUBJECT axis, built-from-source vs introspected-from-live.**
 
-- [ ] **Step 1: Write the failing self-test**
+### ✅ STEPS 1–6 ARE DONE — the gate is a real file, committed and mutation-proven
 
-Create `scripts/check-live-schema.py` with a `--self-test` that must fail first:
+`scripts/check-live-schema.py` exists (`f0c789c`, hardened `322d411`). **This task no longer
+contains its source**; it contains what was measured building it, because three of those
+measurements changed the design.
 
-```python
-def self_test() -> int:
-    cases = failures = 0
-    def check(label, got, want):
-        nonlocal cases, failures
-        cases += 1
-        ok = got == want
-        print(("  ✓ " if ok else "  ✗ ") + label)
-        failures += 0 if ok else 1
+| Was specified | What running it showed |
+|---|---|
+| a self-test of **5** cases | **16.** The file prints its own count — a number in prose is a number that rots |
+| check tables and columns | **five kinds.** `drop table workspaces cascade` removes every M4 table and column while leaving all seven live-table triggers alive; the two-kind version returned **exit 0** over a database where nobody can sign up |
+| prove RED "inside a rolled-back transaction" | ⛔ **impossible.** The gate opens its OWN connection, so it cannot see another session's uncommitted transaction. `scripts/mutate-live-schema-check.sh` builds the state for real in a throwaway database instead. **3/3 mutations caught** |
 
-    NONE = {"tables": set(), "columns": set(), "triggers": set(), "functions": set(), "types": set()}
-    ALL = {"tables": set(M4_TABLES), "columns": set(M4_COLUMNS), "triggers": set(M4_LIVE_TRIGGERS),
-           "functions": set(M4_FUNCTIONS), "types": set(M4_TYPES)}
+⭐ **A fourth measurement, 2026-08-25, changed it again.** Its inventory is the *post*-ADR-0011 one,
+so it was structurally blind to anything ADR-0011 deletes. A rollback over a schema built without
+Tasks 1–2 left `sync_corrections_to_workspace_video()` and both `videos_corrections_sync_*` triggers
+alive, and the gate reported **ABSENT as expected** — the same shape as the `cascade` residue it was
+written to catch. `ADR0011_REMOVED` now fails in **both** polarities, and mutation 3 proves it.
 
-    check("absent verdict when nothing remains", verdict(NONE, "absent"), True)
-    check("absent FAILS when a table survives",
-          verdict({**NONE, "tables": {"workspaces"}}, "absent"), False)
-    # ⭐ THE CASE THAT MATTERS — the measured post-`cascade` state: no tables, no columns, but the
-    # live-table triggers alive and calling a table that is gone. Signup is dead here.
-    check("absent FAILS on the cascade residue (triggers alive, tables gone)",
-          verdict({**NONE, "triggers": {"profiles_ensure_workspace_trg"}}, "absent"), False)
-    check("absent FAILS when a function survives",
-          verdict({**NONE, "functions": {"record_artifact"}}, "absent"), False)
-    check("absent FAILS when the enum survives",
-          verdict({**NONE, "types": {"artifact_kind"}}, "absent"), False)
-    check("present needs ALL five tables",
-          verdict({**ALL, "tables": {"workspaces"}}, "present"), False)
-    check("present needs the triggers too",
-          verdict({**ALL, "triggers": set()}, "present"), False)
-    check("present passes when complete", verdict(ALL, "present"), True)
-    print(f"\n{cases - failures}/{cases} self-test cases passed")
-    return 1 if failures else 0
-```
+⚠ **`--expect-absent` must fail on a PARTIAL teardown, which is the state a failed rollback leaves.**
+That is the whole point: the case the first version could not see is the case that kills the product.
 
-- [ ] **Step 2: Run it and watch it fail**
-
-Run: `python3 scripts/check-live-schema.py --self-test`
-Expected: FAIL — `NameError: name 'verdict' is not defined`.
-
-- [ ] **Step 3: Write the minimal implementation**
-
-```python
-#!/usr/bin/env python3
-"""Does the DEPLOYED schema match what M4 claims — a RATCHET on the SUBJECT axis.
-
-    python3 scripts/check-live-schema.py --expect-present   # after 0027
-    python3 scripts/check-live-schema.py --expect-absent    # after 0028, or before M4
-    python3 scripts/check-live-schema.py --self-test        # 5 cases
-
-WHY THIS EXISTS. Five of the six schema gates REBUILD the schema from spec files inside their own
-rolled-back transaction (verify-schema.sh:10, check-guard-coverage.py:195-206). They therefore
-answer "is the spec internally consistent?" and CANNOT answer "did the migration actually apply?".
-Measured 2026-08-25: with 0027 applied, re-running that DDL fails with `relation "workspaces"
-already exists`, so those gates go RED on a correctly-migrated database. A plan that asserted the
-opposite polarity shipped in v5 and was caught in round 5.
-
-FAILS IF: --expect-present and any of the five tables or three columns is missing; --expect-absent
-and any of them survives; or the database is unreachable (exit 2 — treat as NOT RUN).
-"""
-from __future__ import annotations
-import argparse, subprocess, sys
-
-CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
-M4_TABLES = ("workspaces", "workspace_videos", "video_generations",
-             "video_artifacts", "video_artifact_sources")
-M4_COLUMNS = ("playlists.workspace_id", "videos.workspace_id", "jobs.workspace_id")
-# ⟳ r1 B7 (codex) / B2 (claude) — TABLES AND COLUMNS ARE NOT ENOUGH TO PROVE ABSENCE.
-# MEASURED: `drop table workspaces cascade` removes every table and column while leaving all SEVEN
-# live-table triggers alive, still calling `public.workspaces`. On that database signup is dead and
-# the first version of this gate returned EXIT 0. A gate that blesses an outage is worse than none.
-M4_LIVE_TRIGGERS = ("profiles_ensure_workspace_trg",
-                    "playlists_resolve_workspace_ins_trg", "playlists_resolve_workspace_upd_trg",
-                    "videos_resolve_workspace_ins_trg", "videos_resolve_workspace_upd_trg",
-                    "jobs_resolve_workspace_ins_trg", "jobs_resolve_workspace_upd_trg")
-M4_FUNCTIONS = ("ensure_workspace_for_profile", "resolve_workspace_from_playlist", "record_artifact",
-                "video_generations_freeze", "forbid_collecting_current", "video_artifacts_append_only",
-                "video_artifacts_generation_complete", "video_artifact_sources_append_only",
-                "video_artifact_sources_insert_once", "art_summary_has_no_source", "slot_kind",
-                "corrections_hash_of", "no_corrections_hash")
-M4_TYPES = ("artifact_kind",)
-
-
-def verdict(found: dict[str, set[str]], mode: str) -> bool:
-    """PURE. True = pass. `found` maps kind -> names present in the live catalog.
-
-    Kinds: 'tables', 'columns', 'triggers', 'functions', 'types' — ALL FIVE, because M4 creates all
-    five and `drop table` removes only two of them.
-    """
-    expected = {"tables": set(M4_TABLES), "columns": set(M4_COLUMNS),
-                "triggers": set(M4_LIVE_TRIGGERS), "functions": set(M4_FUNCTIONS),
-                "types": set(M4_TYPES)}
-    if mode == "absent":
-        # NOTHING of M4 may remain, in any kind.
-        return all(not (found.get(k, set()) & expected[k]) for k in expected)
-    return all(expected[k] <= found.get(k, set()) for k in expected)
-```
-
-⚠ **`--expect-absent` must fail on a PARTIAL teardown, which is the state a failed `0028` leaves.**
-That is the whole point: the first version checked two kinds, and the case it could not see is the
-case that kills the product.
-
-- [ ] **Step 4: Run the self-test to verify it passes**
-
-Run: `python3 scripts/check-live-schema.py --self-test`
-Expected: `5/5 self-test cases passed`, exit 0.
-
-- [ ] **Step 5: Run it against the real, pre-M4 stack**
-
-Run: `python3 scripts/check-live-schema.py --expect-absent`
-Expected: exit 0 — M4 has not been applied, so its objects are absent. **This is the gate proving itself against the world before it is trusted about the world.**
-
-- [ ] **Step 6: Prove it can go RED (mutation), inside a rolled-back transaction**
+- [ ] **Step 6: Re-run both, and record the counts against a commit**
 
 ```bash
-docker exec -i supabase_db_youtube-playlist-summaries-cloud psql -U postgres -d postgres -tAq <<'SQL'
-begin;
-create table public.workspaces (id uuid primary key);
-SQL
+python3 scripts/check-live-schema.py --self-test > /tmp/st.txt 2>&1; echo "self=$?"
+bash scripts/mutate-live-schema-check.sh > /tmp/mut.txt 2>&1; echo "mut=$?"
+git rev-parse --short HEAD
 ```
 
-Then in the same session run `--expect-absent` and expect **exit 1**. ⚠ Roll back and re-verify the stack is untouched — `an-instrument-that-edits-the-repo-corrupts-its-peers`.
+Expected: `self=0` with `16/16`, `mut=0` with `✅ every mutation caught`. ⚠ A tick records *that*
+something was verified, never *what against* — name the commit.
 
 - [ ] **Step 7: Wire it in — ⚠ THE EXPECTED STATE IS A PARAMETER, NOT A CONSTANT**
 
@@ -544,11 +450,11 @@ git commit -F /tmp/t5-msg.txt
 
 ---
 
-## Task 6: Create `0027` and `0028` together
+## Task 6: Create `0027`, and prove the rollback against it
 
 **Files:**
 - Create: `supabase/migrations/0027_stable_blob_addressing.sql`
-- Create: `supabase/migrations/0028_rollback_stable_blob_addressing.sql`
+- Run (already created, `322d411`): `supabase/rollback/rollback_0027_stable_blob_addressing.sql` — ⛔ **not a migration**, see Step 3
 
 **Interfaces:**
 - Consumes: Tasks 1–5 (schema edited, gates able to read a live catalog, inventories repaired).
@@ -557,19 +463,30 @@ git commit -F /tmp/t5-msg.txt
 ⛔ **Creating `0027` starts M4-α on every machine that runs the integration suite.** Tasks 1–5 exist so that is safe.
 ⛔ **Splitting `0027` is an outage** (r2): `enqueue_job` inserts into `jobs` without `workspace_id` `[0009:26-27]` and the derive trigger lands with the column — every enqueue fails between two commits.
 
-- [ ] **Step 1: Build `0027` from the three files, in dependency order**
+- [ ] **Step 1: Build `0027` with the builder — ⛔ NOT `cat`**
 
 ```bash
 cd /Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud
-S=docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema
 { printf -- '-- 0027 — M4: promote the stable-blob-addressing schema (ADR-0006, 0007, 0011).\n'
-  printf -- '-- Generated from %s/{01,03,04}. 05_assert.sql is NOT a migration.\n' "$S"
+  printf -- '-- Generated by scripts/build-m4-schema.py. 05_assert.sql is NOT a migration.\n'
   printf -- '-- ⚠ ONE TRANSACTION. The CLI applies a migration file as one implicit transaction;\n'
   printf -- '-- that property is the whole recovery argument and it belongs to `supabase db push`,\n'
   printf -- '-- NOT to this SQL. `psql -f` without --single-transaction does not have it.\n\n'
-  cat "$S"/01_workspaces.sql "$S"/03_generations.sql "$S"/04_artifacts.sql
+  python3 scripts/build-m4-schema.py
 } > supabase/migrations/0027_stable_blob_addressing.sql
 ```
+
+⟳ **MEASURED 2026-08-25 — this step used to be `cat 01 03 04`, and that builds the WRONG SCHEMA.**
+Until Tasks 1–2 land, the spec files still create `sync_corrections_to_workspace_video()` and both
+`videos_corrections_sync_*` triggers, which ADR-0011 deletes. Two consequences were measured, not
+argued: `scripts/mutate-live-schema-check.sh` was proving the live gate against a schema M4 will
+never ship, and a rollback over that schema left all three objects alive while
+`check-live-schema.py --expect-absent` reported **ABSENT as expected**.
+
+`build-m4-schema.py` applies Tasks 1–2, is idempotent (each edit reports `applied` or `already`, so
+it keeps working once Tasks 1–2 have landed), and rests its verdict on the **end state** rather than
+on the anchors. `--self-test`: 14 cases. It exits 1 if the spec is in neither state — which is also
+this step's guard that Task 1 actually landed.
 
 - [ ] **Step 2: Assert `05_assert.sql` did not get in — mechanically, not by looking**
 
@@ -579,7 +496,7 @@ grep -c "execute p_sql\|delete from profiles" supabase/migrations/0027_stable_bl
 
 Expected: `0`. **A non-zero result means the arbitrary-SQL executor and the profile deleter are queued for production.** Add this as a permanent guard in Task 7's gate list.
 
-- [ ] **Step 3: Write `0028` — ⛔ THE ORDER BELOW IS LOAD-BEARING AND WAS MEASURED**
+- [ ] **Step 3: Run the rollback — ⛔ IT IS ALREADY WRITTEN, AND ITS ORDER IS LOAD-BEARING**
 
 ⟳ **r1 B1/B2, both halves, and the coordinator reproduced it.** The previous draft of this step was
 wrong twice over and the second failure was catastrophic. **Read this before writing a line:**
@@ -590,7 +507,7 @@ wrong twice over and the second failure was catastrophic. **Read this before wri
 | reorder the views, then drop the columns | `ERROR: cannot drop column workspace_id … trigger playlists_resolve_workspace_upd_trg depends on it` — a column-list trigger `[03:201-203]` is a hard dependency |
 | **`drop table workspaces cascade`** — *the fix Postgres' own `HINT` suggests on both errors* | ⛔ **ALL SEVEN workspace triggers SURVIVE**, still referencing `public.workspaces`. Measured signup: `ERROR: relation "public.workspaces" does not exist` in `ensure_workspace_for_profile()` via `handle_new_user()`. **No user can sign up; playlist creation and every enqueue break identically.** |
 
-⛔ **NEVER USE `cascade` IN `0028`.** Postgres will recommend it twice and it produces a live outage
+⛔ **NEVER USE `cascade` IN THE ROLLBACK.** Postgres will recommend it twice and it produces a live outage
 rather than a rollback. If a drop fails, the order is wrong — fix the order.
 
 **The inventory `0027` creates (derived, not listed): 44 objects** — 5 tables, 3 views, 14 functions,
@@ -599,78 +516,51 @@ rather than a rollback. If a drop fails, the order is wrong — fix the order.
 **The distinction that makes this writable:** triggers on M4's **own** tables die with `drop table`.
 The **7 on LIVE tables survive** and must be named.
 
-```sql
--- 0028 — reverse 0027. ⚠ NOT `supabase migration down`, which RESETS (drop-and-recreate) and
--- accepts --linked; this is a forward migration that happens to undo.
---
--- LOSSLESS, falsifiably: every column and row 0027 creates is a function of state that predates it,
--- and no caller writes any of it. `workspace_videos` holds only (workspace_id, video_id), both
--- derived (ADR-0011 removed the one column that was not).
--- ⛔ EXPIRES AT M5, the moment `record_artifact` gets a caller. Re-verify with Task 9 Step 2's grep.
--- ⛔ NO `cascade`, ANYWHERE. See the table above: it leaves live-table triggers pointing at dropped
---    tables and kills signup. A failed drop means a wrong order, not a missing `cascade`.
-begin;
+### ⛔ IT IS NOT A MIGRATION, AND IT IS ALREADY WRITTEN
 
--- 1. LIVE-TABLE TRIGGERS FIRST. Their tables survive, so nothing else removes them, and the
---    column drops in step 5 fail while the `_upd_` ones still list the column.
-drop trigger if exists profiles_ensure_workspace_trg        on profiles;
-drop trigger if exists playlists_resolve_workspace_ins_trg  on playlists;
-drop trigger if exists playlists_resolve_workspace_upd_trg  on playlists;
-drop trigger if exists videos_resolve_workspace_ins_trg     on videos;
-drop trigger if exists videos_resolve_workspace_upd_trg     on videos;
-drop trigger if exists jobs_resolve_workspace_ins_trg       on jobs;
-drop trigger if exists jobs_resolve_workspace_upd_trg       on jobs;
+**The rollback lives at `supabase/rollback/rollback_0027_stable_blob_addressing.sql`** (committed
+`322d411`). This step no longer writes SQL — it runs a file that has already been executed.
 
--- 2. VIEWS, in REVERSE creation order — collectable (:918) reads artifacts_current (:728).
-drop view if exists video_generations_collectable;
-drop view if exists video_artifacts_current;
-drop view if exists video_summary_current;
+⟳ **MEASURED 2026-08-25, and this is why it moved.** Two throwaway migrations, `9998` creating a
+table and `9999` dropping it:
 
--- 3. the FK that points videos at workspace_videos
-alter table videos drop constraint if exists videos_workspace_video_fk;
+```
+Applying migration 9998_probe_create.sql...
+Applying migration 9999_probe_drop.sql...
+{"applied":[…9998…,…9999…],"message":"Migrations applied"}
+m4_order_probe rows in catalog: 0
+```
 
--- 4. M4's own tables. Their triggers, indexes and policies go with them.
-drop table if exists video_artifact_sources;
-drop table if exists video_artifacts;
-drop table if exists video_generations;
-drop table if exists workspace_videos;
+`supabase migration up` applies **every** pending file in ascending order in **one pass**, and the
+later file wins. A rollback filed as `0028` therefore runs immediately after `0027` on every fresh
+database — `db push` to production, `db reset`, and `tests/integration/global-setup.ts` alike. **The
+pair composes to a no-op: production receives an empty milestone, and the local suite tests a schema
+that is not there.** The previous draft of this step committed both files into
+`supabase/migrations/`.
 
--- 5. the derived columns (now that no trigger lists them)
-alter table playlists drop column if exists workspace_id;
-alter table videos    drop column if exists workspace_id;
-alter table jobs      drop column if exists workspace_id;
+Note which gate would have caught it: `check-live-schema.py --expect-present`, because it reads the
+live catalog. The five that rebuild from the spec files would all have stayed green — they never
+read the migration directory. That is the SUBJECT axis, again.
 
--- 6. the tenancy root, last of the tables
-drop table if exists workspaces;
+`schema_paths = []` in `supabase/config.toml`, so nothing under `supabase/rollback/` is ever
+replayed.
 
--- 7. FUNCTIONS — now unreferenced. 13 after ADR-0011.
-drop function if exists ensure_workspace_for_profile();
-drop function if exists resolve_workspace_from_playlist();
-drop function if exists record_artifact(uuid, text, text, text, artifact_kind, text, text,
-                                        int, int, text, jsonb, int, timestamptz);
-drop function if exists video_generations_freeze();
-drop function if exists forbid_collecting_current();
-drop function if exists video_artifacts_append_only();
-drop function if exists video_artifacts_generation_complete();
-drop function if exists video_artifact_sources_append_only();
-drop function if exists video_artifact_sources_insert_once();
-drop function if exists art_summary_has_no_source();
-drop function if exists slot_kind(text);
-drop function if exists corrections_hash_of(text);
-drop function if exists no_corrections_hash();
+### It is PROVEN, not asserted
 
--- 8. the enum, last — functions above reference it in their signatures
-drop type if exists artifact_kind;
-commit;
+Built the post-ADR-0011 schema into a throwaway database (161 objects), ran the file verbatim under
+`ON_ERROR_STOP=1`, and diffed the catalog **both directions** against the pre-M4 clone — tables,
+views, columns, triggers, functions, types, indexes, policies **and constraints**:
+
+```
+13 DROP FUNCTION · 7 DROP TRIGGER · 5 DROP TABLE · 4 ALTER TABLE · 3 DROP VIEW · 1 DROP TYPE
+skipping-notices: 0        LEFTOVER: 0        DESTROYED: 0
 ```
 
 ⛔ **A WRONG `drop function` SIGNATURE IS A SILENT NO-OP UNDER `if exists`** — the statement
-succeeds, the function survives, and nothing reports it. ⟳ *Coordinator, before round 2: my own
-first draft got **two of thirteen** wrong.* `slot_kind` takes **`text`**, not `artifact_kind`
-`[03:…  create function slot_kind(p_slot text)]`; and `record_artifact` takes **13** parameters
-`[04_artifacts.sql, create function record_artifact(…)]`, not the 7 I first wrote. Both would have
-left a function behind while `0028` reported success — the same shape as the gate that blessed the
-cascade residue.
+succeeds, the function survives, and nothing reports it. **`skipping-notices: 0` is the falsifier**,
+and it is why the run greps for `NOTICE … skipping` rather than trusting the exit code. ⟳ *My own
+first draft got **two of thirteen** wrong:* `slot_kind` takes **`text`**, not `artifact_kind`; and
+`record_artifact` takes **13** parameters, not the 7 I first wrote.
 
 **Do not eyeball this. Derive it, then assert it:**
 
@@ -682,36 +572,43 @@ docker exec -i supabase_db_youtube-playlist-summaries-cloud psql -U postgres -d 
     where n.nspname='public' order by 1;"
 ```
 
-**And the falsifier that makes the no-op impossible to miss:** after `0028`, `check-live-schema.py
---expect-absent` reports any surviving function by name (Task 3's `M4_FUNCTIONS`). If a signature is
-wrong, that gate goes red — which is exactly why the gate had to grow past tables and columns.
+**And the falsifier that makes the no-op impossible to miss:** after the rollback,
+`check-live-schema.py --expect-absent` reports any surviving function by name (Task 3's
+`M4_FUNCTIONS`). If a signature is wrong, that gate goes red — which is exactly why the gate had to
+grow past tables and columns.
 
 - [ ] **Step 4: Apply `0027` locally and assert with the LIVE gate**
 
 ```bash
 npx supabase migration up
-python3 scripts/check-live-schema.py --expect-present; echo "live=$?"
+python3 scripts/check-live-schema.py --expect-present > /tmp/live.txt 2>&1; echo "live=$?"
 ```
 
-Expected: `live=0`.
+Expected: `live=0`. ⚠ **Redirect, then read `$?` on its own line.** `$?` after a pipe reports the
+LAST command's status, and that mistake produced four false greens in one day.
 
-- [ ] **Step 5: Apply `0028` and assert the reversal**
+- [ ] **Step 5: Run the rollback and assert the reversal**
 
 ```bash
 docker exec -i supabase_db_youtube-playlist-summaries-cloud psql -U postgres -d postgres \
-  -v ON_ERROR_STOP=1 < supabase/migrations/0028_rollback_stable_blob_addressing.sql
-python3 scripts/check-live-schema.py --expect-absent; echo "live=$?"
+  -v ON_ERROR_STOP=1 < supabase/rollback/rollback_0027_stable_blob_addressing.sql > /tmp/rb.txt 2>&1
+grep -c "skipping" /tmp/rb.txt            # expect 0 — a NOTICE here is a SILENT no-op drop
+python3 scripts/check-live-schema.py --expect-absent > /tmp/live.txt 2>&1; echo "live=$?"
 ```
 
-Expected: `live=0`. ⚠ **This, not "the schema gates go red", is the observation that proves removal.** v5 asserted the opposite polarity and round 5 measured it backwards.
+Expected: `live=0`, `skipping` count `0`. ⚠ **This, not "the schema gates go red", is the observation
+that proves removal.** v5 asserted the opposite polarity and round 5 measured it backwards.
 
 - [ ] **Step 6: Re-apply `0027` so the branch is left in the migrated state, and commit**
 
 ```bash
 npx supabase migration up
-git add supabase/migrations/0027_stable_blob_addressing.sql supabase/migrations/0028_rollback_stable_blob_addressing.sql
+git add supabase/migrations/0027_stable_blob_addressing.sql
 git commit -F /tmp/t6-msg.txt
 ```
+
+⛔ **`0027` ONLY.** The rollback is already committed, and it is not a migration — adding it to
+`supabase/migrations/` is the no-op composition measured in Step 3.
 
 ---
 
@@ -779,75 +676,58 @@ git commit -F /tmp/t7-msg.txt
 -- @RE-RUNNABLE:    an invariant that must hold at all times.
 ```
 
-- [ ] **Step 2: Write the seed corpus — the assertions are vacuous without one**
+### ✅ THE SEED AND THE HARNESS ARE WRITTEN AND EXECUTED
 
-⟳ *r3 B4.* Create `docs/superpowers/specs/m4/seed-assertion-corpus.sql`:
+Both exist and both have been run. **This task no longer contains their source.**
 
-```sql
--- Seeds the minimum corpus 05_assert.sql's RE-RUNNABLE assertions need to evaluate at all.
--- ⚠ Runs INSIDE a transaction the caller rolls back. It must never persist.
--- ⚠ It must exercise the DERIVE path (plain inserts), not write workspace_id directly — that is
--- the behaviour :1843-1859 asserts, and pre-filling the column would make it pass vacuously.
--- ⟳ r1 B5 (codex) — THE FIRST DRAFT COULD NOT INSERT A SINGLE ROW.
--- `profiles.id` references `auth.users(id)` (0001_core_schema.sql:3), so a profile cannot exist
--- without an auth user; and `playlists.playlist_url` is `not null` (0001:14) and was omitted.
-insert into auth.users (id, instance_id, aud, role, email)
-  values ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000',
-          'authenticated', 'authenticated', 'seed@example.test');
-insert into profiles (id, is_anonymous) values ('00000000-0000-0000-0000-0000000000a1', false);
-insert into playlists (id, owner_id, playlist_key, playlist_url)
-  values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1',
-          'SEED_PL', 'https://youtube.com/playlist?list=SEED_PL');
-insert into videos (playlist_id, owner_id, video_id, position, data)
-  values ('00000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-0000000000a1',
-          'seedvid001', 0, '{"id":"seedvid001","title":"seed"}'::jsonb);
+| File | State |
+|---|---|
+| `docs/superpowers/specs/m4/seed-assertion-corpus.sql` | ⟳ **r3 B4, r1 B5, r2** — third draft, first one that runs |
+| `scripts/run-schema-assertions.sh` | all four outcomes exercised |
+
+**The seed's third draft is the first that inserts a row, and the second failure is the instructive
+one.** Draft 1 could not insert at all (`profiles.id` → `auth.users(id)`; `playlist_url` NOT NULL).
+Draft 2's fix added `insert into auth.users …` *above* an explicit `insert into profiles …` — a
+guaranteed `duplicate key … profiles_pkey`, because `auth.users` carries `on_auth_user_created` and
+`handle_new_user()` already inserts that row:
+
+```
+on_auth_user_created | handle_new_user
+  insert into public.profiles (id, is_anonymous) values (new.id, coalesce(new.is_anonymous, false));
 ```
 
-⚠ Column lists must be verified against `0001_core_schema.sql` before running — the shape above is the intent, not a guarantee that every `NOT NULL` is satisfied.
+⛔ **There is no explicit profiles insert in the seed, and adding one back breaks it.** Column lists
+were derived by querying `information_schema` for every NOT NULL with no default, not eyeballed.
 
-- [ ] **Step 3: Write the harness**
+**The seed asserts itself**, because a corpus that silently seeds nothing makes every downstream
+assertion vacuous — and a vacuous assertion reports success. MEASURED, three mutations:
 
-Create `scripts/run-schema-assertions.sh`:
+| Mutation | Result |
+|---|---|
+| `profiles_ensure_workspace_trg` disabled | `ERROR: owner … has no workspace — cannot derive workspace_id` |
+| `videos_resolve_workspace_ins_trg` disabled | `ERROR: null value in column "workspace_id" … violates not-null` |
+| both, plus `workspace_id` made nullable | `ERROR: SEED FAILED: videos.workspace_id is null — the derive trigger did not fire` |
 
-```bash
-#!/usr/bin/env bash
-# Runs 05_assert.sql's RE-RUNNABLE assertions against a LIVE, SEEDED schema, then rolls back.
-# ⛔ 05_assert.sql is NEVER a migration — it holds `delete from profiles` (:2207) and an
-#    arbitrary-SQL executor (:37). This is its home instead.
-# FAILS IF: an assertion raises. CANNOT RUN (exit 2) if 0027 is not applied.
-set -uo pipefail
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
-CONTAINER="${PGCONTAINER:-supabase_db_youtube-playlist-summaries-cloud}"
+⚠ **Note what the first two prove and what they do not.** They show the *schema* fails closed before
+the seed's own check is ever reached — stronger than the check, but it left the check itself
+unproven. The third mutation exists solely to make that branch reachable, and it fires.
 
-if ! python3 "$REPO/scripts/check-live-schema.py" --expect-present >/dev/null 2>&1; then
-  echo "CANNOT RUN — 0027 is not applied to this database, so every assertion would be vacuous"
-  echo "or hard-red. Treat this as NOT RUN." >&2
-  exit 2
-fi
+**The harness has four outcomes and all four were executed:**
 
-# ⟳ r1 B5 (claude) / B6 (codex) — THE FIRST SELECTOR WAS FAIL-OPEN.
-# `awk '/@RE-RUNNABLE/{p=1} p'` has no stop condition: on today's unmarked file it selects NOTHING,
-# psql runs an empty script, ASSERTIONS_OK prints, and the gate reports "passed" having asserted
-# nothing at all. Once markers exist it captures everything after the FIRST one, including later
-# @MIGRATION-ONLY blocks. Both failures are silent.
-ASSERTIONS=$(awk '/@RE-RUNNABLE/{p=1;next} /@MIGRATION-ONLY/{p=0;next} p' \
-               "$REPO/docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema/05_assert.sql")
-if [ -z "$(printf '%s' "$ASSERTIONS" | tr -d '[:space:]')" ]; then
-  echo "CANNOT RUN — no @RE-RUNNABLE block found in 05_assert.sql. An empty assertion set must"
-  echo "never report success. Treat this as NOT RUN." >&2
-  exit 2
-fi
-SQL=$(printf 'begin;\n'; cat "$REPO/docs/superpowers/specs/m4/seed-assertion-corpus.sql";
-      printf '%s' "$ASSERTIONS";
-      printf '\n\\echo ASSERTIONS_OK\nrollback;\n')
-OUT=$(printf '%s' "$SQL" | docker exec -i "$CONTAINER" \
-        psql -U postgres -d postgres -v ON_ERROR_STOP=1 2>&1)
-if ! grep -q ASSERTIONS_OK <<<"$OUT"; then
-  echo "$OUT" | tail -20 >&2
-  exit 1
-fi
-echo "schema assertions: RE-RUNNABLE subset passed against the live schema"
-```
+| Outcome | Proven by |
+|---|---|
+| exit 2 — `0027` not applied | run against the real local stack |
+| exit 2 — no `@RE-RUNNABLE` marker | `05_assert.sql` carries **0** today; an empty assertion set must never report success |
+| exit 0 — success | a synthetic marked file, with `@MIGRATION-ONLY` traps **before and after** the block; ⟳ *neither was selected — this is r1 B5/B6's fail-open `awk` selector, fixed and demonstrated* |
+| exit 1 — an assertion raises | a deliberately false assertion |
+
+⚠ `ASSERT_FILE` exists so the **success path can be proven before Task 8 Step 1 adds the markers**.
+Without it the only reachable outcomes are the two cannot-run branches, and a harness whose happy
+path has never executed is the artifact this extraction exists to stop shipping. Same reasoning as
+`--database` on `check-live-schema.py`.
+
+⚠ Success is decided by a **marker in the output**, never an exit code — `scripts/codex-review.py`'s
+rule, for its reason.
 
 - [ ] **Step 4: Run it, and prove the cannot-run path is real**
 
@@ -856,7 +736,7 @@ chmod +x scripts/run-schema-assertions.sh
 ./scripts/run-schema-assertions.sh; echo "exit=$?"          # expect 0 with 0027 applied
 ```
 
-Then apply `0028` and run again:
+Then run the rollback and run again:
 
 ```bash
 ./scripts/run-schema-assertions.sh; echo "exit=$?"          # expect 2, "treat this as NOT RUN"
@@ -902,13 +782,13 @@ docker exec -i -e PGU="$CLAUDE_RO_DATABASE_URL" supabase_db_youtube-playlist-sum
 
 ⚠ The figures decay with every ingest. **Re-measure; do not quote 2026-08-25's numbers.**
 
-- [ ] **Step 2: Establish the repo-wide "no caller" property that `0028` depends on**
+- [ ] **Step 2: Establish the repo-wide "no caller" property that the rollback depends on**
 
 ```bash
 rg -n "record_artifact|video_artifacts_current|video_summary_current" lib app worker --glob '*.ts' --glob '*.tsx'
 ```
 
-Expected: no matches. **Record the command and its count** — this is `0028`'s lossless falsifier, not a general reassurance.
+Expected: no matches. **Record the command and its count** — this is the rollback's lossless falsifier, not a general reassurance.
 
 - [ ] **Step 3: M4-α — apply to the local stack, seeded per Task 8, and run every gate**
 
@@ -981,7 +861,7 @@ T10 ── any time  ┘             ╚═▶ ⚡ UNSEEDED M4-α FIRES on every
 
 1. `./scripts/check-schema-gates.sh` — **nine checks, numbered 0-8, all green**: the `05_assert`
    guard (0), the six originals (1-6), the live-catalog gate (7), the re-runnable assertions (8).
-2. `check-live-schema.py --expect-present` after `0027`; `--expect-absent` after `0028`.
+2. `check-live-schema.py --expect-present` after `0027`; `--expect-absent` after the rollback.
 3. `npm run test:integration` green **against a named commit**; unavailable stack ⇒ non-zero, *treat as NOT RUN*.
 4. `check-anon-exposure.py --prod` at M4-β (the gate); `--local` is a smoke test.
 5. `check-docs`, `check-anchors`, `check-review-rounds`, `check-roadmap-consistency`, `check-test-counts`, `check-arch-findings`, `check-ratchet-contract`, `check-gate-falsifiability` — all 0.
