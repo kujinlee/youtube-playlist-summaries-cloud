@@ -536,6 +536,57 @@ SQL
   fi
 fi
 
+echo "═══ mutation 24 ⭐⭐⭐⭐ r8 B1 (claude): a total session-role READ OUTAGE ═══"
+# THE POLARITY THE WHOLE INSTRUMENT WAS MISSING. Every mutation above asks whether a privilege was
+# ADDED. The digest that was removed carried BOTH directions — SELECT was in REL_PRIVS, so a revoke
+# moved it. MEASURED at 522e766, one statement, all three instruments green over a database on which
+# no logged-in user can read a single M4 row.
+# ⚠ ADR-0012 makes this MORE likely: revoke-from-all-four-then-grant-back means the grant-back line
+# is now the only thing between the schema and this state.
+if fresh "${PREFIX}_readout"; then
+  anon_control "$TPL" "M4 READ LOST" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no lost read" pass "$r"
+  before_r=$(db "${PREFIX}_readout" -c "select has_table_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_readout" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+revoke select on video_artifacts, video_generations, workspace_videos, workspaces,
+                 video_artifact_sources, video_artifacts_current, video_summary_current
+  from anon, authenticated;
+SQL
+  after_r=$(db "${PREFIX}_readout" -c "select has_table_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  echo "     authenticated SELECT on video_artifacts: ${before_r:-<empty>} -> ${after_r:-<empty>}"
+  if [ -z "$before_r" ] || [ -z "$after_r" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — treat mutation 24 as NOT RUN"; fail=1
+  elif [ "$before_r" = "$after_r" ]; then
+    echo "  ✗ THE REVOKE DID NOT LAND — treat mutation 24 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_readout" --expect-present && r=pass || r=fail
+    report "a total read outage -> the DIGEST cannot see it (this is the trade)" pass "$r"
+    anon_gate "${PREFIX}_readout" "M4 READ LOST" && r=pass || r=fail
+    report "a total read outage -> RULE 3 names M4 READ LOST" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 25 ⭐⭐ r8 H1 (claude): SELECT on the OUT-OF-REACH relation ═══"
+# The rule always said "any session-role privilege here is a defect". The FETCH could not feed it:
+# SELECT was in neither probe list, so `held` was empty and the branch never fired — while a
+# self-test case built from the hand-typed fixture "SELECT," passed in green over the gap.
+if fresh "${PREFIX}_oor"; then
+  anon_control "$TPL" "M4 OUT OF REACH" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no out-of-reach privilege" pass "$r"
+  before_o=$(db "${PREFIX}_oor" -c "select has_table_privilege('anon','video_generations_collectable','SELECT')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_oor" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+grant select on video_generations_collectable to anon;
+SQL
+  after_o=$(db "${PREFIX}_oor" -c "select has_table_privilege('anon','video_generations_collectable','SELECT')::text;" | tr -d '[:space:]')
+  echo "     anon SELECT on the collectable view: ${before_o:-<empty>} -> ${after_o:-<empty>}"
+  if [ -z "$before_o" ] || [ "$before_o" = "$after_o" ]; then
+    echo "  ✗ THE GRANT DID NOT LAND — treat mutation 25 as NOT RUN"; fail=1
+  else
+    anon_gate "${PREFIX}_oor" "M4 OUT OF REACH" && r=pass || r=fail
+    report "SELECT on the out-of-reach view -> RULE 3 names M4 OUT OF REACH" pass "$r"
+  fi
+fi
+
 echo "═══ mutation 20 ⭐⭐ r6 H (codex): a RENAMED survivor of the rollback ═══"
 # `alter function … rename to …_old` then the real rollback: the drop skips with a NOTICE and a live
 # SECURITY DEFINER guard remains. Symbol matching cannot see it — the symbol is what changed. But

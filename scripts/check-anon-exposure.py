@@ -119,8 +119,16 @@ WRITE_VERB = re.compile(r"\b(insert|update|delete|truncate)\b", re.IGNORECASE)
 # The verbs no session role may hold on an M4 relation. TRUNCATE is the one that was invisible to
 # both gates before today: it is not in the digest's REL_PRIVS and it bypasses RLS and row triggers.
 FORBIDDEN_ON_M4 = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
+# ⭐ PROBED is NOT the same tuple as FORBIDDEN, and conflating them was r8 H1 (claude).
+# `held` is assembled from what the FETCH asks about. SELECT was in neither probe list, so the
+# out-of-reach branch — "any session-role privilege here is a defect" — could never see a SELECT
+# grant, and a self-test case built from the hand-typed fixture "SELECT," passed in green over it.
+# That is `pg_bool`'s own lesson (see its docstring) repeated in this file: the rule was right and
+# the fetch was broken. SELECT is probed; whether it is ALLOWED is the rule's business, not the
+# fetch's.
+PROBED_ON_M4 = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
 # Column-level grants exist only for these verbs — has_any_column_privilege rejects the others.
-COLUMN_LEVEL = ("INSERT", "UPDATE", "REFERENCES")
+COLUMN_LEVEL = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
 MANIFEST = ROOT / "docs/superpowers/specs/m4/live-manifest.txt"
 
 
@@ -267,6 +275,53 @@ def evaluate_m4(
                 f"ROLE NOT PRESENT   RULE 3 expected to check `{role}` and this database has no such\n"
                 f"                   role, while {len(seen_rels)} M4 relation(s) DO exist. The rule\n"
                 "                   reported nothing about it, which is not the same as a pass.")
+    return problems
+
+
+def evaluate_m4_reads(
+    m4rel: list[tuple[str, str, str]],
+    no_access: tuple[str, ...] = (),
+    expect_roles: tuple[str, ...] = (),
+) -> list[str]:
+    """The OTHER POLARITY: a session role must still be able to READ. PURE.
+
+    ⟳ r8 B1 (claude), reproduced by the coordinator before fixing. Everything else in RULE 3 asks
+    whether a privilege was ADDED. The fingerprint that was removed carried BOTH directions —
+    `REL_PRIVS` included SELECT, so `has_table_privilege('authenticated', rel, 'SELECT')` going
+    true -> false moved the digest. MEASURED at HEAD, one statement:
+
+        revoke select on video_artifacts, video_generations, workspace_videos, workspaces,
+                         video_artifact_sources, video_artifacts_current, video_summary_current
+          from anon, authenticated;
+        digest exit=0 · RULE 3 named 0 problems · assertions exit=0
+
+    That is a total read outage — no logged-in user can read one M4 row — certified as
+    "M4 is PRESENT as expected" by the gate that guards an irreversible cutover. Same class as
+    r7 B1, which this branch filed as Blocking, on the read side instead of the write side.
+
+    ⚠ AND ADR-0012 MAKES IT MORE LIKELY, NOT LESS. Its rule is revoke-from-all-four-then-grant-back,
+    so the grant-back line is now the only thing standing between the schema and this state; before
+    it, a forgotten grant-back was masked by the platform's default ACL and the read still worked.
+
+    DERIVED, not typed: every manifest relation that is not out-of-reach must be SELECTable by every
+    session role the spec grants to. That is the spec's contract (seven `grant select … to
+    authenticated, anon` sites) expressed as its complement, so a relation added to M4 arrives
+    covered.
+    """
+    problems: list[str] = []
+    if not m4rel:
+        return problems
+    for rel, role, privs in sorted(m4rel):
+        if rel in no_access or role == "public":
+            continue          # `public` is granted nothing by the spec; only the named roles read.
+        held = {p.strip().upper() for p in privs.split(",") if p.strip()}
+        if "SELECT" not in held:
+            problems.append(
+                f"M4 READ LOST      `{role}` can no longer SELECT from `{rel}`. The spec grants this\n"
+                "                   read explicitly, and every consumer depends on it: the manifest\n"
+                "                   read, the serve path and the sidebar all return empty while the\n"
+                "                   catalog gate still reports M4 PRESENT. A revoke is a production\n"
+                "                   READ outage and it is invisible to the digest by construction.")
     return problems
 
 
@@ -443,7 +498,7 @@ def fetch(local: bool, database: str = "postgres") -> tuple[
     if not m4fns:
         print(f"CANNOT RUN — {MANIFEST} names no functions. TREAT THIS AS NOT RUN.")
         sys.exit(2)
-    sql = SQL % (pg_array(MONEY_TABLES), pg_array(FORBIDDEN_ON_M4), pg_array(COLUMN_LEVEL),
+    sql = SQL % (pg_array(MONEY_TABLES), pg_array(PROBED_ON_M4), pg_array(COLUMN_LEVEL),
                  pg_array(SESSION_GRANTEES), pg_array(m4rels),
                  pg_array(SESSION_GRANTEES), pg_array(m4fns))
     url = None
@@ -614,6 +669,32 @@ def self_test() -> int:
     case("m4_relations ignores every non-relation line",
          m4_relations("col:a.b@1\ntrg:c.d@2\nidx:e@3\npol:f.g@4\ncon:h.i@5\n") == [])
 
+    # ── RULE 3, READ polarity (r8 B1) ───────────────────────────────────────────────────────────
+    READS = [(r, g, "SELECT,") for r in ("video_artifacts", "workspaces") for g in ROLES]
+    case("RULE 3 read: SELECT held by every session role is clean",
+         evaluate_m4_reads(READS, (), ROLES) == [])
+    case("RULE 3 read: a REVOKED select FAILS",
+         any("M4 READ LOST" in p for p in
+             evaluate_m4_reads([("video_artifacts", "authenticated", "")], (), ROLES)))
+    case("RULE 3 read: it names the role and the relation",
+         any("`authenticated`" in p and "`video_artifacts`" in p for p in
+             evaluate_m4_reads([("video_artifacts", "authenticated", "")], (), ROLES)))
+    case("RULE 3 read: the out-of-reach relation is EXEMPT (it must hold nothing)",
+         evaluate_m4_reads([("video_generations_collectable", "anon", "")],
+                           ("video_generations_collectable",), ROLES) == [])
+    case("RULE 3 read: `public` is exempt — the spec grants it nothing",
+         evaluate_m4_reads([("video_artifacts", "public", "")], (), ROLES) == [])
+    case("RULE 3 read: pre-0027 (no relations) is vacuous, not a failure",
+         evaluate_m4_reads([], (), ROLES) == [])
+    # ⭐ THE FETCH DECIDES WHAT THE RULE CAN SEE — r8 H1. SELECT was in neither probe list, so the
+    # out-of-reach branch could never fire, while a hand-typed "SELECT," fixture passed in green.
+    case("SELECT is actually PROBED, so the out-of-reach branch can fire at all",
+         "SELECT" in PROBED_ON_M4 and "SELECT" in COLUMN_LEVEL)
+    case("the probe list is a SUPERSET of the forbidden list",
+         set(FORBIDDEN_ON_M4) <= set(PROBED_ON_M4))
+    case("main() calls evaluate_m4_reads",
+         "evaluate_m4_reads(" in Path(__file__).read_text().split("def main()", 1)[-1])
+
     # ── RULE 3, function half (fork (a) step 5: FN_GRANTEES left the digest) ────────────────────
     case("RULE 3 fn: no session role executing any M4 function is clean",
          evaluate_m4_functions([("record_artifact", "anon", False),
@@ -698,6 +779,7 @@ def main() -> int:
 
     problems = evaluate(funcs, money)
     problems += evaluate_m4(m4rel, M4_NO_SESSION_ACCESS, SESSION_GRANTEES)
+    problems += evaluate_m4_reads(m4rel, M4_NO_SESSION_ACCESS, SESSION_GRANTEES)
     problems += evaluate_m4_functions(m4fn)
     if not problems:
         print("Anon exposure OK — every anon-callable SECURITY DEFINER function is allow-listed")
