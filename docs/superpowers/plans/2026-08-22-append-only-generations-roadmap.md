@@ -217,11 +217,12 @@ So M3 was: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revi
 > | | |
 > |---|---|
 > | Plan of record | [`plans/2026-08-25-m4-promote-the-schema-v2.md`](2026-08-25-m4-promote-the-schema-v2.md) — rewritten from ADR-0011 (corrections stay per-playlist), supersedes v5.1 |
-> | Merged so far | PR #150 (plan) · #152 (derived manifest) · #153 (round-4 fixes) — **tooling only, no migration** |
-> | Open | branch `docs/m4-round5`, commit `ac56e20` — the round-5 fixes |
-> | Review rounds | **5, none converged.** ⚠ Phase 6 fired at round 4 and has **not run** |
+> | Merged so far | PR #150 (plan) · #152 (derived manifest) · #153 (round-4 fixes) · **#154 (rounds 5+6, squash `74f450b`)** — **tooling only, no migration** |
+> | Open | branch `docs/m4-round7` — round 7 reviewed, fixes NOT yet applied |
+> | Review rounds | **v2 rounds 1-7, none converged.** Before v2, the v5.1 plan ran 5 rounds |
+> | Phase 6 | ⚠ **CORRECTION 2026-08-25 21:30.** This row previously read *"fired at round 4 and has not run"*, and I repeated that in three commit messages and to the user. **It is false.** Phase 6 **RAN** — [`../../reviews/architecture-review-2026-08-25.md`](../../reviews/architecture-review-2026-08-25.md), 17:54 — after the v5.1 sequence. It dissolved nine of eleven findings into one defect, produced **ADR-0011** (accepted, option (a)) and, as its finding 3, **`check-live-schema.py` itself**. Its disposition — *"M4 does not proceed to a v6, rewrite the plan from the decision"* — is why the v2 plan exists. The trigger has now fired a SECOND time, on the v2 sequence, and the second review's subject is different: the first was about `corrections`/`workspace_videos` composition; rounds 5-7 are entirely about **the gate instrument the first review prescribed** |
 > | The gate that now exists | `scripts/check-live-schema.py` — the SUBJECT axis. The other six gates rebuild from spec files and cannot answer *"did the migration apply?"* Verified against production read-only: **prod is pre-M4** |
-> | Next | round 6 on the round-5 fixes, then Tasks 1-2 (ADR-0011 spec edits), then **Task 6 — create `0027`** |
+> | Next | **Phase 6 #2 on the gate instrument** (user decision 2026-08-25), then the round-7 fixes, then Tasks 1-2 (ADR-0011 spec edits), then **Task 6 — create `0027`** |
 >
 > ⛔ **Task 6 is the point of no return for every developer's local stack**: from that commit on,
 > `npm run test:integration` applies M4 on every machine that runs it. Merging is a human gate;
