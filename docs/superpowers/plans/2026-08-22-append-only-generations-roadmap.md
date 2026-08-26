@@ -212,6 +212,26 @@ So M3 was: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revi
 
 ### M4 — Promote the schema ◀ **THE WORK RESUMES HERE**
 
+> **STATUS 2026-08-25 — IN PROGRESS, plan approved, `0027` DOES NOT EXIST YET.**
+>
+> | | |
+> |---|---|
+> | Plan of record | [`plans/2026-08-25-m4-promote-the-schema-v2.md`](2026-08-25-m4-promote-the-schema-v2.md) — rewritten from ADR-0011 (corrections stay per-playlist), supersedes v5.1 |
+> | Merged so far | PR #150 (plan) · #152 (derived manifest) · #153 (round-4 fixes) — **tooling only, no migration** |
+> | Open | branch `docs/m4-round5`, commit `ac56e20` — the round-5 fixes |
+> | Review rounds | **5, none converged.** ⚠ Phase 6 fired at round 4 and has **not run** |
+> | The gate that now exists | `scripts/check-live-schema.py` — the SUBJECT axis. The other six gates rebuild from spec files and cannot answer *"did the migration apply?"* Verified against production read-only: **prod is pre-M4** |
+> | Next | round 6 on the round-5 fixes, then Tasks 1-2 (ADR-0011 spec edits), then **Task 6 — create `0027`** |
+>
+> ⛔ **Task 6 is the point of no return for every developer's local stack**: from that commit on,
+> `npm run test:integration` applies M4 on every machine that runs it. Merging is a human gate;
+> applying M4-β to production is a second one.
+>
+> **Why five rounds.** Every round found that the previous round's FIX was the defect — five of round
+> 5's nine findings were round 4's repairs. The gates are all predicates over a *projection* of the
+> database, and each fix widened the projection just far enough to cover the counter-examples already
+> seen. See [`../../reviews/plan-m4-v2-r5-coordinator.md`](../../reviews/plan-m4-v2-r5-coordinator.md).
+
 The four spec `schema/*.sql` files become migrations **`0027+`** (⟳ was `0026+`; `0026` was taken by
 `record_correction_spend` in M2 slice A). `05_assert.sql` gets a home in CI or
 `scripts/check-schema-gates.sh`. No application caller yet — the schema lands inert.
