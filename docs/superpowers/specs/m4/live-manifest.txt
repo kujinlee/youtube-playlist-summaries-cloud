@@ -1,7 +1,7 @@
 # M4 LIVE MANIFEST — every object migration 0027 creates, DERIVED BY EXECUTION.
 #
 # objects: 161
-# sha256: a62e39cdeacd8657870fc65c421a5c69b54a50300edd68b2906036a1423d2555
+# sha256: a9e65ca18e4ad88194b04fe21da6b612f304496ba0b023ee24c1be9b2d11279e
 #
 # ⛔ DO NOT HAND-EDIT. Regenerate:  python3 scripts/gen-m4-manifest.py
 #    Verify it is current:          python3 scripts/gen-m4-manifest.py --check
@@ -129,13 +129,13 @@ fn:ensure_workspace_for_profile()@7ad93e476119d72aa61f4975364efcd4
 fn:forbid_collecting_current()@b762c8bc38bcade95770b58d6d7bf535
 fn:no_corrections_hash()@084a015d40156f3c9b4e9424f4be61c2
 fn:record_artifact(p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind public.artifact_kind, p_blob_key text, p_source_generation_id text, p_start_sec integer, p_end_sec integer, p_md_hash text, p_card jsonb, p_doc_version_major integer, p_produced_at timestamp with time zone)@c13e181a8a285e27461472620e8e7bdd
-fn:resolve_workspace_from_playlist()@df966c906d0141894e5da636ae32174d
+fn:resolve_workspace_from_playlist()@442f094a76a0e65a5429775ff28a3d7f
 fn:slot_kind(p_slot text)@791ccad8405d9d9f109acaa77ef52249
 fn:video_artifact_sources_append_only()@f0fe2284d5d27bb578474de4fda7ea0d
 fn:video_artifact_sources_insert_once()@ace305d72275d97159c441f3017d8393
 fn:video_artifacts_append_only()@aea7f033e3601d5c4c70c12458c0eeef
 fn:video_artifacts_generation_complete()@354882a0f34f65f7884eb36e6c961e86
-fn:video_generations_freeze()@659d185e2c620f1fbba7e1c6e6223688
+fn:video_generations_freeze()@ae064a6aeae5a9842d0a628e72dbbceb
 idx:video_artifact_sources_gen_idx@ae6731c6de129ec57d945d5dc6116f16
 idx:video_artifact_sources_pkey@a4f4b9a0e98b90e34995af3fde49e600
 idx:video_artifacts_free_uq@9c27caa0409d50518001e868889cedc4
