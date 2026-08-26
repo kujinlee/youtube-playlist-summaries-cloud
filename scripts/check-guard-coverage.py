@@ -67,10 +67,10 @@ GUARDS: dict[str, tuple[str, str]] = {
     # ── video_artifacts: SHAPE (well-formedness / referential integrity) ─────────
     "art_slot_kind":               ("SHAPE", ""),
     "art_paid_has_generation":     ("SHAPE", ""),
-    "art_pending_is_leased":       ("SHAPE", ""),
-    "art_pending_has_token":       ("SHAPE", ""),
-    "art_pending_has_reserved_at": ("SHAPE", ""),
-    "art_summary_has_no_source":   ("SHAPE", ""),
+    # ⛔ FOUR ENTRIES STOOD HERE UNTIL T5 (2026-08-26): art_pending_is_leased, art_pending_has_token,
+    # art_pending_has_reserved_at and art_summary_has_no_source. The first three were the RESERVATION
+    # protocol ADR-0007 deleted; the fourth became a branch of the T3 provenance enforcer rather than
+    # a constraint. All four were VERIFIED ABSENT from the schema before deletion, not assumed.
     "art_dig_has_span":            ("SHAPE", ""),
     "art_detached_is_dig":         ("SHAPE", ""),
     "art_detached_has_timestamp":  ("SHAPE", ""),
@@ -82,15 +82,19 @@ GUARDS: dict[str, tuple[str, str]] = {
     "gen_summary_has_format":       ("SHAPE", ""),
     "gen_summary_has_hash":         ("SHAPE", ""),
     "gen_major_matches_card":       ("SHAPE", ""),
+    # ⟳ T5 (2026-08-26): both reached the schema unclassified. `check (kind = 'summary' or X is null)`
+    # reads only the row being written, so a merely-SECOND caller inserting a well-formed row is
+    # untouched — SHAPE. Mutations 36 and 37 already covered them; only the decision was missing.
+    "gen_card_is_summary_only":     ("SHAPE", ""),
+    "gen_major_is_summary_only":    ("SHAPE", ""),
     # Auto-named inline CHECKs. Found by this ratchet on its first run — they had been
     # in the schema since round 4 and were never in anyone's mental inventory, which is
     # the exact failure mode it exists to remove.
     "video_artifacts_state_check":   ("SHAPE", ""),
     "video_generations_state_check": ("SHAPE", ""),
     # ── SEQUENCE: each must reconcile, and say how ──────────────────────────────
-    "video_artifacts_inflight_uq": (
-        "SEQUENCE",
-        "reserve_artifact_slot upserts on it and returns typed busy|exhausted|reserved"),
+    # ⛔ `video_artifacts_inflight_uq` STOOD HERE — the reservation protocol's slot lock, deleted by
+    # ADR-0007 along with reserve_artifact_slot. VERIFIED ABSENT from the schema before deletion.
     "video_artifacts_paid_uq": (
         "SEQUENCE",
         "record_artifact: on conflict do update (round 7 B1) - a restarted worker records in place"),
@@ -127,7 +131,18 @@ GUARDS: dict[str, tuple[str, str]] = {
     # ── foreign keys are structural, never mutated; named explicitly, not skipped ─
     "video_artifacts_workspace_id_video_id_fkey":                    ("SHAPE", ""),
     "video_artifacts_workspace_id_video_id_generation_id_kind_fkey": ("SHAPE", ""),
-    "video_artifacts_workspace_id_video_id_source_generation_id_fkey": ("SHAPE", ""),
+    # ⛔ `…_source_generation_id_fkey` STOOD HERE. T3 moved provenance onto `video_artifact_sources`,
+    # so `source_generation_id` no longer exists ON `video_artifacts` — it lives on the join table
+    # (04_artifacts.sql:230), whose own FK is classified below. VERIFIED before deletion: the column
+    # survives, the FK on THIS table does not, and the name is what went stale.
+    # ⟳ T5: a UNIQUE constraint that is a SUPERSET OF THE PRIMARY KEY, and therefore SHAPE.
+    # `artifact_id` is `gen_random_uuid()` and is itself the PK (04_artifacts.sql:90-91); this states
+    # the wider tuple only so `video_artifact_sources` can reference it (the schema says so at :99).
+    # It cannot reject a merely-SECOND caller that the PK would admit, because a second caller draws
+    # a different uuid — so the SEQUENCE question has no reachable case, rather than a reconciler.
+    "video_artifacts_identity_uq": (
+        "SHAPE",
+        "superset of the PK on a gen_random_uuid() surrogate; exists as an FK target, not a lock"),
     "video_generations_workspace_id_video_id_fkey":                  ("SHAPE", ""),
     "workspace_videos_workspace_id_fkey":                            ("SHAPE", ""),
     "videos_workspace_video_fk":                                     ("SHAPE", ""),

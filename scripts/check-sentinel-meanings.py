@@ -9,6 +9,17 @@ independent facts:
   * `workspace_videos.corrections_hash` nullable = "no corrections" OR "nobody
     ever computed this" — round 6 B4, measured on the money path: 2903 rows read
     as "uncorrected" by the top ranking rung.
+    ⚠ HISTORICAL, AND THAT IS THE POINT: the column still exists but is now
+    `text NOT NULL default no_corrections_hash()` (03_generations.sql:61). The
+    fix for a two-meaning sentinel was to REMOVE THE NULL, giving "no
+    corrections" a value of its own. So this is what a closed instance looks
+    like, not an open one — do not go looking for a null here.
+    ⟳ T5 (2026-08-26): the plan said to replace this example because "that
+    column no longer exists". Measured: it does. It stopped being NULLABLE,
+    which is a different fact and a better lesson than its absence would be.
+  * a LIVE one, so the rule is not taught only from history:
+    `video_generations.card is null` = "this generation has produced no card
+    yet" and nothing else. One fact, one null — which is the whole bar.
   * `video_artifacts.generation_id is null` = "this is free" AND "this address
     may be overwritten" — one is a MONEY property, the other an ADDRESSING
     property, and the conflation produced five findings across rounds 8-12.
@@ -53,16 +64,19 @@ MEANINGS: dict[tuple[str, str], str] = {
     # ── video_artifacts ─────────────────────────────────────────────────────────
     ("video_artifacts", "generation_id"):
         "this artifact is free and its address may be overwritten",   # ⚠ justified in CONJUNCTION_OK
-    ("video_artifacts", "source_generation_id"):
-        "this artifact was not derived from another generation",
     ("video_artifacts", "start_sec"):        "this artifact does not describe a time span",
     ("video_artifacts", "end_sec"):          "this artifact does not describe a time span",
     ("video_artifacts", "detached_at"):      "this artifact is not detached",
-    ("video_artifacts", "lease_expires_at"): "this artifact is not in flight",
-    ("video_artifacts", "lease_token"):      "this artifact is not in flight",
-    ("video_artifacts", "reserved_at"):      "this artifact is not in flight",
+    # ⛔ FOUR ENTRIES STOOD HERE UNTIL T5 (2026-08-26), all reporting STALE:
+    #   lease_expires_at / lease_token / reserved_at — the RESERVATION protocol ADR-0007 deleted.
+    #   source_generation_id — T3 moved provenance onto `video_artifact_sources`, where the column
+    #     is `text NOT NULL` (04_artifacts.sql:230). A NOT NULL column carries no sentinel, so it
+    #     does not reappear here under the new table; the fact moved out of this ratchet's subject.
+    # ⚠ Each was VERIFIED against the schema before deletion, not deleted on the ratchet's say-so —
+    #   a STALE verdict is a claim about a file, and this ratchet is one of the two whose inventories
+    #   went eight days out of date without anyone noticing.
     # ── video_generations ───────────────────────────────────────────────────────
-    ("video_generations", "reserved_by"):    "no reservation is outstanding for this generation",
+    # ⛔ `reserved_by` STOOD HERE — the same deleted reservation protocol.
     ("video_generations", "card"):           "this generation has produced no card yet",
     ("video_generations", "md_hash"):        "this generation has produced no body yet",
     ("video_generations", "doc_version_major"): "this generation has produced no body yet",

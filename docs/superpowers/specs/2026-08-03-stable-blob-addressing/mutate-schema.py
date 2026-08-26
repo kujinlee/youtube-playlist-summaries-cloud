@@ -127,7 +127,13 @@ MUTATIONS = [
     # ⟳ T3 — `art_summary_has_no_source` IS A CONSTRAINT TRIGGER NOW, and it had never been mutated as
     # a CHECK either: the old entry list has no line for it. Neutralised rather than deleted, so the
     # trigger still exists and only its verdict changes.
-    ("art_summary_has_no_source neutralised (a summary may record a source again)",
+    # ⟳ T5 (2026-08-26): the label named a CHECK constraint that no longer exists. The mutation is
+    # alive — T3 moved the rule from `art_summary_has_no_source` into the provenance enforcer's
+    # `if v_kind = 'summary'` branch, which is what find/replace still targets. Only the NAME rotted,
+    # and a label naming a deleted object is the same "true when written" defect this branch spent
+    # two rounds on. Renamed to the mechanism that actually enforces it.
+    ("the T3 provenance enforcer's summary branch neutralised "
+     "(a summary may record a source again; was art_summary_has_no_source)",
      "  if v_kind = 'summary' then",
      "  if false then",
      "a SUMMARY artifact recording a source", ART),
@@ -358,7 +364,14 @@ MUTATIONS = [
     # `returning artifact_id into v_art` rather than dropping to a bare `;`: without it the mutated
     # function does not compile and the harness reports INVALID, which this project has measured reads
     # as *untested* rather than as *a broken edit*.
-    ("the paid append made blind (round 7 B1 — a retry collides with its own row)",
+    # ⟳ T5 (2026-08-26): the label did not name `video_artifacts_paid_uq`, and
+    # check-guard-coverage.py reads LABELS ONLY — deliberately, since a mutation's find/replace
+    # strings are SQL full of guard names. So this mutation existed, exercised the guard, and was
+    # reported UNMUTATED. The guard name appeared only in field 4, which is the assertion substring,
+    # not a structured field — reading it would be the free-text coverage the ratchet moved away
+    # from. Naming the guard in the label is what mutation 51 already does.
+    ("video_artifacts_paid_uq: the paid append made blind "
+     "(round 7 B1 — a retry collides with its own row)",
      """  on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
   do update set
        state                = 'recorded',
