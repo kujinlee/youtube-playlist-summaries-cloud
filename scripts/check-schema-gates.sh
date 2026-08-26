@@ -127,7 +127,7 @@ run "11/13 anon exposure + M4 relations are session-role read-only (RULE 3)" \
 #
 # ⚠ It writes to the LOCAL cluster. Two of these running at once corrupt each other — see the
 # harness header. Do not run this suite concurrently with a reviewer.
-run "12/13 the live gate is LOAD-BEARING (mutate-live-schema-check.sh, 27 mutations)" \
+run "12/13 the live gate is LOAD-BEARING (mutate-live-schema-check.sh, 29 mutations)" \
     ./scripts/mutate-live-schema-check.sh
 
 # ⭐⭐ 13. THE REASONS THEMSELVES ARE EXECUTED, not re-read — added 2026-08-26.

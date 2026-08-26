@@ -133,7 +133,7 @@ copy that drifts.
 | `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
 | `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt whenever one of its FIVE sources changes — it is derived, so it is never edited by hand (`/goals`; ADR-0010) |
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
-| `scripts/check-schema-gates.sh` | **one command for all six schema gates** — run this, not the pieces |
+| `scripts/check-schema-gates.sh` | **one command for all THIRTEEN schema gates** — run this, not the pieces |
 | `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated |
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |

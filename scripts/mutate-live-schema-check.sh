@@ -97,6 +97,20 @@ anon_ran() {
 anon_gate()    { local o; o=$(anon_ran "$1") || return 1; case "$o" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
 anon_control() { local o; o=$(anon_ran "$1") || return 1; case "$o" in *"$2"*) return 1 ;; *) return 0 ;; esac; }
 
+# ── the PREMISE half of gate 13 (mutations 28, 29) ──────────────────────────────────────────────
+# Same three-way discipline as anon_ran, for the same measured reason: exit 2 is CANNOT RUN and must
+# never be read as either verdict. `premise_gate` passes when the premises go RED (the drift was
+# caught); `premise_control` passes when they all hold on an unmutated template. A gate with no
+# control can be earned by a database that was already broken — r8 B1, measured.
+premise_rc() {
+  local o rc
+  o=$(python3 ./scripts/verify-exclusion-reasons.py --premises-only --database "$1" 2>&1); rc=$?
+  case "$rc:$o" in 2:*|*"CANNOT RUN"*) echo "$o" | head -2 >&2; return 2 ;; esac
+  return "$rc"
+}
+premise_gate()    { premise_rc "$1"; [ "$?" -eq 1 ]; }
+premise_control() { premise_rc "$1"; [ "$?" -eq 0 ]; }
+
 cleanup() {
   for d in $(adm -c "select datname from pg_database where datname like '${PREFIX}%';" 2>/dev/null); do
     adm -c "drop database if exists $d (force);" >/dev/null 2>&1
@@ -671,6 +685,55 @@ SQL
   else
     anon_gate "${PREFIX}_oor" "M4 OUT OF REACH" && r=pass || r=fail
     report "SELECT on the out-of-reach view -> RULE 3 names M4 OUT OF REACH" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 28 ⭐⭐⭐⭐ a DOMAIN type — the manifest never enumerates it ═══"
+# CATALOG_SQL's type arm is `where n.nspname='public' and t.typtype='e'`. A DOMAIN is not an enum, so
+# it is not digested WRONGLY — it is ABSENT, and present mode (MANIFEST ⊆ live) cannot see an object
+# it never enumerated. A domain's CHECK decides whether a write is admitted, so this is a guard the
+# gate is structurally blind to.
+# The exclusion reason for rule 10 covers this by asserting "M4 creates exactly one type, an enum".
+# That is a PREMISE ABOUT THIS SCHEMA, true when written and re-read by nothing until 2026-08-26.
+# ⭐ BOTH HALVES ARE ASSERTED. One would not distinguish "coverage moved" from "coverage deleted".
+if fresh "${PREFIX}_dom"; then
+  before_t=$(db "${PREFIX}_dom" -c "select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typtype='d';" | tr -d '[:space:]')
+  db "${PREFIX}_dom" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create domain public.m4_mut_positive as integer check (value > 0);
+SQL
+  after_t=$(db "${PREFIX}_dom" -c "select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typtype='d';" | tr -d '[:space:]')
+  echo "     domain types in public: ${before_t:-<empty>} -> ${after_t:-<empty>}"
+  if [ -z "$before_t" ] || [ "$before_t" = "$after_t" ]; then
+    echo "  ✗ THE DOMAIN DID NOT LAND — treat mutation 28 as NOT RUN"; fail=1
+  else
+    premise_control "$TPL" && r=pass || r=fail
+    report "CONTROL: an unmutated M4 template satisfies every premise" pass "$r"
+    gate "${PREFIX}_dom" --expect-present && r=pass || r=fail
+    report "a DOMAIN type -> the DIGEST is blind and still PASSES" pass "$r"
+    premise_gate "${PREFIX}_dom" && r=pass || r=fail
+    report "a DOMAIN type -> the rule-10 PREMISE breaks and gate 13 FAILS" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 29 ⭐⭐⭐ a PARTITIONED table — relkind 'p' is never selected ═══"
+# Same shape one catalog over: CATALOG_SQL's table arm is `c.relkind='r'`, so relkind 'p' is absent
+# from the manifest entirely. Rule 8's written reason claims these columns are WHERE-clause filters —
+# TRUE of attisdropped and tgisinternal, and FALSE of `relpartbound`, which appears NOWHERE in
+# CATALOG_SQL. Its real reason is the premise that M4 has no partitions.
+if fresh "${PREFIX}_part"; then
+  before_pt=$(db "${PREFIX}_part" -c "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and (c.relkind='p' or c.relispartition);" | tr -d '[:space:]')
+  db "${PREFIX}_part" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create table public.m4_mut_part (id int, k text) partition by range (id);
+SQL
+  after_pt=$(db "${PREFIX}_part" -c "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and (c.relkind='p' or c.relispartition);" | tr -d '[:space:]')
+  echo "     partitioned tables/partitions in public: ${before_pt:-<empty>} -> ${after_pt:-<empty>}"
+  if [ -z "$before_pt" ] || [ "$before_pt" = "$after_pt" ]; then
+    echo "  ✗ THE PARTITIONED TABLE DID NOT LAND — treat mutation 29 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_part" --expect-present && r=pass || r=fail
+    report "a PARTITIONED table -> the DIGEST is blind and still PASSES" pass "$r"
+    premise_gate "${PREFIX}_part" && r=pass || r=fail
+    report "a PARTITIONED table -> the rule-8 PREMISE breaks and gate 13 FAILS" pass "$r"
   fi
 fi
 
