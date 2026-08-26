@@ -40,6 +40,13 @@ adm()  { docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq -v ON_ERR
 db()   { local d="$1"; shift; docker exec -i "$CONTAINER" psql -U postgres -d "$d" -tAq "$@"; }
 gate() { python3 ./scripts/check-live-schema.py --database "$1" "$2" >/dev/null 2>&1; }
 
+# ⭐ FORK (a) STEP 3 — THE SECOND GATE. Session-role access to M4's relations left the digest and
+# moved to `check-anon-exposure.py` RULE 3. Every mutation that used to be caught by `gate` and is
+# now caught by `anon_gate` asserts BOTH halves: that the digest passes AND that the new home fails.
+# One assertion would not distinguish "coverage moved" from "coverage was deleted", and deleting it
+# is exactly what a careless reading of "remove privileges from the digest" produces.
+anon_gate() { python3 ./scripts/check-anon-exposure.py --local --database "$1" >/dev/null 2>&1; }
+
 cleanup() {
   for d in $(adm -c "select datname from pg_database where datname like '${PREFIX}%';" 2>/dev/null); do
     adm -c "drop database if exists $d (force);" >/dev/null 2>&1
@@ -221,12 +228,17 @@ SQL
 fi
 
 echo "═══ mutation 10 ⭐⭐ r5 B2: GRANTS — the table opens up to anon, definitions untouched ═══"
+# ⟳ MOVED HOME 2026-08-26 (fork (a) step 3). This was a `gate` case for two rounds. The digest no
+# longer carries session-role access, so the CORRECT verdict from check-live-schema is now PASS —
+# and the whole question is whether anything else says no. Both halves are asserted.
 if fresh "${PREFIX}_acl"; then
   db "${PREFIX}_acl" >/dev/null 2>&1 <<'SQL'
 grant insert, update, delete on video_artifacts to anon;
 SQL
   gate "${PREFIX}_acl" --expect-present && r=pass || r=fail
-  report "insert/update/delete granted to anon -> --expect-present FAILS" fail "$r"
+  report "insert/update/delete to anon -> the DIGEST no longer claims to see it" pass "$r"
+  anon_gate "${PREFIX}_acl" && r=pass || r=fail
+  report "insert/update/delete to anon -> anon-exposure RULE 3 FAILS" fail "$r"
 fi
 
 echo "═══ mutation 11 ⭐ r5 B2: a policy recreated AS RESTRICTIVE — same cmd, roles and qual ═══"
@@ -367,8 +379,39 @@ SQL
   if [ "$before_c" = "$after_c" ]; then
     echo "  ✗ THE MUTATION DID NOT CHANGE ANYTHING — treat mutation 17 as NOT RUN"; fail=1
   else
+    # ⟳ MOVED HOME 2026-08-26 with mutation 10. RULE 3 reads has_any_column_privilege for exactly
+    # this: the grant moves no table ACL, so a check that only asked has_table_privilege would be
+    # green here — which is how r6 B2 survived a 16/16 report.
     gate "${PREFIX}_colacl" --expect-present && r=pass || r=fail
-    report "column-level insert granted to anon -> --expect-present FAILS" fail "$r"
+    report "column-level insert to anon -> the DIGEST no longer claims to see it" pass "$r"
+    anon_gate "${PREFIX}_colacl" && r=pass || r=fail
+    report "column-level insert to anon -> anon-exposure RULE 3 FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 22 ⭐⭐⭐ r7 M4 (codex): TRUNCATE — the verb NO gate could see until today ═══"
+# THE FINDING THIS STEP CLOSES. `grant truncate on video_artifacts to anon` passed BOTH gates: the
+# digest's REL_PRIVS listed only SELECT/INSERT/UPDATE/DELETE, and this script's money-table rule
+# covers five tables, none of them M4's. TRUNCATE fires neither RLS nor row triggers, so it walks
+# past every append-only guard in the schema — and `video_artifacts` is the PAID manifest.
+#
+# ⚠ Note the fix shape: TRUNCATE was NOT added to the digest as a fifth privilege. That is the whole
+# argument of fork (a) — a fifth redefinition of the fingerprint is what the previous four rounds
+# each did, and each was correct and insufficient.
+if fresh "${PREFIX}_trunc"; then
+  before_t=$(db "${PREFIX}_trunc" -c "select has_table_privilege('anon','video_artifacts','TRUNCATE')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_trunc" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+grant truncate on video_artifacts to anon;
+SQL
+  after_t=$(db "${PREFIX}_trunc" -c "select has_table_privilege('anon','video_artifacts','TRUNCATE')::text;" | tr -d '[:space:]')
+  echo "     anon TRUNCATE on video_artifacts: ${before_t:-<empty>} -> ${after_t:-<empty>}"
+  if [ -z "$before_t" ] || [ -z "$after_t" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — treat mutation 22 as NOT RUN"; fail=1
+  elif [ "$before_t" = "$after_t" ]; then
+    echo "  ✗ THE GRANT DID NOT LAND — treat mutation 22 as NOT RUN"; fail=1
+  else
+    anon_gate "${PREFIX}_trunc" && r=pass || r=fail
+    report "TRUNCATE granted to anon -> anon-exposure RULE 3 FAILS" fail "$r"
   fi
 fi
 

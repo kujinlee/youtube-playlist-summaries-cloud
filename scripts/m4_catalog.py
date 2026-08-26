@@ -154,10 +154,40 @@ ENFORCEMENT_COLUMNS = (
 # control would reintroduce this whole finding for twelve functions.
 PRIVILEGE_NOTE = "effective access for the principals the spec revokes from and grants to"
 
-# The principals whose access M4's own `grant`/`revoke` statements control.
-REL_GRANTEES = ("public", "anon", "authenticated", "service_role")
+# ⭐⭐ FORK (a), STEP 3 — THE SESSION ROLES LEFT THE DIGEST (2026-08-26, user decision 2026-08-25).
+#
+# Everything above this line is the record of a fingerprint being redefined four times, each
+# redefinition correct and insufficient. Phase 6 #2 named why: a fingerprint has to ENUMERATE what is
+# worth comparing AND be comparable across environments, and privileges fail the second test by
+# construction — production carries `alter default privileges` and a `claude_ro` grantee no developer
+# machine has. Every privilege repair in rounds 5-7 was a repair to that second property.
+#
+# So `public`, `anon` and `authenticated` RELATION access is no longer digested. It moved to
+# `check-anon-exposure.py` RULE 3, which is environment-AWARE by design — it names its subject before
+# its verdict and defaults to production, the environment that is actually exposed.
+#
+# WHAT MOVED, AND WHAT NOW CATCHES IT (each row is a mutation in the harness):
+#     grant insert/update/delete on video_artifacts to anon   -> anon-exposure RULE 3   (mutation 10)
+#     grant insert (blob_key) on video_artifacts to anon      -> anon-exposure RULE 3   (mutation 17)
+#     grant truncate on video_artifacts to anon               -> anon-exposure RULE 3   (mutation 22)
+# That third row was caught by NEITHER gate before today — r7 M4 (codex), and the direct reason
+# TRUNCATE is now in the moved set rather than added as a fifth REL_PRIVS entry.
+#
+# ⚠ `service_role` STAYS, and this is a staging decision with a date on it. Its effective access is
+# environment-invariant (mutation 19 proves it against a production-shaped database), so it is not
+# what fork (a) is trying to remove. It leaves in STEP 5, when the assertion suite gains a CAPABILITY
+# assertion — "service_role can actually call record_artifact and the row lands" — which is strictly
+# stronger than digesting the grant, because r7 B1 measured a grant that is present and unusable.
+# Until that assertion exists, deleting this would open a real window.
+REL_GRANTEES = ("service_role",)
+SESSION_GRANTEES = ("public", "anon", "authenticated")   # ⛔ NOT digested — anon-exposure RULE 3
 FN_GRANTEES = ("public", "anon", "authenticated")
 REL_PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE")
+
+# The one relation the spec puts entirely out of reach of the session roles; everything else in the
+# manifest is SELECT-only for them. Declared here because it is the exception, and an exception that
+# is not written down is indistinguishable from an oversight.
+M4_NO_SESSION_ACCESS = ("video_generations_collectable",)
 
 # ⚠ NO BACKTICKS ANYWHERE IN THIS STRING. psql performs shell command substitution on backquotes
 # inside meta-command arguments, exactly as bash does (measured 2026-08-25).
@@ -199,6 +229,11 @@ def _rel_priv(rel: str) -> str:
     deployed database (r6 B1). `has_any_column_privilege` is what makes a COLUMN-level grant
     visible: `grant insert (blob_key) on video_artifacts to anon` moved no ACL the old query read,
     so the 161-object digest was byte-identical while anon gained INSERT (r6 B2, measured).
+
+    ⟳ FORK (a) STEP 3: `REL_GRANTEES` is now `service_role` alone. The session roles this docstring's
+    examples name are checked by `check-anon-exposure.py` RULE 3 instead — the examples are kept
+    because they are the measurements that justify the column-level term, which service_role still
+    needs. See the SESSION_GRANTEES note above for what moved and what catches it now.
     """
     parts = []
     for g in REL_GRANTEES:

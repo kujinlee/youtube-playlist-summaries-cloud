@@ -1,7 +1,7 @@
 # M4 LIVE MANIFEST — every object migration 0027 creates, DERIVED BY EXECUTION.
 #
 # objects: 161
-# sha256: e62e314b18e3d78144b610726aa4dd55a037bf83750ac1f6d60567cb701676e1
+# sha256: 31cc5c4ca61334df1fd6299c0a1c57e527a5d5c189ef0c4dddca419b671054b9
 #
 # ⛔ DO NOT HAND-EDIT. Regenerate:  python3 scripts/gen-m4-manifest.py
 #    Verify it is current:          python3 scripts/gen-m4-manifest.py --check
@@ -153,11 +153,11 @@ pol:video_artifacts.video_artifacts_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:video_generations.video_generations_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:workspace_videos.workspace_videos_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:workspaces.workspaces_owner_read@5f0f90ce58ec70c4abe4ebd56b4e0ff1
-table:video_artifact_sources@637851a773ffffa274d594e1e5dfda85
-table:video_artifacts@637851a773ffffa274d594e1e5dfda85
-table:video_generations@637851a773ffffa274d594e1e5dfda85
-table:workspace_videos@637851a773ffffa274d594e1e5dfda85
-table:workspaces@637851a773ffffa274d594e1e5dfda85
+table:video_artifact_sources@bfbb943f5421cd436858870c7a96c7db
+table:video_artifacts@bfbb943f5421cd436858870c7a96c7db
+table:video_generations@bfbb943f5421cd436858870c7a96c7db
+table:workspace_videos@bfbb943f5421cd436858870c7a96c7db
+table:workspaces@bfbb943f5421cd436858870c7a96c7db
 trg:jobs.jobs_resolve_workspace_ins_trg@538d94d359f1ebff80ac0af5f234baa7
 trg:jobs.jobs_resolve_workspace_upd_trg@93b9c8373cdd0ac825dc1c145e8ced88
 trg:playlists.playlists_resolve_workspace_ins_trg@8b42a6065abcc80b3ddf108e8b278bdf
@@ -173,6 +173,6 @@ trg:video_generations.video_generations_freeze_trg@63269985f73a3975e39b63de3ab52
 trg:videos.videos_resolve_workspace_ins_trg@7ef2168e6ce8ad47c57c7b46eec30e7c
 trg:videos.videos_resolve_workspace_upd_trg@65ae5fc7c22fdd190aab1c682fcc2b6b
 type:artifact_kind@96f01a3af13e3bc24e8e15cd7c6c1d65
-view:video_artifacts_current@b389e74d9e2f16a56ad07d6e3e6dab44
-view:video_generations_collectable@4866137e0e310e8ea521d4062bef9a4e
-view:video_summary_current@15db785691a055f620e5fb2ef6ac6616
+view:video_artifacts_current@17c0b63b68b2e0dd0c5f00322b3b9179
+view:video_generations_collectable@ba4e9a0385e21a5512e4c415500826c6
+view:video_summary_current@773676000bc1814f10908fa284b908d3
