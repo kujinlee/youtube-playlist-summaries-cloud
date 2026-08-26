@@ -148,6 +148,22 @@ GRANT_SELECT = re.compile(
     r"^\s*grant\s+select\s+on\s+(.*?)\s+to\s+([^;]*);", re.IGNORECASE | re.MULTILINE | re.DOTALL)
 
 
+def _norm_ident(raw: str) -> str:
+    """A bare, unquoted relation name from a grant's target list. PURE.
+
+    ⟳ r9 M1 (codex): the parse used to keep the token verbatim, so the perfectly ordinary spelling
+    `grant select on public.video_artifacts to authenticated, anon;` derived `public.video_artifacts`
+    — which matches no manifest name, so an ordinary READABLE relation would derive as OUT OF REACH
+    and the cross-check would refuse to run. The shipped spec uses bare names, so nothing was firing;
+    a parser that is correct only for the spelling in front of it is a tripwire, not a derivation.
+    """
+    name = raw.strip().split()[-1] if raw.strip() else ""
+    name = name.strip().rstrip(";")
+    if "." in name:                      # schema-qualified: public.video_artifacts -> video_artifacts
+        name = name.rsplit(".", 1)[-1]
+    return name.strip('"')               # quoted identifier: "video_artifacts" -> video_artifacts
+
+
 def session_readable(spec_text: str) -> set[str]:
     """Relations the spec grants SELECT on to a SESSION role. PURE — parses text, touches nothing.
 
@@ -160,7 +176,7 @@ def session_readable(spec_text: str) -> set[str]:
         if not (who & {"anon", "authenticated"}):
             continue                      # e.g. `grant select on … to service_role` — not a session read
         for r in rels.split(","):
-            name = r.strip().split()[-1] if r.strip() else ""
+            name = _norm_ident(r)
             if name:
                 out.add(name)
     return out
@@ -804,6 +820,17 @@ def self_test() -> int:
               "video_generations_collectable"], SPEC) == ("video_generations_collectable",))
     case("derive: a service_role-only grant does NOT count as a session read",
          "video_generations_collectable" not in session_readable(SPEC))
+    # ⟳ r9 M1 — ordinary SQL spellings the first parse could not read.
+    case("derive: a SCHEMA-QUALIFIED grant resolves to the bare manifest name",
+         session_readable("grant select on public.video_artifacts to anon;") == {"video_artifacts"})
+    case("derive: a QUOTED identifier resolves to the bare name",
+         session_readable('grant select on "video_artifacts" to anon;') == {"video_artifacts"})
+    case("derive: schema-qualified + quoted together",
+         session_readable('grant select on public."video_artifacts" to authenticated;')
+         == {"video_artifacts"})
+    case("derive: a schema-qualified readable relation is NOT out-of-reach",
+         derive_no_session_access(
+             ["video_artifacts"], "grant select on public.video_artifacts to anon;") == ())
     case("derive: a multi-relation grant line covers every relation on it",
          {"video_summary_current", "video_artifacts_current"} <= session_readable(SPEC))
     case("derive: the SHIPPED spec reproduces the declared out-of-reach set",

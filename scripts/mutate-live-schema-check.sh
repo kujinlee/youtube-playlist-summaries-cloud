@@ -450,8 +450,15 @@ SQL
   elif [ "$before_t" = "$after_t" ]; then
     echo "  ✗ THE GRANT DID NOT LAND — treat mutation 22 as NOT RUN"; fail=1
   else
-    anon_gate "${PREFIX}_trunc" "TRUNCATE" && r=pass || r=fail
-    report "TRUNCATE granted to anon -> RULE 3 names TRUNCATE on an M4 relation" pass "$r"
+    # ⟳ r9 H1 (codex): the token used to be the bare word `TRUNCATE`, which ALSO appears in RULE 2's
+    # own message — "LOWER THE BASELINE 0 money tables are TRUNCATE-able" — and that message is
+    # present on the unmutated template. So the tick could be earned while RULE 3 said nothing about
+    # any M4 relation. This is the SAME defect the anon_gate repair was written to fix, surviving in
+    # one of the four call sites: a token is only a discriminator if the control cannot contain it.
+    anon_control "$TPL" "holds TRUNCATE on" && r=pass || r=fail
+    report "CONTROL: an unmutated M4 reports no TRUNCATE on any M4 relation" pass "$r"
+    anon_gate "${PREFIX}_trunc" "holds TRUNCATE on \`video_artifacts\`" && r=pass || r=fail
+    report "TRUNCATE granted to anon -> RULE 3 names TRUNCATE on video_artifacts" pass "$r"
   fi
 fi
 
