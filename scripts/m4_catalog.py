@@ -4,10 +4,10 @@ Both `gen-m4-manifest.py` (which derives the manifest by EXECUTION) and `check-l
 (which compares a live database to it) import this. A second copy of the catalog query would be a
 second definition of the thing they are supposed to agree about.
 
-An object is one string, `kind:name@digest`, so set algebra is the whole comparison:
+An object is one string, `kind:name@digest`. The comparison is set algebra:
 
-    present : MANIFEST ⊆ live
-    absent  : MANIFEST ∩ live = ∅
+    present : MANIFEST ⊆ live                     (matched by name@digest)
+    absent  : no live object shares a manifest NAME   (matched by name — see check-live-schema.py B1)
 
 ⛔ WHY THE DIGEST — r4 B1 (claude), coordinator-verified 2026-08-25
 --------------------------------------------------------------------
@@ -24,20 +24,53 @@ applied and then sabotaged three different ways, the gate printed
 *dropping* guards; `disable` leaves every name intact. When the only way you can express a defect is
 deletion, you are testing existence, not behaviour.
 
-r3 B2 was read as a COUNTING problem — 29 names of 161 — and fixed by widening the count. It was a
-PREDICATE problem: name-matching cannot see an inert rule. So each object now carries an `md5` of
-its **definition**, and the definition is what the comparison is over.
+⛔⛔ WHY THE DIGEST COVERS ENFORCEMENT STATE AND NOT ONLY DEFINITIONS — r5 B2 (codex + claude)
+-----------------------------------------------------------------------------------------------
+r4's fix moved the predicate from *"a name exists"* to *"its definition matches"*. Those are not the
+same as *"the rule is in force"*, and the gap is exactly one Postgres flag wide. MEASURED on a fully
+applied M4 database, EIGHT sabotages, every one **exit 0, "M4 is PRESENT as expected"**:
+
+    alter table … disable row level security         relrowsecurity      → policies inert, digest identical
+    alter table … no force row level security        relforcerowsecurity → owner bypasses every policy
+    alter function … security invoker                prosecdef           → guard runs as the caller
+    alter function … reset search_path               proconfig           → search-path hijack on a SECURITY DEFINER
+    alter function … volatile                        provolatile         → planner may re-evaluate
+    revoke select … ; grant insert to anon           relacl              → the table opens up
+    alter view … set (security_invoker = true)       reloptions          → the view stops filtering
+    policy recreated `as restrictive`                polpermissive       → AND/OR flips
+
+#1 is the one to read twice: disabling RLS does not touch a single policy row, and the policy rows
+were the entire policy input. **Byte-identical digest, five owner-scoping policies reported as
+verified, none of them enforcing.** That is `tgenabled='D'` one layer out — in the layer r4's own fix
+did not reach.
+
+So the rule for this query is now stated as a question, because a list of columns invites the same
+mistake a third time:
+
+  ⭐ **"What does this SELECT not select?"** Every catalog column that decides whether a rule
+     EXECUTES belongs in the digest. A column that merely describes the rule's text does not,
+     because `pg_get_*def` already carries it.
+
+`check-live-schema.py --self-test` asserts each column below still appears here, so deleting one is
+a red test rather than a silently narrower gate.
 
 WHAT EACH DIGEST COVERS
 -----------------------
-    trigger     pg_get_triggerdef + tgenabled   -> catches DISABLE and any redefinition
-    function    prosrc                          -> catches `create or replace` with a new body
-    constraint  pg_get_constraintdef            -> catches a predicate weakened to `check (true)`
-    view        pg_get_viewdef                  -> catches a rewritten ranking
-    index       indexdef                        -> catches a uniqueness or predicate change
-    policy      cmd + roles + qual + with_check -> catches a widened RLS rule
-    column      type + nullability + default    -> catches a dropped NOT NULL
-    table/type  existence / enum labels
+    table       RLS on/forced · ACL · persistence
+    view        pg_get_viewdef · reloptions (security_invoker, security_barrier) · ACL
+    column      exact type (format_type) · NOT NULL · default · identity · generated
+    trigger     pg_get_triggerdef + tgenabled   -> DISABLE, timing, level, WHEN, deferrability
+    function    prosrc · prosecdef · proconfig · provolatile · prokind · ACL
+    constraint  pg_get_constraintdef            -> renders NOT VALID and DEFERRABLE (verified r5)
+    index       pg_get_indexdef · indisvalid · indisready · indislive
+    policy      cmd · permissive · roles · using · with check
+    type        enum labels in order
+
+DELIBERATELY EXCLUDED, with the reason (an unexplained omission is how B2 happened):
+    owner (relowner/proowner)  legitimately differs between a container and a managed platform;
+                               `relacl`+`prosecdef` already cover what ownership can do here.
+    comments, statistics       cannot change whether a rule executes.
+    convalidated               `pg_get_constraintdef` renders `NOT VALID` (MEASURED r5).
 """
 from __future__ import annotations
 
@@ -47,19 +80,68 @@ import subprocess
 
 CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 
+# ⭐ EVERY ENFORCEMENT COLUMN, ASSERTED BY THE SELF-TEST TO STILL BE IN `CATALOG_SQL`.
+# r5 B2 was possible because nothing named the properties the digest was supposed to cover, so
+# "we added the digest" and "the digest covers enforcement" could both be believed at once.
+ENFORCEMENT_COLUMNS = (
+    "relrowsecurity", "relforcerowsecurity", "relacl", "relpersistence", "reloptions",
+    "prosecdef", "proconfig", "provolatile", "prokind", "proacl",
+    "polpermissive", "indisvalid", "indisready", "indislive",
+    "attnotnull", "attidentity", "attgenerated", "tgenabled",
+)
+
 # ⚠ NO BACKTICKS ANYWHERE IN THIS STRING. psql performs shell command substitution on backquotes
 # inside meta-command arguments, exactly as bash does (measured 2026-08-25).
-CATALOG_SQL = r"""
-select 'table:' || c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+#
+# ⛔ TWO SESSION SETTINGS, BOTH LOad-BEARING — do not "tidy" them away:
+#
+# 1. `set search_path = pg_catalog` — ⟳ r5 M2 (claude). `conrelid::regclass::text` and
+#    `format_type()` render RELATIVE TO THE SESSION'S search_path. MEASURED, same database, same
+#    query, two sessions: `con:public.video_artifacts.art_dig_has_span` vs
+#    `con:video_artifacts.art_dig_has_span` — all 38 constraints (24% of the manifest) change
+#    identity. The manifest is generated as the container's `postgres`; `--prod` connects as
+#    `claude_ro`, whose search_path is set by whoever created the role. In present mode that
+#    mismatch is loud; in absent mode it was silent. **An identity key must not depend on how you
+#    connected.** Schema names are therefore taken from the JOIN, never from a rendering.
+# 2. `set session characteristics as transaction read only` — ⟳ r5 M5 (claude) / r5 H (codex).
+#    "Read-only" used to be a LABEL derived from whether an env var was set. This is the mechanism:
+#    the session cannot write, whoever it turns out to be connected as.
+SESSION_SQL = """
+set session characteristics as transaction read only;
+set search_path = pg_catalog;
+"""
+
+CATALOG_SQL = SESSION_SQL + r"""
+select 'table:' || c.relname || '@' || md5(
+         c.relrowsecurity::text || c.relforcerowsecurity::text || c.relpersistence::text ||
+         coalesce((select string_agg(a::text, ',' order by a::text) from unnest(c.relacl) a), ''))
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind = 'r'
 union all
-select 'view:' || c.relname || '@' || md5(pg_get_viewdef(c.oid))
+select 'view:' || c.relname || '@' || md5(
+         pg_get_viewdef(c.oid) ||
+         coalesce((select string_agg(o, ',' order by o) from unnest(c.reloptions) o), '') ||
+         coalesce((select string_agg(a::text, ',' order by a::text) from unnest(c.relacl) a), ''))
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind in ('v', 'm')
 union all
-select 'col:' || table_name || '.' || column_name || '@' ||
-       md5(data_type || is_nullable || coalesce(column_default, ''))
-  from information_schema.columns where table_schema = 'public'
+-- ⟳ r5 M3 (claude): this read information_schema.columns, which by SQL-standard definition shows
+-- only columns the CURRENT USER holds a privilege on. MEASURED: 165 columns as `postgres`, 12 as a
+-- role with SELECT on one table. Columns are 43% of the manifest, and the failure was asymmetric in
+-- the dangerous direction — absent-mode over prod passed vacuously for every column claude_ro could
+-- not see. pg_attribute is not privilege-filtered. format_type also fixes r5 L3: information_schema
+-- reports every enum as `USER-DEFINED` and every array as `ARRAY`, carrying no length or precision,
+-- so re-typing a column to a DIFFERENT enum was invisible.
+select 'col:' || c.relname || '.' || a.attname || '@' || md5(
+         format_type(a.atttypid, a.atttypmod) || a.attnotnull::text ||
+         coalesce(pg_get_expr(d.adbin, d.adrelid), '') ||
+         a.attidentity::text || a.attgenerated::text)
+  from pg_attribute a
+  join pg_class c on c.oid = a.attrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+ where n.nspname = 'public' and a.attnum > 0 and not a.attisdropped
+   and c.relkind in ('r', 'v', 'm', 'p', 'f')
 union all
 -- tgenabled is the whole point: 'O' enabled, 'D' DISABLED. A disabled trigger keeps its name.
 select 'trg:' || c.relname || '.' || t.tgname || '@' ||
@@ -69,7 +151,9 @@ select 'trg:' || c.relname || '.' || t.tgname || '@' ||
  where not t.tgisinternal and n.nspname = 'public'
 union all
 select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' || '@' ||
-       md5(coalesce(p.prosrc, ''))
+       md5(coalesce(p.prosrc, '') || p.prosecdef::text || p.provolatile::text || p.prokind::text ||
+           coalesce(array_to_string(p.proconfig, ','), '') ||
+           coalesce((select string_agg(a::text, ',' order by a::text) from unnest(p.proacl) a), ''))
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
 union all
 select 'type:' || t.typname || '@' || md5(coalesce(
@@ -78,16 +162,35 @@ select 'type:' || t.typname || '@' || md5(coalesce(
   from pg_type t join pg_namespace n on n.oid = t.typnamespace
  where n.nspname = 'public' and t.typtype = 'e'
 union all
-select 'idx:' || indexname || '@' || md5(indexdef) from pg_indexes where schemaname = 'public'
+select 'idx:' || i.relname || '@' || md5(
+         pg_get_indexdef(i.oid) || x.indisvalid::text || x.indisready::text || x.indislive::text)
+  from pg_index x join pg_class i on i.oid = x.indexrelid
+  join pg_namespace n on n.oid = i.relnamespace where n.nspname = 'public'
 union all
-select 'pol:' || tablename || '.' || policyname || '@' ||
-       md5(cmd || coalesce(roles::text, '') || coalesce(qual, '') || coalesce(with_check, ''))
-  from pg_policies where schemaname = 'public'
+select 'pol:' || c.relname || '.' || pol.polname || '@' || md5(
+         pol.polcmd::text || pol.polpermissive::text ||
+         coalesce((select string_agg(r.rolname, ',' order by r.rolname)
+                     from pg_roles r where r.oid = any (pol.polroles)), 'public') ||
+         coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') ||
+         coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+  from pg_policy pol join pg_class c on c.oid = pol.polrelid
+  join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public'
 union all
-select 'con:' || conrelid::regclass::text || '.' || conname || '@' ||
-       md5(pg_get_constraintdef(c.oid))
-  from pg_constraint c join pg_namespace n on n.oid = c.connamespace where n.nspname = 'public'
+select 'con:' || rel.relname || '.' || con.conname || '@' || md5(pg_get_constraintdef(con.oid))
+  from pg_constraint con
+  join pg_class rel on rel.oid = con.conrelid
+  join pg_namespace n on n.oid = con.connamespace where n.nspname = 'public'
 order by 1;
+"""
+
+# ⟳ r5 M5 (claude) / r5 H (codex): the subject line said "PRODUCTION (read-only claude_ro)" purely
+# because an env var was set. MEASURED: pointed at a LOCAL scratch database as the `postgres` role,
+# the gate printed exactly that. Given that r4 B2 was the gate reading the laptop while claiming
+# production, a label that cannot be wrong in the safe direction is worth one extra round trip.
+IDENTITY_SQL = SESSION_SQL + """
+select current_user || '|' || current_database() || '|' ||
+       coalesce(host(inet_server_addr()), 'local-socket') || '|' ||
+       current_setting('transaction_read_only');
 """
 
 KIND_ORDER = ("table", "view", "col", "trg", "fn", "type", "idx", "pol", "con")
@@ -101,8 +204,11 @@ KIND_LABEL = {"table": ("table", "tables"), "view": ("view", "views"),
 def read_only_url() -> str | None:
     """The production READ-ONLY URL, from the environment or `.env.local`.
 
-    Same source `check-anon-exposure.py` uses. Read-only by construction: `claude_ro` holds no write
-    grant on any public table.
+    ⟳ r5 M4 (claude): this is now the ONE implementation. `check-anon-exposure.py` imports it rather
+    than carrying its own, which had drifted in three ways — it matched unstripped lines (so an
+    indented assignment was missed), stripped double quotes but not single, and returned `None`
+    where this returned `""`. Two readers of one config value that disagree about which values exist
+    is `check-vocabulary-collisions.py`'s own subject, one layer below where that script looks.
     """
     if os.environ.get("CLAUDE_RO_DATABASE_URL"):
         return os.environ["CLAUDE_RO_DATABASE_URL"]
@@ -111,9 +217,12 @@ def read_only_url() -> str | None:
     if os.path.exists(env):
         with open(env) as f:
             for line in f:
-                m = re.match(r"^CLAUDE_RO_DATABASE_URL=(.*)$", line.strip())
+                m = re.match(r"^\s*(?:export\s+)?CLAUDE_RO_DATABASE_URL=(.*)$", line.rstrip("\n"))
                 if m:
-                    return m.group(1).strip().strip('"').strip("'")
+                    v = m.group(1).strip()
+                    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                        v = v[1:-1]
+                    return v or None
     return None
 
 
@@ -128,27 +237,69 @@ def psql_cmd(database: str = "postgres", url: str | None = None,
 
     The remote form uses the container as a psql CLIENT against a remote URL: the same one mechanism
     `check-anon-exposure.py` already uses, deliberately not a second driver.
+
+    ⟳ r5 L1 (claude) / r5 H (codex) — THE URL NO LONGER APPEARS IN ARGV. It used to be passed as
+    `-e PGU=<url>`, and argv is world-readable: MEASURED, `ps` showed the full URL including the
+    password. `docker exec -e PGU` with NO `=value` takes the value from the calling process's
+    environment, so the secret travels through `psql_env()` instead and `ps` shows only the name.
     """
     if url:
-        return ["docker", "exec", "-i", "-e", f"PGU={url}", container,
+        return ["docker", "exec", "-i", "-e", "PGU", container,
                 "bash", "-c", 'psql "$PGU" -tAq -v ON_ERROR_STOP=1']
     return ["docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", database,
             "-tAq", "-v", "ON_ERROR_STOP=1"]
 
 
+def psql_env(url: str | None) -> dict[str, str] | None:
+    """The environment `psql_cmd`'s remote form expects, or None for the local form. PURE."""
+    if not url:
+        return None
+    return {**os.environ, "PGU": url}
+
+
+def _run(sql: str, database: str, url: str | None, container: str) -> str:
+    p = subprocess.run(psql_cmd(database, url, container), input=sql,
+                       capture_output=True, text=True, env=psql_env(url))
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.strip() or p.stdout.strip() or "psql failed with no message")
+    return p.stdout
+
+
 def read_catalog(database: str = "postgres", url: str | None = None,
                  container: str = CONTAINER) -> set[str]:
     """The live catalog as a set of `kind:name@digest`. Raises RuntimeError if unreachable."""
-    p = subprocess.run(psql_cmd(database, url, container),
-                       input=CATALOG_SQL, capture_output=True, text=True)
-    if p.returncode != 0:
-        raise RuntimeError(p.stderr.strip() or p.stdout.strip() or "psql failed with no message")
-    return {ln.strip() for ln in p.stdout.splitlines() if ln.strip()}
+    return {ln.strip() for ln in _run(CATALOG_SQL, database, url, container).splitlines()
+            if ln.strip()}
+
+
+def read_identity(database: str = "postgres", url: str | None = None,
+                  container: str = CONTAINER) -> str:
+    """WHO the connection actually is, MEASURED — `user@host/db, read_only=on`.
+
+    Printed in every verdict line so the subject can never be a claim. Raises RuntimeError.
+    """
+    line = _run(IDENTITY_SQL, database, url, container).strip().splitlines()
+    if not line:
+        raise RuntimeError("the identity query returned nothing")
+    user, db, host, ro = (line[0].split("|") + ["?", "?", "?", "?"])[:4]
+    return f"{user}@{host}/{db}, read_only={ro}"
 
 
 def name_of(obj: str) -> str:
-    """`kind:name@digest` -> `kind:name`. PURE. Used only for REPORTING, never for the verdict."""
+    """`kind:name@digest` -> `kind:name`. PURE."""
     return obj.split("@", 1)[0]
+
+
+def symbol_of(obj: str) -> str:
+    """The bare identity of an object, ignoring both its digest and its ARGUMENT LIST. PURE.
+
+    ⟳ r5 L2 (claude): `ADR0011_REMOVED` holds `fn:sync_corrections_to_workspace_video()` — the
+    zero-argument rendering. The same drift that makes a `drop function` signature a silent no-op
+    (r5 B1, MEASURED) also evades a name match: a survivor with one added parameter renders as
+    `fn:sync_corrections_to_workspace_video(uuid)` and is simply not in the set. A must-never-exist
+    check has to match the SYMBOL, not one spelling of it.
+    """
+    return name_of(obj).split("(", 1)[0]
 
 
 def by_kind(objects: set[str]) -> dict[str, list[str]]:

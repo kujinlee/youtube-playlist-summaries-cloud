@@ -54,7 +54,6 @@ Usage:
 """
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -234,17 +233,14 @@ def parse_rows(stdout: str) -> tuple[list[tuple[str, bool, str, str]], list[tupl
     return funcs, money
 
 
-def read_only_url() -> str | None:
-    if os.environ.get("CLAUDE_RO_DATABASE_URL"):
-        return os.environ["CLAUDE_RO_DATABASE_URL"]
-    env = ROOT / ".env.local"
-    if not env.exists():
-        return None
-    for line in env.read_text().split("\n"):
-        m = re.match(r"^CLAUDE_RO_DATABASE_URL=(.*)$", line)
-        if m:
-            return m.group(1).replace('"', "").strip() or None
-    return None
+# ⟳ r5 M4 (claude) — ONE READER OF THIS CONFIG VALUE, NOT TWO THAT DISAGREE.
+# `m4_catalog.py` grew a second `read_only_url` "using the same mechanism", and the copies had
+# drifted three ways: which lines match (stripped vs unstripped, so an indented assignment was
+# missed by one), which quotes are stripped (double-only vs both), and what an empty value returns
+# (`""` vs `None`). Two readers of one secret that disagree about which values EXIST is exactly the
+# shape `check-vocabulary-collisions.py` hunts, one layer below where that script looks.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from m4_catalog import psql_cmd, psql_env, read_only_url  # noqa: E402
 
 
 def fetch(local: bool) -> tuple[list[tuple[str, bool, str, str]], list[tuple[str, bool]], str]:
@@ -252,25 +248,22 @@ def fetch(local: bool) -> tuple[list[tuple[str, bool, str, str]], list[tuple[str
     'cannot run' is a FAILURE, never a pass, and an empty catalog would read as 'nothing exposed'."""
     tables = "ARRAY[" + ",".join(f"'{t}'" for t in MONEY_TABLES) + "]"
     sql = SQL % tables
+    url = None
     if local:
-        cmd = ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres",
-               "-tAq", "-v", "ON_ERROR_STOP=1"]
         subject = f"LOCAL container {CONTAINER}"
-        env = None
     else:
         url = read_only_url()
         if not url:
             print("CANNOT RUN — CLAUDE_RO_DATABASE_URL is not set (checked env and .env.local).")
             print("TREAT THIS AS NOT RUN. Use --local only if you mean the container.")
             sys.exit(2)
-        # Same one mechanism as --local (docker + psql), a different target. Deliberately not a
-        # second driver: the row asked not to grow a second harness.
-        cmd = ["docker", "exec", "-i", "-e", f"PGU={url}", CONTAINER,
-               "bash", "-c", 'psql "$PGU" -tAq -v ON_ERROR_STOP=1']
         subject = "PRODUCTION (read-only claude_ro)"
-        env = None
 
-    p = subprocess.run(cmd, input=sql, capture_output=True, text=True, env=env)
+    # Same one mechanism as --local (docker + psql), a different target. Deliberately not a second
+    # driver — and now literally the same function, see the note on read_only_url above. The URL
+    # travels in the ENVIRONMENT, not in argv: `ps` used to show the password (r5 L1, MEASURED).
+    cmd = psql_cmd("postgres", url=url, container=CONTAINER)
+    p = subprocess.run(cmd, input=sql, capture_output=True, text=True, env=psql_env(url))
     if p.returncode != 0:
         print(f"CANNOT RUN — could not read the catalog from {subject}. TREAT THIS AS NOT RUN.")
         print((p.stderr or p.stdout)[-1200:])
