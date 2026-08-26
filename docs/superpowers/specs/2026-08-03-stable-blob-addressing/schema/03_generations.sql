@@ -16,7 +16,7 @@ create function no_corrections_hash() returns text
   language sql immutable
   set search_path = public
   as $$ select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text $$;
-revoke all on function no_corrections_hash() from public, anon, authenticated;
+revoke all on function no_corrections_hash() from public, anon, authenticated, service_role;
 
 -- The canonicalization is `content-hash.ts`'s, reproduced in SQL: CRLF/CR -> LF, strip trailing
 -- newlines, NFC, exactly one trailing newline. VERIFIED byte-identical to the JS on four vectors
@@ -43,7 +43,7 @@ create function corrections_hash_of(p_corrections text) returns text
                      normalize(regexp_replace(regexp_replace(p_corrections, E'\r\n?', E'\n', 'g'),
                                               E'\n+$', ''), NFC) || E'\n', 'sha256'), 'hex')
          end $$;
-revoke all on function corrections_hash_of(text) from public, anon, authenticated;
+revoke all on function corrections_hash_of(text) from public, anon, authenticated, service_role;
 
 create table workspace_videos (
   workspace_id uuid not null references workspaces(id) on delete cascade,
@@ -148,7 +148,7 @@ begin
   on conflict (owner_id) do nothing;
   return new;
 end $$;
-revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;
 create trigger profiles_ensure_workspace_trg
   after insert on profiles
   for each row execute function ensure_workspace_for_profile();
@@ -187,7 +187,7 @@ begin
   end if;
   return new;
 end $$;
-revoke all on function resolve_workspace_from_playlist() from public, anon, authenticated;
+revoke all on function resolve_workspace_from_playlist() from public, anon, authenticated, service_role;
 
 -- BEFORE, not AFTER: it must set NEW.workspace_id before NOT NULL is checked, and create the parent
 -- before the FK is. Split INSERT/UPDATE for the same physical reason documented below — a WHEN clause
@@ -233,7 +233,7 @@ begin
    where workspace_id = new.workspace_id and video_id = new.video_id;
   return new;
 end $$;
-revoke all on function sync_corrections_to_workspace_video() from public, anon, authenticated;
+revoke all on function sync_corrections_to_workspace_video() from public, anon, authenticated, service_role;
 -- TWO triggers, not one with `when (tg_op = 'INSERT' or …)`. MEASURED: `column "tg_op" does not
 -- exist` — a WHEN clause may reference only OLD/NEW, and OLD does not exist for INSERT at all, so the
 -- combined form cannot be written. The UPDATE half keeps its guard so ordinary video writes (every
@@ -549,7 +549,7 @@ begin
   end if;
   return new;
 end $$;
-revoke all on function video_generations_freeze() from public, anon, authenticated;
+revoke all on function video_generations_freeze() from public, anon, authenticated, service_role;
 -- Fires AFTER forbid_collecting_current_trg (04): triggers run in name order, `f` < `v`, and both
 -- return NEW unchanged, so neither depends on the other's result.
 -- ⟳ ROUND 7 — `before INSERT or update`. The produced_at bound above is worthless on UPDATE alone:

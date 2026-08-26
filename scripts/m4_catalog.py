@@ -104,11 +104,11 @@ ENFORCEMENT_COLUMNS = (
     "indimmediate", "indisexclusion",
     "attnotnull", "attidentity", "attgenerated", "attstorage", "attcompression",
     "tgenabled",
-    # privileges are digested as EFFECTIVE ACCESS, never as ACL text — see PRIVILEGE_NOTE.
-    # `has_any_column_privilege` rides in the TABLE digest, which is what catches r6 B2's
-    # column-level `grant insert (blob_key) … to anon`. There is deliberately no PER-COLUMN
-    # privilege digest — see the `col:` branch for the measurement that ruled it out.
-    "has_table_privilege", "has_any_column_privilege", "has_function_privilege",
+    # ⛔ NO PRIVILEGE TERMS. `has_table_privilege` / `has_any_column_privilege` /
+    # `has_function_privilege` were here until step 5 and are deliberately gone — this tuple asserts
+    # what CATALOG_SQL still reads, so leaving them would fail the self-test, loudly, which is the
+    # behaviour we want from a list that no longer matches. See the REL_GRANTEES note for the
+    # three homes those facts moved to.
 )
 
 # ⛔⛔ WHY PRIVILEGES ARE DIGESTED AS EFFECTIVE ACCESS AND NOT AS `relacl`/`proacl`/`attacl` TEXT.
@@ -179,9 +179,32 @@ PRIVILEGE_NOTE = "effective access for the principals the spec revokes from and 
 # assertion — "service_role can actually call record_artifact and the row lands" — which is strictly
 # stronger than digesting the grant, because r7 B1 measured a grant that is present and unusable.
 # Until that assertion exists, deleting this would open a real window.
-REL_GRANTEES = ("service_role",)
+# ⭐⭐⭐ STEP 5 COMPLETED THE MOVE: THE DIGEST NOW CARRIES NO PRIVILEGES AT ALL.
+#
+# `service_role` was held back in step 3 with a date on it, because deleting it before something
+# stronger existed would have opened a real window. That something now exists, and it is stronger for
+# a reason worth stating plainly:
+#
+#     ⭐ A PRIVILEGE IS NOT A CAPABILITY. MEASURED 2026-08-26, one role, one row, two paths:
+#           record_artifact(...)              -> recorded
+#           insert into video_artifacts ...   -> ERROR: permission denied for function slot_kind
+#       `has_table_privilege('service_role','video_artifacts','INSERT')` is TRUE in both. The grant
+#       is present and unusable (r7 H2), so a digest of that grant would have certified a capability
+#       that does not exist — and no widening of a fingerprint can close that gap, because the gap is
+#       between "is granted" and "works".
+#
+# 05_assert.sql (search: SERVICE-ROLE CAPABILITY) asserts the capability instead, both directions,
+# and both halves are mutation-proven:
+#     revoke record_artifact EXECUTE from service_role  -> assertions exit 1, digest exit 0 (blind)
+#     grant slot_kind EXECUTE to service_role           -> assertions exit 1  (the direct door opens)
+#
+# WHERE EACH FACT LIVES NOW — three homes, none of them this file:
+#     session roles, M4 relations   check-anon-exposure.py RULE 3   gate 11/11, every run
+#     session roles, M4 functions   check-anon-exposure.py RULE 3   gate 11/11, every run
+#     service_role capability       05_assert.sql                  gate 8/11, M4_PHASE=post only
+REL_GRANTEES: tuple[str, ...] = ()
+FN_GRANTEES: tuple[str, ...] = ()
 SESSION_GRANTEES = ("public", "anon", "authenticated")   # ⛔ NOT digested — anon-exposure RULE 3
-FN_GRANTEES = ("public", "anon", "authenticated")
 REL_PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE")
 
 # The one relation the spec puts entirely out of reach of the session roles; everything else in the
@@ -235,6 +258,8 @@ def _rel_priv(rel: str) -> str:
     because they are the measurements that justify the column-level term, which service_role still
     needs. See the SESSION_GRANTEES note above for what moved and what catches it now.
     """
+    if not REL_GRANTEES:
+        return "''"          # ⟳ step 5: no privileges in the digest. A neutral term, not a syntax error.
     parts = []
     for g in REL_GRANTEES:
         tbl = " || ".join(f"has_table_privilege('{g}', {rel}, '{p}')::text" for p in REL_PRIVS)
@@ -252,6 +277,8 @@ def _fn_priv(fn: str) -> str:
     authenticated`. Digesting a grant the spec never claimed to control would reintroduce r6 B1 for
     twelve functions.
     """
+    if not FN_GRANTEES:
+        return "''"          # ⟳ step 5: see the note on REL_GRANTEES.
     parts = [f"'{g}=' || " + _guard(g, f"has_function_privilege('{g}', {fn}, 'EXECUTE')::text")
              for g in FN_GRANTEES]
     return "(" + " || ',' || ".join(parts) + ")"

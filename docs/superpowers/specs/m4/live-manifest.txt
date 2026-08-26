@@ -1,7 +1,7 @@
 # M4 LIVE MANIFEST — every object migration 0027 creates, DERIVED BY EXECUTION.
 #
 # objects: 161
-# sha256: 31cc5c4ca61334df1fd6299c0a1c57e527a5d5c189ef0c4dddca419b671054b9
+# sha256: dbb19478da50bd3f99b87020daa0def8ef41d0d0e46d87325381fe32cb84d623
 #
 # ⛔ DO NOT HAND-EDIT. Regenerate:  python3 scripts/gen-m4-manifest.py
 #    Verify it is current:          python3 scripts/gen-m4-manifest.py --check
@@ -123,19 +123,19 @@ con:workspaces.workspaces_id_owner_id_key@b482aed14d3e230244142abc600aa314
 con:workspaces.workspaces_owner_id_fkey@8e10d6bf2781702a2446e768aedc3c03
 con:workspaces.workspaces_owner_id_key@1a91c0b3a3df12a3b2863cfdb8b77e48
 con:workspaces.workspaces_pkey@4c6419b3704337bbfe50f018842a9ad3
-fn:art_summary_has_no_source()@adc22a4c518c5077c6af9b0b4b2a848c
-fn:corrections_hash_of(p_corrections text)@2f33209e6b9cf8112a3f50e59e764cdb
-fn:ensure_workspace_for_profile()@e959c46028500be5797b98fb6c104d34
-fn:forbid_collecting_current()@09a8f438f08a5e3995eeb15b7f48290a
-fn:no_corrections_hash()@1a3e30f04151c31c81c1fdb1044b99ec
-fn:record_artifact(p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind public.artifact_kind, p_blob_key text, p_source_generation_id text, p_start_sec integer, p_end_sec integer, p_md_hash text, p_card jsonb, p_doc_version_major integer, p_produced_at timestamp with time zone)@af18769628113f0377e12587943e3b10
-fn:resolve_workspace_from_playlist()@406882317018f4dbe659201d3df96124
-fn:slot_kind(p_slot text)@a332335622004a835e4d81bfc90e8e81
-fn:video_artifact_sources_append_only()@580f00b78725ffc118b11ca33e648f01
-fn:video_artifact_sources_insert_once()@597ca4713000bed5df925a3edb64ddb1
-fn:video_artifacts_append_only()@0662d16d6a6da010a028bcc49be3ce2b
-fn:video_artifacts_generation_complete()@86126015ed502a9d583bd47320c4d8cc
-fn:video_generations_freeze()@a9398e082fbbe4ff004b749dde8937b8
+fn:art_summary_has_no_source()@d7bf54160776808c3b2fa59b8043520f
+fn:corrections_hash_of(p_corrections text)@0726a106022e75405d80cd300073e16a
+fn:ensure_workspace_for_profile()@7ad93e476119d72aa61f4975364efcd4
+fn:forbid_collecting_current()@b762c8bc38bcade95770b58d6d7bf535
+fn:no_corrections_hash()@084a015d40156f3c9b4e9424f4be61c2
+fn:record_artifact(p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind public.artifact_kind, p_blob_key text, p_source_generation_id text, p_start_sec integer, p_end_sec integer, p_md_hash text, p_card jsonb, p_doc_version_major integer, p_produced_at timestamp with time zone)@c13e181a8a285e27461472620e8e7bdd
+fn:resolve_workspace_from_playlist()@df966c906d0141894e5da636ae32174d
+fn:slot_kind(p_slot text)@791ccad8405d9d9f109acaa77ef52249
+fn:video_artifact_sources_append_only()@f0fe2284d5d27bb578474de4fda7ea0d
+fn:video_artifact_sources_insert_once()@ace305d72275d97159c441f3017d8393
+fn:video_artifacts_append_only()@aea7f033e3601d5c4c70c12458c0eeef
+fn:video_artifacts_generation_complete()@354882a0f34f65f7884eb36e6c961e86
+fn:video_generations_freeze()@659d185e2c620f1fbba7e1c6e6223688
 idx:video_artifact_sources_gen_idx@ae6731c6de129ec57d945d5dc6116f16
 idx:video_artifact_sources_pkey@a4f4b9a0e98b90e34995af3fde49e600
 idx:video_artifacts_free_uq@9c27caa0409d50518001e868889cedc4
@@ -153,11 +153,11 @@ pol:video_artifacts.video_artifacts_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:video_generations.video_generations_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:workspace_videos.workspace_videos_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:workspaces.workspaces_owner_read@5f0f90ce58ec70c4abe4ebd56b4e0ff1
-table:video_artifact_sources@bfbb943f5421cd436858870c7a96c7db
-table:video_artifacts@bfbb943f5421cd436858870c7a96c7db
-table:video_generations@bfbb943f5421cd436858870c7a96c7db
-table:workspace_videos@bfbb943f5421cd436858870c7a96c7db
-table:workspaces@bfbb943f5421cd436858870c7a96c7db
+table:video_artifact_sources@b0f0fde07ca568b97fc61ac7fde14190
+table:video_artifacts@b0f0fde07ca568b97fc61ac7fde14190
+table:video_generations@b0f0fde07ca568b97fc61ac7fde14190
+table:workspace_videos@b0f0fde07ca568b97fc61ac7fde14190
+table:workspaces@b0f0fde07ca568b97fc61ac7fde14190
 trg:jobs.jobs_resolve_workspace_ins_trg@538d94d359f1ebff80ac0af5f234baa7
 trg:jobs.jobs_resolve_workspace_upd_trg@93b9c8373cdd0ac825dc1c145e8ced88
 trg:playlists.playlists_resolve_workspace_ins_trg@8b42a6065abcc80b3ddf108e8b278bdf
@@ -173,6 +173,6 @@ trg:video_generations.video_generations_freeze_trg@63269985f73a3975e39b63de3ab52
 trg:videos.videos_resolve_workspace_ins_trg@7ef2168e6ce8ad47c57c7b46eec30e7c
 trg:videos.videos_resolve_workspace_upd_trg@65ae5fc7c22fdd190aab1c682fcc2b6b
 type:artifact_kind@96f01a3af13e3bc24e8e15cd7c6c1d65
-view:video_artifacts_current@17c0b63b68b2e0dd0c5f00322b3b9179
-view:video_generations_collectable@ba4e9a0385e21a5512e4c415500826c6
-view:video_summary_current@773676000bc1814f10908fa284b908d3
+view:video_artifacts_current@11e6cd75be86a6ac57e0b47876e0c6f3
+view:video_generations_collectable@5d9ec247a59563f529e993ebc3381c49
+view:video_summary_current@b0c0e55a4ec3fa26c04b3bb2be5ce7ff

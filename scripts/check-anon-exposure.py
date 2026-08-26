@@ -124,6 +124,15 @@ COLUMN_LEVEL = ("INSERT", "UPDATE", "REFERENCES")
 MANIFEST = ROOT / "docs/superpowers/specs/m4/live-manifest.txt"
 
 
+def m4_functions(manifest_text: str) -> list[str]:
+    """Every function NAME in the M4 manifest. PURE. Derived, for the same reason as m4_relations."""
+    out = []
+    for line in manifest_text.splitlines():
+        if line.startswith("fn:"):
+            out.append(line[3:].split("(", 1)[0])
+    return sorted(set(out))
+
+
 def m4_relations(manifest_text: str) -> list[str]:
     """Every relation name in the M4 manifest. PURE.
 
@@ -261,6 +270,22 @@ def evaluate_m4(
     return problems
 
 
+def evaluate_m4_functions(m4fn: list[tuple[str, str, bool]]) -> list[str]:
+    """(function, role, anon-may-execute) -> problems. PURE. RULE 3, function half.
+
+    There is no allow-list here on purpose. The spec revokes EXECUTE on every M4 function from
+    public/anon/authenticated and grants it back to exactly one principal that is not a session role,
+    so the correct answer for every row is False and any True is a defect — not a judgement call.
+    """
+    return [
+        f"M4 FN EXECUTABLE   `{role}` may EXECUTE `{fn}()`. Every M4 function is revoked from every\n"
+        "                   session role by the spec; there is no allow-list for this and no case\n"
+        "                   where it is correct. On production the platform grants EXECUTE at CREATE\n"
+        "                   time, so this is the state the schema arrives in unless a revoke lands."
+        for fn, role, may in sorted(m4fn) if may
+    ]
+
+
 # ── the fetch ───────────────────────────────────────────────────────────────────────────────────
 
 SQL = r"""
@@ -302,6 +327,20 @@ select c.relname || E'\t' || r.rolname || E'\t' ||
                where p = 'public' or to_regrole(p) is not null) r
  where n.nspname = 'public' and c.relkind in ('r','v','m','p') and c.relname = any(%s)
  order by c.relname, r.rolname;
+\echo ---M4FN---
+-- RULE 3, function half. ⟳ FORK (a) STEP 5: `FN_GRANTEES` left the digest with the relation
+-- grantees, so this is now the only thing asserting that no session role can EXECUTE an M4 function.
+-- The spec revokes every one of them from public/anon/authenticated and grants EXECUTE to exactly
+-- one principal (service_role, on record_artifact) — so for a SESSION role the expected answer is
+-- ALWAYS false, with no allow-list and no exception.
+select p.proname || E'\t' || r.rolname || E'\t'
+       || has_function_privilege(r.rolname, p.oid, 'EXECUTE')::text
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  cross join (select q as rolname from unnest(%s) q
+               where q = 'public' or to_regrole(q) is not null) r
+ where n.nspname = 'public' and p.proname = any(%s)
+ order by p.proname, r.rolname;
 """
 
 
@@ -330,11 +369,13 @@ def pg_bool(s: str) -> bool:
 
 def parse_rows(stdout: str) -> tuple[list[tuple[str, bool, str, str]],
                                      list[tuple[str, bool]],
-                                     list[tuple[str, str, str]]]:
-    """Pure: psql output -> (funcs, money, m4rel). Split out so the FETCH's own parsing is tested."""
+                                     list[tuple[str, str, str]],
+                                     list[tuple[str, str, bool]]]:
+    """Pure: psql output -> (funcs, money, m4rel, m4fn). The FETCH's own parsing, under test."""
     funcs: list[tuple[str, bool, str, str]] = []
     money: list[tuple[str, bool]] = []
     m4rel: list[tuple[str, str, str]] = []
+    m4fn: list[tuple[str, str, bool]] = []
     section = None
     for raw in stdout.splitlines():
         if raw.startswith("---FUNCS---"):
@@ -343,17 +384,22 @@ def parse_rows(stdout: str) -> tuple[list[tuple[str, bool, str, str]],
             section = "m"; continue
         if raw.startswith("---M4REL---"):
             section = "r"; continue
+        if raw.startswith("---M4FN---"):
+            section = "x"; continue
         if not raw.strip():
             continue
         parts = raw.split("\t")
         if section == "r" and len(parts) >= 3:
             m4rel.append((parts[0], parts[1], parts[2]))
             continue
+        if section == "x" and len(parts) >= 3:
+            m4fn.append((parts[0], parts[1], pg_bool(parts[2])))
+            continue
         if section == "f" and len(parts) >= 4:
             funcs.append((parts[0], pg_bool(parts[1]), parts[2], parts[3]))
         elif section == "m" and len(parts) >= 2:
             money.append((parts[0], pg_bool(parts[1])))
-    return funcs, money, m4rel
+    return funcs, money, m4rel, m4fn
 
 
 # ⟳ r5 M4 (claude) — ONE READER OF THIS CONFIG VALUE, NOT TWO THAT DISAGREE.
@@ -388,13 +434,18 @@ def load_m4_relations() -> list[str]:
 
 def fetch(local: bool, database: str = "postgres") -> tuple[
         list[tuple[str, bool, str, str]], list[tuple[str, bool]],
-        list[tuple[str, str, str]], list[str], str]:
+        list[tuple[str, str, str]], list[tuple[str, str, bool]], list[str], str]:
     """Returns (funcs, money, m4rel, m4_rels_expected, subject). Exits 2 rather than returning empty
     on any failure — 'cannot run' is a FAILURE, never a pass, and an empty catalog would read as
     'nothing exposed'."""
     m4rels = load_m4_relations()
+    m4fns = m4_functions(MANIFEST.read_text())
+    if not m4fns:
+        print(f"CANNOT RUN — {MANIFEST} names no functions. TREAT THIS AS NOT RUN.")
+        sys.exit(2)
     sql = SQL % (pg_array(MONEY_TABLES), pg_array(FORBIDDEN_ON_M4), pg_array(COLUMN_LEVEL),
-                 pg_array(SESSION_GRANTEES), pg_array(m4rels))
+                 pg_array(SESSION_GRANTEES), pg_array(m4rels),
+                 pg_array(SESSION_GRANTEES), pg_array(m4fns))
     url = None
     if local:
         # ⟳ r7 M (codex): the database used to be hard-coded to `postgres`, which is right for the
@@ -420,7 +471,7 @@ def fetch(local: bool, database: str = "postgres") -> tuple[
         sys.exit(2)
 
     try:
-        funcs, money, m4rel = parse_rows(p.stdout)
+        funcs, money, m4rel, m4fn = parse_rows(p.stdout)
     except ValueError as e:
         print(f"CANNOT RUN — unparseable catalog output from {subject}: {e}")
         print("TREAT THIS AS NOT RUN.")
@@ -430,7 +481,7 @@ def fetch(local: bool, database: str = "postgres") -> tuple[
         print(f"CANNOT RUN — {subject} returned no SECURITY DEFINER functions at all, which is not")
         print("a state this schema can be in. TREAT THIS AS NOT RUN.")
         sys.exit(2)
-    return funcs, money, m4rel, m4rels, subject
+    return funcs, money, m4rel, m4fn, m4rels, subject
 
 
 # ── --self-test ─────────────────────────────────────────────────────────────────────────────────
@@ -563,6 +614,31 @@ def self_test() -> int:
     case("m4_relations ignores every non-relation line",
          m4_relations("col:a.b@1\ntrg:c.d@2\nidx:e@3\npol:f.g@4\ncon:h.i@5\n") == [])
 
+    # ── RULE 3, function half (fork (a) step 5: FN_GRANTEES left the digest) ────────────────────
+    case("RULE 3 fn: no session role executing any M4 function is clean",
+         evaluate_m4_functions([("record_artifact", "anon", False),
+                                ("slot_kind", "authenticated", False)]) == [])
+    case("RULE 3 fn: anon EXECUTE on an M4 function FAILS",
+         any("M4 FN EXECUTABLE" in p for p in
+             evaluate_m4_functions([("record_artifact", "anon", True)])))
+    case("RULE 3 fn: authenticated and public are checked too",
+         len(evaluate_m4_functions([("slot_kind", "authenticated", True),
+                                    ("slot_kind", "public", True)])) == 2)
+    # ⚠ there is deliberately NO allow-list here — assert that, so one cannot be added silently.
+    case("RULE 3 fn: no function is exempt, not even record_artifact",
+         any("record_artifact" in p for p in
+             evaluate_m4_functions([("record_artifact", "authenticated", True)])))
+    case("RULE 3 fn: an empty catalog is vacuous, not a failure",
+         evaluate_m4_functions([]) == [])
+    case("m4_functions DERIVES names from the manifest, stripping the signature",
+         m4_functions("fn:record_artifact(a uuid, b text)@x\nfn:slot_kind(p text)@y\ntable:z@w\n")
+         == ["record_artifact", "slot_kind"])
+    case("parse_rows reads the M4FN section and its boolean",
+         parse_rows("---M4FN---\nslot_kind\tanon\tfalse\n")[3]
+         == [("slot_kind", "anon", False)])
+    case("main() calls evaluate_m4_functions too",
+         "evaluate_m4_functions(" in Path(__file__).read_text().split("def main()", 1)[-1])
+
     # ⭐⭐ THE CALLER CHECK. `evaluate_m4` being correct proves nothing if main() never calls it, and
     # this repo has now shipped a working gate with no caller three times. Assert the wiring, not
     # just the rule — and assert it at BOTH ends, since the schema-gate suite is the only thing that
@@ -599,7 +675,7 @@ def arg_value(flag: str, default: str) -> str:
 
 
 def main() -> int:
-    funcs, money, m4rel, m4rels, subject = fetch(
+    funcs, money, m4rel, m4fn, m4rels, subject = fetch(
         local="--local" in sys.argv, database=arg_value("--database", "postgres"))
 
     # Say what was READ before saying whether it passed — subject_status.py's rule, applied here
@@ -614,12 +690,15 @@ def main() -> int:
     # ⚠ RULE 3's coverage is stated as a COUNT, never as a verdict. Pre-0027 it is 0 of N and the
     # rule checks nothing — which is fine and must be VISIBLE, because a rule that silently checks
     # an empty set reads exactly like a rule that passed.
+    print(f"         M4 functions present: {len({f for f, _, _ in m4fn})}"
+          f"  [{len(m4fn)} (function, role) pairs read]")
     print(f"         M4 relations present: {len(present)}/{len(m4rels)}"
           + ("  — RULE 3 has nothing to check here (pre-0027)" if not present else "")
           + f"  [{len(m4rel)} (relation, role) pairs read]\n")
 
     problems = evaluate(funcs, money)
     problems += evaluate_m4(m4rel, M4_NO_SESSION_ACCESS, SESSION_GRANTEES)
+    problems += evaluate_m4_functions(m4fn)
     if not problems:
         print("Anon exposure OK — every anon-callable SECURITY DEFINER function is allow-listed")
         print("with a justification that still holds, the TRUNCATE debt has not grown, and no")

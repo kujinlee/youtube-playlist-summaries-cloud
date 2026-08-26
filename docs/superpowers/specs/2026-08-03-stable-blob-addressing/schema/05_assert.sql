@@ -779,6 +779,149 @@ do $$ begin
     raise notice 'ok (rejected by 42501): anon truncating video_artifacts';
   end;
 end $$;
+-- ⭐⭐ SERVICE-ROLE CAPABILITY — fork (a) step 5, 2026-08-26. THE REPLACEMENT FOR A DIGESTED GRANT.
+--
+-- ⟳ r7 B1 (codex): revoking `record_artifact` EXECUTE from `service_role` is a production write
+-- outage, and `check-live-schema.py --expect-present` exited 0 over it. The obvious fix was to add
+-- `service_role` to the digest's function grantees — a FIFTH widening of the fingerprint, and the
+-- move each of rounds 4-7 made before being told it was insufficient.
+--
+-- ⟳ r7 H2 (codex): `service_role` holds INSERT on `video_artifacts` AND CANNOT USE IT. `art_slot_kind`
+-- CHECKs `slot_kind(slot)`, a CHECK runs as the writing role, and `slot_kind` is granted to nobody.
+-- MEASURED here 2026-08-26, identical row, one role, two paths:
+--
+--     [RPC]    record_artifact(...)                -> recorded
+--     [DIRECT] insert into video_artifacts ...     -> ERROR: permission denied for function slot_kind
+--
+-- ⭐ SO A DIGESTED GRANT WOULD HAVE CERTIFIED A CAPABILITY THAT DOES NOT EXIST. A privilege is not a
+-- capability: `has_table_privilege` says the grant is there, and the write still fails. That gap is
+-- unreachable by any fingerprint, however wide, and it is why these two blocks are the thing that
+-- lets `service_role` leave the digest rather than join it.
+--
+-- ⛔ IT BUILDS ITS OWN FIXTURE, AND THE FIRST DRAFT DID NOT — MEASURED, and the measurement is the
+-- reason this comment exists. The draft read `videos where video_id='seedvid001'`, which the SEED
+-- CORPUS supplies. But this file runs in TWO contexts:
+--     run-schema-assertions.sh   seed corpus, then the RE-RUNNABLE subset   -> seedvid001 exists
+--     verify-schema.sh           01+03+04+05 concatenated in one txn        -> it does NOT
+-- So gate 1/11 went red on the block's own fail-closed guard:
+--     ERROR: ASSERTION FAILED — the seed corpus supplied no workspace; this block is vacuous
+-- The guard was right and the block was wrong. A RE-RUNNABLE assertion may not depend on a fixture
+-- only one of its two callers builds — so this one creates a private owner, and the platform's own
+-- signup chain (auth.users -> handle_new_user -> profiles -> ensure_workspace_for_profile) gives it
+-- a workspace. That also exercises the derive path rather than writing workspace_id by hand.
+do $$
+declare v_ws uuid; v_out text; v_n int;
+        v_uid uuid := '00000000-0000-0000-0000-00000000cab1';
+begin
+  insert into auth.users (id, instance_id, aud, role, email)
+    values (v_uid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+            'svc-capability@example.test')
+    on conflict (id) do nothing;
+  -- ⚠ IT FALLS BACK TO CREATING THE WORKSPACE, AND THAT IS DELIBERATE — MEASURED 2026-08-26.
+  -- The draft RAISED when the derive chain produced nothing, which made this block fire FIRST on
+  -- mutate-schema.py's B3 ("a new profile gets no workspace"), stealing the red from the assertion
+  -- written for it:
+  --     ⚠️ RED(other)  B3 — expected "a NEW profile got no workspace",
+  --                         got  "no workspace was derived for the probe owner"
+  -- Both are true; only one is this block's business. THE SUBJECT HERE IS SERVICE_ROLE PRIVILEGE,
+  -- not workspace derivation, and an assertion that reaches beyond its subject takes the failure
+  -- away from the assertion that would have named the cause. Derivation has its own assertion; this
+  -- one just needs a workspace to exist.
+  select id into v_ws from workspaces where owner_id = v_uid;
+  if v_ws is null then
+    insert into workspaces (id, owner_id) values (v_uid, v_uid) on conflict do nothing;
+    select id into v_ws from workspaces where owner_id = v_uid;
+  end if;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — could not obtain a workspace for the probe owner even by '
+                    'creating one, so nothing below is a statement about service_role';
+  end if;
+  insert into workspace_videos (workspace_id, video_id) values (v_ws, 'vidSVC')
+    on conflict do nothing;
+
+  set local role service_role;
+  begin
+    v_out := record_artifact(
+      v_ws, 'vidSVC', 'summary', 'gSVC', 'summary'::artifact_kind,
+      v_ws::text || '/videos/vidSVC/gSVC/summary.md',
+      null, null, null, 'mdhash-svc',
+      '{"tldr":"t","takeaways":"k","docVersion":"1","mdGeneratedAt":"2026-01-01T00:00:00Z",
+        "processedAt":"2026-01-01T00:00:00Z","mdCorrectionsHash":"h"}'::jsonb,
+      1, now());
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role CANNOT call record_artifact. Every paid write '
+                    'fails; this is a production write outage, not a permissions nicety (r7 B1)';
+  end;
+  reset role;
+
+  if v_out is distinct from 'recorded' then
+    raise exception 'ASSERTION FAILED — record_artifact returned %, expected recorded', v_out;
+  end if;
+  -- ⚠ THE RETURN VALUE IS NOT THE EVIDENCE. A function can report success and write nothing; that
+  -- exact shape is why `persist_summary` needed its own merge assertion. Read the row back.
+  select count(*) into v_n from video_artifacts
+   where video_id = 'vidSVC' and generation_id = 'gSVC';
+  if v_n <> 1 then
+    raise exception 'ASSERTION FAILED — record_artifact said recorded and left % artifact rows', v_n;
+  end if;
+  raise notice 'ok: service_role recorded a paid artifact through the RPC, and the row is there';
+end $$;
+
+-- @RE-RUNNABLE  the other half: the RPC is the ONLY door, in EVERY environment.
+--
+-- ⛔⛔ THIS BLOCK WAS MASKED ON ITS FIRST DRAFT, AND THE MASK WAS FOUND BY MUTATING IT — which is the
+-- only reason it is written this way. The draft created the parent generation with `kind='summary'`
+-- and inserted an artifact with `kind='model'`. `video_artifacts_..._kind_fkey` is on
+-- (workspace_id, video_id, generation_id, KIND), so with the privilege GRANTED the insert died on
+-- the FK, not on the assertion:
+--     ERROR: insert or update on table "video_artifacts" violates foreign key constraint
+--            "video_artifacts_workspace_id_video_id_generation_id_kind_fkey"
+-- The control still passed, because 42501 is raised BEFORE the FK is checked. So the block would
+-- have reported "ok (rejected by 42501)" forever while proving nothing about privileges at all.
+--
+-- That is round 5 H1 verbatim, in the same file, one year of review rounds later: *"the test was
+-- MASKED by the FK"*. A negative assertion is only worth its exit code if the ONLY remaining reason
+-- to fail is the one being asserted — so the parent below matches on every FK column, and a
+-- non-42501 error propagates rather than being swallowed as success.
+do $$
+declare v_ws uuid; v_n int;
+        v_uid uuid := '00000000-0000-0000-0000-00000000cab1';
+begin
+  -- Same private owner as the block above, derived the same way. ⚠ THE NULL GUARD IS NOT OPTIONAL:
+  -- without it a missing workspace makes the INSERT below fail on a NOT NULL, which is a red gate
+  -- for the wrong reason and reads as if the assertion had something to say about privileges.
+  select id into v_ws from workspaces where owner_id = v_uid;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — the probe workspace is absent, so nothing below is a '
+                    'statement about service_role';
+  end if;
+  -- kind='model' to satisfy the FK's kind column. A model generation carries NO card and NO
+  -- doc_version_major — gen_card_is_summary_only and gen_major_is_summary_only forbid them.
+  insert into video_generations (workspace_id, video_id, generation_id, kind, state, produced_at)
+    values (v_ws, 'vidSVC', 'gDIRECT', 'model', 'complete', now());
+
+  set local role service_role;
+  begin
+    insert into video_artifacts (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
+      values (v_ws, 'vidSVC', 'model', 'gDIRECT', 'model'::artifact_kind, 'recorded',
+              v_ws::text || '/videos/vidSVC/gDIRECT/model.json');
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role wrote video_artifacts DIRECTLY. record_artifact '
+                    'is not the only door, so every guard that function performs can be walked past';
+  exception when insufficient_privilege then
+    reset role;
+    raise notice 'ok (rejected by 42501): service_role writing video_artifacts outside the RPC';
+  end;
+
+  -- ⭐ THE ANTI-MASK CHECK. If the parent did not land, the rejection above proves nothing.
+  select count(*) into v_n from video_generations
+   where video_id = 'vidSVC' and generation_id = 'gDIRECT' and kind = 'model';
+  if v_n <> 1 then
+    raise exception 'ASSERTION FAILED — the FK parent is absent, so the 42501 above is unearned';
+  end if;
+end $$;
+
 -- @MIGRATION-ONLY  everything below reads fixtures this file builds, not the seed corpus.
 
 -- ROUND 6 H3 — round 5's cross-tenant assertion read ONE view and ONE table, so security_invoker on

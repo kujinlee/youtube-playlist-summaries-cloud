@@ -464,8 +464,8 @@ MUTATIONS = [
     # keeps the default PUBLIC EXECUTE, and R8 stays green — because nobody added it to the list. A
     # second writer is exactly the thing nobody adds to a list.
     ("a SECOND function writes video_generations (T4's carried invariant, broken)",
-     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;",
-     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;",
+     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;
 create function t4_shadow_writer(p_ws uuid, p_video text, p_gen text) returns void
   language plpgsql security definer set search_path = '' as $t4$
 begin
@@ -484,8 +484,8 @@ end $t4$;""",
     #                        (the inserting statement does not contain the string `video_generations`)
     #   an INSERT grant   -> the surface-privilege clause on the one allowlisted view
     ("a SECOND writer spells the table QUOTED (H1 — the normalisation)",
-     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;",
-     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;",
+     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;
 create function t4_quoted_writer(p_ws uuid, p_video text, p_gen text) returns void
   language plpgsql security definer set search_path = '' as $t4q$
 begin

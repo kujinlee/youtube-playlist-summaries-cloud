@@ -485,6 +485,30 @@ SQL
   fi
 fi
 
+echo "═══ mutation 23 ⭐⭐⭐ step 5: anon EXECUTE on an M4 function — the OTHER half that left ═══"
+# `FN_GRANTEES` left the digest in step 5, so RULE 3's function half is now the ONLY thing asserting
+# that no session role can call an M4 function. On production the platform grants EXECUTE at CREATE
+# time, so this is not a hypothetical sabotage — it is the state the schema ARRIVES IN unless the
+# revoke lands. Both gates are asserted: the digest is blind (correctly), RULE 3 is not.
+if fresh "${PREFIX}_fnacl"; then
+  before_f=$(db "${PREFIX}_fnacl" -c "select has_function_privilege('anon','public.slot_kind(text)','EXECUTE')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_fnacl" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+grant execute on function slot_kind(text) to anon;
+SQL
+  after_f=$(db "${PREFIX}_fnacl" -c "select has_function_privilege('anon','public.slot_kind(text)','EXECUTE')::text;" | tr -d '[:space:]')
+  echo "     anon EXECUTE on slot_kind: ${before_f:-<empty>} -> ${after_f:-<empty>}"
+  if [ -z "$before_f" ] || [ -z "$after_f" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — treat mutation 23 as NOT RUN"; fail=1
+  elif [ "$before_f" = "$after_f" ]; then
+    echo "  ✗ THE GRANT DID NOT LAND — treat mutation 23 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_fnacl" --expect-present && r=pass || r=fail
+    report "anon EXECUTE on an M4 function -> the DIGEST no longer claims to see it" pass "$r"
+    anon_gate "${PREFIX}_fnacl" && r=pass || r=fail
+    report "anon EXECUTE on an M4 function -> anon-exposure RULE 3 FAILS" fail "$r"
+  fi
+fi
+
 echo "═══ mutation 20 ⭐⭐ r6 H (codex): a RENAMED survivor of the rollback ═══"
 # `alter function … rename to …_old` then the real rollback: the drop skips with a NOTICE and a live
 # SECURITY DEFINER guard remains. Symbol matching cannot see it — the symbol is what changed. But

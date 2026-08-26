@@ -625,13 +625,28 @@ end $$;
 -- ⚠ AND THE SWEEP RULE SURVIVES THEM, which is the point of leaving this note: the habit that
 -- produced B1 was applying a revoke at ONE site. Three definer functions became one; the assertion
 -- over `pg_proc` in 05 (R8) is what makes "all of them" checkable rather than remembered.
+-- ⟳ r7 B1 (codex) + FORK (a) STEP 5, 2026-08-26 — `service_role` ADDED TO EVERY FUNCTION REVOKE.
+-- Round 6 made revoke-before-grant the rule for RELATIONS and stopped there, so the function sites
+-- still revoked from three roles and left the fourth to whatever the platform had already granted.
+-- That is not a stylistic gap. MEASURED, same statement, two environments:
+--
+--     as service_role, `insert into video_artifacts …`
+--       container (no default privileges) :  ERROR permission denied for function slot_kind
+--       production (alter default privileges … grant execute … to service_role) :  SUCCEEDS
+--
+-- `art_slot_kind` CHECKs `slot_kind(slot)`, and a CHECK runs as the role performing the write. So
+-- the RPC-only write path was ENFORCED BY ACCIDENT on a laptop and NOT ENFORCED AT ALL where it
+-- matters. Revoking here makes the two agree, and makes `record_artifact` the only door in both.
+-- The grant immediately below is the whole of service_role's function access, and the assertions in
+-- 05 (search: SERVICE-ROLE CAPABILITY) prove both halves — that the RPC works, and that the direct
+-- write is refused with 42501.
 revoke all on function record_artifact(uuid, text, text, text, artifact_kind, text, text, int, int,
                                       text, jsonb, int, timestamptz)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 grant execute on function record_artifact(uuid, text, text, text, artifact_kind, text, text, int, int,
                                           text, jsonb, int, timestamptz)
   to service_role;
-revoke all on function slot_kind(text) from public, anon, authenticated;
+revoke all on function slot_kind(text) from public, anon, authenticated, service_role;
 -- ⟳ ROUND 7 M1 — THE TWO THE SWEEP MISSED, in the file whose comment above claims it swept all of
 -- them. MEASURED via pg_proc: `video_artifacts_append_only` and `forbid_collecting_current` were
 -- still carrying the default PUBLIC EXECUTE, and `has_function_privilege('anon', …)` returned `t`.
@@ -805,7 +820,7 @@ begin
   end if;
   return new;
 end $$;
-revoke all on function forbid_collecting_current() from public, anon, authenticated;   -- ⟳ round 7 M1
+revoke all on function forbid_collecting_current() from public, anon, authenticated, service_role;   -- ⟳ round 7 M1
 create trigger forbid_collecting_current_trg
   before update on video_generations
   for each row execute function forbid_collecting_current();
@@ -1042,7 +1057,7 @@ begin
   end if;
   return case tg_op when 'DELETE' then old else new end;
 end $$;
-revoke all on function video_artifacts_append_only() from public, anon, authenticated;  -- ⟳ round 7 M1
+revoke all on function video_artifacts_append_only() from public, anon, authenticated, service_role;  -- ⟳ round 7 M1
 create trigger video_artifacts_append_only_trg
   before update or delete on video_artifacts
   for each row execute function video_artifacts_append_only();
@@ -1081,7 +1096,7 @@ begin
   raise exception 'video_artifact_sources: the PROVENANCE of artifact % is immutable — % may not become %',
     old.artifact_id, old.source_generation_id, new.source_generation_id;
 end $$;
-revoke all on function video_artifact_sources_append_only() from public, anon, authenticated;
+revoke all on function video_artifact_sources_append_only() from public, anon, authenticated, service_role;
 create trigger video_artifact_sources_append_only_trg
   before update or delete on video_artifact_sources
   for each row execute function video_artifact_sources_append_only();
@@ -1120,7 +1135,7 @@ begin
   end if;
   return null;
 end $$;
-revoke all on function video_artifact_sources_insert_once() from public, anon, authenticated;
+revoke all on function video_artifact_sources_insert_once() from public, anon, authenticated, service_role;
 create trigger video_artifact_sources_insert_once_trg
   after insert on video_artifact_sources
   referencing new table as ins
@@ -1145,7 +1160,7 @@ begin
   end if;
   return null;
 end $$;
-revoke all on function art_summary_has_no_source() from public, anon, authenticated;
+revoke all on function art_summary_has_no_source() from public, anon, authenticated, service_role;
 create constraint trigger art_summary_has_no_source_trg
   after insert on video_artifact_sources
   for each row execute function art_summary_has_no_source();
@@ -1223,7 +1238,7 @@ begin
   end if;
   return new;
 end $$;
-revoke all on function video_artifacts_generation_complete() from public, anon, authenticated;
+revoke all on function video_artifacts_generation_complete() from public, anon, authenticated, service_role;
 -- ⟳ ROUND 7 H1 — the ordering claim that used to live here was BOTH unpinned and wrong, so it is
 -- gone rather than reworded. Wrong: see the `tg_op = 'INSERT'` note above. Unpinned: renaming
 -- video_artifacts_append_only_trg to `zz_…` inverted the supposedly load-bearing order and all 89
