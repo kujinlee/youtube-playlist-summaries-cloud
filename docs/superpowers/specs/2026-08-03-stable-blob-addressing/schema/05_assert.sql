@@ -751,6 +751,23 @@ do $$ declare ws uuid; begin
     raise notice 'ok (rejected by 42501): anon calling record_artifact';
   end;
 end $$;
+-- @RE-RUNNABLE  ⟳ TASK 8, MOVED EARLY BY PHASE 6 #2 (fork (a), user decision 2026-08-25).
+-- THE FIRST ASSERTION IN THIS FILE THAT ACTUALLY RUNS. Until now `05_assert.sql` carried 104
+-- `raise exception`s and ZERO markers, so `scripts/run-schema-assertions.sh` was a permanent
+-- fail-closed CANNOT RUN — a 2,239-line security control that had never executed outside a
+-- review's rolled-back transaction.
+--
+-- ⭐ WHY THIS BLOCK FIRST, AND WHY IT IS THE WHOLE ARGUMENT FOR FORK (a):
+-- round 7 filed `anon` TRUNCATE as a BLOCKING finding against the live-catalog gate, and the
+-- proposed fix was to add TRUNCATE to `REL_PRIVS` in `m4_catalog.py` plus a written exclusion
+-- reason. But the hole was ALREADY FOUND, ALREADY FIXED and ALREADY ASSERTED — right here, with
+-- the measurement recorded twenty lines up: *"anon TRUNCATEd the paid manifest to zero rows"*.
+-- We rediscovered it because nothing ran this. The fingerprint was being widened to relearn what
+-- the assertion already knew.
+--
+-- ⚠ THIS BLOCK NEEDS NO FIXTURE — only the `anon` role and the table — which is why it is the
+-- cheapest possible first marker. Blocks that read `t_ws` or the gOLD/gNEW generations need the
+-- seed corpus to supply them and are NOT marked yet.
 do $$ begin
   set local role anon;
   begin
@@ -762,6 +779,7 @@ do $$ begin
     raise notice 'ok (rejected by 42501): anon truncating video_artifacts';
   end;
 end $$;
+-- @MIGRATION-ONLY  everything below reads fixtures this file builds, not the seed corpus.
 
 -- ROUND 6 H3 — round 5's cross-tenant assertion read ONE view and ONE table, so security_invoker on
 -- video_summary_current and the two new base-table policies were all mutation-GREEN. Read everything.
