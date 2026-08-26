@@ -120,10 +120,11 @@ GUARDS: dict[str, tuple[str, str]] = {
         "SHAPE(reconciled)",
         "`on conflict (owner_id) do nothing` — every profile 01's seed already covered reaches this "
         "trigger too, and must not error on the workspace it already has"),
-    "sync_corrections_to_workspace_video": (
-        "SHAPE(reconciled)",
-        "the INSERT half's WHEN clause skips rows carrying no corrections; without it the same video "
-        "added to a second playlist CLOBBERED the shared corrections (measured round 9)"),
+    # ⛔ `sync_corrections_to_workspace_video` STOOD HERE, classified SHAPE(reconciled) because its
+    # INSERT half's WHEN clause skipped rows carrying no corrections — without it, the same video
+    # added to a second playlist CLOBBERED the shared corrections (measured round 9). ADR-0011 (T2)
+    # deletes the trigger and the denormalized copy it synchronised, so the reconciler has nothing
+    # left to reconcile. VERIFIED ABSENT by this ratchet reporting it STALE before deletion.
     "forbid_collecting_current": (
         "SEQUENCE",
         "the sweeper selects THROUGH video_generations_collectable; trigger kept as a backstop "
@@ -180,8 +181,12 @@ COVERED_BY: dict[str, tuple[str, ...]] = {
                                             "B3: the manifest parent no longer created",
                                             "B3: a disagreeing workspace_id"),
     "ensure_workspace_for_profile":        ("B3: a new profile gets no workspace",),
-    "sync_corrections_to_workspace_video": ("the anti-drift trigger removed",
-                                            "the INSERT-half sync unguarded"),
+    # ⛔ `sync_corrections_to_workspace_video` STOOD HERE, pointing at the two mutation labels
+    # "the anti-drift trigger removed" and "the INSERT-half sync unguarded". ADR-0011 (T2) retired
+    # the guard AND both mutations, so this entry named three things that no longer exist.
+    # ⭐ FOUND BY --self-test ("every COVERED_BY key is a classified guard"), not by reading: the
+    # LIVE ratchet went green the moment the guard left GUARDS, because its subject is the schema.
+    # This map is a second inventory keyed on the first, and only the self-test compares them.
 }
 
 CATALOG_SQL = f"""

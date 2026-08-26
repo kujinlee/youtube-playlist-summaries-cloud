@@ -82,7 +82,10 @@ MEANINGS: dict[tuple[str, str], str] = {
     ("video_generations", "doc_version_major"): "this generation has produced no body yet",
     ("video_generations", "produced_at"):    "this generation has produced nothing yet",
     # ── workspace_videos ────────────────────────────────────────────────────────
-    ("workspace_videos", "corrections"):     "this video carries no correction text",
+    # ⛔ `corrections` STOOD HERE, meaning "this video carries no correction text". ADR-0011 (T2)
+    # removes the column: corrections are per-playlist and live in `videos.data`, which is a JSONB
+    # key rather than a nullable column, so it has no sentinel for this ratchet to police.
+    # VERIFIED ABSENT by this ratchet reporting it STALE before deletion.
     # ── pre-existing tables, recorded rather than excluded ──────────────────────
     ("jobs", "result"):                      "this job has not succeeded yet",
     ("jobs", "error"):                       "this job has not failed",

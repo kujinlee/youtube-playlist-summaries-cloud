@@ -51,25 +51,23 @@ begin
   raise exception 'ASSERTION FAILED — should have been rejected: %', p_label;
 end $$;
 
--- ── ⟳ ROUND 6 B4 — THE BACKFILL, asserted against the LIVE corpus BEFORE any fixture exists ──────
--- Placement is load-bearing and was found by the assertion failing: run after the fixtures and the
--- `vidA` row (deliberately seeded with a non-constant 'H_NEW') is counted as a corrected video, so
--- this reported `wv has 100, videos has 99`. The subject here is the MIGRATION'S OUTPUT, so nothing
--- may have touched the table yet. B4 measured 2903 of 2904 rows NULL while 99 videos carried real
--- corrections; both numbers are now asserted rather than described.
+-- ── ⟳ ADR-0011 — THE BACKFILL ASSERTION IS DELETED, NOT RETARGETED ──────────────────────────────
+-- Round 6 B4's block stood here. It asserted two things about `workspace_videos.corrections_hash`:
+-- that no row carried a NULL, and that the count of corrected rows matched `videos.data`. Both
+-- subjects are gone — the column, and the very idea that the two representations should agree.
+--
+-- ⛔ NOT REWRITTEN TO ASSERT SOMETHING ELSE, on the plan's own instruction: "an assertion retargeted
+-- to keep it alive is how a suite ends up testing what is easy rather than what matters." The
+-- honest count of assertions this file makes about corrections currency is now ZERO, and it should
+-- read that way.
+--
+-- ⚠ WHAT IS NO LONGER GUARDED, SAID OUT LOUD. B4 measured 2903 of 2904 rows NULL while 99 videos
+-- carried real corrections, and this block was the ratchet that stopped that recurring. Under
+-- ADR-0011 the failure is unrepresentable rather than guarded — there is no second copy to lose the
+-- corrections INTO. That is a stronger claim than the assertion made, and it is the whole argument
+-- for the ADR; but it is a claim about SHAPE, so nothing here executes to confirm it, and a reader
+-- looking for "where did the backfill assertion go" deserves to find this instead of silence.
 -- (The rest of the item-2 assertions live at the end of this file, with the ranking fixtures.)
-do $$ declare n_null int; n_corr_wv int; n_corr_v int; begin
-  select count(*) into n_null from workspace_videos where corrections_hash is null;
-  if n_null <> 0 then
-    raise exception 'ASSERTION FAILED — % rows still carry a NULL corrections_hash', n_null; end if;
-  select count(*) into n_corr_wv from workspace_videos where corrections_hash <> no_corrections_hash();
-  select count(distinct (workspace_id, video_id)) into n_corr_v
-    from videos where coalesce(data->>'corrections','') <> '';
-  if n_corr_wv <> n_corr_v then
-    raise exception 'ASSERTION FAILED — backfill lost corrections: wv has %, videos has %',
-      n_corr_wv, n_corr_v; end if;
-  raise notice 'ok (backfill): 0 NULL hashes, and all % corrected videos carried across', n_corr_v;
-end $$;
 
 -- ── ⟳ POPULATION-COVERAGE INSTRUMENT (added 2026-08-07) ─────────────────────────────────────────
 -- THE RATCHET THAT MAKES THE FREE-RENDER DEFECT UNREINTRODUCIBLE.
@@ -116,8 +114,10 @@ create trigger t_writes_trg after insert or update on video_artifacts
 -- must respect the same ordering the migration does.
 create temp table t_ws as select id from workspaces order by id limit 1;
 create temp table t_w2 as select id from workspaces order by id desc limit 1;   -- a SECOND tenant, for RLS
-insert into workspace_videos (workspace_id, video_id, corrections_hash)
-  select id, 'vidA', 'H_NEW' from t_ws;
+-- ⟳ ADR-0011: `vidA` used to be seeded with a non-constant 'H_NEW' corrections_hash, which is why
+-- the backfill assertion above had to run BEFORE the fixtures. With the column gone the two rows
+-- are shaped identically and that ordering constraint is gone with them.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidA' from t_ws;
 insert into workspace_videos (workspace_id, video_id) select id, 'vidB' from t_w2;
 
 -- Keys are SHAPED (`…/<generation>/…`), because art_key_names_generation now requires it and an
@@ -1111,14 +1111,22 @@ do $$ declare ng int; nw int; ns int; me uuid; begin
   raise notice 'ok (RLS): the owner reads video_generations, workspace_videos and video_artifact_sources directly';
 end $$;
 
--- FLOOR: make every generation corrections-stale. A stale generation must STILL SERVE (round 4 A-2).
-update workspace_videos set corrections_hash='H_TYPED_JUST_NOW'
-  where workspace_id=(select id from t_ws) and video_id='vidA';
-do $$ declare n int; begin
-  select count(*) into n from video_artifacts_current where video_id='vidA' and slot='summary';
-  if n <> 1 then raise exception 'ASSERTION FAILED — floor broke: % rows, expected 1', n; end if;
-  raise notice 'ok (floor): a user typing a correction does NOT empty the slot';
-end $$;
+-- ── ⟳ ADR-0011 — THE FLOOR ASSERTION IS DELETED, AND ITS SUBJECT IS UNREPRESENTABLE ─────────────
+-- Round 4 A-2's floor stood here: make every generation corrections-stale by typing a new
+-- `corrections_hash` into `workspace_videos`, then assert the summary slot STILL SERVES one row —
+-- i.e. that corrections RANK but never GATE.
+--
+-- ⛔ THERE IS NO LONGER A WAY TO CREATE THE PRECONDITION. "Corrections-stale" was a disagreement
+-- between a frozen card's stamp and a mutable denormalized copy, and the copy is gone. Nothing can
+-- be typed to make a generation stale, so the assertion cannot be set up, let alone fail.
+--
+-- ⚠ AND THAT IS A STRONGER GUARANTEE THAN THE ASSERTION GAVE, which is why this is a deletion and
+-- not a gap: A-2 protected against corrections ACCIDENTALLY GATING the serve path. With no
+-- corrections term in either ranking view (04_artifacts.sql, both sites), corrections cannot reach
+-- the serve path to gate it. The risk moved from "guarded by one assertion" to "structurally
+-- absent" — but no test executes to say so, so it is written down here instead.
+-- ⛔ NOT retargeted at some other staleness, per the plan: an assertion kept alive by changing its
+-- subject tests what is easy rather than what matters.
 
 -- ── ⟳ ROUND 6 B4 — ONE REPRESENTATION OF "NO CORRECTIONS", AND RUNG 1 ACTUALLY DECIDING ─────────
 -- The cross-language agreement is a REGRESSION GUARD, not a one-off check. If the SQL canonicalizer
@@ -1143,75 +1151,52 @@ do $$ begin
   raise notice 'ok (hash): SQL reproduces content-hash.ts on 4 vectors, and the constant is pinned';
 end $$;
 
--- RUNG 1 DECIDES, and this is the test that a mutation can actually turn red. Asserting the boolean
--- `card->>'mdCorrectionsHash' = corrections_hash` would merely re-implement the rung; it has to pick a
--- WINNER against the rungs below it. vidC takes the DEFAULT hash (no corrections), which is exactly
--- the state B4 measured as corrections-current = FALSE for the entire corpus.
-insert into workspace_videos (workspace_id, video_id) select id, 'vidC' from t_ws;
-insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
-values
- -- corrections-CURRENT but older and a LOWER format version: must still win, because rung 1 is first
- ((select id from t_ws),'vidC','gC_CUR','summary',
-  ('{"tldr":"t","takeaways":"k","docVersion":"3.3","mdGeneratedAt":"2026-01-01","processedAt":"y",'
-   || '"mdCorrectionsHash":"' || no_corrections_hash() || '"}')::jsonb,
-  3,'2026-01-01','SHA_C_CUR'),
- -- corrections-STALE but newer and a HIGHER format version: must lose
- ((select id from t_ws),'vidC','gC_STALE','summary',
-  -- ⟳ ROUND 7 B2 — produced_at moved back from '2026-09-09'. It was a MONTH IN THE FUTURE, which is
-  -- now rejected outright (a clock value may not enter the ranking) — and while it stood, it was the
-  -- fixture that made B2 reachable in practice: a generation with a future produced_at could never
-  -- have its digs detached. `mdGeneratedAt` deliberately KEEPS its later date: it is the string this
-  -- row exists to lose the ranking on, and it is card data, not a clock the schema bounds.
-  '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-09-09","processedAt":"y","mdCorrectionsHash":"H_STALE"}',
-  4,'2026-02-09','SHA_C_STALE');
-insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-values ((select id from t_ws),'vidC','summary','gC_CUR','summary','recorded',
-        (select id from t_ws)::text||'/videos/vidC/gC_CUR/summary.md'),
-       ((select id from t_ws),'vidC','summary','gC_STALE','summary','recorded',
-        (select id from t_ws)::text||'/videos/vidC/gC_STALE/summary.md');
-do $$ declare g text; begin
-  select generation_id into g from video_summary_current where video_id='vidC';
-  if g is distinct from 'gC_CUR' then
-    raise exception 'ASSERTION FAILED — rung 1 did not decide: current is %, expected gC_CUR', coalesce(g,'<none>');
-  end if;
-  raise notice 'ok (rung 1): an UNCORRECTED video ranks its constant-hash generation as current';
-end $$;
+-- ── ⟳ ADR-0011 — "RUNG 1 DECIDES" IS DELETED, AND ONLY EXECUTION FOUND IT ───────────────────────
+-- The vidC fixture pair stood here: `gC_CUR` corrections-current but OLDER with a LOWER format
+-- version, `gC_STALE` corrections-stale but NEWER with a HIGHER one. It asserted `gC_CUR` wins —
+-- proving the corrections term was FIRST among the rungs and genuinely decided, rather than being a
+-- boolean that re-implemented itself. With no corrections term, `gC_STALE` correctly wins on
+-- `doc_version_major` 4 > 3, and the assertion fails.
+--
+-- ⭐⭐ THE PLAN'S TWO SWEEP PREDICATES BOTH MISSED THIS, AND THE REASON GENERALISES. Step 4's MUST-GO
+-- grep and Step 5's gate both match on the NAME of a removed object — `corrections_hash`,
+-- `wv.corrections`, `sync_corrections_to_workspace_video`. This block names none of them: its
+-- fixtures are legal cards, its assertion reads `video_summary_current`, and every line still
+-- parses. It depended on the removed ranking term BEHAVIOURALLY, not lexically.
+-- **A textual sweep cannot find a test whose subject is a behaviour rather than an identifier.**
+-- It was found by RUNNING the suite, which is the only instrument that had a chance.
+--
+-- ⛔ NOT RETARGETED. Rewriting it to assert that `doc_version_major` decides would keep a green
+-- test at the cost of testing what is easy: the rung ordering below rung 1 was never in question.
+-- ⚠ COVERAGE GENUINELY LOST: nothing now proves the surviving rungs decide in the documented order.
+-- That gap PREDATES ADR-0011 for rungs 2-5 — this fixture only ever exercised rung 1 against them —
+-- but it is smaller now than it reads, and it is named rather than left to a diff.
 
--- THE ANTI-DRIFT TRIGGER. Backfilling repairs today; this is what stops the next write re-opening it.
--- Runs against a REAL `videos` row, not the vidC fixture: vidC exists only in `workspace_videos`, so
--- the first version of this test updated ZERO rows, the trigger never fired, and it reported the
--- copy as drifted. A test that cannot reach the trigger it names proves nothing about it.
--- ANY real video, not one constrained to t_ws — MEASURED: t_ws is `workspaces order by id limit 1`
--- and that workspace holds no videos, so the filtered version selected zero rows and the assertion
--- reported "no real video" rather than silently passing. Every `videos` row has a
--- `workspace_videos` row by now; that is what the backfill above just asserted.
-create temp table t_real as select workspace_id, video_id from videos limit 1;
-do $$ declare h text; c text; n int; begin
-  select count(*) into n from t_real;
-  if n <> 1 then raise exception 'ASSERTION FAILED — no real video to test the trigger against'; end if;
-  update videos v set data = jsonb_set(v.data, '{corrections}', '"say Clawcode"')
-    from t_real r where v.workspace_id=r.workspace_id and v.video_id=r.video_id;
-  select wv.corrections_hash, wv.corrections into h, c
-    from workspace_videos wv join t_real r using (workspace_id, video_id);
-  if h <> corrections_hash_of('say Clawcode') then
-    raise exception 'ASSERTION FAILED — the copy drifted: wv has %, expected %',
-      h, corrections_hash_of('say Clawcode'); end if;
-  if c <> 'say Clawcode' then
-    raise exception 'ASSERTION FAILED — the copy kept a stale corrections text: %', coalesce(c,'<null>'); end if;
-  -- ...and clearing them must return the DEFINED CONSTANT, not NULL. This is the direction that
-  -- re-opens B4 if it regresses: a NULL here is indistinguishable from "never computed".
-  update videos v set data = jsonb_set(v.data, '{corrections}', '""')
-    from t_real r where v.workspace_id=r.workspace_id and v.video_id=r.video_id;
-  select wv.corrections_hash into h
-    from workspace_videos wv join t_real r using (workspace_id, video_id);
-  if h <> no_corrections_hash() then
-    raise exception 'ASSERTION FAILED — clearing corrections did not restore the constant: %', h; end if;
-  raise notice 'ok (anti-drift): editing corrections updates the copy; clearing restores the constant';
-end $$;
-
-select assert_raises($$insert into workspace_videos (workspace_id, video_id, corrections_hash)
-  values ((select id from t_ws),'vidNULL', null)$$,
-  'a NULL corrections_hash (absent-vs-failed on the top ranking rung)', '23502');
+-- ── ⟳ ADR-0011 — THE ANTI-DRIFT TRIGGER TEST AND THE NULL-HASH REFUSAL ARE BOTH DELETED ─────────
+-- Two blocks stood here, and both were guarding the SAME denormalisation from two directions:
+--
+--   1. THE ANTI-DRIFT TEST. It wrote 'say Clawcode' into a real `videos.data`, then asserted that
+--      `workspace_videos.corrections_hash` and `.corrections` had followed; then cleared the text
+--      and asserted the hash returned to the DEFINED CONSTANT rather than NULL — the direction that
+--      re-opened round 6 B4, because a NULL there is indistinguishable from "never computed".
+--   2. THE NULL-HASH REFUSAL. `assert_raises(insert … corrections_hash => null)` expecting 23502,
+--      i.e. that absent-vs-failed could not be represented on the top ranking rung.
+--
+-- ⛔ BOTH SUBJECTS ARE GONE, AND NEITHER IS RETARGETED. There is no copy to drift, no second
+-- representation to disagree, and no nullable hash to conflate two meanings on.
+--
+-- ⚠ THIS IS THE LARGEST SINGLE LOSS OF EXECUTED COVERAGE IN ADR-0011, so it is stated plainly
+-- rather than left to a diff. What these two blocks bought was: *the denormalized copy stays equal
+-- to the truth across every write path*. What replaces them is not a better assertion — it is the
+-- absence of the thing they policed. Deleting a disagreement beats synchronising it, but the two
+-- are not the same KIND of guarantee, and only one of them ran.
+--
+-- ⚠ WHAT THIS TEST ALSO TAUGHT, WORTH MORE THAN THE ASSERTION: its first version updated ZERO rows,
+-- because it ran against the `vidC` fixture, which exists only in `workspace_videos` and has no
+-- `videos` row — so the trigger never fired and it reported the copy as drifted. Then the fix ran
+-- against `t_ws`, whose workspace holds no videos, and selected zero rows again. **A test that
+-- cannot reach the mechanism it names proves nothing about it**, and it took two measured attempts
+-- to make this one reach. That lesson outlives its subject.
 select assert_raises($$insert into video_generations
   (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB8','summary',
@@ -1607,10 +1592,12 @@ do $$ declare leaky text[]; begin
      -- ⟳ T3 added THREE definer functions to this file, and adding them here is the whole point of
      -- the list being hand-maintained: two of them are trigger functions, which round 7 M1 measured
      -- as exactly the kind that keeps the default PUBLIC EXECUTE unnoticed.
+     -- ⟳ ADR-0011 removed `sync_corrections_to_workspace_video` from this list, on the same terms
+     -- ADR-0007 removed the two reservation functions: the function is gone, so naming it here
+     -- would inventory an object nobody can find. The hand-maintained weakness is unchanged.
      and p.proname in ('slot_kind','record_artifact',
                        'forbid_collecting_current','video_artifacts_append_only',
                        'video_artifacts_generation_complete','video_generations_freeze',
-                       'sync_corrections_to_workspace_video',
                        'video_artifact_sources_append_only','video_artifact_sources_insert_once',
                        'art_summary_has_no_source')
      and has_function_privilege('anon', p.oid, 'EXECUTE');
@@ -2187,29 +2174,25 @@ begin
   raise notice 'ok (B3 chain): a new playlist derives its workspace from its owner';
 end $$;
 
--- ⟳ ROUND 9 — CORRECTIONS SURVIVE THE SAME VIDEO ARRIVING IN A SECOND PLAYLIST.
--- Round 6's INSERT-half sync was unconditional, and it was harmless only because B3 made INSERTs
--- impossible. MEASURED the moment ingest worked: 'KEEP ME' -> <null>. `corrections` describes the
--- SHARED BODY while `videos` is per-playlist, so a second playlist's row carrying none is not
--- evidence that anyone removed them.
-do $$
-declare v_own uuid; v_p1 uuid; v_p2 uuid;
-begin
-  select owner_id into v_own from playlists limit 1;
-  insert into playlists (owner_id, playlist_key, playlist_url)
-    values (v_own, 'k-assert-c1', 'https://example/c1') returning id into v_p1;
-  insert into playlists (owner_id, playlist_key, playlist_url)
-    values (v_own, 'k-assert-c2', 'https://example/c2') returning id into v_p2;
-  insert into videos (playlist_id, owner_id, video_id, position, data)
-    values (v_p1, v_own, 'sharedCorr', 8001,
-            jsonb_build_object('id','sharedCorr','corrections','KEEP ME'));
-  insert into videos (playlist_id, owner_id, video_id, position, data)
-    values (v_p2, v_own, 'sharedCorr', 8002, jsonb_build_object('id','sharedCorr'));
-  if (select corrections from workspace_videos where video_id='sharedCorr')
-       is distinct from 'KEEP ME' then
-    raise exception 'ASSERTION FAILED — the second playlist CLOBBERED the shared corrections'; end if;
-  raise notice 'ok (round 9): a corrected video survives being added to a second playlist';
-end $$;
+-- ── ⟳ ADR-0011 — ROUND 9'S CLOBBER ASSERTION IS DELETED, AND ITS PREMISE IS WHAT CHANGED ────────
+-- The block here added 'sharedCorr' to two playlists, the first carrying 'KEEP ME' and the second
+-- carrying none, then asserted `workspace_videos.corrections` still read 'KEEP ME'. It was a real
+-- defect, MEASURED the moment ingest worked: 'KEEP ME' -> <null>.
+--
+-- ⛔ THE BEHAVIOUR IT ASSERTED NO LONGER EXISTS, and the reason is worth stating exactly, because it
+-- is ADR-0011's whole thesis. The clobber was possible because ONE workspace-scoped row had to
+-- represent N playlist-scoped truths, so the second playlist's arrival had to be interpreted:
+-- "removed the corrections" or "never had them?" — and NO MERGE RULE CAN BE RIGHT, because the two
+-- playlists genuinely disagree. Round 9 picked "a corrected row never loses to an uncorrected
+-- duplicate", which is a heuristic, not a truth. ADR-0011 keeps the corrections per-playlist in
+-- `videos.data`, where both rows are simply themselves and nothing has to be reconciled.
+--
+-- ⚠ SO THIS IS NOT COVERAGE LOST — IT IS A QUESTION THAT STOPPED BEING ASKED. The assertion could
+-- not be rewritten against the new schema even in principle: there is no shared row to clobber.
+-- ⚠ WHAT IS GENUINELY UNGUARDED NOW: that the two per-playlist rows keep their own corrections. No
+-- assertion in this file covers it, because that is 0001's `videos.data` behaviour and predates this
+-- spec entirely. It is not a regression; it is a boundary, and it is named here so the next reader
+-- does not read the absence as an oversight.
 
 -- And a caller with the WRONG opinion is TOLD, not silently corrected. This is the whole reason the
 -- explicit-writer option was not simply discarded: a caller confused about tenancy is a real bug, and

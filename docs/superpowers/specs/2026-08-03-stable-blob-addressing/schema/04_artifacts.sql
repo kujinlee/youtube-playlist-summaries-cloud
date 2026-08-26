@@ -710,6 +710,20 @@ create policy video_artifacts_owner_read on video_artifacts for select to authen
 create view video_summary_current with (security_invoker = true) as
 select distinct on (a.workspace_id, a.video_id) a.*
 from video_artifacts a
+-- ⚠ ADR-0011 LEFT THIS JOIN CONTRIBUTING NO COLUMN, AND THE NEXT READER WILL WANT TO DELETE IT.
+-- Read this before doing so; it is a tenant-fence question, and the measurement is already done.
+-- MEASURED 2026-08-26, post-T2:
+--   * `wv` is referenced ONLY in this ON clause — no column of it is selected or ranked, here or in
+--     `video_artifacts_current`. `mdCorrectionsHash = wv.corrections_hash` was its last consumer.
+--   * It cannot FILTER: `video_artifacts` carries an FK to `workspace_videos (workspace_id,
+--     video_id)` (see the table definition above), so every row already has a parent.
+--   * Its RLS contribution is REDUNDANT, not absent: `security_invoker = true` means every joined
+--     base table's policy applies to the reader, and `workspace_videos_owner_read` scopes to the
+--     same owner as `video_artifacts_owner_read`, which `a` brings anyway.
+-- So it is genuinely removable — and removing it is a behaviour change to a security-relevant
+-- query, which ADR-0011 does not authorise and T2 does not scope. LEFT IN PLACE DELIBERATELY,
+-- as defence in depth, with the reasoning recorded so the decision is made once rather than
+-- rediscovered. ⛔ If you drop it, drop it in BOTH views and say which policy now carries the fence.
 join workspace_videos wv
   on  wv.workspace_id = a.workspace_id and wv.video_id = a.video_id
 join video_generations g
@@ -717,19 +731,23 @@ join video_generations g
   and g.generation_id = a.generation_id
 where a.slot = 'summary' and a.state = 'recorded' and not g.body_collected
 order by a.workspace_id, a.video_id,
-         -- ⟳ ROUND 6 B4: plain `=`, not `is not distinct from`. Both sides are now NOT NULL — the
-         -- column by DDL, the card by gen_card_complete — so the null-tolerant comparison bought
-         -- nothing and actively hid the defect: it returned TRUE for two NULLs, which read as
-         -- "corrections-current" for every row the migration had failed to backfill.
+         -- ⟳ ADR-0011 — NO CORRECTIONS TERM. This ranked "prefer the generation whose card says it
+         -- reflects the corrections currently in force", comparing an IMMUTABLE stamp inside a frozen
+         -- generation against a MUTABLE denormalized copy — so a generation could keep claiming to
+         -- reflect corrections that had since been overwritten, undetected.
+         -- "Is this generation corrections-current?" is NOT a property of the generation. It is a
+         -- RELATION between a generation and a VIEWER: one shared artifact seen from two playlists
+         -- with different corrections has two answers at once. The card keeps its `mdCorrectionsHash`
+         -- stamp (a fact); the COMPARISON belongs to the reader, who knows their playlist.
          --
-         -- ⚠ THIS LINE CARRIES NO GUARD OF ITS OWN, and the mutation harness says so out loud
-         -- (`mutate-schema.py`, the one entry expected to come back GREEN). While NOT NULL holds,
-         -- `=` and `is not distinct from` are behaviourally identical, so reverting this line
-         -- changes nothing and no assertion can go red. The protection lives ENTIRELY in the NOT
-         -- NULL; this is a clarification riding on it. Recorded rather than quietly asserted,
-         -- because "we tightened the comparison" reads like a fix and is not one — if the NOT NULL
-         -- is ever relaxed, this line silently stops being equivalent and B4 returns.
-         (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,
+         -- ⚠ WHAT ROUND 6 B4 BOUGHT, AND WHY IT IS NOT LOST. B4 changed this line from
+         -- `is not distinct from` to plain `=`, because the null-tolerant form returned TRUE for two
+         -- NULLs and read as "corrections-current" for every row the migration had failed to
+         -- backfill. It also recorded, honestly, that the line CARRIED NO GUARD OF ITS OWN: while
+         -- NOT NULL held, both forms were behaviourally identical, so `mutate-schema.py` had one
+         -- entry expected to come back GREEN. That entry's subject is now gone entirely — which is
+         -- the stronger version of the same fix. A term that could not be protected by an assertion
+         -- has been deleted rather than tightened again.
          g.doc_version_major desc nulls last,
          -- Round 5 B3: rank the CARD's mdGeneratedAt, not produced_at. reconcileClassA:49 ranks
          -- mdGeneratedAt; this ranked produced_at; MEASURED opposite winners on the same pair, which
@@ -743,6 +761,8 @@ order by a.workspace_id, a.video_id,
 create view video_artifacts_current with (security_invoker = true) as
 select distinct on (a.workspace_id, a.video_id, a.slot) a.*
 from video_artifacts a
+-- ⚠ column-less since ADR-0011, kept deliberately — the full measurement is on
+-- `video_summary_current` above. Do not delete it here alone.
 join workspace_videos wv
   on  wv.workspace_id = a.workspace_id and wv.video_id = a.video_id
 left join video_generations g
@@ -789,7 +809,9 @@ order by a.workspace_id, a.video_id, a.slot,
                           where vas.artifact_id = a.artifact_id
                             and sg.kind = 'summary'
                             and vas.source_generation_id is distinct from s.generation_id)) desc,
-         (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,   -- ⟳ round 6 B4; see above
+         -- ⟳ ADR-0011 — NO CORRECTIONS TERM; the full reason is on video_summary_current above.
+         -- Corrections-currency is a RELATION between a generation and a VIEWER, not a property of
+         -- the generation, so it cannot be ranked here at all — it belongs to the reader.
          g.doc_version_major desc nulls last,
          (g.card ->> 'mdGeneratedAt') desc nulls last,   -- round 5 B3; see video_summary_current
          g.produced_at desc nulls last,

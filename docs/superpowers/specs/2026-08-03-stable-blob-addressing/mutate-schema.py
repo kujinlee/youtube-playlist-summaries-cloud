@@ -249,39 +249,34 @@ MUTATIONS = [
      "art_detached_has_timestamp", ART),
 
     # ── item 2: the corrections representation (round 6 B4) ──────────────────────
-    ("corrections_hash nullable again (default kept, so ONLY nullability changes)",
-     "  corrections_hash   text not null default no_corrections_hash(),",
-     "  corrections_hash   text default no_corrections_hash(),",
-     "NULL corrections_hash", GEN),
+    # ⛔ FIVE CORRECTIONS MUTATIONS RETIRED BY ADR-0011 (T2, 2026-08-26). Their subjects are gone:
+    #   "corrections_hash nullable again"        — the column
+    #   "the seed drops corrections"             — the seed's corrections arms
+    #   "the anti-drift trigger removed (UPDATE)" — sync_corrections_to_workspace_video
+    #   "rung 1 back to `is not distinct from`"   — the ranking term in both views
+    #   "the INSERT-half sync unguarded"          — the INSERT trigger and its WHEN guard
+    # Each was verified INVALID (`anchor not found — mutation never applied`) by running the harness
+    # BEFORE deletion, so the harness said out loud that it could not run rather than passing — the
+    # behaviour that makes a retirement safe to do at all.
+    #
+    # ⚠ ONE OF THEM WAS ALREADY DOCUMENTED AS UNABLE TO GO RED, and that is the note worth keeping:
+    # "rung 1 back to `is not distinct from`" carried `None` as its expected-assertion, because while
+    # the NOT NULL held both forms were behaviourally identical. It was a mutation that could only
+    # ever come back GREEN. ADR-0011 deletes the term it could not test — which is the cleaner
+    # resolution of the same observation.
 
-    ("the seed drops corrections (the original migration)",
-     "         nullif(data->>'corrections', ''),\n         corrections_hash_of(data->>'corrections')",
-     "         null::text,\n         no_corrections_hash()",
-     "backfill lost corrections", GEN),
 
     ("gen_card_complete stops requiring mdCorrectionsHash",
      "      and card ->> 'mdCorrectionsHash' is not null)),",
      "      )),",
      "ONLY null is mdCorrectionsHash", GEN),
 
-    ("the anti-drift trigger removed (UPDATE half)",
-     """create trigger videos_corrections_sync_upd_trg
-  after update of data on videos
-  for each row
-  when (coalesce(old.data->>'corrections','') is distinct from coalesce(new.data->>'corrections',''))
-  execute function sync_corrections_to_workspace_video();""",
-     "",
-     "the copy drifted", GEN),
 
     # EXPECTED GREEN, and saying so is the point. With both sides NOT NULL,
     # `is not distinct from` and `=` are behaviourally identical, so the `=` change is a
     # clarification whose safety is entirely SUBSUMED by the NOT NULL above. Recording it as an
     # expected no-op is honest; deleting it would hide that the simplification carries no guard,
     # and claiming it RED would be the laundering this harness exists to stop.
-    ("rung 1 back to `is not distinct from` (no-op while NOT NULL holds)",
-     "         (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,\n         g.doc_version_major",
-     "         (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,\n         g.doc_version_major",
-     None, ART),
 
     ("the DEFINED constant silently re-derived",
      "select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text",
@@ -807,11 +802,6 @@ create trigger video_generations_freeze_trg""",
     # destroys data when a caller is merely SECOND. Removing the WHEN clause restores round 6's
     # unconditional INSERT-half sync — harmless for as long as B3 made inserts impossible, and a
     # measured clobber the moment ingest worked.
-    ("the INSERT-half sync unguarded (round 6's version, live once ingest worked)",
-     "  for each row\n  when (coalesce(new.data->>'corrections','') <> '')\n"
-     "  execute function sync_corrections_to_workspace_video();",
-     "  for each row execute function sync_corrections_to_workspace_video();",
-     "CLOBBERED the shared corrections", GEN),
 ]
 
 
