@@ -254,7 +254,7 @@ alter table video_artifact_sources force row level security;
 -- anon holds TRUNCATE by default, and TRUNCATE fires neither RLS nor a ROW trigger: it would walk
 -- straight past the policy below AND past the append-only trigger, on the table that decides which
 -- paid render is current. Same three lines as `video_artifacts` because it is the same hazard.
-revoke all on video_artifact_sources from anon, authenticated;
+revoke all on video_artifact_sources from public, anon, authenticated, service_role;
 grant select, insert, update, delete on video_artifact_sources to service_role;
 grant select on video_artifact_sources to authenticated, anon;
 -- ⚠ THE POLICY IS NOT COSMETIC, AND THE REASON IS `security_invoker`. `video_artifacts_current` reads
@@ -652,7 +652,7 @@ alter table video_artifacts force row level security;
 -- nothing. TRUNCATE fires neither RLS nor a ROW trigger — so it walks straight past both the policy
 -- below and the append-only trigger, which is this design's central invariant.
 -- The repo already knows this (`0011_cost_guardrails.sql:56` revokes); the new tables were not swept.
-revoke all on video_artifacts from anon, authenticated;
+revoke all on video_artifacts from public, anon, authenticated, service_role;
 grant select, insert, update, delete on video_artifacts to service_role;
 grant select on video_artifacts to authenticated, anon;
 
@@ -780,7 +780,7 @@ order by a.workspace_id, a.video_id, a.slot,
          g.produced_at desc nulls last,
          a.generation_id desc nulls last;
 
-revoke all on video_summary_current, video_artifacts_current from anon, authenticated;
+revoke all on video_summary_current, video_artifacts_current from public, anon, authenticated, service_role;
 grant select on video_summary_current, video_artifacts_current
   to authenticated, anon, service_role;
 
@@ -925,7 +925,7 @@ select g.*
    and not exists (select 1 from video_artifact_sources vas
                     where vas.workspace_id = g.workspace_id and vas.video_id = g.video_id
                       and vas.source_generation_id = g.generation_id);
-revoke all on video_generations_collectable from anon, authenticated;
+revoke all on video_generations_collectable from public, anon, authenticated, service_role;
 grant select on video_generations_collectable to service_role;
 
 -- APPEND-ONLY, ENFORCED. Round 5 M1: the header comment and two others assert append-only, and the

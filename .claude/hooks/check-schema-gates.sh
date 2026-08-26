@@ -28,17 +28,30 @@ except Exception:
     pass
 " 2>/dev/null) || FILE_PATH=""
 
+# ⟳ r5 H2 (claude): THIS PATTERN COULD NOT MATCH THE FILE THE NEW GATES ARE ABOUT.
+# Gates 7 and 8 exist to answer "did the MIGRATION apply?", and the migration is
+# `supabase/migrations/0027_*.sql` — which no branch here named, so editing it fired
+# nothing. The rollback has the same standing: it is the other half of M4-β, and
+# `gen-m4-manifest.py` now executes it, so a change to it moves the manifest.
 case "$FILE_PATH" in
-  *2026-08-03-stable-blob-addressing/schema/*.sql|*2026-08-03-stable-blob-addressing/mutate-schema.py)
+  *2026-08-03-stable-blob-addressing/schema/*.sql \
+  |*2026-08-03-stable-blob-addressing/mutate-schema.py \
+  |*supabase/migrations/0027_*.sql \
+  |*supabase/rollback/rollback_0027_*.sql \
+  |*docs/superpowers/specs/m4/*.sql)
     cat <<'EOF'
 
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║  ⚠️  SCHEMA GATES — run before reporting this task done                  ║
 ╠══════════════════════════════════════════════════════════════════════════╣
 ║                                                                          ║
-║      ./scripts/check-schema-gates.sh                                     ║
+║      ./scripts/check-schema-gates.sh          (M4_PHASE=pre|post once    ║
+║                                                0027 exists)              ║
 ║                                                                          ║
-║  Runs all four: schema+assertions, mutations, GUARD COVERAGE, docs.      ║
+║  EIGHT gates. 1-6 rebuild the schema from the SPEC FILES and ask whether ║
+║  the spec is self-consistent. 7-8 read a LIVE DATABASE and ask whether   ║
+║  the migration APPLIED — the SUBJECT axis, and the only half that can    ║
+║  answer the question M4 exists to answer.                                ║
 ║                                                                          ║
 ║  Note: `psql -f schema/05_assert.sql` does NOT work standalone — the     ║
 ║  assertions need the schema loaded in the SAME transaction.              ║

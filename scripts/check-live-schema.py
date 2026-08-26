@@ -46,8 +46,9 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from m4_catalog import (by_kind, label, name_of, read_catalog, read_only_url,  # noqa: E402
-                        summarise)
+from m4_catalog import (CATALOG_SQL, ENFORCEMENT_COLUMNS, by_kind, label,  # noqa: E402
+                        name_of, read_catalog, read_identity, read_only_url, summarise,
+                        survivors as _survivors, symbol_of)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "live-manifest.txt")
@@ -67,6 +68,26 @@ ADR0011_REMOVED = {
 }
 
 
+def _keys(obj: str) -> set[str]:
+    """EVERY SPELLING under which `obj` could be one of the ADR-0011 objects. PURE.
+
+    ⟳ r5 L2 (claude): `forbidden()` compared whole rendered names, and `ADR0011_REMOVED` records
+    `fn:sync_corrections_to_workspace_video()` — one particular rendering. The same drift that makes
+    a `drop function` signature a silent no-op (r5 B1, MEASURED) evades that match too: a survivor
+    carrying one extra parameter renders as `…_workspace_video(uuid)` and is simply not in the set.
+    A must-never-exist check that can be defeated by adding an argument is not a must-never-exist
+    check, so it matches the SYMBOL, and — for triggers — the trigger name whatever table carries it.
+    """
+    n = name_of(obj)
+    keys = {n, symbol_of(obj)}
+    if n.startswith("trg:") and "." in n:
+        keys.add("trg:" + n.rsplit(".", 1)[1])
+    return keys
+
+
+FORBIDDEN_KEYS = {k for o in ADR0011_REMOVED for k in _keys(o)}
+
+
 def load_manifest(path: str = MANIFEST) -> set[str]:
     """The derived expected object set, VERIFIED against its own header.
 
@@ -77,15 +98,38 @@ def load_manifest(path: str = MANIFEST) -> set[str]:
     claim, and the gate reports the smaller number as though it were the whole.
 
     That is r3 B2 recurring one level up: the trust root moved from a hand-written list to a derived
-    file, and the *guarantee* did not move with it. So the file now states its own object count and
-    a sha256 of its body, and both are checked here — a truncated or edited manifest is a CANNOT RUN.
+    file, and the *guarantee* did not move with it. So the file states its own object count and a
+    sha256 of its body, and both are checked here.
+
+    ⛔ WHAT THAT HEADER DOES AND DOES NOT BUY — ⟳ r5 H1 (claude) / r5 M (codex).
+    **It is a self-consistency check, not an integrity check, and this docstring used to claim
+    otherwise.** `objs` is parsed from the very file that carries the claimed digest, so any editor
+    who changes the body can recompute both fields. MEASURED: the committed manifest reduced to ONE
+    object with its two header fields recomputed — about three lines of Python — and the gate printed
+    **"M4 is PRESENT as expected — checked all 1 objects", exit 0** against a full M4 database. That
+    is r4 B2 verbatim, restored. The r4 fix raised the price of the attack from *delete lines* to
+    *delete lines and rerun a hash*; it did not change its category.
+
+    So state the defence honestly, because a reader who believes this file self-authenticates will
+    not look for the real one:
+        * TRUNCATION and partial writes  -> caught here.
+        * A DELIBERATE OR MISTAKEN EDIT  -> caught by **gate 7** (`gen-m4-manifest.py --check`),
+          which re-derives the set by executing the schema, and by review of the diff in git.
+    Gate 7 is therefore load-bearing, not a convenience — which is why r5 B3 (it could not run in
+    the post phase, the one phase where this manifest carries the production assertion) was Blocking.
     """
     if not os.path.exists(path):
         raise FileNotFoundError(
             f"no manifest at {path}. Generate it: python3 scripts/gen-m4-manifest.py")
     with open(path) as f:
         text = f.read()
-    objs = {ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")}
+    # ⟳ r6 L2: content was measured AFTER strip() and comment-ness BEFORE it, so an indented `#`
+    # line was admitted as an object while an indented header was invisible to the regexes below.
+    # Both directions failed closed (count/digest mismatch → exit 2) but reported "TRUNCATED or
+    # partially written" for a file that is merely indented. This parser is the trust root; it
+    # should not lie about why it refused.
+    objs = {ln.strip() for ln in text.splitlines()
+            if ln.strip() and not ln.strip().startswith("#")}
     if not objs:
         raise ValueError(
             f"the manifest at {path} is EMPTY. An empty expected set makes --expect-present pass\n"
@@ -105,30 +149,91 @@ def load_manifest(path: str = MANIFEST) -> set[str]:
     actual = hashlib.sha256(("\n".join(sorted(objs)) + "\n").encode()).hexdigest()
     if actual != claimed_d.group(1):
         raise ValueError(
-            f"the manifest at {path} does not match its own sha256 — it has been edited by hand or\n"
-            "is partially written. It is DERIVED: regenerate it with "
-            "python3 scripts/gen-m4-manifest.py")
+            f"the manifest at {path} does not match its own sha256, so it is TRUNCATED or partially\n"
+            "written. (An edit that recomputes the header passes this check — see load_manifest;\n"
+            "the defence against an edit is gate 7, gen-m4-manifest.py --check, plus the git diff.)\n"
+            "It is DERIVED: regenerate it with python3 scripts/gen-m4-manifest.py")
     return objs
 
 
 # ---------------------------------------------------------------- pure verdict
+def survivors(live: set[str], manifest: set[str]) -> set[str]:
+    """Live objects M4 created that are STILL THERE — matched by NAME, not by digest. PURE.
+
+    ⛔⛔ r5 B1 (codex + claude), the round's headline. The two polarities ask DIFFERENT QUESTIONS,
+    and r4 moved both to the same predicate:
+
+        present : "does the live object match the definition M4 shipped?"   -> name@digest. Right.
+        absent  : "does an object M4 created still exist AT ALL?"           -> name. The definition
+                  is irrelevant, and requiring it to match makes every drifted survivor invisible.
+
+    MEASURED by both halves independently, on a real database, after the REAL rollback:
+
+      * a guard function `create or replace`d once before the rollback (the shape of any hotfix) —
+        the rollback misses it, and `--expect-absent` goes from exit 1 to **exit 0**;
+      * `record_artifact` drifted by one defaulted parameter, so the rollback's exact 13-type
+        `drop function if exists` is a silent no-op — leaving a live **SECURITY DEFINER** M4 function
+        on a database this gate certified as M4-free, printing
+        *"M4 is ABSENT as expected — checked all 161 objects, BY DEFINITION not just by name"*.
+
+    ⚠ `forbidden()` below already carried the correct reasoning IN THIS FILE, IN THE SAME COMMIT —
+    *"a digest-bearing comparison here would silently never match"* — and it was not applied here.
+    That is the round's whole lesson: the guarantee was carried across in one direction only.
+
+    ⭐ MATCHED ON THE SYMBOL, NOT ON `name_of`, AND THAT DISTINCTION IS THE WHOLE SECOND CASE.
+    Both review halves prescribed `name_of`. **`name_of` does not fix the case they measured.** A
+    function that drifted by one added parameter renders as `fn:record_artifact(…, text)`, whose
+    `name_of` is not the manifest's `fn:record_artifact(…)` either — so the survivor stays invisible
+    under the prescribed fix, and only the first of the two measured cases would have gone red. The
+    predicate has to drop the argument list as well as the digest, which is the same normalisation
+    `_keys` needed for r5 L2. Adopting a review's fix DIRECTION without re-deriving it against its
+    own evidence is how a round produces a fix that passes its own test and not the defect.
+
+    Over-matching here is deliberate and fail-closed: a `record_artifact` of ANY signature sitting on
+    a database that is supposed to be M4-free is worth stopping the rollback for.
+
+    ⭐ ALSO MATCHED BY DIGEST, WHICH CATCHES A RENAME — ⟳ r6 H (codex), MEASURED.
+    `alter function video_artifacts_append_only() rename to …_old` survives the real rollback (it
+    skips with a NOTICE), and a symbol match cannot see it: the symbol is exactly what changed. But a
+    function's digest is over its BODY and flags, and **`prosrc` does not contain the function's own
+    name** — so the renamed survivor's digest is byte-identical to the manifest's. Measured:
+
+        live:     495ca5006b24e4c50b6c964b18510a96
+        manifest: fn:video_artifacts_append_only()@495ca5006b24e4c50b6c964b18510a96
+
+    Restricted to `fn:` on purpose. A table's digest is over a handful of flags, so unrelated tables
+    collide on it constantly; a view/index/constraint/trigger definition embeds its own name, so a
+    rename changes the digest anyway and this would add nothing. `fn:` is the one kind where the
+    digest is both name-independent and content-rich enough to identify an object.
+
+    ⚠ A rename AND a body change together still escape. That is the honest bound: identity-based
+    absent-checking cannot survive the destruction of every form of identity at once.
+    """
+
+    return _survivors(live, manifest)
+
+
 def verdict(live: set[str], manifest: set[str], mode: str) -> bool:
     """PURE. True = pass.
 
-    present: every manifest object is live.
-    absent : no manifest object is live.
+    present: every manifest object is live, BY DEFINITION (name@digest).
+    absent : no object M4 created is live, BY NAME (see `survivors`).
     BOTH   : nothing ADR-0011 removed is live.
     """
     if forbidden(live):
         return False
     if mode == "absent":
-        return not (live & manifest)
+        return not survivors(live, manifest)
     return manifest <= live
 
 
 def residue(live: set[str], manifest: set[str], mode: str) -> set[str]:
-    """What is wrong — so a failure NAMES the objects. PURE."""
-    return (live & manifest) if mode == "absent" else (manifest - live)
+    """What is wrong — so a failure NAMES the objects. PURE.
+
+    Absent mode reports the LIVE objects (with their current digests), because what the reader needs
+    is the thing still sitting in the database, not the manifest line it failed to match.
+    """
+    return survivors(live, manifest) if mode == "absent" else (manifest - live)
 
 
 def split_residue(live: set[str], manifest: set[str]) -> tuple[set[str], set[str]]:
@@ -150,8 +255,11 @@ def forbidden(live: set[str]) -> set[str]:
     ⚠ Matched by NAME, not by the full `name@digest` string: `ADR0011_REMOVED` records things that
     must not exist at all, so their definition is irrelevant — and a digest-bearing comparison here
     would silently never match, which is how this check would have quietly died when digests landed.
+    **That sentence describes r5 B1 exactly, and `verdict`'s absent branch did not apply it.**
+
+    ⟳ r5 L2: matched on every spelling (see `_keys`), so an added argument cannot smuggle one past.
     """
-    return {o for o in live if name_of(o) in ADR0011_REMOVED}
+    return {o for o in live if _keys(o) & FORBIDDEN_KEYS}
 
 
 def report(objs: set[str], prefix: str) -> list[str]:
@@ -219,11 +327,33 @@ def self_test() -> int:
 
     check("absent FAILS on the cascade residue (a live-table trigger alive, tables gone)",
           verdict({"trg:profiles.profiles_ensure_workspace_trg@t1"}, M, "absent"), False)
-    check("absent FAILS when a function survives — a wrong drop signature is a SILENT no-op",
-          verdict({FN}, M, "absent"), False)
+    check("absent FAILS when a function survives byte-identical", verdict({FN}, M, "absent"), False)
 
-    # ADR-0011 objects are matched by NAME: they must not exist whatever their definition, and a
-    # digest-bearing comparison here would silently never match.
+    # ⭐⭐ THE r5 B1 CASES. Every one of these printed "M4 is ABSENT as expected", exit 0, on a real
+    # database — the rollback gate blessing live M4 objects, including a SECURITY DEFINER function.
+    #
+    # ⚠ THE OLD FIXTURE COULD NOT EXHIBIT THE BUG IT WAS NAMED AFTER. The case above was labelled
+    # "a wrong drop signature is a SILENT no-op" and passed `{FN}` — an element OF the manifest. A
+    # wrong drop signature is BY DEFINITION the case where the live signature is not the manifest's,
+    # so the fixture asserted the one shape that was never broken. A test whose fixture cannot
+    # express its own title is a green light bolted to the wall.
+    for label_, survivor in (
+            ("its BODY was hot-fixed before the rollback (same name, new digest)",
+             "fn:record_artifact(uuid)@HOTFIXED"),
+            ("it drifted by one DEFAULTED PARAMETER, so `drop function` was a silent no-op",
+             "fn:record_artifact(uuid, text)@DRIFTED"),
+            ("a trigger survived with a rewritten definition",
+             "trg:video_artifacts.video_artifacts_append_only_trg@REWRITTEN")):
+        check(f"absent FAILS when an M4 object survives and {label_}",
+              verdict({survivor}, M, "absent"), False)
+        check(f"…and residue names the LIVE object, not the manifest line — {label_[:26]}",
+              residue({survivor}, M, "absent"), {survivor})
+
+    check("absent still IGNORES a same-named object of a DIFFERENT KIND",
+          verdict({"idx:record_artifact@i9"}, M, "absent"), True)
+
+    # ADR-0011 objects are matched by SYMBOL: they must not exist whatever their definition OR
+    # ARGUMENT LIST, and a digest-bearing comparison here would silently never match.
     sync = {"fn:sync_corrections_to_workspace_video()@whatever"}
     check("absent FAILS when the ADR-0011 sync function survives, ANY digest",
           verdict(sync, M, "absent"), False)
@@ -232,15 +362,39 @@ def self_test() -> int:
     check("forbidden matches by NAME, ignoring the digest", forbidden(sync), sync)
     check("forbidden is EMPTY on a clean schema", forbidden(set(M)), set())
 
+    # ⟳ r5 L2 — the ADR-0011 set records ONE rendering of each object.
+    drifted_sync = {"fn:sync_corrections_to_workspace_video(uuid)@x"}
+    check("forbidden catches the ADR-0011 function with an ADDED ARGUMENT (r5 L2)",
+          forbidden(drifted_sync), drifted_sync)
+    moved_trg = {"trg:workspace_videos.videos_corrections_sync_ins_trg@x"}
+    check("forbidden catches the ADR-0011 trigger on a DIFFERENT TABLE (r5 L2)",
+          forbidden(moved_trg), moved_trg)
+    check("forbidden does NOT fire on an unrelated function that merely shares a prefix",
+          forbidden({"fn:sync_corrections_to_workspace_video_v2()@x"}), set())
+
     check("residue NAMES what SURVIVED in absent mode",
           residue({"table:workspaces"}, M, "absent"), {"table:workspaces"})
     check("name_of strips the digest", name_of(TRG),
           "trg:video_artifacts.video_artifacts_append_only_trg")
+    check("symbol_of strips the digest AND the argument list", symbol_of(FN), "fn:record_artifact")
+
+    # ⭐ r5 B2 — "WHAT DOES THIS SELECT NOT SELECT?" asked mechanically.
+    # The digest covered definitions and not enforcement state, and nothing named the properties it
+    # was supposed to cover — so "we added a digest" and "the digest covers enforcement" could both
+    # be believed at once. Deleting a column from CATALOG_SQL is now a RED TEST rather than a
+    # silently narrower gate. This cannot prove the list is COMPLETE; it proves it is not shrinking.
+    for col in ENFORCEMENT_COLUMNS:
+        check(f"CATALOG_SQL still reads {col} — the flag that decides whether a rule EXECUTES",
+              col in CATALOG_SQL, True)
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     if failures == 0:
-        print("⚠ the last case documents WHY load_manifest raises on an empty file: the pure\n"
-              "  verdict cannot distinguish 'nothing expected' from 'all present'.")
+        print("⚠ TWO THINGS THESE CASES DO NOT PROVE:\n"
+              "  * that ENFORCEMENT_COLUMNS is COMPLETE — only that it is not shrinking. The\n"
+              "    behavioural proof is scripts/mutate-live-schema-check.sh, which sabotages a real\n"
+              "    database and requires RED.\n"
+              "  * that an EMPTY manifest is safe: the pure verdict cannot distinguish 'nothing\n"
+              "    expected' from 'all present', which is why load_manifest raises on one.")
     return 1 if failures else 0
 
 
@@ -281,12 +435,19 @@ def main() -> int:
             return 2
     try:
         manifest = load_manifest(a.manifest)
+        # ⟳ r5 M5 (claude) / r5 H (codex): WHO answered, measured on the same connection, before the
+        # verdict. The subject used to be inferred from whether an env var was set, so pointing
+        # CLAUDE_RO_DATABASE_URL at a local scratch database as `postgres` printed
+        # "PRODUCTION (read-only claude_ro)". After r4 B2 — the gate reading the laptop while
+        # claiming production — the one property this line must have is that it cannot be a claim.
+        identity = read_identity(a.database, url=url)
         live = read_catalog(a.database, url=url)
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"CANNOT RUN — {e}\nTreat this as NOT RUN.", file=sys.stderr)
         return 2
 
-    subject = "PRODUCTION (read-only claude_ro)" if url else f"local container db '{a.database}'"
+    where = "--prod" if url else f"local container db '{a.database}'"
+    subject = f"{where} — {identity}"
     if verdict(live, manifest, mode):
         print(f"live schema [{subject}]: M4 is {mode.upper()} as expected — checked all "
               f"{len(manifest)} objects, BY DEFINITION not just by name ({summarise(manifest)})")

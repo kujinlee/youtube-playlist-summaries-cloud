@@ -358,31 +358,64 @@ python3 scripts/gen-m4-manifest.py           # clone pre-M4 → apply → `after
 python3 scripts/gen-m4-manifest.py --check   # staleness ratchet: fails if the schema moved
 ```
 
-It writes `docs/superpowers/specs/m4/live-manifest.txt` — **161 lines, one `kind:name` per object**
-— and `check-live-schema.py` compares a live catalog against exactly that set. Comparison is set
-algebra: `present` is `MANIFEST ⊆ live`, `absent` is `MANIFEST ∩ live = ∅`.
+It writes `docs/superpowers/specs/m4/live-manifest.txt` — **161 lines, one `kind:name@digest` per
+object** — and `check-live-schema.py` compares a live catalog against exactly that set.
+
+⭐ **THE TWO POLARITIES ASK DIFFERENT QUESTIONS, AND THAT IS NOT A DETAIL** ⟳ *r5 B1 (codex + claude)*:
+
+| | Question | Key |
+|---|---|---|
+| `--expect-present` | *does the live object match the definition M4 shipped?* | `name@digest` — `MANIFEST ⊆ live` |
+| `--expect-absent` | *does an object M4 created still exist AT ALL?* | the **symbol** — the definition is irrelevant |
+
+r4 moved both to `name@digest`, and MEASURED, that left a live **`SECURITY DEFINER`** M4 function on
+a database the rollback gate certified M4-free: any survivor whose definition drifted simply was not
+in `live ∩ manifest`. ⚠ Matching on the rendered *name* — the fix both review halves prescribed — is
+**not enough either**: a function that drifted by one defaulted parameter has a different rendered
+name too, which is the same reason its `drop function` was a silent no-op.
+
+⭐ **THE DIGEST COVERS ENFORCEMENT STATE, NOT ONLY DEFINITIONS** ⟳ *r5 B2 (codex + claude)*. Eight
+sabotages that leave every definition byte-identical were exit 0 against the r4 gate — the worst
+being `alter table … disable row level security`, which does not touch a single policy row and so
+left five owner-scoping policies reported as *verified* and none of them enforcing. `m4_catalog.py`
+now digests the flags that decide whether a rule **executes** (RLS on/forced, ACLs, `prosecdef`,
+`proconfig`, `provolatile`, `polpermissive`, `indisvalid`, view `reloptions`), and
+`check-live-schema.py --self-test` asserts each one is still read, so the list cannot silently shrink.
 
 ⛔ **Why not parse the SQL.** That reproduces the defect being fixed. The old inventory was
 hand-written, and separately `grep -c "^create trigger"` undercounts by one because
 `art_summary_has_no_source_trg` is a **`create constraint trigger`**. Every reader of the text
 inherits that class of error; the catalog does not.
 
-⛔ **The generator fails closed on a baseline that already has M4.** The manifest is a *diff*; if
-`0027` is already applied, `after EXCEPT before` is empty or partial and it would write a manifest
-that passes over any database at all — the exact failure this finding is about.
+⛔ **The generator's baseline is a throwaway clone, never the developer's database** ⟳ *r5 B3
+(claude)*. The manifest is a *diff*, so a baseline carrying M4 would make it empty or partial. The
+first version handled that by REFUSING when the local database had M4 — which made `M4_PHASE=post`
+permanently unsatisfiable, since in the post phase the local database has `0027` **by definition**.
+The clone is now rolled back if it arrives with M4, on the throwaway only.
 
-**Proven, not asserted** — `scripts/mutate-live-schema-check.sh`, **5/5 caught**:
+**Proven, not asserted** — `scripts/mutate-live-schema-check.sh`, **16/16 caught**:
 
-| Mutation | Result |
-|---|---|
-| empty database | `--expect-absent` passes |
-| M4 applied | `--expect-present` passes |
-| `drop table … cascade` residue | `--expect-absent` **FAILS** (live-table triggers survive) |
-| pre-ADR-0011 schema | `--expect-present` **FAILS** (sync fn + 2 triggers) |
-| ⭐⭐ **all seven own-table guards dropped** | `--expect-present` **FAILS** — *the case the 29-object gate blessed with exit 0* |
+| # | Mutation | Result |
+|---|---|---|
+| 1-2 | empty database · M4 applied | the two controls pass |
+| 3 | pre-ADR-0011 schema | `--expect-present` **FAILS** (sync fn + 2 triggers) |
+| 4 | ⭐⭐ all seven own-table guards **dropped** | `--expect-present` **FAILS** — *the case the 29-object gate blessed with exit 0* |
+| 5 | ⭐⭐⭐ the same seven **DISABLED**, not dropped | `--expect-present` **FAILS** — *r4 B1: the name stays, the rule dies* |
+| 6 | a guard body replaced by `return new` | `--expect-present` **FAILS** |
+| 7-12 | ⭐⭐⭐⭐ RLS off · no force · `security invoker` + `reset search_path` · insert/update/delete to `anon` · policy `as restrictive` · view `security_invoker = false` | `--expect-present` **FAILS** — *r5 B2: every definition byte-identical* |
+| 13 | the **real rollback** applied | `--expect-absent` passes *(the first thing in this repo that ever executed that file)* |
+| 14-15 | ⭐⭐⭐⭐ a survivor whose **body** drifted · whose **signature** drifted | `--expect-absent` **FAILS** — *r5 B1* |
+| 2 | `drop table … cascade` residue | `--expect-absent` **FAILS** — ⚠ 140 of 161 objects survive, so this mutation has almost no discriminating power (*r5 M1*) |
 
-Self-test **20 cases**, five of which assert a *view / index / policy / constraint / column* is
-missing — kinds the old gate named **zero** of.
+⚠ **A mutation can be vacuous, and one here was.** `alter view … set (security_invoker = true)` is a
+**no-op** — M4 already ships all three views that way — so a gate "failing to catch" it is reporting
+on a sabotage that never happened. Mutation 12 now measures `reloptions` before and after and calls
+itself NOT RUN if nothing changed.
+
+Self-test **53 cases**, including every enforcement column and both r5 B1 survivor shapes. ⚠ The old
+case named *"a wrong drop signature is a SILENT no-op"* used a fixture drawn **from** the manifest —
+a wrong drop signature is by definition the case where the live signature is *not* the manifest's, so
+the fixture asserted the one shape that was never broken.
 
 ⚠ **What this does NOT do.** It compares against the manifest generated from *this* repo's pre-M4
 baseline. It is not a proof that `db push --linked` is atomic — §4's one-transaction property is
@@ -960,9 +993,15 @@ supabase db push --linked
 - [ ] **Step 7: Assert against production with the live gate, then re-run `--prod`**
 
 ```bash
-python3 scripts/check-live-schema.py --expect-present   # pointed at prod
+python3 scripts/check-live-schema.py --prod --expect-present
 python3 scripts/check-anon-exposure.py --prod
 ```
+
+⛔ ⟳ *r5 M (codex): this said `--expect-present   # pointed at prod`, which is **the local default with
+a comment claiming otherwise**.* Run literally at M4-β it reads the LAPTOP — which by then has `0027`
+applied — prints PASS, and proves nothing about production. `--prod` is the flag that changes the
+subject; the comment never did. Both commands now print the MEASURED `current_user@host/db`, so a
+run against the wrong database is visible in its own output rather than inferred from a flag.
 
 ---
 
@@ -1000,11 +1039,19 @@ T10 ── any time  ┘             ╚═▶ ⚡ UNSEEDED M4-α FIRES on every
 
 ## Gates for the milestone
 
-1. `M4_PHASE=post ./scripts/check-schema-gates.sh` — **nine checks, numbered 0-8, all green**: the
-   `05_assert` guard (0), the six originals (1-6), the live-catalog gate (7), the re-runnable
-   assertions (8). ⛔ **The variable is not optional once `0027` exists** — without it the suite
-   exits 2 by design (Task 3 Step 7). Before `0027`, use `M4_PHASE=pre`.
-2. `check-live-schema.py --expect-present` after `0027`; `--expect-absent` after the rollback.
+1. `M4_PHASE=post ./scripts/check-schema-gates.sh` — **nine checks, numbered 1-9, all green**: the
+   six originals (1-6), the catalog-coverage ratchet (7), the manifest-currency ratchet (8), the
+   live-catalog gate (9). ⛔ **The
+   variable is not optional once `0027` exists** — without it the suite exits 2 by design (Task 3
+   Step 7). Before `0027`, use `M4_PHASE=pre`.
+   ⟳ *r5 M (codex): this said "nine checks, numbered 0-8" and named a check (0) the script does not
+   have. A gate list is the one place a miscount is load-bearing — a reader ticking nine items off a
+   script that prints eight resolves the difference by assuming they missed one.*
+   ⟳ *r5 B3 (claude): `M4_PHASE=post` was **unsatisfiable** — gate 7 refused to run once the local
+   database had M4, so the suite could never be green from the moment the milestone succeeded. Fixed
+   in `gen-m4-manifest.py`: the baseline is a throwaway clone, rolled back if it arrives carrying M4,
+   so the ratchet no longer depends on which phase the developer's own database is in.*
+2. `check-live-schema.py --prod --expect-present` after `0027`; `--expect-absent` after the rollback.
 3. `npm run test:integration` green **against a named commit**; unavailable stack ⇒ non-zero, *treat as NOT RUN*.
 4. `check-anon-exposure.py --prod` at M4-β (the gate); `--local` is a smoke test.
 5. `check-docs`, `check-anchors`, `check-review-rounds`, `check-roadmap-consistency`, `check-test-counts`, `check-arch-findings`, `check-ratchet-contract`, `check-gate-falsifiability` — all 0.

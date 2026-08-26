@@ -19,16 +19,37 @@ and separately, `grep -c "^create trigger"` undercounts by one because
 `art_summary_has_no_source_trg` is a `create constraint trigger`. Any reader of the text inherits
 that class of error; the catalog does not.
 
-⛔ IT REFUSES TO RUN AGAINST A BASELINE THAT ALREADY HAS M4.
-The manifest is a DIFF. If `0027` is already applied to the baseline database, `after EXCEPT before`
-is empty or partial, and the generator would happily write a manifest asserting almost nothing —
-a gate that passes over any database at all. That is the failure mode this whole finding is about,
-so it fails closed instead.
+⛔ THE BASELINE IS A THROWAWAY CLONE, NOT THE DEVELOPER'S DATABASE — ⟳ r5 B3 (claude)
+--------------------------------------------------------------------------------------
+The manifest is a DIFF, so a baseline that already has M4 makes `after EXCEPT before` empty or
+partial, and the generator would write a manifest asserting almost nothing — a gate that passes over
+any database at all. The first version handled that by REFUSING when the local `postgres` database
+had M4.
+
+**Which made `M4_PHASE=post ./scripts/check-schema-gates.sh` permanently unsatisfiable.** In the post
+phase the local database has 0027 applied *by definition* — that is what "post" means — so gate 7
+exited 2, `run()` set `fail=1`, and the suite could never go green again from the moment the
+milestone succeeded. MEASURED (exit 2). That was **the third unsatisfiable milestone this plan has
+shipped, in the gate added to close the second**, and it was worse than a red suite: gate 7 is the
+only thing that can detect an edited manifest (`check-live-schema.py:load_manifest` — the in-file
+sha256 is self-consistent, so it cannot), and the post phase is exactly when the manifest carries the
+production assertion.
+
+The cause was not the refusal. It was reading `before` from **the machine's working database** at
+all, which also made the diff asymmetric: `before` came from `postgres` while `after` came from a
+`pg_dump --no-privileges` clone, so any privilege-sensitive digest would differ for reasons that have
+nothing to do with M4 — and r5 B2 has just put ACLs in the digest. Both are gone: BOTH readings now
+come from the same throwaway database, and if that clone arrives carrying M4 the ROLLBACK is applied
+to it (never to anything shared) to produce the pre-M4 baseline. The generator no longer cares which
+phase the developer is in.
+
+⚠ It still fails closed if the rollback leaves M4 behind — an incomplete rollback would silently
+shrink the manifest, which is the same class of defect one level down.
 
 FAILS IF
 --------
-the baseline already contains M4; Docker or the spec is unreachable (exit 2); or, with `--check`,
-the committed manifest differs from what the schema now produces (exit 1).
+the baseline still contains M4 after the rollback; Docker or the spec is unreachable (exit 2); or,
+with `--check`, the committed manifest differs from what the schema now produces (exit 1).
 """
 from __future__ import annotations
 
@@ -39,11 +60,13 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from m4_catalog import CONTAINER, read_catalog, summarise, by_kind  # noqa: E402
+from m4_catalog import (CONTAINER, by_kind, read_catalog,  # noqa: E402
+                        summarise, survivors)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "live-manifest.txt")
-SCRATCH = "m4_manifest_gen"
+ROLLBACK = os.path.join(REPO, "supabase", "rollback", "rollback_0027_stable_blob_addressing.sql")
+SCRATCH = f"m4_manifest_gen_{os.getpid()}"   # ⟳ r6 L1: per-process, see the harness
 
 # ⛔ r4 B2 (codex + claude) — THE FILE MUST ASSERT ITS OWN COMPLETENESS.
 # The loader used to accept any non-empty file. MEASURED: a manifest containing one line, against a
@@ -73,8 +96,12 @@ HEADER = """\
 
 
 def psql(db: str, sql: str) -> subprocess.CompletedProcess[str]:
+    # ON_ERROR_STOP, because the rollback is applied through here and a returncode that ignores SQL
+    # errors would make "the rollback applied" unfalsifiable — the exact shape this plan keeps
+    # shipping. (The has_m4 re-check below is the second line of defence, not the first.)
     return subprocess.run(
-        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", db, "-tAq"],
+        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", db, "-tAq",
+         "-v", "ON_ERROR_STOP=1"],
         input=sql, capture_output=True, text=True)
 
 
@@ -82,31 +109,86 @@ def drop_scratch() -> None:
     psql("postgres", f"drop database if exists {SCRATCH} (force);")
 
 
-def derive() -> set[str]:
-    """Build the manifest by executing the schema. Raises RuntimeError with a reason."""
-    try:
-        before = read_catalog("postgres")
-    except (RuntimeError, FileNotFoundError) as e:
-        raise RuntimeError(f"could not read the baseline catalog: {e}") from e
+M4_MARKERS = ("table:workspaces", "table:video_generations")
 
-    # fail closed: a baseline that already has M4 yields a manifest asserting nothing
-    if any(o in before for o in ("table:workspaces", "table:video_generations")):
-        raise RuntimeError(
-            "the baseline database ALREADY HAS M4 applied, so `after EXCEPT before` would be empty\n"
-            "or partial and this would write a manifest that passes over any database.\n"
-            "Run the rollback first: supabase/rollback/rollback_0027_stable_blob_addressing.sql")
 
+def has_m4(catalog: set[str], manifest: set[str] | None = None) -> bool:
+    """Does this catalog carry M4? PURE.
+
+    ⟳ r6 M1 (claude): this was TWO TABLE NAMES, and the docstring above claimed it "fails closed if
+    the rollback leaves M4 behind". MEASURED — a rollback with four `drop` lines commented out left
+    `corrections_hash_of`, `no_corrections_hash`, `slot_kind` and the `artifact_kind` ENUM behind,
+    and this returned False over all four. What actually failed closed was the schema's
+    NON-IDEMPOTENCY (zero `create or replace`, zero `if not exists`, so re-applying over a survivor
+    is a hard error) — an accident, not the stated guarantee, and one line of `create or replace`
+    away from being gone.
+
+    `check-live-schema.survivors()` already answers this question correctly over all 161 objects. A
+    second, weaker definition of "does this database have M4" is exactly the duplicate-mechanism
+    shape `check-vocabulary-collisions.py` exists to find — in the file that fixed the
+    `read_only_url` duplication this same round.
+    """
+    if manifest:
+        return bool(survivors(catalog, manifest))
+    names = {o.split("@", 1)[0] for o in catalog}
+    return any(m in names for m in M4_MARKERS)
+
+
+def _committed() -> set[str] | None:
+    """The committed manifest's object set, or None. Used only to give `has_m4` the real predicate."""
+    return read_committed()
+
+
+def derive(source: str = "postgres") -> set[str]:
+    """Build the manifest by executing the schema. Raises RuntimeError with a reason.
+
+    Both readings come from SCRATCH, never from `source` — see the module docstring (r5 B3).
+    Nothing here writes to the source database.
+
+    `source` exists so the POST-PHASE PATH CAN BE PROVEN. Without it the rollback branch below is
+    only reachable on a machine that has already crossed M4-β, i.e. exactly when it is too late to
+    discover it does not work — and "the fix for the unsatisfiable gate is itself unexercised" is
+    the shape this review round keeps finding. `--self-test` points it at a scratch M4 database.
+    """
     drop_scratch()
     if psql("postgres", f"create database {SCRATCH};").returncode != 0:
         raise RuntimeError("could not create the scratch database")
 
     clone = subprocess.run(
         ["docker", "exec", "-i", CONTAINER, "sh", "-c",
-         f"pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges "
+         f"pg_dump -U postgres -d {source} --schema-only --no-owner --no-privileges "
          f"| psql -U postgres -d {SCRATCH} -q"],
         capture_output=True, text=True)
     if clone.returncode != 0:
         raise RuntimeError(f"could not clone the baseline schema: {clone.stderr.strip()[:200]}")
+
+    try:
+        before = read_catalog(SCRATCH)
+    except (RuntimeError, FileNotFoundError) as e:
+        raise RuntimeError(f"could not read the baseline catalog: {e}") from e
+
+    # ⟳ r5 B3: the clone carries M4 exactly when the developer is in the POST phase. Roll it back —
+    # ON THE THROWAWAY, never on anything shared — instead of refusing, which made the post-phase
+    # suite unsatisfiable. This also means every `--check` run EXERCISES the rollback file, which
+    # until now nothing executed.
+    if has_m4(before, _committed()):
+        if not os.path.exists(ROLLBACK):
+            raise RuntimeError(
+                f"the baseline clone has M4 applied and there is no rollback at {ROLLBACK} to\n"
+                "produce a pre-M4 baseline from it.")
+        with open(ROLLBACK) as f:
+            rolled = psql(SCRATCH, f.read())
+        if rolled.returncode != 0:
+            raise RuntimeError(
+                f"the rollback did not apply to the baseline clone: {rolled.stderr.strip()[-300:]}")
+        before = read_catalog(SCRATCH)
+        # fail closed: an INCOMPLETE rollback shrinks the diff, which silently shrinks the manifest
+        if has_m4(before, _committed()):
+            raise RuntimeError(
+                "the rollback ran on the baseline clone and M4 IS STILL THERE, so `after EXCEPT\n"
+                "before` would be partial and this would write a manifest that passes over any\n"
+                f"database. Fix {os.path.relpath(ROLLBACK, REPO)} first — and note that the same\n"
+                "incompleteness would leave objects behind in production.")
 
     built = subprocess.run(
         [sys.executable, os.path.join(REPO, "scripts", "build-m4-schema.py"), "--quiet"],
@@ -146,12 +228,73 @@ def read_committed() -> set[str] | None:
         return {ln.strip() for ln in f if ln.strip() and not ln.startswith("#")}
 
 
+def self_test() -> int:
+    """⭐ r5 B3 — PROVE THE POST-PHASE PATH, which is otherwise only reachable after M4-β.
+
+    Builds a scratch database that HAS M4, points `derive()` at it as the baseline, and requires the
+    SAME 161-object manifest a pre-M4 baseline produces. Before this fix that call raised
+    "the baseline database ALREADY HAS M4 applied", which is what made
+    `M4_PHASE=post ./scripts/check-schema-gates.sh` permanently red.
+    """
+    m4db = f"m4_manifest_gen_post_{os.getpid()}"
+    cases = failures = 0
+
+    def check(label: str, ok: bool) -> None:
+        nonlocal cases, failures
+        cases += 1
+        print(("  ✓ " if ok else "  ✗ ") + label)
+        failures += 0 if ok else 1
+
+    def drop() -> None:
+        psql("postgres", f"drop database if exists {m4db} (force);")
+
+    try:
+        pre = derive()
+        check(f"a PRE-M4 baseline derives a manifest ({len(pre)} objects)", len(pre) > 100)
+
+        drop()
+        if psql("postgres", f"create database {m4db};").returncode != 0:
+            print("  ✗ CANNOT RUN — could not create the post-phase probe database")
+            return 1
+        subprocess.run(["docker", "exec", "-i", CONTAINER, "sh", "-c",
+                        f"pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges "
+                        f"| psql -U postgres -d {m4db} -q"], capture_output=True, text=True)
+        built = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "build-m4-schema.py"),
+                                "--quiet"], capture_output=True, text=True)
+        applied = subprocess.run(
+            ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", m4db,
+             "-tAq", "-v", "ON_ERROR_STOP=1"], input=built.stdout, capture_output=True, text=True)
+        if applied.returncode != 0:
+            print(f"  ✗ CANNOT RUN — could not build an M4 database: {applied.stderr[-200:]}")
+            return 1
+        check("the probe database really has M4", has_m4(read_catalog(m4db)))
+
+        post = derive(source=m4db)
+        check("a POST-M4 baseline derives a manifest at all (r5 B3: this used to RAISE)", bool(post))
+        check(f"…and it is the SAME manifest — {len(post)} vs {len(pre)} objects, "
+              f"{len(pre ^ post)} differing", pre == post)
+    except (RuntimeError, FileNotFoundError) as e:
+        print(f"  ✗ CANNOT RUN — {e}")
+        return 1
+    finally:
+        drop()
+        drop_scratch()
+
+    print(f"\n{cases - failures}/{cases} self-test cases passed")
+    return 1 if failures else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true",
                     help="regenerate and fail if the committed manifest differs")
+    ap.add_argument("--self-test", action="store_true",
+                    help="prove the post-phase path (r5 B3) against a scratch M4 database")
     a = ap.parse_args()
+
+    if a.self_test:
+        return self_test()
 
     try:
         manifest = derive()
