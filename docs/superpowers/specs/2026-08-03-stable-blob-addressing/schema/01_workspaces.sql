@@ -17,6 +17,15 @@ create table workspaces (
 );
 alter table workspaces enable row level security;
 alter table workspaces force row level security;
+-- ⟳ r6 (coordinator): REVOKE BEFORE GRANT, and from service_role too. Supabase's
+-- `alter default privileges` grants anon/authenticated/service_role ALL on every new public
+-- table AT CREATE TIME (MEASURED on production: anon=arwdDxtm). A `grant` alone therefore does
+-- not describe the end state — it ADDS to whatever the platform already handed out. Revoking
+-- first makes the resulting privileges a property of THIS FILE instead of a property of the
+-- cluster it happens to run on.
+-- ⛔ `workspaces` had NO revoke while all four sibling tables had one, so on a production-shaped
+-- database it would have shipped with anon holding INSERT/UPDATE/DELETE on the TENANCY ROOT.
+revoke all on workspaces from public, anon, authenticated, service_role;
 grant select, insert, update, delete on workspaces to service_role;
 grant select on workspaces to authenticated, anon;
 create policy workspaces_owner_read on workspaces for select using (owner_id = auth.uid());

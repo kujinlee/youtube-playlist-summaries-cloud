@@ -1039,8 +1039,9 @@ T10 ── any time  ┘             ╚═▶ ⚡ UNSEEDED M4-α FIRES on every
 
 ## Gates for the milestone
 
-1. `M4_PHASE=post ./scripts/check-schema-gates.sh` — **eight checks, numbered 1-8, all green**: the
-   six originals (1-6), the manifest-currency ratchet (7), the live-catalog gate (8). ⛔ **The
+1. `M4_PHASE=post ./scripts/check-schema-gates.sh` — **nine checks, numbered 1-9, all green**: the
+   six originals (1-6), the catalog-coverage ratchet (7), the manifest-currency ratchet (8), the
+   live-catalog gate (9). ⛔ **The
    variable is not optional once `0027` exists** — without it the suite exits 2 by design (Task 3
    Step 7). Before `0027`, use `M4_PHASE=pre`.
    ⟳ *r5 M (codex): this said "nine checks, numbered 0-8" and named a check (0) the script does not

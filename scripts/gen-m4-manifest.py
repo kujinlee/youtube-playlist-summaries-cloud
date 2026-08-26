@@ -60,12 +60,13 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from m4_catalog import CONTAINER, read_catalog, summarise, by_kind  # noqa: E402
+from m4_catalog import (CONTAINER, by_kind, read_catalog,  # noqa: E402
+                        summarise, survivors)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "live-manifest.txt")
 ROLLBACK = os.path.join(REPO, "supabase", "rollback", "rollback_0027_stable_blob_addressing.sql")
-SCRATCH = "m4_manifest_gen"
+SCRATCH = f"m4_manifest_gen_{os.getpid()}"   # ⟳ r6 L1: per-process, see the harness
 
 # ⛔ r4 B2 (codex + claude) — THE FILE MUST ASSERT ITS OWN COMPLETENESS.
 # The loader used to accept any non-empty file. MEASURED: a manifest containing one line, against a
@@ -111,10 +112,31 @@ def drop_scratch() -> None:
 M4_MARKERS = ("table:workspaces", "table:video_generations")
 
 
-def has_m4(catalog: set[str]) -> bool:
-    """Does this catalog carry M4? Matched by NAME — objects now carry a digest. PURE."""
+def has_m4(catalog: set[str], manifest: set[str] | None = None) -> bool:
+    """Does this catalog carry M4? PURE.
+
+    ⟳ r6 M1 (claude): this was TWO TABLE NAMES, and the docstring above claimed it "fails closed if
+    the rollback leaves M4 behind". MEASURED — a rollback with four `drop` lines commented out left
+    `corrections_hash_of`, `no_corrections_hash`, `slot_kind` and the `artifact_kind` ENUM behind,
+    and this returned False over all four. What actually failed closed was the schema's
+    NON-IDEMPOTENCY (zero `create or replace`, zero `if not exists`, so re-applying over a survivor
+    is a hard error) — an accident, not the stated guarantee, and one line of `create or replace`
+    away from being gone.
+
+    `check-live-schema.survivors()` already answers this question correctly over all 161 objects. A
+    second, weaker definition of "does this database have M4" is exactly the duplicate-mechanism
+    shape `check-vocabulary-collisions.py` exists to find — in the file that fixed the
+    `read_only_url` duplication this same round.
+    """
+    if manifest:
+        return bool(survivors(catalog, manifest))
     names = {o.split("@", 1)[0] for o in catalog}
     return any(m in names for m in M4_MARKERS)
+
+
+def _committed() -> set[str] | None:
+    """The committed manifest's object set, or None. Used only to give `has_m4` the real predicate."""
+    return read_committed()
 
 
 def derive(source: str = "postgres") -> set[str]:
@@ -149,7 +171,7 @@ def derive(source: str = "postgres") -> set[str]:
     # ON THE THROWAWAY, never on anything shared — instead of refusing, which made the post-phase
     # suite unsatisfiable. This also means every `--check` run EXERCISES the rollback file, which
     # until now nothing executed.
-    if has_m4(before):
+    if has_m4(before, _committed()):
         if not os.path.exists(ROLLBACK):
             raise RuntimeError(
                 f"the baseline clone has M4 applied and there is no rollback at {ROLLBACK} to\n"
@@ -161,7 +183,7 @@ def derive(source: str = "postgres") -> set[str]:
                 f"the rollback did not apply to the baseline clone: {rolled.stderr.strip()[-300:]}")
         before = read_catalog(SCRATCH)
         # fail closed: an INCOMPLETE rollback shrinks the diff, which silently shrinks the manifest
-        if has_m4(before):
+        if has_m4(before, _committed()):
             raise RuntimeError(
                 "the rollback ran on the baseline clone and M4 IS STILL THERE, so `after EXCEPT\n"
                 "before` would be partial and this would write a manifest that passes over any\n"
@@ -214,7 +236,7 @@ def self_test() -> int:
     "the baseline database ALREADY HAS M4 applied", which is what made
     `M4_PHASE=post ./scripts/check-schema-gates.sh` permanently red.
     """
-    m4db = "m4_manifest_gen_post"
+    m4db = f"m4_manifest_gen_post_{os.getpid()}"
     cases = failures = 0
 
     def check(label: str, ok: bool) -> None:

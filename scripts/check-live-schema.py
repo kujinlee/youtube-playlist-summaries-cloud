@@ -48,7 +48,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from m4_catalog import (CATALOG_SQL, ENFORCEMENT_COLUMNS, by_kind, label,  # noqa: E402
                         name_of, read_catalog, read_identity, read_only_url, summarise,
-                        symbol_of)
+                        survivors as _survivors, symbol_of)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "live-manifest.txt")
@@ -123,7 +123,13 @@ def load_manifest(path: str = MANIFEST) -> set[str]:
             f"no manifest at {path}. Generate it: python3 scripts/gen-m4-manifest.py")
     with open(path) as f:
         text = f.read()
-    objs = {ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")}
+    # ⟳ r6 L2: content was measured AFTER strip() and comment-ness BEFORE it, so an indented `#`
+    # line was admitted as an object while an indented header was invisible to the regexes below.
+    # Both directions failed closed (count/digest mismatch → exit 2) but reported "TRUNCATED or
+    # partially written" for a file that is merely indented. This parser is the trust root; it
+    # should not lie about why it refused.
+    objs = {ln.strip() for ln in text.splitlines()
+            if ln.strip() and not ln.strip().startswith("#")}
     if not objs:
         raise ValueError(
             f"the manifest at {path} is EMPTY. An empty expected set makes --expect-present pass\n"
@@ -185,9 +191,26 @@ def survivors(live: set[str], manifest: set[str]) -> set[str]:
 
     Over-matching here is deliberate and fail-closed: a `record_artifact` of ANY signature sitting on
     a database that is supposed to be M4-free is worth stopping the rollback for.
+
+    ⭐ ALSO MATCHED BY DIGEST, WHICH CATCHES A RENAME — ⟳ r6 H (codex), MEASURED.
+    `alter function video_artifacts_append_only() rename to …_old` survives the real rollback (it
+    skips with a NOTICE), and a symbol match cannot see it: the symbol is exactly what changed. But a
+    function's digest is over its BODY and flags, and **`prosrc` does not contain the function's own
+    name** — so the renamed survivor's digest is byte-identical to the manifest's. Measured:
+
+        live:     495ca5006b24e4c50b6c964b18510a96
+        manifest: fn:video_artifacts_append_only()@495ca5006b24e4c50b6c964b18510a96
+
+    Restricted to `fn:` on purpose. A table's digest is over a handful of flags, so unrelated tables
+    collide on it constantly; a view/index/constraint/trigger definition embeds its own name, so a
+    rename changes the digest anyway and this would add nothing. `fn:` is the one kind where the
+    digest is both name-independent and content-rich enough to identify an object.
+
+    ⚠ A rename AND a body change together still escape. That is the honest bound: identity-based
+    absent-checking cannot survive the destruction of every form of identity at once.
     """
-    symbols = {symbol_of(o) for o in manifest}
-    return {o for o in live if symbol_of(o) in symbols}
+
+    return _survivors(live, manifest)
 
 
 def verdict(live: set[str], manifest: set[str], mode: str) -> bool:

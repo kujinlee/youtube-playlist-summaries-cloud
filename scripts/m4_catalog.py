@@ -83,12 +83,76 @@ CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 # ⭐ EVERY ENFORCEMENT COLUMN, ASSERTED BY THE SELF-TEST TO STILL BE IN `CATALOG_SQL`.
 # r5 B2 was possible because nothing named the properties the digest was supposed to cover, so
 # "we added the digest" and "the digest covers enforcement" could both be believed at once.
+#
+# ⚠ THIS LIST IS NOT THE MECHANISM. r6 proved it cannot be: `attacl` and `proisstrict` were both
+# missing, and both were missing for the same reason — the list was assembled from the sabotages
+# somebody had already run. `scripts/check-catalog-coverage.py` is the mechanism: it enumerates the
+# columns each catalog ACTUALLY HAS, straight from `pg_attribute`, and fails unless every one is
+# either digested or on a written EXCLUDED list with a reason. This tuple is the fast in-process
+# assertion; that script is the one that can find a column nobody thought of.
 ENFORCEMENT_COLUMNS = (
-    "relrowsecurity", "relforcerowsecurity", "relacl", "relpersistence", "reloptions",
-    "prosecdef", "proconfig", "provolatile", "prokind", "proacl",
-    "polpermissive", "indisvalid", "indisready", "indislive",
-    "attnotnull", "attidentity", "attgenerated", "tgenabled",
+    "relrowsecurity", "relforcerowsecurity", "relpersistence", "reloptions", "relhasrules",
+    "relreplident",
+    "prosecdef", "proconfig", "provolatile", "prokind", "proisstrict", "proleakproof",
+    "proparallel", "proretset", "prosqlbody",
+    "polpermissive", "indisvalid", "indisready", "indislive", "indisprimary", "indisunique",
+    "indimmediate", "indisexclusion",
+    "attnotnull", "attidentity", "attgenerated", "attstorage", "attcompression",
+    "tgenabled",
+    # privileges are digested as EFFECTIVE ACCESS, never as ACL text — see PRIVILEGE_NOTE.
+    # `has_any_column_privilege` rides in the TABLE digest, which is what catches r6 B2's
+    # column-level `grant insert (blob_key) … to anon`. There is deliberately no PER-COLUMN
+    # privilege digest — see the `col:` branch for the measurement that ruled it out.
+    "has_table_privilege", "has_any_column_privilege", "has_function_privilege",
 )
+
+# ⛔⛔ WHY PRIVILEGES ARE DIGESTED AS EFFECTIVE ACCESS AND NOT AS `relacl`/`proacl`/`attacl` TEXT.
+# ⟳ r6 B1 (claude), coordinator-verified against PRODUCTION 2026-08-25.
+#
+# r5 put `relacl` and `proacl` in the digest. The manifest is derived from a
+# `pg_dump --no-owner --no-privileges` clone, so it records the ACL Postgres assigns when NO default
+# privileges exist. **No deployed database is in that state.** MEASURED, same query, two subjects:
+#
+#     local container, public tables, owner postgres :  anon=Dxtm
+#     PRODUCTION,      public tables, owner postgres :  anon=arwdDxtm , claude_ro=r
+#     local roles                                    :  anon, authenticated, service_role
+#     production roles                               :  anon, authenticated, service_role, CLAUDE_RO
+#
+# `claude_ro` does not exist in the container at all, so **no manifest generated on any developer
+# machine can ever contain that grantee.** On a production-shaped database the reviewer measured 20
+# objects reported as *"EXIST BUT DO NOT MATCH THEIR DEFINITION"*, and called 20 a lower bound.
+#
+# The plan's Step 7 runs `--prod --expect-present` immediately after an irreversible
+# `supabase db push --linked`. With ACL text in the digest, that gate prints *"A PARTIALLY APPLIED M4
+# IS THE DANGEROUS STATE"* over a migration that applied perfectly — and the documented response to
+# that message is the rollback. **The gate built to prevent a bad cutover would argue for undoing a
+# good one.**
+#
+# ⭐ The fix is not to drop privileges from the digest — r5's `grant insert to anon` case is real.
+# It is to digest **what the spec asserts control over**: the EFFECTIVE access of the principals the
+# schema actually revokes from and grants to. MEASURED to be environment-invariant, which is the
+# whole point:
+#
+#     grantee        privilege             --no-privileges clone   production-shaped
+#     anon           SELECT/INSERT/UPDATE/DELETE      r---              r---     ✅ agree
+#     authenticated  SELECT/INSERT/UPDATE/DELETE      r---              r---     ✅ agree
+#     service_role   SELECT/INSERT/UPDATE/DELETE      arwd              arwd     ✅ agree
+#     (anon TRUNCATE/REFERENCES/TRIGGER/MAINTAIN      -                 Dxtm     ✗ diverge — excluded)
+#
+# The privileges that diverge are exactly the ones the M4 spec never mentions, and they are already
+# covered by `check-anon-exposure.py`, which ratchets them against a recorded per-environment
+# baseline — the right home, because it is environment-aware and this manifest cannot be.
+#
+# ⚠ `service_role` is deliberately EXCLUDED from the FUNCTION grantee list: production's default
+# function ACL grants it EXECUTE and the container's does not (measured above), and the spec revokes
+# only from `public, anon, authenticated`. Digesting an EXECUTE grant the spec never claimed to
+# control would reintroduce this whole finding for twelve functions.
+PRIVILEGE_NOTE = "effective access for the principals the spec revokes from and grants to"
+
+# The principals whose access M4's own `grant`/`revoke` statements control.
+REL_GRANTEES = ("public", "anon", "authenticated", "service_role")
+FN_GRANTEES = ("public", "anon", "authenticated")
+REL_PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE")
 
 # ⚠ NO BACKTICKS ANYWHERE IN THIS STRING. psql performs shell command substitution on backquotes
 # inside meta-command arguments, exactly as bash does (measured 2026-08-25).
@@ -111,17 +175,76 @@ set session characteristics as transaction read only;
 set search_path = pg_catalog;
 """
 
+def _guard(grantee: str, body: str) -> str:
+    """`body`, or the literal 'ABSENT' when the role does not exist here. PURE.
+
+    A role missing in one environment must CHANGE the digest, loudly, rather than be skipped — that
+    is the difference between "this database grants nothing to anon" and "anon is not a thing here".
+    `public` is a pseudo-role: `to_regrole('public')` is NULL but the privilege functions accept it.
+    """
+    if grantee == "public":
+        return body
+    return f"case when to_regrole('{grantee}') is null then 'ABSENT' else {body} end"
+
+
+def _rel_priv(rel: str) -> str:
+    """SQL expression: EFFECTIVE access on relation `rel`, for the principals the spec controls.
+
+    Replaces `relacl`/`attacl` TEXT, which cannot agree between a `--no-privileges` clone and any
+    deployed database (r6 B1). `has_any_column_privilege` is what makes a COLUMN-level grant
+    visible: `grant insert (blob_key) on video_artifacts to anon` moved no ACL the old query read,
+    so the 161-object digest was byte-identical while anon gained INSERT (r6 B2, measured).
+    """
+    parts = []
+    for g in REL_GRANTEES:
+        tbl = " || ".join(f"has_table_privilege('{g}', {rel}, '{p}')::text" for p in REL_PRIVS)
+        col = " || ".join(f"has_any_column_privilege('{g}', {rel}, '{p}')::text"
+                          for p in ("SELECT", "INSERT", "UPDATE"))
+        parts.append(f"'{g}=' || " + _guard(g, f"({tbl} || '/' || {col})"))
+    return "(" + " || ',' || ".join(parts) + ")"
+
+
+def _fn_priv(fn: str) -> str:
+    """SQL expression: effective EXECUTE, for the principals the spec revokes from. PURE.
+
+    ⚠ `service_role` is DELIBERATELY ABSENT. Production's default function ACL grants it EXECUTE and
+    the container's does not (measured), and the spec revokes only from `public, anon,
+    authenticated`. Digesting a grant the spec never claimed to control would reintroduce r6 B1 for
+    twelve functions.
+    """
+    parts = [f"'{g}=' || " + _guard(g, f"has_function_privilege('{g}', {fn}, 'EXECUTE')::text")
+             for g in FN_GRANTEES]
+    return "(" + " || ',' || ".join(parts) + ")"
+
+
+def _rules(rel: str) -> str:
+    """SQL expression: the rewrite RULES attached to `rel`. PURE.
+
+    ⟳ r6 H1: `create rule swallow as on insert to video_artifacts do instead nothing` made every
+    artifact write vanish — MEASURED, 0 rows after an insert — with the digest byte-identical,
+    because `pg_rewrite` was not read at all. Present mode ignores EXTRA objects by design, and r5
+    recorded that as correct because "a real database legitimately holds more than M4". True of most
+    extra objects; **false of an object ATTACHED to a manifest relation**, which is not an addition
+    to the database but a modification of that relation.
+    """
+    return (f"coalesce((select string_agg(r.rulename || ':' || r.ev_type::text || "
+            f"r.is_instead::text, ',' order by r.rulename) from pg_rewrite r "
+            f"where r.ev_class = {rel} and r.rulename <> '_RETURN'), '')")
+
+
 CATALOG_SQL = SESSION_SQL + r"""
 select 'table:' || c.relname || '@' || md5(
          c.relrowsecurity::text || c.relforcerowsecurity::text || c.relpersistence::text ||
-         coalesce((select string_agg(a::text, ',' order by a::text) from unnest(c.relacl) a), ''))
+         c.relreplident::text || c.relhasrules::text || c.relispartition::text ||
+         coalesce((select string_agg(o, ',' order by o) from unnest(c.reloptions) o), '') ||
+         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + r""")
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind = 'r'
 union all
 select 'view:' || c.relname || '@' || md5(
          pg_get_viewdef(c.oid) ||
          coalesce((select string_agg(o, ',' order by o) from unnest(c.reloptions) o), '') ||
-         coalesce((select string_agg(a::text, ',' order by a::text) from unnest(c.relacl) a), ''))
+         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + r""")
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind in ('v', 'm')
 union all
@@ -135,7 +258,17 @@ union all
 select 'col:' || c.relname || '.' || a.attname || '@' || md5(
          format_type(a.atttypid, a.atttypmod) || a.attnotnull::text ||
          coalesce(pg_get_expr(d.adbin, d.adrelid), '') ||
-         a.attidentity::text || a.attgenerated::text)
+         a.attidentity::text || a.attgenerated::text ||
+         a.attstorage::text || a.attcompression::text ||
+         coalesce((select string_agg(o, ',' order by o) from unnest(a.attoptions) o), '') ||
+         -- ⚠ NO PER-COLUMN PRIVILEGES HERE, and that is a measured decision, not an omission.
+         -- M4 adds columns to PRE-EXISTING tables (`videos`, `playlists`, `jobs`), and a column's
+         -- effective access is inherited from its table. Those tables' ACLs come from migrations
+         -- 0001-0026, which the manifest's `--no-privileges` baseline strips — so digesting them
+         -- here made `col:jobs.workspace_id` and two siblings mismatch on every real database
+         -- (MEASURED). A COLUMN-level grant on an M4 table is still caught: `has_any_column_privilege`
+         -- rides in that table's own digest, which is where r6 B2's `grant insert (blob_key)` lands.
+         '')
   from pg_attribute a
   join pg_class c on c.oid = a.attrelid
   join pg_namespace n on n.oid = c.relnamespace
@@ -150,11 +283,19 @@ select 'trg:' || c.relname || '.' || t.tgname || '@' ||
   join pg_namespace n on n.oid = c.relnamespace
  where not t.tgisinternal and n.nspname = 'public'
 union all
+-- ⟳ r6 B (codex): `proisstrict` was missing, and `alter function record_artifact(…) strict` passed
+-- the gate at exit 0. A STRICT function RETURNS NULL WITHOUT EXECUTING ITS BODY whenever any
+-- argument is NULL, so the paid write silently does not happen. Every pg_proc column that decides
+-- how or whether the body runs is now here; `check-catalog-coverage.py` enumerates the rest.
 select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' || '@' ||
-       md5(coalesce(p.prosrc, '') || p.prosecdef::text || p.provolatile::text || p.prokind::text ||
+       md5(coalesce(p.prosrc, '') || coalesce(p.prosqlbody::text, '') ||
+           p.prosecdef::text || p.provolatile::text || p.prokind::text ||
+           p.proisstrict::text || p.proleakproof::text || p.proparallel::text ||
+           p.proretset::text || format_type(p.prorettype, null) || l.lanname ||
            coalesce(array_to_string(p.proconfig, ','), '') ||
-           coalesce((select string_agg(a::text, ',' order by a::text) from unnest(p.proacl) a), ''))
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'
+           """ + _fn_priv("p.oid") + r""")
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  join pg_language l on l.oid = p.prolang where n.nspname = 'public'
 union all
 select 'type:' || t.typname || '@' || md5(coalesce(
          (select string_agg(e.enumlabel, ',' order by e.enumsortorder)
@@ -163,7 +304,9 @@ select 'type:' || t.typname || '@' || md5(coalesce(
  where n.nspname = 'public' and t.typtype = 'e'
 union all
 select 'idx:' || i.relname || '@' || md5(
-         pg_get_indexdef(i.oid) || x.indisvalid::text || x.indisready::text || x.indislive::text)
+         pg_get_indexdef(i.oid) || x.indisvalid::text || x.indisready::text || x.indislive::text ||
+         x.indisunique::text || x.indisprimary::text || x.indisexclusion::text ||
+         x.indimmediate::text || x.indnullsnotdistinct::text)
   from pg_index x join pg_class i on i.oid = x.indexrelid
   join pg_namespace n on n.oid = i.relnamespace where n.nspname = 'public'
 union all
@@ -301,6 +444,20 @@ def symbol_of(obj: str) -> str:
     """
     return name_of(obj).split("(", 1)[0]
 
+
+
+def survivors(live: set[str], manifest: set[str]) -> set[str]:
+    """Live objects M4 created that are STILL THERE — matched by SYMBOL, and for functions also by
+    DIGEST. PURE. The full reasoning lives on `check-live-schema.verdict`'s absent branch.
+
+    ⟳ r6 M1: this lives HERE, not in the gate, because `gen-m4-manifest.py` needs the same question
+    answered and had grown its own two-table approximation of it.
+    """
+    symbols = {symbol_of(o) for o in manifest}
+    fn_digests = {o.split("@", 1)[1] for o in manifest if o.startswith("fn:") and "@" in o}
+    return {o for o in live
+            if symbol_of(o) in symbols
+            or (o.startswith("fn:") and "@" in o and o.split("@", 1)[1] in fn_digests)}
 
 def by_kind(objects: set[str]) -> dict[str, list[str]]:
     """Group `kind:name@digest` strings for reporting. PURE."""

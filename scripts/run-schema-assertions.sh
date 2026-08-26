@@ -63,8 +63,26 @@ select_block() { # <file> -> block on stdout, or empty
 
 # Returns 0 if the block can fail, 2 with a reason on stderr otherwise.
 check_block() { # <block>
+  # ⟳ r6 H2 (claude): this used to be `grep -v '^[[:space:]]*--'`, which strips WHOLE COMMENT LINES
+  # only. MEASURED — all three of these were accepted, and the first is `select 1;`, the literal
+  # counter-example FAILS_LOUDLY was written for, re-admitted by appending a comment to it:
+  #
+  #     select 1; -- this would raise exception if the invariant broke
+  #     select 1; /* raise exception */
+  #     select 'raise exception' as note;
+  #
+  # ⚠ The file already knew this. Its own selector comment says "a marker only counts ON A COMMENT
+  # LINE, so SQL text can never steer the selector" — round 2's lesson, applied to the selector and
+  # not to the failure check eight lines below it. Same file, same commit, one direction; which is
+  # r5 B1's sentence verbatim.
+  #
+  # Order matters: literals FIRST (so a literal containing `--` cannot truncate the line), then
+  # block comments, then trailing line comments.
   local sql
-  sql=$(printf '%s\n' "$1" | grep -v '^[[:space:]]*--')
+  sql=$(printf '%s\n' "$1" \
+        | sed -E "s@'[^']*'@''@g" \
+        | sed -E 's@/\*[^*]*\*/@@g' \
+        | sed -E 's@--.*$@@')
   if [ -z "$(printf '%s' "$sql" | tr -cd '[:alnum:]')" ]; then
     echo "CANNOT RUN — no @RE-RUNNABLE block with EXECUTABLE SQL in $ASSERT." >&2
     echo "Comments alone are not assertions, and neither is punctuation: a lone ';' parses and" >&2
@@ -94,7 +112,7 @@ fi
 
 if [ "${1:-}" = "--self-test" ]; then
   TMP=$(mktemp -d) || exit 2
-  SCRATCH="m4_assert_selftest"
+  SCRATCH="m4_assert_selftest_$$"   # ⟳ r6 L1: per-process
   cases=0; bad=0
   cleanup_st() {
     rm -rf "$TMP"
@@ -123,6 +141,16 @@ if [ "${1:-}" = "--self-test" ]; then
   done
   ASSERT_FILE="$TMP/literal.sql" "$0" --print-block >/dev/null 2>&1
   ck "a marker inside a STRING LITERAL does not stop the selector" 0 "$?"
+
+  # ⟳ r6 H2 — a fake failure mechanism hiding in a comment or a literal must NOT count.
+  printf -- '-- @RE-RUNNABLE\nselect 1; -- this would raise exception if the invariant broke\n' \
+                                                                    > "$TMP/trailing.sql"
+  printf -- '-- @RE-RUNNABLE\nselect 1; /* raise exception */\n'    > "$TMP/cstyle.sql"
+  printf -- "-- @RE-RUNNABLE\nselect 'raise exception' as note;\n"  > "$TMP/litfake.sql"
+  for f in trailing cstyle litfake; do
+    ASSERT_FILE="$TMP/$f.sql" "$0" --print-block >/dev/null 2>&1
+    ck "'$f': a fake 'raise exception' in a comment or literal is CANNOT RUN (r6 H2)" 2 "$?"
+  done
   ASSERT_FILE="$TMP/real.sql" "$0" --print-block >/dev/null 2>&1
   ck "a real 'raise exception' block IS selected" 0 "$?"
   out=$(ASSERT_FILE="$TMP/real.sql" "$0" --print-block 2>/dev/null)

@@ -27,7 +27,11 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 CONTAINER="${PGCONTAINER:-supabase_db_youtube-playlist-summaries-cloud}"
-PREFIX="m4_gate_mut"
+# ⟳ r6 L1 (claude): the prefix is PER-PROCESS. `cleanup()` drops every database
+# matching it, and `(force)` terminates other sessions — so two concurrent runs used to
+# destroy each other mid-read, which can report a mutation as CAUGHT for the wrong
+# reason. The r6 reviewer hit this and had to rename into its own namespace to run at all.
+PREFIX="m4_gate_mut_$$"
 TPL="${PREFIX}_tpl"
 SPEC="docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema"
 ROLLBACK="supabase/rollback/rollback_0027_stable_blob_addressing.sql"
@@ -319,6 +323,114 @@ SQL
   echo "     does not contain, on a database this gate would otherwise certify M4-free"
   gate "${PREFIX}_sig" --expect-absent && r=pass || r=fail
   report "drifted-SIGNATURE M4 function survives -> --expect-absent FAILS" fail "$r"
+fi
+
+# ───────────────────────────────────────────────────────────────────────────────────────────────
+# ⭐⭐⭐⭐ r6 — THE FIXTURE WAS THE BLIND SPOT, NOT THE PREDICATE.
+# Every mutation above clones $TPL, and $TPL is built with `pg_dump --no-privileges` — the same
+# construction the manifest generator uses. So the harness and the thing it validates shared one
+# blind spot, and a 16/16 green report was structurally incapable of noticing that the manifest's
+# ACLs matched no deployed database (r6 B1). Mutation 19 is a CONTROL, not a sabotage, and it is the
+# one this suite lacked for five rounds.
+# ───────────────────────────────────────────────────────────────────────────────────────────────
+echo "═══ mutation 16 ⭐⭐ r6 B (codex): a guard made STRICT — the body stops running ═══"
+# A STRICT function returns NULL WITHOUT EXECUTING ITS BODY when any argument is NULL. `prosrc` is
+# untouched, so the r5 digest was byte-identical.
+if fresh "${PREFIX}_strict"; then
+  before_s=$(db "${PREFIX}_strict" -c "select proisstrict::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname='record_artifact';" | tr -d '[:space:]')
+  db "${PREFIX}_strict" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+do $$ declare s text; begin
+  select 'alter function public.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||') strict'
+    into s from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+   where n.nspname='public' and p.proname='record_artifact';
+  execute s; end $$;
+SQL
+  after_s=$(db "${PREFIX}_strict" -c "select proisstrict::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname='record_artifact';" | tr -d '[:space:]')
+  echo "     record_artifact proisstrict: $before_s -> $after_s"
+  if [ "$before_s" = "$after_s" ]; then
+    echo "  ✗ THE MUTATION DID NOT CHANGE ANYTHING — treat mutation 16 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_strict" --expect-present && r=pass || r=fail
+    report "record_artifact made STRICT -> --expect-present FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 17 ⭐⭐ r6 B2 (claude): a COLUMN-level grant, which moves no table ACL ═══"
+if fresh "${PREFIX}_colacl"; then
+  before_c=$(db "${PREFIX}_colacl" -c "select has_column_privilege('anon','video_artifacts','blob_key','INSERT')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_colacl" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+grant insert (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
+  on video_artifacts to anon;
+SQL
+  after_c=$(db "${PREFIX}_colacl" -c "select has_column_privilege('anon','video_artifacts','blob_key','INSERT')::text;" | tr -d '[:space:]')
+  echo "     anon INSERT on video_artifacts.blob_key: $before_c -> $after_c  (table ACL unchanged)"
+  if [ "$before_c" = "$after_c" ]; then
+    echo "  ✗ THE MUTATION DID NOT CHANGE ANYTHING — treat mutation 17 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_colacl" --expect-present && r=pass || r=fail
+    report "column-level insert granted to anon -> --expect-present FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 18 ⭐⭐ r6 H1 (claude): a REWRITE RULE swallows every write ═══"
+if fresh "${PREFIX}_rule"; then
+  db "${PREFIX}_rule" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create rule swallow as on insert to video_artifacts do instead nothing;
+SQL
+  n_rules=$(db "${PREFIX}_rule" -c "select count(*) from pg_rewrite r join pg_class c on c.oid=r.ev_class where c.relname='video_artifacts' and r.rulename<>'_RETURN';" | tr -d '[:space:]')
+  echo "     rules on video_artifacts: $n_rules  — every insert now vanishes silently"
+  if [ "$n_rules" = "0" ]; then
+    echo "  ✗ THE MUTATION DID NOT CHANGE ANYTHING — treat mutation 18 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_rule" --expect-present && r=pass || r=fail
+    report "DO INSTEAD NOTHING rule on video_artifacts -> --expect-present FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 20 ⭐⭐ r6 H (codex): a RENAMED survivor of the rollback ═══"
+# `alter function … rename to …_old` then the real rollback: the drop skips with a NOTICE and a live
+# SECURITY DEFINER guard remains. Symbol matching cannot see it — the symbol is what changed. But
+# `prosrc` does not contain the function's own name, so the survivor's DIGEST is byte-identical to
+# the manifest's, and absent mode matches fn: objects on digest as well as symbol.
+if fresh "${PREFIX}_ren"; then
+  db "${PREFIX}_ren" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter function public.video_artifacts_append_only() rename to video_artifacts_append_only_old;
+SQL
+  db "${PREFIX}_ren" -v ON_ERROR_STOP=1 < "$ROLLBACK" >/dev/null 2>&1
+  surv=$(db "${PREFIX}_ren" -c "select proname||' secdef='||prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and proname like '%append_only%';" | tr -d '[:space:]')
+  echo "     surviving after the full rollback: ${surv:-<none>}"
+  if [ -z "$surv" ]; then
+    echo "  ✗ THE RENAMED FUNCTION DID NOT SURVIVE — treat mutation 20 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_ren" --expect-absent && r=pass || r=fail
+    report "RENAMED M4 guard survives the rollback -> --expect-absent FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 19 ⭐⭐⭐⭐ r6 B1: a PRODUCTION-SHAPED database must PASS ═══"
+# THE CONTROL THE SUITE LACKED. Production carries `alter default privileges` granting
+# anon/authenticated/service_role ALL on every new public table (MEASURED on prod: anon=arwdDxtm,
+# plus a `claude_ro` grantee the container does not even have). With ACL TEXT in the digest this
+# went red on 20+ objects — the plan's Step 7 would have argued for rolling back a good migration.
+adm -c "drop database if exists ${PREFIX}_prodshape (force);" >/dev/null 2>&1
+adm -c "create database ${PREFIX}_prodshape;" >/dev/null 2>&1
+docker exec -i "$CONTAINER" sh -c \
+  "pg_dump -U postgres -d postgres --schema-only --no-owner | psql -U postgres -d ${PREFIX}_prodshape -q" \
+  >/dev/null 2>&1
+db "${PREFIX}_prodshape" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter default privileges for role postgres in schema public
+  grant all on tables to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  grant execute on functions to anon, authenticated, service_role;
+SQL
+n_def=$(db "${PREFIX}_prodshape" -c "select count(*) from pg_default_acl d join pg_namespace n on n.oid=d.defaclnamespace where n.nspname='public';" | tr -d '[:space:]')
+db "${PREFIX}_prodshape" -v ON_ERROR_STOP=1 < /tmp/m4-mutation-schema.sql >/dev/null 2>&1
+echo "     pg_default_acl rows for public: $n_def (the container's own template has 0 after --no-privileges)"
+if [ "$n_def" = "0" ]; then
+  echo "  ✗ THE DEFAULT PRIVILEGES DID NOT INSTALL — treat mutation 19 as NOT RUN"; fail=1
+else
+  gate "${PREFIX}_prodshape" --expect-present && r=pass || r=fail
+  report "M4 on a PRODUCTION-SHAPED database -> --expect-present PASSES" pass "$r"
 fi
 
 echo
