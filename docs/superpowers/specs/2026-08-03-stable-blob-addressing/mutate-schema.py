@@ -15,6 +15,7 @@ broken edit as an untested guard:
 
 Usage:  ./mutate-schema.py          (exit 0 = every guard confirmed RED)
 """
+import os
 import re
 import shutil
 import subprocess
@@ -25,6 +26,8 @@ from pathlib import Path
 SPEC = Path(__file__).resolve().parent
 GEN = SPEC / "schema/03_generations.sql"
 ART = SPEC / "schema/04_artifacts.sql"
+# ⟳ T4: four levels up from the spec dir — specs, superpowers, docs, then the repo root.
+REPO = SPEC.parents[3]
 
 # ⟳ ROUND 8 M3 — THIS HARNESS USED TO MUTATE THE REPO-TRACKED FILES AND PUT THEM BACK IN A
 # `finally`, and that is shape #11 (an instrument that misreports its own result) in the
@@ -805,9 +808,20 @@ create trigger video_generations_freeze_trg""",
 ]
 
 
-def run(script):
-    """Run the verifier that lives beside the schema being mutated — never the repo's."""
-    p = subprocess.run([str(script)], capture_output=True, text=True, cwd=script.parent)
+def run(script, extra_env=None):
+    """Run the verifier that lives beside the schema being mutated — never the repo's.
+
+    ⟳ T4 (2026-08-26): the verifier now resolves the repo from its own path, to find
+    `supabase/migrations/0027…` and `scripts/check-live-schema.py`. From a temp copy that
+    resolution lands outside the repo and the verifier exits 2 — which would have turned all 58
+    mutations INVALID in one go. `M4_REPO` pins it to the real repo; `M4_MIGRATION` pins the
+    migration to OUR COPY so a post-0027 run mutates and verifies the same bytes.
+    ⚠ `stdin=DEVNULL`: the verifier reaches Postgres through `docker exec -i`, which holds stdin
+    open. Measured the same day — an inherited stdin hangs the whole suite with no output at all.
+    """
+    env = {**os.environ, **(extra_env or {})}
+    p = subprocess.run([str(script)], capture_output=True, text=True, cwd=script.parent,
+                       env=env, stdin=subprocess.DEVNULL)
     return p.returncode, p.stdout + p.stderr
 
 
@@ -886,6 +900,25 @@ def run_suite(tmp: Path):
     script = work / "verify-schema.sh"
     copy_of = {GEN: work / "schema" / GEN.name, ART: work / "schema" / ART.name}
 
+    # ── ⟳ T4: the SOURCE the verifier reads is now a variable, so this harness pins both ends ─────
+    # Pre-0027 the verifier globs the spec files, which `copytree` above already put in `work`, so
+    # mutating `work/schema/0[34]_*.sql` is mutating what it reads. Once 0027 exists the verifier
+    # reads the MIGRATION instead, and `work/schema` becomes scenery — so the migration is copied in
+    # and `M4_MIGRATION` points at the copy. Without that, this harness would mutate a temp file and
+    # verify the real one: every mutation GREEN, the suite reporting perfect health over a gate that
+    # never saw a single change.
+    # ⚠ THE POST-0027 BRANCH IS UNEXERCISED TODAY because 0027 does not exist. It is written now
+    # rather than later because the alternative — discovering it at promotion — is the moment the
+    # gate is most trusted and least watched. Stated as UNTESTED rather than asserted as working.
+    env = {"M4_REPO": str(REPO)}
+    migration_src = REPO / "supabase" / "migrations" / "0027_stable_blob_addressing.sql"
+    if migration_src.exists():
+        shutil.copy2(migration_src, work / migration_src.name)
+        env["M4_MIGRATION"] = str(work / migration_src.name)
+        print(f"source: {migration_src.name} (copied into the workspace)")
+    else:
+        print("source: spec files 0[134]*.sql (0027 not present)")
+
     originals = {ART: ART.read_text(), GEN: GEN.read_text()}
     results = []
     for label, find, repl, expect, target in MUTATIONS:
@@ -897,7 +930,7 @@ def run_suite(tmp: Path):
         # opened for writing. The copy is rewritten wholesale before each mutation instead, so a
         # crash mid-suite leaves a temp directory behind and the checkout untouched.
         copy_of[target].write_text(original.replace(find, repl, 1))
-        rc, out = run(script)
+        rc, out = run(script, env)
         results.append((label, *classify(rc, out, expect)))
         copy_of[target].write_text(original)
 
@@ -916,7 +949,7 @@ def run_suite(tmp: Path):
 
     # The baseline now proves the COPY is unmutated, which is the only thing this suite could have
     # broken. That the repo is untouched is guaranteed structurally rather than checked.
-    rc, _ = run(script)
+    rc, _ = run(script, env)
     print("baseline restored:", "GREEN ✅" if rc == 0 else "STILL BROKEN ❌")
     return 1 if bad or rc else 0
 
