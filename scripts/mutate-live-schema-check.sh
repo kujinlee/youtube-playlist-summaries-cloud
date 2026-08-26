@@ -13,6 +13,21 @@
 # proof. This builds the state FOR REAL in throwaway databases and drops them afterwards. The shared
 # stack is never touched: `an-instrument-that-edits-the-repo-corrupts-its-peers`.
 #
+# ⚠⚠ THAT LAST SENTENCE IS TRUE OF EVERY MUTATION IN THIS FILE AND NOT OF THE CLASS — ⟳ r8 L3
+# (claude), proved the expensive way. Object-level grants are PER-DATABASE. **Role membership is
+# CLUSTER-WIDE**: the reviewer's `grant service_role to anon` probe changed `pg_auth_members` and
+# silently altered `has_table_privilege('anon', …)` in the container's shared `postgres` database as
+# well as in every scratch clone, garbaging a result table before it was noticed. The brief for that
+# round listed role membership as a candidate mutation, so the next person to reach for it will reach
+# for it inside a harness that promises an isolation it does not have for that one case. If you add a
+# role-scoped mutation here, it must create its OWN role and drop it, never grant an existing one.
+#
+# ⚠ AND TWO OF THESE MUST NOT RUN AT ONCE. `mutate-schema.py` (gate 2) works inside the SHARED
+# `postgres` database, and during round 8 a reviewer and the coordinator ran it concurrently: one
+# reported 23/63 with "baseline restored: STILL BROKEN" while the other, minutes later, measured
+# 63/63 and a clean database. That was filed as a Blocking finding before it was traced. There is no
+# lock here; serialise by hand.
+#
 # ⭐ WHAT EACH GENERATION OF THIS HARNESS COULD NOT EXPRESS — the defect keeps moving one layer out:
 #
 #   r3  it could only DROP things              -> a name-matching gate passed, and DISABLE was invisible

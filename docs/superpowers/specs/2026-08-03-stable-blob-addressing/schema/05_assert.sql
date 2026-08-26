@@ -977,9 +977,58 @@ begin
     reset role;
     raise exception 'ASSERTION FAILED — service_role cannot read video_artifact_sources';
   end;
+  -- 4. ⟳ r8 H2 (claude) — THE `detached` TRANSITION. §6.1 owes a detached dig "a route back", and
+  --    this file spends ~40 lines proving recorded -> detached -> recorded works — AS `postgres`,
+  --    NEVER AS `service_role`. Revoke UPDATE on video_artifacts from service_role and every detach
+  --    and re-attach fails at runtime with all three gates green. r7 B1's shape, a third time.
+  -- ⚠ ZERO-ROW PREDICATE ON PURPOSE. The first draft targeted the real row and went red — not on a
+  -- privilege, but on `video_artifacts_append_only`, which is a DIFFERENT guard with its own
+  -- assertions forty lines up. An UPDATE matching no rows still requires the UPDATE privilege, so
+  -- this discriminates exactly the thing the block is about and collides with nothing. Same lesson
+  -- as the B3 narrowing above: an assertion that reaches past its subject steals the failure from
+  -- the assertion that would have named the cause.
+  begin
+    update video_artifacts set slot = slot where workspace_id = v_ws and video_id = '__no_such__';
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot UPDATE video_artifacts, so the detached '
+                    'transition has no route in EITHER direction (spec 6.1)';
+  end;
+
+  -- 5. GC DELETE on the manifest — free renders, same argument.
+  begin
+    delete from video_artifacts where workspace_id = v_ws and video_id = '__no_such_video__';
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot DELETE from video_artifacts, so GC '
+                    'cannot reclaim a free render';
+  end;
   reset role;
-  raise notice 'ok: service_role retains its GC and provenance capabilities';
+  raise notice 'ok: service_role retains its GC, provenance and detached-transition capabilities';
 end $$;
+
+-- ⭐ THE GRANTS DELIBERATELY LEFT UNASSERTED, AND WHY — ⟳ r8 H2's direction, verbatim: *"write down,
+-- in that block, the grants deliberately left unasserted and why, so the next round does not
+-- re-derive this table. An unexplained omission is how r5 B2 happened."*
+--
+-- Step 5 deleted the digest of 21 grant sites. The blocks above now assert 12. These NINE are known
+-- to be unasserted, and each line is the reason — not an oversight:
+--
+--   workspaces         INSERT/UPDATE   written by ensure_workspace_for_profile(), a SECURITY DEFINER
+--                                      trigger on profiles. service_role never writes it directly.
+--   workspace_videos   INSERT/UPDATE   upserted by the videos derive trigger, also SECURITY DEFINER.
+--                      DELETE          only by cascade from workspaces.
+--   video_generations  INSERT          record_artifact is the ONLY writer, and 05 asserts that in
+--                                      ANY schema and by ANY spelling (search: T4/H1).
+--                      DELETE          GC, and the UPDATE half above is the one that fails first —
+--                                      a collector that cannot mark cannot reach the delete.
+--   video_artifact_sources INSERT/DELETE  written inside record_artifact's definer context; the READ
+--                                      is asserted above, which is what every consumer needs.
+--
+-- ⚠ THIS TABLE IS A CLAIM, NOT A PROOF. Each line says "no direct caller exists" — and there is no
+-- application code for M4 at all yet, so no caller exists for ANY of them. When M4 is wired up, this
+-- table is the list to re-derive against real call sites, and any row that gains a direct caller
+-- needs an assertion here before it ships.
 
 -- @MIGRATION-ONLY  everything below reads fixtures this file builds, not the seed corpus.
 
