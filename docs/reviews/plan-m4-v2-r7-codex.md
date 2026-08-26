@@ -1,95 +1,199 @@
 <!-- codex-review: model=gpt-5.5 -->
 
-Wrote the Round 7 review to [docs/reviews/plan-m4-v2-r7-codex.md](/Users/kujinlee/code/agentic-ai-docs/youtube-playlist-summaries-cloud/docs/reviews/plan-m4-v2-r7-codex.md).
+**Blocking**
 
-Result: **NOT CONVERGED**.
+1. `service_role` function EXECUTE is outside the live-schema digest, so the gate can pass over an RPC outage.
 
-Findings filed:
-- **Blocking:** `TRUNCATE` is omitted from the live privilege digest, and `check-anon-exposure.py` does not cover M4 tables. Measured `anon` emptying `video_artifacts` while the live M4 gate stayed green.
-- **High:** `proargdefaults` is excluded for a false reason. Measured a default-only function behavior change with identical `prosrc`, unchanged identity args, and `check-live-schema.py` still exit 0.
-- **Medium:** `check-catalog-coverage.py` does not fail closed if `CATALOGS` omits a read catalog.
-- **Medium:** `run-schema-assertions.sh` still cannot run against the real `05_assert.sql`, while the plan says it should exit 0 and be wired into the gate suite.
-
-Cleanup verified:
-- `remaining_dbs|<none>`
-- `remaining_roles|<none>`
-
-Only the new review file is changed/untracked.
-
----
-
-# ⛔ REVIEW GAP — coordinator note, 2026-08-25
-
-**This file is a SUMMARY of a review, not the review.** Line 3 says *"Wrote the Round 7 review to
-`docs/reviews/plan-m4-v2-r7-codex.md`"* — pointing at itself. The four findings below it are stated
-as conclusions with no premise, no quoted `file:line`, and **none of the executed evidence the
-prompt required**. The commands, their output, and the reasoning are gone; the task output file
-(189 bytes) and the wrapper log (513 bytes) do not hold them either.
-
-**This is a NEW fail-open mode for `scripts/codex-review.py`.** Its documented success criterion is
-that `-o/--output-last-message` wrote *a substantive final-message file* — deliberately not the exit
-code, after HTTP-400 runs were recorded as completed gates. A summary satisfies "substantive". The
-criterion checks that the file is not empty; it cannot check that the file **is the review**.
-
-**Disposition: treat the Codex half of round 7 as HAVING RUN BUT NOT HAVING REPORTED.** Its four
-claims are LEADS, not findings, and each is being re-derived from scratch by the coordinator. Under
-`docs/plugins.md` the fallback rule ("a Claude adversarial review satisfies the gate") applies, and
-the Claude half is the substantive half of this round.
-
-## Lead 1 (claimed Blocking) — ✅ **CONFIRMED BY THE COORDINATOR, INDEPENDENTLY MEASURED**
-
-The claim: `TRUNCATE` is omitted from the live privilege digest, and `check-anon-exposure.py` does
-not cover the M4 tables.
-
-Re-derived by execution on a scratch M4 database, `m4_v7_trunc`, since dropped:
-
+Premise:
+`scripts/m4_catalog.py:153-155`:
+```py
+REL_GRANTEES = ("public", "anon", "authenticated", "service_role")
+FN_GRANTEES = ("public", "anon", "authenticated")
+REL_PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE")
 ```
-control (clean M4): gate exit=0
---- anon TRUNCATE before: false
-    grant truncate on video_artifacts to anon;
---- anon TRUNCATE after : true
---- gate after granting TRUNCATE to anon: exit=0
-    live schema […]: M4 is PRESENT as expected — checked all 161 objects,
-    BY DEFINITION not just by name
+`scripts/m4_catalog.py:210-216` says `service_role` is deliberately absent from function privilege checks.
+`04_artifacts.sql:631-633` grants `record_artifact(...)` to `service_role`.
 
---- does check-anon-exposure notice?
-    money tables TRUNCATE-able by a session role: 5/5 (baseline 5)
-    Anon exposure OK — … the TRUNCATE debt has not grown.
+Executed evidence:
+```text
+fnsvc_before_rc=0
+M4 is PRESENT as expected — checked all 161 objects ...
+
+fnsvc_measure:
+t
+f
+
+fnsvc_gate_rc=0
+M4 is PRESENT as expected — checked all 161 objects ...
+```
+Then the actual RPC path as `service_role`:
+```text
+ERROR:  permission denied for function record_artifact
 ```
 
-And by reading, `scripts/check-anon-exposure.py:67-68`:
+Consequence: removing the one grant that lets the worker/server call `record_artifact` is a production write outage, and `check-live-schema.py --expect-present` still exits 0.
 
-```python
-MONEY_TABLES = ("spend_ledger", "ledger_audit", "serve_owner_budget",
-                "serve_model_charge", "guardrail_config")
+**High**
+
+2. `service_role` direct `INSERT` on `video_artifacts` is granted but unusable because `slot_kind()` is not executable by `service_role`.
+
+Premise:
+`04_artifacts.sql:118` uses `slot_kind(slot)` in `art_slot_kind`.
+`04_artifacts.sql:634` revokes `slot_kind(text)` from `public, anon, authenticated` and grants it to nobody.
+`04_artifacts.sql:655-656` grants `INSERT` on `video_artifacts` to `service_role`.
+
+Executed evidence:
+```text
+role=service_role, bypassrls=true
+...
+INSERT 0 1              -- workspace_videos
+INSERT 0 1              -- video_generations
+ERROR:  permission denied for function slot_kind
+```
+Catalog proof:
+```text
+slot_kind|f|f|f
+record_artifact|t|f|f
 ```
 
-**Not one M4 table.**
+Consequence: the post-M4 grant set says `service_role` can insert into `video_artifacts`, but a direct insert fails before the row can be written. The RPC path works because `record_artifact` is `SECURITY DEFINER`; raw DML does not.
 
-⭐ **THE PART THAT IS MINE, AND IS WORSE THAN THE GAP ITSELF.** `scripts/m4_catalog.py`'s r6 note
-justifies excluding TRUNCATE from `REL_PRIVS` like this:
+3. `proargdefaults` exclusion is false: changing only a function default changes behavior and the gate stays green.
 
-> *"The privileges that diverge are exactly the ones the M4 spec never mentions, and they are
-> already covered by `check-anon-exposure.py`, which ratchets them against a recorded
-> per-environment baseline — the right home, because it is environment-aware and this manifest
-> cannot be."*
+Premise:
+`scripts/check-catalog-coverage.py:112-115` excludes `proargdefaults` because “a change to a default’s VALUE changes the identity arguments.”
 
-**That sentence is false for the five M4 tables**, and I wrote it in the same round that added
-`check-catalog-coverage.py`, whose own docstring says: *"It cannot prove an excluded column is
-CORRECTLY excluded — that judgement is in the REASONS, and a wrong reason here is a real defect that
-this script will happily report as green."* The script predicted the shape of my own next mistake
-and I made it eight hours later, in the file the script was written to protect.
+Executed evidence:
+```text
+defaults_before_rc=0
+M4 is PRESENT as expected — checked all 161 objects ...
 
-**Consequence, in observable units.** `truncate video_artifacts` deletes every paid artifact row,
-and TRUNCATE does **not** fire the row-level append-only guards — so the mechanism M4 exists to
-provide is bypassed rather than violated. Two independent instruments report green over it.
+pg_get_function_identity_arguments:
+p_ws uuid, ... p_md_hash text, p_card jsonb, ...
 
-**⭐ The fix is now CHEAPER than the reason for the exclusion.** TRUNCATE/REFERENCES/TRIGGER/MAINTAIN
-were excluded because they diverged between a `--no-privileges` clone and production — measured in
-r6 as `anon=r` vs `anon=rDxtm`. **The r6 revoke-before-grant change strips exactly those**, so all
-privileges should now agree in both environments and the exclusion has outlived its own premise.
-To be verified against the three-shape test before the fix is claimed.
+pg_get_function_arguments after mutation:
+... p_md_hash text DEFAULT 'r7-default'::text ...
 
-Leads 2-4 (`proargdefaults` excluded for a false reason; `check-catalog-coverage.py` not failing
-closed when `CATALOGS` omits a catalog; `run-schema-assertions.sh` still unable to run against the
-real `05_assert.sql`) are **NOT YET VERIFIED** and are recorded here so round 8 does not lose them.
+defaults_gate_rc=0
+M4 is PRESENT as expected — checked all 161 objects ...
+```
+Behavior changed:
+```text
+record_artifact_9_args=recorded
+stored_md_hash=r7-default
+```
+
+Consequence: the manifest can certify the function “by definition” while omitted-argument calls write different data.
+
+4. `TRUNCATE` on M4 tables is invisible to both the M4 digest and `check-anon-exposure.py`.
+
+Premise:
+`scripts/m4_catalog.py:155` limits relation privileges to `SELECT, INSERT, UPDATE, DELETE`.
+`scripts/check-anon-exposure.py:65-68` limits the TRUNCATE ratchet to five non-M4 money tables.
+
+Executed evidence:
+```text
+truncate_before_rc=0
+M4 is PRESENT as expected — checked all 161 objects ...
+
+truncate_measure:
+f
+t
+
+truncate_gate_rc=0
+M4 is PRESENT as expected — checked all 161 objects ...
+```
+`check-anon-exposure.py --local`:
+```text
+money tables TRUNCATE-able by a session role: 5/5 (baseline 5)
+Anon exposure OK ...
+```
+
+Consequence: `grant truncate on video_artifacts to anon` changes the catalog and gives anon the operation this schema’s own comments identify as bypassing RLS and row triggers, but both gates stay green.
+
+**Medium**
+
+5. `check-catalog-coverage.py` does not fail closed if `CATALOGS` omits a catalog the digest reads.
+
+Premise:
+`scripts/check-catalog-coverage.py:43-44` hand-lists the catalogs.
+`scripts/check-catalog-coverage.py:196-199` enumerates only that tuple.
+
+Executed evidence, in-memory monkeypatch only:
+```text
+catalogs= ('pg_class', 'pg_proc', 'pg_attribute', 'pg_index', 'pg_policy', 'pg_constraint', 'pg_trigger', 'pg_type')
+rows= 195 counts= {'DIGESTED': 68, 'EXCLUDED': 127, 'UNCLASSIFIED': 0} bad= [] exit_would_be= 0
+```
+
+Consequence: removing `pg_rewrite` from `CATALOGS` makes the new coverage gate green while no longer checking the catalog added for rewrite-rule sabotage.
+
+**Verified And Not Defects**
+
+- M4 creates no public sequences; `information_schema.sequences` returned no public rows. The M4 columns use `gen_random_uuid()` defaults, not `serial`/`identity`.
+- `service_role` relation grants after M4 are exactly SELECT/INSERT/UPDATE/DELETE on the five tables and SELECT on the three views. No REFERENCES/TRIGGER grants remain:
+```text
+has_refs=false/false
+has_trigger=false/false
+```
+- The intended RPC path works before revoking EXECUTE:
+```text
+record_artifact=recorded
+rows=1/1
+collectable_select=1
+```
+- `video_generations_collectable` SELECT plus non-current GC update/delete works as `service_role`:
+```text
+collectable_contains=1
+noncurrent_collect_update=true
+delete_generation_remaining=0
+```
+- Grant to an unlisted role is invisible, measured:
+```text
+f -> t
+otherrole_gate_rc=0
+```
+I do not count that as a defect by itself; `m4_catalog.py:131-149` states this is the price of environment-invariance. The missing `service_role` function grant and TRUNCATE cases above are different because they affect named M4 behavior/security.
+- `digested_columns()` did not count any catalog column solely from SQL comments:
+```text
+catalog_column_tokens_only_in_comments= []
+```
+- Pre-M4 absent mode passed locally and on production:
+```text
+absent_local_rc=0
+absent_prod_rc=0
+```
+- `has_m4(catalog, manifest=None)` still fails open for function-only survivors:
+```text
+has_m4_fn_only_no_manifest= False
+has_m4_fn_only_with_manifest= True
+```
+Not a current-path defect because the committed manifest exists here, but it remains the fallback’s real bound.
+- Gates 3 and 4 are still the only red schema gates. `M4_PHASE=pre ./scripts/check-schema-gates.sh` failed at `check-guard-coverage.py` and `check-sentinel-meanings.py`; gates 5-9 were green.
+- `mutate-live-schema-check.sh` passed all 20 mutations, including mutation 19’s production-shaped default privileges.
+- `run-schema-assertions.sh --self-test` passed 12/12. The real `05_assert.sql` selector is NOT RUN because the file has no `@RE-RUNNABLE` marker:
+```text
+assert_print_real_rc=2
+CANNOT RUN — no @RE-RUNNABLE block with EXECUTABLE SQL ...
+```
+- `gen-m4-manifest.py --self-test` passed 4/4.
+- Roadmap/task-order checks passed:
+```text
+roadmap_rc=0
+plan_order_rc=0
+```
+
+**Hygiene**
+
+Created and dropped:
+`r7_codex_48600_svc`, `r7_codex_48600_otherrole`, `r7_codex_48600_truncate`, `r7_codex_48600_otherrole2`, `r7_codex_48600_truncate2`, `r7_codex_48600_fnsvc`, `r7_codex_48600_defaults`.
+
+Created and dropped role:
+`r7_codex_48600_writer`.
+
+Final checks:
+```text
+remaining_dbs:
+remaining_role:
+```
+
+NOT CONVERGED.
