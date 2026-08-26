@@ -45,7 +45,30 @@ gate() { python3 ./scripts/check-live-schema.py --database "$1" "$2" >/dev/null 
 # now caught by `anon_gate` asserts BOTH halves: that the digest passes AND that the new home fails.
 # One assertion would not distinguish "coverage moved" from "coverage was deleted", and deleting it
 # is exactly what a careless reading of "remove privileges from the digest" produces.
-anon_gate() { python3 ./scripts/check-anon-exposure.py --local --database "$1" >/dev/null 2>&1; }
+#
+# ⛔⛔ IT MATCHES THE NAMED PROBLEM, NOT THE EXIT CODE — ⟳ r8 B1 (codex), CONFIRMED by re-measurement.
+# The first version tested `exit != 0` and that was a FALSE GREEN on every moved mutation. The
+# template is built with `pg_dump --no-privileges`, which strips ACLs — and a Postgres function with
+# no ACL is EXECUTABLE BY PUBLIC. So on an UNMUTATED M4 scratch the script is already red for two
+# reasons that have nothing to do with M4:
+#     UNLISTED           `exec_sql` is SECURITY DEFINER and anon-EXECUTable
+#     UNLISTED           `record_correction_spend` is SECURITY DEFINER and anon-EXECUTable
+#     LOWER THE BASELINE 0 money tables are TRUNCATE-able, baseline says 5
+#     CONTROL EXIT = 1
+# Every "RULE 3 FAILS" tick was therefore earned by that noise, not by the sabotage. The mutations
+# proved the SCRIPT was red on the fixture; they proved nothing about coverage having moved.
+#
+# So `anon_gate` now takes the problem TOKEN it expects, and `anon_control` asserts that same token
+# is ABSENT before the mutation — which is the discrimination the exit code could never provide.
+# ⚠ NO PIPE INTO `grep -q`. This file runs under `set -o pipefail`, and `grep -q` exits the moment
+# it matches — which SIGPIPEs the producer, and pipefail then returns the PRODUCER's status. So
+# `anon_out … | grep -q X` reports FAILURE on the very runs where X was found. MEASURED here
+# 2026-08-26: RULE 3 printed "M4 NOT READ-ONLY `anon` holds DELETE, INSERT, UPDATE on
+# `video_artifacts`" while all four moved mutations reported MUTATION SURVIVED. Capture first, match
+# second. (Third instance of a pipeline status being read as a verdict in this repo.)
+anon_out()     { python3 ./scripts/check-anon-exposure.py --local --database "$1" 2>&1; }
+anon_gate()    { local o; o=$(anon_out "$1"); case "$o" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+anon_control() { local o; o=$(anon_out "$1"); case "$o" in *"$2"*) return 1 ;; *) return 0 ;; esac; }
 
 cleanup() {
   for d in $(adm -c "select datname from pg_database where datname like '${PREFIX}%';" 2>/dev/null); do
@@ -235,10 +258,12 @@ if fresh "${PREFIX}_acl"; then
   db "${PREFIX}_acl" >/dev/null 2>&1 <<'SQL'
 grant insert, update, delete on video_artifacts to anon;
 SQL
+  anon_control "$TPL" "M4 NOT READ-ONLY" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no M4-NOT-READ-ONLY problem" pass "$r"
   gate "${PREFIX}_acl" --expect-present && r=pass || r=fail
   report "insert/update/delete to anon -> the DIGEST no longer claims to see it" pass "$r"
-  anon_gate "${PREFIX}_acl" && r=pass || r=fail
-  report "insert/update/delete to anon -> anon-exposure RULE 3 FAILS" fail "$r"
+  anon_gate "${PREFIX}_acl" "M4 NOT READ-ONLY" && r=pass || r=fail
+  report "insert/update/delete to anon -> RULE 3 names M4 NOT READ-ONLY" pass "$r"
 fi
 
 echo "═══ mutation 11 ⭐ r5 B2: a policy recreated AS RESTRICTIVE — same cmd, roles and qual ═══"
@@ -384,8 +409,8 @@ SQL
     # green here — which is how r6 B2 survived a 16/16 report.
     gate "${PREFIX}_colacl" --expect-present && r=pass || r=fail
     report "column-level insert to anon -> the DIGEST no longer claims to see it" pass "$r"
-    anon_gate "${PREFIX}_colacl" && r=pass || r=fail
-    report "column-level insert to anon -> anon-exposure RULE 3 FAILS" fail "$r"
+    anon_gate "${PREFIX}_colacl" "M4 NOT READ-ONLY" && r=pass || r=fail
+    report "column-level insert to anon -> RULE 3 names M4 NOT READ-ONLY" pass "$r"
   fi
 fi
 
@@ -410,8 +435,8 @@ SQL
   elif [ "$before_t" = "$after_t" ]; then
     echo "  ✗ THE GRANT DID NOT LAND — treat mutation 22 as NOT RUN"; fail=1
   else
-    anon_gate "${PREFIX}_trunc" && r=pass || r=fail
-    report "TRUNCATE granted to anon -> anon-exposure RULE 3 FAILS" fail "$r"
+    anon_gate "${PREFIX}_trunc" "TRUNCATE" && r=pass || r=fail
+    report "TRUNCATE granted to anon -> RULE 3 names TRUNCATE on an M4 relation" pass "$r"
   fi
 fi
 
@@ -502,10 +527,12 @@ SQL
   elif [ "$before_f" = "$after_f" ]; then
     echo "  ✗ THE GRANT DID NOT LAND — treat mutation 23 as NOT RUN"; fail=1
   else
+    anon_control "$TPL" "M4 FN EXECUTABLE" && r=pass || r=fail
+    report "CONTROL: an unmutated M4 does not report slot_kind as session-executable" pass "$r"
     gate "${PREFIX}_fnacl" --expect-present && r=pass || r=fail
     report "anon EXECUTE on an M4 function -> the DIGEST no longer claims to see it" pass "$r"
-    anon_gate "${PREFIX}_fnacl" && r=pass || r=fail
-    report "anon EXECUTE on an M4 function -> anon-exposure RULE 3 FAILS" fail "$r"
+    anon_gate "${PREFIX}_fnacl" "M4 FN EXECUTABLE" && r=pass || r=fail
+    report "anon EXECUTE on an M4 function -> RULE 3 names M4 FN EXECUTABLE" pass "$r"
   fi
 fi
 

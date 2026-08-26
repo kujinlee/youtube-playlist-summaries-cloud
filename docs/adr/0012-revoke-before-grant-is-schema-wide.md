@@ -75,15 +75,34 @@ you what was granted and not what was left over. After it, the deployed ACL is a
 migration alone, and the two environments agree — which is what makes any environment-invariant check
 possible at all.
 
-**It does not need a gate, because it has one already.** The environments agreeing is what
-`mutate-live-schema-check.sh` mutation 19 asserts: an M4 applied to a *production-shaped* database
-(default privileges installed) must pass the same checks as one applied to a bare container. A
-regressed revoke breaks that agreement and the mutation goes red.
+**⛔ THIS ADR NAMED THE WRONG FALSIFIER FOR ONE COMMIT — ⟳ r8 H3 (codex), and the reviewer proved
+it by construction.** The paragraph here originally claimed mutation 19 was the mechanism: *"an M4
+applied to a production-shaped database must pass the same checks as a bare container; a regressed
+revoke breaks that agreement and the mutation goes red."* **It does not.** Mutation 19 runs only
+`check-live-schema.py --expect-present`, and after ADR-0013 that gate carries no privileges at all —
+so it cannot see a revoke regression of any kind. MEASURED on a production-shaped scratch with
+`service_role` removed from the `slot_kind(text)` revoke:
 
-**⚠ It is a convention where it is not yet mechanised.** Nothing scans for a revoke that names three
-roles instead of four. `check-anon-exposure.py` RULE 3 catches the *consequence* for session roles on
-M4 objects — an object they can write or execute — which is the part that matters for security. It
-does not catch a `service_role` omission on a non-M4 object. If a third instance of this appears,
+```
+check_live_exit=0            # the named falsifier says nothing
+assert_exit=1                # ASSERTION FAILED — service_role wrote video_artifacts DIRECTLY
+```
+
+**The real falsifier is the capability assertion**, not the digest — which is ADR-0013's whole point,
+and this ADR contradicted it while citing it. A claim about which instrument enforces a rule is
+exactly as checkable as the rule itself, and this one was never checked before being written down.
+
+**What actually enforces it, stated as observations that can FAIL:**
+
+| regression | what goes red | verified |
+|---|---|---|
+| a session role gains write or EXECUTE on an M4 object | `check-anon-exposure.py` RULE 3, gate 11/11 | mutations 10, 17, 22, 23 — each with a control proving the named problem was ABSENT first |
+| `service_role` keeps EXECUTE on `slot_kind`, so the direct door opens | `05_assert.sql` SERVICE-ROLE CAPABILITY, gate 8/11 | measured: `assert_exit=1`, "record_artifact is not the only door" |
+| `service_role` loses EXECUTE on `record_artifact` | same block, other direction | measured: `assert_exit=1`, "this is a production write outage" |
+
+**⚠ Still a convention where it is not mechanised.** Nothing scans for a revoke that names three
+roles instead of four; the rows above catch *consequences on M4 objects*, not the omission itself,
+and nothing at all catches a `service_role` omission on a NON-M4 object. If a third instance appears,
 that is the signal to write the script rather than the third comment.
 
 ## Alternatives considered

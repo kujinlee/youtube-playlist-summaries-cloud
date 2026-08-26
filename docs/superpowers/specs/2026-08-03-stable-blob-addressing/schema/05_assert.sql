@@ -922,6 +922,65 @@ begin
   end if;
 end $$;
 
+-- @RE-RUNNABLE  ⟳ r8 H4 (codex): the DIRECT capabilities service_role legitimately has.
+--
+-- The two blocks above cover the PAID WRITE (RPC works) and the RPC-ONLY invariant (direct artifact
+-- write refused). They do not cover the direct DML the spec deliberately grants for GC and
+-- housekeeping — and the reviewer proved that gap by construction: removing `UPDATE` on
+-- `video_generations` from `service_role` left BOTH instruments green.
+--
+--     -- live digest --        M4 is PRESENT as expected ... check_live_exit=0
+--     -- schema assertions --  RE-RUNNABLE subset passed ... assert_exit=0
+--     -- capability probe --   ERROR: permission denied for table video_generations
+--
+-- That is the same shape as r7 B1 one table over, and it is the price of taking privileges out of
+-- the fingerprint: whatever the digest no longer watches, SOMETHING must execute. This block is that
+-- something. It asserts the GC/sweeper capabilities named in the spec's own grants
+-- (`03_generations.sql:68-69,562-563`, `04_artifacts.sql:257-259`) rather than their grant bits.
+do $$
+declare v_ws uuid; v_n int;
+        v_uid uuid := '00000000-0000-0000-0000-00000000cab1';
+begin
+  select id into v_ws from workspaces where owner_id = v_uid;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — the probe workspace is absent; nothing below is a statement '
+                    'about service_role';
+  end if;
+
+  set local role service_role;
+  -- 1. THE SWEEPER. `body_collected` is how GC records that a generation's blob is gone; without
+  --    UPDATE here the collector silently stops making progress and nothing else notices.
+  begin
+    update video_generations set body_collected = body_collected
+     where workspace_id = v_ws and video_id = 'vidSVC' and generation_id = 'gDIRECT';
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot UPDATE video_generations. The GC sweeper '
+                    'cannot mark a body collected, so collection stops and nothing reports it';
+  end;
+
+  -- 2. THE GC READ. `video_generations_collectable` is granted to service_role ALONE; if that grant
+  --    regresses the collector has nothing to iterate and, again, fails by doing nothing.
+  begin
+    select count(*) into v_n from video_generations_collectable;
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot read video_generations_collectable, so '
+                    'the GC has no work list';
+  end;
+
+  -- 3. PROVENANCE. record_artifact writes video_artifact_sources through its definer context, but
+  --    the spec also grants direct DML; assert the READ at minimum, which every consumer needs.
+  begin
+    select count(*) into v_n from video_artifact_sources;
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot read video_artifact_sources';
+  end;
+  reset role;
+  raise notice 'ok: service_role retains its GC and provenance capabilities';
+end $$;
+
 -- @MIGRATION-ONLY  everything below reads fixtures this file builds, not the seed corpus.
 
 -- ROUND 6 H3 — round 5's cross-tenant assertion read ONE view and ONE table, so security_invoker on
