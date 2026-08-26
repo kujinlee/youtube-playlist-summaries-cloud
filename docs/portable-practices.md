@@ -3,10 +3,12 @@
 **This project has two deliverables.** One is the product. The other is a battle-tested harness and
 the documents that make it reproducible somewhere else. This file is the second one's index.
 
-**Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 were measured on 2026-08-11, §8 on
-2026-08-12, §10 on 2026-08-13, §11 and §12 on 2026-08-15. The great majority of the memory files and review
-documents have **not** been mined yet — see *Not yet mined*, whose counts are re-enumerated, not
-recalled, whenever this file is edited.
+**Status: STARTED 2026-08-11, deliberately incomplete.** §1–§7 measured 2026-08-11, §8 on 2026-08-12,
+§9 and §10 on 2026-08-13, §11 and §12 on 2026-08-15, §13 on 2026-08-17, §14 and §15 on 2026-08-22,
+§16 on 2026-08-26. *(⟳ 2026-08-26: this line had gone stale in the way it warns about everywhere else
+— it omitted §9, §13, §14 and §15. The dates above were recovered with `git log -S'## N. '`, not
+recalled.)* The great majority of the memory files and review documents have **not** been mined yet —
+see *Not yet mined*, whose counts are re-enumerated, not recalled, whenever this file is edited.
 
 ---
 
@@ -557,6 +559,46 @@ records returned **13 hits, about half of them false** — *"fold into any markd
 is a batching hint, *"fold into path syntax"* is about characters, *"superseded"* was about storage
 generations. **A derived relation that is wrong is worse than none**, because it is asserted with the
 authority of a script. Hand-write the interpretation; mechanise only the coverage.
+
+## 16. A RECOMMENDATION names the first command it would run
+
+§3 says a gate must state the observation that would make it FAIL. **A recommendation is the same
+shape and currently gets none of that treatment** — it directs the work, it blocks nothing, and it is
+the one artifact a human actually acts on.
+
+**Measured 2026-08-26.** A session ended with *"Recommendation: write `0027` and stop reviewing the
+instrument"*, argued from an ADR's own falsifier. The plan's `## Order` section — in a file open all
+session — put **four unstarted tasks** in front of `0027`, and two of its prerequisite gates were red
+at that moment (`check-guard-coverage.py` rc=1, `check-sentinel-meanings.py` rc=1, run seconds later).
+The recommendation was not merely unwise; **it named an action that could not be performed.**
+
+Three things made it, and only the third is fixable by a rule:
+
+1. **The option list came from the author's own handoff, read back across a compaction boundary as
+   authority.** The Session-Resume rule (*verify from ground truth, never a summary*) was applied to
+   the git state and never to the framing. **A rule applied to the facts and not to the question is
+   half-applied.**
+2. **An ADR's falsifier was allowed to settle a question it does not address.** It asked whether to
+   keep *widening an instrument*; it was read as answering whether 1 500 unreviewed lines needed
+   reviewing. The nearest written rule is not the governing one.
+3. **The recommendation arrived last, after a message whose every other claim carried a probe, a
+   control and a mutation test. The surrounding rigour laundered it.** It was `ARGUED` delivered in
+   the register of `MEASURED`, and nothing in producing it required touching the file that refutes it.
+
+**The rule: state the literal next command, not the intention.** *"Write `0027`"* survives any amount
+of care. `supabase migration new 0027_…` does not — you cannot write it without asking what must
+already exist. This is a **construction, not a reminder**: it fails while being authored rather than
+on later inspection, which is the difference between a convention and a gate for something no script
+can reach. Where no such command exists, the recommendation is labelled `ARGUED`.
+
+⚠ **Do not reach for a script here, and this is the interesting part.** The obvious mechanisation —
+parse the plan's dependency graph — has nothing to read: **0 of 84** plans in this repo carry a
+machine-readable dependency field, and **2 of 84** declare an order at all, as ASCII art. A parser
+over a diagram would be brittle exactly where it must not be. §7 says *ask whether it can be a
+script*; asking honestly sometimes returns **no**, and a forcing function is what is left.
+
+**Portable in full.** The measurement is local; the failure needs only a plan, a summary and a habit
+of ending with advice.
 
 ---
 
