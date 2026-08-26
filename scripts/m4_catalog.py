@@ -104,6 +104,9 @@ ENFORCEMENT_COLUMNS = (
     "indimmediate", "indisexclusion",
     "attnotnull", "attidentity", "attgenerated", "attstorage", "attcompression",
     "tgenabled",
+    # ⟳ r9 H2: policies attached to a manifest relation ride in the RELATION digest, not only as
+    # their own `pol:` objects — present mode is MANIFEST ⊆ live and cannot see a SIXTH policy.
+    "polname", "polcmd",
     # ⛔ NO PRIVILEGE TERMS. `has_table_privilege` / `has_any_column_privilege` /
     # `has_function_privilege` were here until step 5 and are deliberately gone — this tuple asserts
     # what CATALOG_SQL still reads, so leaving them would fail the self-test, loudly, which is the
@@ -199,9 +202,9 @@ PRIVILEGE_NOTE = "effective access for the principals the spec revokes from and 
 #     grant slot_kind EXECUTE to service_role           -> assertions exit 1  (the direct door opens)
 #
 # WHERE EACH FACT LIVES NOW — three homes, none of them this file:
-#     session roles, M4 relations   check-anon-exposure.py RULE 3   gate 11/11, every run
-#     session roles, M4 functions   check-anon-exposure.py RULE 3   gate 11/11, every run
-#     service_role capability       05_assert.sql                  gate 8/11, M4_PHASE=post only
+#     session roles, M4 relations   check-anon-exposure.py RULE 3   gate 11/12, every run
+#     session roles, M4 functions   check-anon-exposure.py RULE 3   gate 11/12, every run
+#     service_role capability       05_assert.sql                  gate 8/12, M4_PHASE=post only
 REL_GRANTEES: tuple[str, ...] = ()
 FN_GRANTEES: tuple[str, ...] = ()
 SESSION_GRANTEES = ("public", "anon", "authenticated")   # ⛔ NOT digested — anon-exposure RULE 3
@@ -284,6 +287,26 @@ def _fn_priv(fn: str) -> str:
     return "(" + " || ',' || ".join(parts) + ")"
 
 
+def _policies(rel: str) -> str:
+    """SQL expression: the POLICIES attached to `rel`. PURE.
+
+    ⟳ r9 H2 (claude). `_rules()` below states the principle — *"present mode ignores EXTRA objects by
+    design … true of most extra objects; FALSE of an object ATTACHED to a manifest relation, which is
+    not an addition to the database but a modification of that relation"* — and r6 H1 acted on it for
+    `pg_rewrite` AND ONLY FOR `pg_rewrite`. `pg_policy` is attached in precisely the same sense.
+
+    MEASURED: `create policy r9_wide on video_artifacts for select to anon, authenticated using
+    (true);` — RLS is permissive-OR, so ONE added policy defeats all five owner-scoping policies at
+    once without touching any of them. anon went from 0 rows to reading another tenant's `blob_key`,
+    and the digest printed *"M4 is PRESENT as expected … 5 policies"* over a database with six.
+
+    That is r5 B2's argument rebuilt out of an ADDITION instead of a flag: disabling RLS did not
+    touch a policy row either.
+    """
+    return ("coalesce((select string_agg(pol.polname || pol.polcmd::text || pol.polpermissive::text,"
+            f" ',' order by pol.polname) from pg_policy pol where pol.polrelid = {rel}), '')")
+
+
 def _rules(rel: str) -> str:
     """SQL expression: the rewrite RULES attached to `rel`. PURE.
 
@@ -304,14 +327,14 @@ select 'table:' || c.relname || '@' || md5(
          c.relrowsecurity::text || c.relforcerowsecurity::text || c.relpersistence::text ||
          c.relreplident::text || c.relhasrules::text || c.relispartition::text ||
          coalesce((select string_agg(o, ',' order by o) from unnest(c.reloptions) o), '') ||
-         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + r""")
+         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + " || " + _policies("c.oid") + r""")
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind = 'r'
 union all
 select 'view:' || c.relname || '@' || md5(
          pg_get_viewdef(c.oid) ||
          coalesce((select string_agg(o, ',' order by o) from unnest(c.reloptions) o), '') ||
-         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + r""")
+         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + " || " + _policies("c.oid") + r""")
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind in ('v', 'm')
 union all

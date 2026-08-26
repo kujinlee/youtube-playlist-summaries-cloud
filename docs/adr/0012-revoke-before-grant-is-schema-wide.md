@@ -96,8 +96,8 @@ exactly as checkable as the rule itself, and this one was never checked before b
 
 | regression | what goes red | verified |
 |---|---|---|
-| a session role gains write or EXECUTE on an M4 object | `check-anon-exposure.py` RULE 3, gate 11/11 | mutations 10, 17, 22, 23 — each with a control proving the named problem was ABSENT first |
-| `service_role` keeps EXECUTE on `slot_kind`, so the direct door opens | `05_assert.sql` SERVICE-ROLE CAPABILITY, gate 8/11 | measured: `assert_exit=1`, "record_artifact is not the only door" |
+| a session role gains write or EXECUTE on an M4 object | `check-anon-exposure.py` RULE 3, gate 11/12 | mutations 10, 17, 22, 23 — each with a control proving the named problem was ABSENT first |
+| `service_role` keeps EXECUTE on `slot_kind`, so the direct door opens | `05_assert.sql` SERVICE-ROLE CAPABILITY, gate 8/12 | measured: `assert_exit=1`, "record_artifact is not the only door" |
 | `service_role` loses EXECUTE on `record_artifact` | same block, other direction | measured: `assert_exit=1`, "this is a production write outage" |
 
 **⚠ Still a convention where it is not mechanised.** Nothing scans for a revoke that names three

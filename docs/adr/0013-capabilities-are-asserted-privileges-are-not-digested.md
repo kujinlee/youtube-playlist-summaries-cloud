@@ -54,8 +54,8 @@ environment-dependent:
 
 | fact | home | runs |
 |---|---|---|
-| session roles (`public`, `anon`, `authenticated`) on M4 relations and functions | `check-anon-exposure.py` RULE 3 | gate 11/11, every run |
-| `service_role`'s ability to do its job | `05_assert.sql` — SERVICE-ROLE CAPABILITY | gate 8/11, `M4_PHASE=post` |
+| session roles (`public`, `anon`, `authenticated`) on M4 relations and functions | `check-anon-exposure.py` RULE 3 | gate 11/12, every run |
+| `service_role`'s ability to do its job | `05_assert.sql` — SERVICE-ROLE CAPABILITY | gate 8/12, `M4_PHASE=post` |
 
 **A capability is asserted by performing it**, not by reading a catalog: call the RPC as the role and
 read the row back; attempt the forbidden path as the role and require `42501`.
@@ -69,7 +69,7 @@ the digest passes and that the new home fails. One assertion could not distingui
 from *coverage deleted*.
 
 **Coverage moved only because something runs the new home.** `check-anon-exposure.py` was named in the
-roadmap and twice in the plan and invoked by nothing; it is now gate 11/11, and its self-test asserts
+roadmap and twice in the plan and invoked by nothing; it is now gate 11/12, and its self-test asserts
 the wiring at both ends. This project has shipped a gate with no caller three times.
 
 **The assertion half is weaker in one specific way: it needs the schema to exist.** Pre-`0027` the

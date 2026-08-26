@@ -1003,16 +1003,42 @@ begin
     raise exception 'ASSERTION FAILED — service_role cannot DELETE from video_artifacts, so GC '
                     'cannot reclaim a free render';
   end;
+  -- 6. ⟳ r9 H1 (claude) — THE FOUR ROWS THE OMISSION TABLE GOT WRONG. It claimed 12 of 21 grants
+  --    were asserted; the reviewer revoked each of the 21 alone and measured that FOUR were seen by
+  --    no instrument at all: workspaces SELECT, workspaces DELETE, video_artifact_sources UPDATE,
+  --    and video_artifacts INSERT. A completeness claim is exactly as checkable as the thing it
+  --    claims to cover, and this one was arithmetic over a list nobody executed.
+  begin
+    perform 1 from workspaces where false;                       -- workspaces SELECT
+    delete from workspaces where id = '00000000-0000-0000-0000-0000000000ff';   -- workspaces DELETE
+    update video_artifact_sources set video_id = video_id where video_id = '__no_such__';  -- vas UPDATE
+    insert into video_artifacts (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
+      select v_ws, '__no_such__', 'model', 'g', 'model'::artifact_kind, 'recorded', 'k'
+       where false;                                              -- video_artifacts INSERT
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role lost one of workspaces SELECT/DELETE, '
+                    'video_artifact_sources UPDATE or video_artifacts INSERT. Each was in the '
+                    'digest before step 5 and covered by nothing after it (r9 H1)';
+  end;
   reset role;
-  raise notice 'ok: service_role retains its GC, provenance and detached-transition capabilities';
+  raise notice 'ok: service_role retains its GC, provenance, detached-transition and '
+               'residual-DML capabilities';
 end $$;
 
 -- ⭐ THE GRANTS DELIBERATELY LEFT UNASSERTED, AND WHY — ⟳ r8 H2's direction, verbatim: *"write down,
 -- in that block, the grants deliberately left unasserted and why, so the next round does not
 -- re-derive this table. An unexplained omission is how r5 B2 happened."*
 --
--- Step 5 deleted the digest of 21 grant sites. The blocks above now assert 12. These NINE are known
--- to be unasserted, and each line is the reason — not an oversight:
+-- ⛔ THIS TABLE WAS WRONG BY FOUR ROWS FOR ONE COMMIT — ⟳ r9 H1 (claude), who did the one thing that
+-- checks a completeness claim: revoked each of the 21 grants ALONE and ran all three instruments.
+-- Four were seen by NOTHING (workspaces SELECT, workspaces DELETE, video_artifact_sources UPDATE,
+-- video_artifacts INSERT) while this table implied they were among the twelve covered. They are now
+-- asserted in step 6 above. **A table that says what is covered is a CLAIM, and 21 − 9 = 12 is
+-- arithmetic, not a measurement.**
+--
+-- Step 5 deleted the digest of 21 grant sites. The blocks above now assert 16. These FIVE remain
+-- unasserted, and each line is the reason — not an oversight:
 --
 --   workspaces         INSERT/UPDATE   written by ensure_workspace_for_profile(), a SECURITY DEFINER
 --                                      trigger on profiles. service_role never writes it directly.

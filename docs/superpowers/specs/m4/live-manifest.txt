@@ -1,7 +1,7 @@
 # M4 LIVE MANIFEST — every object migration 0027 creates, DERIVED BY EXECUTION.
 #
 # objects: 161
-# sha256: dbb19478da50bd3f99b87020daa0def8ef41d0d0e46d87325381fe32cb84d623
+# sha256: a62e39cdeacd8657870fc65c421a5c69b54a50300edd68b2906036a1423d2555
 #
 # ⛔ DO NOT HAND-EDIT. Regenerate:  python3 scripts/gen-m4-manifest.py
 #    Verify it is current:          python3 scripts/gen-m4-manifest.py --check
@@ -153,11 +153,11 @@ pol:video_artifacts.video_artifacts_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:video_generations.video_generations_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:workspace_videos.workspace_videos_owner_read@dcff76a2f72380004c7ab86664cd12e1
 pol:workspaces.workspaces_owner_read@5f0f90ce58ec70c4abe4ebd56b4e0ff1
-table:video_artifact_sources@b0f0fde07ca568b97fc61ac7fde14190
-table:video_artifacts@b0f0fde07ca568b97fc61ac7fde14190
-table:video_generations@b0f0fde07ca568b97fc61ac7fde14190
-table:workspace_videos@b0f0fde07ca568b97fc61ac7fde14190
-table:workspaces@b0f0fde07ca568b97fc61ac7fde14190
+table:video_artifact_sources@0a60a7bdb2e535fd059d227c9da63a23
+table:video_artifacts@f9159332b19d86507b4ac60d9d4d38c0
+table:video_generations@6c2edc3c87a56165dedb3b3f6fc9f4a0
+table:workspace_videos@052cf458fff1b7e0329eabb28d83e130
+table:workspaces@8df68e87bdedf32e9e522967f8e3fa30
 trg:jobs.jobs_resolve_workspace_ins_trg@538d94d359f1ebff80ac0af5f234baa7
 trg:jobs.jobs_resolve_workspace_upd_trg@93b9c8373cdd0ac825dc1c145e8ced88
 trg:playlists.playlists_resolve_workspace_ins_trg@8b42a6065abcc80b3ddf108e8b278bdf

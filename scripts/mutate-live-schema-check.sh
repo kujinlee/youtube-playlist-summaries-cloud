@@ -81,9 +81,21 @@ gate() { python3 ./scripts/check-live-schema.py --database "$1" "$2" >/dev/null 
 # 2026-08-26: RULE 3 printed "M4 NOT READ-ONLY `anon` holds DELETE, INSERT, UPDATE on
 # `video_artifacts`" while all four moved mutations reported MUTATION SURVIVED. Capture first, match
 # second. (Third instance of a pipeline status being read as a verdict in this repo.)
-anon_out()     { python3 ./scripts/check-anon-exposure.py --local --database "$1" 2>&1; }
-anon_gate()    { local o; o=$(anon_out "$1"); case "$o" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
-anon_control() { local o; o=$(anon_out "$1"); case "$o" in *"$2"*) return 1 ;; *) return 0 ;; esac; }
+# ⛔ BOTH HELPERS FAIL WHEN THE INSTRUMENT COULD NOT RUN — ⟳ r9 M2 (claude). `anon_out` used to
+# discard the exit status, and `check-anon-exposure.py` exits 2 with a `CANNOT RUN —` banner on a
+# missing manifest, an unreadable catalog, an unparseable row, an empty definer list, or a
+# derived/declared mismatch. None of those outputs contains a problem token, so EVERY CONTROL PASSED.
+# MEASURED: `anon_control <a database that does not exist> "M4 NOT READ-ONLY"` returned PASS.
+# The control is the entire mechanism r8 B1 installed so a tick could not be earned by noise; a
+# control that passes because nothing ran is that same defect one layer out.
+anon_out() { python3 ./scripts/check-anon-exposure.py --local --database "$1" 2>&1; }
+anon_ran() {
+  local o rc; o=$(anon_out "$1"); rc=$?
+  case "$rc:$o" in 2:*|*"CANNOT RUN"*) echo "$o" | head -2 >&2; return 1 ;; esac
+  printf '%s' "$o"
+}
+anon_gate()    { local o; o=$(anon_ran "$1") || return 1; case "$o" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+anon_control() { local o; o=$(anon_ran "$1") || return 1; case "$o" in *"$2"*) return 1 ;; *) return 0 ;; esac; }
 
 cleanup() {
   for d in $(adm -c "select datname from pg_database where datname like '${PREFIX}%';" 2>/dev/null); do
@@ -585,6 +597,59 @@ SQL
     report "a total read outage -> the DIGEST cannot see it (this is the trade)" pass "$r"
     anon_gate "${PREFIX}_readout" "M4 READ LOST" && r=pass || r=fail
     report "a total read outage -> RULE 3 names M4 READ LOST" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 26 ⭐⭐⭐⭐ r9 B1 (claude): a read outage with a ONE-COLUMN grant-back ═══"
+# STRICTLY MORE REACHABLE THAN MUTATION 24. That one needs a grant-back to be FORGOTTEN; this one
+# needs it to be WRITTEN WITH A COLUMN LIST, which is how people narrow a grant. The read rule used
+# the UNION of table- and column-level privileges, so one surviving column kept SELECT in the set and
+# the rule fell silent while every `select *` raised 42501.
+if fresh "${PREFIX}_colread"; then
+  anon_control "$TPL" "M4 READ LOST" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no lost read (column split)" pass "$r"
+  db "${PREFIX}_colread" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+revoke select on video_artifacts, video_generations, workspace_videos, workspaces,
+                 video_artifact_sources, video_artifacts_current, video_summary_current
+  from anon, authenticated;
+grant select (workspace_id) on video_artifacts        to anon, authenticated;
+grant select (workspace_id) on video_generations      to anon, authenticated;
+grant select (workspace_id) on workspace_videos       to anon, authenticated;
+grant select (id)           on workspaces             to anon, authenticated;
+grant select (workspace_id) on video_artifact_sources to anon, authenticated;
+grant select (workspace_id) on video_artifacts_current to anon, authenticated;
+grant select (workspace_id) on video_summary_current  to anon, authenticated;
+SQL
+  tbl_c=$(db "${PREFIX}_colread" -c "select has_table_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  col_c=$(db "${PREFIX}_colread" -c "select has_any_column_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  echo "     authenticated on video_artifacts: table=$tbl_c  any-column=$col_c  (the whole point)"
+  if [ "$tbl_c" != "false" ] || [ "$col_c" != "true" ]; then
+    echo "  ✗ THE MUTATION DID NOT PRODUCE THE COLUMN-ONLY STATE — treat mutation 26 as NOT RUN"; fail=1
+  else
+    anon_gate "${PREFIX}_colread" "M4 READ LOST" && r=pass || r=fail
+    report "a column-only grant-back -> RULE 3 still names M4 READ LOST" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 27 ⭐⭐⭐⭐ r9 H2 (claude): a SIXTH policy opens every tenant's manifest ═══"
+# RLS IS PERMISSIVE-OR, so ONE added `using (true)` policy defeats all five owner-scoping policies at
+# once WITHOUT TOUCHING ANY OF THEM. Present mode is MANIFEST ⊆ live and ignores extra objects — true
+# of most extra objects, FALSE of one ATTACHED to a manifest relation, which is a MODIFICATION of that
+# relation. r6 H1 acted on that sentence for pg_rewrite and only for pg_rewrite.
+# MEASURED before the fix: anon went from 0 rows to reading another tenant's blob_key, and the digest
+# printed "M4 is PRESENT as expected … 5 policies" over a database holding six.
+if fresh "${PREFIX}_pol"; then
+  before_p=$(db "${PREFIX}_pol" -c "select count(*) from pg_policy pol join pg_class c on c.oid=pol.polrelid where c.relname='video_artifacts';" | tr -d '[:space:]')
+  db "${PREFIX}_pol" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create policy r9_wide on video_artifacts for select to anon, authenticated using (true);
+SQL
+  after_p=$(db "${PREFIX}_pol" -c "select count(*) from pg_policy pol join pg_class c on c.oid=pol.polrelid where c.relname='video_artifacts';" | tr -d '[:space:]')
+  echo "     policies on video_artifacts: ${before_p:-<empty>} -> ${after_p:-<empty>}"
+  if [ -z "$before_p" ] || [ "$before_p" = "$after_p" ]; then
+    echo "  ✗ THE POLICY DID NOT LAND — treat mutation 27 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_pol" --expect-present && r=pass || r=fail
+    report "a SIXTH policy on video_artifacts -> --expect-present FAILS" fail "$r"
   fi
 fi
 
