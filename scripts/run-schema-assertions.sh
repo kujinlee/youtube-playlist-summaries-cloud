@@ -67,11 +67,19 @@ ASSERTIONS=$(awk '
   /^[[:space:]]*--.*@MIGRATION-ONLY/ { p = 0; next }
   p' "$ASSERT")
 
-EXECUTABLE=$(printf '%s\n' "$ASSERTIONS" | grep -v '^[[:space:]]*--' | tr -d '[:space:]')
+# ⟳ r4 HIGH (codex), THIRD ROUND FOR THIS SELECTOR. The r3 fix required a non-comment,
+# non-whitespace character. MEASURED: a block whose only content is `;` satisfies that, parses
+# cleanly, asserts NOTHING, and the harness printed "RE-RUNNABLE subset passed", exit 0.
+#
+# Punctuation is not an assertion. The block must contain a WORD — every real assertion here is a
+# `do $$ … raise exception … $$;`, so requiring one alphanumeric character costs nothing and closes
+# the `;`, `;;`, `()` and `--`-only families in one predicate.
+EXECUTABLE=$(printf '%s\n' "$ASSERTIONS" | grep -v '^[[:space:]]*--' | tr -cd '[:alnum:]')
 if [ -z "$EXECUTABLE" ]; then
   echo "CANNOT RUN — no @RE-RUNNABLE block with EXECUTABLE SQL in $ASSERT." >&2
-  echo "Comments alone are not assertions: a marked block containing only comments would otherwise" >&2
-  echo "run the seed and report success over zero assertions. Treat this as NOT RUN." >&2
+  echo "The block must contain at least one alphanumeric character. Comments alone are not" >&2
+  echo "assertions, and neither is punctuation: a lone ';' parses and asserts nothing, which" >&2
+  echo "would run the seed and report success over ZERO assertions. Treat this as NOT RUN." >&2
   exit 2
 fi
 

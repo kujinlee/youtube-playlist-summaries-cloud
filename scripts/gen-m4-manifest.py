@@ -33,6 +33,7 @@ the committed manifest differs from what the schema now produces (exit 1).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -44,8 +45,17 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "live-manifest.txt")
 SCRATCH = "m4_manifest_gen"
 
+# ⛔ r4 B2 (codex + claude) — THE FILE MUST ASSERT ITS OWN COMPLETENESS.
+# The loader used to accept any non-empty file. MEASURED: a manifest containing one line, against a
+# database containing that one object, printed "M4 is PRESENT as expected — checked all 1 objects",
+# exit 0 — over a database missing 160 of 161. Truncating the trust root silently REDEFINES what
+# "complete" means, which is r3 B2 again, one level up. These two lines are checked by the loader,
+# so a short file is a CANNOT RUN rather than a pass.
 HEADER = """\
 # M4 LIVE MANIFEST — every object migration 0027 creates, DERIVED BY EXECUTION.
+#
+# objects: {total}
+# sha256: {digest}
 #
 # ⛔ DO NOT HAND-EDIT. Regenerate:  python3 scripts/gen-m4-manifest.py
 #    Verify it is current:          python3 scripts/gen-m4-manifest.py --check
@@ -118,8 +128,14 @@ def derive() -> set[str]:
     return manifest
 
 
+def body_digest(manifest: set[str]) -> str:
+    """sha256 over the sorted body, exactly as written. PURE."""
+    return hashlib.sha256(("\n".join(sorted(manifest)) + "\n").encode()).hexdigest()
+
+
 def render(manifest: set[str]) -> str:
-    return (HEADER.format(total=len(manifest), summary=summarise(manifest))
+    return (HEADER.format(total=len(manifest), summary=summarise(manifest),
+                          digest=body_digest(manifest))
             + "\n".join(sorted(manifest)) + "\n")
 
 
@@ -150,6 +166,16 @@ def main() -> int:
         if committed is None:
             print(f"FAILED — no manifest at {MANIFEST}. Run without --check to write it.",
                   file=sys.stderr)
+            return 1
+        # ⟳ r4 MEDIUM (codex) — --check compared OBJECT SETS, so a stale HEADER survived it. Proof:
+        # the committed file read "12 indexs · 5 policys" (a pluralisation bug fixed in code and
+        # never regenerated) while --check reported "manifest is current". Compare the RENDERED
+        # FILE, so the whole artifact is the subject, not just the part that is easy to compare.
+        on_disk = open(MANIFEST).read() if os.path.exists(MANIFEST) else ""
+        if committed == manifest and on_disk != render(manifest):
+            print("FAILED — the manifest's OBJECT SET is current, but the FILE differs from what\n"
+                  "this generator would write now (header, counts or ordering are stale).\n"
+                  "Regenerate: python3 scripts/gen-m4-manifest.py", file=sys.stderr)
             return 1
         if committed != manifest:
             missing, extra = manifest - committed, committed - manifest
