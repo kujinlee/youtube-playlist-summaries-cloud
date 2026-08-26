@@ -1,7 +1,7 @@
 # M4 LIVE MANIFEST — every object migration 0027 creates, DERIVED BY EXECUTION.
 #
 # objects: 161
-# sha256: 997bb7d557b592745b5c322e2f93e2e4f695e0e271d88419a5a54f1b5c2ee84a
+# sha256: e62e314b18e3d78144b610726aa4dd55a037bf83750ac1f6d60567cb701676e1
 #
 # ⛔ DO NOT HAND-EDIT. Regenerate:  python3 scripts/gen-m4-manifest.py
 #    Verify it is current:          python3 scripts/gen-m4-manifest.py --check
@@ -124,13 +124,13 @@ con:workspaces.workspaces_owner_id_fkey@8e10d6bf2781702a2446e768aedc3c03
 con:workspaces.workspaces_owner_id_key@1a91c0b3a3df12a3b2863cfdb8b77e48
 con:workspaces.workspaces_pkey@4c6419b3704337bbfe50f018842a9ad3
 fn:art_summary_has_no_source()@adc22a4c518c5077c6af9b0b4b2a848c
-fn:corrections_hash_of(p_corrections text)@ffb1557349a3209c466fb23b73ccf5e8
+fn:corrections_hash_of(p_corrections text)@2f33209e6b9cf8112a3f50e59e764cdb
 fn:ensure_workspace_for_profile()@e959c46028500be5797b98fb6c104d34
 fn:forbid_collecting_current()@09a8f438f08a5e3995eeb15b7f48290a
 fn:no_corrections_hash()@1a3e30f04151c31c81c1fdb1044b99ec
-fn:record_artifact(p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind public.artifact_kind, p_blob_key text, p_source_generation_id text, p_start_sec integer, p_end_sec integer, p_md_hash text, p_card jsonb, p_doc_version_major integer, p_produced_at timestamp with time zone)@f772db7d948372d38f5c1178000ff2ad
+fn:record_artifact(p_ws uuid, p_video text, p_slot text, p_generation_id text, p_kind public.artifact_kind, p_blob_key text, p_source_generation_id text, p_start_sec integer, p_end_sec integer, p_md_hash text, p_card jsonb, p_doc_version_major integer, p_produced_at timestamp with time zone)@af18769628113f0377e12587943e3b10
 fn:resolve_workspace_from_playlist()@406882317018f4dbe659201d3df96124
-fn:slot_kind(p_slot text)@cf35f7484fff7c1b56fd4f615175cb2d
+fn:slot_kind(p_slot text)@a332335622004a835e4d81bfc90e8e81
 fn:video_artifact_sources_append_only()@580f00b78725ffc118b11ca33e648f01
 fn:video_artifact_sources_insert_once()@597ca4713000bed5df925a3edb64ddb1
 fn:video_artifacts_append_only()@0662d16d6a6da010a028bcc49be3ce2b

@@ -387,6 +387,61 @@ SQL
   fi
 fi
 
+echo "═══ mutation 21 ⭐⭐⭐ r7 M (codex): an ARGUMENT DEFAULT changed — same symbol, same body ═══"
+# The narrowest sabotage in this suite. `prosrc` is untouched and the identity arguments are
+# untouched — identity arguments OMIT DEFAULTS — so before r7 the digest was byte-identical, while
+# every caller that OMITS the argument writes a different value. TWO falsifiers below: if
+# pg_get_function_arguments does not move, the mutation did not happen; if anything ELSE moves, the
+# gate could go red for a reason round 5 already covered and this case proves nothing.
+if fresh "${PREFIX}_argdef"; then
+  # A default cannot be changed by ALTER FUNCTION — only by CREATE OR REPLACE at the same signature,
+  # which is exactly the hot-fix shape. Everything except the one default is rebuilt FROM THE
+  # CATALOG, so the replacement is byte-identical in body, volatility, config and security context.
+  probe="from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='record_artifact'"
+  # ⚠ EVERY CAST HERE IS LOAD-BEARING. Without `::text` on prosecdef/provolatile this SELECT dies
+  # with `operator is not unique: text || "char"`, both probes come back EMPTY, and empty == empty
+  # makes the narrowness check PASS WITHOUT RUNNING. Measured 2026-08-26 — it reported ✓ on its very
+  # first run. That is why the emptiness guard below exists: silence must not read as agreement.
+  narrow="select pg_get_function_identity_arguments(p.oid)||'|'||md5(p.prosrc)||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.provolatile::text $probe;"
+  argsql="select pg_get_function_arguments(p.oid) $probe;"
+  before_a=$(db "${PREFIX}_argdef" -c "$argsql")
+  before_n=$(db "${PREFIX}_argdef" -c "$narrow")
+  db "${PREFIX}_argdef" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+do $$ declare s text; begin
+  select 'create or replace function public.record_artifact(' ||
+         regexp_replace(pg_get_function_arguments(p.oid),
+                        'p_md_hash text DEFAULT [^,)]*',
+                        'p_md_hash text DEFAULT ''r7-default''::text') ||
+         ') returns ' || pg_get_function_result(p.oid) ||
+         ' language plpgsql security definer set search_path = '''' as ' || quote_literal(p.prosrc)
+    into s
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'record_artifact';
+  execute s;
+end $$;
+SQL
+  after_a=$(db "${PREFIX}_argdef" -c "$argsql")
+  after_n=$(db "${PREFIX}_argdef" -c "$narrow")
+  echo "     p_md_hash: $(echo "$before_a" | grep -o 'p_md_hash[^,)]*') -> $(echo "$after_a" | grep -o 'p_md_hash[^,)]*')"
+  if [ -z "$before_a" ] || [ -z "$before_n" ] || [ -z "$after_n" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — the narrowness check cannot run, so a CAUGHT verdict here"
+    echo "    would be unearned. treat mutation 21 as NOT RUN"; fail=1
+  elif [ "$before_a" = "$after_a" ]; then
+    echo "  ✗ THE DEFAULT DID NOT CHANGE — treat mutation 21 as NOT RUN"; fail=1
+  elif [ "$before_n" != "$after_n" ]; then
+    # ⭐ WITHOUT THIS, A CAUGHT VERDICT PROVES NOTHING. If the rebuild also moved prosrc, prosecdef,
+    # proconfig or the identity args, the gate would have gone red on a column it already digested
+    # in round 5 — and the r7 finding would read as fixed while the narrow case stayed invisible.
+    echo "  ✗ THE MUTATION IS NOT NARROW — identity/body/secdef/config/volatility also moved:"
+    echo "      before: $before_n"
+    echo "      after:  $after_n"
+    echo "    treat mutation 21 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_argdef" --expect-present && r=pass || r=fail
+    report "an argument DEFAULT changed, NOTHING else -> --expect-present FAILS" fail "$r"
+  fi
+fi
+
 echo "═══ mutation 20 ⭐⭐ r6 H (codex): a RENAMED survivor of the rollback ═══"
 # `alter function … rename to …_old` then the real rollback: the drop skips with a NOTICE and a live
 # SECURITY DEFINER guard remains. Symbol matching cannot see it — the symbol is what changed. But

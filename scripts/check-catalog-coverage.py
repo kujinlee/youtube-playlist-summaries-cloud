@@ -109,10 +109,16 @@ EXCLUDED: tuple[tuple[str, str], ...] = (
      "replica identity and physical clustering: they affect logical replication and row order on "
      "disk, neither of which can admit or reject a write. `relreplident` IS digested, so a change "
      "of replica identity at the TABLE level is still visible"),
-    (r"^(prosupport|probin|proargdefaults)$",
-     "a planner support function, a C-language shared-object path, and the internal node tree of "
-     "argument defaults. M4 ships no C functions; a change to a default's VALUE changes the "
-     "identity arguments, which are the manifest key"),
+    (r"^(prosupport|probin)$",
+     "a planner support function and a C-language shared-object path. M4 ships no C functions and "
+     "declares no support function; neither can change whether a plpgsql body runs"),
+    (r"^(proargdefaults)$",
+     "the internal node tree of argument defaults, rendered as SQL text by "
+     "pg_get_function_arguments, which IS digested (r7 M). ⛔ THIS ROW HELD A FALSE REASON FOR ONE "
+     "ROUND: it claimed a default's VALUE changes the identity arguments. It does not — identity "
+     "arguments OMIT DEFAULTS (MEASURED 2026-08-26: `a integer, b text` vs `a integer, b text "
+     "DEFAULT 'x'::text`), so a changed default moved neither the symbol nor the digest while every "
+     "omitted-argument call wrote different data"),
     (r"^(reltype|reloftype|relam)$",
      "the composite type Postgres auto-creates for every relation, the OF-type of a typed table "
      "(M4 declares none), and the access method. All three are OID references; `relam` would matter "

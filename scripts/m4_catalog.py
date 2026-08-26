@@ -61,6 +61,7 @@ WHAT EACH DIGEST COVERS
     column      exact type (format_type) · NOT NULL · default · identity · generated
     trigger     pg_get_triggerdef + tgenabled   -> DISABLE, timing, level, WHEN, deferrability
     function    prosrc · prosecdef · proconfig · provolatile · prokind · ACL
+                · pg_get_function_arguments  -> ARGUMENT DEFAULTS, which the identity args omit
     constraint  pg_get_constraintdef            -> renders NOT VALID and DEFERRABLE (verified r5)
     index       pg_get_indexdef · indisvalid · indisready · indislive
     policy      cmd · permissive · roles · using · with check
@@ -95,6 +96,10 @@ ENFORCEMENT_COLUMNS = (
     "relreplident",
     "prosecdef", "proconfig", "provolatile", "prokind", "proisstrict", "proleakproof",
     "proparallel", "proretset", "prosqlbody",
+    # ⟳ r7 M: argument DEFAULTS. Not a pg_proc column name — `proargdefaults` is an internal node
+    # tree and is excluded as "rendered by" this. Named here because what must not silently vanish
+    # is the RENDERING, not the storage.
+    "pg_get_function_arguments",
     "polpermissive", "indisvalid", "indisready", "indislive", "indisprimary", "indisunique",
     "indimmediate", "indisexclusion",
     "attnotnull", "attidentity", "attgenerated", "attstorage", "attcompression",
@@ -287,8 +292,20 @@ union all
 -- the gate at exit 0. A STRICT function RETURNS NULL WITHOUT EXECUTING ITS BODY whenever any
 -- argument is NULL, so the paid write silently does not happen. Every pg_proc column that decides
 -- how or whether the body runs is now here; `check-catalog-coverage.py` enumerates the rest.
+-- ⟳ r7 M (codex, coordinator-verified): the SYMBOL uses identity arguments, and identity arguments
+-- OMIT DEFAULTS. MEASURED here 2026-08-26 on a two-argument probe, because the first version of this
+-- comment said "types only" — which is false, and false in exactly the shape this finding is about:
+--     identity: a integer, b text
+--     full    : a integer, b text DEFAULT 'x'::text
+-- So replacing record_artifact's `p_md_hash text default null` with `default 'r7-default'` moved
+-- nothing: same symbol, same prosrc, byte-identical digest — while every call that OMITS that
+-- argument now writes a different md_hash.
+-- `pg_get_function_arguments` is the same signature WITH the defaults rendered, so it rides in the
+-- PAYLOAD (a default is not part of the object's identity) while the symbol stays stable for the
+-- survivor matching absent mode depends on.
 select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' || '@' ||
        md5(coalesce(p.prosrc, '') || coalesce(p.prosqlbody::text, '') ||
+           pg_get_function_arguments(p.oid) ||
            p.prosecdef::text || p.provolatile::text || p.prokind::text ||
            p.proisstrict::text || p.proleakproof::text || p.proparallel::text ||
            p.proretset::text || format_type(p.prorettype, null) || l.lanname ||
