@@ -26,9 +26,17 @@ nobody has thought of, or one a future Postgres adds, is a RED TEST rather than 
 exclusion must carry a written reason, which is the part that cannot be automated and is the part
 worth a human's attention.
 
-⚠ WHAT IT STILL CANNOT DO. It proves the digest is not narrowing. It cannot prove an excluded column
-is *correctly* excluded — that judgement is in the REASONS below, and a wrong reason here is a real
-defect that this script will happily report as green. Read them.
+⚠ WHAT IT STILL CANNOT DO — AND WHAT NOW DOES. It proves the digest is not narrowing. It cannot
+prove an excluded column is *correctly* excluded: that judgement is in the REASONS below, and a wrong
+reason here is a defect this script reports as green. **That bound was hit five times** — four in
+round 7, and a fifth introduced by the commit that fixed the fourth, which then survived both halves
+of rounds 8 and 9 because every reviewer was pointed at the instruments and nobody re-read the prose
+saying what the instruments cover.
+
+`scripts/verify-exclusion-reasons.py` (gate 13) closes the executable part of it: the six rules that
+say "X is rendered by Y, and Y IS digested" are claims about a hash, so it changes X and requires the
+digest to move. 10 executed and held; the twelve rules with no executable form are PRINTED every run
+rather than left silent. Read the reasons anyway — but the ones that can be run, are.
 """
 from __future__ import annotations
 
