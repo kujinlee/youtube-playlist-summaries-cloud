@@ -397,7 +397,8 @@ bash scripts/mutate-live-schema-check.sh > /tmp/mut.txt 2>&1; echo "mut=$?"
 git rev-parse --short HEAD
 ```
 
-Expected: `self=0` with `16/16`, `mut=0` with `✅ every mutation caught`. ⚠ A tick records *that*
+Expected: `self=0` (the script prints its own case count — **do not hardcode it here**, it has been
+5 → 16 → 20 → 24 and a number in prose is a number that rots), `mut=0` with `✅ every mutation caught`. ⚠ A tick records *that*
 something was verified, never *what against* — name the commit.
 
 - [ ] **Step 7: Wire it in — ⚠ THE EXPECTED STATE IS A PARAMETER, NOT A CONSTANT**
@@ -643,7 +644,8 @@ systematically misses every one of them.** The count that matters is the catalog
 **The distinction that makes the rollback writable:** the 14 split **7 / 7**. The seven on M4's
 **own** tables (`video_generations` ×2, `video_artifacts` ×2, `video_artifact_sources` ×3) die with
 `drop table`. The **seven on LIVE tables** — `profiles`, `playlists` ×2, `videos` ×2, `jobs` ×2 —
-survive, and must be named. Those seven are `M4_LIVE_TRIGGERS` in `check-live-schema.py`.
+survive, and must be named. ⟳ *r4: the hand-written `M4_LIVE_TRIGGERS` tuple is GONE — the gate
+derives all 14 from the manifest, and checks each by DEFINITION, so a disabled one fails too.*
 
 ### ⛔ IT IS NOT A MIGRATION, AND IT IS ALREADY WRITTEN
 
@@ -702,9 +704,9 @@ docker exec -i supabase_db_youtube-playlist-summaries-cloud psql -U postgres -d 
 ```
 
 **And the falsifier that makes the no-op impossible to miss:** after the rollback,
-`check-live-schema.py --expect-absent` reports any surviving function by name (Task 3's
-`M4_FUNCTIONS`). If a signature is wrong, that gate goes red — which is exactly why the gate had to
-grow past tables and columns.
+`check-live-schema.py --expect-absent` reports any surviving function by name (from the derived
+manifest — the hand-written `M4_FUNCTIONS` tuple is gone as of r4). If a signature is wrong, that
+gate goes red — which is exactly why the gate had to grow past tables and columns.
 
 - [ ] **Step 4: Apply `0027` locally and assert with the LIVE gate**
 

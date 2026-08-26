@@ -122,6 +122,55 @@ echo "     that is precisely the state the 29-object gate blessed with exit 0."
 docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
   -c "drop database if exists ${SCRATCH}_guard (force);" >/dev/null 2>&1
 
+echo "═══ mutation 5 ⭐⭐⭐ r4 B1: DISABLE, do not drop — the name stays, the rule dies ═══"
+# THE MUTATION THIS HARNESS WAS ONE WORD FROM CATCHING. Mutation 4 DROPS the guards; a gate that
+# compares names catches that. `alter table … disable trigger` leaves every name in place and every
+# rule inert, and the name-only gate returned exit 0 over it — measured on a real database.
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "drop database if exists ${SCRATCH}_dis (force);" >/dev/null 2>&1
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "create database ${SCRATCH}_dis;" >/dev/null 2>&1
+docker exec -i "$CONTAINER" sh -c \
+  "pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges | psql -U postgres -d ${SCRATCH}_dis -q" \
+  >/dev/null 2>&1
+python3 ./scripts/build-m4-schema.py --quiet --out /tmp/m4-disable-mutation.sql >/dev/null 2>&1
+docker exec -i "$CONTAINER" psql -U postgres -d "${SCRATCH}_dis" -tAq -v ON_ERROR_STOP=1 \
+  < /tmp/m4-disable-mutation.sql >/dev/null 2>&1
+
+docker exec -i "$CONTAINER" psql -U postgres -d "${SCRATCH}_dis" -tAq >/dev/null 2>&1 <<'SQL'
+alter table video_artifacts        disable trigger video_artifacts_append_only_trg;
+alter table video_artifacts        disable trigger video_artifacts_generation_complete_trg;
+alter table video_generations      disable trigger video_generations_freeze_trg;
+alter table video_generations      disable trigger forbid_collecting_current_trg;
+alter table video_artifact_sources disable trigger video_artifact_sources_append_only_trg;
+alter table video_artifact_sources disable trigger video_artifact_sources_insert_once_trg;
+alter table video_artifact_sources disable trigger art_summary_has_no_source_trg;
+SQL
+n_dis=$(docker exec -i "$CONTAINER" psql -U postgres -d "${SCRATCH}_dis" -tAq \
+  -c "select count(*) from pg_trigger where tgenabled='D' and not tgisinternal;" | tr -d '[:space:]')
+echo "     triggers now DISABLED (tgenabled='D'): $n_dis  — every NAME still present"
+python3 ./scripts/check-live-schema.py --database "${SCRATCH}_dis" --expect-present \
+  >/dev/null 2>&1 && r=pass || r=fail
+report "7 guards DISABLED (not dropped) -> --expect-present FAILS" fail "$r"
+
+echo "═══ mutation 6 ⭐ a guard FUNCTION BODY replaced with a no-op ═══"
+docker exec -i "$CONTAINER" psql -U postgres -d "${SCRATCH}_dis" -tAq >/dev/null 2>&1 <<'SQL'
+alter table video_artifacts enable trigger video_artifacts_append_only_trg;
+alter table video_artifacts enable trigger video_artifacts_generation_complete_trg;
+alter table video_generations enable trigger video_generations_freeze_trg;
+alter table video_generations enable trigger forbid_collecting_current_trg;
+alter table video_artifact_sources enable trigger video_artifact_sources_append_only_trg;
+alter table video_artifact_sources enable trigger video_artifact_sources_insert_once_trg;
+alter table video_artifact_sources enable trigger art_summary_has_no_source_trg;
+create or replace function video_artifacts_append_only() returns trigger
+  language plpgsql as $$ begin return new; end $$;
+SQL
+python3 ./scripts/check-live-schema.py --database "${SCRATCH}_dis" --expect-present \
+  >/dev/null 2>&1 && r=pass || r=fail
+report "guard body replaced by 'return new' -> --expect-present FAILS" fail "$r"
+docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+  -c "drop database if exists ${SCRATCH}_dis (force);" >/dev/null 2>&1
+
 echo "═══ mutation 3 ⭐ the ADR-0011 RESIDUE: a Task 1 that never landed ═══"
 # MEASURED 2026-08-25: with the raw spec applied, the rollback left three objects behind and
 # `--expect-absent` reported ABSENT — because the gate's inventory is post-ADR-0011 and could not
