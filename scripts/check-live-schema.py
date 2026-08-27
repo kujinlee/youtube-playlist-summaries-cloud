@@ -33,9 +33,10 @@ remembered". `--check` on the generator is the staleness ratchet.
 
 FAILS IF
 --------
-`--expect-absent` and ANY manifest object survives; `--expect-present` and any is missing; an
-ADR-0011-removed object exists in either polarity; the manifest is missing or empty; or the database
-is unreachable (exit 2 — treat as NOT RUN).
+`--expect-absent` and ANY manifest object survives; `--expect-present` and any is missing OR an
+UNEXPECTED object sits on a relation M4 owns (see `unexpected`); an ADR-0011-removed object exists in
+either polarity; the manifest is missing or empty; or the database is unreachable (exit 2 — treat as
+NOT RUN).
 """
 from __future__ import annotations
 
@@ -213,18 +214,134 @@ def survivors(live: set[str], manifest: set[str]) -> set[str]:
     return _survivors(live, manifest)
 
 
+# Kinds whose catalog string is `kind:relation.name`, so the object can be ATTRIBUTED to a relation.
+# ⚠ `idx:` is deliberately absent and that is a MEASURED limit, not an oversight — see `unexpected`.
+ATTRIBUTABLE_KINDS = ("col", "con", "trg", "pol")
+
+
+def owned_relations(manifest: set[str]) -> set[str]:
+    """Relations M4 CREATED, DERIVED from the manifest's own `table:`/`view:` entries. PURE.
+
+    Never hand-written. This file's r3 B2 lesson was that a hand-maintained list of what to check
+    silently stops matching the schema; the same reasoning applies to a hand-maintained list of what
+    to check it AGAINST. MEASURED 2026-08-27: 8 relations — 5 tables, 3 views.
+    """
+    out = set()
+    for o in manifest:
+        kind, _, rest = name_of(o).partition(":")
+        if kind in ("table", "view"):
+            out.add(rest)
+    return out
+
+
+def unexpected(live: set[str], manifest: set[str]) -> set[str]:
+    """Live objects sitting on an M4-OWNED relation that the manifest does not name. PURE.
+
+    ⭐ BACKLOG 65. `verdict`'s present branch was `manifest <= live` — a SUBSET test — so a REMOVED
+    object broke the subset and was caught, while an ADDED one passed silently. This gate is the only
+    one on the SUBJECT axis (the other six rebuild from spec files and structurally cannot answer
+    *"what is actually in production?"*), so its blind spot was the repo's blind spot. It became the
+    gate over a LIVE schema on 2026-08-27, the day M4-β applied 0027 to production.
+
+    ⛔ WHY NOT `manifest == live`, WHICH IS WHAT THE BACKLOG ROW FIRST PROPOSED — REFUTED BY
+    MEASUREMENT, 2026-08-27. `CATALOG_SQL` reads ALL of schema `public`, not M4's slice: production
+    holds **391** objects against a **161**-object manifest, because `playlists`, `jobs`, `profiles`
+    and their columns are none of M4's business. Equality would have failed by 230 objects on a
+    perfectly healthy database — a gate that is red on day one gets disabled on day two.
+
+    So the comparison is scoped to the relations M4 OWNS, where "the manifest is complete" is a claim
+    M4 is actually entitled to make. MEASURED on both subjects before this landed: **0** unexpected
+    objects on prod AND on the local container, so the gate went in green rather than pre-broken.
+
+    ⚠ MATCHED BY `name_of`, NOT BY `name@digest`, AND THAT IS LOAD-BEARING. An object whose
+    DEFINITION drifted is already `manifest - live`, and `split_residue` reports it as REDEFINED —
+    the far more useful message, since the object is right there and merely wrong. Comparing full
+    strings here would report every redefined object a second time as "unexpected", burying the real
+    diagnosis under a duplicate. Only a name the manifest has never heard of is drift.
+
+    ⛔⛔ WHAT THIS DOES NOT SEE — stated, because an unstated bound is read as coverage:
+
+      * **INDEXES. `idx:` renders as `idx:<indexname>` with NO relation** (`m4_catalog.CATALOG_SQL`),
+        so an index CANNOT be attributed to a relation by parsing, and scoping it would mean changing
+        the catalog rendering and regenerating all 161 manifest entries. The residual hole is a bare
+        `create unique index` on an M4 table, which changes semantics without appearing as a `con:`.
+        A unique CONSTRAINT is caught, because it renders as `con:relation.name`.
+      * **The 27 manifest objects on FOREIGN relations** — 12 indexes, 7 triggers, 5 constraints and
+        3 columns that M4 adds to the pre-existing `videos`, `playlists`, `jobs` and `profiles`.
+        Those tables are not M4's to bound: any future migration adding a column to `videos` is
+        legitimate, so asserting completeness there would generate false positives forever.
+      * **Schema-level objects** — `fn:` and `type:` attach to no relation, so "unexpected" is not
+        defined for them. An added function is caught by `check-anon-exposure.py`, not here.
+
+    A legitimate future migration that adds a column to an M4 relation turns this RED until the
+    manifest is regenerated. That is correct and already the standing discipline: the manifest is
+    DERIVED (`gen-m4-manifest.py`), and gate 9 fails when it is stale.
+    """
+    owned = owned_relations(manifest)
+    known = {name_of(o) for o in manifest}
+    out = set()
+    for o in live:
+        n = name_of(o)
+        kind, _, rest = n.partition(":")
+        if kind not in ATTRIBUTABLE_KINDS or rest.count(".") != 1:
+            continue  # `ambiguous()` has already refused the run for these — see below
+        if rest.split(".", 1)[0] in owned and n not in known:
+            out.add(o)
+    return out
+
+
+def ambiguous(live: set[str]) -> set[str]:
+    """Attributable objects whose relation CANNOT be determined from the catalog string. PURE.
+
+    ⟳ BACKLOG 65 REVIEW, codex High + Medium (2026-08-27) — ONE ROOT CAUSE, AND IT IS NOT A PARSER
+    BUG. `CATALOG_SQL` builds these strings as `relname || '.' || objectname` with NO quoting, so a
+    dot inside either identifier is indistinguishable from the separator:
+
+        col:workspaces.audit.seen   is BOTH  column `seen` on the quoted table "workspaces.audit"
+                                        AND  column "audit.seen" on the table `workspaces`
+
+    `split` reads it the first way and would raise a FALSE ALARM on a legitimate database; `rsplit`
+    reads it the second way and would SILENTLY MISS an addition to an owned relation whose own name
+    contains a dot. Both were reported, and choosing either one is choosing which error to make.
+
+    ⛔ SO THE GATE REFUSES INSTEAD OF GUESSING. A gate that cannot determine its subject must report
+    CANNOT RUN — "cannot run" is a failure, never a pass, and never a coin flip either. Fixing it
+    properly means quoting the separator in `CATALOG_SQL`, which changes all 161 manifest entries and
+    belongs in its own slice.
+
+    MEASURED 2026-08-27 on BOTH subjects before this landed: production and the local container each
+    hold 391 objects and **0** ambiguous ones, so this refusal is unreachable today — which is
+    exactly why it must exist before something makes it reachable.
+    """
+    return {o for o in live
+            if name_of(o).partition(":")[0] in ATTRIBUTABLE_KINDS
+            and name_of(o).partition(":")[2].count(".") != 1}
+
+
 def verdict(live: set[str], manifest: set[str], mode: str) -> bool:
     """PURE. True = pass.
 
-    present: every manifest object is live, BY DEFINITION (name@digest).
+    present: every manifest object is live, BY DEFINITION (name@digest), AND nothing UNEXPECTED sits
+             on a relation M4 owns (backlog 65 — the subset test alone is blind to additions).
     absent : no object M4 created is live, BY NAME (see `survivors`).
     BOTH   : nothing ADR-0011 removed is live.
+
+    ⚠ The drift half is deliberately NOT behind an opt-in flag. `check-schema-gates.sh` gate 10/15
+    invokes this with `"$LIVE_FLAG"` and nothing else, and the production runbook is a written
+    command — so an opt-in `--exact` would be armed only when someone remembered, which is
+    backlog 54's finding ("a record, not a mechanism") rebuilt in a new place.
+
+    ⛔ PRECONDITION, ENFORCED BY `main` AND NOT BY THIS FUNCTION: `ambiguous(live)` must be empty and
+    `owned_relations(manifest)` must be non-empty. `unexpected` SKIPS what it cannot attribute and
+    returns the empty set when nothing is owned, so calling this directly on an unvalidated catalog
+    yields a pass that means "could not tell", not "clean". Any new caller must run those two checks
+    first, exactly as `main` does.
     """
     if forbidden(live):
         return False
     if mode == "absent":
         return not survivors(live, manifest)
-    return manifest <= live
+    return manifest <= live and not unexpected(live, manifest)
 
 
 def residue(live: set[str], manifest: set[str], mode: str) -> set[str]:
@@ -372,6 +489,80 @@ def self_test() -> int:
     check("forbidden does NOT fire on an unrelated function that merely shares a prefix",
           forbidden({"fn:sync_corrections_to_workspace_video_v2()@x"}), set())
 
+    # ⭐⭐ BACKLOG 65 — THE SUBSET TEST IS BLIND TO ADDITIONS.
+    # Every case below returned exit 0 before `unexpected` existed. `workspaces` and
+    # `video_artifacts_current` are the fixture's OWNED relations (they appear as table:/view:);
+    # `playlists`, `profiles` and `video_artifacts` are foreign to it, which is what makes the
+    # negative cases below meaningful rather than decorative.
+    check("owned_relations DERIVES the M4 namespace from table:/view: entries",
+          owned_relations(M), {"workspaces", "video_artifacts_current"})
+
+    for kind, extra in (
+            ("COLUMN", "col:workspaces.leaked_at@x1"),
+            ("TRIGGER", "trg:workspaces.ws_backdoor_trg@x2"),
+            ("POLICY", "pol:workspaces.ws_anyone_reads@x3"),
+            ("CONSTRAINT", "con:workspaces.ws_weakened@x4"),
+            ("COLUMN on an owned VIEW", "col:video_artifacts_current.smuggled@x5")):
+        live = set(M) | {extra}
+        check(f"present FAILS on an UNEXPECTED {kind} on a relation M4 owns",
+              verdict(live, M, "present"), False)
+        check(f"…and `unexpected` NAMES it — {kind[:24]}", unexpected(live, M), {extra})
+
+    # ⛔ THE TRAP THIS GUARDS: the manifest is FULLY present, so `residue` is EMPTY. A drift report
+    # hung off `residue` would exit 1 having printed nothing at all.
+    drifted = set(M) | {"col:workspaces.leaked_at@x1"}
+    check("drift fails even when EVERY manifest object is present (subset holds)",
+          (M <= drifted, verdict(drifted, M, "present")), (True, False))
+    check("…and `residue` is EMPTY in exactly that case — so drift MUST report separately",
+          residue(drifted, M, "present"), set())
+
+    # The stated bounds, asserted so they cannot quietly widen or narrow without a red test.
+    for why, extra in (
+            ("a FOREIGN relation's new column (videos/playlists/jobs are not M4's to bound)",
+             "col:playlists.new_feature_flag@y1"),
+            ("an INDEX — `idx:` carries no relation, so it cannot be attributed",
+             "idx:workspaces_new_idx@y2"),
+            ("a FUNCTION — it attaches to no relation (check-anon-exposure.py's subject)",
+             "fn:some_new_helper()@y3"),
+            ("a whole NEW TABLE outside the manifest", "table:unrelated_new_table@y4")):
+        check(f"present still PASSES on {why}", verdict(set(M) | {extra}, M, "present"), True)
+
+    # A REDEFINED object must stay REDEFINED — reporting it twice buries the useful diagnosis.
+    redef = (set(M) - {"pol:workspaces.ws_owner@p1"}) | {"pol:workspaces.ws_owner@WIDENED"}
+    check("a REDEFINED object on an owned relation is NOT double-reported as drift",
+          unexpected(redef, M), set())
+    check("…it is reported as REDEFINED, which names the real problem",
+          split_residue(redef, M), (set(), {"pol:workspaces.ws_owner@p1"}))
+
+    # ⟳ BACKLOG 65 REVIEW (codex High + Medium): a DOT INSIDE AN IDENTIFIER makes the catalog string
+    # undecidable, and the gate REFUSES rather than picking an error direction.
+    ambig_fp = "col:workspaces.audit.seen@z1"   # codex High: column `seen` on table "workspaces.audit"
+    check("codex High — a dotted identifier is detected as AMBIGUOUS, not silently attributed",
+          ambiguous({ambig_fp}), {ambig_fp})
+    check("…so it does NOT become a false-positive drift report",
+          unexpected(set(M) | {ambig_fp}, M), set())
+    # codex Medium: the mirror case — an OWNED relation whose own name contains a dot.
+    Md = set(M) | {"table:foo.bar@d1"}
+    check("codex Medium — an owned relation with a dotted name is AMBIGUOUS too, not silently missed",
+          ambiguous({"col:foo.bar.extra@d2"}), {"col:foo.bar.extra@d2"})
+    check("…and `unexpected` does not pretend to have judged it",
+          unexpected(Md | {"col:foo.bar.extra@d2"}, Md), set())
+    check("a normal one-dot object is NOT ambiguous", ambiguous(set(M)), set())
+
+    # ⛔ THE EMPTY-SET PASS. A manifest naming no table or view makes `unexpected` vacuously clean
+    # over ANY database — `main` refuses (exit 2) on exactly this predicate.
+    no_rels = {o for o in M if not name_of(o).startswith(("table:", "view:"))}
+    check("owned_relations is EMPTY when the manifest names no table or view",
+          owned_relations(no_rels), set())
+    check("…and `unexpected` is then vacuously clean, which is why main REFUSES on it",
+          unexpected(set(M) | {"col:workspaces.leaked_at@x1"}, no_rels), set())
+    check("non-attributable kinds are never ambiguous (fn/idx/type carry no relation)",
+          ambiguous({"fn:f()@a", "idx:i@b", "type:t@c", "table:x@d"}), set())
+
+    # Absent mode asks a different question; drift is meaningless when nothing should exist.
+    check("absent mode IGNORES drift entirely",
+          verdict({"col:workspaces.leaked_at@x1"}, M, "absent"), True)
+
     check("residue NAMES what SURVIVED in absent mode",
           residue({"table:workspaces"}, M, "absent"), {"table:workspaces"})
     check("name_of strips the digest", name_of(TRG),
@@ -389,12 +580,17 @@ def self_test() -> int:
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     if failures == 0:
-        print("⚠ TWO THINGS THESE CASES DO NOT PROVE:\n"
+        print("⚠ THREE THINGS THESE CASES DO NOT PROVE:\n"
               "  * that ENFORCEMENT_COLUMNS is COMPLETE — only that it is not shrinking. The\n"
               "    behavioural proof is scripts/mutate-live-schema-check.sh, which sabotages a real\n"
               "    database and requires RED.\n"
               "  * that an EMPTY manifest is safe: the pure verdict cannot distinguish 'nothing\n"
-              "    expected' from 'all present', which is why load_manifest raises on one.")
+              "    expected' from 'all present', which is why load_manifest raises on one.\n"
+              "  * that DRIFT DETECTION IS COMPLETE. `unexpected` covers col/con/trg/pol on the 8\n"
+              "    relations M4 owns. It cannot see an added INDEX (idx: carries no relation name),\n"
+              "    anything added to the 4 FOREIGN relations M4 only extends, or a new fn:/type:.\n"
+              "    Those bounds are asserted as PASSING cases above, so widening them is a decision\n"
+              "    that turns a test red — never a silent accident.")
     return 1 if failures else 0
 
 
@@ -448,6 +644,33 @@ def main() -> int:
 
     where = "--prod" if url else f"local container db '{a.database}'"
     subject = f"{where} — {identity}"
+
+    # ⛔ BACKLOG 65 REVIEW — REFUSE BEFORE JUDGING. Drift attribution is present-mode only, so this
+    # cannot weaken `--expect-absent`; but where it applies, an undecidable subject makes the verdict
+    # meaningless rather than merely imprecise.
+    if mode == "present":
+        # ⛔ THE EMPTY SET PASSES — this repo's most-repeated defect, and `unexpected` has the shape
+        # that produces it: no owned relations means nothing is ever attributable, so drift detection
+        # reports CLEAN while checking nothing. `load_manifest` already refuses an empty manifest for
+        # exactly this reason one level up; a manifest that parses but names no table or view would
+        # slip through that guard and silently disarm this one.
+        if not owned_relations(manifest):
+            print("CANNOT RUN — the manifest names no table or view, so there is no M4 namespace to\n"
+                  "bound and drift detection would pass over ANY database. That is the empty-set\n"
+                  "pass this gate exists to prevent. Regenerate it: python3 "
+                  "scripts/gen-m4-manifest.py\nTreat this as NOT RUN.", file=sys.stderr)
+            return 2
+
+        murky = ambiguous(live)
+        if murky:
+            print(f"CANNOT RUN — {len(murky)} catalog object(s) carry a DOT inside an identifier, so\n"
+                  "the relation they belong to cannot be read out of the catalog string (it is built\n"
+                  "as relname || '.' || objectname, unquoted). Guessing would either raise a false\n"
+                  "alarm or silently miss an addition. Treat this as NOT RUN.\n", file=sys.stderr)
+            for line in report(murky, "?"):
+                print(line, file=sys.stderr)
+            return 2
+
     if verdict(live, manifest, mode):
         print(f"live schema [{subject}]: M4 is {mode.upper()} as expected — checked all "
               f"{len(manifest)} objects, BY DEFINITION not just by name ({summarise(manifest)})")
@@ -490,6 +713,28 @@ def main() -> int:
             print("\n⚠ A PARTIALLY APPLIED M4 IS THE DANGEROUS STATE: the guard triggers are what\n"
                   "  make the artifact tables append-only. A schema with the tables and without\n"
                   "  their guards accepts writes the design forbids.", file=sys.stderr)
+
+    # ⭐ BACKLOG 65 — reported SEPARATELY and unconditionally, because drift is the one failure that
+    # leaves `residue()` EMPTY. `manifest <= live` can hold perfectly while an extra column sits on
+    # an M4 table; if this branch hung off `bad` like the two above, the gate would exit 1 having
+    # printed NOTHING, which is the failure mode this whole file exists to argue against.
+    if mode == "present":
+        drift = unexpected(live, manifest)
+        if drift:
+            # "AND" only when something was already reported. MEASURED 2026-08-27: drift alone
+            # printed "⛔ AND 1 object(s) …" as the FIRST line of the output, continuing a sentence
+            # nothing had started — found by EXECUTING this branch, not by reading it.
+            joiner = "AND " if (gone or bad) else ""
+            print(f"\n⛔ {joiner}{len(drift)} object(s) EXIST ON A RELATION M4 OWNS THAT THE "
+                  "MANIFEST DOES NOT NAME —\n   the schema has grown since 0027 and this gate's "
+                  "expected set was never regenerated:\n", file=sys.stderr)
+            for line in report(drift, "+"):
+                print(line, file=sys.stderr)
+            print("\n⚠ AN ADDED COLUMN IS NOT COSMETIC ON THESE TABLES. The artifact relations are\n"
+                  "  append-only by TRIGGER, and a guard enumerates the columns it protects; a\n"
+                  "  column the guards do not know about is writable in a way the design forbids.\n"
+                  "  If the addition is INTENDED, regenerate the manifest and review the diff:\n"
+                  "      python3 scripts/gen-m4-manifest.py", file=sys.stderr)
     return 1
 
 
