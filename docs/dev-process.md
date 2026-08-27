@@ -139,7 +139,7 @@ copy that drifts.
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |
 | `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
-| `scripts/check-paid-caller-arrival.py` | backlog 26's trigger: fires when a non-test caller reaches `record_artifact`; refuses if the symbol was renamed away (`--self-test`: 9 cases) |
+| `scripts/check-paid-caller-arrival.py` | backlog 26's trigger: fires when a non-test caller reaches `record_artifact`; refuses if the symbol was renamed away (`--self-test`: 32 cases). ⟳ r12: this row said 9 and, worse, listed the script as *mechanically enforced* while **nothing executed it** — it is now gate 15 of `scripts/check-schema-gates.sh` |
 | `scripts/check-docs.py` | documentation integrity |
 | `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason — never blocks when a reviewer cannot run, only when nobody says so (`--self-test`: 14 cases) |
 | `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to, by a name that survives a rename (ADR-0010; registry `docs/anchors.md`; `--self-test`: 15 cases) |
