@@ -18,11 +18,19 @@
 # not follow, and MEASURED 2026-08-26 it would have been a silent gutting:
 #
 #     05_assert.sql                    2517 lines, 122 assertion sites
-#     ...marked @RE-RUNNABLE              3
+#     ...marked re-runnable               3
 #     gate 8 (run-schema-assertions.sh)   SKIPPED when M4_PHASE=pre, and only ever runs those 3
 #     gate 1 (this script)                runs all 122, and is the ONLY thing that does
 #
 # So dropping 05 here leaves 122 assertions executing NOWHERE before 0027, and 3 of 122 after it.
+#
+# ⟳ TASK 8 (2026-08-26) — THE SECOND ROW OF THAT TABLE IS NOW THE WHOLE FILE, and the conclusion is
+# unchanged. Measurement found no migration-only assertion left (ADR-0011 deleted the one there was),
+# so 05 carries a single re-runnable marker at the top and gate 8 runs all 119 of its ok-reporting
+# assertions against the APPLIED catalog. Gate 1 is still the only thing that runs them against a
+# schema rebuilt from source — the two subjects are different, and neither replaces the other.
+# ⚠ The counts above are hand-maintained and were already stale once. `run-schema-assertions.sh`
+# now carries a floor that fails when the count drops, which is the mechanical half of this note.
 # This gate is named "1/13 schema + assertions"; the second noun is not decoration. Within the hour
 # this was written, this suite caught a T2 defect that both of the plan's textual sweeps had missed.
 # The distinction the plan needed: 05 must never be part of the SCHEMA SOURCE (it would ship inside a

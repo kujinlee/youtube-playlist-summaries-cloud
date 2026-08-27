@@ -12,6 +12,37 @@
 -- So: EVERY NEGATIVE BELOW MUST VIOLATE EXACTLY ONE GUARD. A fixture that is invalid in two ways
 -- tests neither. Where a row must be FK-valid to isolate a CHECK, it uses a generation of the right
 -- kind; where a key must be shaped, it is shaped.
+--
+-- ══ @RE-RUNNABLE ═══ THE WHOLE FILE, AND THAT IS A MEASUREMENT, NOT A DEFAULT ═════════════════════
+--
+-- ⛔ EVERY MENTION OF A MARKER BELOW DROPS ITS `@`, AND THAT IS NOT PEDANTRY. The selector matches
+-- the literal on any comment line, so prose ABOUT the markers is itself a marker: the first draft
+-- of this header said the word three times and toggled the selection off mid-explanation, taking
+-- the file from 119 assertions to 61. Nothing syntactic saw it — the block still parsed, still held
+-- `raise exception`, still reached the success echo. The assertion floor caught it, on the very
+-- commit that added the floor. Round 2 learned this about string literals; it is true of comments.
+--
+-- `scripts/run-schema-assertions.sh` selects from this marker to the next MIGRATION-ONLY one, so
+-- this one line puts every assertion below into the gate that runs against the LIVE, APPLIED schema
+-- (gate 8 of `scripts/check-schema-gates.sh`) rather than only against a schema rebuilt from source
+-- inside gate 1. The two ask different questions: gate 1 asks whether the SPEC is self-consistent,
+-- gate 8 asks whether the DEPLOYED catalog actually behaves.
+--
+-- ⚠ THE PLAN EXPECTED A SPLIT, AND MEASUREMENT FOUND NONE. Task 8 Step 1 was written to tag each
+-- block MIGRATION-ONLY ("compares the migration's output; any later write invalidates it") or
+-- RE-RUNNABLE ("an invariant that must hold at all times"). The canonical migration-only
+-- assertion was round 6 B4's corrections backfill — and ADR-0011 DELETED it, in this file, with the
+-- note that stands at line 54. Nothing took its place: every remaining block builds its own fixture
+-- rows and scopes every read to them (`where video_id='vidA'`, `'vidSVC'`, `'vidF'` …), so none of
+-- them can be invalidated by a later write.
+--
+-- MEASURED 2026-08-26 against the applied 0027, seed corpus + this entire file in one transaction:
+-- 119 assertions reported ok, none raised, identical on three consecutive runs.
+--
+-- ⛔ THE MARKER IS A RANGE TOGGLE, SO ADDING A MIGRATION-ONLY ONE BELOW SILENTLY DROPS EVERYTHING
+--    AFTER IT. If you genuinely add a migration-only assertion, add a matching re-runnable marker to
+--    resume — and if you forget, the harness's assertion floor goes RED naming the count, which is
+--    the only reason a whole-file classification is safe to make.
 \set ON_ERROR_STOP on
 -- ⚠ ROUND 6 B2/L5 — THE HARNESS ITSELF WAS LAUNDERING FAILURES, and it is why the round-5 claim
 -- "every guard was mutation-checked and came back RED" was FALSE.
@@ -751,7 +782,10 @@ do $$ declare ws uuid; begin
     raise notice 'ok (rejected by 42501): anon calling record_artifact';
   end;
 end $$;
--- @RE-RUNNABLE  ⟳ TASK 8, MOVED EARLY BY PHASE 6 #2 (fork (a), user decision 2026-08-25).
+-- ⟳ TASK 8, MOVED EARLY BY PHASE 6 #2 (fork (a), user decision 2026-08-25).
+-- (A re-runnable marker stood on this line and is now at the top of the file. It was one of three
+--  that made this the only live-gated region; leaving them behind would be a second mechanism
+--  saying what the header already says, and the toggle only needs one.)
 -- THE FIRST ASSERTION IN THIS FILE THAT ACTUALLY RUNS. Until now `05_assert.sql` carried 104
 -- `raise exception`s and ZERO markers, so `scripts/run-schema-assertions.sh` was a permanent
 -- fail-closed CANNOT RUN — a 2,239-line security control that had never executed outside a
@@ -868,7 +902,7 @@ begin
   raise notice 'ok: service_role recorded a paid artifact through the RPC, and the row is there';
 end $$;
 
--- @RE-RUNNABLE  the other half: the RPC is the ONLY door, in EVERY environment.
+-- The other half: the RPC is the ONLY door, in EVERY environment.  (Marker retired to the header.)
 --
 -- ⛔⛔ THIS BLOCK WAS MASKED ON ITS FIRST DRAFT, AND THE MASK WAS FOUND BY MUTATING IT — which is the
 -- only reason it is written this way. The draft created the parent generation with `kind='summary'`
@@ -922,7 +956,7 @@ begin
   end if;
 end $$;
 
--- @RE-RUNNABLE  ⟳ r8 H4 (codex): the DIRECT capabilities service_role legitimately has.
+-- ⟳ r8 H4 (codex): the DIRECT capabilities service_role legitimately has.  (Marker retired above.)
 --
 -- The two blocks above cover the PAID WRITE (RPC works) and the RPC-ONLY invariant (direct artifact
 -- write refused). They do not cover the direct DML the spec deliberately grants for GC and
@@ -1056,7 +1090,17 @@ end $$;
 -- table is the list to re-derive against real call sites, and any row that gains a direct caller
 -- needs an assertion here before it ships.
 
--- @MIGRATION-ONLY  everything below reads fixtures this file builds, not the seed corpus.
+-- ⟳ TASK 8 — THE MIGRATION-ONLY STOP THAT STOOD HERE IS DELETED, AND ITS REASON WAS THE TELL.
+-- (Spelled without its `@`, per the header: a comment naming the marker IS one. This very line was
+--  the second time that bit in one commit — the note recording the deletion re-created the stop.)
+-- It read: *"everything below reads fixtures this file builds, not the seed corpus."* True, and not
+-- a reason to exclude anything — it was a reason to select the fixtures TOO, which is what moving
+-- the marker to the top of the file does. Building fixtures inside the harness's transaction and
+-- rolling them back is precisely what gate 1 has always done; the seed corpus supplies the rows the
+-- blocks between here and line 778 need, not a substitute for the fixtures.
+--
+-- Measured before deleting it: with the whole file selected, all 119 assertions pass against the
+-- applied 0027. The stop was costing 54 of the 58 blocks their live-schema gate.
 
 -- ROUND 6 H3 — round 5's cross-tenant assertion read ONE view and ONE table, so security_invoker on
 -- video_summary_current and the two new base-table policies were all mutation-GREEN. Read everything.
