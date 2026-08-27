@@ -52,6 +52,9 @@ from subject_status import subject_banner
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from m4_base_db import read_catalog  # noqa: E402
+
 CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 
 # Tables this spec owns or extends. Same set the guard ratchet uses, for the same
@@ -130,15 +133,10 @@ def nullable_columns() -> set[tuple[str, str]]:
             f" where table_schema = 'public' and table_name in {TABLES}\n"
             "   and is_nullable = 'YES'\n"
             " order by 1;\nrollback;\n")
-    p = subprocess.run(
-        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres",
-         "-tAq", "-v", "ON_ERROR_STOP=1"],
-        input=sql, capture_output=True, text=True)
-    if p.returncode != 0:
-        print("could not read the catalog — is the local Supabase container running?")
-        print(p.stdout[-1500:] or p.stderr[-1500:])
-        sys.exit(2)
-    out = p.stdout.split("---COLS---", 1)[-1]
+    # ⟳ 2026-08-26 — was a byte-identical copy in three ratchets, all reading `postgres`
+    # directly. Once 0027 was applied there, all three died on `relation "workspaces"
+    # already exists`. `read_catalog` runs it against a guaranteed pre-M4 subject.
+    out = read_catalog(sql, "---COLS---")
     cols = set()
     for ln in out.splitlines():
         ln = ln.strip()

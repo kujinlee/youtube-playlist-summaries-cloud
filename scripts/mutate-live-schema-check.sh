@@ -153,11 +153,20 @@ echo "═══ building the REAL post-ADR-0011 M4 schema as a TEMPLATE ══�
 # PRE-ADR-0011 schema: `sync_corrections_to_workspace_video()` plus both `videos_corrections_sync_*`
 # triggers, none of which M4 ships. The gate was therefore being mutation-proven against a schema
 # that will never exist. `build-m4-schema.py` applies Tasks 1-2 and ASSERTS the end state.
-adm -c "create database $TPL;" >/dev/null 2>&1
-if ! docker exec -i "$CONTAINER" sh -c \
-      "pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges | psql -U postgres -d $TPL -q" \
-      >/dev/null 2>&1; then
-  echo "CANNOT RUN — could not clone the live schema into the template. Treat this as NOT RUN." >&2
+# ⟳ 2026-08-26 — CLONE A *PRE-M4* BASE, NOT `postgres` DIRECTLY. Once 0027 was applied locally, the
+# `pg_dump` clone already contained M4 and the apply below died on `relation "workspaces" already
+# exists`, so this gate reported "the spec did not apply to the cloned schema" and stopped. It was
+# one of seven with that single cause; `scripts/m4-base-db.sh` documents the set.
+# ⚠ The base is named under $PREFIX so the existing EXIT trap reaps it with everything else, and it
+# is built ONCE — every database below is a `template` clone of it, which the note above measures at
+# ~100× cheaper than repeating the dump.
+BASE="${PREFIX}_base"
+if ! ./scripts/m4-base-db.sh "$BASE"; then
+  echo "CANNOT RUN — could not build a pre-M4 base database. Treat this as NOT RUN." >&2
+  exit 2
+fi
+if ! adm -c "create database $TPL template $BASE;" >/dev/null 2>&1; then
+  echo "CANNOT RUN — could not clone $BASE into the template. Treat this as NOT RUN." >&2
   exit 2
 fi
 if ! python3 ./scripts/build-m4-schema.py --quiet --out /tmp/m4-mutation-schema.sql; then
@@ -185,21 +194,52 @@ if fresh "${PREFIX}_casc"; then
   report "post-cascade residue -> --expect-absent FAILS (140/161 objects survive)" fail "$r"
 fi
 
-echo "═══ mutation 3 ⭐ the ADR-0011 RESIDUE: a Task 1 that never landed ═══"
-# MEASURED 2026-08-25: with the raw spec applied, the rollback left three objects behind and
-# `--expect-absent` reported ABSENT — because the gate's inventory is post-ADR-0011 and could not
-# see them. `--expect-present` must REJECT this schema: it is not a valid M4.
-adm -c "create database ${PREFIX}_raw;" >/dev/null 2>&1
-docker exec -i "$CONTAINER" sh -c \
-  "pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges | psql -U postgres -d ${PREFIX}_raw -q" \
-  >/dev/null 2>&1
-if { cat "$SPEC"/01_workspaces.sql "$SPEC"/03_generations.sql "$SPEC"/04_artifacts.sql; } \
-   | docker exec -i "$CONTAINER" psql -U postgres -d "${PREFIX}_raw" -tAq -v ON_ERROR_STOP=1 \
-   >/dev/null 2>&1; then
-  gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
-  report "pre-ADR-0011 schema -> --expect-present FAILS (sync fn + 2 triggers)" fail "$r"
-else
-  echo "  ✗ could not build the raw pre-ADR-0011 schema — treat mutation 3 as NOT RUN"; fail=1
+echo "═══ mutation 3 ⭐ COLUMN DRIFT on an ENUMERATED relation ═══"
+# ⟳ REWRITTEN 2026-08-26 — AND THE OLD VERSION'S SUBJECT NO LONGER EXISTS, WHICH IS WHY.
+#
+# It used to build the "pre-ADR-0011 residue" by applying the raw spec files 01/03/04, and assert
+# that `--expect-present` REJECTED the result because of `sync_corrections_to_workspace_video()`
+# and its two triggers. Task 1 (8907b5a) deleted all three FROM THOSE SPEC FILES, so the raw build
+# is now byte-for-byte the post-ADR-0011 schema, `--expect-present` correctly passes, and the
+# mutation reported MUTATION SURVIVED. VERIFIED before touching it: the only remaining occurrence
+# of that function name in the spec or in 0027 is a COMMENT recording its deletion.
+#
+# ⭐⭐ AND THE REPLACEMENT'S FIRST DRAFT ASSERTED THE WRONG DIRECTION, WHICH IS THE FINDING.
+#
+# It was written expecting `--expect-present` to FAIL on an added column — "the manifest digests the
+# column list of every relation it enumerates, so drift there is caught". MEASURED: the column
+# landed (2 -> 3) and the gate PASSED. Present mode is `MANIFEST ⊆ live`, and the manifest
+# enumerates columns as individual objects, so an EXTRA column is simply an extra live object and
+# the subset still holds. The asymmetry is deliberate and worth stating: a REMOVED column breaks the
+# subset and IS caught; an ADDED one is invisible.
+#
+# ⚠ SO THIS IS A THIRD FACE OF MUTATIONS 28 AND 29, NOT THEIR COMPLEMENT — and unlike those two it
+#   has NO COMPENSATING PREMISE. `verify-exclusion-reasons.py` asserts "M4 creates exactly one type,
+#   an enum" and "no partitioned table exists", which catch the domain and the partition. Nothing
+#   asserts a column count. This mutation therefore DOCUMENTS a hole rather than guarding one, and
+#   says so rather than being quietly written to pass. Whether that hole is worth closing is a
+#   design question, not a defect to patch here.
+if fresh "${PREFIX}_raw"; then
+  before_c=$(db "${PREFIX}_raw" -c "select count(*) from information_schema.columns where table_schema='public' and table_name='workspace_videos';" | tr -d '[:space:]')
+  db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter table public.workspace_videos add column m4_mut_residue text;
+SQL
+  after_c=$(db "${PREFIX}_raw" -c "select count(*) from information_schema.columns where table_schema='public' and table_name='workspace_videos';" | tr -d '[:space:]')
+  echo "     workspace_videos columns: ${before_c:-<empty>} -> ${after_c:-<empty>}"
+  if [ -z "$before_c" ] || [ "$before_c" = "$after_c" ]; then
+    echo "  ✗ THE COLUMN DID NOT LAND — treat mutation 3 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+    report "an extra COLUMN -> the digest is blind and still PASSES (no premise covers it)" pass "$r"
+    # The other direction, which is the one that IS guarded — and asserting it here is what keeps
+    # the case above from reading as "the gate sees nothing".
+    db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter table public.workspace_videos drop column m4_mut_residue;
+alter table public.workspace_videos drop column video_id cascade;
+SQL
+    gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+    report "a REMOVED column breaks MANIFEST ⊆ live -> --expect-present FAILS" fail "$r"
+  fi
 fi
 
 echo "═══ mutation 4 ⭐⭐ r3 B2: DROP EVERY OWN-TABLE GUARD TRIGGER ═══"

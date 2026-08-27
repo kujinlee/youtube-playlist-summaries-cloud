@@ -55,6 +55,7 @@ move. If it does not, the reason is FALSE and the gate has a hole exactly the wi
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -263,14 +264,24 @@ def digest_red(db: str) -> bool:
 
 
 def build_template(tpl: str) -> bool:
+    """Build an M4 database to run the exclusion reasons against.
+
+    ⟳ 2026-08-26 — THE BASE IS A *PRE-M4* CLONE, not `postgres` itself. Once 0027 was applied
+    locally, the old `pg_dump postgres` clone already carried M4 and the apply below failed, so this
+    gate reported "CANNOT RUN — could not build the M4 template" and stopped. Same single cause as
+    six other gates; `scripts/m4-base-db.sh` carries the account. The base clones WITH data, which
+    also makes the premises here (partitioned tables, foreign tables, domain types) read a populated
+    catalog rather than an empty one.
+    """
     admin(f"drop database if exists {tpl} (force);")
-    if admin(f"create database {tpl};").returncode != 0:
-        return False
-    dump = sh("docker", "exec", "-i", CONTAINER, "sh", "-c",
-              f"pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges "
-              f"| psql -U postgres -d {tpl} -q")
-    if dump.returncode != 0:
-        return False
+    base = f"m4_xr_base_{os.getpid()}"
+    try:
+        if sh(str(ROOT / "scripts/m4-base-db.sh"), base).returncode != 0:
+            return False
+        if admin(f"create database {tpl} template {base};").returncode != 0:
+            return False
+    finally:
+        admin(f"drop database if exists {base} (force);")
     built = sh("python3", str(ROOT / "scripts/build-m4-schema.py"), "--quiet",
                "--out", "/tmp/xr-m4.sql")
     if built.returncode != 0:

@@ -15,6 +15,7 @@ broken edit as an untested guard:
 
 Usage:  ./mutate-schema.py          (exit 0 = every guard confirmed RED)
 """
+import atexit
 import os
 import re
 import shutil
@@ -28,6 +29,7 @@ GEN = SPEC / "schema/03_generations.sql"
 ART = SPEC / "schema/04_artifacts.sql"
 # ⟳ T4: four levels up from the spec dir — specs, superpowers, docs, then the repo root.
 REPO = SPEC.parents[3]
+CONTAINER = os.environ.get("PGCONTAINER", "supabase_db_youtube-playlist-summaries-cloud")
 
 # ⟳ ROUND 8 M3 — THIS HARNESS USED TO MUTATE THE REPO-TRACKED FILES AND PUT THEM BACK IN A
 # `finally`, and that is shape #11 (an instrument that misreports its own result) in the
@@ -899,6 +901,7 @@ def run_suite(tmp: Path):
     (work / "verify-schema.sh").chmod(0o755)
     script = work / "verify-schema.sh"
     copy_of = {GEN: work / "schema" / GEN.name, ART: work / "schema" / ART.name}
+    originals = {GEN: GEN.read_text(), ART: ART.read_text()}
 
     # ── ⟳ T4: the SOURCE the verifier reads is now a variable, so this harness pins both ends ─────
     # Pre-0027 the verifier globs the spec files, which `copytree` above already put in `work`, so
@@ -907,19 +910,87 @@ def run_suite(tmp: Path):
     # and `M4_MIGRATION` points at the copy. Without that, this harness would mutate a temp file and
     # verify the real one: every mutation GREEN, the suite reporting perfect health over a gate that
     # never saw a single change.
-    # ⚠ THE POST-0027 BRANCH IS UNEXERCISED TODAY because 0027 does not exist. It is written now
-    # rather than later because the alternative — discovering it at promotion — is the moment the
-    # gate is most trusted and least watched. Stated as UNTESTED rather than asserted as working.
+    # ⟳ 2026-08-26: THE POST-0027 BRANCH IS NOW EXERCISED — 0027 exists and this is the path taken.
+    # It was written before it could be tested, and the note here said so; recording the transition
+    # rather than deleting the caveat, because "UNTESTED" and "tested and green" are different
+    # claims and only one of them was ever true at a time.
     env = {"M4_REPO": str(REPO)}
     migration_src = REPO / "supabase" / "migrations" / "0027_stable_blob_addressing.sql"
     if migration_src.exists():
-        shutil.copy2(migration_src, work / migration_src.name)
-        env["M4_MIGRATION"] = str(work / migration_src.name)
+        mig_copy = work / migration_src.name
+        shutil.copy2(migration_src, mig_copy)
+        env["M4_MIGRATION"] = str(mig_copy)
         print(f"source: {migration_src.name} (copied into the workspace)")
+        # ⭐⭐ AND THE MUTATIONS MUST FOLLOW THE SOURCE. MEASURED 2026-08-26, the first run of this
+        # branch after 0027 landed: **57 of 58 mutations reported GREEN — "mutation SURVIVED"**.
+        # Not one guard had weakened. The verifier was reading the MIGRATION while the mutations
+        # were still being written into `work/schema/0[34]_*.sql`, which it no longer opens. The
+        # T4 comment above predicted this failure in exactly these words — "this harness would
+        # mutate a temp file and verify the real one: every mutation GREEN, the suite reporting
+        # perfect health over a gate that never saw a single change" — and then only pinned the
+        # READ side. Writing down a failure mode is not guarding against it.
+        #
+        # ⚠ WHY REDIRECTING BOTH TARGETS AT ONE FILE IS SAFE: `target` existed to disambiguate two
+        # files; the migration is one. VERIFIED before doing it — all 58 anchors occur in 0027, and
+        # every one occurs EXACTLY ONCE, so `replace(find, repl, 1)` cannot hit the wrong region.
+        # If a future anchor appears twice, the count check below turns it into a loud INVALID.
+        mig_text = mig_copy.read_text()
+        for t in (GEN, ART):
+            copy_of[t] = mig_copy
+            originals[t] = mig_text
     else:
         print("source: spec files 0[134]*.sql (0027 not present)")
 
-    originals = {ART: ART.read_text(), GEN: GEN.read_text()}
+    # ── ⭐⭐ THE PRE-M4 BASE, AND THE CONTROL THAT MUST PRECEDE THE SUITE ──────────────────────────
+    #
+    # MEASURED 2026-08-26, and it is the worst-shaped of the seven post-0027 gate failures. With
+    # 0027 applied to `postgres`, the verifier could not rebuild anything, and this harness printed
+    #
+    #     ❌ INVALID   <label>
+    #                  no error captured; SQL did not run          … 58 times
+    #
+    # A VERDICT LIST built from a gate that never ran — and INVALID reads as *untested*, so the
+    # output looked like 58 discovered coverage holes rather than one dead instrument. Two changes:
+    #
+    #   1. A pre-M4 base database, built once and reused. Per-mutation it would cost ~7 s × 58,
+    #      i.e. seven minutes added to a two-minute gate; `verify-schema.sh` always wraps its work
+    #      in `begin … rollback`, so one base serves every mutation.
+    #   2. A CONTROL RUN BEFORE THE LOOP. The baseline check at the bottom of this function already
+    #      existed and would have caught it — after 58 wrong verdicts had been printed. A control
+    #      that runs last can only ever explain the wreckage; this one refuses to produce it.
+    base_db = None
+    if (REPO / "scripts" / "m4-base-db.sh").exists():
+        base_db = f"m4_mutate_base_{os.getpid()}"
+        p = subprocess.run([str(REPO / "scripts" / "m4-base-db.sh"), base_db],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        if p.returncode != 0:
+            print(p.stdout + p.stderr, file=sys.stderr)
+            print("CANNOT RUN — no pre-M4 base database. Treat this as NOT RUN.", file=sys.stderr)
+            return 2
+        env["M4_DB"] = base_db
+        print(f"subject: {base_db} (pre-M4 clone of the local stack)")
+
+    # ⚠ `atexit`, not an explicit call at each return — the loop below can raise, and a leaked
+    # 21 MB database per crashed run is the shape of task #145 ("the mutation harness can leave the
+    # local DB broken"). One mechanism, every exit path, including the ones not written yet.
+    def drop_base():
+        if base_db:
+            subprocess.run(["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres",
+                            "-d", "postgres", "-tAq",
+                            "-c", f"drop database if exists {base_db} (force);"],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    atexit.register(drop_base)
+
+    rc, out = run(script, env)
+    if rc != 0:
+        print(out[-1500:], file=sys.stderr)
+        print("CANNOT RUN — the CONTROL failed: the unmutated schema does not verify, so every",
+              file=sys.stderr)
+        print("  mutation below would be scored against a broken baseline. Treat this as NOT RUN.",
+              file=sys.stderr)
+        return 2
+    print("control: unmutated schema verifies ✅")
+
     results = []
     for label, find, repl, expect, target in MUTATIONS:
         original = originals[target]

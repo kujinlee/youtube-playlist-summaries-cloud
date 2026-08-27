@@ -70,18 +70,36 @@ fi
 MIGRATION="${M4_MIGRATION:-$REPO/supabase/migrations/0027_stable_blob_addressing.sql}"
 CONTAINER="${PGCONTAINER:-supabase_db_youtube-playlist-summaries-cloud}"
 
-# ── the already-applied branch ───────────────────────────────────────────────────────────────────
+# ── the SUBJECT DATABASE ─────────────────────────────────────────────────────────────────────────
 # This gate REBUILDS from source by design, so against a database that already carries M4 it can only
 # fail with `relation "workspaces" already exists` — an error about our method, not about the schema.
-# ⚠ ONLY exit 0 means "applied". check-live-schema.py exits 2 when it cannot reach a database, and
-# treating that as "not applied" is right: the rebuild then fails loudly on its own terms.
+#
+# ⟳ 2026-08-26 — IT USED TO STOP HERE, AND THAT WAS SIX OTHER GATES' BUG TOO. Refusing was honest,
+# and it made this gate (plus 2, 3, 4, 5, 12 and 13) permanently dead in the phase the project is
+# actually in, which meant the fourteen-gate suite could not be green in EITHER phase. It does not
+# need `postgres` to be pre-M4; it needs A pre-M4 database, and `scripts/m4-base-db.sh` builds one
+# by cloning and applying the committed rollback. See that script's header for the measurement.
+#
+# ⚠ ONLY exit 0 from check-live-schema.py means "applied". It exits 2 when it cannot reach a
+# database, and treating that as "not applied" is right: the rebuild then fails loudly on its own.
 # ⚠ `</dev/null` because the child reaches Postgres through `docker exec -i`, which holds stdin open.
-if [ -f "$REPO/scripts/check-live-schema.py" ] \
+#
+# `M4_DB` lets a caller supply its own base — `mutate-schema.py` builds ONE and reuses it across 58
+# mutations, because a fresh clone per mutation would add four minutes to that gate. When it is
+# unset we own the lifecycle: build on entry, drop on exit.
+DB="${M4_DB:-postgres}"
+OWN_BASE=""
+if [ -z "${M4_DB:-}" ] && [ -f "$REPO/scripts/check-live-schema.py" ] \
    && python3 "$REPO/scripts/check-live-schema.py" --expect-present </dev/null >/dev/null 2>&1; then
-  echo "CANNOT RUN — 0027 is already applied to this database, so rebuilding it will fail with"
-  echo "  'relation \"workspaces\" already exists'. This gate rebuilds from source by design."
-  echo "  Use scripts/check-live-schema.py for an applied database. Treat this as NOT RUN."
-  exit 2
+  OWN_BASE="m4_verify_base_$$"
+  if ! "$REPO/scripts/m4-base-db.sh" "$OWN_BASE"; then
+    echo "CANNOT RUN — 0027 is applied to 'postgres' and no pre-M4 base could be built." >&2
+    echo "  This gate rebuilds from source by design. Treat this as NOT RUN." >&2
+    exit 2
+  fi
+  DB="$OWN_BASE"
+  trap 'docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq \
+          -c "drop database if exists '"$OWN_BASE"' (force);" >/dev/null 2>&1' EXIT
 fi
 
 # ── the source list: migration if promoted, spec files if not; 05 ALWAYS last ───────────────────
@@ -102,10 +120,13 @@ for f in "${SRC_FILES[@]}"; do
   fi
 done
 echo "source: $SRC_LABEL"
+echo "subject database: $DB"
 
+# ⛔ ONLY the `-d` argument changed here. The `$(printf; cat; printf)` composition is the original —
+# see the 10-minute-hang warning in the header. Change the file list and the database, never the shape.
 SQL=$(printf 'begin;\n'; cat "${SRC_FILES[@]}"; printf '\n\\echo ALL_STATEMENTS_OK\nrollback;\n')
 OUT=$(printf '%s' "$SQL" | docker exec -i "$CONTAINER" \
-        psql -U postgres -d postgres -v ON_ERROR_STOP=1 2>&1)
+        psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 2>&1)
 echo "$OUT"
 if grep -q ALL_STATEMENTS_OK <<<"$OUT"; then echo "✅ schema verified (rolled back)"; exit 0; fi
 echo "❌ schema FAILED"; exit 1

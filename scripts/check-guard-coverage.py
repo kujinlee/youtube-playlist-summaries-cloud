@@ -44,6 +44,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing"
 SCHEMA = SPEC / "schema"
 MUTATIONS = SPEC / "mutate-schema.py"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from m4_base_db import read_catalog  # noqa: E402
+
 CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 TABLES = ("video_artifacts", "video_generations")
 
@@ -219,15 +222,10 @@ def catalog_guards() -> set[str]:
             continue  # assertions, not schema
         sql += f.read_text() + "\n"
     sql += "\\echo ---GUARDS---\n" + CATALOG_SQL + "\nrollback;\n"
-    p = subprocess.run(
-        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres",
-         "-tAq", "-v", "ON_ERROR_STOP=1"],
-        input=sql, capture_output=True, text=True)
-    if p.returncode != 0:
-        print("could not read the catalog — is the local Supabase container running?")
-        print(p.stdout[-1500:] or p.stderr[-1500:])
-        sys.exit(2)
-    out = p.stdout.split("---GUARDS---", 1)[-1]
+    # ⟳ 2026-08-26 — was a byte-identical copy in three ratchets, all reading `postgres`
+    # directly. Once 0027 was applied there, all three died on `relation "workspaces"
+    # already exists`. `read_catalog` runs it against a guaranteed pre-M4 subject.
+    out = read_catalog(sql, "---GUARDS---")
     return {ln.split(":", 1)[1] for ln in out.splitlines()
             if ":" in ln and ln.split(":", 1)[0] in {"check", "fk", "index", "trigger"}}
 
