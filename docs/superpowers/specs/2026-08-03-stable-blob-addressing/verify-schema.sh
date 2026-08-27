@@ -142,6 +142,24 @@ if ! grep -q ALL_STATEMENTS_OK <<<"$OUT"; then
     echo "   Treat this as NOT RUN. The schema itself was not judged."
     exit 2
   fi
+  # ⟳ r12 MEDIUM (codex). r11 M3 taught this branch that a CANNOT RUN raised BY THE SQL is not a
+  # schema failure — and left the case where the SQL never ran at all. MEASURED:
+  #   PGCONTAINER=definitely_no_such_container M4_DB=postgres ./verify-schema.sh
+  #   -> "Error response from daemon: No such container: …"  then  "❌ schema FAILED", rc 1
+  # No psql, no catalog, no judgement — and a headline blaming the schema. That is the same defect
+  # r11 M3 named, one layer further out: an unreachable SUBJECT reported as a guilty subject.
+  # A reader triaging a red build would go looking for a schema defect that does not exist.
+  #
+  # ⚠ The test is the TRANSPORT, not the wording of any one Docker message. If nothing that looks
+  # like psql output came back, we did not reach the database, whatever the reason.
+  if grep -qiE "error response from daemon|no such container|cannot connect to the docker|is the docker daemon running|executable file not found|connection refused|could not connect to server" <<<"$OUT" \
+     || [ -z "${OUT//[[:space:]]/}" ]; then
+    echo "⛔ CANNOT RUN — the subject database was never reached, so nothing was judged:"
+    printf '%s\n' "${OUT:-（no output at all）}" | head -3 | sed "s/^/   /"
+    echo "   container='${CONTAINER}' database='${DB}'"
+    echo "   Treat this as NOT RUN — this is NOT a schema failure."
+    exit 2
+  fi
   echo "❌ schema FAILED"; exit 1
 fi
 

@@ -177,14 +177,113 @@ def scan(dirs: tuple[str, ...], root: Path) -> tuple[list[str], list[str]]:
             off += u16(line)
         lines = text.splitlines()
         for i, line in enumerate(lines):
+            # ⟳ r12 BLOCKING (codex, reproduced by the coordinator). This was `line.find(SYMBOL)` —
+            # the FIRST occurrence on the line decided the whole line. MEASURED on
+            # `/* record_artifact historical note */ await sb.rpc('record_artifact');`:
+            # `production callers: 0`, verdict DORMANT, rc 0 — over a real paid caller.
+            #
+            # A comment on the same line as a call is not exotic; it is the normal shape of
+            # `await sb.rpc('record_artifact');  // charges 25c`. One occurrence must never speak
+            # for another, so EVERY occurrence is classified on its own offset.
+            #
+            # A line can now appear in BOTH lists, and that is correct rather than a bug: it really
+            # does contain a mention and a call. `report()` decides on `code` being non-empty, so a
+            # commented twin can no longer mask a caller — the failure this guard exists to prevent.
             col = line.find(SYMBOL)
-            if col < 0:
-                continue
-            at = starts[i] + u16(line[:col])
-            inside = any(a <= at < b for a, b in fspans)
-            entry = f"{f.relative_to(root)}:{i + 1}: {line.strip()[:120]}"
-            (commented if inside else code).append(entry)
+            while col >= 0:
+                at = starts[i] + u16(line[:col])
+                inside = any(a <= at < b for a, b in fspans)
+                entry = f"{f.relative_to(root)}:{i + 1}: {line.strip()[:120]}"
+                bucket = commented if inside else code
+                if entry not in bucket:
+                    bucket.append(entry)
+                col = line.find(SYMBOL, col + len(SYMBOL))
     return code, commented
+
+
+def strip_sql_noise(sql: str) -> str:
+    """SQL with comments blanked, preserving length so offsets stay comparable. PURE.
+
+    ⟳ r12 HIGH (codex, reproduced by the coordinator). `ledger_net_effect` ran its create/drop
+    regexes over RAW text, so PROSE decided whether a production function exists. MEASURED: a file
+    containing `drop function record_artifact(uuid);` followed by
+    `-- TODO: create function record_artifact again if backlog 26 changes` reported
+    `(True, '0028_drop.sql (creates it)')` — the ledger resurrected a dropped money function from a
+    comment, and the guard then reported DORMANT for a symbol that no longer exists.
+
+    Blanking rather than deleting keeps every offset identical, so `max(m.start())` still means what
+    it meant — the fix must not perturb the ordering logic it is protecting.
+
+    ⚠ It must know STRINGS too, not just comments. r11 H1 was a comment scanner that desynchronised
+    on quoting, and the lesson there was that half a lexer is worse than none: `'-- not a comment'`
+    is data, and Postgres bodies are routinely dollar-quoted (`$$ ... $$`, `$tag$ ... $tag$`) with
+    `--` inside them. Block comments NEST in Postgres, so depth is counted rather than flagged.
+    """
+    out = list(sql)
+    i, n = 0, len(sql)
+
+    def blank(a: int, b: int) -> None:
+        """Blank [a, b) but keep newlines, so line numbers and offsets both survive."""
+        for k in range(a, min(b, n)):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        c = sql[i]
+        if c == "'":                                    # single-quoted literal; '' escapes
+            start = i
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            # ⚠ CONTENTS BLANKED, not merely skipped. Found by this fix's own test: leaving them
+            # intact meant `select '-- create function record_artifact';` still counted as a CREATE.
+            # A symbol name inside a string is DATA. That hole predates r12 — raw text was always
+            # scanned — so the comment fix alone would have been correct about the case it named and
+            # silent about the identical one beside it.
+            blank(start, i)
+            continue
+        if c == "$":                                    # dollar-quoted body: $$ or $tag$
+            m = re.match(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$", sql[i:])
+            if m:
+                tag = m.group(0)
+                end = sql.find(tag, i + len(tag))
+                stop = n if end < 0 else end + len(tag)
+                # Function BODIES live here. `create function` inside a body string is not a
+                # top-level definition of that function, and `raise notice '…'` text is not SQL.
+                blank(i, stop)
+                i = stop
+                continue
+        if c == "-" and sql.startswith("--", i):        # line comment
+            j = sql.find("\n", i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = " "
+            i = j
+            continue
+        if c == "/" and sql.startswith("/*", i):        # block comment, NESTING
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if sql.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                elif sql.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            for k in range(i, min(j, n)):
+                if out[k] != "\n":
+                    out[k] = " "
+            i = j
+            continue
+        i += 1
+    return "".join(out)
 
 
 def ledger_net_effect(migrations_dir: Path) -> tuple[bool, str]:
@@ -197,7 +296,7 @@ def ledger_net_effect(migrations_dir: Path) -> tuple[bool, str]:
         return False, f"{migrations_dir} does not exist"
     exists, decided_by = False, "no migration mentions the symbol"
     for f in sorted(migrations_dir.glob("*.sql")):
-        text = f.read_text(encoding="utf-8")
+        text = strip_sql_noise(f.read_text(encoding="utf-8"))
         last_create = max((m.start() for m in DEFINES.finditer(text)), default=-1)
         last_drop = max((m.start() for m in DROPS.finditer(text)), default=-1)
         if last_create < 0 and last_drop < 0:
@@ -357,6 +456,25 @@ def self_test() -> int:
         lib.write_text(f"const e = 'it\\'s // fine'; await sb.rpc('{SYMBOL}');\n")
         ck("…and an escaped quote does not desynchronise the scanner", 1, run())
 
+        # ⭐⭐ r12 BLOCKING — A REAL COMMENT SHARING A LINE WITH A REAL CALL.
+        # r10 H4 (above) proved a comment-like thing inside a STRING must not hide the call. This is
+        # its mirror and it survived that fix: a GENUINE comment, correctly identified, whose only
+        # crime was coming FIRST. `line.find(SYMBOL)` classified the line by its first occurrence,
+        # so the call after `*/` was recorded as "a comment, not a caller" — `production callers: 0`,
+        # DORMANT, rc 0, over a paid caller.
+        #
+        # Note what this says about the r11 fix that preceded it: replacing the regex scanner with a
+        # real TypeScript parse made comment DETECTION exact and left comment ATTRIBUTION per-line.
+        # An exact answer to the wrong question. Both directions are now covered.
+        lib.write_text(f"/* {SYMBOL} historical note */ await sb.rpc('{SYMBOL}');\n")
+        ck("a real comment BEFORE a real call on one line does not hide it (r12 B1)", 1, run())
+
+        lib.write_text(f"await sb.rpc('{SYMBOL}'); // {SYMBOL} charges 25c\n")
+        ck("…and the same line with the comment AFTER the call still fires", 1, run())
+
+        lib.write_text(f"/* {SYMBOL} then {SYMBOL} twice, both commented */\nexport const a = 1;\n")
+        ck("…while two mentions in ONE comment are still not callers", 0, run())
+
         # A comment AFTER real code on the same line is still a comment.
         lib.write_text(f"const a = 1; // someday: {SYMBOL}\n")
         ck("a trailing comment mentioning the symbol is not a caller", 0, run())
@@ -412,6 +530,41 @@ def self_test() -> int:
         (migs / "0029_restore.sql").write_text(
             f"create function {SYMBOL}(p uuid) returns text as $$ $$;\n")
         ck("…and a later one restoring it is DORMANT again", 0, run())
+        (migs / "0029_restore.sql").unlink()
+
+        # ⭐⭐ r12 HIGH — PROSE MUST NOT BE A SCHEMA OPERATION.
+        # `0028` really drops the function; the COMMENT below it merely talks about recreating it.
+        # The ledger regexes ran over raw text, so the comment won by position and reported
+        # `(True, '0028 creates it)'` — a dropped money function resurrected by a TODO, and the
+        # guard then answering DORMANT for a symbol that does not exist.
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"-- TODO: create function {SYMBOL} again if backlog 26 changes\n")
+        ck("a comment cannot resurrect a dropped symbol (r12 H1)", 2, run())
+
+        # Found by the r12 fix's OWN test, and it predates r12: the same hole with a string literal.
+        # Fixing only the case the finding named would have been correct about `--` and silent about
+        # the identical defect one quote away.
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"select 'create function {SYMBOL} -- someday';\n")
+        ck("…nor can a STRING literal", 2, run())
+
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"do $$ begin raise notice 'create function {SYMBOL}'; end $$;\n")
+        ck("…nor a dollar-quoted body", 2, run())
+
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"/* outer /* nested */ create function {SYMBOL}() */\n")
+        ck("…nor a NESTED block comment (Postgres nests them)", 2, run())
+
+        # The mirror: the stripper must not eat a REAL definition. Without this, blanking everything
+        # would pass all four cases above and the guard would be vacuous.
+        (migs / "0029_restore.sql").write_text(
+            f"create function {SYMBOL}(p uuid) returns text as $$ $$;\n")
+        ck("…and a REAL create after the drop still restores it", 0, run())
         (migs / "0028_rename.sql").unlink()
         (migs / "0029_restore.sql").unlink()
 
