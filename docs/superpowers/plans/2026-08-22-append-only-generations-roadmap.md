@@ -210,7 +210,7 @@ So M3 was: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revi
   shared summaries falls, and its `(playlist_id, owner_id)` cross-tenant guard STANDS.
 - **Gate:** Phase 1 exit. ✅ Human approval given 2026-08-24.
 
-### M4 — Promote the schema — ✅ **MERGED 2026-08-27** (the human merge gate was given)
+### M4 — Promote the schema — ✅ **DONE 2026-08-27. MERGED *and* APPLIED TO PRODUCTION**
 
 > **STATUS 2026-08-27 — `0027` IS ON `master`, ALL TEN PLAN TASKS DONE, ALL FOURTEEN GATES GREEN.**
 > The migration is written, applied locally, proven in both directions, and reviewed to round 11.
@@ -218,8 +218,21 @@ So M3 was: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revi
 > place rather than rewritten, because the merge tick is written *before* the PR by policy
 > (`dev-process.md` Phase 5) and a reader who remembers the old sentence needs to find out when it
 > changed.
-> **Production is STILL untouched: release v10, schema `0026`.** Merging moved nothing into prod —
-> M4-β is a SECOND human gate and it has NOT been given.
+> ⟳ **M4-β WAS GIVEN AND EXECUTED at 14:01 UTC. Production schema is now `0027`.**
+> This block twice said *"production is untouched"* — true until the second gate was given, false after.
+> **VERIFIED BY EXECUTION, not by exit code** (`db push` printed a `pg-delta` cache warning and still
+> exited 0, so the exit code was not treated as evidence):
+>
+> ```
+> check-live-schema.py --prod --expect-present  -> 0   M4 PRESENT, all 161 objects, BY DEFINITION
+> check-anon-exposure.py --prod                 -> 0   10 anon-EXECUTable (baseline 10, UNCHANGED)
+>                                                      money tables TRUNCATE-able 5/5 (baseline 5)
+>                                                      M4 relations 8/8, no session role can write
+> ```
+>
+> **The anon count not moving is the load-bearing number.** `0027` added 13 functions to `public`, and
+> Supabase grants `anon` EXECUTE at CREATE time — so the revokes held. A rise here would have been a
+> tenant-exposure regression that no test would have caught.
 >
 > | | |
 > |---|---|
@@ -231,12 +244,14 @@ So M3 was: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revi
 > | ⚠ Each fix round caused the next round's worst finding | r10 H2's `set -uo pipefail` → **r11 B1**, gate 14 green over the violation it detects. r10 H4's regex scanner → **r11 H1**, 240 real comments misread. That is `portable-practices` §12, measured twice in one evening |
 > | Phase 6 | ⚠ **CORRECTION 2026-08-25 21:30.** This row previously read *"fired at round 4 and has not run"*, and I repeated that in three commit messages and to the user. **It is false.** Phase 6 **RAN** — [`../../reviews/architecture-review-2026-08-25.md`](../../reviews/architecture-review-2026-08-25.md), 17:54 — after the v5.1 sequence. It dissolved nine of eleven findings into one defect, produced **ADR-0011** (accepted, option (a)) and, as its finding 3, **`check-live-schema.py` itself**. Its disposition — *"M4 does not proceed to a v6, rewrite the plan from the decision"* — is why the v2 plan exists. The trigger has now fired a SECOND time, on the v2 sequence, and the second review's subject is different: the first was about `corrections`/`workspace_videos` composition; rounds 5-7 are entirely about **the gate instrument the first review prescribed** |
 > | The gate that now exists | `scripts/check-live-schema.py` — the SUBJECT axis. The other six gates rebuild from spec files and cannot answer *"did the migration apply?"* Verified against production read-only: **prod is pre-M4** |
-> | Next | ⟳ **The merge gate was given 2026-08-27 and is spent.** What remains is **M4-β** (plan Task 9 steps 6-7) — `supabase db push --linked`, then `check-live-schema.py --prod --expect-present` and `check-anon-exposure.py --prod`. **That is a SEPARATE human gate and it has NOT been given**; authorisation to merge is not authorisation to touch production |
+> | Next | ⟳ **BOTH human gates are now given and spent** (merge 12:53 UTC, M4-β 14:01 UTC). M4 is closed. Next is **M5 — write-path cutover.** The schema is live and inert: no application caller reaches `record_artifact` yet, which is exactly what `scripts/check-paid-caller-arrival.py` now watches for |
+> | ⚠ M4-β runbook, as actually executed | The plan required a `lock_timeout` and **`0027` carries none** — so contention was removed instead of bounded: `flyctl scale count worker=0`, apply, `worker=1`. Measured before and during: 0 idle-in-transaction, 0 txns older than 5s, 0 ungranted locks. Worker down 14:01:26 → 14:02:47, **web never stopped serving**. `supabase migration list --linked` first confirmed `0027` was the ONLY pending migration — not assumed |
 > | Deferred out of this PR, by decision | **Instrument hardening as its own slice** (user, 2026-08-27) — r10 L1's leaked-base sweeper (task #145), and any round 12 on the round-11 fixes. The reasoning is the row above: the defects are in the gates, not in the thing being gated, and `0027` is what this PR ships |
 >
 > ⛔ **Task 6 WAS the point of no return for every developer's local stack, and it has been crossed**
 > (`6bf4e18`): `npm run test:integration` now applies M4 on every machine that runs it. ⟳ The merge gate
-> has been passed; applying M4-β to production is a second one and is still CLOSED.
+> has been passed; ⟳ **M4-β was the second gate and it too has now been given and executed** (2026-08-27
+> 14:01 UTC). Production schema is `0027`.
 >
 > **Why five rounds.** Every round found that the previous round's FIX was the defect — five of round
 > 5's nine findings were round 4's repairs. The gates are all predicates over a *projection* of the

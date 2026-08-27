@@ -713,12 +713,15 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
 > is the milestone spine (M1–M7) for this goal, and **state lives there, not here.** This section is
 > the *history and evidence*; that file is *what happens next*. The anchor for the whole feature is
 > **ADR-0006** — ✅ **`accepted` 2026-08-24 (M3), with ADR-0007**; ADR-0002 is partly superseded.
-> Phase 1 is CLOSED. ⟳ **2026-08-27: the schema HAS now run, and it is now MERGED.** M4 wrote `0027`
-> (1,898 lines, 161 objects), applied it locally and proved it in both directions; **PR #155 merged
-> as `c517faa`** at 12:53 UTC. **Production is still untouched at release v10 / schema `0026`** —
-> merging moved nothing into prod. Applying M4-β is a SECOND human gate and it has not been given.
-> State stays in the spine — this line exists only because it previously said "the schema has still
-> never run", and then "PR #155 is open and NOT merged", each of which stopped being true in turn.
+> Phase 1 is CLOSED. ⟳ **2026-08-27: the schema HAS run, is MERGED, and is now LIVE IN PRODUCTION.**
+> M4 wrote `0027` (1,898 lines, 161 objects); **PR #155 merged as `c517faa`** at 12:53 UTC and
+> **M4-β applied it to production at 14:01 UTC**. Prod schema is `0027`; Fly release is still v10 —
+> **no redeploy was needed or done, because M4 ships no application caller.** Verified by execution:
+> `check-live-schema.py --prod --expect-present` → M4 PRESENT across all 161 objects, and
+> `check-anon-exposure.py --prod` → 10 anon-EXECUTable, unchanged from the pre-M4 baseline of 10.
+> State stays in the spine — this line exists only because it has said, in turn, "the schema has
+> still never run", "PR #155 is open and NOT merged", and "production is still untouched". Each was
+> true when written and stopped being true. **Derive prod state from the gates, never from this line.**
 >
 > ⚠ Added 2026-08-24 after an hour was lost re-deriving a roadmap that already existed, and reaching
 > a conclusion that document had already corrected in itself. Two causes, and only one is naming: the
