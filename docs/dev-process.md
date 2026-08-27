@@ -8,7 +8,7 @@ Detail lives in four places, each with a different read-trigger:
 
 | File | Read when |
 |---|---|
-| [`docs/process-checklists.md`](process-checklists.md) | you are working a gate — per-task list, post-plan gate, TDD policy, spec contents |
+| [`docs/process-checklists.md`](process-checklists.md) | you are working a gate — per-task list, post-plan gate, TDD policy, spec contents, **qualifying numbers in prose** |
 | [`docs/review-method.md`](review-method.md) | a review round is starting — adversarial review, convergence, the classification passes |
 | [`docs/process-rationale.md`](process-rationale.md) | a rule here looks arbitrary, expensive or wrong |
 | [`docs/plugins.md`](plugins.md) | choosing a skill, or a tool gate misbehaves |
