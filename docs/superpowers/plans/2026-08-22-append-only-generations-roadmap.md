@@ -210,28 +210,33 @@ So M3 was: **apply r17's residue, then set ADR-0006 to `accepted`.** No new revi
   shared summaries falls, and its `(playlist_id, owner_id)` cross-tenant guard STANDS.
 - **Gate:** Phase 1 exit. ✅ Human approval given 2026-08-24.
 
-### M4 — Promote the schema — ⏳ **PR #155 OPEN, NOT MERGED** (merging is a human gate)
+### M4 — Promote the schema — ✅ **MERGED 2026-08-27** (the human merge gate was given)
 
-> **STATUS 2026-08-27 — `0027` EXISTS, ALL TEN PLAN TASKS DONE, ALL FOURTEEN GATES GREEN.**
+> **STATUS 2026-08-27 — `0027` IS ON `master`, ALL TEN PLAN TASKS DONE, ALL FOURTEEN GATES GREEN.**
 > The migration is written, applied locally, proven in both directions, and reviewed to round 11.
-> **Production is untouched: release v10, schema `0026`.** M4-β is a SECOND human gate, after merge.
+> ⟳ **This block read *"PR #155 OPEN, NOT MERGED"* until the merge at 12:53 UTC.** It is corrected in
+> place rather than rewritten, because the merge tick is written *before* the PR by policy
+> (`dev-process.md` Phase 5) and a reader who remembers the old sentence needs to find out when it
+> changed.
+> **Production is STILL untouched: release v10, schema `0026`.** Merging moved nothing into prod —
+> M4-β is a SECOND human gate and it has NOT been given.
 >
 > | | |
 > |---|---|
 > | Plan of record | [`plans/2026-08-25-m4-promote-the-schema-v2.md`](2026-08-25-m4-promote-the-schema-v2.md) — rewritten from ADR-0011 (corrections stay per-playlist), supersedes v5.1 |
 > | Merged so far | PR #150 (plan) · #152 (derived manifest) · #153 (round-4 fixes) · **#154 (rounds 5+6, squash `74f450b`)** — **tooling only, no migration** |
-> | **OPEN** | **PR #155**, branch `docs/m4-round7`, 31 commits. **Carries `0027` itself** — 1,898 lines, 161 catalog objects |
+> | **✅ MERGED** | **PR #155**, branch `docs/m4-round7`, squash **`c517faa`**, 2026-08-27 12:53 UTC. **Carried `0027` itself** — 1,898 lines, 161 catalog objects. CI `verify` passed on the PR head `7c95059`. (⟳ the row said *31 commits* at PR-open; `git rev-list --count 74f450b..7c95059` = **33** at merge — two doc commits landed after it was written, which is exactly why a count recorded in prose is a cache) |
 > | Review rounds | **v2 rounds 1-11.** Rounds 10 and 11 were whole-branch and scoped-to-fixes respectively; both halves ran in both |
 > | ⭐ What 2 rounds of review found | **1 Blocking · 8 High · 8 Medium · 6 Low — and NOT ONE was in `0027`.** Every finding was in an INSTRUMENT. Both halves of both rounds independently confirmed the migration: the three `backfill → set not null` pairs are FK-protected upstream and cannot abort; `0027`'s entire pre-M4 footprint (3 columns, 2 FKs, 7 triggers) is in the manifest; the rebuilt base is definitionally identical to the applied `0027` across all 161 objects |
 > | ⚠ Each fix round caused the next round's worst finding | r10 H2's `set -uo pipefail` → **r11 B1**, gate 14 green over the violation it detects. r10 H4's regex scanner → **r11 H1**, 240 real comments misread. That is `portable-practices` §12, measured twice in one evening |
 > | Phase 6 | ⚠ **CORRECTION 2026-08-25 21:30.** This row previously read *"fired at round 4 and has not run"*, and I repeated that in three commit messages and to the user. **It is false.** Phase 6 **RAN** — [`../../reviews/architecture-review-2026-08-25.md`](../../reviews/architecture-review-2026-08-25.md), 17:54 — after the v5.1 sequence. It dissolved nine of eleven findings into one defect, produced **ADR-0011** (accepted, option (a)) and, as its finding 3, **`check-live-schema.py` itself**. Its disposition — *"M4 does not proceed to a v6, rewrite the plan from the decision"* — is why the v2 plan exists. The trigger has now fired a SECOND time, on the v2 sequence, and the second review's subject is different: the first was about `corrections`/`workspace_videos` composition; rounds 5-7 are entirely about **the gate instrument the first review prescribed** |
 > | The gate that now exists | `scripts/check-live-schema.py` — the SUBJECT axis. The other six gates rebuild from spec files and cannot answer *"did the migration apply?"* Verified against production read-only: **prod is pre-M4** |
-> | Next | **The human merge gate on PR #155.** After merge: M4-β (plan Task 9 steps 6-7) — `supabase db push --linked`, then `check-live-schema.py --prod --expect-present` and `check-anon-exposure.py --prod`. Both are the user's calls |
+> | Next | ⟳ **The merge gate was given 2026-08-27 and is spent.** What remains is **M4-β** (plan Task 9 steps 6-7) — `supabase db push --linked`, then `check-live-schema.py --prod --expect-present` and `check-anon-exposure.py --prod`. **That is a SEPARATE human gate and it has NOT been given**; authorisation to merge is not authorisation to touch production |
 > | Deferred out of this PR, by decision | **Instrument hardening as its own slice** (user, 2026-08-27) — r10 L1's leaked-base sweeper (task #145), and any round 12 on the round-11 fixes. The reasoning is the row above: the defects are in the gates, not in the thing being gated, and `0027` is what this PR ships |
 >
 > ⛔ **Task 6 WAS the point of no return for every developer's local stack, and it has been crossed**
-> (`6bf4e18`): `npm run test:integration` now applies M4 on every machine that runs it. Merging is a human gate;
-> applying M4-β to production is a second one.
+> (`6bf4e18`): `npm run test:integration` now applies M4 on every machine that runs it. ⟳ The merge gate
+> has been passed; applying M4-β to production is a second one and is still CLOSED.
 >
 > **Why five rounds.** Every round found that the previous round's FIX was the defect — five of round
 > 5's nine findings were round 4's repairs. The gates are all predicates over a *projection* of the

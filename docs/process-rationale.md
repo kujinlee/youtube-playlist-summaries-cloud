@@ -321,3 +321,44 @@ that looks wrong without it is the whole fix.
 Promotion criteria are already written in
 [`.claude/skills/grill-with-docs/ADR-FORMAT.md`](../.claude/skills/grill-with-docs/ADR-FORMAT.md) →
 *"When to offer an ADR"*. Do not invent new ones.
+
+---
+
+## The handoff with no reader
+
+**Measured 2026-08-27.** `/handoff` saved to `mktemp -t handoff-XXXXXX.md`. **Three such files sat in
+`$TMPDIR` — 2026-08-26 12:09, 2026-08-26 17:44, 2026-08-27 05:48 — and not one had ever been read by a
+resuming session.** Random suffix, outside the repo, unindexed. Nothing could find them, including the
+agent that wrote them.
+
+The documents were good. That is the point. This is the **"live gate with NO CALLER"** shape this repo
+has now hit four times, and it is the hardest kind to notice, because **the producing step is green**:
+`/handoff` ran, wrote a file, reported success. Nothing downstream consumed it, and nothing was watching
+for a consumer.
+
+**What it cost, in the resume that found it.** That session re-derived the `M1`/`M2`/`M3` cross-document
+collision from scratch and reported it to the user as a *new* finding — trap 3 of the unread handoff had
+already stated it in one sentence. Two open items the user should have seen (the `--expect-present`
+added-column blindness; the 16 MB `.superpowers/` residue) went unsurfaced while the user was told
+*"nothing is waiting on me"*.
+
+**The near-miss worth recording.** The obvious repair was `.remember/handoff.md`. It is wrong, and
+wrong invisibly: **nothing reads that name either**, so the fix would have looked complete while
+rebuilding the identical defect at a prettier path. The path that works is `.remember/remember.md`
+because the `remember` plugin's SessionStart hook already reads it —
+`REMEMBER_HANDOFF="$REMEMBER_DIR/remember.md"` (`session-start-hook.sh:795`), emitted as
+`=== LAST HANDOFF ===` and injected **before** identity and memory so it survives context-preview
+truncation (`:809-812`), with fingerprinted non-destructive delivery (`:814-825`) so a read-only session
+does not consume the next one's note.
+
+**Two general lessons.**
+
+1. **Before building a channel, check whether one exists.** A mechanism was nearly written for a job the
+   installed plugin already did. The tell was in a comment enumerating the hook's own output sections —
+   found by grepping the hook for what it *injects*, not by assuming.
+2. **A falsifier written as a sentence is usually a lagging one.** The first guard here was
+   *"if a resume ever finds a `handoff-XXXXXX.md` in `$TMPDIR`, the skill was overwritten"* — true, and
+   it only fires **after** a session has already lost its handoff. The leading guard is
+   `scripts/check-handoff-path.py` behind a `PreToolUse` hook: it fires at invocation, before anything
+   is written. Both are kept, because they fail differently — the script guards the *instruction*, and
+   cannot observe where the file actually lands.

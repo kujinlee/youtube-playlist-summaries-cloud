@@ -66,10 +66,49 @@ When multiple installed skills can handle the same task, use this table.
 
 | When | Use | Requires |
 |---|---|---|
-| End of session — continuity for next session | `remember:remember` → writes `.remember/now.md` | remember |
-| Mid-task agent handoff — passing work to a subagent | `mattpocock:handoff` → temp file with artifact references | mattpocock/skills |
+| End of session — continuity for next session | `remember:remember` **or** `mattpocock:handoff` → both write **`.remember/remember.md`** | remember |
+| Mid-task agent handoff — passing work to a subagent *inside* the current session | `mattpocock:handoff` → `mktemp` temp file | mattpocock/skills |
 
 **Fallback** (remember not installed): write a brief handoff note to `.handoff.md` in project root; delete after resuming.
+
+> ### ⛔ RULE — a session-continuity handoff is written to `.remember/remember.md`. Nowhere else.
+>
+> **This line governs, whatever the skill file says.** `CLAUDE.md` imports this document, and project
+> instructions take precedence over skills — so this rule survives a vendor update that reverts the
+> skill, which a patched vendor file cannot do on its own.
+>
+> **NOT `.remember/handoff.md`.** That name looks right and nothing reads it — choosing it would
+> rebuild the same bug somewhere prettier. The path is `REMEMBER_HANDOFF` in the `remember` plugin's
+> `session-start-hook.sh:795`, emitted as `=== LAST HANDOFF ===` and injected **before** identity and
+> memory so it survives context-preview truncation (`:809-812`). Delivery is fingerprinted and
+> non-destructive (`:814-825`), so a read-only session does not consume the next one's note.
+>
+> **If a session-start block prints `=== HANDOFF === / Write next handoff to: <path>`**, you are in
+> external mode — obey that path instead. It is absent in legacy mode by design (`:800-802`).
+
+**⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
+`$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the
+resume that found it, is in [`process-rationale.md`](process-rationale.md) → *The handoff with no reader*.
+
+⚠ A vendored edit is reverted by `npx skills@latest add mattpocock/skills`, so **it is the weakest of
+three layers, not the mechanism:**
+
+| Layer | Where | Survives a vendor update? | Fires |
+|---|---|---|---|
+| **1 — Authority** | the RULE box above (`CLAUDE.md` imports this file; instructions beat skills) | ✅ | every session, as context |
+| **2 — Leading gate** | `scripts/check-handoff-path.py` + `.claude/hooks/enforce-handoff-path.sh` (PreToolUse on `Skill`) | ✅ | at `/handoff` invocation, **before** anything is written |
+| 3 — Convenience | `.agents/skills/handoff/SKILL.md` | ❌ reverted | n/a |
+
+**Layer 2's falsifier:** `.agents/skills/handoff/SKILL.md` stops naming `.remember/remember.md` →
+`check-handoff-path.py` exits **1** and the hook **blocks the skill with the correct path in the
+error**. Mutation-tested 2026-08-27: reverted → `rc=2` (blocked); restored → `rc=0`; an unrelated
+skill under the same reversion → `rc=0`, no collateral block. `--self-test` covers 10 cases including
+both near-misses (`.remember/handoff.md`, bare `remember.md`) and CANNOT-RUN on a missing or empty
+file. Run `python3 scripts/check-handoff-path.py --self-test` after touching it.
+
+⚠ **What layer 2 does NOT do, stated rather than hidden:** it guards the *instruction*, not the
+outcome — it cannot observe where the file actually lands. The lagging check still has a job: **if a
+resume ever finds a `handoff-XXXXXX.md` in `$TMPDIR`, something wrote one anyway.**
 
 ### Code Review (dual review per task)
 
