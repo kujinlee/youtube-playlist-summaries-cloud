@@ -213,13 +213,29 @@ echo "═══ mutation 3 ⭐ COLUMN DRIFT on an ENUMERATED relation ═══"
 # the subset still holds. The asymmetry is deliberate and worth stating: a REMOVED column breaks the
 # subset and IS caught; an ADDED one is invisible.
 #
-# ⚠ SO THIS IS A THIRD FACE OF MUTATIONS 28 AND 29, NOT THEIR COMPLEMENT — and unlike those two it
-#   has NO COMPENSATING PREMISE. `verify-exclusion-reasons.py` asserts "M4 creates exactly one type,
+# ⚠ SO THIS WAS A THIRD FACE OF MUTATIONS 28 AND 29, NOT THEIR COMPLEMENT — and unlike those two it
+#   had NO COMPENSATING PREMISE. `verify-exclusion-reasons.py` asserts "M4 creates exactly one type,
 #   an enum" and "no partitioned table exists", which catch the domain and the partition. Nothing
-#   asserts a column count. This mutation therefore DOCUMENTS a hole rather than guarding one, and
-#   says so rather than being quietly written to pass. Whether that hole is worth closing is a
-#   design question, not a defect to patch here.
+#   asserted a column count. This mutation therefore DOCUMENTED a hole rather than guarding one, and
+#   said so rather than being quietly written to pass.
+#
+# ⭐⭐ ⟳ BACKLOG 65, 2026-08-27 — THE HOLE IS NOW CLOSED AND THIS MUTATION FLIPS DIRECTION.
+#     `check-live-schema.unexpected()` compares the manifest against live objects sitting on the 8
+#     relations M4 OWNS, so an ADDED column there is now RED. The assertion below therefore expects
+#     `fail` where it used to expect `pass`. That inversion IS the falsifier the backlog row demanded
+#     ("MUTATION-TESTED by adding a column to a scratch DB and confirming RED"); revert `unexpected`
+#     and this line goes MUTATION SURVIVED.
+#
+# ⚠ EACH RED IS FOLLOWED BY A RESTORE THAT MUST GO GREEN AGAIN. A red on a scratch clone proves
+#   nothing on its own — it could come from the clone, the template, or an unrelated drift. Only
+#   `green -> mutate -> red -> undo -> green` attributes the red TO THE MUTATION. (Measured cost of
+#   skipping this, 2026-08-27: a mutation run from a temp path showed 20/27 failing until an
+#   UNMUTATED CONTROL at the same path failed identically.)
 if fresh "${PREFIX}_raw"; then
+  # CONTROL — the unmutated clone must PASS before any mutation means anything.
+  gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+  report "CONTROL: an unmutated M4 clone PASSES --expect-present" pass "$r"
+
   before_c=$(db "${PREFIX}_raw" -c "select count(*) from information_schema.columns where table_schema='public' and table_name='workspace_videos';" | tr -d '[:space:]')
   db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 alter table public.workspace_videos add column m4_mut_residue text;
@@ -230,11 +246,108 @@ SQL
     echo "  ✗ THE COLUMN DID NOT LAND — treat mutation 3 as NOT RUN"; fail=1
   else
     gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
-    report "an extra COLUMN -> the digest is blind and still PASSES (no premise covers it)" pass "$r"
-    # The other direction, which is the one that IS guarded — and asserting it here is what keeps
-    # the case above from reading as "the gate sees nothing".
+    report "⭐ backlog 65: an extra COLUMN on an M4-OWNED relation -> --expect-present FAILS" fail "$r"
+
+    # RESTORE — attributes the red above to the column and not to the clone.
     db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
 alter table public.workspace_videos drop column m4_mut_residue;
+SQL
+    gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+    report "…and dropping it goes GREEN again, so the red was THE COLUMN" pass "$r"
+
+    # ⟳ r-claude MEDIUM 3 — `unexpected()` claims FOUR kinds (col/con/trg/pol) and only the COLUMN
+    # had a behavioural probe. The self-test catches a narrowed ATTRIBUTABLE_KINDS, but it is
+    # fixture-based: it cannot catch the other way this breaks. `ambiguous()`'s docstring names
+    # quoting the separator in CATALOG_SQL as the proper fix for the dotted-identifier problem — if
+    # that lands, `rest.count(".")` and `rest.split(".", 1)[0]` silently stop matching, the
+    # hand-written fixtures stay green, and a column-only harness stays green too. Each claimed kind
+    # now sabotages a REAL database and requires RED, which is this file's own stated standard.
+    # ⛔⛔ ⟳ r3 HIGH 1 — THE POLICY PROBE COULD NOT FAIL FOR THE REASON IT WAS ADDED, AND THE EXIT
+    # CODE COULD NOT TELL. MEASURED: with `unexpected()` neutered to `return set()` on a temp copy,
+    # the POLICY probe still went red — because `_policies()` is spliced into the **table:** digest
+    # (`m4_catalog.py:330`), so a new policy makes `table:video_artifacts` REDEFINED and breaks the
+    # subset test. Mutation 27 already covers that. The tick was earned by pre-existing coverage.
+    #
+    # This is r8 B1's shape verbatim, and this file already states the rule: *a token is only a
+    # discriminator if the control cannot contain it.* So the probes stop reading the exit code and
+    # match the DRIFT SENTENCE, which only `unexpected()` can produce.
+    drift_out() { python3 ./scripts/check-live-schema.py --database "$1" --expect-present 2>&1; }
+    probe_kind() { # label  mutate-sql  undo-sql
+      local out
+      db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
+$2
+SQL
+      # ⚠ CAPTURE FIRST, MATCH SECOND — never pipe into `grep -q` under `set -o pipefail`; this file
+      # measured that reporting failure on the very runs where the token WAS found.
+      out=$(drift_out "${PREFIX}_raw")
+      case "$out" in *"EXIST ON A RELATION M4 OWNS"*) r=pass ;; *) r=fail ;; esac
+      report "⭐ backlog 65: an unexpected $1 names DRIFT (not merely a red gate)" pass "$r"
+      db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
+$3
+SQL
+      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+      report "…and undoing the $1 goes GREEN again" pass "$r"
+    }
+
+    out=$(drift_out "${PREFIX}_raw")
+    case "$out" in *"EXIST ON A RELATION M4 OWNS"*) r=fail ;; *) r=pass ;; esac
+    report "CONTROL: an unmutated clone does NOT contain the drift sentence" pass "$r"
+
+    probe_kind "POLICY" \
+      "create policy m4_mut_pol on public.video_artifacts for select using (true);" \
+      "drop policy if exists m4_mut_pol on public.video_artifacts;"
+
+    probe_kind "CONSTRAINT" \
+      "alter table public.video_artifacts add constraint m4_mut_chk check (true);" \
+      "alter table public.video_artifacts drop constraint if exists m4_mut_chk;"
+
+    probe_kind "TRIGGER" \
+      "create trigger m4_mut_trg before insert on public.video_artifacts
+         for each row execute function video_artifacts_append_only();" \
+      "drop trigger if exists m4_mut_trg on public.video_artifacts;"
+
+    # ⛔ THE STATED BOUNDS, ASSERTED. An unstated bound is read as coverage, so each one that this
+    #    gate deliberately does NOT cover gets a case here — if a later change silently widens the
+    #    scope, these turn red and the widening is a decision instead of an accident.
+    # ⟳ codex Low (backlog 65 review): these two probes assert that the gate PASSES, so if their SQL
+    # never landed they would pass on an UNCHANGED database and certify a bound nothing tested. A
+    # green over an unapplied mutation is the exact shape this harness exists to prevent, so each one
+    # now asserts its own postcondition and reports NOT RUN rather than a tick.
+    landed() { # relation predicate-sql label
+      local n
+      n=$(db "${PREFIX}_raw" -tAc "$2" | tr -d '[:space:]')
+      if [ "$n" = "1" ]; then return 0; fi
+      echo "  ✗ $3 DID NOT LAND (got '${n:-<empty>}', wanted 1) — treat this bound as NOT RUN"
+      fail=1; return 1
+    }
+
+    db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter table public.videos add column m4_mut_foreign text;
+SQL
+    if landed videos "select count(*) from information_schema.columns where table_schema='public' and table_name='videos' and column_name='m4_mut_foreign';" "the FOREIGN column"; then
+      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+      report "BOUND: a new column on a FOREIGN relation (videos) still PASSES — not M4's to bound" pass "$r"
+    fi
+
+    db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter table public.videos drop column if exists m4_mut_foreign;
+create index m4_mut_idx on public.workspace_videos (workspace_id);
+SQL
+    if landed idx "select count(*) from pg_indexes where schemaname='public' and indexname='m4_mut_idx';" "the bare INDEX"; then
+      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+      report "BOUND: a bare INDEX on an M4 relation still PASSES — idx: carries no relation name" pass "$r"
+    fi
+
+    # The direction that was ALREADY guarded — asserting it keeps the bounds above from reading as
+    # "the gate sees nothing".
+    # ⚠ `if exists` ON THE CLEANUP, so a probe that failed cannot make its NEIGHBOUR red. MEASURED
+    # while falsifying `landed`: a deliberately misnamed index left `drop index m4_mut_idx` to abort
+    # this block under ON_ERROR_STOP, so the removed-column case never ran and reported MUTATION
+    # SURVIVED for a reason that had nothing to do with it. Failing loudly is right; failing loudly
+    # in the WRONG ASSERTION sends the next reader to the wrong defect.
+    db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+drop index if exists m4_mut_idx;
+alter table public.workspace_videos drop column if exists m4_mut_residue;
 alter table public.workspace_videos drop column video_id cascade;
 SQL
     gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
