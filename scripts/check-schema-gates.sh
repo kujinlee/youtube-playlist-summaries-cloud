@@ -156,9 +156,49 @@ run "13/14 the written EXCLUSION REASONS are true (verify-exclusion-reasons.py)"
 #       05_assert.sql alone ............ 164
 #       0027 with 05 appended .......... 164   (must catch it)
 #       the plan's version:  4  vs  7          (cannot discriminate)
+#
+# ⟳⟳ r10 H2 + M2 — THIS GATE PASSED OVER ZERO INPUT, AND ITS MARGIN RESTED ON AN UNCHECKED PROPERTY.
+#
+# H2, MEASURED three ways: with the glob unmatched (empty dir), with `supabase/migrations/` missing
+# entirely, and with the assertion file placed in a subdirectory, the pipeline returned rc=0 — GREEN.
+# An unmatched glob makes `grep` print "No such file or directory", the second `grep` reads empty
+# input and exits 1, and `!` turns that into success. **And it is reachable from inside this very
+# script**: line 18 is `cd "$(dirname "$0")/.."` under `set -uo pipefail` with NO `-e`, so a failed
+# `cd` runs all fourteen gates from the wrong directory and this is the one that answers green.
+# Its own sibling shouts the rule — verify-schema.sh: "⛔ A GATE THAT READS AN EMPTY SET PASSES —
+# measured twice in this repo" — and it was applied there and not here, in the same commit.
+#
+# M2: the mutation numbers below (0 / 164 / 164) decompose as `execute p_sql` 1 + `delete from
+# profiles` 1 + `assert_raises` 62 + `ASSERTION FAILED` 100. **162 of the 164 are assertion
+# VOCABULARY**, and nothing asserted that vocabulary still existed. Two ordinary renames
+# (`assert_raises`→`expect_raises`, and the message prefix) drop the margin from 164 to 2 without
+# touching either dangerous construct. That is the same rot `check-paid-caller-arrival.py` builds an
+# anti-rot canary for — again, one site done and the sibling not.
+#
+# So the signature is named ONCE and used by both the subject check and the gate.
+M4_ASSERT_SIG='execute p_sql|delete from profiles|assert_raises|ASSERTION FAILED'
+export M4_ASSERT_SIG
 run "14/14 05_assert.sql is NOT in any migration (arbitrary-SQL executor + profile deleter)" \
-    bash -c '! grep -hv "^[[:space:]]*--" supabase/migrations/*.sql \
-               | grep -qE "execute p_sql|delete from profiles|assert_raises|ASSERTION FAILED"'
+    bash -c '
+      set -uo pipefail
+      # (a) the SUBJECT must exist and still match the signature — else the gate has no margin.
+      assert_src="'"$SPEC"'/schema/05_assert.sql"
+      [ -s "$assert_src" ] || { echo "CANNOT RUN — missing or empty $assert_src"; exit 2; }
+      hits=$(grep -hv "^[[:space:]]*--" "$assert_src" | grep -cE "$M4_ASSERT_SIG")
+      if [ "$hits" -lt 100 ]; then
+        echo "CANNOT RUN — the signature matches 05_assert.sql only $hits times (was 164)."
+        echo "  The vocabulary was renamed, so this gate no longer discriminates. TREAT AS NOT RUN."
+        exit 2
+      fi
+      # (b) the CORPUS must be non-empty — a glob that matches nothing is not a clean bill of health.
+      shopt -s nullglob
+      migs=(supabase/migrations/*.sql)
+      if [ "${#migs[@]}" -lt 27 ]; then
+        echo "CANNOT RUN — read ${#migs[@]} migration(s) from $(pwd); expected at least 27."
+        echo "  An unmatched glob feeds this gate empty input and it reports GREEN. TREAT AS NOT RUN."
+        exit 2
+      fi
+      ! grep -hv "^[[:space:]]*--" "${migs[@]}" | grep -qE "$M4_ASSERT_SIG"'
 
 echo
 if [ "$fail" -eq 0 ]; then

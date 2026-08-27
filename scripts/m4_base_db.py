@@ -111,6 +111,20 @@ def read_catalog(sql: str, marker: str, source: str = "postgres") -> str:
                 print(f"CANNOT RUN — could not read the catalog from '{db}'. TREAT THIS AS NOT RUN.")
                 print(p.stdout[-1500:] or p.stderr[-1500:])
                 raise SystemExit(2)
+            # ⟳ r10 M4 — `split(marker, 1)[-1]` returns the WHOLE STRING when the marker is absent,
+            # so a missing marker handed the caller every line psql printed (DDL echo included)
+            # instead of failing. Downstream it was fail-closed only by luck: the three ratchets
+            # filter on `check:`/`fk:`/`index:`/`trigger:` prefixes, so a whole-output parse yields
+            # an empty set and every entry reports STALE — a wrong answer arrived at safely.
+            # CLAUDE.md: "a parse that found nothing … must fail loudly." This function was
+            # extracted precisely so there is ONE place to put that rule.
+            if marker not in p.stdout:
+                print(f"CANNOT RUN — marker {marker!r} not found in the catalog output from '{db}'.")
+                print("  The query ran and returned 0, so this is a PARSE that found nothing, not a")
+                print("  database error. Reporting it as an empty result set would be a wrong answer")
+                print("  reached safely. TREAT THIS AS NOT RUN.")
+                print(p.stdout[-1000:])
+                raise SystemExit(2)
             return p.stdout.split(marker, 1)[-1]
     except CannotRun as e:
         print(f"CANNOT RUN — {e} TREAT THIS AS NOT RUN.")

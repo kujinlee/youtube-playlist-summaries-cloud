@@ -128,5 +128,32 @@ SQL=$(printf 'begin;\n'; cat "${SRC_FILES[@]}"; printf '\n\\echo ALL_STATEMENTS_
 OUT=$(printf '%s' "$SQL" | docker exec -i "$CONTAINER" \
         psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 2>&1)
 echo "$OUT"
-if grep -q ALL_STATEMENTS_OK <<<"$OUT"; then echo "✅ schema verified (rolled back)"; exit 0; fi
-echo "❌ schema FAILED"; exit 1
+if ! grep -q ALL_STATEMENTS_OK <<<"$OUT"; then echo "❌ schema FAILED"; exit 1; fi
+
+# ⭐⭐ r10 H5 — THIS GATE REPORTED "schema verified" OVER **ZERO** ASSERTIONS.
+#
+# `ALL_STATEMENTS_OK` is printf'd unconditionally after the `cat`, so it proves nothing RAISED. It
+# cannot prove anything RAN — which is the exact sentence the sibling written in the SAME commit
+# already carried: `run-schema-assertions.sh` — "⭐ THE FLOOR. ASSERTIONS_OK proves nothing RAISED;
+# it cannot prove anything RAN." One site got the floor and this one, which runs the LARGER corpus,
+# did not.
+#
+# MEASURED by the reviewer: replacing `05_assert.sql` with two lines (`-- gutted` / `select 1;`)
+# produced `ALL_STATEMENTS_OK` / `ROLLBACK` / `✅ schema verified (rolled back)`, rc 0.
+#
+# ⚠ IT MATTERS MOST IN THE `pre` PHASE. Gate 8 is SKIPPED when M4_PHASE=pre by design, so before
+# 0027 is applied this gate is the ONLY floor on the assertion corpus anywhere in the suite — and it
+# had none. The header of this very file says "run-schema-assertions.sh now carries a floor that
+# fails when the count drops, which is the mechanical half of this note", describing a mechanism
+# that did not cover the gate whose header it is written in.
+#
+# Same constant as the sibling, same update rule: raising it is routine, LOWERING it is deliberate.
+ASSERTION_FLOOR="${M4_ASSERTION_FLOOR:-120}"
+RAN=$(grep -cE 'NOTICE:.*\bok\b' <<<"$OUT")
+if [ "$RAN" -lt "$ASSERTION_FLOOR" ]; then
+  echo "❌ schema FAILED — only $RAN assertions reported ok; the floor is $ASSERTION_FLOOR." >&2
+  echo "   Nothing raised, so this is not a broken invariant: assertions STOPPED EXECUTING." >&2
+  echo "   Look for a gutted or truncated 05_assert.sql, or a source list that dropped it." >&2
+  exit 1
+fi
+echo "✅ schema verified (rolled back) — $RAN assertions ran (floor $ASSERTION_FLOOR)"; exit 0

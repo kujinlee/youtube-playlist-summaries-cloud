@@ -933,7 +933,10 @@ def run_suite(tmp: Path):
         # ⚠ WHY REDIRECTING BOTH TARGETS AT ONE FILE IS SAFE: `target` existed to disambiguate two
         # files; the migration is one. VERIFIED before doing it — all 58 anchors occur in 0027, and
         # every one occurs EXACTLY ONCE, so `replace(find, repl, 1)` cannot hit the wrong region.
-        # If a future anchor appears twice, the count check below turns it into a loud INVALID.
+        # ⟳ r10 H1: that last sentence used to end "the count check below turns it into a loud
+        # INVALID", and there WAS NO COUNT CHECK. There is one now (see the loop). Both review halves
+        # found this independently, which is why the wording here is deliberately about what the code
+        # does rather than about what it is for.
         mig_text = mig_copy.read_text()
         for t in (GEN, ART):
             copy_of[t] = mig_copy
@@ -994,8 +997,19 @@ def run_suite(tmp: Path):
     results = []
     for label, find, repl, expect, target in MUTATIONS:
         original = originals[target]
-        if find not in original:
-            results.append((label, "INVALID", "anchor not found — mutation never applied"))
+        # ⟳ r10 H1 (codex AND claude, independently) — THE COUNT CHECK THE COMMENT ABOVE PROMISED
+        # AND THAT DID NOT EXIST. The redirect above rests on "every anchor occurs exactly once, so
+        # `replace(find, repl, 1)` cannot hit the wrong region", and then only tested for ZERO.
+        # `str.replace(old, new, 1)` edits the FIRST occurrence and returns silently, so a
+        # twice-occurring anchor is not INVALID — it is a mutation applied to the wrong region,
+        # after which `classify()` may score an unrelated failure as RED and the summary counts it ✅.
+        # That is coverage laundering, in the gate whose whole purpose is proving guards load-bearing.
+        # The premise held when measured (58 anchors, 0 with a count ≠ 1); it is now enforced rather
+        # than asserted in prose. A comment describing a guard is not a guard.
+        n = original.count(find)
+        if n != 1:
+            results.append((label, "INVALID",
+                            f"anchor occurs {n} times — ambiguous target, mutation NOT applied"))
             continue
         # No `finally` restore is needed to protect the repo — nothing repo-tracked was ever
         # opened for writing. The copy is rewritten wholesale before each mutation instead, so a

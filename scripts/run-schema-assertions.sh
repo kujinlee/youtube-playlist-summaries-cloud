@@ -55,7 +55,16 @@ DB="${PGDATABASE:-postgres}"
 # it, and the gate would report success over the remainder. Nothing syntactic can see that; a COUNT
 # can. MEASURED 2026-08-26 against the applied 0027, identical on three consecutive runs:
 #
-#   docker exec … psql < (seed + 05_assert.sql) | grep -cE 'NOTICE:.*\bok\b'   ->  119
+#   docker exec … psql < (seed + 05_assert.sql) | grep -cE 'NOTICE:.*\bok\b'   ->  120
+#
+# ⟳ r10 L3 — WHY THE NUMBER IS NOT THE COUNT OF `raise notice` SITES. 05_assert.sql has 60 static
+#   ok-sites but emits 120 notices, because the population-coverage instrument LOOPS over
+#   artifact_kind × free/paid. So the floor also moves if the enum gains a value (upward, harmlessly)
+#   and it cannot tell "an assertion was deleted" from "the enum shrank and a loop ran fewer times".
+#   Not a defect; recorded so the next person to see this number move looks in the right place.
+# ⟳ r10 M3 — 119 -> 120: the fixtures block now asserts t_ws <> t_w2 and says which tenants it
+#   resolved, which is one more ok-notice. Raising a floor because a real assertion was ADDED is the
+#   routine direction.
 #
 # ⚠ Raising it is routine (add assertions). LOWERING it is a deliberate act — ADR-0011 deleted seven
 #   blocks and that is exactly the direction this floor exists to make visible. Do not lower it to
@@ -65,7 +74,7 @@ DB="${PGDATABASE:-postgres}"
 # directions against a fixture whose assertion count it controls. They are deliberately not the
 # `ASSERT_FLOOR`/`FORCE` names a caller would guess, and the real run announces when a floor was
 # skipped, so neither can quietly disable the ratchet in a gate.
-ASSERTION_FLOOR="${M4_ASSERTION_FLOOR:-119}"
+ASSERTION_FLOOR="${M4_ASSERTION_FLOOR:-120}"
 
 # The ways an assertion in this corpus can FAIL. Every real one is a `do $$ … raise exception … $$;`.
 # Adding a mechanism here is a deliberate act; NOT adding it makes the block a loud CANNOT RUN.

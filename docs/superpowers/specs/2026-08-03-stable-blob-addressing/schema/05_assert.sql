@@ -37,7 +37,15 @@
 -- them can be invalidated by a later write.
 --
 -- MEASURED 2026-08-26 against the applied 0027, seed corpus + this entire file in one transaction:
--- 119 assertions reported ok, none raised, identical on three consecutive runs.
+-- 120 assertions reported ok, none raised, identical on three consecutive runs.
+--
+-- ⚠ ⟳ r10 L2 — BOUND THE CLAIM TO THE STATE IT WAS MEASURED IN. That run happened while
+-- `video_artifacts` and `video_generations` held ZERO real rows (backlog 26 is DORMANT and
+-- `record_artifact` has no caller), i.e. the one state in which 'no assertion can be
+-- invalidated by a later write' is easiest to be true. Every block is fixture-scoped and is
+-- expected to survive a populated corpus — but the sentence claims a property of every future
+-- state and was measured on the empty one. RE-MEASURE the day a caller lands; the day is
+-- observable, via `python3 scripts/check-paid-caller-arrival.py`.
 --
 -- ⛔ THE MARKER IS A RANGE TOGGLE, SO ADDING A MIGRATION-ONLY ONE BELOW SILENTLY DROPS EVERYTHING
 --    AFTER IT. If you genuinely add a migration-only assertion, add a matching re-runnable marker to
@@ -145,6 +153,32 @@ create trigger t_writes_trg after insert or update on video_artifacts
 -- must respect the same ordering the migration does.
 create temp table t_ws as select id from workspaces order by id limit 1;
 create temp table t_w2 as select id from workspaces order by id desc limit 1;   -- a SECOND tenant, for RLS
+
+-- ⭐⭐ ⟳ r10 M3 — "A SECOND TENANT" WAS A HOPE, NOT A CHECK, AND ON A ONE-WORKSPACE DATABASE IT IS
+-- FALSE. `limit 1` and `desc limit 1` over a single row return THE SAME ROW. Ten blocks below then
+-- treat one tenant as two and go RED accusing the schema of a CROSS-TENANT LEAK — a false
+-- accusation naming the wrong subject, which this repo has measured the cost of. A `db reset` plus
+-- one signup produces exactly that state, so it is reachable on any fresh machine.
+--
+-- ⚠ IT ALSO MAKES THE TWO GATES' SUBJECTS VISIBLE, which they were not. Gate 1 runs this file
+-- against a pre-M4 base with no seed, gate 8 against `postgres` WITH the seed corpus — and because
+-- `workspaces.id = owner_id` and the seed's user id is `…0000a1`, the seed tenant SORTS FIRST. So
+-- `t_ws` resolves to a different workspace in each gate. Both are green and no assertion's meaning
+-- changes, but the difference arrived silently, and the anti-drift block ADR-0011 deleted was on
+-- record measuring the opposite property of this same variable. A variable that has already caused
+-- one measured defect does not get to change meaning between two gates without saying so.
+do $$ declare a uuid; b uuid; n int; begin
+  select count(*) into n from workspaces;
+  select id into a from t_ws; select id into b from t_w2;
+  if a is null or b is null then
+    raise exception 'CANNOT RUN — no workspaces exist, so every fixture below would be NULL-keyed';
+  end if;
+  if a = b then
+    raise exception 'CANNOT RUN — only % workspace(s); t_ws and t_w2 are the SAME row (%), so the '
+                    'cross-tenant assertions would be vacuous. Seed a second workspace.', n, a;
+  end if;
+  raise notice 'ok (fixtures): % workspaces; t_ws=% t_w2=% — two distinct tenants', n, a, b;
+end $$;
 -- ⟳ ADR-0011: `vidA` used to be seeded with a non-constant 'H_NEW' corrections_hash, which is why
 -- the backfill assertion above had to run BEFORE the fixtures. With the column gone the two rows
 -- are shaped identically and that ordering constraint is gone with them.
