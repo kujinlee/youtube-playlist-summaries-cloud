@@ -66,10 +66,32 @@ When multiple installed skills can handle the same task, use this table.
 
 | When | Use | Requires |
 |---|---|---|
-| End of session — continuity for next session | `remember:remember` → writes `.remember/now.md` | remember |
-| Mid-task agent handoff — passing work to a subagent | `mattpocock:handoff` → temp file with artifact references | mattpocock/skills |
+| End of session — continuity for next session | `remember:remember` **or** `mattpocock:handoff` → both write **`.remember/remember.md`** | remember |
+| Mid-task agent handoff — passing work to a subagent *inside* the current session | `mattpocock:handoff` → `mktemp` temp file | mattpocock/skills |
 
 **Fallback** (remember not installed): write a brief handoff note to `.handoff.md` in project root; delete after resuming.
+
+**⚠ `mattpocock:handoff` IS LOCALLY MODIFIED, and the reason is a measured miss (2026-08-27).**
+Upstream saves to `mktemp -t handoff-XXXXXX.md`. **Three such files accumulated in `$TMPDIR` and not one
+was ever read by a resuming session** — random suffix, outside the repo, unindexed. The docs were good;
+they had no consumer. This is the same defect class as the *"live gate with NO CALLER"* this repo has
+now hit four times: the artifact is produced, the run reports success, and nothing consumes it.
+
+**Measured cost, in the resume that found it:** the `M1`/`M2`/`M3` cross-document collision was
+re-derived from scratch and reported to the user as a new finding — trap 3 of the unread handoff already
+stated it. Two other open items went unsurfaced while the user was told *"nothing is waiting on me"*.
+
+`.agents/skills/handoff/SKILL.md` now writes to **`.remember/remember.md`**, which is **not an arbitrary
+path**: it is `REMEMBER_HANDOFF` in the `remember` plugin's `session-start-hook.sh:795`, emitted as
+`=== LAST HANDOFF ===` and **injected before identity and memory so it survives context-preview
+truncation** (`:809-812`). Delivery is fingerprinted and non-destructive (`:814-825`), so a read-only
+session does not consume the note. **Verified by executing the hook**, not by reading it — the block
+appeared first in the output.
+
+⚠ **This edit is to a VENDORED file.** `npx skills@latest add mattpocock/skills` will silently revert it.
+**Falsifier: if a resume ever finds a `handoff-XXXXXX.md` in `$TMPDIR`, the skill was overwritten** —
+re-apply the edit. In external mode (`.remember/` outside the project) the hook prints
+`=== HANDOFF === / Write next handoff to: <path>`; obey that path instead.
 
 ### Code Review (dual review per task)
 
