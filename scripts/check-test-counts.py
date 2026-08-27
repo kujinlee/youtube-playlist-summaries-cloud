@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import sys
@@ -136,6 +137,79 @@ def compare(documented: tuple[int, int], actual: tuple[int, int]) -> list[str]:
     return out
 
 
+JEST_CONFIG = ROOT / "jest.config.ts"
+
+
+def test_sources(config: pathlib.Path = JEST_CONFIG) -> list[pathlib.Path]:
+    """The files jest would run, DERIVED from jest.config.ts's own `testMatch`.
+
+    ⛔ NOT a hand-copied glob list. A second copy of the test inventory drifts from the first, which
+    is the defect this repo has now paid for in `check-live-schema.py` (r3 B2, a 29-of-161 hand list)
+    and `check-guard-coverage.py`. If the config cannot be read, or its `testMatch` cannot be parsed,
+    or it resolves to no files, this REFUSES — a silently narrower file set would make the staleness
+    check below vacuous, which is the same failure one layer up.
+    """
+    try:
+        text = config.read_text()
+    except OSError as exc:
+        raise CannotRun(f"could not read {config}: {exc}. Treat as NOT RUN.") from exc
+    block = re.search(r"testMatch\s*:\s*\[(.*?)\]", text, re.S)
+    if not block:
+        raise CannotRun(
+            f"{config.name} has no parseable `testMatch`, so the set of test files cannot be "
+            "derived.\nWithout it the staleness check below would compare against nothing. "
+            "Treat as NOT RUN.")
+    pats = re.findall(r"['\"]<rootDir>/([^'\"]+)['\"]", block.group(1))
+    if not pats:
+        raise CannotRun(f"{config.name}'s `testMatch` listed no <rootDir> patterns. Treat as NOT RUN.")
+    # ⚠ Glob from the CONFIG'S OWN directory, not a module-level ROOT. Caught by this file's own
+    # self-test: the first draft ignored the path it was handed and matched the real repo, so the
+    # "matched NO files" refusal could never fire and the function was untestable. In production
+    # jest.config.ts sits at the repo root, so behaviour there is unchanged.
+    root = config.parent
+    files = sorted({f for pat in pats for f in root.glob(pat)})
+    if not files:
+        raise CannotRun(
+            f"{config.name}'s `testMatch` matched NO files on disk. An empty test inventory makes "
+            "this check vacuous. Treat as NOT RUN.")
+    return files
+
+
+def assert_describes_this_tree(results: object, config: pathlib.Path = JEST_CONFIG) -> None:
+    """⭐ TASK #144 — the counts must come from a run of the CURRENT tree, not any run at all.
+
+    MEASURED 2026-08-27: `jest-results.json` was dated **Aug 24 17:28** — three days old — and this
+    check printed *"roadmap test counts match the suite: 2,819 unit / 274 suites"*, exit 0, in every
+    sweep of the day. It happened to be right; nothing made it so. `load_results` asserted only that
+    the file EXISTS and PARSES, so a stale file describing a suite that has since changed reports a
+    match with full confidence — and a green count over the wrong subject is exactly the shape
+    `CLAUDE.md` warns about: *"a green check over the wrong subject is an assertion in better
+    packaging, and more dangerous than prose, because nobody re-examines it."*
+
+    The falsifiable property: **no test file may be newer than the run that counted it.** jest's own
+    `startTime` is the run's clock, so this compares against the thing jest recorded rather than the
+    results file's mtime, which a copy or a checkout would reset.
+    """
+    if not isinstance(results, dict):
+        raise CannotRun("the jest results file did not contain a JSON object. Treat as NOT RUN.")
+    started = results.get("startTime")
+    if not isinstance(started, (int, float)):
+        raise CannotRun(
+            "the jest results file has no numeric `startTime`, so it cannot be shown to describe "
+            "the current tree. Regenerate it. Treat as NOT RUN.")
+    run_at = started / 1000.0
+    newer = [f for f in test_sources(config) if f.stat().st_mtime > run_at]
+    if newer:
+        listed = "\n".join(f"      {f.relative_to(config.parent)}" for f in sorted(newer)[:8])
+        more = f"\n      … and {len(newer) - 8} more" if len(newer) > 8 else ""
+        raise CannotRun(
+            f"the jest results are STALE: {len(newer)} test file(s) changed AFTER the run that "
+            f"produced them.\n{listed}{more}\n"
+            "    Those counts describe a suite that no longer exists, so a match proves nothing.\n"
+            "    Regenerate:  npm test -- --ci --json --outputFile=jest-results.json\n"
+            "    Treat this check as NOT RUN.")
+
+
 def load_results(path: pathlib.Path) -> object:
     if not path.exists():
         raise CannotRun(
@@ -157,7 +231,10 @@ def run(results_path: pathlib.Path) -> int:
         return 1
     try:
         documented = documented_counts(roadmap_text)
-        actual = actual_counts(load_results(results_path))
+        results = load_results(results_path)
+        # ⭐ task #144 — assert the counts describe THIS tree before comparing them.
+        assert_describes_this_tree(results)
+        actual = actual_counts(results)
     except CannotRun as exc:
         print(f"FAIL (cannot run): {exc}")
         return 1
@@ -198,6 +275,51 @@ def _self_test() -> int:
          lambda: documented_counts("history: **2690 unit / 266 suites**\n\nnow: **2703 unit / 267 suites**"), True)
     case("the single-match path still returns the pair after the ambiguity guard",
          lambda: documented_counts("prose **2703 unit / 267 suites** prose") == (2703, 267))
+
+    # ⭐ task #144 — the counts must describe THIS tree. Every case below returned a confident
+    # "match" before `assert_describes_this_tree` existed.
+    import tempfile as _tf
+
+    def _tree(match_block: str, files: dict[str, float] | None):
+        """A throwaway repo root: a jest.config.ts and optional test files with set mtimes."""
+        d = pathlib.Path(_tf.mkdtemp())
+        (d / "jest.config.ts").write_text(match_block)
+        for rel, mtime in (files or {}).items():
+            f = d / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("test('x', () => {});")
+            os.utime(f, (mtime, mtime))
+        return d
+
+    GOOD = "export default { testMatch: ['<rootDir>/tests/**/*.test.ts'] };"
+    RUN_AT = 1_000_000.0                      # seconds; startTime is milliseconds
+    RESULTS = {"success": True, "numTotalTests": 1, "numTotalTestSuites": 1,
+               "startTime": RUN_AT * 1000}
+
+    case("a test file NEWER than the run is STALE — the whole point of #144",
+         lambda: assert_describes_this_tree(
+             RESULTS, _tree(GOOD, {"tests/a.test.ts": RUN_AT + 60}) / "jest.config.ts"), True)
+    case("a test file OLDER than the run is fine",
+         lambda: assert_describes_this_tree(
+             RESULTS, _tree(GOOD, {"tests/a.test.ts": RUN_AT - 60}) / "jest.config.ts") is None)
+    case("no startTime is CANNOT RUN — provenance cannot be shown",
+         lambda: assert_describes_this_tree(
+             {"success": True}, _tree(GOOD, {"tests/a.test.ts": RUN_AT - 60}) / "jest.config.ts"), True)
+    case("a non-numeric startTime is CANNOT RUN",
+         lambda: assert_describes_this_tree(
+             {"startTime": "yesterday"}, _tree(GOOD, {"tests/a.test.ts": 1.0}) / "jest.config.ts"), True)
+
+    # test_sources — a silently narrower file set would make the staleness check vacuous
+    case("an unparseable testMatch is CANNOT RUN, not an empty list",
+         lambda: test_sources(_tree("export default { };", {"tests/a.test.ts": 1.0}) / "jest.config.ts"), True)
+    case("a testMatch matching NO files is CANNOT RUN",
+         lambda: test_sources(_tree(GOOD, {}) / "jest.config.ts"), True)
+    case("a missing jest config is CANNOT RUN",
+         lambda: test_sources(pathlib.Path("/nonexistent/jest.config.ts")), True)
+    case("the globs are DERIVED from the config, not hardcoded",
+         lambda: [f.name for f in test_sources(
+             _tree(GOOD, {"tests/a.test.ts": 1.0, "tests/deep/b.test.ts": 1.0}) / "jest.config.ts")]
+             == ["a.test.ts", "b.test.ts"])
 
     # actual_counts — a failed or malformed run must never yield numbers
     case("reads a successful run",
