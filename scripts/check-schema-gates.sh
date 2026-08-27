@@ -27,23 +27,23 @@ run() {
 }
 
 # 1. The schema executes against live Postgres, and every behavioural assertion holds.
-run "1/13  schema + assertions (verify-schema.sh)"      "$SPEC/verify-schema.sh"
+run "1/14  schema + assertions (verify-schema.sh)"      "$SPEC/verify-schema.sh"
 
 # 2. Every guard is mutation-checked — a guard that is never mutated is documentation.
-run "2/13  mutation suite (mutate-schema.py)"           "$SPEC/mutate-schema.py"
+run "2/14  mutation suite (mutate-schema.py)"           "$SPEC/mutate-schema.py"
 
 # 3. COVERAGE, the only gate that looks at what is ABSENT rather than what is present.
 #    Enumerates guards from pg_catalog, so a guard added today cannot be skipped.
-run "3/13  guard coverage (check-guard-coverage.py)"    ./scripts/check-guard-coverage.py
+run "3/14  guard coverage (check-guard-coverage.py)"    ./scripts/check-guard-coverage.py
 
 # 4. COHERENCE, not correctness. Everything above asks "is this right?" — a LOCAL question
 #    that can always be answered yes by patching, which is how a wrong shape survives twelve
 #    review rounds while the gates get greener. These two compare the design against ITSELF.
-run "4/13  sentinel meanings (one NULL, one meaning)"   ./scripts/check-sentinel-meanings.py
-run "5/13  vocabulary collisions (one mechanism)"       ./scripts/check-vocabulary-collisions.py
+run "4/14  sentinel meanings (one NULL, one meaning)"   ./scripts/check-sentinel-meanings.py
+run "5/14  vocabulary collisions (one mechanism)"       ./scripts/check-vocabulary-collisions.py
 
 # 6. Docs integrity — cheap, and catches spec/prose drift.
-run "6/13  documentation integrity"                     python3 scripts/check-docs.py
+run "6/14  documentation integrity"                     python3 scripts/check-docs.py
 
 # 7-8. THE SUBJECT AXIS. Everything above rebuilds the schema from the SPEC FILES and asks whether
 # the spec is self-consistent. None of it can answer "did the migration APPLY?" — the wrong question
@@ -72,7 +72,7 @@ esac
 #    digest reads, straight from pg_attribute, and fails unless each is digested or excluded WITH A
 #    WRITTEN REASON. r6 found `proisstrict` and `attacl` missing for the same cause: the previous
 #    list was assembled from the sabotages someone had already run.
-run "7/13 catalog coverage (no silently narrower digest)" \
+run "7/14 catalog coverage (no silently narrower digest)" \
     python3 ./scripts/check-catalog-coverage.py
 
 # ⭐ 8. BEHAVIOUR, not structure — Phase 6 #2, fork (a) (user decision 2026-08-25).
@@ -87,20 +87,20 @@ run "7/13 catalog coverage (no silently narrower digest)" \
 # Skipped in the `pre` phase BY DESIGN: with 0027 unapplied every assertion is vacuous, and the
 # harness says so itself rather than passing.
 if [ "${M4_PHASE:-pre}" = "post" ]; then
-  run "8/13 schema ASSERTIONS (behaviour, against the live schema)" ./scripts/run-schema-assertions.sh
+  run "8/14 schema ASSERTIONS (behaviour, against the live schema)" ./scripts/run-schema-assertions.sh
 else
   echo
-  echo "═══ 8/13 schema ASSERTIONS — SKIPPED, M4_PHASE=pre ═══"
+  echo "═══ 8/14 schema ASSERTIONS — SKIPPED, M4_PHASE=pre ═══"
   echo "    0027 is not applied, so every assertion would be vacuous. NOT a pass."
 fi
 
 # 8. Is the manifest the gate trusts still what the schema produces? Without this the gate can be
 #    perfectly rigorous about yesterday's shape.
-run "9/13 manifest is current (gen-m4-manifest.py --check)" \
+run "9/14 manifest is current (gen-m4-manifest.py --check)" \
     python3 ./scripts/gen-m4-manifest.py --check
 
 # 8. Does the DEPLOYED catalog match, BY DEFINITION and not merely by name?
-run "10/13 live catalog matches M4_PHASE=${M4_PHASE:-pre}" \
+run "10/14 live catalog matches M4_PHASE=${M4_PHASE:-pre}" \
     python3 ./scripts/check-live-schema.py "$LIVE_FLAG"
 
 # ⭐ ADDED 2026-08-26, FORK (a) STEP 3 — AND IT IS THE POINT OF THE STEP, NOT A DETAIL.
@@ -111,7 +111,7 @@ run "10/13 live catalog matches M4_PHASE=${M4_PHASE:-pre}" \
 # removal — this repo has shipped a working gate with no caller three times.
 # `--local` here because the suite's other nine gates are all local; `--prod` is the M4-β gate and
 # belongs to plan Task 9, where the subject that matters is production.
-run "11/13 anon exposure + M4 relations are session-role read-only (RULE 3)" \
+run "11/14 anon exposure + M4 relations are session-role read-only (RULE 3)" \
     python3 ./scripts/check-anon-exposure.py --local
 
 # ⭐⭐ 12. ⟳ r8 M4 (claude) — THE ONLY GATE THAT EXECUTES EITHER FORK-(a) INSTRUMENT AGAINST A
@@ -127,7 +127,7 @@ run "11/13 anon exposure + M4 relations are session-role read-only (RULE 3)" \
 #
 # ⚠ It writes to the LOCAL cluster. Two of these running at once corrupt each other — see the
 # harness header. Do not run this suite concurrently with a reviewer.
-run "12/13 the live gate is LOAD-BEARING (mutate-live-schema-check.sh, 29 mutations)" \
+run "12/14 the live gate is LOAD-BEARING (mutate-live-schema-check.sh, 29 mutations)" \
     ./scripts/mutate-live-schema-check.sh
 
 # ⭐⭐ 13. THE REASONS THEMSELVES ARE EXECUTED, not re-read — added 2026-08-26.
@@ -137,8 +137,28 @@ run "12/13 the live gate is LOAD-BEARING (mutate-live-schema-check.sh, 29 mutati
 # the commit that fixed the fourth, which then survived both halves of rounds 8 AND 9.
 # Six of the eighteen rules say "column X is not digested because renderer Y covers it, and Y IS
 # digested". That is a claim about a hash: change X, the digest must move. This runs them.
-run "13/13 the written EXCLUSION REASONS are true (verify-exclusion-reasons.py)" \
+run "13/14 the written EXCLUSION REASONS are true (verify-exclusion-reasons.py)" \
     python3 ./scripts/verify-exclusion-reasons.py
+
+# 14. ⛔ 05_assert.sql IS NOT A MIGRATION, AND THIS IS THE MECHANICAL PROOF.
+#     It holds `execute p_sql` (an arbitrary-SQL executor) and `delete from profiles`. If either
+#     reaches supabase/migrations/, both are queued for PRODUCTION.
+#
+# ⚠ THE PLAN'S VERSION OF THIS GUARD IS A FALSE POSITIVE, MEASURED 2026-08-26 against the real 0027:
+#       ! grep -qE "execute p_sql|delete from profiles" supabase/migrations/*.sql   ->  FAILS
+#     All four matches are COMMENT LINES in 04_artifacts.sql discussing the account-erasure cascade.
+#     A gate that is red when nothing is wrong gets disabled, so the comment lines are stripped first.
+#     It was also weak the other way: 05_assert.sql matches those two strings only 3 times in 2517
+#     lines, so a rename would slip past. The signature below adds the assertion vocabulary.
+#
+#     MUTATION-TESTED BOTH DIRECTIONS, which is the only reason to trust a rewritten guard:
+#       0027 as built .................. 0     (control — must pass)
+#       05_assert.sql alone ............ 164
+#       0027 with 05 appended .......... 164   (must catch it)
+#       the plan's version:  4  vs  7          (cannot discriminate)
+run "14/14 05_assert.sql is NOT in any migration (arbitrary-SQL executor + profile deleter)" \
+    bash -c '! grep -hv "^[[:space:]]*--" supabase/migrations/*.sql \
+               | grep -qE "execute p_sql|delete from profiles|assert_raises|ASSERTION FAILED"'
 
 echo
 if [ "$fail" -eq 0 ]; then

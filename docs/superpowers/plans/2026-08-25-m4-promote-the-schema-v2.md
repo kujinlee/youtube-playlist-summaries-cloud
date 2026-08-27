@@ -1039,11 +1039,18 @@ T10 ── any time  ┘             ╚═▶ ⚡ UNSEEDED M4-α FIRES on every
 
 ## Gates for the milestone
 
-1. `M4_PHASE=post ./scripts/check-schema-gates.sh` — **nine checks, numbered 1-9, all green**: the
-   six originals (1-6), the catalog-coverage ratchet (7), the manifest-currency ratchet (8), the
-   live-catalog gate (9). ⛔ **The
+1. `M4_PHASE=post ./scripts/check-schema-gates.sh` — **FOURTEEN checks, numbered 1-14, all green**:
+   the six originals (1-6), the catalog-coverage ratchet (7), the schema assertions (8, `post` only),
+   the manifest-currency ratchet (9), the live-catalog gate (10), anon exposure / RULE 3 (11), the
+   live-gate mutation harness (12), the executed exclusion reasons (13), and the `05_assert.sql`
+   migration guard (14). ⛔ **The
    variable is not optional once `0027` exists** — without it the suite exits 2 by design (Task 3
    Step 7). Before `0027`, use `M4_PHASE=pre`.
+   ⟳ *T7 (2026-08-26): this said **"nine checks, numbered 1-9"** while the script ran thirteen, and it
+   carried a `⟳ r5 M` note — quoted below — warning that this exact line had ALREADY been wrong once.
+   It went stale again the moment gates 11-13 landed. **A hand-maintained count of a script's contents
+   is a second representation of the script**, and this one has now drifted twice; the honest fix is
+   that the SCRIPT prints `x/14` labels and this list names them rather than counting them.*
    ⟳ *r5 M (codex): this said "nine checks, numbered 0-8" and named a check (0) the script does not
    have. A gate list is the one place a miscount is load-bearing — a reader ticking nine items off a
    script that prints eight resolves the difference by assuming they missed one.*
