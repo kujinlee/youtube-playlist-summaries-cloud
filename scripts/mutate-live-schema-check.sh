@@ -262,18 +262,36 @@ SQL
     # that lands, `rest.count(".")` and `rest.split(".", 1)[0]` silently stop matching, the
     # hand-written fixtures stay green, and a column-only harness stays green too. Each claimed kind
     # now sabotages a REAL database and requires RED, which is this file's own stated standard.
+    # ⛔⛔ ⟳ r3 HIGH 1 — THE POLICY PROBE COULD NOT FAIL FOR THE REASON IT WAS ADDED, AND THE EXIT
+    # CODE COULD NOT TELL. MEASURED: with `unexpected()` neutered to `return set()` on a temp copy,
+    # the POLICY probe still went red — because `_policies()` is spliced into the **table:** digest
+    # (`m4_catalog.py:330`), so a new policy makes `table:video_artifacts` REDEFINED and breaks the
+    # subset test. Mutation 27 already covers that. The tick was earned by pre-existing coverage.
+    #
+    # This is r8 B1's shape verbatim, and this file already states the rule: *a token is only a
+    # discriminator if the control cannot contain it.* So the probes stop reading the exit code and
+    # match the DRIFT SENTENCE, which only `unexpected()` can produce.
+    drift_out() { python3 ./scripts/check-live-schema.py --database "$1" --expect-present 2>&1; }
     probe_kind() { # label  mutate-sql  undo-sql
+      local out
       db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
 $2
 SQL
-      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
-      report "⭐ backlog 65: an unexpected $1 on an M4-OWNED relation -> FAILS" fail "$r"
+      # ⚠ CAPTURE FIRST, MATCH SECOND — never pipe into `grep -q` under `set -o pipefail`; this file
+      # measured that reporting failure on the very runs where the token WAS found.
+      out=$(drift_out "${PREFIX}_raw")
+      case "$out" in *"EXIST ON A RELATION M4 OWNS"*) r=pass ;; *) r=fail ;; esac
+      report "⭐ backlog 65: an unexpected $1 names DRIFT (not merely a red gate)" pass "$r"
       db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
 $3
 SQL
       gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
       report "…and undoing the $1 goes GREEN again" pass "$r"
     }
+
+    out=$(drift_out "${PREFIX}_raw")
+    case "$out" in *"EXIST ON A RELATION M4 OWNS"*) r=fail ;; *) r=pass ;; esac
+    report "CONTROL: an unmutated clone does NOT contain the drift sentence" pass "$r"
 
     probe_kind "POLICY" \
       "create policy m4_mut_pol on public.video_artifacts for select using (true);" \

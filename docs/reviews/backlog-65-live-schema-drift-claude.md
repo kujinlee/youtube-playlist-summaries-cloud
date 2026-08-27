@@ -28,9 +28,9 @@ disabled on day two"* failure the same docstring rejects `MANIFEST == live` for,
 
 **Fix** — `docs/superpowers/specs/m4/accepted-additions.txt` + `load_accepted()`: an exact,
 per-object, **reason-mandatory** allow-list. No patterns (a `*` is refused), only kinds the gate can
-attribute, and the pass line prints the accepted count so the list cannot grow unnoticed.
+attribute, and the pass line prints the accepted NAMES so the list cannot grow unnoticed (r3: it printed a bare count).
 **Verified end-to-end** against a real catalog: undeclared → exit 1 naming the object and the file;
-declared → exit 0 with `1 accepted post-0027 addition(s)`; a *different* object declared → still
+declared → exit 0, the run naming what it accepted; a *different* object declared → still
 exit 1. Author's note: the self-test caught that `col:workspaces.*` parsed — the code was accepting
 a line its own docstring promised to refuse.
 
@@ -64,7 +64,7 @@ fixture-based and cannot catch the other failure: if `CATALOG_SQL` ever quotes t
 hand-written fixtures stay green.
 
 **Fix** — `probe_kind` now sabotages a real database for POLICY, CONSTRAINT and TRIGGER, each
-control → mutate → **RED** → undo → **GREEN**. Harness **48 → 54** assertions, exit 0.
+control → mutate → **RED** → undo → **GREEN**. Harness **48 → 55** assertions, exit 0 (54 at the time of writing; round 3 added the drift-sentence control).
 
 ## LOW 1 ✅ FIXED — "an added function is caught by `check-anon-exposure.py`" holds only for a
 `security definer` function `anon` may EXECUTE; RULE 3 iterates the *manifest's* functions, so an
@@ -91,7 +91,7 @@ a reviewed PR.
 | | |
 |---|---|
 | self-test | **110/110** (was 95; 67 before this slice) |
-| mutation harness | **54/54**, exit 0 |
+| mutation harness | **55/55**, exit 0 |
 | HIGH scenario | executed end-to-end: fail → declare → pass, and a foreign acceptance does not silence |
 | both refusals | executed: dotted-on-owned → exit 2; empty namespace → exit 2; dotted-on-foreign → exit 0 |
 | prod / local | `--prod --expect-present` exit 0 over 161 objects; local exit 0. Production read-only throughout |

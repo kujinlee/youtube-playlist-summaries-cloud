@@ -310,7 +310,12 @@ def unexpected(live: set[str], manifest: set[str],
         n = name_of(o)
         kind, _, rest = n.partition(":")
         if kind not in ATTRIBUTABLE_KINDS or rest.count(".") != 1:
-            continue  # `ambiguous()` has already refused the run for these — see below
+            # ⟳ r3 LOW 1: this said "`ambiguous()` has already refused the run for these", which
+            # the r2 MEDIUM 1 narrowing made false BOTH ways — `ambiguous` never refuses for a
+            # non-attributable kind, and no longer refuses for a dotted name on a non-owned
+            # relation. Skipping is correct on its own terms: an object this loop cannot attribute
+            # to an owned relation is not drift. Do not read a refusal guarantee into it.
+            continue
         if rest.split(".", 1)[0] in owned and n not in known:
             out.add(o)
     return out
@@ -344,8 +349,15 @@ def load_accepted(path: str = ACCEPTED) -> set[str]:
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            obj, sep, reason = line.partition("#")
-            obj, reason = obj.strip(), reason.strip()
+            # ⟳ r3 LOW 3: `partition("#")` split `col:workspaces.a#b  # 0028 reason` at the FIRST
+            # `#`, accepting `col:workspaces.a` — an entry that silences a different object than it
+            # names, which is the one thing an allow-list must never do. The comment marker must be
+            # preceded by whitespace (or start the line), so a `#` inside a quoted identifier is
+            # part of the name.
+            m = re.search(r"(?:^|\s)#", line)
+            obj = line[:m.start()].strip() if m else line.strip()
+            reason = line[m.end():].strip() if m else ""
+            sep = bool(m)
             if not sep or not reason:
                 raise ValueError(
                     f"{path}:{lineno}: `{obj}` carries no reason. Every accepted addition states "
@@ -357,6 +369,11 @@ def load_accepted(path: str = ACCEPTED) -> set[str]:
             # someone believes is wider than it is, is worse than one that is refused. Caught by this
             # file's own self-test, which asserted the refusal the docstring promised before the code
             # performed it.
+            if "@" in obj:
+                raise ValueError(
+                    f"{path}:{lineno}: `{obj}` contains `@`, which separates a catalog name from its "
+                    "digest.\nAn entry carrying one cannot be matched unambiguously against a live "
+                    "object — r3-codex HIGH.")
             if any(c in rest for c in "*%"):
                 raise ValueError(
                     f"{path}:{lineno}: `{obj}` looks like a PATTERN. Entries are matched literally, "
@@ -398,14 +415,28 @@ def ambiguous(live: set[str], manifest: set[str]) -> set[str]:
     out = set()
     for o in live:
         kind, _, rest = name_of(o).partition(":")
-        if kind not in ATTRIBUTABLE_KINDS or rest.count(".") == 1:
+        if kind not in ATTRIBUTABLE_KINDS:
             continue
+        if rest.count(".") == 1 and o.count("@") == 1:
+            continue    # the ordinary, decidable shape
         # ⟳ r-claude MEDIUM 1: only DECIDABLE-AND-RELEVANT ambiguity refuses the run. A dotted
         # string is a problem only if SOME reading of it lands on a relation M4 owns; if no prefix
         # is owned, the object cannot be `unexpected` under ANY reading, so refusing would destroy
         # the verdict without being able to change it.
         parts = rest.split(".")
-        if any(".".join(parts[:i]) in owned for i in range(1, len(parts))):
+        on_owned = any(".".join(parts[:i]) in owned for i in range(1, len(parts)))
+        # ⛔ r3-codex HIGH — THE SAME CLASS AS THE DOT, AND I FIXED ONLY THE DOT. Every catalog string
+        # is `name@digest`, so `name_of` splits at the FIRST `@`. A column literally named
+        # "retention_class@shadow" renders `col:workspaces.retention_class@shadow@<digest>` and
+        # name_of returns `col:workspaces.retention_class` — the name of a DIFFERENT column. MEASURED:
+        # with only `col:workspaces.retention_class` on the accept-list, `verdict` returned True while
+        # the shadow column sat unaccepted on an owned relation. An allow-list entry silencing an
+        # object it does not name is the one thing it must never do.
+        # This is the FOURTH instance-not-class in this slice: I had just fixed `#` inside an
+        # identifier (r3 LOW 3) and did not carry it to `@`.
+        if rest.count(".") != 1 and on_owned:
+            out.add(o)
+        elif o.count("@") != 1 and (parts[0] in owned or on_owned):
             out.add(o)
     return out
 
@@ -685,6 +716,18 @@ def self_test() -> int:
 
     check("a normal one-dot object is NOT ambiguous", ambiguous(set(M), M), set())
 
+    # ⟳ r3-codex HIGH — an `@` INSIDE an identifier. `name_of` splits at the first `@`, so the live
+    # object below is indistinguishable from `col:workspaces.retention_class`, and an accept-list
+    # entry for THAT column silenced THIS one. Same class as the dot, and as `#` in load_accepted.
+    shadow = "col:workspaces.retention_class@shadow@d1"
+    check("codex High — an `@` inside an identifier is AMBIGUOUS, not silently attributed",
+          ambiguous({shadow}, M), {shadow})
+    check("…so an accept entry for a DIFFERENT column cannot silence it (main refuses first)",
+          bool(ambiguous(set(M) | {shadow}, M)), True)
+    check("an `@`-bearing object on a NON-owned relation does not refuse the run",
+          ambiguous({"col:playlists.a@b@d2"}, M), set())
+    check("an ordinary name@digest object is NOT flagged", ambiguous(set(M), M), set())
+
     # ⟳ r-claude MEDIUM 1 — the refusal is scoped to ambiguity that could CHANGE the verdict.
     off = "col:usage_counters.v1.2_flag@z9"   # `usage_counters` is not an M4-owned relation
     check("a dotted object on a NON-owned relation does NOT refuse the run",
@@ -781,7 +824,10 @@ def main() -> int:
             return 2
     try:
         manifest = load_manifest(a.manifest)
-        accepted = load_accepted(a.accepted)
+        # ⟳ r3 LOW 2: this loaded unconditionally, so one bad line in a file that ABSENT MODE
+        # NEVER READS took `--expect-absent` to exit 2 — gate 10/15 in the pre phase, the
+        # m4-base-db.sh postcondition, and five harness mutations. Only present mode consults it.
+        accepted = load_accepted(a.accepted) if a.expect_present else set()
         # ⟳ r5 M5 (claude) / r5 H (codex): WHO answered, measured on the same connection, before the
         # verdict. The subject used to be inferred from whether an env var was set, so pointing
         # CLAUDE_RO_DATABASE_URL at a local scratch database as `postgres` printed
@@ -817,13 +863,32 @@ def main() -> int:
             print(f"CANNOT RUN — {len(murky)} catalog object(s) carry a DOT inside an identifier, so\n"
                   "the relation they belong to cannot be read out of the catalog string (it is built\n"
                   "as relname || '.' || objectname, unquoted). Guessing would either raise a false\n"
-                  "alarm or silently miss an addition. Treat this as NOT RUN.\n", file=sys.stderr)
+                  "alarm or silently miss an addition. Treat this as NOT RUN.\n"
+                  # ⟳ r3 MEDIUM 3: this printed no remedy at all, which is round 2's HIGH 1 verbatim
+                  # (a refusal an operator cannot clear) on the neighbouring branch. The accept-list
+                  # CANNOT express a two-dot name and the manifest is derived, so the only real
+                  # actions are renaming the object or quoting the separator in CATALOG_SQL. Say so,
+                  # rather than leaving the operator to discover it under a red production gate.
+                  "WHAT TO DO — there are exactly two, and neither is 'regenerate something':\n"
+                  "  1. RENAME the offending object so its name carries no dot. This is the only\n"
+                  "     operator-side fix, and it is usually right: a dot in an identifier is a\n"
+                  "     trap for every tool that renders `relation.name`.\n"
+                  "  2. Quote the separator in m4_catalog.CATALOG_SQL and regenerate the manifest\n"
+                  "     (all 161 entries change). That is a code change in its own slice, NOT an\n"
+                  "     action available while this gate is red.\n"
+                  "⚠ The accept-list CANNOT clear this: load_accepted refuses a two-dot name, and\n"
+                  "  the refusal runs BEFORE the verdict, so nothing in it is consulted.\n",
+                  file=sys.stderr)
             for line in report(murky, "?"):
                 print(line, file=sys.stderr)
             return 2
 
     if verdict(live, manifest, mode, accepted):
-        extra = (f"; {len(accepted)} accepted post-0027 addition(s)" if accepted else "")
+        # ⟳ r3 LOW 4: this printed a bare COUNT, and only on the PASS path, while
+        # accepted-additions.txt claimed "the gate PRINTS the accepted count on every pass, so the
+        # list cannot grow unnoticed". A number nothing compares to an expectation is not a ratchet;
+        # the NAMES are what a reader can actually check against the file and the git diff.
+        extra = ("; accepting " + ", ".join(sorted(accepted)) if accepted else "")
         print(f"live schema [{subject}]: M4 is {mode.upper()} as expected — checked all "
               f"{len(manifest)} objects, BY DEFINITION not just by name "
               f"({summarise(manifest)}){extra}")
@@ -851,7 +916,12 @@ def main() -> int:
             for line in report(missing, "✗"):
                 print(line, file=sys.stderr)
         if redefined:
-            print(f"\n⛔ AND {len(redefined)} object(s) EXIST BUT DO NOT MATCH THEIR DEFINITION —\n"
+            # ⟳ r3 MEDIUM 2: the drift branch below got a conditional joiner and THIS one — the
+            # identical bug, 26 lines up, in the same function — did not. Reachable whenever
+            # `redefined` is non-empty and `missing` is empty, which is most of the mutation suite
+            # (a DISABLED trigger, a replaced body, RLS off). Fixed as a CLASS, not an instance.
+            j2 = "AND " if missing else ""
+            print(f"\n⛔ {j2}{len(redefined)} object(s) EXIST BUT DO NOT MATCH THEIR DEFINITION —\n"
                   "   the name is there and the behaviour is not. A DISABLED trigger, a "
                   "`create or replace`d\n   function body, or a constraint weakened to "
                   "`check (true)` all look like this:\n", file=sys.stderr)

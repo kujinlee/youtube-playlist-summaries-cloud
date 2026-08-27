@@ -20,7 +20,10 @@
 #   1. EXACT names only — `kind:relation.name`. No wildcards, no prefixes. One line, one object.
 #   2. EVERY entry carries a reason after `#`. An entry without one is a parse ERROR, not a warning:
 #      an unexplained exemption is indistinguishable from a mistake.
-#   3. The gate PRINTS the accepted count on every pass, so the list cannot grow unnoticed.
+#   3. The gate PRINTS THE ACCEPTED NAMES on every pass, so an entry cannot be added without
+#      appearing in the log next to the verdict. (⟳ r3 LOW 4 / r3-codex LOW: this said
+#      "the accepted count", and a bare number nothing compares to an expectation is not a
+#      ratchet — a reader can check NAMES against this file and the git diff.)
 #
 # An entry belongs here only when the addition is intended and reviewed. If an object appears that
 # nobody meant to add, the fix is to drop it from the database — not to add a line here.
