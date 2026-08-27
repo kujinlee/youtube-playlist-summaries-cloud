@@ -976,8 +976,21 @@ def run_suite(tmp: Path):
     #   2. A CONTROL RUN BEFORE THE LOOP. The baseline check at the bottom of this function already
     #      existed and would have caught it — after 58 wrong verdicts had been printed. A control
     #      that runs last can only ever explain the wreckage; this one refuses to produce it.
+    # ⛔ NO SILENT FALLBACK TO THE SHARED DATABASE (added 2026-08-27, measured while auditing agent
+    # interference). This used to be `if m4-base-db.sh exists:` with NO else — so a missing script
+    # left `M4_DB` unset, and `verify-schema.sh:90` does `DB="${M4_DB:-postgres}"`. The harness would
+    # then mutate the ONE database every other tool on the machine reads, WITHOUT SAYING SO. The
+    # script is repo-tracked, so its absence means a broken checkout, not a supported configuration —
+    # and "cannot run" is a failure, never a quiet downgrade onto shared state.
+    if not (REPO / "scripts" / "m4-base-db.sh").exists():
+        print("CANNOT RUN — scripts/m4-base-db.sh is missing, so no private scratch database can be\n"
+              "built. Without it this harness would fall through to the SHARED `postgres` database\n"
+              "(verify-schema.sh: DB=\"${M4_DB:-postgres}\") and mutate the subject every other gate\n"
+              "and every concurrent reviewer reads. Restore the script. Treat this as NOT RUN.",
+              file=sys.stderr)
+        return 2
     base_db = None
-    if (REPO / "scripts" / "m4-base-db.sh").exists():
+    if True:
         base_db = f"m4_mutate_base_{os.getpid()}"
         p = subprocess.run([str(REPO / "scripts" / "m4-base-db.sh"), base_db],
                            capture_output=True, text=True, stdin=subprocess.DEVNULL)

@@ -117,9 +117,11 @@ def load_manifest(path: str = MANIFEST) -> set[str]:
     So state the defence honestly, because a reader who believes this file self-authenticates will
     not look for the real one:
         * TRUNCATION and partial writes  -> caught here.
-        * A DELIBERATE OR MISTAKEN EDIT  -> caught by **gate 7** (`gen-m4-manifest.py --check`),
+        * A DELIBERATE OR MISTAKEN EDIT  -> caught by **gate 9/15** (`gen-m4-manifest.py --check`),
           which re-derives the set by executing the schema, and by review of the diff in git.
-    Gate 7 is therefore load-bearing, not a convenience — which is why r5 B3 (it could not run in
+    ⟳ r3 LOW 4: this cited "gate 7" twice; gate 7 is `check-catalog-coverage.py`
+    (`check-schema-gates.sh:75`) and the manifest re-derivation is gate 9/15 (`:99`).
+    Gate 9 is therefore load-bearing, not a convenience — which is why r5 B3 (it could not run in
     the post phase, the one phase where this manifest carries the production assertion) was Blocking.
     """
     if not os.path.exists(path):
@@ -908,6 +910,16 @@ def main() -> int:
               file=sys.stderr)
         for line in report(bad, "✗"):
             print(line, file=sys.stderr)
+        # ⟳ r3 LOW 2 — THIS ESCALATION WAS UNREACHABLE. It lived inside the `elif` below, which is
+        # entered only when `mode != "absent"`, while testing `mode == "absent"`. So in the one
+        # polarity where a surviving trigger means the PRODUCT IS DOWN, the operator saw the object
+        # list and never the sentence explaining what it costs. Moved to the branch that can run it.
+        # Pre-existing on master; found by the round-3 reviewer reading branch control flow.
+        if any(o.startswith("trg:") for o in bad):
+            print("\n⚠ A SURVIVING TRIGGER ON A LIVE TABLE MEANS THE PRODUCT IS DOWN, not merely\n"
+                  "  untidy — it still calls tables that are gone. Signup, playlist creation and\n"
+                  "  enqueue all fail. This is the state `drop table … cascade` produces.",
+                  file=sys.stderr)
     elif bad:
         missing, redefined = split_residue(live, manifest)
         if missing:
@@ -927,12 +939,7 @@ def main() -> int:
                   "`check (true)` all look like this:\n", file=sys.stderr)
             for o in sorted(redefined):
                 print(f"      ✗ {name_of(o)}", file=sys.stderr)
-        if mode == "absent" and any(o.startswith("trg:") for o in bad):
-            print("\n⚠ A SURVIVING TRIGGER ON A LIVE TABLE MEANS THE PRODUCT IS DOWN, not merely\n"
-                  "  untidy — it still calls tables that are gone. Signup, playlist creation and\n"
-                  "  enqueue all fail. This is the state `drop table … cascade` produces.",
-                  file=sys.stderr)
-        if mode == "present":
+        if True:   # ⟳ r3 LOW 2: was `if mode == "present"`, always true inside this `elif`
             print("\n⚠ A PARTIALLY APPLIED M4 IS THE DANGEROUS STATE: the guard triggers are what\n"
                   "  make the artifact tables append-only. A schema with the tables and without\n"
                   "  their guards accepts writes the design forbids.", file=sys.stderr)
