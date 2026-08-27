@@ -85,9 +85,25 @@ DEFINES = re.compile(
 # is an equally standard spelling and missed too. MEASURED against a two-file fixture ledger before
 # and after. The live catalog covers both when Docker answers — but the ledger is the authority in
 # CI, which is exactly where an unnoticed rename would sit longest.
+# ⟳ r12 HIGH (claude half) — THREE MORE SPELLINGS, ALL FAILING TOWARDS DORMANT.
+# r11 H3 swept two rename spellings and left three. VERIFIED through the real `report()`, each
+# returning rc 0 (dormant) where rc 2 (cannot run — the symbol is gone) is correct:
+#     drop function "record_artifact"(uuid);                          quoted identifier
+#     drop function public."record_artifact"(uuid);                   schema-qualified + quoted
+#     alter function public.record_artifact(uuid) set schema archive; moved out of `public`
+# `set schema` is the worst of the three: the live-catalog arm filters `nspname='public'` and would
+# have been RIGHT, but `exists = ledger or bool(live)` lets the blind ledger overrule the sighted
+# catalog. Every miss lands in the direction that says "no paid caller" — the answer that lets
+# backlog 26's money defect ship.
+#
+# ⚠ The pattern is now `"?SYMBOL"?` because Postgres folds unquoted identifiers to lower case, so
+# `"record_artifact"` and `record_artifact` name the SAME function. A guard that reads one spelling
+# is answering about the text, not about the object.
+_S = rf'"?{SYMBOL}"?'
 DROPS = re.compile(
-    rf"(drop\s+(function|routine)\s+(if\s+exists\s+)?(public\.)?{SYMBOL}\b"
-    rf"|alter\s+(function|routine)\s+(public\.)?{SYMBOL}\b[^;]*\brename\s+to\b)", re.IGNORECASE)
+    rf"(drop\s+(function|routine)\s+(if\s+exists\s+)?(public\.)?{_S}"
+    rf"|alter\s+(function|routine)\s+(public\.)?{_S}[^;]*\brename\s+to\b"
+    rf"|alter\s+(function|routine)\s+(public\.)?{_S}[^;]*\bset\s+schema\b)", re.IGNORECASE)
 
 # Production surface. `tests/` is deliberately NOT here — it is counted separately below.
 # ⟳ r10 M1: `scripts/` ADDED. It holds operational TypeScript that runs against PRODUCTION data —
@@ -95,11 +111,44 @@ DROPS = re.compile(
 # `fix-duplicate-summaries.ts`. A backfill populating the manifest for existing videos is the most
 # plausible FIRST caller of `record_artifact` and would be written before any `lib/` path exists —
 # and the directory was invisible to this guard: not a caller, not a comment, not printed.
-PRODUCTION_DIRS = ("lib", "app", "worker", "components", "scripts")
+# ⟳ r12 MEDIUM (claude half) — THE LIST STILL MISSED PRODUCTION SURFACE, and it is the same class as
+# the r10 M1 finding that produced the list: a hand pass adds the directory it noticed.
+#   `types` ADDED       — `types/index.ts` is tracked and imported across the app.
+#   `middleware.ts`     — repo ROOT, so no directory entry could ever reach it, and it is live
+#                         per-request Next.js code that builds a `@supabase/ssr` client. It needed a
+#                         FILE list, not another directory; that is why one now exists.
+#   `.mjs` ADDED        — r10 M1 admitted `scripts/` AS PRODUCTION SURFACE and then filtered it to
+#                         `.ts`/`.tsx`, so the three `.mjs` files in it were invisible on arrival.
+PRODUCTION_DIRS = ("lib", "app", "worker", "components", "scripts", "types")
+PRODUCTION_FILES = ("middleware.ts",)
 TEST_DIRS = ("tests",)
-SUFFIXES = (".ts", ".tsx")
+TEST_FILES: tuple[str, ...] = ()
+SUFFIXES = (".ts", ".tsx", ".mjs")
+
+# ⛔ THE GUARD'S OWN ORACLE, EXCLUDED WITH A REASON THAT CAN BE CHECKED.
+# Adding `.mjs` above immediately made this guard report ⛔ FIRED with **10 production callers** —
+# all ten were self-test fixtures inside `scripts/ts-comment-spans.mjs`, the comment oracle THIS
+# GUARD CALLS to decide what is a comment. Its fixtures must contain the symbol; that is what they
+# test. A money trigger that cries wolf is retired by whoever is on call, so a false FIRED is not a
+# safe direction either.
+#
+# ⚠ WHY NOT "IGNORE THE SYMBOL INSIDE STRINGS", which is what the SQL half of this file does:
+# in SQL a symbol inside a literal IS data, but in TypeScript a REAL call is
+# `sb.rpc('record_artifact')` — the symbol inside quotes is the call itself. The same rule applied
+# to both languages would blind the guard completely. Two languages, two answers.
+#
+# FALSIFIER FOR THIS EXCLUSION — it fails loudly rather than rotting: if this file ever stops being
+# the oracle (`SPANS_TOOL` no longer points at it), the assert below fires.
+TOOLCHAIN_EXCLUDED = ("scripts/ts-comment-spans.mjs",)
 
 SPANS_TOOL = ROOT / "scripts/ts-comment-spans.mjs"
+
+# The exclusion above is justified ONLY because this file is the oracle. If SPANS_TOOL is ever
+# repointed, the exclusion becomes an unexplained blind spot on the money path — so it fails here,
+# loudly, at import, rather than quietly widening the hole.
+assert str(SPANS_TOOL.relative_to(ROOT)) in TOOLCHAIN_EXCLUDED, (
+    f"TOOLCHAIN_EXCLUDED must name the comment oracle ({SPANS_TOOL.relative_to(ROOT)}); "
+    "otherwise a production .mjs is being skipped for no stated reason")
 
 
 class CannotRun(RuntimeError):
@@ -144,20 +193,38 @@ def comment_spans(files: list[Path]) -> dict[str, list[tuple[int, int]]]:
     return {k: [(a, b) for a, b in v] for k, v in raw.items()}
 
 
-def scan(dirs: tuple[str, ...], root: Path) -> tuple[list[str], list[str]]:
-    """(code hits, comment-only hits) as 'path:line: text'."""
+def scan(dirs: tuple[str, ...], root: Path,
+         files: tuple[str, ...] = ()) -> tuple[list[str], list[str]]:
+    """(code hits, comment-only hits) as 'path:line: text'.
+
+    `files` carries ROOT-LEVEL production modules — `middleware.ts` lives in no directory, so a
+    dirs-only walk could never see it however many directories were added (r12 MEDIUM).
+    """
     candidates: list[Path] = []
+    seen: set[Path] = set()
+    excluded = {root / p for p in TOOLCHAIN_EXCLUDED}
     for d in dirs:
         base = root / d
         if not base.is_dir():
             continue
         for f in sorted(base.rglob("*")):
+            if f in excluded:
+                continue
             if f.suffix in SUFFIXES and f.is_file():
                 try:
                     if SYMBOL in f.read_text(encoding="utf-8"):
                         candidates.append(f)
+                        seen.add(f)
                 except (UnicodeDecodeError, OSError):
                     continue
+    for name in files:
+        f = root / name
+        if f.is_file() and f not in seen:
+            try:
+                if SYMBOL in f.read_text(encoding="utf-8"):
+                    candidates.append(f)
+            except (UnicodeDecodeError, OSError):
+                continue
     spans = comment_spans(candidates)
     code, commented = [], []
     for f in candidates:
@@ -177,14 +244,138 @@ def scan(dirs: tuple[str, ...], root: Path) -> tuple[list[str], list[str]]:
             off += u16(line)
         lines = text.splitlines()
         for i, line in enumerate(lines):
+            # ⟳ r12 BLOCKING (codex, reproduced by the coordinator). This was `line.find(SYMBOL)` —
+            # the FIRST occurrence on the line decided the whole line. MEASURED on
+            # `/* record_artifact historical note */ await sb.rpc('record_artifact');`:
+            # `production callers: 0`, verdict DORMANT, rc 0 — over a real paid caller.
+            #
+            # A comment on the same line as a call is not exotic; it is the normal shape of
+            # `await sb.rpc('record_artifact');  // charges 25c`. One occurrence must never speak
+            # for another, so EVERY occurrence is classified on its own offset.
+            #
+            # A line can now appear in BOTH lists, and that is correct rather than a bug: it really
+            # does contain a mention and a call. `report()` decides on `code` being non-empty, so a
+            # commented twin can no longer mask a caller — the failure this guard exists to prevent.
             col = line.find(SYMBOL)
-            if col < 0:
-                continue
-            at = starts[i] + u16(line[:col])
-            inside = any(a <= at < b for a, b in fspans)
-            entry = f"{f.relative_to(root)}:{i + 1}: {line.strip()[:120]}"
-            (commented if inside else code).append(entry)
+            while col >= 0:
+                at = starts[i] + u16(line[:col])
+                inside = any(a <= at < b for a, b in fspans)
+                entry = f"{f.relative_to(root)}:{i + 1}: {line.strip()[:120]}"
+                bucket = commented if inside else code
+                if entry not in bucket:
+                    bucket.append(entry)
+                col = line.find(SYMBOL, col + len(SYMBOL))
     return code, commented
+
+
+def strip_sql_noise(sql: str) -> str:
+    """SQL with comments blanked, preserving length so offsets stay comparable. PURE.
+
+    ⟳ r12 HIGH (codex, reproduced by the coordinator). `ledger_net_effect` ran its create/drop
+    regexes over RAW text, so PROSE decided whether a production function exists. MEASURED: a file
+    containing `drop function record_artifact(uuid);` followed by
+    `-- TODO: create function record_artifact again if backlog 26 changes` reported
+    `(True, '0028_drop.sql (creates it)')` — the ledger resurrected a dropped money function from a
+    comment, and the guard then reported DORMANT for a symbol that no longer exists.
+
+    Blanking rather than deleting keeps every offset identical, so `max(m.start())` still means what
+    it meant — the fix must not perturb the ordering logic it is protecting.
+
+    ⚠ It must know STRINGS too, not just comments. r11 H1 was a comment scanner that desynchronised
+    on quoting, and the lesson there was that half a lexer is worse than none: `'-- not a comment'`
+    is data, and Postgres bodies are routinely dollar-quoted (`$$ ... $$`, `$tag$ ... $tag$`) with
+    `--` inside them. Block comments NEST in Postgres, so depth is counted rather than flagged.
+    """
+    out = list(sql)
+    i, n = 0, len(sql)
+
+    def blank(a: int, b: int) -> None:
+        """Blank [a, b) but keep newlines, so line numbers and offsets both survive."""
+        for k in range(a, min(b, n)):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        c = sql[i]
+        if c == "'":                                    # single-quoted literal
+            start = i
+            # ⟳ r12 HIGH (claude half) — MY OWN FIX FROM AN HOUR EARLIER DESYNCED HERE.
+            # `''` was treated as the only escape. That is right for a standard string (Postgres
+            # with `standard_conforming_strings=on` reads backslash literally) and WRONG for an
+            # E-string, where `\'` is an escaped quote. MEASURED:
+            #     select E'don\'t';
+            #     drop function record_artifact(uuid);
+            # the lexer closed at `\'`, reopened at the next quote, ran to EOF, blanked the DROP, and
+            # `ledger_net_effect` answered "(True, creates it)" — DORMANT over a dropped money
+            # function. `0027` already uses E-strings on the money path.
+            #
+            # ⚠ The lesson is embarrassing and worth keeping: r11 H1 replaced a hand-rolled comment
+            # scanner with the TypeScript compiler BECAUSE hand-rolled lexers desync on quoting —
+            # and I hand-rolled a SQL lexer forty lines under a docstring citing that finding.
+            escapes_backslash = start > 0 and sql[start - 1] in "Ee" and (
+                start == 1 or not (sql[start - 2].isalnum() or sql[start - 2] == "_"))
+            i += 1
+            closed = False
+            while i < n:
+                if escapes_backslash and sql[i] == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    closed = True
+                    break
+                i += 1
+            if not closed:
+                # An unterminated literal means the lexer lost the file. Blanking to EOF would hide
+                # every DDL after it and answer confidently — the exact failure above. Refuse.
+                raise ValueError(
+                    f"unterminated string literal at offset {start}; the SQL lexer cannot bound it")
+            # ⚠ CONTENTS BLANKED, not merely skipped. Found by this fix's own test: leaving them
+            # intact meant `select '-- create function record_artifact';` still counted as a CREATE.
+            # A symbol name inside a string is DATA. That hole predates r12 — raw text was always
+            # scanned — so the comment fix alone would have been correct about the case it named and
+            # silent about the identical one beside it.
+            blank(start, i)
+            continue
+        if c == "$":                                    # dollar-quoted body: $$ or $tag$
+            m = re.match(r"\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$", sql[i:])
+            if m:
+                tag = m.group(0)
+                end = sql.find(tag, i + len(tag))
+                stop = n if end < 0 else end + len(tag)
+                # Function BODIES live here. `create function` inside a body string is not a
+                # top-level definition of that function, and `raise notice '…'` text is not SQL.
+                blank(i, stop)
+                i = stop
+                continue
+        if c == "-" and sql.startswith("--", i):        # line comment
+            j = sql.find("\n", i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = " "
+            i = j
+            continue
+        if c == "/" and sql.startswith("/*", i):        # block comment, NESTING
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if sql.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                elif sql.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            for k in range(i, min(j, n)):
+                if out[k] != "\n":
+                    out[k] = " "
+            i = j
+            continue
+        i += 1
+    return "".join(out)
 
 
 def ledger_net_effect(migrations_dir: Path) -> tuple[bool, str]:
@@ -197,7 +388,7 @@ def ledger_net_effect(migrations_dir: Path) -> tuple[bool, str]:
         return False, f"{migrations_dir} does not exist"
     exists, decided_by = False, "no migration mentions the symbol"
     for f in sorted(migrations_dir.glob("*.sql")):
-        text = f.read_text(encoding="utf-8")
+        text = strip_sql_noise(f.read_text(encoding="utf-8"))
         last_create = max((m.start() for m in DEFINES.finditer(text)), default=-1)
         last_drop = max((m.start() for m in DROPS.finditer(text)), default=-1)
         if last_create < 0 and last_drop < 0:
@@ -264,8 +455,8 @@ def report(root: Path, migrations_dir: Path, use_live: bool = True) -> int:
         return 2
 
     try:
-        code, commented = scan(PRODUCTION_DIRS, root)
-        test_code, test_commented = scan(TEST_DIRS, root)
+        code, commented = scan(PRODUCTION_DIRS, root, PRODUCTION_FILES)
+        test_code, test_commented = scan(TEST_DIRS, root, TEST_FILES)
     except CannotRun as e:
         print(f"CANNOT RUN — {e}")
         print("  Comment detection is answered by the TypeScript compiler and has NO fallback: the")
@@ -357,6 +548,25 @@ def self_test() -> int:
         lib.write_text(f"const e = 'it\\'s // fine'; await sb.rpc('{SYMBOL}');\n")
         ck("…and an escaped quote does not desynchronise the scanner", 1, run())
 
+        # ⭐⭐ r12 BLOCKING — A REAL COMMENT SHARING A LINE WITH A REAL CALL.
+        # r10 H4 (above) proved a comment-like thing inside a STRING must not hide the call. This is
+        # its mirror and it survived that fix: a GENUINE comment, correctly identified, whose only
+        # crime was coming FIRST. `line.find(SYMBOL)` classified the line by its first occurrence,
+        # so the call after `*/` was recorded as "a comment, not a caller" — `production callers: 0`,
+        # DORMANT, rc 0, over a paid caller.
+        #
+        # Note what this says about the r11 fix that preceded it: replacing the regex scanner with a
+        # real TypeScript parse made comment DETECTION exact and left comment ATTRIBUTION per-line.
+        # An exact answer to the wrong question. Both directions are now covered.
+        lib.write_text(f"/* {SYMBOL} historical note */ await sb.rpc('{SYMBOL}');\n")
+        ck("a real comment BEFORE a real call on one line does not hide it (r12 B1)", 1, run())
+
+        lib.write_text(f"await sb.rpc('{SYMBOL}'); // {SYMBOL} charges 25c\n")
+        ck("…and the same line with the comment AFTER the call still fires", 1, run())
+
+        lib.write_text(f"/* {SYMBOL} then {SYMBOL} twice, both commented */\nexport const a = 1;\n")
+        ck("…while two mentions in ONE comment are still not callers", 0, run())
+
         # A comment AFTER real code on the same line is still a comment.
         lib.write_text(f"const a = 1; // someday: {SYMBOL}\n")
         ck("a trailing comment mentioning the symbol is not a caller", 0, run())
@@ -412,6 +622,41 @@ def self_test() -> int:
         (migs / "0029_restore.sql").write_text(
             f"create function {SYMBOL}(p uuid) returns text as $$ $$;\n")
         ck("…and a later one restoring it is DORMANT again", 0, run())
+        (migs / "0029_restore.sql").unlink()
+
+        # ⭐⭐ r12 HIGH — PROSE MUST NOT BE A SCHEMA OPERATION.
+        # `0028` really drops the function; the COMMENT below it merely talks about recreating it.
+        # The ledger regexes ran over raw text, so the comment won by position and reported
+        # `(True, '0028 creates it)'` — a dropped money function resurrected by a TODO, and the
+        # guard then answering DORMANT for a symbol that does not exist.
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"-- TODO: create function {SYMBOL} again if backlog 26 changes\n")
+        ck("a comment cannot resurrect a dropped symbol (r12 H1)", 2, run())
+
+        # Found by the r12 fix's OWN test, and it predates r12: the same hole with a string literal.
+        # Fixing only the case the finding named would have been correct about `--` and silent about
+        # the identical defect one quote away.
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"select 'create function {SYMBOL} -- someday';\n")
+        ck("…nor can a STRING literal", 2, run())
+
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"do $$ begin raise notice 'create function {SYMBOL}'; end $$;\n")
+        ck("…nor a dollar-quoted body", 2, run())
+
+        (migs / "0028_rename.sql").write_text(
+            f"drop function {SYMBOL}(uuid);\n"
+            f"/* outer /* nested */ create function {SYMBOL}() */\n")
+        ck("…nor a NESTED block comment (Postgres nests them)", 2, run())
+
+        # The mirror: the stripper must not eat a REAL definition. Without this, blanking everything
+        # would pass all four cases above and the guard would be vacuous.
+        (migs / "0029_restore.sql").write_text(
+            f"create function {SYMBOL}(p uuid) returns text as $$ $$;\n")
+        ck("…and a REAL create after the drop still restores it", 0, run())
         (migs / "0028_rename.sql").unlink()
         (migs / "0029_restore.sql").unlink()
 

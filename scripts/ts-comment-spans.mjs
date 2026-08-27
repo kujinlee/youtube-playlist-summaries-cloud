@@ -1,5 +1,13 @@
 #!/usr/bin/env node
-// Print, as JSON, the byte spans of every COMMENT in each TypeScript/TSX file given on argv.
+// Print, as JSON, the UTF-16 CODE-UNIT spans of every COMMENT in each TypeScript/TSX file on argv.
+//
+// ⟳ r12 LOW (codex). This line said "byte spans" and the tool has never emitted bytes — TypeScript's
+// scanner counts UTF-16 code units, so for `const x = '🖼'; // record_artifact` the `//` starts at
+// byte 18 and this prints 16. The CODE is right and the SENTENCE was wrong: the only consumer,
+// `scripts/check-paid-caller-arrival.py`, converts its own offsets with
+// `len(t.encode("utf-16-le")) // 2` precisely because these are UTF-16 units. Changing the tool to
+// emit bytes would have broken the caller to satisfy a comment. Naming the unit is the fix —
+// a wrong contract is worse than none, because the next caller trusts it without measuring.
 //
 //     node scripts/ts-comment-spans.mjs a.ts b.tsx      ->  {"a.ts":[[12,40],[88,101]], ...}
 //     node scripts/ts-comment-spans.mjs --self-test

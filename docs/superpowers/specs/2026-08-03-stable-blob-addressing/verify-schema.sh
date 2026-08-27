@@ -124,7 +124,10 @@ echo "subject database: $DB"
 
 # ⛔ ONLY the `-d` argument changed here. The `$(printf; cat; printf)` composition is the original —
 # see the 10-minute-hang warning in the header. Change the file list and the database, never the shape.
-SQL=$(printf 'begin;\n'; cat "${SRC_FILES[@]}"; printf '\n\\echo ALL_STATEMENTS_OK\nrollback;\n')
+# ⟳ r12 MEDIUM (claude half): `PSQL_REACHED` is emitted BEFORE `begin;`, so its presence is a
+# STRUCTURAL answer to "did we reach a psql connected to the subject database?" — replacing the
+# substring list below, which was a Docker-wording guess wearing a comment that claimed otherwise.
+SQL=$(printf '\\echo PSQL_REACHED\nbegin;\n'; cat "${SRC_FILES[@]}"; printf '\n\\echo ALL_STATEMENTS_OK\nrollback;\n')
 OUT=$(printf '%s' "$SQL" | docker exec -i "$CONTAINER" \
         psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 2>&1)
 echo "$OUT"
@@ -140,6 +143,36 @@ if ! grep -q ALL_STATEMENTS_OK <<<"$OUT"; then
     echo "⛔ CANNOT RUN — the assertion corpus refused its own preconditions:"
     grep -m3 "CANNOT RUN" <<<"$OUT" | sed "s/^/   /"
     echo "   Treat this as NOT RUN. The schema itself was not judged."
+    exit 2
+  fi
+  # ⟳ r12 MEDIUM (codex). r11 M3 taught this branch that a CANNOT RUN raised BY THE SQL is not a
+  # schema failure — and left the case where the SQL never ran at all. MEASURED:
+  #   PGCONTAINER=definitely_no_such_container M4_DB=postgres ./verify-schema.sh
+  #   -> "Error response from daemon: No such container: …"  then  "❌ schema FAILED", rc 1
+  # No psql, no catalog, no judgement — and a headline blaming the schema. That is the same defect
+  # r11 M3 named, one layer further out: an unreachable SUBJECT reported as a guilty subject.
+  # A reader triaging a red build would go looking for a schema defect that does not exist.
+  #
+  # ⚠ ⟳ r12 MEDIUM (claude half) — THIS TEST USED TO BE A LIST OF SEVEN DOCKER SUBSTRINGS, under a
+  # comment asserting "the test is the TRANSPORT, not the wording of any one Docker message". The
+  # comment was the intention; the code was the guess. VERIFIED to fall through to "❌ schema
+  # FAILED" — six ways to never reach the database, all blamed on the schema:
+  #     FATAL: database "m4_verify_base_9" does not exist   <- THIS SCRIPT CREATES THAT DATABASE
+  #     FATAL: role ... does not exist
+  #     the database system is starting up
+  #     FATAL: sorry, too many clients already
+  #     server closed the connection unexpectedly
+  #     docker: command not found                            <- bash, not the daemon
+  #
+  # The honest test is STRUCTURAL: `\echo PSQL_REACHED` runs before `begin;`, so if it is absent we
+  # never got a psql talking to the subject database — whatever the reason, and without this script
+  # needing to predict how the failure will be worded. My own first fix here was the same defect one
+  # layer out: a lexical guess about a transport question.
+  if ! grep -q PSQL_REACHED <<<"$OUT"; then
+    echo "⛔ CANNOT RUN — the subject database was never reached, so nothing was judged:"
+    printf '%s\n' "${OUT:-（no output at all）}" | head -3 | sed "s/^/   /"
+    echo "   container='${CONTAINER}' database='${DB}'"
+    echo "   Treat this as NOT RUN — this is NOT a schema failure."
     exit 2
   fi
   echo "❌ schema FAILED"; exit 1
