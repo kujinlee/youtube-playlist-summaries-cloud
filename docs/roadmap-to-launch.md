@@ -713,7 +713,11 @@ error, no report, no cleanup. Divergence was routine, not hypothetical: both rep
 > is the milestone spine (M1–M7) for this goal, and **state lives there, not here.** This section is
 > the *history and evidence*; that file is *what happens next*. The anchor for the whole feature is
 > **ADR-0006** — ✅ **`accepted` 2026-08-24 (M3), with ADR-0007**; ADR-0002 is partly superseded.
-> Phase 1 is CLOSED, and **accepted is not implemented** — the schema has still never run. Next: **M4**.
+> Phase 1 is CLOSED. ⟳ **2026-08-27: the schema HAS now run.** M4 wrote `0027` (1,898 lines, 161
+> objects), applied it locally and proved it in both directions; **PR #155 is open and NOT merged**,
+> and production is untouched at release v10 / schema `0026`. Merging is a human gate and applying
+> M4-β is a second one. State stays in the spine — this line exists only because it previously said
+> "the schema has still never run", which stopped being true.
 >
 > ⚠ Added 2026-08-24 after an hour was lost re-deriving a roadmap that already existed, and reaching
 > a conclusion that document had already corrected in itself. Two causes, and only one is naming: the
