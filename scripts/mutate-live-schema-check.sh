@@ -255,6 +255,39 @@ SQL
     gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
     report "…and dropping it goes GREEN again, so the red was THE COLUMN" pass "$r"
 
+    # ⟳ r-claude MEDIUM 3 — `unexpected()` claims FOUR kinds (col/con/trg/pol) and only the COLUMN
+    # had a behavioural probe. The self-test catches a narrowed ATTRIBUTABLE_KINDS, but it is
+    # fixture-based: it cannot catch the other way this breaks. `ambiguous()`'s docstring names
+    # quoting the separator in CATALOG_SQL as the proper fix for the dotted-identifier problem — if
+    # that lands, `rest.count(".")` and `rest.split(".", 1)[0]` silently stop matching, the
+    # hand-written fixtures stay green, and a column-only harness stays green too. Each claimed kind
+    # now sabotages a REAL database and requires RED, which is this file's own stated standard.
+    probe_kind() { # label  mutate-sql  undo-sql
+      db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
+$2
+SQL
+      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+      report "⭐ backlog 65: an unexpected $1 on an M4-OWNED relation -> FAILS" fail "$r"
+      db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL
+$3
+SQL
+      gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+      report "…and undoing the $1 goes GREEN again" pass "$r"
+    }
+
+    probe_kind "POLICY" \
+      "create policy m4_mut_pol on public.video_artifacts for select using (true);" \
+      "drop policy if exists m4_mut_pol on public.video_artifacts;"
+
+    probe_kind "CONSTRAINT" \
+      "alter table public.video_artifacts add constraint m4_mut_chk check (true);" \
+      "alter table public.video_artifacts drop constraint if exists m4_mut_chk;"
+
+    probe_kind "TRIGGER" \
+      "create trigger m4_mut_trg before insert on public.video_artifacts
+         for each row execute function video_artifacts_append_only();" \
+      "drop trigger if exists m4_mut_trg on public.video_artifacts;"
+
     # ⛔ THE STATED BOUNDS, ASSERTED. An unstated bound is read as coverage, so each one that this
     #    gate deliberately does NOT cover gets a case here — if a later change silently widens the
     #    scope, these turn red and the widening is a decision instead of an accident.
@@ -279,7 +312,7 @@ SQL
     fi
 
     db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
-alter table public.videos drop column m4_mut_foreign;
+alter table public.videos drop column if exists m4_mut_foreign;
 create index m4_mut_idx on public.workspace_videos (workspace_id);
 SQL
     if landed idx "select count(*) from pg_indexes where schemaname='public' and indexname='m4_mut_idx';" "the bare INDEX"; then

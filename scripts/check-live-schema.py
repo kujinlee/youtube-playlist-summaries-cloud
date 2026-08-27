@@ -53,6 +53,9 @@ from m4_catalog import (CATALOG_SQL, ENFORCEMENT_COLUMNS, by_kind, label,  # noq
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "live-manifest.txt")
+# ⟳ r-claude HIGH 1: the manifest cannot describe anything past 0027, so later migrations
+# declare their intended additions here. See `load_accepted`.
+ACCEPTED = os.path.join(REPO, "docs", "superpowers", "specs", "m4", "accepted-additions.txt")
 
 # ⚠ OBJECTS ADR-0011 DELETED. These must NEVER exist, in EITHER polarity.
 # MEASURED 2026-08-25: with M4 built from the spec WITHOUT Tasks 1-2 applied, the rollback left
@@ -234,7 +237,8 @@ def owned_relations(manifest: set[str]) -> set[str]:
     return out
 
 
-def unexpected(live: set[str], manifest: set[str]) -> set[str]:
+def unexpected(live: set[str], manifest: set[str],
+               accepted: set[str] | None = None) -> set[str]:
     """Live objects sitting on an M4-OWNED relation that the manifest does not name. PURE.
 
     ⭐ BACKLOG 65. `verdict`'s present branch was `manifest <= live` — a SUBSET test — so a REMOVED
@@ -266,19 +270,41 @@ def unexpected(live: set[str], manifest: set[str]) -> set[str]:
         the catalog rendering and regenerating all 161 manifest entries. The residual hole is a bare
         `create unique index` on an M4 table, which changes semantics without appearing as a `con:`.
         A unique CONSTRAINT is caught, because it renders as `con:relation.name`.
-      * **The 27 manifest objects on FOREIGN relations** — 12 indexes, 7 triggers, 5 constraints and
-        3 columns that M4 adds to the pre-existing `videos`, `playlists`, `jobs` and `profiles`.
-        Those tables are not M4's to bound: any future migration adding a column to `videos` is
-        legitimate, so asserting completeness there would generate false positives forever.
+      * **The 15 manifest objects on FOREIGN relations** — 7 triggers, 5 constraints and 3 columns
+        that M4 adds to the pre-existing `videos`, `playlists`, `jobs` and `profiles`. Those tables
+        are not M4's to bound: any future migration adding a column to `videos` is legitimate, so
+        asserting completeness there would generate false positives forever.
+        ⟳ r-claude MEDIUM 2 (2026-08-27): this said **27, of which 12 indexes**, and BOTH numbers
+        were wrong. They came from a measurement script that parsed `idx:<name>` and took the INDEX'S
+        OWN NAME as its relation — so every index looked foreign. Counted against `pg_index`, **all
+        12 manifest indexes are on M4-OWNED tables** and the foreign total is 15. The error mattered:
+        it told the reader the index blind spot named in the bullet ABOVE sits on relations M4 does
+        not own — i.e. that the hole is harmless — while the two bullets contradicted each other.
+        MEASURED: `create unique index rev_uq on video_artifacts (video_id)` still passes.
       * **Schema-level objects** — `fn:` and `type:` attach to no relation, so "unexpected" is not
-        defined for them. An added function is caught by `check-anon-exposure.py`, not here.
+        defined for them. ⟳ r-claude LOW 1: this claimed an added function is "caught by
+        `check-anon-exposure.py`". That holds only for a `security definer` function `anon` may
+        EXECUTE (its RULE 1); RULE 3 iterates the MANIFEST's functions, so an added one is never in
+        its input. A `security invoker` function, or one granted only to `authenticated`, is caught
+        by neither gate. Stated because the job of this bullet is to BOUND a hole, not close it.
 
-    A legitimate future migration that adds a column to an M4 relation turns this RED until the
-    manifest is regenerated. That is correct and already the standing discipline: the manifest is
-    DERIVED (`gen-m4-manifest.py`), and gate 9 fails when it is stale.
+    ⭐ A LEGITIMATE LATER MIGRATION IS NOT DRIFT, AND UNTIL THE REVIEW IT HAD NO EXIT.
+    ⟳ r-claude HIGH 1 (2026-08-27). This docstring used to say such a case "turns this RED until the
+    manifest is regenerated … gate 9 fails when it is stale." **Both halves were false.**
+    `gen-m4-manifest.py` derives the manifest by applying `build-m4-schema.py`, which reads exactly
+    three spec files — migration 0027 and nothing else — so a column created by 0028 is in neither
+    `before` nor `after`, and `after - before` is unchanged. MEASURED on a scratch clone carrying a
+    simulated 0028 column: the regenerated manifest was byte-identical and did not contain it, while
+    gate 9 stayed GREEN because the manifest was not stale — merely incapable. The gate was therefore
+    permanently red with its own printed remedy unable to clear it, which is exactly the
+    *"red on day one, disabled on day two"* failure this function's docstring rejects
+    `manifest == live` for, one migration later.
+
+    The exit is `accepted-additions.txt` — an explicit, reviewed, per-object allow-list. See
+    `load_accepted`.
     """
     owned = owned_relations(manifest)
-    known = {name_of(o) for o in manifest}
+    known = {name_of(o) for o in manifest} | (accepted or set())
     out = set()
     for o in live:
         n = name_of(o)
@@ -290,7 +316,62 @@ def unexpected(live: set[str], manifest: set[str]) -> set[str]:
     return out
 
 
-def ambiguous(live: set[str]) -> set[str]:
+def load_accepted(path: str = ACCEPTED) -> set[str]:
+    """Objects deliberately added to an M4-owned relation AFTER 0027. PURE apart from the read.
+
+    ⟳ r-claude HIGH 1's fix. `unexpected()` compares live objects against a manifest that CANNOT
+    describe anything past migration 0027 (see its docstring), so without this the first legitimate
+    later migration makes gate 10/15 permanently red with no reachable remedy.
+
+    ⛔ AN ALLOW-LIST IS ALSO THE PLACE TO HIDE THINGS, so it is parsed strictly:
+
+      * EXACT `kind:relation.name` only — no wildcards, no prefixes, one object per line. A pattern
+        would let one entry silence a whole relation, which is how an exemption becomes a blind spot.
+      * A REASON IS MANDATORY. `col:x.y  # 0028 — why` parses; `col:x.y` alone RAISES. An unexplained
+        exemption is indistinguishable from a mistake, and this repo has twice found a gate weakened
+        by an entry nobody could account for.
+      * The kind must be one this gate can actually attribute; accepting `idx:…` here would imply a
+        coverage that `unexpected` does not have.
+
+    A missing file is NOT an error — it means nothing has been accepted, which is the correct state
+    until a migration adds something. An EMPTY set is therefore normal, unlike the manifest.
+    """
+    if not os.path.exists(path):
+        return set()
+    accepted: set[str] = set()
+    with open(path) as f:
+        for lineno, raw in enumerate(f, 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            obj, sep, reason = line.partition("#")
+            obj, reason = obj.strip(), reason.strip()
+            if not sep or not reason:
+                raise ValueError(
+                    f"{path}:{lineno}: `{obj}` carries no reason. Every accepted addition states "
+                    "WHY,\nafter a `#` — an unexplained exemption cannot be told apart from a "
+                    "mistake.")
+            kind, _, rest = obj.partition(":")
+            # ⚠ `*` and `%` are matched LITERALLY here, so `col:workspaces.*` would silence nothing
+            # and fail safe — but it would read as a glob to whoever wrote it, and an exemption
+            # someone believes is wider than it is, is worse than one that is refused. Caught by this
+            # file's own self-test, which asserted the refusal the docstring promised before the code
+            # performed it.
+            if any(c in rest for c in "*%"):
+                raise ValueError(
+                    f"{path}:{lineno}: `{obj}` looks like a PATTERN. Entries are matched literally, "
+                    "so this\nwould accept an object of that exact name and nothing else. Name each "
+                    "object on its own line.")
+            if kind not in ATTRIBUTABLE_KINDS or rest.count(".") != 1:
+                raise ValueError(
+                    f"{path}:{lineno}: `{obj}` is not an exact <kind>:<relation>.<name> for a kind "
+                    f"this gate\nattributes ({'/'.join(ATTRIBUTABLE_KINDS)}). No wildcards: one "
+                    "line accepts exactly one object.")
+            accepted.add(obj)
+    return accepted
+
+
+def ambiguous(live: set[str], manifest: set[str]) -> set[str]:
     """Attributable objects whose relation CANNOT be determined from the catalog string. PURE.
 
     ⟳ BACKLOG 65 REVIEW, codex High + Medium (2026-08-27) — ONE ROOT CAUSE, AND IT IS NOT A PARSER
@@ -313,12 +394,24 @@ def ambiguous(live: set[str]) -> set[str]:
     hold 391 objects and **0** ambiguous ones, so this refusal is unreachable today — which is
     exactly why it must exist before something makes it reachable.
     """
-    return {o for o in live
-            if name_of(o).partition(":")[0] in ATTRIBUTABLE_KINDS
-            and name_of(o).partition(":")[2].count(".") != 1}
+    owned = owned_relations(manifest)
+    out = set()
+    for o in live:
+        kind, _, rest = name_of(o).partition(":")
+        if kind not in ATTRIBUTABLE_KINDS or rest.count(".") == 1:
+            continue
+        # ⟳ r-claude MEDIUM 1: only DECIDABLE-AND-RELEVANT ambiguity refuses the run. A dotted
+        # string is a problem only if SOME reading of it lands on a relation M4 owns; if no prefix
+        # is owned, the object cannot be `unexpected` under ANY reading, so refusing would destroy
+        # the verdict without being able to change it.
+        parts = rest.split(".")
+        if any(".".join(parts[:i]) in owned for i in range(1, len(parts))):
+            out.add(o)
+    return out
 
 
-def verdict(live: set[str], manifest: set[str], mode: str) -> bool:
+def verdict(live: set[str], manifest: set[str], mode: str,
+            accepted: set[str] | None = None) -> bool:
     """PURE. True = pass.
 
     present: every manifest object is live, BY DEFINITION (name@digest), AND nothing UNEXPECTED sits
@@ -341,7 +434,7 @@ def verdict(live: set[str], manifest: set[str], mode: str) -> bool:
         return False
     if mode == "absent":
         return not survivors(live, manifest)
-    return manifest <= live and not unexpected(live, manifest)
+    return manifest <= live and not unexpected(live, manifest, accepted)
 
 
 def residue(live: set[str], manifest: set[str], mode: str) -> set[str]:
@@ -538,16 +631,70 @@ def self_test() -> int:
     # undecidable, and the gate REFUSES rather than picking an error direction.
     ambig_fp = "col:workspaces.audit.seen@z1"   # codex High: column `seen` on table "workspaces.audit"
     check("codex High — a dotted identifier is detected as AMBIGUOUS, not silently attributed",
-          ambiguous({ambig_fp}), {ambig_fp})
+          ambiguous({ambig_fp}, M), {ambig_fp})
     check("…so it does NOT become a false-positive drift report",
           unexpected(set(M) | {ambig_fp}, M), set())
     # codex Medium: the mirror case — an OWNED relation whose own name contains a dot.
     Md = set(M) | {"table:foo.bar@d1"}
     check("codex Medium — an owned relation with a dotted name is AMBIGUOUS too, not silently missed",
-          ambiguous({"col:foo.bar.extra@d2"}), {"col:foo.bar.extra@d2"})
+          ambiguous({"col:foo.bar.extra@d2"}, Md), {"col:foo.bar.extra@d2"})
     check("…and `unexpected` does not pretend to have judged it",
           unexpected(Md | {"col:foo.bar.extra@d2"}, Md), set())
-    check("a normal one-dot object is NOT ambiguous", ambiguous(set(M)), set())
+    # ⟳ r-claude HIGH 1 — a LATER migration's intended object is not drift, and the accept-list is
+    # the only exit (the manifest is derived from 0027 and cannot grow).
+    later = "col:workspaces.retention_class@m28"
+    check("an addition NOT on the accept-list is still drift",
+          unexpected(set(M) | {later}, M, set()), {later})
+    check("an ACCEPTED addition is not drift",
+          unexpected(set(M) | {later}, M, {"col:workspaces.retention_class"}), set())
+    check("…and `verdict` passes with it accepted",
+          verdict(set(M) | {later}, M, "present", {"col:workspaces.retention_class"}), True)
+    check("accepting a DIFFERENT object does not silence this one",
+          unexpected(set(M) | {later}, M, {"col:workspaces.something_else"}), {later})
+
+    # The accept-list is parsed strictly, because it is also the place to hide things.
+    import tempfile as _tf
+
+    def _accepts(body: str):
+        with _tf.NamedTemporaryFile("w", suffix=".txt", delete=False) as fh:
+            fh.write(body)
+        try:
+            return load_accepted(fh.name)
+        finally:
+            os.unlink(fh.name)
+
+    def _raises(body: str) -> bool:
+        try:
+            _accepts(body)
+            return False
+        except ValueError:
+            return True
+
+    check("an entry WITH a reason parses",
+          _accepts("col:workspaces.rc  # 0028 — retention tiering\n"), {"col:workspaces.rc"})
+    check("an entry with NO reason is REFUSED (an unexplained exemption is a mistake)",
+          _raises("col:workspaces.rc\n"), True)
+    check("an entry with an EMPTY reason is REFUSED", _raises("col:workspaces.rc  #\n"), True)
+    check("a WILDCARD is REFUSED — one line accepts exactly one object",
+          _raises("col:workspaces.*  # everything\n"), True)
+    check("a non-attributable kind is REFUSED (accepting idx: would imply coverage we lack)",
+          _raises("idx:some_index  # 0028 — new index\n"), True)
+    check("comments and blank lines are ignored", _accepts("# header\n\n"), set())
+    check("a MISSING accept-list is not an error — it means nothing is accepted",
+          load_accepted(os.path.join(os.sep, "nonexistent", "accepted.txt")), set())
+
+    check("a normal one-dot object is NOT ambiguous", ambiguous(set(M), M), set())
+
+    # ⟳ r-claude MEDIUM 1 — the refusal is scoped to ambiguity that could CHANGE the verdict.
+    off = "col:usage_counters.v1.2_flag@z9"   # `usage_counters` is not an M4-owned relation
+    check("a dotted object on a NON-owned relation does NOT refuse the run",
+          ambiguous({off}, M), set())
+    check("…and it is not drift either, under any reading", unexpected(set(M) | {off}, M), set())
+    check("a dotted object whose PREFIX is an owned relation still refuses",
+          ambiguous({"col:workspaces.audit.seen@z1"}, M), {"col:workspaces.audit.seen@z1"})
+    check("a dotted object whose LONGER prefix is owned also refuses (view case)",
+          ambiguous({"col:video_artifacts_current.a.b@z2"}, M),
+          {"col:video_artifacts_current.a.b@z2"})
 
     # ⛔ THE EMPTY-SET PASS. A manifest naming no table or view makes `unexpected` vacuously clean
     # over ANY database — `main` refuses (exit 2) on exactly this predicate.
@@ -557,7 +704,7 @@ def self_test() -> int:
     check("…and `unexpected` is then vacuously clean, which is why main REFUSES on it",
           unexpected(set(M) | {"col:workspaces.leaked_at@x1"}, no_rels), set())
     check("non-attributable kinds are never ambiguous (fn/idx/type carry no relation)",
-          ambiguous({"fn:f()@a", "idx:i@b", "type:t@c", "table:x@d"}), set())
+          ambiguous({"fn:f()@a", "idx:i@b", "type:t@c", "table:x@d"}, M), set())
 
     # Absent mode asks a different question; drift is meaningless when nothing should exist.
     check("absent mode IGNORES drift entirely",
@@ -610,6 +757,9 @@ def main() -> int:
                          "container. ⟳ r4 B2: without this the gate could only ever read the "
                          "laptop, while the plan said to point it at prod.")
     ap.add_argument("--manifest", default=MANIFEST)
+    ap.add_argument("--accepted", default=ACCEPTED,
+                    help="objects deliberately added to an M4-owned relation after 0027; a "
+                         "missing file means none have been accepted (see load_accepted)")
     a = ap.parse_args()
 
     if a.self_test:
@@ -631,6 +781,7 @@ def main() -> int:
             return 2
     try:
         manifest = load_manifest(a.manifest)
+        accepted = load_accepted(a.accepted)
         # ⟳ r5 M5 (claude) / r5 H (codex): WHO answered, measured on the same connection, before the
         # verdict. The subject used to be inferred from whether an env var was set, so pointing
         # CLAUDE_RO_DATABASE_URL at a local scratch database as `postgres` printed
@@ -661,7 +812,7 @@ def main() -> int:
                   "scripts/gen-m4-manifest.py\nTreat this as NOT RUN.", file=sys.stderr)
             return 2
 
-        murky = ambiguous(live)
+        murky = ambiguous(live, manifest)
         if murky:
             print(f"CANNOT RUN — {len(murky)} catalog object(s) carry a DOT inside an identifier, so\n"
                   "the relation they belong to cannot be read out of the catalog string (it is built\n"
@@ -671,9 +822,11 @@ def main() -> int:
                 print(line, file=sys.stderr)
             return 2
 
-    if verdict(live, manifest, mode):
+    if verdict(live, manifest, mode, accepted):
+        extra = (f"; {len(accepted)} accepted post-0027 addition(s)" if accepted else "")
         print(f"live schema [{subject}]: M4 is {mode.upper()} as expected — checked all "
-              f"{len(manifest)} objects, BY DEFINITION not just by name ({summarise(manifest)})")
+              f"{len(manifest)} objects, BY DEFINITION not just by name "
+              f"({summarise(manifest)}){extra}")
         return 0
 
     gone = forbidden(live)
@@ -719,7 +872,7 @@ def main() -> int:
     # an M4 table; if this branch hung off `bad` like the two above, the gate would exit 1 having
     # printed NOTHING, which is the failure mode this whole file exists to argue against.
     if mode == "present":
-        drift = unexpected(live, manifest)
+        drift = unexpected(live, manifest, accepted)
         if drift:
             # "AND" only when something was already reported. MEASURED 2026-08-27: drift alone
             # printed "⛔ AND 1 object(s) …" as the FIRST line of the output, continuing a sentence
@@ -730,11 +883,21 @@ def main() -> int:
                   "expected set was never regenerated:\n", file=sys.stderr)
             for line in report(drift, "+"):
                 print(line, file=sys.stderr)
+            # ⟳ r-claude HIGH 1: this used to say "regenerate the manifest", which CANNOT clear
+            # this failure — gen-m4-manifest.py derives from three 0027 spec files, so a later
+            # migration's object is in neither `before` nor `after`. MEASURED: regenerating
+            # produced a byte-identical 161-object manifest without the added column, while
+            # gate 9 stayed green because the manifest was not stale, merely incapable.
             print("\n⚠ AN ADDED COLUMN IS NOT COSMETIC ON THESE TABLES. The artifact relations are\n"
                   "  append-only by TRIGGER, and a guard enumerates the columns it protects; a\n"
                   "  column the guards do not know about is writable in a way the design forbids.\n"
-                  "  If the addition is INTENDED, regenerate the manifest and review the diff:\n"
-                  "      python3 scripts/gen-m4-manifest.py", file=sys.stderr)
+                  "\n"
+                  "  IF THE ADDITION IS INTENDED, declare it — one line, with a reason — in\n"
+                  f"      {os.path.relpath(ACCEPTED, REPO)}\n"
+                  "  ⛔ Do NOT regenerate the manifest: it is derived from migration 0027's three\n"
+                  "     spec files, so it CANNOT contain anything a later migration creates, and\n"
+                  "     re-deriving it returns the same 161 objects. Do NOT hand-edit it either —\n"
+                  "     gate 9 re-derives it and would revert the edit.", file=sys.stderr)
     return 1
 
 

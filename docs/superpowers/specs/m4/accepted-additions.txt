@@ -1,0 +1,31 @@
+# ACCEPTED ADDITIONS — objects deliberately added to an M4-owned relation AFTER migration 0027.
+#
+# ⛔ WHY THIS FILE EXISTS. `check-live-schema.py --expect-present` fails when an object appears on a
+# relation M4 owns that `live-manifest.txt` does not name. That manifest is DERIVED by
+# `gen-m4-manifest.py`, which applies `build-m4-schema.py` output — and that reads exactly THREE spec
+# files (01_workspaces.sql, 03_generations.sql, 04_artifacts.sql), i.e. migration 0027 and nothing
+# else. So the manifest is structurally incapable of describing anything a LATER migration creates.
+#
+# MEASURED 2026-08-27 (backlog 65 review, HIGH 1): with a simulated migration 0028 adding
+# `video_artifacts.m0028_retention_class`, the gate went red and told the operator to regenerate the
+# manifest; regenerating produced a byte-identical 161-object file that did not contain the column.
+# The gate's own remedy could not clear it, and gate 9 (`gen-m4-manifest.py --check`) stayed GREEN
+# because the manifest was not stale. Without this file the only exits were hand-editing a derived
+# manifest — which `load_manifest`'s header check and gate 9 exist to forbid — or editing M4's spec
+# files to describe a migration that is not M4.
+#
+# ⚠ THIS IS AN ALLOW-LIST, WHICH MEANS IT IS ALSO THE PLACE TO HIDE THINGS. Three rules keep it
+# honest, all enforced by `load_accepted()` in scripts/check-live-schema.py:
+#
+#   1. EXACT names only — `kind:relation.name`. No wildcards, no prefixes. One line, one object.
+#   2. EVERY entry carries a reason after `#`. An entry without one is a parse ERROR, not a warning:
+#      an unexplained exemption is indistinguishable from a mistake.
+#   3. The gate PRINTS the accepted count on every pass, so the list cannot grow unnoticed.
+#
+# An entry belongs here only when the addition is intended and reviewed. If an object appears that
+# nobody meant to add, the fix is to drop it from the database — not to add a line here.
+#
+# Format:   <kind>:<relation>.<name>   # <migration> — <why it is intended>
+# Example:  col:video_artifacts.retention_class   # 0028 — retention tiering, ADR-0014
+#
+# (No accepted additions yet. Production is exactly migration 0027 as of 2026-08-27.)

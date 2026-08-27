@@ -1,73 +1,100 @@
-# Backlog 65 — drift detection in `check-live-schema.py`: the Claude half
+# Backlog 65 — drift detection in `check-live-schema.py`: the Claude half (INDEPENDENT)
 
-**Date** 2026-08-27 · **Subject** `scripts/check-live-schema.py`, `scripts/mutate-live-schema-check.sh`
-**Codex half** [`backlog-65-live-schema-drift-codex.md`](backlog-65-live-schema-drift-codex.md) — 1 High, 1 Medium, 1 Low, all accepted and fixed.
+**Date** 2026-08-27 · **Subject** `fix/backlog-65-live-schema-drift` @ `0227951`
+**Reviewer** a fresh subagent with full file access, run alone. It was NOT told what Codex found or
+what the author concluded. **Verdict: NOT CONVERGED — 1 High, 3 Medium, 4 Low, 0 Blocking.**
 
-REVIEW GAP: claude — not invoked as an independent fresh-context reviewer. This session is under a
-standing instruction not to spawn subagents, so this half was written by the **implementing agent**.
-That is materially weaker than the process requires: an author reviewing their own work shares every
-blind spot that produced it, which is the exact failure `dual-review-halves-are-not-redundant`
-records. **Re-run this half with a fresh subagent before treating the round as converged.** What
-follows is therefore evidence, not an independent verdict.
+> This half nearly did not happen. The session carried a standing instruction not to spawn subagents,
+> and the author resolved that conflict silently — shipping a self-review under the filename
+> `…-claude.md`, which is exactly the convention a real half uses. **The user challenged it, and the
+> High below is what the challenge bought.** Neither Codex nor the self-review found it.
+> The self-review is retained as [`…-self-review.md`](backlog-65-live-schema-drift-self-review.md).
 
 ---
 
-## 1. What was verified BY EXECUTION, not by reading
+## HIGH 1 — the printed remedy provably could not clear the failure ✅ FIXED
 
-| Claim | How it was falsified |
+The drift failure said *"regenerate the manifest"*, and the docstring justified the whole design with
+*"gate 9 fails when it is stale."* **Both false.** `gen-m4-manifest.py:193-210` computes
+`after - before` by applying `build-m4-schema.py`, which reads exactly three files —
+`01_workspaces.sql`, `03_generations.sql`, `04_artifacts.sql`, i.e. migration 0027. An object created
+by a LATER migration is in neither set.
+
+Measured by the reviewer on a scratch clone with a simulated 0028 column: regenerating produced a
+**byte-identical 161-object manifest without the column**, while gate 9 stayed GREEN — the manifest
+was not stale, merely *incapable*. Gate 10/15 was therefore permanently red on the first legitimate
+migration, with hand-editing (forbidden by gate 9) as the only exit. That is the *"red on day one,
+disabled on day two"* failure the same docstring rejects `MANIFEST == live` for, one migration later.
+
+**Fix** — `docs/superpowers/specs/m4/accepted-additions.txt` + `load_accepted()`: an exact,
+per-object, **reason-mandatory** allow-list. No patterns (a `*` is refused), only kinds the gate can
+attribute, and the pass line prints the accepted count so the list cannot grow unnoticed.
+**Verified end-to-end** against a real catalog: undeclared → exit 1 naming the object and the file;
+declared → exit 0 with `1 accepted post-0027 addition(s)`; a *different* object declared → still
+exit 1. Author's note: the self-test caught that `col:workspaces.*` parsed — the code was accepting
+a line its own docstring promised to refuse.
+
+## MEDIUM 1 — the ambiguity refusal was cluster-wide for a local ambiguity ✅ FIXED
+
+`ambiguous()` scanned all **391** live objects. One dotted identifier *anywhere* in `public` — e.g.
+`col:usage_counters.v1.2_flag` on a relation the manifest never mentions — took the production gate
+to exit 2, and `check-schema-gates.sh` treats that as `fail=1`. Under **both** readings that object
+names a relation that is not owned, so the refusal could not change the verdict; it only destroyed it.
+
+**Fix** — refuse only when some prefix reading lands on an owned relation. Verified: the reviewer's
+`usage_counters` case now exits 0; `col:workspaces.audit.seen` still exits 2.
+
+## MEDIUM 2 — the bounds statement's largest number was wrong, in the hiding direction ✅ FIXED
+
+Claimed *"27 manifest objects on FOREIGN relations — 12 indexes …"*. Counted against `pg_index`:
+**15 foreign (7 trg · 5 con · 3 col), and 0 indexes — all 12 are on M4-OWNED tables.**
+
+The cause was the author's own measurement script parsing `idx:<name>` and taking the index's own
+name as its relation. Its effect was worse than an arithmetic slip: the bullet above names the index
+blind spot as *"a bare `create unique index` on an M4 table"*, and this bullet then implied those
+indexes live on relations M4 does not own — i.e. that the hole is harmless. The reviewer executed it:
+`create unique index rev_uq on video_artifacts (video_id)` **passes**. Corrected in the docstring and
+in `docs/backlog.md`; the hole is now described as being on the money path, which is where it is.
+
+## MEDIUM 3 — three of four claimed kinds had no behavioural proof ✅ FIXED
+
+Only the COLUMN kind was probed. The self-test catches a narrowed `ATTRIBUTABLE_KINDS`, but it is
+fixture-based and cannot catch the other failure: if `CATALOG_SQL` ever quotes the separator — which
+`ambiguous()`'s own docstring proposes as the proper fix — the parsing silently stops matching while
+hand-written fixtures stay green.
+
+**Fix** — `probe_kind` now sabotages a real database for POLICY, CONSTRAINT and TRIGGER, each
+control → mutate → **RED** → undo → **GREEN**. Harness **48 → 54** assertions, exit 0.
+
+## LOW 1 ✅ FIXED — "an added function is caught by `check-anon-exposure.py`" holds only for a
+`security definer` function `anon` may EXECUTE; RULE 3 iterates the *manifest's* functions, so an
+added one is never in its input. The bullet's job is to bound a hole, and it closed it on paper.
+
+## LOW 3 ✅ FIXED — a failed foreign-column probe left `drop column m4_mut_foreign` to abort its block
+under `ON_ERROR_STOP`, so the INDEX probe reported "DID NOT LAND" for its neighbour's failure. Now
+`drop column if exists`.
+
+## LOW 2 and LOW 4 — PRE-EXISTING on `master`, NOT fixed here (deliberate)
+
+- The surviving-trigger escalation at `main()`'s `elif` is unreachable: the branch is entered only
+  when `mode != "absent"`, and the inner condition tests `mode == "absent"`. In absent mode the
+  operator never sees the line telling them the product is down.
+- `load_manifest`'s docstring cites *"gate 7"* for `gen-m4-manifest.py --check`; it is gate **9/15**.
+
+Both predate this branch and are separate subjects. Left for the user to decide rather than widening
+a reviewed PR.
+
+---
+
+## Verification after the fixes
+
+| | |
 |---|---|
-| The guard is load-bearing | Reverted `unexpected()` to `HEAD`, kept the harness → **exactly 1 of 48** assertions went red, and the `✅ every mutation caught` banner disappeared. Harness `exit "$fail"` → 1 |
-| The red is caused by the mutation, not the clone | `green → add column → red → drop column → green`. A red on a scratch clone alone proves nothing |
-| Drift-only failures actually print something | Ran `main()` with one injected column: exit 1, object named, remedy printed |
-| Both refusal branches work | Injected a dotted identifier → exit 2; stripped `table:`/`view:` from the manifest → exit 2. Baseline unchanged at exit 0 |
-| The bound probes really landed | Desynced the index name from its postcondition → `DID NOT LAND (got '0', wanted 1) — treat this bound as NOT RUN`, harness exit 1 |
-| Prod is unaffected | `--prod --expect-present` exit 0 before and after; 161 objects; anon surface still 10 |
+| self-test | **110/110** (was 95; 67 before this slice) |
+| mutation harness | **54/54**, exit 0 |
+| HIGH scenario | executed end-to-end: fail → declare → pass, and a foreign acceptance does not silence |
+| both refusals | executed: dotted-on-owned → exit 2; empty namespace → exit 2; dotted-on-foreign → exit 0 |
+| prod / local | `--prod --expect-present` exit 0 over 161 objects; local exit 0. Production read-only throughout |
 
-## 2. Defects found in my own work, by executing rather than reading
-
-**M1 — the drift report opened with a dangling conjunction.** With drift as the only failure the
-first line read `⛔ AND 1 object(s) …`, continuing a sentence nothing had started, because the block
-was written to follow the missing/redefined reports. Fixed with a joiner conditional on prior output;
-both branches asserted. **A self-test proves the verdict, never the message.**
-
-**M2 — the empty set passes.** `unexpected()` returns `set()` when `owned_relations()` is empty, so a
-manifest that parses but names no table or view would report CLEAN over any database at all. This is
-the same defect class `load_manifest` already guards one level up (r4 B2), reappearing in the new
-code — *the guarantee was carried across in one direction only*, which is this file's own r5 B1
-lesson. `main` now refuses with exit 2, and two self-test cases pin it.
-
-**M3 — a failed probe reddened its neighbour.** Found while falsifying `landed`: the misnamed index
-left `drop index m4_mut_idx` to abort its block under `ON_ERROR_STOP`, so the removed-column
-assertion reported MUTATION SURVIVED for an unrelated reason. Cleanup is now `if exists`. Failing
-loudly is right; failing loudly in the *wrong* assertion sends the next reader to the wrong defect.
-
-## 3. Codex's findings — adjudicated by re-derivation, not accepted on sight
-
-**High + Medium share one root cause, and it is not a parser bug.** `CATALOG_SQL` builds
-`relname || '.' || objectname` unquoted, so `col:workspaces.audit.seen` is *genuinely* both a column
-on `"workspaces.audit"` and a column `"audit.seen"` on `workspaces`. `split` yields Codex's false
-positive; `rsplit` yields its false negative. **Choosing either is choosing which error to make**, so
-the gate refuses (exit 2) instead. Measured on both subjects first: prod and local hold 391 objects
-each and **0** ambiguous ones, so the refusal is unreachable today — which is why it must exist
-before something makes it reachable.
-
-**Low accepted as written**, and it was the sharpest of the three: two bound probes asserted the gate
-*passes*, so if their SQL never landed they would have certified a bound nothing tested.
-
-## 4. Bounds — stated, and asserted as PASSING cases so widening them turns a test red
-
-- **Indexes.** `idx:` carries no relation name; a bare `create unique index` on an M4 table is still
-  invisible. Closing it means changing the catalog rendering and regenerating all 161 manifest
-  entries — its own slice.
-- **The 27 manifest objects on 4 FOREIGN relations** (`videos`, `playlists`, `jobs`, `profiles`).
-  Not M4's to bound: a future migration adding a column to `videos` is legitimate.
-- **`fn:` and `type:`** attach to no relation. Added functions are `check-anon-exposure.py`'s subject.
-- `verdict()` does **not** enforce its own preconditions — `main` does. A future direct caller of
-  `verdict()` bypasses both refusals. Recorded in its docstring; not fixed, because raising from a
-  pure predicate would complicate every existing caller for a hypothetical one.
-
-## 5. Verdict
-
-**CONVERGED on the evidence available — but the round is NOT converged procedurally**, because the
-independent half named above never ran. Nothing here is blocking; the residual risk is that an author
-who missed a defect once will miss it twice.
+**Round 2 verdict: the High and all three Mediums are fixed and each is falsifiable.** Two Lows
+remain, both pre-existing and both recorded rather than silently carried.
