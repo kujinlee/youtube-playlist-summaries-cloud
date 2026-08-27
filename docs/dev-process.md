@@ -8,7 +8,7 @@ Detail lives in four places, each with a different read-trigger:
 
 | File | Read when |
 |---|---|
-| [`docs/process-checklists.md`](process-checklists.md) | you are working a gate — per-task list, post-plan gate, TDD policy, spec contents |
+| [`docs/process-checklists.md`](process-checklists.md) | you are working a gate — per-task list, post-plan gate, TDD policy, spec contents, **qualifying numbers in prose** |
 | [`docs/review-method.md`](review-method.md) | a review round is starting — adversarial review, convergence, the classification passes |
 | [`docs/process-rationale.md`](process-rationale.md) | a rule here looks arbitrary, expensive or wrong |
 | [`docs/plugins.md`](plugins.md) | choosing a skill, or a tool gate misbehaves |
@@ -133,11 +133,12 @@ copy that drifts.
 | `.claude/hooks/check-plan-gate.sh` | the Post-Plan Gate before dispatching subagents |
 | `.claude/hooks/regen-goals-page.sh` | the goals view is rebuilt whenever one of its FIVE sources changes — it is derived, so it is never edited by hand (`/goals`; ADR-0010) |
 | `.claude/hooks/check-schema-gates.sh` | after editing schema, the gates must run before reporting done |
-| `scripts/check-schema-gates.sh` | **one command for all six schema gates** — run this, not the pieces |
+| `scripts/check-schema-gates.sh` | **one command for all THIRTEEN schema gates** — run this, not the pieces |
 | `scripts/check-guard-coverage.py` | every guard classified SHAPE/SEQUENCE; every SEQUENCE guard reconciles and is mutated |
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |
 | `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
+| `scripts/check-paid-caller-arrival.py` | backlog 26's trigger: fires when a non-test caller reaches `record_artifact`; refuses if the symbol was renamed away (`--self-test`: 9 cases) |
 | `scripts/check-docs.py` | documentation integrity |
 | `scripts/check-review-rounds.py` | a review round has BOTH halves, or a written `REVIEW GAP:` reason — never blocks when a reviewer cannot run, only when nobody says so (`--self-test`: 14 cases) |
 | `scripts/check-anchors.py` | every living spec/plan declares the GOAL it belongs to, by a name that survives a rename (ADR-0010; registry `docs/anchors.md`; `--self-test`: 15 cases) |

@@ -9,6 +9,17 @@ independent facts:
   * `workspace_videos.corrections_hash` nullable = "no corrections" OR "nobody
     ever computed this" — round 6 B4, measured on the money path: 2903 rows read
     as "uncorrected" by the top ranking rung.
+    ⚠ HISTORICAL, AND THAT IS THE POINT: the column still exists but is now
+    `text NOT NULL default no_corrections_hash()` (03_generations.sql:61). The
+    fix for a two-meaning sentinel was to REMOVE THE NULL, giving "no
+    corrections" a value of its own. So this is what a closed instance looks
+    like, not an open one — do not go looking for a null here.
+    ⟳ T5 (2026-08-26): the plan said to replace this example because "that
+    column no longer exists". Measured: it does. It stopped being NULLABLE,
+    which is a different fact and a better lesson than its absence would be.
+  * a LIVE one, so the rule is not taught only from history:
+    `video_generations.card is null` = "this generation has produced no card
+    yet" and nothing else. One fact, one null — which is the whole bar.
   * `video_artifacts.generation_id is null` = "this is free" AND "this address
     may be overwritten" — one is a MONEY property, the other an ADDRESSING
     property, and the conflation produced five findings across rounds 8-12.
@@ -41,6 +52,9 @@ from subject_status import subject_banner
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from m4_base_db import read_catalog  # noqa: E402
+
 CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 
 # Tables this spec owns or extends. Same set the guard ratchet uses, for the same
@@ -53,22 +67,28 @@ MEANINGS: dict[tuple[str, str], str] = {
     # ── video_artifacts ─────────────────────────────────────────────────────────
     ("video_artifacts", "generation_id"):
         "this artifact is free and its address may be overwritten",   # ⚠ justified in CONJUNCTION_OK
-    ("video_artifacts", "source_generation_id"):
-        "this artifact was not derived from another generation",
     ("video_artifacts", "start_sec"):        "this artifact does not describe a time span",
     ("video_artifacts", "end_sec"):          "this artifact does not describe a time span",
     ("video_artifacts", "detached_at"):      "this artifact is not detached",
-    ("video_artifacts", "lease_expires_at"): "this artifact is not in flight",
-    ("video_artifacts", "lease_token"):      "this artifact is not in flight",
-    ("video_artifacts", "reserved_at"):      "this artifact is not in flight",
+    # ⛔ FOUR ENTRIES STOOD HERE UNTIL T5 (2026-08-26), all reporting STALE:
+    #   lease_expires_at / lease_token / reserved_at — the RESERVATION protocol ADR-0007 deleted.
+    #   source_generation_id — T3 moved provenance onto `video_artifact_sources`, where the column
+    #     is `text NOT NULL` (04_artifacts.sql:230). A NOT NULL column carries no sentinel, so it
+    #     does not reappear here under the new table; the fact moved out of this ratchet's subject.
+    # ⚠ Each was VERIFIED against the schema before deletion, not deleted on the ratchet's say-so —
+    #   a STALE verdict is a claim about a file, and this ratchet is one of the two whose inventories
+    #   went eight days out of date without anyone noticing.
     # ── video_generations ───────────────────────────────────────────────────────
-    ("video_generations", "reserved_by"):    "no reservation is outstanding for this generation",
+    # ⛔ `reserved_by` STOOD HERE — the same deleted reservation protocol.
     ("video_generations", "card"):           "this generation has produced no card yet",
     ("video_generations", "md_hash"):        "this generation has produced no body yet",
     ("video_generations", "doc_version_major"): "this generation has produced no body yet",
     ("video_generations", "produced_at"):    "this generation has produced nothing yet",
     # ── workspace_videos ────────────────────────────────────────────────────────
-    ("workspace_videos", "corrections"):     "this video carries no correction text",
+    # ⛔ `corrections` STOOD HERE, meaning "this video carries no correction text". ADR-0011 (T2)
+    # removes the column: corrections are per-playlist and live in `videos.data`, which is a JSONB
+    # key rather than a nullable column, so it has no sentinel for this ratchet to police.
+    # VERIFIED ABSENT by this ratchet reporting it STALE before deletion.
     # ── pre-existing tables, recorded rather than excluded ──────────────────────
     ("jobs", "result"):                      "this job has not succeeded yet",
     ("jobs", "error"):                       "this job has not failed",
@@ -113,15 +133,10 @@ def nullable_columns() -> set[tuple[str, str]]:
             f" where table_schema = 'public' and table_name in {TABLES}\n"
             "   and is_nullable = 'YES'\n"
             " order by 1;\nrollback;\n")
-    p = subprocess.run(
-        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres",
-         "-tAq", "-v", "ON_ERROR_STOP=1"],
-        input=sql, capture_output=True, text=True)
-    if p.returncode != 0:
-        print("could not read the catalog — is the local Supabase container running?")
-        print(p.stdout[-1500:] or p.stderr[-1500:])
-        sys.exit(2)
-    out = p.stdout.split("---COLS---", 1)[-1]
+    # ⟳ 2026-08-26 — was a byte-identical copy in three ratchets, all reading `postgres`
+    # directly. Once 0027 was applied there, all three died on `relation "workspaces"
+    # already exists`. `read_catalog` runs it against a guaranteed pre-M4 subject.
+    out = read_catalog(sql, "---COLS---")
     cols = set()
     for ln in out.splitlines():
         ln = ln.strip()

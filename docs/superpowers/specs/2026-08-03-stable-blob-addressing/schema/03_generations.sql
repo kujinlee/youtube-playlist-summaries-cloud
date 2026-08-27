@@ -16,7 +16,7 @@ create function no_corrections_hash() returns text
   language sql immutable
   set search_path = public
   as $$ select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text $$;
-revoke all on function no_corrections_hash() from public, anon, authenticated;
+revoke all on function no_corrections_hash() from public, anon, authenticated, service_role;
 
 -- The canonicalization is `content-hash.ts`'s, reproduced in SQL: CRLF/CR -> LF, strip trailing
 -- newlines, NFC, exactly one trailing newline. VERIFIED byte-identical to the JS on four vectors
@@ -43,24 +43,25 @@ create function corrections_hash_of(p_corrections text) returns text
                      normalize(regexp_replace(regexp_replace(p_corrections, E'\r\n?', E'\n', 'g'),
                                               E'\n+$', ''), NFC) || E'\n', 'sha256'), 'hex')
          end $$;
-revoke all on function corrections_hash_of(text) from public, anon, authenticated;
+revoke all on function corrections_hash_of(text) from public, anon, authenticated, service_role;
 
+-- ⟳ ADR-0011 (2026-08-25) — CORRECTIONS ARE PER-PLAYLIST AND DO NOT LIVE HERE.
+-- This table is workspace-scoped; `videos` is playlist-scoped (0001_core_schema.sql:30). Carrying
+-- `corrections` here collapsed N playlist rows into 1 with no merge rule, and produced nine of the
+-- eleven Blocking/High findings across five review rounds. The truth stays in `videos.data`.
+--
+-- ⚠ WHAT THE DELETED COLUMNS COST, KEPT BECAUSE THE LESSON OUTLIVES THEM. `corrections_hash` was
+-- made NOT NULL by round 6 B4 after a MEASUREMENT: the seed left 2903 of 2904 rows NULL while 99
+-- live videos carried real corrections, and rung 1 — the TOP rung of both view orderings — read the
+-- NULL as "this video has no corrections". A nullable column conflated "no corrections" with
+-- "nobody ever computed this" ON THE RANKING KEY, and the money path went cloud-permanently-stale,
+-- so reconcileClassA returned copyToCloud on EVERY sync, forever. NOT NULL made that conflation
+-- unrepresentable. ADR-0011 goes one better and makes the whole denormalisation unrepresentable —
+-- but the shape (absent-vs-failed on a key something ranks by) is the one this repo keeps paying
+-- for, so it is recorded here rather than deleted with the code that suffered it.
 create table workspace_videos (
   workspace_id uuid not null references workspaces(id) on delete cascade,
   video_id     text not null,
-  -- fields describing the SHARED BODY live here, not on the per-playlist videos row (round 2 B3):
-  corrections        text,
-  -- ⟳ ROUND 6 B4 — NOT NULL, and this is a correctness fix rather than tidiness. MEASURED: the seed
-  -- below left 2903 of 2904 rows NULL while 99 live videos carried real corrections, and rung 1 —
-  -- the TOP rung of both view orderings — read the NULL as "this video has no corrections". So a
-  -- nullable column conflated "no corrections" with "nobody ever computed this", which is shape #1
-  -- (absent-vs-failed) sitting on the ranking key. The consequence was measured on the money path:
-  -- cloud permanently rung-1-stale, local current, so reconcileClassA returned copyToCloud on EVERY
-  -- sync, forever — verbatim the failure round 5 B3 was written to remove, one rung above it.
-  -- NOT NULL makes that conflation unrepresentable rather than fixed-once.
-  corrections_hash   text not null default no_corrections_hash(),
-                                    -- hash of `corrections`; a generation is "corrections-current"
-                                    -- when its mdCorrectionsHash equals this. RANKS, never gates.
   primary key (workspace_id, video_id)
 );
 alter table workspace_videos enable row level security;
@@ -79,20 +80,15 @@ create policy workspace_videos_owner_read on workspace_videos for select to auth
   using (workspace_id in (select id from workspaces where owner_id = (select auth.uid())));
 
 -- videos gains its FK only AFTER workspace_videos is populated (round 4 J1-4).
--- ⟳ ROUND 6 B4 — THE SEED CARRIES THE CORRECTIONS. It used to be `select distinct workspace_id,
--- video_id` and nothing else, so the migration silently DROPPED 99 users' corrections into a column
--- the top ranking rung then read. `distinct on` rather than `distinct`, because corrections describe
--- the SHARED BODY (round 2 B3) while `videos` is per-playlist: the same video in two playlists is two
--- rows, and a bare `distinct` over three columns would emit BOTH and violate the primary key. Ordering
--- by "has corrections first" makes the pick deterministic and biased toward keeping content — a
--- corrected row never loses to an uncorrected duplicate.
-insert into workspace_videos (workspace_id, video_id, corrections, corrections_hash)
-  select distinct on (workspace_id, video_id)
-         workspace_id, video_id,
-         nullif(data->>'corrections', ''),
-         corrections_hash_of(data->>'corrections')
-    from videos
-   order by workspace_id, video_id, (coalesce(data->>'corrections','') <> '') desc;
+-- ⟳ ADR-0011: `distinct`, NOT `distinct on`. Round 6 B4 needed `distinct on … order by (has
+-- corrections) desc` because the seed carried a value whose correctness depended on WHICH duplicate
+-- row won — the same video in two playlists is two `videos` rows, and picking the wrong one dropped
+-- 99 users' corrections. With the columns gone there is no value to win, the two rows are identical
+-- in the only columns that remain, and a bare `distinct` collapses them without a tie-break.
+-- ⚠ THE TIE-BREAK WAS NOT REMOVED FOR TIDINESS — it became unexpressible. Keeping it would imply a
+-- winner still matters here, which is exactly the belief ADR-0011 deletes.
+insert into workspace_videos (workspace_id, video_id)
+  select distinct workspace_id, video_id from videos;
 alter table videos add constraint videos_workspace_video_fk
   foreign key (workspace_id, video_id) references workspace_videos (workspace_id, video_id);
 
@@ -148,7 +144,7 @@ begin
   on conflict (owner_id) do nothing;
   return new;
 end $$;
-revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;
 create trigger profiles_ensure_workspace_trg
   after insert on profiles
   for each row execute function ensure_workspace_for_profile();
@@ -178,16 +174,19 @@ begin
   new.workspace_id := v_ws;
   -- The manifest parent, created for the rows the seed could not know about. `do nothing`, because
   -- a video in two playlists is two `videos` rows and ONE shared body (round 2 B3) — the second
-  -- insert must not clobber the first's corrections.
+  -- insert must not error on the parent the first already made.
+  -- ⟳ ADR-0011: `do nothing` USED TO CARRY A SECOND JOB — stopping the second playlist's row from
+  -- clobbering the first's corrections. That job is gone with the columns, and only the
+  -- idempotence remains. The clause is unchanged and its REASON is now half as large; recorded
+  -- because "why is this `do nothing`?" is the question a future reader will ask.
   if tg_table_name = 'videos' then
-    insert into public.workspace_videos (workspace_id, video_id, corrections, corrections_hash)
-    values (v_ws, new.video_id, nullif(new.data->>'corrections', ''),
-            public.corrections_hash_of(new.data->>'corrections'))
+    insert into public.workspace_videos (workspace_id, video_id)
+    values (v_ws, new.video_id)
     on conflict (workspace_id, video_id) do nothing;
   end if;
   return new;
 end $$;
-revoke all on function resolve_workspace_from_playlist() from public, anon, authenticated;
+revoke all on function resolve_workspace_from_playlist() from public, anon, authenticated, service_role;
 
 -- BEFORE, not AFTER: it must set NEW.workspace_id before NOT NULL is checked, and create the parent
 -- before the FK is. Split INSERT/UPDATE for the same physical reason documented below — a WHEN clause
@@ -214,52 +213,26 @@ create trigger jobs_resolve_workspace_upd_trg
   before update of playlist_id, workspace_id on jobs
   for each row execute function resolve_workspace_from_playlist();
 
--- ⟳ ROUND 6 B4, THE HALF THE FINDING DID NOT ASK FOR — DRIFT IS PREVENTED, NOT REPAIRED.
--- `workspace_videos.corrections_hash` is a DENORMALIZED COPY; the truth lives in `videos.data`.
--- Backfilling it fixes the 2903 rows that are wrong TODAY and says nothing about the next write.
--- B4 offered a choice — "route update_video_annotations at workspace_videos, or keep the two in sync
--- by trigger". The trigger, because a routing rule holds only until someone adds a second writer and
--- there is ALREADY more than one (`update_video_annotations` in 0021, and `persist_summary`'s layer-2
--- merge). A rule that depends on every future caller remembering is the shape this whole review keeps
--- finding; the same argument as `art_detached_is_dig` being a CHECK and not only a trigger rule.
+-- ⛔ THE CORRECTIONS SYNC MECHANISM STOOD HERE AND IS DELETED BY ADR-0011 —
+-- `sync_corrections_to_workspace_video()`, its revoke, and both `videos_corrections_sync_*_trg`
+-- triggers. It existed ONLY to keep a denormalized copy honest, and there is no longer a copy.
 --
--- Fires only when the corrections TEXT actually changes, so ordinary video updates cost nothing.
-create function sync_corrections_to_workspace_video() returns trigger
-  language plpgsql security definer set search_path = '' as $$
-begin
-  update public.workspace_videos
-     set corrections      = nullif(new.data->>'corrections', ''),
-         corrections_hash = public.corrections_hash_of(new.data->>'corrections')
-   where workspace_id = new.workspace_id and video_id = new.video_id;
-  return new;
-end $$;
-revoke all on function sync_corrections_to_workspace_video() from public, anon, authenticated;
--- TWO triggers, not one with `when (tg_op = 'INSERT' or …)`. MEASURED: `column "tg_op" does not
--- exist` — a WHEN clause may reference only OLD/NEW, and OLD does not exist for INSERT at all, so the
--- combined form cannot be written. The UPDATE half keeps its guard so ordinary video writes (every
--- summarize, every annotation) cost nothing.
--- ⟳ ROUND 9 — THE INSERT HALF IS GUARDED TOO, and this was a live defect the moment B3 was fixed.
--- MEASURED: video with corrections 'KEEP ME' in playlist A, then the SAME video added to playlist B
--- with a row carrying none -> `after playlist B insert: corrections = <null>  -> CLOBBERED`.
--- `corrections` describes the SHARED BODY (round 2 B3) while `videos` is per-playlist, so the second
--- playlist's row is not evidence that the corrections were removed — it is a row that never had them.
+-- ⚠ WHAT IT COST, KEPT BECAUSE THE ARGUMENT SURVIVES ITS SUBJECT. Round 6 B4 offered a choice:
+-- route every writer at `workspace_videos`, or keep the two in sync by trigger. The trigger won
+-- because a routing rule holds only until someone adds a second writer, and there were ALREADY two
+-- (`update_video_annotations` in 0021 and `persist_summary`'s layer-2 merge). That reasoning was
+-- correct and is why the mechanism is gone rather than repaired: ADR-0011 removes the second
+-- representation instead of policing agreement between two. **Deleting the disagreement beats
+-- synchronising it**, and this is the instance that paid for the sentence.
 --
--- Latent until now ONLY because ingest was impossible (B3): no INSERT could reach this trigger at
--- all. Fixing ingest made a dormant defect live, which is shape #9 — and it was found by probing the
--- fix's own blast radius rather than by a reviewer.
+-- ⚠ AND IT TOOK TWO ROUNDS TO GET RIGHT, WHICH IS THE REAL ARGUMENT. Round 9 measured the INSERT
+-- half CLOBBERING: 'KEEP ME' in playlist A, the same video added to playlist B carrying none, and
+-- the shared corrections went NULL. Latent only because ingest was impossible until B3 was fixed —
+-- fixing ingest made a dormant defect live. A denormalisation whose sync needed a guarded INSERT
+-- half, a guarded UPDATE half, and a seed tie-break to stay correct was carrying more coordination
+-- than the fact was worth. Nine of the eleven Blocking/High findings across five rounds were here.
 --
--- The rule is the seed's, restated: the seed picks `(has corrections) desc` precisely so "a corrected
--- row never loses to an uncorrected duplicate". The trigger now obeys the same bias.
-create trigger videos_corrections_sync_ins_trg
-  after insert on videos
-  for each row
-  when (coalesce(new.data->>'corrections','') <> '')
-  execute function sync_corrections_to_workspace_video();
-create trigger videos_corrections_sync_upd_trg
-  after update of data on videos
-  for each row
-  when (coalesce(old.data->>'corrections','') is distinct from coalesce(new.data->>'corrections',''))
-  execute function sync_corrections_to_workspace_video();
+-- ⟳ TRIGGER COUNT: 10 -> 8 on this file, which Task 1 Step 6 asserts.
 
 create type artifact_kind as enum ('summary','model','dig','digDeeper','render');
 
@@ -531,7 +504,11 @@ begin
       new.produced_at;
   end if;
   -- OLD does not exist on INSERT, so the freeze half must be guarded by tg_op rather than by
-  -- old.state. Same physical rule that forced 03's corrections sync into TWO triggers.
+  -- old.state. Same physical rule that splits `resolve_workspace_from_playlist` into `_ins_trg` and
+  -- `_upd_trg` on all three tables above: a WHEN clause may reference only OLD/NEW, so `tg_op`
+  -- cannot appear in one, and the combined form simply cannot be written.
+  -- ⟳ ADR-0011: this cited the corrections sync, which no longer exists. The RULE is unchanged and
+  -- still has live witnesses — re-pointed at one rather than deleted with its old example.
   if tg_op = 'UPDATE' and old.state = 'complete' then
     if new.state <> 'complete' then
       raise exception 'video_generations: % is COMPLETE and cannot return to %',
@@ -549,7 +526,7 @@ begin
   end if;
   return new;
 end $$;
-revoke all on function video_generations_freeze() from public, anon, authenticated;
+revoke all on function video_generations_freeze() from public, anon, authenticated, service_role;
 -- Fires AFTER forbid_collecting_current_trg (04): triggers run in name order, `f` < `v`, and both
 -- return NEW unchanged, so neither depends on the other's result.
 -- ⟳ ROUND 7 — `before INSERT or update`. The produced_at bound above is worthless on UPDATE alone:

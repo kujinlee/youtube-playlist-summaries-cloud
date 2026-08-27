@@ -61,6 +61,7 @@ WHAT EACH DIGEST COVERS
     column      exact type (format_type) · NOT NULL · default · identity · generated
     trigger     pg_get_triggerdef + tgenabled   -> DISABLE, timing, level, WHEN, deferrability
     function    prosrc · prosecdef · proconfig · provolatile · prokind · ACL
+                · pg_get_function_arguments  -> ARGUMENT DEFAULTS, which the identity args omit
     constraint  pg_get_constraintdef            -> renders NOT VALID and DEFERRABLE (verified r5)
     index       pg_get_indexdef · indisvalid · indisready · indislive
     policy      cmd · permissive · roles · using · with check
@@ -95,15 +96,22 @@ ENFORCEMENT_COLUMNS = (
     "relreplident",
     "prosecdef", "proconfig", "provolatile", "prokind", "proisstrict", "proleakproof",
     "proparallel", "proretset", "prosqlbody",
+    # ⟳ r7 M: argument DEFAULTS. Not a pg_proc column name — `proargdefaults` is an internal node
+    # tree and is excluded as "rendered by" this. Named here because what must not silently vanish
+    # is the RENDERING, not the storage.
+    "pg_get_function_arguments",
     "polpermissive", "indisvalid", "indisready", "indislive", "indisprimary", "indisunique",
     "indimmediate", "indisexclusion",
     "attnotnull", "attidentity", "attgenerated", "attstorage", "attcompression",
     "tgenabled",
-    # privileges are digested as EFFECTIVE ACCESS, never as ACL text — see PRIVILEGE_NOTE.
-    # `has_any_column_privilege` rides in the TABLE digest, which is what catches r6 B2's
-    # column-level `grant insert (blob_key) … to anon`. There is deliberately no PER-COLUMN
-    # privilege digest — see the `col:` branch for the measurement that ruled it out.
-    "has_table_privilege", "has_any_column_privilege", "has_function_privilege",
+    # ⟳ r9 H2: policies attached to a manifest relation ride in the RELATION digest, not only as
+    # their own `pol:` objects — present mode is MANIFEST ⊆ live and cannot see a SIXTH policy.
+    "polname", "polcmd",
+    # ⛔ NO PRIVILEGE TERMS. `has_table_privilege` / `has_any_column_privilege` /
+    # `has_function_privilege` were here until step 5 and are deliberately gone — this tuple asserts
+    # what CATALOG_SQL still reads, so leaving them would fail the self-test, loudly, which is the
+    # behaviour we want from a list that no longer matches. See the REL_GRANTEES note for the
+    # three homes those facts moved to.
 )
 
 # ⛔⛔ WHY PRIVILEGES ARE DIGESTED AS EFFECTIVE ACCESS AND NOT AS `relacl`/`proacl`/`attacl` TEXT.
@@ -149,10 +157,63 @@ ENFORCEMENT_COLUMNS = (
 # control would reintroduce this whole finding for twelve functions.
 PRIVILEGE_NOTE = "effective access for the principals the spec revokes from and grants to"
 
-# The principals whose access M4's own `grant`/`revoke` statements control.
-REL_GRANTEES = ("public", "anon", "authenticated", "service_role")
-FN_GRANTEES = ("public", "anon", "authenticated")
+# ⭐⭐ FORK (a), STEP 3 — THE SESSION ROLES LEFT THE DIGEST (2026-08-26, user decision 2026-08-25).
+#
+# Everything above this line is the record of a fingerprint being redefined four times, each
+# redefinition correct and insufficient. Phase 6 #2 named why: a fingerprint has to ENUMERATE what is
+# worth comparing AND be comparable across environments, and privileges fail the second test by
+# construction — production carries `alter default privileges` and a `claude_ro` grantee no developer
+# machine has. Every privilege repair in rounds 5-7 was a repair to that second property.
+#
+# So `public`, `anon` and `authenticated` RELATION access is no longer digested. It moved to
+# `check-anon-exposure.py` RULE 3, which is environment-AWARE by design — it names its subject before
+# its verdict and defaults to production, the environment that is actually exposed.
+#
+# WHAT MOVED, AND WHAT NOW CATCHES IT (each row is a mutation in the harness):
+#     grant insert/update/delete on video_artifacts to anon   -> anon-exposure RULE 3   (mutation 10)
+#     grant insert (blob_key) on video_artifacts to anon      -> anon-exposure RULE 3   (mutation 17)
+#     grant truncate on video_artifacts to anon               -> anon-exposure RULE 3   (mutation 22)
+# That third row was caught by NEITHER gate before today — r7 M4 (codex), and the direct reason
+# TRUNCATE is now in the moved set rather than added as a fifth REL_PRIVS entry.
+#
+# ⚠ `service_role` STAYS, and this is a staging decision with a date on it. Its effective access is
+# environment-invariant (mutation 19 proves it against a production-shaped database), so it is not
+# what fork (a) is trying to remove. It leaves in STEP 5, when the assertion suite gains a CAPABILITY
+# assertion — "service_role can actually call record_artifact and the row lands" — which is strictly
+# stronger than digesting the grant, because r7 B1 measured a grant that is present and unusable.
+# Until that assertion exists, deleting this would open a real window.
+# ⭐⭐⭐ STEP 5 COMPLETED THE MOVE: THE DIGEST NOW CARRIES NO PRIVILEGES AT ALL.
+#
+# `service_role` was held back in step 3 with a date on it, because deleting it before something
+# stronger existed would have opened a real window. That something now exists, and it is stronger for
+# a reason worth stating plainly:
+#
+#     ⭐ A PRIVILEGE IS NOT A CAPABILITY. MEASURED 2026-08-26, one role, one row, two paths:
+#           record_artifact(...)              -> recorded
+#           insert into video_artifacts ...   -> ERROR: permission denied for function slot_kind
+#       `has_table_privilege('service_role','video_artifacts','INSERT')` is TRUE in both. The grant
+#       is present and unusable (r7 H2), so a digest of that grant would have certified a capability
+#       that does not exist — and no widening of a fingerprint can close that gap, because the gap is
+#       between "is granted" and "works".
+#
+# 05_assert.sql (search: SERVICE-ROLE CAPABILITY) asserts the capability instead, both directions,
+# and both halves are mutation-proven:
+#     revoke record_artifact EXECUTE from service_role  -> assertions exit 1, digest exit 0 (blind)
+#     grant slot_kind EXECUTE to service_role           -> assertions exit 1  (the direct door opens)
+#
+# WHERE EACH FACT LIVES NOW — three homes, none of them this file:
+#     session roles, M4 relations   check-anon-exposure.py RULE 3   gate 11/12, every run
+#     session roles, M4 functions   check-anon-exposure.py RULE 3   gate 11/12, every run
+#     service_role capability       05_assert.sql                  gate 8/12, M4_PHASE=post only
+REL_GRANTEES: tuple[str, ...] = ()
+FN_GRANTEES: tuple[str, ...] = ()
+SESSION_GRANTEES = ("public", "anon", "authenticated")   # ⛔ NOT digested — anon-exposure RULE 3
 REL_PRIVS = ("SELECT", "INSERT", "UPDATE", "DELETE")
+
+# The one relation the spec puts entirely out of reach of the session roles; everything else in the
+# manifest is SELECT-only for them. Declared here because it is the exception, and an exception that
+# is not written down is indistinguishable from an oversight.
+M4_NO_SESSION_ACCESS = ("video_generations_collectable",)
 
 # ⚠ NO BACKTICKS ANYWHERE IN THIS STRING. psql performs shell command substitution on backquotes
 # inside meta-command arguments, exactly as bash does (measured 2026-08-25).
@@ -194,7 +255,14 @@ def _rel_priv(rel: str) -> str:
     deployed database (r6 B1). `has_any_column_privilege` is what makes a COLUMN-level grant
     visible: `grant insert (blob_key) on video_artifacts to anon` moved no ACL the old query read,
     so the 161-object digest was byte-identical while anon gained INSERT (r6 B2, measured).
+
+    ⟳ FORK (a) STEP 3: `REL_GRANTEES` is now `service_role` alone. The session roles this docstring's
+    examples name are checked by `check-anon-exposure.py` RULE 3 instead — the examples are kept
+    because they are the measurements that justify the column-level term, which service_role still
+    needs. See the SESSION_GRANTEES note above for what moved and what catches it now.
     """
+    if not REL_GRANTEES:
+        return "''"          # ⟳ step 5: no privileges in the digest. A neutral term, not a syntax error.
     parts = []
     for g in REL_GRANTEES:
         tbl = " || ".join(f"has_table_privilege('{g}', {rel}, '{p}')::text" for p in REL_PRIVS)
@@ -212,9 +280,31 @@ def _fn_priv(fn: str) -> str:
     authenticated`. Digesting a grant the spec never claimed to control would reintroduce r6 B1 for
     twelve functions.
     """
+    if not FN_GRANTEES:
+        return "''"          # ⟳ step 5: see the note on REL_GRANTEES.
     parts = [f"'{g}=' || " + _guard(g, f"has_function_privilege('{g}', {fn}, 'EXECUTE')::text")
              for g in FN_GRANTEES]
     return "(" + " || ',' || ".join(parts) + ")"
+
+
+def _policies(rel: str) -> str:
+    """SQL expression: the POLICIES attached to `rel`. PURE.
+
+    ⟳ r9 H2 (claude). `_rules()` below states the principle — *"present mode ignores EXTRA objects by
+    design … true of most extra objects; FALSE of an object ATTACHED to a manifest relation, which is
+    not an addition to the database but a modification of that relation"* — and r6 H1 acted on it for
+    `pg_rewrite` AND ONLY FOR `pg_rewrite`. `pg_policy` is attached in precisely the same sense.
+
+    MEASURED: `create policy r9_wide on video_artifacts for select to anon, authenticated using
+    (true);` — RLS is permissive-OR, so ONE added policy defeats all five owner-scoping policies at
+    once without touching any of them. anon went from 0 rows to reading another tenant's `blob_key`,
+    and the digest printed *"M4 is PRESENT as expected … 5 policies"* over a database with six.
+
+    That is r5 B2's argument rebuilt out of an ADDITION instead of a flag: disabling RLS did not
+    touch a policy row either.
+    """
+    return ("coalesce((select string_agg(pol.polname || pol.polcmd::text || pol.polpermissive::text,"
+            f" ',' order by pol.polname) from pg_policy pol where pol.polrelid = {rel}), '')")
 
 
 def _rules(rel: str) -> str:
@@ -237,14 +327,14 @@ select 'table:' || c.relname || '@' || md5(
          c.relrowsecurity::text || c.relforcerowsecurity::text || c.relpersistence::text ||
          c.relreplident::text || c.relhasrules::text || c.relispartition::text ||
          coalesce((select string_agg(o, ',' order by o) from unnest(c.reloptions) o), '') ||
-         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + r""")
+         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + " || " + _policies("c.oid") + r""")
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind = 'r'
 union all
 select 'view:' || c.relname || '@' || md5(
          pg_get_viewdef(c.oid) ||
          coalesce((select string_agg(o, ',' order by o) from unnest(c.reloptions) o), '') ||
-         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + r""")
+         """ + _rel_priv("c.oid") + " || " + _rules("c.oid") + " || " + _policies("c.oid") + r""")
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind in ('v', 'm')
 union all
@@ -287,8 +377,20 @@ union all
 -- the gate at exit 0. A STRICT function RETURNS NULL WITHOUT EXECUTING ITS BODY whenever any
 -- argument is NULL, so the paid write silently does not happen. Every pg_proc column that decides
 -- how or whether the body runs is now here; `check-catalog-coverage.py` enumerates the rest.
+-- ⟳ r7 M (codex, coordinator-verified): the SYMBOL uses identity arguments, and identity arguments
+-- OMIT DEFAULTS. MEASURED here 2026-08-26 on a two-argument probe, because the first version of this
+-- comment said "types only" — which is false, and false in exactly the shape this finding is about:
+--     identity: a integer, b text
+--     full    : a integer, b text DEFAULT 'x'::text
+-- So replacing record_artifact's `p_md_hash text default null` with `default 'r7-default'` moved
+-- nothing: same symbol, same prosrc, byte-identical digest — while every call that OMITS that
+-- argument now writes a different md_hash.
+-- `pg_get_function_arguments` is the same signature WITH the defaults rendered, so it rides in the
+-- PAYLOAD (a default is not part of the object's identity) while the symbol stays stable for the
+-- survivor matching absent mode depends on.
 select 'fn:' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' || '@' ||
        md5(coalesce(p.prosrc, '') || coalesce(p.prosqlbody::text, '') ||
+           pg_get_function_arguments(p.oid) ||
            p.prosecdef::text || p.provolatile::text || p.prokind::text ||
            p.proisstrict::text || p.proleakproof::text || p.proparallel::text ||
            p.proretset::text || format_type(p.prorettype, null) || l.lanname ||

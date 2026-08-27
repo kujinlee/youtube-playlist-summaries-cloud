@@ -350,3 +350,55 @@ skipped"* restates the mutation and cannot.
 *(Why this is not a ratchet: a script can find mutation tables, but deciding whether a named input is
 constructible requires reading the callers. `check-gate-falsifiability.py` covers the gate half of
 this shape; the mutation half stays human.)*
+
+---
+
+## Qualify every number in prose (added 2026-08-27)
+
+**A bare `#39` is not a reference. Write `backlog #39` or `task #39`.**
+
+Same for every other scarce namespace this project reuses across documents:
+
+| Write | Not |
+|---|---|
+| `backlog #39`, `task #39` | `#39` |
+| `PR #155`, `migration 0027` | `#155`, `0027` |
+| `spine M4`, `roadmap M2` | `M4`, `M2` |
+| `ADR-0011`, `round 11` | `0011`, `11` |
+
+**Applies to** chat, commit messages, PR bodies, review documents, and newly written doc prose.
+**Does not apply** inside the document that owns the namespace — `docs/backlog.md` citing its own
+rows as `#31` is unambiguous, and rewriting the 1,556 historical bare references would be churn
+with no reader on the other end.
+
+### Why this is a rule and not a ratchet — MEASURED 2026-08-27, three scopes
+
+Before writing this, the obvious script was tried on paper at every scope that could carry it:
+
+| Scope | Bare `#N` found | Verdict |
+|---|---|---|
+| all of `docs/` | **1,556** of 2,130 | a gate firing 1,556 times is disabled the same day |
+| added lines on one branch | **24** | ~90% false positives |
+
+The 24 were `Phase 6 #1`, `Architecture Review #2`, `#54(a)` — **titles and ordinals, not
+references into a namespace.** Making the check usable means adding `Phase`, `Review`, `Section`…
+i.e. asking *"what did the last counter-example have that a real reference does not?"*, which is a
+question about SYNTAX with an unbounded supply of answers. `scripts/run-schema-assertions.sh`
+records that exact sequence costing four review rounds in this repo. **A syntactic proxy for
+"is this reference resolvable?" is the wrong instrument; the property is semantic.**
+
+### What it actually costs when skipped — two measured instances, same day
+
+- **A wrong turn.** Searching `#26` in `docs/backlog.md` returns nothing, because that file uses
+  bare `| 26 |` in a table. The item had to be found by grepping the *concept* instead.
+- **A reader had to ask.** Four bare `#39`s were written in one message — in an argument that bare
+  numbers are ambiguous — while `task #39` and `backlog #39` are unrelated items. The ambiguity was
+  invisible until the reader asked "backlog or task?".
+
+⚠ **Neither is expensive. That is the point:** the cost is a few minutes each time and it is paid
+by the *reader*, which is why nothing surfaces it and why it needs to be a habit rather than a gate.
+
+⟳ Related: **backlog #39** — *roadmap items have no permanent identity* — states the general
+principle (*separate the label from the identity in any document that other files cite*). Its
+`files` column names only the roadmap, so doing it as written would not reach the two collisions
+above. Widen the scope there rather than filing a second row.

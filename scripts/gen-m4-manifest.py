@@ -253,12 +253,24 @@ def self_test() -> int:
         check(f"a PRE-M4 baseline derives a manifest ({len(pre)} objects)", len(pre) > 100)
 
         drop()
-        if psql("postgres", f"create database {m4db};").returncode != 0:
+        # ⟳ 2026-08-26 — THE PROBE IS BUILT ON A *PRE-M4* BASE. It used to clone `postgres`
+        # directly, which worked until 0027 was applied there and then failed with
+        # `relation "workspaces" already exists`. That is the same single cause as the seven gates
+        # `scripts/m4-base-db.sh` documents — and this was an EIGHTH face of it, invisible because
+        # the fourteen-gate suite runs `--check` and never `--self-test`. `derive()` above has
+        # handled the post phase since r5 B3; the self-test that proves derive() works did not.
+        probe_base = f"m4_manifest_base_{os.getpid()}"
+        base_rc = subprocess.run([os.path.join(REPO, "scripts", "m4-base-db.sh"), probe_base],
+                                 capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        if base_rc.returncode != 0:
+            print("  ✗ CANNOT RUN — could not build a pre-M4 base for the probe database")
+            print(f"    {base_rc.stdout.strip()[-200:] or base_rc.stderr.strip()[-200:]}")
+            return 1
+        created = psql("postgres", f"create database {m4db} template {probe_base};")
+        psql("postgres", f"drop database if exists {probe_base} (force);")
+        if created.returncode != 0:
             print("  ✗ CANNOT RUN — could not create the post-phase probe database")
             return 1
-        subprocess.run(["docker", "exec", "-i", CONTAINER, "sh", "-c",
-                        f"pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges "
-                        f"| psql -U postgres -d {m4db} -q"], capture_output=True, text=True)
         built = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "build-m4-schema.py"),
                                 "--quiet"], capture_output=True, text=True)
         applied = subprocess.run(

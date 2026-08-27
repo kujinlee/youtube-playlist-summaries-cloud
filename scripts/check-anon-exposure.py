@@ -46,10 +46,32 @@ RULE 1  Every `security definer` function in `public` that `anon` may EXECUTE is
 RULE 2  The money tables' TRUNCATE exposure (backlog #30, still open) may not GROW. A hard "must be
         zero" assertion would be red from birth and get disabled; a baseline that can only fall is
         the honest shape while #30 is unfixed.
+RULE 3  ⭐ NEW 2026-08-26 — M4's relations are READ-ONLY for the session roles. No `public`, `anon`
+        or `authenticated` may hold INSERT, UPDATE, DELETE or TRUNCATE on any relation in the M4
+        manifest, at TABLE or COLUMN level; and none may hold anything at all on the one relation the
+        spec puts entirely out of reach. **This rule is here rather than in the M4 digest because it
+        is the one class of fact a fingerprint cannot carry** — see `m4_catalog.SESSION_GRANTEES`.
+
+        Three things worth knowing before editing it:
+
+        1. **The relation list is DERIVED from the manifest**, not typed here. A hand-list would go
+           stale the first time M4 gains a table, and would go stale SILENTLY — the check would keep
+           passing over an unlisted relation. If the manifest cannot be read, RULE 3 refuses to run.
+        2. **TRUNCATE is the reason this rule exists at all.** r7 M4 (codex) measured
+           `grant truncate on video_artifacts to anon` passing BOTH gates: the digest listed only
+           SELECT/INSERT/UPDATE/DELETE, and this script's money-table rule covers five tables, none
+           of them M4's. TRUNCATE fires neither RLS nor row triggers, so it is the one verb that
+           walks past every guard the append-only design puts in the way.
+        3. **Pre-M4 it is VACUOUS, and it says so out loud.** Until `0027` applies, none of these
+           relations exist and the rule has nothing to check. The banner reports the count it found;
+           `0 present` is a fact the reader can see, not a silent pass. What actually proves the rule
+           bites is `mutate-live-schema-check.sh`, which runs it against databases where M4 IS
+           present and requires exit 1.
 
 Usage:
     ./scripts/check-anon-exposure.py            # prod (read-only) — the subject that matters
     ./scripts/check-anon-exposure.py --local    # the docker stack
+    ./scripts/check-anon-exposure.py --local --database <db>   # a named db in the container
     ./scripts/check-anon-exposure.py --self-test
 """
 from __future__ import annotations
@@ -92,6 +114,124 @@ ALLOW: dict[str, tuple[str, str]] = {
 }
 
 WRITE_VERB = re.compile(r"\b(insert|update|delete|truncate)\b", re.IGNORECASE)
+
+# ── RULE 3 ──────────────────────────────────────────────────────────────────────────────────────
+# The verbs no session role may hold on an M4 relation. TRUNCATE is the one that was invisible to
+# both gates before today: it is not in the digest's REL_PRIVS and it bypasses RLS and row triggers.
+FORBIDDEN_ON_M4 = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
+# ⭐ PROBED is NOT the same tuple as FORBIDDEN, and conflating them was r8 H1 (claude).
+# `held` is assembled from what the FETCH asks about. SELECT was in neither probe list, so the
+# out-of-reach branch — "any session-role privilege here is a defect" — could never see a SELECT
+# grant, and a self-test case built from the hand-typed fixture "SELECT," passed in green over it.
+# That is `pg_bool`'s own lesson (see its docstring) repeated in this file: the rule was right and
+# the fetch was broken. SELECT is probed; whether it is ALLOWED is the rule's business, not the
+# fetch's.
+PROBED_ON_M4 = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
+# Column-level grants exist only for these verbs — has_any_column_privilege rejects the others.
+# ⟳ r8 L2 (claude): WHICH BRANCH EACH LIST SERVES, because they read as one policy and are not.
+#   FORBIDDEN_ON_M4  the ordinary-relation branch: these verbs are a defect, SELECT is not
+#   PROBED_ON_M4     what the FETCH asks about — a superset, so the rules can decide
+#   COLUMN_LEVEL     the same, at column granularity. `REFERENCES` is discarded by the ordinary
+#                    branch and is load-bearing ONLY on the out-of-reach branch, where the claim is
+#                    "any privilege at all".
+COLUMN_LEVEL = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
+MANIFEST = ROOT / "docs/superpowers/specs/m4/live-manifest.txt"
+SPEC_DIR = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing/schema"
+
+# ⟳ r8 M3 (claude) — INSTANCE, NOT CLASS. `m4_relations()` twelve lines below argues that a hand-list
+# "silently stops matching", and the exception BESIDE it was hand-typed anyway
+# (`m4_catalog.M4_NO_SESSION_ACCESS`) — on the branch with the STRONGER claim ("any privilege here is
+# a defect"). The same parse that RULE 3's read polarity needs also derives the exception, so the two
+# were one fix. The hand-list is kept only as a cross-check that FAILS LOUDLY when the two disagree —
+# `hardcode-only-what-fails-loudly`: hardcode what announces its own wrongness, derive the rest.
+GRANT_SELECT = re.compile(
+    r"^\s*grant\s+select\s+on\s+(.*?)\s+to\s+([^;]*);", re.IGNORECASE | re.MULTILINE | re.DOTALL)
+
+
+def _norm_ident(raw: str) -> str:
+    """A bare, unquoted relation name from a grant's target list. PURE.
+
+    ⟳ r9 M1 (codex): the parse used to keep the token verbatim, so the perfectly ordinary spelling
+    `grant select on public.video_artifacts to authenticated, anon;` derived `public.video_artifacts`
+    — which matches no manifest name, so an ordinary READABLE relation would derive as OUT OF REACH
+    and the cross-check would refuse to run. The shipped spec uses bare names, so nothing was firing;
+    a parser that is correct only for the spelling in front of it is a tripwire, not a derivation.
+    """
+    name = raw.strip().split()[-1] if raw.strip() else ""
+    name = name.strip().rstrip(";")
+    if "." in name:                      # schema-qualified: public.video_artifacts -> video_artifacts
+        name = name.rsplit(".", 1)[-1]
+    if name.startswith('"') and name.endswith('"') and len(name) > 1:
+        return name[1:-1]                # quoted: case is PRESERVED, that is what quoting means
+    return name.lower()                  # unquoted: Postgres folds to lower case, so we must too
+
+
+def session_readable(spec_text: str) -> set[str]:
+    """Relations the spec grants SELECT on to a SESSION role. PURE — parses text, touches nothing.
+
+    The spec's seven `grant select on … to authenticated, anon` sites are the contract. Their
+    complement within the manifest is the set no session role may touch at all.
+    """
+    out: set[str] = set()
+    for rels, grantees in GRANT_SELECT.findall(spec_text):
+        # ⟳ r9 M3: the grantee side went through `.lower()` on the RAW token, so `to "anon"` — an
+        # ordinary quoted grantee — matched nothing and the relation derived as out-of-reach. Same
+        # normaliser both sides, or the fix is instance-not-class.
+        who = {_norm_ident(g) for g in grantees.split(",")}
+        if not (who & {"anon", "authenticated"}):
+            continue                      # e.g. `grant select on … to service_role` — not a session read
+        for r in rels.split(","):
+            name = _norm_ident(r)
+            if name:
+                out.add(name)
+    return out
+
+
+def derive_no_session_access(relations: list[str], spec_text: str) -> tuple[str, ...]:
+    """Manifest relations the spec grants NO session-role SELECT on. PURE."""
+    readable = session_readable(spec_text)
+    return tuple(sorted(r for r in relations if r not in readable))
+
+
+def read_spec() -> str:
+    """Every schema file, concatenated. Exits 2 rather than deriving from nothing."""
+    # ⟳ r9 M4 (claude): the glob used to be `*.sql`, which swept in `05_assert.sql` — 2,500 lines of
+    # deliberately HOSTILE SQL whose job includes `set local role anon` and `truncate
+    # video_artifacts`. It is the thing that ATTACKS the contract, not the contract. Today every
+    # grant/revoke in it is prose inside a comment, so nothing fires; it stops being harmless the
+    # moment M4 gains a second out-of-reach relation whose assertions grant it to anon in order to
+    # PROVE the rule bites — derived and declared would then agree by coincidence.
+    files = sorted(f for f in SPEC_DIR.glob("*.sql") if not f.name.startswith("05_"))
+    if not files:
+        print(f"CANNOT RUN — no schema files under {SPEC_DIR}, so the out-of-reach set cannot be")
+        print("derived. TREAT THIS AS NOT RUN.")
+        sys.exit(2)
+    return "\n".join(f.read_text() for f in files)
+
+
+def m4_functions(manifest_text: str) -> list[str]:
+    """Every function NAME in the M4 manifest. PURE. Derived, for the same reason as m4_relations."""
+    out = []
+    for line in manifest_text.splitlines():
+        if line.startswith("fn:"):
+            out.append(line[3:].split("(", 1)[0])
+    return sorted(set(out))
+
+
+def m4_relations(manifest_text: str) -> list[str]:
+    """Every relation name in the M4 manifest. PURE.
+
+    DERIVED, never typed: the manifest is generated from the spec by `gen-m4-manifest.py`, so a table
+    added to M4 arrives here without anyone remembering. A hand-list would keep passing over the new
+    relation, which is the failure this project has a name for — a vocabulary that silently stops
+    matching is worse than no check.
+    """
+    out = []
+    for line in manifest_text.splitlines():
+        for prefix in ("table:", "view:"):
+            if line.startswith(prefix):
+                out.append(line[len(prefix):].split("@", 1)[0])
+    return sorted(set(out))
 
 
 def justification_holds(kind: str, returns: str, body: str) -> bool:
@@ -169,6 +309,134 @@ def evaluate(
     return problems
 
 
+def evaluate_m4(
+    m4rel: list[tuple[str, str, str, str]],
+    no_access: tuple[str, ...] = (),
+    expect_roles: tuple[str, ...] = (),
+) -> list[str]:
+    """(relation, role, table-level privs, column-level privs) rows -> problems. PURE.
+
+    RULE 3. Kept as its own function rather than folded into `evaluate()` so the twenty existing
+    self-test cases keep meaning what they meant — and so this rule's own cases read as one subject.
+    `main()` calls both; `self_test` asserts that it does, because a rule with no caller is the
+    third-most-expensive mistake in this repo's history and has now been made four times.
+    """
+    problems: list[str] = []
+    for rel, role, tbl_privs, col_privs in sorted(m4rel):
+        # the ADDITIVE branch keeps the union: a grant at EITHER level is a grant.
+        held = {p.strip().upper() for p in (tbl_privs + "," + col_privs).split(",") if p.strip()}
+        if rel in no_access:
+            if held:
+                problems.append(
+                    f"M4 OUT OF REACH    `{role}` holds {', '.join(sorted(held))} on `{rel}`, which\n"
+                    "                   the spec revokes from every session role and grants only to\n"
+                    "                   service_role. Any session-role privilege here is a defect.")
+            continue
+        writes = sorted(held & set(FORBIDDEN_ON_M4))
+        if writes:
+            problems.append(
+                f"M4 NOT READ-ONLY   `{role}` holds {', '.join(writes)} on `{rel}`. M4's session-role\n"
+                "                   contract is SELECT and nothing else — the write path is\n"
+                "                   service_role via SECURITY DEFINER RPC. TRUNCATE in that list is\n"
+                "                   the worst case: it fires neither RLS nor row triggers, so the\n"
+                "                   append-only guards never see it.")
+
+    # ⭐ FAIL CLOSED ON A MISSING ROLE. The fetch drops a role that does not exist in this database,
+    # which is right for `to_regrole` and wrong as a verdict: "anon holds nothing here" and "anon is
+    # not a thing here" produce the same empty result, and only one of them is a passing state.
+    # Same shape as `_guard()` in m4_catalog.py, which digests 'ABSENT' rather than skipping.
+    seen_rels = {rel for rel, _, _, _ in m4rel}
+    seen_roles = {role for _, role, _, _ in m4rel}
+    if seen_rels:
+        for role in sorted(set(expect_roles) - seen_roles):
+            problems.append(
+                f"ROLE NOT PRESENT   RULE 3 expected to check `{role}` and this database has no such\n"
+                f"                   role, while {len(seen_rels)} M4 relation(s) DO exist. The rule\n"
+                "                   reported nothing about it, which is not the same as a pass.")
+    return problems
+
+
+def evaluate_m4_reads(
+    m4rel: list[tuple[str, str, str, str]],
+    no_access: tuple[str, ...] = (),
+    expect_roles: tuple[str, ...] = (),
+) -> list[str]:
+    """The OTHER POLARITY: a session role must still be able to READ. PURE.
+
+    ⟳ r8 B1 (claude), reproduced by the coordinator before fixing. Everything else in RULE 3 asks
+    whether a privilege was ADDED. The fingerprint that was removed carried BOTH directions —
+    `REL_PRIVS` included SELECT, so `has_table_privilege('authenticated', rel, 'SELECT')` going
+    true -> false moved the digest. MEASURED at HEAD, one statement:
+
+        revoke select on video_artifacts, video_generations, workspace_videos, workspaces,
+                         video_artifact_sources, video_artifacts_current, video_summary_current
+          from anon, authenticated;
+        digest exit=0 · RULE 3 named 0 problems · assertions exit=0
+
+    That is a total read outage — no logged-in user can read one M4 row — certified as
+    "M4 is PRESENT as expected" by the gate that guards an irreversible cutover. Same class as
+    r7 B1, which this branch filed as Blocking, on the read side instead of the write side.
+
+    ⚠ AND ADR-0012 MAKES IT MORE LIKELY, NOT LESS. Its rule is revoke-from-all-four-then-grant-back,
+    so the grant-back line is now the only thing standing between the schema and this state; before
+    it, a forgotten grant-back was masked by the platform's default ACL and the read still worked.
+
+    DERIVED, not typed: every manifest relation that is not out-of-reach must be SELECTable by every
+    session role the spec grants to. That is the spec's contract (seven `grant select … to
+    authenticated, anon` sites) expressed as its complement, so a relation added to M4 arrives
+    covered.
+    """
+    problems: list[str] = []
+    if not m4rel:
+        return problems
+    # ⟳ r9 L2: `expect_roles` was accepted and never read. A missing role is caught by
+    # `evaluate_m4`'s ROLE NOT PRESENT on the same rows, so this is not a second gap — but an unused
+    # parameter reads as coverage that is not there, which is the shape this file keeps filing.
+    for rel, role, tbl_privs, _col_privs in sorted(m4rel):
+        if rel in no_access or role == "public":
+            continue          # `public` is granted nothing by the spec; only the named roles read.
+        # ⚠ TABLE LEVEL ONLY. A column grant does not make the relation readable — `select *` and any
+        # unselected column both raise 42501. Using the union here was r9 B1.
+        held = {p.strip().upper() for p in tbl_privs.split(",") if p.strip()}
+        if "SELECT" not in held:
+            problems.append(
+                f"M4 READ LOST      `{role}` can no longer SELECT from `{rel}`. The spec grants this\n"
+                "                   read explicitly, and every consumer depends on it: the manifest\n"
+                "                   read, the serve path and the sidebar all return empty while the\n"
+                "                   catalog gate still reports M4 PRESENT. A revoke is a production\n"
+                "                   READ outage and it is invisible to the digest by construction.")
+    return problems
+
+
+def evaluate_m4_functions(m4fn: list[tuple[str, str, bool]],
+                          expect_roles: tuple[str, ...] = ()) -> list[str]:
+    """(function, role, anon-may-execute) -> problems. PURE. RULE 3, function half.
+
+    There is no allow-list here on purpose. The spec revokes EXECUTE on every M4 function from
+    public/anon/authenticated and grants it back to exactly one principal that is not a session role,
+    so the correct answer for every row is False and any True is a defect — not a judgement call.
+    """
+    problems = [
+        f"M4 FN EXECUTABLE   `{role}` may EXECUTE `{fn}()`. Every M4 function is revoked from every\n"
+        "                   session role by the spec; there is no allow-list for this and no case\n"
+        "                   where it is correct. On production the platform grants EXECUTE at CREATE\n"
+        "                   time, so this is the state the schema arrives in unless a revoke lands."
+        for fn, role, may in sorted(m4fn) if may
+    ]
+    # ⟳ r8 L1 (claude): the relation half fails closed on a missing role and this did not. Its
+    # coverage-by-the-other-half is gated on `if seen_rels:`, so a database with M4 FUNCTIONS and no
+    # RELATIONS — mutation 15's drifted-signature survivor is exactly that shape — was silent in
+    # both. Same argument, one branch over.
+    seen_roles = {role for _, role, _ in m4fn}
+    if m4fn:
+        for role in sorted(set(expect_roles) - seen_roles):
+            problems.append(
+                f"ROLE NOT PRESENT   RULE 3's function half expected `{role}` and this database has\n"
+                f"                   no such role, while {len({f for f, _, _ in m4fn})} M4 function(s)\n"
+                "                   DO exist. Silence about a role is not a pass.")
+    return problems
+
+
 # ── the fetch ───────────────────────────────────────────────────────────────────────────────────
 
 SQL = r"""
@@ -187,6 +455,55 @@ select c.relname || E'\t'
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
  where n.nspname = 'public' and c.relkind = 'r' and c.relname = any(%s)
  order by c.relname;
+\echo ---M4REL---
+-- RULE 3. One row per (M4 relation, session role) that EXISTS here. A relation `0027` has not
+-- created yet produces no row, and main() reports the count it found rather than passing quietly.
+--
+-- TWO privilege functions, because a grant can hide at either level. `has_any_column_privilege` is
+-- what makes `grant insert (blob_key) on video_artifacts to anon` visible — it moves no table ACL
+-- (r6 B2, measured). It accepts only SELECT/INSERT/UPDATE/REFERENCES: DELETE and TRUNCATE have no
+-- column-level form and asking for them RAISES rather than returning false.
+--
+-- ⛔ THE TWO LEVELS ARE SEPARATE FIELDS, NOT A UNION — ⟳ r9 B1 (claude), reproduced before fixing.
+-- They used to be comma-joined into one string, which is the CORRECT shape for the ADDITIVE question
+-- ("was a privilege added at either level" — r6 B2) and the WRONG shape for the SUBTRACTIVE one. One
+-- surviving column keeps SELECT in the set, so:
+--     revoke select on <every M4 relation> from anon, authenticated;
+--     grant  select (workspace_id) on video_artifacts to anon, authenticated;
+-- left `video_artifacts` reading as still-readable while the runtime says
+--     ERROR: permission denied for table video_artifacts
+-- MEASURED: table-level false, any-column true, RULE 3 silent about that relation. And it is MORE
+-- reachable than the total revoke — that needs a forgotten grant-back; this needs someone to write
+-- one with a column list, which is how people narrow a grant.
+--
+-- Third time in this file that THE FETCH decided what a rule could see (pg_bool, then the missing
+-- SELECT probe, now the union). The rule was right all three times.
+select c.relname || E'\t' || r.rolname || E'\t' ||
+       coalesce((select string_agg(p, ',' order by p)
+                   from unnest(%s) p where has_table_privilege(r.rolname, c.oid, p)), '')
+       || E'\t' ||
+       coalesce((select string_agg(p, ',' order by p)
+                   from unnest(%s) p where has_any_column_privilege(r.rolname, c.oid, p)), '')
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  cross join (select p as rolname from unnest(%s) p
+               where p = 'public' or to_regrole(p) is not null) r
+ where n.nspname = 'public' and c.relkind in ('r','v','m','p') and c.relname = any(%s)
+ order by c.relname, r.rolname;
+\echo ---M4FN---
+-- RULE 3, function half. ⟳ FORK (a) STEP 5: `FN_GRANTEES` left the digest with the relation
+-- grantees, so this is now the only thing asserting that no session role can EXECUTE an M4 function.
+-- The spec revokes every one of them from public/anon/authenticated and grants EXECUTE to exactly
+-- one principal (service_role, on record_artifact) — so for a SESSION role the expected answer is
+-- ALWAYS false, with no allow-list and no exception.
+select p.proname || E'\t' || r.rolname || E'\t'
+       || has_function_privilege(r.rolname, p.oid, 'EXECUTE')::text
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  cross join (select q as rolname from unnest(%s) q
+               where q = 'public' or to_regrole(q) is not null) r
+ where n.nspname = 'public' and p.proname = any(%s)
+ order by p.proname, r.rolname;
 """
 
 
@@ -213,24 +530,39 @@ def pg_bool(s: str) -> bool:
     raise ValueError(f"not a postgres boolean: {s!r}")
 
 
-def parse_rows(stdout: str) -> tuple[list[tuple[str, bool, str, str]], list[tuple[str, bool]]]:
-    """Pure: psql output -> (funcs, money). Split out so the FETCH's own parsing is under test."""
+def parse_rows(stdout: str) -> tuple[list[tuple[str, bool, str, str]],
+                                     list[tuple[str, bool]],
+                                     list[tuple[str, str, str, str]],
+                                     list[tuple[str, str, bool]]]:
+    """Pure: psql output -> (funcs, money, m4rel, m4fn). The FETCH's own parsing, under test."""
     funcs: list[tuple[str, bool, str, str]] = []
     money: list[tuple[str, bool]] = []
+    m4rel: list[tuple[str, str, str, str]] = []
+    m4fn: list[tuple[str, str, bool]] = []
     section = None
     for raw in stdout.splitlines():
         if raw.startswith("---FUNCS---"):
             section = "f"; continue
         if raw.startswith("---MONEY---"):
             section = "m"; continue
+        if raw.startswith("---M4REL---"):
+            section = "r"; continue
+        if raw.startswith("---M4FN---"):
+            section = "x"; continue
         if not raw.strip():
             continue
         parts = raw.split("\t")
+        if section == "r" and len(parts) >= 4:
+            m4rel.append((parts[0], parts[1], parts[2], parts[3]))
+            continue
+        if section == "x" and len(parts) >= 3:
+            m4fn.append((parts[0], parts[1], pg_bool(parts[2])))
+            continue
         if section == "f" and len(parts) >= 4:
             funcs.append((parts[0], pg_bool(parts[1]), parts[2], parts[3]))
         elif section == "m" and len(parts) >= 2:
             money.append((parts[0], pg_bool(parts[1])))
-    return funcs, money
+    return funcs, money, m4rel, m4fn
 
 
 # ⟳ r5 M4 (claude) — ONE READER OF THIS CONFIG VALUE, NOT TWO THAT DISAGREE.
@@ -240,17 +572,57 @@ def parse_rows(stdout: str) -> tuple[list[tuple[str, bool, str, str]], list[tupl
 # (`""` vs `None`). Two readers of one secret that disagree about which values EXIST is exactly the
 # shape `check-vocabulary-collisions.py` hunts, one layer below where that script looks.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from m4_catalog import psql_cmd, psql_env, read_only_url  # noqa: E402
+from m4_catalog import (M4_NO_SESSION_ACCESS, SESSION_GRANTEES,  # noqa: E402
+                        psql_cmd, psql_env, read_only_url)
 
 
-def fetch(local: bool) -> tuple[list[tuple[str, bool, str, str]], list[tuple[str, bool]], str]:
-    """Returns (funcs, money, subject). Exits 2 rather than returning empty on any failure —
-    'cannot run' is a FAILURE, never a pass, and an empty catalog would read as 'nothing exposed'."""
-    tables = "ARRAY[" + ",".join(f"'{t}'" for t in MONEY_TABLES) + "]"
-    sql = SQL % tables
+def pg_array(items) -> str:
+    """A Postgres text[] literal. PURE. Values here are identifiers from the repo, never input."""
+    return "ARRAY[" + ",".join(f"'{i}'" for i in items) + "]::text[]"
+
+
+def load_m4_relations() -> list[str]:
+    """The manifest's relations, or exit 2. RULE 3 refuses to run rather than run over nothing."""
+    if not MANIFEST.is_file():
+        print(f"CANNOT RUN — RULE 3 needs the M4 manifest and {MANIFEST} is missing.")
+        print("Regenerate it with scripts/gen-m4-manifest.py. TREAT THIS AS NOT RUN.")
+        sys.exit(2)
+    rels = m4_relations(MANIFEST.read_text())
+    if not rels:
+        print(f"CANNOT RUN — {MANIFEST} names no tables or views, which is not a state it can be in.")
+        print("TREAT THIS AS NOT RUN.")
+        sys.exit(2)
+    return rels
+
+
+def fetch(local: bool, database: str = "postgres") -> tuple[
+        list[tuple[str, bool, str, str]], list[tuple[str, bool]],
+        list[tuple[str, str, str, str]], list[tuple[str, str, bool]], list[str],
+        tuple[str, ...], str]:
+    """Returns (funcs, money, m4rel, m4_rels_expected, subject). Exits 2 rather than returning empty
+    on any failure — 'cannot run' is a FAILURE, never a pass, and an empty catalog would read as
+    'nothing exposed'."""
+    m4rels = load_m4_relations()
+    derived_oor = derive_no_session_access(m4rels, read_spec())
+    if set(derived_oor) != set(M4_NO_SESSION_ACCESS):
+        print("CANNOT RUN — the out-of-reach set DERIVED from the spec disagrees with the one")
+        print(f"declared in m4_catalog.M4_NO_SESSION_ACCESS:\n  derived  {derived_oor}\n"
+              f"  declared {M4_NO_SESSION_ACCESS}\n"
+              "One of them is stale. Refusing to guess which. TREAT THIS AS NOT RUN.")
+        sys.exit(2)
+    m4fns = m4_functions(MANIFEST.read_text())
+    if not m4fns:
+        print(f"CANNOT RUN — {MANIFEST} names no functions. TREAT THIS AS NOT RUN.")
+        sys.exit(2)
+    sql = SQL % (pg_array(MONEY_TABLES), pg_array(PROBED_ON_M4), pg_array(COLUMN_LEVEL),
+                 pg_array(SESSION_GRANTEES), pg_array(m4rels),
+                 pg_array(SESSION_GRANTEES), pg_array(m4fns))
     url = None
     if local:
-        subject = f"LOCAL container {CONTAINER}"
+        # ⟳ r7 M (codex): the database used to be hard-coded to `postgres`, which is right for the
+        # container's own app database and made every OTHER database unreachable — including the
+        # mutated clones the harness builds, which is the only place RULE 3 can be proven to bite.
+        subject = f"LOCAL container {CONTAINER} db '{database}'"
     else:
         url = read_only_url()
         if not url:
@@ -262,7 +634,7 @@ def fetch(local: bool) -> tuple[list[tuple[str, bool, str, str]], list[tuple[str
     # Same one mechanism as --local (docker + psql), a different target. Deliberately not a second
     # driver — and now literally the same function, see the note on read_only_url above. The URL
     # travels in the ENVIRONMENT, not in argv: `ps` used to show the password (r5 L1, MEASURED).
-    cmd = psql_cmd("postgres", url=url, container=CONTAINER)
+    cmd = psql_cmd(database, url=url, container=CONTAINER)
     p = subprocess.run(cmd, input=sql, capture_output=True, text=True, env=psql_env(url))
     if p.returncode != 0:
         print(f"CANNOT RUN — could not read the catalog from {subject}. TREAT THIS AS NOT RUN.")
@@ -270,7 +642,7 @@ def fetch(local: bool) -> tuple[list[tuple[str, bool, str, str]], list[tuple[str
         sys.exit(2)
 
     try:
-        funcs, money = parse_rows(p.stdout)
+        funcs, money, m4rel, m4fn = parse_rows(p.stdout)
     except ValueError as e:
         print(f"CANNOT RUN — unparseable catalog output from {subject}: {e}")
         print("TREAT THIS AS NOT RUN.")
@@ -280,7 +652,7 @@ def fetch(local: bool) -> tuple[list[tuple[str, bool, str, str]], list[tuple[str
         print(f"CANNOT RUN — {subject} returned no SECURITY DEFINER functions at all, which is not")
         print("a state this schema can be in. TREAT THIS AS NOT RUN.")
         sys.exit(2)
-    return funcs, money, subject
+    return funcs, money, m4rel, m4fn, m4rels, derived_oor, subject
 
 
 # ── --self-test ─────────────────────────────────────────────────────────────────────────────────
@@ -366,8 +738,178 @@ def self_test() -> int:
     case("parse_rows reads the money section",
          parse_rows("---MONEY---\nspend_ledger\ttrue\n")[1] == [("spend_ledger", True)])
     case("parse_rows keeps the two sections separate",
-         parse_rows("---FUNCS---\nf\tfalse\tboolean\tb\n---MONEY---\nt1\tfalse\n")
+         parse_rows("---FUNCS---\nf\tfalse\tboolean\tb\n---MONEY---\nt1\tfalse\n")[:2]
          == ([("f", False, "boolean", "b")], [("t1", False)]))
+
+    # ── RULE 3 ──────────────────────────────────────────────────────────────────────────────────
+    ROLES = ("public", "anon", "authenticated")
+    CLEAN = [(r, g, "SELECT", "SELECT") for r in ("video_artifacts", "workspaces") for g in ROLES]
+
+    case("RULE 3: SELECT-only on every M4 relation is clean",
+         evaluate_m4(CLEAN, (), ROLES) == [])
+    case("RULE 3: a table-level INSERT to anon FAILS",
+         any("M4 NOT READ-ONLY" in p for p in
+             evaluate_m4([("video_artifacts", "anon", "INSERT,SELECT", "")], (), ())))
+    # ⭐ r7 M4 (codex) — the case NEITHER gate caught before today.
+    case("RULE 3: TRUNCATE FAILS, and it is named in the message",
+         any("TRUNCATE" in p and "M4 NOT READ-ONLY" in p for p in
+             evaluate_m4([("video_artifacts", "anon", "SELECT,TRUNCATE", "")], (), ())))
+    # ⭐ r6 B2 — the grant that moves no table ACL. The column-level list arrives after the comma.
+    case("RULE 3: a COLUMN-level insert FAILS just like a table-level one",
+         any("M4 NOT READ-ONLY" in p for p in
+             evaluate_m4([("video_artifacts", "anon", "SELECT", "INSERT")], (), ())))
+    case("RULE 3: authenticated is checked too, not only anon",
+         any("`authenticated`" in p for p in
+             evaluate_m4([("workspaces", "authenticated", "SELECT,DELETE", "")], (), ())))
+    case("RULE 3: the out-of-reach relation FAILS on a mere SELECT",
+         any("M4 OUT OF REACH" in p for p in
+             evaluate_m4([("video_generations_collectable", "anon", "SELECT", "")],
+                         ("video_generations_collectable",), ())))
+    case("RULE 3: the out-of-reach relation is clean when NOTHING is held",
+         evaluate_m4([("video_generations_collectable", "anon", "", "")],
+                     ("video_generations_collectable",), ()) == [])
+    # ⭐ the fail-closed half: silence is not agreement.
+    case("RULE 3: an EXPECTED role that produced no row FAILS when relations exist",
+         any("ROLE NOT PRESENT" in p for p in
+             evaluate_m4([("workspaces", "anon", "SELECT", "")], (), ROLES)))
+    case("RULE 3: a missing role is NOT an error when no M4 relation exists yet",
+         evaluate_m4([], (), ROLES) == [])
+    case("RULE 3: pre-0027 (no relations at all) is vacuous, not a failure",
+         evaluate_m4([], (), ()) == [])
+    case("parse_rows reads the M4REL section",
+         parse_rows("---M4REL---\nvideo_artifacts\tanon\tSELECT\tSELECT\n")[2]
+         == [("video_artifacts", "anon", "SELECT", "SELECT")])
+    case("m4_relations DERIVES names from the manifest, tables and views alike",
+         m4_relations("table:workspaces@abc\nview:video_summary_current@def\nfn:x()@ghi\n")
+         == ["video_summary_current", "workspaces"])
+    case("m4_relations ignores every non-relation line",
+         m4_relations("col:a.b@1\ntrg:c.d@2\nidx:e@3\npol:f.g@4\ncon:h.i@5\n") == [])
+
+    # ── RULE 3, READ polarity (r8 B1) ───────────────────────────────────────────────────────────
+    READS = [(r, g, "SELECT", "SELECT") for r in ("video_artifacts", "workspaces") for g in ROLES]
+    case("RULE 3 read: SELECT held by every session role is clean",
+         evaluate_m4_reads(READS, (), ROLES) == [])
+    case("RULE 3 read: a REVOKED select FAILS",
+         any("M4 READ LOST" in p for p in
+             evaluate_m4_reads([("video_artifacts", "authenticated", "", "")], (), ROLES)))
+    case("RULE 3 read: it names the role and the relation",
+         any("`authenticated`" in p and "`video_artifacts`" in p for p in
+             evaluate_m4_reads([("video_artifacts", "authenticated", "", "")], (), ROLES)))
+    # ⭐⭐ r9 B1 — A COLUMN GRANT IS NOT A READABLE RELATION. This is the case whose absence let a
+    # runtime `permission denied for table video_artifacts` pass all three instruments.
+    case("RULE 3 read: a one-COLUMN grant-back does NOT satisfy the read",
+         any("M4 READ LOST" in p for p in
+             evaluate_m4_reads([("video_artifacts", "authenticated", "", "SELECT")], (), ROLES)))
+    case("RULE 3 add: a column-level grant IS still an addition (the union is right there)",
+         any("M4 NOT READ-ONLY" in p for p in
+             evaluate_m4([("video_artifacts", "anon", "SELECT", "INSERT")], (), ())))
+    case("RULE 3 read: the out-of-reach relation is EXEMPT (it must hold nothing)",
+         evaluate_m4_reads([("video_generations_collectable", "anon", "", "")],
+                           ("video_generations_collectable",), ROLES) == [])
+    case("RULE 3 read: `public` is exempt — the spec grants it nothing",
+         evaluate_m4_reads([("video_artifacts", "public", "", "")], (), ROLES) == [])
+    case("RULE 3 read: pre-0027 (no relations) is vacuous, not a failure",
+         evaluate_m4_reads([], (), ROLES) == [])
+    # ⭐ THE FETCH DECIDES WHAT THE RULE CAN SEE — r8 H1. SELECT was in neither probe list, so the
+    # out-of-reach branch could never fire, while a hand-typed "SELECT," fixture passed in green.
+    case("SELECT is actually PROBED, so the out-of-reach branch can fire at all",
+         "SELECT" in PROBED_ON_M4 and "SELECT" in COLUMN_LEVEL)
+    case("the probe list is a SUPERSET of the forbidden list",
+         set(FORBIDDEN_ON_M4) <= set(PROBED_ON_M4))
+    case("main() calls evaluate_m4_reads",
+         "evaluate_m4_reads(" in Path(__file__).read_text().split("def main()", 1)[-1])
+
+    # ── RULE 3, function half (fork (a) step 5: FN_GRANTEES left the digest) ────────────────────
+    case("RULE 3 fn: no session role executing any M4 function is clean",
+         evaluate_m4_functions([("record_artifact", "anon", False),
+                                ("slot_kind", "authenticated", False)]) == [])
+    case("RULE 3 fn: anon EXECUTE on an M4 function FAILS",
+         any("M4 FN EXECUTABLE" in p for p in
+             evaluate_m4_functions([("record_artifact", "anon", True)])))
+    case("RULE 3 fn: authenticated and public are checked too",
+         len(evaluate_m4_functions([("slot_kind", "authenticated", True),
+                                    ("slot_kind", "public", True)])) == 2)
+    # ⚠ there is deliberately NO allow-list here — assert that, so one cannot be added silently.
+    case("RULE 3 fn: no function is exempt, not even record_artifact",
+         any("record_artifact" in p for p in
+             evaluate_m4_functions([("record_artifact", "authenticated", True)])))
+    case("RULE 3 fn: an empty catalog is vacuous, not a failure",
+         evaluate_m4_functions([]) == [])
+    case("m4_functions DERIVES names from the manifest, stripping the signature",
+         m4_functions("fn:record_artifact(a uuid, b text)@x\nfn:slot_kind(p text)@y\ntable:z@w\n")
+         == ["record_artifact", "slot_kind"])
+    case("parse_rows reads the M4FN section and its boolean",
+         parse_rows("---M4FN---\nslot_kind\tanon\tfalse\n")[3]
+         == [("slot_kind", "anon", False)])
+    # ⟳ r8 L1: the function half now fails closed on a missing role too.
+    case("RULE 3 fn: a missing EXPECTED role FAILS when M4 functions exist",
+         any("ROLE NOT PRESENT" in p for p in
+             evaluate_m4_functions([("slot_kind", "anon", False)], ROLES)))
+    case("RULE 3 fn: a missing role is NOT an error when no M4 function exists",
+         evaluate_m4_functions([], ROLES) == [])
+    # ⟳ r8 M3: the out-of-reach exception is DERIVED from the spec, not typed beside the derivation.
+    SPEC = ("grant select on workspaces to authenticated, anon;\n"
+            "grant select on video_summary_current, video_artifacts_current to authenticated, anon;\n"
+            "grant select on video_generations_collectable to service_role;\n")
+    case("derive: a relation the spec grants no session SELECT on is OUT OF REACH",
+         derive_no_session_access(
+             ["workspaces", "video_summary_current", "video_artifacts_current",
+              "video_generations_collectable"], SPEC) == ("video_generations_collectable",))
+    case("derive: a service_role-only grant does NOT count as a session read",
+         "video_generations_collectable" not in session_readable(SPEC))
+    # ⟳ r9 M1 — ordinary SQL spellings the first parse could not read.
+    case("derive: a SCHEMA-QUALIFIED grant resolves to the bare manifest name",
+         session_readable("grant select on public.video_artifacts to anon;") == {"video_artifacts"})
+    case("derive: a QUOTED identifier resolves to the bare name",
+         session_readable('grant select on "video_artifacts" to anon;') == {"video_artifacts"})
+    case("derive: schema-qualified + quoted together",
+         session_readable('grant select on public."video_artifacts" to authenticated;')
+         == {"video_artifacts"})
+    case("derive: a schema-qualified readable relation is NOT out-of-reach",
+         derive_no_session_access(
+             ["video_artifacts"], "grant select on public.video_artifacts to anon;") == ())
+    # ⟳ r9 M3 — four ordinary SQL spellings, all of which made a READABLE relation derive as
+    # out-of-reach. Postgres folds unquoted identifiers to lower case; the parser must too.
+    case("derive: an UPPERCASE relation folds to lower case",
+         session_readable("GRANT SELECT ON VIDEO_ARTIFACTS TO ANON;") == {"video_artifacts"})
+    case("derive: a MixedCase relation folds too",
+         session_readable("grant select on Video_Artifacts to anon;") == {"video_artifacts"})
+    case("derive: a QUOTED GRANTEE is still a session role",
+         session_readable('grant select on video_artifacts to "anon";') == {"video_artifacts"})
+    case("derive: an UPPERCASE grantee is still a session role",
+         session_readable("grant select on video_artifacts to ANON;") == {"video_artifacts"})
+    # ⟳ r9 M4 — the adversarial corpus is not the DDL contract.
+    # ⟳ r9 M4 — the adversarial corpus is not the DDL contract. Asserted by CONTENT, not by name:
+    # 05_assert.sql contains a string no DDL file does, so its absence from read_spec() is decidable.
+    _assert_marker = "ASSERTION FAILED"
+    case("read_spec EXCLUDES 05_assert.sql — the hostile corpus is not the contract",
+         _assert_marker not in read_spec()
+         and any(_assert_marker in f.read_text() for f in SPEC_DIR.glob("05_*.sql")))
+    case("read_spec still includes the DDL files it derives from",
+         "create table video_artifacts" in read_spec())
+    case("derive: a multi-relation grant line covers every relation on it",
+         {"video_summary_current", "video_artifacts_current"} <= session_readable(SPEC))
+    case("derive: the SHIPPED spec reproduces the declared out-of-reach set",
+         derive_no_session_access(m4_relations(MANIFEST.read_text()), read_spec())
+         == tuple(sorted(M4_NO_SESSION_ACCESS)))
+    case("main() cross-checks the derived set against the declared one",
+         "derive_no_session_access(" in Path(__file__).read_text().split("def fetch(", 1)[-1])
+
+    case("main() calls evaluate_m4_functions too",
+         "evaluate_m4_functions(" in Path(__file__).read_text().split("def main()", 1)[-1])
+
+    # ⭐⭐ THE CALLER CHECK. `evaluate_m4` being correct proves nothing if main() never calls it, and
+    # this repo has now shipped a working gate with no caller three times. Assert the wiring, not
+    # just the rule — and assert it at BOTH ends, since the schema-gate suite is the only thing that
+    # runs this file without a human typing its name.
+    main_src = Path(__file__).read_text().split("def main()", 1)[-1]
+    case("main() calls evaluate_m4 — a rule with no caller is not a gate",
+         "evaluate_m4(" in main_src)
+    case("main() passes the out-of-reach list and the expected roles",
+         "M4_NO_SESSION_ACCESS" in main_src and "SESSION_GRANTEES" in main_src)
+    gates = ROOT / "scripts/check-schema-gates.sh"
+    case("check-schema-gates.sh runs this file",
+         gates.is_file() and "check-anon-exposure.py" in gates.read_text())
 
     # the shipped config must itself be coherent
     case("every shipped ALLOW entry uses a known kind",
@@ -382,22 +924,45 @@ def self_test() -> int:
     return 1 if failed else 0
 
 
+def arg_value(flag: str, default: str) -> str:
+    """`--flag value` from argv, or the default. PURE enough; argv is the only input."""
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return default
+
+
 def main() -> int:
-    funcs, money, subject = fetch(local="--local" in sys.argv)
+    funcs, money, m4rel, m4fn, m4rels, oor, subject = fetch(
+        local="--local" in sys.argv, database=arg_value("--database", "postgres"))
 
     # Say what was READ before saying whether it passed — subject_status.py's rule, applied here
     # because this check has two possible subjects that genuinely disagree.
     exposed = [n for n, a, _, _ in funcs if a]
+    present = sorted({rel for rel, _, _, _ in m4rel})
     print(f"subject: {subject}")
     print(f"         {len(funcs)} SECURITY DEFINER function(s) in public, "
           f"{len(exposed)} anon-EXECUTable")
     print(f"         money tables TRUNCATE-able by a session role: "
-          f"{sum(1 for _, t in money if t)}/{len(money)} (baseline {TRUNCATE_BASELINE})\n")
+          f"{sum(1 for _, t in money if t)}/{len(money)} (baseline {TRUNCATE_BASELINE})")
+    # ⚠ RULE 3's coverage is stated as a COUNT, never as a verdict. Pre-0027 it is 0 of N and the
+    # rule checks nothing — which is fine and must be VISIBLE, because a rule that silently checks
+    # an empty set reads exactly like a rule that passed.
+    print(f"         M4 functions present: {len({f for f, _, _ in m4fn})}"
+          f"  [{len(m4fn)} (function, role) pairs read]")
+    print(f"         M4 relations present: {len(present)}/{len(m4rels)}"
+          + ("  — RULE 3 has nothing to check here (pre-0027)" if not present else "")
+          + f"  [{len(m4rel)} (relation, role) pairs read]\n")
 
     problems = evaluate(funcs, money)
+    problems += evaluate_m4(m4rel, oor, SESSION_GRANTEES)
+    problems += evaluate_m4_reads(m4rel, oor, SESSION_GRANTEES)
+    problems += evaluate_m4_functions(m4fn, SESSION_GRANTEES)
     if not problems:
         print("Anon exposure OK — every anon-callable SECURITY DEFINER function is allow-listed")
-        print("with a justification that still holds, and the TRUNCATE debt has not grown.")
+        print("with a justification that still holds, the TRUNCATE debt has not grown, and no")
+        print(f"session role can write to any of the {len(present)} M4 relation(s) present.")
         return 0
     print(f"FAILED — {len(problems)} problem(s):\n")
     for p in problems:

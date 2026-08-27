@@ -13,6 +13,21 @@
 # proof. This builds the state FOR REAL in throwaway databases and drops them afterwards. The shared
 # stack is never touched: `an-instrument-that-edits-the-repo-corrupts-its-peers`.
 #
+# ⚠⚠ THAT LAST SENTENCE IS TRUE OF EVERY MUTATION IN THIS FILE AND NOT OF THE CLASS — ⟳ r8 L3
+# (claude), proved the expensive way. Object-level grants are PER-DATABASE. **Role membership is
+# CLUSTER-WIDE**: the reviewer's `grant service_role to anon` probe changed `pg_auth_members` and
+# silently altered `has_table_privilege('anon', …)` in the container's shared `postgres` database as
+# well as in every scratch clone, garbaging a result table before it was noticed. The brief for that
+# round listed role membership as a candidate mutation, so the next person to reach for it will reach
+# for it inside a harness that promises an isolation it does not have for that one case. If you add a
+# role-scoped mutation here, it must create its OWN role and drop it, never grant an existing one.
+#
+# ⚠ AND TWO OF THESE MUST NOT RUN AT ONCE. `mutate-schema.py` (gate 2) works inside the SHARED
+# `postgres` database, and during round 8 a reviewer and the coordinator ran it concurrently: one
+# reported 23/63 with "baseline restored: STILL BROKEN" while the other, minutes later, measured
+# 63/63 and a clean database. That was filed as a Blocking finding before it was traced. There is no
+# lock here; serialise by hand.
+#
 # ⭐ WHAT EACH GENERATION OF THIS HARNESS COULD NOT EXPRESS — the defect keeps moving one layer out:
 #
 #   r3  it could only DROP things              -> a name-matching gate passed, and DISABLE was invisible
@@ -39,6 +54,62 @@ ROLLBACK="supabase/rollback/rollback_0027_stable_blob_addressing.sql"
 adm()  { docker exec -i "$CONTAINER" psql -U postgres -d postgres -tAq -v ON_ERROR_STOP=1 "$@"; }
 db()   { local d="$1"; shift; docker exec -i "$CONTAINER" psql -U postgres -d "$d" -tAq "$@"; }
 gate() { python3 ./scripts/check-live-schema.py --database "$1" "$2" >/dev/null 2>&1; }
+
+# ⭐ FORK (a) STEP 3 — THE SECOND GATE. Session-role access to M4's relations left the digest and
+# moved to `check-anon-exposure.py` RULE 3. Every mutation that used to be caught by `gate` and is
+# now caught by `anon_gate` asserts BOTH halves: that the digest passes AND that the new home fails.
+# One assertion would not distinguish "coverage moved" from "coverage was deleted", and deleting it
+# is exactly what a careless reading of "remove privileges from the digest" produces.
+#
+# ⛔⛔ IT MATCHES THE NAMED PROBLEM, NOT THE EXIT CODE — ⟳ r8 B1 (codex), CONFIRMED by re-measurement.
+# The first version tested `exit != 0` and that was a FALSE GREEN on every moved mutation. The
+# template is built with `pg_dump --no-privileges`, which strips ACLs — and a Postgres function with
+# no ACL is EXECUTABLE BY PUBLIC. So on an UNMUTATED M4 scratch the script is already red for two
+# reasons that have nothing to do with M4:
+#     UNLISTED           `exec_sql` is SECURITY DEFINER and anon-EXECUTable
+#     UNLISTED           `record_correction_spend` is SECURITY DEFINER and anon-EXECUTable
+#     LOWER THE BASELINE 0 money tables are TRUNCATE-able, baseline says 5
+#     CONTROL EXIT = 1
+# Every "RULE 3 FAILS" tick was therefore earned by that noise, not by the sabotage. The mutations
+# proved the SCRIPT was red on the fixture; they proved nothing about coverage having moved.
+#
+# So `anon_gate` now takes the problem TOKEN it expects, and `anon_control` asserts that same token
+# is ABSENT before the mutation — which is the discrimination the exit code could never provide.
+# ⚠ NO PIPE INTO `grep -q`. This file runs under `set -o pipefail`, and `grep -q` exits the moment
+# it matches — which SIGPIPEs the producer, and pipefail then returns the PRODUCER's status. So
+# `anon_out … | grep -q X` reports FAILURE on the very runs where X was found. MEASURED here
+# 2026-08-26: RULE 3 printed "M4 NOT READ-ONLY `anon` holds DELETE, INSERT, UPDATE on
+# `video_artifacts`" while all four moved mutations reported MUTATION SURVIVED. Capture first, match
+# second. (Third instance of a pipeline status being read as a verdict in this repo.)
+# ⛔ BOTH HELPERS FAIL WHEN THE INSTRUMENT COULD NOT RUN — ⟳ r9 M2 (claude). `anon_out` used to
+# discard the exit status, and `check-anon-exposure.py` exits 2 with a `CANNOT RUN —` banner on a
+# missing manifest, an unreadable catalog, an unparseable row, an empty definer list, or a
+# derived/declared mismatch. None of those outputs contains a problem token, so EVERY CONTROL PASSED.
+# MEASURED: `anon_control <a database that does not exist> "M4 NOT READ-ONLY"` returned PASS.
+# The control is the entire mechanism r8 B1 installed so a tick could not be earned by noise; a
+# control that passes because nothing ran is that same defect one layer out.
+anon_out() { python3 ./scripts/check-anon-exposure.py --local --database "$1" 2>&1; }
+anon_ran() {
+  local o rc; o=$(anon_out "$1"); rc=$?
+  case "$rc:$o" in 2:*|*"CANNOT RUN"*) echo "$o" | head -2 >&2; return 1 ;; esac
+  printf '%s' "$o"
+}
+anon_gate()    { local o; o=$(anon_ran "$1") || return 1; case "$o" in *"$2"*) return 0 ;; *) return 1 ;; esac; }
+anon_control() { local o; o=$(anon_ran "$1") || return 1; case "$o" in *"$2"*) return 1 ;; *) return 0 ;; esac; }
+
+# ── the PREMISE half of gate 13 (mutations 28, 29) ──────────────────────────────────────────────
+# Same three-way discipline as anon_ran, for the same measured reason: exit 2 is CANNOT RUN and must
+# never be read as either verdict. `premise_gate` passes when the premises go RED (the drift was
+# caught); `premise_control` passes when they all hold on an unmutated template. A gate with no
+# control can be earned by a database that was already broken — r8 B1, measured.
+premise_rc() {
+  local o rc
+  o=$(python3 ./scripts/verify-exclusion-reasons.py --premises-only --database "$1" 2>&1); rc=$?
+  case "$rc:$o" in 2:*|*"CANNOT RUN"*) echo "$o" | head -2 >&2; return 2 ;; esac
+  return "$rc"
+}
+premise_gate()    { premise_rc "$1"; [ "$?" -eq 1 ]; }
+premise_control() { premise_rc "$1"; [ "$?" -eq 0 ]; }
 
 cleanup() {
   for d in $(adm -c "select datname from pg_database where datname like '${PREFIX}%';" 2>/dev/null); do
@@ -82,11 +153,20 @@ echo "═══ building the REAL post-ADR-0011 M4 schema as a TEMPLATE ══�
 # PRE-ADR-0011 schema: `sync_corrections_to_workspace_video()` plus both `videos_corrections_sync_*`
 # triggers, none of which M4 ships. The gate was therefore being mutation-proven against a schema
 # that will never exist. `build-m4-schema.py` applies Tasks 1-2 and ASSERTS the end state.
-adm -c "create database $TPL;" >/dev/null 2>&1
-if ! docker exec -i "$CONTAINER" sh -c \
-      "pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges | psql -U postgres -d $TPL -q" \
-      >/dev/null 2>&1; then
-  echo "CANNOT RUN — could not clone the live schema into the template. Treat this as NOT RUN." >&2
+# ⟳ 2026-08-26 — CLONE A *PRE-M4* BASE, NOT `postgres` DIRECTLY. Once 0027 was applied locally, the
+# `pg_dump` clone already contained M4 and the apply below died on `relation "workspaces" already
+# exists`, so this gate reported "the spec did not apply to the cloned schema" and stopped. It was
+# one of seven with that single cause; `scripts/m4-base-db.sh` documents the set.
+# ⚠ The base is named under $PREFIX so the existing EXIT trap reaps it with everything else, and it
+# is built ONCE — every database below is a `template` clone of it, which the note above measures at
+# ~100× cheaper than repeating the dump.
+BASE="${PREFIX}_base"
+if ! ./scripts/m4-base-db.sh "$BASE"; then
+  echo "CANNOT RUN — could not build a pre-M4 base database. Treat this as NOT RUN." >&2
+  exit 2
+fi
+if ! adm -c "create database $TPL template $BASE;" >/dev/null 2>&1; then
+  echo "CANNOT RUN — could not clone $BASE into the template. Treat this as NOT RUN." >&2
   exit 2
 fi
 if ! python3 ./scripts/build-m4-schema.py --quiet --out /tmp/m4-mutation-schema.sql; then
@@ -114,21 +194,52 @@ if fresh "${PREFIX}_casc"; then
   report "post-cascade residue -> --expect-absent FAILS (140/161 objects survive)" fail "$r"
 fi
 
-echo "═══ mutation 3 ⭐ the ADR-0011 RESIDUE: a Task 1 that never landed ═══"
-# MEASURED 2026-08-25: with the raw spec applied, the rollback left three objects behind and
-# `--expect-absent` reported ABSENT — because the gate's inventory is post-ADR-0011 and could not
-# see them. `--expect-present` must REJECT this schema: it is not a valid M4.
-adm -c "create database ${PREFIX}_raw;" >/dev/null 2>&1
-docker exec -i "$CONTAINER" sh -c \
-  "pg_dump -U postgres -d postgres --schema-only --no-owner --no-privileges | psql -U postgres -d ${PREFIX}_raw -q" \
-  >/dev/null 2>&1
-if { cat "$SPEC"/01_workspaces.sql "$SPEC"/03_generations.sql "$SPEC"/04_artifacts.sql; } \
-   | docker exec -i "$CONTAINER" psql -U postgres -d "${PREFIX}_raw" -tAq -v ON_ERROR_STOP=1 \
-   >/dev/null 2>&1; then
-  gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
-  report "pre-ADR-0011 schema -> --expect-present FAILS (sync fn + 2 triggers)" fail "$r"
-else
-  echo "  ✗ could not build the raw pre-ADR-0011 schema — treat mutation 3 as NOT RUN"; fail=1
+echo "═══ mutation 3 ⭐ COLUMN DRIFT on an ENUMERATED relation ═══"
+# ⟳ REWRITTEN 2026-08-26 — AND THE OLD VERSION'S SUBJECT NO LONGER EXISTS, WHICH IS WHY.
+#
+# It used to build the "pre-ADR-0011 residue" by applying the raw spec files 01/03/04, and assert
+# that `--expect-present` REJECTED the result because of `sync_corrections_to_workspace_video()`
+# and its two triggers. Task 1 (8907b5a) deleted all three FROM THOSE SPEC FILES, so the raw build
+# is now byte-for-byte the post-ADR-0011 schema, `--expect-present` correctly passes, and the
+# mutation reported MUTATION SURVIVED. VERIFIED before touching it: the only remaining occurrence
+# of that function name in the spec or in 0027 is a COMMENT recording its deletion.
+#
+# ⭐⭐ AND THE REPLACEMENT'S FIRST DRAFT ASSERTED THE WRONG DIRECTION, WHICH IS THE FINDING.
+#
+# It was written expecting `--expect-present` to FAIL on an added column — "the manifest digests the
+# column list of every relation it enumerates, so drift there is caught". MEASURED: the column
+# landed (2 -> 3) and the gate PASSED. Present mode is `MANIFEST ⊆ live`, and the manifest
+# enumerates columns as individual objects, so an EXTRA column is simply an extra live object and
+# the subset still holds. The asymmetry is deliberate and worth stating: a REMOVED column breaks the
+# subset and IS caught; an ADDED one is invisible.
+#
+# ⚠ SO THIS IS A THIRD FACE OF MUTATIONS 28 AND 29, NOT THEIR COMPLEMENT — and unlike those two it
+#   has NO COMPENSATING PREMISE. `verify-exclusion-reasons.py` asserts "M4 creates exactly one type,
+#   an enum" and "no partitioned table exists", which catch the domain and the partition. Nothing
+#   asserts a column count. This mutation therefore DOCUMENTS a hole rather than guarding one, and
+#   says so rather than being quietly written to pass. Whether that hole is worth closing is a
+#   design question, not a defect to patch here.
+if fresh "${PREFIX}_raw"; then
+  before_c=$(db "${PREFIX}_raw" -c "select count(*) from information_schema.columns where table_schema='public' and table_name='workspace_videos';" | tr -d '[:space:]')
+  db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter table public.workspace_videos add column m4_mut_residue text;
+SQL
+  after_c=$(db "${PREFIX}_raw" -c "select count(*) from information_schema.columns where table_schema='public' and table_name='workspace_videos';" | tr -d '[:space:]')
+  echo "     workspace_videos columns: ${before_c:-<empty>} -> ${after_c:-<empty>}"
+  if [ -z "$before_c" ] || [ "$before_c" = "$after_c" ]; then
+    echo "  ✗ THE COLUMN DID NOT LAND — treat mutation 3 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+    report "an extra COLUMN -> the digest is blind and still PASSES (no premise covers it)" pass "$r"
+    # The other direction, which is the one that IS guarded — and asserting it here is what keeps
+    # the case above from reading as "the gate sees nothing".
+    db "${PREFIX}_raw" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+alter table public.workspace_videos drop column m4_mut_residue;
+alter table public.workspace_videos drop column video_id cascade;
+SQL
+    gate "${PREFIX}_raw" --expect-present && r=pass || r=fail
+    report "a REMOVED column breaks MANIFEST ⊆ live -> --expect-present FAILS" fail "$r"
+  fi
 fi
 
 echo "═══ mutation 4 ⭐⭐ r3 B2: DROP EVERY OWN-TABLE GUARD TRIGGER ═══"
@@ -221,12 +332,19 @@ SQL
 fi
 
 echo "═══ mutation 10 ⭐⭐ r5 B2: GRANTS — the table opens up to anon, definitions untouched ═══"
+# ⟳ MOVED HOME 2026-08-26 (fork (a) step 3). This was a `gate` case for two rounds. The digest no
+# longer carries session-role access, so the CORRECT verdict from check-live-schema is now PASS —
+# and the whole question is whether anything else says no. Both halves are asserted.
 if fresh "${PREFIX}_acl"; then
   db "${PREFIX}_acl" >/dev/null 2>&1 <<'SQL'
 grant insert, update, delete on video_artifacts to anon;
 SQL
+  anon_control "$TPL" "M4 NOT READ-ONLY" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no M4-NOT-READ-ONLY problem" pass "$r"
   gate "${PREFIX}_acl" --expect-present && r=pass || r=fail
-  report "insert/update/delete granted to anon -> --expect-present FAILS" fail "$r"
+  report "insert/update/delete to anon -> the DIGEST no longer claims to see it" pass "$r"
+  anon_gate "${PREFIX}_acl" "M4 NOT READ-ONLY" && r=pass || r=fail
+  report "insert/update/delete to anon -> RULE 3 names M4 NOT READ-ONLY" pass "$r"
 fi
 
 echo "═══ mutation 11 ⭐ r5 B2: a policy recreated AS RESTRICTIVE — same cmd, roles and qual ═══"
@@ -367,8 +485,46 @@ SQL
   if [ "$before_c" = "$after_c" ]; then
     echo "  ✗ THE MUTATION DID NOT CHANGE ANYTHING — treat mutation 17 as NOT RUN"; fail=1
   else
+    # ⟳ MOVED HOME 2026-08-26 with mutation 10. RULE 3 reads has_any_column_privilege for exactly
+    # this: the grant moves no table ACL, so a check that only asked has_table_privilege would be
+    # green here — which is how r6 B2 survived a 16/16 report.
     gate "${PREFIX}_colacl" --expect-present && r=pass || r=fail
-    report "column-level insert granted to anon -> --expect-present FAILS" fail "$r"
+    report "column-level insert to anon -> the DIGEST no longer claims to see it" pass "$r"
+    anon_gate "${PREFIX}_colacl" "M4 NOT READ-ONLY" && r=pass || r=fail
+    report "column-level insert to anon -> RULE 3 names M4 NOT READ-ONLY" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 22 ⭐⭐⭐ r7 M4 (codex): TRUNCATE — the verb NO gate could see until today ═══"
+# THE FINDING THIS STEP CLOSES. `grant truncate on video_artifacts to anon` passed BOTH gates: the
+# digest's REL_PRIVS listed only SELECT/INSERT/UPDATE/DELETE, and this script's money-table rule
+# covers five tables, none of them M4's. TRUNCATE fires neither RLS nor row triggers, so it walks
+# past every append-only guard in the schema — and `video_artifacts` is the PAID manifest.
+#
+# ⚠ Note the fix shape: TRUNCATE was NOT added to the digest as a fifth privilege. That is the whole
+# argument of fork (a) — a fifth redefinition of the fingerprint is what the previous four rounds
+# each did, and each was correct and insufficient.
+if fresh "${PREFIX}_trunc"; then
+  before_t=$(db "${PREFIX}_trunc" -c "select has_table_privilege('anon','video_artifacts','TRUNCATE')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_trunc" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+grant truncate on video_artifacts to anon;
+SQL
+  after_t=$(db "${PREFIX}_trunc" -c "select has_table_privilege('anon','video_artifacts','TRUNCATE')::text;" | tr -d '[:space:]')
+  echo "     anon TRUNCATE on video_artifacts: ${before_t:-<empty>} -> ${after_t:-<empty>}"
+  if [ -z "$before_t" ] || [ -z "$after_t" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — treat mutation 22 as NOT RUN"; fail=1
+  elif [ "$before_t" = "$after_t" ]; then
+    echo "  ✗ THE GRANT DID NOT LAND — treat mutation 22 as NOT RUN"; fail=1
+  else
+    # ⟳ r9 H1 (codex): the token used to be the bare word `TRUNCATE`, which ALSO appears in RULE 2's
+    # own message — "LOWER THE BASELINE 0 money tables are TRUNCATE-able" — and that message is
+    # present on the unmutated template. So the tick could be earned while RULE 3 said nothing about
+    # any M4 relation. This is the SAME defect the anon_gate repair was written to fix, surviving in
+    # one of the four call sites: a token is only a discriminator if the control cannot contain it.
+    anon_control "$TPL" "holds TRUNCATE on" && r=pass || r=fail
+    report "CONTROL: an unmutated M4 reports no TRUNCATE on any M4 relation" pass "$r"
+    anon_gate "${PREFIX}_trunc" "holds TRUNCATE on \`video_artifacts\`" && r=pass || r=fail
+    report "TRUNCATE granted to anon -> RULE 3 names TRUNCATE on video_artifacts" pass "$r"
   fi
 fi
 
@@ -384,6 +540,240 @@ SQL
   else
     gate "${PREFIX}_rule" --expect-present && r=pass || r=fail
     report "DO INSTEAD NOTHING rule on video_artifacts -> --expect-present FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 21 ⭐⭐⭐ r7 M (codex): an ARGUMENT DEFAULT changed — same symbol, same body ═══"
+# The narrowest sabotage in this suite. `prosrc` is untouched and the identity arguments are
+# untouched — identity arguments OMIT DEFAULTS — so before r7 the digest was byte-identical, while
+# every caller that OMITS the argument writes a different value. TWO falsifiers below: if
+# pg_get_function_arguments does not move, the mutation did not happen; if anything ELSE moves, the
+# gate could go red for a reason round 5 already covered and this case proves nothing.
+if fresh "${PREFIX}_argdef"; then
+  # A default cannot be changed by ALTER FUNCTION — only by CREATE OR REPLACE at the same signature,
+  # which is exactly the hot-fix shape. Everything except the one default is rebuilt FROM THE
+  # CATALOG, so the replacement is byte-identical in body, volatility, config and security context.
+  probe="from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='record_artifact'"
+  # ⚠ EVERY CAST HERE IS LOAD-BEARING. Without `::text` on prosecdef/provolatile this SELECT dies
+  # with `operator is not unique: text || "char"`, both probes come back EMPTY, and empty == empty
+  # makes the narrowness check PASS WITHOUT RUNNING. Measured 2026-08-26 — it reported ✓ on its very
+  # first run. That is why the emptiness guard below exists: silence must not read as agreement.
+  narrow="select pg_get_function_identity_arguments(p.oid)||'|'||md5(p.prosrc)||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.provolatile::text $probe;"
+  argsql="select pg_get_function_arguments(p.oid) $probe;"
+  before_a=$(db "${PREFIX}_argdef" -c "$argsql")
+  before_n=$(db "${PREFIX}_argdef" -c "$narrow")
+  db "${PREFIX}_argdef" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+do $$ declare s text; begin
+  select 'create or replace function public.record_artifact(' ||
+         regexp_replace(pg_get_function_arguments(p.oid),
+                        'p_md_hash text DEFAULT [^,)]*',
+                        'p_md_hash text DEFAULT ''r7-default''::text') ||
+         ') returns ' || pg_get_function_result(p.oid) ||
+         ' language plpgsql security definer set search_path = '''' as ' || quote_literal(p.prosrc)
+    into s
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'record_artifact';
+  execute s;
+end $$;
+SQL
+  after_a=$(db "${PREFIX}_argdef" -c "$argsql")
+  after_n=$(db "${PREFIX}_argdef" -c "$narrow")
+  echo "     p_md_hash: $(echo "$before_a" | grep -o 'p_md_hash[^,)]*') -> $(echo "$after_a" | grep -o 'p_md_hash[^,)]*')"
+  if [ -z "$before_a" ] || [ -z "$before_n" ] || [ -z "$after_n" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — the narrowness check cannot run, so a CAUGHT verdict here"
+    echo "    would be unearned. treat mutation 21 as NOT RUN"; fail=1
+  elif [ "$before_a" = "$after_a" ]; then
+    echo "  ✗ THE DEFAULT DID NOT CHANGE — treat mutation 21 as NOT RUN"; fail=1
+  elif [ "$before_n" != "$after_n" ]; then
+    # ⭐ WITHOUT THIS, A CAUGHT VERDICT PROVES NOTHING. If the rebuild also moved prosrc, prosecdef,
+    # proconfig or the identity args, the gate would have gone red on a column it already digested
+    # in round 5 — and the r7 finding would read as fixed while the narrow case stayed invisible.
+    echo "  ✗ THE MUTATION IS NOT NARROW — identity/body/secdef/config/volatility also moved:"
+    echo "      before: $before_n"
+    echo "      after:  $after_n"
+    echo "    treat mutation 21 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_argdef" --expect-present && r=pass || r=fail
+    report "an argument DEFAULT changed, NOTHING else -> --expect-present FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 23 ⭐⭐⭐ step 5: anon EXECUTE on an M4 function — the OTHER half that left ═══"
+# `FN_GRANTEES` left the digest in step 5, so RULE 3's function half is now the ONLY thing asserting
+# that no session role can call an M4 function. On production the platform grants EXECUTE at CREATE
+# time, so this is not a hypothetical sabotage — it is the state the schema ARRIVES IN unless the
+# revoke lands. Both gates are asserted: the digest is blind (correctly), RULE 3 is not.
+if fresh "${PREFIX}_fnacl"; then
+  before_f=$(db "${PREFIX}_fnacl" -c "select has_function_privilege('anon','public.slot_kind(text)','EXECUTE')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_fnacl" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+grant execute on function slot_kind(text) to anon;
+SQL
+  after_f=$(db "${PREFIX}_fnacl" -c "select has_function_privilege('anon','public.slot_kind(text)','EXECUTE')::text;" | tr -d '[:space:]')
+  echo "     anon EXECUTE on slot_kind: ${before_f:-<empty>} -> ${after_f:-<empty>}"
+  if [ -z "$before_f" ] || [ -z "$after_f" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — treat mutation 23 as NOT RUN"; fail=1
+  elif [ "$before_f" = "$after_f" ]; then
+    echo "  ✗ THE GRANT DID NOT LAND — treat mutation 23 as NOT RUN"; fail=1
+  else
+    anon_control "$TPL" "M4 FN EXECUTABLE" && r=pass || r=fail
+    report "CONTROL: an unmutated M4 does not report slot_kind as session-executable" pass "$r"
+    gate "${PREFIX}_fnacl" --expect-present && r=pass || r=fail
+    report "anon EXECUTE on an M4 function -> the DIGEST no longer claims to see it" pass "$r"
+    anon_gate "${PREFIX}_fnacl" "M4 FN EXECUTABLE" && r=pass || r=fail
+    report "anon EXECUTE on an M4 function -> RULE 3 names M4 FN EXECUTABLE" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 24 ⭐⭐⭐⭐ r8 B1 (claude): a total session-role READ OUTAGE ═══"
+# THE POLARITY THE WHOLE INSTRUMENT WAS MISSING. Every mutation above asks whether a privilege was
+# ADDED. The digest that was removed carried BOTH directions — SELECT was in REL_PRIVS, so a revoke
+# moved it. MEASURED at 522e766, one statement, all three instruments green over a database on which
+# no logged-in user can read a single M4 row.
+# ⚠ ADR-0012 makes this MORE likely: revoke-from-all-four-then-grant-back means the grant-back line
+# is now the only thing between the schema and this state.
+if fresh "${PREFIX}_readout"; then
+  anon_control "$TPL" "M4 READ LOST" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no lost read" pass "$r"
+  before_r=$(db "${PREFIX}_readout" -c "select has_table_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_readout" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+revoke select on video_artifacts, video_generations, workspace_videos, workspaces,
+                 video_artifact_sources, video_artifacts_current, video_summary_current
+  from anon, authenticated;
+SQL
+  after_r=$(db "${PREFIX}_readout" -c "select has_table_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  echo "     authenticated SELECT on video_artifacts: ${before_r:-<empty>} -> ${after_r:-<empty>}"
+  if [ -z "$before_r" ] || [ -z "$after_r" ]; then
+    echo "  ✗ A PROBE RETURNED NOTHING — treat mutation 24 as NOT RUN"; fail=1
+  elif [ "$before_r" = "$after_r" ]; then
+    echo "  ✗ THE REVOKE DID NOT LAND — treat mutation 24 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_readout" --expect-present && r=pass || r=fail
+    report "a total read outage -> the DIGEST cannot see it (this is the trade)" pass "$r"
+    anon_gate "${PREFIX}_readout" "M4 READ LOST" && r=pass || r=fail
+    report "a total read outage -> RULE 3 names M4 READ LOST" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 26 ⭐⭐⭐⭐ r9 B1 (claude): a read outage with a ONE-COLUMN grant-back ═══"
+# STRICTLY MORE REACHABLE THAN MUTATION 24. That one needs a grant-back to be FORGOTTEN; this one
+# needs it to be WRITTEN WITH A COLUMN LIST, which is how people narrow a grant. The read rule used
+# the UNION of table- and column-level privileges, so one surviving column kept SELECT in the set and
+# the rule fell silent while every `select *` raised 42501.
+if fresh "${PREFIX}_colread"; then
+  anon_control "$TPL" "M4 READ LOST" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no lost read (column split)" pass "$r"
+  db "${PREFIX}_colread" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+revoke select on video_artifacts, video_generations, workspace_videos, workspaces,
+                 video_artifact_sources, video_artifacts_current, video_summary_current
+  from anon, authenticated;
+grant select (workspace_id) on video_artifacts        to anon, authenticated;
+grant select (workspace_id) on video_generations      to anon, authenticated;
+grant select (workspace_id) on workspace_videos       to anon, authenticated;
+grant select (id)           on workspaces             to anon, authenticated;
+grant select (workspace_id) on video_artifact_sources to anon, authenticated;
+grant select (workspace_id) on video_artifacts_current to anon, authenticated;
+grant select (workspace_id) on video_summary_current  to anon, authenticated;
+SQL
+  tbl_c=$(db "${PREFIX}_colread" -c "select has_table_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  col_c=$(db "${PREFIX}_colread" -c "select has_any_column_privilege('authenticated','video_artifacts','SELECT')::text;" | tr -d '[:space:]')
+  echo "     authenticated on video_artifacts: table=$tbl_c  any-column=$col_c  (the whole point)"
+  if [ "$tbl_c" != "false" ] || [ "$col_c" != "true" ]; then
+    echo "  ✗ THE MUTATION DID NOT PRODUCE THE COLUMN-ONLY STATE — treat mutation 26 as NOT RUN"; fail=1
+  else
+    anon_gate "${PREFIX}_colread" "M4 READ LOST" && r=pass || r=fail
+    report "a column-only grant-back -> RULE 3 still names M4 READ LOST" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 27 ⭐⭐⭐⭐ r9 H2 (claude): a SIXTH policy opens every tenant's manifest ═══"
+# RLS IS PERMISSIVE-OR, so ONE added `using (true)` policy defeats all five owner-scoping policies at
+# once WITHOUT TOUCHING ANY OF THEM. Present mode is MANIFEST ⊆ live and ignores extra objects — true
+# of most extra objects, FALSE of one ATTACHED to a manifest relation, which is a MODIFICATION of that
+# relation. r6 H1 acted on that sentence for pg_rewrite and only for pg_rewrite.
+# MEASURED before the fix: anon went from 0 rows to reading another tenant's blob_key, and the digest
+# printed "M4 is PRESENT as expected … 5 policies" over a database holding six.
+if fresh "${PREFIX}_pol"; then
+  before_p=$(db "${PREFIX}_pol" -c "select count(*) from pg_policy pol join pg_class c on c.oid=pol.polrelid where c.relname='video_artifacts';" | tr -d '[:space:]')
+  db "${PREFIX}_pol" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create policy r9_wide on video_artifacts for select to anon, authenticated using (true);
+SQL
+  after_p=$(db "${PREFIX}_pol" -c "select count(*) from pg_policy pol join pg_class c on c.oid=pol.polrelid where c.relname='video_artifacts';" | tr -d '[:space:]')
+  echo "     policies on video_artifacts: ${before_p:-<empty>} -> ${after_p:-<empty>}"
+  if [ -z "$before_p" ] || [ "$before_p" = "$after_p" ]; then
+    echo "  ✗ THE POLICY DID NOT LAND — treat mutation 27 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_pol" --expect-present && r=pass || r=fail
+    report "a SIXTH policy on video_artifacts -> --expect-present FAILS" fail "$r"
+  fi
+fi
+
+echo "═══ mutation 25 ⭐⭐ r8 H1 (claude): SELECT on the OUT-OF-REACH relation ═══"
+# The rule always said "any session-role privilege here is a defect". The FETCH could not feed it:
+# SELECT was in neither probe list, so `held` was empty and the branch never fired — while a
+# self-test case built from the hand-typed fixture "SELECT," passed in green over the gap.
+if fresh "${PREFIX}_oor"; then
+  anon_control "$TPL" "M4 OUT OF REACH" && r=pass || r=fail
+  report "CONTROL: an unmutated M4 reports no out-of-reach privilege" pass "$r"
+  before_o=$(db "${PREFIX}_oor" -c "select has_table_privilege('anon','video_generations_collectable','SELECT')::text;" | tr -d '[:space:]')
+  db "${PREFIX}_oor" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+grant select on video_generations_collectable to anon;
+SQL
+  after_o=$(db "${PREFIX}_oor" -c "select has_table_privilege('anon','video_generations_collectable','SELECT')::text;" | tr -d '[:space:]')
+  echo "     anon SELECT on the collectable view: ${before_o:-<empty>} -> ${after_o:-<empty>}"
+  if [ -z "$before_o" ] || [ "$before_o" = "$after_o" ]; then
+    echo "  ✗ THE GRANT DID NOT LAND — treat mutation 25 as NOT RUN"; fail=1
+  else
+    anon_gate "${PREFIX}_oor" "M4 OUT OF REACH" && r=pass || r=fail
+    report "SELECT on the out-of-reach view -> RULE 3 names M4 OUT OF REACH" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 28 ⭐⭐⭐⭐ a DOMAIN type — the manifest never enumerates it ═══"
+# CATALOG_SQL's type arm is `where n.nspname='public' and t.typtype='e'`. A DOMAIN is not an enum, so
+# it is not digested WRONGLY — it is ABSENT, and present mode (MANIFEST ⊆ live) cannot see an object
+# it never enumerated. A domain's CHECK decides whether a write is admitted, so this is a guard the
+# gate is structurally blind to.
+# The exclusion reason for rule 10 covers this by asserting "M4 creates exactly one type, an enum".
+# That is a PREMISE ABOUT THIS SCHEMA, true when written and re-read by nothing until 2026-08-26.
+# ⭐ BOTH HALVES ARE ASSERTED. One would not distinguish "coverage moved" from "coverage deleted".
+if fresh "${PREFIX}_dom"; then
+  before_t=$(db "${PREFIX}_dom" -c "select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typtype='d';" | tr -d '[:space:]')
+  db "${PREFIX}_dom" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create domain public.m4_mut_positive as integer check (value > 0);
+SQL
+  after_t=$(db "${PREFIX}_dom" -c "select count(*) from pg_type t join pg_namespace n on n.oid=t.typnamespace where n.nspname='public' and t.typtype='d';" | tr -d '[:space:]')
+  echo "     domain types in public: ${before_t:-<empty>} -> ${after_t:-<empty>}"
+  if [ -z "$before_t" ] || [ "$before_t" = "$after_t" ]; then
+    echo "  ✗ THE DOMAIN DID NOT LAND — treat mutation 28 as NOT RUN"; fail=1
+  else
+    premise_control "$TPL" && r=pass || r=fail
+    report "CONTROL: an unmutated M4 template satisfies every premise" pass "$r"
+    gate "${PREFIX}_dom" --expect-present && r=pass || r=fail
+    report "a DOMAIN type -> the DIGEST is blind and still PASSES" pass "$r"
+    premise_gate "${PREFIX}_dom" && r=pass || r=fail
+    report "a DOMAIN type -> the rule-10 PREMISE breaks and gate 13 FAILS" pass "$r"
+  fi
+fi
+
+echo "═══ mutation 29 ⭐⭐⭐ a PARTITIONED table — relkind 'p' is never selected ═══"
+# Same shape one catalog over: CATALOG_SQL's table arm is `c.relkind='r'`, so relkind 'p' is absent
+# from the manifest entirely. Rule 8's written reason claims these columns are WHERE-clause filters —
+# TRUE of attisdropped and tgisinternal, and FALSE of `relpartbound`, which appears NOWHERE in
+# CATALOG_SQL. Its real reason is the premise that M4 has no partitions.
+if fresh "${PREFIX}_part"; then
+  before_pt=$(db "${PREFIX}_part" -c "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and (c.relkind='p' or c.relispartition);" | tr -d '[:space:]')
+  db "${PREFIX}_part" -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<'SQL'
+create table public.m4_mut_part (id int, k text) partition by range (id);
+SQL
+  after_pt=$(db "${PREFIX}_part" -c "select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and (c.relkind='p' or c.relispartition);" | tr -d '[:space:]')
+  echo "     partitioned tables/partitions in public: ${before_pt:-<empty>} -> ${after_pt:-<empty>}"
+  if [ -z "$before_pt" ] || [ "$before_pt" = "$after_pt" ]; then
+    echo "  ✗ THE PARTITIONED TABLE DID NOT LAND — treat mutation 29 as NOT RUN"; fail=1
+  else
+    gate "${PREFIX}_part" --expect-present && r=pass || r=fail
+    report "a PARTITIONED table -> the DIGEST is blind and still PASSES" pass "$r"
+    premise_gate "${PREFIX}_part" && r=pass || r=fail
+    report "a PARTITIONED table -> the rule-8 PREMISE breaks and gate 13 FAILS" pass "$r"
   fi
 fi
 

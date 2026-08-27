@@ -15,6 +15,8 @@ broken edit as an untested guard:
 
 Usage:  ./mutate-schema.py          (exit 0 = every guard confirmed RED)
 """
+import atexit
+import os
 import re
 import shutil
 import subprocess
@@ -25,6 +27,9 @@ from pathlib import Path
 SPEC = Path(__file__).resolve().parent
 GEN = SPEC / "schema/03_generations.sql"
 ART = SPEC / "schema/04_artifacts.sql"
+# ⟳ T4: four levels up from the spec dir — specs, superpowers, docs, then the repo root.
+REPO = SPEC.parents[3]
+CONTAINER = os.environ.get("PGCONTAINER", "supabase_db_youtube-playlist-summaries-cloud")
 
 # ⟳ ROUND 8 M3 — THIS HARNESS USED TO MUTATE THE REPO-TRACKED FILES AND PUT THEM BACK IN A
 # `finally`, and that is shape #11 (an instrument that misreports its own result) in the
@@ -127,7 +132,13 @@ MUTATIONS = [
     # ⟳ T3 — `art_summary_has_no_source` IS A CONSTRAINT TRIGGER NOW, and it had never been mutated as
     # a CHECK either: the old entry list has no line for it. Neutralised rather than deleted, so the
     # trigger still exists and only its verdict changes.
-    ("art_summary_has_no_source neutralised (a summary may record a source again)",
+    # ⟳ T5 (2026-08-26): the label named a CHECK constraint that no longer exists. The mutation is
+    # alive — T3 moved the rule from `art_summary_has_no_source` into the provenance enforcer's
+    # `if v_kind = 'summary'` branch, which is what find/replace still targets. Only the NAME rotted,
+    # and a label naming a deleted object is the same "true when written" defect this branch spent
+    # two rounds on. Renamed to the mechanism that actually enforces it.
+    ("the T3 provenance enforcer's summary branch neutralised "
+     "(a summary may record a source again; was art_summary_has_no_source)",
      "  if v_kind = 'summary' then",
      "  if false then",
      "a SUMMARY artifact recording a source", ART),
@@ -243,39 +254,34 @@ MUTATIONS = [
      "art_detached_has_timestamp", ART),
 
     # ── item 2: the corrections representation (round 6 B4) ──────────────────────
-    ("corrections_hash nullable again (default kept, so ONLY nullability changes)",
-     "  corrections_hash   text not null default no_corrections_hash(),",
-     "  corrections_hash   text default no_corrections_hash(),",
-     "NULL corrections_hash", GEN),
+    # ⛔ FIVE CORRECTIONS MUTATIONS RETIRED BY ADR-0011 (T2, 2026-08-26). Their subjects are gone:
+    #   "corrections_hash nullable again"        — the column
+    #   "the seed drops corrections"             — the seed's corrections arms
+    #   "the anti-drift trigger removed (UPDATE)" — sync_corrections_to_workspace_video
+    #   "rung 1 back to `is not distinct from`"   — the ranking term in both views
+    #   "the INSERT-half sync unguarded"          — the INSERT trigger and its WHEN guard
+    # Each was verified INVALID (`anchor not found — mutation never applied`) by running the harness
+    # BEFORE deletion, so the harness said out loud that it could not run rather than passing — the
+    # behaviour that makes a retirement safe to do at all.
+    #
+    # ⚠ ONE OF THEM WAS ALREADY DOCUMENTED AS UNABLE TO GO RED, and that is the note worth keeping:
+    # "rung 1 back to `is not distinct from`" carried `None` as its expected-assertion, because while
+    # the NOT NULL held both forms were behaviourally identical. It was a mutation that could only
+    # ever come back GREEN. ADR-0011 deletes the term it could not test — which is the cleaner
+    # resolution of the same observation.
 
-    ("the seed drops corrections (the original migration)",
-     "         nullif(data->>'corrections', ''),\n         corrections_hash_of(data->>'corrections')",
-     "         null::text,\n         no_corrections_hash()",
-     "backfill lost corrections", GEN),
 
     ("gen_card_complete stops requiring mdCorrectionsHash",
      "      and card ->> 'mdCorrectionsHash' is not null)),",
      "      )),",
      "ONLY null is mdCorrectionsHash", GEN),
 
-    ("the anti-drift trigger removed (UPDATE half)",
-     """create trigger videos_corrections_sync_upd_trg
-  after update of data on videos
-  for each row
-  when (coalesce(old.data->>'corrections','') is distinct from coalesce(new.data->>'corrections',''))
-  execute function sync_corrections_to_workspace_video();""",
-     "",
-     "the copy drifted", GEN),
 
     # EXPECTED GREEN, and saying so is the point. With both sides NOT NULL,
     # `is not distinct from` and `=` are behaviourally identical, so the `=` change is a
     # clarification whose safety is entirely SUBSUMED by the NOT NULL above. Recording it as an
     # expected no-op is honest; deleting it would hide that the simplification carries no guard,
     # and claiming it RED would be the laundering this harness exists to stop.
-    ("rung 1 back to `is not distinct from` (no-op while NOT NULL holds)",
-     "         (g.card->>'mdCorrectionsHash' = wv.corrections_hash) desc,\n         g.doc_version_major",
-     "         (g.card->>'mdCorrectionsHash' is not distinct from wv.corrections_hash) desc,\n         g.doc_version_major",
-     None, ART),
 
     ("the DEFINED constant silently re-derived",
      "select '01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b'::text",
@@ -358,7 +364,14 @@ MUTATIONS = [
     # `returning artifact_id into v_art` rather than dropping to a bare `;`: without it the mutated
     # function does not compile and the harness reports INVALID, which this project has measured reads
     # as *untested* rather than as *a broken edit*.
-    ("the paid append made blind (round 7 B1 — a retry collides with its own row)",
+    # ⟳ T5 (2026-08-26): the label did not name `video_artifacts_paid_uq`, and
+    # check-guard-coverage.py reads LABELS ONLY — deliberately, since a mutation's find/replace
+    # strings are SQL full of guard names. So this mutation existed, exercised the guard, and was
+    # reported UNMUTATED. The guard name appeared only in field 4, which is the assertion substring,
+    # not a structured field — reading it would be the free-text coverage the ratchet moved away
+    # from. Naming the guard in the label is what mutation 51 already does.
+    ("video_artifacts_paid_uq: the paid append made blind "
+     "(round 7 B1 — a retry collides with its own row)",
      """  on conflict (workspace_id, video_id, slot, generation_id) where generation_id is not null
   do update set
        state                = 'recorded',
@@ -464,8 +477,8 @@ MUTATIONS = [
     # keeps the default PUBLIC EXECUTE, and R8 stays green — because nobody added it to the list. A
     # second writer is exactly the thing nobody adds to a list.
     ("a SECOND function writes video_generations (T4's carried invariant, broken)",
-     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;",
-     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;",
+     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;
 create function t4_shadow_writer(p_ws uuid, p_video text, p_gen text) returns void
   language plpgsql security definer set search_path = '' as $t4$
 begin
@@ -484,8 +497,8 @@ end $t4$;""",
     #                        (the inserting statement does not contain the string `video_generations`)
     #   an INSERT grant   -> the surface-privilege clause on the one allowlisted view
     ("a SECOND writer spells the table QUOTED (H1 — the normalisation)",
-     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;",
-     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated;
+     "revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;",
+     """revoke all on function ensure_workspace_for_profile() from public, anon, authenticated, service_role;
 create function t4_quoted_writer(p_ws uuid, p_video text, p_gen text) returns void
   language plpgsql security definer set search_path = '' as $t4q$
 begin
@@ -794,17 +807,23 @@ create trigger video_generations_freeze_trg""",
     # destroys data when a caller is merely SECOND. Removing the WHEN clause restores round 6's
     # unconditional INSERT-half sync — harmless for as long as B3 made inserts impossible, and a
     # measured clobber the moment ingest worked.
-    ("the INSERT-half sync unguarded (round 6's version, live once ingest worked)",
-     "  for each row\n  when (coalesce(new.data->>'corrections','') <> '')\n"
-     "  execute function sync_corrections_to_workspace_video();",
-     "  for each row execute function sync_corrections_to_workspace_video();",
-     "CLOBBERED the shared corrections", GEN),
 ]
 
 
-def run(script):
-    """Run the verifier that lives beside the schema being mutated — never the repo's."""
-    p = subprocess.run([str(script)], capture_output=True, text=True, cwd=script.parent)
+def run(script, extra_env=None):
+    """Run the verifier that lives beside the schema being mutated — never the repo's.
+
+    ⟳ T4 (2026-08-26): the verifier now resolves the repo from its own path, to find
+    `supabase/migrations/0027…` and `scripts/check-live-schema.py`. From a temp copy that
+    resolution lands outside the repo and the verifier exits 2 — which would have turned all 58
+    mutations INVALID in one go. `M4_REPO` pins it to the real repo; `M4_MIGRATION` pins the
+    migration to OUR COPY so a post-0027 run mutates and verifies the same bytes.
+    ⚠ `stdin=DEVNULL`: the verifier reaches Postgres through `docker exec -i`, which holds stdin
+    open. Measured the same day — an inherited stdin hangs the whole suite with no output at all.
+    """
+    env = {**os.environ, **(extra_env or {})}
+    p = subprocess.run([str(script)], capture_output=True, text=True, cwd=script.parent,
+                       env=env, stdin=subprocess.DEVNULL)
     return p.returncode, p.stdout + p.stderr
 
 
@@ -882,19 +901,136 @@ def run_suite(tmp: Path):
     (work / "verify-schema.sh").chmod(0o755)
     script = work / "verify-schema.sh"
     copy_of = {GEN: work / "schema" / GEN.name, ART: work / "schema" / ART.name}
+    # ⭐⭐ ⟳ r11 H2 — THE MUTATION GATE REPORTED SUCCESS OVER AN EMPTY INVENTORY.
+    # r10 H2 gave gate 14 a corpus floor for exactly this ("a gate that reads an empty set passes").
+    # The gate whose entire purpose is proving guards load-bearing got the per-anchor count check
+    # and NO inventory floor. MEASURED with MUTATIONS monkey-patched to []:
+    #     0/0 mutations behaved as expected · baseline restored: GREEN ✅ · rc 0
+    # A truncated MUTATIONS literal — a bad merge, a stray `]` — was silent. Note the r10 count
+    # check does NOT cover this: `n != 1 -> INVALID` only fires for anchors present in the list.
+    # ⚠ Same update rule as the two assertion floors: raising is routine, LOWERING is deliberate.
+    MUTATION_FLOOR = 58
+    if len(MUTATIONS) < MUTATION_FLOOR:
+        print(f"CANNOT RUN — the mutation inventory holds {len(MUTATIONS)}, floor is "
+              f"{MUTATION_FLOOR}. A gate that mutates nothing reports perfect coverage over an "
+              f"empty set. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return 2
 
-    originals = {ART: ART.read_text(), GEN: GEN.read_text()}
+    originals = {GEN: GEN.read_text(), ART: ART.read_text()}
+
+    # ── ⟳ T4: the SOURCE the verifier reads is now a variable, so this harness pins both ends ─────
+    # Pre-0027 the verifier globs the spec files, which `copytree` above already put in `work`, so
+    # mutating `work/schema/0[34]_*.sql` is mutating what it reads. Once 0027 exists the verifier
+    # reads the MIGRATION instead, and `work/schema` becomes scenery — so the migration is copied in
+    # and `M4_MIGRATION` points at the copy. Without that, this harness would mutate a temp file and
+    # verify the real one: every mutation GREEN, the suite reporting perfect health over a gate that
+    # never saw a single change.
+    # ⟳ 2026-08-26: THE POST-0027 BRANCH IS NOW EXERCISED — 0027 exists and this is the path taken.
+    # It was written before it could be tested, and the note here said so; recording the transition
+    # rather than deleting the caveat, because "UNTESTED" and "tested and green" are different
+    # claims and only one of them was ever true at a time.
+    env = {"M4_REPO": str(REPO)}
+    migration_src = REPO / "supabase" / "migrations" / "0027_stable_blob_addressing.sql"
+    if migration_src.exists():
+        mig_copy = work / migration_src.name
+        shutil.copy2(migration_src, mig_copy)
+        env["M4_MIGRATION"] = str(mig_copy)
+        print(f"source: {migration_src.name} (copied into the workspace)")
+        # ⭐⭐ AND THE MUTATIONS MUST FOLLOW THE SOURCE. MEASURED 2026-08-26, the first run of this
+        # branch after 0027 landed: **57 of 58 mutations reported GREEN — "mutation SURVIVED"**.
+        # Not one guard had weakened. The verifier was reading the MIGRATION while the mutations
+        # were still being written into `work/schema/0[34]_*.sql`, which it no longer opens. The
+        # T4 comment above predicted this failure in exactly these words — "this harness would
+        # mutate a temp file and verify the real one: every mutation GREEN, the suite reporting
+        # perfect health over a gate that never saw a single change" — and then only pinned the
+        # READ side. Writing down a failure mode is not guarding against it.
+        #
+        # ⚠ WHY REDIRECTING BOTH TARGETS AT ONE FILE IS SAFE: `target` existed to disambiguate two
+        # files; the migration is one. VERIFIED before doing it — all 58 anchors occur in 0027, and
+        # every one occurs EXACTLY ONCE, so `replace(find, repl, 1)` cannot hit the wrong region.
+        # ⟳ r10 H1: that last sentence used to end "the count check below turns it into a loud
+        # INVALID", and there WAS NO COUNT CHECK. There is one now (see the loop). Both review halves
+        # found this independently, which is why the wording here is deliberately about what the code
+        # does rather than about what it is for.
+        mig_text = mig_copy.read_text()
+        for t in (GEN, ART):
+            copy_of[t] = mig_copy
+            originals[t] = mig_text
+    else:
+        print("source: spec files 0[134]*.sql (0027 not present)")
+
+    # ── ⭐⭐ THE PRE-M4 BASE, AND THE CONTROL THAT MUST PRECEDE THE SUITE ──────────────────────────
+    #
+    # MEASURED 2026-08-26, and it is the worst-shaped of the seven post-0027 gate failures. With
+    # 0027 applied to `postgres`, the verifier could not rebuild anything, and this harness printed
+    #
+    #     ❌ INVALID   <label>
+    #                  no error captured; SQL did not run          … 58 times
+    #
+    # A VERDICT LIST built from a gate that never ran — and INVALID reads as *untested*, so the
+    # output looked like 58 discovered coverage holes rather than one dead instrument. Two changes:
+    #
+    #   1. A pre-M4 base database, built once and reused. Per-mutation it would cost ~7 s × 58,
+    #      i.e. seven minutes added to a two-minute gate; `verify-schema.sh` always wraps its work
+    #      in `begin … rollback`, so one base serves every mutation.
+    #   2. A CONTROL RUN BEFORE THE LOOP. The baseline check at the bottom of this function already
+    #      existed and would have caught it — after 58 wrong verdicts had been printed. A control
+    #      that runs last can only ever explain the wreckage; this one refuses to produce it.
+    base_db = None
+    if (REPO / "scripts" / "m4-base-db.sh").exists():
+        base_db = f"m4_mutate_base_{os.getpid()}"
+        p = subprocess.run([str(REPO / "scripts" / "m4-base-db.sh"), base_db],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        if p.returncode != 0:
+            print(p.stdout + p.stderr, file=sys.stderr)
+            print("CANNOT RUN — no pre-M4 base database. Treat this as NOT RUN.", file=sys.stderr)
+            return 2
+        env["M4_DB"] = base_db
+        print(f"subject: {base_db} (pre-M4 clone of the local stack)")
+
+    # ⚠ `atexit`, not an explicit call at each return — the loop below can raise, and a leaked
+    # 21 MB database per crashed run is the shape of task #145 ("the mutation harness can leave the
+    # local DB broken"). One mechanism, every exit path, including the ones not written yet.
+    def drop_base():
+        if base_db:
+            subprocess.run(["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres",
+                            "-d", "postgres", "-tAq",
+                            "-c", f"drop database if exists {base_db} (force);"],
+                           capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    atexit.register(drop_base)
+
+    rc, out = run(script, env)
+    if rc != 0:
+        print(out[-1500:], file=sys.stderr)
+        print("CANNOT RUN — the CONTROL failed: the unmutated schema does not verify, so every",
+              file=sys.stderr)
+        print("  mutation below would be scored against a broken baseline. Treat this as NOT RUN.",
+              file=sys.stderr)
+        return 2
+    print("control: unmutated schema verifies ✅")
+
     results = []
     for label, find, repl, expect, target in MUTATIONS:
         original = originals[target]
-        if find not in original:
-            results.append((label, "INVALID", "anchor not found — mutation never applied"))
+        # ⟳ r10 H1 (codex AND claude, independently) — THE COUNT CHECK THE COMMENT ABOVE PROMISED
+        # AND THAT DID NOT EXIST. The redirect above rests on "every anchor occurs exactly once, so
+        # `replace(find, repl, 1)` cannot hit the wrong region", and then only tested for ZERO.
+        # `str.replace(old, new, 1)` edits the FIRST occurrence and returns silently, so a
+        # twice-occurring anchor is not INVALID — it is a mutation applied to the wrong region,
+        # after which `classify()` may score an unrelated failure as RED and the summary counts it ✅.
+        # That is coverage laundering, in the gate whose whole purpose is proving guards load-bearing.
+        # The premise held when measured (58 anchors, 0 with a count ≠ 1); it is now enforced rather
+        # than asserted in prose. A comment describing a guard is not a guard.
+        n = original.count(find)
+        if n != 1:
+            results.append((label, "INVALID",
+                            f"anchor occurs {n} times — ambiguous target, mutation NOT applied"))
             continue
         # No `finally` restore is needed to protect the repo — nothing repo-tracked was ever
         # opened for writing. The copy is rewritten wholesale before each mutation instead, so a
         # crash mid-suite leaves a temp directory behind and the checkout untouched.
         copy_of[target].write_text(original.replace(find, repl, 1))
-        rc, out = run(script)
+        rc, out = run(script, env)
         results.append((label, *classify(rc, out, expect)))
         copy_of[target].write_text(original)
 
@@ -913,7 +1049,7 @@ def run_suite(tmp: Path):
 
     # The baseline now proves the COPY is unmutated, which is the only thing this suite could have
     # broken. That the repo is untouched is guaranteed structurally rather than checked.
-    rc, _ = run(script)
+    rc, _ = run(script, env)
     print("baseline restored:", "GREEN ✅" if rc == 0 else "STILL BROKEN ❌")
     return 1 if bad or rc else 0
 

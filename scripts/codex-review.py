@@ -87,8 +87,20 @@ class Outcome:
     # exploited through a different matcher.
 
 
+
+def _names_own_output(body: str, out_path: str) -> bool:
+    """Does the final message refer to the file it is about to be written to? PURE.
+
+    Matched on the BASENAME, because the agent may print an absolute path, a repo-relative path or a
+    markdown link. A genuine review has no reason to name its own destination — it does not know it.
+    """
+    base = os.path.basename(out_path)
+    return bool(base) and base in body
+
+
 def classify(exit_code: int, stdout: str, message: "str | None",
-             min_chars: int = MIN_REVIEW_CHARS, timed_out: bool = False) -> "tuple[str, str]":
+             min_chars: int = MIN_REVIEW_CHARS, timed_out: bool = False,
+             out_path: str = "") -> "tuple[str, str]":
     """Decide whether this run produced a real review. Returns (Outcome, human reason).
 
     `message` is the content of the --output-last-message file, or None if the CLI never wrote it.
@@ -107,6 +119,25 @@ def classify(exit_code: int, stdout: str, message: "str | None",
 
     body = (message or "").strip()
     if len(body) >= min_chars:
+        # ⛔ A SUMMARY OF A REVIEW IS "SUBSTANTIVE" AND IS NOT A REVIEW — measured 2026-08-25, M4 r7.
+        # The final message read "Wrote the Round 7 review to docs/reviews/plan-m4-v2-r7-codex.md"
+        # followed by four one-line conclusions. It cleared min_chars comfortably, so this function
+        # returned OK, and the caller then wrote that summary OVER the path the agent had just
+        # written the real review to. The premises, the quoted code and every measurement were lost.
+        #
+        # The length rule was itself the fix for an earlier fail-open (exit codes certifying HTTP-400
+        # runs). It answers "did the model say anything?" and cannot answer "is this the artifact?".
+        # The tell is SELF-REFERENCE: a review does not name the file it is being written to, because
+        # it does not know it. A report of having written one always does.
+        #
+        # Root cause was in the PROMPT — it told the agent it had a review file — but a wrapper whose
+        # whole purpose is refusing to record a gate that did not run should not depend on every
+        # future prompt being worded correctly.
+        if out_path and _names_own_output(body, out_path):
+            return Outcome.TRY_NEXT, (
+                f"the final message NAMES ITS OWN OUTPUT FILE ({os.path.basename(out_path)}), so it "
+                "is a report of having written a review, not the review. The review itself was not "
+                "captured — see the prompt rule 'YOUR FINAL MESSAGE IS THE REVIEW ITSELF'")
         return Outcome.OK, f"{len(body)} chars"
 
     # No usable message. Diagnose WHY — for the operator's benefit only. Nothing below changes
@@ -233,7 +264,8 @@ def main() -> int:
     for slug in models:
         print(f"[codex-review] trying {slug} ...", file=sys.stderr)
         code, stdout, message, timed_out = run_codex(slug, prompt, args.timeout)
-        outcome, reason = classify(code, stdout, message, args.min_chars, timed_out)
+        outcome, reason = classify(code, stdout, message, args.min_chars, timed_out,
+                                   out_path=args.out)
         attempts.append(f"  {slug}: {outcome} — {reason}")
 
         if outcome == Outcome.OK:
@@ -303,10 +335,27 @@ def self_test() -> int:
         # v4-Medium: same shape via the STRUCTURED matcher — a prompt QUOTING a 429 ERROR line.
         ("v4-Medium: a quoted 429 ERROR line in the prompt does not abort the chain",
          1, "user\nfixture: " + quota + "codex\n", None, False, Outcome.TRY_NEXT),
+        # ⛔ M4 r7, MEASURED: a SUMMARY of a review is substantive and is not a review. The real
+        # final message named its own output path and was written OVER the review the agent had
+        # just saved there. The tell is self-reference — a review cannot name its own destination.
+        ("r7-Blocking: a final message that NAMES ITS OWN OUTPUT FILE is a report, not a review",
+         0, "", ("Wrote the Round 7 review to docs/reviews/plan-m4-v2-r7-codex.md.\n\n"
+                 "Result: NOT CONVERGED.\n\nFindings filed:\n"
+                 "- Blocking: TRUNCATE is omitted from the live privilege digest.\n"
+                 "- High: proargdefaults is excluded for a false reason.\n"
+                 "Cleanup verified: remaining_dbs|<none>\n" + "padding. " * 30),
+         False, Outcome.TRY_NEXT),
+        ("r7: a REAL review that never names the output path still passes",
+         0, "", ("**Blocking: the digest omits TRUNCATE.**\n\nPremise:\n"
+                 "- scripts/m4_catalog.py:155 REL_PRIVS = (SELECT, INSERT, UPDATE, DELETE)\n\n"
+                 "Executed:\n```\nanon TRUNCATE before: false\nafter: true\ngate exit=0\n```\n"
+                 "NOT CONVERGED\n" + "padding. " * 30),
+         False, Outcome.OK),
     ]
     failures = 0
+    OUT = "docs/reviews/plan-m4-v2-r7-codex.md"
     for name, code, out, msg, t_out, want in cases:
-        got, reason = classify(code, out, msg, MIN_REVIEW_CHARS, t_out)
+        got, reason = classify(code, out, msg, MIN_REVIEW_CHARS, t_out, out_path=OUT)
         ok = got == want
         print(f"  [{'PASS' if ok else 'FAIL'}] {name}: got={got} ({reason})")
         if not ok:

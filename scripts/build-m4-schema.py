@@ -59,10 +59,17 @@ UPSERT_NEW = ("    insert into public.workspace_videos (workspace_id, video_id)\
 COL_A = re.compile(r"^  corrections        text,\n", re.M)
 COL_B = re.compile(r"^  corrections_hash   text not null default no_corrections_hash\(\),\n", re.M)
 RANK = re.compile(r"^ *\(g\.card->>'mdCorrectionsHash' = wv\.corrections_hash\) desc,.*\n", re.M)
+# ⚠ THE GRANTEE LIST IS `[^;]*`, NOT SPELLED OUT — measured 2026-08-26. It used to end with the
+# literal `from public, anon, authenticated;`, and fork (a) step 5 appended `, service_role` to every
+# function revoke in the spec. The regex stopped matching, the function survived the build, and the
+# builder's own end-state assertion caught it:
+#     ✗ sync_corrections_to_workspace_video() still exists — ADR-0011 deletes it
+# That is the right failure — loud, and from the assertion rather than from a downstream mystery. But
+# the lesson is the pattern: a regex that pins text it does not care about is a tripwire on unrelated
+# edits. It cares about the FUNCTION NAME; the grantees are somebody else's business.
 SYNC_FN = re.compile(
     r"create function sync_corrections_to_workspace_video\(\) returns trigger.*?"
-    r"revoke all on function sync_corrections_to_workspace_video\(\) from public, anon, "
-    r"authenticated;", re.S)
+    r"revoke all on function sync_corrections_to_workspace_video\(\) from [^;]*;", re.S)
 
 
 def trigger_rx(name: str) -> re.Pattern[str]:

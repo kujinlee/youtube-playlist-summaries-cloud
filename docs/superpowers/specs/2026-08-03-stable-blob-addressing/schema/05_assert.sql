@@ -12,6 +12,45 @@
 -- So: EVERY NEGATIVE BELOW MUST VIOLATE EXACTLY ONE GUARD. A fixture that is invalid in two ways
 -- tests neither. Where a row must be FK-valid to isolate a CHECK, it uses a generation of the right
 -- kind; where a key must be shaped, it is shaped.
+--
+-- ══ @RE-RUNNABLE ═══ THE WHOLE FILE, AND THAT IS A MEASUREMENT, NOT A DEFAULT ═════════════════════
+--
+-- ⛔ EVERY MENTION OF A MARKER BELOW DROPS ITS `@`, AND THAT IS NOT PEDANTRY. The selector matches
+-- the literal on any comment line, so prose ABOUT the markers is itself a marker: the first draft
+-- of this header said the word three times and toggled the selection off mid-explanation, taking
+-- the file from 119 assertions to 61. Nothing syntactic saw it — the block still parsed, still held
+-- `raise exception`, still reached the success echo. The assertion floor caught it, on the very
+-- commit that added the floor. Round 2 learned this about string literals; it is true of comments.
+--
+-- `scripts/run-schema-assertions.sh` selects from this marker to the next MIGRATION-ONLY one, so
+-- this one line puts every assertion below into the gate that runs against the LIVE, APPLIED schema
+-- (gate 8 of `scripts/check-schema-gates.sh`) rather than only against a schema rebuilt from source
+-- inside gate 1. The two ask different questions: gate 1 asks whether the SPEC is self-consistent,
+-- gate 8 asks whether the DEPLOYED catalog actually behaves.
+--
+-- ⚠ THE PLAN EXPECTED A SPLIT, AND MEASUREMENT FOUND NONE. Task 8 Step 1 was written to tag each
+-- block MIGRATION-ONLY ("compares the migration's output; any later write invalidates it") or
+-- RE-RUNNABLE ("an invariant that must hold at all times"). The canonical migration-only
+-- assertion was round 6 B4's corrections backfill — and ADR-0011 DELETED it, in this file, with the
+-- note that stands at line 54. Nothing took its place: every remaining block builds its own fixture
+-- rows and scopes every read to them (`where video_id='vidA'`, `'vidSVC'`, `'vidF'` …), so none of
+-- them can be invalidated by a later write.
+--
+-- MEASURED 2026-08-26 against the applied 0027, seed corpus + this entire file in one transaction:
+-- 120 assertions reported ok, none raised, identical on three consecutive runs.
+--
+-- ⚠ ⟳ r10 L2 — BOUND THE CLAIM TO THE STATE IT WAS MEASURED IN. That run happened while
+-- `video_artifacts` and `video_generations` held ZERO real rows (backlog 26 is DORMANT and
+-- `record_artifact` has no caller), i.e. the one state in which 'no assertion can be
+-- invalidated by a later write' is easiest to be true. Every block is fixture-scoped and is
+-- expected to survive a populated corpus — but the sentence claims a property of every future
+-- state and was measured on the empty one. RE-MEASURE the day a caller lands; the day is
+-- observable, via `python3 scripts/check-paid-caller-arrival.py`.
+--
+-- ⛔ THE MARKER IS A RANGE TOGGLE, SO ADDING A MIGRATION-ONLY ONE BELOW SILENTLY DROPS EVERYTHING
+--    AFTER IT. If you genuinely add a migration-only assertion, add a matching re-runnable marker to
+--    resume — and if you forget, the harness's assertion floor goes RED naming the count, which is
+--    the only reason a whole-file classification is safe to make.
 \set ON_ERROR_STOP on
 -- ⚠ ROUND 6 B2/L5 — THE HARNESS ITSELF WAS LAUNDERING FAILURES, and it is why the round-5 claim
 -- "every guard was mutation-checked and came back RED" was FALSE.
@@ -51,25 +90,23 @@ begin
   raise exception 'ASSERTION FAILED — should have been rejected: %', p_label;
 end $$;
 
--- ── ⟳ ROUND 6 B4 — THE BACKFILL, asserted against the LIVE corpus BEFORE any fixture exists ──────
--- Placement is load-bearing and was found by the assertion failing: run after the fixtures and the
--- `vidA` row (deliberately seeded with a non-constant 'H_NEW') is counted as a corrected video, so
--- this reported `wv has 100, videos has 99`. The subject here is the MIGRATION'S OUTPUT, so nothing
--- may have touched the table yet. B4 measured 2903 of 2904 rows NULL while 99 videos carried real
--- corrections; both numbers are now asserted rather than described.
+-- ── ⟳ ADR-0011 — THE BACKFILL ASSERTION IS DELETED, NOT RETARGETED ──────────────────────────────
+-- Round 6 B4's block stood here. It asserted two things about `workspace_videos.corrections_hash`:
+-- that no row carried a NULL, and that the count of corrected rows matched `videos.data`. Both
+-- subjects are gone — the column, and the very idea that the two representations should agree.
+--
+-- ⛔ NOT REWRITTEN TO ASSERT SOMETHING ELSE, on the plan's own instruction: "an assertion retargeted
+-- to keep it alive is how a suite ends up testing what is easy rather than what matters." The
+-- honest count of assertions this file makes about corrections currency is now ZERO, and it should
+-- read that way.
+--
+-- ⚠ WHAT IS NO LONGER GUARDED, SAID OUT LOUD. B4 measured 2903 of 2904 rows NULL while 99 videos
+-- carried real corrections, and this block was the ratchet that stopped that recurring. Under
+-- ADR-0011 the failure is unrepresentable rather than guarded — there is no second copy to lose the
+-- corrections INTO. That is a stronger claim than the assertion made, and it is the whole argument
+-- for the ADR; but it is a claim about SHAPE, so nothing here executes to confirm it, and a reader
+-- looking for "where did the backfill assertion go" deserves to find this instead of silence.
 -- (The rest of the item-2 assertions live at the end of this file, with the ranking fixtures.)
-do $$ declare n_null int; n_corr_wv int; n_corr_v int; begin
-  select count(*) into n_null from workspace_videos where corrections_hash is null;
-  if n_null <> 0 then
-    raise exception 'ASSERTION FAILED — % rows still carry a NULL corrections_hash', n_null; end if;
-  select count(*) into n_corr_wv from workspace_videos where corrections_hash <> no_corrections_hash();
-  select count(distinct (workspace_id, video_id)) into n_corr_v
-    from videos where coalesce(data->>'corrections','') <> '';
-  if n_corr_wv <> n_corr_v then
-    raise exception 'ASSERTION FAILED — backfill lost corrections: wv has %, videos has %',
-      n_corr_wv, n_corr_v; end if;
-  raise notice 'ok (backfill): 0 NULL hashes, and all % corrected videos carried across', n_corr_v;
-end $$;
 
 -- ── ⟳ POPULATION-COVERAGE INSTRUMENT (added 2026-08-07) ─────────────────────────────────────────
 -- THE RATCHET THAT MAKES THE FREE-RENDER DEFECT UNREINTRODUCIBLE.
@@ -116,8 +153,36 @@ create trigger t_writes_trg after insert or update on video_artifacts
 -- must respect the same ordering the migration does.
 create temp table t_ws as select id from workspaces order by id limit 1;
 create temp table t_w2 as select id from workspaces order by id desc limit 1;   -- a SECOND tenant, for RLS
-insert into workspace_videos (workspace_id, video_id, corrections_hash)
-  select id, 'vidA', 'H_NEW' from t_ws;
+
+-- ⭐⭐ ⟳ r10 M3 — "A SECOND TENANT" WAS A HOPE, NOT A CHECK, AND ON A ONE-WORKSPACE DATABASE IT IS
+-- FALSE. `limit 1` and `desc limit 1` over a single row return THE SAME ROW. Ten blocks below then
+-- treat one tenant as two and go RED accusing the schema of a CROSS-TENANT LEAK — a false
+-- accusation naming the wrong subject, which this repo has measured the cost of. A `db reset` plus
+-- one signup produces exactly that state, so it is reachable on any fresh machine.
+--
+-- ⚠ IT ALSO MAKES THE TWO GATES' SUBJECTS VISIBLE, which they were not. Gate 1 runs this file
+-- against a pre-M4 base with no seed, gate 8 against `postgres` WITH the seed corpus — and because
+-- `workspaces.id = owner_id` and the seed's user id is `…0000a1`, the seed tenant SORTS FIRST. So
+-- `t_ws` resolves to a different workspace in each gate. Both are green and no assertion's meaning
+-- changes, but the difference arrived silently, and the anti-drift block ADR-0011 deleted was on
+-- record measuring the opposite property of this same variable. A variable that has already caused
+-- one measured defect does not get to change meaning between two gates without saying so.
+do $$ declare a uuid; b uuid; n int; begin
+  select count(*) into n from workspaces;
+  select id into a from t_ws; select id into b from t_w2;
+  if a is null or b is null then
+    raise exception 'CANNOT RUN — no workspaces exist, so every fixture below would be NULL-keyed';
+  end if;
+  if a = b then
+    raise exception 'CANNOT RUN — only % workspace(s); t_ws and t_w2 are the SAME row (%), so the '
+                    'cross-tenant assertions would be vacuous. Seed a second workspace.', n, a;
+  end if;
+  raise notice 'ok (fixtures): % workspaces; t_ws=% t_w2=% — two distinct tenants', n, a, b;
+end $$;
+-- ⟳ ADR-0011: `vidA` used to be seeded with a non-constant 'H_NEW' corrections_hash, which is why
+-- the backfill assertion above had to run BEFORE the fixtures. With the column gone the two rows
+-- are shaped identically and that ordering constraint is gone with them.
+insert into workspace_videos (workspace_id, video_id) select id, 'vidA' from t_ws;
 insert into workspace_videos (workspace_id, video_id) select id, 'vidB' from t_w2;
 
 -- Keys are SHAPED (`…/<generation>/…`), because art_key_names_generation now requires it and an
@@ -751,6 +816,26 @@ do $$ declare ws uuid; begin
     raise notice 'ok (rejected by 42501): anon calling record_artifact';
   end;
 end $$;
+-- ⟳ TASK 8, MOVED EARLY BY PHASE 6 #2 (fork (a), user decision 2026-08-25).
+-- (A re-runnable marker stood on this line and is now at the top of the file. It was one of three
+--  that made this the only live-gated region; leaving them behind would be a second mechanism
+--  saying what the header already says, and the toggle only needs one.)
+-- THE FIRST ASSERTION IN THIS FILE THAT ACTUALLY RUNS. Until now `05_assert.sql` carried 104
+-- `raise exception`s and ZERO markers, so `scripts/run-schema-assertions.sh` was a permanent
+-- fail-closed CANNOT RUN — a 2,239-line security control that had never executed outside a
+-- review's rolled-back transaction.
+--
+-- ⭐ WHY THIS BLOCK FIRST, AND WHY IT IS THE WHOLE ARGUMENT FOR FORK (a):
+-- round 7 filed `anon` TRUNCATE as a BLOCKING finding against the live-catalog gate, and the
+-- proposed fix was to add TRUNCATE to `REL_PRIVS` in `m4_catalog.py` plus a written exclusion
+-- reason. But the hole was ALREADY FOUND, ALREADY FIXED and ALREADY ASSERTED — right here, with
+-- the measurement recorded twenty lines up: *"anon TRUNCATEd the paid manifest to zero rows"*.
+-- We rediscovered it because nothing ran this. The fingerprint was being widened to relearn what
+-- the assertion already knew.
+--
+-- ⚠ THIS BLOCK NEEDS NO FIXTURE — only the `anon` role and the table — which is why it is the
+-- cheapest possible first marker. Blocks that read `t_ws` or the gOLD/gNEW generations need the
+-- seed corpus to supply them and are NOT marked yet.
 do $$ begin
   set local role anon;
   begin
@@ -762,6 +847,294 @@ do $$ begin
     raise notice 'ok (rejected by 42501): anon truncating video_artifacts';
   end;
 end $$;
+-- ⭐⭐ SERVICE-ROLE CAPABILITY — fork (a) step 5, 2026-08-26. THE REPLACEMENT FOR A DIGESTED GRANT.
+--
+-- ⟳ r7 B1 (codex): revoking `record_artifact` EXECUTE from `service_role` is a production write
+-- outage, and `check-live-schema.py --expect-present` exited 0 over it. The obvious fix was to add
+-- `service_role` to the digest's function grantees — a FIFTH widening of the fingerprint, and the
+-- move each of rounds 4-7 made before being told it was insufficient.
+--
+-- ⟳ r7 H2 (codex): `service_role` holds INSERT on `video_artifacts` AND CANNOT USE IT. `art_slot_kind`
+-- CHECKs `slot_kind(slot)`, a CHECK runs as the writing role, and `slot_kind` is granted to nobody.
+-- MEASURED here 2026-08-26, identical row, one role, two paths:
+--
+--     [RPC]    record_artifact(...)                -> recorded
+--     [DIRECT] insert into video_artifacts ...     -> ERROR: permission denied for function slot_kind
+--
+-- ⭐ SO A DIGESTED GRANT WOULD HAVE CERTIFIED A CAPABILITY THAT DOES NOT EXIST. A privilege is not a
+-- capability: `has_table_privilege` says the grant is there, and the write still fails. That gap is
+-- unreachable by any fingerprint, however wide, and it is why these two blocks are the thing that
+-- lets `service_role` leave the digest rather than join it.
+--
+-- ⛔ IT BUILDS ITS OWN FIXTURE, AND THE FIRST DRAFT DID NOT — MEASURED, and the measurement is the
+-- reason this comment exists. The draft read `videos where video_id='seedvid001'`, which the SEED
+-- CORPUS supplies. But this file runs in TWO contexts:
+--     run-schema-assertions.sh   seed corpus, then the RE-RUNNABLE subset   -> seedvid001 exists
+--     verify-schema.sh           01+03+04+05 concatenated in one txn        -> it does NOT
+-- So gate 1/11 went red on the block's own fail-closed guard:
+--     ERROR: ASSERTION FAILED — the seed corpus supplied no workspace; this block is vacuous
+-- The guard was right and the block was wrong. A RE-RUNNABLE assertion may not depend on a fixture
+-- only one of its two callers builds — so this one creates a private owner, and the platform's own
+-- signup chain (auth.users -> handle_new_user -> profiles -> ensure_workspace_for_profile) gives it
+-- a workspace. That also exercises the derive path rather than writing workspace_id by hand.
+do $$
+declare v_ws uuid; v_out text; v_n int;
+        v_uid uuid := '00000000-0000-0000-0000-00000000cab1';
+begin
+  insert into auth.users (id, instance_id, aud, role, email)
+    values (v_uid, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
+            'svc-capability@example.test')
+    on conflict (id) do nothing;
+  -- ⚠ IT FALLS BACK TO CREATING THE WORKSPACE, AND THAT IS DELIBERATE — MEASURED 2026-08-26.
+  -- The draft RAISED when the derive chain produced nothing, which made this block fire FIRST on
+  -- mutate-schema.py's B3 ("a new profile gets no workspace"), stealing the red from the assertion
+  -- written for it:
+  --     ⚠️ RED(other)  B3 — expected "a NEW profile got no workspace",
+  --                         got  "no workspace was derived for the probe owner"
+  -- Both are true; only one is this block's business. THE SUBJECT HERE IS SERVICE_ROLE PRIVILEGE,
+  -- not workspace derivation, and an assertion that reaches beyond its subject takes the failure
+  -- away from the assertion that would have named the cause. Derivation has its own assertion; this
+  -- one just needs a workspace to exist.
+  select id into v_ws from workspaces where owner_id = v_uid;
+  if v_ws is null then
+    insert into workspaces (id, owner_id) values (v_uid, v_uid) on conflict do nothing;
+    select id into v_ws from workspaces where owner_id = v_uid;
+  end if;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — could not obtain a workspace for the probe owner even by '
+                    'creating one, so nothing below is a statement about service_role';
+  end if;
+  insert into workspace_videos (workspace_id, video_id) values (v_ws, 'vidSVC')
+    on conflict do nothing;
+
+  set local role service_role;
+  begin
+    v_out := record_artifact(
+      v_ws, 'vidSVC', 'summary', 'gSVC', 'summary'::artifact_kind,
+      v_ws::text || '/videos/vidSVC/gSVC/summary.md',
+      null, null, null, 'mdhash-svc',
+      '{"tldr":"t","takeaways":"k","docVersion":"1","mdGeneratedAt":"2026-01-01T00:00:00Z",
+        "processedAt":"2026-01-01T00:00:00Z","mdCorrectionsHash":"h"}'::jsonb,
+      1, now());
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role CANNOT call record_artifact. Every paid write '
+                    'fails; this is a production write outage, not a permissions nicety (r7 B1)';
+  end;
+  reset role;
+
+  if v_out is distinct from 'recorded' then
+    raise exception 'ASSERTION FAILED — record_artifact returned %, expected recorded', v_out;
+  end if;
+  -- ⚠ THE RETURN VALUE IS NOT THE EVIDENCE. A function can report success and write nothing; that
+  -- exact shape is why `persist_summary` needed its own merge assertion. Read the row back.
+  select count(*) into v_n from video_artifacts
+   where video_id = 'vidSVC' and generation_id = 'gSVC';
+  if v_n <> 1 then
+    raise exception 'ASSERTION FAILED — record_artifact said recorded and left % artifact rows', v_n;
+  end if;
+  raise notice 'ok: service_role recorded a paid artifact through the RPC, and the row is there';
+end $$;
+
+-- The other half: the RPC is the ONLY door, in EVERY environment.  (Marker retired to the header.)
+--
+-- ⛔⛔ THIS BLOCK WAS MASKED ON ITS FIRST DRAFT, AND THE MASK WAS FOUND BY MUTATING IT — which is the
+-- only reason it is written this way. The draft created the parent generation with `kind='summary'`
+-- and inserted an artifact with `kind='model'`. `video_artifacts_..._kind_fkey` is on
+-- (workspace_id, video_id, generation_id, KIND), so with the privilege GRANTED the insert died on
+-- the FK, not on the assertion:
+--     ERROR: insert or update on table "video_artifacts" violates foreign key constraint
+--            "video_artifacts_workspace_id_video_id_generation_id_kind_fkey"
+-- The control still passed, because 42501 is raised BEFORE the FK is checked. So the block would
+-- have reported "ok (rejected by 42501)" forever while proving nothing about privileges at all.
+--
+-- That is round 5 H1 verbatim, in the same file, one year of review rounds later: *"the test was
+-- MASKED by the FK"*. A negative assertion is only worth its exit code if the ONLY remaining reason
+-- to fail is the one being asserted — so the parent below matches on every FK column, and a
+-- non-42501 error propagates rather than being swallowed as success.
+do $$
+declare v_ws uuid; v_n int;
+        v_uid uuid := '00000000-0000-0000-0000-00000000cab1';
+begin
+  -- Same private owner as the block above, derived the same way. ⚠ THE NULL GUARD IS NOT OPTIONAL:
+  -- without it a missing workspace makes the INSERT below fail on a NOT NULL, which is a red gate
+  -- for the wrong reason and reads as if the assertion had something to say about privileges.
+  select id into v_ws from workspaces where owner_id = v_uid;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — the probe workspace is absent, so nothing below is a '
+                    'statement about service_role';
+  end if;
+  -- kind='model' to satisfy the FK's kind column. A model generation carries NO card and NO
+  -- doc_version_major — gen_card_is_summary_only and gen_major_is_summary_only forbid them.
+  insert into video_generations (workspace_id, video_id, generation_id, kind, state, produced_at)
+    values (v_ws, 'vidSVC', 'gDIRECT', 'model', 'complete', now());
+
+  set local role service_role;
+  begin
+    insert into video_artifacts (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
+      values (v_ws, 'vidSVC', 'model', 'gDIRECT', 'model'::artifact_kind, 'recorded',
+              v_ws::text || '/videos/vidSVC/gDIRECT/model.json');
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role wrote video_artifacts DIRECTLY. record_artifact '
+                    'is not the only door, so every guard that function performs can be walked past';
+  exception when insufficient_privilege then
+    reset role;
+    raise notice 'ok (rejected by 42501): service_role writing video_artifacts outside the RPC';
+  end;
+
+  -- ⭐ THE ANTI-MASK CHECK. If the parent did not land, the rejection above proves nothing.
+  select count(*) into v_n from video_generations
+   where video_id = 'vidSVC' and generation_id = 'gDIRECT' and kind = 'model';
+  if v_n <> 1 then
+    raise exception 'ASSERTION FAILED — the FK parent is absent, so the 42501 above is unearned';
+  end if;
+end $$;
+
+-- ⟳ r8 H4 (codex): the DIRECT capabilities service_role legitimately has.  (Marker retired above.)
+--
+-- The two blocks above cover the PAID WRITE (RPC works) and the RPC-ONLY invariant (direct artifact
+-- write refused). They do not cover the direct DML the spec deliberately grants for GC and
+-- housekeeping — and the reviewer proved that gap by construction: removing `UPDATE` on
+-- `video_generations` from `service_role` left BOTH instruments green.
+--
+--     -- live digest --        M4 is PRESENT as expected ... check_live_exit=0
+--     -- schema assertions --  RE-RUNNABLE subset passed ... assert_exit=0
+--     -- capability probe --   ERROR: permission denied for table video_generations
+--
+-- That is the same shape as r7 B1 one table over, and it is the price of taking privileges out of
+-- the fingerprint: whatever the digest no longer watches, SOMETHING must execute. This block is that
+-- something. It asserts the GC/sweeper capabilities named in the spec's own grants
+-- (`03_generations.sql:68-69,562-563`, `04_artifacts.sql:257-259`) rather than their grant bits.
+do $$
+declare v_ws uuid; v_n int;
+        v_uid uuid := '00000000-0000-0000-0000-00000000cab1';
+begin
+  select id into v_ws from workspaces where owner_id = v_uid;
+  if v_ws is null then
+    raise exception 'ASSERTION FAILED — the probe workspace is absent; nothing below is a statement '
+                    'about service_role';
+  end if;
+
+  set local role service_role;
+  -- 1. THE SWEEPER. `body_collected` is how GC records that a generation's blob is gone; without
+  --    UPDATE here the collector silently stops making progress and nothing else notices.
+  begin
+    update video_generations set body_collected = body_collected
+     where workspace_id = v_ws and video_id = 'vidSVC' and generation_id = 'gDIRECT';
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot UPDATE video_generations. The GC sweeper '
+                    'cannot mark a body collected, so collection stops and nothing reports it';
+  end;
+
+  -- 2. THE GC READ. `video_generations_collectable` is granted to service_role ALONE; if that grant
+  --    regresses the collector has nothing to iterate and, again, fails by doing nothing.
+  begin
+    select count(*) into v_n from video_generations_collectable;
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot read video_generations_collectable, so '
+                    'the GC has no work list';
+  end;
+
+  -- 3. PROVENANCE. record_artifact writes video_artifact_sources through its definer context, but
+  --    the spec also grants direct DML; assert the READ at minimum, which every consumer needs.
+  begin
+    select count(*) into v_n from video_artifact_sources;
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot read video_artifact_sources';
+  end;
+  -- 4. ⟳ r8 H2 (claude) — THE `detached` TRANSITION. §6.1 owes a detached dig "a route back", and
+  --    this file spends ~40 lines proving recorded -> detached -> recorded works — AS `postgres`,
+  --    NEVER AS `service_role`. Revoke UPDATE on video_artifacts from service_role and every detach
+  --    and re-attach fails at runtime with all three gates green. r7 B1's shape, a third time.
+  -- ⚠ ZERO-ROW PREDICATE ON PURPOSE. The first draft targeted the real row and went red — not on a
+  -- privilege, but on `video_artifacts_append_only`, which is a DIFFERENT guard with its own
+  -- assertions forty lines up. An UPDATE matching no rows still requires the UPDATE privilege, so
+  -- this discriminates exactly the thing the block is about and collides with nothing. Same lesson
+  -- as the B3 narrowing above: an assertion that reaches past its subject steals the failure from
+  -- the assertion that would have named the cause.
+  begin
+    update video_artifacts set slot = slot where workspace_id = v_ws and video_id = '__no_such__';
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot UPDATE video_artifacts, so the detached '
+                    'transition has no route in EITHER direction (spec 6.1)';
+  end;
+
+  -- 5. GC DELETE on the manifest — free renders, same argument.
+  begin
+    delete from video_artifacts where workspace_id = v_ws and video_id = '__no_such_video__';
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role cannot DELETE from video_artifacts, so GC '
+                    'cannot reclaim a free render';
+  end;
+  -- 6. ⟳ r9 H1 (claude) — THE FOUR ROWS THE OMISSION TABLE GOT WRONG. It claimed 12 of 21 grants
+  --    were asserted; the reviewer revoked each of the 21 alone and measured that FOUR were seen by
+  --    no instrument at all: workspaces SELECT, workspaces DELETE, video_artifact_sources UPDATE,
+  --    and video_artifacts INSERT. A completeness claim is exactly as checkable as the thing it
+  --    claims to cover, and this one was arithmetic over a list nobody executed.
+  begin
+    perform 1 from workspaces where false;                       -- workspaces SELECT
+    delete from workspaces where id = '00000000-0000-0000-0000-0000000000ff';   -- workspaces DELETE
+    update video_artifact_sources set video_id = video_id where video_id = '__no_such__';  -- vas UPDATE
+    insert into video_artifacts (workspace_id, video_id, slot, generation_id, kind, state, blob_key)
+      select v_ws, '__no_such__', 'model', 'g', 'model'::artifact_kind, 'recorded', 'k'
+       where false;                                              -- video_artifacts INSERT
+  exception when insufficient_privilege then
+    reset role;
+    raise exception 'ASSERTION FAILED — service_role lost one of workspaces SELECT/DELETE, '
+                    'video_artifact_sources UPDATE or video_artifacts INSERT. Each was in the '
+                    'digest before step 5 and covered by nothing after it (r9 H1)';
+  end;
+  reset role;
+  raise notice 'ok: service_role retains its GC, provenance, detached-transition and '
+               'residual-DML capabilities';
+end $$;
+
+-- ⭐ THE GRANTS DELIBERATELY LEFT UNASSERTED, AND WHY — ⟳ r8 H2's direction, verbatim: *"write down,
+-- in that block, the grants deliberately left unasserted and why, so the next round does not
+-- re-derive this table. An unexplained omission is how r5 B2 happened."*
+--
+-- ⛔ THIS TABLE WAS WRONG BY FOUR ROWS FOR ONE COMMIT — ⟳ r9 H1 (claude), who did the one thing that
+-- checks a completeness claim: revoked each of the 21 grants ALONE and ran all three instruments.
+-- Four were seen by NOTHING (workspaces SELECT, workspaces DELETE, video_artifact_sources UPDATE,
+-- video_artifacts INSERT) while this table implied they were among the twelve covered. They are now
+-- asserted in step 6 above. **A table that says what is covered is a CLAIM, and 21 − 9 = 12 is
+-- arithmetic, not a measurement.**
+--
+-- Step 5 deleted the digest of 21 grant sites. The blocks above now assert 16. These FIVE remain
+-- unasserted, and each line is the reason — not an oversight:
+--
+--   workspaces         INSERT/UPDATE   written by ensure_workspace_for_profile(), a SECURITY DEFINER
+--                                      trigger on profiles. service_role never writes it directly.
+--   workspace_videos   INSERT/UPDATE   upserted by the videos derive trigger, also SECURITY DEFINER.
+--                      DELETE          only by cascade from workspaces.
+--   video_generations  INSERT          record_artifact is the ONLY writer, and 05 asserts that in
+--                                      ANY schema and by ANY spelling (search: T4/H1).
+--                      DELETE          GC, and the UPDATE half above is the one that fails first —
+--                                      a collector that cannot mark cannot reach the delete.
+--   video_artifact_sources INSERT/DELETE  written inside record_artifact's definer context; the READ
+--                                      is asserted above, which is what every consumer needs.
+--
+-- ⚠ THIS TABLE IS A CLAIM, NOT A PROOF. Each line says "no direct caller exists" — and there is no
+-- application code for M4 at all yet, so no caller exists for ANY of them. When M4 is wired up, this
+-- table is the list to re-derive against real call sites, and any row that gains a direct caller
+-- needs an assertion here before it ships.
+
+-- ⟳ TASK 8 — THE MIGRATION-ONLY STOP THAT STOOD HERE IS DELETED, AND ITS REASON WAS THE TELL.
+-- (Spelled without its `@`, per the header: a comment naming the marker IS one. This very line was
+--  the second time that bit in one commit — the note recording the deletion re-created the stop.)
+-- It read: *"everything below reads fixtures this file builds, not the seed corpus."* True, and not
+-- a reason to exclude anything — it was a reason to select the fixtures TOO, which is what moving
+-- the marker to the top of the file does. Building fixtures inside the harness's transaction and
+-- rolling them back is precisely what gate 1 has always done; the seed corpus supplies the rows the
+-- blocks between here and line 778 need, not a substitute for the fixtures.
+--
+-- Measured before deleting it: with the whole file selected, all 119 assertions pass against the
+-- applied 0027. The stop was costing 54 of the 58 blocks their live-schema gate.
 
 -- ROUND 6 H3 — round 5's cross-tenant assertion read ONE view and ONE table, so security_invoker on
 -- video_summary_current and the two new base-table policies were all mutation-GREEN. Read everything.
@@ -816,14 +1189,22 @@ do $$ declare ng int; nw int; ns int; me uuid; begin
   raise notice 'ok (RLS): the owner reads video_generations, workspace_videos and video_artifact_sources directly';
 end $$;
 
--- FLOOR: make every generation corrections-stale. A stale generation must STILL SERVE (round 4 A-2).
-update workspace_videos set corrections_hash='H_TYPED_JUST_NOW'
-  where workspace_id=(select id from t_ws) and video_id='vidA';
-do $$ declare n int; begin
-  select count(*) into n from video_artifacts_current where video_id='vidA' and slot='summary';
-  if n <> 1 then raise exception 'ASSERTION FAILED — floor broke: % rows, expected 1', n; end if;
-  raise notice 'ok (floor): a user typing a correction does NOT empty the slot';
-end $$;
+-- ── ⟳ ADR-0011 — THE FLOOR ASSERTION IS DELETED, AND ITS SUBJECT IS UNREPRESENTABLE ─────────────
+-- Round 4 A-2's floor stood here: make every generation corrections-stale by typing a new
+-- `corrections_hash` into `workspace_videos`, then assert the summary slot STILL SERVES one row —
+-- i.e. that corrections RANK but never GATE.
+--
+-- ⛔ THERE IS NO LONGER A WAY TO CREATE THE PRECONDITION. "Corrections-stale" was a disagreement
+-- between a frozen card's stamp and a mutable denormalized copy, and the copy is gone. Nothing can
+-- be typed to make a generation stale, so the assertion cannot be set up, let alone fail.
+--
+-- ⚠ AND THAT IS A STRONGER GUARANTEE THAN THE ASSERTION GAVE, which is why this is a deletion and
+-- not a gap: A-2 protected against corrections ACCIDENTALLY GATING the serve path. With no
+-- corrections term in either ranking view (04_artifacts.sql, both sites), corrections cannot reach
+-- the serve path to gate it. The risk moved from "guarded by one assertion" to "structurally
+-- absent" — but no test executes to say so, so it is written down here instead.
+-- ⛔ NOT retargeted at some other staleness, per the plan: an assertion kept alive by changing its
+-- subject tests what is easy rather than what matters.
 
 -- ── ⟳ ROUND 6 B4 — ONE REPRESENTATION OF "NO CORRECTIONS", AND RUNG 1 ACTUALLY DECIDING ─────────
 -- The cross-language agreement is a REGRESSION GUARD, not a one-off check. If the SQL canonicalizer
@@ -848,75 +1229,52 @@ do $$ begin
   raise notice 'ok (hash): SQL reproduces content-hash.ts on 4 vectors, and the constant is pinned';
 end $$;
 
--- RUNG 1 DECIDES, and this is the test that a mutation can actually turn red. Asserting the boolean
--- `card->>'mdCorrectionsHash' = corrections_hash` would merely re-implement the rung; it has to pick a
--- WINNER against the rungs below it. vidC takes the DEFAULT hash (no corrections), which is exactly
--- the state B4 measured as corrections-current = FALSE for the entire corpus.
-insert into workspace_videos (workspace_id, video_id) select id, 'vidC' from t_ws;
-insert into video_generations (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
-values
- -- corrections-CURRENT but older and a LOWER format version: must still win, because rung 1 is first
- ((select id from t_ws),'vidC','gC_CUR','summary',
-  ('{"tldr":"t","takeaways":"k","docVersion":"3.3","mdGeneratedAt":"2026-01-01","processedAt":"y",'
-   || '"mdCorrectionsHash":"' || no_corrections_hash() || '"}')::jsonb,
-  3,'2026-01-01','SHA_C_CUR'),
- -- corrections-STALE but newer and a HIGHER format version: must lose
- ((select id from t_ws),'vidC','gC_STALE','summary',
-  -- ⟳ ROUND 7 B2 — produced_at moved back from '2026-09-09'. It was a MONTH IN THE FUTURE, which is
-  -- now rejected outright (a clock value may not enter the ranking) — and while it stood, it was the
-  -- fixture that made B2 reachable in practice: a generation with a future produced_at could never
-  -- have its digs detached. `mdGeneratedAt` deliberately KEEPS its later date: it is the string this
-  -- row exists to lose the ranking on, and it is card data, not a clock the schema bounds.
-  '{"tldr":"t","takeaways":"k","docVersion":"4.0","mdGeneratedAt":"2026-09-09","processedAt":"y","mdCorrectionsHash":"H_STALE"}',
-  4,'2026-02-09','SHA_C_STALE');
-insert into video_artifacts (workspace_id,video_id,slot,generation_id,kind,state,blob_key)
-values ((select id from t_ws),'vidC','summary','gC_CUR','summary','recorded',
-        (select id from t_ws)::text||'/videos/vidC/gC_CUR/summary.md'),
-       ((select id from t_ws),'vidC','summary','gC_STALE','summary','recorded',
-        (select id from t_ws)::text||'/videos/vidC/gC_STALE/summary.md');
-do $$ declare g text; begin
-  select generation_id into g from video_summary_current where video_id='vidC';
-  if g is distinct from 'gC_CUR' then
-    raise exception 'ASSERTION FAILED — rung 1 did not decide: current is %, expected gC_CUR', coalesce(g,'<none>');
-  end if;
-  raise notice 'ok (rung 1): an UNCORRECTED video ranks its constant-hash generation as current';
-end $$;
+-- ── ⟳ ADR-0011 — "RUNG 1 DECIDES" IS DELETED, AND ONLY EXECUTION FOUND IT ───────────────────────
+-- The vidC fixture pair stood here: `gC_CUR` corrections-current but OLDER with a LOWER format
+-- version, `gC_STALE` corrections-stale but NEWER with a HIGHER one. It asserted `gC_CUR` wins —
+-- proving the corrections term was FIRST among the rungs and genuinely decided, rather than being a
+-- boolean that re-implemented itself. With no corrections term, `gC_STALE` correctly wins on
+-- `doc_version_major` 4 > 3, and the assertion fails.
+--
+-- ⭐⭐ THE PLAN'S TWO SWEEP PREDICATES BOTH MISSED THIS, AND THE REASON GENERALISES. Step 4's MUST-GO
+-- grep and Step 5's gate both match on the NAME of a removed object — `corrections_hash`,
+-- `wv.corrections`, `sync_corrections_to_workspace_video`. This block names none of them: its
+-- fixtures are legal cards, its assertion reads `video_summary_current`, and every line still
+-- parses. It depended on the removed ranking term BEHAVIOURALLY, not lexically.
+-- **A textual sweep cannot find a test whose subject is a behaviour rather than an identifier.**
+-- It was found by RUNNING the suite, which is the only instrument that had a chance.
+--
+-- ⛔ NOT RETARGETED. Rewriting it to assert that `doc_version_major` decides would keep a green
+-- test at the cost of testing what is easy: the rung ordering below rung 1 was never in question.
+-- ⚠ COVERAGE GENUINELY LOST: nothing now proves the surviving rungs decide in the documented order.
+-- That gap PREDATES ADR-0011 for rungs 2-5 — this fixture only ever exercised rung 1 against them —
+-- but it is smaller now than it reads, and it is named rather than left to a diff.
 
--- THE ANTI-DRIFT TRIGGER. Backfilling repairs today; this is what stops the next write re-opening it.
--- Runs against a REAL `videos` row, not the vidC fixture: vidC exists only in `workspace_videos`, so
--- the first version of this test updated ZERO rows, the trigger never fired, and it reported the
--- copy as drifted. A test that cannot reach the trigger it names proves nothing about it.
--- ANY real video, not one constrained to t_ws — MEASURED: t_ws is `workspaces order by id limit 1`
--- and that workspace holds no videos, so the filtered version selected zero rows and the assertion
--- reported "no real video" rather than silently passing. Every `videos` row has a
--- `workspace_videos` row by now; that is what the backfill above just asserted.
-create temp table t_real as select workspace_id, video_id from videos limit 1;
-do $$ declare h text; c text; n int; begin
-  select count(*) into n from t_real;
-  if n <> 1 then raise exception 'ASSERTION FAILED — no real video to test the trigger against'; end if;
-  update videos v set data = jsonb_set(v.data, '{corrections}', '"say Clawcode"')
-    from t_real r where v.workspace_id=r.workspace_id and v.video_id=r.video_id;
-  select wv.corrections_hash, wv.corrections into h, c
-    from workspace_videos wv join t_real r using (workspace_id, video_id);
-  if h <> corrections_hash_of('say Clawcode') then
-    raise exception 'ASSERTION FAILED — the copy drifted: wv has %, expected %',
-      h, corrections_hash_of('say Clawcode'); end if;
-  if c <> 'say Clawcode' then
-    raise exception 'ASSERTION FAILED — the copy kept a stale corrections text: %', coalesce(c,'<null>'); end if;
-  -- ...and clearing them must return the DEFINED CONSTANT, not NULL. This is the direction that
-  -- re-opens B4 if it regresses: a NULL here is indistinguishable from "never computed".
-  update videos v set data = jsonb_set(v.data, '{corrections}', '""')
-    from t_real r where v.workspace_id=r.workspace_id and v.video_id=r.video_id;
-  select wv.corrections_hash into h
-    from workspace_videos wv join t_real r using (workspace_id, video_id);
-  if h <> no_corrections_hash() then
-    raise exception 'ASSERTION FAILED — clearing corrections did not restore the constant: %', h; end if;
-  raise notice 'ok (anti-drift): editing corrections updates the copy; clearing restores the constant';
-end $$;
-
-select assert_raises($$insert into workspace_videos (workspace_id, video_id, corrections_hash)
-  values ((select id from t_ws),'vidNULL', null)$$,
-  'a NULL corrections_hash (absent-vs-failed on the top ranking rung)', '23502');
+-- ── ⟳ ADR-0011 — THE ANTI-DRIFT TRIGGER TEST AND THE NULL-HASH REFUSAL ARE BOTH DELETED ─────────
+-- Two blocks stood here, and both were guarding the SAME denormalisation from two directions:
+--
+--   1. THE ANTI-DRIFT TEST. It wrote 'say Clawcode' into a real `videos.data`, then asserted that
+--      `workspace_videos.corrections_hash` and `.corrections` had followed; then cleared the text
+--      and asserted the hash returned to the DEFINED CONSTANT rather than NULL — the direction that
+--      re-opened round 6 B4, because a NULL there is indistinguishable from "never computed".
+--   2. THE NULL-HASH REFUSAL. `assert_raises(insert … corrections_hash => null)` expecting 23502,
+--      i.e. that absent-vs-failed could not be represented on the top ranking rung.
+--
+-- ⛔ BOTH SUBJECTS ARE GONE, AND NEITHER IS RETARGETED. There is no copy to drift, no second
+-- representation to disagree, and no nullable hash to conflate two meanings on.
+--
+-- ⚠ THIS IS THE LARGEST SINGLE LOSS OF EXECUTED COVERAGE IN ADR-0011, so it is stated plainly
+-- rather than left to a diff. What these two blocks bought was: *the denormalized copy stays equal
+-- to the truth across every write path*. What replaces them is not a better assertion — it is the
+-- absence of the thing they policed. Deleting a disagreement beats synchronising it, but the two
+-- are not the same KIND of guarantee, and only one of them ran.
+--
+-- ⚠ WHAT THIS TEST ALSO TAUGHT, WORTH MORE THAN THE ASSERTION: its first version updated ZERO rows,
+-- because it ran against the `vidC` fixture, which exists only in `workspace_videos` and has no
+-- `videos` row — so the trigger never fired and it reported the copy as drifted. Then the fix ran
+-- against `t_ws`, whose workspace holds no videos, and selected zero rows again. **A test that
+-- cannot reach the mechanism it names proves nothing about it**, and it took two measured attempts
+-- to make this one reach. That lesson outlives its subject.
 select assert_raises($$insert into video_generations
   (workspace_id,video_id,generation_id,kind,card,doc_version_major,produced_at,md_hash)
   values ((select id from t_ws),'vidA','gB8','summary',
@@ -1312,10 +1670,12 @@ do $$ declare leaky text[]; begin
      -- ⟳ T3 added THREE definer functions to this file, and adding them here is the whole point of
      -- the list being hand-maintained: two of them are trigger functions, which round 7 M1 measured
      -- as exactly the kind that keeps the default PUBLIC EXECUTE unnoticed.
+     -- ⟳ ADR-0011 removed `sync_corrections_to_workspace_video` from this list, on the same terms
+     -- ADR-0007 removed the two reservation functions: the function is gone, so naming it here
+     -- would inventory an object nobody can find. The hand-maintained weakness is unchanged.
      and p.proname in ('slot_kind','record_artifact',
                        'forbid_collecting_current','video_artifacts_append_only',
                        'video_artifacts_generation_complete','video_generations_freeze',
-                       'sync_corrections_to_workspace_video',
                        'video_artifact_sources_append_only','video_artifact_sources_insert_once',
                        'art_summary_has_no_source')
      and has_function_privilege('anon', p.oid, 'EXECUTE');
@@ -1892,29 +2252,25 @@ begin
   raise notice 'ok (B3 chain): a new playlist derives its workspace from its owner';
 end $$;
 
--- ⟳ ROUND 9 — CORRECTIONS SURVIVE THE SAME VIDEO ARRIVING IN A SECOND PLAYLIST.
--- Round 6's INSERT-half sync was unconditional, and it was harmless only because B3 made INSERTs
--- impossible. MEASURED the moment ingest worked: 'KEEP ME' -> <null>. `corrections` describes the
--- SHARED BODY while `videos` is per-playlist, so a second playlist's row carrying none is not
--- evidence that anyone removed them.
-do $$
-declare v_own uuid; v_p1 uuid; v_p2 uuid;
-begin
-  select owner_id into v_own from playlists limit 1;
-  insert into playlists (owner_id, playlist_key, playlist_url)
-    values (v_own, 'k-assert-c1', 'https://example/c1') returning id into v_p1;
-  insert into playlists (owner_id, playlist_key, playlist_url)
-    values (v_own, 'k-assert-c2', 'https://example/c2') returning id into v_p2;
-  insert into videos (playlist_id, owner_id, video_id, position, data)
-    values (v_p1, v_own, 'sharedCorr', 8001,
-            jsonb_build_object('id','sharedCorr','corrections','KEEP ME'));
-  insert into videos (playlist_id, owner_id, video_id, position, data)
-    values (v_p2, v_own, 'sharedCorr', 8002, jsonb_build_object('id','sharedCorr'));
-  if (select corrections from workspace_videos where video_id='sharedCorr')
-       is distinct from 'KEEP ME' then
-    raise exception 'ASSERTION FAILED — the second playlist CLOBBERED the shared corrections'; end if;
-  raise notice 'ok (round 9): a corrected video survives being added to a second playlist';
-end $$;
+-- ── ⟳ ADR-0011 — ROUND 9'S CLOBBER ASSERTION IS DELETED, AND ITS PREMISE IS WHAT CHANGED ────────
+-- The block here added 'sharedCorr' to two playlists, the first carrying 'KEEP ME' and the second
+-- carrying none, then asserted `workspace_videos.corrections` still read 'KEEP ME'. It was a real
+-- defect, MEASURED the moment ingest worked: 'KEEP ME' -> <null>.
+--
+-- ⛔ THE BEHAVIOUR IT ASSERTED NO LONGER EXISTS, and the reason is worth stating exactly, because it
+-- is ADR-0011's whole thesis. The clobber was possible because ONE workspace-scoped row had to
+-- represent N playlist-scoped truths, so the second playlist's arrival had to be interpreted:
+-- "removed the corrections" or "never had them?" — and NO MERGE RULE CAN BE RIGHT, because the two
+-- playlists genuinely disagree. Round 9 picked "a corrected row never loses to an uncorrected
+-- duplicate", which is a heuristic, not a truth. ADR-0011 keeps the corrections per-playlist in
+-- `videos.data`, where both rows are simply themselves and nothing has to be reconciled.
+--
+-- ⚠ SO THIS IS NOT COVERAGE LOST — IT IS A QUESTION THAT STOPPED BEING ASKED. The assertion could
+-- not be rewritten against the new schema even in principle: there is no shared row to clobber.
+-- ⚠ WHAT IS GENUINELY UNGUARDED NOW: that the two per-playlist rows keep their own corrections. No
+-- assertion in this file covers it, because that is 0001's `videos.data` behaviour and predates this
+-- spec entirely. It is not a regression; it is a boundary, and it is named here so the next reader
+-- does not read the absence as an oversight.
 
 -- And a caller with the WRONG opinion is TOLD, not silently corrected. This is the whole reason the
 -- explicit-writer option was not simply discarded: a caller confused about tenancy is a real bug, and

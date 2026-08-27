@@ -26,9 +26,17 @@ nobody has thought of, or one a future Postgres adds, is a RED TEST rather than 
 exclusion must carry a written reason, which is the part that cannot be automated and is the part
 worth a human's attention.
 
-⚠ WHAT IT STILL CANNOT DO. It proves the digest is not narrowing. It cannot prove an excluded column
-is *correctly* excluded — that judgement is in the REASONS below, and a wrong reason here is a real
-defect that this script will happily report as green. Read them.
+⚠ WHAT IT STILL CANNOT DO — AND WHAT NOW DOES. It proves the digest is not narrowing. It cannot
+prove an excluded column is *correctly* excluded: that judgement is in the REASONS below, and a wrong
+reason here is a defect this script reports as green. **That bound was hit five times** — four in
+round 7, and a fifth introduced by the commit that fixed the fourth, which then survived both halves
+of rounds 8 and 9 because every reviewer was pointed at the instruments and nobody re-read the prose
+saying what the instruments cover.
+
+`scripts/verify-exclusion-reasons.py` (gate 13) closes the executable part of it: the six rules that
+say "X is rendered by Y, and Y IS digested" are claims about a hash, so it changes X and requires the
+digest to move. 10 executed and held; the twelve rules with no executable form are PRINTED every run
+rather than left silent. Read the reasons anyway — but the ones that can be run, are.
 """
 from __future__ import annotations
 
@@ -36,9 +44,12 @@ import argparse
 import os
 import re
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from m4_catalog import CATALOG_SQL, _run  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
 
 CATALOGS = ("pg_class", "pg_proc", "pg_attribute", "pg_index",
             "pg_policy", "pg_constraint", "pg_trigger", "pg_type", "pg_rewrite")
@@ -79,10 +90,20 @@ EXCLUDED: tuple[tuple[str, str], ...] = (
 
     # ---- privileges: digested as EFFECTIVE ACCESS instead ----------------------------------------
     (r"^(relacl|proacl|attacl|typacl)$",
-     "⛔ r6 B1: ACL TEXT cannot agree between the manifest's --no-privileges baseline and any "
-     "deployed database (production's default ACL names `claude_ro`, a role the container does not "
-     "have). Digested instead as EFFECTIVE ACCESS via has_table_privilege / "
-     "has_any_column_privilege / has_function_privilege over the principals the spec controls"),
+     "⛔⛔ THIS REASON WAS FALSE FOR SEVEN COMMITS AND SURVIVED TWO REVIEW ROUNDS. It said "
+     "privileges were 'digested instead as EFFECTIVE ACCESS via has_table_privilege / "
+     "has_any_column_privilege / has_function_privilege' — true until fork (a) step 5, which emptied "
+     "REL_GRANTEES and FN_GRANTEES so that NOTHING privilege-shaped is digested at all. The "
+     "correction was written and never landed: a `str.replace` whose target no longer matched, "
+     "reported as done by an UNCONDITIONAL print. Round 7's headline was four FALSE exclusion "
+     "reasons; this is the fifth, in the script that exists to keep them honest. "
+     "⭐ THE TRUE REASON: ACL text cannot agree between the manifest's --no-privileges baseline and "
+     "any deployed database — production's default ACL names `claude_ro`, a role no container has "
+     "(r6 B1, measured against production). Privileges therefore left the digest ENTIRELY "
+     "(ADR-0013) and are covered by EXECUTION instead: session roles by "
+     "check-anon-exposure.py RULE 3 (gate 11/12, mutations 10/17/22/23/24/25/26), and service_role "
+     "by 05_assert.sql's SERVICE-ROLE CAPABILITY blocks (gate 8/12). "
+     "⚠ THAT SENTENCE IS ITSELF A CLAIM — see MOVED_COVERAGE below, which makes it fail loudly."),
 
     # ---- rows this query does not select at all ---------------------------------------------------
     (r"^(attisdropped|tgisinternal|relispartition|relpartbound)$",
@@ -109,10 +130,16 @@ EXCLUDED: tuple[tuple[str, str], ...] = (
      "replica identity and physical clustering: they affect logical replication and row order on "
      "disk, neither of which can admit or reject a write. `relreplident` IS digested, so a change "
      "of replica identity at the TABLE level is still visible"),
-    (r"^(prosupport|probin|proargdefaults)$",
-     "a planner support function, a C-language shared-object path, and the internal node tree of "
-     "argument defaults. M4 ships no C functions; a change to a default's VALUE changes the "
-     "identity arguments, which are the manifest key"),
+    (r"^(prosupport|probin)$",
+     "a planner support function and a C-language shared-object path. M4 ships no C functions and "
+     "declares no support function; neither can change whether a plpgsql body runs"),
+    (r"^(proargdefaults)$",
+     "the internal node tree of argument defaults, rendered as SQL text by "
+     "pg_get_function_arguments, which IS digested (r7 M). ⛔ THIS ROW HELD A FALSE REASON FOR ONE "
+     "ROUND: it claimed a default's VALUE changes the identity arguments. It does not — identity "
+     "arguments OMIT DEFAULTS (MEASURED 2026-08-26: `a integer, b text` vs `a integer, b text "
+     "DEFAULT 'x'::text`), so a changed default moved neither the symbol nor the digest while every "
+     "omitted-argument call wrote different data"),
     (r"^(reltype|reloftype|relam)$",
      "the composite type Postgres auto-creates for every relation, the OF-type of a typed table "
      "(M4 declares none), and the access method. All three are OID references; `relam` would matter "
@@ -130,6 +157,53 @@ EXCLUDED: tuple[tuple[str, str], ...] = (
      "pg_rewrite row attached to a manifest relation as `name:ev_type:is_instead` (r6 H1). They "
      "appear here only because the enumeration reads pg_rewrite's columns directly"),
 )
+
+
+# ⭐⭐ EVERY "COVERED ELSEWHERE" CLAIM NAMES ITS INSTRUMENT AND ITS MUTATION, AND BOTH ARE CHECKED.
+#
+# This is the mechanism the ACL row above went without, and it is the reason that row could be false
+# for seven commits across two review rounds. An exclusion whose reason says a fact "moved" to
+# another instrument is making a claim about a DIFFERENT FILE, which this script never opened.
+#
+# The pattern across rounds 8-9 was uniform and this is its narrowest form: a coverage claim written
+# by the person who built the coverage, verified by reading it. `21 - 9 = 12` is arithmetic;
+# "mutation 19 goes red" was never run; "covered elsewhere" named no one. Each was true-sounding and
+# unexecuted, and each cost a review round.
+#
+# So a moved fact must name (a) the file that now covers it and (b) a mutation label in the harness
+# that proves that file goes red. Both are checked HERE, mechanically. It does not prove the mutation
+# is a good one — it proves the claim points at something that exists.
+MOVED_COVERAGE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (r"^(relacl|proacl|attacl|typacl)$",
+     "scripts/check-anon-exposure.py",
+     ("mutation 10", "mutation 17", "mutation 22", "mutation 23",
+      "mutation 24", "mutation 25", "mutation 26")),
+)
+HARNESS = ROOT / "scripts/mutate-live-schema-check.sh"
+
+
+def moved_coverage_problems() -> list[str]:
+    """The shipped claims. Thin wrapper so `--self-test` can drive the rule with fixtures."""
+    return _moved_problems_for(MOVED_COVERAGE)
+
+
+def _moved_problems_for(claims) -> list[str]:
+    """Every claim points at a file that exists and mutations that exist."""
+    out: list[str] = []
+    harness = HARNESS.read_text() if HARNESS.is_file() else ""
+    if not harness:
+        return [f"MOVED COVERAGE  cannot read {HARNESS} — the mutation half of every 'covered "
+                "elsewhere' claim is unverifiable. TREAT THIS AS NOT RUN."]
+    for pattern, instrument, mutations in claims:
+        if not (ROOT / instrument).is_file():
+            out.append(f"MOVED COVERAGE  {pattern} says its facts moved to `{instrument}`, and no "
+                       "such file exists. The claim is prose.")
+        for mut in mutations:
+            if mut not in harness:
+                out.append(f"MOVED COVERAGE  {pattern} cites `{mut}` as the proof that "
+                           f"`{instrument}` catches what left the digest, and the harness contains "
+                           "no such mutation.")
+    return out
 
 
 def digested_columns(sql: str = CATALOG_SQL) -> set[str]:
@@ -166,6 +240,19 @@ def self_test() -> int:
     check("relhasrules is DIGESTED (r6 claude H1)", classify("relhasrules", d)[0], "DIGESTED")
     check("relrowsecurity is DIGESTED (r5 B2)", classify("relrowsecurity", d)[0], "DIGESTED")
     check("tgenabled is DIGESTED (r4 B1)", classify("tgenabled", d)[0], "DIGESTED")
+    # ⟳ 2026-08-26 — the ACL reason was FALSE for seven commits and this self-test passed over it,
+    # because it asserted the reason mentions `claude_ro`, not that the reason is TRUE. A keyword is
+    # not a fact. MOVED_COVERAGE is the part that can actually fail.
+    check("every MOVED_COVERAGE claim names a file that exists and mutations that exist",
+          moved_coverage_problems(), [])
+    check("the ACL row is the one that claims its facts moved",
+          any(r"relacl" in pat for pat, _, _ in MOVED_COVERAGE), True)
+    check("a claim citing a mutation that does not exist FAILS", bool([
+        p2 for p2 in _moved_problems_for(
+            ((r"^(x)$", "scripts/check-anon-exposure.py", ("mutation 999",)),))]), True)
+    check("a claim naming a file that does not exist FAILS", bool([
+        p2 for p2 in _moved_problems_for(
+            ((r"^(x)$", "scripts/no-such-file.py", ("mutation 10",)),))]), True)
     check("relacl is EXCLUDED, not digested (r6 B1)", classify("relacl", d)[0], "EXCLUDED")
     check("…and its reason names the production divergence",
           "claude_ro" in classify("relacl", d)[1], True)
@@ -205,6 +292,9 @@ def main() -> int:
         return 2
 
     digested = digested_columns()
+    moved = moved_coverage_problems()
+    for m in moved:
+        print(m)
     rows = [ln.split("|", 1) for ln in out.splitlines() if "|" in ln]
     if not rows:
         print("CANNOT RUN — the catalog enumeration returned nothing. Treat this as NOT RUN.",
@@ -223,6 +313,10 @@ def main() -> int:
 
     print(f"catalog coverage: {len(rows)} columns across {len(CATALOGS)} catalogs — "
           f"{counts['DIGESTED']} digested, {counts['EXCLUDED']} excluded with a reason")
+    if moved:
+        print(f"\n❌ {len(moved)} 'covered elsewhere' claim(s) point at nothing — a moved fact must "
+              "name a file that exists and a mutation that proves it", file=sys.stderr)
+        return 1
     if bad:
         print(f"\n❌ {len(bad)} column(s) are UNCLASSIFIED — the digest may be silently narrower "
               f"than it claims:\n", file=sys.stderr)

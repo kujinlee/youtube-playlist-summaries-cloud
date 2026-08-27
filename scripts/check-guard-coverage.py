@@ -44,6 +44,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "docs/superpowers/specs/2026-08-03-stable-blob-addressing"
 SCHEMA = SPEC / "schema"
 MUTATIONS = SPEC / "mutate-schema.py"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from m4_base_db import read_catalog  # noqa: E402
+
 CONTAINER = "supabase_db_youtube-playlist-summaries-cloud"
 TABLES = ("video_artifacts", "video_generations")
 
@@ -67,10 +70,10 @@ GUARDS: dict[str, tuple[str, str]] = {
     # ── video_artifacts: SHAPE (well-formedness / referential integrity) ─────────
     "art_slot_kind":               ("SHAPE", ""),
     "art_paid_has_generation":     ("SHAPE", ""),
-    "art_pending_is_leased":       ("SHAPE", ""),
-    "art_pending_has_token":       ("SHAPE", ""),
-    "art_pending_has_reserved_at": ("SHAPE", ""),
-    "art_summary_has_no_source":   ("SHAPE", ""),
+    # ⛔ FOUR ENTRIES STOOD HERE UNTIL T5 (2026-08-26): art_pending_is_leased, art_pending_has_token,
+    # art_pending_has_reserved_at and art_summary_has_no_source. The first three were the RESERVATION
+    # protocol ADR-0007 deleted; the fourth became a branch of the T3 provenance enforcer rather than
+    # a constraint. All four were VERIFIED ABSENT from the schema before deletion, not assumed.
     "art_dig_has_span":            ("SHAPE", ""),
     "art_detached_is_dig":         ("SHAPE", ""),
     "art_detached_has_timestamp":  ("SHAPE", ""),
@@ -82,15 +85,19 @@ GUARDS: dict[str, tuple[str, str]] = {
     "gen_summary_has_format":       ("SHAPE", ""),
     "gen_summary_has_hash":         ("SHAPE", ""),
     "gen_major_matches_card":       ("SHAPE", ""),
+    # ⟳ T5 (2026-08-26): both reached the schema unclassified. `check (kind = 'summary' or X is null)`
+    # reads only the row being written, so a merely-SECOND caller inserting a well-formed row is
+    # untouched — SHAPE. Mutations 36 and 37 already covered them; only the decision was missing.
+    "gen_card_is_summary_only":     ("SHAPE", ""),
+    "gen_major_is_summary_only":    ("SHAPE", ""),
     # Auto-named inline CHECKs. Found by this ratchet on its first run — they had been
     # in the schema since round 4 and were never in anyone's mental inventory, which is
     # the exact failure mode it exists to remove.
     "video_artifacts_state_check":   ("SHAPE", ""),
     "video_generations_state_check": ("SHAPE", ""),
     # ── SEQUENCE: each must reconcile, and say how ──────────────────────────────
-    "video_artifacts_inflight_uq": (
-        "SEQUENCE",
-        "reserve_artifact_slot upserts on it and returns typed busy|exhausted|reserved"),
+    # ⛔ `video_artifacts_inflight_uq` STOOD HERE — the reservation protocol's slot lock, deleted by
+    # ADR-0007 along with reserve_artifact_slot. VERIFIED ABSENT from the schema before deletion.
     "video_artifacts_paid_uq": (
         "SEQUENCE",
         "record_artifact: on conflict do update (round 7 B1) - a restarted worker records in place"),
@@ -116,10 +123,11 @@ GUARDS: dict[str, tuple[str, str]] = {
         "SHAPE(reconciled)",
         "`on conflict (owner_id) do nothing` — every profile 01's seed already covered reaches this "
         "trigger too, and must not error on the workspace it already has"),
-    "sync_corrections_to_workspace_video": (
-        "SHAPE(reconciled)",
-        "the INSERT half's WHEN clause skips rows carrying no corrections; without it the same video "
-        "added to a second playlist CLOBBERED the shared corrections (measured round 9)"),
+    # ⛔ `sync_corrections_to_workspace_video` STOOD HERE, classified SHAPE(reconciled) because its
+    # INSERT half's WHEN clause skipped rows carrying no corrections — without it, the same video
+    # added to a second playlist CLOBBERED the shared corrections (measured round 9). ADR-0011 (T2)
+    # deletes the trigger and the denormalized copy it synchronised, so the reconciler has nothing
+    # left to reconcile. VERIFIED ABSENT by this ratchet reporting it STALE before deletion.
     "forbid_collecting_current": (
         "SEQUENCE",
         "the sweeper selects THROUGH video_generations_collectable; trigger kept as a backstop "
@@ -127,7 +135,18 @@ GUARDS: dict[str, tuple[str, str]] = {
     # ── foreign keys are structural, never mutated; named explicitly, not skipped ─
     "video_artifacts_workspace_id_video_id_fkey":                    ("SHAPE", ""),
     "video_artifacts_workspace_id_video_id_generation_id_kind_fkey": ("SHAPE", ""),
-    "video_artifacts_workspace_id_video_id_source_generation_id_fkey": ("SHAPE", ""),
+    # ⛔ `…_source_generation_id_fkey` STOOD HERE. T3 moved provenance onto `video_artifact_sources`,
+    # so `source_generation_id` no longer exists ON `video_artifacts` — it lives on the join table
+    # (04_artifacts.sql:230), whose own FK is classified below. VERIFIED before deletion: the column
+    # survives, the FK on THIS table does not, and the name is what went stale.
+    # ⟳ T5: a UNIQUE constraint that is a SUPERSET OF THE PRIMARY KEY, and therefore SHAPE.
+    # `artifact_id` is `gen_random_uuid()` and is itself the PK (04_artifacts.sql:90-91); this states
+    # the wider tuple only so `video_artifact_sources` can reference it (the schema says so at :99).
+    # It cannot reject a merely-SECOND caller that the PK would admit, because a second caller draws
+    # a different uuid — so the SEQUENCE question has no reachable case, rather than a reconciler.
+    "video_artifacts_identity_uq": (
+        "SHAPE",
+        "superset of the PK on a gen_random_uuid() surrogate; exists as an FK target, not a lock"),
     "video_generations_workspace_id_video_id_fkey":                  ("SHAPE", ""),
     "workspace_videos_workspace_id_fkey":                            ("SHAPE", ""),
     "videos_workspace_video_fk":                                     ("SHAPE", ""),
@@ -165,8 +184,12 @@ COVERED_BY: dict[str, tuple[str, ...]] = {
                                             "B3: the manifest parent no longer created",
                                             "B3: a disagreeing workspace_id"),
     "ensure_workspace_for_profile":        ("B3: a new profile gets no workspace",),
-    "sync_corrections_to_workspace_video": ("the anti-drift trigger removed",
-                                            "the INSERT-half sync unguarded"),
+    # ⛔ `sync_corrections_to_workspace_video` STOOD HERE, pointing at the two mutation labels
+    # "the anti-drift trigger removed" and "the INSERT-half sync unguarded". ADR-0011 (T2) retired
+    # the guard AND both mutations, so this entry named three things that no longer exist.
+    # ⭐ FOUND BY --self-test ("every COVERED_BY key is a classified guard"), not by reading: the
+    # LIVE ratchet went green the moment the guard left GUARDS, because its subject is the schema.
+    # This map is a second inventory keyed on the first, and only the self-test compares them.
 }
 
 CATALOG_SQL = f"""
@@ -199,15 +222,10 @@ def catalog_guards() -> set[str]:
             continue  # assertions, not schema
         sql += f.read_text() + "\n"
     sql += "\\echo ---GUARDS---\n" + CATALOG_SQL + "\nrollback;\n"
-    p = subprocess.run(
-        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres",
-         "-tAq", "-v", "ON_ERROR_STOP=1"],
-        input=sql, capture_output=True, text=True)
-    if p.returncode != 0:
-        print("could not read the catalog — is the local Supabase container running?")
-        print(p.stdout[-1500:] or p.stderr[-1500:])
-        sys.exit(2)
-    out = p.stdout.split("---GUARDS---", 1)[-1]
+    # ⟳ 2026-08-26 — was a byte-identical copy in three ratchets, all reading `postgres`
+    # directly. Once 0027 was applied there, all three died on `relation "workspaces"
+    # already exists`. `read_catalog` runs it against a guaranteed pre-M4 subject.
+    out = read_catalog(sql, "---GUARDS---")
     return {ln.split(":", 1)[1] for ln in out.splitlines()
             if ":" in ln and ln.split(":", 1)[0] in {"check", "fk", "index", "trigger"}}
 
