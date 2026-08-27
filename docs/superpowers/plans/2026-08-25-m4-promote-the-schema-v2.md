@@ -1073,11 +1073,11 @@ run against the wrong database is visible in its own output rather than inferred
 - Consumes: Task 9 Step 2's grep.
 - Produces: a mechanical trigger for #26.
 
-- [ ] **Step 1: Record the repo-wide grep and its count in M5's entry** ⟳ *r2 High / r3 M3: "by reading the live serve path" proves something about `serve-doc.ts` and nothing about the repo.*
+- [x] **Step 1: Record the repo-wide grep and its count in M5's entry** — ✅ **DONE 2026-08-26.** ⚠ There is no heading named "M5" and no `#26` in `docs/backlog.md`: the spine's entry is the **⚠ UNPARK TRIGGER** paragraph in `docs/roadmap-to-launch.md`, and the backlog uses bare numeric IDs (`| 26 |`), not `#26`. Both were found by searching the CONCEPT (`inflight_uq`, `record_artifact`) after the literal names returned nothing — the failure this repo files under *it already exists under a name I didn't search*. Recorded there: 0 production callers, 0 test callers, 2 comment lines, measured at `6f78abe`. ⟳ *r2 High / r3 M3: "by reading the live serve path" proves something about `serve-doc.ts` and nothing about the repo.*
 
-- [ ] **Step 2: Wire #26's trigger to that command** ⟳ *r3 M2: v3's own paragraph called this "a decision wearing a checkbox" and then wrote one.* The trigger must be observable: *"fails the moment a non-test caller reaches `record_artifact` for a paid kind."*
+- [x] **Step 2: Wire #26's trigger to that command** — ✅ **DONE, and as a SCRIPT rather than a command in prose.** `scripts/check-paid-caller-arrival.py` (9 self-test cases, mutation-checked both ways). A trigger that is a sentence someone must remember to run is the same shape this step's own ⟳ note calls *"a decision wearing a checkbox"*, and `dev-process.md` says to ask whether a rule can be a script before writing it down. It can. ⟳ *r3 M2: v3's own paragraph called this "a decision wearing a checkbox" and then wrote one.* The trigger must be observable: *"fails the moment a non-test caller reaches `record_artifact` for a paid kind."*
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ---
 

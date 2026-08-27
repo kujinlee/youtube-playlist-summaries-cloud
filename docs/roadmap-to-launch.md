@@ -736,7 +736,12 @@ its own trigger — task #44 (T5 code preconditions), task #45 (`doc_key` re-key
 coupling), backlog #25 (render addressing), #26 (attempt ceiling), #27 (GC retention).
 
 **⚠ UNPARK TRIGGER:** when backlog #17/#19 (CAS conditional-write on `persist_summary`) becomes the
-next slice, or when a real caller is about to reach `record_artifact` for a paid kind. **Backlog #26
+next slice, or when a real caller is about to reach `record_artifact` for a paid kind — **and that
+second half is now a command, not a judgement: `python3 scripts/check-paid-caller-arrival.py`**
+(⟳ M4 T10, 2026-08-26). `exit 0` dormant · `exit 1` fired · `exit 2` CANNOT RUN.
+**MEASURED at `6f78abe`: 0 production callers, 0 test callers, 2 comment lines in
+`tests/lib/blob-addressing-caller-contract.test.ts`.** The script is the record; this count is a
+snapshot of it and will age — re-run rather than quote. **Backlog #26
 must be closed FIRST** in that case — ADR-0007 deleted the only per-kind attempt bound on the money
 path, so shipping without that decision silently promotes a summary from 1 paid attempt to 5.
 
