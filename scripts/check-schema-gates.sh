@@ -191,14 +191,46 @@ run "14/14 05_assert.sql is NOT in any migration (arbitrary-SQL executor + profi
         exit 2
       fi
       # (b) the CORPUS must be non-empty — a glob that matches nothing is not a clean bill of health.
+      #
+      # ⟳ r11 M1: the floor used to be `-lt 27`, which is TODAY'"'"'S COUNT WITH ZERO MARGIN in the only
+      # direction it can move. Measured: master has 26, so gate 14 was a hard CANNOT RUN on any
+      # pre-0027 checkout — and this script has an explicit M4_PHASE=pre branch. `squash` would do
+      # the same on any branch. The failure to guard against is an UNMATCHED GLOB, so that is what is
+      # tested, plus a sentinel proving the directory is the real migrations directory.
+      # `hardcode-only-what-fails-loudly`: a count that legitimately changes is not that.
       shopt -s nullglob
       migs=(supabase/migrations/*.sql)
-      if [ "${#migs[@]}" -lt 27 ]; then
-        echo "CANNOT RUN — read ${#migs[@]} migration(s) from $(pwd); expected at least 27."
+      if [ "${#migs[@]}" -eq 0 ] || [ ! -f supabase/migrations/0001_core_schema.sql ]; then
+        echo "CANNOT RUN — read ${#migs[@]} migration(s) from $(pwd), or 0001_core_schema.sql is absent."
         echo "  An unmatched glob feeds this gate empty input and it reports GREEN. TREAT AS NOT RUN."
         exit 2
       fi
-      ! grep -hv "^[[:space:]]*--" "${migs[@]}" | grep -qE "$M4_ASSERT_SIG"'
+      # ⛔⛔ r11 B1 — DO NOT WRITE `| grep -q` HERE. THE PREVIOUS LINE DID, AND IT WAS A FALSE GREEN
+      # OVER THE EXACT VIOLATION THIS GATE EXISTS TO DETECT.
+      #
+      # `grep -q` exits on the FIRST match and closes the pipe; the producer `grep -hv`, still
+      # writing, dies of SIGPIPE (141); `pipefail` — added by the r10 fix on the line above — reports
+      # the PRODUCER; and the leading `!` inverts that non-zero into SUCCESS. MEASURED, same tree,
+      # same corpus, 8 runs each: WITH pipefail 0 0 0 0 0 0 0 0 (false green), WITHOUT 1 1 1 1 1 1 1 1.
+      #
+      # It only caught violations near the END of the corpus. A full `05_assert.sql` appended to
+      # `0027` PASSED; one `assert_raises` line added to `0001_core_schema.sql` PASSED. The header'"'"'s
+      # own mutation table below ("0027 with 05 appended … 164, must catch it") had stopped holding
+      # against the committed code, and nothing re-ran it.
+      #
+      # ⚠ AND THE REPO HAD ALREADY MEASURED THIS, THE SAME DAY, IN THE SIBLING FILE:
+      # `run-schema-assertions.sh` carries a ⛔ block saying "DO NOT REINTRODUCE `printf … | grep -q`"
+      # with the identical 141/pipefail explanation. r10 fixed it there and reintroduced it here in
+      # the very next commit. Not un-generalised — written down, dated, and violated.
+      # `grep -c` reads all of its input, so there is no early exit to race. Capture first, match second.
+      hits=$(grep -hv "^[[:space:]]*--" "${migs[@]}" | grep -cE "$M4_ASSERT_SIG")
+      if [ "${hits:-0}" -ne 0 ]; then
+        echo "05_assert.sql'"'"'s signature matched ${hits} time(s) across ${#migs[@]} migration(s)."
+        echo "  An arbitrary-SQL executor and/or a profile deleter is queued for PRODUCTION."
+        grep -lE "$M4_ASSERT_SIG" "${migs[@]}" | sed "s/^/    /"
+        exit 1
+      fi
+      exit 0'
 
 echo
 if [ "$fail" -eq 0 ]; then

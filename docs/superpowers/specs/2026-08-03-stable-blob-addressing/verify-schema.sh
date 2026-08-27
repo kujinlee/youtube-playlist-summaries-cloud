@@ -128,7 +128,22 @@ SQL=$(printf 'begin;\n'; cat "${SRC_FILES[@]}"; printf '\n\\echo ALL_STATEMENTS_
 OUT=$(printf '%s' "$SQL" | docker exec -i "$CONTAINER" \
         psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 2>&1)
 echo "$OUT"
-if ! grep -q ALL_STATEMENTS_OK <<<"$OUT"; then echo "❌ schema FAILED"; exit 1; fi
+if ! grep -q ALL_STATEMENTS_OK <<<"$OUT"; then
+  # ⟳ r11 M3 — A RAISED `CANNOT RUN` IS NOT A SCHEMA FAILURE, AND THIS HEADLINE NAMED THE WRONG
+  # SUBJECT. 05_assert.sql's fixtures guard (added by r10 M3) raises "CANNOT RUN — only 1
+  # workspace(s)…" on a one-workspace database — a state its own comment says a `db reset` plus one
+  # signup produces. Any exception suppresses ALL_STATEMENTS_OK, so this branch answered
+  # "❌ schema FAILED", exit 1, against a perfectly good schema. r10 M3 replaced a false
+  # cross-tenant-leak accusation with a true diagnosis and then routed it through a wrong headline
+  # one layer out. This file's own header documents `exit 2 = CANNOT RUN (never a pass)`.
+  if grep -q "CANNOT RUN" <<<"$OUT"; then
+    echo "⛔ CANNOT RUN — the assertion corpus refused its own preconditions:"
+    grep -m3 "CANNOT RUN" <<<"$OUT" | sed "s/^/   /"
+    echo "   Treat this as NOT RUN. The schema itself was not judged."
+    exit 2
+  fi
+  echo "❌ schema FAILED"; exit 1
+fi
 
 # ⭐⭐ r10 H5 — THIS GATE REPORTED "schema verified" OVER **ZERO** ASSERTIONS.
 #
@@ -148,6 +163,16 @@ if ! grep -q ALL_STATEMENTS_OK <<<"$OUT"; then echo "❌ schema FAILED"; exit 1;
 # that did not cover the gate whose header it is written in.
 #
 # Same constant as the sibling, same update rule: raising it is routine, LOWERING it is deliberate.
+#
+# ⟳ r11 L2 — `M4_ASSERTION_FLOOR` NOW DISARMS BOTH FLOORS FROM ONE EXPORT, and this is DELIBERATE:
+#   gate 1 and gate 8 run the same corpus and must move together, so two names would be two things
+#   to forget. The mitigation is that BOTH announce the floor they used in their success line, so a
+#   disarmed run says `floor 0` in its own output rather than looking normal.
+# ⟳ r11 L3 — WHAT THE 120th "assertion" IS. The fixtures block's `raise notice 'ok (fixtures): …'`
+#   is a PRECONDITION CHECK, not an assertion, and it matches the counted pattern — which is exactly
+#   why the floor moved 119 -> 120. So the subject is "119 assertions plus one fixture health check".
+#   If a future author makes that guard silent, the floor fails saying "assertions STOPPED
+#   EXECUTING" and points at the wrong file; this sentence is what stops that costing an hour.
 ASSERTION_FLOOR="${M4_ASSERTION_FLOOR:-120}"
 RAN=$(grep -cE 'NOTICE:.*\bok\b' <<<"$OUT")
 if [ "$RAN" -lt "$ASSERTION_FLOOR" ]; then

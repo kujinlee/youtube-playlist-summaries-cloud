@@ -74,6 +74,16 @@ DB="${PGDATABASE:-postgres}"
 # directions against a fixture whose assertion count it controls. They are deliberately not the
 # `ASSERT_FLOOR`/`FORCE` names a caller would guess, and the real run announces when a floor was
 # skipped, so neither can quietly disable the ratchet in a gate.
+#
+# ⟳ r11 L2 — `M4_ASSERTION_FLOOR` NOW DISARMS BOTH FLOORS FROM ONE EXPORT, and this is DELIBERATE:
+#   gate 1 and gate 8 run the same corpus and must move together, so two names would be two things
+#   to forget. The mitigation is that BOTH announce the floor they used in their success line, so a
+#   disarmed run says `floor 0` in its own output rather than looking normal.
+# ⟳ r11 L3 — WHAT THE 120th "assertion" IS. The fixtures block's `raise notice 'ok (fixtures): …'`
+#   is a PRECONDITION CHECK, not an assertion, and it matches the counted pattern — which is exactly
+#   why the floor moved 119 -> 120. So the subject is "119 assertions plus one fixture health check".
+#   If a future author makes that guard silent, the floor fails saying "assertions STOPPED
+#   EXECUTING" and points at the wrong file; this sentence is what stops that costing an hour.
 ASSERTION_FLOOR="${M4_ASSERTION_FLOOR:-120}"
 
 # The ways an assertion in this corpus can FAIL. Every real one is a `do $$ … raise exception … $$;`.
@@ -313,7 +323,7 @@ OUT=$(printf '%s' "$SQL" | docker exec -i "$CONTAINER" \
         psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 2>&1)
 
 # Same SIGPIPE trap as check_block, one buffer size away from firing: `$OUT` is ~15 KB today
-# because the corpus emits 119 notices. Counted, not `-q`-ed, for that reason.
+# because the corpus emits 120 notices. Counted, not `-q`-ed, for that reason.
 if [ "$(printf '%s' "$OUT" | grep -c ASSERTIONS_OK)" -eq 0 ]; then
   printf '%s\n' "$OUT" | tail -25 >&2
   echo "FAILED — an assertion raised, or the seed could not build its corpus." >&2

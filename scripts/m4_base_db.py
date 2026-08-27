@@ -125,7 +125,20 @@ def read_catalog(sql: str, marker: str, source: str = "postgres") -> str:
                 print("  reached safely. TREAT THIS AS NOT RUN.")
                 print(p.stdout[-1000:])
                 raise SystemExit(2)
-            return p.stdout.split(marker, 1)[-1]
+            body = p.stdout.split(marker, 1)[-1]
+            # ⟳ r11 M2 — AND AN EMPTY PARSE IS THE SAME CLASS AS A MISSING MARKER. The comment above
+            # cites CLAUDE.md's "a parse that found nothing must fail loudly" and then guarded only
+            # the marker. A query that emits the marker and ZERO ROWS returned "", and none of the
+            # three callers has a row floor — they build a set, filter it, find nothing, and report
+            # "0 guards, all classified": green. Reachable whenever a catalog query narrows without
+            # anyone noticing. The floor belongs here, in the one place this function was extracted
+            # to be.
+            if not body.strip():
+                print(f"CANNOT RUN — the catalog query on '{db}' returned the marker and NO ROWS.")
+                print("  An empty result set is not a clean bill of health: every downstream ratchet")
+                print("  filters this list, so zero rows reads as 'nothing to check'. TREAT AS NOT RUN.")
+                raise SystemExit(2)
+            return body
     except CannotRun as e:
         print(f"CANNOT RUN — {e} TREAT THIS AS NOT RUN.")
         raise SystemExit(2)

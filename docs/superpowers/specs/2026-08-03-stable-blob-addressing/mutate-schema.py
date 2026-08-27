@@ -901,6 +901,21 @@ def run_suite(tmp: Path):
     (work / "verify-schema.sh").chmod(0o755)
     script = work / "verify-schema.sh"
     copy_of = {GEN: work / "schema" / GEN.name, ART: work / "schema" / ART.name}
+    # ⭐⭐ ⟳ r11 H2 — THE MUTATION GATE REPORTED SUCCESS OVER AN EMPTY INVENTORY.
+    # r10 H2 gave gate 14 a corpus floor for exactly this ("a gate that reads an empty set passes").
+    # The gate whose entire purpose is proving guards load-bearing got the per-anchor count check
+    # and NO inventory floor. MEASURED with MUTATIONS monkey-patched to []:
+    #     0/0 mutations behaved as expected · baseline restored: GREEN ✅ · rc 0
+    # A truncated MUTATIONS literal — a bad merge, a stray `]` — was silent. Note the r10 count
+    # check does NOT cover this: `n != 1 -> INVALID` only fires for anchors present in the list.
+    # ⚠ Same update rule as the two assertion floors: raising is routine, LOWERING is deliberate.
+    MUTATION_FLOOR = 58
+    if len(MUTATIONS) < MUTATION_FLOOR:
+        print(f"CANNOT RUN — the mutation inventory holds {len(MUTATIONS)}, floor is "
+              f"{MUTATION_FLOOR}. A gate that mutates nothing reports perfect coverage over an "
+              f"empty set. TREAT THIS AS NOT RUN.", file=sys.stderr)
+        return 2
+
     originals = {GEN: GEN.read_text(), ART: ART.read_text()}
 
     # ── ⟳ T4: the SOURCE the verifier reads is now a variable, so this harness pins both ends ─────

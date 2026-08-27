@@ -50,6 +50,7 @@ why 9 green cases certified it.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -76,8 +77,17 @@ SYMBOL = "record_artifact"
 # symbol decides — with the LIVE CATALOG preferred when a database is reachable, because that is the
 # only authority that cannot be stale. The spec file is no longer an authority at all.
 MIGRATIONS_DIR = ROOT / "supabase/migrations"
-DEFINES = re.compile(rf"create\s+(or\s+replace\s+)?function\s+(public\.)?{SYMBOL}\b", re.IGNORECASE)
-DROPS = re.compile(rf"drop\s+function\s+(if\s+exists\s+)?(public\.)?{SYMBOL}\b", re.IGNORECASE)
+DEFINES = re.compile(
+    rf"create\s+(or\s+replace\s+)?(function|routine)\s+(public\.)?{SYMBOL}\b", re.IGNORECASE)
+# ⟳ r11 H3 — THE DOCSTRING NAMED A RENAME AND THE PATTERN COULD NOT SEE ONE.
+# `alter function … rename to` is the canonical rename and matched neither pattern, so a ledger
+# renaming the symbol reported exists=True and the guard went on to answer DORMANT. `drop routine`
+# is an equally standard spelling and missed too. MEASURED against a two-file fixture ledger before
+# and after. The live catalog covers both when Docker answers — but the ledger is the authority in
+# CI, which is exactly where an unnoticed rename would sit longest.
+DROPS = re.compile(
+    rf"(drop\s+(function|routine)\s+(if\s+exists\s+)?(public\.)?{SYMBOL}\b"
+    rf"|alter\s+(function|routine)\s+(public\.)?{SYMBOL}\b[^;]*\brename\s+to\b)", re.IGNORECASE)
 
 # Production surface. `tests/` is deliberately NOT here — it is counted separately below.
 # ⟳ r10 M1: `scripts/` ADDED. It holds operational TypeScript that runs against PRODUCTION data —
@@ -89,87 +99,91 @@ PRODUCTION_DIRS = ("lib", "app", "worker", "components", "scripts")
 TEST_DIRS = ("tests",)
 SUFFIXES = (".ts", ".tsx")
 
-def strip_comments(src: str) -> str:
-    """Blank out comments, PRESERVING line count so reported line numbers stay true.
+SPANS_TOOL = ROOT / "scripts/ts-comment-spans.mjs"
 
-    ⚠ STRINGS ARE NOT STRIPPED, and that is deliberate: the call this guard hunts for is
-    `supabase.rpc('record_artifact', …)` — the symbol lives INSIDE a string literal. Stripping
-    string contents the way `run-schema-assertions.sh` does would make this guard blind to the only
-    thing it is looking for. Opposite problem, opposite treatment.
 
-    ⟳⟳ r10 H4 — AND THE FIRST DRAFT'S REGEXES DID NOT KNOW THAT, WHICH LOST A REAL MONEY CALL.
-    It used `re.compile(r"//.*$", re.MULTILINE)` and blanked from the FIRST `//` on the line —
-    including one inside a string. MEASURED, verbatim, one line:
+class CannotRun(RuntimeError):
+    """No degraded answer is available. The caller must exit 2."""
 
-        const base = 'https://example.com/api'; const o = await sb.rpc('record_artifact', {…});
-        -> production callers: 0   (comments, not callers: 1)   DORMANT   exit 0
 
-    A live production caller of the money path, filed as a comment. `https://` does it, so does any
-    protocol-relative path, and a `/*` inside a string opens a DOTALL block comment that swallows
-    everything after it. That is precisely the outcome this file's own header calls "the one answer
-    that lets backlog 26's money defect ship".
+def comment_spans(files: list[Path]) -> dict[str, list[tuple[int, int]]]:
+    """{path: [(start, end), …]} for every COMMENT, answered by the TypeScript compiler.
 
-    So this is a scanner, not a regex: it walks the source tracking whether it is inside a single,
-    double or template string (honouring backslash escapes) and only treats `//` and `/*` as comment
-    openers OUTSIDE one. A regex cannot express that, and the previous one silently pretended to.
+    ⭐⭐ r11 H1 — THIS REPLACES THE FOURTH HAND-WRITTEN ANSWER TO "is this inside a comment?".
+
+        r10 H4  two regexes -> a `//` INSIDE A STRING hid a real `.rpc('record_artifact', …)` call
+        r11 H1  a scanner   -> a REGEX LITERAL containing a quote opened a phantom string and
+                               inverted inside/outside from there. MEASURED on the real tree: 14
+                               files ended the scan inside a string; 240 real comment lines across
+                               12 production files were being read as CODE. Both directions
+                               reproduced — a comment reported as a money caller, and a live
+                               `.rpc('record_artifact')` reported DORMANT.
+
+    Each fix asked what the last counter-example had that ordinary code does not — a question about
+    characters, with an unbounded supply of answers. `run-schema-assertions.sh` records the same
+    sequence costing four rounds here. The way out is to stop proxying: `scripts/ts-comment-spans.mjs`
+    asks the TypeScript compiler, which already ships in this repo and already has to know about
+    regex literals, JSX, template interpolation, escapes and CRLF.
+
+    ⛔ NO FALLBACK, DELIBERATELY. If node or typescript is missing this raises and the caller exits
+    2. A hand-rolled degraded answer is exactly what the two rounds above were, and DORMANT is the
+    one verdict that lets backlog 26's money defect ship.
     """
-    out = list(src)
-    i, n = 0, len(src)
-    quote: str | None = None
-    while i < n:
-        c = src[i]
-        if quote:
-            if c == "\\":
-                i += 2
-                continue
-            if c == quote:
-                quote = None
-            i += 1
-            continue
-        if c in "'\"`":
-            quote = c
-            i += 1
-            continue
-        if c == "/" and i + 1 < n and src[i + 1] == "/":
-            while i < n and src[i] != "\n":
-                out[i] = " "
-                i += 1
-            continue
-        if c == "/" and i + 1 < n and src[i + 1] == "*":
-            j = src.find("*/", i + 2)
-            j = n if j < 0 else j + 2
-            for k in range(i, j):
-                if out[k] != "\n":
-                    out[k] = " "
-            i = j
-            continue
-        i += 1
-    return "".join(out)
+    if not files:
+        return {}
+    if not SPANS_TOOL.is_file():
+        raise CannotRun(f"{SPANS_TOOL} is missing.")
+    p = subprocess.run(["node", str(SPANS_TOOL), *[str(f) for f in files]],
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if p.returncode != 0:
+        raise CannotRun(f"node could not compute comment spans: {(p.stderr or p.stdout)[-400:]}")
+    try:
+        raw = json.loads(p.stdout)
+    except json.JSONDecodeError as e:
+        raise CannotRun(f"comment-span output was not JSON: {e}") from e
+    return {k: [(a, b) for a, b in v] for k, v in raw.items()}
 
 
 def scan(dirs: tuple[str, ...], root: Path) -> tuple[list[str], list[str]]:
-    """(code hits, comment-only hits) as 'path:line: text'. PURE apart from reading files."""
-    code, commented = [], []
+    """(code hits, comment-only hits) as 'path:line: text'."""
+    candidates: list[Path] = []
     for d in dirs:
         base = root / d
         if not base.is_dir():
             continue
         for f in sorted(base.rglob("*")):
-            if f.suffix not in SUFFIXES or not f.is_file():
-                continue
-            try:
-                src = f.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            if SYMBOL not in src:
-                continue
-            stripped = strip_comments(src)
-            for n, (raw, bare) in enumerate(zip(src.splitlines(), stripped.splitlines()), 1):
-                if SYMBOL not in raw:
+            if f.suffix in SUFFIXES and f.is_file():
+                try:
+                    if SYMBOL in f.read_text(encoding="utf-8"):
+                        candidates.append(f)
+                except (UnicodeDecodeError, OSError):
                     continue
-                rel = f.relative_to(root)
-                entry = f"{rel}:{n}: {raw.strip()[:120]}"
-                (code if SYMBOL in bare else commented).append(entry)
+    spans = comment_spans(candidates)
+    code, commented = [], []
+    for f in candidates:
+        text = f.read_text(encoding="utf-8")
+        fspans = spans.get(str(f), [])
+
+        # ⛔⛔ OFFSETS ARE IN UTF-16 CODE UNITS, BECAUSE THAT IS WHAT TYPESCRIPT COUNTS.
+        # Python counts CODE POINTS. A non-BMP character — `🖼` in
+        # `lib/dig/cloud/parse-dig-section-blob.ts`, `→`-class emoji elsewhere — is ONE code point
+        # and TWO UTF-16 units, so every offset after it drifts and a hit lands in the wrong span.
+        # MEASURED while verifying this very fix: a genuine `//` comment two lines below an emoji
+        # was being classified as CODE. Silent, direction-dependent, and on the money path.
+        u16 = lambda t: len(t.encode("utf-16-le")) // 2  # noqa: E731 — one expression, used twice
+        starts, off = [], 0
+        for line in text.splitlines(keepends=True):
+            starts.append(off)
+            off += u16(line)
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            col = line.find(SYMBOL)
+            if col < 0:
+                continue
+            at = starts[i] + u16(line[:col])
+            inside = any(a <= at < b for a, b in fspans)
+            entry = f"{f.relative_to(root)}:{i + 1}: {line.strip()[:120]}"
+            (commented if inside else code).append(entry)
     return code, commented
 
 
@@ -201,11 +215,17 @@ def live_catalog_has(symbol: str) -> bool | None:
     third outcome and is NOT folded into False: "cannot see" and "is absent" are different claims,
     which is the distinction this repo files under `rls-denial-is-indistinguishable-from-absence`.
     """
-    p = subprocess.run(
-        ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres", "-tAq",
-         "-c", f"select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace "
-               f"where n.nspname = 'public' and p.proname = '{symbol}';"],
-        capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    # ⟳ r11 M4: an unguarded subprocess raised FileNotFoundError with no `docker` on PATH, and the
+    # process exited 1 — which this script documents as FIRED, "a production caller exists". A
+    # missing binary is not a money finding.
+    try:
+        p = subprocess.run(
+            ["docker", "exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres", "-tAq",
+             "-c", f"select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace "
+                   f"where n.nspname = 'public' and p.proname = '{symbol}';"],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    except (FileNotFoundError, OSError):
+        return None
     if p.returncode != 0:
         return None
     out = p.stdout.strip()
@@ -215,15 +235,26 @@ def live_catalog_has(symbol: str) -> bool | None:
 def report(root: Path, migrations_dir: Path, use_live: bool = True) -> int:
     live = live_catalog_has(SYMBOL) if use_live else None
     ledger, decided_by = ledger_net_effect(migrations_dir)
-    authority = "live catalog" if live is not None else f"migration ledger — {decided_by}"
-    exists = ledger if live is None else live
-
-    if live is not None and live != ledger:
-        # Not fatal, and worth saying: the ledger and the database disagree, which usually means
-        # migrations are pending or the local stack drifted. The LIVE answer wins — it is the one
-        # that decides whether a caller would actually reach anything.
+    # ⟳⟳ r11 M4 — THE LIVE ANSWER USED TO WIN UNCONDITIONALLY, AND THAT MADE THIS GUARD A PERMANENT
+    # CANNOT RUN ON EVERY MACHINE WHERE 0027 IS NOT YET APPLIED — i.e. every developer before
+    # promotion, and production today. Same repo, same commit, two verdicts decided by whether a
+    # container happened to be running.
+    #
+    # The two authorities answer different questions. The ledger says what the schema WILL be; the
+    # catalog says what THIS database has. `live=False, ledger=True` is the ordinary
+    # pending-migration state, not rot — the symbol exists and callers are what matter. CANNOT RUN
+    # is reserved for BOTH agreeing it is gone, which is the actual rot this check exists for.
+    exists = ledger or bool(live)
+    if live is None:
+        authority = f"migration ledger — {decided_by}"
+    elif live == ledger:
+        authority = f"live catalog and ledger agree — {decided_by}"
+    else:
+        authority = f"ledger ({decided_by}); live catalog disagrees"
         print(f"⚠ ledger and live catalog DISAGREE about `{SYMBOL}` "
-              f"(ledger: {ledger} via {decided_by}; live: {live}). Trusting the live catalog.")
+              f"(ledger: {ledger} via {decided_by}; live: {live}).")
+        print("  That is the ordinary pending-migration state when the ledger says PRESENT. The"
+              " ledger decides, because it is what a caller would be written against.")
 
     if not exists:
         print(f"CANNOT RUN — `{SYMBOL}` does not exist according to the {authority}.")
@@ -232,8 +263,15 @@ def report(root: Path, migrations_dir: Path, use_live: bool = True) -> int:
         print("  is the one answer that lets backlog 26's money defect ship. TREAT AS NOT RUN.")
         return 2
 
-    code, commented = scan(PRODUCTION_DIRS, root)
-    test_code, test_commented = scan(TEST_DIRS, root)
+    try:
+        code, commented = scan(PRODUCTION_DIRS, root)
+        test_code, test_commented = scan(TEST_DIRS, root)
+    except CannotRun as e:
+        print(f"CANNOT RUN — {e}")
+        print("  Comment detection is answered by the TypeScript compiler and has NO fallback: the")
+        print("  two hand-written versions before it each shipped a false verdict on the money path")
+        print("  (r10 H4, r11 H1). TREAT THIS AS NOT RUN.")
+        return 2
 
     print(f"subject: `{SYMBOL}` · production dirs {'/'.join(PRODUCTION_DIRS)} · suffixes {' '.join(SUFFIXES)}")
     print(f"         production callers: {len(code)}   (comments, not callers: {len(commented)})")
@@ -328,6 +366,34 @@ def self_test() -> int:
         (t / "scripts" / "backfill.ts").write_text(f"await sb.rpc('{SYMBOL}');\n")
         ck("a caller in scripts/ FIRES (r10 M1)", 1, run())
         (t / "scripts" / "backfill.ts").unlink()
+
+        # ⭐⭐ r11 H1 — THE TWO DIRECTIONS THE HAND-WRITTEN SCANNER GOT WRONG, both measured on
+        # the real tree. The construct in the first is live at lib/html-doc/file-response.ts:8.
+        lib.write_text(
+            "export const clean = (s: string) => s.replace(/[\"\\\\/;]/g, '_');\n"
+            f"// TODO: once {SYMBOL} lands, encode the manifest key here\n")
+        ck("a regex literal with a quote does not turn a COMMENT into a caller (r11 H1)", 0, run())
+
+        lib.write_text(
+            "const label = 'Don\\'t';\n"
+            "const GLOB = 'src/*';\n"
+            f"await sb.rpc('{SYMBOL}');\n")
+        ck("…nor does it hide a REAL call behind a phantom string (r11 H1)", 1, run())
+
+        lib.write_text(f"const s = `${{/* {SYMBOL} */ v}}`;\n")
+        ck("a comment inside template interpolation is a COMMENT, not a caller", 0, run())
+
+        lib.write_text(f"const s = `${{sb.rpc('{SYMBOL}')}}`;\n")
+        ck("…but a CALL inside template interpolation FIRES", 1, run())
+
+        # ⭐ r11 H3 — the rename spellings the ledger could not see.
+        lib.write_text("export const a = 1;\n")
+        (migs / "0028_rename.sql").write_text(
+            f"alter function public.{SYMBOL}(uuid, text) rename to {SYMBOL}_v2;\n")
+        ck("ALTER FUNCTION … RENAME TO is CANNOT RUN (r11 H3)", 2, run())
+        (migs / "0028_rename.sql").write_text(f"drop routine if exists public.{SYMBOL}(uuid);\n")
+        ck("DROP ROUTINE is CANNOT RUN (r11 H3)", 2, run())
+        (migs / "0028_rename.sql").unlink()
 
         # ⭐ Today's actual state: the only mentions are comments, in tests.
         (t / "tests" / "c.test.ts").write_text(f"// `{SYMBOL}` completes a generation\n")
