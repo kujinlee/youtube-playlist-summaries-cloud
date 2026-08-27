@@ -937,7 +937,7 @@ git commit -F /tmp/t8-msg.txt
 - Consumes: Tasks 6–8.
 - Produces: production carrying `0027`.
 
-- [ ] **Step 1: Re-measure production before applying anything**
+- [x] **Step 1: Re-measure production before applying anything** — ✅ **DONE 2026-08-26 19:35**
 
 ```bash
 docker exec -i -e PGU="$CLAUDE_RO_DATABASE_URL" supabase_db_youtube-playlist-summaries-cloud \
@@ -946,7 +946,27 @@ docker exec -i -e PGU="$CLAUDE_RO_DATABASE_URL" supabase_db_youtube-playlist-sum
 
 ⚠ The figures decay with every ingest. **Re-measure; do not quote 2026-08-25's numbers.**
 
-- [ ] **Step 2: Establish the repo-wide "no caller" property that the rollback depends on**
+✅ **MEASURED 2026-08-26 19:35 against `claude_ro@…/postgres`, project `uykwcybxqgewmbltroxf`.**
+⚠ The project ref was confirmed as PRODUCTION from `docs/roadmap-to-launch.md:86`, not from memory —
+`.env.local` also carries LOCAL Supabase settings, and a prod task has already aimed at the wrong
+project once for exactly that reason.
+
+| | |
+|---|---|
+| **`CONFLICTING_GROUPS`** — the falsifier | **0** |
+| `videos.workspace_id_exists` | 0 (M4 adds it) |
+| `videos_with_corrections` | 1 · `multi_row_groups` 0 |
+| orphans: videos/playlists/jobs | 0 / 0 / 0 |
+| rows the NOT NULL promotions rewrite | playlists 3 · videos 12 · jobs 15 |
+| `pgcrypto_schema` | `extensions` — PASS: resolvable from `corrections_hash_of` |
+| `video_ids_in_multiple_playlists` | 0 |
+
+⚠ **Production is far SMALLER than the gate subject.** Prod carries 1 profile and 12 videos; the
+pre-M4 base the fourteen gates run against carries **7,864 profiles and 4,385 videos**. The local
+subject is the harsher one, which is the right direction — but it means M4-β's *timing* has not been
+measured at prod's scale by these gates, only its *correctness*.
+
+- [x] **Step 2: Establish the repo-wide "no caller" property that the rollback depends on** — ✅ **DONE, 0 matches**
 
 ```bash
 rg -n "record_artifact|video_artifacts_current|video_summary_current" lib app worker --glob '*.ts' --glob '*.tsx'
@@ -954,10 +974,13 @@ rg -n "record_artifact|video_artifacts_current|video_summary_current" lib app wo
 
 Expected: no matches. **Record the command and its count** — this is the rollback's lossless falsifier, not a general reassurance.
 
-- [ ] **Step 3: M4-α — apply to the local stack, seeded per Task 8, and run every gate**
+✅ **MEASURED 2026-08-26 19:33 at `82f9f13`: 0 matches.** The rollback is lossless because nothing in
+`lib/ app/ worker/` reaches these symbols yet.
+
+- [x] **Step 3: M4-α — apply to the local stack, seeded per Task 8, and run every gate** — ✅ **DONE 2026-08-26 19:34**
 
 ```bash
-M4_PHASE=post ./scripts/check-schema-gates.sh   # 9 checks, 0-8; see the caller warning below
+M4_PHASE=post ./scripts/check-schema-gates.sh   # FOURTEEN gates, 1-14; see the caller warning below
 python3 scripts/check-anon-exposure.py --local
 npm run test:integration
 ```
@@ -972,10 +995,45 @@ maintenance-window residue and the `05_assert` sweep. The counter-practice, stat
 mechanical: **a fix that adds a requirement must grep for its callers in the same edit.** The two
 callers in this plan are here and the milestone gate list; both now carry the variable.
 
-- [ ] **Step 4: Set the anon-exposure baseline against the PRE-M4 production world**
+- [x] **Step 4: Set the anon-exposure baseline against the PRE-M4 production world** — ✅ **DONE 2026-08-26 19:40, one half SUPERSEDED (see below)**
 
-⟳ *r3 H1, corrected r4-claude H2.* Extend `MONEY_TABLES` to **all five** new tables — `workspaces`, `workspace_videos`, `video_generations`, `video_artifacts`, `video_artifact_sources` — **before** M4-β. ⚠ **Name the five; do not name a category.** v4 said "the manifest tables" and `workspaces` is the tenancy root, so the instruction added the four already safe and skipped the only unrevoked one.
+⛔ **THE `MONEY_TABLES` HALF OF THIS STEP IS SUPERSEDED, AND FOLLOWING IT WOULD MAKE THE CODE WORSE.**
+It was written before **fork (a) step 3**, which shipped M4 relation coverage as **RULE 3** in
+`check-anon-exposure.py`. RULE 3 already covers those relations and covers them *better*:
+
+| | the instruction below | RULE 3, as shipped |
+|---|---|---|
+| membership | five hand-typed names | **derived from the live manifest** |
+| coverage | 5 tables | **8 relations** (measured: `M4 relations present: 8/8`, 24 (relation, role) pairs) |
+| claim | records a TRUNCATE **debt** that is expected to exist | **forbids** INSERT/UPDATE/DELETE/TRUNCATE outright |
+
+The claims are **opposite**. `MONEY_TABLES` exists to carry `TRUNCATE_BASELINE = 5` — backlog #30's
+written-down debt, *"all five are TRUNCATE-able by session roles on prod today"*. Adding the M4
+tables there would assert they are **expected** to be truncate-able, contradicting RULE 3, and would
+put two mechanisms on one concern — the exact shape `scripts/check-vocabulary-collisions.py` exists
+to catch. **Not done, deliberately.** The original instruction is preserved below unedited, because
+a superseded rule that vanishes leaves the next reader re-deriving why.
+
+> ~~⟳ *r3 H1, corrected r4-claude H2.* Extend `MONEY_TABLES` to **all five** new tables —
+> `workspaces`, `workspace_videos`, `video_generations`, `video_artifacts`,
+> `video_artifact_sources` — **before** M4-β. ⚠ **Name the five; do not name a category.** v4 said
+> "the manifest tables" and `workspaces` is the tenancy root, so the instruction added the four
+> already safe and skipped the only unrevoked one.~~
+
 ⚠ **`--local` and `--prod` are not one check at two times** — measured 5 vs 10 anon-executable definer functions. **`--prod` is the gate; `--local` is a smoke test.**
+
+✅ **MEASURED 2026-08-26 19:40 — the baseline, and the divergence the line above predicts:**
+
+| | LOCAL | PRODUCTION (`claude_ro`, read-only) |
+|---|---|---|
+| SECURITY DEFINER in `public` | 22 | 12 |
+| …anon-EXECUTable | **5** | **10** |
+| money tables TRUNCATE-able | 5/5 (baseline 5) | 5/5 (baseline 5) |
+| M4 relations present | 8/8, 24 pairs read | **0/8 — RULE 3 has nothing to check (pre-0027)** |
+| verdict | OK | OK |
+
+The predicted **5 vs 10** is exact. Note the last row: `--prod` reports its own vacuity rather than
+passing quietly, which is what makes this a baseline and not a reassurance.
 
 - [ ] **Step 5: Open the PR and STOP. Merging is a human gate.**
 
