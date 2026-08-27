@@ -71,27 +71,44 @@ When multiple installed skills can handle the same task, use this table.
 
 **Fallback** (remember not installed): write a brief handoff note to `.handoff.md` in project root; delete after resuming.
 
-**⚠ `mattpocock:handoff` IS LOCALLY MODIFIED, and the reason is a measured miss (2026-08-27).**
-Upstream saves to `mktemp -t handoff-XXXXXX.md`. **Three such files accumulated in `$TMPDIR` and not one
-was ever read by a resuming session** — random suffix, outside the repo, unindexed. The docs were good;
-they had no consumer. This is the same defect class as the *"live gate with NO CALLER"* this repo has
-now hit four times: the artifact is produced, the run reports success, and nothing consumes it.
+> ### ⛔ RULE — a session-continuity handoff is written to `.remember/remember.md`. Nowhere else.
+>
+> **This line governs, whatever the skill file says.** `CLAUDE.md` imports this document, and project
+> instructions take precedence over skills — so this rule survives a vendor update that reverts the
+> skill, which a patched vendor file cannot do on its own.
+>
+> **NOT `.remember/handoff.md`.** That name looks right and nothing reads it — choosing it would
+> rebuild the same bug somewhere prettier. The path is `REMEMBER_HANDOFF` in the `remember` plugin's
+> `session-start-hook.sh:795`, emitted as `=== LAST HANDOFF ===` and injected **before** identity and
+> memory so it survives context-preview truncation (`:809-812`). Delivery is fingerprinted and
+> non-destructive (`:814-825`), so a read-only session does not consume the next one's note.
+>
+> **If a session-start block prints `=== HANDOFF === / Write next handoff to: <path>`**, you are in
+> external mode — obey that path instead. It is absent in legacy mode by design (`:800-802`).
 
-**Measured cost, in the resume that found it:** the `M1`/`M2`/`M3` cross-document collision was
-re-derived from scratch and reported to the user as a new finding — trap 3 of the unread handoff already
-stated it. Two other open items went unsurfaced while the user was told *"nothing is waiting on me"*.
+**⚠ `mattpocock:handoff` IS LOCALLY MODIFIED** — it saved to `mktemp`, three such files accumulated in
+`$TMPDIR`, and **not one was ever read by a resuming session**. Why that happened, and what it cost the
+resume that found it, is in [`process-rationale.md`](process-rationale.md) → *The handoff with no reader*.
 
-`.agents/skills/handoff/SKILL.md` now writes to **`.remember/remember.md`**, which is **not an arbitrary
-path**: it is `REMEMBER_HANDOFF` in the `remember` plugin's `session-start-hook.sh:795`, emitted as
-`=== LAST HANDOFF ===` and **injected before identity and memory so it survives context-preview
-truncation** (`:809-812`). Delivery is fingerprinted and non-destructive (`:814-825`), so a read-only
-session does not consume the note. **Verified by executing the hook**, not by reading it — the block
-appeared first in the output.
+⚠ A vendored edit is reverted by `npx skills@latest add mattpocock/skills`, so **it is the weakest of
+three layers, not the mechanism:**
 
-⚠ **This edit is to a VENDORED file.** `npx skills@latest add mattpocock/skills` will silently revert it.
-**Falsifier: if a resume ever finds a `handoff-XXXXXX.md` in `$TMPDIR`, the skill was overwritten** —
-re-apply the edit. In external mode (`.remember/` outside the project) the hook prints
-`=== HANDOFF === / Write next handoff to: <path>`; obey that path instead.
+| Layer | Where | Survives a vendor update? | Fires |
+|---|---|---|---|
+| **1 — Authority** | the RULE box above (`CLAUDE.md` imports this file; instructions beat skills) | ✅ | every session, as context |
+| **2 — Leading gate** | `scripts/check-handoff-path.py` + `.claude/hooks/enforce-handoff-path.sh` (PreToolUse on `Skill`) | ✅ | at `/handoff` invocation, **before** anything is written |
+| 3 — Convenience | `.agents/skills/handoff/SKILL.md` | ❌ reverted | n/a |
+
+**Layer 2's falsifier:** `.agents/skills/handoff/SKILL.md` stops naming `.remember/remember.md` →
+`check-handoff-path.py` exits **1** and the hook **blocks the skill with the correct path in the
+error**. Mutation-tested 2026-08-27: reverted → `rc=2` (blocked); restored → `rc=0`; an unrelated
+skill under the same reversion → `rc=0`, no collateral block. `--self-test` covers 10 cases including
+both near-misses (`.remember/handoff.md`, bare `remember.md`) and CANNOT-RUN on a missing or empty
+file. Run `python3 scripts/check-handoff-path.py --self-test` after touching it.
+
+⚠ **What layer 2 does NOT do, stated rather than hidden:** it guards the *instruction*, not the
+outcome — it cannot observe where the file actually lands. The lagging check still has a job: **if a
+resume ever finds a `handoff-XXXXXX.md` in `$TMPDIR`, something wrote one anyway.**
 
 ### Code Review (dual review per task)
 

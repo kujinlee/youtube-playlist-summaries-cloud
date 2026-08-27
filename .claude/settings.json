@@ -26,6 +26,16 @@
             "command": "bash .claude/hooks/block-implementation-before-plan-gate.sh"
           }
         ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/enforce-handoff-path.sh",
+            "statusMessage": "Checking the handoff save path..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
