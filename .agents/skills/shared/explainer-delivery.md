@@ -164,12 +164,24 @@ the channel looked alive. Now defaulted in `brief-compose.py`'s SHIM, with 3 mut
 centre:
 
 ```js
-[...document.querySelectorAll('h1 .askbtn, h2 .askbtn, h3 .askbtn')].map(b => {
-  b.style.opacity = '1';                        // it is hover-revealed
-  const r = b.getBoundingClientRect();
+const seen = [];
+for (const b of document.querySelectorAll('h1 .askbtn, h2 .askbtn, h3 .askbtn')) {
+  b.scrollIntoView({block: 'center'});   // ⚠ elementFromPoint takes VIEWPORT coordinates and
+  b.style.opacity = '1';                 // returns null off-screen. Without this scroll every
+  const r = b.getBoundingClientRect();   // button below the fold reports a FALSE failure.
   const hit = document.elementFromPoint(r.left + r.width/2, r.top + r.height/2);
-  return [Math.round(r.top), hit === b || b.contains(hit)];
-})
+  seen.push([Math.round(r.top + scrollY), Math.round(r.left), hit === b || b.contains(hit)]);
+}
+seen
+```
+
+⛔ **AND REFUSE TO CONCLUDE IF THE PAGE IS NOT BEING RENDERED.** Measured 2026-08-28: run against a
+backgrounded tab, this probe reported **0 of 9 reachable** and a horizontal body scroll — both pure
+artifacts, because `document.hidden` was `true` and the viewport was **0 × 0**. A hidden tab has no
+geometry, so every geometric assertion is false. Check first, and treat it as CANNOT RUN:
+
+```js
+({hidden: document.hidden, w: innerWidth, h: innerHeight})   // hidden || w === 0  ->  NOT RUN
 ```
 
 Distinct positions must equal the number of buttons. **Collapsed coordinates are the signature.**

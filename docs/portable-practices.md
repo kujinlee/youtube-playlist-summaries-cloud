@@ -655,3 +655,100 @@ goes stale silently and is then **worse than grep**, because it looks authoritat
 script can re-derive from scratch (doc→doc, doc→`file:line`, doc→identifier, finding→destination),
 and note that the highest-value query is a **dangling edge** — *which deferrals name no destination?*
 — not a path. That is the failure above, made mechanically detectable.
+
+---
+
+## 17. "Red → fix → green" is not a cause. The control is defect-present, fix-absent
+
+A defect reproduces, you change something, it stops reproducing. That is **one arm of a two-arm
+experiment**, and on its own it says nothing about why.
+
+**Measured 2026-08-27.** An integration suite failed 2 of 538 twice. 15 leftover fixture rows were
+deleted, the suite went **535 green**, and the cause was written up as `PROVEN` — in a handoff, as
+the recommended next task, with a fix already chosen. The next session ran the missing control:
+leave the rows in place and just run it.
+
+| Run | State | Result |
+|---|---|---|
+| control 1 | leftovers present | **535 passed, exit 0** |
+| control 2 | leftovers present, and *more* of them | **535 passed, exit 0** |
+
+The "cause" was **not sufficient**. The fix explained nothing; something else had changed in the same
+window — the machine had been restarted and its container images upgraded.
+
+**Two tells were visible at the time, and both generalise:**
+
+1. **The symptom varied while the proposed cause was deterministic.** The failures took a *different
+   pair each run*; the mechanism blamed was a deterministic ordering, which selects the *same* victims
+   every time. **When the proposed cause is deterministic and the symptom is not, the cause is wrong.**
+2. **An uncontrolled confound sat between red and green.** More than one thing changed. Attributing
+   the result to the interesting one is a choice, not an observation.
+
+### The sibling: green that came from somewhere else entirely
+
+Same family, different disguise — **a fix verified only where its precondition already holds is
+verified nowhere.** Measured 2026-08-28: a one-line database migration was written to remove a default
+grant. It passed against production, because production's stored default had *already* had the
+relevant entry removed years earlier by unrelated means. In a fresh database — the state every future
+environment starts from — it did nothing at all. It was **right by accident, on the single environment
+anyone would have checked.**
+
+### How to apply
+
+Before recording a cause as proven — **especially before writing it somewhere a later reader inherits
+it as a premise and never re-derives it** — state the control and run it:
+
+- *the defect still reproduces with the fix reverted*, and
+- *the fix still works in an environment where the precondition does not already hold*.
+
+If neither can be run, the finding is a **hypothesis** and must be labelled one. The cost of the
+control here was two suite runs; the cost of skipping it was a fix built for a defect that did not
+exist, recommended to someone else as the next task.
+
+---
+
+## 18. `element.click()` is not a test of a button — assert the AFFORDANCE, not the handler
+
+Calling a handler proves the handler runs. It proves nothing about whether a human could ever reach
+it. The control may be zero-sized, painted off-screen, or buried under six siblings; `.click()`
+succeeds in every one of those worlds.
+
+**Measured 2026-08-27.** A generated-page toolchain attached an absolutely-positioned "ask" button to
+every heading. With no positioned ancestor, all of them resolved against the initial containing block
+and landed on **one point** in the corner. On one page: **10 buttons, 4 distinct positions, 6
+unreachable.** Across the corpus, **29 of 33** pages carried the defect, for weeks.
+
+It survived because the instruction to verify was already there and already followed — with
+`heading.querySelector('.askbtn').click()`. **Handler tested, affordance never.** A second entry point
+on the same pages was unaffected, so the feature always looked alive.
+
+### The assertion that finds it
+
+The element must be the topmost thing at its own centre, and distinct controls must occupy distinct
+positions:
+
+```js
+for (const b of document.querySelectorAll(SELECTOR)) {
+  b.scrollIntoView({block: 'center'});   // elementFromPoint takes VIEWPORT coords and
+  b.style.opacity = '1';                 // returns null off-screen — scroll first or
+  const r = b.getBoundingClientRect();   // everything below the fold reports a false FAIL
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  record(Math.round(r.top + scrollY), Math.round(r.left), hit === b || b.contains(hit));
+}
+// ...and refuse to conclude anything if the page is not being rendered:
+//   document.hidden === true  or  innerWidth === 0   ->   CANNOT RUN, not a verdict.
+```
+
+**Collapsed coordinates are the signature** — if N controls report fewer than N positions, they are
+stacked. Screenshots do not substitute: a screenshot of stacked buttons looks like one button, which
+is exactly what a reader would expect to see.
+
+### The generalisation
+
+This is the same shape as §2 and §3 one level down: **the instrument answered a question the user
+never asks.** The rule that catches the class is to name, for any check, *the channel the user
+actually goes through* — and to verify through that one. A check that reaches the subject by a private
+route reports on the route.
+
+**Portable in full.** Nothing here depends on the framework, the page, or the toolchain — only on a
+DOM and an agent that can execute one.
