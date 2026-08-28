@@ -405,11 +405,20 @@ select 'type:' || t.typname || '@' || md5(coalesce(
   from pg_type t join pg_namespace n on n.oid = t.typnamespace
  where n.nspname = 'public' and t.typtype = 'e'
 union all
-select 'idx:' || i.relname || '@' || md5(
+-- ⟳ 2026-08-28: renders as `idx:<RELATION>.<index>`, not `idx:<index>`. It carried only the
+-- index's own name, so `check-live-schema.unexpected()` could not attribute an index to a
+-- relation and skipped every `idx:` entry — leaving a bare `create unique index` on an M4-owned
+-- table invisible to the one gate that reads production. MEASURED before the fix:
+-- `create unique index rev_uq on video_artifacts (video_id)` PASSED. `t` is the indexed table,
+-- reachable through `x.indrelid`; `pol:` two blocks down already had this shape.
+-- The digest inputs are UNCHANGED — only the name half moves, so a differing digest still means
+-- a differing index definition and nothing else.
+select 'idx:' || t.relname || '.' || i.relname || '@' || md5(
          pg_get_indexdef(i.oid) || x.indisvalid::text || x.indisready::text || x.indislive::text ||
          x.indisunique::text || x.indisprimary::text || x.indisexclusion::text ||
          x.indimmediate::text || x.indnullsnotdistinct::text)
   from pg_index x join pg_class i on i.oid = x.indexrelid
+  join pg_class t on t.oid = x.indrelid
   join pg_namespace n on n.oid = i.relnamespace where n.nspname = 'public'
 union all
 select 'pol:' || c.relname || '.' || pol.polname || '@' || md5(
