@@ -57,12 +57,13 @@ no new delivery mechanism.
 
 1. One page at a fixed address: `http://127.0.0.1:7391/dashboard`.
 2. Overall picture visible; **all detail folded** behind title lines.
-3. Four graphics (§5).
+3. Five graphics (§5).
 4. A dated list of plain, one-sentence entries — "what changed since you last looked".
-5. A request box that can ask for `explain-diff`, `explain-findings`, `explain-topic`, `brief`.
-6. A visible list of those requests and whether they are done.
-7. A glossary, folded.
-8. Links to `/goals`, `/backlog-table`, `/latest`, `/`.
+5. A **backlog section** (§5.6) — counts visible, dependency diagram inline, full table one click away.
+6. A request box that can ask for `explain-diff`, `explain-findings`, `explain-topic`, `brief`.
+7. A visible list of those requests and whether they are done.
+8. A glossary, folded.
+9. Links to `/goals`, `/backlog-table`, `/latest`, `/`.
 
 ### Out — deliberately, because the user asked for simplicity
 
@@ -70,7 +71,9 @@ no new delivery mechanism.
 - A recurring-mistakes section. *(Wanted — the user said "common mistakes etc." — but deferred to v2
   so v1 ships.)*
 - Any chart beyond the four in §5.
-- Real Mermaid rendering (§5.5).
+- Converting `gen-backlog-page.py`'s existing hand-drawn SVG diagram to Mermaid (§5.5 — Mermaid **is**
+  in scope for the dashboard; the backlog page's working renderer is not touched in this slice).
+- Marketplace packaging itself (§7a — designing so it is *possible* is in scope; doing it is not).
 
 ## 4. The rule the whole page obeys
 
@@ -129,18 +132,83 @@ A left-to-right diagram: `idea → spec → plan → build → review → pull r
 on where current work sits. Answers *what are you doing and where is this going* without requiring
 the user to know the process.
 
-### 5.5 ⛔ Not Mermaid — and the reason is measured
-The user asked whether Mermaid could be used. **Measured 2026-08-28: `mmdc` is not installed and
-`npx mmdc` fails (`could not determine executable to run`); Mermaid appears nowhere in the project's
-dependencies.** The two ways to get it both break a constraint:
+### 5.5 Mermaid — INCLUDED, bundled with the plugin, and no fallback renderer
 
-- installing `@mermaid-js/mermaid-cli` pulls in a headless browser — against "simplicity";
-- bundling `mermaid.min.js` into each page adds roughly a megabyte to a file that is currently 67 KB,
-  and `explainer-delivery.md` §2 requires the page to render offline with no external fetches.
+⟳ **This section REVERSES an earlier decision in this same spec. The reversal is recorded rather
+than edited away, because the first version was wrong for an instructive reason.**
 
-**Decision:** graphics are authored as inline SVG and CSS, themed with the page's own colour tokens
-so they work in light and dark. Same comprehension benefit, no dependency. If real Mermaid is wanted
-later it is its own decision, not a silent addition.
+**What the first version said, and why it was wrong.** It refused Mermaid on the grounds that `mmdc`
+is not installed and bundling would cost "roughly a megabyte". Both facts were true and the
+conclusion did not follow. The check performed was *"is a Mermaid renderer installed?"* — the
+question that mattered was *"can this project ship a Mermaid renderer to its users?"* The user then
+pointed out that `docs/backlog.md`'s page **already uses Mermaid**, which the search had missed
+because it emits Mermaid *source* rather than rendering it. Same failure shape as the memory
+`it-already-exists-under-a-name-i-didnt-search`.
+
+**Measured 2026-08-28, correcting the recalled figure:**
+
+| Fact | Value |
+|---|---|
+| `mermaid` browser bundle, v11.17.2 | **3.41 MB** raw · 0.93 MB gzipped |
+| The "~1 MB" in `gen-backlog-page.py:419` | the **gzipped** number — 3.4× under the file that would actually ship |
+| License | **MIT** — redistribution permitted with attribution |
+| Comparable installed plugins | `superpowers` 4.0 MB · `remember` 10 MB |
+| Current page sizes | brief 67 KB · goals 71 KB · backlog-table 477 KB |
+
+**Decision:** Mermaid is bundled with the distributed plugin and served from `127.0.0.1`.
+*(Flagged for ADR triage — bundling a 3.4 MB third-party dependency into a published plugin is an
+architectural commitment, not an implementation detail.)*
+
+The user's stated intent is to publish this dashboard and its scripts to a marketplace, and asked
+what happens to someone who cannot install Mermaid. **That case is designed out rather than handled:**
+at 3.4 MB against a 4–10 MB plugin norm, and under a permissive licence, Mermaid ships *inside* the
+plugin. No user installs anything, so no user lacks it, so **there is no fallback renderer** — nothing
+to build, nothing to test, nothing to rot.
+
+**Rejected: a hand-drawn SVG fallback beside Mermaid.** It was considered seriously — the backlog
+page proves the technique works. It is rejected because **a fallback nobody exercises is not a
+fallback**, and this project has measured that twice already: the unverified Mermaid source in
+`gen-backlog-page.py:477`, and the 29-of-33 unreachable ask-buttons of PR #163. Development would
+happen with Mermaid present, the other path would never be seen, and it would become fiction while
+still being described as a safety net. Two renderers for one diagram is also
+`two-mechanisms-for-one-concern`, which this project has a script to hunt.
+
+**What IS still required, and it is not a fallback.** If `mermaid.min.js` is absent or damaged, the
+page must say so **in plain words, in place of the diagram**. A blank box is indistinguishable from a
+diagram containing nothing — the `"cannot run" is a FAILURE, never a pass` rule from `CLAUDE.md`
+applies directly.
+
+**A side-effect worth having: it fixes a live defect.** `gen-backlog-page.py:477` emits Mermaid
+source and states outright that *"its rendering is unverified"* — text handed to the user that
+nothing has ever drawn. Once a page renders the same string it offers for export, the export is
+correct **because** it is rendered.
+
+⚠ **SCOPE BOUND, stated so it is not silently crossed.** This holds because a dashboard is a **live
+view**, regenerated in place like `/goals` and `/backlog-table` — nobody archives it, so
+`explainer-delivery.md` §2's "opens on its own in five years" requirement is not in play. **Dated
+explainer pages ARE archival and that requirement still binds them.** Putting Mermaid on a dated page
+re-opens this question, because a saved file has no server to load the library from. Out of scope
+here; must not be assumed settled there.
+
+**Not converting the backlog page in this slice.** Its hand-drawn SVG works. Swapping a working
+renderer while building a new page means debugging two things at once. If Mermaid proves out on the
+dashboard, converting `gen-backlog-page.py` is an easy follow-up and its own change.
+
+### 5.6 Backlog — a section, not just a link
+Added 2026-08-28 at the user's request ("I forgot to include backlogs page. add it too").
+
+Three levels, following §4's folding rule:
+
+| Level | Shows |
+|---|---|
+| visible | counts — total, closed, open, and how many are on the money path |
+| fold 1 | the **dependency diagram** (Mermaid, §5.5), plus the few items that block others, in plain words |
+| link | `/backlog-table` for the full 66-row table, which already exists and is not duplicated here |
+
+**Counts are derived by `gen-backlog-page.py`'s existing parser, not re-counted.** A second counter
+over the same file is `two-mechanisms-for-one-concern`, and this project has already measured the
+cost of a hand-written count drifting (§ the 110-vs-117 correction in `docs/backlog.md` row 65,
+fixed the same day this spec was written).
 
 ## 6. Where the entries come from
 
@@ -177,6 +245,28 @@ that is judgement. So it gets both.
 `["explain-diff", "brief", "explain-findings", "explain-topic"]`). That check exists so a page skill
 cannot restate the delivery loop instead of citing it. **An unlisted page skill escapes the check
 entirely** — that is written in `explainer-delivery.md` and is a live trap here.
+
+## 7a. Distribution — this is built to be published
+
+Stated by the user 2026-08-28: *"eventually I want to publish this dashboard and related skills and
+scripts to marketplace."* That is a **constraint on the design, not a later packaging step**, and it
+is what settled §5.5.
+
+| Consequence | Requirement |
+|---|---|
+| Users will not be this project | nothing may assume `~/code/agentic-ai-docs/...`, this repo's file names, or this machine's Supabase. Every source path is a parameter with a documented default |
+| Users will not install extras | Mermaid ships **inside** the plugin (§5.5). Python 3 and a browser are the only assumptions |
+| Users will not read this spec | failure messages must be self-explaining. "cannot run" states what is missing and what to do |
+| The plugin has a size budget | 3.4 MB of Mermaid against a 4–10 MB norm for installed plugins — acceptable, and recorded so a later addition is a decision rather than a drift |
+| MIT attribution | Mermaid's licence text ships with the bundled file |
+
+**Sequencing, so publication does not become a rewrite:** the scripts take their inputs as arguments
+from the start. This project is the first user, not the only shape. Actual marketplace packaging is
+**out of scope for v1** — but designing so it is possible is not.
+
+⚠ **`docs/backlog.md` #40 already asks to "package explain-diff + explainer-serve as a Claude Code
+plugin" (task #75, open).** This dashboard rides the same packaging work. They must be planned
+together or the plugin gets built twice.
 
 ## 8. The request box, and its honest limit
 
