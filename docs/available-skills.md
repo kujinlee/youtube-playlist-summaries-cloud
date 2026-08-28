@@ -1,6 +1,6 @@
 # Available Skills Reference
 
-> **Generated** 2026-08-25 · `scripts/regen-skills-doc.py`
+> **Generated** 2026-08-28 · `scripts/regen-skills-doc.py`
 > Re-run after: `/plugin install`, `/plugin update`, `/plugin enable/disable`,
 > or `npx skills@latest add/remove mattpocock/skills`.
 
@@ -76,6 +76,7 @@ Installed via `npx skills@latest add mattpocock/skills` — lives in `.agents/sk
 | **diagnose** | `diagnose` | `auto + /slash` | Disciplined diagnosis loop for hard bugs and performance regressions. Reproduce → minimise → hypothesise → instrument → fix → regression-test. |
 | **explain-diff** | `explain-diff` | `auto + /slash` | Build a rich, self-contained HTML explanation of a code change, branch, or PR — aimed at behaviour and decisions rather than a line-by-line walkthroug… |
 | **explain-findings** | `explain-findings` | `auto + /slash` | Use when findings, defects, review results or open questions need a file / don't-file / severity decision from a human — including "should this be a b… |
+| **explain-topic** | `explain-topic` | `auto + /slash` | Build a self-contained HTML page explaining a topic, concept, mechanism or open question, served locally so the reader can ask questions back and get… |
 | **grill-me** | `grill-me` | `auto + /slash` | Interview the user relentlessly about a plan or design until reaching shared understanding, resolving each branch of the decision tree. |
 | **grill-with-docs** | `grill-with-docs` | `auto + /slash` | Grilling session that challenges your plan against the existing domain model, sharpens terminology, and updates documentation (CONTEXT. |
 | **handoff** | `handoff` | `auto + /slash` | Compact the current conversation into a handoff document for another agent to pick up. |
