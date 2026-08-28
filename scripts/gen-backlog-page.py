@@ -215,6 +215,10 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "fold into path syntax never reach the address."),
         (53, "You can verify which release is live, but not which commit it was built from. "
              "Deliberately dormant until its trigger fires."),
+        (66, "Ninety-two written notes from past work sessions exist on one machine, are excluded "
+             "from git, and have no backup. Nobody has decided whether they are worth keeping. "
+             "The expensive part of that folder was already reclaimed; this is the residue, and "
+             "the decision is yours."),
      ]),
 ]
 
