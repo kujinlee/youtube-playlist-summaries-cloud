@@ -149,6 +149,30 @@ Possible, and therefore required. Navigate to it with the Chrome tools, read it 
 interactive affordance you added. Shipping an unexecuted affordance is what produced all four rounds
 of tray defects.
 
+⛔ **`element.click()` IS NOT A TEST OF A BUTTON.** It fires the handler regardless of where the
+button is painted, whether it has zero size, or whether six siblings are stacked on top of it. Every
+session that "drove both paths" did it this way, and all of them passed a live defect:
+
+**MEASURED 2026-08-27 — 29 of the 33 pages in `~/explainers` carrying a tray had heading ask-buttons
+stacked in one corner**, because the tray positions `.askbtn` absolutely and the page gave headings
+no positioning context. On one page: 10 buttons, **4** distinct positions, **6 unreachable**. The
+selection path was fine throughout (its floater is `position:fixed` with explicit coordinates), so
+the channel looked alive. Now defaulted in `brief-compose.py`'s SHIM, with 3 mutation-tested cases.
+
+**So assert the AFFORDANCE, not the handler** — the button must be the topmost element at its own
+centre:
+
+```js
+[...document.querySelectorAll('h1 .askbtn, h2 .askbtn, h3 .askbtn')].map(b => {
+  b.style.opacity = '1';                        // it is hover-revealed
+  const r = b.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width/2, r.top + r.height/2);
+  return [Math.round(r.top), hit === b || b.contains(hit)];
+})
+```
+
+Distinct positions must equal the number of buttons. **Collapsed coordinates are the signature.**
+
 **Drive BOTH question paths, and read the event the session actually receives — not the DOM.** Two
 defects were caught this way on 2026-08-13 that no amount of re-reading would have shown:
 
