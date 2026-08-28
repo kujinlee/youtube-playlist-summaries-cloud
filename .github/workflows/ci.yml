@@ -140,3 +140,20 @@ jobs:
       # migration would leave with the edit it should have stopped — so the grant is pinned instead.
       - name: Storage grant pin (ADR-0008)
         run: python3 scripts/check-storage-grant-pin.py
+
+      # Backlog #54 half (a), PREVENTION — after the mechanism that row specifies was MEASURED not
+      # to work. PostgreSQL grants EXECUTE on a new function to PUBLIC, and `alter default
+      # privileges` CANNOT remove it: stored entries are ADDITIVE to the built-in default (three
+      # scratch-database setups, 2026-08-28, all left `=X/postgres` on the created function). So
+      # `revoke execute on functions from anon` closes one of two routes and the other cannot be
+      # closed at that layer at all — and it would have PASSED on production, whose default ACL
+      # happens to carry no PUBLIC entry, while being wrong everywhere else.
+      # What actually keeps prod clean is 41 individual `revoke ... from public` statements, one
+      # per migration — a convention, i.e. every author remembering. This is the mechanism for it.
+      # Static (reads .sql text, no database), which is why it runs here and not with the schema
+      # gates.
+      - name: Every new public function revokes PUBLIC
+        run: python3 scripts/check-function-revokes.py
+
+      - name: check-function-revokes self-test
+        run: python3 scripts/check-function-revokes.py --self-test
