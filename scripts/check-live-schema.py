@@ -220,8 +220,11 @@ def survivors(live: set[str], manifest: set[str]) -> set[str]:
 
 
 # Kinds whose catalog string is `kind:relation.name`, so the object can be ATTRIBUTED to a relation.
-# ⚠ `idx:` is deliberately absent and that is a MEASURED limit, not an oversight — see `unexpected`.
-ATTRIBUTABLE_KINDS = ("col", "con", "trg", "pol")
+# ⟳ 2026-08-28: `idx` JOINED THIS LIST, and the catalog changed to let it. It rendered as
+# `idx:<indexname>` with no relation, so an index could not be attributed and every `idx:` entry
+# was skipped — MEASURED: `create unique index rev_uq on video_artifacts (video_id)` PASSED.
+# `m4_catalog.CATALOG_SQL` now renders `idx:<relation>.<index>`, the same shape `pol:` always had.
+ATTRIBUTABLE_KINDS = ("col", "con", "trg", "pol", "idx")
 
 
 def owned_relations(manifest: set[str]) -> set[str]:
@@ -267,11 +270,16 @@ def unexpected(live: set[str], manifest: set[str],
 
     ⛔⛔ WHAT THIS DOES NOT SEE — stated, because an unstated bound is read as coverage:
 
-      * **INDEXES. `idx:` renders as `idx:<indexname>` with NO relation** (`m4_catalog.CATALOG_SQL`),
-        so an index CANNOT be attributed to a relation by parsing, and scoping it would mean changing
-        the catalog rendering and regenerating all 161 manifest entries. The residual hole is a bare
-        `create unique index` on an M4 table, which changes semantics without appearing as a `con:`.
-        A unique CONSTRAINT is caught, because it renders as `con:relation.name`.
+      * ✅ **INDEXES — CLOSED 2026-08-28, and this bullet is kept as the record of a hole rather
+        than deleted.** It read: *"`idx:` renders as `idx:<indexname>` with NO relation, so an index
+        CANNOT be attributed … the residual hole is a bare `create unique index` on an M4 table,
+        which changes semantics without appearing as a `con:`."* That was true and the falsifier
+        beside it was already written down — `create unique index rev_uq on video_artifacts
+        (video_id)` PASSED. The cost quoted for closing it (change the rendering, regenerate all
+        161 entries) was correct and simply worth paying: `CATALOG_SQL` joins `x.indrelid` and now
+        emits `idx:<relation>.<index>`, `idx` is in ATTRIBUTABLE_KINDS, and that same
+        `create unique index` is now REPORTED. A unique CONSTRAINT was always caught, because
+        `con:` already carried its relation — the two spellings of one idea now agree.
       * **The 15 manifest objects on FOREIGN relations** — 7 triggers, 5 constraints and 3 columns
         that M4 adds to the pre-existing `videos`, `playlists`, `jobs` and `profiles`. Those tables
         are not M4's to bound: any future migration adding a column to `videos` is legitimate, so
@@ -337,8 +345,10 @@ def load_accepted(path: str = ACCEPTED) -> set[str]:
       * A REASON IS MANDATORY. `col:x.y  # 0028 — why` parses; `col:x.y` alone RAISES. An unexplained
         exemption is indistinguishable from a mistake, and this repo has twice found a gate weakened
         by an entry nobody could account for.
-      * The kind must be one this gate can actually attribute; accepting `idx:…` here would imply a
-        coverage that `unexpected` does not have.
+      * The kind must be one this gate can actually attribute. ⟳ 2026-08-28: `idx:` IS now
+        attributable — as `idx:<relation>.<index>` — so an intentionally added index is accepted
+        here like any other addition. A relation-less `idx:<name>` is still refused, because it
+        means the CATALOG is not producing what this gate assumes.
 
     A missing file is NOT an error — it means nothing has been accepted, which is the correct state
     until a migration adds something. An EMPTY set is therefore normal, unlike the manifest.
@@ -418,6 +428,15 @@ def ambiguous(live: set[str], manifest: set[str]) -> set[str]:
     for o in live:
         kind, _, rest = name_of(o).partition(":")
         if kind not in ATTRIBUTABLE_KINDS:
+            continue
+        # ⟳ 2026-08-28 — REGRESSION GUARD FOR THE FIX THAT CLOSED THE INDEX HOLE.
+        # `idx:` gained its relation (`idx:<relation>.<index>`) so indexes could be attributed at
+        # all. If `CATALOG_SQL` ever reverts to the bare `idx:<index>`, every index would go back
+        # to being SILENTLY SKIPPED by `unexpected` — the gate would lose index coverage and still
+        # report green, which is the precise failure this whole slice existed to remove. A
+        # relation-less `idx:` is therefore a CANNOT RUN, not a shrug.
+        if kind == "idx" and rest.count(".") != 1:
+            out.add(o)
             continue
         if rest.count(".") == 1 and o.count("@") == 1:
             continue    # the ordinary, decidable shape
@@ -534,14 +553,14 @@ def self_test() -> int:
     CON = "con:video_artifacts.art_dig_has_span@ccc333"
     M = {"table:workspaces", "view:video_artifacts_current@v1",
          "col:playlists.workspace_id@c1", "trg:profiles.profiles_ensure_workspace_trg@t1",
-         TRG, FN, CON, "type:artifact_kind@e1", "idx:va_pkey@i1",
+         TRG, FN, CON, "type:artifact_kind@e1", "idx:video_artifacts.va_pkey@i1",
          "pol:workspaces.ws_owner@p1"}
     none: set[str] = set()
 
     check("absent passes when nothing remains", verdict(none, M, "absent"), True)
     check("absent FAILS when a table survives", verdict({"table:workspaces"}, M, "absent"), False)
     check("absent IGNORES unrelated objects",
-          verdict({"table:profiles", "idx:profiles_pkey@x"}, M, "absent"), True)
+          verdict({"table:profiles", "idx:profiles.profiles_pkey@x"}, M, "absent"), True)
     check("present passes when complete", verdict(set(M), M, "present"), True)
 
     # ⭐⭐ THE r4 B1 CASES — the name is present, the BEHAVIOUR is not. Every one of these returned
@@ -562,7 +581,7 @@ def self_test() -> int:
     check("a genuinely NEVER-CREATED object is reported as missing, not redefined",
           split_residue(set(M) - {TRG}, M) == ({TRG}, set()), True)
 
-    for kind, obj in (("view", "view:video_artifacts_current@v1"), ("index", "idx:va_pkey@i1"),
+    for kind, obj in (("view", "view:video_artifacts_current@v1"), ("index", "idx:video_artifacts.va_pkey@i1"),
                       ("policy", "pol:workspaces.ws_owner@p1"),
                       ("constraint", CON), ("column", "col:playlists.workspace_id@c1")):
         check(f"present FAILS when a {kind} is missing — the 29-object gate named ZERO of these",
@@ -593,7 +612,7 @@ def self_test() -> int:
               residue({survivor}, M, "absent"), {survivor})
 
     check("absent still IGNORES a same-named object of a DIFFERENT KIND",
-          verdict({"idx:record_artifact@i9"}, M, "absent"), True)
+          verdict({"idx:video_artifacts.record_artifact@i9"}, M, "absent"), True)
 
     # ADR-0011 objects are matched by SYMBOL: they must not exist whatever their definition OR
     # ARGUMENT LIST, and a digest-bearing comparison here would silently never match.
@@ -646,8 +665,8 @@ def self_test() -> int:
     for why, extra in (
             ("a FOREIGN relation's new column (videos/playlists/jobs are not M4's to bound)",
              "col:playlists.new_feature_flag@y1"),
-            ("an INDEX — `idx:` carries no relation, so it cannot be attributed",
-             "idx:workspaces_new_idx@y2"),
+            ("an INDEX on a FOREIGN relation (same reasoning as the column above)",
+             "idx:videos.some_new_videos_idx@y2"),
             ("a FUNCTION — it attaches to no relation (check-anon-exposure.py's subject)",
              "fn:some_new_helper()@y3"),
             ("a whole NEW TABLE outside the manifest", "table:unrelated_new_table@y4")):
@@ -710,8 +729,14 @@ def self_test() -> int:
     check("an entry with an EMPTY reason is REFUSED", _raises("col:workspaces.rc  #\n"), True)
     check("a WILDCARD is REFUSED — one line accepts exactly one object",
           _raises("col:workspaces.*  # everything\n"), True)
-    check("a non-attributable kind is REFUSED (accepting idx: would imply coverage we lack)",
+    # ⟳ 2026-08-28: `idx` is attributable now, so this no longer fails on the KIND — it fails on
+    # the SHAPE, because `idx:some_index` names no relation. The distinction matters: an accept
+    # entry must identify one object on one relation, and a bare index name identifies neither.
+    check("a relation-less idx accept entry is REFUSED (it names no relation)",
           _raises("idx:some_index  # 0028 — new index\n"), True)
+    check("…but a QUALIFIED index accept entry is allowed, like any other addition",
+          _accepts("idx:workspaces.rc_idx  # 0028 — retention lookup\n"),
+          {"idx:workspaces.rc_idx"})
     check("comments and blank lines are ignored", _accepts("# header\n\n"), set())
     check("a MISSING accept-list is not an error — it means nothing is accepted",
           load_accepted(os.path.join(os.sep, "nonexistent", "accepted.txt")), set())
@@ -748,8 +773,15 @@ def self_test() -> int:
           owned_relations(no_rels), set())
     check("…and `unexpected` is then vacuously clean, which is why main REFUSES on it",
           unexpected(set(M) | {"col:workspaces.leaked_at@x1"}, no_rels), set())
-    check("non-attributable kinds are never ambiguous (fn/idx/type carry no relation)",
-          ambiguous({"fn:f()@a", "idx:i@b", "type:t@c", "table:x@d"}, M), set())
+    check("non-attributable kinds are never ambiguous (fn/type attach to no relation)",
+          ambiguous({"fn:f()@a", "type:t@c", "table:x@d"}, M), set())
+    # ⟳ 2026-08-28 — the regression guard for the index fix. `idx:` MUST now carry its relation;
+    # if CATALOG_SQL ever reverts to the bare form, every index would silently stop being
+    # attributed and the gate would report green over exactly the hole this slice closed.
+    check("a relation-less `idx:` is AMBIGUOUS — the catalog is not producing what we assume",
+          ambiguous({"idx:i@b"}, M), {"idx:i@b"})
+    check("…and a properly qualified one is not",
+          ambiguous({"idx:video_artifacts.i@b"}, M), set())
 
     # Absent mode asks a different question; drift is meaningless when nothing should exist.
     check("absent mode IGNORES drift entirely",
@@ -778,9 +810,10 @@ def self_test() -> int:
               "    database and requires RED.\n"
               "  * that an EMPTY manifest is safe: the pure verdict cannot distinguish 'nothing\n"
               "    expected' from 'all present', which is why load_manifest raises on one.\n"
-              "  * that DRIFT DETECTION IS COMPLETE. `unexpected` covers col/con/trg/pol on the 8\n"
-              "    relations M4 owns. It cannot see an added INDEX (idx: carries no relation name),\n"
-              "    anything added to the 4 FOREIGN relations M4 only extends, or a new fn:/type:.\n"
+              "  * that DRIFT DETECTION IS COMPLETE. `unexpected` covers col/con/trg/pol/idx on\n"
+              "    the 8 relations M4 owns — idx JOINED that list 2026-08-28, when the catalog\n"
+              "    started rendering `idx:<relation>.<index>`. It still cannot see anything added\n"
+              "    to the 4 FOREIGN relations M4 only extends, or a new fn:/type:.\n"
               "    Those bounds are asserted as PASSING cases above, so widening them is a decision\n"
               "    that turns a test red — never a silent accident.")
     return 1 if failures else 0
