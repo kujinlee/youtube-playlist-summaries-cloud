@@ -416,7 +416,7 @@ Not a feature slice — this is the machinery that stops hard-won lessons from d
   decision lived only in a Draft spec and was misread by the very review that reads `docs/adr/`.
 - [x] **`scripts/check-docs.py`** — ADR index drift, dangling ADR refs, broken living-doc links;
   advisory list of spec decisions never promoted. Code→ADR references went 0 → 2.
-- [ ] **Triage the 20 spec docs** holding decision markers with no ADR (the advisory list).
+- [ ] **Triage the 21 spec docs** holding decision markers with no ADR (the advisory list).
       ⟳ **21 → 20 on 2026-08-24, and the mechanism is worth noting:** it dropped because ADR-0010's
       anchor headers gave one of those documents an `ADR:` line, so it is no longer untraceable.
       The header is doing the job the triage list exists to chase. `check-docs` derived the new
