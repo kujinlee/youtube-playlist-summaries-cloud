@@ -36,6 +36,7 @@ failure, not a placeholder — allocate the name when the first document needs i
 | `cloud-blob-key-encoding` | 0009 | A video titled in any language can be stored and served from cloud storage. |
 | `corrections-in-cloud` | — | A cloud user corrects a summary and gets the same result a local user would. |
 | `prod-smoke` | — | Every deploy is proven by machine to serve the real application, against the deployed URL. |
+| `status-visibility` | — | A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript. |
 
 ## Declaring the anchor in a document
 
