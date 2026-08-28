@@ -728,12 +728,15 @@ The element must be the topmost thing at its own centre, and distinct controls m
 positions:
 
 ```js
-[...document.querySelectorAll(SELECTOR)].map(b => {
-  b.style.opacity = '1';                          // if it is hover-revealed
-  const r = b.getBoundingClientRect();
+for (const b of document.querySelectorAll(SELECTOR)) {
+  b.scrollIntoView({block: 'center'});   // elementFromPoint takes VIEWPORT coords and
+  b.style.opacity = '1';                 // returns null off-screen — scroll first or
+  const r = b.getBoundingClientRect();   // everything below the fold reports a false FAIL
   const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-  return [Math.round(r.top), Math.round(r.left), hit === b || b.contains(hit)];
-})
+  record(Math.round(r.top + scrollY), Math.round(r.left), hit === b || b.contains(hit));
+}
+// ...and refuse to conclude anything if the page is not being rendered:
+//   document.hidden === true  or  innerWidth === 0   ->   CANNOT RUN, not a verdict.
 ```
 
 **Collapsed coordinates are the signature** — if N controls report fewer than N positions, they are
