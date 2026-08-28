@@ -99,6 +99,23 @@ SHIM = """
      is concatenated AFTER the fragment's CSS, so a normal `body{…}` rule here would override every
      page that already paints itself. This one is always losable. */
   :where(html, body) { background: var(--bg); color: var(--fg); }
+  /* GIVE HEADINGS A POSITIONING CONTEXT, or the heading ask-path silently dies.
+     The tray appends an ABSOLUTELY positioned `.askbtn` to every heading. With no positioned
+     ancestor it resolves against the initial containing block, so EVERY heading button lands on
+     the same point in the top-right corner, stacked, with only the last one clickable.
+     MEASURED 2026-08-27 across ~/explainers: 29 of the 33 pages carrying a tray had NO positioning
+     context on headings. On one page: 10 buttons, 4 distinct positions, all 7 h2s at top:14
+     left:1560 — 6 unreachable. The 3 that worked did so by accident, sitting inside an unrelated
+     `position:relative` list item.
+     ⚠ WHY IT SURVIVED EVERY "I drove both question paths" CHECK: those checks call
+     `heading.querySelector('.askbtn').click()`, which fires the handler no matter where the button
+     is painted or what is stacked on top of it. That tests the HANDLER, never the AFFORDANCE. The
+     check that finds it is a hit test — `document.elementFromPoint(centre)` must return the button
+     itself. The selection path was never affected: its floater is `position:fixed` with explicit
+     coordinates, which is why the channel looked alive throughout.
+     `:where()` keeps this at ZERO specificity, so any fragment that positions its own headings
+     still wins — the shim only supplies what nobody supplied. */
+  :where(h1, h2, h3, h4) { position: relative; }
 """
 
 
@@ -278,6 +295,25 @@ def self_test() -> int:
     # override. `html` is 0,0,1; `:root` is 0,1,0.
     case("shim declares --rule on `html`, not `:root`", "html { --rule:" in SHIM)
     case("the :root block does not declare --rule", "--rule" not in SHIM.split("html {")[0])
+
+    # ── headings must get a positioning context, or the heading ask-path silently dies ───────────
+    # The tray appends an ABSOLUTELY positioned `.askbtn` to each heading. With no positioned
+    # ancestor every one of them resolves against the initial containing block and lands on the
+    # same point, stacked, with only the topmost clickable. MEASURED 2026-08-27: 29 of the 33
+    # pages in ~/explainers carrying a tray had no such context; on one, 10 buttons occupied 4
+    # distinct positions and 6 were unreachable.
+    # It survived every "I drove both question paths" check because those call
+    # `heading.querySelector('.askbtn').click()` — the HANDLER, never the AFFORDANCE. The check
+    # that finds it is `document.elementFromPoint(centre) === button`.
+    case("shim gives headings a positioning context", bool(
+        re.search(r":where\([^)]*h2[^)]*\)\s*\{[^}]*position:\s*relative", SHIM)))
+    # Must stay zero-specificity for the same reason as the paint rule: a fragment that positions
+    # its own headings has to keep winning, since the shim is concatenated AFTER it.
+    case("the heading rule is zero-specificity (:where)", bool(
+        re.search(r":where\([^)]*h1[^)]*\)\s*\{[^}]*position:\s*relative", SHIM)))
+    # …and it must actually reach the composed page, not merely exist in SHIM.
+    case("composed doc carries the heading positioning rule", bool(
+        re.search(r":where\([^)]*h2[^)]*\)\s*\{[^}]*position:\s*relative", doc)))
     # NOT a guard on the cascade — this one survives the self-reference mutation, so it proves only
     # that compose does not STRIP a content page's own --rule. The cascade itself is not testable
     # here (it needs a layout engine); it was verified in a real browser on 2026-08-19 by reading
