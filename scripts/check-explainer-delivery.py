@@ -50,7 +50,7 @@ SHARED_REL = "shared/explainer-delivery.md"
 # that forgets to cite the shared file is exactly what this check is for, and a derived list would
 # silently grow to include it. Per `hardcode-only-what-fails-loudly` — this list going stale
 # announces itself (a missing directory is an error below), a derived one would not.
-PAGE_SKILLS = ["explain-diff", "brief", "explain-findings"]
+PAGE_SKILLS = ["explain-diff", "brief", "explain-findings", "explain-topic"]
 
 DELIVERY_CMD = re.compile(r"explainer-serve\.py|brief-compose\.py|tail -n 0 -F.*questions\.md")
 FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)

@@ -9,6 +9,7 @@ produces one:
 | `explain-diff` | a code change |
 | `brief` | the state of a body of work |
 | `explain-findings` | findings needing a file / don't-file verdict |
+| `explain-topic` | a concept, mechanism or question — subject arrives free-form |
 
 **Why extracted (2026-08-24).** Before this file, the loop was described in full in `explain-diff`
 and again in `brief`. Adding a third page-producing skill would have made three copies of a
