@@ -136,12 +136,23 @@ Replace the `parse_entries` stub. Every rule below is from spec §6.2:
 import datetime as _dt
 import re
 
-# `^##\s*\S` — NOT `startswith("## ")`. A header typed without the space
-# ("##2026-08-28") must become a MALFORMED entry, not vanish. v1 dropped it
-# silently while its own docstring promised "never dropped"; a missing space is
-# a plausible hand-typing slip, and the store is hand-written.
+# TWO regexes with DIFFERENT strictness, deliberately.
+#
+# BLOCK decides what STARTS an entry, and is loose (`^##\s*\S`) so that a
+# header typed without the space — "##2026-08-28" — is still CAPTURED. v1 used
+# `startswith("## ")`, so such a block vanished entirely, with no error and no
+# trace on the page, while its own docstring promised "never dropped".
+#
+# HEADER decides whether the captured block is WELL-FORMED, and requires the
+# space, because spec §6.2's grammar is `## ` followed by the date. So a
+# missing space is a MALFORMED entry: visible, explained, and refused by the
+# ratchet — not silently accepted as if it were fine.
+#
+# ⟳ Round 2 caught these two disagreeing: this comment said "must become a
+# MALFORMED entry" while HEADER's `\s*` accepted it as an ordinary one, and a
+# self-test row asserted the accepting behaviour. The comment was right.
 BLOCK = re.compile(r"^##\s*\S")
-HEADER = re.compile(r"^##\s*(\S+)(.*)$")
+HEADER = re.compile(r"^## (\S+)(.*)$")
 FLAG = re.compile(r"\[(needs-you|resolved:\s*[^\]]*)\]")
 TECH_MARKER = "<!--tech-->"
 
@@ -173,9 +184,13 @@ def parse_entries(text: str) -> list[dict]:
         entry = {"raw": raw, "error": None, "needs_you": False, "resolves": None,
                  "date": None, "ordinal": 0, "id": None, "title": "", "plain": "", "tech": None}
         m = HEADER.match(b[0])
-        if m is None or not _valid_date(m.group(1)):
-            bad = "" if m is None else m.group(1)
-            entry["error"] = f"not a real calendar date: {bad!r}"
+        if m is None:
+            entry["error"] = ("header must be '## ' then a YYYY-MM-DD date — "
+                              "check the space after the ##")
+            out.append(entry)
+            continue
+        if not _valid_date(m.group(1)):
+            entry["error"] = f"not a real calendar date: {m.group(1)!r}"
             out.append(entry)
             continue
         date, rest = m.group(1), m.group(2)
@@ -291,10 +306,14 @@ Append to `_self_test` before the print:
     empty_res = parse_entries("## 2026-08-29 [resolved: ]\nDone.\n")
     case("resolve with an empty id is an error", empty_res[0]["error"] is not None, True)
 
-    # --- the two silent-drop cases
+    # --- the two silent-drop cases. NOT DROPPED and NOT ACCEPTED: captured as
+    # a malformed entry, so the page explains it and the ratchet refuses it.
     nospace = parse_entries("##2026-08-28\nNo space after the hashes.\n")
     case("'##' with no space is still an entry", len(nospace), 1)
-    case("'##' with no space parses normally", nospace[0]["error"], None)
+    case("'##' with no space is MALFORMED", nospace[0]["error"] is not None, True)
+    case("'##' with no space says why", "space" in (nospace[0]["error"] or ""), True)
+    case("'##' with no space keeps its raw text",
+         "No space after the hashes." in nospace[0]["raw"], True)
 
     notitle = parse_entries("## 2026-08-28\n\n\n")
     case("entry with no title is an error", notitle[0]["error"] is not None, True)
@@ -589,10 +608,17 @@ spec = importlib.util.spec_from_file_location('g','scripts/gen-dashboard.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 d, err = m.commit_dates(14); print('dates:', len(d) if d else None, 'err:', err)
 p, err2 = m.open_prs(); print('prs:', len(p) if p is not None else None, 'err:', err2)
-n, err3 = m.no_entry_prs(); print('no-entry:', len(n) if n is not None else None, 'err:', err3)
 "
 ```
-Expected: a non-zero date count and `err: None`. `prs: 0 err: None` is correct when nothing is open — the distinction from failure is `err`. `no-entry: 0` is expected today; no merged PR has ever carried the declaration.
+Expected: a non-zero date count and `err: None`. `prs: 0 err: None` is correct when nothing is open — the distinction from failure is `err`.
+
+⛔ **Do NOT verify `no_entry_prs()` here.** It loads `exemption_reason` out of
+`scripts/check-dashboard-entry.py`, which **Task 4 creates** — two tasks later. Running it now
+returns
+`(None, "could not load the gate's exemption reader: [Errno 2] No such file or directory: …")`,
+which is the *correct* loud failure but not a useful check, and a step whose stated expected output
+cannot occur in task order is exactly the class of defect round 1 was full of. Its verification is
+**Task 4 Step 6a**, after the gate exists.
 
 **Then falsify the could-not-tell contract, because it is the one thing here that must not fail quietly.** Run the same snippet with `gh` made unavailable:
 
@@ -643,7 +669,13 @@ Append to `_self_test`. `_B` gives every call the two new arguments without repe
 
     html_err = _B([], bucket_days([], [], 2, "2026-08-28"), prs=None, pr_error="gh exploded")
     case("gh failure is NOT 'nothing needs you'", "Nothing needs you" in html_err, False)
-    case("gh failure says could not tell", "could not tell" in html_err.lower(), True)
+    # v1 asserted the literal phrase "could not tell". H5's fix changed the
+    # wording to the more precise "I could not ALSO check open pull requests",
+    # and the case was not updated — so it asserted a string the renderer had
+    # stopped emitting. Assert the CONTRACT (an unchecked source is announced
+    # as unchecked, and the reason is surfaced), not one v1 sentence.
+    case("gh failure is announced as NOT CHECKED", "not checked" in html_err.lower(), True)
+    case("gh failure surfaces the reason", "gh exploded" in html_err, True)
 
     bad3 = parse_entries("## 2026-99-99\nBroken.\n")
     html_bad = _B(bad3, bucket_days([], bad3, 2, "2026-08-28"))
@@ -1261,9 +1293,11 @@ Expected: exit 0, no `[FAIL]` lines.
 ```python
 import argparse, datetime as _dt, re, subprocess
 
-# `+##` then optional space then a YYYY-MM-DD that is a real calendar date.
+# `+## ` — the SPACE IS REQUIRED, matching HEADER in gen-dashboard.py. The two
+# must agree: a header the parser calls malformed must not satisfy the gate, or
+# the ratchet would pass exactly the entry the page cannot use.
 # The date is re-validated below, because the regex alone accepts 2026-02-30.
-_ADDED_ENTRY = re.compile(r"^\+##\s*(\d{4}-\d{2}-\d{2})\b")
+_ADDED_ENTRY = re.compile(r"^\+## (\d{4}-\d{2}-\d{2})\b")
 
 def _added_entry_line(line: str) -> bool:
     m = _ADDED_ENTRY.match(line)
@@ -1333,6 +1367,8 @@ than the eye:
     case("a non-date header does NOT count", _added_entry_line("+## not-a-date"), False)
     case("an impossible date does NOT count", _added_entry_line("+## 2026-02-30"), False)
     case("a REMOVED header does not count", _added_entry_line("-## 2026-08-28"), False)
+    # Agrees with gen-dashboard.py's HEADER: no space, not an entry.
+    case("'##' with no space does NOT count", _added_entry_line("+##2026-08-28"), False)
 ```
 
 Delete the Task-4 Step-1 `if __name__` block.
@@ -1355,9 +1391,15 @@ a throwaway repository by both review halves. `git stash pop` on the next line w
 **The only input `collect()` has is `git diff <base>...HEAD`.** A falsifier must remove the entry
 from *that diff*. Run this in a scratch repository so nothing is done to the real branch:
 
+⛔ **No `set -e` in this script, and that is not an oversight.** Controls A, C and D are *expected*
+to exit non-zero — that is the whole point of them. With `set -e` the script dies at Control A on
+its first correct refusal, never prints `A rc=1`, and never reaches B–E. Measured by the round-2
+Codex reviewer running the v2 version verbatim: it stopped at A, and a reader would have seen a
+refusal message with no verdict lines and no way to tell whether the gate was proven.
+
 ```bash
-set -e
-D=$(mktemp -d); cd "$D"; git init -q .; git config user.email t@t; git config user.name t
+D=$(mktemp -d); cd "$D" || exit 1
+git init -q .; git config user.email t@t; git config user.name t
 mkdir -p docs scripts
 cp "$OLDPWD/scripts/check-dashboard-entry.py" scripts/
 git add -A; git commit -qm base; git branch -M master; git checkout -qb feature
@@ -1411,6 +1453,31 @@ ok — an entry block was added     E rc=0
 the collector is not seeing an entry that is genuinely there. C is the falsifier proper: it is the
 step that removes `+## <date>` from the diff, which is the only thing `collect()` reads. D and E are
 a matched pair — D alone can pass for the wrong reason.
+
+- [ ] **Step 6a: NOW verify `no_entry_prs()` — the gate it imports finally exists**
+
+Deferred here from Task 2 Step 6, where `scripts/check-dashboard-entry.py` had not been created yet.
+
+```bash
+python3 -c "
+import importlib.util
+spec = importlib.util.spec_from_file_location('g','scripts/gen-dashboard.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+n, err = m.no_entry_prs(); print('no-entry:', len(n) if n is not None else None, 'err:', err)
+"
+```
+Expected: `no-entry: 0 err: None` — no merged pull request has ever carried the declaration.
+
+**Then falsify the loader**, because a page that silently shows *no exemptions* when it could not
+read them is the exact false-healthy state §7 exists to prevent:
+
+```bash
+mv scripts/check-dashboard-entry.py /tmp/gate-hidden.py
+python3 -c "…same snippet…"
+mv /tmp/gate-hidden.py scripts/check-dashboard-entry.py
+```
+Expected: `no-entry: None err: could not load the gate's exemption reader: …`.
+**If it prints `no-entry: 0 err: None`, the loader is swallowing the failure — stop and fix it.**
 
 - [ ] **Step 7: Wire into CI — the self-tests now, the ratchet in Task 6**
 
@@ -1730,16 +1797,28 @@ Append to `.github/workflows/ci.yml` after the two self-test steps from Task 4:
           BODY: ${{ github.event.pull_request.body }}
         run: |
           printf '%s' "$BODY" > /tmp/pr-body.md
-          git fetch --no-tags --depth=200 origin "$GITHUB_BASE_REF"
+          git fetch --no-tags --depth=200 origin \
+            "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
           python3 scripts/check-dashboard-entry.py \
             --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/pr-body.md
 ```
 
 Three things this depends on, each of which fails loudly rather than quietly:
 
-- **The base ref must be fetched.** `actions/checkout` does not fetch the base branch by default,
-  and `git diff origin/master...HEAD` against a missing ref exits non-zero → `collect()` returns an
-  error → the script prints `CANNOT RUN` and returns **2**. A cannot-run is a failure, not a pass.
+- **The base ref must be fetched INTO `refs/remotes/origin/…`, which needs an explicit refspec.**
+  `git fetch origin master` on a shallow branch-only checkout **exits 0 and creates no
+  `origin/master`** — measured by the round-2 Codex reviewer against v2's version, which used the
+  bare form:
+
+  ```
+  fetch_rc=0
+  CANNOT RUN — git diff exited 128: fatal: ambiguous argument 'origin/master...HEAD': …
+  ratchet_rc=2
+  ```
+
+  The `+refs/heads/X:refs/remotes/origin/X` form creates the ref. Note the failure was **loud** —
+  `CANNOT RUN`, exit 2, which is correct behaviour — but a gate that reliably cannot run is not a
+  gate, so this had to be fixed rather than tolerated.
 - **The PR body reaches the script through a FILE and an env var**, never interpolated into the
   shell. A PR body is arbitrary user text; `${{ }}` directly inside `run:` is a script-injection
   hole, and a backtick in a double-quoted bash string is command substitution — the same root cause
@@ -1916,6 +1995,49 @@ A fourth, smaller: pass 2 said *"names no entry in this file"* even when the ent
 merely unparseable, sending the author to hunt for a typo that was not there. It now distinguishes
 the three cases.
 
-**Round 1 verdict was NOT CONVERGED from both halves. This is v2, and it has not been reviewed.**
-Round 2 must run **both** halves — they overlapped on only 2 of roughly 26 findings, which is the
-measured argument against treating either as sufficient.
+---
+
+## Round 2 — Codex half, and the thing it caught me doing
+
+`docs/reviews/plan-project-dashboard-r2-codex.md`, against `4077817`. **NOT CONVERGED**: 3 Blocking,
+2 High, 2 Medium. All seven are addressed below; every fix was re-run, not reasoned about.
+
+### ⛔ The finding that matters most is about the VERIFICATION, not the plan
+
+**Blocking — `gen-dashboard.py --self-test` FAILS.** The case
+`case("gh failure says could not tell", "could not tell" in html_err.lower(), True)` asserts a
+string the renderer stopped emitting when H5's fix reworded it to *"I could not **also** check open
+pull requests"*. A stale assertion against live code — ordinary enough.
+
+**What is not ordinary is that I had run this and reported 55/55.** Transcribing the plan into a
+scratch file, I wrote `"could not" in html_err.lower()` — dropping one word — and the weakened
+version passed. Codex transcribed faithfully and got `54/55`.
+
+So the green I reported was measured against **an assertion I had softened while copying it**. This
+is `docs/portable-practices.md`'s *test harness can launder failures*, committed by the author of
+the section warning about it, one commit after writing it. **A transcription is not a copy unless
+it is diffed.** The case now asserts the contract — an unchecked source is announced as
+`NOT CHECKED` and its reason is surfaced — rather than one version's wording.
+
+### The rest
+
+| Sev | Finding | Fix |
+|---|---|---|
+| **B** | Task 2 Step 6 verifies `no_entry_prs()`, which imports `check-dashboard-entry.py` — a file **Task 4 creates**. The stated expected output cannot occur in task order | The check moved to **Task 4 Step 6a**, plus a falsifier that hides the gate file and requires a loud `CANNOT RUN` |
+| **B** | `set -e` at the top of the Task 4 controls **kills the script at Control A**, whose whole purpose is to exit 1. It never printed a verdict line and never reached B–E | `set -e` removed, with the reason stated so nobody restores it |
+| **H** | `git fetch --no-tags --depth=200 origin master` **exits 0 and creates no `origin/master`** on a shallow branch-only checkout, so the CI ratchet cannot run | Explicit refspec `+refs/heads/X:refs/remotes/origin/X`. **Reproduced and re-verified here**: bare form → `origin/master MISSING`, `diff rc=128`; refspec form → ref created, diff clean |
+| **H** | `NO-ENTRY:` inside an HTML comment exempts the branch | **Already fixed in v2.1**, independently. Two reviewers reaching the same defect from different directions is the strongest signal available that it was real |
+| **M** | A ` ``` ` fence treated as closed by `~~~` | **Already fixed in v2.1** |
+| **M** | The parser comment says a spaceless `##2026-08-28` "must become a MALFORMED entry"; the code accepted it as ordinary, and a self-test row asserted the accepting behaviour | The comment was right. `HEADER` now requires the space, the entry is malformed with a diagnostic naming the space, and the gate's `_ADDED_ENTRY` requires it too — so the two can no longer disagree about what an entry is |
+
+**Re-verified after all seven, not assumed:** generator **58/58**, gate **32/32**, controls A–E run
+to completion (`A rc=1`, `B rc=0`, `C rc=1`, `+## not-a-date` present, `D rc=1`, `E rc=0`), and the
+CI refspec reproduced end to end.
+
+**Two Codex findings were things v2.1 had already fixed**, which is worth noting rather than
+glossing: it reviewed `4077817`, and v2.1 landed as `7ce2ac6` while it was running. The overlap is
+confirmation, not waste.
+
+**Still NOT CONVERGED, and the Claude half of round 2 has NOT run.** Round 1's two halves overlapped
+on 2 of ~26 findings; one reviewer is not the gate. That gap is the next action, and it is recorded
+rather than papered over.
