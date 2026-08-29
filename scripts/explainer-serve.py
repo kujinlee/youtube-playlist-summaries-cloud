@@ -562,6 +562,31 @@ RELOAD_JS = """
     var y = sessionStorage.getItem(KEY);
     if (y !== null) { sessionStorage.removeItem(KEY); window.scrollTo(0, parseInt(y, 10) || 0); }
   } catch (e) {}
+  // Restore <details> open state across an auto-reload, keyed on d.id — NEVER on position. An
+  // index key shifts when a new entry is appended at the top, so the restore would work when the
+  // page had not changed and misapply itself, silently, when it had.
+  var DKEY = 'explainer-details:' + here;
+  function saveDetails() {
+    try {
+      var open = [];
+      document.querySelectorAll('details[id]').forEach(function (d) {
+        if (d.open) open.push(d.id);
+      });
+      sessionStorage.setItem(DKEY, JSON.stringify(open));
+    } catch (e) {}
+  }
+  function restoreDetails() {
+    try {
+      var raw = sessionStorage.getItem(DKEY);
+      if (!raw) return;
+      sessionStorage.removeItem(DKEY);
+      var open = JSON.parse(raw);
+      document.querySelectorAll('details[id]').forEach(function (d) {
+        if (open.indexOf(d.id) !== -1) d.open = true;
+      });
+    } catch (e) {}
+  }
+  restoreDetails();
   function busyTyping() {
     // NEVER reload out from under a half-typed question. The tray's textarea is #qbox; if it holds
     // text or has focus, the reader is mid-thought and a reload would silently eat it.
@@ -577,6 +602,7 @@ RELOAD_JS = """
         if (mine === null) { mine = rev; return; }  // first sample establishes the baseline
         if (rev === mine || busyTyping()) return;
         try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+        saveDetails();
         location.reload();
       })
       .catch(function () {});                     // server stopped: keep showing the page, keep trying
@@ -919,6 +945,15 @@ def _self_test() -> int:
              lambda: "addEventListener('focus'" in RELOAD_JS)
         case("reload client polls on pageshow (bfcache restore)",
              lambda: "'pageshow'" in RELOAD_JS)
+        # COUNT, not presence: "restoreDetails()" is a substring of its own definition
+        # (`function restoreDetails()`), so a presence check stays green even after the CALL that
+        # invokes it is deleted. >= 2 requires both the definition and at least one call site.
+        case("reload client defines and CALLS saveDetails",
+             lambda: RELOAD_JS.count("saveDetails()") >= 2)
+        case("reload client defines and CALLS restoreDetails",
+             lambda: RELOAD_JS.count("restoreDetails()") >= 2)
+        case("reload client keys folds on id, never on position",
+             lambda: "details[id]" in RELOAD_JS and "String(i)" not in RELOAD_JS)
 
     # --- md_render: one case per construct COUNTED in the corpus, so a regression in the least
     # frequent one (strikethrough, 18 occurrences) fails as loudly as the most frequent.
