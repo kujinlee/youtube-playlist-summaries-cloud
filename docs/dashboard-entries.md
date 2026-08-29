@@ -175,3 +175,40 @@ round is Codex plus coordinator verification, which is weaker than round 1. Roun
 
 ⚠ Out of scope, reported not fixed: `--ink-3` is sub-AA as body text on `--ground` (4.26:1) and
 `--pending-bg` (4.22:1). Pre-existing, not a link issue.
+
+## 2026-08-29
+The second reviewer came back after I'd already committed, and found something worse than what it
+was sent to look for: the readability limit itself had no protection.
+
+The whole point of these tests is a number — 4.5, the level at which text is readable. Changing that
+one number to zero switched off the entire check, on both pages, and the suite still reported
+everything passing. Every future readability problem would have shipped green. The test measured
+carefully against a standard that anyone could delete without noticing.
+
+Both limits are now pinned, along with the list of what gets measured, so quietly shrinking the
+check fails too.
+
+Also worth recording: it independently made — and caught — the same mistake I did earlier today. It
+first measured those seventy links against the wrong backgrounds, got three failures, then checked
+where the links actually sit and withdrew all three. Two reviewers and me, same trap, same exit.
+<!--tech-->
+`CONTRAST_MIN = 4.5 -> 0.0` SURVIVED at 111/111 in `gen-dashboard.py`. `LINK_MIN` in
+`gen-backlog-page.py` was caught, but only incidentally — by a positive-assertion case that happens
+to need a non-empty result. Luck is not a guard; both are now pinned, plus the sweep sets
+(`LINK_FOREGROUNDS`/`LINK_SURFACES`, `LINK_PAIRS`) so narrowing coverage also reddens. Backlog #69's
+class, fresh instance.
+
+Also fixed: `scheme_palettes` demanded `@media(` with no space while the sibling generator emits
+`@media (` with one, so a harmless reformat raised — and because `case` evaluates arguments eagerly,
+that raise arrived as an uncaught traceback that skipped every later case. Regex is now
+whitespace-tolerant (fail on ABSENCE, never formatting) and `_safe()` turns a raise into one failed
+case. Deleting the dark palette for real is still caught, now cleanly at 112/113.
+
+Re-measured with green controls (113/113, 73/73): all seven mutations from both reviewers caught,
+plus three new ones. Their `--ink-3` finding was already closed by the previous commit.
+
+⚠ Round 2 is now CONVERGED and its REVIEW GAP is closed — both halves ran, both with green controls.
+
+⚠ Still open, now quantified: the plan's mutation manifest is 43 before and 43 after, against 17 new
+cases. `--verify-evidence` passing says nothing about whether the contrast guards are
+mutation-covered. Backlog #70.

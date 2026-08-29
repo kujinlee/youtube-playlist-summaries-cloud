@@ -1714,6 +1714,13 @@ def self_test() -> int:
     # stops describing the page — which is exactly how `.num a`'s 70 links went unmeasured.
     case("the page's link rules still match the model that LINK_PAIRS is built from",
          lambda: link_rule_drift(_page) == [])
+    # ⟲ The threshold, pinned EXPLICITLY. `LINK_MIN = 4.5 -> 0.0` is currently caught, but only
+    # incidentally — by a positive-assertion case that happens to need a non-empty result. Luck is
+    # not a guard: state it. (`CONTRAST_MIN` in gen-dashboard.py had the same hole and was NOT
+    # caught at all; measured, it survived at 111/111.)
+    case("the contrast floor is WCAG AA, not a number someone lowered", lambda: LINK_MIN == 4.5)
+    case("...and every modelled link colour is actually paired with a surface",
+         lambda: {fg for fg, _ in LINK_PAIRS} == {"--structural", "--ink-3", "--ink"})
     case("a NEW link rule the model has not heard of is reported, not ignored",
          lambda: any("UNMODELLED" in e for e in link_rule_drift(
              _page.replace("</style>", ".newthing a{color:var(--problem)}</style>", 1))))
