@@ -1354,11 +1354,32 @@ corrections slice above.
       script; Task 6 Step 5 is what makes it gate anything. **FAILS IF** the PR opens with
       `check-dashboard-entry.py` still absent from a `pull_request`-triggered CI job.
 
-⚠ **Known cost, measured, not estimated:** the gate as specified would have refused **all eleven**
-first-parent commits on `master` from 2026-08-28, including a single-file backlog edit. Both review
-halves verified this with `git`. That is the intended cost if every merge deserves a plain-language
-entry — and the `NO-ENTRY:` display (plan v2, Task 2 + 3) is what stops the exemption becoming a
-silent reflex. **This is the one thing to overrule if the cadence proves wrong.**
+✅ **DECIDED 2026-08-28 by the user: keep the gate exactly as specified.** No change to the exempt
+list. The scope question is closed; do not re-open it in a review round.
+
+**The cost, measured rather than estimated.** Of the **13** first-parent merges dated 2026-08-28,
+the gate as specified refuses **12** — the one pass is `929c74b`, whose only files are review
+documents. Re-measured this session by running `verdict()` against each merge's real file list.
+(Both review halves independently found 11 of 11 at 18:20; two merges landed after that, which is
+why the figure moved. Re-derive it, never quote it:
+`git log --first-parent --since=… --until=…`.)
+
+**Narrowing it to code-only was measured and rejected.** Adding `"docs/"` to the exempt list drops
+refusals from 12 to **8** — it buys back four entries, and those four are the dashboard spec, the
+dashboard plan, plan v2 and a backlog fix: the changes hardest to reconstruct from a diff, and the
+ones a *"what changed while I was away"* page most needs. A middle variant (exempt `docs/` except
+specs, plans, backlog and roadmap) refuses **12** — identical to doing nothing, because the merges
+it exempts are exactly the ones it keeps. Not built.
+
+**Why so few escape:** almost nothing here is a pure documentation change. A rule written down in
+this repo usually gets a script enforcing it in the same branch, so the commit is labelled
+`docs(...)` and touches `scripts/` anyway.
+
+⚠ **What now carries the risk is the `NO-ENTRY:` display** (plan v2, Task 2 + Task 3). It is the
+gate's only feedback loop: without it nothing counts exemptions, nobody can see *"eleven of the last
+twelve branches skipped their entry"*, and the page goes on looking healthy while describing less
+and less. Reader-facing explainer of this decision:
+`~/explainers/2026-08-28-brief-entry-gate-cost.html`.
 
 ---
 

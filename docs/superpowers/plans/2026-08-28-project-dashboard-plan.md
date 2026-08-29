@@ -228,8 +228,16 @@ def parse_entries(text: str) -> list[dict]:
         if e["error"] or e["resolves"] is None:
             continue
         if e["resolves"] not in ids:
-            e["error"] = (f"[resolved: {e['resolves']!r}] names no entry in this file"
-                          if e["resolves"] else "[resolved:] with no entry id after it")
+            # THREE distinct diagnoses, because "no such entry" is a lie when
+            # the entry exists and is merely unparseable — the author would go
+            # looking for a typo in the id that is not there.
+            if not e["resolves"]:
+                e["error"] = "[resolved:] with no entry id after it"
+            elif any(o["id"] == e["resolves"] for o in out):
+                e["error"] = (f"[resolved: {e['resolves']}] names an entry that "
+                              f"could not be parsed — fix that entry first")
+            else:
+                e["error"] = f"[resolved: {e['resolves']}] names no entry in this file"
     return out
 ```
 
@@ -1085,6 +1093,8 @@ EXEMPT_DIRS = ("docs/reviews/",)
 EXEMPT_FILES = ("docs/dashboard-entries.md",)
 NO_ENTRY = "NO-ENTRY:"
 
+FENCE = re.compile(r"^(?P<ind> {0,3})(?P<ch>`{3,}|~{3,})")
+
 def exemption_reason(pr_body: str) -> str | None:
     """The reason after a line-leading `NO-ENTRY:`, or None.
 
@@ -1092,20 +1102,59 @@ def exemption_reason(pr_body: str) -> str | None:
     function so the page displays exactly the exemptions the gate granted
     (spec §7). A display that disagrees with the gate is worse than none.
 
-    Fenced code is skipped: the gate's own refusal message contains the
-    literal string `NO-ENTRY: <reason>`, so quoting it back inside a ``` block
-    in a PR body is a plausible accident that would exempt the branch. A `>`
-    blockquote is already safe, because the marker is no longer line-leading.
+    AN EXEMPTION MUST BE DELIBERATE, so anything a Markdown reader would treat
+    as inert text does not count. Four constructs are skipped, and the gate's
+    own refusal message contains the literal string `NO-ENTRY: <reason>` —
+    which is exactly what makes quoting it back an accident waiting to happen:
+
+      * fenced code, with the fence closed only by its OWN character. A ```
+        block is not closed by ~~~, and an unterminated fence runs to the end.
+      * an indented code block — 4+ leading spaces, Markdown's own rule.
+      * an HTML comment, possibly spanning lines. THIS IS THE ONE THAT WOULD
+        HAVE BITTEN: GitHub pull-request templates put their instructions in
+        `<!-- ... -->`, so a template that documented the escape hatch would
+        have silently exempted every branch that used it. This repo has no
+        template today (checked 2026-08-28) — the hole is latent, not active,
+        which is the only reason this is not Blocking.
+      * a `>` blockquote, which was already safe because the marker stops
+        being line-leading.
     """
-    fenced = False
+    fence_ch = None
+    in_comment = False
     for line in pr_body.split("\n"):
-        s = line.strip()
-        if s.startswith("```") or s.startswith("~~~"):
-            fenced = not fenced
+        if not in_comment:
+            m = FENCE.match(line)
+            if m:
+                ch = m.group("ch")[0]
+                if fence_ch is None:
+                    fence_ch = ch
+                elif ch == fence_ch:
+                    fence_ch = None
+                continue
+        if fence_ch is not None:
             continue
-        if fenced or not s.startswith(NO_ENTRY):
+        probe = line
+        while probe:
+            if in_comment:
+                end = probe.find("-->")
+                if end < 0:
+                    probe = ""
+                    break
+                probe, in_comment = probe[end + 3:], False
+            else:
+                start = probe.find("<!--")
+                if start < 0:
+                    break
+                head, probe, in_comment = probe[:start], probe[start + 4:], True
+                if head.strip().startswith(NO_ENTRY):
+                    return head.strip()[len(NO_ENTRY):].strip() or ""
+        if in_comment or not probe:
             continue
-        return s[len(NO_ENTRY):].strip() or ""
+        if len(probe) - len(probe.lstrip(" ")) >= 4:
+            continue
+        s = probe.strip()
+        if s.startswith(NO_ENTRY):
+            return s[len(NO_ENTRY):].strip() or ""
     return None
 
 def verdict(changed: list[str], added_entry: bool, pr_body: str) -> tuple[int, str]:
@@ -1145,6 +1194,24 @@ def _self_test() -> int:
          exemption_reason("NO-ENTRY: typo fix"), "typo fix")
     case("exemption_reason distinguishes empty from absent",
          (exemption_reason("NO-ENTRY:"), exemption_reason("nothing here")), ("", None))
+
+    # --- the inert-text constructs. All MEASURED against the reader, not
+    # assumed. The HTML-comment row is the one that would have bitten: a
+    # GitHub PR template documents itself inside <!-- ... -->.
+    for name, body, want in [
+        ("fenced with ~~~",        "~~~\nNO-ENTRY: inside\n~~~",                    None),
+        ("unterminated fence",     "```\nNO-ENTRY: inside\n",                       None),
+        ("``` is not closed by ~~~", "```\nNO-ENTRY: a\n~~~\nNO-ENTRY: b\n",        None),
+        ("indented code block",    "    NO-ENTRY: indented\n",                      None),
+        ("multi-line HTML comment", "<!--\nNO-ENTRY: commented out\n-->\n",         None),
+        ("one-line HTML comment",  "<!-- NO-ENTRY: nope -->\n",                     None),
+        ("blockquoted",            "> NO-ENTRY: quoted\n",                          None),
+        ("lowercase is not the marker", "no-entry: lower\n",                        None),
+        ("after a CLOSED comment", "<!-- hint -->\nNO-ENTRY: real one\n",     "real one"),
+        ("after a CLOSED fence",   "```\ncode\n```\nNO-ENTRY: real one\n",    "real one"),
+        ("3 spaces is still a declaration", "   NO-ENTRY: ok\n",                    "ok"),
+    ]:
+        case(f"exemption_reason — {name}", exemption_reason(body), want)
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
@@ -1814,6 +1881,40 @@ the argument for the method, not incidental:
 Both are the same shape as B1 and as `docs/portable-practices.md` §17: a check that reports success
 about a subject it never reached. Writing that rule into the Global Constraints did not stop it
 happening twice on the next page. **Only running it did.**
+
+### v2.1 — a third, found by attacking v2's own new code before the reviewers saw it
+
+Round 1's lesson was *execute the material*, so before dispatching round 2 I ran v2's additions
+against their edge cases rather than re-reading them. `_ordered()` held (malformed block first,
+last, several consecutively, entire file malformed — all render in place) and pass 2 held. The
+exemption reader did not:
+
+| Probe | v2 did | Should |
+|---|---|---|
+| `<!--`…`NO-ENTRY: x`…`-->` | **exempted the branch** | ignore |
+| `    NO-ENTRY: x` (4-space indent) | exempted | ignore — Markdown code block |
+| ` ``` ` opened, `~~~` "closing" it | read the line after as a declaration | ignore — a fence closes only with its own character |
+
+**The HTML-comment case is the one that mattered.** GitHub pull-request templates put their
+instructions inside `<!-- ... -->`. A template that documented this very escape hatch would have
+silently exempted every branch that used it — the gate would have reported success on every PR
+while enforcing nothing, and the dashboard's exemption list would have shown it happening, which is
+the only reason it would ever have been caught.
+
+**Why this is not Blocking:** it is latent, not active. Measured 2026-08-28 — this repo has **no**
+`.github/PULL_REQUEST_TEMPLATE`, and PRs #170–#173 contain zero HTML comments. Nothing is exempt
+today that should not be.
+
+`exemption_reason` now tracks fences by their own character, honours the 4-space rule, and skips
+HTML comments across line boundaries; 11 new self-test rows cover all of it, including the three
+constructs that must **still** be read as real declarations (after a closed comment, after a closed
+fence, and a 3-space indent). Re-verified after the change: generator self-test green, gate
+self-test green, controls A–E unchanged, and end-to-end a commented-out `NO-ENTRY:` now refuses
+while a real one passes.
+
+A fourth, smaller: pass 2 said *"names no entry in this file"* even when the entry existed and was
+merely unparseable, sending the author to hunt for a typo that was not there. It now distinguishes
+the three cases.
 
 **Round 1 verdict was NOT CONVERGED from both halves. This is v2, and it has not been reviewed.**
 Round 2 must run **both** halves — they overlapped on only 2 of roughly 26 findings, which is the
