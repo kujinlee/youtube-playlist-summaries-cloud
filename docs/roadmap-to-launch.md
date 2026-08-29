@@ -1383,6 +1383,36 @@ and less. Reader-facing explainer of this decision:
 
 ---
 
+## Backlog #67 — concurrent-agent interference — 🟠 HIGH, ⏭ NEXT AFTER THE DASHBOARD
+
+**Unparked 2026-08-28 at the user's request** (parked 2026-08-27: *"don't forget it. I'd like to have
+stable dev process"*). Sequenced deliberately: **finish the dashboard slice, then this.**
+
+The hazard is measured twice — two review halves on one shared database produced a **false Blocking**
+(23/63 vs 63/63 alone, the same near-identical ratio as the earlier 23/44 vs 44/44), and a peer agent
+ran `git stash` in the working tree the coordinator was committing to.
+
+**Most of it is already engineered out**, re-measured 2026-08-28 rather than recalled: every writer
+is on a PID-suffixed scratch clone, the clone step is fail-closed with `CANNOT RUN … Treat this as
+NOT RUN` (exit 2), and no scratch databases have leaked.
+
+- [ ] **Correct or delete the stale warning.** `scripts/mutate-live-schema-check.sh:25-29` blames
+      `mutate-schema.py` (gate 2), and **`scripts/mutate-schema.py` and `scripts/verify-schema.sh` no
+      longer exist**. **FAILS IF** the header names a script absent from the tree.
+- [ ] **Put the rule where the decision is made.** `docs/plugins.md` — which owns the dual-review
+      dispatch — has **zero** matches for serialise/concurrent/parallel. **FAILS IF** a reader
+      choosing to dispatch two reviewers finds no constraint at the point of choosing.
+- [ ] **Decide whether any of it can be a script** (`dev-process.md`'s own test).
+      ⚠ `pg_try_advisory_lock` was **REJECTED by the user** — a writer-only lock does not protect
+      readers, and extending it to readers would block `--prod` and scratch reads that cannot be
+      corrupted.
+
+**Two residuals stand regardless of cloning:** roles are **cluster-wide**, so a `grant` alters
+`has_table_privilege` in every clone at once; and any subagent that can run `git` can move the
+coordinator's uncommitted work. Both are hand-discipline today.
+
+---
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
