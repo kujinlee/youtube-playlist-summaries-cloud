@@ -62,3 +62,33 @@ the route to that, and a poor one — it keeps a second copy of 1,401 lines in a
 `scripts/check-docs.py:46` marks `FROZEN`. Retarget the 43 mutations at the delivered scripts and
 the guarantee gets stronger while the byte-identity requirement dissolves. A supersession, not a
 switch-off.
+
+## 2026-08-29
+Fixed: links on the dashboard were nearly invisible in dark mode. You reported it twice — first the
+blue entry titles, then the purple "Elsewhere" links — and both were the same cause: the page never
+said what colour a link should be, so the browser used its own, which is chosen for white
+backgrounds.
+
+Measured rather than eyeballed. Against the dark background the old colours scored 1.9 and 1.6 out
+of a required 4.5 for readable text; light mode scored 8.8 and 10.4, which is why nobody caught it —
+everyone who reviewed this page, including me, was reading it in light mode. The new colours score
+8.9 and 8.4 in dark, 6.6 and 6.9 in light.
+
+A test now fails if either colour goes missing again, in either mode.
+<!--tech-->
+`scripts/gen-dashboard.py` had no `a{}` rule at all, so `#0000EE` and `:visited` `#551A8B` came from
+the UA sheet. Adds `--link` / `--link-visited` to both `:root` scheme blocks and declares
+`a` and `a:visited` explicitly — `:visited` is stated rather than left to the cascade, since
+browsers restrict and mis-report visited styling.
+
+Two self-test cases, mutation-tested four ways: deleting either rule, or defining either variable in
+only one scheme, reddens exactly the case that names it. Contrast ratios computed, not judged.
+
+⚠ Verified in a real browser at `http://127.0.0.1:7391/dashboard` — every link computes to
+`rgb(140,189,224)` against `rgb(20,24,27)`. `getComputedStyle` reports the unvisited colour even for
+visited links (browser privacy), so the `:visited` rule is confirmed from the served source and the
+guard, not from a computed value.
+
+⚠ First exercise of the plan-as-CI-dependency decided today: this fix required the identical edit in
+`docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` and an evidence regeneration. Backlog
+#70 is what ends that.

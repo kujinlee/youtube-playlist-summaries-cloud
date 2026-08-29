@@ -461,12 +461,19 @@ def build(entries, days, prs, pr_error, git_error, window,
 <style>
 :root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
 --need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
---mono:ui-monospace,SFMono-Regular,Menlo,monospace}}
+--link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}}
 @media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
 --bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
---err:#d98873;--err-bg:#2a1a16}}}}
+--err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
 line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
+/* The browser default link colour is #0000EE, which measures 1.9:1 against the dark
+   --bg (#14181b) — under half WCAG AA's 4.5. It shipped because every reviewer, and
+   the author, read this page in LIGHT mode, where the same colour measures 8.84.
+   A defect visible in only one mode is invisible to anyone who never switches. */
+a{{color:var(--link)}}
+a:visited{{color:var(--link-visited)}}
+a:hover{{color:var(--ink)}}
 .shell{{max-width:820px;margin:0 auto;padding:32px 20px 80px}}
 h2{{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
 color:var(--fg3);border-bottom:1px solid var(--rule);padding-bottom:8px;margin:44px 0 16px}}
@@ -745,6 +752,18 @@ def _self_test() -> int:
     all_ids = re.findall(r'\sid="([^"]+)"', ht)
     case("no duplicate DOM ids", len(all_ids), len(set(all_ids)))
     case("every details has an id", ht.count("<details id="), ht.count("<details"))
+    # A link with no colour rule inherits the browser default #0000EE, which measures
+    # 1.9:1 against the dark --bg — under half WCAG AA. That shipped, because the
+    # page was only ever read in light mode. Assert the rule EXISTS and that --link
+    # is defined in BOTH schemes: defining it once leaves the other scheme inheriting.
+    case("links are coloured in both schemes, never the browser default",
+         ("a{color:var(--link)}" in ht, ht.count("--link:")), (True, 2))
+    # :visited is declared EXPLICITLY rather than left to the cascade. The UA
+    # default #551A8B measures 1.62:1 on the dark --bg — WORSE than the unvisited
+    # blue, and it was the second symptom reported from the same root cause.
+    case("visited links are coloured too, in both schemes",
+         ("a:visited{color:var(--link-visited)}" in ht,
+          ht.count("--link-visited:")), (True, 2))
 
     def _marks(bar):
         """What a SIGHTED reader can tell apart: the bar's own classes and its
