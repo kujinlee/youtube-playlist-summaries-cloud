@@ -131,5 +131,16 @@
    ]
   ],
   "expect": "main: a could-not-tell exits 2 — NEVER 0"
+ },
+ {
+  "name": "the entry ratchet fails OPEN: added is hardcoded true",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    added = any(_added_entry_line(l) for l in patch.stdout.split(\"\\n\"))",
+    "    added = True"
+   ]
+  ],
+  "expect": "collect: a working git still reports the changed files, and NO entry added"
  }
 ]

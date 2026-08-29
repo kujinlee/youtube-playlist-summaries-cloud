@@ -294,7 +294,7 @@ def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[
 # entries it counts gets edited in the same breath as deleting one, which is no guard at all.
 EXPECTED_MUTATIONS = {
     "scripts/gen-dashboard.py": 32,
-    "scripts/check-dashboard-entry.py": 11,
+    "scripts/check-dashboard-entry.py": 12,
 }
 
 MANIFEST_DIR = "scripts/mutations"
@@ -331,7 +331,26 @@ def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
         if not isinstance(entries, list) or not entries:
             problems.append(f"{man.name}: no entries — an empty manifest measures nothing")
             continue
+        seen_names, seen_anchors = set(), set()
         for e in entries:
+            # ⟲ IDENTITY, not just cardinality. EXPECTED_MUTATIONS pins HOW MANY entries a
+            # script has; on its own that is satisfied by replacing one entry with a copy of
+            # another — count unchanged, coverage silently narrowed. Found in branch review
+            # by Codex, reproduced: entry 32 swapped for a duplicate of entry 1, still green.
+            # This is the same error as asserting a threshold's presence instead of measuring
+            # the ratio: a proxy for the property rather than the property.
+            nm, anchors = e.get("name"), tuple(f for f, _ in e.get("edits", []))
+            if nm in seen_names:
+                problems.append(f"{man.name}: duplicate mutation name {nm!r} — two entries "
+                                f"cannot both be the guard for the same named behaviour, and "
+                                f"a duplicate keeps the count while shrinking coverage")
+                continue
+            if anchors and anchors in seen_anchors:
+                problems.append(f"{man.name}: entry {nm!r} repeats the edit anchors of an "
+                                f"earlier entry — it measures nothing new")
+                continue
+            seen_names.add(nm)
+            seen_anchors.add(anchors)
             if e.get("file") != target:
                 problems.append(f"{man.name}: entry {e.get('name')!r} has file "
                                 f"{e.get('file')!r}, which disagrees with the manifest "
@@ -1472,7 +1491,7 @@ def _self_test() -> int:
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
                                       "scripts/gen-dashboard.py"])
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 43)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 44)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
