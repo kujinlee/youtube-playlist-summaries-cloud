@@ -3,7 +3,9 @@
 
     python3 scripts/check-plan-code.py <plan.md>            # assemble, run suites + mutations
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
-    python3 scripts/check-plan-code.py --self-test          # 12 cases
+    python3 scripts/check-plan-code.py <plan.md> --compare scripts/  # ...and diff vs the REAL files
+    python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
+    python3 scripts/check-plan-code.py --self-test          # 44 cases
 
 WHY THIS EXISTS. Three adversarial review rounds on the project-dashboard plan each
 found that its stated evidence was wrong, and each found it BY HAND:
@@ -29,6 +31,15 @@ PROSE is right, that the mutation list is complete, or that a passing case is
 meaningful. An undeclared mutation is invisible to it — which is why the manifest
 lives in the plan under review, where a reviewer reads it.
 
+⚠⚠ ITS SUBJECT IS THE PLAN'S COPY OF THE CODE, NOT THE DELIVERED FILES. Everything
+above happens inside a `TemporaryDirectory` written from the markdown. Without
+`--compare` this script never opens `scripts/gen-dashboard.py`; a green says the
+DOCUMENT is internally sound and says nothing about what CI ships. Round 4 filed
+exactly that (H1) — `CLAUDE.md`: *"a green check over the wrong subject is an
+assertion in better packaging."* Once the delivered files exist, run with
+`--compare scripts/`, which fails on any byte of drift between the two copies. The
+evidence block always records which of the two subjects was measured.
+
 CONTRACT. In the plan, tag each Python block with the file it belongs to:
 
     <!-- file: gen-dashboard.py -->
@@ -43,6 +54,7 @@ optionally `expect` — a substring of the self-test case name that has to go re
 """
 from __future__ import annotations
 import argparse
+import difflib
 import json
 import pathlib
 import re
@@ -51,29 +63,50 @@ import sys
 import tempfile
 
 FILE_TAG = re.compile(r"<!--\s*file:\s*([A-Za-z0-9._/-]+)\s*-->")
-# `<!-- illustrative -->` marks a python block that is NOT part of an assembled
+# `<!-- illustrative: why -->` marks a python block that is NOT part of an assembled
 # file — a fragment shown for context, or an edit to a file this plan only
 # modifies. It must be DECLARED, never merely absent: an untagged block is
 # exactly how three functions lived as prose through two review rounds.
-ILLUS_TAG = re.compile(r"<!--\s*illustrative\s*-->")
+#
+# THE REASON IS MANDATORY (round 4, M6). A bare `<!-- illustrative -->` excuses a
+# block from every check this script performs, so it is an unbounded hiding vector:
+# arbitrary broken code behind it passes with rc=0. Requiring a reason does not stop
+# a determined author, but it makes each exclusion say what it is, and `--evidence`
+# prints them, so a reader sees what was left out and why.
+#
+# Both forms must stand ALONE on their line — `^…$`, not a search. A plan that
+# *describes* its own conventions writes "`<!-- illustrative -->`" inside backticks
+# in prose, and a bare `.search()` reported that sentence as a defect. Measured
+# while adding this rule: the checker failed on the paragraph explaining it.
+ILLUS_TAG = re.compile(r"^\s*<!--\s*illustrative\s*:\s*(\S.*?)\s*-->\s*$")
+ILLUS_BARE = re.compile(r"^\s*<!--\s*illustrative\s*-->\s*$")
 MUT_TAG = re.compile(r"<!--\s*mutations\s*-->")
 FENCE = re.compile(r"^```(\w*)\s*$")
+# A suite's result line: "45/45 passed", "5/5 cannot-run cases passed", …
+RESULT = re.compile(r"\b\d+/\d+\b.*\bpassed\b")
 
 
-def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str]]:
+def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]:
     """(files -> blocks, mutations, problems). A tag with no block that follows is a
     problem, not a silent skip — that is how a plan loses a function to prose."""
     lines, files, muts, problems = md.split("\n"), {}, [], []
-    pending, want_mut, illus, i = None, False, False, 0
+    pending, want_mut, illus, i = None, False, None, 0
     py_total = py_tagged = py_illus = 0
+    illus_reasons = []
     while i < len(lines):
         line = lines[i]
         if (m := FILE_TAG.search(line)):
             if pending:
                 problems.append(f"file tag for {pending!r} was followed by another tag, not a block")
             pending, want_mut = m.group(1), False
-        elif ILLUS_TAG.search(line):
-            illus = True
+        elif (m := ILLUS_TAG.search(line)):
+            illus = m.group(1)
+        elif ILLUS_BARE.search(line):
+            problems.append(
+                "a bare `<!-- illustrative -->` — the tag must carry a REASON "
+                "(`<!-- illustrative: explainer-serve.py rows, not assembled -->`). "
+                "It excuses a block from every check here, so each exclusion has to "
+                "say what it is")
         elif MUT_TAG.search(line):
             if pending:
                 problems.append(f"file tag for {pending!r} was followed by the mutations tag")
@@ -91,12 +124,13 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str]]:
                     py_tagged += 1
                 elif illus:
                     py_illus += 1
+                    illus_reasons.append(illus)
                 else:
                     problems.append(
                         f"an UNTAGGED ```python block (near line {i}) — the assembler "
                         f"cannot see it, so nothing proves it runs. Tag it with "
                         f"`<!-- file: … -->`, or mark it `<!-- illustrative -->`")
-            illus = False
+            illus = None
             if pending:
                 if f.group(1) != "python":
                     problems.append(f"block for {pending!r} is tagged ```{f.group(1)}, not ```python")
@@ -114,20 +148,57 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str]]:
     if want_mut:
         problems.append("mutations tag has no JSON block after it")
     return files, muts, problems, {"python_fences": py_total,
-                                   "tagged": py_tagged, "illustrative": py_illus}
+                                   "tagged": py_tagged, "illustrative": py_illus,
+                                   "illustrative_reasons": illus_reasons}
 
 
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
-    r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
-                       capture_output=True, text=True, timeout=120)
+    # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
+    # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
+    try:
+        r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
+                           capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return 2, f"CANNOT RUN — {name} --self-test did not finish in 120s. NOT CHECKED."
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
-def check(plan: pathlib.Path) -> tuple[bool, list[str], dict]:
+def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[str], dict]:
+    """Diff each assembled file against the real one in `root`. A missing target is a
+    FAILURE, never a skip: the whole point is that the check reads the shipped file."""
+    problems, seen = [], {}
+    for name in sorted(names):
+        target = root / pathlib.Path(name).name
+        # Read first, ask questions after: `is_file()` and the read are two separate
+        # observations, and only the read is the one the verdict rests on.
+        try:
+            got = target.read_text(encoding="utf-8")
+        except OSError as exc:
+            seen[name] = "MISSING"
+            problems.append(
+                f"--compare: cannot read {target} ({exc}). The delivered file is what "
+                f"CI ships; a check that cannot open it has NOT RUN. Treat as NOT CHECKED.")
+            continue
+        want = (d / name).read_text(encoding="utf-8")
+        if want == got:
+            seen[name] = "identical"
+            continue
+        seen[name] = "DRIFTED"
+        diff = list(difflib.unified_diff(want.split("\n"), got.split("\n"),
+                                         fromfile=f"plan:{name}", tofile=str(target),
+                                         lineterm=""))
+        problems.append(f"--compare: {target} DIFFERS from the plan's blocks "
+                        f"({sum(1 for l in diff if l[:1] in '+-' and l[:3] not in ('+++', '---'))} "
+                        f"changed line(s)) — the mutation evidence describes the plan's copy, "
+                        f"not this file:\n    " + "\n    ".join(diff[:40]))
+    return problems, seen
+
+
+def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool, list[str], dict]:
     md = plan.read_text(encoding="utf-8")
     files, muts, problems, tally = extract(md)
     report, ev = list(problems), {"files": {}, "mutations": [], "survivors": [],
-                                  "tally": tally}
+                                  "tally": tally, "compared": None}
     if not files:
         report.append("no `<!-- file: … -->` tagged Python blocks found — nothing to assemble")
         return False, report, ev
@@ -138,9 +209,18 @@ def check(plan: pathlib.Path) -> tuple[bool, list[str], dict]:
             (d / name).parent.mkdir(parents=True, exist_ok=True)
             (d / name).write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
         ok = not problems
+        if compare is not None:
+            cmp_problems, ev["compared"] = compare_delivered(d, files, compare)
+            if cmp_problems:
+                ok = False
+                report.extend(cmp_problems)
         for name in files:
             rc, out = run_suite(d, name)
-            tail = out.split("\n")[-1] if out else "(no output)"
+            # EVERY result line, not just the last. A file with two suites (a pure
+            # one and a cannot-run one) prints two summaries, and reporting only the
+            # tail silently drops one of them from the evidence.
+            results = [l.strip() for l in out.split("\n") if RESULT.search(l)]
+            tail = " · ".join(results) or (out.split("\n")[-1] if out else "(no output)")
             ev["files"][name] = {"rc": rc, "tail": tail, "blocks": len(files[name])}
             if rc != 0:
                 ok = False
@@ -171,7 +251,12 @@ def check(plan: pathlib.Path) -> tuple[bool, list[str], dict]:
             (d / fname).write_text(src)
             rc, out = run_suite(d, fname)
             (d / fname).write_text(orig)
-            fails = [l.strip()[7:].split(":")[0] for l in out.split("\n") if "[FAIL]" in l]
+            # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
+            # not the first ":". A case name may contain a colon ("collect: a missing
+            # git is a could-not-tell"), and splitting on the first one truncated it to
+            # "collect", so no `expect` naming the full case could ever match.
+            fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
+                     for l in out.split("\n") if "[FAIL]" in l]
             caught = rc != 0
             want = mut.get("expect")
             named = (not want) or any(want in f for f in fails)
@@ -194,16 +279,69 @@ def evidence(ev: dict) -> str:
     if tl:
         out.append(f"  python fences: {tl['python_fences']} "
                    f"({tl['tagged']} assembled, {tl['illustrative']} illustrative)")
+        # What was EXCLUDED, and why. An exclusion nobody can see is the hiding vector.
+        for why in tl.get("illustrative_reasons", []):
+            out.append(f"    not assembled: {why}")
         out.append("")
     for name, f in sorted(ev["files"].items()):
         out.append(f"  {name:28} {f['blocks']:>2} blocks assembled -> {f['tail']}")
     caught = sum(1 for m in ev["mutations"] if m["caught"])
+    out.append("")
+    # The subject is stated in the evidence itself, so a reader cannot mistake a
+    # green over the plan's copy for a green over the delivered scripts (round 4 H1).
+    cmp = ev.get("compared")
+    if cmp is None:
+        out.append("  subject: the PLAN'S COPY of the code. --compare was not given, so")
+        out.append("           nothing here was measured against the files in scripts/.")
+    else:
+        out.append("  subject: the plan's blocks, DIFFED against the delivered files:")
+        for name, verdict in sorted(cmp.items()):
+            out.append(f"    {verdict:10} {name}")
     out.append("")
     out.append(f"  mutations declared and run: {len(ev['mutations'])}, caught {caught}")
     for m in ev["mutations"]:
         out.append(f"    {'caught  ' if m['caught'] else 'SURVIVED'} {m['name']}")
     out.append("```")
     return "\n".join(out)
+
+
+EV_MARK = "GENERATED by scripts/check-plan-code.py — do not edit by hand."
+
+
+def pasted_evidence(md: str) -> str | None:
+    """The evidence block currently pasted into the plan, or None if there is none."""
+    i = md.find(EV_MARK)
+    if i < 0:
+        return None
+    start = md.rfind("```", 0, i)
+    end = md.find("\n```", i)
+    if start < 0 or end < 0:
+        return None
+    return md[start:end + 4]
+
+
+def verify_evidence(plan: pathlib.Path, ev: dict) -> list[str]:
+    """FAIL if the pasted block is not what this run just produced.
+
+    Round 4's Blocking: the block was generated at v4 and never again, so by v5 it
+    reported 25 mutations against 26 and 77 tests against 79 — WRONG, inside the one
+    mechanism built to stop the plan being wrong about its own verification. Being
+    generated bought provenance, not freshness. A derived artifact that is not
+    re-derived on every change is a cached claim, and a cached claim with a
+    `GENERATED` header is read with MORE trust than typed prose, not less.
+    """
+    pasted = pasted_evidence(plan.read_text(encoding="utf-8"))
+    if pasted is None:
+        return ["--verify-evidence: no generated evidence block found in the plan "
+                "(looked for the GENERATED header). Treat this as NOT CHECKED."]
+    fresh = evidence(ev)
+    if pasted.strip() == fresh.strip():
+        return []
+    diff = list(difflib.unified_diff(pasted.strip().split("\n"), fresh.split("\n"),
+                                     fromfile="pasted in the plan",
+                                     tofile="generated by this run", lineterm=""))
+    return ["--verify-evidence: the pasted evidence block is STALE. It describes a "
+            "different run than the one that just happened:\n    " + "\n    ".join(diff[:40])]
 
 
 def _self_test() -> int:
@@ -238,9 +376,20 @@ def _self_test() -> int:
     case("the tally counts one tagged python fence", (tally["python_fences"], tally["tagged"]), (1, 1))
     _f, _m, p2, t2 = extract('```python\nx = 1\n```\n')
     case("an UNTAGGED python block is a problem", len(p2), 1)
-    _f, _m, p3, t3 = extract('<!-- illustrative -->\n```python\nx = 1\n```\n')
-    case("an explicitly ILLUSTRATIVE block is not", p3, [])
+    _f, _m, p3, t3 = extract('<!-- illustrative: a fragment, shown for context -->\n'
+                             '```python\nx = 1\n```\n')
+    case("an explicitly ILLUSTRATIVE block with a reason is not", p3, [])
     case("...and is counted as such", t3["illustrative"], 1)
+    case("...and its reason is recorded for the evidence block",
+         t3["illustrative_reasons"], ["a fragment, shown for context"])
+    # A bare tag excuses a block from every check here with no account of why.
+    _f, _m, p3b, _t = extract('<!-- illustrative -->\n```python\nx = 1\n```\n')
+    # TWO problems, and that is right: the tag is rejected, and the block it was
+    # meant to excuse is then simply untagged. Fail closed in both directions.
+    case("a BARE illustrative tag (no reason) is a problem", len(p3b), 2)
+    case("...and it says a REASON is required", any("REASON" in p for p in p3b), True)
+    case("...and the block it failed to excuse is reported as UNTAGGED",
+         any("UNTAGGED" in p for p in p3b), True)
 
     _, _, p, _t = extract('<!-- file: a.py -->\n<!-- file: b.py -->\n```python\nx = 1\n```\n')
     case("a tag followed by another tag is a problem", len(p), 1)
@@ -270,6 +419,14 @@ def _self_test() -> int:
         ghost_ok, rep, _ = check(pl)
         case("a mutation whose anchor is missing FAILS", ghost_ok, False)
 
+        # A case name containing a colon must still be matchable by `expect`.
+        COLON = GOOD.replace("f returns one", "f: returns one")
+        pl.write_text(COLON + '<!-- mutations -->\n```json\n'
+                      '[{"name": "colon", "file": "m.py", "edits": [["return 1", "return 2"]],'
+                      ' "expect": "f: returns one"}]\n```\n')
+        colon_ok, rep, _ = check(pl)
+        case("an `expect` matches a case name containing a COLON", colon_ok, True)
+
         # A mutation that goes red via a DIFFERENT case than the one named is
         # not evidence for the case it claims — r3's day-anchor shape.
         pl.write_text(GOOD + '<!-- mutations -->\n```json\n'
@@ -285,7 +442,99 @@ def _self_test() -> int:
         surv_ok, rep, ev = check(pl)
         case("a SURVIVING mutation fails the check", surv_ok, False)
 
+        # ── THE CHECKER'S OWN PRIMARY JOB (round 4, H3) ──────────────────────
+        # Three behaviours below were each disabled by a one-line mutant that the
+        # suite passed 19/19: rc!=0 no longer failing, `ok = not problems` no longer
+        # failing, and an unknown mutation target no longer failing. The tool's
+        # single most important behaviour had no case; the nearest one (a file with
+        # no entrypoint) exits 0 and so never reaches the rc!=0 branch at all.
+        RED = ('<!-- file: m.py -->\n```python\ndef f():\n    return 2\n\n\n'
+               'def _self_test():\n'
+               '    print("  [FAIL] f returns one: got %r" % f())\n'
+               '    print("0/1 passed")\n'
+               '    return 1\n\n\n'
+               'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
+        pl.write_text(RED)
+        red_ok, rep, ev = check(pl)
+        case("a plan whose assembled suite goes RED fails the check", red_ok, False)
+        case("...and reports the exit code", any("exited 1" in r for r in rep), True)
+        case("...and the evidence records it", ev["files"]["m.py"]["rc"], 1)
+
+        # An untagged block is reported by extract(); check() must FAIL on it, or
+        # the rule v5 added is advisory and CI (which reads the exit code) is blind.
+        pl.write_text(GOOD + '```python\nwhatever = 1\n```\n')
+        untagged_ok, rep, _ = check(pl)
+        case("an UNTAGGED python block fails the CHECK, not just extract",
+             untagged_ok, False)
+
+        # A mutation aimed at a file that does not exist proves nothing about it.
+        pl.write_text(GOOD + '<!-- mutations -->\n```json\n'
+                      '[{"name": "elsewhere", "file": "nope.py", "edits": [["a", "b"]]}]\n```\n')
+        unk_ok, rep, _ = check(pl)
+        case("a mutation targeting an UNKNOWN file fails the check", unk_ok, False)
+        case("...and names the file", any("unknown file" in r for r in rep), True)
+
+        # ── --compare: the delivered files are the subject, or nothing is ────
+        pl.write_text(GOOD + MUTS)
+        files, _m, _p, _t = extract(GOOD + MUTS)
+        assembled = "\n\n".join(files["m.py"]) + "\n"
+        shipped = pathlib.Path(td) / "shipped"
+        shipped.mkdir()
+
+        _, _, ev_none = check(pl)
+        case("without --compare the evidence says the subject was NOT the real files",
+             ev_none["compared"], None)
+
+        (shipped / "m.py").write_text(assembled)
+        same_ok, rep, ev_same = check(pl, shipped)
+        case("--compare passes when the delivered file matches", same_ok, True)
+        case("...and records it as identical", ev_same["compared"]["m.py"], "identical")
+
+        (shipped / "m.py").write_text(assembled.replace("return 1", "return 3", 1))
+        drift_ok, rep, ev_drift = check(pl, shipped)
+        case("--compare FAILS on any drift from the delivered file", drift_ok, False)
+        case("...and says which file drifted", any("DIFFERS" in r for r in rep), True)
+        case("...and the evidence records the drift", ev_drift["compared"]["m.py"], "DRIFTED")
+
+        (shipped / "m.py").unlink()
+        miss_ok, rep, _ = check(pl, shipped)
+        case("--compare against a MISSING file is a failure, never a skip", miss_ok, False)
+        case("...and says NOT CHECKED", any("NOT CHECKED" in r for r in rep), True)
+
+        # ── --verify-evidence: a GENERATED block still goes stale (round 4, B1) ──
+        pl.write_text(GOOD + MUTS)
+        _, _, ev_fresh = check(pl)
+        fresh = evidence(ev_fresh)
+        pl.write_text(GOOD + MUTS + "\n" + fresh + "\n")
+        _, _, ev2 = check(pl)
+        case("a freshly pasted evidence block verifies", verify_evidence(pl, ev2), [])
+
+        stale = fresh.replace("caught 1", "caught 7", 1)
+        case("the stale fixture really differs", stale != fresh, True)
+        pl.write_text(GOOD + MUTS + "\n" + stale + "\n")
+        _, _, ev3 = check(pl)
+        problems = verify_evidence(pl, ev3)
+        case("a STALE evidence block is a failure", len(problems), 1)
+        case("...and says it is stale", "STALE" in problems[0], True)
+
+        pl.write_text(GOOD + MUTS)
+        _, _, ev4 = check(pl)
+        case("NO evidence block at all is a failure, never a skip",
+             len(verify_evidence(pl, ev4)), 1)
+        case("...and says NOT CHECKED",
+             "NOT CHECKED" in verify_evidence(pl, ev4)[0], True)
+
     print(f"\n{ok}/{ok+fail} passed")
+    # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
+    # it cannot drift silently the way `# 12 cases` did against a 19-case suite.
+    declared = re.search(r"--self-test\s+#\s*(\d+) cases", __doc__ or "")
+    if not declared:
+        print("CANNOT RUN — the docstring no longer declares a case count.")
+        return 1
+    if int(declared.group(1)) != ok + fail:
+        print(f"  [DRIFT] the docstring declares {declared.group(1)} cases; "
+              f"the suite ran {ok + fail}")
+        return 1
     return 1 if fail else 0
 
 
@@ -295,6 +544,14 @@ def main(argv: list[str]) -> int:
     ap.add_argument("plan", nargs="?")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--evidence", action="store_true")
+    ap.add_argument("--verify-evidence", action="store_true",
+                    help="FAIL if the evidence block pasted in the plan is not exactly "
+                         "what this run produces. Generating the block bought "
+                         "provenance; only this buys freshness.")
+    ap.add_argument("--compare", metavar="DIR",
+                    help="diff each assembled file against DIR/<name> and FAIL on any "
+                         "difference. WITHOUT THIS the check reads only the plan's copy "
+                         "of the code and says nothing about the delivered scripts.")
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
@@ -305,7 +562,19 @@ def main(argv: list[str]) -> int:
     if not p.is_file():
         print(f"CANNOT RUN — {p} does not exist. Treat this as NOT CHECKED.", file=sys.stderr)
         return 2
-    ok, report, ev = check(p)
+    cmp_dir = None
+    if a.compare:
+        cmp_dir = pathlib.Path(a.compare)
+        if not cmp_dir.is_dir():
+            print(f"CANNOT RUN — --compare {cmp_dir} is not a directory. NOT CHECKED.",
+                  file=sys.stderr)
+            return 2
+    ok, report, ev = check(p, cmp_dir)
+    if a.verify_evidence:
+        stale = verify_evidence(p, ev)
+        if stale:
+            ok = False
+            report.extend(stale)
     for r in report:
         print(f"  ✗ {r}")
     if a.evidence:

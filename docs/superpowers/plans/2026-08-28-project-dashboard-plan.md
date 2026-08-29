@@ -14,8 +14,18 @@
 **Spec:** `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` (v5, merged `c5fcb07`).
 Section references below (§4, §5, §6.2, §7) are to that spec.
 
-**Version: v4** — folds in **both halves of round 3** (Codex 2B/2H, Claude 2B/4H/7M/7L, both NOT
-CONVERGED) and makes the evidence generated rather than typed.
+**Version: v6** — folds in **both halves of round 4** (Codex 3 findings; Claude 1 Blocking, 6 High,
+6 Medium, 5 Low; both NOT CONVERGED). v5 folded in round 4's Codex half; v4 folded in both halves of
+round 3 (Codex 2B/2H, Claude 2B/4H/7M/7L) and made the evidence generated rather than typed.
+
+**Round 4's Blocking is the point of v6, and it is about this header.** The evidence block was
+generated at v4 and never regenerated, so it described v4's run while sitting under a v5 document —
+the fourth round running in which what failed was *the plan's account of its own verification*, this
+time **inside the mechanism built to stop exactly that**. The lesson is not that generating was
+wrong. It is that **a derived artifact which is not re-derived on every change is a cached claim
+with better provenance**, and therefore worse than a typed one. v6 replaces the rule with a check:
+`check-plan-code.py --verify-evidence` exits 1 when the pasted block is not what the current
+document produces, and it runs in CI.
 
 **Round 3's finding was that this document's evidence could not be trusted.** Its blocks did not
 assemble — no import block for one file, no `__main__` dispatch for the other, three functions
@@ -276,8 +286,16 @@ def verdict(changed: list[str], added_entry: bool, pr_body: str) -> tuple[int, s
 ⚠ `reason` is **three-valued**: a non-empty string exempts, `""` means the marker was present with
 nothing after it and must **refuse**, `None` means absent. `if reason:` alone conflates the last two.
 
-- [ ] **Step 4: Add the self-test and run it.** Expected: exit 0, no `[FAIL]` lines. **Do not check
-the count** — see Global Constraints.
+- [ ] **Step 4: Add the PURE self-test and run it.** Expected: exit 0, no `[FAIL]` lines. **Do not
+check the count** — see Global Constraints.
+
+⚠ This block is `_self_test` and nothing else. It covers only functions that exist by the end of
+Step 3; the cannot-run cases for `collect` and `main` arrive in Step 5 as a **second** function,
+because a step must be runnable at the point it is read. **Until v6 this block was silently
+re-included whole inside Step 5's**, so an implementer following the blocks wrote 74 lines twice and
+one following the step titles wrote them once — and neither suite could tell, because Python keeps
+the second definition. Worse, `check-plan-code.py` applies each edit with `replace(…, 1)`, so any
+mutation anchored in the self-test landed on the **dead first copy**.
 
 <!-- file: scripts/check-dashboard-entry.py -->
 ```python
@@ -296,6 +314,13 @@ def _self_test() -> int:
     case("code change with entry passes", verdict(["lib/x.ts"], True, "")[0], 0)
     case("NO-ENTRY declaration passes", verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[0], 0)
     case("NO-ENTRY without a reason is refused", verdict(["lib/x.ts"], False, "NO-ENTRY:")[0], 1)
+    # ⚠ `reason` is three-valued and both empty-vs-absent branches return 1, so the
+    # CODE cannot tell them apart — only the message can. Round 4's M3: deleting the
+    # empty-reason branch entirely left 45/45 green, which made the distinction the
+    # ⚠ calls load-bearing purely cosmetic. Assert the MESSAGE, as the sibling case
+    # below already does for the other branch.
+    case("...and says the marker was present with nothing after it",
+         "no reason after it" in verdict(["lib/x.ts"], False, "NO-ENTRY:")[1], True)
     case("review-only branch is exempt", verdict(["docs/reviews/r1.md"], False, "")[0], 0)
     case("entry-only branch is exempt", verdict(["docs/dashboard-entries.md"], False, "")[0], 0)
     case("no changes at all passes", verdict([], False, "")[0], 0)
@@ -356,11 +381,16 @@ def _self_test() -> int:
     return 1 if fail else 0
 ```
 
-- [ ] **Step 5: Add the git collector, `main`, and the dispatch**
+- [ ] **Step 5: Add the git collector, its cannot-run suite, `main`, and the dispatch**
 
 ⚠ **The `if __name__` line is part of this step.** Without it the file exits 0 silently, and a
 control harness reads that as success — round 3 measured controls A–F all printing `rc=0` against
 exactly that.
+
+⚠ **`_impure_self_test` is the point of this step, not decoration.** `collect` and `main` are the
+only two functions in this file that can *fail to run*, and they were the only two with no coverage
+at all. The gate refusing to run must be distinguishable from the gate passing — `main` returns
+**2**, never 0. Run `--self-test` after this step and expect **two** result lines.
 
 <!-- file: scripts/check-dashboard-entry.py -->
 ```python
@@ -380,7 +410,21 @@ def collect(base: str) -> tuple[list[str], bool, str | None]:
     return changed, added, None
 
 
-def _self_test() -> int:
+def _impure_self_test() -> int:
+    """The cannot-run contract for the layer that touches git.
+
+    SEPARATE from `_self_test` on purpose. `_self_test` is added in Step 4, where
+    `collect` and `main` do not exist yet — folding these cases into it would make
+    Step 4's stated outcome ("exit 0, no [FAIL] lines") impossible to observe, and a
+    step whose outcome cannot occur is the defect rounds 2, 3 and 4 each filed. Both
+    suites run; `main --self-test` fails if either does.
+
+    Round 4 measured three one-line mutations here, ALL GREEN against the whole
+    45-case suite: `return 2` becoming `return 0` — which turns this ratchet
+    FAIL-OPEN, merging a branch with no entry on a git hiccup — the returncode check
+    becoming `if False`, and the OSError branch returning `err=None`. `collect()` and
+    `main()` had no coverage at all.
+    """
     ok = fail = 0
 
     def case(name, got, want):
@@ -391,68 +435,50 @@ def _self_test() -> int:
             fail += 1
             print(f"  [FAIL] {name}: got {got!r} want {want!r}")
 
-    case("code change with no entry is refused", verdict(["lib/x.ts"], False, "")[0], 1)
-    case("code change with entry passes", verdict(["lib/x.ts"], True, "")[0], 0)
-    case("NO-ENTRY declaration passes", verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[0], 0)
-    case("NO-ENTRY without a reason is refused", verdict(["lib/x.ts"], False, "NO-ENTRY:")[0], 1)
-    case("review-only branch is exempt", verdict(["docs/reviews/r1.md"], False, "")[0], 0)
-    case("entry-only branch is exempt", verdict(["docs/dashboard-entries.md"], False, "")[0], 0)
-    case("no changes at all passes", verdict([], False, "")[0], 0)
-    case("mixed exempt and real is refused", verdict(["docs/reviews/r.md", "lib/x.ts"], False, "")[0], 1)
-    case("refusal explains itself", "entry" in verdict(["lib/x.ts"], False, "")[1].lower(), True)
-    case("NO-ENTRY reason is echoed", "typo fix" in verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[1], True)
-    case("a lookalike filename is NOT exempt", verdict(["docs/dashboard-entries.md.bak"], False, "")[0], 1)
-    case("a lookalike directory is NOT exempt", verdict(["docs/reviews-not-really/x.ts"], False, "")[0], 1)
+    class _R:
+        def __init__(self, rc, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
 
-    fenced = "```\nNO-ENTRY: example from the docs\n```"
-    case("NO-ENTRY inside a code fence does not exempt", verdict(["lib/x.ts"], False, fenced)[0], 1)
-    case("exemption_reason reads a real declaration", exemption_reason("NO-ENTRY: typo fix"), "typo fix")
-    case("exemption_reason distinguishes empty from absent",
-         (exemption_reason("NO-ENTRY:"), exemption_reason("nothing here")), ("", None))
+    def _with_run(stub, call):
+        real = subprocess.run
+        subprocess.run = stub
+        try:
+            return call()
+        finally:
+            subprocess.run = real      # restored even if `call` raises
 
-    for name, body, want in [
-        ("fenced ```",                  fenced,                                        None),
-        ("a SHORT fence does not close a longer fence",
-                                        "`````\n```\nNO-ENTRY: sneaky\n`````\n",       None),
-        ("...same for tildes",          "~~~~\n~~~\nNO-ENTRY: sneaky2\n~~~~\n",       None),
-        ("an EQUAL-length fence does close",
-                                        "```\ncode\n```\nNO-ENTRY: real\n",        "real"),
-        ("fenced with ~~~",             "~~~\nNO-ENTRY: inside\n~~~",                  None),
-        ("unterminated fence",          "```\nNO-ENTRY: inside\n",                     None),
-        ("``` is not closed by ~~~",    "```\nNO-ENTRY: a\n~~~\nNO-ENTRY: b\n",        None),
-        ("indented code block",         "    NO-ENTRY: indented\n",                    None),
-        ("TAB-indented code block",     "\tNO-ENTRY: tabbed\n",                        None),
-        ("indented, with a comment later on the line",
-                                        "    NO-ENTRY: sneaky <!-- c -->\n",           None),
-        ("multi-line HTML comment",     "<!--\nNO-ENTRY: commented out\n-->\n",        None),
-        ("one-line HTML comment",       "<!-- NO-ENTRY: nope -->\n",                   None),
-        ("blockquoted",                 "> NO-ENTRY: quoted\n",                        None),
-        ("lowercase is not the marker", "no-entry: lower\n",                           None),
-        ("CRLF body still reads",       "NO-ENTRY: crlf\r\n",                        "crlf"),
-        ("after a CLOSED comment",      "<!-- hint --> NO-ENTRY: real one\n",    "real one"),
-        ("after a CLOSED fence",        "```\ncode\n```\nNO-ENTRY: real one\n",  "real one"),
-        ("3 spaces is still a declaration", "   NO-ENTRY: ok\n",                       "ok"),
-    ]:
-        case(f"exemption_reason — {name}", exemption_reason(body), want)
+    def _boom(*a, **k):
+        raise OSError("git is not installed")
 
-    # ─── the header grammar, shared with the parser ───
-    case("a real date header counts", _added_entry_line("+## 2026-08-28"), True)
-    case("a flagged header counts", _added_entry_line("+## 2026-08-28 [needs-you]"), True)
-    case("a non-date header does NOT count", _added_entry_line("+## not-a-date"), False)
-    case("an impossible date does NOT count", _added_entry_line("+## 2026-02-30"), False)
-    case("a REMOVED header does not count", _added_entry_line("-## 2026-08-28"), False)
-    case("'##' with no space does NOT count", _added_entry_line("+##2026-08-28"), False)
-    # The five shapes v2.2 claimed could not diverge, and did.
-    case("a suffixed date does NOT count", _added_entry_line("+## 2026-08-28-foo"), False)
-    case("a trailing dot does NOT count", _added_entry_line("+## 2026-08-28."), False)
-    case("a typo'd flag does NOT count", _added_entry_line("+## 2026-08-28 [needs-yo]"), False)
-    case("a title on the header line does NOT count",
-         _added_entry_line("+## 2026-08-28 rambling title text"), False)
-    case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
-    case("header_error is None on a good header", header_error("## 2026-08-28 [needs-you]"), None)
+    ch, ad, err = _with_run(_boom, lambda: collect("master"))
+    case("collect: a missing git is a could-not-tell, not 'nothing changed'",
+         (ch, ad, bool(err)), ([], False, True))
+    ch, ad, err = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
+                            lambda: collect("master"))
+    case("collect: a non-zero git exit is a could-not-tell, not 'nothing changed'",
+         (ch, ad, bool(err)), ([], False, True))
+    ch, ad, err = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
+                            lambda: collect("master"))
+    case("collect: a working git still reports the changed files",
+         (ch, err), (["lib/x.ts"], None))
 
-    print(f"\n{ok}/{ok+fail} passed")
+    # main's dispatch on that error is the fail-closed half, and it is the single
+    # worst line in this file to get wrong: rc 0 merges the branch.
+    import contextlib as _cl, io as _io
+    g = globals()
+    real_collect = g["collect"]
+    g["collect"] = lambda base: ([], False, "could not run git: boom")
+    try:
+        with _cl.redirect_stdout(_io.StringIO()) as buf:
+            rc = main(["--base", "master"])
+    finally:
+        g["collect"] = real_collect
+    case("main: a could-not-tell exits 2 — NEVER 0", rc, 2)
+    case("...and says NOT CHECKED", "NOT CHECKED" in buf.getvalue(), True)
+
+    print(f"{ok}/{ok+fail} cannot-run cases passed")
     return 1 if fail else 0
+
 
 
 def main(argv: list[str]) -> int:
@@ -463,7 +489,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--pr-body-file", default=None)
     a = ap.parse_args(argv)
     if a.self_test:
-        return _self_test()
+        # BOTH suites, both always run. `or` would short-circuit and hide the
+        # cannot-run cases whenever the pure suite is already red.
+        pure, impure = _self_test(), _impure_self_test()
+        return 1 if (pure or impure) else 0
     changed, added, err = collect(a.base)
     if err:
         print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
@@ -487,21 +516,39 @@ if __name__ == "__main__":
 script at A before it prints a verdict. ⛔ **No `git stash`** — on a committed file it does nothing;
 the only input `collect()` has is `git diff <base>...HEAD`, so a falsifier must change that.
 
+⛔ **The block asserts an exact code per row, and refuses to start if the gate script is not
+there.** v5 stopped at *"if any row prints `ok`, stop"*, and round 4 measured what that misses: run
+from a directory where the `cp` silently failed, **every row prints `rc=2`, no row prints `ok`, and
+the stated stop-condition is satisfied by a run that tested nothing**. `rc=2` is the gate's own
+*cannot run* code — the one value that is neither pass nor refusal — and the criterion was blind to
+exactly it. The reviewer hit this by accident, having the file one directory up, which is precisely
+how an implementer meets it.
+
 ```bash
 D=$(mktemp -d); cd "$D" || exit 1
 git init -q .; git config user.email t@t; git config user.name t
-mkdir -p docs scripts; cp "$OLDPWD/scripts/check-dashboard-entry.py" scripts/
+mkdir -p docs scripts
+cp "$OLDPWD/scripts/check-dashboard-entry.py" scripts/ \
+  || { echo "CANNOT RUN — the gate script did not copy. Treat this as NOT TESTED."; exit 1; }
+test -s scripts/check-dashboard-entry.py \
+  || { echo "CANNOT RUN — scripts/check-dashboard-entry.py is absent or empty. NOT TESTED."; exit 1; }
 git add -A; git commit -qm base; git branch -M master; git checkout -qb feature
 
+GOT=""
+row() {  # row <label> — records the code so the verdict is compared, never eyeballed
+  python3 scripts/check-dashboard-entry.py --base master; local rc=$?
+  printf '  %-32s rc=%s\n' "$1" "$rc"; GOT="$GOT$1=$rc;"
+}
+
 mkdir -p lib; echo "x" > lib/x.ts; git add -A; git commit -qm code
-python3 scripts/check-dashboard-entry.py --base master; echo "A rc=$?"      # want REFUSED 1
+row A                                                                      # want REFUSED 1
 
 printf '## 2026-08-28\nDid a thing.\n' > docs/dashboard-entries.md
 git add -A; git commit -qm entry
-python3 scripts/check-dashboard-entry.py --base master; echo "B rc=$?"      # want ok 0
+row B                                                                      # want ok 0
 
-git rm -q docs/dashboard-entries.md; git commit -qm remove                  # THE FALSIFIER
-python3 scripts/check-dashboard-entry.py --base master; echo "C rc=$?"      # want REFUSED 1
+git rm -q docs/dashboard-entries.md; git commit -qm remove                 # THE FALSIFIER
+row C                                                                      # want REFUSED 1
 
 mkdir -p docs   # NOT optional: C's `git rm` removed the last file in docs/ and git
                 # removed the directory. Without this the printf fails, nothing is
@@ -509,25 +556,33 @@ mkdir -p docs   # NOT optional: C's `git rm` removed the last file in docs/ and 
                 # passing without ever exercising the date rule. MEASURED.
 printf '## not-a-date\nDid a thing.\n' > docs/dashboard-entries.md
 git add -A; git commit -qm baddate
-git diff -U0 master...HEAD -- docs/dashboard-entries.md | grep '^+##'       # must print it
-python3 scripts/check-dashboard-entry.py --base master; echo "D rc=$?"      # want REFUSED 1
+git diff -U0 master...HEAD -- docs/dashboard-entries.md | grep '^+##'      # must print it
+row D                                                                      # want REFUSED 1
 
 printf '## 2026-08-28\nDid a thing.\n' > docs/dashboard-entries.md
 git add -A; git commit -qm gooddate
-python3 scripts/check-dashboard-entry.py --base master; echo "E rc=$?"      # want ok 0
+row E                                                                      # want ok 0
 
+n=0
 for h in '## 2026-08-28-foo' '## 2026-08-28.' '## 2026-08-28 [needs-yo]' \
          '## 2026-08-28 rambling title' '##2026-08-28'; do
+  n=$((n+1))
   printf '%s\nBody.\n' "$h" > docs/dashboard-entries.md
   git add -A; git commit -qm t >/dev/null
-  python3 scripts/check-dashboard-entry.py --base master >/dev/null
-  printf '  %-32s rc=%s\n' "$h" "$?"                                       # want 1 each
+  row "F$n"                                                                # want 1 each
 done
+
+WANT="A=1;B=0;C=1;D=1;E=0;F1=1;F2=1;F3=1;F4=1;F5=1;"
+if [ "$GOT" = "$WANT" ]; then echo "CONTROLS OK"; else
+  echo "CONTROLS FAILED — the gate does not behave as specified."
+  echo "  want $WANT"; echo "  got  $GOT"
+fi
 cd "$OLDPWD"; rm -rf "$D"
 ```
 
-**If A, C, D or any F row prints `ok`, the gate does not work — stop.** C is the falsifier proper;
-D and E are a matched pair, because D alone can pass for the wrong reason.
+**Anything but `CONTROLS OK` is a stop.** C is the falsifier proper; D and E are a matched pair,
+because D alone can pass for the wrong reason. The `want`/`got` pair is printed on failure so the
+*shape* of the disagreement is visible — an all-`2` row means the gate never ran, not that it refused.
 
 - [ ] **Step 7: Commit.**
 
@@ -595,7 +650,11 @@ def _exemption_reader():
 ⚠ **`BLOCK` is loose and `HEADER` is strict, deliberately.** `BLOCK` decides what *starts* an entry,
 so `##2026-08-28` is CAPTURED rather than vanishing. `HEADER` decides whether it is *well-formed*.
 
-- [ ] **Step 2: Write the failing test**, then **Step 3: implement the parser**
+- [ ] **Step 2: implement the parser.** ⚠ **Its cases live in Task 4 Step 3**, with the rest of
+`gen-dashboard.py`'s suite — this step writes the parser and nothing else, and there is no `--self-test`
+to run until Task 4. v5 titled this *"Write the failing test, then implement the parser"* and followed
+it with one block, the parser. **A step whose stated outcome cannot occur at that point is the defect
+rounds 2, 3 and 4 each filed** — and v5's own warning to that effect sits three lines below this line.
 
 <!-- file: scripts/gen-dashboard.py -->
 ```python
@@ -838,11 +897,40 @@ def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
 alarm is derived from this number.
 
 - [ ] **Step 3: Verify `commit_dates` and `open_prs` against the real repo**, then falsify the
-could-not-tell contract with `gh` off the `PATH`. **If either prints `0` with `err: None`, the
-collector reports "nothing" where it means "could not ask" — stop.**
+could-not-tell contract with `gh` off the `PATH`. **Compare the PAIR — the run with the binaries and
+the run without. A `0` is meaningful only next to the `None` it is not.**
 
-⛔ `no_entry_prs` is verified in Task 6 Step 5, where a synthetic body makes a `0` distinguishable
-from a `[]`.
+```bash
+cat > /tmp/probe.py <<'PY'
+import importlib.util as u
+s = u.spec_from_file_location("g", "scripts/gen-dashboard.py")
+g = u.module_from_spec(s); s.loader.exec_module(g)
+for label, call in (("commit_dates", lambda: g.commit_dates(14)),
+                    ("open_prs",     g.open_prs),
+                    ("no_entry_prs", g.no_entry_prs)):
+    v, err = call()
+    print(f"  {label:14} n={'None' if v is None else len(v):>4}  err={err!r}")
+PY
+PY3=$(command -v python3)   # ⛔ absolute: emptying PATH hides the INTERPRETER too, and
+                            #    `env PATH=/nonexistent python3` then dies before the
+                            #    falsifier runs at all. Measured while writing this step.
+echo "--- WITH the binaries ---";  "$PY3" /tmp/probe.py
+echo "--- WITHOUT them ---";       env PATH=/nonexistent "$PY3" /tmp/probe.py
+```
+
+**Stop unless BOTH hold:** with the binaries present every `err` is `None`; with the `PATH` emptied
+every one of the three returns `n=None` and a non-empty `err`. **Do not stop merely because a count
+is `0`.**
+
+⚠ Round 4 measured why: against this repo today `open_prs` returns `0 / err: None` and that is the
+**correct answer** — there are genuinely no open pull requests — so v5's *"if either prints `0` with
+`err: None`, stop"* halts the implementer on a working collector. The plan already makes exactly this
+argument three tasks later for `no_entry_prs` (*"`0` is also the correct answer today, so the
+falsifier is the only thing that distinguishes them"*) and did not apply it to the step in front of
+it. **A count cannot discriminate "nothing" from "could not ask"; only the pair can.**
+
+⛔ `no_entry_prs` is additionally verified in Task 6 Step 5, where a synthetic body makes a `0`
+distinguishable from a `[]` on live data.
 
 ---
 
@@ -1281,6 +1369,19 @@ def _self_test() -> int:
          _marks(gap) != _marks(written), True)
     case("that mark is named for a reader", "no entry" in gap.lower(), True)
 
+    # §5: "Orange = that day has an unresolved needs-you entry" — the chart's PRIMARY
+    # signal, and until round 4 the only one of the three with no comparison. `cls =
+    # "bar needs" if day["needs_you"] else "bar"` could be replaced by `cls = "bar"`
+    # and the whole suite stayed green: `needs-you day is flagged` above asserts
+    # bucket_days' DATA, not the bar. Every other surviving trace of that mutation
+    # lives in title/aria/.vh — the three channels _marks exists to exclude.
+    needs = _bar({"date": "D", "commits": 3, "needs_you": True, "has_entry": True}, 3)
+    calm = _bar({"date": "D", "commits": 3, "needs_you": False, "has_entry": True}, 3)
+    case("§5 a needs-you day is marked in SIGHTED output",
+         _marks(needs) != _marks(calm), True)
+    case("...and the mark is the needs class, not an incidental difference",
+         "needs" in _marks(needs)[0] and "needs" not in _marks(calm)[0], True)
+
     # §5: a bar only links where there is an entry to land on.
     case("a bar with no entry is not a dead link", 'href="#day-' in gap, False)
     case("a bar with an entry does link", 'href="#day-' in written, True)
@@ -1335,6 +1436,57 @@ def _self_test() -> int:
          "could not be parsed" in (baddate or ""), True)
     case("...and is distinguishable from a genuinely absent target",
          "names no entry" in (absent or ""), True)
+
+    # ── THE COLLECTORS' CANNOT-RUN CONTRACT (round 4, H2) ────────────────────
+    # Global Constraint #3 — `"cannot run" is a FAILURE, never a pass` — had NO
+    # executable guard. Round 4 measured six one-line mutations that each turn a
+    # broken `git`/`gh` into a confident zero, all green: the git-failure branch
+    # deleted, `return None, err` becoming `return [], None`, the JSONDecodeError
+    # branch returning `[]`. The whole impure layer was unreachable from the suite,
+    # so `subprocess.run` is swapped for a stub. Cheap, pure, and it makes the
+    # constraint falsifiable instead of merely stated.
+    import subprocess as _sp
+
+    class _R:                       # a completed process with a chosen outcome
+        def __init__(self, rc, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+
+    def _with_run(stub, call):
+        real = _sp.run
+        _sp.run = stub
+        try:
+            return call()
+        finally:
+            _sp.run = real           # restored even if `call` raises
+
+    def _raises(exc):
+        def _f(*a, **k):
+            raise exc
+        return _f
+
+    for label, call in (("commit_dates", lambda: commit_dates(14)),
+                        ("open_prs", open_prs),
+                        ("no_entry_prs", no_entry_prs)):
+        # (a) the binary is missing entirely
+        v, err = _with_run(_raises(OSError("no such binary")), call)
+        case(f"{label}: a missing binary is a could-not-tell, not an empty result",
+             (v, bool(err)), (None, True))
+        # (b) the binary runs and FAILS — the exit code must not be ignored
+        v, err = _with_run(lambda *a, **k: _R(2, "", "boom"), call)
+        case(f"{label}: a non-zero exit is a could-not-tell, not an empty result",
+             (v, bool(err)), (None, True))
+
+    # (c) `gh` succeeds and returns something that is not JSON. Round 4's U13: the
+    # JSONDecodeError branch returning `[], None` renders as a confident zero.
+    v, err = _with_run(lambda *a, **k: _R(0, "not json at all", ""), open_prs)
+    case("open_prs: unparseable gh output is a could-not-tell, not zero",
+         (v, bool(err)), (None, True))
+
+    # (d) ...and the happy path still works through the same seam, so the cases
+    # above cannot be passing merely because the stub broke everything.
+    v, err = _with_run(lambda *a, **k: _R(0, '[{"number": 9, "title": "T"}]', ""), open_prs)
+    case("open_prs: a well-formed gh response is returned as data", (v, err),
+         ([{"number": 9, "title": "T"}], None))
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
@@ -1399,14 +1551,54 @@ if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 ```
 
-- [ ] **Step 5: Run the plan's own checker**
+- [ ] **Step 5: Run the plan's own checker — against the files you just wrote**
 
 ```bash
-python3 scripts/check-plan-code.py docs/superpowers/plans/2026-08-28-project-dashboard-plan.md
+python3 scripts/check-plan-code.py \
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare scripts/
 ```
 
-This assembles both files from the blocks above, runs both suites, and runs every mutation in the
-manifest. **It fails if any mutation survives, or is caught by a case other than the one it names.**
+This assembles both files from the blocks above, runs both suites, runs every mutation in the
+manifest, **and diffs each assembled file against the one in `scripts/`.** It fails if any mutation
+survives, is caught by a case other than the one it names, or **the file you wrote differs by a
+single byte from the plan's blocks.**
+
+⛔ **`--compare` is not optional here, and v5 omitting it was round 4's H1.** Without it the checker
+works entirely inside a `TemporaryDirectory` written from the markdown: it never opens
+`scripts/gen-dashboard.py` at all. v5 offered this step to the implementer as verification of *their
+own work* and it verified **the document**. Mistype a line into the delivered file and v5's Step 5
+still printed `OK`.
+
+That is this session's own recurring defect — *a checker pointed at the wrong subject* — committed
+while building the tool against it. `CLAUDE.md`: **"A script beats a claim only when it reads the
+thing the claim is about. A green check over the wrong subject is an assertion in better packaging,
+and more dangerous than prose, because nobody re-examines it."**
+
+The evidence block now names its subject in its own output, so a bare run cannot be mistaken for a
+compared one:
+
+```
+  subject: the PLAN'S COPY of the code. --compare was not given, so
+           nothing here was measured against the files in scripts/.
+```
+
+- [ ] **Step 5a: Regenerate the Standing evidence block in the COMPARED form, and commit it.**
+
+```bash
+python3 scripts/check-plan-code.py \
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare scripts/ --evidence
+# paste the block over the one under "Standing evidence", then:
+python3 scripts/check-plan-code.py \
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare scripts/ --verify-evidence
+```
+
+⛔ **This step is not optional and it is not cosmetic — without it the CI step added in Task 6 is
+red by construction.** The block committed today was generated *without* `--compare`, because
+`scripts/gen-dashboard.py` does not exist until this task creates it; its subject line says so in as
+many words. The CI step runs `--compare scripts/ --verify-evidence`, and a compared run produces a
+different block. **The two must be brought into agreement here, at the first moment both files
+exist.** Expected after the paste: `OK`, and the block's subject reading
+`the plan's blocks, DIFFED against the delivered files` with both files `identical`.
 
 - [ ] **Step 6: Generate and look at it**
 
@@ -1460,7 +1652,7 @@ the page had not changed and misapply itself when it had.
 - [ ] **Step 3: Rows that can fail** — COUNT, not presence, since `"restoreDetails()"` is a substring
 of `function restoreDetails()`:
 
-<!-- illustrative -->
+<!-- illustrative: assertion rows added to scripts/explainer-serve.py's OWN suite, not to a file this plan assembles -->
 ```python
         case("reload client defines and CALLS saveDetails",
              lambda: RELOAD_JS.count("saveDetails()") >= 2)
@@ -1526,8 +1718,20 @@ entry's text; append a block and remove it afterwards.
       - name: check-dashboard-entry self-test
         run: python3 scripts/check-dashboard-entry.py --self-test
 
-      - name: plan code assembles and its mutations are caught
-        run: python3 scripts/check-plan-code.py docs/superpowers/plans/2026-08-28-project-dashboard-plan.md
+      # --compare is what makes this step mean what its name says. Without it the
+      # step measures the plan's COPY of ~1,100 lines and never opens the files CI
+      # ships; the first bug fixed in scripts/gen-dashboard.py would leave the plan
+      # green while the mutation evidence described a file that no longer exists in
+      # that form. Round 4, H1.
+      # --verify-evidence is the other half. The block is GENERATED, which round 4
+      # proved buys provenance and not freshness: it was generated once at v4 and
+      # described a run two versions old. CI is where "regenerate it" stops being a
+      # rule somebody has to remember.
+      - name: the plan's code and the DELIVERED scripts are the same, its mutations are caught, and its evidence is fresh
+        run: |
+          python3 scripts/check-plan-code.py \
+            docs/superpowers/plans/2026-08-28-project-dashboard-plan.md \
+            --compare scripts/ --verify-evidence
 
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
@@ -1575,9 +1779,12 @@ Add to `docs/dev-process.md`'s "What is mechanically enforced" table:
 |---|---|
 | `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` — which the dashboard then **displays**. Owns the entry-header grammar the page imports (`--self-test`) |
 | `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited; composed through `brief-compose.py` so it cannot lose its Ask tray (`--self-test`) |
-| `scripts/check-plan-code.py` | a plan's code blocks ASSEMBLE and run, and every mutation it declares is caught by the case it names (`--self-test`) |
+| `scripts/check-plan-code.py` | a plan's code blocks ASSEMBLE and run, every mutation it declares is caught by the case it names, the DELIVERED scripts match the plan byte-for-byte (`--compare`), and its evidence block is not stale (`--verify-evidence`) (`--self-test`) |
 
-⚠ Re-measure the line budget with `wc -l` first.
+⚠ **Re-measure the line budget with `wc -l` first, and know that it is tight.** Measured 2026-08-29:
+`docs/dev-process.md` is **214** lines against `scripts/check-docs.py`'s budget of **220** — three
+pointer rows leave **three lines of headroom**, and the third row above is long enough to wrap. If it
+does not fit, the fix is a shorter row, not a bigger budget.
 
 **UPDATE** the existing `## Project dashboard` section in `docs/roadmap-to-launch.md` — tick the
 steps and refresh the status line. **Do not add a section**; one already exists.
@@ -1587,6 +1794,13 @@ steps and refresh the status line. **Do not add a section**; one already exists.
 ```bash
 git log --oneline origin/master..HEAD      # confirm the branch carries ONLY this work
 git push -u origin <branch>
+
+# WRITE the body first. The only other /tmp/pr-body.md in this plan is created by the
+# CI snippet in Step 5, inside the runner — it does not exist on your machine, and
+# `gh --body-file` against a missing path fails at the last step of the last task.
+cat > /tmp/pr-body.md <<'EOF'
+<the PR description — anything longer than a line goes in a file, never a -m argument>
+EOF
 gh pr create --title "..." --body-file /tmp/pr-body.md
 ```
 
@@ -1596,9 +1810,16 @@ gh pr create --title "..." --body-file /tmp/pr-body.md
 2. The regen hook has been **seen to fire** on a real store write.
 3. The served page has its **Ask tray**.
 4. `check-docs.py` and `check-explainer-delivery.py` are green.
-5. **`check-plan-code.py` exits 0** — every declared mutation caught by the case it names.
+5. **`check-plan-code.py --compare scripts/ --verify-evidence` exits 0** — every declared mutation
+   caught by the case it names, the delivered scripts **byte-identical** to the plan's blocks, and
+   the Standing evidence block **exactly what that invocation produces**. The block must read
+   `subject: the plan's blocks, DIFFED against the delivered files` with every file `identical`;
+   anything else, including the `--compare was not given` line, fails this criterion.
    *(Criterion 5 replaces "their mutation checks were run", which was satisfied by running them and
-   ignoring the result — a checkbox with no observation that could fail it.)*
+   ignoring the result — a checkbox with no observation that could fail it. **Round 4 then found it
+   was still satisfiable by a plan that had drifted from the code**: without `--compare` the check
+   never opened `scripts/`. FAILS IF: `scripts/gen-dashboard.py` is edited without the same edit
+   landing in this plan's blocks.)*
 
 **Merging is a human gate. Do not merge.**
 
@@ -1901,6 +2122,94 @@ mutation caught by a different case, fails the check.
    ]
   ],
   "expect": "blockquoted"
+ },
+ {
+  "name": "the three-valued reason collapses: empty and absent become one message",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if reason == \"\":",
+    "    if False:"
+   ]
+  ],
+  "expect": "says the marker was present with nothing after it"
+ },
+ {
+  "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    cls = \"bar needs\" if day[\"needs_you\"] else \"bar\"",
+    "    cls = \"bar\""
+   ]
+  ],
+  "expect": "§5 a needs-you day is marked"
+ },
+ {
+  "name": "commit_dates: a git failure renders as an EMPTY chart, not could-not-tell",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        return None, f\"git log exited {r.returncode}: {r.stderr.strip()[:200]}\"",
+    "        return [], None"
+   ]
+  ],
+  "expect": "commit_dates: a non-zero exit"
+ },
+ {
+  "name": "_gh_json: a missing gh renders as ZERO open PRs",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        return None, f\"could not run gh: {exc}\"",
+    "        return [], None"
+   ]
+  ],
+  "expect": "open_prs: a missing binary"
+ },
+ {
+  "name": "_gh_json: unparseable gh output renders as ZERO",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        return None, f\"gh returned unparseable JSON: {exc}\"",
+    "        return [], None"
+   ]
+  ],
+  "expect": "unparseable gh output"
+ },
+ {
+  "name": "the GATE reads a broken git as 'nothing changed'",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if names.returncode != 0:",
+    "    if False:"
+   ]
+  ],
+  "expect": "collect: a non-zero git exit"
+ },
+ {
+  "name": "the GATE's missing-git branch reports no error",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        return [], False, f\"could not run git: {exc}\"",
+    "        return [], False, None"
+   ]
+  ],
+  "expect": "collect: a missing git"
+ },
+ {
+  "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+   ]
+  ],
+  "expect": "main: a could-not-tell exits 2"
  }
 ]
 ```
@@ -1923,11 +2232,11 @@ tested: the behaviour was broken and the named case was watched going red.
 | §6.1 rendered once, marked bars | Task 4 | ✅ both marks asserted on **sighted output only** — hover text and screen-reader labels excluded |
 | §6.2 grammar | Tasks 1–2 | ✅ every row, including the unknown-resolve-id falsifier, two `[resolved:]` flags, the missing space, the empty title, tie order, ordinal stability, and "in place" on the order the store **actually uses** |
 | §7 the gate | Tasks 1, 6 | ✅ verdict cases + controls A–F; **display** built; CI wiring is Task 6 Step 5 and is an acceptance criterion, not an assumption |
-| §9 checks | Tasks 1, 4, 5 | ✅ **including the commits-with-no-entry alarm**, which v2 marked ✅ without building |
+| §9 checks | Tasks 1, 4, 5 | ⚠ **PARTIAL — one ✅ covered five bullets of unequal standing.** Bullet 2 (the commits-with-no-entry alarm) is built and mutation-tested. Bullet 4 (a resolved item leaves §4 **and stays in §6**) has a case for the leaving half and none for the staying half — filtering cleared entries out of *What changed* is green. Bullet 5 (folds) the row below downgrades to *partial*. **Bullet 1 — "the page names the last date an entry was written" — is NOT BUILT**: `build()` renders no such element, a reader infers it from the first `<h3>`, and an empty store says "No entries yet". Round 4's M5, and the third round in which a Self-Review row claimed coverage it did not have |
 | §10.1 folds | Task 5 | partial — three text-shape rows that go red when the call is deleted, plus a manual two-fold check. **No automated behavioural test**; see Gaps |
 | §10.2 store created | Task 2 Step 5 | ✅ Step 6 parses the real file |
 | §10.3 `PAGE_SKILLS` | Task 6 Step 1 | ✅ via `check-explainer-delivery.py`, which **cannot enforce its own list** — stated in the step |
-| §10.4 `gh` failure | Tasks 3–4 | ✅ including a falsifier with `gh` off the `PATH` |
+| §10.4 `gh` failure | Tasks 3–4 | ✅ **now automated, not only manual.** v5's ✅ rested on the Task 3 falsifier alone: a **human step**, covering two of the four collectors, and blind to unparseable `gh` output entirely. v6 stubs `subprocess.run` in the suite, so a missing binary, a non-zero exit and unreadable JSON each have a case and a declared mutation. The manual falsifier stays — it is the only thing that exercises the real binaries |
 
 **Gaps, stated rather than hidden — five.**
 
@@ -2125,15 +2434,109 @@ not fire, the transcription that weakened its own assertion, and the two vacuous
 The lesson is not "write better cases": it is that **the only thing distinguishing a real guard from
 a decorative one is breaking the code and watching it go red.**
 
+## v6 — round 4, both halves
+
+Round 4 is the **fourth consecutive non-converging round**, which is `docs/dev-process.md`'s Phase 6
+trigger. It is also the first *complete* round since round 2 — three of the last four had a half that
+did not really run or was not really independent, so the count is inflated by process failures as
+well as by defects. Read the trigger off the **cause**: rounds 1–2 found broken code; rounds 3–4
+found the document wrong about its own checks. The code side is strong and stayed strong. What kept
+failing was the prose around it, and v6 is the version that stops relying on prose for it.
+
+**Its method is the bar for the next round.** It assembled the plan's code twice — once with the
+plan's own `extract()`, once with an independent hand parser — and `diff`ed the two before believing
+any green; ran controls A–F verbatim in a throwaway repo; and wrote **50 mutations the manifest does
+not declare**, 42 against the plan's code and 8 against `check-plan-code.py` itself.
+
+### The Blocking, and why the fix is a check and not a resolution
+
+**B1 — the generated evidence block was stale.** Generated at v4, never regenerated, so under a v5
+document it reported 25 mutations against 26 and 77 tests against 79. *Fourth round running that
+what failed was the plan's account of its own verification — this time inside the mechanism built to
+stop exactly that.*
+
+The tempting reading is "generating was a mistake". It was not. **Generating bought provenance and
+not freshness**, and a block headed `GENERATED` is read with more trust than typed prose, which makes
+a stale one strictly worse than a typed one. So v6 does not add a rule saying *remember to
+regenerate*; it adds `--verify-evidence`, which exits 1 when the pasted block is not what the current
+document produces, and puts it in CI. Pointed at the v5 block it printed a diff naming `25 → 33` and
+`77 → 89`.
+
+### The six High
+
+| # | Finding | Fix |
+|---|---|---|
+| **H1** | `check-plan-code.py` **never opens the delivered scripts** — everything happens in a `TemporaryDirectory` written from the markdown. Acceptance criterion 5, Task 4 Step 5 and the new CI step all said otherwise. *A checker pointed at the wrong subject — this session's own recurring defect, committed while building the tool against it* | `--compare DIR` diffs each assembled file against `scripts/` and fails on one byte, or on a file it cannot read. The evidence block now **names its subject**, so a bare run cannot be mistaken for a compared one. Step 5, the CI step and criterion 5 all pass `--compare`; new **Step 5a** regenerates the block in the compared form at the first moment both files exist |
+| **H2** | The **whole impure layer was unguarded** — 15 undeclared mutations survived, 6 turning *cannot tell* into a silent pass. `collect()` and `main()` had no coverage at all; `return 2` → `return 0` makes the ratchet **fail-open** | `_impure_self_test` in the gate and a collector block in `gen-dashboard.py`, both stubbing `subprocess.run`. **7 new declared mutations**, each caught by the case that names it |
+| **H3** | The checker's self-test had **no case for its primary job**. Three mutants passed 19/19: `rc != 0` no longer failing, `ok = not problems` → `ok = True`, and an unknown mutation target | Cases for all three, plus `--compare` and `--verify-evidence` coverage. **44 cases**, and the declared count is now checked against the real one — it fired on its author's first guess |
+| **H4** | Task 1 Step 6's controls **report a pass when the gate script is absent**: every row prints `rc=2`, none prints `ok`, and the stop-condition is satisfied by a run that tested nothing | The block refuses to start without the file, and compares a full `want`/`got` vector instead of scanning for one token. Falsified both ways: `CONTROLS OK` with the gate present, `CANNOT RUN … NOT TESTED` without |
+| **H5** | The **orange `needs-you` bar** — spec §5's primary chart signal — was built and no case could see it go | A third `_marks` comparison, plus a declared mutation |
+| **H6** | Task 3 Step 3's stop-condition **fires on the correct answer**: `open_prs` returns `0 / err: None` against this repo today because there are genuinely no open PRs | Compare the **pair**, with and without the binaries. ⚠ The falsifier as first written hid `python3` along with `git`, so it could never run — fixed with an absolute interpreter path, measured |
+
+### Medium and Low
+
+- **M1** — `_self_test` was assembled **twice, byte-identical**, into the gate. Step 5 silently
+  re-included all 74 lines of Step 4's block; Python keeps the second, so both suites were green
+  either way, and `replace(…, 1)` meant any mutation anchored there landed on the **dead first
+  copy**. The duplicate is gone; Step 5 now carries `_impure_self_test` instead.
+- **M2** — Task 2 Step 2 told the implementer to write a test that does not exist until Task 4.
+  Retitled to what the block actually is.
+- **M3** — `verdict`'s three-valued `reason`: both branches return `1`, so deleting the empty-reason
+  branch was green. The **message** is now asserted, with a mutation.
+- **M5** — §9's row carried one ✅ over five bullets, one of which (*the page names the last date an
+  entry was written*) **is not built**. Downgraded to ⚠ PARTIAL, per bullet.
+- **M6** — `<!-- illustrative -->` was an unbounded hiding vector: arbitrary broken code behind it
+  passed. The tag now **requires a reason**, and `--evidence` prints what was excluded and why. ⚠ Both
+  forms must stand alone on their line — a `.search()` reported the paragraph *describing* the
+  convention as a defect, measured while adding the rule.
+- **Lows** — the checker's `# 12 cases` against a 19-case suite (now derived and self-falsifying);
+  `extract()`'s 3-tuple annotation on a 4-tuple return; a `TimeoutExpired` traceback where a
+  `CANNOT RUN` belonged; the `dev-process.md` line budget named as **214 of 220** rather than left to
+  be discovered at the gate; and a `gh --body-file` reading a path only the CI runner creates.
+
+### Two defects v6 introduced and caught in itself
+
+Both are the same shape as the ones above, which is the argument for running the checks rather than
+trusting the edit:
+
+1. The Step 3 falsifier emptied `PATH` to hide `git` and `gh` — **and hid `python3`**, so it died
+   before testing anything. A falsifier that cannot run is H4 again, one file over.
+2. `ILLUS_BARE` used `.search()`, so the sentence explaining the convention matched it and the
+   checker failed on its own documentation.
+
+### Deliberately NOT fixed
+
+- **M4** — `collect()`'s three-dot `...HEAD` survives becoming `..HEAD`, and controls A–F structurally
+  cannot see it because `master` never advances in them. Real, and the fix is a longer control repo;
+  filed as work, not folded in.
+- **U15/U16/U30/U31** — `main`'s compose path, the `--window < 1` guard, `--store`, and a frozen
+  `today`. These need a subprocess and a written page to observe; **stated here as a gap rather than
+  covered by a ✅**, which is what round 4 asked for.
+
+**Round 5 should be SCOPED to `scripts/check-plan-code.py`.** H1 is a genuine design defect in the
+tool — a checker verifying the wrong subject — and the tool grew a lot in v6: `--compare`,
+`--verify-evidence`, the illustrative-reason rule, the result-line and colon parsers. The rest of the
+plan has now survived four rounds, 34 declared plus 50 undeclared mutations, and controls A–F; a
+fifth full reading would be the fifth reading of material that stopped yielding code defects two
+rounds ago.
+
+---
+
 ### Standing evidence — GENERATED, not typed
 
 ```
 GENERATED by scripts/check-plan-code.py — do not edit by hand.
 
-  scripts/check-dashboard-entry.py  4 blocks assembled -> 45/45 passed
-  scripts/gen-dashboard.py      8 blocks assembled -> 77/77 passed
+  python fences: 13 (12 assembled, 1 illustrative)
+    not assembled: assertion rows added to scripts/explainer-serve.py's OWN suite, not to a file this plan assembles
 
-  mutations declared and run: 25, caught 25
+  scripts/check-dashboard-entry.py  4 blocks assembled -> 46/46 passed · 5/5 cannot-run cases passed
+  scripts/gen-dashboard.py      8 blocks assembled -> 89/89 passed
+
+  subject: the PLAN'S COPY of the code. --compare was not given, so
+           nothing here was measured against the files in scripts/.
+
+  mutations declared and run: 34, caught 34
     caught   day anchors never emitted (every bar href is a dead link)
     caught   bar height ignores commits
     caught   entry title not rendered
@@ -2143,6 +2546,7 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
     caught   gh half of what-needs-you suppressed
     caught   dead bar links restored
     caught   in-place anchoring reverted to the previous neighbour
+    caught   a run of malformed blocks loses its file order
     caught   render in raw file order
     caught   second [resolved:] dropped
     caught   pass 2 deleted
@@ -2159,8 +2563,33 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
     caught   fence LENGTH ignored (short inner fence closes a long outer one)
     caught   indent rule removed entirely
     caught   line-leading rule removed
+    caught   the three-valued reason collapses: empty and absent become one message
+    caught   the orange needs-you bar is not drawn (spec §5's primary chart signal)
+    caught   commit_dates: a git failure renders as an EMPTY chart, not could-not-tell
+    caught   _gh_json: a missing gh renders as ZERO open PRs
+    caught   _gh_json: unparseable gh output renders as ZERO
+    caught   the GATE reads a broken git as 'nothing changed'
+    caught   the GATE's missing-git branch reports no error
+    caught   THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges
 ```
 
 Reproduce with `python3 scripts/check-plan-code.py <this file> --evidence`.
 
-**v3 was reviewed by both halves of round 3; v4 is the result and has NOT been reviewed.**
+**⛔ Do not paste this block by hand, and do not trust it because it says GENERATED.** Round 4's
+Blocking was that this block *was* generated — at v4 — and then never again. By v5 it reported
+**25 mutations against 26** and **77 tests against 79**: wrong, inside the one mechanism built to
+stop this document being wrong about its own verification. **Generating bought provenance, not
+freshness, and a `GENERATED` header is read with more trust than prose, not less.**
+
+v6 closes that with a check rather than a rule:
+
+```bash
+python3 scripts/check-plan-code.py <this file> --verify-evidence   # exit 1 if this block is stale
+```
+
+**FAILS IF:** any block above changes, any mutation is added or removed, or the invocation's
+`--compare` mode changes, without this block being regenerated. Verified 2026-08-29 by pointing it
+at the v5 block: it printed a diff naming `25 → 33` and `77 → 89` and exited 1.
+
+**v5 was reviewed by both halves of round 4 (Codex 3 findings, Claude 1 Blocking / 6 High / 6 Medium
+/ 5 Low, both NOT CONVERGED); v6 is the result and has NOT been reviewed.**
