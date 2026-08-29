@@ -1328,7 +1328,7 @@ whether editing an already-applied migration is safe here.
 
 ---
 
-## Project dashboard — anchor `status-visibility` — ⏳ PLAN AT v6 AFTER 4 ROUNDS, NO CODE WRITTEN
+## Project dashboard — anchor `status-visibility` — 🏗 TASKS 1–6 BUILT; THE GATE HAS NOT YET REFUSED ON GITHUB
 
 **Goal (`docs/anchors.md:39`):** a person who was away can see the current state, what changed, and
 what needs them — without reading the chat transcript.
@@ -1341,7 +1341,9 @@ corrections slice above.
 | Artifact | State |
 |---|---|
 | `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` | v5, merged `c5fcb07` (3 review rounds, none converged) |
-| `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | **v6** (`a643df6`) — round 4 folded in; **NOT CONVERGED**, not yet re-reviewed |
+| `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | **v8** (`ce0cdf1`) — rounds 5–6 folded in; **NOT CONVERGED**; reviewing closed by DECISION, not convergence |
+| `scripts/gen-dashboard.py`, `docs/dashboard-entries.md` | **NEW, committed.** The parser, the collectors, the page, and the append-only store |
+| `.agents/skills/dashboard/`, `.claude/hooks/regen-dashboard.sh` | **NEW, committed.** The skill that writes an entry, and the hook that regenerates the page whenever the store is written |
 | `scripts/check-plan-code.py` | **NEW, committed.** Assembles the plan's code, runs it, mutates it, diffs it against the delivered scripts (`--compare`), and refuses a stale evidence block (`--verify-evidence`). 44 self-test cases |
 | `docs/reviews/plan-project-dashboard-r{1,2,3,4}-*.md` | rounds 1–4, **NOT CONVERGED, every half** |
 
@@ -1364,16 +1366,26 @@ corrections slice above.
       shape here is the *prose floor*, not thrashing: rounds 1–2 found broken code, 3–4 found stale
       prose about verification, 5–6 found gaps in the reviewing instrument itself. On a document,
       that is the signal to go build.
-- [ ] **Tasks 1–6 — BUILD IT.** Now in progress. Per-task two-stage review to convergence, autonomous
-      (`docs/dev-process.md` Phase 3). ⚠ Task 4 Step 5a is the one step that is easy to skip and
-      turns CI red by construction if skipped.
+- [x] **Tasks 1–6 — BUILT.** The gate + entry grammar (T1), the parser and the append-only store
+      (T2), `unresolved`/`bucket_days` and the `git`/`gh` collectors (T3), the page and its assembled
+      self-test (T4), fold persistence across live reload (T5), and the skill + regen hook + CI
+      wiring (T6). Task 4 Step 5a — the one step that turns CI red by construction if skipped — was
+      done: the plan's Standing-evidence block is in COMPARED form and every printed command carries
+      `--compare .`.
 - [ ] **Backlog #69** 🟢 — the external `--self-test` count ratchet. Round 6's only unfixed finding,
       declared in the script's header rather than ticked: a suite cannot observe its own exit code.
-- [ ] **Tasks 1–6** — the entry store + parser, activity + open PRs, the page, the gate, fold
-      persistence on reload, and the skill + hook + CI wiring. None started.
-- [ ] **The gate is not proven until it has been seen to REFUSE on GitHub.** Task 4 ships a tested
-      script; Task 6 Step 5 is what makes it gate anything. **FAILS IF** the PR opens with
-      `check-dashboard-entry.py` still absent from a `pull_request`-triggered CI job.
+- [ ] **Whole-branch review, then the PR.** Per-task review ran throughout; the branch has not yet
+      been reviewed as a whole, and Task 6 Step 7 (push + PR) is deliberately NOT done — the plan
+      orders it before the branch review and `docs/dev-process.md` Phase 5 orders it after, and the
+      process wins. Merging stays the human gate.
+- [ ] **The gate is not proven until it has been seen to REFUSE on GitHub.** Task 1 ships a tested
+      script; Task 6 Step 5 is what makes it gate anything, and that wiring **is now in
+      `.github/workflows/ci.yml`** — a `pull_request`-triggered step, with `fetch-depth: 0` on the
+      checkout because without it the diff has no merge base and the ratchet exits 2 (CANNOT RUN).
+      Locally it both passes on this branch and REFUSES against `HEAD~1`. **What is still unobserved
+      is the run on GitHub**, which is the only place the `fetch-depth` claim is actually tested.
+      **FAILS IF** the PR opens with `check-dashboard-entry.py` absent from a `pull_request`-triggered
+      CI job, or if that job reports `CANNOT RUN` / `no merge base`.
 
 ✅ **DECIDED 2026-08-28 by the user: keep the gate exactly as specified.** No change to the exempt
 list. The scope question is closed; do not re-open it in a review round.
@@ -1396,10 +1408,21 @@ it exempts are exactly the ones it keeps. Not built.
 this repo usually gets a script enforcing it in the same branch, so the commit is labelled
 `docs(...)` and touches `scripts/` anyway.
 
-⚠ **What now carries the risk is the `NO-ENTRY:` display** (plan v2, Task 2 + Task 3). It is the
-gate's only feedback loop: without it nothing counts exemptions, nobody can see *"eleven of the last
-twelve branches skipped their entry"*, and the page goes on looking healthy while describing less
-and less. Reader-facing explainer of this decision:
+✅ **The `NO-ENTRY:` display is BUILT** (plan v2, Tasks 2–3) — `no_entry_prs()` in
+`scripts/gen-dashboard.py`, reading the gate's own `exemption_reason` so the page cannot disagree
+with the gate about what was exempted. It was the thing carrying the risk: it is the gate's only
+feedback loop, and without it nothing counts exemptions, nobody sees *"eleven of the last twelve
+branches skipped their entry"*, and the page goes on looking healthy while describing less and less.
+
+Verified 2026-08-29, both directions, because `0` is also the correct answer today and the two are
+otherwise indistinguishable: against this repo it returns `no-entry: 0 err: None`; fed four synthetic
+merged-PR bodies it returns exactly the one real declaration and correctly ignores the fenced and
+HTML-commented ones; and with the gate's `exemption_reason` renamed away it returns
+`no-entry: None err: could not load the gate's exemption reader: …` rather than a silent `0`.
+
+⚠ **Two bounds, named rather than left to be discovered:** the list is capped at 40 merged PRs, so an
+older exemption silently stops being displayed; and it needs `gh` — a failure is announced on the
+page as NOT CHECKED, never rendered as a confident zero. Reader-facing explainer of the gate's cost:
 `~/explainers/2026-08-28-brief-entry-gate-cost.html`.
 
 ---

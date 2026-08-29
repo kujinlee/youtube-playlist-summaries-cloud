@@ -28,7 +28,17 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # fetch-depth: 0 is REQUIRED by the dashboard entry ratchet, which diffs
+      # `origin/$GITHUB_BASE_REF...HEAD`. actions/checkout takes depth 1 on the synthesised
+      # merge ref, so HEAD is a graft with NO MERGE BASE and the ratchet exits 2 —
+      # `fatal: origin/master...HEAD: no merge base`, i.e. CANNOT RUN, i.e. NOT CHECKED.
+      # An explicit `git fetch` refspec was tried first: it creates origin/master and leaves
+      # that same error, because it fixes the symptom a review reported and not the outcome.
+      # Measured: full history is ~0.85s and ~3.7MB over 1,398 commits, and nothing else in
+      # this workflow reads git history.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -157,3 +167,41 @@ jobs:
 
       - name: check-function-revokes self-test
         run: python3 scripts/check-function-revokes.py --self-test
+
+      # ── The project dashboard: the page, its grammar, and the gate that feeds it ──
+      #
+      # A person who was away reads this page instead of the transcript. It is only worth
+      # reading while entries keep being written, which is what the ratchet below enforces.
+
+      - name: gen-dashboard self-test
+        run: python3 scripts/gen-dashboard.py --self-test
+
+      - name: check-dashboard-entry self-test
+        run: python3 scripts/check-dashboard-entry.py --self-test
+
+      # --compare is what makes this step mean what its name says. Without it the
+      # step measures the plan's COPY of ~1,100 lines and never opens the files CI
+      # ships; the first bug fixed in scripts/gen-dashboard.py would leave the plan
+      # green while the mutation evidence described a file that no longer exists in
+      # that form. Round 4, H1.
+      # --verify-evidence is the other half. The block is GENERATED, which round 4
+      # proved buys provenance and not freshness: it was generated once at v4 and
+      # described a run two versions old. CI is where "regenerate it" stops being a
+      # rule somebody has to remember.
+      - name: the plan's code and the DELIVERED scripts are the same, its mutations are caught, and its evidence is fresh
+        run: |
+          python3 scripts/check-plan-code.py \
+            docs/superpowers/plans/2026-08-28-project-dashboard-plan.md \
+            --compare . --verify-evidence
+
+      # The gate itself. Needs the merge base, hence fetch-depth: 0 on the checkout.
+      # BODY goes through env and then a FILE — never interpolated into the shell —
+      # because a PR body is attacker-controlled text full of backticks and quotes.
+      - name: dashboard entry ratchet
+        if: github.event_name == 'pull_request'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$BODY" > /tmp/pr-body.md
+          python3 scripts/check-dashboard-entry.py \
+            --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/pr-body.md
