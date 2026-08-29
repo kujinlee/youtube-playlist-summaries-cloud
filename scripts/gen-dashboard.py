@@ -41,12 +41,25 @@ HEADER = _GATE.HEADER
 
 
 def _exemption_reader():
-    """Resolved LAZILY, so a missing gate file degrades one SECTION rather than
-    killing the page. Bound at import, hiding the gate raised FileNotFoundError
-    before `no_entry_prs` could return its (None, why) — the falsifier the plan
-    states was unreachable, and the whole dashboard would have failed to render
-    over a section that is allowed to say "could not check"."""
-    return _gate_module().exemption_reason
+    """Looked up AT CALL TIME off the already-imported `_GATE`, inside
+    `no_entry_prs`'s try — so a gate that no longer EXPOSES `exemption_reason`
+    (a rename, a refactor; Task 1 owns that symbol) degrades one SECTION
+    instead of killing the page. Binding it at import in any form
+    (`_EX = _GATE.exemption_reason`) turns that rename into an import-time
+    AttributeError and there is no page left to degrade.
+
+    ⚠ It does NOT defend against a MISSING gate file, and the docstring used to
+    claim it did: `_GATE = _gate_module()` above kills the module on import long
+    before any call here, measured. The grammar is required to parse at all, so
+    that eager binding is correct and this function cannot rescue it.
+
+    It reads `_GATE` rather than calling `_gate_module()` again. A second call
+    re-execs the file into a DISTINCT module object, so if the gate changed on
+    disk between import and call the page's grammar and its exemption reader
+    would come from two different reads — contradicting `no_entry_prs`'s own
+    rationale that the page shows exactly the exemptions the gate granted.
+    """
+    return getattr(_GATE, "exemption_reason")
 
 def parse_entries(text: str) -> list[dict]:
     """Split on column-0 '##' only. A malformed block is RETURNED with an
@@ -320,7 +333,12 @@ GLOSSARY = [
 ]
 
 def build(entries, days, prs, pr_error, git_error, window,
-          exemptions, exempt_error) -> str:
+          exemptions, exempt_error, store, store_error) -> str:
+    # `store` and `store_error` have NO defaults on purpose. A default would let
+    # this function name a store path it was never told about — which is the
+    # exact defect they exist to close (it used to print a HARDCODED path in the
+    # empty state, so a run against `--store docs/typo.md` positively asserted a
+    # location it had never opened).
     # ─── What needs you ───
     need = unresolved(entries)
     rows = [f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["title"])}</a> '
@@ -356,9 +374,16 @@ def build(entries, days, prs, pr_error, git_error, window,
                   'so work that was never committed does not appear here.</p>')
 
     # ─── What changed ───
-    if not entries:
-        entries_html = ('<p class="none">No entries yet. They live in '
-                        '<code>docs/dashboard-entries.md</code>.</p>')
+    # The store was the LAST confident-empty in the program: every other input
+    # (`commit_dates`, `open_prs`, `no_entry_prs`) already returns (None, why),
+    # while a missing store yielded `[]` and rendered as a measured "nothing
+    # written yet". Same class as `_gh_json`'s empty-stdout hole.
+    if store_error:
+        entries_html = (f'<p class="unknown">I could not read the entry store — '
+                        f'{_html.escape(store_error)}. Treat this as NOT CHECKED.</p>')
+    elif not entries:
+        entries_html = (f'<p class="none">No entries yet. They live in '
+                        f'<code>{_html.escape(str(store))}</code>.</p>')
     else:
         parts, anchored = [], set()
         for i, e in enumerate(_ordered(entries)):
@@ -547,10 +572,11 @@ def _self_test() -> int:
     case("needs-you day is flagged", days[2]["needs_you"], True)
 
     def _B(entries, days, prs=(), pr_error=None, git_error=None, window=2,
-           exemptions=(), exempt_error=None):
+           exemptions=(), exempt_error=None, store="docs/dashboard-entries.md",
+           store_error=None):
         return build(entries, days, list(prs) if prs is not None else None, pr_error,
                      git_error, window, list(exemptions) if exemptions is not None else None,
-                     exempt_error)
+                     exempt_error, store, store_error)
 
     def _section(html, heading):
         # Returns "" when the heading is ABSENT rather than raising: a crash is
@@ -563,12 +589,32 @@ def _self_test() -> int:
     d3 = bucket_days(["2026-08-28"], ents3, 2, "2026-08-28")
     html = _B(ents3, d3)
     case("needs-you surfaces", "Decide the thing." in html, True)
-    case("tech is behind a fold", "<details" in html, True)
+    # Was `"<details" in html`, which passed with the tech fold DELETED: `build`
+    # always emits <details id="glossary">. Scoping it to the section does not fix
+    # that either — the "What this means" fold is unconditional too. Bind to the
+    # tech fold's OWN id, which is the only thing that goes away with it.
+    case("tech is behind a fold",
+         f'<details id="{_slug(ents3[0]["id"])}-tech">' in html, True)
     case("tech labelled", "technical detail" in html.lower(), True)
 
     html_empty = _B([], bucket_days([], [], 2, "2026-08-28"))
     case("empty says nothing needs you", "Nothing needs you" in html_empty, True)
     case("empty says no entries yet", "no entries yet" in html_empty.lower(), True)
+
+    # The store was the last input that could report a confident zero. `--store
+    # docs/typo.md` rendered "No entries yet" — and named a HARDCODED, different
+    # path while doing it, so the page asserted a location the run never opened.
+    hs = _section(_B([], bucket_days([], [], 2, "2026-08-28"),
+                     store="docs/typo.md",
+                     store_error="no such file: docs/typo.md"), "What changed")
+    case("a store that could not be read is NOT 'no entries yet'",
+         "no entries yet" in hs.lower(), False)
+    case("...and it names the file it could not read", "docs/typo.md" in hs, True)
+    # The empty state must name the store it ACTUALLY read, never a literal.
+    hs_ok = _section(_B([], bucket_days([], [], 2, "2026-08-28"),
+                        store="docs/elsewhere.md"), "What changed")
+    case("the empty state names the store that was read",
+         "docs/elsewhere.md" in hs_ok, True)
 
     html_err = _B([], bucket_days([], [], 2, "2026-08-28"), prs=None, pr_error="gh exploded")
     case("gh failure is NOT 'nothing needs you'", "Nothing needs you" in html_err, False)
@@ -795,14 +841,30 @@ def main(argv: list[str]) -> int:
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2
-    store = pathlib.Path(a.store)
-    entries = parse_entries(store.read_text(encoding="utf-8")) if store.exists() else []
+    store, store_error, entries = pathlib.Path(a.store), None, []
+    try:
+        entries = parse_entries(store.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        # A missing DEFAULT store is genuinely "nothing written yet" — the store
+        # is created by the first entry. A store the caller NAMED and that is not
+        # there is a could-not-tell: the run was pointed at a file and never
+        # opened it, and `store.exists()` had no third state to say so.
+        # Residual, stated rather than hidden: passing the default path
+        # explicitly is indistinguishable from not passing it. The page still
+        # names that path, so it stays honest about WHICH file it means.
+        if a.store != ap.get_default("store"):
+            store_error = f"no such file: {store}"
+    except UnicodeDecodeError as exc:
+        store_error = f"{store} is not valid UTF-8: {exc}"
+    except OSError as exc:
+        store_error = f"could not read {store}: {exc}"
     dates, git_error = commit_dates(a.window)
     prs, pr_error = open_prs()
     exemptions, exempt_error = no_entry_prs()
     today = _dt.date.today().isoformat()
     days = bucket_days(dates or [], entries, a.window, today)
-    frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions, exempt_error)
+    frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
+                 exempt_error, a.store, store_error)
     if a.fragment_only:
         a.fragment_only.write_text(frag, encoding="utf-8")
         print(f"wrote fragment {a.fragment_only}")
@@ -811,19 +873,32 @@ def main(argv: list[str]) -> int:
     with tempfile.TemporaryDirectory() as td:
         f = pathlib.Path(td) / "dashboard-fragment.html"
         f.write_text(frag, encoding="utf-8")
-        r = subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "brief-compose.py"),
-             "--content", str(f), "--slug", "dashboard", "--out", str(a.out),
-             "--title", "Project dashboard"],
-            cwd=ROOT, capture_output=True, text=True)
+        # Bounded like every other subprocess here (`commit_dates` 20, `_gh_json`
+        # 30). This runs from a git hook, and an unbounded child hangs the hook
+        # with no output at all — a cannot-run that never says so.
+        try:
+            r = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "brief-compose.py"),
+                 "--content", str(f), "--slug", "dashboard", "--out", str(a.out),
+                 "--title", "Project dashboard"],
+                cwd=ROOT, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            print(f"CANNOT RUN — brief-compose did not finish in 120s, so {a.out} "
+                  f"was NOT written. Treat this as NOT RUN.", file=sys.stderr)
+            return 1
     if r.returncode != 0 or not a.out.is_file():
         print(f"FAILED — brief-compose did not write {a.out}:\n{r.stdout}{r.stderr}",
               file=sys.stderr)
         return 1
     print(f"wrote {a.out}  ({len(entries)} entries, window {a.window})")
-    for label, err in (("git", git_error), ("gh", pr_error), ("gh/exemptions", exempt_error)):
+    # STDERR, not stdout. A caller reading stdout saw only the success line, so a
+    # fully-measured page and one with two dead collectors were indistinguishable
+    # to anything but a human eye. `{len(entries)}` above is part of why: with a
+    # store_error that count is a zero nobody measured.
+    for label, err in (("git", git_error), ("gh", pr_error),
+                       ("gh/exemptions", exempt_error), ("store", store_error)):
         if err:
-            print(f"  ⚠ {label}: {err}")
+            print(f"  ⚠ {label}: {err}", file=sys.stderr)
     print("     http://127.0.0.1:7391/dashboard   (start: python3 scripts/explainer-serve.py)")
     return 0
 
