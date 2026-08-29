@@ -1383,6 +1383,30 @@ and less. Reader-facing explainer of this decision:
 
 ---
 
+## Backlog #68 — the Codex review gate can fail silently AND overwrite a filed review — 🟠 HIGH
+
+Filed 2026-08-29 after it happened four times in one run. Three defects in one chain:
+the wrapper judges success by the agent's FINAL MESSAGE, so a brief that says *"write a file"*
+guarantees rejection; **no output path is ever given to the agent**, so it inferred one from the
+prior-round filenames in the brief and wrote over a **committed** review; and the caller masked the
+wrapper's exit code behind an `echo`, so `WRAPPER_RC=1` went unread.
+
+- [ ] **`codex-review.py` must not be able to leave an artifact behind a failed gate.** Refuse an
+      `--out` inside the repository, or write to a temp path and promote only on success.
+      **FAILS IF** a run with a non-zero wrapper exit leaves a file at `--out`.
+- [ ] **Warn when the prompt file contains a write-a-file instruction** — the one input that
+      guarantees a rejected capture. **FAILS IF** a brief containing it dispatches without warning.
+- [ ] **State the per-half output contract in `docs/plugins.md`**, where the dispatch decision is
+      made. It documents the wrapper's fail-open modes at length and is silent on this one.
+      **FAILS IF** a reader choosing a brief finds no statement that the two halves differ.
+- [ ] Decide whether the caller can be stopped from masking the exit code, or whether the wrapper
+      writes a verdict file the caller must read.
+
+⚠ **All three are worked around by hand today and none is a mechanism** — the same standing as #67,
+which is why they should be done together.
+
+---
+
 ## Backlog #67 — concurrent-agent interference — 🟠 HIGH, ⏭ NEXT AFTER THE DASHBOARD
 
 **Unparked 2026-08-28 at the user's request** (parked 2026-08-27: *"don't forget it. I'd like to have
