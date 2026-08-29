@@ -3,206 +3,224 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** **v4 — CUT TO THREE THINGS by user decision 2026-08-28, after two review rounds.**
-v1–v3 and both review rounds are in git history and `docs/reviews/spec-project-dashboard-r{1,2}-*.md`.
-This version deliberately does less.
+**Status:** **v5 — round 3 folded in, and the entry is now GATED rather than voluntary.**
+Three dual-adversarial rounds, six reviewer verdicts, all NOT CONVERGED. Reviews retained at
+`docs/reviews/spec-project-dashboard-r{1,2,3}-{codex,claude}.md`.
+**User decision 2026-08-28: option (a) — add the forcing function.**
 
 ---
 
 ## 1. Why this exists
 
-The user's words:
-
 > "I am having hard time to understand your output on chat dialogs… I cannot monitor closely what you
 > are doing and I lost in flooding text."
-
-Ranked by them:
 
 | Rank | Problem |
 |---|---|
 | **1** | **Continuity** — cannot hold the thread across a day or a week |
 | 2 | Volume with no signal |
-| 3 | Terms — re-gloss them periodically; never a sentence that mixes several unfamiliar ones |
+| 3 | Terms — re-gloss periodically; never a sentence mixing several unfamiliar ones |
 
-Chat is transient. The user cannot re-read a week.
+## 2. What the page is, and what is reliable about it
 
-## 2. Why this version is small
+Round 3 corrected a premise this spec had wrong for four versions. **Entries are not the only
+mechanism serving continuity.** The page has three sources and two need no discipline from me:
 
-Two rounds of dual adversarial review returned **NOT CONVERGED four times out of four**: 4 Blocking
-in round 1, 5 in round 2. The decisive finding was not a defect:
+| Block | Source | Reliable without me remembering? |
+|---|---|---|
+| §5 the chart | `git log --first-parent` | **Yes** |
+| §4 open pull requests | `gh pr list` | **Yes** |
+| §4 needs-you, §6 what changed | written by me | **No — now gated, §7** |
 
-> **"The design is best-developed where the problem is smallest."**
+**So the page degrades rather than fails.** On a day I write nothing it still answers *when work
+happened and what is open* — more than the transcript gives. That is the skeleton of continuity, and
+it is free.
 
-Continuity is rank 1 and is delivered by **entries**. Everything v3 had grown — a progress chart,
-health lamps, a work-flow diagram, a backlog section, a recurring-mistakes section, bundled Mermaid —
-served ranks 2 and 3. Measured: v1 234 lines → v2 324 → v3 **388**; §5 reached twelve numbered units
-where v1 had four. Round 1 said the page already had too many blocks; v3 **added** one and removed
-none.
+**But a page that is *sometimes* complete is worse than one that is never complete, because the reader
+cannot tell which day they are looking at.** That is why §7 exists.
 
-The user asked for simplicity twice and did not get it. **Decision 2026-08-28: cut v1 to entries,
-what-needs-you, and one chart.**
-
-### What the cut dissolves — this is the argument for it
-
-| Round-1/2 finding | Status after the cut |
-|---|---|
-| **B2 (r1)** §5.1 cited a source that did not contain what was claimed | **GONE** — no progress chart |
-| **B1 (r2)** the replacement derivation renders 100/100/100 and no current milestone | **GONE** — same |
-| **B2 (r2)** the derivation cannot be shared with `gen-goals-page.py`, tripping §7's own redesign condition | **GONE** — same |
-| **B1 (r1)** "bundled" ≠ "loadable"; no path from plugin dir to served root | **GONE** — nothing is bundled |
-| **H6 (r1)** the "no fallback renderer" argument was rationalisation | **GONE** — no Mermaid |
-| **H2 (r2)** "both paths run on every build" is false for Mermaid | **GONE** — same |
-| Licence audit; Apache-2.0/MPL-2.0 notices (§7a v3) | **GONE** — nothing redistributed |
-| Page-class change to `explainer-delivery.md` (§5.5d v3) | **GONE** — no external asset, so no exemption needed |
-| **B2 (r1)** request identity on a channel with no id | **DEFERRED to v2** — §7 |
-| Health lamps' missing third state; work-flow diagram; backlog counts; recurring mistakes | **DEFERRED to v2** |
-
-**Five of the nine Blocking findings are dissolved rather than fixed.** One prerequisite remains
-(§6), where v3 had five and did not order them.
+### Why this version is smaller than v3
+v1 234 lines → v2 324 → v3 388 → v4 208 (all four verified against git 2026-08-28). The cut removed
+the progress chart and Mermaid, dissolving five Blocking findings rather than fixing them. **Round 3
+verified each dissolution individually.**
+⟳ v4 said *"§5 reached twelve numbered units where v1 had four"* — **v1 had five** (§5.1–§5.5); four
+was a count of *graphics*. Corrected.
 
 ## 3. Scope
 
-### In — three things, plus links
-1. **What needs you** — first, unfolded, often empty.
-2. **What changed** — dated plain entries, newest first, detail folded.
-3. **One chart** — days, which is also how you navigate into the entries.
-4. Plain links to `/goals`, `/backlog-table`, `/latest`, `/`. No counts, no derivation — just links.
-5. A folded glossary. Static text, no derivation, and it is the whole of the rank-3 fix.
+**In:** what-needs-you · what-changed · one chart · the entry gate (§7) · plain links · a folded glossary.
 
-### Out of v1 — with the reason, so re-adding is a decision
-Progress chart · health lamps · work-flow diagram · backlog counts section · recurring mistakes ·
-the request box · Mermaid · marketplace packaging.
+**Out of v1:** progress chart · health lamps · work-flow diagram · backlog counts · recurring
+mistakes · the request box · Mermaid · marketplace packaging.
 
-**Why the request box is out even though the user asked for it.** It carried a Blocking: the
-`POST /questions` channel records only a timestamp, a page and free text — **no id, no type, no
-status** (`explainer-serve.py:671-698`, verified). "Waiting/done" cannot be derived without changing
-the server. That change is worth making; it is not worth making before the page has proved useful.
+**The request box stays out** even though it was asked for: `POST /questions` records only a
+timestamp, a page and free text — no id, no type, no status (`scripts/explainer-serve.py:671-698`,
+verified) — so "waiting/done" cannot be derived without changing the server.
 
-## 4. The page
+## 4. What needs you — first, unfolded
 
-### 4.1 What needs you
-One line per item awaiting the human, each naming the decision — or the words **"Nothing needs you."**
-Derived from entries flagged `needs-you`, plus open pull requests.
+One line per item, each naming the decision — or **"Nothing needs you."**
+Sources: entries flagged `needs-you` that are **not yet resolved** (§6.2), plus `gh pr list`.
 
-⚠ **It must distinguish "nothing needs you" from "I could not tell".** If the entry file is unreadable
-or `gh` fails, the block says so. `"cannot run" is a FAILURE, never a pass` (`CLAUDE.md`).
+⚠ **It must distinguish "nothing needs you" from "I could not tell".** If the entry file is
+unreadable or `gh` fails, the block says which. `"cannot run" is a FAILURE, never a pass`.
 
-### 4.2 What changed
-Newest first. Each entry is three layers:
+## 5. The one chart
 
-| Layer | Visible | Language |
-|---|---|---|
-| Title line | yes | plain, one sentence, and whether it needs you |
-| Fold 1 | no | **plain** — what happened, why it matters, what it means for you |
-| Fold 2 | no | technical, **labelled as such** — commits, paths, commands |
+One bar per day. **Height = commits on `git log --first-parent HEAD`** for that day — named
+explicitly because "commits" is ambiguous once branches and squash-merges exist. It under-counts
+uncommitted work, and the page says so.
 
-**Fold 1 must be plain.** Summary-plain-but-detail-technical was considered and rejected: opening the
-fold would hit the same wall of terms that caused the problem.
+**Orange = that day has an unresolved `needs-you` entry.**
 
-Native `<details>`/`<summary>` — no JavaScript, keyboard-accessible, works saved to disk.
+⟳ **The window is a parameter, default 14 days, with a control to widen it.** v3 established this
+after round 1 showed a fixed fortnight is shorter than the absences this page exists for; **v4 dropped
+it silently and round 3 caught the regression.** Restored, and recorded here so it cannot be lost
+again quietly.
 
-### 4.3 The one chart
-One bar per day for the last 14 days. **Height = commits authored that day**, on the current branch's
-first-parent history — derivable, no judgement, and it under-counts uncommitted work, which the page
-states. **Orange = a day carrying an entry flagged `needs-you`.**
+**Clicking a bar scrolls to that day's entries in §6. The chart never renders entry text** — see §6.1.
 
-Clicking a bar opens that day's entries below it. That is why this is the one chart kept: it is the
-only one that is also navigation, and it shows the gap where you were away.
+## 6. What changed
 
-**A day with commits and no entry renders a bar with nothing under it.** That is the visible tell
-that I skipped writing — an alarm, not a cure, and §5 says so plainly.
+### 6.1 Rendered exactly once
+Round 3 found §4.2 and §4.3 of v4 both claiming to present the entries with neither referencing the
+other. **The entry list in §6 is the only place entry text is rendered.** The chart is navigation
+into it, nothing more.
 
-## 5. Where entries come from, and the honest weakness
+- **The list is not windowed.** Every entry in the store renders, newest first.
+- **The chart is windowed.** An entry older than the window is reachable by scrolling, not by a bar.
+- **An entry on a day with zero commits** renders in the list and gets a **zero-height marked bar**,
+  so "I wrote about a day with no commits" is visible rather than invisible.
 
-The user chose: *"start with mainly (b)"* — I write them — *"and when there are important points, you
-can put more details."*
+### 6.2 The store and its grammar
 
-**Store: `docs/dashboard-entries.md`**, in the repo, append-only. The skill appends; the script parses
-and renders; regeneration is lossless. Round 1 found v2 had **no store at all** — entries lived only
-as markup inside the page that regeneration overwrites, so every entry died on the next build.
-
-Format, specified because round 2 found "fields, not a grammar" was not enough:
+**`docs/dashboard-entries.md`**, in the repo, append-only.
+**The renderer reads the working tree**, not a committed ref — the dashboard is a local live view and
+must show work in progress. The chart reads `HEAD`. Both are stated because round 3 found v4 silent
+on which ref, in a repo where docs land through batched PRs behind a human merge gate.
 
 ```
-## 2026-08-28  [needs-you]
+## 2026-08-28 [needs-you]
 Fixed a note in the backlog that sent the next person at a method that does not work.
-<!--plain-->
-...plain detail...
 <!--tech-->
-...technical detail...
+PR #168, squash 71c7e40. ALTER DEFAULT PRIVILEGES cannot remove PUBLIC's built-in EXECUTE.
 ```
 
-- One `##` block per entry. **Multiple entries on one day are separate blocks** — the date is not a key.
-- A malformed block is **rendered as an error in place**, never skipped silently.
-- Merge conflicts: append-only, newest at the end, so conflicts are rare and resolved by keeping both.
+A grammar, not an example — round 3 found v4's version was still only an example:
 
-**THE WEAKNESS, STATED NOT SOLVED.** An entry exists only if I write it, and I would skip it exactly
-when busy — which is when you most need it. No mechanism fixes that. The empty bar (§4.3) makes the
-failure visible; it does not prevent it. **This is the single largest risk to the whole design, and it
-sits on the rank-1 problem.**
+| Rule | Definition |
+|---|---|
+| Block start | `## ` at **column 0**, followed by `YYYY-MM-DD` |
+| Date | ISO-8601 **and a real calendar date**; `2026-02-30` is malformed |
+| Flags | zero or more of `[needs-you]`, `[resolved: YYYY-MM-DD/N]`, space-separated, after the date |
+| Unknown flag | **malformed** — never silently ignored, because a typo'd `[needs-you]` would silently drop an item off §4 |
+| Entry id | `YYYY-MM-DD/N`, N = 1-based ordinal **within that date, in file order** |
+| Title | the first non-blank line after the header |
+| Plain detail | everything up to `<!--tech-->` or the next column-0 `## ` |
+| Technical detail | after a line that is **exactly** `<!--tech-->`; optional |
+| `##` inside detail | only column-0 `## ` splits blocks; indent or fence it to include one literally |
+| Marker in prose | only a line that is exactly `<!--tech-->` is a marker; inline occurrences are text |
+| Ordering | file order, rendered newest-date-first; ties keep file order |
+| Absent or empty file | **not an error** — the page renders "no entries yet" and says where the file would live |
+| Malformed block | rendered **in place**, raw, under a visible "could not parse this entry" label, and the page still renders everything else |
 
-## 6. The one prerequisite
+**Resolution — because round 3 found §4 could only ever grow.** A `needs-you` item is cleared by a
+later entry carrying `[resolved: <id>]`. Append-only is preserved: nothing is edited, the clearing
+fact is appended. A `[resolved:]` naming an unknown id is **malformed**.
 
-**Folds must survive live reload.** Measured: the injected reload client (`explainer-serve.py:559-580`)
-preserves scroll and refuses to reload while `#qbox` holds a draft, but does **nothing** for
-`<details>`. The page rewrites itself whenever a source changes, so every fold you opened snaps shut —
-on a page whose design is folding.
+**Falsifier:** an entry with a bad date, an unknown flag, and a `[resolved:]` pointing at nothing must
+each render as an error while the surrounding entries still render.
 
-The fix persists open/closed state across reload, keyed by the entry's date-and-index, which
-`gen-dashboard.py` assigns and which is stable because the store is append-only.
-⚠ v3 claimed this "benefits every existing page". **It does not** — the server does not add ids to
-pages it did not generate. Withdrawn.
+## 7. The gate — why an entry will actually exist
 
-**Falsifier:** open two folds, touch a source file, confirm both are still open after the reload.
-It fails today.
+**This is the change that option (a) buys, and it is the answer to the design's largest risk.**
 
-## 7. Build
+Through v4 the rank-1 mechanism was voluntary: an entry existed only if I remembered, and I would
+skip it exactly when busy. `docs/dev-process.md` gives the remedy: *"Before adding a rule here, ask
+whether it can be a script."*
+
+**Bind the entry to an artifact that already cannot be skipped.** Every unit of work in this repo
+produces exactly one: a **pull request**, gated on a human merge (`docs/dev-process.md` Phase 5,
+*"Branch + PR, always"*).
+
+1. **The entry rides the branch.** It is written to `docs/dashboard-entries.md` in the same branch as
+   the work, so it lands when the work lands.
+2. **`scripts/check-dashboard-entry.py` refuses a branch that changes tracked files and adds no entry
+   block.** With `--self-test` covering the near-misses, like the ratchets already in
+   `scripts/check-schema-gates.sh`.
+3. **It repairs the alarm as a side effect.** Entry and commits arrive in the same squash, so
+   "a bar with no entry" becomes a precise statement — *this work shipped without an entry* — rather
+   than an artifact of merge timing, which round 3 showed was the case in v4.
+
+**Decision:** the entry gate ships **with** v1, not after it. A page that promises continuity, rests
+it on a voluntary act, and carries an alarm that does not fire is the one version that should not
+exist.
+
+**The cost, stated:** an entry written to satisfy a gate can become a compliance artifact rather than
+a briefing. That is real. It is smaller than no entry at all, and the user is the only detector of
+quality either way (§9).
+
+**Exemptions must be explicit and visible:** a branch may declare `NO-ENTRY: <reason>` in its body,
+which the check accepts and the dashboard **displays**, so a skipped entry is a recorded decision
+rather than a silence.
+
+## 8. Build
 
 | Piece | Does |
 |---|---|
-| `scripts/gen-dashboard.py` | parses `docs/dashboard-entries.md`, derives the day counts and open PRs, renders the page |
-| Skill `/dashboard` | writes entries in plain language, appends to the store, composes and delivers |
+| `scripts/gen-dashboard.py` | parses the store, derives day counts and open PRs, renders the page |
+| `scripts/check-dashboard-entry.py` | the gate (§7), with `--self-test` |
+| Skill `/dashboard` | writes entries in plain language, appends, composes, delivers |
 
-**Decision:** a skill *and* a script, because the plain-English writing is judgement and the counts
-must not go stale. `regen-goals-page.sh:4-10` records that a purely derived page gets a script and a
-hook and never a skill — that rule holds; this page is not purely derived.
+A skill **and** scripts: the plain-English writing is judgement; the counts must not go stale.
+`.claude/hooks/regen-goals-page.sh:4-10` records that a purely derived page gets a script and a hook
+and never a skill — that holds, and this page is not purely derived.
 
-⚠ The skill must be added to `PAGE_SKILLS` in `check-explainer-delivery.py`. **That check cannot
-enforce its own list** — verified: it only inspects skills already on it, so an absent skill is
-invisible and it exits green. This is a manual step with **no gate behind it**, stated rather than
-pretended otherwise.
+⚠ The skill must be added to `PAGE_SKILLS` in `scripts/check-explainer-delivery.py`. **That check
+cannot enforce its own list** — verified: it inspects only skills already on it, so an absent skill is
+invisible and it exits green. A manual step with **no gate behind it**, stated rather than pretended.
 
-## 8. How we will know it works
+## 9. How we will know it works
 
 **It fails if** the user opens the dashboard after two days away and still has to ask "what happened?"
 
-Observable sub-criteria, because round 2 rightly called that unattributable on its own:
+Observable, because round 2 rightly called that unattributable alone:
 
 - the page names the last date an entry was written;
 - every day with commits and no entry is visibly marked;
 - "what needs you" is present, correct, or explicitly says it could not tell;
+- a resolved `needs-you` item disappears from §4 and stays in §6;
 - every fold survives a reload.
 
 | Check | Fails when |
 |---|---|
-| `gen-dashboard.py --self-test` | entry parsing, day bucketing, or the malformed-block path mis-derives |
-| fold-survival probe | any `<details>` closes across a reload (§6) |
-| affordance probe | ask-buttons are not topmost at their own centre (`explainer-delivery.md` §5b) |
+| `gen-dashboard.py --self-test` | any §6.2 grammar rule mis-parses, or a malformed block is skipped instead of shown |
+| `check-dashboard-entry.py --self-test` | a branch changing tracked files with no entry and no `NO-ENTRY:` passes |
+| fold-survival probe | any `<details>` closes across a reload (§10) |
+| affordance probe | ask-buttons are not topmost at their own centre (`.agents/skills/shared/explainer-delivery.md` §5b) |
 
-**None of these measure comprehension.** Only the user can report whether it works, and the design is
-revised on their word, not on a green check.
+**None of these measure comprehension.** Only the user can report whether it works.
 
-## 9. Open questions
+## 10. Prerequisites — plural, because "one" was wrong
 
-1. Activity window — 14 days is a guess; adjust after use.
-2. Whether the fold fix (§6) ships here or as its own change.
+v4 claimed one. Round 3 counted more. Honestly:
 
-## 10. What was measured, and when
+1. **Folds survive live reload.** The injected client (`scripts/explainer-serve.py:559-580`) preserves
+   scroll and guards `#qbox`, but does **nothing** for `<details>`. ⟳ v4's claim that fixing it
+   "benefits every existing page" is **withdrawn** — the server does not add ids to pages it did not
+   generate.
+2. **The store must be created** — `docs/dashboard-entries.md` does not exist yet.
+3. **`/dashboard` added to `PAGE_SKILLS`** — manual, ungated (§8).
+4. **`gh` failure behaviour defined** for the open-PR half of §4.
 
-Every figure here was produced by running something on 2026-08-28. **Three times in one session a
-count in this spec went stale within hours because the spec's own edits changed it** — the goals page
-grew twice, the backlog page grew when I fixed it. Counts are therefore kept out of this version
-wherever they are not load-bearing.
+## 11. Open questions
 
-Two stale numbers found and left for their owners: `explainer-delivery.md:68` says `brief-compose.py`
-has **14** self-test cases; it has **30**.
+1. Default window — 14 days is a guess (§5); adjust after use.
+2. Whether the fold fix (§10.1) ships here or separately.
+
+## 12. Stale numbers found and left for their owners
+
+`brief-compose.py --self-test` returns **30/30** (run 2026-08-28). **Two** documents still say 14:
+`.agents/skills/shared/explainer-delivery.md:68` and `.agents/skills/brief/SKILL.md:162`.
+⟳ v4 said "two stale numbers" and named one location; both are named now, with full paths — round 2
+and round 3 both flagged this document's habit of bare citations.
