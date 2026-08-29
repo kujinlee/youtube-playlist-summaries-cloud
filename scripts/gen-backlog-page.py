@@ -1435,9 +1435,49 @@ SAMPLE = """## Items
 # this measures the RATIO instead, across every palette block. The sibling defect in
 # gen-dashboard.py was found the same day by a guard that checked presence and let three
 # colour-value mutations through; see the note above contrast_failures there.
+# ⟲ Round 2 replaced a flat FOREGROUNDS x SURFACES cross-product, which was wrong in both
+# directions and passed only because the data hid it. It MISSED `.num a{color:inherit}` — 70 of
+# this page's links, taking their colour from `.num` (`--ink-3`) — so a mutation to 1.37:1
+# SURVIVED at 64/64. And it would have over-asserted: `--ink-3` measures 4.26:1 on `--ground`
+# and 4.22:1 on `--pending-bg`, under AA, so simply adding it to the foreground list reddens a
+# CORRECT page. `.num a` only ever renders inside `.item`, whose background is `--card`.
+#
+# So: explicit (foreground, surface) pairs. The cross-product asserted pairs that never occur
+# and missed pairs that do.
 LINK_MIN = 4.5
-LINK_FG = ("--structural", "--ink")                        # a{}'s colour, and .num a:hover's
-LINK_BG = ("--ground", "--card", "--panel", "--pending-bg")
+LINK_PAIRS: tuple[tuple[str, str], ...] = (
+    # `a` is unscoped, so its colour can land on any surface the page paints.
+    ("--structural", "--ground"), ("--structural", "--card"),
+    ("--structural", "--panel"), ("--structural", "--pending-bg"),
+    ("--ink-3", "--card"),        # .num a inherits .num's colour; .item is --card
+    ("--ink", "--card"),          # .num a:hover
+)
+
+# Every selector in this page's stylesheet that colours a link, and where its colour comes from.
+# `link_rule_drift` asserts the emitted CSS still matches this exactly — that is the ONLY thing
+# keeping LINK_PAIRS honest as the page grows. Round 2's defect was a link rule the model had
+# never heard of; a new one now fails loudly instead of being silently unmeasured.
+# `.depmap a` sets no colour (SVG, coloured by fill) and is listed so its absence is deliberate.
+LINK_RULES: dict[str, str] = {
+    "a": "var(--structural)",
+    ".qabody a": "var(--structural)",
+    ".rootref a": "var(--structural)",
+    "td.mono a": "var(--structural)",
+    ".num a": "inherit",
+    ".num a:hover": "var(--ink)",
+    ".depmap a": "",
+    ".depmap a:hover .n": "",
+}
+
+# ⟲ Round 2, second pass. Modelling `.num a` as "inherit" was NOT enough: repointing the
+# PARENT — `.num{color:var(--ink-3)}` -> `var(--line)`, 1.37:1 — left `.num a` itself untouched,
+# so the drift check saw nothing and the contrast check went on measuring `--ink-3`, a variable
+# the links no longer use. MEASURED: that mutation survived at 69/69 against the first version
+# of this guard. An inherited colour has to be modelled at its SOURCE, or the model describes a
+# page that no longer exists.
+LINK_INHERITS: dict[str, tuple[str, str]] = {
+    ".num a": (".num", "var(--ink-3)"),
+}
 
 
 def _luminance(colour: str) -> float:
@@ -1486,15 +1526,53 @@ def link_contrast_errors(page: str, minimum: float = LINK_MIN) -> list[str]:
     out: list[str] = []
     for sel, body in blocks:
         pal = {**base, **hexes(body)}          # later blocks OVERRIDE, they do not replace
-        for fg in LINK_FG:
-            for bg in LINK_BG:
-                if fg not in pal or bg not in pal:
-                    out.append(f"{sel}: {fg} or {bg} is undefined")
-                    continue
-                a, b = _luminance(pal[fg]), _luminance(pal[bg])
-                ratio = (max(a, b) + 0.05) / (min(a, b) + 0.05)
-                if ratio < minimum:
-                    out.append(f"{sel}: {fg} {pal[fg]} on {bg} {pal[bg]} = {ratio:.2f}:1")
+        for fg, bg in LINK_PAIRS:
+            if fg not in pal or bg not in pal:
+                out.append(f"{sel}: {fg} or {bg} is undefined")
+                continue
+            a, b = _luminance(pal[fg]), _luminance(pal[bg])
+            ratio = (max(a, b) + 0.05) / (min(a, b) + 0.05)
+            if ratio < minimum:
+                out.append(f"{sel}: {fg} {pal[fg]} on {bg} {pal[bg]} = {ratio:.2f}:1")
+    return out
+
+
+def link_rule_drift(page: str) -> list[str]:
+    """Selectors that colour a link but are not in LINK_RULES, and vice versa.
+
+    LINK_PAIRS is a hand-written model of where link colours land, and a hand-written model
+    goes stale the moment someone adds a rule. This is what makes it fail loudly instead:
+    round 2's defect was `.num a{color:inherit}`, a rule the model had never heard of, whose
+    70 links were therefore never measured. Any NEW link rule now reddens this case until it
+    is added here and paired in LINK_PAIRS.
+    """
+    css = page[page.index("<style>"):page.index("</style>")]
+    colours: dict[str, str] = {}
+    for sel, body in re.findall(r"([^{}\n]*?)\{([^}]*)\}", css):
+        m = re.search(r"color:\s*([^;}]+)", body)
+        colours[sel.strip()] = m.group(1).strip() if m else ""
+    found = {s: c for s, c in colours.items() if re.search(r"(^|[\s>])a($|[:\s.])", s)}
+    if not found:
+        raise ShapeError("found NO link rules at all — the selector scan is broken, not the page")
+    out = []
+    # An inherited link colour lives on the PARENT, so that is where drift has to be detected.
+    for sel, (parent, want) in LINK_INHERITS.items():
+        if sel not in found:
+            out.append(f"LINK_INHERITS names {sel!r} but the page no longer emits it")
+        elif parent not in colours:
+            out.append(f"{sel!r} inherits from {parent!r}, which the page no longer emits")
+        elif colours[parent] != want:
+            out.append(f"{sel!r} inherits from {parent!r}, modelled {want!r} but emitted "
+                       f"{colours[parent]!r} — LINK_PAIRS is now measuring the wrong variable")
+    for sel in sorted(set(found) | set(LINK_RULES)):
+        want, got = LINK_RULES.get(sel), found.get(sel)
+        if want is None:
+            out.append(f"UNMODELLED link rule {sel!r} -> {got!r}: add it to LINK_RULES and pair "
+                       f"its colour in LINK_PAIRS, or its links go unmeasured")
+        elif got is None:
+            out.append(f"LINK_RULES names {sel!r} but the page no longer emits it")
+        elif want != got:
+            out.append(f"{sel!r} colour changed: modelled {want!r}, emitted {got!r}")
     return out
 
 
@@ -1629,8 +1707,39 @@ def self_test() -> int:
     case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
 
     # ── links are READABLE, in every palette this page can be rendered under ────────────────────
-    case("every link colour clears WCAG AA on every surface, all four palettes",
+    case("every link colour clears WCAG AA on every surface it lands on, all four palettes",
          lambda: link_contrast_errors(_page) == [])
+    # ⟲ Round 2. The case above measures a HAND-WRITTEN model of which colour lands on which
+    # surface; this one asserts the page still matches that model. Without it the model silently
+    # stops describing the page — which is exactly how `.num a`'s 70 links went unmeasured.
+    case("the page's link rules still match the model that LINK_PAIRS is built from",
+         lambda: link_rule_drift(_page) == [])
+    case("a NEW link rule the model has not heard of is reported, not ignored",
+         lambda: any("UNMODELLED" in e for e in link_rule_drift(
+             _page.replace("</style>", ".newthing a{color:var(--problem)}</style>", 1))))
+    case("a link rule that CHANGES colour is reported",
+         lambda: any("colour changed" in e for e in link_rule_drift(
+             _page.replace(".rootref a{color:var(--structural)}",
+                           ".rootref a{color:var(--line)}", 1))))
+    case("a scan that matches no link rules RAISES rather than reporting no drift",
+         lambda: _raises(lambda: link_rule_drift("<style>body{color:red}</style>"), ShapeError))
+    # ⟲ The round-2 survivor, exactly as the reviewer wrote it: repoint the PARENT of an
+    # inherited link colour. `.num a` is untouched, so the first version of this guard saw
+    # nothing and the contrast check kept measuring a variable the links no longer use.
+    case("repointing .num's colour is CAUGHT — the parent is where an inherited colour drifts",
+         lambda: any("inherits from" in e for e in link_rule_drift(
+             _page.replace(".num{font-family:var(--mono);font-size:.9rem;color:var(--ink-3);",
+                           ".num{font-family:var(--mono);font-size:.9rem;color:var(--line);", 1))))
+    case("...and deleting the parent rule entirely is also caught",
+         lambda: any("no longer emits" in e for e in link_rule_drift(
+             _page.replace(".num{font-family:var(--mono);font-size:.9rem;color:var(--ink-3);",
+                           ".numGONE{font-family:var(--mono);font-size:.9rem;color:var(--ink-3);", 1))))
+    # The round-2 survivor itself, pinned: .num's colour is what .num a inherits, and it is
+    # measured against --card because .item — the only place .num renders — is --card.
+    case("breaking .num's colour is now CAUGHT (it was the round-2 survivor at 1.37:1)",
+         lambda: link_contrast_errors(
+             _page.replace("--ink-3:#6b7686", "--ink-3:#dfdcd5")
+                  .replace("--ink-3:#7a8494", "--ink-3:#2a3039")) != [])
     # The instrument's own falsifiers. It returns a LIST, so a stylesheet it could not parse
     # would otherwise report "no failures" and be indistinguishable from a readable page.
     case("a page with no palette RAISES rather than reporting no failures",

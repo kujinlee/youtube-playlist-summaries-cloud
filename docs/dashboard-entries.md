@@ -138,3 +138,40 @@ reproducible but not mechanised; backlog #70 retargets that manifest and would d
 
 ⚠ All three mutation harnesses run today reported a meaningless control on first use. Every "caught"
 here comes from a run whose control was green.
+
+## 2026-08-29
+A second review round found the repair above was still incomplete, so this is a third pass on the
+same problem.
+
+The backlog page's item numbers — the `#17`, `#25` links down the left of every row, seventy of
+them — take their colour from the row rather than carrying one of their own. My readability test
+didn't know that, so it never checked them. Breaking them to a 1.4-out-of-4.5 grey left everything
+green.
+
+Worth reporting plainly: my first attempt to fix *that* also didn't work. The test now knew the
+numbers borrowed their colour, but not from where — so changing where they borrowed it from slipped
+through again, and I only found out because I re-ran the reviewer's exact test instead of assuming
+my fix had worked. The second attempt holds.
+
+This is the fourth time in this small piece of work that something was correct about the thing it
+named and blind to the layer around it, and the second time a fix created the next one.
+<!--tech-->
+`link_contrast_errors` used a flat `LINK_FG x LINK_BG` cross-product. It missed
+`.num a{color:inherit}` (inherits `--ink-3` from `.num`; `.item` is `--card`), so Codex's mutation
+`.num{color:var(--ink-3)}` -> `var(--line)` — 1.37:1 light, 1.30:1 dark — SURVIVED 64/64.
+
+⚠ Codex's proposed fix was declined, measured: adding `--ink-3` to the foreground list asserts it
+against `--ground` (4.26:1) and `--pending-bg` (4.22:1), both sub-AA today, reddening a correct
+page. The defect was the MODEL — a cross-product asserts pairs that never co-occur and misses pairs
+that do. It passed only because `--structural` clears AA everywhere.
+
+Now explicit `LINK_PAIRS`, plus `link_rule_drift` asserting the emitted CSS still matches the nine
+modelled link rules, plus `LINK_INHERITS` pinning an inherited colour at its SOURCE — which the
+first fix did not do, so the same mutation survived a second time at 69/69. Control 71/71; both
+repoint mutations now caught. 64 -> 71 cases.
+
+⚠ REVIEW GAP: the independent Claude reviewer for round 2 had not returned at commit time. This
+round is Codex plus coordinator verification, which is weaker than round 1. Round 3 should re-run it.
+
+⚠ Out of scope, reported not fixed: `--ink-3` is sub-AA as body text on `--ground` (4.26:1) and
+`--pending-bg` (4.22:1). Pre-existing, not a link issue.
