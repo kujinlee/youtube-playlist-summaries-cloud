@@ -3,7 +3,7 @@
 
 WHY THIS EXISTS
 ---------------
-Three skills produce a served HTML page: `explain-diff`, `brief`, `explain-findings`. Before
+Several skills produce a served HTML page — `PAGE_SKILLS` below is the list, and it grows. Before
 2026-08-24 the delivery loop — where the file goes, `explainer-serve.py`, the Ask tray, arming the
 Monitor, delivering the URL — was written out in full in `explain-diff` AND again in `brief`.
 Adding a third page-producing skill would have made three copies of a procedure that cost four

@@ -707,10 +707,20 @@ def parse_entries(text: str) -> list[dict]:
             entry["date"], entry["ordinal"] = date, seen[date]
             entry["id"] = f"{date}/{seen[date]}"
             for f in FLAG.findall(m.group(2)):
+                # The `else` here used to assume every non-`needs-you` flag
+                # contains a colon — true only by accident of FLAG's current
+                # alternation, in a file whose header says it OWNS the grammar
+                # and invites you to extend it there. Measured: adding one
+                # alternative to FLAG left the gate's suite fully green and made
+                # `f.split(":", 1)[1]` raise IndexError on EVERY render, so the
+                # page stopped existing rather than degrading one entry. The
+                # generator imported the grammar's symbols but not its meaning.
                 if f == "needs-you":
                     entry["needs_you"] = True
-                else:
+                elif f.startswith("resolved:"):
                     entry["resolves"].append(f.split(":", 1)[1].strip())
+                else:
+                    entry["error"] = f"unrecognised flag [{f}]"
         elif m is not None:
             # A block whose DATE is malformed never gets an id, so pass 2 could
             # not distinguish "no such entry" from "that entry exists and is
@@ -1281,6 +1291,25 @@ def _self_test() -> int:
          ["2026-08-26/1", "2026-08-26/2"])
     case("two [resolved:] flags clear BOTH items", [x["id"] for x in unresolved(twin)], [])
 
+    # An UNKNOWN flag must degrade THAT ENTRY, never take the page down. The gate
+    # owns FLAG and its docstring invites extending it there; when it was extended
+    # the gate stayed fully green and `parse_entries` raised IndexError on every
+    # render. `_flagged` is built through the gate's own grammar rather than a
+    # literal, so this case exercises the real seam instead of a mock of it.
+    _flagged = re.compile(r"\[(needs-you|blocked|resolved:\s*[^\]]*)\]")
+    _real_flag = globals()["FLAG"]
+    globals()["FLAG"] = _flagged
+    try:
+        unknown = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
+    except Exception as exc:                 # the defect: the page does not render
+        unknown = [{"error": None, "raised": f"{type(exc).__name__}"}]
+    finally:
+        globals()["FLAG"] = _real_flag
+    case("an unrecognised flag is an ERROR, not a crash",
+         unknown[0]["error"] is not None, True)
+    case("...and the error names the flag it did not recognise",
+         "blocked" in (unknown[0]["error"] or ""), True)
+
     nospace = parse_entries("##2026-08-28\nNo space after the hashes.\n")
     case("'##' with no space is still an entry", len(nospace), 1)
     case("'##' with no space is MALFORMED", nospace[0]["error"] is not None, True)
@@ -1577,6 +1606,79 @@ def _self_test() -> int:
     v, err = _with_run(lambda *a, **k: _R(0, '[{"number": 9, "title": "T"}]', ""), open_prs)
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
+
+    # ── main()'S CONTRACT ────────────────────────────────────────────────────
+    # `main` had ZERO coverage — the same hole round 4 measured in
+    # check-dashboard-entry.py's `collect`/`main`, where `return 2` -> `return 0`
+    # made the ratchet fail-open at a fully green suite. That fix landed on one
+    # script and not its sibling. Four one-line mutations survived here, and two
+    # are the exact promise .agents/skills/dashboard/SKILL.md makes about the exit
+    # code — the promise .claude/hooks/regen-dashboard.sh's error branch rests on.
+    import contextlib as _ctx, io as _io, tempfile as _tf
+
+    def _run_main(args, stub):
+        """main() under a stubbed subprocess -> (rc, stderr).
+
+        Both streams are captured: stderr because it is what (c) asserts on, and
+        stdout because main's own success line would otherwise be interleaved
+        into this suite's output and read as a result of it.
+        """
+        buf, real = _io.StringIO(), _sp.run
+        _sp.run = stub
+        try:
+            with _ctx.redirect_stderr(buf), _ctx.redirect_stdout(_io.StringIO()):
+                rc = main(args)
+        finally:
+            _sp.run = real
+        return rc, buf.getvalue()
+
+    def _compose(writes: bool, collectors_ok: bool):
+        """One stub standing in for BOTH brief-compose and the git/gh collectors."""
+        def _f(argv, *a, **k):
+            if argv and argv[0] == sys.executable:            # brief-compose
+                if writes:
+                    pathlib.Path(argv[argv.index("--out") + 1]).write_text("<html>")
+                return _R(0)
+            return _R(0, "[]", "") if collectors_ok else _R(2, "", "boom")
+        return _f
+
+    with _tf.TemporaryDirectory() as _td:
+        _store = pathlib.Path(_td) / "store.md"
+        _store.write_text("## 2026-08-29\nA title.\n")
+        _out = pathlib.Path(_td) / "sub" / "page.html"
+        _args = ["--store", str(_store), "--out", str(_out)]
+
+        # (a) brief-compose exits 0 and writes NOTHING. `--out` is the deliverable,
+        # so a success line here would be a page that does not exist.
+        rc, _ = _run_main(_args, _compose(writes=False, collectors_ok=True))
+        case("main: a compose that wrote no page is a FAILURE, never a 0", rc, 1)
+
+        # (b) the happy path through the SAME seam, so (a) cannot be passing
+        # merely because the stub broke everything.
+        rc, _ = _run_main(_args, _compose(writes=True, collectors_ok=True))
+        case("main: a composed page exits 0", (rc, _out.is_file()), (0, True))
+
+        # (c) the page composed, but git and gh could not be reached. The run still
+        # succeeds — a page beats none — and every dead collector is announced on
+        # STDERR. Without that loop, a fully-measured page and one with three dead
+        # collectors are indistinguishable to anything reading stdout.
+        _out.unlink()
+        rc, errtxt = _run_main(_args, _compose(writes=True, collectors_ok=False))
+        case("main: a dead collector is announced on stderr, not swallowed",
+             (rc, errtxt.count("⚠") >= 3), (0, True))
+
+        # (d) brief-compose hangs. The bound exists because this runs from a hook,
+        # where an unbounded child hangs the turn with no output at all.
+        def _timeout(*a, **k):
+            raise _sp.TimeoutExpired(cmd="brief-compose.py", timeout=1)
+        rc, _ = _run_main(_args, _timeout)
+        case("main: a compose that timed out is a FAILURE, never a 0", rc, 1)
+
+    # (e) a non-positive window refuses BEFORE anything is measured.
+    _buf = _io.StringIO()
+    with _ctx.redirect_stderr(_buf):
+        _wrc = main(["--window", "0"])
+    case("main: --window below 1 is a refusal, not a silent default", _wrc, 2)
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
@@ -2382,6 +2484,62 @@ mutation caught by a different case, fails the check.
    ]
   ],
   "expect": "main: a could-not-tell exits 2 — NEVER 0"
+ },
+ {
+  "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "                elif f.startswith(\"resolved:\"):\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())\n                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
+    "                else:\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())"
+   ]
+  ],
+  "expect": ["an unrecognised flag is an ERROR, not a crash",
+            "...and the error names the flag it did not recognise"]
+ },
+ {
+  "name": "main: a compose that wrote NO page reports success",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if r.returncode != 0 or not a.out.is_file():",
+    "    if False:"
+   ]
+  ],
+  "expect": "main: a compose that wrote no page is a FAILURE, never a 0"
+ },
+ {
+  "name": "main: a compose that TIMED OUT reports success",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 1",
+    "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 0"
+   ]
+  ],
+  "expect": "main: a compose that timed out is a FAILURE, never a 0"
+ },
+ {
+  "name": "main: the dead-collector warning loop never fires, so a half-measured page looks whole",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    for label, err in ((\"git\", git_error), (\"gh\", pr_error),\n                       (\"gh/exemptions\", exempt_error), (\"store\", store_error)):",
+    "    for label, err in ():"
+   ]
+  ],
+  "expect": "main: a dead collector is announced on stderr, not swallowed"
+ },
+ {
+  "name": "main: a non-positive --window is silently accepted",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if a.window < 1:",
+    "    if False:"
+   ]
+  ],
+  "expect": "main: --window below 1 is a refusal, not a silent default"
  }
 ]
 ```
@@ -2837,6 +2995,36 @@ same author. That is the finding worth carrying out of this slice, and it is in
 
 ---
 
+## v9 — the whole-branch review, and the two findings that were MEASURED
+
+The branch review (2026-08-29, after Tasks 1–6 landed) returned **nothing Critical** and two
+Important findings, both reproduced rather than argued. Neither is about the plan's prose; both are
+in `scripts/gen-dashboard.py`, so the plan's blocks and the delivered file moved together and the
+evidence block below was regenerated in the same edit.
+
+**C1 — the generator imported the grammar's SYMBOLS but not its MEANING.** `parse_entries`'s flag
+loop ended in a bare `else` that assumed every non-`needs-you` flag contains a colon. That was true
+only by accident of `FLAG`'s current alternation — in `scripts/check-dashboard-entry.py`, a file
+whose header says it **owns** the grammar and whose `_gate_module()` docstring invites you to extend
+it there. Measured: adding one alternative to `FLAG` left the gate at **46/46 + 5/5**, fully green,
+and made `parse_entries` raise `IndexError` on **every** render — so `gen-dashboard.py` exits
+non-zero, `regen-dashboard.sh` prints *"the page is now STALE"*, and the reader sees a page that has
+silently stopped moving. **This slice's own failure mode, reached through the seam built to prevent
+it.** An unknown flag now errors that ENTRY; the page degrades one block instead of dying.
+
+**C2 — `main()` had zero coverage**, which is round 4's finding about
+`check-dashboard-entry.py`'s `collect`/`main` recurring in the sibling file the fix did not reach.
+Four one-line mutations each survived a fully green **95/95**, and two of them are the exact promise
+`.agents/skills/dashboard/SKILL.md` makes about the exit code — the promise
+`.claude/hooks/regen-dashboard.sh`'s error branch rests on. All four are now declared mutations
+caught by cases that name them.
+
+⚠ **The shape is the one this plan has now filed seven times**: a seam that is narrower than the
+prose describing it. C1's `else` and C2's uncovered wrapper are both *"a check that reports success
+over something it never measured"*, one layer out from where the previous fix landed.
+
+---
+
 ### Standing evidence — GENERATED, not typed
 
 ```
@@ -2846,13 +3034,13 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
     not assembled: assertion rows added to scripts/explainer-serve.py's OWN suite, not to a file this plan assembles
 
   scripts/check-dashboard-entry.py  4 blocks assembled -> 46/46 passed · 5/5 cannot-run cases passed
-  scripts/gen-dashboard.py      8 blocks assembled -> 95/95 passed
+  scripts/gen-dashboard.py      8 blocks assembled -> 102/102 passed
 
   subject: the plan's blocks, DIFFED against the delivered files:
     identical  scripts/check-dashboard-entry.py
     identical  scripts/gen-dashboard.py
 
-  mutations declared and run: 37, caught 37
+  mutations declared and run: 42, caught 42
     caught   day anchors never emitted (every bar href is a dead link)
     caught   bar height ignores commits
     caught   entry title not rendered
@@ -2890,6 +3078,11 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
     caught   the GATE reads a broken git as 'nothing changed'
     caught   the GATE's missing-git branch reports no error
     caught   THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges
+    caught   the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render
+    caught   main: a compose that wrote NO page reports success
+    caught   main: a compose that TIMED OUT reports success
+    caught   main: the dead-collector warning loop never fires, so a half-measured page looks whole
+    caught   main: a non-positive --window is silently accepted
 ```
 
 Reproduce with `python3 scripts/check-plan-code.py <this file> --compare . --evidence`.

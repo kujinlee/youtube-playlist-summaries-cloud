@@ -1344,7 +1344,7 @@ corrections slice above.
 | `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | **v8** (`ce0cdf1`) — rounds 5–6 folded in; **NOT CONVERGED**; reviewing closed by DECISION, not convergence |
 | `scripts/gen-dashboard.py`, `docs/dashboard-entries.md` | **NEW, committed.** The parser, the collectors, the page, and the append-only store |
 | `.agents/skills/dashboard/`, `.claude/hooks/regen-dashboard.sh` | **NEW, committed.** The skill that writes an entry, and the hook that regenerates the page whenever the store is written |
-| `scripts/check-plan-code.py` | **NEW, committed.** Assembles the plan's code, runs it, mutates it, diffs it against the delivered scripts (`--compare`), and refuses a stale evidence block (`--verify-evidence`). 44 self-test cases |
+| `scripts/check-plan-code.py` | **NEW, committed.** Assembles the plan's code, runs it, mutates it, diffs it against the delivered scripts (`--compare`), and refuses a stale evidence block (`--verify-evidence`). For the case count run `--self-test` — this row said **44** against a measured **121**, twelve lines above a bullet that said `44 → 121` |
 | `docs/reviews/plan-project-dashboard-r{1,2,3,4}-*.md` | rounds 1–4, **NOT CONVERGED, every half** |
 
 - [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped
@@ -1374,8 +1374,13 @@ corrections slice above.
       `--compare .`.
 - [ ] **Backlog #69** 🟢 — the external `--self-test` count ratchet. Round 6's only unfixed finding,
       declared in the script's header rather than ticked: a suite cannot observe its own exit code.
-- [ ] **Whole-branch review, then the PR.** Per-task review ran throughout; the branch has not yet
-      been reviewed as a whole, and Task 6 Step 7 (push + PR) is deliberately NOT done — the plan
+- [x] **Whole-branch review — DONE 2026-08-29, mergeable, nothing Critical.** Two Important findings,
+      both **measured** and both in `scripts/gen-dashboard.py`, fixed in one wave (plan v9):
+      the flag loop assumed every non-`needs-you` flag carried a colon, so extending `FLAG` in the
+      file that OWNS the grammar left the gate fully green and crashed **every** render; and `main()`
+      had zero coverage, where four one-line mutations survived — two of them the exit-code promise
+      the regen hook's error branch depends on. Mutations 37 → 42, suite 95 → 102.
+- [ ] **The PR.** Task 6 Step 7 (push + PR) deliberately NOT done by the implementer — the plan
       orders it before the branch review and `docs/dev-process.md` Phase 5 orders it after, and the
       process wins. Merging stays the human gate.
 - [ ] **The gate is not proven until it has been seen to REFUSE on GitHub.** Task 1 ships a tested
