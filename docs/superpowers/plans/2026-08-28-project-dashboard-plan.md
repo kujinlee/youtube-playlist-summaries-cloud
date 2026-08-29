@@ -143,7 +143,7 @@ EXEMPT_DIRS = ("docs/reviews/",)
 EXEMPT_FILES = ("docs/dashboard-entries.md",)
 NO_ENTRY = "NO-ENTRY:"
 
-# ─── the entry-header grammar — ONE definition, imported by gen-dashboard.py ───
+# ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
 HEADER = re.compile(r"^## (\S+)(.*)$")
 FLAG = re.compile(r"\[(needs-you|resolved:\s*[^\]]*)\]")
 
@@ -213,7 +213,7 @@ def _indented(text: str) -> bool:
 def exemption_reason(pr_body: str) -> str | None:
     """The reason after a line-leading `NO-ENTRY:`, or None.
 
-    ONE DEFINITION, shared with gen-dashboard.py, so the page displays exactly
+    ONE DEFINITION, shared with scripts/gen-dashboard.py, so the page displays exactly
     the exemptions the gate granted (spec §7). An exemption must be DELIBERATE,
     so anything a Markdown reader treats as inert does not count: fenced code
     (closed only by its own character), indented code (4+ columns, tabs

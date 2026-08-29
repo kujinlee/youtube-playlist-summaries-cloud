@@ -11,7 +11,7 @@ EXEMPT_DIRS = ("docs/reviews/",)
 EXEMPT_FILES = ("docs/dashboard-entries.md",)
 NO_ENTRY = "NO-ENTRY:"
 
-# ─── the entry-header grammar — ONE definition, imported by gen-dashboard.py ───
+# ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
 HEADER = re.compile(r"^## (\S+)(.*)$")
 FLAG = re.compile(r"\[(needs-you|resolved:\s*[^\]]*)\]")
 
@@ -47,7 +47,6 @@ def header_error(line: str) -> str | None:
 def _added_entry_line(line: str) -> bool:
     return line.startswith("+") and header_error(line[1:]) is None
 
-
 FENCE = re.compile(r"^(?P<ind> {0,3})(?P<ch>`{3,}|~{3,})")
 
 
@@ -74,7 +73,7 @@ def _indented(text: str) -> bool:
 def exemption_reason(pr_body: str) -> str | None:
     """The reason after a line-leading `NO-ENTRY:`, or None.
 
-    ONE DEFINITION, shared with gen-dashboard.py, so the page displays exactly
+    ONE DEFINITION, shared with scripts/gen-dashboard.py, so the page displays exactly
     the exemptions the gate granted (spec §7). An exemption must be DELIBERATE,
     so anything a Markdown reader treats as inert does not count: fenced code
     (closed only by its own character), indented code (4+ columns, tabs
@@ -147,7 +146,6 @@ def verdict(changed: list[str], added_entry: bool, pr_body: str) -> tuple[int, s
     return 1, (f"{len(real)} tracked file(s) changed and no entry was added to "
                f"docs/dashboard-entries.md. Add a '## YYYY-MM-DD' block describing "
                f"the change in plain words, or put 'NO-ENTRY: <reason>' in the PR body.")
-
 
 def _self_test() -> int:
     ok = fail = 0
@@ -229,7 +227,6 @@ def _self_test() -> int:
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
-
 
 def collect(base: str) -> tuple[list[str], bool, str | None]:
     try:
