@@ -212,3 +212,44 @@ plus three new ones. Their `--ink-3` finding was already closed by the previous 
 ⚠ Still open, now quantified: the plan's mutation manifest is 43 before and 43 after, against 17 new
 cases. `--verify-evidence` passing says nothing about whether the contrast guards are
 mutation-covered. Backlog #70.
+
+## 2026-08-29
+A planning document no longer has a veto over two production scripts.
+
+Until today, fixing a bug in either dashboard script turned the build red until you also
+copied the identical edit into a 3,170-line planning document. That document held a second
+copy of both scripts — about 1,500 lines — and a check enforced that the two matched
+character for character. The check was doing something real: it made sure the tests we
+claim to run are running against the code that actually ships. But it went about it by
+comparing the code to a copy in a document, which is a strange way to check anything.
+
+The tests now run against the real files directly. The document's copy is deleted rather
+than left with a warning label, because code in a document that nothing checks quietly
+stops being true, and looks authoritative while doing it.
+
+Honest about what's left: this doesn't remove the coupling entirely. About 45 specific
+lines are still named by the tests, so changing one of those still means updating the test.
+That's down from every line in both files. Over the busiest editing day these files have
+had, none of the 45 were touched.
+<!--tech-->
+`check-plan-code.py <plan> --compare . --verify-evidence` is gone from CI, replaced by
+`check-plan-code.py --mutate .`. The 43-entry manifest lives in `scripts/mutations/*.json`,
+moved verbatim by script with a lossless round-trip proved first.
+
+The mutation engine is unchanged — extracted to `run_mutations(d, muts, known)` so it has two
+callers and is indifferent to where the code came from. Verdict identical before and after:
+43 mutations / 0 survivors. `--mutate` copies the WHOLE `scripts/` tree (siblings import each
+other) and refuses a red control before applying anything.
+
+`EXPECTED_MUTATIONS` pins coverage per script — exact, not a floor — and lives in the runner,
+not beside the entries it counts. Without it, deleting a manifest entry would narrow coverage
+with CI still green: backlog #69's class, and the shape found in `CONTRAST_MIN` the same day.
+
+Equivalence demonstrated on one tree (43/0 both paths) and each path shown to FAIL: a broken
+delivered file makes the control red and the run refuse; a deleted entry is named with both
+numbers. 121 → 136 cases.
+
+⚠ Three defects in the plan were found by EXECUTING it, after two reviewers had read it: the
+substitution table read 1:1 where two entries occur twice; the instruction to insert cases
+"before the final return" put them after the line that PRINTS the total, so the suite printed
+121 while the drift check saw 125 and stayed silent; and a fixture anchor was ambiguous.
