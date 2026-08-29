@@ -209,6 +209,46 @@ def check_line_budgets(errors: list[str]) -> None:
                 f"or make the rule a script — do not raise the budget as a reflex.")
 
 
+def check_skill_symlinks(errors: list[str]) -> int:
+    """Every skill in `.agents/skills/` must be reachable through `.claude/skills/`.
+
+    Added 2026-08-28. `explain-topic` shipped in PR #164 with its SKILL.md in
+    `.agents/skills/` and NO symlink in `.claude/skills/`. Measured that day: the
+    runtime lists skills from `.claude/skills`, so the skill was UNREACHABLE for
+    four days — while `docs/available-skills.md`, which reads the other tree,
+    listed it as present. Documentation said it existed; the runtime disagreed.
+
+    A convention catches what you read; a script catches what is there. The tell
+    that this was mechanically detectable: a human stated the rule ("maintain
+    uniform shape") in the same breath as fixing the single instance they noticed.
+
+    FAILS IF: a directory under `.agents/skills/` has no `.claude/skills/` entry;
+    a `.claude/skills/` entry dangles; or an entry is a real directory rather than
+    a symlink (a copy diverges silently, which is the failure this prevents).
+    """
+    agents, claude = ROOT / ".agents" / "skills", ROOT / ".claude" / "skills"
+    if not agents.is_dir() or not claude.is_dir():
+        # Not this project's shape — say so rather than passing vacuously.
+        print("skills trees        : not both present — CHECK DID NOT RUN")
+        return 0
+    want = {p.name for p in agents.iterdir() if p.is_dir()}
+    have = {p.name for p in claude.iterdir()}
+    for missing in sorted(want - have):
+        errors.append(
+            f".agents/skills/{missing} has no .claude/skills/{missing} — the runtime "
+            f"reads .claude/skills, so this skill is UNREACHABLE. Fix: "
+            f"ln -s ../../.agents/skills/{missing} .claude/skills/{missing}")
+    for entry in sorted(claude.iterdir(), key=lambda p: p.name):
+        if not entry.is_symlink():
+            errors.append(f".claude/skills/{entry.name} is not a symlink — a copy "
+                          f"diverges from .agents/skills/{entry.name} silently")
+        elif not entry.exists():
+            errors.append(f".claude/skills/{entry.name} is a DANGLING symlink -> "
+                          f"{os.readlink(entry)}")
+    print(f"skills symlinked    : {len(want)} in .agents, {len(have)} in .claude")
+    return len(want)
+
+
 def check_duplicate_headings(errors: list[str]) -> int:
     """No ADR may carry the same `##`/`###` heading twice.
 
@@ -548,6 +588,7 @@ def main() -> int:
     check_adr_frontmatter(errors)
     check_adr_index(errors)
     check_line_budgets(errors)
+    check_skill_symlinks(errors)
     backlog_ids = check_backlog_ids(errors)
     backlog_rows = check_backlog_table_shape(errors)
     check_backlog_closed_markers(errors)
