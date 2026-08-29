@@ -199,6 +199,13 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
      "from recurring.", [
         (16, "After a deploy, a browser tab left open keeps running the old JavaScript with no "
              "“refresh available” prompt."),
+        (69, "A script's self-test cannot check its own exit code, so the one line that guards its "
+             "declared case count could be deleted without anything noticing. The count is right "
+             "today; what is missing is a watcher outside the script."),
+        (70, "The dashboard plan is currently a permanent CI dependency: the first bug fixed in "
+             "either dashboard script turns the build red until the same edit is copied into the "
+             "3,170-line planning document. Decided 2026-08-29 to keep it, with a written exit — "
+             "this item is that exit. Doing it makes the check stronger, not weaker."),
         (29, "A guard-coverage checker only inspects the parked schema, so the guards in real "
              "migrations are invisible to it."),
         (38, "Extract the sidebar's load/refresh state machine into a hook — a reviewer, asked "
@@ -930,6 +937,17 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
      font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}}
+/* UNSCOPED, and that is the point. This page had five link rules — .qabody a,
+   .depmap a, .rootref a, .num a, td.mono a — and every one of them was correct.
+   The links they did NOT reach (three, in .prose and .status, rendered from
+   md(r['body']), so the count grows with every markdown link filed into a
+   backlog item) fell through to the browser default #0000EE: 1.98:1 on the dark
+   --ground and 1.84:1 on --card, against WCAG AA's 4.5. A per-container rule
+   only ever covers the containers someone remembered; this one covers the next
+   container too. More specific rules still win, including .num a's deliberate
+   `color:inherit`. MEASURED 2026-08-29: --structural clears AA on all six
+   surfaces, 6.40:1 worst case. */
+a{{color:var(--structural)}}
 .wrap{{max-width:56rem;margin:0 auto;padding:2.5rem 1.25rem 6rem}}
 h1{{font-family:var(--serif);font-size:2.1rem;line-height:1.15;margin:0 0 .5rem;
     text-wrap:balance;letter-spacing:-.01em}}
@@ -1407,6 +1425,157 @@ SAMPLE = """## Items
 """
 
 
+# ── link contrast, MEASURED on the emitted stylesheet ───────────────────────────────────────────
+# ⟲ Added 2026-08-29. This page carried FIVE per-container link rules, every one of them correct,
+# and still served three links at the browser default #0000EE — 1.98:1 on the dark --ground, 1.84:1
+# on --card, against WCAG AA's 4.5 — because those links sat in containers nobody had enumerated
+# (.prose and .status, rendered from md(r['body']), so the count grows with the backlog).
+#
+# A guard asserting those five selectors were PRESENT would have passed on exactly that page. So
+# this measures the RATIO instead, across every palette block. The sibling defect in
+# gen-dashboard.py was found the same day by a guard that checked presence and let three
+# colour-value mutations through; see the note above contrast_failures there.
+# ⟲ Round 2 replaced a flat FOREGROUNDS x SURFACES cross-product, which was wrong in both
+# directions and passed only because the data hid it. It MISSED `.num a{color:inherit}` — 70 of
+# this page's links, taking their colour from `.num` (`--ink-3`) — so a mutation to 1.37:1
+# SURVIVED at 64/64. And it would have over-asserted: `--ink-3` measures 4.26:1 on `--ground`
+# and 4.22:1 on `--pending-bg`, under AA, so simply adding it to the foreground list reddens a
+# CORRECT page. `.num a` only ever renders inside `.item`, whose background is `--card`.
+#
+# So: explicit (foreground, surface) pairs. The cross-product asserted pairs that never occur
+# and missed pairs that do.
+LINK_MIN = 4.5
+LINK_PAIRS: tuple[tuple[str, str], ...] = (
+    # `a` is unscoped, so its colour can land on any surface the page paints.
+    ("--structural", "--ground"), ("--structural", "--card"),
+    ("--structural", "--panel"), ("--structural", "--pending-bg"),
+    ("--ink-3", "--card"),        # .num a inherits .num's colour; .item is --card
+    ("--ink", "--card"),          # .num a:hover
+)
+
+# Every selector in this page's stylesheet that colours a link, and where its colour comes from.
+# `link_rule_drift` asserts the emitted CSS still matches this exactly — that is the ONLY thing
+# keeping LINK_PAIRS honest as the page grows. Round 2's defect was a link rule the model had
+# never heard of; a new one now fails loudly instead of being silently unmeasured.
+# `.depmap a` sets no colour (SVG, coloured by fill) and is listed so its absence is deliberate.
+LINK_RULES: dict[str, str] = {
+    "a": "var(--structural)",
+    ".qabody a": "var(--structural)",
+    ".rootref a": "var(--structural)",
+    "td.mono a": "var(--structural)",
+    ".num a": "inherit",
+    ".num a:hover": "var(--ink)",
+    ".depmap a": "",
+    ".depmap a:hover .n": "",
+}
+
+# ⟲ Round 2, second pass. Modelling `.num a` as "inherit" was NOT enough: repointing the
+# PARENT — `.num{color:var(--ink-3)}` -> `var(--line)`, 1.37:1 — left `.num a` itself untouched,
+# so the drift check saw nothing and the contrast check went on measuring `--ink-3`, a variable
+# the links no longer use. MEASURED: that mutation survived at 69/69 against the first version
+# of this guard. An inherited colour has to be modelled at its SOURCE, or the model describes a
+# page that no longer exists.
+LINK_INHERITS: dict[str, tuple[str, str]] = {
+    ".num a": (".num", "var(--ink-3)"),
+}
+
+
+def _luminance(colour: str) -> float:
+    """WCAG relative luminance of an #rgb or #rrggbb colour."""
+    h = colour.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        raise ShapeError(f"not a hex colour: {colour!r}")
+
+    def chan(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+
+
+def link_contrast_errors(page: str, minimum: float = LINK_MIN) -> list[str]:
+    """Every link-colour / surface pair below `minimum`, in EVERY :root palette.
+
+    All four blocks are checked, not just the two media-query ones: the page has a manual
+    theme toggle, so `:root[data-theme=...]` is live CSS, not decoration.
+
+    RAISES ShapeError when it cannot find the palettes or the unscoped rule. A contrast
+    check that never reached a stylesheet has not passed — and from a list of zero
+    failures the two are indistinguishable.
+    """
+    blocks = re.findall(r'(:root(?:\[data-theme="\w+"\])?)\{([^}]*)\}', page)
+    if len(blocks) < 2:
+        raise ShapeError(f"expected several :root palettes, found {len(blocks)}")
+    # ANCHORED to the start of a line, and that is load-bearing. A bare substring test
+    # for "a{color:var(--structural)}" is satisfied by the SCOPED rules — `.qabody a{…}`,
+    # `.rootref a{…}` and `td.mono a{…}` all contain it — so it stays true with the
+    # unscoped rule deleted, which is precisely the state that shipped. Measured while
+    # writing this guard: the unanchored version passed on the defect it exists to catch.
+    if not re.search(r"^a\{color:var\(--structural\)\}", page, re.M):
+        raise ShapeError("no UNSCOPED a{} rule — links outside the scoped selectors "
+                         "fall back to the browser default")
+
+    def hexes(body: str) -> dict[str, str]:
+        return dict(re.findall(r"(--[a-z0-9-]+):\s*(#[0-9a-fA-F]{3,6})\b", body))
+
+    base = hexes(blocks[0][1])
+    if not base:
+        raise ShapeError("the first :root palette parsed EMPTY")
+    out: list[str] = []
+    for sel, body in blocks:
+        pal = {**base, **hexes(body)}          # later blocks OVERRIDE, they do not replace
+        for fg, bg in LINK_PAIRS:
+            if fg not in pal or bg not in pal:
+                out.append(f"{sel}: {fg} or {bg} is undefined")
+                continue
+            a, b = _luminance(pal[fg]), _luminance(pal[bg])
+            ratio = (max(a, b) + 0.05) / (min(a, b) + 0.05)
+            if ratio < minimum:
+                out.append(f"{sel}: {fg} {pal[fg]} on {bg} {pal[bg]} = {ratio:.2f}:1")
+    return out
+
+
+def link_rule_drift(page: str) -> list[str]:
+    """Selectors that colour a link but are not in LINK_RULES, and vice versa.
+
+    LINK_PAIRS is a hand-written model of where link colours land, and a hand-written model
+    goes stale the moment someone adds a rule. This is what makes it fail loudly instead:
+    round 2's defect was `.num a{color:inherit}`, a rule the model had never heard of, whose
+    70 links were therefore never measured. Any NEW link rule now reddens this case until it
+    is added here and paired in LINK_PAIRS.
+    """
+    css = page[page.index("<style>"):page.index("</style>")]
+    colours: dict[str, str] = {}
+    for sel, body in re.findall(r"([^{}\n]*?)\{([^}]*)\}", css):
+        m = re.search(r"color:\s*([^;}]+)", body)
+        colours[sel.strip()] = m.group(1).strip() if m else ""
+    found = {s: c for s, c in colours.items() if re.search(r"(^|[\s>])a($|[:\s.])", s)}
+    if not found:
+        raise ShapeError("found NO link rules at all — the selector scan is broken, not the page")
+    out = []
+    # An inherited link colour lives on the PARENT, so that is where drift has to be detected.
+    for sel, (parent, want) in LINK_INHERITS.items():
+        if sel not in found:
+            out.append(f"LINK_INHERITS names {sel!r} but the page no longer emits it")
+        elif parent not in colours:
+            out.append(f"{sel!r} inherits from {parent!r}, which the page no longer emits")
+        elif colours[parent] != want:
+            out.append(f"{sel!r} inherits from {parent!r}, modelled {want!r} but emitted "
+                       f"{colours[parent]!r} — LINK_PAIRS is now measuring the wrong variable")
+    for sel in sorted(set(found) | set(LINK_RULES)):
+        want, got = LINK_RULES.get(sel), found.get(sel)
+        if want is None:
+            out.append(f"UNMODELLED link rule {sel!r} -> {got!r}: add it to LINK_RULES and pair "
+                       f"its colour in LINK_PAIRS, or its links go unmeasured")
+        elif got is None:
+            out.append(f"LINK_RULES names {sel!r} but the page no longer emits it")
+        elif want != got:
+            out.append(f"{sel!r} colour changed: modelled {want!r}, emitted {got!r}")
+    return out
+
+
 def self_test() -> int:
     cases: list[tuple[str, "Callable[[], object]"]] = []
 
@@ -1536,6 +1705,76 @@ def self_test() -> int:
         case(f"the full statement of root {_rk!r} appears exactly once",
              lambda d=_root["detail"]: _page.count(d) == 1)
     case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
+
+    # ── links are READABLE, in every palette this page can be rendered under ────────────────────
+    case("every link colour clears WCAG AA on every surface it lands on, all four palettes",
+         lambda: link_contrast_errors(_page) == [])
+    # ⟲ Round 2. The case above measures a HAND-WRITTEN model of which colour lands on which
+    # surface; this one asserts the page still matches that model. Without it the model silently
+    # stops describing the page — which is exactly how `.num a`'s 70 links went unmeasured.
+    case("the page's link rules still match the model that LINK_PAIRS is built from",
+         lambda: link_rule_drift(_page) == [])
+    # ⟲ The threshold, pinned EXPLICITLY. `LINK_MIN = 4.5 -> 0.0` is currently caught, but only
+    # incidentally — by a positive-assertion case that happens to need a non-empty result. Luck is
+    # not a guard: state it. (`CONTRAST_MIN` in gen-dashboard.py had the same hole and was NOT
+    # caught at all; measured, it survived at 111/111.)
+    case("the contrast floor is WCAG AA, not a number someone lowered", lambda: LINK_MIN == 4.5)
+    case("...and every modelled link colour is actually paired with a surface",
+         lambda: {fg for fg, _ in LINK_PAIRS} == {"--structural", "--ink-3", "--ink"})
+    case("a NEW link rule the model has not heard of is reported, not ignored",
+         lambda: any("UNMODELLED" in e for e in link_rule_drift(
+             _page.replace("</style>", ".newthing a{color:var(--problem)}</style>", 1))))
+    case("a link rule that CHANGES colour is reported",
+         lambda: any("colour changed" in e for e in link_rule_drift(
+             _page.replace(".rootref a{color:var(--structural)}",
+                           ".rootref a{color:var(--line)}", 1))))
+    case("a scan that matches no link rules RAISES rather than reporting no drift",
+         lambda: _raises(lambda: link_rule_drift("<style>body{color:red}</style>"), ShapeError))
+    # ⟲ The round-2 survivor, exactly as the reviewer wrote it: repoint the PARENT of an
+    # inherited link colour. `.num a` is untouched, so the first version of this guard saw
+    # nothing and the contrast check kept measuring a variable the links no longer use.
+    case("repointing .num's colour is CAUGHT — the parent is where an inherited colour drifts",
+         lambda: any("inherits from" in e for e in link_rule_drift(
+             _page.replace(".num{font-family:var(--mono);font-size:.9rem;color:var(--ink-3);",
+                           ".num{font-family:var(--mono);font-size:.9rem;color:var(--line);", 1))))
+    case("...and deleting the parent rule entirely is also caught",
+         lambda: any("no longer emits" in e for e in link_rule_drift(
+             _page.replace(".num{font-family:var(--mono);font-size:.9rem;color:var(--ink-3);",
+                           ".numGONE{font-family:var(--mono);font-size:.9rem;color:var(--ink-3);", 1))))
+    # The round-2 survivor itself, pinned: .num's colour is what .num a inherits, and it is
+    # measured against --card because .item — the only place .num renders — is --card.
+    case("breaking .num's colour is now CAUGHT (it was the round-2 survivor at 1.37:1)",
+         lambda: link_contrast_errors(
+             _page.replace("--ink-3:#6b7686", "--ink-3:#dfdcd5")
+                  .replace("--ink-3:#7a8494", "--ink-3:#2a3039")) != [])
+    # The instrument's own falsifiers. It returns a LIST, so a stylesheet it could not parse
+    # would otherwise report "no failures" and be indistinguishable from a readable page.
+    case("a page with no palette RAISES rather than reporting no failures",
+         lambda: _raises(lambda: link_contrast_errors("<style>a{color:red}</style>"), ShapeError))
+    _PAL = (':root{--structural:#3d5a86;--ground:#fff;--card:#fff;--panel:#fff;'
+            '--pending-bg:#fff;--ink:#000}\n:root[data-theme="dark"]{}')
+    case("a page with palettes but NO unscoped a{} rule RAISES — the defect that shipped",
+         lambda: _raises(lambda: link_contrast_errors(_PAL), ShapeError))
+    # The NEAR-MISS, which is the whole reason the check is anchored: a page carrying only
+    # the SCOPED rules satisfies a bare `"a{color:var(--structural)}" in page` test. That is
+    # the exact stylesheet this fix replaced, and an unanchored guard calls it clean.
+    case("...and so does one with ONLY the scoped rules, which a substring test would pass",
+         lambda: _raises(lambda: link_contrast_errors(
+             _PAL + "\n.qabody a{color:var(--structural)}\ntd.mono a{color:var(--structural)}"),
+             ShapeError))
+    # The measurement itself, pinned against hand-computed values — a broken luminance
+    # formula would otherwise make every ratio above pass.
+    def _ratio(fg: str, bg: str) -> float:
+        a, b = _luminance(fg), _luminance(bg)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+    case("black on white is 21:1", lambda: round(_ratio("#000000", "#ffffff"), 2) == 21.0)
+    case("a colour against itself is 1:1", lambda: round(_ratio("#3d5a86", "#3d5a86"), 2) == 1.0)
+    case("shorthand hex expands (--card is #fff, not #ffffff)",
+         lambda: round(_ratio("#fff", "#ffffff"), 2) == 1.0)
+    case("the defect this fixed measures what the comment claims: 1.98 on --ground",
+         lambda: round(_ratio("#0000EE", "#101318"), 2) == 1.98)
+    case("...and 1.84 on --card", lambda: round(_ratio("#0000EE", "#171b22"), 2) == 1.84)
     case("every group's root reference links to the map, which exists",
          lambda: 'id="order"' in _page and _page.count('href="#order"') >= 1)
 
