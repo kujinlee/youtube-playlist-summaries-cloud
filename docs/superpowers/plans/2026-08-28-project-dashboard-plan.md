@@ -14,7 +14,9 @@
 **Spec:** `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` (v5, merged `c5fcb07`).
 Section references below (§4, §5, §6.2, §7) are to that spec.
 
-**Version: v7** — folds in **both halves of round 5**, which was SCOPED to
+**Version: v8** — folds in **both halves of round 6**, a short re-review scoped to round 5's
+own fixes. It found them correct in verdict and INCOMPLETE IN MECHANISM — the shape now named
+at the end of *v8 — round 6*. v7 folded in **both halves of round 5**, which was SCOPED to
 `scripts/check-plan-code.py` rather than to this plan. Not one of its findings was about the tasks
 below; all of them were about the tool that checks them. See *v7 — round 5* at the end. v6 folded in
 **both halves of round 4** (Codex 3 findings; Claude 1 Blocking, 6 High,
@@ -1856,7 +1858,7 @@ mutation caught by a different case, fails the check.
     "                day_anchor = \"\""
    ]
   ],
-  "expect": "a bar's day anchor exists"
+  "expect": "a bar's day anchor exists for the day it links to"
  },
  {
   "name": "bar height ignores commits",
@@ -1904,7 +1906,7 @@ mutation caught by a different case, fails the check.
     "    mark = \"\""
    ]
   ],
-  "expect": "zero-commit day WITH an entry is marked"
+  "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
  },
  {
   "name": "gap mark: gapmark AND class both gone",
@@ -1919,7 +1921,7 @@ mutation caught by a different case, fails the check.
     "        mark += \"\""
    ]
   ],
-  "expect": "shipped with NO entry is marked"
+  "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
  },
  {
   "name": "gh half of what-needs-you suppressed",
@@ -1930,7 +1932,7 @@ mutation caught by a different case, fails the check.
     "        rows += []\n        _dead = [f'<li>Pull request #"
    ]
   ],
-  "expect": "an open PR appears"
+  "expect": "an open PR appears in what-needs-you"
  },
  {
   "name": "dead bar links restored",
@@ -1941,7 +1943,7 @@ mutation caught by a different case, fails the check.
     "    href = f' href=\"#day-{day[\"date\"]}\"'"
    ]
   ],
-  "expect": "not a dead link"
+  "expect": "a bar with no entry is not a dead link"
  },
  {
   "name": "in-place anchoring reverted to the previous neighbour",
@@ -1952,14 +1954,15 @@ mutation caught by a different case, fails the check.
     "anchor = max(cands, key=lambda j: rank[j])"
    ]
   ],
-  "expect": "BETWEEN its neighbours"
+  "expect": ["malformed renders BETWEEN its neighbours on an APPENDED store",
+            "...and the run still sits between its valid neighbours"]
  },
  {
   "name": "a run of malformed blocks loses its file order",
   "file": "scripts/gen-dashboard.py",
   "edits": [["        off = placed.get(anchor, 0)\n        placed[anchor] = off + 1\n        out.insert(out.index(entries[anchor]) + 1 + off, e)",
              "        out.insert(out.index(entries[anchor]) + 1, e)"]],
-  "expect": "RUN of malformed blocks keeps file order"
+  "expect": "a RUN of malformed blocks keeps file order among themselves"
  },
  {
   "name": "render in raw file order",
@@ -1970,7 +1973,9 @@ mutation caught by a different case, fails the check.
     "for i, e in enumerate(entries):"
    ]
   ],
-  "expect": "BETWEEN its neighbours"
+  "expect": ["malformed renders BETWEEN its neighbours on an APPENDED store",
+            "newest date renders first on an APPENDED store",
+            "...and the run still sits between its valid neighbours"]
  },
  {
   "name": "second [resolved:] dropped",
@@ -1992,7 +1997,7 @@ mutation caught by a different case, fails the check.
     "        for r in []:\n            if r in ids:"
    ]
   ],
-  "expect": "resolve of an unknown id"
+  "expect": "resolve of an unknown id is an error"
  },
  {
   "name": "ordinal instability restored",
@@ -2003,7 +2008,7 @@ mutation caught by a different case, fails the check.
     "        if m is not None and _GATE.valid_date(m.group(1)) and not err:"
    ]
   ],
-  "expect": "still consumes its ordinal"
+  "expect": "a malformed block still consumes its ordinal"
  },
  {
   "name": "chart drawn newest-leftmost",
@@ -2014,7 +2019,7 @@ mutation caught by a different case, fails the check.
     "_bar(d, tallest) for d in days"
    ]
   ],
-  "expect": "oldest-first"
+  "expect": "the chart draws oldest-first (left to right)"
  },
  {
   "name": "under-count sentence removed",
@@ -2025,7 +2030,7 @@ mutation caught by a different case, fails the check.
     "x."
    ]
   ],
-  "expect": "under-counts"
+  "expect": "the chart says what it under-counts"
  },
  {
   "name": "glossary section removed",
@@ -2047,7 +2052,7 @@ mutation caught by a different case, fails the check.
     "    if pr_error:\n        needs_html = pr_note\n    elif rows:\n        needs_html"
    ]
   ],
-  "expect": "IN THAT SECTION"
+  "expect": "a gh failure still shows the store's needs IN THAT SECTION"
  },
  {
   "name": "first-parent dropped from the commit count",
@@ -2058,7 +2063,7 @@ mutation caught by a different case, fails the check.
     "\"git\", \"log\", \"HEAD\""
    ]
   ],
-  "expect": "first-parent"
+  "expect": "commit_dates passes --first-parent as an ARGUMENT"
  },
  {
   "name": "gate stops sharing the parser grammar",
@@ -2082,7 +2087,7 @@ mutation caught by a different case, fails the check.
     "            col += 0"
    ]
   ],
-  "expect": "TAB-indented"
+  "expect": "exemption_reason — TAB-indented code block"
  },
  {
   "name": "head path skips the indent check",
@@ -2093,7 +2098,7 @@ mutation caught by a different case, fails the check.
     "if head.strip().startswith(NO_ENTRY):"
    ]
   ],
-  "expect": "comment later on the line"
+  "expect": "exemption_reason — indented, with a comment later on the line"
  },
  {
   "name": "fence closes on either character",
@@ -2104,7 +2109,7 @@ mutation caught by a different case, fails the check.
     "elif True:"
    ]
   ],
-  "expect": "not closed by"
+  "expect": "exemption_reason — ``` is not closed by ~~~"
  },
  {
   "name": "fence LENGTH ignored (short inner fence closes a long outer one)",
@@ -2115,7 +2120,8 @@ mutation caught by a different case, fails the check.
     "if True:"
    ]
   ],
-  "expect": "longer fence"
+  "expect": ["exemption_reason — a SHORT fence does not close a longer fence",
+            "exemption_reason — ...same for tildes"]
  },
  {
   "name": "indent rule removed entirely",
@@ -2138,7 +2144,7 @@ mutation caught by a different case, fails the check.
     "if NO_ENTRY in s:"
    ]
   ],
-  "expect": "blockquoted"
+  "expect": "exemption_reason — blockquoted"
  },
  {
   "name": "the three-valued reason collapses: empty and absent become one message",
@@ -2149,7 +2155,7 @@ mutation caught by a different case, fails the check.
     "    if False:"
    ]
   ],
-  "expect": "says the marker was present with nothing after it"
+  "expect": "...and says the marker was present with nothing after it"
  },
  {
   "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
@@ -2160,7 +2166,8 @@ mutation caught by a different case, fails the check.
     "    cls = \"bar\""
    ]
   ],
-  "expect": "§5 a needs-you day is marked"
+  "expect": ["§5 a needs-you day is marked in SIGHTED output",
+            "...and the mark is the needs class, not an incidental difference"]
  },
  {
   "name": "commit_dates: a git failure renders as an EMPTY chart, not could-not-tell",
@@ -2171,7 +2178,7 @@ mutation caught by a different case, fails the check.
     "        return [], None"
    ]
   ],
-  "expect": "commit_dates: a non-zero exit"
+  "expect": "commit_dates: a non-zero exit is a could-not-tell, not an empty result"
  },
  {
   "name": "_gh_json: a missing gh renders as ZERO open PRs",
@@ -2182,7 +2189,8 @@ mutation caught by a different case, fails the check.
     "        return [], None"
    ]
   ],
-  "expect": "open_prs: a missing binary"
+  "expect": ["open_prs: a missing binary is a could-not-tell, not an empty result",
+            "no_entry_prs: a missing binary is a could-not-tell, not an empty result"]
  },
  {
   "name": "_gh_json: unparseable gh output renders as ZERO",
@@ -2193,7 +2201,7 @@ mutation caught by a different case, fails the check.
     "        return [], None"
    ]
   ],
-  "expect": "unparseable gh output"
+  "expect": "open_prs: unparseable gh output is a could-not-tell, not zero"
  },
  {
   "name": "the GATE reads a broken git as 'nothing changed'",
@@ -2204,7 +2212,7 @@ mutation caught by a different case, fails the check.
     "    if False:"
    ]
   ],
-  "expect": "collect: a non-zero git exit"
+  "expect": "collect: a non-zero git exit is a could-not-tell, not 'nothing changed'"
  },
  {
   "name": "the GATE's missing-git branch reports no error",
@@ -2215,7 +2223,7 @@ mutation caught by a different case, fails the check.
     "        return [], False, None"
    ]
   ],
-  "expect": "collect: a missing git"
+  "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
  },
  {
   "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
@@ -2226,7 +2234,7 @@ mutation caught by a different case, fails the check.
     "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
    ]
   ],
-  "expect": "main: a could-not-tell exits 2"
+  "expect": "main: a could-not-tell exits 2 — NEVER 0"
  }
 ]
 ```
@@ -2597,6 +2605,88 @@ uncovered `main`, the hang read as a catch, the substring `expect`. v6 fixed tha
 `check()` and reproduced it five times in the code it added while doing so. The lesson is not to
 write better checks; it is that **the question "what would this report if it were measuring nothing?"
 has to be asked of every layer, every time — including the layer you just wrote to ask it.**
+
+---
+
+## v8 — round 6, the short scoped re-review
+
+Round 6 was deliberately short and pointed at the eleven things round 5 changed, with both halves
+told that *a short clean round is a real result*. It was not clean, and what it found is the most
+useful result of the six rounds: **round 5's fixes were correct in verdict and incomplete in
+mechanism, in the same shape as the defects they fixed.**
+
+**Codex:** 0 Blocking, 0 High, 1 Medium, 1 Low, 6 survivors of 27.
+**Claude:** 0 Blocking, **2 High**, 5 Medium, 5 Low, 9 genuine survivors of 60 (2 proven equivalent).
+
+**No finding in either half was about the plan's tasks.** That is now two consecutive rounds.
+
+### The two that mattered
+
+**H2 — an escaping file tag was reported and then WRITTEN ANYWAY.** Round 5's fix added the problem
+to `extract()` and left the write loop in `check()` untouched, so the checker still created the file.
+An absolute tag pointing into the `--compare` root **overwrote a delivered file**, and the run that
+did it printed `identical <path>` inside its own evidence block beside `FAILED`. The verdict was
+right; the side effect was silent data loss in a tool whose stated premise is that everything happens
+inside a `TemporaryDirectory`.
+
+The reason nothing caught it is the sharpest sentence in the round: **the case that claimed to cover
+it asserted against `extract()` — the layer that reports — and never ran `check()`, the layer that
+acts.** Round 5's must-change asked for two things and one landed. There is now a single predicate,
+`unsafe_tag()`, used both to report and to refuse, and a case that runs `check()` and asserts the
+delivered file still holds its original bytes.
+
+**H1 — the `expect` LIST form had ZERO coverage.** Round 5 added the mode, moved the plan's most
+important mutations onto it (4 entries declaring 11 named guards, including its own headline example),
+and asserted nothing about it. Deleting the list handling outright, and checking only its first entry,
+both left the 92-case suite **and the real plan** green.
+
+### And the rule itself was still not the rule
+
+Codex found that round 5's "exactly one" guard is **cardinality-only**: it required exactly one
+*match*, never that the match was the right case. Measured — an `expect` naming a **completely
+unrelated** case, or a mere fragment of a name, still certified the mutation. The plan's rule is *"red
+via the case it NAMES"*, and only equality says that.
+
+`expect` is now an **exact** case name. Applying it exposed **19 of the 34 entries** as shortenings;
+all are now spelled out, four as explicit sets where a mutation legitimately breaks several guards.
+An empty list is refused rather than read as "no expectation".
+
+### The rest
+
+| Finding | Fix |
+|---|---|
+| **M3** `INVISIBLE_FENCE` rejected a **four-backtick fence** — the standard idiom for quoting a fence, already in this repo — and then demanded the fence quoted *inside* it be tagged, which is advice that cannot be followed. Also ` ```c++ `, ` ```{r} ` | Narrowed to the only hazard that matters: a **python** block the parser cannot see. Everything else is somebody else's fence |
+| **M1** `MISSING` — the one compare verdict meaning *not checked* — was the only one with no assertion; the evidence block would print `identical` for a file that could not be opened | Pinned by value |
+| **M2** the anchor-NOT-FOUND case passed via the wrong branch. With one edit a missing anchor and a survivor coincide; with **two**, the guard is the only thing between a typo and a mutation certified `caught` on its second edit | A two-edit fixture, asserting the message |
+| **M4** "all four tag patterns anchored" was three-of-four | ⚠ The first version of this case did not diverge either — the prose tag needed a JSON block after it to be observable |
+| **M5** `count_drift` was covered; the CALL that makes it load-bearing was not | `_drift_rc` — and see the gap below |
+| **L1** the evidence block's per-file result line had no assertion | Pinned |
+
+### The one thing NOT fixed, and why it is written in the docstring instead
+
+`_self_test`'s last line is `return _drift_rc(__doc__, ok, fail)`. Deleting the drift check there is
+**not caught**, and it cannot be: a suite cannot observe its own exit code without recursing into
+itself. `_drift_rc` has three cases; its call site has none. **The honest closure is an external
+observer** — a ratchet that runs `--self-test` and compares the printed count to the docstring, the
+way `check-test-counts.py` does for the jest suite. That is recorded as a declared gap in the
+script's own header rather than ticked, and it is the first finding in six rounds whose fix belongs
+somewhere else entirely.
+
+**Suite: 92 → 121 cases.** Re-running round 6's survivor set: **11 of 12 caught**, the twelfth being
+that declared gap.
+
+### Where this leaves convergence
+
+Six rounds, and the severity curve on the *plan* went 3 Blocking → … → 1 Blocking → 0 → 0, with the
+last two rounds finding nothing in it at all. The curve on the *tool* went 4 High → 2 High → and
+round 6's Highs are both "the fix was half a fix", not new defects.
+
+⚠ **The recurring shape is now precisely nameable, and it is not "bad checks".** It is: **a fix that
+corrects the verdict without covering the mechanism.** H2 reported and did not refuse. H1 added a mode
+and asserted nothing. M5 extracted a function and left its call. M4 anchored three of four patterns.
+Each was a real fix that stopped one instance and left the class — six times, in six rounds, by the
+same author. That is the finding worth carrying out of this slice, and it is in
+`docs/portable-practices.md` territory rather than this plan's.
 
 ---
 
