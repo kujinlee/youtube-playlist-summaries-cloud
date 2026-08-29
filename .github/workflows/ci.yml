@@ -184,6 +184,11 @@ jobs:
       # backlog #70, retired 2026-08-29 once this existed and both paths were shown green
       # at 43 mutations / 0 survivors on the same tree.
       #
+      # ⚠ That 43 is HISTORY — it pins the one-off equivalence demonstration, not the live
+      # count, which has since grown (a 44th entry closed a fail-open found in review). For
+      # the current number run the step; EXPECTED_MUTATIONS in check-plan-code.py is what
+      # actually enforces it. Do not restate a live count here — see ff5857b.
+      #
       # What this protects is unchanged from the step it replaces: the mutation evidence
       # describes the code that ships. It is now literally true rather than true-by-copy.
       #

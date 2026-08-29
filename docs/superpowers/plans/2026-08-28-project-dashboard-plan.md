@@ -380,10 +380,19 @@ doubled. An unbalanced brace is a `SyntaxError` at import time.
 
 - [ ] **Step 5: Run the plan's own checker — against the files you just wrote**
 
-```bash
-python3 scripts/check-plan-code.py \
-  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare .
-```
+> ⛔ **RETIRED 2026-08-29 by backlog #70 — the command below now EXITS 1 and cannot be followed.**
+> The tagged `<!-- file: … -->` blocks it assembled from were deleted with the rest of the
+> duplicated source; a run at `d16dcd8` prints
+> *no tagged Python blocks found — nothing to assemble*.
+> **The live equivalent, and what CI runs, is:**
+>
+> ```bash
+> python3 scripts/check-plan-code.py --mutate .
+> ```
+>
+> It applies every entry in `scripts/mutations/*.json` to the **delivered** scripts, over a control
+> proved green first. The paragraphs below are kept as the RECORD of why `--compare` existed — that
+> reasoning is what `--mutate` inherits — not as an instruction to run anything.
 
 This assembles both files from the blocks above, runs both suites, runs every mutation in the
 manifest, **and diffs each assembled file against the one in `scripts/`.** It fails if any mutation
@@ -410,6 +419,11 @@ compared one:
 ```
 
 - [ ] **Step 5a: Regenerate the Standing evidence block in the COMPARED form, and commit it.**
+
+> ⛔ **RETIRED 2026-08-29 by backlog #70 — both commands below EXIT 1, for the same reason as
+> Step 5, and the CI step they served no longer exists.** `--verify-evidence` is not run by CI;
+> the evidence block under *Standing evidence* is now a dated record and is free to go stale, which
+> was the entire point of #70. **Nothing here needs regenerating or committing.**
 
 ```bash
 python3 scripts/check-plan-code.py \

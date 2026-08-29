@@ -3,12 +3,16 @@
 **Subject:** `origin/master..HEAD` on `feat/mutation-manifest-retarget`.
 **Codex half:** [`branch-mutation-retarget-r1-codex.md`](branch-mutation-retarget-r1-codex.md).
 
-⚠ **REVIEW GAP: claude — the dispatched independent reviewer had not returned when this was
-written.** Per `docs/plugins.md`, do not wait. This half is the coordinator's own verification plus
-adjudication of Codex's findings; it is weaker than an independent pass and is recorded as such.
+⚠ **The gap this document declared is now CLOSED — see [§ The independent pass, arriving
+late](#the-independent-pass-arriving-late) at the end.** As originally written this half was the
+coordinator's own verification plus adjudication of Codex's findings, recorded as weaker than an
+independent pass because the dispatched reviewer had not returned. It returned afterwards, measured
+`d16dcd8` rather than the `e006604` it started on, and **reached CONVERGED**. The original text is
+left unedited above that section; nothing in it was retracted.
 
 **Verdict: NOT CONVERGED at first pass — 5 defects, 2 of them found by Codex against the
-implementation. All fixed; re-review wanted.**
+implementation. All fixed; re-review wanted.** → **CONVERGED** on the independent pass, with three
+Medium and two Low items of coverage residue carried, none of them correctness.
 
 ## Found by EXECUTING the plan, after two reviewers had read it
 
@@ -62,3 +66,67 @@ implementation. All fixed; re-review wanted.**
 `check-roadmap-consistency` · `--mutate .` at **2 files / 44 mutations / 0 survivors**.
 
 **Not run:** `test:integration`, `test:e2e` — no TypeScript changed.
+
+---
+
+## The independent pass, arriving late
+
+Dispatched before the fixes above; returned after them. **It measured `d16dcd8`, not the `e006604`
+it began on** — three commits landed under it mid-review — and it re-verified rather than assuming.
+**Verdict: CONVERGED.** It independently reproduced the byte-identical extraction, confirmed via
+`symtable` that the moved block has **zero free variables**, and controlled its own mutation sweep
+with a no-op mutant that correctly survived.
+
+It also confirms three findings were real at `e006604` and already fixed by `af7836e` / `6c7ab80`:
+`gen-backlog-page.py --self-test` red on a `GROUPS` entry naming closed #70; `check-review-rounds.py`
+red on a Codex half committed with no Claude half and no `REVIEW GAP:`; and the duplicate-manifest
+hole (#5 above). **Note the second one: this branch turned that gate red exactly once, by filing a
+lone review half — the same shape as the gap this document declared.**
+
+### Residue carried — coverage honesty, not correctness
+
+Three Medium, two Low. Verified by the coordinator before recording; none blocks the PR.
+
+1. **Medium — six survivors exist that the manifest does not cover.** Each injected into the
+   delivered file on a copy, then run through the full `--mutate .`: all six returned
+   `rc=0, OK — 44 mutations, 0 survivors`. Two proven to change behaviour —
+   `check-dashboard-entry.py:112` `probe[end+3:]`→`end+4` makes a valid `NO-ENTRY:` declaration
+   return `None`, so the gate refuses it; `gen-dashboard.py:1156` `!=`→`==` inverts the three-way
+   store distinction an adjacent comment says cost a round. Also `gen-dashboard.py:225` `or`→`and`,
+   measured. Three more plausible, not individually proven.
+   **Not a regression** — the same entries had the same holes against the plan's copy, so the branch
+   weakens nothing. The problem is that a step named *"Mutation manifest against the delivered
+   scripts"* prints a bare survivor count, which invites a completeness reading the manifest does not
+   support. The docstring's *"it cannot prove the mutation list is complete"* needs to sit where the
+   number is read. **DECISION OWED:** record the measured escape rate in the CI comment, or add
+   entries for these classes. Not taken here — it is the user's call whether to spend it.
+2. **Medium — the branch enforcing "every shipped manifest is declared" has no falsifier.**
+   `check-plan-code.py:392`, `for target in sorted(set(counts) - set(EXPECTED_MUTATIONS))`. Replace
+   with `for target in []:` and the suite stays **136/136**. Measured on a clean two-script fixture:
+   branch deleted → an undeclared manifest runs and reports `OK — 1 mutation(s), 0 survivors`;
+   branch present → `rc=1`. The case named *"the declared counts name every manifest that ships"* is
+   **vacuous with respect to its own name** — `:1513`/`:1515` compare against a hardcoded list and
+   `sum(...) == 44`; neither reads `scripts/mutations/`. **This is backlog #69's shape exactly**, and
+   was already carried as residue before the independent pass confirmed it.
+3. **Medium — three dead commands in the plan. ✅ FIXED in this commit.** Steps 5 (`:384`) and 5a
+   (`:415`/`:418`) told a reader to run `--compare .`, which at `d16dcd8` exits **1**: the tagged
+   blocks it assembled from were deleted. Verified by running it. Both steps are now marked RETIRED
+   in place, pointing at `--mutate .`; the surrounding reasoning is kept as the record of *why*
+   `--compare` existed, since `--mutate` inherits it.
+4. **Low — `--mutate` returns only 0/1** (`:1569`), so no-manifests, missing-dir and a **control
+   timeout** are indistinguishable from a survivor — in the one mode CI runs, in a file built around
+   `rc=2` being a distinct CANNOT-RUN.
+5. **Low —** a red control is labelled `CANNOT RUN — … exited 1` with an empty detail tail.
+
+**Retracted by the reviewer itself:** it initially flagged `unresolved`'s `and`→`or` as a seventh
+survivor, then measured it on three fixtures and dropped it as an **equivalent mutant** — ids are
+unique per block, and pass 2 already errors on any resolver naming a malformed id.
+
+### Also verified sound by the independent pass
+
+Coverage cannot shrink, checked by execution rather than reasoning: manifest **deleted** → `rc=1`
+*"holds 0 mutation(s), expected 32"*; **renamed** → `rc=1` *"target … does not exist"*; **all
+manifests gone** → `rc=1` CANNOT RUN; **entry swapped for a duplicate** (count preserved) → refused
+at `d16dcd8`. The `try/finally` around `EXPECTED_MUTATIONS` (`:1483`–`:1511`) has no corruption path:
+`case()` cannot raise, and the two trailing cases sit after the restore. The 2,128-line deletion left
+nothing structural — `check-docs` and `check-anchors` pass and every inbound reference resolves.
