@@ -185,6 +185,43 @@ For small, contained changes (single-file logic, config, thin wrappers), one rou
 3. **Re-review the revised artifact** — both passes again, explicitly scoped to (a) verify each prior finding is *genuinely* fixed, not reworded, and (b) hunt for defects the fixes introduced.
 4. Repeat from 2.
 
+### ⚠ Non-convergence means different things on a DOCUMENT and on CODE — added 2026-08-28
+
+`docs/dev-process.md` arms Phase 6 (architecture review) after **four non-converging rounds**. That
+trigger was bought with the stable-blob-addressing spec and it is correct — but it was written from
+one shape of failure and reads as if it covers every shape. **It does not, and the difference decides
+whether a fifth round is worth running.**
+
+**The distinction is the CAUSE of the non-convergence, not the count of findings.**
+
+| Shape | Tell | What it means | Do |
+|---|---|---|---|
+| **Thrashing** | findings are **introduced by the previous round's own fix**; severity stays put | the design is fighting itself — a real architecture problem | **Phase 6.** This is what the four-round trigger was bought for |
+| **Prose floor** | findings shift from *"this cannot work"* to *"this is under-specified"*; each round is right and the artifact keeps improving | the review has reached the limit of what can be settled **without an executable subject** | **Stop reviewing prose. Write the code or the plan, and review THAT** |
+
+**Why the second shape exists at all.** A spec review has nothing to run. A reviewer can verify a
+citation, refute a premise, and find an ambiguity — but *"define what malformed means"* and
+*"what happens on the third edge case"* are questions whose answers are only checkable once something
+executes them. Rounds spent on them produce true findings and never terminate, because the artifact
+cannot answer back. Continuing is not diligence at that point; it is reviewing the wrong subject.
+
+**⛔ RAW BLOCKING COUNT IS A BAD DISCRIMINATOR, AND THIS WAS MEASURED.** The dashboard spec ran three
+rounds: Blocking totals **4 → 5 → 4**. Flat. By count that looks like thrashing and would argue for
+Phase 6. By cause it was the prose floor — round 1 said *"the first chart is built on a file that
+does not contain what you claim"* and *"bundled is not loadable"*; round 3 said *"define malformed"*
+and *"say how a needs-you item stops needing you"*. **The number said one thing and the character said
+the other.** Do not read the trigger off a count.
+
+⚠ **And do not use this as an escape hatch.** The same spec ALSO showed thrashing twice — round 2
+found that round 1's fix had produced an untested primary while asserting the opposite, and round 3
+found that the scope cut had silently dropped a fix round 1 had won. **Both shapes can be present at
+once.** The question to answer, out loud and per finding, is: *did the previous fix cause this?* If
+yes for a meaningful share of the round, it is thrashing and the count is irrelevant.
+
+**How to record the call.** Whichever way it goes, write the reason in the round's review doc — the
+shape you judged it to be, and the per-finding evidence. A decision to stop reviewing is exactly the
+kind that looks arbitrary six weeks later.
+
 **Four rules for the loop** — evidence for each in `docs/process-rationale.md`:
 - **At fix time, list the consumers.** Before a fix that changes what state *means*, name every reader
   — including the same code in a **different process**. `grep` for the field name is usually the job.
