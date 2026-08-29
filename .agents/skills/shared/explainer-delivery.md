@@ -65,7 +65,10 @@ existing explainer**. Never hand-copy it. It took four rounds of shipped defects
 (`explainer-serve.py`'s docstring records them), and hand-copying working code between documents is
 a failure this project has measured: on 2026-08-17, 45 of 97 review findings were identifiers,
 imports and counts that did not survive a copy. The script fails loudly and writes nothing if it
-cannot find a tray to lift, or if the composed page has lost it. It has a `--self-test` (14 cases).
+cannot find a tray to lift, or if the composed page has lost it. It has a `--self-test` — **run it for
+the count rather than reading one here.** ⟳ 2026-08-28: this line said **14** against a measured
+**30/30**, and had been wrong for long enough that nobody noticed. A count written into prose is a
+claim about a moving number, so the number is gone rather than corrected.
 
 **If you hand-build the page instead**, the tray contract is fixed and you must match it exactly:
 element ids `modechip`, `tray`, `qbox`, `qt`, `sentnote`, `sendbtn`, `closebtn`; class `askbtn`;
