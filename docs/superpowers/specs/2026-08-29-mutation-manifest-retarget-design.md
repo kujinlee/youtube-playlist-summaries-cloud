@@ -117,7 +117,7 @@ requires also lowering a number someone will see in review.
 
 ### 3.5 The plan's code blocks are deleted
 
-**User decision 2026-08-29.** The 12 `<!-- file: -->` blocks (1,401 lines of duplicated source) are
+**User decision 2026-08-29.** The 12 `<!-- file: -->` blocks (**1,541** lines of duplicated source — measured; the 1,401 in backlog #70 was inherited, never counted) are
 removed and replaced with pointers to `scripts/`. Once nothing validates them they are guaranteed to
 rot, and this project's own rule is that an unread rule is worse than none because it creates a
 belief something is covered. The plan keeps its prose — the reasoning, the task breakdown, the
