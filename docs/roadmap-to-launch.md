@@ -1328,7 +1328,7 @@ whether editing an already-applied migration is safe here.
 
 ---
 
-## Project dashboard — anchor `status-visibility` — ⏳ SPEC + PLAN MERGED, NO CODE WRITTEN
+## Project dashboard — anchor `status-visibility` — ⏳ PLAN AT v6 AFTER 4 ROUNDS, NO CODE WRITTEN
 
 **Goal (`docs/anchors.md:39`):** a person who was away can see the current state, what changed, and
 what needs them — without reading the chat transcript.
@@ -1341,13 +1341,25 @@ corrections slice above.
 | Artifact | State |
 |---|---|
 | `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` | v5, merged `c5fcb07` (3 review rounds, none converged) |
-| `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | v2 — v1 merged `af757d9`, then **failed its dual review** |
-| `docs/reviews/plan-project-dashboard-r1-{codex,claude}.md` | round 1, **NOT CONVERGED both halves** |
+| `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | **v6** (`a643df6`) — round 4 folded in; **NOT CONVERGED**, not yet re-reviewed |
+| `scripts/check-plan-code.py` | **NEW, committed.** Assembles the plan's code, runs it, mutates it, diffs it against the delivered scripts (`--compare`), and refuses a stale evidence block (`--verify-evidence`). 44 self-test cases |
+| `docs/reviews/plan-project-dashboard-r{1,2,3,4}-*.md` | rounds 1–4, **NOT CONVERGED, every half** |
 
-- [ ] **Plan round 2 — dual adversarial on v2.** Round 1's two halves overlapped on only 2 of ~26
-      findings, so **both** must run. Both executed the plan's Python rather than reading it, which
-      is why they found what three prose rounds on the spec did not.
-      **FAILS IF** either half returns a Blocking, or either reports it could not execute the code.
+- [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped
+      on only 2 of ~26 findings, which is why **both** always run. Every half executed the plan's
+      Python rather than reading it, and found what three prose rounds on the spec had not.
+- [ ] **Round 5 — SCOPED to `scripts/check-plan-code.py`**, not a fifth reading of the plan. The plan
+      side stopped yielding code defects two rounds ago (34 declared + 50 undeclared mutations,
+      controls A–F, all caught); rounds 3 and 4 instead found the *document wrong about its own
+      checks*. Round 4's H1 was a genuine design defect in the TOOL — **it verified the plan's copy of
+      the code and never opened the files CI ships** — and the fix plus four other mechanisms landed
+      with no independent read.
+      **FAILS IF** either half returns a Blocking, either reports it could not execute the code, or
+      either finds a way to print `OK —` over a subject the tool did not measure.
+- [ ] ⚠ **Phase 6 has genuinely fired** — four non-converging rounds (`docs/dev-process.md`). Read the
+      trigger off the CAUSE before convening it: rounds 1–2 found broken code, rounds 3–4 found stale
+      prose about verification, and three of the last four rounds had a half that did not really run.
+      The count is inflated by process failures as well as defects.
 - [ ] **Tasks 1–6** — the entry store + parser, activity + open PRs, the page, the gate, fold
       persistence on reload, and the skill + hook + CI wiring. None started.
 - [ ] **The gate is not proven until it has been seen to REFUSE on GitHub.** Task 4 ships a tested
