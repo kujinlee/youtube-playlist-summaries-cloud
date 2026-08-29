@@ -190,7 +190,7 @@ def _gh_json(args: list[str]) -> tuple[object | None, str | None]:
     if r.returncode != 0:
         return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
     try:
-        return json.loads(r.stdout or "[]"), None
+        return json.loads(r.stdout), None
     except json.JSONDecodeError as exc:
         return None, f"gh returned unparseable JSON: {exc}"
 
@@ -235,3 +235,597 @@ def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
             out.append({"number": p.get("number"), "title": p.get("title") or "",
                         "merged": (p.get("mergedAt") or "")[:10], "reason": reason})
     return out, None
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "-", s or "")
+
+
+def _ordered(entries: list[dict]) -> list[dict]:
+    """Newest date first; ties keep FILE order; a malformed block stays adjacent
+    to its file neighbours (spec §6.2, 'rendered in place').
+
+    Valid entries sort by (date descending, file order within a date). A
+    malformed block has no usable date, so it is SPLICED back in: immediately
+    after whichever of its two file-neighbours renders FIRST.
+
+    That formulation is order-agnostic, and it has to be. v2.2 gave the block
+    its preceding neighbour's date and certified it with a fixture written
+    newest-FIRST — but the store is written newest-at-the-END (Task 1 Step 7,
+    "Append one block"), so the render reverses the file and the block fell to
+    the bottom of the page: the exact defect this function exists to fix,
+    invisible under the one ordering the fixture used. Keying off a date also
+    could not satisfy "ties keep file order" at the same time, because within a
+    borrowed date group the malformed block must sit AFTER the entry it
+    borrowed from while a genuine tie keeps file order. Splicing separates the
+    two rules instead of trying to encode both in one sort key.
+    """
+    valid = [(i, e) for i, e in enumerate(entries) if not e["error"]]
+    order = sorted(valid, key=lambda p: (p[1]["date"] or "", -p[0]), reverse=True)
+    rank = {i: r for r, (i, _) in enumerate(order)}
+    out = [e for _, e in order]
+    placed: dict[int, int] = {}
+    for i, e in enumerate(entries):
+        if not e["error"]:
+            continue
+        before = max((j for j, _ in valid if j < i), default=None)
+        after = min((j for j, _ in valid if j > i), default=None)
+        cands = [j for j in (before, after) if j is not None]
+        if not cands:
+            out.append(e)
+            continue
+        anchor = min(cands, key=lambda j: rank[j])
+        # `placed` keeps a RUN of consecutive malformed blocks in file order.
+        # Inserting each at anchor+1 put the later one first, so two broken
+        # blocks between the same neighbours came out mirrored — the splice
+        # fixed the single-block case and left the run wrong.
+        off = placed.get(anchor, 0)
+        placed[anchor] = off + 1
+        out.insert(out.index(entries[anchor]) + 1 + off, e)
+    return out
+
+
+def _bar(day: dict, tallest: int) -> str:
+    h = 4 if day["commits"] == 0 else max(6, round(48 * day["commits"] / max(tallest, 1)))
+    quiet = day["has_entry"] and day["commits"] == 0     # §6.1
+    unwritten = day["commits"] > 0 and not day["has_entry"]  # §9 / §7.3
+    cls = "bar needs" if day["needs_you"] else "bar"
+    if quiet:
+        cls += " marked"
+    if unwritten:
+        cls += " unwritten"
+    label = (f'{day["date"]}: {day["commits"]} commits'
+             f'{", needs you" if day["needs_you"] else ""}'
+             f'{", entry with no commits" if quiet else ""}'
+             f'{", SHIPPED WITH NO ENTRY" if unwritten else ""}')
+    # Every mark is a REAL element or class, never text inside .vh: §6.1 asks
+    # for "visible rather than invisible", and title/aria-label are neither.
+    mark = '<span class="dot" aria-hidden="true"></span>' if quiet else ""
+    if unwritten:
+        mark += '<span class="gapmark" aria-hidden="true"></span>'
+    # A bar only links where there is an entry to land on — the anchor is
+    # emitted while iterating entries, so a link on a day without one goes
+    # nowhere (spec §5).
+    tag = "a" if day["has_entry"] else "span"
+    href = f' href="#day-{day["date"]}"' if day["has_entry"] else ""
+    return (f'<{tag} class="{cls}"{href} style="height:{h}px" '
+            f'title="{_html.escape(label)}" aria-label="{_html.escape(label)}">'
+            f'{mark}<span class="vh">{_html.escape(label)}</span></{tag}>')
+
+
+GLOSSARY = [
+    ("needs you", "a decision is waiting on you — nothing else on the page is asking for anything"),
+    ("entry", "one dated block you or the assistant wrote, in plain words, about what changed"),
+    ("no entry recorded", "a branch was merged with its entry deliberately skipped, and said why"),
+    ("shipped with no entry", "a day with commits and nothing written about them — the gap the entry rule exists to close"),
+]
+
+def build(entries, days, prs, pr_error, git_error, window,
+          exemptions, exempt_error) -> str:
+    # ─── What needs you ───
+    need = unresolved(entries)
+    rows = [f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["title"])}</a> '
+            f'<span class="when">{_html.escape(e["date"])} · {_html.escape(e["id"])}</span></li>'
+            for e in need]
+    if pr_error:
+        pr_note = (f'<p class="unknown">I could not also check open pull requests — '
+                   f'{_html.escape(pr_error)}. Treat this as NOT CHECKED.</p>')
+    else:
+        pr_note = ""
+        rows += [f'<li>Pull request #{_html.escape(str(p["number"]))} — '
+                 f'{_html.escape(str(p["title"]))}'
+                 f' <span class="when">open</span></li>' for p in (prs or [])]
+    if rows:
+        needs_html = '<ul class="needs">' + "".join(rows) + "</ul>" + pr_note
+    elif pr_error:
+        needs_html = pr_note
+    else:
+        needs_html = '<p class="none">Nothing needs you.</p>'
+
+    # ─── The chart ───
+    if git_error:
+        chart = (f'<p class="unknown">Could not read the git history — '
+                 f'{_html.escape(git_error)}</p>')
+    elif not days:
+        chart = (f'<p class="unknown">No days to show — the window is '
+                 f'{_html.escape(str(window))}. Pass --window with a positive number.</p>')
+    else:
+        tallest = max((d["commits"] for d in days), default=0)
+        chart = "".join(_bar(d, tallest) for d in reversed(days))
+    # §5: the count is commits, and it under-counts work that was never committed.
+    chart_note = ('<p class="note">One bar per day, oldest on the left. It counts commits, '
+                  'so work that was never committed does not appear here.</p>')
+
+    # ─── What changed ───
+    if not entries:
+        entries_html = ('<p class="none">No entries yet. They live in '
+                        '<code>docs/dashboard-entries.md</code>.</p>')
+    else:
+        parts, anchored = [], set()
+        for i, e in enumerate(_ordered(entries)):
+            eid = _slug(e["id"]) if e["id"] else f"bad-{i}"
+            day_anchor = ""
+            if e["date"] and not e["error"] and e["date"] not in anchored:
+                anchored.add(e["date"])
+                day_anchor = f'<span class="anchor" id="day-{_html.escape(e["date"])}"></span>'
+            if e["error"]:
+                parts.append(
+                    f'{day_anchor}<article class="entry broken" id="{eid}">'
+                    f'<p class="err">Could not parse this entry — {_html.escape(e["error"])}</p>'
+                    f'<pre>{_html.escape(e["raw"])}</pre></article>')
+                continue
+            tech = ("" if not e["tech"] else
+                    f'<details id="{eid}-tech"><summary>Raw technical detail</summary>'
+                    f'<pre>{_html.escape(e["tech"])}</pre></details>')
+            flag = ' <span class="flag">needs you</span>' if e["needs_you"] else ""
+            parts.append(
+                f'{day_anchor}<article class="entry" id="{eid}">'
+                f'<h3>{_html.escape(e["date"])} '
+                f'<span class="eid">{_html.escape(e["id"])}</span>{flag}</h3>'
+                f'<p class="title">{_html.escape(e["title"])}</p>'
+                f'<details id="{eid}-plain"><summary>What this means</summary>'
+                f'<p>{_html.escape(e["plain"])}</p></details>{tech}</article>')
+        entries_html = "".join(parts)
+
+    # ─── Recorded exemptions (spec §7) ───
+    if exempt_error:
+        exempt_html = (f'<p class="unknown">I could not tell whether any branch skipped its '
+                       f'entry — {_html.escape(exempt_error)}. Treat this as NOT CHECKED.</p>')
+    elif not exemptions:
+        exempt_html = '<p class="none">No branch has skipped its entry.</p>'
+    else:
+        exempt_html = '<ul class="needs">' + "".join(
+            f'<li>No entry recorded — <strong>{_html.escape(str(x["reason"]))}</strong> '
+            f'<span class="when">#{_html.escape(str(x["number"]))} · '
+            f'{_html.escape(str(x["merged"]))}</span></li>' for x in exemptions) + "</ul>"
+
+    glossary_html = ('<details id="glossary"><summary>What the words on this page mean</summary>'
+                     '<dl>' + "".join(
+                         f'<dt>{_html.escape(t)}</dt><dd>{_html.escape(d)}</dd>'
+                         for t, d in GLOSSARY) + '</dl></details>')
+
+    return f"""<title>Project dashboard</title>
+<style>
+:root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
+--need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
+--mono:ui-monospace,SFMono-Regular,Menlo,monospace}}
+@media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
+--bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
+--err:#d98873;--err-bg:#2a1a16}}}}
+body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
+line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
+.shell{{max-width:820px;margin:0 auto;padding:32px 20px 80px}}
+h2{{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+color:var(--fg3);border-bottom:1px solid var(--rule);padding-bottom:8px;margin:44px 0 16px}}
+.none{{color:var(--ok);font-weight:600}}
+.note{{color:var(--fg3);font-size:13px;margin:8px 0 0}}
+.unknown{{color:var(--err);background:var(--err-bg);padding:10px 14px;border-radius:4px}}
+ul.needs{{list-style:none;padding:0}} ul.needs li{{background:var(--need-bg);
+border-left:3px solid var(--need);padding:10px 14px;margin-bottom:8px;border-radius:0 4px 4px 0}}
+.when{{font-family:var(--mono);font-size:11px;color:var(--fg3)}}
+.chart{{display:flex;align-items:flex-end;gap:4px;height:56px;padding:8px 8px 14px;
+background:var(--panel);border:1px solid var(--rule);border-radius:4px;overflow-x:auto}}
+.bar{{position:relative;flex:1;min-width:8px;background:var(--ok);
+border-radius:2px 2px 0 0;display:block}}
+.bar.needs{{background:var(--need)}}
+.bar.marked{{outline:2px solid var(--need);outline-offset:1px}}
+.bar.unwritten{{background:repeating-linear-gradient(45deg,var(--err) 0 3px,transparent 3px 6px),
+var(--err-bg);border:1px solid var(--err)}}
+.bar .dot{{position:absolute;left:50%;bottom:-11px;width:6px;height:6px;
+margin-left:-3px;border-radius:50%;background:var(--need)}}
+.bar .gapmark{{position:absolute;left:0;right:0;top:-6px;height:3px;background:var(--err)}}
+.vh{{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
+.anchor{{display:block;height:0;scroll-margin-top:12px}}
+.entry{{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
+padding:14px 18px;margin-bottom:10px}}
+.entry.broken{{border-color:var(--err);background:var(--err-bg)}}
+.entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
+.entry .eid{{color:var(--fg3);opacity:.75}}
+.entry .title{{margin:0;font-weight:600}}
+.flag{{color:var(--need);font-weight:700}}
+.err{{color:var(--err);font-weight:600;margin:0 0 8px}}
+details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
+#glossary dt{{font-weight:600;margin-top:8px}} #glossary dd{{margin:2px 0 0;color:var(--fg3)}}
+pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:auto}}
+:focus-visible{{outline:2px solid var(--need);outline-offset:2px}}
+</style>
+<div class="shell">
+<h1>Project dashboard</h1>
+<h2>What needs you</h2>{needs_html}
+<h2>The last {window} days</h2><div class="chart">{chart}</div>{chart_note}
+<h2>What changed</h2>{entries_html}
+<h2>Branches that skipped their entry</h2>{exempt_html}
+<h2>Words</h2>{glossary_html}
+<h2>Elsewhere</h2><ul>
+<li><a href="/goals">Goals</a></li><li><a href="/backlog-table">Backlog</a></li>
+<li><a href="/latest">Newest briefing</a></li><li><a href="/">All pages</a></li></ul>
+</div>"""
+
+def _self_test() -> int:
+    ok = fail = 0
+
+    def case(name, got, want):
+        nonlocal ok, fail
+        if got == want:
+            ok += 1
+        else:
+            fail += 1
+            print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
+
+    e = parse_entries("## 2026-08-28 [needs-you]\nFixed a thing.\n")
+    case("one entry parsed", len(e), 1)
+    case("date", e[0]["date"], "2026-08-28")
+    case("id", e[0]["id"], "2026-08-28/1")
+    case("title", e[0]["title"], "Fixed a thing.")
+    case("needs_you", e[0]["needs_you"], True)
+    case("no error", e[0]["error"], None)
+
+    bad = parse_entries("## 2026-02-30\nImpossible date.\n")
+    case("bad date is an error", bad[0]["error"] is not None, True)
+    case("bad date still returned", len(bad), 1)
+    case("bad date keeps raw", "Impossible date." in bad[0]["raw"], True)
+    typo = parse_entries("## 2026-08-28 [needs-yo]\nTypo flag.\n")
+    case("unknown flag is an error", typo[0]["error"] is not None, True)
+    two = parse_entries("## 2026-08-28\nFirst.\n## 2026-08-28\nSecond.\n")
+    case("two entries same date", [x["id"] for x in two], ["2026-08-28/1", "2026-08-28/2"])
+    tech = parse_entries("## 2026-08-28\nTitle.\nMore plain.\n<!--tech-->\nPR #1.\n")
+    case("plain stops at marker", tech[0]["plain"], "Title.\nMore plain.")
+    case("tech captured", tech[0]["tech"], "PR #1.")
+    inline = parse_entries("## 2026-08-28\nI mention <!--tech--> inline.\n")
+    case("inline marker is text", inline[0]["tech"], None)
+    nested = parse_entries("## 2026-08-28\nTitle.\n<!--tech-->\n  ## indented heading\n")
+    case("indented ## does not split", len(nested), 1)
+    case("empty file", parse_entries(""), [])
+    case("no entries yet", parse_entries("# Heading only\n"), [])
+
+    res = parse_entries("## 2026-08-28\nTarget.\n## 2026-08-29 [resolved: 2026-08-28/1]\nDone.\n")
+    case("resolves parsed", res[1]["resolves"], ["2026-08-28/1"])
+    case("valid resolve is not an error", res[1]["error"], None)
+    ghost = parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nDone.\n")
+    case("resolve of an unknown id is an error", ghost[0]["error"] is not None, True)
+    empty_res = parse_entries("## 2026-08-29 [resolved: ]\nDone.\n")
+    case("resolve with an empty id is an error", empty_res[0]["error"] is not None, True)
+
+    # spec §6.2 allows "zero or more" flags — a SECOND [resolved:] used to be
+    # silently discarded, clearing one item and leaving the other open forever.
+    twin = parse_entries("## 2026-08-26 [needs-you]\nA.\n## 2026-08-26 [needs-you]\nB.\n"
+                         "## 2026-08-27 [resolved: 2026-08-26/1] [resolved: 2026-08-26/2]\nBoth.\n")
+    case("two [resolved:] flags are both kept", twin[2]["resolves"],
+         ["2026-08-26/1", "2026-08-26/2"])
+    case("two [resolved:] flags clear BOTH items", [x["id"] for x in unresolved(twin)], [])
+
+    nospace = parse_entries("##2026-08-28\nNo space after the hashes.\n")
+    case("'##' with no space is still an entry", len(nospace), 1)
+    case("'##' with no space is MALFORMED", nospace[0]["error"] is not None, True)
+    case("'##' with no space says why", "space" in (nospace[0]["error"] or ""), True)
+    notitle = parse_entries("## 2026-08-28\n\n\n")
+    case("entry with no title is an error", notitle[0]["error"] is not None, True)
+
+    # A malformed block must not RENUMBER its neighbours: repairing a typo'd
+    # flag would otherwise silently rebind a standing [resolved:].
+    unstable = parse_entries("## 2026-08-28 [needs-yo]\nTypo.\n## 2026-08-28\nReal one.\n")
+    case("a malformed block still consumes its ordinal",
+         [x["id"] for x in unstable], ["2026-08-28/1", "2026-08-28/2"])
+
+    ents = parse_entries("## 2026-08-26 [needs-you]\nA.\n## 2026-08-27\nB.\n"
+                         "## 2026-08-28 [resolved: 2026-08-26/1]\nC.\n")
+    case("unresolved is empty after resolve", [x["id"] for x in unresolved(ents)], [])
+    ents2 = parse_entries("## 2026-08-26 [needs-you]\nA.\n## 2026-08-27\nB.\n")
+    case("unresolved before resolve", [x["id"] for x in unresolved(ents2)], ["2026-08-26/1"])
+    self_res = parse_entries("## 2026-08-26 [needs-you] [resolved: 2026-08-26/1]\nA.\n")
+    case("an entry cannot resolve itself", [x["id"] for x in unresolved(self_res)], ["2026-08-26/1"])
+    early = parse_entries("## 2026-08-25 [resolved: 2026-08-26/1]\nEarly.\n"
+                          "## 2026-08-26 [needs-you]\nLater.\n")
+    case("an earlier entry cannot resolve a later one",
+         [x["id"] for x in unresolved(early)], ["2026-08-26/1"])
+
+    days = bucket_days(["2026-08-28", "2026-08-28", "2026-08-26"], ents2, 3, "2026-08-28")
+    case("window length", len(days), 3)
+    case("newest first", days[0]["date"], "2026-08-28")
+    case("commit count", days[0]["commits"], 2)
+    case("zero-commit day present", days[1]["commits"], 0)
+    case("entry with no commits is marked", days[1]["has_entry"], True)
+    case("needs-you day is flagged", days[2]["needs_you"], True)
+
+    def _B(entries, days, prs=(), pr_error=None, git_error=None, window=2,
+           exemptions=(), exempt_error=None):
+        return build(entries, days, list(prs) if prs is not None else None, pr_error,
+                     git_error, window, list(exemptions) if exemptions is not None else None,
+                     exempt_error)
+
+    def _section(html, heading):
+        # Returns "" when the heading is ABSENT rather than raising: a crash is
+        # "caught" by the runner but by no case, so a deleted section would fail
+        # the suite without any assertion naming what went missing.
+        parts = html.split(f"<h2>{heading}</h2>", 1)
+        return "" if len(parts) < 2 else parts[1].split("<h2>", 1)[0]
+
+    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n<!--tech-->\nPR #1.\n")
+    d3 = bucket_days(["2026-08-28"], ents3, 2, "2026-08-28")
+    html = _B(ents3, d3)
+    case("needs-you surfaces", "Decide the thing." in html, True)
+    case("tech is behind a fold", "<details" in html, True)
+    case("tech labelled", "technical detail" in html.lower(), True)
+
+    html_empty = _B([], bucket_days([], [], 2, "2026-08-28"))
+    case("empty says nothing needs you", "Nothing needs you" in html_empty, True)
+    case("empty says no entries yet", "no entries yet" in html_empty.lower(), True)
+
+    html_err = _B([], bucket_days([], [], 2, "2026-08-28"), prs=None, pr_error="gh exploded")
+    case("gh failure is NOT 'nothing needs you'", "Nothing needs you" in html_err, False)
+    case("gh failure is announced as NOT CHECKED", "not checked" in html_err.lower(), True)
+    case("gh failure surfaces the reason", "gh exploded" in html_err, True)
+
+    # §4's OTHER source. Every fixture used to pass an empty or None PR list, so
+    # the gh half of "what needs you" could be deleted with the suite still green.
+    html_prs = _B([], bucket_days([], [], 2, "2026-08-28"),
+                  prs=[{"number": 42, "title": "Open thing"}])
+    needs_prs = _section(html_prs, "What needs you")
+    case("an open PR appears in what-needs-you", "Open thing" in needs_prs, True)
+    case("the open PR is numbered", "#42" in needs_prs, True)
+
+    bad3 = parse_entries("## 2026-99-99\nBroken.\n")
+    html_bad = _B(bad3, bucket_days([], bad3, 2, "2026-08-28"))
+    case("malformed says it could not parse", "could not parse" in html_bad.lower(), True)
+    case("malformed keeps its raw text", "Broken." in html_bad, True)
+
+    # H5's real assertion: the store's needs survive a gh failure IN THEIR OWN
+    # SECTION. Asserting against the whole page passed on the title's copy in
+    # "What changed" — i.e. on exactly the defect it names.
+    need_html = _B(ents3, d3, prs=None, pr_error="gh exited 1: auth")
+    case("a gh failure still shows the store's needs IN THAT SECTION",
+         "Decide the thing." in _section(need_html, "What needs you"), True)
+
+    # "In place" on the order the store is ACTUALLY written: newest at the END.
+    appended = parse_entries("## 2026-08-27\nOlder good.\n"
+                             "## 2026-02-30\nBroken middle.\n"
+                             "## 2026-08-28\nNewest good.\n")
+    ha = _B(appended, bucket_days([], appended, 2, "2026-08-28"))
+    case("malformed renders BETWEEN its neighbours on an APPENDED store",
+         ha.index("Newest good.") < ha.index("Broken middle.") < ha.index("Older good."), True)
+    case("newest date renders first on an APPENDED store",
+         ha.index("Newest good.") < ha.index("Older good."), True)
+
+    run2 = parse_entries("## 2026-08-27\nOlder.\n## 2026-99-01\nBroken ONE.\n"
+                         "## 2026-99-02\nBroken TWO.\n## 2026-08-28\nNewer.\n")
+    hr = _B(run2, bucket_days([], run2, 2, "2026-08-28"))
+    case("a RUN of malformed blocks keeps file order among themselves",
+         hr.index("Broken ONE.") < hr.index("Broken TWO."), True)
+    case("...and the run still sits between its valid neighbours",
+         hr.index("Newer.") < hr.index("Broken ONE.") < hr.index("Older."), True)
+
+    tie = parse_entries("## 2026-08-28\nFIRST in file.\n## 2026-08-28\nSECOND in file.\n")
+    ht = _B(tie, bucket_days([], tie, 2, "2026-08-28"))
+    case("same-date ties keep file order",
+         ht.index("FIRST in file.") < ht.index("SECOND in file."), True)
+    case("the entry id is rendered", "2026-08-28/1" in ht, True)
+    all_ids = re.findall(r'\sid="([^"]+)"', ht)
+    case("no duplicate DOM ids", len(all_ids), len(set(all_ids)))
+    case("every details has an id", ht.count("<details id="), ht.count("<details"))
+
+    def _marks(bar):
+        """What a SIGHTED reader can tell apart: the bar's own classes and its
+        child elements. Deliberately ignores the tag, href, style, title and
+        aria-label — title needs a hover, aria is not drawn, and the tag/href
+        differ for an unrelated reason (a bar only links where an entry exists),
+        which would let this assertion pass with every mark deleted."""
+        # Scan the OPENING TAG and the CHILDREN separately. A single regex over
+        # the whole string picked up the container's own class as a child the
+        # moment the container became a <span> (a bar with no entry does not
+        # link), which made the two bars differ for a reason unrelated to the
+        # mark — the assertion passed with every mark deleted. MEASURED.
+        cut = bar.index(">") + 1
+        cls = re.search(r'class="([^"]*)"', bar[:cut])
+        kids = [k for k in re.findall(r'<span class="([^"]*)"', bar[cut:]) if k != "vh"]
+        return (cls.group(1) if cls else "", kids)
+
+    quiet = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": True}, 5)
+    plainb = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": False}, 5)
+    case("§6.1 a zero-commit day WITH an entry is marked in SIGHTED output",
+         _marks(quiet) != _marks(plainb), True)
+
+    # §9 / §7.3: a day WITH commits and NO entry is the gap the rule exists to close.
+    gap = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": False}, 7)
+    written = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": True}, 7)
+    case("§9 a day that shipped with NO entry is marked in SIGHTED output",
+         _marks(gap) != _marks(written), True)
+    case("that mark is named for a reader", "no entry" in gap.lower(), True)
+
+    # §5: "Orange = that day has an unresolved needs-you entry" — the chart's PRIMARY
+    # signal, and until round 4 the only one of the three with no comparison. `cls =
+    # "bar needs" if day["needs_you"] else "bar"` could be replaced by `cls = "bar"`
+    # and the whole suite stayed green: `needs-you day is flagged` above asserts
+    # bucket_days' DATA, not the bar. Every other surviving trace of that mutation
+    # lives in title/aria/.vh — the three channels _marks exists to exclude.
+    needs = _bar({"date": "D", "commits": 3, "needs_you": True, "has_entry": True}, 3)
+    calm = _bar({"date": "D", "commits": 3, "needs_you": False, "has_entry": True}, 3)
+    case("§5 a needs-you day is marked in SIGHTED output",
+         _marks(needs) != _marks(calm), True)
+    case("...and the mark is the needs class, not an incidental difference",
+         "needs" in _marks(needs)[0] and "needs" not in _marks(calm)[0], True)
+
+    # §5: a bar only links where there is an entry to land on.
+    case("a bar with no entry is not a dead link", 'href="#day-' in gap, False)
+    case("a bar with an entry does link", 'href="#day-' in written, True)
+
+    chart_only = _section(_B(ents3, d3), "The last 2 days")
+    case("the chart says what it under-counts", "never committed" in chart_only, True)
+    # oldest-left: the OLDER day must be drawn before the newer one.
+    d2 = bucket_days(["2026-08-28"], [], 2, "2026-08-28")
+    two_bars = _section(_B([], d2), "The last 2 days")
+    case("the chart draws oldest-first (left to right)",
+         two_bars.index("2026-08-27") < two_bars.index("2026-08-28"), True)
+
+    hx = _B([], bucket_days([], [], 2, "2026-08-28"),
+            exemptions=[{"number": 9, "title": "T", "merged": "2026-08-28", "reason": "typo fix"}])
+    case("a recorded exemption is displayed", "typo fix" in hx, True)
+    case("the exemption names its pull request", "#9" in hx, True)
+    hxe = _B([], bucket_days([], [], 2, "2026-08-28"), exemptions=None, exempt_error="gh exploded")
+    case("an unreadable exemption list says so", "could not" in hxe.lower(), True)
+
+    hz = _B([], bucket_days([], [], 0, "2026-08-28"), window=0)
+    case("a zero window says so rather than drawing an empty box",
+         "could not" in hz.lower() or "no days" in hz.lower(), True)
+
+    words = _section(_B([], d2), "Words")
+    case("the page carries a glossary", "<dl>" in words, True)
+    case("the glossary defines its terms",
+         "a decision is waiting on you" in words, True)
+
+    # ─── round 3's survivors: behaviours the suite named and could not check ───
+    anchored = _B(ents3, d3)
+    case("a bar's day anchor exists for the day it links to",
+         'id="day-2026-08-28"' in anchored, True)
+    case("the title is rendered outside the fold",
+         '<p class="title">Decide the thing.</p>' in anchored, True)
+    tall = _bar({"date": "D", "commits": 8, "needs_you": False, "has_entry": True}, 8)
+    short = _bar({"date": "D", "commits": 1, "needs_you": False, "has_entry": True}, 8)
+    case("bar height scales with commits",
+         int(re.search(r"height:(\d+)px", tall).group(1))
+         > int(re.search(r"height:(\d+)px", short).group(1)), True)
+    broke = parse_entries("## 2026-08-28 [needs-you] [resolved: nope]\nBroken.\n")
+    case("a malformed entry is never listed as needing you",
+         [x["id"] for x in unresolved(broke)], [])
+    # §5 names --first-parent explicitly: after a squash-merge a plain log counts
+    # the branch's own commits too, and the §9 alarm is derived from this number.
+    import inspect as _i
+    case("commit_dates passes --first-parent as an ARGUMENT",
+         '"--first-parent"' in _i.getsource(commit_dates), True)
+    # H3: the three diagnoses must be distinguishable, INCLUDING a bad-date target.
+    absent = parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nx.\n")[0]["error"]
+    baddate = parse_entries("## 2026-02-30\nBad.\n## 2026-08-29 [resolved: 2026-02-30/1]\nx.\n")[1]["error"]
+    case("a resolve naming an UNPARSEABLE entry says so",
+         "could not be parsed" in (baddate or ""), True)
+    case("...and is distinguishable from a genuinely absent target",
+         "names no entry" in (absent or ""), True)
+
+    # ── THE COLLECTORS' CANNOT-RUN CONTRACT (round 4, H2) ────────────────────
+    # Global Constraint #3 — `"cannot run" is a FAILURE, never a pass` — had NO
+    # executable guard. Round 4 measured six one-line mutations that each turn a
+    # broken `git`/`gh` into a confident zero, all green: the git-failure branch
+    # deleted, `return None, err` becoming `return [], None`, the JSONDecodeError
+    # branch returning `[]`. The whole impure layer was unreachable from the suite,
+    # so `subprocess.run` is swapped for a stub. Cheap, pure, and it makes the
+    # constraint falsifiable instead of merely stated.
+    import subprocess as _sp
+
+    class _R:                       # a completed process with a chosen outcome
+        def __init__(self, rc, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+
+    def _with_run(stub, call):
+        real = _sp.run
+        _sp.run = stub
+        try:
+            return call()
+        finally:
+            _sp.run = real           # restored even if `call` raises
+
+    def _raises(exc):
+        def _f(*a, **k):
+            raise exc
+        return _f
+
+    for label, call in (("commit_dates", lambda: commit_dates(14)),
+                        ("open_prs", open_prs),
+                        ("no_entry_prs", no_entry_prs)):
+        # (a) the binary is missing entirely
+        v, err = _with_run(_raises(OSError("no such binary")), call)
+        case(f"{label}: a missing binary is a could-not-tell, not an empty result",
+             (v, bool(err)), (None, True))
+        # (b) the binary runs and FAILS — the exit code must not be ignored
+        v, err = _with_run(lambda *a, **k: _R(2, "", "boom"), call)
+        case(f"{label}: a non-zero exit is a could-not-tell, not an empty result",
+             (v, bool(err)), (None, True))
+
+    # (c) `gh` succeeds and returns something that is not JSON. Round 4's U13: the
+    # JSONDecodeError branch returning `[], None` renders as a confident zero.
+    v, err = _with_run(lambda *a, **k: _R(0, "not json at all", ""), open_prs)
+    case("open_prs: unparseable gh output is a could-not-tell, not zero",
+         (v, bool(err)), (None, True))
+
+    # (c2) `gh` exits 0 and says NOTHING. `json.loads(r.stdout or "[]")` turned that
+    # into a confident MEASURED ZERO — the page printed "0 open PRs" having never
+    # been answered. Three guards aimed at `_gh_json` (missing binary, non-zero exit,
+    # garbage stdout) all landed on NEIGHBOURING cases and left this one between them.
+    v, err = _with_run(lambda *a, **k: _R(0, "", ""), open_prs)
+    case("open_prs: EMPTY gh output is a could-not-tell, not zero",
+         (v, bool(err)), (None, True))
+
+    # (d) ...and the happy path still works through the same seam, so the cases
+    # above cannot be passing merely because the stub broke everything.
+    v, err = _with_run(lambda *a, **k: _R(0, '[{"number": 9, "title": "T"}]', ""), open_prs)
+    case("open_prs: a well-formed gh response is returned as data", (v, err),
+         ([{"number": 9, "title": "T"}], None))
+
+    print(f"\n{ok}/{ok+fail} passed")
+    return 1 if fail else 0
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--window", type=int, default=14)
+    ap.add_argument("--store", default="docs/dashboard-entries.md")
+    ap.add_argument("--out", type=pathlib.Path,
+                    default=pathlib.Path.home() / "explainers" / "dashboard.html")
+    ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
+    a = ap.parse_args(argv)
+    if a.self_test:
+        return _self_test()
+    if a.window < 1:
+        print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
+        return 2
+    store = pathlib.Path(a.store)
+    entries = parse_entries(store.read_text(encoding="utf-8")) if store.exists() else []
+    dates, git_error = commit_dates(a.window)
+    prs, pr_error = open_prs()
+    exemptions, exempt_error = no_entry_prs()
+    today = _dt.date.today().isoformat()
+    days = bucket_days(dates or [], entries, a.window, today)
+    frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions, exempt_error)
+    if a.fragment_only:
+        a.fragment_only.write_text(frag, encoding="utf-8")
+        print(f"wrote fragment {a.fragment_only}")
+        return 0
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as td:
+        f = pathlib.Path(td) / "dashboard-fragment.html"
+        f.write_text(frag, encoding="utf-8")
+        r = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "brief-compose.py"),
+             "--content", str(f), "--slug", "dashboard", "--out", str(a.out),
+             "--title", "Project dashboard"],
+            cwd=ROOT, capture_output=True, text=True)
+    if r.returncode != 0 or not a.out.is_file():
+        print(f"FAILED — brief-compose did not write {a.out}:\n{r.stdout}{r.stderr}",
+              file=sys.stderr)
+        return 1
+    print(f"wrote {a.out}  ({len(entries)} entries, window {a.window})")
+    for label, err in (("git", git_error), ("gh", pr_error), ("gh/exemptions", exempt_error)):
+        if err:
+            print(f"  ⚠ {label}: {err}")
+    print("     http://127.0.0.1:7391/dashboard   (start: python3 scripts/explainer-serve.py)")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
