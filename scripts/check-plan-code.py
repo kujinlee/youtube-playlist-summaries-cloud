@@ -3,9 +3,16 @@
 
     python3 scripts/check-plan-code.py <plan.md>            # assemble, run suites + mutations
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
-    python3 scripts/check-plan-code.py <plan.md> --compare scripts/  # ...and diff vs the REAL files
+    python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 44 cases
+    python3 scripts/check-plan-code.py --self-test          # 92 cases
+
+⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
+repo-relative path it already is. It took the containing DIRECTORY until round 5,
+which forced the target to be reduced to a basename — so two tags with the same
+basename in different directories both compared to one file and both reported
+`identical`. A false green over a subject never measured: the very defect
+`--compare` was added to fix, one layer in.
 
 WHY THIS EXISTS. Three adversarial review rounds on the project-dashboard plan each
 found that its stated evidence was wrong, and each found it BY HAND:
@@ -62,7 +69,12 @@ import subprocess
 import sys
 import tempfile
 
-FILE_TAG = re.compile(r"<!--\s*file:\s*([A-Za-z0-9._/-]+)\s*-->")
+# ⚠ ALL FOUR tag patterns are anchored `^…$`. v6 anchored only the two illustrative
+# ones, having measured the failure on those — instance, not class. `FILE_TAG` and
+# `MUT_TAG` kept `.search()`, so a tag written into a SENTENCE was parsed as a real
+# tag: a plan documenting its own convention got `file tag for 'x' was followed by
+# another tag, not a block`. Round 5, M4.
+FILE_TAG = re.compile(r"^\s*<!--\s*file:\s*([A-Za-z0-9._/-]+)\s*-->\s*$")
 # `<!-- illustrative: why -->` marks a python block that is NOT part of an assembled
 # file — a fragment shown for context, or an edit to a file this plan only
 # modifies. It must be DECLARED, never merely absent: an untagged block is
@@ -80,10 +92,25 @@ FILE_TAG = re.compile(r"<!--\s*file:\s*([A-Za-z0-9._/-]+)\s*-->")
 # while adding this rule: the checker failed on the paragraph explaining it.
 ILLUS_TAG = re.compile(r"^\s*<!--\s*illustrative\s*:\s*(\S.*?)\s*-->\s*$")
 ILLUS_BARE = re.compile(r"^\s*<!--\s*illustrative\s*-->\s*$")
-MUT_TAG = re.compile(r"<!--\s*mutations\s*-->")
+MUT_TAG = re.compile(r"^\s*<!--\s*mutations\s*-->\s*$")
 FENCE = re.compile(r"^```(\w*)\s*$")
+# A fence this parser CANNOT see: indented, or carrying an info string. Both are
+# ordinary markdown and both take a code block out of sight entirely — not counted,
+# not reported, not excused by the illustrative rule whose whole purpose is that
+# every exclusion states itself. FENCE stays anchored at column 0 (an indented ```
+# inside a python block must NOT close it), so these are reported rather than
+# parsed: fail loud instead of changing what a block means. Round 5, M3.
+# An indented opening fence, or a column-0 fence whose remainder is not a bare
+# language word. The negative lookahead is what catches an INFO STRING: ```` ```python
+# title=foo ```` has a space after the word, so a `[^\w\s]` test right after it misses
+# — measured while writing this.
+INVISIBLE_FENCE = re.compile(r"^(?:\s+```\s*\w+\s*$|```(?!\w*\s*$).+$)")
 # A suite's result line: "45/45 passed", "5/5 cannot-run cases passed", …
 RESULT = re.compile(r"\b\d+/\d+\b.*\bpassed\b")
+# A module constant so the suite can shorten it. As a literal `timeout=120` inside
+# `run_suite`, the timeout path could only be reached by waiting two minutes, so no
+# case reached it and "a hung suite is recorded as caught" survived. Round 5, M2.
+SUITE_TIMEOUT = 120
 
 
 def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]:
@@ -111,6 +138,12 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]
             if pending:
                 problems.append(f"file tag for {pending!r} was followed by the mutations tag")
             pending, want_mut = None, True
+        elif INVISIBLE_FENCE.match(line):
+            problems.append(
+                f"a code fence this parser cannot see (line {i + 1}): {line.strip()[:60]!r}. "
+                f"A fence must start at column 0 with a bare language word. Indented "
+                f"and info-string fences are skipped silently, which takes the block "
+                f"out of every check here without any account of why")
         elif (f := FENCE.match(line)):
             is_py = f.group(1) == "python"
             body, i = [], i + 1
@@ -145,6 +178,19 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]
         i += 1
     if pending:
         problems.append(f"file tag for {pending!r} has no code block after it")
+    for name in files:
+        # A tag becomes a path in two places: the temp assembly dir, and (under
+        # --compare) the repo. `<!-- file: ../escape.py -->` writes OUTSIDE the
+        # TemporaryDirectory — measured in round 5 — and an absolute tag ignores
+        # it entirely. Reject rather than sanitise: a plan has no reason to name
+        # anything but a repo-relative path, and silently rewriting the tag would
+        # make the evidence describe a file the plan does not name.
+        p = pathlib.PurePosixPath(name)
+        if p.is_absolute() or ".." in p.parts:
+            problems.append(
+                f"file tag {name!r} escapes the plan's own tree (absolute path or "
+                f"'..'). Tags are repo-relative paths, and this one would write "
+                f"outside the assembly directory")
     if want_mut:
         problems.append("mutations tag has no JSON block after it")
     return files, muts, problems, {"python_fences": py_total,
@@ -157,18 +203,29 @@ def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
     try:
         r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=SUITE_TIMEOUT)
     except subprocess.TimeoutExpired:
-        return 2, f"CANNOT RUN — {name} --self-test did not finish in 120s. NOT CHECKED."
+        return 2, (f"CANNOT RUN — {name} --self-test did not finish in "
+                   f"{SUITE_TIMEOUT}s. NOT CHECKED.")
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
 def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[str], dict]:
     """Diff each assembled file against the real one in `root`. A missing target is a
-    FAILURE, never a skip: the whole point is that the check reads the shipped file."""
+    FAILURE, never a skip: the whole point is that the check reads the shipped file.
+
+    `root` is the REPO ROOT and `name` is the tag verbatim — a repo-relative path.
+    Until round 5 `root` was the containing DIRECTORY, which forced the target down
+    to `pathlib.Path(name).name`, so two tags with the same basename in different
+    directories both resolved to ONE delivered file and both reported `identical`.
+    A false green over a subject never measured — the exact defect `--compare` was
+    added to fix, one layer in. Resolving the tag whole removes the aliasing rather
+    than warning about it, so same-named files in different directories are simply
+    correct now, and no check is needed for them.
+    """
     problems, seen = [], {}
     for name in sorted(names):
-        target = root / pathlib.Path(name).name
+        target = root / name
         # Read first, ask questions after: `is_file()` and the read are two separate
         # observations, and only the read is the one the verdict rests on.
         try:
@@ -238,6 +295,21 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
                 continue
             src = (d / fname).read_text()
             for find, repl in mut.get("edits", []):
+                # `replace(find, repl, 1)` takes the FIRST occurrence. If the anchor
+                # matches more than once, the mutation may land on a test oracle
+                # while the production line it names is untouched — and the named
+                # case still goes red, so it reports `caught`. Measured round 5;
+                # round 4's M1 filed the same hazard when a duplicated function
+                # made it concrete. Deleting that duplicate removed the instance,
+                # not the class.
+                if src.count(find) > 1:
+                    ok = False
+                    report.append(
+                        f"mutation {name!r}: anchor matches {src.count(find)} times "
+                        f"in {fname} — only the FIRST is replaced, so a 'caught' "
+                        f"verdict would not be about the line you named. Tighten it")
+                    src = None
+                    break
                 if find not in src:
                     ok = False
                     report.append(f"mutation {name!r}: anchor NOT FOUND — it was not applied, "
@@ -255,21 +327,58 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
             # not the first ":". A case name may contain a colon ("collect: a missing
             # git is a could-not-tell"), and splitting on the first one truncated it to
             # "collect", so no `expect` naming the full case could ever match.
+            # `l.strip()[7:]` assumes the line STARTS with "[FAIL] ". A line that
+            # merely contains the marker (a log prefix, an ANSI escape) was sliced
+            # blind and silently produced a wrong case name. Measured round 5.
             fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
-                     for l in out.split("\n") if "[FAIL]" in l]
-            caught = rc != 0
+                     for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
+            # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
+            # two minutes of NOT CHECKED as proof that a guard works, and prints
+            # `caught <name>` into the evidence block. The comment on `run_suite`
+            # said rc 2 must not be readable as either verdict and its very next
+            # caller read it as one. Measured round 5, M2.
+            if rc == 2:
+                ok = False
+                ev["mutations"].append({"name": name, "caught": False, "fails": fails})
+                ev["survivors"].append(name)
+                report.append(
+                    f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
+                    f"That is a cannot-run, not a catch — treat this mutation as NOT CHECKED")
+                continue
+            caught = rc == 1
+            # Each `expect` entry must name exactly ONE red case. As a bare substring
+            # it could be satisfied by a DIFFERENT case than the mutation is about —
+            # measured round 5 (M1): `expect: "does NOT count"` matches 7 case names
+            # in this plan alone, and a fixture certified an untouched guard as caught
+            # because a sibling case went red. The plan's rule is "red via the case it
+            # NAMES"; the tool enforced "red via any case containing this substring".
+            #
+            # A mutation may legitimately break several behaviours, so `expect` accepts
+            # a LIST — every entry must resolve to exactly one red case. That is more
+            # honest than naming one of five arbitrarily and calling it the guard.
             want = mut.get("expect")
-            named = (not want) or any(want in f for f in fails)
+            wants = [want] if isinstance(want, str) else list(want or [])
+            # ONE branch for both failure shapes. Zero matches means the mutation was
+            # caught by something else; two or more means the expect cannot say which
+            # case is the guard. Reporting them separately left the zero-match message
+            # unreachable the moment the set form landed — dead code that two cases
+            # were still asserting.
+            unnamed = [(w, [f for f in fails if w in f]) for w in wants]
+            unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
             ev["mutations"].append({"name": name, "caught": caught, "fails": fails})
             if not caught:
                 ok = False
                 ev["survivors"].append(name)
                 report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
                               f"can fail for what it names")
-            elif not named:
+            elif unnamed:
                 ok = False
-                report.append(f"mutation {name!r} went red, but not via a case matching "
-                              f"{want!r} — it was caught by something else: {fails}")
+                for w, m in unnamed:
+                    report.append(
+                        f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
+                        f"{m or '— it was caught by something else: ' + str(fails)}. An "
+                        f"expect must name EXACTLY ONE, or it cannot show which case is "
+                        f"the guard")
     return ok, report, ev
 
 
@@ -310,6 +419,11 @@ EV_MARK = "GENERATED by scripts/check-plan-code.py — do not edit by hand."
 
 def pasted_evidence(md: str) -> str | None:
     """The evidence block currently pasted into the plan, or None if there is none."""
+    if md.count(EV_MARK) > 1:
+        # A plan with a fresh block followed by a stale one passed, because only
+        # the first was ever compared. Measured round 5. Ambiguity here is a
+        # failure, not a choice of which to believe.
+        return "AMBIGUOUS"
     i = md.find(EV_MARK)
     if i < 0:
         return None
@@ -331,6 +445,10 @@ def verify_evidence(plan: pathlib.Path, ev: dict) -> list[str]:
     `GENERATED` header is read with MORE trust than typed prose, not less.
     """
     pasted = pasted_evidence(plan.read_text(encoding="utf-8"))
+    if pasted == "AMBIGUOUS":
+        return ["--verify-evidence: the plan contains MORE THAN ONE generated "
+                "evidence block. Only one can be the current one, and checking the "
+                "first would leave the others free to go stale. Treat as NOT CHECKED."]
     if pasted is None:
         return ["--verify-evidence: no generated evidence block found in the plan "
                 "(looked for the GENERATED header). Treat this as NOT CHECKED."]
@@ -340,8 +458,28 @@ def verify_evidence(plan: pathlib.Path, ev: dict) -> list[str]:
     diff = list(difflib.unified_diff(pasted.strip().split("\n"), fresh.split("\n"),
                                      fromfile="pasted in the plan",
                                      tofile="generated by this run", lineterm=""))
-    return ["--verify-evidence: the pasted evidence block is STALE. It describes a "
-            "different run than the one that just happened:\n    " + "\n    ".join(diff[:40])]
+    mode = ("--compare " + str(ev["compared"] and "<dir>" or "")).strip() if ev.get(
+        "compared") is not None else "(no --compare)"
+    return [f"--verify-evidence: the pasted evidence block is STALE. It describes a "
+            f"different run than the one that just happened, which was {mode}. "
+            f"⚠ The block is INVOCATION-SPECIFIC: a compared run and a bare run "
+            f"produce different blocks, so regenerate with the SAME flags the "
+            f"gate uses.\n    " + "\n    ".join(diff[:40])]
+
+
+def count_drift(doc: str | None, actual: int) -> str | None:
+    """None if the docstring's declared case count matches `actual`, else why not.
+
+    A module-level function so the suite can cover it. As an inline block at the end
+    of `_self_test` it was unreachable from any case, and deleting it outright left
+    the suite green — measured round 5.
+    """
+    m = re.search(r"--self-test\s+#\s*(\d+) cases", doc or "")
+    if not m:
+        return "CANNOT RUN — the docstring no longer declares a case count."
+    if int(m.group(1)) != actual:
+        return f"[DRIFT] the docstring declares {m.group(1)} cases; the suite ran {actual}"
+    return None
 
 
 def _self_test() -> int:
@@ -365,8 +503,14 @@ def _self_test() -> int:
             '    print("%d/1 passed" % (0 if bad else 1))\n'
             '    return 1 if bad else 0\n\n\n'
             'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
+    # ⚠ The anchor is `def f():\\n    return 1`, not the bare `return 1`. The bare
+    # form matches TWICE in GOOD (the production line and `return 1 if bad else 0`),
+    # and an ambiguous anchor is now refused — correctly: `replace(…, 1)` takes the
+    # first, which need not be the line the mutation names. This fixture carried
+    # that ambiguity from the day it was written, and the new check found it.
     MUTS = ('<!-- mutations -->\n```json\n'
-            '[{"name": "f returns 2", "file": "m.py", "edits": [["return 1", "return 2"]],'
+            '[{"name": "f returns 2", "file": "m.py",'
+            ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
             ' "expect": "f returns one"}]\n```\n')
 
     files, muts, probs, tally = extract(GOOD + MUTS)
@@ -422,7 +566,8 @@ def _self_test() -> int:
         # A case name containing a colon must still be matchable by `expect`.
         COLON = GOOD.replace("f returns one", "f: returns one")
         pl.write_text(COLON + '<!-- mutations -->\n```json\n'
-                      '[{"name": "colon", "file": "m.py", "edits": [["return 1", "return 2"]],'
+                      '[{"name": "colon", "file": "m.py",'
+                      ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
                       ' "expect": "f: returns one"}]\n```\n')
         colon_ok, rep, _ = check(pl)
         case("an `expect` matches a case name containing a COLON", colon_ok, True)
@@ -430,11 +575,13 @@ def _self_test() -> int:
         # A mutation that goes red via a DIFFERENT case than the one named is
         # not evidence for the case it claims — r3's day-anchor shape.
         pl.write_text(GOOD + '<!-- mutations -->\n```json\n'
-                      '[{"name": "wrong case", "file": "m.py", "edits": [["return 1", "return 2"]],'
+                      '[{"name": "wrong case", "file": "m.py",'
+                      ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
                       ' "expect": "some other case"}]\n```\n')
         wrong_ok, rep, _ = check(pl)
         case("a mutation caught by the WRONG case fails", wrong_ok, False)
-        case("...and says which case caught it", any("caught by something else" in r for r in rep), True)
+        case("...and says it was caught by something else",
+             any("caught by something else" in r for r in rep), True)
 
         # A surviving mutation must fail the check.
         pl.write_text(GOOD + '<!-- mutations -->\n```json\n'
@@ -524,16 +671,345 @@ def _self_test() -> int:
         case("...and says NOT CHECKED",
              "NOT CHECKED" in verify_evidence(pl, ev4)[0], True)
 
+        # Two evidence blocks: checking only the first leaves the rest free to rot.
+        pl.write_text(GOOD + MUTS + "\n" + fresh + "\n\n" + fresh + "\n")
+        _, _, ev5 = check(pl)
+        amb = verify_evidence(pl, ev5)
+        case("TWO evidence blocks is a failure, not a choice of which to believe",
+             len(amb), 1)
+        case("...and says NOT CHECKED", "NOT CHECKED" in amb[0], True)
+
+        # The block ends at ITS OWN closing fence, not the last fence in the file.
+        pl.write_text(GOOD + MUTS + "\n" + fresh + "\n\nProse.\n\n```\nunrelated\n```\n")
+        _, _, ev6 = check(pl)
+        case("a later unrelated fence does not extend the evidence block",
+             verify_evidence(pl, ev6), [])
+
+        # An ambiguous anchor mutates the FIRST match, which need not be the line
+        # the mutation names — and the named case still goes red, so it reports a
+        # `caught` that is about something else entirely.
+        pl.write_text(GOOD + '<!-- mutations -->\n```json\n'
+                      '[{"name": "ambiguous", "file": "m.py",'
+                      ' "edits": [["return 1", "return 2"]]}]\n```\n')
+        amb_ok, rep, _ = check(pl)
+        case("an anchor matching MORE THAN ONCE fails the check", amb_ok, False)
+        case("...and says how many times it matched",
+             any("matches 2 times" in r for r in rep), True)
+
+        # Tags that escape the assembly directory.
+        for bad_tag in ("../escape.py", "/tmp/abs.py"):
+            _f, _m, esc, _t = extract(GOOD.replace("m.py", bad_tag, 1))
+            case(f"a file tag of {bad_tag!r} is refused",
+                 any("escapes" in p for p in esc), True)
+
+        # Two tags sharing a basename used to compare to the SAME delivered file and
+        # BOTH report `identical`. The tag is now used whole.
+        two = GOOD.replace("m.py", "one/m.py", 1) + GOOD.replace("m.py", "two/m.py", 1)
+        pl.write_text(two)
+        ship2 = pathlib.Path(td) / "ship2"
+        (ship2 / "one").mkdir(parents=True, exist_ok=True)
+        (ship2 / "two").mkdir(parents=True, exist_ok=True)
+        body = "\n\n".join(extract(two)[0]["one/m.py"]) + "\n"
+        (ship2 / "one" / "m.py").write_text(body)
+        (ship2 / "two" / "m.py").write_text(body)
+        two_ok, rep, ev7 = check(pl, ship2)
+        # ⚠ Assert the VERDICTS, not the keys. The keys are the tag names and do not
+        # move when the target does — an earlier version of this case asserted them
+        # and the basename mutant sailed through it. The mutant collapses both
+        # targets onto `<root>/m.py`, which does not exist, so both go MISSING.
+        case("--compare resolves each tag at its OWN path, not its basename",
+             [ev7["compared"]["one/m.py"], ev7["compared"]["two/m.py"]],
+             ["identical", "identical"])
+        case("...so a plan with two same-named files in different dirs PASSES",
+             two_ok, True)
+
+    # A file may print more than one result line; keeping only the tail hides one.
+    TWO_SUITES = ('<!-- file: t.py -->\n```python\n'
+                  'def _self_test():\n    print("3/3 passed")\n    return 0\n\n\n'
+                  'def _extra():\n    print("2/2 cannot-run cases passed")\n    return 0\n\n\n'
+                  'import sys\n'
+                  'if __name__ == "__main__":\n'
+                  '    sys.exit(_self_test() or _extra())\n```\n')
+    with tempfile.TemporaryDirectory() as td2:
+        p2 = pathlib.Path(td2) / "p.md"
+        p2.write_text(TWO_SUITES)
+        _, _, ev8 = check(p2)
+        case("EVERY result line is recorded, not just the last",
+             ev8["files"]["t.py"]["tail"], "3/3 passed · 2/2 cannot-run cases passed")
+
+    # A hung suite is a CANNOT RUN (rc 2), not a traceback and not a verdict.
+    import subprocess as _sp
+    _real = _sp.run
+
+    def _timeout(*a, **k):
+        raise _sp.TimeoutExpired(cmd="x", timeout=120)
+
+    _sp.run = _timeout
+    try:
+        rc_t, out_t = run_suite(pathlib.Path("."), "whatever.py")
+    finally:
+        _sp.run = _real
+    case("a hung suite is rc 2, distinct from both pass and fail", rc_t, 2)
+    case("...and says NOT CHECKED", "NOT CHECKED" in out_t, True)
+
+    # The docstring case count, which no case could previously reach.
+    case("count_drift is silent when the docstring matches",
+         count_drift("x --self-test          # 7 cases", 7), None)
+    case("count_drift reports a mismatch",
+         "DRIFT" in (count_drift("x --self-test          # 7 cases", 8) or ""), True)
+    case("count_drift CANNOT RUN when no count is declared",
+         "CANNOT RUN" in (count_drift("no count here", 7) or ""), True)
+
+    # ── main(): the ONLY layer CI and acceptance criterion 5 read (round 5, H3) ──
+    # `check()` was well covered; the wrapper converting its verdict into the
+    # observable was not. Three mutants gutting the CLI verdict — including
+    # `return 0` unconditionally — survived the whole suite. The proposition the
+    # gate rests on, that a non-zero exit follows from a failed check, was asserted
+    # nowhere. This is round 4's H3 recurring one layer out: the same question was
+    # not asked of `main`.
+    import contextlib as _cl2, io as _io2
+
+    def _main_rc(argv):
+        with _cl2.redirect_stdout(_io2.StringIO()) as buf, _cl2.redirect_stderr(_io2.StringIO()):
+            rc = main(argv)
+        return rc, buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as td4:
+        g = pathlib.Path(td4) / "green.md"
+        g.write_text(GOOD + MUTS)
+        r = pathlib.Path(td4) / "red.md"
+        r.write_text(RED)
+        rc, out = _main_rc([str(g)])
+        case("main: a passing plan exits 0", rc, 0)
+        case("...and names the mode, so a CI log shows the subject",
+             "NOT compared" in out, True)
+        case("main: a FAILING plan exits 1", _main_rc([str(r)])[0], 1)
+        case("main: a plan that does not exist exits 2, not 1", _main_rc(["nope.md"])[0], 2)
+        case("main: no plan at all exits 2", _main_rc([])[0], 2)
+        case("main: --compare at a NON-directory exits 2 (cannot run, not failure)",
+             _main_rc([str(g), "--compare", str(g)])[0], 2)
+        rc, out = _main_rc([str(g), "--verify-evidence"])
+        case("main: --verify-evidence on a plan with NO block exits 1", rc, 1)
+        ship3 = pathlib.Path(td4) / "ship3"
+        ship3.mkdir()
+        (ship3 / "m.py").write_text("\n\n".join(extract(GOOD + MUTS)[0]["m.py"]) + "\n")
+        rc, out = _main_rc([str(g), "--compare", str(ship3)])
+        case("main: a compared run that matches exits 0", rc, 0)
+        case("...and says so on the final line", "OK — compared" in out, True)
+
+    # ── the evidence block's CONTENT, not just its round-trip (round 5, M6) ──
+    # `--verify-evidence` diffs `evidence()` against itself, so any change to what
+    # the block SAYS changes both sides identically. Dropping the per-mutation
+    # roll-call — the part a human actually reads — survived the whole suite.
+    with tempfile.TemporaryDirectory() as td5:
+        p5 = pathlib.Path(td5) / "p.md"
+        p5.write_text(GOOD + '<!-- mutations -->\n```json\n'
+                      '[{"name": "no-op", "file": "m.py", "edits": [["def f():", "def f():"]]}]\n```\n')
+        _, _, ev9 = check(p5)
+        text = evidence(ev9)
+        case("the evidence block names a SURVIVOR as such", "SURVIVED no-op" in text, True)
+        p5.write_text(GOOD + MUTS)
+        _, _, ev10 = check(p5)
+        case("...and a caught mutation as caught",
+             "caught   f returns 2" in evidence(ev10), True)
+        ship4 = pathlib.Path(td5) / "ship4"
+        ship4.mkdir()
+        (ship4 / "m.py").write_text("\n\n".join(extract(GOOD + MUTS)[0]["m.py"]) + "\n")
+        _, _, ev11 = check(p5, ship4)
+        case("...and the per-file compare verdict appears in the block",
+             "identical  m.py" in evidence(ev11), True)
+
+    # ── block ORDER and the per-mutation restore (round 5, M5) ──
+    # Every multi-block fixture had exactly one block, so "concatenated in document
+    # order" was never observed; and no fixture declared two mutations, so the
+    # restore between them was never observed either. Without the restore, mutation
+    # N lands on a source already carrying 1…N-1 and `caught` stops meaning anything.
+    ORDER = ('<!-- file: o.py -->\n```python\nFIRST = 1\n```\n\n'
+             '<!-- file: o.py -->\n```python\nSECOND = 2\n```\n')
+    files_o, _m, _p, _t = extract(ORDER)
+    case("blocks are concatenated in DOCUMENT order", files_o["o.py"],
+         ["FIRST = 1", "SECOND = 2"])
+
+    TWO_MUT = (GOOD + '<!-- mutations -->\n```json\n'
+               '[{"name": "a", "file": "m.py",'
+               ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
+               ' "expect": "f returns one"},'
+               ' {"name": "b", "file": "m.py",'
+               ' "edits": [["def f():\\n    return 1", "def f():\\n    return 3"]],'
+               ' "expect": "f returns one"}]\n```\n')
+    with tempfile.TemporaryDirectory() as td6:
+        p6 = pathlib.Path(td6) / "p.md"
+        p6.write_text(TWO_MUT)
+        two_ok, _rep, ev12 = check(p6)
+        # Without the restore, mutation `b`'s anchor is gone (a already replaced it)
+        # and it reports "anchor NOT FOUND" instead of being applied.
+        case("the source is RESTORED between mutations", two_ok, True)
+        case("...so both are applied to a clean copy",
+             [m["caught"] for m in ev12["mutations"]], [True, True])
+
+    # ── fences this parser cannot see (round 5, M3) ──
+    for label, fixture in (
+            ("indented", "<!-- file: m.py -->\n```python\nx = 1\n```\n\n    ```python\n    1/0\n    ```\n"),
+            ("info-string", "<!-- file: m.py -->\n```python\nx = 1\n```\n\n```python title=foo\n1/0\n```\n")):
+        _f, _m, fp, _t = extract(fixture)
+        case(f"a {label} python fence is REPORTED, not skipped in silence",
+             any("cannot see" in p for p in fp), True)
+
+    # ── a HUNG mutation is a cannot-run, never a catch (round 5, M2) ──
+    # `run_suite` returns rc 2 on timeout and the mutation loop read it as red, so
+    # two minutes of NOT CHECKED were recorded as `caught <name>` in the evidence.
+    HANG = ('<!-- file: h.py -->\n```python\nimport sys, time\n'
+            'FLAG = 1\n\n\n'
+            'def _self_test():\n'
+            '    if FLAG != 1:\n        time.sleep(60)\n'
+            '    print("1/1 passed")\n    return 0\n\n\n'
+            'if __name__ == "__main__":\n    sys.exit(_self_test())\n```\n'
+            '<!-- mutations -->\n```json\n'
+            '[{"name": "hangs instead of failing", "file": "h.py",'
+            ' "edits": [["FLAG = 1", "FLAG = 2"]]}]\n```\n')
+    global SUITE_TIMEOUT
+    _saved_timeout = SUITE_TIMEOUT
+    SUITE_TIMEOUT = 2
+    try:
+        with tempfile.TemporaryDirectory() as td8:
+            p8 = pathlib.Path(td8) / "p.md"
+            p8.write_text(HANG)
+            hang_ok, rep, ev13 = check(p8)
+            case("a mutation that HANGS is not recorded as caught", hang_ok, False)
+            case("...and the evidence does not claim it was caught",
+                 ev13["mutations"][0]["caught"], False)
+            case("...and the report says NOT CHECKED",
+                 any("NOT CHECKED" in r for r in rep), True)
+    finally:
+        SUITE_TIMEOUT = _saved_timeout
+
+    # ── an `expect` matching SEVERAL red cases cannot name the guard (M1) ──
+    TWO_CASES = ('<!-- file: m.py -->\n```python\ndef f():\n    return 1\n\n\n'
+                 'def _self_test():\n'
+                 '    bad = f() != 1\n'
+                 '    if bad:\n'
+                 '        print("  [FAIL] guard: head path: got 1 want 2")\n'
+                 '        print("  [FAIL] guard: in-place path: got 1 want 2")\n'
+                 '    print("%d/2 passed" % (0 if bad else 2))\n'
+                 '    return 1 if bad else 0\n\n\n'
+                 'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
+    with tempfile.TemporaryDirectory() as td9:
+        p9 = pathlib.Path(td9) / "p.md"
+        p9.write_text(TWO_CASES + '<!-- mutations -->\n```json\n'
+                      '[{"name": "loose", "file": "m.py",'
+                      ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
+                      ' "expect": "guard"}]\n```\n')
+        loose2_ok, rep, _ = check(p9)
+        case("an `expect` matching TWO red cases fails — it names neither",
+             loose2_ok, False)
+        case("...and says it must name exactly one",
+             any("EXACTLY ONE" in r for r in rep), True)
+        # ...and naming one of them precisely is accepted.
+        p9.write_text(TWO_CASES + '<!-- mutations -->\n```json\n'
+                      '[{"name": "precise", "file": "m.py",'
+                      ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
+                      ' "expect": "guard: in-place path"}]\n```\n')
+        case("...while an expect naming ONE case passes", check(p9)[0], True)
+
+    # ── the assembled file must preserve DOCUMENT order, in check() not just extract ──
+    ORDER_RUN = ('<!-- file: o.py -->\n```python\nBASE = 7\n```\n\n'
+                 '<!-- file: o.py -->\n```python\n'
+                 'def _self_test():\n'
+                 '    print("1/1 passed" if BASE == 7 else "  [FAIL] base")\n'
+                 '    return 0\n\n\n'
+                 'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
+    with tempfile.TemporaryDirectory() as td10:
+        p10 = pathlib.Path(td10) / "p.md"
+        p10.write_text(ORDER_RUN)
+        case("the ASSEMBLED file keeps document order (reversed -> NameError)",
+             check(p10)[0], True)
+
+    # ── `tail` records RESULT lines only, not arbitrary chatter ──
+    NOISY = ('<!-- file: n.py -->\n```python\n'
+             'def _self_test():\n'
+             '    print("some diagnostic chatter")\n'
+             '    print("4/4 passed")\n    return 0\n\n\n'
+             'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
+    with tempfile.TemporaryDirectory() as td11:
+        p11 = pathlib.Path(td11) / "p.md"
+        p11.write_text(NOISY)
+        _, _, ev14 = check(p11)
+        case("the evidence records the RESULT line, not surrounding chatter",
+             ev14["files"]["n.py"]["tail"], "4/4 passed")
+
+    # ── an indented ``` inside a python block must NOT close it (FENCE anchoring) ──
+    INNER = ('<!-- file: m.py -->\n```python\n'
+             'DOC = """\n    ```\n    not a fence\n    """\n\n\n'
+             'def _self_test():\n    print("1/1 passed")\n    return 0\n\n\n'
+             'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
+    _f, _m, inner_p, inner_t = extract(INNER)
+    case("an INDENTED ``` inside a python block does not close it",
+         [inner_t["python_fences"], inner_p], [1, []])
+
+    # ── a file tag written into PROSE is not a tag (FILE_TAG anchoring, M4) ──
+    _f, _m, ft, _t = extract("Tag it with `<!-- file: gen-dashboard.py -->` above the block.\n"
+                             + GOOD + MUTS)
+    case("a file tag quoted in prose is not parsed as a tag", ft, [])
+
+    # ── a plan whose tags stop matching must FAIL, not report a clean zero (L6) ──
+    with tempfile.TemporaryDirectory() as td7:
+        p7 = pathlib.Path(td7) / "p.md"
+        p7.write_text("Just prose. No tagged blocks at all.\n")
+        none_ok, rep, _ = check(p7)
+        case("a plan with NO tagged blocks fails rather than reporting 0 files",
+             none_ok, False)
+        case("...and says nothing was assembled",
+             any("nothing to assemble" in r for r in rep), True)
+
+    # Prose that MENTIONS a tag must not be read as one — the checker failed on its
+    # own documentation when these patterns were unanchored. ⚠ The falsifier must
+    # put an UNTAGGED block after the prose: if the prose is (wrongly) read as a
+    # tag, it EXCUSES that block and the problem disappears. Asserting only that
+    # the prose itself is quiet cannot see that, and an earlier version of this
+    # case did exactly that — the mutant passed it.
+    # ⚠ Assert the problem COUNT, not just that UNTAGGED is present. If the prose is
+    # read as a tag, the UNTAGGED complaint is still raised — plus a spurious
+    # "needs a REASON" one — so `any(UNTAGGED)` cannot tell the two apart, and an
+    # earlier version of this case let the unanchored mutant through.
+    _f, _m, pr1, _t = extract(
+        "Mark it `<!-- illustrative -->` to exclude a block.\n"
+        "```python\nx = 1\n```\n")
+    case("prose mentioning the BARE tag raises ONE problem, not two",
+         [len(pr1), any("UNTAGGED" in p for p in pr1)], [1, True])
+    _f, _m, pr2, _t = extract(
+        "Give a reason, as in `<!-- illustrative: why -->`.\n"
+        "```python\nx = 1\n```\n")
+    case("prose mentioning the REASON form does not excuse the block after it",
+         [len(pr2), any("UNTAGGED" in p for p in pr2)], [1, True])
+
+    # `[FAIL] ` must START the line. A line that merely CONTAINS it was sliced
+    # blind at [7:], producing a garbage case name that an `expect` could match —
+    # so a mutation could be recorded as caught by a case that does not exist.
+    LOOSE = ('<!-- file: m.py -->\n```python\ndef f():\n    return 1\n\n\n'
+             'def _self_test():\n'
+             '    bad = f() != 1\n'
+             '    if bad:\n'
+             '        print("note [FAIL] realcase: got %r want 1" % f())\n'
+             '    print("%d/1 passed" % (0 if bad else 1))\n'
+             '    return 1 if bad else 0\n\n\n'
+             'import sys\nif __name__ == "__main__":\n    sys.exit(_self_test())\n```\n')
+    with tempfile.TemporaryDirectory() as td3:
+        p3 = pathlib.Path(td3) / "p.md"
+        p3.write_text(LOOSE + '<!-- mutations -->\n```json\n'
+                      '[{"name": "loose", "file": "m.py",'
+                      ' "edits": [["def f():\\n    return 1", "def f():\\n    return 2"]],'
+                      ' "expect": "AIL] realcase"}]\n```\n')
+        loose_ok, rep, _ = check(p3)
+        case("a mid-line [FAIL] is NOT parsed as a case name", loose_ok, False)
+        case("...so the mutation is not credited to a case that does not exist",
+             any("must name EXACTLY ONE" in r for r in rep), True)
+
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
     # it cannot drift silently the way `# 12 cases` did against a 19-case suite.
-    declared = re.search(r"--self-test\s+#\s*(\d+) cases", __doc__ or "")
-    if not declared:
-        print("CANNOT RUN — the docstring no longer declares a case count.")
-        return 1
-    if int(declared.group(1)) != ok + fail:
-        print(f"  [DRIFT] the docstring declares {declared.group(1)} cases; "
-              f"the suite ran {ok + fail}")
+    drift = count_drift(__doc__, ok + fail)
+    if drift:
+        print(f"  {drift}")
         return 1
     return 1 if fail else 0
 
@@ -579,7 +1055,14 @@ def main(argv: list[str]) -> int:
         print(f"  ✗ {r}")
     if a.evidence:
         print(evidence(ev))
-    print(("OK — " if ok else "FAILED — ") + f"{len(ev['files'])} file(s), "
+    # Name the MODE on the final line. All three modes used to end in an identical
+    # `OK — …`, so a CI log could not show which subject was measured, and dropping
+    # both flags looked exactly like passing them. Round 5, L1.
+    mode = ("compared + evidence-verified" if cmp_dir and a.verify_evidence else
+            "compared" if cmp_dir else
+            "evidence-verified, plan's copy only" if a.verify_evidence else
+            "plan's copy only, NOT compared")
+    print(("OK — " if ok else "FAILED — ") + f"{mode}: {len(ev['files'])} file(s), "
           f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
     return 0 if ok else 1
 

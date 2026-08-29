@@ -14,7 +14,10 @@
 **Spec:** `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` (v5, merged `c5fcb07`).
 Section references below (§4, §5, §6.2, §7) are to that spec.
 
-**Version: v6** — folds in **both halves of round 4** (Codex 3 findings; Claude 1 Blocking, 6 High,
+**Version: v7** — folds in **both halves of round 5**, which was SCOPED to
+`scripts/check-plan-code.py` rather than to this plan. Not one of its findings was about the tasks
+below; all of them were about the tool that checks them. See *v7 — round 5* at the end. v6 folded in
+**both halves of round 4** (Codex 3 findings; Claude 1 Blocking, 6 High,
 6 Medium, 5 Low; both NOT CONVERGED). v5 folded in round 4's Codex half; v4 folded in both halves of
 round 3 (Codex 2B/2H, Claude 2B/4H/7M/7L) and made the evidence generated rather than typed.
 
@@ -1555,7 +1558,7 @@ if __name__ == "__main__":
 
 ```bash
 python3 scripts/check-plan-code.py \
-  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare scripts/
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare .
 ```
 
 This assembles both files from the blocks above, runs both suites, runs every mutation in the
@@ -1586,19 +1589,30 @@ compared one:
 
 ```bash
 python3 scripts/check-plan-code.py \
-  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare scripts/ --evidence
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare . --evidence
 # paste the block over the one under "Standing evidence", then:
 python3 scripts/check-plan-code.py \
-  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare scripts/ --verify-evidence
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare . --verify-evidence
 ```
 
 ⛔ **This step is not optional and it is not cosmetic — without it the CI step added in Task 6 is
 red by construction.** The block committed today was generated *without* `--compare`, because
 `scripts/gen-dashboard.py` does not exist until this task creates it; its subject line says so in as
-many words. The CI step runs `--compare scripts/ --verify-evidence`, and a compared run produces a
+many words. The CI step runs `--compare . --verify-evidence`, and a compared run produces a
 different block. **The two must be brought into agreement here, at the first moment both files
-exist.** Expected after the paste: `OK`, and the block's subject reading
-`the plan's blocks, DIFFED against the delivered files` with both files `identical`.
+exist.** Expected after the paste: `OK — compared + evidence-verified`, and the block's subject
+reading `the plan's blocks, DIFFED against the delivered files` with both files `identical`.
+
+⛔⛔ **AND rewrite the two commands printed under *Standing evidence* to carry `--compare .` in the
+same edit.** They read `--evidence` and `--verify-evidence` with no `--compare`, and **the evidence
+block is invocation-specific**: the moment this step regenerates it in compared form, those two bare
+commands exit 1 and print *"the pasted evidence block is STALE"* about a block that is perfectly
+fresh.
+
+**A falsifier that fires unconditionally is worse than none** — the first person to run it learns the
+check lies, and stops reading it. That is round 4's B1 inverted, and round 5 (H4) caught v6
+introducing it while fixing B1. **Both invocations must name the same mode as CI, or the freshness
+check is theatre.**
 
 - [ ] **Step 6: Generate and look at it**
 
@@ -1731,7 +1745,7 @@ entry's text; append a block and remove it afterwards.
         run: |
           python3 scripts/check-plan-code.py \
             docs/superpowers/plans/2026-08-28-project-dashboard-plan.md \
-            --compare scripts/ --verify-evidence
+            --compare . --verify-evidence
 
       - name: dashboard entry ratchet
         if: github.event_name == 'pull_request'
@@ -1810,7 +1824,7 @@ gh pr create --title "..." --body-file /tmp/pr-body.md
 2. The regen hook has been **seen to fire** on a real store write.
 3. The served page has its **Ask tray**.
 4. `check-docs.py` and `check-explainer-delivery.py` are green.
-5. **`check-plan-code.py --compare scripts/ --verify-evidence` exits 0** — every declared mutation
+5. **`check-plan-code.py --compare . --verify-evidence` exits 0** — every declared mutation
    caught by the case it names, the delivered scripts **byte-identical** to the plan's blocks, and
    the Standing evidence block **exactly what that invocation produces**. The block must read
    `subject: the plan's blocks, DIFFED against the delivered files` with every file `identical`;
@@ -1967,7 +1981,7 @@ mutation caught by a different case, fails the check.
     "entry[\"resolves\"] = [f.split(\":\", 1)[1].strip()]"
    ]
   ],
-  "expect": "two [resolved"
+  "expect": ["two [resolved:] flags are both kept", "two [resolved:] flags clear BOTH items"]
  },
  {
   "name": "pass 2 deleted",
@@ -2022,7 +2036,7 @@ mutation caught by a different case, fails the check.
     ""
    ]
   ],
-  "expect": "glossary"
+  "expect": ["the page carries a glossary", "the glossary defines its terms"]
  },
  {
   "name": "gh failure blanks the needs section",
@@ -2055,7 +2069,9 @@ mutation caught by a different case, fails the check.
     "import re as _r; return bool(_r.match(r\"^\\+## (\\d{4}-\\d{2}-\\d{2})\\b\", line))"
    ]
   ],
-  "expect": "does NOT count"
+  "expect": ["an impossible date does NOT count", "a suffixed date does NOT count",
+            "a trailing dot does NOT count", "a typo'd flag does NOT count",
+            "a title on the header line does NOT count"]
  },
  {
   "name": "tab indent not counted",
@@ -2110,7 +2126,8 @@ mutation caught by a different case, fails the check.
     "if in_comment or not probe:"
    ]
   ],
-  "expect": "indented code block"
+  "expect": ["exemption_reason — indented code block",
+            "exemption_reason — TAB-indented code block"]
  },
  {
   "name": "line-leading rule removed",
@@ -2522,6 +2539,67 @@ rounds ago.
 
 ---
 
+## v7 — round 5, SCOPED to the tool
+
+Round 5 deliberately did not re-read the plan. The plan side had survived four rounds and stopped
+yielding code defects two rounds earlier; **the subject was `scripts/check-plan-code.py`**, because
+round 4's H1 was a design defect *in the tool* — it verified the plan's copy of the code and never
+opened the files CI ships — and the fix, plus four other mechanisms, had landed with no independent
+read.
+
+That scoping was right. Both halves found real defects in the new code, and **not one finding was
+about the plan's tasks.**
+
+**Codex:** 1 misapplied Blocking, 3 High, 2 Medium, 1 Low, plus 6 self-test survivors.
+**Claude:** 0 Blocking, 4 High, 6 Medium, 6 Low, plus **18 survivors out of 42 valid mutants** —
+having written 44 undeclared mutations against the checker itself.
+
+### What was actually wrong
+
+| Finding | Fix, and how it was falsified |
+|---|---|
+| **`--compare` resolved the BASENAME.** Two tags — `one/m.py`, `two/m.py` — both compared to a single delivered `m.py` and both reported `identical`. A tag naming a path that exists nowhere reported `identical` too. **The exact defect `--compare` was added to fix, one layer in** | `--compare` now takes the **repo root** and resolves each tag whole. The plan's six call sites move from `--compare scripts/` to `--compare .`. Falsified: distinct tags now resolve to their own targets, and a same-basename plan passes |
+| **The file tag was used as a path with no sanitisation.** `<!-- file: ../escape.py -->` wrote OUTSIDE the `TemporaryDirectory` — measured, the file landed in `$TMPDIR`. An absolute tag aimed at the compare root would make the checker **overwrite the delivered file and then certify it `identical`** | Absolute and `..` tags are refused. Reject, not sanitise: silently rewriting a tag makes the evidence describe a file the plan does not name |
+| **`main()` had ZERO coverage** — and it is the only layer CI and acceptance criterion 5 read. `return 0 if ok else 1` → `return 0` left the suite at 44/44. The proposition the whole gate rests on, *that a non-zero exit follows from a failed check*, was asserted nowhere | Nine cases on `main`: green → 0, red → 1, missing plan → 2, no plan → 2, `--compare` at a non-directory → 2, stale evidence → 1, compared-and-matching → 0. **Round 4's H3 recurring one layer out**: the fix there added cases for `check()`, and nobody asked the same question of its wrapper |
+| **A mutation that HANGS was recorded as `caught`.** `run_suite`'s own comment says rc 2 must not read as either verdict; its very next caller did `caught = rc != 0`. Two minutes of NOT CHECKED, printed into the evidence as proof a guard works | rc 2 is now a loud cannot-run. The timeout became a module constant so a case can reach it in 2s instead of 120 |
+| **`expect` was a bare substring**, and `"does NOT count"` matched **7** case names. Combined with first-occurrence replacement it certified an *untouched* guard as caught | Each `expect` must resolve to **exactly one** red case, and it may now be a **list** when a mutation legitimately breaks several — more honest than naming one of five arbitrarily. **It immediately found 4 loose entries in this plan's own manifest**, all now explicit case sets |
+| **An ambiguous mutation anchor** mutates the first match, which need not be the line it names | Refused. It found a real ambiguity in the checker's own `GOOD` fixture on its first run |
+| **Two evidence blocks:** a stale one after a fresh one was never read | More than one marker is a failure, not a choice of which to believe |
+| **Indented and info-string fences were invisible** — not counted, not reported, not excused | Reported. `FENCE` stays anchored at column 0 so an indented ``` inside a python block still cannot close it |
+| **Only `ILLUS_*` were anchored.** `FILE_TAG` and `MUT_TAG` still used `.search()`, so a tag in a SENTENCE parsed as a tag | All four anchored. v6 fixed the instance it measured and left the class — the shape this project has now filed five times |
+| Block order, the per-mutation source restore, the `[FAIL]` prefix, `count_drift`, the no-files guard, and the evidence block's own content were all unpinned | A case each |
+| **The three modes were indistinguishable** from stdout and exit code, so a CI log could not show which subject ran | The final line names the mode: `OK — compared + evidence-verified: …` |
+
+### The one I introduced while fixing round 4
+
+**H4.** v6's Step 5a regenerates the evidence block in compared form — and the plan's own two
+documented commands do not pass `--compare`. From the moment 5a lands, *the command the plan
+advertises as its freshness falsifier exits 1 and reports a fresh block as STALE.* **A falsifier that
+fires unconditionally is worse than none**: the first person to run it learns the check lies and
+stops reading it. That is round 4's B1 inverted, introduced by B1's own fix. Step 5a now rewrites
+those commands in the same edit, and the block says plainly that it is invocation-specific.
+
+### Not fixed — three EQUIVALENT mutants, verified as such rather than waved away
+
+`caught = rc == 1` → `rc != 0` (the `rc == 2` guard returns first, so rc ∈ {0,1} there);
+un-anchoring `FENCE` (it is only ever used with `.match()`, which anchors at 0 regardless); and
+`replace(find, repl, 1)` → replace-all (the ambiguity guard means only one occurrence can exist).
+Each was checked by reading the path, not assumed.
+
+**Suite: 44 → 92 cases.** Re-running round 5's survivor set: **13 of 16 caught, 3 equivalent, 0 real
+survivors.**
+
+### The shape worth remembering
+
+Every High in this round is the same sentence with a different subject: **a check that reports
+success over something it did not measure.** The basename collapse, the unsanitised tag, the
+uncovered `main`, the hang read as a catch, the substring `expect`. v6 fixed that sentence for
+`check()` and reproduced it five times in the code it added while doing so. The lesson is not to
+write better checks; it is that **the question "what would this report if it were measuring nothing?"
+has to be asked of every layer, every time — including the layer you just wrote to ask it.**
+
+---
+
 ### Standing evidence — GENERATED, not typed
 
 ```
@@ -2574,6 +2652,11 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
 ```
 
 Reproduce with `python3 scripts/check-plan-code.py <this file> --evidence`.
+
+⚠ **This block is INVOCATION-SPECIFIC, and the command above must match the one that generated it.**
+It is in the *bare* form today because `scripts/gen-dashboard.py` does not exist yet. **Task 4 Step
+5a regenerates it with `--compare .` and rewrites this command and the one below to match** — if you
+find them disagreeing, the disagreement is the defect, not the block.
 
 **⛔ Do not paste this block by hand, and do not trust it because it says GENERATED.** Round 4's
 Blocking was that this block *was* generated — at v4 — and then never again. By v5 it reported
