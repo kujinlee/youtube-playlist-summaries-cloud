@@ -196,9 +196,17 @@ jobs:
       # a written exit the first maintainer to hit it deletes the step to get green —
       # taking the guarantee with it.
       #
-      # RETIRES WHEN: check-plan-code.py's mutation manifest is reimplemented as a
-      # normal mutation test that runs against the DELIVERED scripts rather than
-      # against blocks assembled from the plan. Backlog #70.
+      # STATUS TODAY: NOT RETIRED, AND THE REPLACEMENT DOES NOT EXIST YET. This step
+      # is live, the tax is live, and editing either script still requires the same
+      # edit in the plan. The condition below describes a FUTURE event that has not
+      # been started. (Measured 2026-08-29: all 43 mutation entries are still inside
+      # the plan document; there is no mutation test against the delivered scripts.)
+      #
+      # RETIRES ONLY WHEN, AND NOT BEFORE: check-plan-code.py's mutation manifest has
+      # been reimplemented as a normal mutation test that runs against the DELIVERED
+      # scripts rather than against blocks assembled from the plan — and that test is
+      # green in CI. Backlog #70, OPEN. Until you can point at that test, this step
+      # stays, whatever it costs you today.
       #
       # Why that is the condition and not a date: what this step actually protects is
       # "the mutation evidence describes the code that ships". Byte-identity with the
