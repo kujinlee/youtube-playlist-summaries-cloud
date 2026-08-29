@@ -1348,18 +1348,27 @@ corrections slice above.
 - [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped
       on only 2 of ~26 findings, which is why **both** always run. Every half executed the plan's
       Python rather than reading it, and found what three prose rounds on the spec had not.
-- [ ] **Round 5 — SCOPED to `scripts/check-plan-code.py`**, not a fifth reading of the plan. The plan
-      side stopped yielding code defects two rounds ago (34 declared + 50 undeclared mutations,
-      controls A–F, all caught); rounds 3 and 4 instead found the *document wrong about its own
-      checks*. Round 4's H1 was a genuine design defect in the TOOL — **it verified the plan's copy of
-      the code and never opened the files CI ships** — and the fix plus four other mechanisms landed
-      with no independent read.
-      **FAILS IF** either half returns a Blocking, either reports it could not execute the code, or
-      either finds a way to print `OK —` over a subject the tool did not measure.
-- [ ] ⚠ **Phase 6 has genuinely fired** — four non-converging rounds (`docs/dev-process.md`). Read the
-      trigger off the CAUSE before convening it: rounds 1–2 found broken code, rounds 3–4 found stale
-      prose about verification, and three of the last four rounds had a half that did not really run.
-      The count is inflated by process failures as well as defects.
+- [x] **Rounds 5 and 6 — SCOPED to `scripts/check-plan-code.py`**, not further readings of the plan.
+      Both were right to be scoped: **neither round found anything in the plan's tasks.** Round 5
+      found the tool verifying the plan's copy of the code and never opening the files CI ships, plus
+      `main()` with zero coverage. Round 6 found round 5's own fixes *correct in verdict, incomplete
+      in mechanism* — an escaping file tag reported and then **written anyway** (silently overwriting
+      a delivered file), and the `expect` list form carrying 11 named guards with zero coverage.
+      Suite 44 → 121 cases; every `expect` in the manifest is now an exact case name.
+- [x] **REVIEWING STOPPED 2026-08-29 by user decision**, not by convergence — recorded honestly.
+      Round 6 returned 2 High (both fixed); no round 7 ran, so *"a full re-review round with no new
+      Blocking/High"* was never demonstrated. The case for stopping: the plan itself has been
+      finding-free for two rounds, and the tool's remaining findings were all "half a fix" rather
+      than new defects. **Phase 6's trigger did fire** (five non-converging rounds) and was **not**
+      convened, for the reason `docs/review-method.md` gives — read the trigger off the CAUSE. The
+      shape here is the *prose floor*, not thrashing: rounds 1–2 found broken code, 3–4 found stale
+      prose about verification, 5–6 found gaps in the reviewing instrument itself. On a document,
+      that is the signal to go build.
+- [ ] **Tasks 1–6 — BUILD IT.** Now in progress. Per-task two-stage review to convergence, autonomous
+      (`docs/dev-process.md` Phase 3). ⚠ Task 4 Step 5a is the one step that is easy to skip and
+      turns CI red by construction if skipped.
+- [ ] **Backlog #69** 🟢 — the external `--self-test` count ratchet. Round 6's only unfixed finding,
+      declared in the script's header rather than ticked: a suite cannot observe its own exit code.
 - [ ] **Tasks 1–6** — the entry store + parser, activity + open PRs, the page, the gate, fold
       persistence on reload, and the skill + hook + CI wiring. None started.
 - [ ] **The gate is not proven until it has been seen to REFUSE on GitHub.** Task 4 ships a tested
