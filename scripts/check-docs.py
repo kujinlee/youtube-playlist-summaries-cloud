@@ -345,7 +345,9 @@ CELL_SPLIT = re.compile(r"(?<!\\)\|")
 # FAILS IF: an item row's column count differs from the header of the table it is in; a blank line
 # splits a table between two item rows; an item row appears outside any table; or NO item rows are
 # found at all (fail-closed — a rename or a restructure must not read as a clean pass).
-def backlog_shape_errors(lines: list[str], label: str = "docs/backlog.md") -> tuple[list[str], int]:
+def backlog_shape_errors(
+    lines: list[str], label: str = "docs/backlog.md"
+) -> tuple[list[str], int, set[int]]:
     """PURE — takes lines, returns (errors, rows_seen). Split out so `--self-test` can drive it with
     synthetic tables instead of the real file; a check whose only proof lives in a scratchpad
     mutation script decays the moment that file is deleted."""
