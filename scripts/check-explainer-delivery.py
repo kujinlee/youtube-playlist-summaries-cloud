@@ -3,7 +3,7 @@
 
 WHY THIS EXISTS
 ---------------
-Three skills produce a served HTML page: `explain-diff`, `brief`, `explain-findings`. Before
+Several skills produce a served HTML page — `PAGE_SKILLS` below is the list, and it grows. Before
 2026-08-24 the delivery loop — where the file goes, `explainer-serve.py`, the Ask tray, arming the
 Monitor, delivering the URL — was written out in full in `explain-diff` AND again in `brief`.
 Adding a third page-producing skill would have made three copies of a procedure that cost four
@@ -50,7 +50,7 @@ SHARED_REL = "shared/explainer-delivery.md"
 # that forgets to cite the shared file is exactly what this check is for, and a derived list would
 # silently grow to include it. Per `hardcode-only-what-fails-loudly` — this list going stale
 # announces itself (a missing directory is an error below), a derived one would not.
-PAGE_SKILLS = ["explain-diff", "brief", "explain-findings", "explain-topic"]
+PAGE_SKILLS = ["explain-diff", "brief", "explain-findings", "explain-topic", "dashboard"]
 
 DELIVERY_CMD = re.compile(r"explainer-serve\.py|brief-compose\.py|tail -n 0 -F.*questions\.md")
 FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)

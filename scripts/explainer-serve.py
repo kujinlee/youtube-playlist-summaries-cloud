@@ -77,6 +77,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import http.server
+import inspect
 import json
 import os
 import pathlib
@@ -562,6 +563,31 @@ RELOAD_JS = """
     var y = sessionStorage.getItem(KEY);
     if (y !== null) { sessionStorage.removeItem(KEY); window.scrollTo(0, parseInt(y, 10) || 0); }
   } catch (e) {}
+  // Restore <details> open state across an auto-reload, keyed on d.id — NEVER on position. An
+  // index key shifts when a new entry is appended at the top, so the restore would work when the
+  // page had not changed and misapply itself, silently, when it had.
+  var DKEY = 'explainer-details:' + here;
+  function saveDetails() {
+    try {
+      var open = [];
+      document.querySelectorAll('details[id]').forEach(function (d) {
+        if (d.open) open.push(d.id);
+      });
+      sessionStorage.setItem(DKEY, JSON.stringify(open));
+    } catch (e) {}
+  }
+  function restoreDetails() {
+    try {
+      var raw = sessionStorage.getItem(DKEY);
+      if (!raw) return;
+      sessionStorage.removeItem(DKEY);
+      var open = JSON.parse(raw);
+      document.querySelectorAll('details[id]').forEach(function (d) {
+        if (open.indexOf(d.id) !== -1) d.open = true;
+      });
+    } catch (e) {}
+  }
+  restoreDetails();
   function busyTyping() {
     // NEVER reload out from under a half-typed question. The tray's textarea is #qbox; if it holds
     // text or has focus, the reader is mid-thought and a reload would silently eat it.
@@ -577,6 +603,7 @@ RELOAD_JS = """
         if (mine === null) { mine = rev; return; }  // first sample establishes the baseline
         if (rev === mine || busyTyping()) return;
         try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+        saveDetails();
         location.reload();
       })
       .catch(function () {});                     // server stopped: keep showing the page, keep trying
@@ -635,11 +662,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             return
         if path == "/_rev":
-            # Change detection for the injected live-reload client. Goes through safe_path, so it
-            # can only ever report on a file this server would already serve — it is not a stat()
-            # oracle for the filesystem.
+            # Change detection for the injected live-reload client. Goes through resolve_page —
+            # the SAME resolver the page GET below uses — so the two agree by construction: if
+            # `here` (the client's own location.pathname) is extensionless because it named a
+            # standing page (`/dashboard`, `/goals`, `/backlog-table`), this still finds the file,
+            # exactly as the GET that served the page in the first place did.
+            #
+            # ⛔ THIS WAS `safe_path` DIRECTLY, AND LIVE RELOAD NEVER FIRED ON ANY STANDING PAGE.
+            # MEASURED 2026-08-29: `/dashboard` served 200, but `/_rev?p=/dashboard` 404'd forever
+            # (only `/_rev?p=/dashboard.html` resolved) — two resolvers for one concern, agreeing
+            # on a dated page's URL and disagreeing on exactly the shape every standing page uses.
+            # `resolve_page` still cannot become a stat() oracle for the filesystem: it calls
+            # `safe_path` for both the direct and the `.html`-fallback attempt, so it can only ever
+            # report on a file this server would already serve (self-tested: rejects `/secret.env`
+            # and `/../../etc/hosts` the same as `safe_path` does).
             qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
-            target = safe_path((qs.get("p") or [""])[0], ROOT)
+            target = resolve_page((qs.get("p") or [""])[0], ROOT)
             if target is None or not target.is_file():
                 return self._send(404, b"no such page", "text/plain; charset=utf-8")
             return self._send(200, revision(target).encode(), "text/plain; charset=utf-8")
@@ -819,6 +857,23 @@ def _self_test() -> int:
         case("the fallback cannot be used to traverse",
              lambda: resolve_page("/../../etc/hosts", dated) is None)
 
+        # ⛔ /_rev USED TO RESOLVE `p` THROUGH safe_path DIRECTLY, SO LIVE RELOAD NEVER FIRED ON A
+        # STANDING PAGE. MEASURED 2026-08-29: `/dashboard` served 200; `/_rev?p=/dashboard` 404'd
+        # forever (only the `.html` form resolved) — two resolvers for one concern, agreeing on a
+        # dated page's URL and disagreeing on exactly the shape every standing page uses. The fix
+        # routes `/_rev` through resolve_page — the SAME function the page GET already uses —
+        # which the cases just above already prove: applies the `.html` fallback (so a standing
+        # page agrees with the GET by construction) and still rejects `/secret.env` and
+        # `/../../etc/hosts` exactly as safe_path does, so this is not a new stat() oracle.
+        #
+        # Assert on the MECHANISM, not a hardcoded page name — the defect was never "the wrong
+        # answer for /dashboard specifically", so pin the call site: a mutation reverting `/_rev`
+        # to `safe_path` must go red here.
+        _rev_branch_src = inspect.getsource(Handler.do_GET).split('if path == "/_rev":', 1)[1] \
+                                  .split('if path.startswith("/src/"):', 1)[0]
+        case("/_rev resolves THROUGH resolve_page — agrees with the page GET by construction",
+             lambda: "resolve_page(" in _rev_branch_src and "safe_path(" not in _rev_branch_src)
+
         # the daemon's own log lives in ROOT and must never be reachable over http
         (root / SERVE_LOG).write_text("access lines")
         case("the daemon's log is inside ROOT but NOT servable",
@@ -919,6 +974,15 @@ def _self_test() -> int:
              lambda: "addEventListener('focus'" in RELOAD_JS)
         case("reload client polls on pageshow (bfcache restore)",
              lambda: "'pageshow'" in RELOAD_JS)
+        # COUNT, not presence: "restoreDetails()" is a substring of its own definition
+        # (`function restoreDetails()`), so a presence check stays green even after the CALL that
+        # invokes it is deleted. >= 2 requires both the definition and at least one call site.
+        case("reload client defines and CALLS saveDetails",
+             lambda: RELOAD_JS.count("saveDetails()") >= 2)
+        case("reload client defines and CALLS restoreDetails",
+             lambda: RELOAD_JS.count("restoreDetails()") >= 2)
+        case("reload client keys folds on id, never on position",
+             lambda: "details[id]" in RELOAD_JS and "String(i)" not in RELOAD_JS)
 
     # --- md_render: one case per construct COUNTED in the corpus, so a regression in the least
     # frequent one (strikethrough, 18 occurrences) fails as loudly as the most frequent.

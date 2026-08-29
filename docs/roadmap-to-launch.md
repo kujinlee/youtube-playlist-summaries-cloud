@@ -1328,6 +1328,170 @@ whether editing an already-applied migration is safe here.
 
 ---
 
+## Project dashboard — anchor `status-visibility` — 🏗 TASKS 1–6 BUILT; THE GATE HAS NOT YET REFUSED ON GITHUB
+
+**Goal (`docs/anchors.md:39`):** a person who was away can see the current state, what changed, and
+what needs them — without reading the chat transcript.
+
+**This section exists because the slice had none.** The spec and the plan were both merged on
+2026-08-28 and the roadmap — the compaction-proof layer — said nothing about either, so a fresh
+session reconciling the three layers would not have found the work at all. Same drift as the
+corrections slice above.
+
+| Artifact | State |
+|---|---|
+| `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` | v5, merged `c5fcb07` (3 review rounds, none converged) |
+| `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | **v8** (`ce0cdf1`) — rounds 5–6 folded in; **NOT CONVERGED**; reviewing closed by DECISION, not convergence |
+| `scripts/gen-dashboard.py`, `docs/dashboard-entries.md` | **NEW, committed.** The parser, the collectors, the page, and the append-only store |
+| `.agents/skills/dashboard/`, `.claude/hooks/regen-dashboard.sh` | **NEW, committed.** The skill that writes an entry, and the hook that regenerates the page whenever the store is written |
+| `scripts/check-plan-code.py` | **NEW, committed.** Assembles the plan's code, runs it, mutates it, diffs it against the delivered scripts (`--compare`), and refuses a stale evidence block (`--verify-evidence`). For the case count run `--self-test` — this row said **44** against a measured **121**, twelve lines above a bullet that said `44 → 121` |
+| `docs/reviews/plan-project-dashboard-r{1,2,3,4}-*.md` | rounds 1–4, **NOT CONVERGED, every half** |
+
+- [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped
+      on only 2 of ~26 findings, which is why **both** always run. Every half executed the plan's
+      Python rather than reading it, and found what three prose rounds on the spec had not.
+- [x] **Rounds 5 and 6 — SCOPED to `scripts/check-plan-code.py`**, not further readings of the plan.
+      Both were right to be scoped: **neither round found anything in the plan's tasks.** Round 5
+      found the tool verifying the plan's copy of the code and never opening the files CI ships, plus
+      `main()` with zero coverage. Round 6 found round 5's own fixes *correct in verdict, incomplete
+      in mechanism* — an escaping file tag reported and then **written anyway** (silently overwriting
+      a delivered file), and the `expect` list form carrying 11 named guards with zero coverage.
+      Suite 44 → 121 cases; every `expect` in the manifest is now an exact case name.
+- [x] **REVIEWING STOPPED 2026-08-29 by user decision**, not by convergence — recorded honestly.
+      Round 6 returned 2 High (both fixed); no round 7 ran, so *"a full re-review round with no new
+      Blocking/High"* was never demonstrated. The case for stopping: the plan itself has been
+      finding-free for two rounds, and the tool's remaining findings were all "half a fix" rather
+      than new defects. **Phase 6's trigger did fire** (five non-converging rounds) and was **not**
+      convened, for the reason `docs/review-method.md` gives — read the trigger off the CAUSE. The
+      shape here is the *prose floor*, not thrashing: rounds 1–2 found broken code, 3–4 found stale
+      prose about verification, 5–6 found gaps in the reviewing instrument itself. On a document,
+      that is the signal to go build.
+- [x] **Tasks 1–6 — BUILT.** The gate + entry grammar (T1), the parser and the append-only store
+      (T2), `unresolved`/`bucket_days` and the `git`/`gh` collectors (T3), the page and its assembled
+      self-test (T4), fold persistence across live reload (T5), and the skill + regen hook + CI
+      wiring (T6). Task 4 Step 5a — the one step that turns CI red by construction if skipped — was
+      done: the plan's Standing-evidence block is in COMPARED form and every printed command carries
+      `--compare .`.
+- [ ] **Backlog #69** 🟢 — the external `--self-test` count ratchet. Round 6's only unfixed finding,
+      declared in the script's header rather than ticked: a suite cannot observe its own exit code.
+- [x] **Whole-branch review — DONE 2026-08-29, mergeable, nothing Critical.** Two Important findings,
+      both **measured** and both in `scripts/gen-dashboard.py`, fixed in one wave (plan v9):
+      the flag loop assumed every non-`needs-you` flag carried a colon, so extending `FLAG` in the
+      file that OWNS the grammar left the gate fully green and crashed **every** render; and `main()`
+      had zero coverage, where four one-line mutations survived — two of them the exit-code promise
+      the regen hook's error branch depends on.
+- [x] **Re-review of the fix wave — one further finding, N1, fixed.** C1's own new case swapped only
+      the generator's `FLAG` and not the gate's, which `header_error` reads; the header error then
+      overwrote the flag-loop message, so `else: pass` survived and the case's comment claimed it
+      exercised the real seam while binding a literal. Fixture now derived from `_GATE.FLAG.pattern`
+      with both attributes swapped, and the exact message asserted.
+      **Mutations 37 → 43, suite 95 → 103, survivors 0.**
+- [ ] **The PR.** Task 6 Step 7 (push + PR) deliberately NOT done by the implementer — the plan
+      orders it before the branch review and `docs/dev-process.md` Phase 5 orders it after, and the
+      process wins. Merging stays the human gate.
+- [ ] **The gate is not proven until it has been seen to REFUSE on GitHub.** Task 1 ships a tested
+      script; Task 6 Step 5 is what makes it gate anything, and that wiring **is now in
+      `.github/workflows/ci.yml`** — a `pull_request`-triggered step, with `fetch-depth: 0` on the
+      checkout because without it the diff has no merge base and the ratchet exits 2 (CANNOT RUN).
+      Locally it both passes on this branch and REFUSES against `HEAD~1`. **What is still unobserved
+      is the run on GitHub**, which is the only place the `fetch-depth` claim is actually tested.
+      **FAILS IF** the PR opens with `check-dashboard-entry.py` absent from a `pull_request`-triggered
+      CI job, or if that job reports `CANNOT RUN` / `no merge base`.
+
+✅ **DECIDED 2026-08-28 by the user: keep the gate exactly as specified.** No change to the exempt
+list. The scope question is closed; do not re-open it in a review round.
+
+**The cost, measured rather than estimated.** Of the **13** first-parent merges dated 2026-08-28,
+the gate as specified refuses **12** — the one pass is `929c74b`, whose only files are review
+documents. Re-measured this session by running `verdict()` against each merge's real file list.
+(Both review halves independently found 11 of 11 at 18:20; two merges landed after that, which is
+why the figure moved. Re-derive it, never quote it:
+`git log --first-parent --since=… --until=…`.)
+
+**Narrowing it to code-only was measured and rejected.** Adding `"docs/"` to the exempt list drops
+refusals from 12 to **8** — it buys back four entries, and those four are the dashboard spec, the
+dashboard plan, plan v2 and a backlog fix: the changes hardest to reconstruct from a diff, and the
+ones a *"what changed while I was away"* page most needs. A middle variant (exempt `docs/` except
+specs, plans, backlog and roadmap) refuses **12** — identical to doing nothing, because the merges
+it exempts are exactly the ones it keeps. Not built.
+
+**Why so few escape:** almost nothing here is a pure documentation change. A rule written down in
+this repo usually gets a script enforcing it in the same branch, so the commit is labelled
+`docs(...)` and touches `scripts/` anyway.
+
+✅ **The `NO-ENTRY:` display is BUILT** (plan v2, Tasks 2–3) — `no_entry_prs()` in
+`scripts/gen-dashboard.py`, reading the gate's own `exemption_reason` so the page cannot disagree
+with the gate about what was exempted. It was the thing carrying the risk: it is the gate's only
+feedback loop, and without it nothing counts exemptions, nobody sees *"eleven of the last twelve
+branches skipped their entry"*, and the page goes on looking healthy while describing less and less.
+
+Verified 2026-08-29, both directions, because `0` is also the correct answer today and the two are
+otherwise indistinguishable: against this repo it returns `no-entry: 0 err: None`; fed four synthetic
+merged-PR bodies it returns exactly the one real declaration and correctly ignores the fenced and
+HTML-commented ones; and with the gate's `exemption_reason` renamed away it returns
+`no-entry: None err: could not load the gate's exemption reader: …` rather than a silent `0`.
+
+⚠ **Two bounds, named rather than left to be discovered:** the list is capped at 40 merged PRs, so an
+older exemption silently stops being displayed; and it needs `gh` — a failure is announced on the
+page as NOT CHECKED, never rendered as a confident zero. Reader-facing explainer of the gate's cost:
+`~/explainers/2026-08-28-brief-entry-gate-cost.html`.
+
+---
+
+## Backlog #68 — the Codex review gate can fail silently AND overwrite a filed review — 🟠 HIGH
+
+Filed 2026-08-29 after it happened four times in one run. Three defects in one chain:
+the wrapper judges success by the agent's FINAL MESSAGE, so a brief that says *"write a file"*
+guarantees rejection; **no output path is ever given to the agent**, so it inferred one from the
+prior-round filenames in the brief and wrote over a **committed** review; and the caller masked the
+wrapper's exit code behind an `echo`, so `WRAPPER_RC=1` went unread.
+
+- [ ] **`codex-review.py` must not be able to leave an artifact behind a failed gate.** Refuse an
+      `--out` inside the repository, or write to a temp path and promote only on success.
+      **FAILS IF** a run with a non-zero wrapper exit leaves a file at `--out`.
+- [ ] **Warn when the prompt file contains a write-a-file instruction** — the one input that
+      guarantees a rejected capture. **FAILS IF** a brief containing it dispatches without warning.
+- [ ] **State the per-half output contract in `docs/plugins.md`**, where the dispatch decision is
+      made. It documents the wrapper's fail-open modes at length and is silent on this one.
+      **FAILS IF** a reader choosing a brief finds no statement that the two halves differ.
+- [ ] Decide whether the caller can be stopped from masking the exit code, or whether the wrapper
+      writes a verdict file the caller must read.
+
+⚠ **All three are worked around by hand today and none is a mechanism** — the same standing as #67,
+which is why they should be done together.
+
+---
+
+## Backlog #67 — concurrent-agent interference — 🟠 HIGH, ⏭ NEXT AFTER THE DASHBOARD
+
+**Unparked 2026-08-28 at the user's request** (parked 2026-08-27: *"don't forget it. I'd like to have
+stable dev process"*). Sequenced deliberately: **finish the dashboard slice, then this.**
+
+The hazard is measured twice — two review halves on one shared database produced a **false Blocking**
+(23/63 vs 63/63 alone, the same near-identical ratio as the earlier 23/44 vs 44/44), and a peer agent
+ran `git stash` in the working tree the coordinator was committing to.
+
+**Most of it is already engineered out**, re-measured 2026-08-28 rather than recalled: every writer
+is on a PID-suffixed scratch clone, the clone step is fail-closed with `CANNOT RUN … Treat this as
+NOT RUN` (exit 2), and no scratch databases have leaked.
+
+- [ ] **Correct or delete the stale warning.** `scripts/mutate-live-schema-check.sh:25-29` blames
+      `mutate-schema.py` (gate 2), and **`scripts/mutate-schema.py` and `scripts/verify-schema.sh` no
+      longer exist**. **FAILS IF** the header names a script absent from the tree.
+- [ ] **Put the rule where the decision is made.** `docs/plugins.md` — which owns the dual-review
+      dispatch — has **zero** matches for serialise/concurrent/parallel. **FAILS IF** a reader
+      choosing to dispatch two reviewers finds no constraint at the point of choosing.
+- [ ] **Decide whether any of it can be a script** (`dev-process.md`'s own test).
+      ⚠ `pg_try_advisory_lock` was **REJECTED by the user** — a writer-only lock does not protect
+      readers, and extending it to readers would block `--prod` and scratch reads that cannot be
+      corrupted.
+
+**Two residuals stand regardless of cloning:** roles are **cluster-wide**, so a `grant` alters
+`has_table_privilege` in every clone at once; and any subagent that can run `git` can move the
+coordinator's uncommitted work. Both are hand-discipline today.
+
+---
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**

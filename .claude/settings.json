@@ -65,6 +65,11 @@
             "type": "command",
             "command": "bash .claude/hooks/regen-goals-page.sh",
             "statusMessage": "Refreshing the goals view..."
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/regen-dashboard.sh",
+            "statusMessage": "Refreshing the dashboard..."
           }
         ]
       }

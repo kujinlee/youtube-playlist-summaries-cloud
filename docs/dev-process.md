@@ -150,6 +150,9 @@ copy that drifts.
 | `scripts/check-explainer-delivery.py` | the explainer delivery loop is described in ONE place; page-producing skills cite it, never restate it (`--self-test`: 8 cases) |
 | `scripts/check-test-counts.py` | the roadmap's stated test counts equal the suite's actual counts |
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
+| `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` — which the dashboard then **displays**. Owns the entry-header grammar the page imports (`--self-test`) |
+| `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited; composed through `brief-compose.py` so it cannot lose its Ask tray (`--self-test`) |
+| `scripts/check-plan-code.py` | a plan's code blocks ASSEMBLE and run, every declared mutation is caught by the case it names, the DELIVERED scripts match the plan (`--compare`), evidence is fresh (`--verify-evidence`) (`--self-test`) |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
 
 **Not yet in CI:** `test:integration` and `test:e2e` (need a live Supabase stack), and the schema

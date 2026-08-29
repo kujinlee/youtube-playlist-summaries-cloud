@@ -14,6 +14,43 @@
 **Spec:** `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` (v5, merged `c5fcb07`).
 Section references below (§4, §5, §6.2, §7) are to that spec.
 
+**Version: v8** — folds in **both halves of round 6**, a short re-review scoped to round 5's
+own fixes. It found them correct in verdict and INCOMPLETE IN MECHANISM — the shape now named
+at the end of *v8 — round 6*. v7 folded in **both halves of round 5**, which was SCOPED to
+`scripts/check-plan-code.py` rather than to this plan. Not one of its findings was about the tasks
+below; all of them were about the tool that checks them. See *v7 — round 5* at the end. v6 folded in
+**both halves of round 4** (Codex 3 findings; Claude 1 Blocking, 6 High,
+6 Medium, 5 Low; both NOT CONVERGED). v5 folded in round 4's Codex half; v4 folded in both halves of
+round 3 (Codex 2B/2H, Claude 2B/4H/7M/7L) and made the evidence generated rather than typed.
+
+**Round 4's Blocking is the point of v6, and it is about this header.** The evidence block was
+generated at v4 and never regenerated, so it described v4's run while sitting under a v5 document —
+the fourth round running in which what failed was *the plan's account of its own verification*, this
+time **inside the mechanism built to stop exactly that**. The lesson is not that generating was
+wrong. It is that **a derived artifact which is not re-derived on every change is a cached claim
+with better provenance**, and therefore worse than a typed one. v6 replaces the rule with a check:
+`check-plan-code.py --verify-evidence` exits 1 when the pasted block is not what the current
+document produces, and it runs in CI.
+
+**Round 3's finding was that this document's evidence could not be trusted.** Its blocks did not
+assemble — no import block for one file, no `__main__` dispatch for the other, three functions
+present only as prose — while its evidence line read `19/19 mutations caught` and one it *named*
+survived. Every earlier reviewer had injected the missing pieces into a private harness, so the hole
+lived through two rounds.
+
+**The fix is structural, not editorial.** Every Python block is now tagged with the file it belongs
+to, and `scripts/check-plan-code.py` assembles them, runs both suites, and applies the mutation
+manifest at the end of this document — requiring each to go red **via the case it names**. The
+evidence block near the end is that script's output. Nobody types it, so it cannot be wrong about
+itself.
+
+v2 folded in round 1
+(`docs/reviews/plan-project-dashboard-r1-codex.md`, `…-r1-claude.md`; both **NOT CONVERGED**,
+3 Blocking + 3 High + 3 Medium + 1 Low and 3 Blocking + 5 High + 8 Medium + 7 Low respectively).
+Both halves **executed** every Python block in v1 before judging it, which is why they found
+defects three prose rounds on the spec did not. What changed, and why, is listed under
+*What v2 changed* at the end.
+
 ## Global Constraints
 
 - **Python 3 standard library only.** No new dependency, no pip install, no npm.
@@ -23,6 +60,15 @@ Section references below (§4, §5, §6.2, §7) are to that spec.
 - **Anything longer than a line goes in a file** — `--body-file`, `git commit -F`, `--prompt-file`. A backtick inside a double-quoted bash string is command substitution.
 - **The store is append-only.** Nothing edits or deletes an existing entry block; corrections are appended.
 - **Bare citations are a defect.** Every path written into code comments or page output is repo-relative and complete.
+- **Never write an expected self-test COUNT.** v1 said `19/19` where the truth was `18/18`, and an
+  implementer following its own TDD loop would have stopped to hunt for a case that does not exist.
+  A count in a plan is a claim about a number that moves every time a case is added. Every "run the
+  self-test" step below asserts **exit 0 and no `[FAIL]` lines** instead. If a step names a count
+  anywhere, that is a defect in this plan, not in the code.
+- **A falsifier must be shown to FIRE.** v1's Task 4 falsifier could not fail — `git stash push` on
+  a committed file is a no-op — and the plan told the implementer to read its success as failure.
+  Every step below that claims to falsify something states the observation that makes it go red,
+  and the implementer must see red before proceeding. This is `docs/portable-practices.md` §17.
 - Branch + PR for every task group; **merging is a human gate**.
 
 ---
@@ -31,676 +77,329 @@ Section references below (§4, §5, §6.2, §7) are to that spec.
 
 | File | Responsibility |
 |---|---|
+| `scripts/check-dashboard-entry.py` | **Create FIRST.** The ratchet, **and the owner of the entry-header grammar**. |
 | `docs/dashboard-entries.md` | **Create.** The append-only store. Owned by humans and the skill, never rewritten by a script. |
-| `scripts/gen-dashboard.py` | **Create.** Parse the store, derive activity and open PRs, render `~/explainers/dashboard.html`. |
-| `scripts/check-dashboard-entry.py` | **Create.** The ratchet: a branch touching tracked files must add an entry block or declare `NO-ENTRY:`. |
-| `scripts/explainer-serve.py` | **Modify** (`:556-580`). Persist `<details>` open state across live reload. |
+| `scripts/gen-dashboard.py` | **Create.** Parse the store, derive activity, open PRs and recorded exemptions, then **compose and write** `~/explainers/dashboard.html` via `brief-compose.py`. |
+| `scripts/explainer-serve.py` | **Modify.** Persist `<details>` open state across live reload. |
 | `scripts/check-explainer-delivery.py` | **Modify** (`:53`). Add `dashboard` to `PAGE_SKILLS`. |
-| `.claude/skills/dashboard/SKILL.md` | **Create.** The skill that writes entries and delivers the page. |
-| `.github/workflows/ci.yml` | **Modify.** Run both new `--self-test`s and the ratchet. |
-| `tests/` | **Not used.** These are standalone scripts with built-in `--self-test`, following every existing `scripts/check-*.py`. |
+| `.agents/skills/dashboard/SKILL.md` + `.claude/skills/dashboard` | **Create.** Real file plus symlink. |
+| `.claude/hooks/regen-dashboard.sh` + `.claude/settings.json` | **Create + modify.** A hook with no settings entry never runs. |
+| `.github/workflows/ci.yml` | **Modify.** `fetch-depth: 0`, both `--self-test`s, **and the ratchet itself**. |
+| `docs/dev-process.md` | **Modify.** One pointer row per new mechanically-enforced script. |
+| `docs/roadmap-to-launch.md` | **Modify — UPDATE the existing section**, do not add one. |
 
-**Why parsing and rendering live in one file.** `gen-goals-page.py` and `gen-backlog-page.py` both do parse-plus-render in a single script with pure parse functions and a `build()`. Splitting would break the established pattern for no gain at this size.
+⚠ **The skill path:** all twenty existing skills are a real directory under `.agents/skills/` plus a
+symlink from `.claude/skills/`; `scripts/check-explainer-delivery.py:46` reads `.agents/skills`.
+
+### ⛔ Why the gate is Task 1 and the parser is Task 2
+
+The ratchet and the page must agree on what an entry header **is**, or the gate passes branches whose
+entry the page renders under *"Could not parse this entry"*. Round 2 measured five such shapes.
+
+One grammar, therefore, owned by `check-dashboard-entry.py` and imported by `gen-dashboard.py`. The
+arrow points **generator → gate**, never the reverse: a gate must not import the thing it guards.
+That import is why the order changed — building the parser first would recreate the task-ordering
+defect rounds 2 and 3 filed three times between them.
+
+### How this plan is verified
+
+**Every Python block below is either tagged with the file it belongs to — assembled, run and
+mutated by a script — or explicitly marked `<!-- illustrative -->`.** An untagged block now FAILS
+the checker: three functions once lived as prose through two review rounds because nothing counted
+the blocks it could not see. `python3 scripts/check-plan-code.py <this file>` concatenates the tagged blocks in
+document order, runs each file's `--self-test`, then applies every mutation in the manifest at the
+end and requires each to go **red via the case it names**.
+
+That exists because three review rounds each found the plan's stated evidence wrong, and each found
+it by hand — a transcription that quietly weakened an assertion, then blocks that did not assemble at
+all while the evidence line read `19/19 mutations caught` and one it *named* survived. Prose about a
+measurement is not the measurement. **The evidence block at the end is generated output, not typed.**
 
 ---
 
-## Task 1: The entry store and its parser
+## Task 1: The gate, and the grammar it owns
 
-**Files:**
-- Create: `docs/dashboard-entries.md`
-- Create: `scripts/gen-dashboard.py`
+**Files:** Create `scripts/check-dashboard-entry.py`.
 
-**Interfaces:**
-- Consumes: nothing.
-- Produces: `parse_entries(text: str) -> list[dict]`. Each dict has keys `date` (`str`, `YYYY-MM-DD`), `ordinal` (`int`, 1-based within the date), `id` (`str`, `f"{date}/{ordinal}"`), `title` (`str`), `plain` (`str`), `tech` (`str | None`), `needs_you` (`bool`), `resolves` (`str | None`), `error` (`str | None`), `raw` (`str`). When `error` is non-None every other field except `raw` and `error` is unreliable and the renderer shows `raw`.
+- [ ] **Step 1: Write the failing test.** Create the file with the module docstring, the imports, the
+constants and the grammar — then a stub `verdict` raising `NotImplementedError`, and the self-test
+from Step 4.
 
-- [ ] **Step 1: Write the failing test**
+⚠ **`import re` belongs in this first block.** A `re.compile` above the import makes Step 2's
+expected `NotImplementedError` a `NameError` instead — measured in round 2, for this very file.
 
-Create `scripts/gen-dashboard.py` containing only this self-test block and a stub:
-
+<!-- file: scripts/check-dashboard-entry.py -->
 ```python
 #!/usr/bin/env python3
-"""Render the project dashboard from docs/dashboard-entries.md.
-
-    python3 scripts/gen-dashboard.py              # -> ~/explainers/dashboard.html
-    python3 scripts/gen-dashboard.py --self-test  # pure functions only, no I/O
-"""
+"""Refuse a branch that changes tracked files and records no dashboard entry."""
 from __future__ import annotations
-import sys
-
-def parse_entries(text: str) -> list[dict]:
-    raise NotImplementedError
-
-def _self_test() -> int:
-    ok = fail = 0
-    def case(name, got, want):
-        nonlocal ok, fail
-        if got == want:
-            ok += 1
-        else:
-            fail += 1
-            print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
-    e = parse_entries("## 2026-08-28 [needs-you]\nFixed a thing.\n")
-    case("one entry parsed", len(e), 1)
-    case("date", e[0]["date"], "2026-08-28")
-    case("id", e[0]["id"], "2026-08-28/1")
-    case("title", e[0]["title"], "Fixed a thing.")
-    case("needs_you", e[0]["needs_you"], True)
-    case("no error", e[0]["error"], None)
-    print(f"\n{ok}/{ok+fail} passed")
-    return 1 if fail else 0
-
-if __name__ == "__main__":
-    sys.exit(_self_test() if "--self-test" in sys.argv else 0)
-```
-
-- [ ] **Step 2: Run it to verify it fails**
-
-Run: `python3 scripts/gen-dashboard.py --self-test`
-Expected: `NotImplementedError` traceback, non-zero exit.
-
-- [ ] **Step 3: Implement the parser**
-
-Replace the `parse_entries` stub. Every rule below is from spec §6.2:
-
-```python
+import argparse
 import datetime as _dt
 import re
+import subprocess
+import sys
 
+EXEMPT_DIRS = ("docs/reviews/",)
+EXEMPT_FILES = ("docs/dashboard-entries.md",)
+NO_ENTRY = "NO-ENTRY:"
+
+# ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
 HEADER = re.compile(r"^## (\S+)(.*)$")
-FLAG = re.compile(r"\[(needs-you|resolved:\s*[^\]]+)\]")
-TECH_MARKER = "<!--tech-->"
+FLAG = re.compile(r"\[(needs-you|resolved:\s*[^\]]*)\]")
 
-def _valid_date(s: str) -> bool:
+
+def valid_date(s: str) -> bool:
     try:
         _dt.date.fromisoformat(s)
         return True
     except ValueError:
         return False
 
-def parse_entries(text: str) -> list[dict]:
-    """Split on column-0 '## ' only. A malformed block is RETURNED with an
-    error, never dropped — the page must show it in place (spec §6.2)."""
-    blocks: list[list[str]] = []
-    for line in text.split("\n"):
-        if line.startswith("## "):
-            blocks.append([line])
-        elif blocks:
-            blocks[-1].append(line)
-    out: list[dict] = []
-    seen: dict[str, int] = {}
-    for b in blocks:
-        raw = "\n".join(b)
-        entry = {"raw": raw, "error": None, "needs_you": False, "resolves": None,
-                 "date": None, "ordinal": 0, "id": None, "title": "", "plain": "", "tech": None}
-        m = HEADER.match(b[0])
-        date = m.group(1) if m else ""
-        if not _valid_date(date):
-            entry["error"] = f"not a real calendar date: {date!r}"
-            out.append(entry)
-            continue
-        rest = m.group(2)
-        flags = FLAG.findall(rest)
-        # An UNKNOWN flag is malformed, never ignored: a typo'd [needs-you]
-        # would otherwise silently drop an item off the page's first block.
-        leftover = FLAG.sub("", rest).strip()
-        if leftover:
-            entry["error"] = f"unrecognised text in header: {leftover!r}"
-            out.append(entry)
-            continue
-        for f in flags:
-            if f == "needs-you":
-                entry["needs_you"] = True
-            else:
-                entry["resolves"] = f.split(":", 1)[1].strip()
-        seen[date] = seen.get(date, 0) + 1
-        entry["date"], entry["ordinal"] = date, seen[date]
-        entry["id"] = f"{date}/{seen[date]}"
-        body = b[1:]
-        # Only a line that is EXACTLY the marker splits plain from tech.
-        cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
-        plain_lines = body if cut is None else body[:cut]
-        entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
-        entry["title"] = next((l.strip() for l in plain_lines if l.strip()), "")
-        entry["plain"] = "\n".join(plain_lines).strip()
-        out.append(entry)
-    return out
+
+def header_error(line: str) -> str | None:
+    """None if `line` is a well-formed entry header, else why not.
+
+    Shared by the parser and the ratchet so they CANNOT disagree about what a
+    header is. v2.2 claimed they already agreed; measured, they diverged on
+    five shapes — `## D-foo`, `## D.`, a typo'd flag, an unknown-flag payload,
+    and a title on the header line — each of which the ratchet waved through
+    while the page rendered it under "Could not parse this entry".
+    """
+    m = HEADER.match(line)
+    if m is None:
+        return "header must be '## ' then a YYYY-MM-DD date — check the space after the ##"
+    if not valid_date(m.group(1)):
+        return f"not a real calendar date: {m.group(1)!r}"
+    leftover = FLAG.sub("", m.group(2)).strip()
+    if leftover:
+        return f"unrecognised text in header: {leftover!r}"
+    return None
+
+
+def _added_entry_line(line: str) -> bool:
+    return line.startswith("+") and header_error(line[1:]) is None
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [ ] **Step 2: Run it.** Expected: **`NotImplementedError`**, non-zero exit. A `NameError` means an
+import is missing from Step 1.
 
-Run: `python3 scripts/gen-dashboard.py --self-test`
-Expected: `6/6 passed`, exit 0.
+- [ ] **Step 3: Implement the exemption reader and the verdict**
 
-- [ ] **Step 5: Add the malformed and edge cases**
-
-Append to `_self_test` before the print:
-
+<!-- file: scripts/check-dashboard-entry.py -->
 ```python
-    bad = parse_entries("## 2026-02-30\nImpossible date.\n")
-    case("bad date is an error", bad[0]["error"] is not None, True)
-    case("bad date still returned", len(bad), 1)
-    case("bad date keeps raw", "Impossible date." in bad[0]["raw"], True)
-
-    typo = parse_entries("## 2026-08-28 [needs-yo]\nTypo flag.\n")
-    case("unknown flag is an error", typo[0]["error"] is not None, True)
-
-    two = parse_entries("## 2026-08-28\nFirst.\n## 2026-08-28\nSecond.\n")
-    case("two entries same date", [x["id"] for x in two], ["2026-08-28/1", "2026-08-28/2"])
-
-    tech = parse_entries("## 2026-08-28\nTitle.\nMore plain.\n<!--tech-->\nPR #1.\n")
-    case("plain stops at marker", tech[0]["plain"], "Title.\nMore plain.")
-    case("tech captured", tech[0]["tech"], "PR #1.")
-
-    inline = parse_entries("## 2026-08-28\nI mention <!--tech--> inline.\n")
-    case("inline marker is text", inline[0]["tech"], None)
-
-    nested = parse_entries("## 2026-08-28\nTitle.\n<!--tech-->\n  ## indented heading\n")
-    case("indented ## does not split", len(nested), 1)
-
-    case("empty file", parse_entries(""), [])
-    case("no entries yet", parse_entries("# Heading only\n"), [])
-
-    res = parse_entries("## 2026-08-29 [resolved: 2026-08-28/1]\nDone.\n")
-    case("resolves parsed", res[0]["resolves"], "2026-08-28/1")
-```
-
-- [ ] **Step 6: Run to verify all pass**
-
-Run: `python3 scripts/gen-dashboard.py --self-test`
-Expected: `19/19 passed`, exit 0. If "indented ## does not split" fails, the block splitter is matching indented lines — it must test `line.startswith("## ")` against the raw line, not a stripped one.
-
-- [ ] **Step 7: Create the store with its first real entry**
-
-Create `docs/dashboard-entries.md`:
-
-```markdown
-# Dashboard entries
-
-Append-only. One `## YYYY-MM-DD` block per entry; newest at the end.
-Nothing here is edited or deleted — corrections are appended.
-Grammar: `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` §6.2.
-Rendered by `scripts/gen-dashboard.py`; enforced by `scripts/check-dashboard-entry.py`.
-
-## 2026-08-28
-Started building the dashboard — a page that shows what changed while you were away.
-<!--tech-->
-Spec v5 merged as `c5fcb07` after three dual-adversarial review rounds, none of which converged.
-Task 1 of `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md`.
-```
-
-- [ ] **Step 8: Verify the real store parses**
-
-Run:
-```bash
-python3 -c "
-import pathlib, importlib.util
-spec = importlib.util.spec_from_file_location('g', 'scripts/gen-dashboard.py')
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-e = m.parse_entries(pathlib.Path('docs/dashboard-entries.md').read_text())
-print(len(e), 'entries;', [x['error'] for x in e])
-"
-```
-Expected: `1 entries; [None]`
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add scripts/gen-dashboard.py docs/dashboard-entries.md
-git commit -F /tmp/msg-task1.txt
-```
-
-Write the message to a file first — the body contains backticks.
-
----
-
-## Task 2: Derive activity and open pull requests
-
-**Files:**
-- Modify: `scripts/gen-dashboard.py`
-
-**Interfaces:**
-- Consumes: `parse_entries` from Task 1.
-- Produces: `bucket_days(dates: list[str], entries: list[dict], window: int, today: str) -> list[dict]` — each dict has `date` (`str`), `commits` (`int`), `needs_you` (`bool`), `has_entry` (`bool`). And `unresolved(entries: list[dict]) -> list[dict]` returning entries flagged `needs_you` whose `id` is named by no later `resolves`.
-
-- [ ] **Step 1: Write the failing tests**
-
-Append to `_self_test`:
-
-```python
-    ents = parse_entries(
-        "## 2026-08-26 [needs-you]\nA.\n"
-        "## 2026-08-27\nB.\n"
-        "## 2026-08-28 [resolved: 2026-08-26/1]\nC.\n")
-    case("unresolved is empty after resolve", [x["id"] for x in unresolved(ents)], [])
-
-    ents2 = parse_entries("## 2026-08-26 [needs-you]\nA.\n## 2026-08-27\nB.\n")
-    case("unresolved before resolve", [x["id"] for x in unresolved(ents2)], ["2026-08-26/1"])
-
-    days = bucket_days(["2026-08-28", "2026-08-28", "2026-08-26"], ents2, 3, "2026-08-28")
-    case("window length", len(days), 3)
-    case("newest first", days[0]["date"], "2026-08-28")
-    case("commit count", days[0]["commits"], 2)
-    case("zero-commit day present", days[1]["commits"], 0)
-    case("entry with no commits is marked", days[1]["has_entry"], True)
-    case("needs-you day is flagged", days[2]["needs_you"], True)
-```
-
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `python3 scripts/gen-dashboard.py --self-test`
-Expected: `NameError: name 'unresolved' is not defined`.
-
-- [ ] **Step 3: Implement both functions**
-
-```python
-def unresolved(entries: list[dict]) -> list[dict]:
-    """needs-you entries not cleared by a later [resolved: <id>] (spec §6.2)."""
-    cleared = {e["resolves"] for e in entries if e["resolves"]}
-    return [e for e in entries
-            if e["needs_you"] and not e["error"] and e["id"] not in cleared]
-
-def bucket_days(dates: list[str], entries: list[dict], window: int, today: str) -> list[dict]:
-    """One bucket per calendar day, newest first, `window` days ending at `today`.
-
-    `dates` is one string per commit. A day with an entry and zero commits is
-    still returned with commits=0 — the spec requires it to render a marked
-    zero-height bar rather than vanish (§6.1)."""
-    counts: dict[str, int] = {}
-    for d in dates:
-        counts[d] = counts.get(d, 0) + 1
-    with_entry = {e["date"] for e in entries if not e["error"]}
-    flagged = {e["date"] for e in unresolved(entries)}
-    end = _dt.date.fromisoformat(today)
-    out = []
-    for i in range(window):
-        d = (end - _dt.timedelta(days=i)).isoformat()
-        out.append({"date": d, "commits": counts.get(d, 0),
-                    "needs_you": d in flagged, "has_entry": d in with_entry})
-    return out
-```
-
-- [ ] **Step 4: Run to verify they pass**
-
-Run: `python3 scripts/gen-dashboard.py --self-test`
-Expected: `26/26 passed`, exit 0.
-
-- [ ] **Step 5: Add the impure collectors, kept out of the self-test**
-
-```python
-import subprocess
-
-def commit_dates(window: int) -> tuple[list[str] | None, str | None]:
-    """Author dates on first-parent HEAD. Returns (dates, None) or (None, why).
-
-    first-parent is named explicitly: after squash-merges, plain `git log`
-    counts differently and 'commits' would be ambiguous (spec §5)."""
-    try:
-        r = subprocess.run(
-            ["git", "log", "--first-parent", f"--since={window} days ago",
-             "--date=short", "--pretty=%ad"],
-            capture_output=True, text=True, timeout=20)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, f"could not run git: {exc}"
-    if r.returncode != 0:
-        return None, f"git log exited {r.returncode}: {r.stderr.strip()[:200]}"
-    return [l for l in r.stdout.split("\n") if l.strip()], None
-
-def open_prs() -> tuple[list[dict] | None, str | None]:
-    """Open PRs via gh. Returns (prs, None) or (None, why) — never a bare []
-    on failure, because 'nothing open' and 'could not ask' must not look alike."""
-    try:
-        r = subprocess.run(
-            ["gh", "pr", "list", "--state", "open", "--json", "number,title"],
-            capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, f"could not run gh: {exc}"
-    if r.returncode != 0:
-        return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
-    import json
-    try:
-        return json.loads(r.stdout or "[]"), None
-    except json.JSONDecodeError as exc:
-        return None, f"gh returned unparseable JSON: {exc}"
-```
-
-- [ ] **Step 6: Verify both against the real repo**
-
-Run:
-```bash
-python3 -c "
-import importlib.util
-spec = importlib.util.spec_from_file_location('g','scripts/gen-dashboard.py')
-m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-d, err = m.commit_dates(14); print('dates:', len(d) if d else None, 'err:', err)
-p, err2 = m.open_prs(); print('prs:', len(p) if p is not None else None, 'err:', err2)
-"
-```
-Expected: a non-zero date count and `err: None`. `prs: 0 err: None` is correct when nothing is open — the distinction from failure is `err`.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add scripts/gen-dashboard.py
-git commit -F /tmp/msg-task2.txt
-```
-
----
-
-## Task 3: Render the page
-
-**Files:**
-- Modify: `scripts/gen-dashboard.py`
-
-**Interfaces:**
-- Consumes: `parse_entries`, `unresolved`, `bucket_days`, `commit_dates`, `open_prs`.
-- Produces: `build(entries, days, prs, pr_error, git_error, window) -> str` returning a complete HTML fragment (a `<title>`, one `<style>`, then body markup) suitable for `scripts/brief-compose.py --content`.
-
-- [ ] **Step 1: Write the failing tests**
-
-Append to `_self_test`:
-
-```python
-    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n<!--tech-->\nPR #1.\n")
-    d3 = bucket_days(["2026-08-28"], ents3, 2, "2026-08-28")
-    html = build(ents3, d3, [], None, None, 2)
-    case("needs-you surfaces", "Decide the thing." in html, True)
-    case("tech is behind a fold", "<details" in html, True)
-    case("tech labelled", "technical detail" in html.lower(), True)
-
-    html_empty = build([], bucket_days([], [], 2, "2026-08-28"), [], None, None, 2)
-    case("empty says nothing needs you", "Nothing needs you" in html_empty, True)
-    case("empty says no entries yet", "no entries yet" in html_empty.lower(), True)
-
-    html_err = build([], bucket_days([], [], 2, "2026-08-28"), None, "gh exploded", None, 2)
-    case("gh failure is NOT 'nothing needs you'", "Nothing needs you" in html_err, False)
-    case("gh failure says could not tell", "could not tell" in html_err.lower(), True)
-
-    bad3 = parse_entries("## 2026-99-99\nBroken.\n")
-    html_bad = build(bad3, bucket_days([], bad3, 2, "2026-08-28"), [], None, None, 2)
-    case("malformed rendered in place", "could not parse" in html_bad.lower(), True)
-    case("malformed keeps its raw text", "Broken." in html_bad, True)
-```
-
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `python3 scripts/gen-dashboard.py --self-test`
-Expected: `NameError: name 'build' is not defined`.
-
-- [ ] **Step 3: Implement `build`**
-
-```python
-import html as _html
-
-def _bar(day: dict, tallest: int) -> str:
-    h = 4 if day["commits"] == 0 else max(6, round(48 * day["commits"] / max(tallest, 1)))
-    cls = "bar needs" if day["needs_you"] else "bar"
-    mark = " ●" if day["has_entry"] and day["commits"] == 0 else ""
-    label = (f'{day["date"]}: {day["commits"]} commits'
-             f'{", needs you" if day["needs_you"] else ""}'
-             f'{", entry with no commits" if mark else ""}')
-    return (f'<a class="{cls}" href="#d-{day["date"]}" style="height:{h}px" '
-            f'title="{_html.escape(label)}" aria-label="{_html.escape(label)}">'
-            f'<span class="vh">{mark}</span></a>')
-
-def build(entries, days, prs, pr_error, git_error, window) -> str:
-    need = unresolved(entries)
-    # "could not tell" is NOT "nothing needs you" — CLAUDE.md's cannot-run rule.
-    if pr_error:
-        needs_html = (f'<p class="unknown">I could not tell whether anything needs you — '
-                      f'{_html.escape(pr_error)}</p>')
-    elif not need and not prs:
-        needs_html = '<p class="none">Nothing needs you.</p>'
-    else:
-        rows = [f'<li>{_html.escape(e["title"])} '
-                f'<span class="when">{e["date"]}</span></li>' for e in need]
-        rows += [f'<li>Pull request #{p["number"]} — {_html.escape(p["title"])}'
-                 f' <span class="when">open</span></li>' for p in (prs or [])]
-        needs_html = "<ul class=\"needs\">" + "".join(rows) + "</ul>"
-
-    tallest = max([d["commits"] for d in days], default=0)
-    chart = ("".join(_bar(d, tallest) for d in reversed(days))
-             if not git_error else
-             f'<p class="unknown">Could not read the git history — {_html.escape(git_error)}</p>')
-
-    if not entries:
-        entries_html = ('<p class="none">No entries yet. They live in '
-                        '<code>docs/dashboard-entries.md</code>.</p>')
-    else:
-        parts = []
-        for e in sorted(entries, key=lambda x: (x["date"] or "", x["ordinal"]), reverse=True):
-            if e["error"]:
-                parts.append(
-                    f'<article class="entry broken" id="d-{_html.escape(e["date"] or "?")}">'
-                    f'<p class="err">Could not parse this entry — {_html.escape(e["error"])}</p>'
-                    f'<pre>{_html.escape(e["raw"])}</pre></article>')
-                continue
-            tech = ("" if not e["tech"] else
-                    f'<details><summary>Raw technical detail</summary>'
-                    f'<pre>{_html.escape(e["tech"])}</pre></details>')
-            flag = ' <span class="flag">needs you</span>' if e["needs_you"] else ""
-            parts.append(
-                f'<article class="entry" id="d-{e["date"]}">'
-                f'<h3>{_html.escape(e["date"])}{flag}</h3>'
-                f'<p class="title">{_html.escape(e["title"])}</p>'
-                f'<details><summary>What this means</summary>'
-                f'<p>{_html.escape(e["plain"])}</p></details>{tech}</article>')
-        entries_html = "".join(parts)
-
-    return f"""<title>Project dashboard</title>
-<style>
-:root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
---need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
---mono:ui-monospace,SFMono-Regular,Menlo,monospace}}
-@media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
---bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
---err:#d98873;--err-bg:#2a1a16}}}}
-body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
-line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
-.shell{{max-width:820px;margin:0 auto;padding:32px 20px 80px}}
-h2{{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
-color:var(--fg3);border-bottom:1px solid var(--rule);padding-bottom:8px;margin:44px 0 16px}}
-.none{{color:var(--ok);font-weight:600}}
-.unknown{{color:var(--err);background:var(--err-bg);padding:10px 14px;border-radius:4px}}
-ul.needs{{list-style:none;padding:0}} ul.needs li{{background:var(--need-bg);
-border-left:3px solid var(--need);padding:10px 14px;margin-bottom:8px;border-radius:0 4px 4px 0}}
-.when{{font-family:var(--mono);font-size:11px;color:var(--fg3)}}
-.chart{{display:flex;align-items:flex-end;gap:4px;height:56px;padding:8px;
-background:var(--panel);border:1px solid var(--rule);border-radius:4px;overflow-x:auto}}
-.bar{{flex:1;min-width:8px;background:var(--ok);border-radius:2px 2px 0 0;display:block}}
-.bar.needs{{background:var(--need)}}
-.vh{{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
-.entry{{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
-padding:14px 18px;margin-bottom:10px}}
-.entry.broken{{border-color:var(--err);background:var(--err-bg)}}
-.entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
-.entry .title{{margin:0;font-weight:600}}
-.flag{{color:var(--need);font-weight:700}}
-.err{{color:var(--err);font-weight:600;margin:0 0 8px}}
-details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
-pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:auto}}
-:focus-visible{{outline:2px solid var(--need);outline-offset:2px}}
-</style>
-<div class="shell">
-<h1>Project dashboard</h1>
-<h2>What needs you</h2>{needs_html}
-<h2>The last {window} days</h2><div class="chart">{chart}</div>
-<h2>What changed</h2>{entries_html}
-<h2>Elsewhere</h2><ul>
-<li><a href="/goals">Goals</a></li><li><a href="/backlog-table">Backlog</a></li>
-<li><a href="/latest">Newest briefing</a></li><li><a href="/">All pages</a></li></ul>
-</div>"""
-```
-
-- [ ] **Step 4: Run to verify they pass**
-
-Run: `python3 scripts/gen-dashboard.py --self-test`
-Expected: `35/35 passed`, exit 0.
-
-- [ ] **Step 5: Wire up `main` and write the page**
-
-```python
-import argparse, pathlib
-
-def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--self-test", action="store_true")
-    ap.add_argument("--window", type=int, default=14)
-    ap.add_argument("--store", default="docs/dashboard-entries.md")
-    ap.add_argument("--out", default=str(pathlib.Path.home() / "explainers" / "dashboard.html"))
-    a = ap.parse_args(argv)
-    if a.self_test:
-        return _self_test()
-    store = pathlib.Path(a.store)
-    entries = parse_entries(store.read_text(encoding="utf-8")) if store.exists() else []
-    dates, git_error = commit_dates(a.window)
-    prs, pr_error = open_prs()
-    today = _dt.date.today().isoformat()
-    days = bucket_days(dates or [], entries, a.window, today)
-    frag = build(entries, days, prs, pr_error, git_error, a.window)
-    out = pathlib.Path(a.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(frag, encoding="utf-8")
-    print(f"wrote {out}  ({len(entries)} entries, window {a.window})")
-    if git_error:
-        print(f"  ⚠ git: {git_error}")
-    if pr_error:
-        print(f"  ⚠ gh: {pr_error}")
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
-```
-
-Delete the old `if __name__` block from Task 1.
-
-- [ ] **Step 6: Generate, compose and look at it**
-
-```bash
-python3 scripts/gen-dashboard.py --out /tmp/dash-fragment.html
-python3 scripts/brief-compose.py --content /tmp/dash-fragment.html \
-  --slug dashboard --title "Project dashboard"
-python3 scripts/explainer-serve.py
-```
-
-⚠ `brief-compose.py` writes a **dated** filename. The dashboard must be a **standing** page — an undated name, so it is excluded from `/latest` (`scripts/explainer-serve.py:35-49`). Rename:
-
-```bash
-mv ~/explainers/*-brief-dashboard.html ~/explainers/dashboard.html
-```
-
-Then open `http://127.0.0.1:7391/dashboard` and confirm: the entry from Task 1 appears, its fold opens, the chart has bars, and `/latest` still points at the newest *briefing*, not at the dashboard.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add scripts/gen-dashboard.py
-git commit -F /tmp/msg-task3.txt
-```
-
----
-
-## Task 4: The gate — an entry cannot be forgotten
-
-**Files:**
-- Create: `scripts/check-dashboard-entry.py`
-- Modify: `.github/workflows/ci.yml`
-
-**Interfaces:**
-- Consumes: nothing (independent of `gen-dashboard.py` on purpose — a gate that imports the thing it guards fails when that thing is broken).
-- Produces: `verdict(changed: list[str], added_entry: bool, pr_body: str) -> tuple[int, str]` returning `(exit_code, reason)`. `0` = pass, `1` = refuse.
-
-- [ ] **Step 1: Write the failing test**
-
-Create `scripts/check-dashboard-entry.py`:
-
-```python
-#!/usr/bin/env python3
-"""Refuse a branch that changes tracked files and records no dashboard entry.
-
-    python3 scripts/check-dashboard-entry.py             # against origin/master..HEAD
-    python3 scripts/check-dashboard-entry.py --self-test
-
-WHY THIS EXISTS. Through spec v4 the dashboard's entries were voluntary, and the
-spec conceded they would be skipped exactly when busy — so the answer to the
-user's rank-1 problem rested on discipline. docs/dev-process.md says: before
-adding a rule, ask whether it can be a script. This is that script.
-"""
-from __future__ import annotations
-import sys
-
-EXEMPT_PREFIXES = ("docs/reviews/", "docs/dashboard-entries.md")
-NO_ENTRY = "NO-ENTRY:"
-
-def verdict(changed: list[str], added_entry: bool, pr_body: str) -> tuple[int, str]:
-    raise NotImplementedError
-
-def _self_test() -> int:
-    ok = fail = 0
-    def case(name, got, want):
-        nonlocal ok, fail
-        if got == want: ok += 1
+FENCE = re.compile(r"^(?P<ind> {0,3})(?P<ch>`{3,}|~{3,})")
+
+
+def _indented(text: str) -> bool:
+    """4+ COLUMNS of leading whitespace = a Markdown indented code block.
+
+    A tab advances to the next 4-column stop, which CommonMark applies BEFORE
+    block parsing. Counting spaces alone let a tab-indented declaration exempt
+    a branch — measured.
+    """
+    col = 0
+    for ch in text:
+        if ch == " ":
+            col += 1
+        elif ch == "\t":
+            col += 4 - (col % 4)
         else:
-            fail += 1
-            print(f"  [FAIL] {name}: got {got!r} want {want!r}")
-    case("code change with no entry is refused", verdict(["lib/x.ts"], False, "")[0], 1)
-    case("code change with entry passes", verdict(["lib/x.ts"], True, "")[0], 0)
-    case("NO-ENTRY declaration passes", verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[0], 0)
-    case("NO-ENTRY without a reason is refused", verdict(["lib/x.ts"], False, "NO-ENTRY:")[0], 1)
-    case("review-only branch is exempt", verdict(["docs/reviews/r1.md"], False, "")[0], 0)
-    case("entry-only branch is exempt", verdict(["docs/dashboard-entries.md"], False, "")[0], 0)
-    case("no changes at all passes", verdict([], False, "")[0], 0)
-    case("mixed exempt and real is refused", verdict(["docs/reviews/r.md","lib/x.ts"], False, "")[0], 1)
-    case("refusal explains itself", "entry" in verdict(["lib/x.ts"], False, "")[1].lower(), True)
-    case("NO-ENTRY reason is echoed", "typo fix" in verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[1], True)
-    print(f"\n{ok}/{ok+fail} passed")
-    return 1 if fail else 0
+            break
+        if col >= 4:
+            return True
+    return False
 
-if __name__ == "__main__":
-    sys.exit(_self_test() if "--self-test" in sys.argv else 0)
-```
 
-- [ ] **Step 2: Run to verify it fails**
+def exemption_reason(pr_body: str) -> str | None:
+    """The reason after a line-leading `NO-ENTRY:`, or None.
 
-Run: `python3 scripts/check-dashboard-entry.py --self-test`
-Expected: `NotImplementedError`.
+    ONE DEFINITION, shared with scripts/gen-dashboard.py, so the page displays exactly
+    the exemptions the gate granted (spec §7). An exemption must be DELIBERATE,
+    so anything a Markdown reader treats as inert does not count: fenced code
+    (closed only by its own character), indented code (4+ columns, tabs
+    included), HTML comments across lines, and blockquotes.
+    """
+    fence_ch = None
+    fence_run = ""
+    in_comment = False
+    for line in pr_body.split("\n"):
+        if not in_comment:
+            m = FENCE.match(line)
+            if m:
+                run = m.group("ch")
+                ch = run[0]
+                if fence_ch is None:
+                    fence_ch, fence_run = ch, run
+                elif ch == fence_ch:
+                    # CommonMark: the CLOSING fence must be AT LEAST AS LONG as
+                    # the opener. Keeping only the character let a 3-backtick
+                    # line close a 5-backtick block, so a NO-ENTRY: that GitHub
+                    # renders as grey code inside a code block exempted the
+                    # branch — measured. Anyone quoting markdown-inside-markdown
+                    # nests fences, and the SKILL.md teaches people to quote it.
+                    if len(run) >= len(fence_run):
+                        fence_ch, fence_run = None, ""
+                continue
+        if fence_ch is not None:
+            continue
+        probe = line
+        while probe:
+            if in_comment:
+                end = probe.find("-->")
+                if end < 0:
+                    probe = ""
+                    break
+                probe, in_comment = probe[end + 3:], False
+            else:
+                start = probe.find("<!--")
+                if start < 0:
+                    break
+                head, probe, in_comment = probe[:start], probe[start + 4:], True
+                # The head runs through the SAME indent rule as a bare line. It
+                # did not, so an indented declaration exempted the moment the
+                # line also carried a comment — measured.
+                if not _indented(head) and head.strip().startswith(NO_ENTRY):
+                    return head.strip()[len(NO_ENTRY):].strip() or ""
+        if in_comment or not probe or _indented(probe):
+            continue
+        s = probe.strip()
+        if s.startswith(NO_ENTRY):
+            return s[len(NO_ENTRY):].strip() or ""
+    return None
 
-- [ ] **Step 3: Implement `verdict`**
 
-```python
+def _is_exempt(path: str) -> bool:
+    return path in EXEMPT_FILES or any(path.startswith(d) for d in EXEMPT_DIRS)
+
+
 def verdict(changed: list[str], added_entry: bool, pr_body: str) -> tuple[int, str]:
-    real = [p for p in changed if not p.startswith(EXEMPT_PREFIXES)]
+    real = [p for p in changed if not _is_exempt(p)]
     if not real:
         return 0, "no tracked files changed outside the exempt paths"
     if added_entry:
         return 0, "an entry block was added"
-    for line in pr_body.split("\n"):
-        s = line.strip()
-        if s.startswith(NO_ENTRY):
-            reason = s[len(NO_ENTRY):].strip()
-            if reason:
-                return 0, f"exempted by declaration — {reason}"
-            return 1, f"{NO_ENTRY} was declared with no reason after it"
+    reason = exemption_reason(pr_body)
+    if reason:
+        return 0, f"exempted by declaration — {reason}"
+    if reason == "":
+        return 1, f"{NO_ENTRY} was declared with no reason after it"
     return 1, (f"{len(real)} tracked file(s) changed and no entry was added to "
                f"docs/dashboard-entries.md. Add a '## YYYY-MM-DD' block describing "
                f"the change in plain words, or put 'NO-ENTRY: <reason>' in the PR body.")
 ```
 
-- [ ] **Step 4: Run to verify all pass**
+⚠ `reason` is **three-valued**: a non-empty string exempts, `""` means the marker was present with
+nothing after it and must **refuse**, `None` means absent. `if reason:` alone conflates the last two.
 
-Run: `python3 scripts/check-dashboard-entry.py --self-test`
-Expected: `10/10 passed`, exit 0.
+- [ ] **Step 4: Add the PURE self-test and run it.** Expected: exit 0, no `[FAIL]` lines. **Do not
+check the count** — see Global Constraints.
 
-- [ ] **Step 5: Add the git collector and `main`**
+⚠ This block is `_self_test` and nothing else. It covers only functions that exist by the end of
+Step 3; the cannot-run cases for `collect` and `main` arrive in Step 5 as a **second** function,
+because a step must be runnable at the point it is read. **Until v6 this block was silently
+re-included whole inside Step 5's**, so an implementer following the blocks wrote 74 lines twice and
+one following the step titles wrote them once — and neither suite could tell, because Python keeps
+the second definition. Worse, `check-plan-code.py` applies each edit with `replace(…, 1)`, so any
+mutation anchored in the self-test landed on the **dead first copy**.
 
+<!-- file: scripts/check-dashboard-entry.py -->
 ```python
-import argparse, subprocess
+def _self_test() -> int:
+    ok = fail = 0
 
+    def case(name, got, want):
+        nonlocal ok, fail
+        if got == want:
+            ok += 1
+        else:
+            fail += 1
+            print(f"  [FAIL] {name}: got {got!r} want {want!r}")
+
+    case("code change with no entry is refused", verdict(["lib/x.ts"], False, "")[0], 1)
+    case("code change with entry passes", verdict(["lib/x.ts"], True, "")[0], 0)
+    case("NO-ENTRY declaration passes", verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[0], 0)
+    case("NO-ENTRY without a reason is refused", verdict(["lib/x.ts"], False, "NO-ENTRY:")[0], 1)
+    # ⚠ `reason` is three-valued and both empty-vs-absent branches return 1, so the
+    # CODE cannot tell them apart — only the message can. Round 4's M3: deleting the
+    # empty-reason branch entirely left 45/45 green, which made the distinction the
+    # ⚠ calls load-bearing purely cosmetic. Assert the MESSAGE, as the sibling case
+    # below already does for the other branch.
+    case("...and says the marker was present with nothing after it",
+         "no reason after it" in verdict(["lib/x.ts"], False, "NO-ENTRY:")[1], True)
+    case("review-only branch is exempt", verdict(["docs/reviews/r1.md"], False, "")[0], 0)
+    case("entry-only branch is exempt", verdict(["docs/dashboard-entries.md"], False, "")[0], 0)
+    case("no changes at all passes", verdict([], False, "")[0], 0)
+    case("mixed exempt and real is refused", verdict(["docs/reviews/r.md", "lib/x.ts"], False, "")[0], 1)
+    case("refusal explains itself", "entry" in verdict(["lib/x.ts"], False, "")[1].lower(), True)
+    case("NO-ENTRY reason is echoed", "typo fix" in verdict(["lib/x.ts"], False, "NO-ENTRY: typo fix")[1], True)
+    case("a lookalike filename is NOT exempt", verdict(["docs/dashboard-entries.md.bak"], False, "")[0], 1)
+    case("a lookalike directory is NOT exempt", verdict(["docs/reviews-not-really/x.ts"], False, "")[0], 1)
+
+    fenced = "```\nNO-ENTRY: example from the docs\n```"
+    case("NO-ENTRY inside a code fence does not exempt", verdict(["lib/x.ts"], False, fenced)[0], 1)
+    case("exemption_reason reads a real declaration", exemption_reason("NO-ENTRY: typo fix"), "typo fix")
+    case("exemption_reason distinguishes empty from absent",
+         (exemption_reason("NO-ENTRY:"), exemption_reason("nothing here")), ("", None))
+
+    for name, body, want in [
+        ("fenced ```",                  fenced,                                        None),
+        ("a SHORT fence does not close a longer fence",
+                                        "`````\n```\nNO-ENTRY: sneaky\n`````\n",       None),
+        ("...same for tildes",          "~~~~\n~~~\nNO-ENTRY: sneaky2\n~~~~\n",       None),
+        ("an EQUAL-length fence does close",
+                                        "```\ncode\n```\nNO-ENTRY: real\n",        "real"),
+        ("fenced with ~~~",             "~~~\nNO-ENTRY: inside\n~~~",                  None),
+        ("unterminated fence",          "```\nNO-ENTRY: inside\n",                     None),
+        ("``` is not closed by ~~~",    "```\nNO-ENTRY: a\n~~~\nNO-ENTRY: b\n",        None),
+        ("indented code block",         "    NO-ENTRY: indented\n",                    None),
+        ("TAB-indented code block",     "\tNO-ENTRY: tabbed\n",                        None),
+        ("indented, with a comment later on the line",
+                                        "    NO-ENTRY: sneaky <!-- c -->\n",           None),
+        ("multi-line HTML comment",     "<!--\nNO-ENTRY: commented out\n-->\n",        None),
+        ("one-line HTML comment",       "<!-- NO-ENTRY: nope -->\n",                   None),
+        ("blockquoted",                 "> NO-ENTRY: quoted\n",                        None),
+        ("lowercase is not the marker", "no-entry: lower\n",                           None),
+        ("CRLF body still reads",       "NO-ENTRY: crlf\r\n",                        "crlf"),
+        ("after a CLOSED comment",      "<!-- hint --> NO-ENTRY: real one\n",    "real one"),
+        ("after a CLOSED fence",        "```\ncode\n```\nNO-ENTRY: real one\n",  "real one"),
+        ("3 spaces is still a declaration", "   NO-ENTRY: ok\n",                       "ok"),
+    ]:
+        case(f"exemption_reason — {name}", exemption_reason(body), want)
+
+    # ─── the header grammar, shared with the parser ───
+    case("a real date header counts", _added_entry_line("+## 2026-08-28"), True)
+    case("a flagged header counts", _added_entry_line("+## 2026-08-28 [needs-you]"), True)
+    case("a non-date header does NOT count", _added_entry_line("+## not-a-date"), False)
+    case("an impossible date does NOT count", _added_entry_line("+## 2026-02-30"), False)
+    case("a REMOVED header does not count", _added_entry_line("-## 2026-08-28"), False)
+    case("'##' with no space does NOT count", _added_entry_line("+##2026-08-28"), False)
+    # The five shapes v2.2 claimed could not diverge, and did.
+    case("a suffixed date does NOT count", _added_entry_line("+## 2026-08-28-foo"), False)
+    case("a trailing dot does NOT count", _added_entry_line("+## 2026-08-28."), False)
+    case("a typo'd flag does NOT count", _added_entry_line("+## 2026-08-28 [needs-yo]"), False)
+    case("a title on the header line does NOT count",
+         _added_entry_line("+## 2026-08-28 rambling title text"), False)
+    case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
+    case("header_error is None on a good header", header_error("## 2026-08-28 [needs-you]"), None)
+
+    print(f"\n{ok}/{ok+fail} passed")
+    return 1 if fail else 0
+```
+
+- [ ] **Step 5: Add the git collector, its cannot-run suite, `main`, and the dispatch**
+
+⚠ **The `if __name__` line is part of this step.** Without it the file exits 0 silently, and a
+control harness reads that as success — round 3 measured controls A–F all printing `rc=0` against
+exactly that.
+
+⚠ **`_impure_self_test` is the point of this step, not decoration.** `collect` and `main` are the
+only two functions in this file that can *fail to run*, and they were the only two with no coverage
+at all. The gate refusing to run must be distinguishable from the gate passing — `main` returns
+**2**, never 0. Run `--self-test` after this step and expect **two** result lines.
+
+<!-- file: scripts/check-dashboard-entry.py -->
+```python
 def collect(base: str) -> tuple[list[str], bool, str | None]:
-    """(changed paths, whether an entry block was added, error).
-    Never `$?` after a pipe — this repo has measured that reporting the wrong
-    command's status three times."""
     try:
         names = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
                                capture_output=True, text=True, timeout=20)
@@ -712,8 +411,80 @@ def collect(base: str) -> tuple[list[str], bool, str | None]:
     if names.returncode != 0:
         return [], False, f"git diff exited {names.returncode}: {names.stderr.strip()[:200]}"
     changed = [l for l in names.stdout.split("\n") if l.strip()]
-    added = any(l.startswith("+## ") for l in patch.stdout.split("\n"))
+    added = any(_added_entry_line(l) for l in patch.stdout.split("\n"))
     return changed, added, None
+
+
+def _impure_self_test() -> int:
+    """The cannot-run contract for the layer that touches git.
+
+    SEPARATE from `_self_test` on purpose. `_self_test` is added in Step 4, where
+    `collect` and `main` do not exist yet — folding these cases into it would make
+    Step 4's stated outcome ("exit 0, no [FAIL] lines") impossible to observe, and a
+    step whose outcome cannot occur is the defect rounds 2, 3 and 4 each filed. Both
+    suites run; `main --self-test` fails if either does.
+
+    Round 4 measured three one-line mutations here, ALL GREEN against the whole
+    45-case suite: `return 2` becoming `return 0` — which turns this ratchet
+    FAIL-OPEN, merging a branch with no entry on a git hiccup — the returncode check
+    becoming `if False`, and the OSError branch returning `err=None`. `collect()` and
+    `main()` had no coverage at all.
+    """
+    ok = fail = 0
+
+    def case(name, got, want):
+        nonlocal ok, fail
+        if got == want:
+            ok += 1
+        else:
+            fail += 1
+            print(f"  [FAIL] {name}: got {got!r} want {want!r}")
+
+    class _R:
+        def __init__(self, rc, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+
+    def _with_run(stub, call):
+        real = subprocess.run
+        subprocess.run = stub
+        try:
+            return call()
+        finally:
+            subprocess.run = real      # restored even if `call` raises
+
+    def _boom(*a, **k):
+        raise OSError("git is not installed")
+
+    ch, ad, err = _with_run(_boom, lambda: collect("master"))
+    case("collect: a missing git is a could-not-tell, not 'nothing changed'",
+         (ch, ad, bool(err)), ([], False, True))
+    ch, ad, err = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
+                            lambda: collect("master"))
+    case("collect: a non-zero git exit is a could-not-tell, not 'nothing changed'",
+         (ch, ad, bool(err)), ([], False, True))
+    ch, ad, err = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
+                            lambda: collect("master"))
+    case("collect: a working git still reports the changed files",
+         (ch, err), (["lib/x.ts"], None))
+
+    # main's dispatch on that error is the fail-closed half, and it is the single
+    # worst line in this file to get wrong: rc 0 merges the branch.
+    import contextlib as _cl, io as _io
+    g = globals()
+    real_collect = g["collect"]
+    g["collect"] = lambda base: ([], False, "could not run git: boom")
+    try:
+        with _cl.redirect_stdout(_io.StringIO()) as buf:
+            rc = main(["--base", "master"])
+    finally:
+        g["collect"] = real_collect
+    case("main: a could-not-tell exits 2 — NEVER 0", rc, 2)
+    case("...and says NOT CHECKED", "NOT CHECKED" in buf.getvalue(), True)
+
+    print(f"{ok}/{ok+fail} cannot-run cases passed")
+    return 1 if fail else 0
+
+
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
@@ -723,10 +494,12 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--pr-body-file", default=None)
     a = ap.parse_args(argv)
     if a.self_test:
-        return _self_test()
+        # BOTH suites, both always run. `or` would short-circuit and hide the
+        # cannot-run cases whenever the pure suite is already red.
+        pure, impure = _self_test(), _impure_self_test()
+        return 1 if (pure or impure) else 0
     changed, added, err = collect(a.base)
     if err:
-        # cannot run is a FAILURE, never a pass.
         print(f"CANNOT RUN — {err}\nTreat this as NOT CHECKED.")
         return 2
     body = ""
@@ -742,75 +515,1372 @@ if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 ```
 
-Delete the Task-4 Step-1 `if __name__` block.
+- [ ] **Step 6: Prove it passes, then make it go RED**
 
-- [ ] **Step 6: Prove it refuses, then prove it passes**
+⛔ **No `set -e`** — controls A, C and D are *expected* to exit non-zero, and `set -e` kills the
+script at A before it prints a verdict. ⛔ **No `git stash`** — on a committed file it does nothing;
+the only input `collect()` has is `git diff <base>...HEAD`, so a falsifier must change that.
 
-```bash
-python3 scripts/check-dashboard-entry.py --base origin/master; echo "rc=$?"
-```
-On this branch, which changed scripts and added an entry in Task 1, expect `ok` and `rc=0`.
-
-Now falsify it — the check is worthless if it cannot go red:
-
-```bash
-git stash push docs/dashboard-entries.md
-python3 scripts/check-dashboard-entry.py --base origin/master; echo "rc=$?"
-git stash pop
-```
-Expected: `REFUSED` and `rc=1`. **If this prints `ok`, the gate does not work — stop and fix it.**
-
-- [ ] **Step 7: Wire into CI**
-
-In `.github/workflows/ci.yml`, after the `check-function-revokes` steps:
-
-```yaml
-      - name: gen-dashboard self-test
-        run: python3 scripts/gen-dashboard.py --self-test
-
-      - name: check-dashboard-entry self-test
-        run: python3 scripts/check-dashboard-entry.py --self-test
-```
-
-Do **not** run the ratchet itself in CI yet — it needs the PR body, and wiring that is Task 6.
-
-- [ ] **Step 8: Commit**
+⛔ **The block asserts an exact code per row, and refuses to start if the gate script is not
+there.** v5 stopped at *"if any row prints `ok`, stop"*, and round 4 measured what that misses: run
+from a directory where the `cp` silently failed, **every row prints `rc=2`, no row prints `ok`, and
+the stated stop-condition is satisfied by a run that tested nothing**. `rc=2` is the gate's own
+*cannot run* code — the one value that is neither pass nor refusal — and the criterion was blind to
+exactly it. The reviewer hit this by accident, having the file one directory up, which is precisely
+how an implementer meets it.
 
 ```bash
-git add scripts/check-dashboard-entry.py .github/workflows/ci.yml
-git commit -F /tmp/msg-task4.txt
+D=$(mktemp -d); cd "$D" || exit 1
+git init -q .; git config user.email t@t; git config user.name t
+mkdir -p docs scripts
+cp "$OLDPWD/scripts/check-dashboard-entry.py" scripts/ \
+  || { echo "CANNOT RUN — the gate script did not copy. Treat this as NOT TESTED."; exit 1; }
+test -s scripts/check-dashboard-entry.py \
+  || { echo "CANNOT RUN — scripts/check-dashboard-entry.py is absent or empty. NOT TESTED."; exit 1; }
+git add -A; git commit -qm base; git branch -M master; git checkout -qb feature
+
+GOT=""
+row() {  # row <label> — records the code so the verdict is compared, never eyeballed
+  python3 scripts/check-dashboard-entry.py --base master; local rc=$?
+  printf '  %-32s rc=%s\n' "$1" "$rc"; GOT="$GOT$1=$rc;"
+}
+
+mkdir -p lib; echo "x" > lib/x.ts; git add -A; git commit -qm code
+row A                                                                      # want REFUSED 1
+
+printf '## 2026-08-28\nDid a thing.\n' > docs/dashboard-entries.md
+git add -A; git commit -qm entry
+row B                                                                      # want ok 0
+
+git rm -q docs/dashboard-entries.md; git commit -qm remove                 # THE FALSIFIER
+row C                                                                      # want REFUSED 1
+
+mkdir -p docs   # NOT optional: C's `git rm` removed the last file in docs/ and git
+                # removed the directory. Without this the printf fails, nothing is
+                # committed, and D refuses because there is no entry AT ALL —
+                # passing without ever exercising the date rule. MEASURED.
+printf '## not-a-date\nDid a thing.\n' > docs/dashboard-entries.md
+git add -A; git commit -qm baddate
+git diff -U0 master...HEAD -- docs/dashboard-entries.md | grep '^+##'      # must print it
+row D                                                                      # want REFUSED 1
+
+printf '## 2026-08-28\nDid a thing.\n' > docs/dashboard-entries.md
+git add -A; git commit -qm gooddate
+row E                                                                      # want ok 0
+
+n=0
+for h in '## 2026-08-28-foo' '## 2026-08-28.' '## 2026-08-28 [needs-yo]' \
+         '## 2026-08-28 rambling title' '##2026-08-28'; do
+  n=$((n+1))
+  printf '%s\nBody.\n' "$h" > docs/dashboard-entries.md
+  git add -A; git commit -qm t >/dev/null
+  row "F$n"                                                                # want 1 each
+done
+
+WANT="A=1;B=0;C=1;D=1;E=0;F1=1;F2=1;F3=1;F4=1;F5=1;"
+if [ "$GOT" = "$WANT" ]; then echo "CONTROLS OK"; else
+  echo "CONTROLS FAILED — the gate does not behave as specified."
+  echo "  want $WANT"; echo "  got  $GOT"
+fi
+cd "$OLDPWD"; rm -rf "$D"
 ```
+
+**Anything but `CONTROLS OK` is a stop.** C is the falsifier proper; D and E are a matched pair,
+because D alone can pass for the wrong reason. The `want`/`got` pair is printed on failure so the
+*shape* of the disagreement is visible — an all-`2` row means the gate never ran, not that it refused.
+
+- [ ] **Step 7: Commit.**
+
+---
+
+## Task 2: The entry store and its parser
+
+**Files:** Create `docs/dashboard-entries.md`, `scripts/gen-dashboard.py`.
+
+- [ ] **Step 1: The module header, the imports, and the grammar import**
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+#!/usr/bin/env python3
+"""Render the project dashboard from docs/dashboard-entries.md."""
+from __future__ import annotations
+import argparse
+import datetime as _dt
+import json
+import pathlib
+import subprocess
+import tempfile
+import html as _html
+import re
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+TECH_MARKER = "<!--tech-->"
+BLOCK = re.compile(r"^##\s*\S")
+
+
+def _gate_module():
+    """Load scripts/check-dashboard-entry.py for the grammar it owns.
+
+    The dependency arrow points generator -> gate, never the reverse: a GATE
+    must not import the thing it guards, but a page importing a gate is what
+    keeps their readings identical by construction. Hyphenated filenames are
+    not importable, so importlib is the only route.
+    """
+    import importlib.util, pathlib
+    p = pathlib.Path(__file__).with_name("check-dashboard-entry.py")
+    spec = importlib.util.spec_from_file_location("_dash_gate", p)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load {p}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_GATE = _gate_module()          # the GRAMMAR is required to parse at all
+header_error = _GATE.header_error
+FLAG = _GATE.FLAG
+HEADER = _GATE.HEADER
+
+
+def _exemption_reader():
+    """Looked up AT CALL TIME off the already-imported `_GATE`, inside
+    `no_entry_prs`'s try — so a gate that no longer EXPOSES `exemption_reason`
+    (a rename, a refactor; Task 1 owns that symbol) degrades one SECTION
+    instead of killing the page. Binding it at import in any form
+    (`_EX = _GATE.exemption_reason`) turns that rename into an import-time
+    AttributeError and there is no page left to degrade.
+
+    ⚠ It does NOT defend against a MISSING gate file, and the docstring used to
+    claim it did: `_GATE = _gate_module()` above kills the module on import long
+    before any call here, measured. The grammar is required to parse at all, so
+    that eager binding is correct and this function cannot rescue it.
+
+    It reads `_GATE` rather than calling `_gate_module()` again. A second call
+    re-execs the file into a DISTINCT module object, so if the gate changed on
+    disk between import and call the page's grammar and its exemption reader
+    would come from two different reads — contradicting `no_entry_prs`'s own
+    rationale that the page shows exactly the exemptions the gate granted.
+    """
+    return getattr(_GATE, "exemption_reason")
+```
+
+⚠ **`BLOCK` is loose and `HEADER` is strict, deliberately.** `BLOCK` decides what *starts* an entry,
+so `##2026-08-28` is CAPTURED rather than vanishing. `HEADER` decides whether it is *well-formed*.
+
+- [ ] **Step 2: implement the parser.** ⚠ **Its cases live in Task 4 Step 3**, with the rest of
+`gen-dashboard.py`'s suite — this step writes the parser and nothing else, and there is no `--self-test`
+to run until Task 4. v5 titled this *"Write the failing test, then implement the parser"* and followed
+it with one block, the parser. **A step whose stated outcome cannot occur at that point is the defect
+rounds 2, 3 and 4 each filed** — and v5's own warning to that effect sits three lines below this line.
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+def parse_entries(text: str) -> list[dict]:
+    """Split on column-0 '##' only. A malformed block is RETURNED with an
+    error, never dropped — the page must show it in place (spec §6.2).
+
+    `resolves` is a LIST: spec §6.2 says flags are "zero or more", and a
+    second [resolved:] used to overwrite the first silently, clearing one item
+    and leaving the other open forever with error=None.
+    """
+    blocks: list[list[str]] = []
+    for line in text.split("\n"):
+        if BLOCK.match(line):
+            blocks.append([line])
+        elif blocks:
+            blocks[-1].append(line)
+    out: list[dict] = []
+    seen: dict[str, int] = {}
+    for b in blocks:
+        entry = {"raw": "\n".join(b), "error": None, "needs_you": False, "resolves": [],
+                 "date": None, "ordinal": 0, "id": None, "would_be_id": None,
+                 "title": "", "plain": "", "tech": None}
+        err = header_error(b[0])
+        m = HEADER.match(b[0])
+        if m is not None and _GATE.valid_date(m.group(1)):
+            # The ordinal is claimed as soon as the DATE is known good — BEFORE
+            # the flag check — so repairing a typo'd flag does not renumber the
+            # entries after it and silently rebind a standing [resolved:].
+            date = m.group(1)
+            seen[date] = seen.get(date, 0) + 1
+            entry["date"], entry["ordinal"] = date, seen[date]
+            entry["id"] = f"{date}/{seen[date]}"
+            for f in FLAG.findall(m.group(2)):
+                # The `else` here used to assume every non-`needs-you` flag
+                # contains a colon — true only by accident of FLAG's current
+                # alternation, in a file whose header says it OWNS the grammar
+                # and invites you to extend it there. Measured: adding one
+                # alternative to FLAG left the gate's suite fully green and made
+                # `f.split(":", 1)[1]` raise IndexError on EVERY render, so the
+                # page stopped existing rather than degrading one entry. The
+                # generator imported the grammar's symbols but not its meaning.
+                if f == "needs-you":
+                    entry["needs_you"] = True
+                elif f.startswith("resolved:"):
+                    entry["resolves"].append(f.split(":", 1)[1].strip())
+                else:
+                    entry["error"] = f"unrecognised flag [{f}]"
+        elif m is not None:
+            # A block whose DATE is malformed never gets an id, so pass 2 could
+            # not distinguish "no such entry" from "that entry exists and is
+            # unparseable" — and sent the author hunting for a typo that was not
+            # there. A bad date is the CANONICAL malformed entry (§6.2's own
+            # example, and the one control D exercises), so it was precisely the
+            # case the earlier three-way fix did not reach.
+            raw_date = m.group(1)
+            seen[raw_date] = seen.get(raw_date, 0) + 1
+            entry["would_be_id"] = f"{raw_date}/{seen[raw_date]}"
+        if err:
+            entry["error"] = err
+            out.append(entry)
+            continue
+        body = b[1:]
+        cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
+        plain_lines = body if cut is None else body[:cut]
+        entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
+        entry["title"] = next((l.strip() for l in plain_lines if l.strip()), "")
+        entry["plain"] = "\n".join(plain_lines).strip()
+        if not entry["title"]:
+            entry["error"] = "no title line — the first line after the header is blank"
+        out.append(entry)
+
+    # PASS 2 — every [resolved:] must name an entry that exists.
+    ids = {e["id"] for e in out if e["id"] and not e["error"]}
+    for e in out:
+        if e["error"]:
+            continue
+        for r in e["resolves"]:
+            if r in ids:
+                continue
+            if not r:
+                e["error"] = "[resolved:] with no entry id after it"
+            elif any(o["id"] == r or o["would_be_id"] == r for o in out):
+                e["error"] = (f"[resolved: {r}] names an entry that could not be "
+                              f"parsed — fix that entry first")
+            else:
+                e["error"] = f"[resolved: {r}] names no entry in this file"
+            break
+    return out
+```
+
+- [ ] **Step 4: Create the store with its first real entry**
+
+```markdown
+# Dashboard entries
+
+Append-only. One `## YYYY-MM-DD` block per entry; **newest at the end**.
+Nothing here is edited or deleted — corrections are appended.
+Grammar: `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` §6.2.
+Rendered by `scripts/gen-dashboard.py`; enforced by `scripts/check-dashboard-entry.py`.
+
+## 2026-08-28
+Started building the dashboard — a page that shows what changed while you were away.
+<!--tech-->
+Spec v5 merged as `c5fcb07`. Task 2 of the project-dashboard plan.
+```
+
+⚠ **"Newest at the end" is load-bearing**, not formatting: `_ordered` places malformed blocks
+relative to their file neighbours, and the render reverses this file. This header line is the
+durable statement of that rule — `_ordered`'s docstring points here rather than at a step number.
+
+- [ ] **Step 5: Verify the real store parses** — expected `1 entries; [None]` — then commit.
+
+⚠ **The full self-test does not run until Task 4.** It exercises `unresolved` (Task 3) and `build`
+(Task 4), so at this point run only the parser cases you have. A step whose stated outcome cannot
+occur at that point is the defect rounds 2 and 3 filed three times.
+
+---
+
+## Task 3: Activity, open pull requests, and recorded exemptions
+
+**Files:** Modify `scripts/gen-dashboard.py`.
+
+- [ ] **Step 1: `unresolved` and `bucket_days`**
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+def _pos(e: dict) -> tuple:
+    return (e["date"] or "", e["ordinal"])
+
+
+def unresolved(entries: list[dict]) -> list[dict]:
+    """needs-you entries not cleared by a LATER [resolved: <id>] (spec §6.2)."""
+    by_id = {e["id"]: e for e in entries if e["id"] and not e["error"]}
+    cleared = set()
+    for e in entries:
+        if e["error"]:
+            continue
+        for r in e["resolves"]:
+            t = by_id.get(r)
+            if t is not None and _pos(e) > _pos(t):
+                cleared.add(t["id"])
+    return [e for e in entries
+            if e["needs_you"] and not e["error"] and e["id"] not in cleared]
+
+
+def bucket_days(dates: list[str], entries: list[dict], window: int, today: str) -> list[dict]:
+    counts: dict[str, int] = {}
+    for d in dates:
+        counts[d] = counts.get(d, 0) + 1
+    with_entry = {e["date"] for e in entries if not e["error"]}
+    flagged = {e["date"] for e in unresolved(entries)}
+    end = _dt.date.fromisoformat(today)
+    out = []
+    for i in range(window):
+        d = (end - _dt.timedelta(days=i)).isoformat()
+        out.append({"date": d, "commits": counts.get(d, 0),
+                    "needs_you": d in flagged, "has_entry": d in with_entry})
+    return out
+```
+
+⚠ `unresolved` iterates `e["resolves"]` as a **list** — §6.2 says flags are "zero or more", and a
+scalar silently discarded the first of two, clearing one item and leaving the other open forever.
+
+- [ ] **Step 2: The impure collectors**
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+def commit_dates(window: int) -> tuple[list[str] | None, str | None]:
+    """Author dates on FIRST-PARENT HEAD. Returns (dates, None) or (None, why).
+
+    `--first-parent` is named explicitly because spec §5 requires it: after a
+    squash-merge a plain `git log` counts the branch's own commits too, so
+    "commits" would mean two different things depending on how a PR landed —
+    and the §9 alarm (a day with commits and no entry) is computed from this.
+
+    §6.2's ref split: the CHART reads HEAD; the renderer reads the working tree.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "log", "HEAD", "--first-parent", f"--since={window} days ago",
+             "--date=short", "--pretty=%ad"],
+            capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"could not run git: {exc}"
+    if r.returncode != 0:
+        return None, f"git log exited {r.returncode}: {r.stderr.strip()[:200]}"
+    return [l for l in r.stdout.split("\n") if l.strip()], None
+
+
+def _gh_json(args: list[str]) -> tuple[object | None, str | None]:
+    """Run `gh` and parse its JSON. Never a bare [] on failure — "nothing" and
+    "could not ask" must not look alike."""
+    try:
+        r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"could not run gh: {exc}"
+    if r.returncode != 0:
+        return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
+    try:
+        return json.loads(r.stdout), None
+    except json.JSONDecodeError as exc:
+        return None, f"gh returned unparseable JSON: {exc}"
+
+
+def open_prs() -> tuple[list[dict] | None, str | None]:
+    data, err = _gh_json(["pr", "list", "--state", "open", "--json", "number,title"])
+    if err:
+        return None, err
+    if not isinstance(data, list) or any(
+            not isinstance(p, dict) or "number" not in p or "title" not in p for p in data):
+        return None, "gh returned JSON in an unexpected shape"
+    return data, None
+
+
+def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
+    """Merged PRs whose body declared `NO-ENTRY:`, newest first.
+
+    SPEC §7 REQUIRES THIS TO BE DISPLAYED. Without it nothing counts exemptions,
+    nobody can see "eleven of the last twelve branches skipped their entry", and
+    the page goes on looking healthy while describing less and less.
+
+    Reads the gate's own `exemption_reason`, so the page shows exactly the
+    exemptions the gate granted. A display that disagrees with the gate is worse
+    than none. Bounded at `limit`: an older exemption stops being shown.
+    """
+    try:
+        reader = _exemption_reader()
+    except Exception as exc:
+        return None, f"could not load the gate's exemption reader: {exc}"
+    data, err = _gh_json(["pr", "list", "--state", "merged", "--limit", str(limit),
+                          "--json", "number,title,body,mergedAt"])
+    if err:
+        return None, err
+    if not isinstance(data, list):
+        return None, "gh returned JSON in an unexpected shape"
+    out = []
+    for p in data:
+        if not isinstance(p, dict):
+            return None, "gh returned JSON in an unexpected shape"
+        reason = reader(p.get("body") or "")
+        if reason:
+            out.append({"number": p.get("number"), "title": p.get("title") or "",
+                        "merged": (p.get("mergedAt") or "")[:10], "reason": reason})
+    return out, None
+```
+
+⚠ **`--first-parent` is spec §5's requirement, not a preference**: after a squash-merge a plain
+`git log` also counts the branch's own commits, so "commits" would mean two things — and the §9
+alarm is derived from this number.
+
+- [ ] **Step 3: Verify `commit_dates` and `open_prs` against the real repo**, then falsify the
+could-not-tell contract with `gh` off the `PATH`. **Compare the PAIR — the run with the binaries and
+the run without. A `0` is meaningful only next to the `None` it is not.**
+
+```bash
+cat > /tmp/probe.py <<'PY'
+import importlib.util as u
+s = u.spec_from_file_location("g", "scripts/gen-dashboard.py")
+g = u.module_from_spec(s); s.loader.exec_module(g)
+for label, call in (("commit_dates", lambda: g.commit_dates(14)),
+                    ("open_prs",     g.open_prs),
+                    ("no_entry_prs", g.no_entry_prs)):
+    v, err = call()
+    print(f"  {label:14} n={'None' if v is None else len(v):>4}  err={err!r}")
+PY
+PY3=$(command -v python3)   # ⛔ absolute: emptying PATH hides the INTERPRETER too, and
+                            #    `env PATH=/nonexistent python3` then dies before the
+                            #    falsifier runs at all. Measured while writing this step.
+echo "--- WITH the binaries ---";  "$PY3" /tmp/probe.py
+echo "--- WITHOUT them ---";       env PATH=/nonexistent "$PY3" /tmp/probe.py
+```
+
+**Stop unless BOTH hold:** with the binaries present every `err` is `None`; with the `PATH` emptied
+every one of the three returns `n=None` and a non-empty `err`. **Do not stop merely because a count
+is `0`.**
+
+⚠ Round 4 measured why: against this repo today `open_prs` returns `0 / err: None` and that is the
+**correct answer** — there are genuinely no open pull requests — so v5's *"if either prints `0` with
+`err: None`, stop"* halts the implementer on a working collector. The plan already makes exactly this
+argument three tasks later for `no_entry_prs` (*"`0` is also the correct answer today, so the
+falsifier is the only thing that distinguishes them"*) and did not apply it to the step in front of
+it. **A count cannot discriminate "nothing" from "could not ask"; only the pair can.**
+
+⛔ `no_entry_prs` is additionally verified in Task 6 Step 5, where a synthetic body makes a `0`
+distinguishable from a `[]` on live data.
+
+---
+
+## Task 4: Render the page
+
+**Files:** Modify `scripts/gen-dashboard.py`.
+
+- [ ] **Step 1: The render helpers**
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+def _slug(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "-", s or "")
+
+
+def _ordered(entries: list[dict]) -> list[dict]:
+    """Newest date first; ties keep FILE order; a malformed block stays adjacent
+    to its file neighbours (spec §6.2, 'rendered in place').
+
+    Valid entries sort by (date descending, file order within a date). A
+    malformed block has no usable date, so it is SPLICED back in: immediately
+    after whichever of its two file-neighbours renders FIRST.
+
+    That formulation is order-agnostic, and it has to be. v2.2 gave the block
+    its preceding neighbour's date and certified it with a fixture written
+    newest-FIRST — but the store is written newest-at-the-END (Task 1 Step 7,
+    "Append one block"), so the render reverses the file and the block fell to
+    the bottom of the page: the exact defect this function exists to fix,
+    invisible under the one ordering the fixture used. Keying off a date also
+    could not satisfy "ties keep file order" at the same time, because within a
+    borrowed date group the malformed block must sit AFTER the entry it
+    borrowed from while a genuine tie keeps file order. Splicing separates the
+    two rules instead of trying to encode both in one sort key.
+    """
+    valid = [(i, e) for i, e in enumerate(entries) if not e["error"]]
+    order = sorted(valid, key=lambda p: (p[1]["date"] or "", -p[0]), reverse=True)
+    rank = {i: r for r, (i, _) in enumerate(order)}
+    out = [e for _, e in order]
+    placed: dict[int, int] = {}
+    for i, e in enumerate(entries):
+        if not e["error"]:
+            continue
+        before = max((j for j, _ in valid if j < i), default=None)
+        after = min((j for j, _ in valid if j > i), default=None)
+        cands = [j for j in (before, after) if j is not None]
+        if not cands:
+            out.append(e)
+            continue
+        anchor = min(cands, key=lambda j: rank[j])
+        # `placed` keeps a RUN of consecutive malformed blocks in file order.
+        # Inserting each at anchor+1 put the later one first, so two broken
+        # blocks between the same neighbours came out mirrored — the splice
+        # fixed the single-block case and left the run wrong.
+        off = placed.get(anchor, 0)
+        placed[anchor] = off + 1
+        out.insert(out.index(entries[anchor]) + 1 + off, e)
+    return out
+
+
+def _bar(day: dict, tallest: int, store_unknown: bool) -> str:
+    h = 4 if day["commits"] == 0 else max(6, round(48 * day["commits"] / max(tallest, 1)))
+    quiet = day["has_entry"] and day["commits"] == 0     # §6.1
+    # §9 / §7.3 — SUPPRESSED when the store could not be read. `has_entry` is
+    # then derived from an empty entry list, so "this day has no entry" is not a
+    # finding, it is the absence of a reading; firing §9's alarm off it is the
+    # confident-zero defect wearing an alarm. `quiet` needs no such guard: it
+    # requires has_entry TRUE, which an empty list can never produce.
+    # `store_unknown` has no default for the reason `build`'s store params have
+    # none — a default is how a caller silently gets the unguarded behaviour.
+    unwritten = day["commits"] > 0 and not day["has_entry"] and not store_unknown
+    cls = "bar needs" if day["needs_you"] else "bar"
+    if quiet:
+        cls += " marked"
+    if unwritten:
+        cls += " unwritten"
+    label = (f'{day["date"]}: {day["commits"]} commits'
+             f'{", needs you" if day["needs_you"] else ""}'
+             f'{", entry with no commits" if quiet else ""}'
+             f'{", SHIPPED WITH NO ENTRY" if unwritten else ""}')
+    # Every mark is a REAL element or class, never text inside .vh: §6.1 asks
+    # for "visible rather than invisible", and title/aria-label are neither.
+    mark = '<span class="dot" aria-hidden="true"></span>' if quiet else ""
+    if unwritten:
+        mark += '<span class="gapmark" aria-hidden="true"></span>'
+    # A bar only links where there is an entry to land on — the anchor is
+    # emitted while iterating entries, so a link on a day without one goes
+    # nowhere (spec §5).
+    tag = "a" if day["has_entry"] else "span"
+    href = f' href="#day-{day["date"]}"' if day["has_entry"] else ""
+    return (f'<{tag} class="{cls}"{href} style="height:{h}px" '
+            f'title="{_html.escape(label)}" aria-label="{_html.escape(label)}">'
+            f'{mark}<span class="vh">{_html.escape(label)}</span></{tag}>')
+
+
+GLOSSARY = [
+    ("needs you", "a decision is waiting on you — nothing else on the page is asking for anything"),
+    ("entry", "one dated block you or the assistant wrote, in plain words, about what changed"),
+    ("no entry recorded", "a branch was merged with its entry deliberately skipped, and said why"),
+    ("shipped with no entry", "a day with commits and nothing written about them — the gap the entry rule exists to close"),
+]
+```
+
+- [ ] **Step 2: `build`**
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+def build(entries, days, prs, pr_error, git_error, window,
+          exemptions, exempt_error, store, store_error) -> str:
+    # `store` and `store_error` have NO defaults on purpose. A default would let
+    # this function name a store path it was never told about — which is the
+    # exact defect they exist to close (it used to print a HARDCODED path in the
+    # empty state, so a run against `--store docs/typo.md` positively asserted a
+    # location it had never opened).
+    # ─── What needs you ───
+    need = unresolved(entries)
+    rows = [f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["title"])}</a> '
+            f'<span class="when">{_html.escape(e["date"])} · {_html.escape(e["id"])}</span></li>'
+            for e in need]
+    if pr_error:
+        pr_note = (f'<p class="unknown">I could not also check open pull requests — '
+                   f'{_html.escape(pr_error)}. Treat this as NOT CHECKED.</p>')
+    else:
+        pr_note = ""
+        rows += [f'<li>Pull request #{_html.escape(str(p["number"]))} — '
+                 f'{_html.escape(str(p["title"]))}'
+                 f' <span class="when">open</span></li>' for p in (prs or [])]
+    # The store is the SOLE source of needs-you items, so an unreadable one makes
+    # "Nothing needs you." a green all-clear over the very thing that was not
+    # read. Same fall-through shape as `pr_error` above, and it composes: two
+    # dead inputs produce two notes, never one silently masking the other.
+    store_note = ("" if not store_error else
+                  f'<p class="unknown">I could not read the entry store — '
+                  f'{_html.escape(store_error)}, so I cannot tell whether anything in '
+                  f'it needs you. Treat this as NOT CHECKED.</p>')
+    if rows:
+        needs_html = '<ul class="needs">' + "".join(rows) + "</ul>" + store_note + pr_note
+    elif store_error or pr_error:
+        needs_html = store_note + pr_note
+    else:
+        needs_html = '<p class="none">Nothing needs you.</p>'
+
+    # ─── The chart ───
+    if git_error:
+        chart = (f'<p class="unknown">Could not read the git history — '
+                 f'{_html.escape(git_error)}</p>')
+    elif not days:
+        chart = (f'<p class="unknown">No days to show — the window is '
+                 f'{_html.escape(str(window))}. Pass --window with a positive number.</p>')
+    else:
+        tallest = max((d["commits"] for d in days), default=0)
+        chart = "".join(_bar(d, tallest, bool(store_error)) for d in reversed(days))
+    # §5: the count is commits, and it under-counts work that was never committed.
+    chart_note = ('<p class="note">One bar per day, oldest on the left. It counts commits, '
+                  'so work that was never committed does not appear here.</p>')
+
+    # ─── What changed ───
+    # A missing store used to yield `[]` and render as a measured "nothing
+    # written yet" — the same class as `_gh_json`'s empty-stdout hole.
+    # ⚠ THIS BRANCH IS ONE OF THREE. `entries` is read here, by `unresolved`
+    # above, and by `bucket_days` in the caller, and each has to refuse the
+    # empty list separately: closing only this one produced a page that said
+    # NOT CHECKED here while saying "Nothing needs you" and firing §9's alarm
+    # from the same unread file. Round 1 wrote "the LAST confident-empty in the
+    # program" here and it was true of the branch, not the program.
+    if store_error:
+        entries_html = (f'<p class="unknown">I could not read the entry store — '
+                        f'{_html.escape(store_error)}. Treat this as NOT CHECKED.</p>')
+    elif not entries:
+        entries_html = (f'<p class="none">No entries yet. They live in '
+                        f'<code>{_html.escape(str(store))}</code>.</p>')
+    else:
+        parts, anchored = [], set()
+        for i, e in enumerate(_ordered(entries)):
+            eid = _slug(e["id"]) if e["id"] else f"bad-{i}"
+            day_anchor = ""
+            if e["date"] and not e["error"] and e["date"] not in anchored:
+                anchored.add(e["date"])
+                day_anchor = f'<span class="anchor" id="day-{_html.escape(e["date"])}"></span>'
+            if e["error"]:
+                parts.append(
+                    f'{day_anchor}<article class="entry broken" id="{eid}">'
+                    f'<p class="err">Could not parse this entry — {_html.escape(e["error"])}</p>'
+                    f'<pre>{_html.escape(e["raw"])}</pre></article>')
+                continue
+            tech = ("" if not e["tech"] else
+                    f'<details id="{eid}-tech"><summary>Raw technical detail</summary>'
+                    f'<pre>{_html.escape(e["tech"])}</pre></details>')
+            flag = ' <span class="flag">needs you</span>' if e["needs_you"] else ""
+            parts.append(
+                f'{day_anchor}<article class="entry" id="{eid}">'
+                f'<h3>{_html.escape(e["date"])} '
+                f'<span class="eid">{_html.escape(e["id"])}</span>{flag}</h3>'
+                f'<p class="title">{_html.escape(e["title"])}</p>'
+                f'<details id="{eid}-plain"><summary>What this means</summary>'
+                f'<p>{_html.escape(e["plain"])}</p></details>{tech}</article>')
+        entries_html = "".join(parts)
+
+    # ─── Recorded exemptions (spec §7) ───
+    if exempt_error:
+        exempt_html = (f'<p class="unknown">I could not tell whether any branch skipped its '
+                       f'entry — {_html.escape(exempt_error)}. Treat this as NOT CHECKED.</p>')
+    elif not exemptions:
+        exempt_html = '<p class="none">No branch has skipped its entry.</p>'
+    else:
+        exempt_html = '<ul class="needs">' + "".join(
+            f'<li>No entry recorded — <strong>{_html.escape(str(x["reason"]))}</strong> '
+            f'<span class="when">#{_html.escape(str(x["number"]))} · '
+            f'{_html.escape(str(x["merged"]))}</span></li>' for x in exemptions) + "</ul>"
+
+    glossary_html = ('<details id="glossary"><summary>What the words on this page mean</summary>'
+                     '<dl>' + "".join(
+                         f'<dt>{_html.escape(t)}</dt><dd>{_html.escape(d)}</dd>'
+                         for t, d in GLOSSARY) + '</dl></details>')
+
+    return f"""<title>Project dashboard</title>
+<style>
+:root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
+--need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
+--mono:ui-monospace,SFMono-Regular,Menlo,monospace}}
+@media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
+--bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
+--err:#d98873;--err-bg:#2a1a16}}}}
+body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
+line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
+.shell{{max-width:820px;margin:0 auto;padding:32px 20px 80px}}
+h2{{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+color:var(--fg3);border-bottom:1px solid var(--rule);padding-bottom:8px;margin:44px 0 16px}}
+.none{{color:var(--ok);font-weight:600}}
+.note{{color:var(--fg3);font-size:13px;margin:8px 0 0}}
+.unknown{{color:var(--err);background:var(--err-bg);padding:10px 14px;border-radius:4px}}
+ul.needs{{list-style:none;padding:0}} ul.needs li{{background:var(--need-bg);
+border-left:3px solid var(--need);padding:10px 14px;margin-bottom:8px;border-radius:0 4px 4px 0}}
+.when{{font-family:var(--mono);font-size:11px;color:var(--fg3)}}
+.chart{{display:flex;align-items:flex-end;gap:4px;height:56px;padding:8px 8px 14px;
+background:var(--panel);border:1px solid var(--rule);border-radius:4px;overflow-x:auto}}
+.bar{{position:relative;flex:1;min-width:8px;background:var(--ok);
+border-radius:2px 2px 0 0;display:block}}
+.bar.needs{{background:var(--need)}}
+.bar.marked{{outline:2px solid var(--need);outline-offset:1px}}
+.bar.unwritten{{background:repeating-linear-gradient(45deg,var(--err) 0 3px,transparent 3px 6px),
+var(--err-bg);border:1px solid var(--err)}}
+.bar .dot{{position:absolute;left:50%;bottom:-11px;width:6px;height:6px;
+margin-left:-3px;border-radius:50%;background:var(--need)}}
+.bar .gapmark{{position:absolute;left:0;right:0;top:-6px;height:3px;background:var(--err)}}
+.vh{{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
+.anchor{{display:block;height:0;scroll-margin-top:12px}}
+.entry{{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
+padding:14px 18px;margin-bottom:10px}}
+.entry.broken{{border-color:var(--err);background:var(--err-bg)}}
+.entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
+.entry .eid{{color:var(--fg3);opacity:.75}}
+.entry .title{{margin:0;font-weight:600}}
+.flag{{color:var(--need);font-weight:700}}
+.err{{color:var(--err);font-weight:600;margin:0 0 8px}}
+details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
+#glossary dt{{font-weight:600;margin-top:8px}} #glossary dd{{margin:2px 0 0;color:var(--fg3)}}
+pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:auto}}
+:focus-visible{{outline:2px solid var(--need);outline-offset:2px}}
+</style>
+<div class="shell">
+<h1>Project dashboard</h1>
+<h2>What needs you</h2>{needs_html}
+<h2>The last {window} days</h2><div class="chart">{chart}</div>{chart_note}
+<h2>What changed</h2>{entries_html}
+<h2>Branches that skipped their entry</h2>{exempt_html}
+<h2>Words</h2>{glossary_html}
+<h2>Elsewhere</h2><ul>
+<li><a href="/goals">Goals</a></li><li><a href="/backlog-table">Backlog</a></li>
+<li><a href="/latest">Newest briefing</a></li><li><a href="/">All pages</a></li></ul>
+</div>"""
+```
+
+⚠ **The `{`/`}` escapes are load-bearing** — one f-string containing CSS; every literal brace is
+doubled. An unbalanced brace is a `SyntaxError` at import time.
+
+- [ ] **Step 3: The assembled self-test**
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+def _self_test() -> int:
+    ok = fail = 0
+
+    def case(name, got, want):
+        nonlocal ok, fail
+        if got == want:
+            ok += 1
+        else:
+            fail += 1
+            print(f"  [FAIL] {name}\n    got:  {got!r}\n    want: {want!r}")
+
+    e = parse_entries("## 2026-08-28 [needs-you]\nFixed a thing.\n")
+    case("one entry parsed", len(e), 1)
+    case("date", e[0]["date"], "2026-08-28")
+    case("id", e[0]["id"], "2026-08-28/1")
+    case("title", e[0]["title"], "Fixed a thing.")
+    case("needs_you", e[0]["needs_you"], True)
+    case("no error", e[0]["error"], None)
+
+    bad = parse_entries("## 2026-02-30\nImpossible date.\n")
+    case("bad date is an error", bad[0]["error"] is not None, True)
+    case("bad date still returned", len(bad), 1)
+    case("bad date keeps raw", "Impossible date." in bad[0]["raw"], True)
+    typo = parse_entries("## 2026-08-28 [needs-yo]\nTypo flag.\n")
+    case("unknown flag is an error", typo[0]["error"] is not None, True)
+    two = parse_entries("## 2026-08-28\nFirst.\n## 2026-08-28\nSecond.\n")
+    case("two entries same date", [x["id"] for x in two], ["2026-08-28/1", "2026-08-28/2"])
+    tech = parse_entries("## 2026-08-28\nTitle.\nMore plain.\n<!--tech-->\nPR #1.\n")
+    case("plain stops at marker", tech[0]["plain"], "Title.\nMore plain.")
+    case("tech captured", tech[0]["tech"], "PR #1.")
+    inline = parse_entries("## 2026-08-28\nI mention <!--tech--> inline.\n")
+    case("inline marker is text", inline[0]["tech"], None)
+    nested = parse_entries("## 2026-08-28\nTitle.\n<!--tech-->\n  ## indented heading\n")
+    case("indented ## does not split", len(nested), 1)
+    case("empty file", parse_entries(""), [])
+    case("no entries yet", parse_entries("# Heading only\n"), [])
+
+    res = parse_entries("## 2026-08-28\nTarget.\n## 2026-08-29 [resolved: 2026-08-28/1]\nDone.\n")
+    case("resolves parsed", res[1]["resolves"], ["2026-08-28/1"])
+    case("valid resolve is not an error", res[1]["error"], None)
+    ghost = parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nDone.\n")
+    case("resolve of an unknown id is an error", ghost[0]["error"] is not None, True)
+    empty_res = parse_entries("## 2026-08-29 [resolved: ]\nDone.\n")
+    case("resolve with an empty id is an error", empty_res[0]["error"] is not None, True)
+
+    # spec §6.2 allows "zero or more" flags — a SECOND [resolved:] used to be
+    # silently discarded, clearing one item and leaving the other open forever.
+    twin = parse_entries("## 2026-08-26 [needs-you]\nA.\n## 2026-08-26 [needs-you]\nB.\n"
+                         "## 2026-08-27 [resolved: 2026-08-26/1] [resolved: 2026-08-26/2]\nBoth.\n")
+    case("two [resolved:] flags are both kept", twin[2]["resolves"],
+         ["2026-08-26/1", "2026-08-26/2"])
+    case("two [resolved:] flags clear BOTH items", [x["id"] for x in unresolved(twin)], [])
+
+    # An UNKNOWN flag must degrade THAT ENTRY, never take the page down. The gate
+    # owns FLAG and its docstring invites extending it there; when it was extended
+    # the gate stayed fully green and `parse_entries` raised IndexError on every
+    # render.
+    #
+    # THERE ARE TWO READINGS OF THE GRAMMAR AND BOTH MUST MOVE. `header_error` is
+    # the GATE's function and closes over the GATE's module-global FLAG; this
+    # module holds its own `FLAG` binding, taken at import. Swapping only ours
+    # leaves the gate rejecting `[blocked]` at the HEADER, so `err` is truthy and
+    # overwrites the flag-loop message before it is ever read — the case then
+    # pins `header_error`'s string and `else: entry["error"] = ...` -> `else: pass`
+    # SURVIVES. Measured: "unrecognised text in header: '[blocked]'" (one reading)
+    # vs "unrecognised flag [blocked]" (both). So both attributes are swapped, and
+    # the assertion below is the EXACT degradation message rather than a substring
+    # that either string would satisfy.
+    _flagged = re.compile(_GATE.FLAG.pattern.replace("needs-you", "needs-you|blocked", 1))
+    # Derived from the gate's live pattern, not a copy of it — a copy silently
+    # stops resembling the gate. Derivation is a step that can fail, so it is
+    # checked: a no-op replace would leave a pattern that does not know the flag,
+    # and the case would then pass for the wrong reason.
+    case("the unknown-flag fixture really extends the GATE's own pattern",
+         (_flagged.pattern != _GATE.FLAG.pattern, _flagged.findall("[blocked]")),
+         (True, ["blocked"]))
+    _real_flag, _real_gate_flag = globals()["FLAG"], _GATE.FLAG
+    globals()["FLAG"] = _GATE.FLAG = _flagged
+    try:
+        unknown = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
+    except Exception as exc:                 # the defect: the page does not render
+        unknown = [{"error": f"RAISED {type(exc).__name__}"}]
+    finally:
+        globals()["FLAG"], _GATE.FLAG = _real_flag, _real_gate_flag
+    case("an unrecognised flag is an ERROR, not a crash",
+         (unknown[0]["error"] is not None,
+          not str(unknown[0]["error"] or "").startswith("RAISED")), (True, True))
+    case("...and the entry degrades with the flag-loop's own diagnostic",
+         unknown[0]["error"], "unrecognised flag [blocked]")
+
+    nospace = parse_entries("##2026-08-28\nNo space after the hashes.\n")
+    case("'##' with no space is still an entry", len(nospace), 1)
+    case("'##' with no space is MALFORMED", nospace[0]["error"] is not None, True)
+    case("'##' with no space says why", "space" in (nospace[0]["error"] or ""), True)
+    notitle = parse_entries("## 2026-08-28\n\n\n")
+    case("entry with no title is an error", notitle[0]["error"] is not None, True)
+
+    # A malformed block must not RENUMBER its neighbours: repairing a typo'd
+    # flag would otherwise silently rebind a standing [resolved:].
+    unstable = parse_entries("## 2026-08-28 [needs-yo]\nTypo.\n## 2026-08-28\nReal one.\n")
+    case("a malformed block still consumes its ordinal",
+         [x["id"] for x in unstable], ["2026-08-28/1", "2026-08-28/2"])
+
+    ents = parse_entries("## 2026-08-26 [needs-you]\nA.\n## 2026-08-27\nB.\n"
+                         "## 2026-08-28 [resolved: 2026-08-26/1]\nC.\n")
+    case("unresolved is empty after resolve", [x["id"] for x in unresolved(ents)], [])
+    ents2 = parse_entries("## 2026-08-26 [needs-you]\nA.\n## 2026-08-27\nB.\n")
+    case("unresolved before resolve", [x["id"] for x in unresolved(ents2)], ["2026-08-26/1"])
+    self_res = parse_entries("## 2026-08-26 [needs-you] [resolved: 2026-08-26/1]\nA.\n")
+    case("an entry cannot resolve itself", [x["id"] for x in unresolved(self_res)], ["2026-08-26/1"])
+    early = parse_entries("## 2026-08-25 [resolved: 2026-08-26/1]\nEarly.\n"
+                          "## 2026-08-26 [needs-you]\nLater.\n")
+    case("an earlier entry cannot resolve a later one",
+         [x["id"] for x in unresolved(early)], ["2026-08-26/1"])
+
+    days = bucket_days(["2026-08-28", "2026-08-28", "2026-08-26"], ents2, 3, "2026-08-28")
+    case("window length", len(days), 3)
+    case("newest first", days[0]["date"], "2026-08-28")
+    case("commit count", days[0]["commits"], 2)
+    case("zero-commit day present", days[1]["commits"], 0)
+    case("entry with no commits is marked", days[1]["has_entry"], True)
+    case("needs-you day is flagged", days[2]["needs_you"], True)
+
+    def _B(entries, days, prs=(), pr_error=None, git_error=None, window=2,
+           exemptions=(), exempt_error=None, store="docs/dashboard-entries.md",
+           store_error=None):
+        return build(entries, days, list(prs) if prs is not None else None, pr_error,
+                     git_error, window, list(exemptions) if exemptions is not None else None,
+                     exempt_error, store, store_error)
+
+    def _section(html, heading):
+        # Returns "" when the heading is ABSENT rather than raising: a crash is
+        # "caught" by the runner but by no case, so a deleted section would fail
+        # the suite without any assertion naming what went missing.
+        parts = html.split(f"<h2>{heading}</h2>", 1)
+        return "" if len(parts) < 2 else parts[1].split("<h2>", 1)[0]
+
+    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n<!--tech-->\nPR #1.\n")
+    d3 = bucket_days(["2026-08-28"], ents3, 2, "2026-08-28")
+    html = _B(ents3, d3)
+    case("needs-you surfaces", "Decide the thing." in html, True)
+    # Was `"<details" in html`, which passed with the tech fold DELETED: `build`
+    # always emits <details id="glossary">. Scoping it to the section does not fix
+    # that either — the "What this means" fold is unconditional too. Bind to the
+    # tech fold's OWN id, which is the only thing that goes away with it.
+    case("tech is behind a fold",
+         f'<details id="{_slug(ents3[0]["id"])}-tech">' in html, True)
+    case("tech labelled", "technical detail" in html.lower(), True)
+
+    html_empty = _B([], bucket_days([], [], 2, "2026-08-28"))
+    case("empty says nothing needs you", "Nothing needs you" in html_empty, True)
+    case("empty says no entries yet", "no entries yet" in html_empty.lower(), True)
+
+    # The store was the last input that could report a confident zero. `--store
+    # docs/typo.md` rendered "No entries yet" — and named a HARDCODED, different
+    # path while doing it, so the page asserted a location the run never opened.
+    hs = _section(_B([], bucket_days([], [], 2, "2026-08-28"),
+                     store="docs/typo.md",
+                     store_error="no such file: docs/typo.md"), "What changed")
+    case("a store that could not be read is NOT 'no entries yet'",
+         "no entries yet" in hs.lower(), False)
+    case("...and it names the file it could not read", "docs/typo.md" in hs, True)
+    # The empty state must name the store it ACTUALLY read, never a literal.
+    hs_ok = _section(_B([], bucket_days([], [], 2, "2026-08-28"),
+                        store="docs/elsewhere.md"), "What changed")
+    case("the empty state names the store that was read",
+         "docs/elsewhere.md" in hs_ok, True)
+
+    # `entries` is read THREE times and round 1 guarded ONE of them, so the page
+    # said NOT CHECKED in "What changed" while, off the same unread file, calling
+    # an all-clear in the headline section and firing §9's alarm on every day
+    # with commits. Both assertions are NEGATIVE, so each carries a POSITIVE
+    # companion — otherwise a page that failed to render at all would pass them.
+    hu = _B([], bucket_days(["2026-08-28"], [], 2, "2026-08-28"),
+            store="docs/typo.md", store_error="no such file: docs/typo.md")
+    case("an unreadable store is NOT a green 'nothing needs you'",
+         ("Nothing needs you" in hu, "NOT CHECKED" in hu), (False, True))
+    case("...and §9's alarm is not fired off a store nobody could read",
+         ("SHIPPED WITH NO ENTRY" in hu, 'class="bar' in hu), (False, True))
+
+    html_err = _B([], bucket_days([], [], 2, "2026-08-28"), prs=None, pr_error="gh exploded")
+    case("gh failure is NOT 'nothing needs you'", "Nothing needs you" in html_err, False)
+    case("gh failure is announced as NOT CHECKED", "not checked" in html_err.lower(), True)
+    case("gh failure surfaces the reason", "gh exploded" in html_err, True)
+
+    # §4's OTHER source. Every fixture used to pass an empty or None PR list, so
+    # the gh half of "what needs you" could be deleted with the suite still green.
+    html_prs = _B([], bucket_days([], [], 2, "2026-08-28"),
+                  prs=[{"number": 42, "title": "Open thing"}])
+    needs_prs = _section(html_prs, "What needs you")
+    case("an open PR appears in what-needs-you", "Open thing" in needs_prs, True)
+    case("the open PR is numbered", "#42" in needs_prs, True)
+
+    bad3 = parse_entries("## 2026-99-99\nBroken.\n")
+    html_bad = _B(bad3, bucket_days([], bad3, 2, "2026-08-28"))
+    case("malformed says it could not parse", "could not parse" in html_bad.lower(), True)
+    case("malformed keeps its raw text", "Broken." in html_bad, True)
+
+    # H5's real assertion: the store's needs survive a gh failure IN THEIR OWN
+    # SECTION. Asserting against the whole page passed on the title's copy in
+    # "What changed" — i.e. on exactly the defect it names.
+    need_html = _B(ents3, d3, prs=None, pr_error="gh exited 1: auth")
+    case("a gh failure still shows the store's needs IN THAT SECTION",
+         "Decide the thing." in _section(need_html, "What needs you"), True)
+
+    # "In place" on the order the store is ACTUALLY written: newest at the END.
+    appended = parse_entries("## 2026-08-27\nOlder good.\n"
+                             "## 2026-02-30\nBroken middle.\n"
+                             "## 2026-08-28\nNewest good.\n")
+    ha = _B(appended, bucket_days([], appended, 2, "2026-08-28"))
+    case("malformed renders BETWEEN its neighbours on an APPENDED store",
+         ha.index("Newest good.") < ha.index("Broken middle.") < ha.index("Older good."), True)
+    case("newest date renders first on an APPENDED store",
+         ha.index("Newest good.") < ha.index("Older good."), True)
+
+    run2 = parse_entries("## 2026-08-27\nOlder.\n## 2026-99-01\nBroken ONE.\n"
+                         "## 2026-99-02\nBroken TWO.\n## 2026-08-28\nNewer.\n")
+    hr = _B(run2, bucket_days([], run2, 2, "2026-08-28"))
+    case("a RUN of malformed blocks keeps file order among themselves",
+         hr.index("Broken ONE.") < hr.index("Broken TWO."), True)
+    case("...and the run still sits between its valid neighbours",
+         hr.index("Newer.") < hr.index("Broken ONE.") < hr.index("Older."), True)
+
+    tie = parse_entries("## 2026-08-28\nFIRST in file.\n## 2026-08-28\nSECOND in file.\n")
+    ht = _B(tie, bucket_days([], tie, 2, "2026-08-28"))
+    case("same-date ties keep file order",
+         ht.index("FIRST in file.") < ht.index("SECOND in file."), True)
+    case("the entry id is rendered", "2026-08-28/1" in ht, True)
+    all_ids = re.findall(r'\sid="([^"]+)"', ht)
+    case("no duplicate DOM ids", len(all_ids), len(set(all_ids)))
+    case("every details has an id", ht.count("<details id="), ht.count("<details"))
+
+    def _marks(bar):
+        """What a SIGHTED reader can tell apart: the bar's own classes and its
+        child elements. Deliberately ignores the tag, href, style, title and
+        aria-label — title needs a hover, aria is not drawn, and the tag/href
+        differ for an unrelated reason (a bar only links where an entry exists),
+        which would let this assertion pass with every mark deleted."""
+        # Scan the OPENING TAG and the CHILDREN separately. A single regex over
+        # the whole string picked up the container's own class as a child the
+        # moment the container became a <span> (a bar with no entry does not
+        # link), which made the two bars differ for a reason unrelated to the
+        # mark — the assertion passed with every mark deleted. MEASURED.
+        cut = bar.index(">") + 1
+        cls = re.search(r'class="([^"]*)"', bar[:cut])
+        kids = [k for k in re.findall(r'<span class="([^"]*)"', bar[cut:]) if k != "vh"]
+        return (cls.group(1) if cls else "", kids)
+
+    quiet = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": True}, 5, False)
+    plainb = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": False}, 5, False)
+    case("§6.1 a zero-commit day WITH an entry is marked in SIGHTED output",
+         _marks(quiet) != _marks(plainb), True)
+
+    # §9 / §7.3: a day WITH commits and NO entry is the gap the rule exists to close.
+    gap = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": False}, 7, False)
+    written = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": True}, 7, False)
+    case("§9 a day that shipped with NO entry is marked in SIGHTED output",
+         _marks(gap) != _marks(written), True)
+    case("that mark is named for a reader", "no entry" in gap.lower(), True)
+
+    # §5: "Orange = that day has an unresolved needs-you entry" — the chart's PRIMARY
+    # signal, and until round 4 the only one of the three with no comparison. `cls =
+    # "bar needs" if day["needs_you"] else "bar"` could be replaced by `cls = "bar"`
+    # and the whole suite stayed green: `needs-you day is flagged` above asserts
+    # bucket_days' DATA, not the bar. Every other surviving trace of that mutation
+    # lives in title/aria/.vh — the three channels _marks exists to exclude.
+    needs = _bar({"date": "D", "commits": 3, "needs_you": True, "has_entry": True}, 3, False)
+    calm = _bar({"date": "D", "commits": 3, "needs_you": False, "has_entry": True}, 3, False)
+    case("§5 a needs-you day is marked in SIGHTED output",
+         _marks(needs) != _marks(calm), True)
+    case("...and the mark is the needs class, not an incidental difference",
+         "needs" in _marks(needs)[0] and "needs" not in _marks(calm)[0], True)
+
+    # §5: a bar only links where there is an entry to land on.
+    case("a bar with no entry is not a dead link", 'href="#day-' in gap, False)
+    case("a bar with an entry does link", 'href="#day-' in written, True)
+
+    chart_only = _section(_B(ents3, d3), "The last 2 days")
+    case("the chart says what it under-counts", "never committed" in chart_only, True)
+    # oldest-left: the OLDER day must be drawn before the newer one.
+    d2 = bucket_days(["2026-08-28"], [], 2, "2026-08-28")
+    two_bars = _section(_B([], d2), "The last 2 days")
+    case("the chart draws oldest-first (left to right)",
+         two_bars.index("2026-08-27") < two_bars.index("2026-08-28"), True)
+
+    hx = _B([], bucket_days([], [], 2, "2026-08-28"),
+            exemptions=[{"number": 9, "title": "T", "merged": "2026-08-28", "reason": "typo fix"}])
+    case("a recorded exemption is displayed", "typo fix" in hx, True)
+    case("the exemption names its pull request", "#9" in hx, True)
+    hxe = _B([], bucket_days([], [], 2, "2026-08-28"), exemptions=None, exempt_error="gh exploded")
+    case("an unreadable exemption list says so", "could not" in hxe.lower(), True)
+
+    hz = _B([], bucket_days([], [], 0, "2026-08-28"), window=0)
+    case("a zero window says so rather than drawing an empty box",
+         "could not" in hz.lower() or "no days" in hz.lower(), True)
+
+    words = _section(_B([], d2), "Words")
+    case("the page carries a glossary", "<dl>" in words, True)
+    case("the glossary defines its terms",
+         "a decision is waiting on you" in words, True)
+
+    # ─── round 3's survivors: behaviours the suite named and could not check ───
+    anchored = _B(ents3, d3)
+    case("a bar's day anchor exists for the day it links to",
+         'id="day-2026-08-28"' in anchored, True)
+    case("the title is rendered outside the fold",
+         '<p class="title">Decide the thing.</p>' in anchored, True)
+    tall = _bar({"date": "D", "commits": 8, "needs_you": False, "has_entry": True}, 8, False)
+    short = _bar({"date": "D", "commits": 1, "needs_you": False, "has_entry": True}, 8, False)
+    case("bar height scales with commits",
+         int(re.search(r"height:(\d+)px", tall).group(1))
+         > int(re.search(r"height:(\d+)px", short).group(1)), True)
+    broke = parse_entries("## 2026-08-28 [needs-you] [resolved: nope]\nBroken.\n")
+    case("a malformed entry is never listed as needing you",
+         [x["id"] for x in unresolved(broke)], [])
+    # §5 names --first-parent explicitly: after a squash-merge a plain log counts
+    # the branch's own commits too, and the §9 alarm is derived from this number.
+    import inspect as _i
+    case("commit_dates passes --first-parent as an ARGUMENT",
+         '"--first-parent"' in _i.getsource(commit_dates), True)
+    # H3: the three diagnoses must be distinguishable, INCLUDING a bad-date target.
+    absent = parse_entries("## 2026-08-29 [resolved: 1999-01-01/9]\nx.\n")[0]["error"]
+    baddate = parse_entries("## 2026-02-30\nBad.\n## 2026-08-29 [resolved: 2026-02-30/1]\nx.\n")[1]["error"]
+    case("a resolve naming an UNPARSEABLE entry says so",
+         "could not be parsed" in (baddate or ""), True)
+    case("...and is distinguishable from a genuinely absent target",
+         "names no entry" in (absent or ""), True)
+
+    # ── THE COLLECTORS' CANNOT-RUN CONTRACT (round 4, H2) ────────────────────
+    # Global Constraint #3 — `"cannot run" is a FAILURE, never a pass` — had NO
+    # executable guard. Round 4 measured six one-line mutations that each turn a
+    # broken `git`/`gh` into a confident zero, all green: the git-failure branch
+    # deleted, `return None, err` becoming `return [], None`, the JSONDecodeError
+    # branch returning `[]`. The whole impure layer was unreachable from the suite,
+    # so `subprocess.run` is swapped for a stub. Cheap, pure, and it makes the
+    # constraint falsifiable instead of merely stated.
+    import subprocess as _sp
+
+    class _R:                       # a completed process with a chosen outcome
+        def __init__(self, rc, out="", err=""):
+            self.returncode, self.stdout, self.stderr = rc, out, err
+
+    def _with_run(stub, call):
+        real = _sp.run
+        _sp.run = stub
+        try:
+            return call()
+        finally:
+            _sp.run = real           # restored even if `call` raises
+
+    def _raises(exc):
+        def _f(*a, **k):
+            raise exc
+        return _f
+
+    for label, call in (("commit_dates", lambda: commit_dates(14)),
+                        ("open_prs", open_prs),
+                        ("no_entry_prs", no_entry_prs)):
+        # (a) the binary is missing entirely
+        v, err = _with_run(_raises(OSError("no such binary")), call)
+        case(f"{label}: a missing binary is a could-not-tell, not an empty result",
+             (v, bool(err)), (None, True))
+        # (b) the binary runs and FAILS — the exit code must not be ignored
+        v, err = _with_run(lambda *a, **k: _R(2, "", "boom"), call)
+        case(f"{label}: a non-zero exit is a could-not-tell, not an empty result",
+             (v, bool(err)), (None, True))
+
+    # (c) `gh` succeeds and returns something that is not JSON. Round 4's U13: the
+    # JSONDecodeError branch returning `[], None` renders as a confident zero.
+    v, err = _with_run(lambda *a, **k: _R(0, "not json at all", ""), open_prs)
+    case("open_prs: unparseable gh output is a could-not-tell, not zero",
+         (v, bool(err)), (None, True))
+
+    # (c2) `gh` exits 0 and says NOTHING. `json.loads(r.stdout or "[]")` turned that
+    # into a confident MEASURED ZERO — the page printed "0 open PRs" having never
+    # been answered. Three guards aimed at `_gh_json` (missing binary, non-zero exit,
+    # garbage stdout) all landed on NEIGHBOURING cases and left this one between them.
+    v, err = _with_run(lambda *a, **k: _R(0, "", ""), open_prs)
+    case("open_prs: EMPTY gh output is a could-not-tell, not zero",
+         (v, bool(err)), (None, True))
+
+    # (d) ...and the happy path still works through the same seam, so the cases
+    # above cannot be passing merely because the stub broke everything.
+    v, err = _with_run(lambda *a, **k: _R(0, '[{"number": 9, "title": "T"}]', ""), open_prs)
+    case("open_prs: a well-formed gh response is returned as data", (v, err),
+         ([{"number": 9, "title": "T"}], None))
+
+    # ── main()'S CONTRACT ────────────────────────────────────────────────────
+    # `main` had ZERO coverage — the same hole round 4 measured in
+    # check-dashboard-entry.py's `collect`/`main`, where `return 2` -> `return 0`
+    # made the ratchet fail-open at a fully green suite. That fix landed on one
+    # script and not its sibling. Four one-line mutations survived here, and two
+    # are the exact promise .agents/skills/dashboard/SKILL.md makes about the exit
+    # code — the promise .claude/hooks/regen-dashboard.sh's error branch rests on.
+    import contextlib as _ctx, io as _io, tempfile as _tf
+
+    def _run_main(args, stub):
+        """main() under a stubbed subprocess -> (rc, stderr).
+
+        Both streams are captured: stderr because it is what (c) asserts on, and
+        stdout because main's own success line would otherwise be interleaved
+        into this suite's output and read as a result of it.
+        """
+        buf, real = _io.StringIO(), _sp.run
+        _sp.run = stub
+        try:
+            with _ctx.redirect_stderr(buf), _ctx.redirect_stdout(_io.StringIO()):
+                rc = main(args)
+        finally:
+            _sp.run = real
+        return rc, buf.getvalue()
+
+    def _compose(writes: bool, collectors_ok: bool):
+        """One stub standing in for BOTH brief-compose and the git/gh collectors."""
+        def _f(argv, *a, **k):
+            if argv and argv[0] == sys.executable:            # brief-compose
+                if writes:
+                    pathlib.Path(argv[argv.index("--out") + 1]).write_text("<html>")
+                return _R(0)
+            return _R(0, "[]", "") if collectors_ok else _R(2, "", "boom")
+        return _f
+
+    with _tf.TemporaryDirectory() as _td:
+        _store = pathlib.Path(_td) / "store.md"
+        _store.write_text("## 2026-08-29\nA title.\n")
+        _out = pathlib.Path(_td) / "sub" / "page.html"
+        _args = ["--store", str(_store), "--out", str(_out)]
+
+        # (a) brief-compose exits 0 and writes NOTHING. `--out` is the deliverable,
+        # so a success line here would be a page that does not exist.
+        rc, _ = _run_main(_args, _compose(writes=False, collectors_ok=True))
+        case("main: a compose that wrote no page is a FAILURE, never a 0", rc, 1)
+
+        # (b) the happy path through the SAME seam, so (a) cannot be passing
+        # merely because the stub broke everything.
+        rc, _ = _run_main(_args, _compose(writes=True, collectors_ok=True))
+        case("main: a composed page exits 0", (rc, _out.is_file()), (0, True))
+
+        # (c) the page composed, but git and gh could not be reached. The run still
+        # succeeds — a page beats none — and every dead collector is announced on
+        # STDERR. Without that loop, a fully-measured page and one with three dead
+        # collectors are indistinguishable to anything reading stdout.
+        _out.unlink()
+        rc, errtxt = _run_main(_args, _compose(writes=True, collectors_ok=False))
+        case("main: a dead collector is announced on stderr, not swallowed",
+             (rc, errtxt.count("⚠") >= 3), (0, True))
+
+        # (d) brief-compose hangs. The bound exists because this runs from a hook,
+        # where an unbounded child hangs the turn with no output at all.
+        def _timeout(*a, **k):
+            raise _sp.TimeoutExpired(cmd="brief-compose.py", timeout=1)
+        rc, _ = _run_main(_args, _timeout)
+        case("main: a compose that timed out is a FAILURE, never a 0", rc, 1)
+
+    # (e) a non-positive window refuses BEFORE anything is measured.
+    _buf = _io.StringIO()
+    with _ctx.redirect_stderr(_buf):
+        _wrc = main(["--window", "0"])
+    case("main: --window below 1 is a refusal, not a silent default", _wrc, 2)
+
+    print(f"\n{ok}/{ok+fail} passed")
+    return 1 if fail else 0
+```
+
+- [ ] **Step 4: `main`, which COMPOSES the page rather than writing the fragment**
+
+`build()` returns a **fragment** — no `<!doctype>`, no charset, **no Ask tray**. `main` calls
+`brief-compose.py` with `--out` and fails non-zero when the file is not written, copying
+`scripts/gen-goals-page.py:487-498`. `--fragment-only` is the only way to emit the raw fragment.
+
+<!-- file: scripts/gen-dashboard.py -->
+```python
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--window", type=int, default=14)
+    ap.add_argument("--store", default="docs/dashboard-entries.md")
+    ap.add_argument("--out", type=pathlib.Path,
+                    default=pathlib.Path.home() / "explainers" / "dashboard.html")
+    ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
+    a = ap.parse_args(argv)
+    if a.self_test:
+        return _self_test()
+    if a.window < 1:
+        print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
+        return 2
+    store, store_error, entries = pathlib.Path(a.store), None, []
+    try:
+        entries = parse_entries(store.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        # A missing DEFAULT store is genuinely "nothing written yet" — the store
+        # is created by the first entry. A store the caller NAMED and that is not
+        # there is a could-not-tell: the run was pointed at a file and never
+        # opened it, and `store.exists()` had no third state to say so.
+        # Residual, stated rather than hidden: passing the default path
+        # explicitly is indistinguishable from not passing it. The page still
+        # names that path, so it stays honest about WHICH file it means.
+        if a.store != ap.get_default("store"):
+            store_error = f"no such file: {store}"
+    except UnicodeDecodeError as exc:
+        store_error = f"{store} is not valid UTF-8: {exc}"
+    except OSError as exc:
+        store_error = f"could not read {store}: {exc}"
+    dates, git_error = commit_dates(a.window)
+    prs, pr_error = open_prs()
+    exemptions, exempt_error = no_entry_prs()
+    today = _dt.date.today().isoformat()
+    days = bucket_days(dates or [], entries, a.window, today)
+    frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
+                 exempt_error, a.store, store_error)
+    if a.fragment_only:
+        a.fragment_only.write_text(frag, encoding="utf-8")
+        print(f"wrote fragment {a.fragment_only}")
+        return 0
+    a.out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as td:
+        f = pathlib.Path(td) / "dashboard-fragment.html"
+        f.write_text(frag, encoding="utf-8")
+        # Bounded like every other subprocess here (`commit_dates` 20, `_gh_json`
+        # 30). This runs from a git hook, and an unbounded child hangs the hook
+        # with no output at all — a cannot-run that never says so.
+        try:
+            r = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "brief-compose.py"),
+                 "--content", str(f), "--slug", "dashboard", "--out", str(a.out),
+                 "--title", "Project dashboard"],
+                cwd=ROOT, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            print(f"CANNOT RUN — brief-compose did not finish in 120s, so {a.out} "
+                  f"was NOT written. Treat this as NOT RUN.", file=sys.stderr)
+            return 1
+    if r.returncode != 0 or not a.out.is_file():
+        print(f"FAILED — brief-compose did not write {a.out}:\n{r.stdout}{r.stderr}",
+              file=sys.stderr)
+        return 1
+    print(f"wrote {a.out}  ({len(entries)} entries, window {a.window})")
+    # STDERR, not stdout. A caller reading stdout saw only the success line, so a
+    # fully-measured page and one with two dead collectors were indistinguishable
+    # to anything but a human eye. `{len(entries)}` above is part of why: with a
+    # store_error that count is a zero nobody measured.
+    for label, err in (("git", git_error), ("gh", pr_error),
+                       ("gh/exemptions", exempt_error), ("store", store_error)):
+        if err:
+            print(f"  ⚠ {label}: {err}", file=sys.stderr)
+    print("     http://127.0.0.1:7391/dashboard   (start: python3 scripts/explainer-serve.py)")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
+```
+
+- [ ] **Step 5: Run the plan's own checker — against the files you just wrote**
+
+```bash
+python3 scripts/check-plan-code.py \
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare .
+```
+
+This assembles both files from the blocks above, runs both suites, runs every mutation in the
+manifest, **and diffs each assembled file against the one in `scripts/`.** It fails if any mutation
+survives, is caught by a case other than the one it names, or **the file you wrote differs by a
+single byte from the plan's blocks.**
+
+⛔ **`--compare` is not optional here, and v5 omitting it was round 4's H1.** Without it the checker
+works entirely inside a `TemporaryDirectory` written from the markdown: it never opens
+`scripts/gen-dashboard.py` at all. v5 offered this step to the implementer as verification of *their
+own work* and it verified **the document**. Mistype a line into the delivered file and v5's Step 5
+still printed `OK`.
+
+That is this session's own recurring defect — *a checker pointed at the wrong subject* — committed
+while building the tool against it. `CLAUDE.md`: **"A script beats a claim only when it reads the
+thing the claim is about. A green check over the wrong subject is an assertion in better packaging,
+and more dangerous than prose, because nobody re-examines it."**
+
+The evidence block now names its subject in its own output, so a bare run cannot be mistaken for a
+compared one:
+
+```
+  subject: the PLAN'S COPY of the code. --compare was not given, so
+           nothing here was measured against the files in scripts/.
+```
+
+- [ ] **Step 5a: Regenerate the Standing evidence block in the COMPARED form, and commit it.**
+
+```bash
+python3 scripts/check-plan-code.py \
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare . --evidence
+# paste the block over the one under "Standing evidence", then:
+python3 scripts/check-plan-code.py \
+  docs/superpowers/plans/2026-08-28-project-dashboard-plan.md --compare . --verify-evidence
+```
+
+⛔ **This step is not optional and it is not cosmetic — without it the CI step added in Task 6 is
+red by construction.** The block committed today was generated *without* `--compare`, because
+`scripts/gen-dashboard.py` does not exist until this task creates it; its subject line says so in as
+many words. The CI step runs `--compare . --verify-evidence`, and a compared run produces a
+different block. **The two must be brought into agreement here, at the first moment both files
+exist.** Expected after the paste: `OK — compared + evidence-verified`, and the block's subject
+reading `the plan's blocks, DIFFED against the delivered files` with both files `identical`.
+
+⛔⛔ **AND rewrite the two commands printed under *Standing evidence* to carry `--compare .` in the
+same edit.** They read `--evidence` and `--verify-evidence` with no `--compare`, and **the evidence
+block is invocation-specific**: the moment this step regenerates it in compared form, those two bare
+commands exit 1 and print *"the pasted evidence block is STALE"* about a block that is perfectly
+fresh.
+
+**A falsifier that fires unconditionally is worse than none** — the first person to run it learns the
+check lies, and stops reading it. That is round 4's B1 inverted, and round 5 (H4) caught v6
+introducing it while fixing B1. **Both invocations must name the same mode as CI, or the freshness
+check is theatre.**
+
+- [ ] **Step 6: Generate and look at it**
+
+```bash
+python3 scripts/gen-dashboard.py && python3 scripts/explainer-serve.py
+```
+
+Confirm **on the page**: the entry with its id; the fold opens; a zero-commit day with an entry is
+distinguishable **with the mouse elsewhere**; a day with commits and **no** entry is marked; clicking
+a bar lands on that day; the **Ask tray** is present; `/latest` still points at the newest briefing.
+
+⚠ Check `document.hidden` first — a backgrounded tab has no geometry.
 
 ---
 
 ## Task 5: Folds survive live reload
 
-**Files:**
-- Modify: `scripts/explainer-serve.py:556-580`
+**Files:** Modify `scripts/explainer-serve.py`.
 
-**Interfaces:**
-- Consumes: nothing.
-- Produces: no Python API. Behavioural: after the injected client reloads a page, every `<details open>` is still open.
+- [ ] **Step 1: Confirm it is broken.** Open a fold, `touch` the page, watch it close.
 
-- [ ] **Step 1: Confirm it is broken first**
-
-```bash
-python3 scripts/explainer-serve.py
-open http://127.0.0.1:7391/dashboard
-```
-Open a fold. Then `touch ~/explainers/dashboard.html`. The page reloads and **the fold closes**. Record that — a fix for a bug you have not reproduced is a guess.
-
-- [ ] **Step 2: Extend the injected reload client**
-
-In `RELOAD_JS`, beside the existing scroll persistence, add:
+- [ ] **Step 2: Extend `RELOAD_JS`** — save and restore `<details>` open state, keyed on `d.id`
+**only**. An index key shifts when a new entry is appended at the top, so the restore would work when
+the page had not changed and misapply itself when it had.
 
 ```javascript
   var DKEY = 'explainer-details:' + here;
   function saveDetails() {
     try {
       var open = [];
-      document.querySelectorAll('details').forEach(function (d, i) {
-        if (d.open) open.push(d.id || String(i));
+      document.querySelectorAll('details[id]').forEach(function (d) {
+        if (d.open) open.push(d.id);
       });
       sessionStorage.setItem(DKEY, JSON.stringify(open));
     } catch (e) {}
@@ -821,160 +1891,1280 @@ In `RELOAD_JS`, beside the existing scroll persistence, add:
       if (!raw) return;
       sessionStorage.removeItem(DKEY);
       var open = JSON.parse(raw);
-      document.querySelectorAll('details').forEach(function (d, i) {
-        if (open.indexOf(d.id || String(i)) !== -1) d.open = true;
+      document.querySelectorAll('details[id]').forEach(function (d) {
+        if (open.indexOf(d.id) !== -1) d.open = true;
       });
     } catch (e) {}
   }
   restoreDetails();
 ```
 
-Call `saveDetails()` immediately before the existing `sessionStorage.setItem(KEY, ...)` scroll save, in the same place the reload is triggered.
+- [ ] **Step 3: Rows that can fail** — COUNT, not presence, since `"restoreDetails()"` is a substring
+of `function restoreDetails()`:
 
-- [ ] **Step 3: Add self-test rows**
-
-Beside the two existing reload-client cases in `_self_test`:
-
+<!-- illustrative: assertion rows added to scripts/explainer-serve.py's OWN suite, not to a file this plan assembles -->
 ```python
-        case("reload client persists details state",
-             lambda: "explainer-details:" in RELOAD_JS and "saveDetails" in RELOAD_JS)
-        case("reload client restores details state",
-             lambda: "restoreDetails()" in RELOAD_JS)
+        case("reload client defines and CALLS saveDetails",
+             lambda: RELOAD_JS.count("saveDetails()") >= 2)
+        case("reload client defines and CALLS restoreDetails",
+             lambda: RELOAD_JS.count("restoreDetails()") >= 2)
+        case("reload client keys folds on id, never on position",
+             lambda: "details[id]" in RELOAD_JS and "String(i)" not in RELOAD_JS)
 ```
 
-- [ ] **Step 4: Run the self-test**
+- [ ] **Step 4: Run, then MUTATE.** Delete the `restoreDetails();` call, leaving the definition; the
+row must go red. **These rows only assert that text was typed** — Step 5 is the real test.
 
-Run: `python3 scripts/explainer-serve.py --self-test`
-Expected: all pass, exit 0, with two more cases than before.
-
-- [ ] **Step 5: Verify the actual behaviour, not the markup**
-
-Restart the server, open the dashboard, open **two** folds, `touch ~/explainers/dashboard.html`, and confirm **both are still open** after the reload.
-
-⚠ Check `document.hidden` first. A backgrounded tab has no geometry and reports false results — measured 2026-08-28, a probe reported "0 of 9 reachable" purely because the tab was hidden.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add scripts/explainer-serve.py
-git commit -F /tmp/msg-task5.txt
-```
+- [ ] **Step 5: Two folds open, `touch` the file, both still open.** Then commit.
 
 ---
 
-## Task 6: The skill, registration, and the regen hook
+## Task 6: The skill, the hook, and the wiring that makes the gate real
 
-**Files:**
-- Create: `.claude/skills/dashboard/SKILL.md`
-- Modify: `scripts/check-explainer-delivery.py:53`
-- Create: `.claude/hooks/regen-dashboard.sh`
+- [ ] **Step 1: Register the skill in `PAGE_SKILLS`** (`scripts/check-explainer-delivery.py:53`).
+⚠ This check **cannot enforce its own list** — an absent skill is invisible to it.
 
-**Interfaces:**
-- Consumes: everything above.
-- Produces: the `/dashboard` skill.
-
-- [ ] **Step 1: Register the skill in `PAGE_SKILLS`**
-
-`scripts/check-explainer-delivery.py:53`:
-
-```python
-PAGE_SKILLS = ["explain-diff", "brief", "explain-findings", "explain-topic", "dashboard"]
-```
-
-⚠ **This check cannot enforce its own list** — it inspects only skills already on it, so an absent one is invisible and it exits green. Verified. This step is manual and ungated; that is why it is a numbered step rather than an assumption.
-
-- [ ] **Step 2: Write the skill**
-
-Create `.claude/skills/dashboard/SKILL.md`:
-
-```markdown
----
-name: dashboard
-description: Update and open the project dashboard — what needs the user, what changed, and one chart. Use when the user asks for the dashboard, says "what changed", "catch me up", or types /dashboard. Also use after finishing a unit of work, to record the entry the gate requires.
----
-
-# Dashboard
-
-**Announce at start:** "Using the dashboard skill."
-
-## 1. Write the entry FIRST
-
-Append one block to `docs/dashboard-entries.md`. Never edit an existing block.
-
-    ## YYYY-MM-DD [needs-you]
-    One plain sentence. What happened, in words the user already knows.
-    <!--tech-->
-    Commit SHAs, file paths, exact commands.
-
-- `[needs-you]` **only** when a decision is genuinely waiting on the human.
-- Clear an earlier one by appending a later entry with `[resolved: YYYY-MM-DD/N]`.
-- The title line is what the user reads. No jargon, no abbreviations they have not
-  seen defined. The technical fold is where identifiers belong.
-- Grammar: `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` §6.2.
-
-## 2. Regenerate and deliver
-
-    python3 scripts/gen-dashboard.py --out /tmp/dash-fragment.html
-    python3 scripts/brief-compose.py --content /tmp/dash-fragment.html \
-      --slug dashboard --title "Project dashboard"
-    mv ~/explainers/*-brief-dashboard.html ~/explainers/dashboard.html
-
-The undated filename is required: it makes this a **standing page**, excluded from
-`/latest` so regenerating it does not steal the newest-briefing bookmark
-(`scripts/explainer-serve.py:35-49`).
-
-**For serving, the question tray, arming the push loop, and verifying the page
-before handing it over, follow `.agents/skills/shared/explainer-delivery.md`.**
-Cite it; never restate it.
-
-## 3. Deliver the URL
-
-    http://127.0.0.1:7391/dashboard
-
-Say in one line what changed since they last looked.
-```
-
-- [ ] **Step 3: Verify the delivery check still passes**
-
-Run: `python3 scripts/check-explainer-delivery.py`
-Expected: exit 0. If it fails saying the skill restates the delivery loop, the skill body is repeating commands it should be citing — remove them.
-
-- [ ] **Step 4: Add the regen hook**
-
-Create `.claude/hooks/regen-dashboard.sh`, modelled on `.claude/hooks/regen-goals-page.sh`, firing when `docs/dashboard-entries.md` is written. **Exit 0 unconditionally** — a page regeneration must never fail a turn.
-
-- [ ] **Step 5: Full verification**
+- [ ] **Step 2: Write the skill at `.agents/skills/`, with a symlink**
 
 ```bash
-python3 scripts/gen-dashboard.py --self-test
-python3 scripts/check-dashboard-entry.py --self-test
-python3 scripts/explainer-serve.py --self-test
-python3 scripts/check-explainer-delivery.py
-python3 scripts/check-docs.py
+mkdir -p .agents/skills/dashboard
+ln -s ../../.agents/skills/dashboard .claude/skills/dashboard
+ls -l .claude/skills/dashboard        # must print '-> ../../.agents/skills/dashboard'
 ```
-All expected rc=0. Check each separately — never `$?` after a pipe.
 
-- [ ] **Step 6: Commit and open the PR**
+The SKILL.md instructs: append one block, never edit an existing one; `[needs-you]` only when a
+decision is genuinely waiting; clear one with a **later** `[resolved: YYYY-MM-DD/N]`, reading the id
+**off the page**. Regeneration is one command — `python3 scripts/gen-dashboard.py` — which composes
+and writes the page and exits non-zero if it does not. **No `mv` glob.**
+
+**For serving, the tray, the push loop and verification, follow
+`.agents/skills/shared/explainer-delivery.md`.** Cite it; never restate it.
+
+- [ ] **Step 3: `check-explainer-delivery.py` and `check-docs.py` both rc=0.**
+
+- [ ] **Step 4: The regen hook, and its registration**
+
+⚠ **A hook script with no entry in `.claude/settings.json` never runs**, and it exits 0
+unconditionally so there is no signal either way. Model it on
+`.claude/hooks/regen-goals-page.sh`, match only `docs/dashboard-entries.md`, and register it in the
+existing `PostToolUse` → `"Edit|Write"` array.
+
+**Then prove it fires**: append a whole throwaway `## <date>` **block** with the Edit tool and
+confirm the turn prints `↻ dashboard regenerated`. ⚠ A bare *line* would become part of the previous
+entry's text; append a block and remove it afterwards.
+
+- [ ] **Step 5: Wire the ratchet into CI — this is what makes §7 real**
+
+```yaml
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+```
+
+```yaml
+      - name: gen-dashboard self-test
+        run: python3 scripts/gen-dashboard.py --self-test
+
+      - name: check-dashboard-entry self-test
+        run: python3 scripts/check-dashboard-entry.py --self-test
+
+      # --compare is what makes this step mean what its name says. Without it the
+      # step measures the plan's COPY of ~1,100 lines and never opens the files CI
+      # ships; the first bug fixed in scripts/gen-dashboard.py would leave the plan
+      # green while the mutation evidence described a file that no longer exists in
+      # that form. Round 4, H1.
+      # --verify-evidence is the other half. The block is GENERATED, which round 4
+      # proved buys provenance and not freshness: it was generated once at v4 and
+      # described a run two versions old. CI is where "regenerate it" stops being a
+      # rule somebody has to remember.
+      - name: the plan's code and the DELIVERED scripts are the same, its mutations are caught, and its evidence is fresh
+        run: |
+          python3 scripts/check-plan-code.py \
+            docs/superpowers/plans/2026-08-28-project-dashboard-plan.md \
+            --compare . --verify-evidence
+
+      - name: dashboard entry ratchet
+        if: github.event_name == 'pull_request'
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$BODY" > /tmp/pr-body.md
+          python3 scripts/check-dashboard-entry.py \
+            --base "origin/$GITHUB_BASE_REF" --pr-body-file /tmp/pr-body.md
+```
+
+⛔ **`fetch-depth: 0` is the fix; a bespoke `git fetch` is not.** `actions/checkout` takes depth 1 on
+the synthesised merge ref, so `HEAD` is a graft with no merge base:
+
+```
+fetch_rc=0
+CANNOT RUN — git diff exited 128: fatal: origin/master...HEAD: no merge base
+ratchet_rc=2
+```
+
+An explicit refspec creates `origin/master` and **still leaves that error** — it fixes the symptom a
+review reported, not the outcome. Measured: full history costs **~0.85s and ~3.7MB** over 1,398
+commits, and nothing else in CI reads git history.
+
+**Also verify `no_entry_prs` here**, now that both files exist — once for `no-entry: 0 err: None`,
+then again with the gate file moved away, which must print
+`no-entry: None err: could not load the gate's exemption reader: …`. **If the second prints `0`
+with `err: None`, the loader is swallowing the failure — stop.** `0` is also the correct answer
+today, so the falsifier is the only thing that distinguishes them.
+
+⚠ **The reader is resolved LAZILY, and that is what makes this falsifier reachable.** Bound at
+import time it raised `FileNotFoundError` before `no_entry_prs` could return anything, so the whole
+page failed to render over a section that is allowed to say *"could not check"* — and the stated
+expected output above was unreachable. The GRAMMAR is still imported eagerly, because without it
+nothing can parse at all; only the exemption reader degrades.
+
+**Then falsify the ratchet in CI, not locally.** Open the PR with no entry, confirm **red**, add the
+entry, confirm green.
+
+- [ ] **Step 6: Pointer rows and the roadmap**
+
+Add to `docs/dev-process.md`'s "What is mechanically enforced" table:
+
+| Check | Enforces |
+|---|---|
+| `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` — which the dashboard then **displays**. Owns the entry-header grammar the page imports (`--self-test`) |
+| `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited; composed through `brief-compose.py` so it cannot lose its Ask tray (`--self-test`) |
+| `scripts/check-plan-code.py` | a plan's code blocks ASSEMBLE and run, every mutation it declares is caught by the case it names, the DELIVERED scripts match the plan byte-for-byte (`--compare`), and its evidence block is not stale (`--verify-evidence`) (`--self-test`) |
+
+⚠ **Re-measure the line budget with `wc -l` first, and know that it is tight.** Measured 2026-08-29:
+`docs/dev-process.md` is **214** lines against `scripts/check-docs.py`'s budget of **220** — three
+pointer rows leave **three lines of headroom**, and the third row above is long enough to wrap. If it
+does not fit, the fix is a shorter row, not a bigger budget.
+
+**UPDATE** the existing `## Project dashboard` section in `docs/roadmap-to-launch.md` — tick the
+steps and refresh the status line. **Do not add a section**; one already exists.
+
+- [ ] **Step 7: Commit and open the PR**
 
 ```bash
-git add .claude/skills/dashboard/SKILL.md scripts/check-explainer-delivery.py .claude/hooks/regen-dashboard.sh
-git commit -F /tmp/msg-task6.txt
+git log --oneline origin/master..HEAD      # confirm the branch carries ONLY this work
 git push -u origin <branch>
+
+# WRITE the body first. The only other /tmp/pr-body.md in this plan is created by the
+# CI snippet in Step 5, inside the runner — it does not exist on your machine, and
+# `gh --body-file` against a missing path fails at the last step of the last task.
+cat > /tmp/pr-body.md <<'EOF'
+<the PR description — anything longer than a line goes in a file, never a -m argument>
+EOF
 gh pr create --title "..." --body-file /tmp/pr-body.md
 ```
+
+**Acceptance criteria — all five observable, or it is not ready:**
+
+1. The ratchet has been **seen to refuse** on GitHub, not only locally.
+2. The regen hook has been **seen to fire** on a real store write.
+3. The served page has its **Ask tray**.
+4. `check-docs.py` and `check-explainer-delivery.py` are green.
+5. **`check-plan-code.py --compare . --verify-evidence` exits 0** — every declared mutation
+   caught by the case it names, the delivered scripts **byte-identical** to the plan's blocks, and
+   the Standing evidence block **exactly what that invocation produces**. The block must read
+   `subject: the plan's blocks, DIFFED against the delivered files` with every file `identical`;
+   anything else, including the `--compare was not given` line, fails this criterion.
+   *(Criterion 5 replaces "their mutation checks were run", which was satisfied by running them and
+   ignoring the result — a checkbox with no observation that could fail it. **Round 4 then found it
+   was still satisfiable by a plan that had drifted from the code**: without `--compare` the check
+   never opened `scripts/`. FAILS IF: `scripts/gen-dashboard.py` is edited without the same edit
+   landing in this plan's blocks.)*
 
 **Merging is a human gate. Do not merge.**
 
 ---
 
+## Mutation manifest
+
+Run by `scripts/check-plan-code.py`. Each must go **red via the case it names**; a survivor, or a
+mutation caught by a different case, fails the check.
+
+<!-- mutations -->
+```json
+[
+ {
+  "name": "day anchors never emitted (every bar href is a dead link)",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "                day_anchor = f'<span class=\"anchor\" id=\"day-{_html.escape(e[\"date\"])}\"></span>'",
+    "                day_anchor = \"\""
+   ]
+  ],
+  "expect": "a bar's day anchor exists for the day it links to"
+ },
+ {
+  "name": "bar height ignores commits",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    h = 4 if day[\"commits\"] == 0 else max(6, round(48 * day[\"commits\"] / max(tallest, 1)))",
+    "    h = 10"
+   ]
+  ],
+  "expect": "bar height scales with commits"
+ },
+ {
+  "name": "entry title not rendered",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "f'<p class=\"title\">{_html.escape(e[\"title\"])}</p>'",
+    "f''"
+   ]
+  ],
+  "expect": "the title is rendered outside the fold"
+ },
+ {
+  "name": "unresolved surfaces entries that failed to parse",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "            if e[\"needs_you\"] and not e[\"error\"] and e[\"id\"] not in cleared]",
+    "            if e[\"needs_you\"] and e[\"id\"] not in cleared]"
+   ]
+  ],
+  "expect": "a malformed entry is never listed as needing you"
+ },
+ {
+  "name": "quiet-day mark: dot AND class both gone",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if quiet:\n        cls += \" marked\"",
+    "    if False:\n        cls += \"\""
+   ],
+   [
+    "    mark = '<span class=\"dot\" aria-hidden=\"true\"></span>' if quiet else \"\"",
+    "    mark = \"\""
+   ]
+  ],
+  "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
+ },
+ {
+  "name": "gap mark: gapmark AND class both gone",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if unwritten:\n        cls += \" unwritten\"",
+    "    if False:\n        cls += \"\""
+   ],
+   [
+    "        mark += '<span class=\"gapmark\" aria-hidden=\"true\"></span>'",
+    "        mark += \"\""
+   ]
+  ],
+  "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
+ },
+ {
+  "name": "gh half of what-needs-you suppressed",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        rows += [f'<li>Pull request #",
+    "        rows += []\n        _dead = [f'<li>Pull request #"
+   ]
+  ],
+  "expect": "an open PR appears in what-needs-you"
+ },
+ {
+  "name": "dead bar links restored",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    href = f' href=\"#day-{day[\"date\"]}\"' if day[\"has_entry\"] else \"\"",
+    "    href = f' href=\"#day-{day[\"date\"]}\"'"
+   ]
+  ],
+  "expect": "a bar with no entry is not a dead link"
+ },
+ {
+  "name": "in-place anchoring reverted to the previous neighbour",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "anchor = min(cands, key=lambda j: rank[j])",
+    "anchor = max(cands, key=lambda j: rank[j])"
+   ]
+  ],
+  "expect": ["malformed renders BETWEEN its neighbours on an APPENDED store",
+            "...and the run still sits between its valid neighbours"]
+ },
+ {
+  "name": "a run of malformed blocks loses its file order",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [["        off = placed.get(anchor, 0)\n        placed[anchor] = off + 1\n        out.insert(out.index(entries[anchor]) + 1 + off, e)",
+             "        out.insert(out.index(entries[anchor]) + 1, e)"]],
+  "expect": "a RUN of malformed blocks keeps file order among themselves"
+ },
+ {
+  "name": "render in raw file order",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "for i, e in enumerate(_ordered(entries)):",
+    "for i, e in enumerate(entries):"
+   ]
+  ],
+  "expect": ["malformed renders BETWEEN its neighbours on an APPENDED store",
+            "newest date renders first on an APPENDED store",
+            "...and the run still sits between its valid neighbours"]
+ },
+ {
+  "name": "second [resolved:] dropped",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())",
+    "entry[\"resolves\"] = [f.split(\":\", 1)[1].strip()]"
+   ]
+  ],
+  "expect": ["two [resolved:] flags are both kept", "two [resolved:] flags clear BOTH items"]
+ },
+ {
+  "name": "pass 2 deleted",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        for r in e[\"resolves\"]:\n            if r in ids:",
+    "        for r in []:\n            if r in ids:"
+   ]
+  ],
+  "expect": "resolve of an unknown id is an error"
+ },
+ {
+  "name": "ordinal instability restored",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        if m is not None and _GATE.valid_date(m.group(1)):",
+    "        if m is not None and _GATE.valid_date(m.group(1)) and not err:"
+   ]
+  ],
+  "expect": "a malformed block still consumes its ordinal"
+ },
+ {
+  "name": "chart drawn newest-leftmost",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "_bar(d, tallest, bool(store_error)) for d in reversed(days)",
+    "_bar(d, tallest, bool(store_error)) for d in days"
+   ]
+  ],
+  "expect": "the chart draws oldest-first (left to right)"
+ },
+ {
+  "name": "under-count sentence removed",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "so work that was never committed does not appear here.",
+    "x."
+   ]
+  ],
+  "expect": "the chart says what it under-counts"
+ },
+ {
+  "name": "glossary section removed",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "<h2>Words</h2>{glossary_html}",
+    ""
+   ]
+  ],
+  "expect": ["the page carries a glossary", "the glossary defines its terms"]
+ },
+ {
+  "name": "gh failure blanks the needs section",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if rows:\n        needs_html",
+    "    if pr_error:\n        needs_html = pr_note\n    elif rows:\n        needs_html"
+   ]
+  ],
+  "expect": "a gh failure still shows the store's needs IN THAT SECTION"
+ },
+ {
+  "name": "first-parent dropped from the commit count",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "\"git\", \"log\", \"HEAD\", \"--first-parent\"",
+    "\"git\", \"log\", \"HEAD\""
+   ]
+  ],
+  "expect": "commit_dates passes --first-parent as an ARGUMENT"
+ },
+ {
+  "name": "gate stops sharing the parser grammar",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "return line.startswith(\"+\") and header_error(line[1:]) is None",
+    "import re as _r; return bool(_r.match(r\"^\\+## (\\d{4}-\\d{2}-\\d{2})\\b\", line))"
+   ]
+  ],
+  "expect": ["an impossible date does NOT count", "a suffixed date does NOT count",
+            "a trailing dot does NOT count", "a typo'd flag does NOT count",
+            "a title on the header line does NOT count"]
+ },
+ {
+  "name": "tab indent not counted",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "            col += 4 - (col % 4)",
+    "            col += 0"
+   ]
+  ],
+  "expect": "exemption_reason — TAB-indented code block"
+ },
+ {
+  "name": "head path skips the indent check",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if not _indented(head) and head.strip().startswith(NO_ENTRY):",
+    "if head.strip().startswith(NO_ENTRY):"
+   ]
+  ],
+  "expect": "exemption_reason — indented, with a comment later on the line"
+ },
+ {
+  "name": "fence closes on either character",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "elif ch == fence_ch:",
+    "elif True:"
+   ]
+  ],
+  "expect": "exemption_reason — ``` is not closed by ~~~"
+ },
+ {
+  "name": "fence LENGTH ignored (short inner fence closes a long outer one)",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if len(run) >= len(fence_run):",
+    "if True:"
+   ]
+  ],
+  "expect": ["exemption_reason — a SHORT fence does not close a longer fence",
+            "exemption_reason — ...same for tildes"]
+ },
+ {
+  "name": "indent rule removed entirely",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if in_comment or not probe or _indented(probe):",
+    "if in_comment or not probe:"
+   ]
+  ],
+  "expect": ["exemption_reason — indented code block",
+            "exemption_reason — TAB-indented code block"]
+ },
+ {
+  "name": "line-leading rule removed",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if s.startswith(NO_ENTRY):",
+    "if NO_ENTRY in s:"
+   ]
+  ],
+  "expect": "exemption_reason — blockquoted"
+ },
+ {
+  "name": "the three-valued reason collapses: empty and absent become one message",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if reason == \"\":",
+    "    if False:"
+   ]
+  ],
+  "expect": "...and says the marker was present with nothing after it"
+ },
+ {
+  "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    cls = \"bar needs\" if day[\"needs_you\"] else \"bar\"",
+    "    cls = \"bar\""
+   ]
+  ],
+  "expect": ["§5 a needs-you day is marked in SIGHTED output",
+            "...and the mark is the needs class, not an incidental difference"]
+ },
+ {
+  "name": "commit_dates: a git failure renders as an EMPTY chart, not could-not-tell",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        return None, f\"git log exited {r.returncode}: {r.stderr.strip()[:200]}\"",
+    "        return [], None"
+   ]
+  ],
+  "expect": "commit_dates: a non-zero exit is a could-not-tell, not an empty result"
+ },
+ {
+  "name": "_gh_json: a missing gh renders as ZERO open PRs",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        return None, f\"could not run gh: {exc}\"",
+    "        return [], None"
+   ]
+  ],
+  "expect": ["open_prs: a missing binary is a could-not-tell, not an empty result",
+            "no_entry_prs: a missing binary is a could-not-tell, not an empty result"]
+ },
+ {
+  "name": "_gh_json: unparseable gh output renders as ZERO",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        return None, f\"gh returned unparseable JSON: {exc}\"",
+    "        return [], None"
+   ]
+  ],
+  "expect": "open_prs: unparseable gh output is a could-not-tell, not zero"
+ },
+ {
+  "name": "_gh_json: EMPTY gh output renders as a measured ZERO",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "        return json.loads(r.stdout), None",
+    "        return json.loads(r.stdout or \"[]\"), None"
+   ]
+  ],
+  "expect": "open_prs: EMPTY gh output is a could-not-tell, not zero"
+ },
+ {
+  "name": "an UNREADABLE store renders as a measured 'no entries yet'",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '",
+    "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '"
+   ]
+  ],
+  "expect": "a store that could not be read is NOT 'no entries yet'"
+ },
+ {
+  "name": "§9's alarm fires off an UNREADABLE store",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"] and not store_unknown",
+    "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"]"
+   ]
+  ],
+  "expect": "...and §9's alarm is not fired off a store nobody could read"
+ },
+ {
+  "name": "the GATE reads a broken git as 'nothing changed'",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if names.returncode != 0:",
+    "    if False:"
+   ]
+  ],
+  "expect": "collect: a non-zero git exit is a could-not-tell, not 'nothing changed'"
+ },
+ {
+  "name": "the GATE's missing-git branch reports no error",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        return [], False, f\"could not run git: {exc}\"",
+    "        return [], False, None"
+   ]
+  ],
+  "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
+ },
+ {
+  "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+   ]
+  ],
+  "expect": "main: a could-not-tell exits 2 — NEVER 0"
+ },
+ {
+  "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "                elif f.startswith(\"resolved:\"):\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())\n                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
+    "                else:\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())"
+   ]
+  ],
+  "expect": ["an unrecognised flag is an ERROR, not a crash",
+            "...and the entry degrades with the flag-loop's own diagnostic"]
+ },
+ {
+  "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
+    "                else:\n                    pass"
+   ]
+  ],
+  "expect": ["an unrecognised flag is an ERROR, not a crash",
+            "...and the entry degrades with the flag-loop's own diagnostic"]
+ },
+ {
+  "name": "main: a compose that wrote NO page reports success",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if r.returncode != 0 or not a.out.is_file():",
+    "    if False:"
+   ]
+  ],
+  "expect": "main: a compose that wrote no page is a FAILURE, never a 0"
+ },
+ {
+  "name": "main: a compose that TIMED OUT reports success",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 1",
+    "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 0"
+   ]
+  ],
+  "expect": "main: a compose that timed out is a FAILURE, never a 0"
+ },
+ {
+  "name": "main: the dead-collector warning loop never fires, so a half-measured page looks whole",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    for label, err in ((\"git\", git_error), (\"gh\", pr_error),\n                       (\"gh/exemptions\", exempt_error), (\"store\", store_error)):",
+    "    for label, err in ():"
+   ]
+  ],
+  "expect": "main: a dead collector is announced on stderr, not swallowed"
+ },
+ {
+  "name": "main: a non-positive --window is silently accepted",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "    if a.window < 1:",
+    "    if False:"
+   ]
+  ],
+  "expect": "main: --window below 1 is a refusal, not a silent default"
+ }
+]
+```
+
+---
+
 ## Self-Review
 
-**Spec coverage.** §4 what-needs-you → Task 3 Step 3. §5 the chart → Tasks 2–3. §6.1 rendered once → Task 3. §6.2 grammar → Task 1 (every row has a case). §7 the gate → Task 4. §8 build split → Tasks 1–4, 6. §9 checks → Tasks 1, 4, 5. §10.1 folds → Task 5. §10.2 store created → Task 1 Step 7. §10.3 `PAGE_SKILLS` → Task 6 Step 1. §10.4 `gh` failure → Task 2 Step 5 + Task 3.
+⚠ **Read this sceptically.** v1's asserted *"every row has a case"* where one falsifier had neither
+code nor case; v2's carried a ✅ on §9 for an alarm that was never built, and a ✅ on §4 for "four
+cases" when half of §4's sources had none. **A self-review fails in the direction self-reviews
+always fail — toward believing the mapping rather than running it.** Every ✅ below was mutation-
+tested: the behaviour was broken and the named case was watched going red.
 
-**Gaps, stated rather than hidden:**
-- §5's *"control to widen the window"* is a `--window` **argument**, not an in-page control. A reader cannot widen it from the browser. That is a real shortfall against the spec and belongs in the PR description as known, not silently absent.
-- §9's affordance probe is inherited from `explainer-delivery.md` §5b rather than restated; Task 6 Step 2 cites it.
+| Spec | Where | Checked by |
+|---|---|---|
+| §3 in-scope list | Tasks 2–4 | ✅ glossary now built and asserted on its **content**, not the word (the CSS rule `#glossary` matched, so the whole section could be deleted and the case still passed) |
+| §4 what-needs-you | Task 4 | ✅ store half **and** the `gh` half — v2 had no case passing a non-empty PR list, so half of §4 could be deleted silently |
+| §5 the chart | Tasks 3–4 | ✅ buckets, oldest-left direction, the under-count sentence, and the bar→entry anchor; **✗ the "control to widen the window" is still a CLI argument** — see Gaps |
+| §6.1 rendered once, marked bars | Task 4 | ✅ both marks asserted on **sighted output only** — hover text and screen-reader labels excluded |
+| §6.2 grammar | Tasks 1–2 | ✅ every row, including the unknown-resolve-id falsifier, two `[resolved:]` flags, the missing space, the empty title, tie order, ordinal stability, and "in place" on the order the store **actually uses** |
+| §7 the gate | Tasks 1, 6 | ✅ verdict cases + controls A–F; **display** built; CI wiring is Task 6 Step 5 and is an acceptance criterion, not an assumption |
+| §9 checks | Tasks 1, 4, 5 | ⚠ **PARTIAL — one ✅ covered five bullets of unequal standing.** Bullet 2 (the commits-with-no-entry alarm) is built and mutation-tested. Bullet 4 (a resolved item leaves §4 **and stays in §6**) has a case for the leaving half and none for the staying half — filtering cleared entries out of *What changed* is green. Bullet 5 (folds) the row below downgrades to *partial*. **Bullet 1 — "the page names the last date an entry was written" — is NOT BUILT**: `build()` renders no such element, a reader infers it from the first `<h3>`, and an empty store says "No entries yet". Round 4's M5, and the third round in which a Self-Review row claimed coverage it did not have |
+| §10.1 folds | Task 5 | partial — three text-shape rows that go red when the call is deleted, plus a manual two-fold check. **No automated behavioural test**; see Gaps |
+| §10.2 store created | Task 2 Step 5 | ✅ Step 6 parses the real file |
+| §10.3 `PAGE_SKILLS` | Task 6 Step 1 | ✅ via `check-explainer-delivery.py`, which **cannot enforce its own list** — stated in the step |
+| §10.4 `gh` failure | Tasks 3–4 | ✅ **now automated, not only manual.** v5's ✅ rested on the Task 3 falsifier alone: a **human step**, covering two of the four collectors, and blind to unparseable `gh` output entirely. v6 stubs `subprocess.run` in the suite, so a missing binary, a non-zero exit and unreadable JSON each have a case and a declared mutation. The manual falsifier stays — it is the only thing that exercises the real binaries |
 
-**Type consistency.** `parse_entries` returns dicts with `id`/`date`/`ordinal`/`needs_you`/`resolves`/`error`/`raw`/`title`/`plain`/`tech`; `unresolved` and `bucket_days` read only those keys; `build` reads only those plus `bucket_days`' `commits`/`has_entry`. `verdict` in Task 4 shares no types with `gen-dashboard.py` by design.
+**Gaps, stated rather than hidden — five.**
 
-**Placeholders:** none. Every code step carries the code.
+1. §5's *"control to widen the window"* is a `--window` **argument**, not an in-page control.
+2. §9's affordance probe is inherited from `.agents/skills/shared/explainer-delivery.md` §5b.
+3. **Task 5 has no automated test of the actual behaviour.** Three static rows plus a human opening
+   two folds is all a check of a JS string can do.
+4. **`no_entry_prs` is bounded at 40 merged PRs** and depends on `gh`. An older exemption stops
+   being displayed — a silent horizon, named here.
+5. **The gate cannot see a missing title.** `header_error` is shared, so parser and ratchet agree on
+   every *header* shape; but a well-formed header over an empty body is malformed to the page and
+   invisible at the diff level. Perfect agreement is impossible there, so it is stated instead of
+   claimed away — which is what v2 did.
+
+**Type consistency.** `parse_entries` returns dicts whose `resolves` is a **list**; `unresolved`,
+`bucket_days` and `build` all iterate it as one. The dependency is one-way: `gen-dashboard.py`
+imports the grammar and `exemption_reason` from `check-dashboard-entry.py`, never the reverse, and
+the gate is built first so no step depends on a file a later task creates.
+
+**Placeholders:** none.
+
+
+## What v2 changed
+
+Grouped by the review finding that forced it. Nothing here was found by re-reading the plan; every
+item came from running it.
+
+| # | Change | Task |
+|---|---|---|
+| B1 | The Task 4 falsifier could not fire (`git stash push` on a committed file is a no-op) **and the plan told the implementer to read its success as failure**. Replaced with scratch-repo controls A–E, one of which removes the entry from the branch diff — the only input the check reads | 4 Step 6 |
+| B2 | `build()` returns a fragment; v1's default `--out` wrote it straight to the served page, losing the Ask tray and the charset silently, and the regen hook would have done it on every entry. `main` now calls `brief-compose.py` and fails non-zero | 3 Step 5 |
+| B3 | `[resolved:]` naming an unknown id was accepted — silent in the worst direction, leaving an item on "What needs you" forever with no diagnostic. Added a second parser pass | 1 Step 3 |
+| B/H | The skill was to be created at `.claude/skills/dashboard/` as a real directory, failing two checks. Moved to `.agents/skills/` + symlink | 6 Step 2 |
+| B/H | The ratchet was never wired to a PR body, so it shipped a tested script and not a gate. Wired, with an injection-safe body path, and made an acceptance criterion | 6 Step 5 |
+| H1 | §7 requires `NO-ENTRY:` to be **displayed**; nothing rendered it, which is the mechanism by which the gate hollows out leaving no trace. Added `no_entry_prs` + a page section | 2, 3 |
+| H3 | A malformed block always rendered at the very bottom, and the case named "rendered in place" asserted only that the string appeared somewhere | 3 |
+| H4 | The zero-commit "marked" bar was marked only inside a visually-hidden span — pixel-identical on screen | 3 |
+| H5 | A `gh` failure blanked "What needs you", discarding needs the local store knew — in exactly the scenario the page exists for | 3 |
+| M1–M8 | Entry ids rendered; duplicate DOM ids removed; same-date ties keep file order; `unresolved` enforces "later"; the hook became code plus registration; Task 5's rows can now fail; folds key on stable ids; `##` with no space is no longer silently dropped | 1–5 |
+| L1–L7 | Expected counts removed from every step (v1 said `19/19`, actual `18/18`); untitled entries rejected; `gh` output shape-checked; fenced `NO-ENTRY:` ignored; exempt paths matched as paths; a non-positive window refuses; pointer rows added | all |
+| — | The roadmap has no dashboard entry at all. Added | 6 Step 6 |
+
+**Two of v2's own defects were found by running v2, not by reading it** — recorded because they are
+the argument for the method, not incidental:
+
+1. The new pass-2 guard was written `if e["error"] or not e["resolves"]`, which treats `""` — the
+   flag declared with nothing after it — as "no flag at all". The case asserting `[resolved: ]` is
+   malformed **failed**. `resolves` is three-valued; a falsy test collapses two of the three.
+2. Control D was written without `mkdir -p docs`. Control C's `git rm` had removed the last file in
+   `docs/`, git removed the directory, the `printf` failed, nothing was committed — and D **still
+   printed `REFUSED`**, because there was no entry at all. It passed without ever exercising the
+   rule it names. Fixed, and paired with control E so that D alone cannot look convincing.
+
+Both are the same shape as B1 and as `docs/portable-practices.md` §17: a check that reports success
+about a subject it never reached. Writing that rule into the Global Constraints did not stop it
+happening twice on the next page. **Only running it did.**
+
+### v2.1 — a third, found by attacking v2's own new code before the reviewers saw it
+
+Round 1's lesson was *execute the material*, so before dispatching round 2 I ran v2's additions
+against their edge cases rather than re-reading them. `_ordered()` held (malformed block first,
+last, several consecutively, entire file malformed — all render in place) and pass 2 held. The
+exemption reader did not:
+
+| Probe | v2 did | Should |
+|---|---|---|
+| `<!--`…`NO-ENTRY: x`…`-->` | **exempted the branch** | ignore |
+| `    NO-ENTRY: x` (4-space indent) | exempted | ignore — Markdown code block |
+| ` ``` ` opened, `~~~` "closing" it | read the line after as a declaration | ignore — a fence closes only with its own character |
+
+**The HTML-comment case is the one that mattered.** GitHub pull-request templates put their
+instructions inside `<!-- ... -->`. A template that documented this very escape hatch would have
+silently exempted every branch that used it — the gate would have reported success on every PR
+while enforcing nothing, and the dashboard's exemption list would have shown it happening, which is
+the only reason it would ever have been caught.
+
+**Why this is not Blocking:** it is latent, not active. Measured 2026-08-28 — this repo has **no**
+`.github/PULL_REQUEST_TEMPLATE`, and PRs #170–#173 contain zero HTML comments. Nothing is exempt
+today that should not be.
+
+`exemption_reason` now tracks fences by their own character, honours the 4-space rule, and skips
+HTML comments across line boundaries; 11 new self-test rows cover all of it, including the three
+constructs that must **still** be read as real declarations (after a closed comment, after a closed
+fence, and a 3-space indent). Re-verified after the change: generator self-test green, gate
+self-test green, controls A–E unchanged, and end-to-end a commented-out `NO-ENTRY:` now refuses
+while a real one passes.
+
+A fourth, smaller: pass 2 said *"names no entry in this file"* even when the entry existed and was
+merely unparseable, sending the author to hunt for a typo that was not there. It now distinguishes
+the three cases.
+
+---
+
+## Round 2 — Codex half, and the thing it caught me doing
+
+`docs/reviews/plan-project-dashboard-r2-codex.md`, against `4077817`. **NOT CONVERGED**: 3 Blocking,
+2 High, 2 Medium. All seven are addressed below; every fix was re-run, not reasoned about.
+
+### ⛔ The finding that matters most is about the VERIFICATION, not the plan
+
+**Blocking — `gen-dashboard.py --self-test` FAILS.** The case
+`case("gh failure says could not tell", "could not tell" in html_err.lower(), True)` asserts a
+string the renderer stopped emitting when H5's fix reworded it to *"I could not **also** check open
+pull requests"*. A stale assertion against live code — ordinary enough.
+
+**What is not ordinary is that I had run this and reported 55/55.** Transcribing the plan into a
+scratch file, I wrote `"could not" in html_err.lower()` — dropping one word — and the weakened
+version passed. Codex transcribed faithfully and got `54/55`.
+
+So the green I reported was measured against **an assertion I had softened while copying it**. This
+is `docs/portable-practices.md`'s *test harness can launder failures*, committed by the author of
+the section warning about it, one commit after writing it. **A transcription is not a copy unless
+it is diffed.** The case now asserts the contract — an unchecked source is announced as
+`NOT CHECKED` and its reason is surfaced — rather than one version's wording.
+
+### The rest
+
+| Sev | Finding | Fix |
+|---|---|---|
+| **B** | Task 2 Step 6 verifies `no_entry_prs()`, which imports `check-dashboard-entry.py` — a file **Task 4 creates**. The stated expected output cannot occur in task order | The check moved to **Task 4 Step 6a**, plus a falsifier that hides the gate file and requires a loud `CANNOT RUN` |
+| **B** | `set -e` at the top of the Task 4 controls **kills the script at Control A**, whose whole purpose is to exit 1. It never printed a verdict line and never reached B–E | `set -e` removed, with the reason stated so nobody restores it |
+| **H** | `git fetch --no-tags --depth=200 origin master` **exits 0 and creates no `origin/master`** on a shallow branch-only checkout, so the CI ratchet cannot run | Explicit refspec `+refs/heads/X:refs/remotes/origin/X`. **Reproduced and re-verified here**: bare form → `origin/master MISSING`, `diff rc=128`; refspec form → ref created, diff clean |
+| **H** | `NO-ENTRY:` inside an HTML comment exempts the branch | **Already fixed in v2.1**, independently. Two reviewers reaching the same defect from different directions is the strongest signal available that it was real |
+| **M** | A ` ``` ` fence treated as closed by `~~~` | **Already fixed in v2.1** |
+| **M** | The parser comment says a spaceless `##2026-08-28` "must become a MALFORMED entry"; the code accepted it as ordinary, and a self-test row asserted the accepting behaviour | The comment was right. `HEADER` now requires the space, the entry is malformed with a diagnostic naming the space, and the gate's `_ADDED_ENTRY` requires it too — so the two can no longer disagree about what an entry is |
+
+**Re-verified after all seven, not assumed:** generator **58/58**, gate **32/32**, controls A–E run
+to completion (`A rc=1`, `B rc=0`, `C rc=1`, `+## not-a-date` present, `D rc=1`, `E rc=0`), and the
+CI refspec reproduced end to end.
+
+**Two Codex findings were things v2.1 had already fixed**, which is worth noting rather than
+glossing: it reviewed `4077817`, and v2.1 landed as `7ce2ac6` while it was running. The overlap is
+confirmation, not waste.
+
+**Still NOT CONVERGED, and the Claude half of round 2 has NOT run.** Round 1's two halves overlapped
+on 2 of ~26 findings; one reviewer is not the gate. That gap is the next action, and it is recorded
+rather than papered over.
+
+---
+
+## v3 — round 2's Claude half, and the task reorder it forced
+
+`docs/reviews/plan-project-dashboard-r2-claude.md` — **2 Blocking, 8 High, 6 Medium, 5 Low, NOT
+CONVERGED.** Twenty-one findings, of which **none** duplicated the Codex half and **one** overlapped
+the coordinator's mutation pass. Two rounds now say the same thing: a single reviewer is not the gate.
+
+### The two Blocking
+
+| | |
+|---|---|
+| **B1** | The CI ratchet **still could not run**. v2.2's refspec created `origin/master` and left a second error behind it — `actions/checkout` takes depth 1 on the synthesised merge ref, so `HEAD` is a graft with **no merge base**. Same `ratchet_rc=2`, different sentence. It had been verified against the *symptom the previous round reported* rather than the *outcome*, in a scratch repo that was not shallow and therefore could not observe it. **Fixed with `fetch-depth: 0`** — measured at ~1.2s and ~4MB over 1,398 commits, with nothing else in CI reading history |
+| **B2** | Task 4's Step 1 block had no `import re`, so Step 2's expected `NotImplementedError` was a `NameError` and Step 4's green was unreachable. v2.1 added `FENCE` above the block that imported `re`; both prior reviewers assembled the **final** file and never executed the intermediate states the task prescribes |
+
+### The reorder, and why it was not optional
+
+H1 measured **five header shapes** where the ratchet and the parser disagreed, while v2.2's own text
+claimed *"they can no longer disagree"* — v2.2 had closed exactly the two shapes Codex named.
+Instance-not-class, answered this time with a run rather than a recollection.
+
+The fix is one grammar, owned by the gate and imported by the page. **But that makes the parser
+depend on a file the gate task creates** — which is the very defect B2 and H8 filed. Fixing one
+finding would have reintroduced another.
+
+**So the gate is now Task 1 and the parser Task 2.** Considered and rejected: a third shared module
+(more concept than the problem needs), and inverting the import so the gate depends on the generator
+(a gate must never import the thing it guards).
+
+### The rest
+
+| Sev | Finding | Fix |
+|---|---|---|
+| H2 | §9's alarm — *every day with commits and no entry is visibly marked* — was **not built, had no case, and its Self-Review row carried a ✅**. Bars measured byte-identical | Built, with a hatched bar and a gap mark, asserted on sighted output |
+| H3 | Two `[resolved:]` flags on one header: the first silently discarded, `error: None` — verbatim the failure pass 2 exists to prevent, in the sibling case it did not consider | `resolves` is a list; every consumer iterates it |
+| H4 | *"Rendered in place"* held only for a newest-**first** file. The store is newest-**last** by the plan's own Step 5, so on a real store the malformed block still fell to the bottom. **The certifying case was built on the one ordering where the bug is invisible** | `_ordered` splices a malformed block after whichever neighbour renders first — order-agnostic, verified under both orderings |
+| H5 | The marked-bar row survived losing **both** on-screen marks, because it still compared `title=` and `aria-label=` | Compares the bar's own class and its child elements; hover text and aria excluded |
+| H6 | The `gh` half of §4 had **no case at all** — every fixture passed an empty or `None` PR list | A case with a real open PR, asserted inside its own section |
+| H7 | The indent rule was bypassable two ways: a **tab**-indented declaration, and the text before an HTML comment, which never ran through the check | Tabs count to the 4-column stop; the head runs through the same rule |
+| H8 | *"Replace the direct call"* had a literal reading returning `([], None)` — a confident *"No branch has skipped its entry"* on every page — and Step 6a could not tell, because `0` is also today's correct answer | The finished function is shown; the check is paired with a falsifier that hides the gate file |
+| M1–M6 | Ordering untested; a roadmap step duplicating work the same commit already did; a falsifier expecting output its own snippet cannot print; §3's glossary and §5's under-count sentence absent; dead bar links on days without entries; ordinals that shifted when a typo was repaired, silently rebinding a standing `[resolved:]` | all fixed and mutation-checked |
+| L1–L5 | A cited line number off by one; a visible declaration after a closed comment; a row passing for an unrelated reason; chart direction untested; a verification step whose "scratch line" becomes part of the previous entry | all fixed |
+
+### Three more found by attacking v3 itself, before any reviewer saw it
+
+Mutation-testing the new suite — 19 mutations — caught three cases that could not fail for what they
+named, **all written in the same sitting as the fixes they certify**:
+
+1. The `§6.1` mark comparison read the **container's own class as a child element**, an artifact of
+   the §5 fix that made the container tag vary. It passed with every visible mark deleted.
+2. The glossary case matched the **CSS rule** `#glossary`, so the entire section could be removed.
+3. The CRLF normalisation was **dead code** — `.strip()` already covered it. Removed rather than
+   left as a line no test can reach.
+
+**That is the fourth, fifth and sixth instance of one shape today**, after the falsifier that could
+not fire, the transcription that weakened its own assertion, and the two vacuous regression cases.
+The lesson is not "write better cases": it is that **the only thing distinguishing a real guard from
+a decorative one is breaking the code and watching it go red.**
+
+## v6 — round 4, both halves
+
+Round 4 is the **fourth consecutive non-converging round**, which is `docs/dev-process.md`'s Phase 6
+trigger. It is also the first *complete* round since round 2 — three of the last four had a half that
+did not really run or was not really independent, so the count is inflated by process failures as
+well as by defects. Read the trigger off the **cause**: rounds 1–2 found broken code; rounds 3–4
+found the document wrong about its own checks. The code side is strong and stayed strong. What kept
+failing was the prose around it, and v6 is the version that stops relying on prose for it.
+
+**Its method is the bar for the next round.** It assembled the plan's code twice — once with the
+plan's own `extract()`, once with an independent hand parser — and `diff`ed the two before believing
+any green; ran controls A–F verbatim in a throwaway repo; and wrote **50 mutations the manifest does
+not declare**, 42 against the plan's code and 8 against `check-plan-code.py` itself.
+
+### The Blocking, and why the fix is a check and not a resolution
+
+**B1 — the generated evidence block was stale.** Generated at v4, never regenerated, so under a v5
+document it reported 25 mutations against 26 and 77 tests against 79. *Fourth round running that
+what failed was the plan's account of its own verification — this time inside the mechanism built to
+stop exactly that.*
+
+The tempting reading is "generating was a mistake". It was not. **Generating bought provenance and
+not freshness**, and a block headed `GENERATED` is read with more trust than typed prose, which makes
+a stale one strictly worse than a typed one. So v6 does not add a rule saying *remember to
+regenerate*; it adds `--verify-evidence`, which exits 1 when the pasted block is not what the current
+document produces, and puts it in CI. Pointed at the v5 block it printed a diff naming `25 → 33` and
+`77 → 89`.
+
+### The six High
+
+| # | Finding | Fix |
+|---|---|---|
+| **H1** | `check-plan-code.py` **never opens the delivered scripts** — everything happens in a `TemporaryDirectory` written from the markdown. Acceptance criterion 5, Task 4 Step 5 and the new CI step all said otherwise. *A checker pointed at the wrong subject — this session's own recurring defect, committed while building the tool against it* | `--compare DIR` diffs each assembled file against `scripts/` and fails on one byte, or on a file it cannot read. The evidence block now **names its subject**, so a bare run cannot be mistaken for a compared one. Step 5, the CI step and criterion 5 all pass `--compare`; new **Step 5a** regenerates the block in the compared form at the first moment both files exist |
+| **H2** | The **whole impure layer was unguarded** — 15 undeclared mutations survived, 6 turning *cannot tell* into a silent pass. `collect()` and `main()` had no coverage at all; `return 2` → `return 0` makes the ratchet **fail-open** | `_impure_self_test` in the gate and a collector block in `gen-dashboard.py`, both stubbing `subprocess.run`. **7 new declared mutations**, each caught by the case that names it |
+| **H3** | The checker's self-test had **no case for its primary job**. Three mutants passed 19/19: `rc != 0` no longer failing, `ok = not problems` → `ok = True`, and an unknown mutation target | Cases for all three, plus `--compare` and `--verify-evidence` coverage. **44 cases**, and the declared count is now checked against the real one — it fired on its author's first guess |
+| **H4** | Task 1 Step 6's controls **report a pass when the gate script is absent**: every row prints `rc=2`, none prints `ok`, and the stop-condition is satisfied by a run that tested nothing | The block refuses to start without the file, and compares a full `want`/`got` vector instead of scanning for one token. Falsified both ways: `CONTROLS OK` with the gate present, `CANNOT RUN … NOT TESTED` without |
+| **H5** | The **orange `needs-you` bar** — spec §5's primary chart signal — was built and no case could see it go | A third `_marks` comparison, plus a declared mutation |
+| **H6** | Task 3 Step 3's stop-condition **fires on the correct answer**: `open_prs` returns `0 / err: None` against this repo today because there are genuinely no open PRs | Compare the **pair**, with and without the binaries. ⚠ The falsifier as first written hid `python3` along with `git`, so it could never run — fixed with an absolute interpreter path, measured |
+
+### Medium and Low
+
+- **M1** — `_self_test` was assembled **twice, byte-identical**, into the gate. Step 5 silently
+  re-included all 74 lines of Step 4's block; Python keeps the second, so both suites were green
+  either way, and `replace(…, 1)` meant any mutation anchored there landed on the **dead first
+  copy**. The duplicate is gone; Step 5 now carries `_impure_self_test` instead.
+- **M2** — Task 2 Step 2 told the implementer to write a test that does not exist until Task 4.
+  Retitled to what the block actually is.
+- **M3** — `verdict`'s three-valued `reason`: both branches return `1`, so deleting the empty-reason
+  branch was green. The **message** is now asserted, with a mutation.
+- **M5** — §9's row carried one ✅ over five bullets, one of which (*the page names the last date an
+  entry was written*) **is not built**. Downgraded to ⚠ PARTIAL, per bullet.
+- **M6** — `<!-- illustrative -->` was an unbounded hiding vector: arbitrary broken code behind it
+  passed. The tag now **requires a reason**, and `--evidence` prints what was excluded and why. ⚠ Both
+  forms must stand alone on their line — a `.search()` reported the paragraph *describing* the
+  convention as a defect, measured while adding the rule.
+- **Lows** — the checker's `# 12 cases` against a 19-case suite (now derived and self-falsifying);
+  `extract()`'s 3-tuple annotation on a 4-tuple return; a `TimeoutExpired` traceback where a
+  `CANNOT RUN` belonged; the `dev-process.md` line budget named as **214 of 220** rather than left to
+  be discovered at the gate; and a `gh --body-file` reading a path only the CI runner creates.
+
+### Two defects v6 introduced and caught in itself
+
+Both are the same shape as the ones above, which is the argument for running the checks rather than
+trusting the edit:
+
+1. The Step 3 falsifier emptied `PATH` to hide `git` and `gh` — **and hid `python3`**, so it died
+   before testing anything. A falsifier that cannot run is H4 again, one file over.
+2. `ILLUS_BARE` used `.search()`, so the sentence explaining the convention matched it and the
+   checker failed on its own documentation.
+
+### Deliberately NOT fixed
+
+- **M4** — `collect()`'s three-dot `...HEAD` survives becoming `..HEAD`, and controls A–F structurally
+  cannot see it because `master` never advances in them. Real, and the fix is a longer control repo;
+  filed as work, not folded in.
+- **U15/U16/U30/U31** — `main`'s compose path, the `--window < 1` guard, `--store`, and a frozen
+  `today`. These need a subprocess and a written page to observe; **stated here as a gap rather than
+  covered by a ✅**, which is what round 4 asked for.
+
+**Round 5 should be SCOPED to `scripts/check-plan-code.py`.** H1 is a genuine design defect in the
+tool — a checker verifying the wrong subject — and the tool grew a lot in v6: `--compare`,
+`--verify-evidence`, the illustrative-reason rule, the result-line and colon parsers. The rest of the
+plan has now survived four rounds, 34 declared plus 50 undeclared mutations, and controls A–F; a
+fifth full reading would be the fifth reading of material that stopped yielding code defects two
+rounds ago.
+
+---
+
+## v7 — round 5, SCOPED to the tool
+
+Round 5 deliberately did not re-read the plan. The plan side had survived four rounds and stopped
+yielding code defects two rounds earlier; **the subject was `scripts/check-plan-code.py`**, because
+round 4's H1 was a design defect *in the tool* — it verified the plan's copy of the code and never
+opened the files CI ships — and the fix, plus four other mechanisms, had landed with no independent
+read.
+
+That scoping was right. Both halves found real defects in the new code, and **not one finding was
+about the plan's tasks.**
+
+**Codex:** 1 misapplied Blocking, 3 High, 2 Medium, 1 Low, plus 6 self-test survivors.
+**Claude:** 0 Blocking, 4 High, 6 Medium, 6 Low, plus **18 survivors out of 42 valid mutants** —
+having written 44 undeclared mutations against the checker itself.
+
+### What was actually wrong
+
+| Finding | Fix, and how it was falsified |
+|---|---|
+| **`--compare` resolved the BASENAME.** Two tags — `one/m.py`, `two/m.py` — both compared to a single delivered `m.py` and both reported `identical`. A tag naming a path that exists nowhere reported `identical` too. **The exact defect `--compare` was added to fix, one layer in** | `--compare` now takes the **repo root** and resolves each tag whole. The plan's six call sites move from `--compare scripts/` to `--compare .`. Falsified: distinct tags now resolve to their own targets, and a same-basename plan passes |
+| **The file tag was used as a path with no sanitisation.** `<!-- file: ../escape.py -->` wrote OUTSIDE the `TemporaryDirectory` — measured, the file landed in `$TMPDIR`. An absolute tag aimed at the compare root would make the checker **overwrite the delivered file and then certify it `identical`** | Absolute and `..` tags are refused. Reject, not sanitise: silently rewriting a tag makes the evidence describe a file the plan does not name |
+| **`main()` had ZERO coverage** — and it is the only layer CI and acceptance criterion 5 read. `return 0 if ok else 1` → `return 0` left the suite at 44/44. The proposition the whole gate rests on, *that a non-zero exit follows from a failed check*, was asserted nowhere | Nine cases on `main`: green → 0, red → 1, missing plan → 2, no plan → 2, `--compare` at a non-directory → 2, stale evidence → 1, compared-and-matching → 0. **Round 4's H3 recurring one layer out**: the fix there added cases for `check()`, and nobody asked the same question of its wrapper |
+| **A mutation that HANGS was recorded as `caught`.** `run_suite`'s own comment says rc 2 must not read as either verdict; its very next caller did `caught = rc != 0`. Two minutes of NOT CHECKED, printed into the evidence as proof a guard works | rc 2 is now a loud cannot-run. The timeout became a module constant so a case can reach it in 2s instead of 120 |
+| **`expect` was a bare substring**, and `"does NOT count"` matched **7** case names. Combined with first-occurrence replacement it certified an *untouched* guard as caught | Each `expect` must resolve to **exactly one** red case, and it may now be a **list** when a mutation legitimately breaks several — more honest than naming one of five arbitrarily. **It immediately found 4 loose entries in this plan's own manifest**, all now explicit case sets |
+| **An ambiguous mutation anchor** mutates the first match, which need not be the line it names | Refused. It found a real ambiguity in the checker's own `GOOD` fixture on its first run |
+| **Two evidence blocks:** a stale one after a fresh one was never read | More than one marker is a failure, not a choice of which to believe |
+| **Indented and info-string fences were invisible** — not counted, not reported, not excused | Reported. `FENCE` stays anchored at column 0 so an indented ``` inside a python block still cannot close it |
+| **Only `ILLUS_*` were anchored.** `FILE_TAG` and `MUT_TAG` still used `.search()`, so a tag in a SENTENCE parsed as a tag | All four anchored. v6 fixed the instance it measured and left the class — the shape this project has now filed five times |
+| Block order, the per-mutation source restore, the `[FAIL]` prefix, `count_drift`, the no-files guard, and the evidence block's own content were all unpinned | A case each |
+| **The three modes were indistinguishable** from stdout and exit code, so a CI log could not show which subject ran | The final line names the mode: `OK — compared + evidence-verified: …` |
+
+### The one I introduced while fixing round 4
+
+**H4.** v6's Step 5a regenerates the evidence block in compared form — and the plan's own two
+documented commands do not pass `--compare`. From the moment 5a lands, *the command the plan
+advertises as its freshness falsifier exits 1 and reports a fresh block as STALE.* **A falsifier that
+fires unconditionally is worse than none**: the first person to run it learns the check lies and
+stops reading it. That is round 4's B1 inverted, introduced by B1's own fix. Step 5a now rewrites
+those commands in the same edit, and the block says plainly that it is invocation-specific.
+
+### Not fixed — three EQUIVALENT mutants, verified as such rather than waved away
+
+`caught = rc == 1` → `rc != 0` (the `rc == 2` guard returns first, so rc ∈ {0,1} there);
+un-anchoring `FENCE` (it is only ever used with `.match()`, which anchors at 0 regardless); and
+`replace(find, repl, 1)` → replace-all (the ambiguity guard means only one occurrence can exist).
+Each was checked by reading the path, not assumed.
+
+**Suite: 44 → 92 cases.** Re-running round 5's survivor set: **13 of 16 caught, 3 equivalent, 0 real
+survivors.**
+
+### The shape worth remembering
+
+Every High in this round is the same sentence with a different subject: **a check that reports
+success over something it did not measure.** The basename collapse, the unsanitised tag, the
+uncovered `main`, the hang read as a catch, the substring `expect`. v6 fixed that sentence for
+`check()` and reproduced it five times in the code it added while doing so. The lesson is not to
+write better checks; it is that **the question "what would this report if it were measuring nothing?"
+has to be asked of every layer, every time — including the layer you just wrote to ask it.**
+
+---
+
+## v8 — round 6, the short scoped re-review
+
+Round 6 was deliberately short and pointed at the eleven things round 5 changed, with both halves
+told that *a short clean round is a real result*. It was not clean, and what it found is the most
+useful result of the six rounds: **round 5's fixes were correct in verdict and incomplete in
+mechanism, in the same shape as the defects they fixed.**
+
+**Codex:** 0 Blocking, 0 High, 1 Medium, 1 Low, 6 survivors of 27.
+**Claude:** 0 Blocking, **2 High**, 5 Medium, 5 Low, 9 genuine survivors of 60 (2 proven equivalent).
+
+**No finding in either half was about the plan's tasks.** That is now two consecutive rounds.
+
+### The two that mattered
+
+**H2 — an escaping file tag was reported and then WRITTEN ANYWAY.** Round 5's fix added the problem
+to `extract()` and left the write loop in `check()` untouched, so the checker still created the file.
+An absolute tag pointing into the `--compare` root **overwrote a delivered file**, and the run that
+did it printed `identical <path>` inside its own evidence block beside `FAILED`. The verdict was
+right; the side effect was silent data loss in a tool whose stated premise is that everything happens
+inside a `TemporaryDirectory`.
+
+The reason nothing caught it is the sharpest sentence in the round: **the case that claimed to cover
+it asserted against `extract()` — the layer that reports — and never ran `check()`, the layer that
+acts.** Round 5's must-change asked for two things and one landed. There is now a single predicate,
+`unsafe_tag()`, used both to report and to refuse, and a case that runs `check()` and asserts the
+delivered file still holds its original bytes.
+
+**H1 — the `expect` LIST form had ZERO coverage.** Round 5 added the mode, moved the plan's most
+important mutations onto it (4 entries declaring 11 named guards, including its own headline example),
+and asserted nothing about it. Deleting the list handling outright, and checking only its first entry,
+both left the 92-case suite **and the real plan** green.
+
+### And the rule itself was still not the rule
+
+Codex found that round 5's "exactly one" guard is **cardinality-only**: it required exactly one
+*match*, never that the match was the right case. Measured — an `expect` naming a **completely
+unrelated** case, or a mere fragment of a name, still certified the mutation. The plan's rule is *"red
+via the case it NAMES"*, and only equality says that.
+
+`expect` is now an **exact** case name. Applying it exposed **19 of the 34 entries** as shortenings;
+all are now spelled out, four as explicit sets where a mutation legitimately breaks several guards.
+An empty list is refused rather than read as "no expectation".
+
+### The rest
+
+| Finding | Fix |
+|---|---|
+| **M3** `INVISIBLE_FENCE` rejected a **four-backtick fence** — the standard idiom for quoting a fence, already in this repo — and then demanded the fence quoted *inside* it be tagged, which is advice that cannot be followed. Also ` ```c++ `, ` ```{r} ` | Narrowed to the only hazard that matters: a **python** block the parser cannot see. Everything else is somebody else's fence |
+| **M1** `MISSING` — the one compare verdict meaning *not checked* — was the only one with no assertion; the evidence block would print `identical` for a file that could not be opened | Pinned by value |
+| **M2** the anchor-NOT-FOUND case passed via the wrong branch. With one edit a missing anchor and a survivor coincide; with **two**, the guard is the only thing between a typo and a mutation certified `caught` on its second edit | A two-edit fixture, asserting the message |
+| **M4** "all four tag patterns anchored" was three-of-four | ⚠ The first version of this case did not diverge either — the prose tag needed a JSON block after it to be observable |
+| **M5** `count_drift` was covered; the CALL that makes it load-bearing was not | `_drift_rc` — and see the gap below |
+| **L1** the evidence block's per-file result line had no assertion | Pinned |
+
+### The one thing NOT fixed, and why it is written in the docstring instead
+
+`_self_test`'s last line is `return _drift_rc(__doc__, ok, fail)`. Deleting the drift check there is
+**not caught**, and it cannot be: a suite cannot observe its own exit code without recursing into
+itself. `_drift_rc` has three cases; its call site has none. **The honest closure is an external
+observer** — a ratchet that runs `--self-test` and compares the printed count to the docstring, the
+way `check-test-counts.py` does for the jest suite. That is recorded as a declared gap in the
+script's own header rather than ticked, and it is the first finding in six rounds whose fix belongs
+somewhere else entirely.
+
+**Suite: 92 → 121 cases.** Re-running round 6's survivor set: **11 of 12 caught**, the twelfth being
+that declared gap.
+
+### Where this leaves convergence
+
+Six rounds, and the severity curve on the *plan* went 3 Blocking → … → 1 Blocking → 0 → 0, with the
+last two rounds finding nothing in it at all. The curve on the *tool* went 4 High → 2 High → and
+round 6's Highs are both "the fix was half a fix", not new defects.
+
+⚠ **The recurring shape is now precisely nameable, and it is not "bad checks".** It is: **a fix that
+corrects the verdict without covering the mechanism.** H2 reported and did not refuse. H1 added a mode
+and asserted nothing. M5 extracted a function and left its call. M4 anchored three of four patterns.
+Each was a real fix that stopped one instance and left the class — six times, in six rounds, by the
+same author. That is the finding worth carrying out of this slice, and it is in
+`docs/portable-practices.md` territory rather than this plan's.
+
+---
+
+## v9 — the whole-branch review, and the two findings that were MEASURED
+
+The branch review (2026-08-29, after Tasks 1–6 landed) returned **nothing Critical** and two
+Important findings, both reproduced rather than argued. Neither is about the plan's prose; both are
+in `scripts/gen-dashboard.py`, so the plan's blocks and the delivered file moved together and the
+evidence block below was regenerated in the same edit.
+
+**C1 — the generator imported the grammar's SYMBOLS but not its MEANING.** `parse_entries`'s flag
+loop ended in a bare `else` that assumed every non-`needs-you` flag contains a colon. That was true
+only by accident of `FLAG`'s current alternation — in `scripts/check-dashboard-entry.py`, a file
+whose header says it **owns** the grammar and whose `_gate_module()` docstring invites you to extend
+it there. Measured: adding one alternative to `FLAG` left the gate at **46/46 + 5/5**, fully green,
+and made `parse_entries` raise `IndexError` on **every** render — so `gen-dashboard.py` exits
+non-zero, `regen-dashboard.sh` prints *"the page is now STALE"*, and the reader sees a page that has
+silently stopped moving. **This slice's own failure mode, reached through the seam built to prevent
+it.** An unknown flag now errors that ENTRY; the page degrades one block instead of dying.
+
+**C2 — `main()` had zero coverage**, which is round 4's finding about
+`check-dashboard-entry.py`'s `collect`/`main` recurring in the sibling file the fix did not reach.
+Four one-line mutations each survived a fully green **95/95**, and two of them are the exact promise
+`.agents/skills/dashboard/SKILL.md` makes about the exit code — the promise
+`.claude/hooks/regen-dashboard.sh`'s error branch rests on. All four are now declared mutations
+caught by cases that name them.
+
+**N1 — the re-review then found C1's own case exercising a MOCK of the seam, and saying it did not.**
+The case swapped only this module's `FLAG`. But `header_error` is the **gate's** function and closes
+over the **gate's** `FLAG`, which still rejected `[blocked]` at the header — so `err` was truthy and
+overwrote the flag-loop's message before it was ever read. Measured, the two readings differ:
+
+```
+under the TEST's setup      : "unrecognised text in header: '[blocked]'"   <- header_error
+with BOTH extended (REAL)   : "unrecognised flag [blocked]"                <- the new else
+```
+
+**Consequence: `else: entry["error"] = …` → `else: pass` SURVIVED at 102/102.** The case pinned
+*"does not crash"* — which was the defect, so the fix was never unguarded — but not the graceful
+degradation the same fix added. And the comment above it claimed `_flagged` was *"built through the
+gate's own grammar rather than a literal, so this case exercises the real seam instead of a mock of
+it"*, while being a hand-written literal duplicating the gate's pattern. **The comment asserted the
+very property the case lacked** — which is the sentence this slice keeps rediscovering, this time
+written by the author of the fix, in the same edit.
+
+Now: `_flagged` is derived from `_GATE.FLAG.pattern`; **both** attributes are swapped so the two
+readings agree by construction; the derivation is itself a case, because a no-op `replace` would
+leave a pattern that does not know the flag and the case would pass for the wrong reason; and the
+assertion is the **exact** degradation message rather than a substring both strings satisfy. The
+`else: pass` form is declared as its own manifest entry. Re-measured: `else: pass` → **101/103**.
+
+⚠ **The shape is the one this plan has now filed eight times**: a seam narrower than the prose
+describing it. C1's `else`, C2's uncovered wrapper and N1's half-bound fixture are all *"a check that
+reports success over something it never measured"*, each one layer out from where the previous fix
+landed. N1 is the sharpest instance, because the thing that was wrong was **a comment claiming the
+case was not a mock**.
+
+---
+
+### Standing evidence — GENERATED, not typed
+
+```
+GENERATED by scripts/check-plan-code.py — do not edit by hand.
+
+  python fences: 13 (12 assembled, 1 illustrative)
+    not assembled: assertion rows added to scripts/explainer-serve.py's OWN suite, not to a file this plan assembles
+
+  scripts/check-dashboard-entry.py  4 blocks assembled -> 46/46 passed · 5/5 cannot-run cases passed
+  scripts/gen-dashboard.py      8 blocks assembled -> 103/103 passed
+
+  subject: the plan's blocks, DIFFED against the delivered files:
+    identical  scripts/check-dashboard-entry.py
+    identical  scripts/gen-dashboard.py
+
+  mutations declared and run: 43, caught 43
+    caught   day anchors never emitted (every bar href is a dead link)
+    caught   bar height ignores commits
+    caught   entry title not rendered
+    caught   unresolved surfaces entries that failed to parse
+    caught   quiet-day mark: dot AND class both gone
+    caught   gap mark: gapmark AND class both gone
+    caught   gh half of what-needs-you suppressed
+    caught   dead bar links restored
+    caught   in-place anchoring reverted to the previous neighbour
+    caught   a run of malformed blocks loses its file order
+    caught   render in raw file order
+    caught   second [resolved:] dropped
+    caught   pass 2 deleted
+    caught   ordinal instability restored
+    caught   chart drawn newest-leftmost
+    caught   under-count sentence removed
+    caught   glossary section removed
+    caught   gh failure blanks the needs section
+    caught   first-parent dropped from the commit count
+    caught   gate stops sharing the parser grammar
+    caught   tab indent not counted
+    caught   head path skips the indent check
+    caught   fence closes on either character
+    caught   fence LENGTH ignored (short inner fence closes a long outer one)
+    caught   indent rule removed entirely
+    caught   line-leading rule removed
+    caught   the three-valued reason collapses: empty and absent become one message
+    caught   the orange needs-you bar is not drawn (spec §5's primary chart signal)
+    caught   commit_dates: a git failure renders as an EMPTY chart, not could-not-tell
+    caught   _gh_json: a missing gh renders as ZERO open PRs
+    caught   _gh_json: unparseable gh output renders as ZERO
+    caught   _gh_json: EMPTY gh output renders as a measured ZERO
+    caught   an UNREADABLE store renders as a measured 'no entries yet'
+    caught   §9's alarm fires off an UNREADABLE store
+    caught   the GATE reads a broken git as 'nothing changed'
+    caught   the GATE's missing-git branch reports no error
+    caught   THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges
+    caught   the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render
+    caught   the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix
+    caught   main: a compose that wrote NO page reports success
+    caught   main: a compose that TIMED OUT reports success
+    caught   main: the dead-collector warning loop never fires, so a half-measured page looks whole
+    caught   main: a non-positive --window is silently accepted
+```
+
+Reproduce with `python3 scripts/check-plan-code.py <this file> --compare . --evidence`.
+
+⚠ **This block is INVOCATION-SPECIFIC, and the command above must match the one that generated it.**
+It is in the **compared** form as of Task 4 Step 5a (2026-08-29), which is the form CI runs: both
+files now exist, so the block's subject is the delivered code and not only the document. The command
+above, the one below, and the CI step all carry `--compare .` — if you find them disagreeing, the
+disagreement is the defect, not the block.
+
+**⛔ Do not paste this block by hand, and do not trust it because it says GENERATED.** Round 4's
+Blocking was that this block *was* generated — at v4 — and then never again. By v5 it reported
+**25 mutations against 26** and **77 tests against 79**: wrong, inside the one mechanism built to
+stop this document being wrong about its own verification. **Generating bought provenance, not
+freshness, and a `GENERATED` header is read with more trust than prose, not less.**
+
+v6 closes that with a check rather than a rule:
+
+```bash
+python3 scripts/check-plan-code.py <this file> --compare . --verify-evidence   # exit 1 if stale
+```
+
+**FAILS IF:** any block above changes, any mutation is added or removed, or the invocation's
+`--compare` mode changes, without this block being regenerated. Verified 2026-08-29 by pointing it
+at the v5 block: it printed a diff naming `25 → 33` and `77 → 89` and exited 1.
+
+**v5 was reviewed by both halves of round 4 (Codex 3 findings, Claude 1 Blocking / 6 High / 6 Medium
+/ 5 Low, both NOT CONVERGED); v6 is the result and has NOT been reviewed.**

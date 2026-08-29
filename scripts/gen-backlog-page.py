@@ -219,6 +219,16 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "from git, and have no backup. Nobody has decided whether they are worth keeping. "
              "The expensive part of that folder was already reclaimed; this is the residue, and "
              "the decision is yours."),
+        (68, "The tool that runs the second opinion on our work can fail without saying so — and "
+             "while failing, quietly replace a review that had already been filed with a different "
+             "one reaching the opposite verdict. It happened four times in a single run. Each part "
+             "is now worked around by hand; none of it is prevented."),
+        (67, "Two helpers working at the same time can corrupt each other's results — measured "
+             "twice, once producing a false alarm that was filed as a blocking defect before anyone "
+             "traced it, and once nearly swallowing uncommitted work. Most of the danger has since "
+             "been engineered out. What is left is that the warning about it sits in a comment "
+             "inside one script, names two scripts that no longer exist, and is absent from the "
+             "document where the decision to run two helpers is actually made."),
      ]),
 ]
 
