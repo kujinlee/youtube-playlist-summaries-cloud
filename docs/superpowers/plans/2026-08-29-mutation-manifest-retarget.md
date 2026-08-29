@@ -563,13 +563,13 @@ And immediately after `if a.self_test: return _self_test()`:
 
 - [ ] **Step 5: Bump the count and run the suite**
 
-Line 8: `# 130 cases` → `# 134 cases`.
+Line 8: `# 130 cases` → `# 133 cases`.
 
 ```bash
 python3 scripts/check-plan-code.py --self-test | tail -1
 ```
 
-Expected: `134/134 passed`.
+Expected: `133/133 passed`.
 
 - [ ] **Step 6: Run it against the real repo — the first time this measures the shipped code**
 
@@ -602,7 +602,7 @@ The control runs FIRST and a red one is refused. A mutation table over a suite
 that was already failing is a full page of artefacts that reads like proof, and
 that failure mode is now unreachable rather than merely unlikely.
 
-130 -> 134 cases."
+130 -> 133 cases."
 ```
 
 ---
@@ -691,14 +691,14 @@ In `mutate_delivered`, immediately after the `if problems:` early return:
 
 - [ ] **Step 4: Bump the count and verify both directions**
 
-Line 8: `# 134 cases` → `# 138 cases`.
+Line 8: `# 133 cases` → `# 136 cases`.
 
 ```bash
 python3 scripts/check-plan-code.py --self-test | tail -1
 python3 scripts/check-plan-code.py --mutate . | tail -1
 ```
 
-Expected: `138/138 passed` and `OK — delivered scripts mutated: 2 file(s), 43 mutation(s), 0 survivor(s)`.
+Expected: `136/136 passed` and `OK — delivered scripts mutated: 2 file(s), 43 mutation(s), 0 survivor(s)`.
 
 - [ ] **Step 5: Mutation-test the ratchet by hand — on a copy, never the repo**
 
@@ -734,7 +734,7 @@ lives in the RUNNER rather than beside the entries, because a count stored next 
 what it counts gets edited in the same breath and guards nothing.
 
 Mutation-tested by hand on a copy: deleting one entry fails naming the file and both
-numbers. 134 -> 138 cases."
+numbers. 133 -> 136 cases."
 ```
 
 ---
@@ -981,8 +981,11 @@ its expected output.
 defined in T1 and called with that arity in T1 S5 and T3 S3. `load_manifests(root) -> (mutations,
 problems)` defined T2 S5, called T3 S3 and T4 S3. `mutate_delivered(root) -> (ok, report, ev)`
 defined T3 S3, called T3 S4 and T4 S1/S5. `EXPECTED_MUTATIONS` defined T4 S3, read T4 S1.
-Case-count chain: 121 → 125 (T1) → 130 (T2) → 134 (T3) → 138 (T4), each bumped in the task that adds
-the cases.
+Case-count chain: **counted, not assumed** — T1 adds 4, T2 adds 5, T3 adds 3, T4 adds 3, giving
+121 → 125 → 130 → 133 → 136, each bumped in the task that adds them. ⚠ The first draft of this plan
+asserted 134 and 138 here without counting, which would have reddened every task from T3 onward on
+the docstring drift check — for a reason unrelated to the task. Counted with
+`grep -c '^\s*case('` per task before this line was rewritten.
 
 **Known risk, stated not hidden.** Task 1 moves ~100 lines of six-rounds-hardened code. Its only
 proof of innocence is that the 43/0 verdict is identical before and after, plus four new cases on the
