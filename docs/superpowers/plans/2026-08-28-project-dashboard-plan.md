@@ -88,8 +88,10 @@ defect rounds 2 and 3 filed three times between them.
 
 ### How this plan is verified
 
-**Every Python block below is tagged with the file it belongs to and is assembled, run and mutated by
-a script.** `python3 scripts/check-plan-code.py <this file>` concatenates the tagged blocks in
+**Every Python block below is either tagged with the file it belongs to — assembled, run and
+mutated by a script — or explicitly marked `<!-- illustrative -->`.** An untagged block now FAILS
+the checker: three functions once lived as prose through two review rounds because nothing counted
+the blocks it could not see. `python3 scripts/check-plan-code.py <this file>` concatenates the tagged blocks in
 document order, runs each file's `--self-test`, then applies every mutation in the manifest at the
 end and requires each to go **red via the case it names**.
 
@@ -575,10 +577,19 @@ def _gate_module():
     return mod
 
 
-_GATE = _gate_module()
+_GATE = _gate_module()          # the GRAMMAR is required to parse at all
 header_error = _GATE.header_error
 FLAG = _GATE.FLAG
 HEADER = _GATE.HEADER
+
+
+def _exemption_reader():
+    """Resolved LAZILY, so a missing gate file degrades one SECTION rather than
+    killing the page. Bound at import, hiding the gate raised FileNotFoundError
+    before `no_entry_prs` could return its (None, why) — the falsifier the plan
+    states was unreachable, and the whole dashboard would have failed to render
+    over a section that is allowed to say "could not check"."""
+    return _gate_module().exemption_reason
 ```
 
 ⚠ **`BLOCK` is loose and `HEADER` is strict, deliberately.** `BLOCK` decides what *starts* an entry,
@@ -801,6 +812,10 @@ def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
     exemptions the gate granted. A display that disagrees with the gate is worse
     than none. Bounded at `limit`: an older exemption stops being shown.
     """
+    try:
+        reader = _exemption_reader()
+    except Exception as exc:
+        return None, f"could not load the gate's exemption reader: {exc}"
     data, err = _gh_json(["pr", "list", "--state", "merged", "--limit", str(limit),
                           "--json", "number,title,body,mergedAt"])
     if err:
@@ -811,7 +826,7 @@ def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
     for p in data:
         if not isinstance(p, dict):
             return None, "gh returned JSON in an unexpected shape"
-        reason = _GATE.exemption_reason(p.get("body") or "")
+        reason = reader(p.get("body") or "")
         if reason:
             out.append({"number": p.get("number"), "title": p.get("title") or "",
                         "merged": (p.get("mergedAt") or "")[:10], "reason": reason})
@@ -866,6 +881,7 @@ def _ordered(entries: list[dict]) -> list[dict]:
     order = sorted(valid, key=lambda p: (p[1]["date"] or "", -p[0]), reverse=True)
     rank = {i: r for r, (i, _) in enumerate(order)}
     out = [e for _, e in order]
+    placed: dict[int, int] = {}
     for i, e in enumerate(entries):
         if not e["error"]:
             continue
@@ -876,7 +892,13 @@ def _ordered(entries: list[dict]) -> list[dict]:
             out.append(e)
             continue
         anchor = min(cands, key=lambda j: rank[j])
-        out.insert(out.index(entries[anchor]) + 1, e)
+        # `placed` keeps a RUN of consecutive malformed blocks in file order.
+        # Inserting each at anchor+1 put the later one first, so two broken
+        # blocks between the same neighbours came out mirrored — the splice
+        # fixed the single-block case and left the run wrong.
+        off = placed.get(anchor, 0)
+        placed[anchor] = off + 1
+        out.insert(out.index(entries[anchor]) + 1 + off, e)
     return out
 
 
@@ -1214,6 +1236,14 @@ def _self_test() -> int:
     case("newest date renders first on an APPENDED store",
          ha.index("Newest good.") < ha.index("Older good."), True)
 
+    run2 = parse_entries("## 2026-08-27\nOlder.\n## 2026-99-01\nBroken ONE.\n"
+                         "## 2026-99-02\nBroken TWO.\n## 2026-08-28\nNewer.\n")
+    hr = _B(run2, bucket_days([], run2, 2, "2026-08-28"))
+    case("a RUN of malformed blocks keeps file order among themselves",
+         hr.index("Broken ONE.") < hr.index("Broken TWO."), True)
+    case("...and the run still sits between its valid neighbours",
+         hr.index("Newer.") < hr.index("Broken ONE.") < hr.index("Older."), True)
+
     tie = parse_entries("## 2026-08-28\nFIRST in file.\n## 2026-08-28\nSECOND in file.\n")
     ht = _B(tie, bucket_days([], tie, 2, "2026-08-28"))
     case("same-date ties keep file order",
@@ -1430,6 +1460,7 @@ the page had not changed and misapply itself when it had.
 - [ ] **Step 3: Rows that can fail** — COUNT, not presence, since `"restoreDetails()"` is a substring
 of `function restoreDetails()`:
 
+<!-- illustrative -->
 ```python
         case("reload client defines and CALLS saveDetails",
              lambda: RELOAD_JS.count("saveDetails()") >= 2)
@@ -1523,9 +1554,15 @@ commits, and nothing else in CI reads git history.
 
 **Also verify `no_entry_prs` here**, now that both files exist — once for `no-entry: 0 err: None`,
 then again with the gate file moved away, which must print
-`no-entry: None err: could not load …`. **If the second prints `0` with `err: None`, the loader is
-swallowing the failure — stop.** `0` is also the correct answer today, so the falsifier is the only
-thing that distinguishes them.
+`no-entry: None err: could not load the gate's exemption reader: …`. **If the second prints `0`
+with `err: None`, the loader is swallowing the failure — stop.** `0` is also the correct answer
+today, so the falsifier is the only thing that distinguishes them.
+
+⚠ **The reader is resolved LAZILY, and that is what makes this falsifier reachable.** Bound at
+import time it raised `FileNotFoundError` before `no_entry_prs` could return anything, so the whole
+page failed to render over a section that is allowed to say *"could not check"* — and the stated
+expected output above was unreachable. The GRAMMAR is still imported eagerly, because without it
+nothing can parse at all; only the exemption reader degrades.
 
 **Then falsify the ratchet in CI, not locally.** Open the PR with no entry, confirm **red**, add the
 entry, confirm green.
@@ -1681,6 +1718,13 @@ mutation caught by a different case, fails the check.
    ]
   ],
   "expect": "BETWEEN its neighbours"
+ },
+ {
+  "name": "a run of malformed blocks loses its file order",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [["        off = placed.get(anchor, 0)\n        placed[anchor] = off + 1\n        out.insert(out.index(entries[anchor]) + 1 + off, e)",
+             "        out.insert(out.index(entries[anchor]) + 1, e)"]],
+  "expect": "RUN of malformed blocks keeps file order"
  },
  {
   "name": "render in raw file order",
