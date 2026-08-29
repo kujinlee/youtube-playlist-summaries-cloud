@@ -50,14 +50,21 @@ PROSE is right, that the mutation list is complete, or that a passing case is
 meaningful. An undeclared mutation is invisible to it — which is why the manifest
 lives in the plan under review, where a reviewer reads it.
 
-⚠⚠ ITS SUBJECT IS THE PLAN'S COPY OF THE CODE, NOT THE DELIVERED FILES. Everything
-above happens inside a `TemporaryDirectory` written from the markdown. Without
-`--compare` this script never opens `scripts/gen-dashboard.py`; a green says the
-DOCUMENT is internally sound and says nothing about what CI ships. Round 4 filed
-exactly that (H1) — `CLAUDE.md`: *"a green check over the wrong subject is an
-assertion in better packaging."* Once the delivered files exist, run with
-`--compare scripts/`, which fails on any byte of drift between the two copies. The
-evidence block always records which of the two subjects was measured.
+⚠⚠ WHICH SUBJECT IS MEASURED DEPENDS ON THE MODE, and this docstring is `--help`.
+
+  --mutate ROOT   the DELIVERED scripts under ROOT. Manifests come from
+                  ROOT/scripts/mutations/<script>.json; no plan is involved. This is
+                  what CI runs (backlog #70, 2026-08-29), and it is the mode whose
+                  green means something about the code that ships.
+
+  <plan>          the PLAN'S COPY, assembled into a TemporaryDirectory from the
+                  markdown. Without `--compare DIR` this never opens
+                  `scripts/gen-dashboard.py`: a green says the DOCUMENT is internally
+                  sound and nothing about what ships. Round 4 filed exactly that (H1)
+                  — `CLAUDE.md`: *"a green check over the wrong subject is an
+                  assertion in better packaging."*
+
+The final line names the mode, so a CI log cannot be read as the wrong subject.
 
 CONTRACT. In the plan, tag each Python block with the file it belongs to:
 
@@ -406,6 +413,20 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
             return False, report, ev
         ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets))
         ev["mutations"], ev["survivors"] = m_muts, m_survivors
+        # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
+        # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
+        # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
+        # recorded as `caught` indistinguishably from a real one. Re-running on the
+        # restored copy is what turns the control from a prologue into an invariant.
+        for name in targets:
+            rc, out = run_suite(d, name)
+            if rc != 0:
+                ok = False
+                m_report.append(
+                    f"CANNOT RUN — {name} is no longer green AFTER the sequence (exit "
+                    f"{rc}), so the tree changed underneath it. Any 'caught' above may be "
+                    f"an artefact of that, not of its mutation. Treat this run as NOT "
+                    f"CHECKED.\n    {out[-400:]}")
         return ok, m_report, ev
 
 
@@ -1522,6 +1543,18 @@ def main(argv: list[str]) -> int:
     if a.self_test:
         return _self_test()
     if a.mutate:
+        # REFUSE the combination rather than silently ignoring it. --mutate measures the
+        # delivered scripts and --compare/--evidence/--verify-evidence all describe the
+        # plan-assembling mode; accepting both would let a caller believe a subject was
+        # measured that never was, which is the failure this whole mode exists to end.
+        conflicting = [f for f, v in (("--compare", a.compare), ("--evidence", a.evidence),
+                                      ("--verify-evidence", a.verify_evidence)) if v]
+        if conflicting:
+            print(f"CANNOT RUN — --mutate cannot be combined with "
+                  f"{', '.join(conflicting)}: those describe the plan-assembling mode and "
+                  f"would be silently ignored. Run them as a separate invocation.",
+                  file=sys.stderr)
+            return 2
         mroot = pathlib.Path(a.mutate)
         if not mroot.is_dir():
             print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",

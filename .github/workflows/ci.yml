@@ -193,9 +193,17 @@ jobs:
       #
       # FAILS IF: a mutation survives · an anchor is missing or ambiguous · a suite times
       # out (CANNOT RUN, never a catch) · the control is red before any mutation is applied
-      # · a manifest shrinks below its declared count in EXPECTED_MUTATIONS.
+      # · a manifest's count differs from EXPECTED_MUTATIONS in EITHER direction (adding a
+      #   mutation is also a visible act) · a manifest repeats a mutation name or edit anchor,
+      #   which would keep the count while narrowing real coverage.
       - name: Mutation manifest against the delivered scripts
         run: python3 scripts/check-plan-code.py --mutate .
+
+      # The ratchet runs in CI; until now its own tests did not. Same reason every other
+      # ratchet here has a --self-test step: a guard whose tests are developer-machine-only
+      # can rot without anything noticing.
+      - name: check-plan-code self-test
+        run: python3 scripts/check-plan-code.py --self-test
 
       # The gate itself. Needs the merge base, hence fetch-depth: 0 on the checkout.
       # BODY goes through env and then a FILE — never interpolated into the shell —

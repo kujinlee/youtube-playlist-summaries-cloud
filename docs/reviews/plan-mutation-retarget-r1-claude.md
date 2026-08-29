@@ -31,3 +31,45 @@ unique. Codex additionally built a standalone prototype of the delivered-script 
 Three further defects surfaced only when the plan was executed — recorded in
 [`branch-mutation-retarget-r1-claude.md`](branch-mutation-retarget-r1-claude.md). Two reviewers read
 this document and neither found them. **Reading a plan is a weaker instrument than running it.**
+
+---
+
+# ADDENDUM — the independent Claude half, received after implementation
+
+**The REVIEW GAP above is CLOSED.** The dispatched reviewer returned with 1 Blocking, 2 High,
+4 Medium, 8 Low, having built a working prototype from the plan's code. Re-measured against what
+actually shipped:
+
+| Finding | Against the plan | Against shipped code | Disposition |
+|---|---|---|---|
+| **Blocking** — T4's ratchet breaks two of T3's cases; suite 134/136 and the control falsifier stops asserting | real, reproduced by their prototype | **does not apply** | The implementation sets `EXPECTED_MUTATIONS` inside the fixtures' `try/finally`, so the ratchet is scoped to the fixture. 136/136. **And the control falsifier is NOT vacuous** — disabling the control check makes it fail (135/136), verified by mutation, which is precisely the property they warned could be lost |
+| **H1** — `dev-process.md:155` + `roadmap:1347` assert `--compare`/`--verify-evidence` as mechanically enforced | real | **REAL AND LIVE** | **Fixed.** `dev-process.md` is `@`-included into every session; it would have described an enforcement CI no longer performs — the exact defect class this branch removes |
+| **H2** — the module docstring is `--help` and says "ITS SUBJECT IS THE PLAN'S COPY" | real | **REAL AND LIVE** | **Fixed.** Rewritten per-mode; `--mutate` documented as what CI runs |
+| **M1** — the control is a prologue, not an invariant | real | real | **Fixed.** Re-run after the sequence on the restored copy; an environmental red mid-run is no longer recordable as `caught` |
+| **M3** — nothing in CI runs `--self-test` | real | real | **Fixed.** Added as a CI step |
+| **Low** — CI comment says "shrinks below" but the ratchet is exact | real | real | **Fixed**, and it now names the duplicate-identity refusal too |
+| **Low** — `--mutate` silently ignores `--compare`/`--evidence`/`--verify-evidence` | real | real | **Fixed** — refuses with rc=2; falsified |
+| **Low** — `roadmap:1359` "Suite 44 → 121 cases", stale at 136 | real | real | **Fixed** by deleting the number, not correcting it: it has gone stale twice |
+| **M2** — T6 S7's gate loop discards exit codes | real | n/a | The loop as executed captured `rc` on its own line. Their warning that `${PIPESTATUS[0]}` after an assignment does not work is correct and was independently hit on this branch |
+| **(a)** `set(counts) - set(EXPECTED_MUTATIONS)` is live, not dead, and uncovered | correct | correct | Accepted, **not fixed** — a case would need a second script+manifest pair in a fixture. Filed below |
+| **(b)** round-trip cannot lose data on this input | sound | sound | Matches the coordinator's own check |
+| **(c)** no forward task dependency | sound | sound | — |
+
+## Where they were right and I was not
+
+Their §(d) correction to my own self-review: I claimed the *anchor missing or ambiguous* falsifier was
+"T1 S2 (inherited, pinned)". **T1 S2 pins missing only**; ambiguity is covered solely by the
+pre-existing `check()` cases. "Pinned" overstated it by half. Recorded rather than quietly corrected.
+
+They also verified the rc=2 falsifier claim I had asserted — three existing cases drive `check()`
+with `SUITE_TIMEOUT = 2` and route through `run_mutations` after T1. That one held.
+
+## Residue, filed not fixed
+
+- **The undeclared-target branch has no case.** Live guard, no test. Small, and it needs a
+  two-script fixture.
+- **Global Constraints in the plan says "four `<!-- file: … -->` strings"; there are six** — two added
+  by the round-1 fix. A count in prose that nobody updates, in a document about exactly that failure.
+- **The evidence-block deletion had no assertion of its own.** It completed (parser reports 0 blocks),
+  but its regex was the least anchored of the three and a silent no-op would still have cleared the
+  `> 1300` line guard.
