@@ -110,7 +110,10 @@ six consecutive rounds — four of them introduced by the previous round's own f
 component of the same spec converged and stayed converged. Phase 6 describes that failure in its own
 sentence below and never ran, because a spec can burn twelve rounds in a week without crossing a
 milestone. **The inventory was right; the arming condition was wrong.** See
-[`review-method.md`](review-method.md) for the stop condition that goes with it, and
+⚠ **Read the trigger off the CAUSE, not the count** — on a *document*, rounds can be right forever
+because prose has nothing to execute; that is a signal to go build, not to convene Phase 6. Measured
+2026-08-28: Blocking totals ran 4→5→4 while the character shifted entirely. Both shapes, and how to
+tell them apart, are in [`review-method.md`](review-method.md) — also the stop condition, and
 `docs/reviews/blob-addressing-retrospective-2026-08-09.md` for the full account.
 
 **Phase 6 — why it is per-milestone:** per-task review is structurally blind to composition defects.
