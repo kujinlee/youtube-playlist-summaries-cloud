@@ -297,10 +297,17 @@ def _ordered(entries: list[dict]) -> list[dict]:
     return out
 
 
-def _bar(day: dict, tallest: int) -> str:
+def _bar(day: dict, tallest: int, store_unknown: bool) -> str:
     h = 4 if day["commits"] == 0 else max(6, round(48 * day["commits"] / max(tallest, 1)))
     quiet = day["has_entry"] and day["commits"] == 0     # §6.1
-    unwritten = day["commits"] > 0 and not day["has_entry"]  # §9 / §7.3
+    # §9 / §7.3 — SUPPRESSED when the store could not be read. `has_entry` is
+    # then derived from an empty entry list, so "this day has no entry" is not a
+    # finding, it is the absence of a reading; firing §9's alarm off it is the
+    # confident-zero defect wearing an alarm. `quiet` needs no such guard: it
+    # requires has_entry TRUE, which an empty list can never produce.
+    # `store_unknown` has no default for the reason `build`'s store params have
+    # none — a default is how a caller silently gets the unguarded behaviour.
+    unwritten = day["commits"] > 0 and not day["has_entry"] and not store_unknown
     cls = "bar needs" if day["needs_you"] else "bar"
     if quiet:
         cls += " marked"
@@ -352,10 +359,18 @@ def build(entries, days, prs, pr_error, git_error, window,
         rows += [f'<li>Pull request #{_html.escape(str(p["number"]))} — '
                  f'{_html.escape(str(p["title"]))}'
                  f' <span class="when">open</span></li>' for p in (prs or [])]
+    # The store is the SOLE source of needs-you items, so an unreadable one makes
+    # "Nothing needs you." a green all-clear over the very thing that was not
+    # read. Same fall-through shape as `pr_error` above, and it composes: two
+    # dead inputs produce two notes, never one silently masking the other.
+    store_note = ("" if not store_error else
+                  f'<p class="unknown">I could not read the entry store — '
+                  f'{_html.escape(store_error)}, so I cannot tell whether anything in '
+                  f'it needs you. Treat this as NOT CHECKED.</p>')
     if rows:
-        needs_html = '<ul class="needs">' + "".join(rows) + "</ul>" + pr_note
-    elif pr_error:
-        needs_html = pr_note
+        needs_html = '<ul class="needs">' + "".join(rows) + "</ul>" + store_note + pr_note
+    elif store_error or pr_error:
+        needs_html = store_note + pr_note
     else:
         needs_html = '<p class="none">Nothing needs you.</p>'
 
@@ -368,16 +383,20 @@ def build(entries, days, prs, pr_error, git_error, window,
                  f'{_html.escape(str(window))}. Pass --window with a positive number.</p>')
     else:
         tallest = max((d["commits"] for d in days), default=0)
-        chart = "".join(_bar(d, tallest) for d in reversed(days))
+        chart = "".join(_bar(d, tallest, bool(store_error)) for d in reversed(days))
     # §5: the count is commits, and it under-counts work that was never committed.
     chart_note = ('<p class="note">One bar per day, oldest on the left. It counts commits, '
                   'so work that was never committed does not appear here.</p>')
 
     # ─── What changed ───
-    # The store was the LAST confident-empty in the program: every other input
-    # (`commit_dates`, `open_prs`, `no_entry_prs`) already returns (None, why),
-    # while a missing store yielded `[]` and rendered as a measured "nothing
-    # written yet". Same class as `_gh_json`'s empty-stdout hole.
+    # A missing store used to yield `[]` and render as a measured "nothing
+    # written yet" — the same class as `_gh_json`'s empty-stdout hole.
+    # ⚠ THIS BRANCH IS ONE OF THREE. `entries` is read here, by `unresolved`
+    # above, and by `bucket_days` in the caller, and each has to refuse the
+    # empty list separately: closing only this one produced a page that said
+    # NOT CHECKED here while saying "Nothing needs you" and firing §9's alarm
+    # from the same unread file. Round 1 wrote "the LAST confident-empty in the
+    # program" here and it was true of the branch, not the program.
     if store_error:
         entries_html = (f'<p class="unknown">I could not read the entry store — '
                         f'{_html.escape(store_error)}. Treat this as NOT CHECKED.</p>')
@@ -616,6 +635,18 @@ def _self_test() -> int:
     case("the empty state names the store that was read",
          "docs/elsewhere.md" in hs_ok, True)
 
+    # `entries` is read THREE times and round 1 guarded ONE of them, so the page
+    # said NOT CHECKED in "What changed" while, off the same unread file, calling
+    # an all-clear in the headline section and firing §9's alarm on every day
+    # with commits. Both assertions are NEGATIVE, so each carries a POSITIVE
+    # companion — otherwise a page that failed to render at all would pass them.
+    hu = _B([], bucket_days(["2026-08-28"], [], 2, "2026-08-28"),
+            store="docs/typo.md", store_error="no such file: docs/typo.md")
+    case("an unreadable store is NOT a green 'nothing needs you'",
+         ("Nothing needs you" in hu, "NOT CHECKED" in hu), (False, True))
+    case("...and §9's alarm is not fired off a store nobody could read",
+         ("SHIPPED WITH NO ENTRY" in hu, 'class="bar' in hu), (False, True))
+
     html_err = _B([], bucket_days([], [], 2, "2026-08-28"), prs=None, pr_error="gh exploded")
     case("gh failure is NOT 'nothing needs you'", "Nothing needs you" in html_err, False)
     case("gh failure is announced as NOT CHECKED", "not checked" in html_err.lower(), True)
@@ -684,14 +715,14 @@ def _self_test() -> int:
         kids = [k for k in re.findall(r'<span class="([^"]*)"', bar[cut:]) if k != "vh"]
         return (cls.group(1) if cls else "", kids)
 
-    quiet = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": True}, 5)
-    plainb = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": False}, 5)
+    quiet = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": True}, 5, False)
+    plainb = _bar({"date": "D", "commits": 0, "needs_you": False, "has_entry": False}, 5, False)
     case("§6.1 a zero-commit day WITH an entry is marked in SIGHTED output",
          _marks(quiet) != _marks(plainb), True)
 
     # §9 / §7.3: a day WITH commits and NO entry is the gap the rule exists to close.
-    gap = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": False}, 7)
-    written = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": True}, 7)
+    gap = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": False}, 7, False)
+    written = _bar({"date": "D", "commits": 7, "needs_you": False, "has_entry": True}, 7, False)
     case("§9 a day that shipped with NO entry is marked in SIGHTED output",
          _marks(gap) != _marks(written), True)
     case("that mark is named for a reader", "no entry" in gap.lower(), True)
@@ -702,8 +733,8 @@ def _self_test() -> int:
     # and the whole suite stayed green: `needs-you day is flagged` above asserts
     # bucket_days' DATA, not the bar. Every other surviving trace of that mutation
     # lives in title/aria/.vh — the three channels _marks exists to exclude.
-    needs = _bar({"date": "D", "commits": 3, "needs_you": True, "has_entry": True}, 3)
-    calm = _bar({"date": "D", "commits": 3, "needs_you": False, "has_entry": True}, 3)
+    needs = _bar({"date": "D", "commits": 3, "needs_you": True, "has_entry": True}, 3, False)
+    calm = _bar({"date": "D", "commits": 3, "needs_you": False, "has_entry": True}, 3, False)
     case("§5 a needs-you day is marked in SIGHTED output",
          _marks(needs) != _marks(calm), True)
     case("...and the mark is the needs class, not an incidental difference",
@@ -743,8 +774,8 @@ def _self_test() -> int:
          'id="day-2026-08-28"' in anchored, True)
     case("the title is rendered outside the fold",
          '<p class="title">Decide the thing.</p>' in anchored, True)
-    tall = _bar({"date": "D", "commits": 8, "needs_you": False, "has_entry": True}, 8)
-    short = _bar({"date": "D", "commits": 1, "needs_you": False, "has_entry": True}, 8)
+    tall = _bar({"date": "D", "commits": 8, "needs_you": False, "has_entry": True}, 8, False)
+    short = _bar({"date": "D", "commits": 1, "needs_you": False, "has_entry": True}, 8, False)
     case("bar height scales with commits",
          int(re.search(r"height:(\d+)px", tall).group(1))
          > int(re.search(r"height:(\d+)px", short).group(1)), True)
