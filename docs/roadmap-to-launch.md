@@ -1328,6 +1328,40 @@ whether editing an already-applied migration is safe here.
 
 ---
 
+## Project dashboard — anchor `status-visibility` — ⏳ SPEC + PLAN MERGED, NO CODE WRITTEN
+
+**Goal (`docs/anchors.md:39`):** a person who was away can see the current state, what changed, and
+what needs them — without reading the chat transcript.
+
+**This section exists because the slice had none.** The spec and the plan were both merged on
+2026-08-28 and the roadmap — the compaction-proof layer — said nothing about either, so a fresh
+session reconciling the three layers would not have found the work at all. Same drift as the
+corrections slice above.
+
+| Artifact | State |
+|---|---|
+| `docs/superpowers/specs/2026-08-28-project-dashboard-design.md` | v5, merged `c5fcb07` (3 review rounds, none converged) |
+| `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | v2 — v1 merged `af757d9`, then **failed its dual review** |
+| `docs/reviews/plan-project-dashboard-r1-{codex,claude}.md` | round 1, **NOT CONVERGED both halves** |
+
+- [ ] **Plan round 2 — dual adversarial on v2.** Round 1's two halves overlapped on only 2 of ~26
+      findings, so **both** must run. Both executed the plan's Python rather than reading it, which
+      is why they found what three prose rounds on the spec did not.
+      **FAILS IF** either half returns a Blocking, or either reports it could not execute the code.
+- [ ] **Tasks 1–6** — the entry store + parser, activity + open PRs, the page, the gate, fold
+      persistence on reload, and the skill + hook + CI wiring. None started.
+- [ ] **The gate is not proven until it has been seen to REFUSE on GitHub.** Task 4 ships a tested
+      script; Task 6 Step 5 is what makes it gate anything. **FAILS IF** the PR opens with
+      `check-dashboard-entry.py` still absent from a `pull_request`-triggered CI job.
+
+⚠ **Known cost, measured, not estimated:** the gate as specified would have refused **all eleven**
+first-parent commits on `master` from 2026-08-28, including a single-file backlog edit. Both review
+halves verified this with `git`. That is the intended cost if every merge deserves a plain-language
+entry — and the `NO-ENTRY:` display (plan v2, Task 2 + 3) is what stops the exemption becoming a
+silent reflex. **This is the one thing to overrule if the cadence proves wrong.**
+
+---
+
 ## Sequence & status
 **M1 → M2 → M3**, Parking Lot after. Within M1: 1.2 + 1.3 can proceed in parallel with 1.1; 1.4 needs all
 three. **M2 Sync is COMPLETE (PR #23 + #24, 2026-07-19).** **M1.1 is now DONE (2026-07-19).**
