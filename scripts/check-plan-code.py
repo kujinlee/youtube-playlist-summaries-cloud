@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 121 cases
+    python3 scripts/check-plan-code.py --self-test          # 125 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -285,6 +285,130 @@ def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[
     return problems, seen
 
 
+def run_mutations(d: pathlib.Path, muts: list[dict],
+                  known: set[str]) -> tuple[bool, list[str], list[dict], list[str]]:
+    """Apply each mutation to a file in `d`, run its suite, require red via the named case.
+
+    `d` holds runnable scripts — assembled from a plan, or copied from the delivered
+    tree. This function does not care which, and that indifference is the point: the
+    guarantee is about the mutation discipline, not where the code came from.
+
+    NOTHING in the body changed when it was extracted (backlog #70, Task 1). Every
+    guard below was bought with a review round, so a diff that alters behaviour is a
+    defect in the refactor, not an improvement. Proof is a measurement, not a reading:
+    43 mutations / 0 survivors before and after.
+    """
+    ok, report, ev_muts, ev_survivors = True, [], [], []
+    for mut in muts:
+        name, fname = mut.get("name", "?"), mut.get("file", "")
+        if fname not in known:
+            ok = False
+            report.append(f"mutation {name!r} targets unknown file {fname!r}")
+            continue
+        src = (d / fname).read_text()
+        for find, repl in mut.get("edits", []):
+            # `replace(find, repl, 1)` takes the FIRST occurrence. If the anchor
+            # matches more than once, the mutation may land on a test oracle
+            # while the production line it names is untouched — and the named
+            # case still goes red, so it reports `caught`. Measured round 5;
+            # round 4's M1 filed the same hazard when a duplicated function
+            # made it concrete. Deleting that duplicate removed the instance,
+            # not the class.
+            if src.count(find) > 1:
+                ok = False
+                report.append(
+                    f"mutation {name!r}: anchor matches {src.count(find)} times "
+                    f"in {fname} — only the FIRST is replaced, so a 'caught' "
+                    f"verdict would not be about the line you named. Tighten it")
+                src = None
+                break
+            if find not in src:
+                ok = False
+                report.append(f"mutation {name!r}: anchor NOT FOUND — it was not applied, "
+                              f"so its 'caught' verdict would be meaningless")
+                src = None
+                break
+            src = src.replace(find, repl, 1)
+        if src is None:
+            continue
+        orig = (d / fname).read_text()
+        (d / fname).write_text(src)
+        rc, out = run_suite(d, fname)
+        (d / fname).write_text(orig)
+        # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
+        # not the first ":". A case name may contain a colon ("collect: a missing
+        # git is a could-not-tell"), and splitting on the first one truncated it to
+        # "collect", so no `expect` naming the full case could ever match.
+        # `l.strip()[7:]` assumes the line STARTS with "[FAIL] ". A line that
+        # merely contains the marker (a log prefix, an ANSI escape) was sliced
+        # blind and silently produced a wrong case name. Measured round 5.
+        fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
+                 for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
+        # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
+        # two minutes of NOT CHECKED as proof that a guard works, and prints
+        # `caught <name>` into the evidence block. The comment on `run_suite`
+        # said rc 2 must not be readable as either verdict and its very next
+        # caller read it as one. Measured round 5, M2.
+        if rc == 2:
+            ok = False
+            ev_muts.append({"name": name, "caught": False, "fails": fails})
+            ev_survivors.append(name)
+            report.append(
+                f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
+                f"That is a cannot-run, not a catch — treat this mutation as NOT CHECKED")
+            continue
+        caught = rc == 1
+        # Each `expect` entry must name exactly ONE red case. As a bare substring
+        # it could be satisfied by a DIFFERENT case than the mutation is about —
+        # measured round 5 (M1): `expect: "does NOT count"` matches 7 case names
+        # in this plan alone, and a fixture certified an untouched guard as caught
+        # because a sibling case went red. The plan's rule is "red via the case it
+        # NAMES"; the tool enforced "red via any case containing this substring".
+        #
+        # A mutation may legitimately break several behaviours, so `expect` accepts
+        # a LIST — every entry must resolve to exactly one red case. That is more
+        # honest than naming one of five arbitrarily and calling it the guard.
+        #
+        # ⚠ EXACT case names, not substrings (round 6). The round-5 rule was
+        # CARDINALITY-ONLY: it required exactly one MATCH, never that the match
+        # was the right case. Measured — an `expect` naming a completely
+        # unrelated case, or a mere fragment of a name, still certified the
+        # mutation. The plan's rule is "red via the case it NAMES"; only
+        # equality says that.
+        want = mut.get("expect")
+        if isinstance(want, list) and not want:
+            # An empty list read as "no expectation" — a declared-but-empty set
+            # is a mistake, and silently honouring it disables the check.
+            ok = False
+            report.append(f"mutation {name!r}: `expect` is an EMPTY list. Name the "
+                          f"case(s) that must go red, or omit `expect` entirely")
+            continue
+        wants = [want] if isinstance(want, str) else list(want or [])
+        # ONE branch for both failure shapes. Zero matches means the mutation was
+        # caught by something else; two or more means the expect cannot say which
+        # case is the guard. Reporting them separately left the zero-match message
+        # unreachable the moment the set form landed — dead code that two cases
+        # were still asserting.
+        unnamed = [(w, [f for f in fails if w == f]) for w in wants]
+        unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
+        ev_muts.append({"name": name, "caught": caught, "fails": fails})
+        if not caught:
+            ok = False
+            ev_survivors.append(name)
+            report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
+                          f"can fail for what it names")
+        elif unnamed:
+            ok = False
+            for w, m in unnamed:
+                report.append(
+                    f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
+                    f"{m or '— it was caught by something else: ' + str(fails)}. An "
+                    f"expect must name EXACTLY ONE, or it cannot show which case is "
+                    f"the guard")
+    return ok, report, ev_muts, ev_survivors
+
+
+
 def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool, list[str], dict]:
     md = plan.read_text(encoding="utf-8")
     files, muts, problems, tally = extract(md)
@@ -321,112 +445,12 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
                 report.append(f"{name}: --self-test exited 0 but printed no result — "
                               f"a script with no entrypoint exits 0 silently. Got: {tail!r}")
 
-        for mut in muts:
-            name, fname = mut.get("name", "?"), mut.get("file", "")
-            if fname not in files:
-                ok = False
-                report.append(f"mutation {name!r} targets unknown file {fname!r}")
-                continue
-            src = (d / fname).read_text()
-            for find, repl in mut.get("edits", []):
-                # `replace(find, repl, 1)` takes the FIRST occurrence. If the anchor
-                # matches more than once, the mutation may land on a test oracle
-                # while the production line it names is untouched — and the named
-                # case still goes red, so it reports `caught`. Measured round 5;
-                # round 4's M1 filed the same hazard when a duplicated function
-                # made it concrete. Deleting that duplicate removed the instance,
-                # not the class.
-                if src.count(find) > 1:
-                    ok = False
-                    report.append(
-                        f"mutation {name!r}: anchor matches {src.count(find)} times "
-                        f"in {fname} — only the FIRST is replaced, so a 'caught' "
-                        f"verdict would not be about the line you named. Tighten it")
-                    src = None
-                    break
-                if find not in src:
-                    ok = False
-                    report.append(f"mutation {name!r}: anchor NOT FOUND — it was not applied, "
-                                  f"so its 'caught' verdict would be meaningless")
-                    src = None
-                    break
-                src = src.replace(find, repl, 1)
-            if src is None:
-                continue
-            orig = (d / fname).read_text()
-            (d / fname).write_text(src)
-            rc, out = run_suite(d, fname)
-            (d / fname).write_text(orig)
-            # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
-            # not the first ":". A case name may contain a colon ("collect: a missing
-            # git is a could-not-tell"), and splitting on the first one truncated it to
-            # "collect", so no `expect` naming the full case could ever match.
-            # `l.strip()[7:]` assumes the line STARTS with "[FAIL] ". A line that
-            # merely contains the marker (a log prefix, an ANSI escape) was sliced
-            # blind and silently produced a wrong case name. Measured round 5.
-            fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
-                     for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
-            # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
-            # two minutes of NOT CHECKED as proof that a guard works, and prints
-            # `caught <name>` into the evidence block. The comment on `run_suite`
-            # said rc 2 must not be readable as either verdict and its very next
-            # caller read it as one. Measured round 5, M2.
-            if rc == 2:
-                ok = False
-                ev["mutations"].append({"name": name, "caught": False, "fails": fails})
-                ev["survivors"].append(name)
-                report.append(
-                    f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
-                    f"That is a cannot-run, not a catch — treat this mutation as NOT CHECKED")
-                continue
-            caught = rc == 1
-            # Each `expect` entry must name exactly ONE red case. As a bare substring
-            # it could be satisfied by a DIFFERENT case than the mutation is about —
-            # measured round 5 (M1): `expect: "does NOT count"` matches 7 case names
-            # in this plan alone, and a fixture certified an untouched guard as caught
-            # because a sibling case went red. The plan's rule is "red via the case it
-            # NAMES"; the tool enforced "red via any case containing this substring".
-            #
-            # A mutation may legitimately break several behaviours, so `expect` accepts
-            # a LIST — every entry must resolve to exactly one red case. That is more
-            # honest than naming one of five arbitrarily and calling it the guard.
-            #
-            # ⚠ EXACT case names, not substrings (round 6). The round-5 rule was
-            # CARDINALITY-ONLY: it required exactly one MATCH, never that the match
-            # was the right case. Measured — an `expect` naming a completely
-            # unrelated case, or a mere fragment of a name, still certified the
-            # mutation. The plan's rule is "red via the case it NAMES"; only
-            # equality says that.
-            want = mut.get("expect")
-            if isinstance(want, list) and not want:
-                # An empty list read as "no expectation" — a declared-but-empty set
-                # is a mistake, and silently honouring it disables the check.
-                ok = False
-                report.append(f"mutation {name!r}: `expect` is an EMPTY list. Name the "
-                              f"case(s) that must go red, or omit `expect` entirely")
-                continue
-            wants = [want] if isinstance(want, str) else list(want or [])
-            # ONE branch for both failure shapes. Zero matches means the mutation was
-            # caught by something else; two or more means the expect cannot say which
-            # case is the guard. Reporting them separately left the zero-match message
-            # unreachable the moment the set form landed — dead code that two cases
-            # were still asserting.
-            unnamed = [(w, [f for f in fails if w == f]) for w in wants]
-            unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
-            ev["mutations"].append({"name": name, "caught": caught, "fails": fails})
-            if not caught:
-                ok = False
-                ev["survivors"].append(name)
-                report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
-                              f"can fail for what it names")
-            elif unnamed:
-                ok = False
-                for w, m in unnamed:
-                    report.append(
-                        f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
-                        f"{m or '— it was caught by something else: ' + str(fails)}. An "
-                        f"expect must name EXACTLY ONE, or it cannot show which case is "
-                        f"the guard")
+        m_ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(files))
+        if not m_ok:
+            ok = False
+        report.extend(m_report)
+        ev["mutations"].extend(m_muts)
+        ev["survivors"].extend(m_survivors)
     return ok, report, ev
 
 
@@ -1222,9 +1246,46 @@ def _self_test() -> int:
         case("...so the mutation is not credited to a case that does not exist",
              any("must name EXACTLY ONE" in r for r in rep), True)
 
+    # ⟲ Backlog #70, Task 1. The mutation loop gained a second caller (--mutate). These
+    # cases pin the EXTRACTED function directly, so a later change on the --mutate side
+    # cannot quietly alter the behaviour the plan path depends on.
+    with tempfile.TemporaryDirectory() as _td:
+        _d = pathlib.Path(_td)
+        (_d / "m.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] f returns one: got %r" % f())\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        # ANCHORED on the def line. A bare "return 1" occurs TWICE here — f's body and
+        # _self_test's failure branch — and the engine REFUSES an ambiguous anchor, so
+        # the case would have failed for a reason unrelated to what it tests. Round 1.
+        _mut = [{"name": "f returns two", "file": "m.py",
+                 "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+                 "expect": "f returns one"}]
+        _ok, _rep, _evm, _evs = run_mutations(_d, _mut, {"m.py"})
+        case("run_mutations catches a real mutation", (_ok, _evs), (True, []))
+        case("run_mutations records the caught mutation", len(_evm), 1)
+        _bad = [{"name": "anchor not there", "file": "m.py",
+                 "edits": [["return 99", "return 2"]], "expect": "f returns one"}]
+        _ok2, _rep2, _, _ = run_mutations(_d, _bad, {"m.py"})
+        case("run_mutations refuses a missing anchor",
+             (_ok2, any("anchor NOT FOUND" in r for r in _rep2)), (False, True))
+        _unknown = [{"name": "elsewhere", "file": "nope.py",
+                     "edits": [["a", "b"]], "expect": "x"}]
+        _ok3, _rep3, _, _ = run_mutations(_d, _unknown, {"m.py"})
+        case("run_mutations refuses an unknown target file",
+             (_ok3, any("unknown file" in r for r in _rep3)), (False, True))
+
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
     # it cannot drift silently the way `# 12 cases` did against a 19-case suite.
+
     return _drift_rc(__doc__, ok, fail)
 
 
