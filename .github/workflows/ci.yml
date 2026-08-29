@@ -188,6 +188,26 @@ jobs:
       # proved buys provenance and not freshness: it was generated once at v4 and
       # described a run two versions old. CI is where "regenerate it" stops being a
       # rule somebody has to remember.
+      #
+      # ⛔ WHEN THIS STEP RETIRES — decided 2026-08-29, do not delete it before then.
+      # This step makes a PLANNING DOCUMENT a permanent CI dependency: the first bug
+      # fixed in either script turns CI red until the same edit lands in the plan's
+      # blocks and its evidence block is regenerated. That is a real tax, and without
+      # a written exit the first maintainer to hit it deletes the step to get green —
+      # taking the guarantee with it.
+      #
+      # RETIRES WHEN: check-plan-code.py's mutation manifest is reimplemented as a
+      # normal mutation test that runs against the DELIVERED scripts rather than
+      # against blocks assembled from the plan. Backlog #70.
+      #
+      # Why that is the condition and not a date: what this step actually protects is
+      # "the mutation evidence describes the code that ships". Byte-identity with the
+      # plan is only the ROUTE to that, and a poor one — it keeps a second copy of
+      # 1,401 lines in a tree check-docs.py deliberately ignores (FROZEN, see
+      # scripts/check-docs.py). Run the mutations against the delivered files and the
+      # guarantee gets STRONGER (it is about the real files, not a copy that matches)
+      # while the byte-identity requirement dissolves. So this retires by being
+      # superseded, never by being switched off.
       - name: the plan's code and the DELIVERED scripts are the same, its mutations are caught, and its evidence is fresh
         run: |
           python3 scripts/check-plan-code.py \

@@ -40,3 +40,25 @@ Live reload: `/_rev` resolved via `safe_path` while the page GET used `resolve_p
 ⚠ The ratchet has never been **seen to refuse on GitHub** — this PR is the first real exercise of
 `fetch-depth: 0`, and a shallow clone is exactly what breaks it. Locally it passes on this branch
 and refuses against `HEAD~1`.
+
+## 2026-08-29 [resolved: 2026-08-29/1]
+Decided: the CI check that keeps the plan document and the two dashboard scripts identical stays,
+and it now says in writing when it goes away. It retires when the mutation checks are rewritten to
+run against the real scripts instead of against copies pasted into the plan — not on a date, and not
+by someone switching it off.
+
+The reason to keep it at all: those mutation checks are the only thing proving the page's guards
+still work, and they found four real defects while this was being built. The reason it could not
+just stay forever unwritten: every future bug fix in either script would have paid a tax to a
+document nobody reads, with no note explaining why, and the likeliest outcome was somebody deleting
+the check to get a green build.
+<!--tech-->
+Option C of four. Condition recorded in `.github/workflows/ci.yml`'s own step comment, so the exit
+ships with the thing it governs; work filed as backlog #70.
+
+The framing that settled it: the step protects *"the mutation evidence describes the code that
+ships"*. Byte-identity with `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` is only
+the route to that, and a poor one — it keeps a second copy of 1,401 lines in a tree
+`scripts/check-docs.py:46` marks `FROZEN`. Retarget the 43 mutations at the delivered scripts and
+the guarantee gets stronger while the byte-identity requirement dissolves. A supersession, not a
+switch-off.
