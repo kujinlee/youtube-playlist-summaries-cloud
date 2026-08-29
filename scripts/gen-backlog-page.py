@@ -937,6 +937,17 @@ def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
      font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}}
+/* UNSCOPED, and that is the point. This page had five link rules — .qabody a,
+   .depmap a, .rootref a, .num a, td.mono a — and every one of them was correct.
+   The links they did NOT reach (three, in .prose and .status, rendered from
+   md(r['body']), so the count grows with every markdown link filed into a
+   backlog item) fell through to the browser default #0000EE: 1.98:1 on the dark
+   --ground and 1.84:1 on --card, against WCAG AA's 4.5. A per-container rule
+   only ever covers the containers someone remembered; this one covers the next
+   container too. More specific rules still win, including .num a's deliberate
+   `color:inherit`. MEASURED 2026-08-29: --structural clears AA on all six
+   surfaces, 6.40:1 worst case. */
+a{{color:var(--structural)}}
 .wrap{{max-width:56rem;margin:0 auto;padding:2.5rem 1.25rem 6rem}}
 h1{{font-family:var(--serif);font-size:2.1rem;line-height:1.15;margin:0 0 .5rem;
     text-wrap:balance;letter-spacing:-.01em}}
@@ -1414,6 +1425,79 @@ SAMPLE = """## Items
 """
 
 
+# ── link contrast, MEASURED on the emitted stylesheet ───────────────────────────────────────────
+# ⟲ Added 2026-08-29. This page carried FIVE per-container link rules, every one of them correct,
+# and still served three links at the browser default #0000EE — 1.98:1 on the dark --ground, 1.84:1
+# on --card, against WCAG AA's 4.5 — because those links sat in containers nobody had enumerated
+# (.prose and .status, rendered from md(r['body']), so the count grows with the backlog).
+#
+# A guard asserting those five selectors were PRESENT would have passed on exactly that page. So
+# this measures the RATIO instead, across every palette block. The sibling defect in
+# gen-dashboard.py was found the same day by a guard that checked presence and let three
+# colour-value mutations through; see the note above contrast_failures there.
+LINK_MIN = 4.5
+LINK_FG = ("--structural", "--ink")                        # a{}'s colour, and .num a:hover's
+LINK_BG = ("--ground", "--card", "--panel", "--pending-bg")
+
+
+def _luminance(colour: str) -> float:
+    """WCAG relative luminance of an #rgb or #rrggbb colour."""
+    h = colour.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        raise ShapeError(f"not a hex colour: {colour!r}")
+
+    def chan(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+
+
+def link_contrast_errors(page: str, minimum: float = LINK_MIN) -> list[str]:
+    """Every link-colour / surface pair below `minimum`, in EVERY :root palette.
+
+    All four blocks are checked, not just the two media-query ones: the page has a manual
+    theme toggle, so `:root[data-theme=...]` is live CSS, not decoration.
+
+    RAISES ShapeError when it cannot find the palettes or the unscoped rule. A contrast
+    check that never reached a stylesheet has not passed — and from a list of zero
+    failures the two are indistinguishable.
+    """
+    blocks = re.findall(r'(:root(?:\[data-theme="\w+"\])?)\{([^}]*)\}', page)
+    if len(blocks) < 2:
+        raise ShapeError(f"expected several :root palettes, found {len(blocks)}")
+    # ANCHORED to the start of a line, and that is load-bearing. A bare substring test
+    # for "a{color:var(--structural)}" is satisfied by the SCOPED rules — `.qabody a{…}`,
+    # `.rootref a{…}` and `td.mono a{…}` all contain it — so it stays true with the
+    # unscoped rule deleted, which is precisely the state that shipped. Measured while
+    # writing this guard: the unanchored version passed on the defect it exists to catch.
+    if not re.search(r"^a\{color:var\(--structural\)\}", page, re.M):
+        raise ShapeError("no UNSCOPED a{} rule — links outside the scoped selectors "
+                         "fall back to the browser default")
+
+    def hexes(body: str) -> dict[str, str]:
+        return dict(re.findall(r"(--[a-z0-9-]+):\s*(#[0-9a-fA-F]{3,6})\b", body))
+
+    base = hexes(blocks[0][1])
+    if not base:
+        raise ShapeError("the first :root palette parsed EMPTY")
+    out: list[str] = []
+    for sel, body in blocks:
+        pal = {**base, **hexes(body)}          # later blocks OVERRIDE, they do not replace
+        for fg in LINK_FG:
+            for bg in LINK_BG:
+                if fg not in pal or bg not in pal:
+                    out.append(f"{sel}: {fg} or {bg} is undefined")
+                    continue
+                a, b = _luminance(pal[fg]), _luminance(pal[bg])
+                ratio = (max(a, b) + 0.05) / (min(a, b) + 0.05)
+                if ratio < minimum:
+                    out.append(f"{sel}: {fg} {pal[fg]} on {bg} {pal[bg]} = {ratio:.2f}:1")
+    return out
+
+
 def self_test() -> int:
     cases: list[tuple[str, "Callable[[], object]"]] = []
 
@@ -1543,6 +1627,38 @@ def self_test() -> int:
         case(f"the full statement of root {_rk!r} appears exactly once",
              lambda d=_root["detail"]: _page.count(d) == 1)
     case("the dependency map is drawn exactly once", lambda: _page.count("<figure class=\"depmap\"") == 1)
+
+    # ── links are READABLE, in every palette this page can be rendered under ────────────────────
+    case("every link colour clears WCAG AA on every surface, all four palettes",
+         lambda: link_contrast_errors(_page) == [])
+    # The instrument's own falsifiers. It returns a LIST, so a stylesheet it could not parse
+    # would otherwise report "no failures" and be indistinguishable from a readable page.
+    case("a page with no palette RAISES rather than reporting no failures",
+         lambda: _raises(lambda: link_contrast_errors("<style>a{color:red}</style>"), ShapeError))
+    _PAL = (':root{--structural:#3d5a86;--ground:#fff;--card:#fff;--panel:#fff;'
+            '--pending-bg:#fff;--ink:#000}\n:root[data-theme="dark"]{}')
+    case("a page with palettes but NO unscoped a{} rule RAISES — the defect that shipped",
+         lambda: _raises(lambda: link_contrast_errors(_PAL), ShapeError))
+    # The NEAR-MISS, which is the whole reason the check is anchored: a page carrying only
+    # the SCOPED rules satisfies a bare `"a{color:var(--structural)}" in page` test. That is
+    # the exact stylesheet this fix replaced, and an unanchored guard calls it clean.
+    case("...and so does one with ONLY the scoped rules, which a substring test would pass",
+         lambda: _raises(lambda: link_contrast_errors(
+             _PAL + "\n.qabody a{color:var(--structural)}\ntd.mono a{color:var(--structural)}"),
+             ShapeError))
+    # The measurement itself, pinned against hand-computed values — a broken luminance
+    # formula would otherwise make every ratio above pass.
+    def _ratio(fg: str, bg: str) -> float:
+        a, b = _luminance(fg), _luminance(bg)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+    case("black on white is 21:1", lambda: round(_ratio("#000000", "#ffffff"), 2) == 21.0)
+    case("a colour against itself is 1:1", lambda: round(_ratio("#3d5a86", "#3d5a86"), 2) == 1.0)
+    case("shorthand hex expands (--card is #fff, not #ffffff)",
+         lambda: round(_ratio("#fff", "#ffffff"), 2) == 1.0)
+    case("the defect this fixed measures what the comment claims: 1.98 on --ground",
+         lambda: round(_ratio("#0000EE", "#101318"), 2) == 1.98)
+    case("...and 1.84 on --card", lambda: round(_ratio("#0000EE", "#171b22"), 2) == 1.84)
     case("every group's root reference links to the map, which exists",
          lambda: 'id="order"' in _page and _page.count('href="#order"') >= 1)
 

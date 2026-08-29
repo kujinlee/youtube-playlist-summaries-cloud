@@ -1245,6 +1245,87 @@ doubled. An unbalanced brace is a `SyntaxError` at import time.
 
 <!-- file: scripts/gen-dashboard.py -->
 ```python
+# --- WCAG contrast, measured on the EMITTED stylesheet -------------------------
+# The first version of this guard asserted that `a{color:var(--link)}` was
+# PRESENT and that `--link:` occurred twice. Both stayed true of a page whose
+# dark link had been set back to #0000EE at 1.90:1 — MEASURED 2026-08-29, three
+# separate value mutations survived at 105/105, while a harmless `a{` -> `a {`
+# reformat was caught. The count of two was blind in a second way: it is a
+# TOTAL, so moving both definitions into :root and deleting the dark one also
+# survived. Presence of a rule is not the property the rule exists for.
+#
+# These read the palette out of the generated HTML and assert the RATIO, which
+# covers colour VALUES, both SCHEMES and :hover with one assertion instead of
+# three that each have to be remembered.
+CONTRAST_MIN = 4.5
+LINK_FOREGROUNDS = ("--link", "--link-visited", "--ink")   # --ink is the :hover colour
+LINK_SURFACES = ("--bg", "--panel", "--need-bg", "--err-bg")
+
+
+def _luminance(colour: str) -> float:
+    """WCAG relative luminance of an #rgb or #rrggbb colour."""
+    h = colour.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) != 6:
+        raise ValueError(f"not a hex colour: {colour!r}")
+
+    def chan(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+
+
+def contrast_ratio(fg: str, bg: str) -> float:
+    """WCAG 2.x contrast ratio. 4.5:1 is AA for body-size text."""
+    a, b = _luminance(fg), _luminance(bg)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+def scheme_palettes(css: str) -> dict[str, dict[str, str]]:
+    """{scheme: {var: '#hex'}} read out of the emitted stylesheet.
+
+    RAISES when either block is missing. A contrast check that cannot find the
+    palette has NOT passed — it failed to run, and from a green suite the two
+    are indistinguishable. The dark block OVERRIDES the light one rather than
+    replacing it, which is what the cascade actually does: a variable defined
+    only in :root is still in force in dark mode, and reporting it as absent
+    would be a false failure.
+    """
+    light = re.search(r"^:root\{([^}]*)\}", css, re.M)
+    dark = re.search(r"@media\(prefers-color-scheme:dark\)\{:root\{([^}]*)\}", css)
+    if not light or not dark:
+        raise ValueError("could not find both :root palettes in the emitted CSS")
+
+    def hexes(block: str) -> dict[str, str]:
+        return dict(re.findall(r"(--[a-z0-9-]+):(#[0-9a-fA-F]{3,6})\b", block))
+
+    base = hexes(light.group(1))
+    if not base:
+        raise ValueError("the light :root palette parsed EMPTY")
+    return {"light": base, "dark": {**base, **hexes(dark.group(1))}}
+
+
+def contrast_failures(html: str, minimum: float = CONTRAST_MIN) -> list[str]:
+    """Every link colour / surface pair below `minimum`, in BOTH schemes.
+
+    An unresolved variable is reported as a failure, never skipped.
+    """
+    out = []
+    for scheme, pal in sorted(scheme_palettes(html).items()):
+        for fg in LINK_FOREGROUNDS:
+            for surf in LINK_SURFACES:
+                if fg not in pal or surf not in pal:
+                    out.append(f"{scheme}: {fg} or {surf} is undefined")
+                    continue
+                r = contrast_ratio(pal[fg], pal[surf])
+                if r < minimum:
+                    out.append(f"{scheme}: {fg} {pal[fg]} on {surf} "
+                               f"{pal[surf]} = {r:.2f}:1")
+    return out
+
+
 def _self_test() -> int:
     ok = fail = 0
 
@@ -1477,17 +1558,45 @@ def _self_test() -> int:
     case("no duplicate DOM ids", len(all_ids), len(set(all_ids)))
     case("every details has an id", ht.count("<details id="), ht.count("<details"))
     # A link with no colour rule inherits the browser default #0000EE, which measures
-    # 1.9:1 against the dark --bg — under half WCAG AA. That shipped, because the
-    # page was only ever read in light mode. Assert the rule EXISTS and that --link
-    # is defined in BOTH schemes: defining it once leaves the other scheme inheriting.
-    case("links are coloured in both schemes, never the browser default",
-         ("a{color:var(--link)}" in ht, ht.count("--link:")), (True, 2))
-    # :visited is declared EXPLICITLY rather than left to the cascade. The UA
-    # default #551A8B measures 1.62:1 on the dark --bg — WORSE than the unvisited
-    # blue, and it was the second symptom reported from the same root cause.
-    case("visited links are coloured too, in both schemes",
-         ("a:visited{color:var(--link-visited)}" in ht,
-          ht.count("--link-visited:")), (True, 2))
+    # 1.9:1 against the dark --bg — under half WCAG AA. That shipped because the page
+    # was only ever read in light mode. This asserts the PROPERTY, not the presence
+    # of the rule that currently delivers it: every link colour, on every surface a
+    # link actually lands on, in both schemes. See the note above contrast_failures
+    # for the three mutations the presence-only version let through.
+    case("every link colour clears WCAG AA on every surface, both schemes",
+         contrast_failures(ht), [])
+    # ...and the rules must still EXIST. A palette can be flawless while nothing
+    # references it, which is exactly the state this page shipped in.
+    case("the link rules are present, so the palette is actually used",
+         ("a{color:var(--link)}" in ht,
+          "a:visited{color:var(--link-visited)}" in ht,
+          "a:hover{color:var(--ink)}" in ht), (True, True, True))
+
+    # The instrument's own falsifier. contrast_failures returns a LIST, so a
+    # stylesheet it cannot parse would otherwise report [] — no failures — and be
+    # indistinguishable from a clean page. It must raise instead.
+    # NB: deliberately NOT called _raises — `_self_test` already binds that name
+    # further down to a FACTORY that returns a raising callable. Same word, opposite
+    # meaning; reusing it would work only by accident of definition order.
+    def _refuses(fn) -> bool:
+        try:
+            fn()
+        except ValueError:
+            return True
+        return False
+
+    case("a stylesheet with no palette RAISES rather than reporting no failures",
+         _refuses(lambda: contrast_failures("<style>a{color:red}</style>")), True)
+    case("...and so does one whose light palette holds no colours",
+         _refuses(lambda: contrast_failures(
+             ":root{--mono:monospace}\n@media(prefers-color-scheme:dark){:root{}}")), True)
+    # The measurement itself, pinned against hand-computed values, so a broken
+    # luminance formula cannot make every ratio pass.
+    case("black on white is 21:1", round(contrast_ratio("#000000", "#ffffff"), 2), 21.0)
+    case("a colour against itself is 1:1", round(contrast_ratio("#8cbde0", "#8cbde0"), 2), 1.0)
+    case("the original defect measures what the comment says it does",
+         round(contrast_ratio("#0000EE", "#14181b"), 2), 1.9)
+    case("shorthand hex expands", round(contrast_ratio("#fff", "#ffffff"), 2), 1.0)
 
     def _marks(bar):
         """What a SIGHTED reader can tell apart: the bar's own classes and its
@@ -3109,7 +3218,7 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
     not assembled: assertion rows added to scripts/explainer-serve.py's OWN suite, not to a file this plan assembles
 
   scripts/check-dashboard-entry.py  4 blocks assembled -> 46/46 passed · 5/5 cannot-run cases passed
-  scripts/gen-dashboard.py      8 blocks assembled -> 105/105 passed
+  scripts/gen-dashboard.py      8 blocks assembled -> 111/111 passed
 
   subject: the plan's blocks, DIFFED against the delivered files:
     identical  scripts/check-dashboard-entry.py

@@ -92,3 +92,49 @@ guard, not from a computed value.
 ⚠ First exercise of the plan-as-CI-dependency decided today: this fix required the identical edit in
 `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` and an evidence regeneration. Backlog
 #70 is what ends that.
+
+## 2026-08-29
+Reviewed the link fix above, and it needed two more repairs before it was safe to merge.
+
+The test I wrote to stop the problem coming back did not actually check the thing that had gone
+wrong. It checked that a colour instruction was *present* — not that the colour was *readable*. So
+setting the link back to the exact unreadable blue that started all this left the test passing.
+Three different ways of breaking it slipped through; a harmless tidy-up of the spacing, which breaks
+nothing, was the one thing it caught. It is now rewritten to measure the actual readability score,
+which covers all of those at once.
+
+The second repair: the backlog page had the same fault, and slightly worse — 1.98 and 1.84 against
+the required 4.5, where the dashboard scored 1.9. It had five link-colour rules, all correct, but
+they each covered one part of the page and three links sat outside all of them. Those are now
+covered, with the same kind of measured test.
+
+Worth knowing, because it says something about how much to trust a green tick: the automated
+reviewer read the backlog page and reported it clean. It was describing the five rules that exist,
+not the links they miss.
+<!--tech-->
+Finding 1 — `gen-dashboard.py`'s two cases asserted `"a{color:var(--link)}" in ht` and
+`ht.count("--link:") == 2`. Mutation-tested on a copied `scripts/` tree, control 105/105: value
+swaps to `#0000EE` (1.90:1), `#551A8B` (1.62:1) and `#f2f4f6` all SURVIVED, as did moving both
+definitions into `:root` and deleting the dark one — the count is a total, blind to which block
+holds them. `a { color` was caught. Replaced by `contrast_failures()`, which parses the emitted
+palette and asserts the WCAG ratio for `--link`/`--link-visited`/`--ink` against
+`--bg`/`--panel`/`--need-bg`/`--err-bg` in both schemes. All eight mutations now caught; 105 → 111.
+
+⚠ This supersedes the previous entry's "mutation-tested four ways". Those four rows were accurate;
+the set was not exhaustive, and the sentence read as though it were.
+
+Finding 2 — `gen-backlog-page.py` had no unscoped `a{}`, only `.qabody a`, `.depmap a`, `.rootref a`,
+`.num a`, `td.mono a`. Three anchors in `.prose`/`.status` — rendered from `md(r['body'])`, so the
+count grows with the backlog — fell through to `#0000EE`. Adds `a{color:var(--structural)}` (6.40:1
+worst case over six surfaces) and `link_contrast_errors()` over all four palette blocks, including
+the `data-theme` ones the manual toggle uses. 55 → 64.
+
+Finding 3, found while fixing 2 — that guard's own refusal used a bare substring test for
+`a{color:var(--structural)}`, which the SCOPED rules contain, so it passed with the unscoped rule
+deleted. Now `re.search(r"^a\{…", re.M)`, with the near-miss pinned as its own case.
+
+⚠ The plan's 43-mutation manifest was NOT extended to the new cases. Coverage is hand-verified and
+reproducible but not mechanised; backlog #70 retargets that manifest and would discard the work.
+
+⚠ All three mutation harnesses run today reported a meaningless control on first use. Every "caught"
+here comes from a run whose control was green.
