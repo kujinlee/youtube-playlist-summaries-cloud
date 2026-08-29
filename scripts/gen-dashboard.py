@@ -124,3 +124,114 @@ def parse_entries(text: str) -> list[dict]:
                 e["error"] = f"[resolved: {r}] names no entry in this file"
             break
     return out
+
+def _pos(e: dict) -> tuple:
+    return (e["date"] or "", e["ordinal"])
+
+
+def unresolved(entries: list[dict]) -> list[dict]:
+    """needs-you entries not cleared by a LATER [resolved: <id>] (spec §6.2)."""
+    by_id = {e["id"]: e for e in entries if e["id"] and not e["error"]}
+    cleared = set()
+    for e in entries:
+        if e["error"]:
+            continue
+        for r in e["resolves"]:
+            t = by_id.get(r)
+            if t is not None and _pos(e) > _pos(t):
+                cleared.add(t["id"])
+    return [e for e in entries
+            if e["needs_you"] and not e["error"] and e["id"] not in cleared]
+
+
+def bucket_days(dates: list[str], entries: list[dict], window: int, today: str) -> list[dict]:
+    counts: dict[str, int] = {}
+    for d in dates:
+        counts[d] = counts.get(d, 0) + 1
+    with_entry = {e["date"] for e in entries if not e["error"]}
+    flagged = {e["date"] for e in unresolved(entries)}
+    end = _dt.date.fromisoformat(today)
+    out = []
+    for i in range(window):
+        d = (end - _dt.timedelta(days=i)).isoformat()
+        out.append({"date": d, "commits": counts.get(d, 0),
+                    "needs_you": d in flagged, "has_entry": d in with_entry})
+    return out
+
+def commit_dates(window: int) -> tuple[list[str] | None, str | None]:
+    """Author dates on FIRST-PARENT HEAD. Returns (dates, None) or (None, why).
+
+    `--first-parent` is named explicitly because spec §5 requires it: after a
+    squash-merge a plain `git log` counts the branch's own commits too, so
+    "commits" would mean two different things depending on how a PR landed —
+    and the §9 alarm (a day with commits and no entry) is computed from this.
+
+    §6.2's ref split: the CHART reads HEAD; the renderer reads the working tree.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "log", "HEAD", "--first-parent", f"--since={window} days ago",
+             "--date=short", "--pretty=%ad"],
+            capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"could not run git: {exc}"
+    if r.returncode != 0:
+        return None, f"git log exited {r.returncode}: {r.stderr.strip()[:200]}"
+    return [l for l in r.stdout.split("\n") if l.strip()], None
+
+
+def _gh_json(args: list[str]) -> tuple[object | None, str | None]:
+    """Run `gh` and parse its JSON. Never a bare [] on failure — "nothing" and
+    "could not ask" must not look alike."""
+    try:
+        r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"could not run gh: {exc}"
+    if r.returncode != 0:
+        return None, f"gh exited {r.returncode}: {r.stderr.strip()[:200]}"
+    try:
+        return json.loads(r.stdout or "[]"), None
+    except json.JSONDecodeError as exc:
+        return None, f"gh returned unparseable JSON: {exc}"
+
+
+def open_prs() -> tuple[list[dict] | None, str | None]:
+    data, err = _gh_json(["pr", "list", "--state", "open", "--json", "number,title"])
+    if err:
+        return None, err
+    if not isinstance(data, list) or any(
+            not isinstance(p, dict) or "number" not in p or "title" not in p for p in data):
+        return None, "gh returned JSON in an unexpected shape"
+    return data, None
+
+
+def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
+    """Merged PRs whose body declared `NO-ENTRY:`, newest first.
+
+    SPEC §7 REQUIRES THIS TO BE DISPLAYED. Without it nothing counts exemptions,
+    nobody can see "eleven of the last twelve branches skipped their entry", and
+    the page goes on looking healthy while describing less and less.
+
+    Reads the gate's own `exemption_reason`, so the page shows exactly the
+    exemptions the gate granted. A display that disagrees with the gate is worse
+    than none. Bounded at `limit`: an older exemption stops being shown.
+    """
+    try:
+        reader = _exemption_reader()
+    except Exception as exc:
+        return None, f"could not load the gate's exemption reader: {exc}"
+    data, err = _gh_json(["pr", "list", "--state", "merged", "--limit", str(limit),
+                          "--json", "number,title,body,mergedAt"])
+    if err:
+        return None, err
+    if not isinstance(data, list):
+        return None, "gh returned JSON in an unexpected shape"
+    out = []
+    for p in data:
+        if not isinstance(p, dict):
+            return None, "gh returned JSON in an unexpected shape"
+        reason = reader(p.get("body") or "")
+        if reason:
+            out.append({"number": p.get("number"), "title": p.get("title") or "",
+                        "merged": (p.get("mergedAt") or "")[:10], "reason": reason})
+    return out, None
