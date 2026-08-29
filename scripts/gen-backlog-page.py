@@ -202,10 +202,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (69, "A script's self-test cannot check its own exit code, so the one line that guards its "
              "declared case count could be deleted without anything noticing. The count is right "
              "today; what is missing is a watcher outside the script."),
-        (70, "The dashboard plan is currently a permanent CI dependency: the first bug fixed in "
-             "either dashboard script turns the build red until the same edit is copied into the "
-             "3,170-line planning document. Decided 2026-08-29 to keep it, with a written exit — "
-             "this item is that exit. Doing it makes the check stronger, not weaker."),
         (29, "A guard-coverage checker only inspects the parked schema, so the guards in real "
              "migrations are invisible to it."),
         (38, "Extract the sidebar's load/refresh state machine into a hook — a reviewer, asked "
