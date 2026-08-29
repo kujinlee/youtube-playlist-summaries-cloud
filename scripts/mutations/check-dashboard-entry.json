@@ -1,0 +1,135 @@
+[
+ {
+  "name": "gate stops sharing the parser grammar",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "return line.startswith(\"+\") and header_error(line[1:]) is None",
+    "import re as _r; return bool(_r.match(r\"^\\+## (\\d{4}-\\d{2}-\\d{2})\\b\", line))"
+   ]
+  ],
+  "expect": [
+   "an impossible date does NOT count",
+   "a suffixed date does NOT count",
+   "a trailing dot does NOT count",
+   "a typo'd flag does NOT count",
+   "a title on the header line does NOT count"
+  ]
+ },
+ {
+  "name": "tab indent not counted",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "            col += 4 - (col % 4)",
+    "            col += 0"
+   ]
+  ],
+  "expect": "exemption_reason — TAB-indented code block"
+ },
+ {
+  "name": "head path skips the indent check",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if not _indented(head) and head.strip().startswith(NO_ENTRY):",
+    "if head.strip().startswith(NO_ENTRY):"
+   ]
+  ],
+  "expect": "exemption_reason — indented, with a comment later on the line"
+ },
+ {
+  "name": "fence closes on either character",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "elif ch == fence_ch:",
+    "elif True:"
+   ]
+  ],
+  "expect": "exemption_reason — ``` is not closed by ~~~"
+ },
+ {
+  "name": "fence LENGTH ignored (short inner fence closes a long outer one)",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if len(run) >= len(fence_run):",
+    "if True:"
+   ]
+  ],
+  "expect": [
+   "exemption_reason — a SHORT fence does not close a longer fence",
+   "exemption_reason — ...same for tildes"
+  ]
+ },
+ {
+  "name": "indent rule removed entirely",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if in_comment or not probe or _indented(probe):",
+    "if in_comment or not probe:"
+   ]
+  ],
+  "expect": [
+   "exemption_reason — indented code block",
+   "exemption_reason — TAB-indented code block"
+  ]
+ },
+ {
+  "name": "line-leading rule removed",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "if s.startswith(NO_ENTRY):",
+    "if NO_ENTRY in s:"
+   ]
+  ],
+  "expect": "exemption_reason — blockquoted"
+ },
+ {
+  "name": "the three-valued reason collapses: empty and absent become one message",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if reason == \"\":",
+    "    if False:"
+   ]
+  ],
+  "expect": "...and says the marker was present with nothing after it"
+ },
+ {
+  "name": "the GATE reads a broken git as 'nothing changed'",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "    if names.returncode != 0:",
+    "    if False:"
+   ]
+  ],
+  "expect": "collect: a non-zero git exit is a could-not-tell, not 'nothing changed'"
+ },
+ {
+  "name": "the GATE's missing-git branch reports no error",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        return [], False, f\"could not run git: {exc}\"",
+    "        return [], False, None"
+   ]
+  ],
+  "expect": "collect: a missing git is a could-not-tell, not 'nothing changed'"
+ },
+ {
+  "name": "THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges",
+  "file": "scripts/check-dashboard-entry.py",
+  "edits": [
+   [
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 2",
+    "        print(f\"CANNOT RUN — {err}\\nTreat this as NOT CHECKED.\")\n        return 0"
+   ]
+  ],
+  "expect": "main: a could-not-tell exits 2 — NEVER 0"
+ }
+]

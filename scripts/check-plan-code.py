@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 125 cases
+    python3 scripts/check-plan-code.py --self-test          # 136 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -77,6 +77,7 @@ import difflib
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -283,6 +284,110 @@ def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[
                         f"changed line(s)) — the mutation evidence describes the plan's copy, "
                         f"not this file:\n    " + "\n    ".join(diff[:40]))
     return problems, seen
+
+
+# How many mutations each delivered script is covered by. EXACT, not a floor: adding a
+# mutation should also be a visible act, and a floor drifts downward the moment somebody
+# adds one without saying so.
+#
+# ⚠ This lives in the RUNNER, deliberately, not in the manifest. A count stored beside the
+# entries it counts gets edited in the same breath as deleting one, which is no guard at all.
+EXPECTED_MUTATIONS = {
+    "scripts/gen-dashboard.py": 32,
+    "scripts/check-dashboard-entry.py": 11,
+}
+
+MANIFEST_DIR = "scripts/mutations"
+
+
+def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
+    """Read every `scripts/mutations/<stem>.json` under `root`.
+
+    The FILENAME is the authority on which script an entry targets; each entry's `file`
+    key must agree with it. Two statements of one fact, checked against each other — a
+    copy-paste that retargets an entry is caught, where a single unchecked statement
+    would simply be believed.
+
+    An empty manifest, a missing target, and no manifests at all are all REFUSALS. A
+    mutation run that measured nothing must never be readable as one that found nothing.
+    """
+    d = root / MANIFEST_DIR
+    if not d.is_dir():
+        return [], [f"CANNOT RUN — no manifests: {d} is not a directory"]
+    files = sorted(d.glob("*.json"))
+    if not files:
+        return [], [f"CANNOT RUN — no manifests found in {d}"]
+    out, problems = [], []
+    for man in files:
+        target = f"scripts/{man.stem}.py"
+        if not (root / target).is_file():
+            problems.append(f"{man.name}: target {target} does not exist under {root}")
+            continue
+        try:
+            entries = json.loads(man.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            problems.append(f"{man.name}: not valid JSON — {exc}")
+            continue
+        if not isinstance(entries, list) or not entries:
+            problems.append(f"{man.name}: no entries — an empty manifest measures nothing")
+            continue
+        for e in entries:
+            if e.get("file") != target:
+                problems.append(f"{man.name}: entry {e.get('name')!r} has file "
+                                f"{e.get('file')!r}, which disagrees with the manifest "
+                                f"name (expected {target!r})")
+                continue
+            out.append(e)
+    return out, problems
+
+
+def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
+    """Mutate the DELIVERED scripts, not a copy assembled from a document.
+
+    The whole `scripts/` tree is copied because these scripts import each other as
+    siblings and resolve a repo root from their own path; copying only the targeted
+    files gives a red control, and a mutation table over a red control is not evidence.
+    """
+    muts, problems = load_manifests(root)
+    ev = {"files": {}, "mutations": [], "survivors": [], "tally": {}, "compared": None}
+    if problems:
+        return False, problems, ev
+    counts = {}
+    for m in muts:
+        counts[m["file"]] = counts.get(m["file"], 0) + 1
+    drift = []
+    for target, want in sorted(EXPECTED_MUTATIONS.items()):
+        got = counts.get(target, 0)
+        if got != want:
+            drift.append(f"{target}: manifest holds {got} mutation(s), expected {want}. "
+                         f"Coverage cannot change silently — if this is deliberate, change "
+                         f"EXPECTED_MUTATIONS in check-plan-code.py in the SAME commit and "
+                         f"say why in the message")
+    for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):
+        drift.append(f"{target}: {counts[target]} mutation(s) but no declared count — add it "
+                     f"to EXPECTED_MUTATIONS so its coverage cannot shrink unnoticed")
+    if drift:
+        return False, drift, ev
+    targets = sorted(counts)
+    with tempfile.TemporaryDirectory() as td:
+        d = pathlib.Path(td)
+        shutil.copytree(root / "scripts", d / "scripts")
+        report = []
+        # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
+        # the mutation; that claim is empty unless the suite is green without it.
+        for name in targets:
+            rc, out = run_suite(d, name)
+            ev["files"][name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
+                                 "blocks": None}
+            if rc != 0:
+                report.append(f"CANNOT RUN — control run of {name} exited {rc} BEFORE any "
+                              f"mutation was applied. Every verdict below would be an "
+                              f"artefact. Treat this as NOT CHECKED.\n    {out[-400:]}")
+        if report:
+            return False, report, ev
+        ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets))
+        ev["mutations"], ev["survivors"] = m_muts, m_survivors
+        return ok, m_report, ev
 
 
 def run_mutations(d: pathlib.Path, muts: list[dict],
@@ -1282,6 +1387,93 @@ def _self_test() -> int:
         case("run_mutations refuses an unknown target file",
              (_ok3, any("unknown file" in r for r in _rep3)), (False, True))
 
+    # ⟲ Backlog #70, Task 2. The manifest FILENAME names the target script, and an entry
+    # whose `file` key disagrees is refused rather than silently believed.
+    with tempfile.TemporaryDirectory() as _td:
+        _r = pathlib.Path(_td)
+        (_r / "scripts" / "mutations").mkdir(parents=True)
+        (_r / "scripts" / "thing.py").write_text("x = 1\n")
+        _man = _r / "scripts" / "mutations" / "thing.json"
+        _man.write_text(json.dumps([{"name": "n", "file": "scripts/thing.py",
+                                     "edits": [["x = 1", "x = 2"]], "expect": "e"}]))
+        case("load_manifests reads a well-formed manifest", load_manifests(_r), 
+             ([{"name": "n", "file": "scripts/thing.py",
+                "edits": [["x = 1", "x = 2"]], "expect": "e"}], []))
+        _man.write_text(json.dumps([{"name": "n", "file": "scripts/OTHER.py",
+                                     "edits": [["a", "b"]], "expect": "e"}]))
+        case("a `file` key disagreeing with the manifest NAME is refused",
+             any("disagrees" in x for x in load_manifests(_r)[1]), True)
+        _man.write_text(json.dumps([]))
+        case("an EMPTY manifest is a refusal, not zero work",
+             any("no entries" in x for x in load_manifests(_r)[1]), True)
+        (_r / "scripts" / "mutations" / "ghost.json").write_text(
+            json.dumps([{"name": "n", "file": "scripts/ghost.py",
+                         "edits": [["a", "b"]], "expect": "e"}]))
+        case("a manifest naming a script that does not exist is refused",
+             any("does not exist" in x for x in load_manifests(_r)[1]), True)
+    with tempfile.TemporaryDirectory() as _td:
+        _r2 = pathlib.Path(_td)
+        (_r2 / "scripts" / "mutations").mkdir(parents=True)
+        case("NO manifests at all is CANNOT RUN, never a silent pass",
+             any("no manifests" in x for x in load_manifests(_r2)[1]), True)
+
+    # ⟲ Backlog #70, Task 3. The WHOLE scripts/ tree is copied, not the targeted files:
+    # gen-dashboard.py loads check-dashboard-entry.py as a sibling at import time. MEASURED
+    # 2026-08-29 — three separate hand-run harnesses reported a red or meaningless control
+    # on first use for exactly this reason.
+    def _mini(root, val=1):
+        (root / "scripts" / "mutations").mkdir(parents=True, exist_ok=True)
+        (root / "scripts" / "helper.py").write_text(f"VALUE = {val}\n")
+        (root / "scripts" / "thing.py").write_text(
+            'import pathlib, sys\n'
+            'VALUE = int((pathlib.Path(__file__).parent / "helper.py")\n'
+            '            .read_text().split("=")[1])\n'
+            'def _self_test():\n'
+            '    if VALUE != 1:\n'
+            '        print("  [FAIL] value is one: got %r" % VALUE)\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        (root / "scripts" / "mutations" / "thing.json").write_text(json.dumps(
+            [{"name": "value is two", "file": "scripts/thing.py",
+              "edits": [["VALUE != 1", "VALUE != 2"]], "expect": "value is one"}]))
+
+    _saved = dict(EXPECTED_MUTATIONS)
+    try:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _ok, _rep, _ev = mutate_delivered(_r)
+            case("--mutate catches a mutation in the DELIVERED tree", _ok, True)
+            case("...the sibling import survived the copy, so no control complaint",
+                 any("control" in r.lower() for r in _rep), False)
+        # The falsifier for the instrument: break the UNMUTATED script. Without a control
+        # check every mutation 'goes red' and a full table of catches is reported over a
+        # suite that never worked.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r, val=99)
+            _ok2, _rep2, _ = mutate_delivered(_r)
+            case("a RED control is refused, not reported as catches",
+                 (_ok2, any("control" in r.lower() for r in _rep2)), (False, True))
+        # ⟲ Task 4. Deleting an entry narrows coverage while CI stays green — backlog #69's
+        # class, and the shape found in CONTRAST_MIN the same day.
+        EXPECTED_MUTATIONS["scripts/thing.py"] = 2
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _ok3, _rep3, _ = mutate_delivered(_r)
+            case("a SHRUNKEN manifest is refused by name and number",
+                 (_ok3, any("holds 1 mutation(s), expected 2" in r for r in _rep3)),
+                 (False, True))
+    finally:
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
+    case("the declared counts name every manifest that ships",
+         sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
+                                      "scripts/gen-dashboard.py"])
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 43)
+
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
     # it cannot drift silently the way `# 12 cases` did against a 19-case suite.
@@ -1299,6 +1491,10 @@ def main(argv: list[str]) -> int:
                     help="FAIL if the evidence block pasted in the plan is not exactly "
                          "what this run produces. Generating the block bought "
                          "provenance; only this buys freshness.")
+    ap.add_argument("--mutate", metavar="ROOT",
+                    help="Mutate the DELIVERED scripts under ROOT, reading manifests from "
+                         "ROOT/scripts/mutations/<script>.json. No plan is involved: this is "
+                         "the mode that makes the evidence about the code that ships.")
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -1306,6 +1502,19 @@ def main(argv: list[str]) -> int:
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
+    if a.mutate:
+        mroot = pathlib.Path(a.mutate)
+        if not mroot.is_dir():
+            print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",
+                  file=sys.stderr)
+            return 2
+        ok, report, ev = mutate_delivered(mroot)
+        for r in report:
+            print(f"  \u2717 {r}")
+        print(("OK — " if ok else "FAILED — ")
+              + f"delivered scripts mutated: {len(ev['files'])} file(s), "
+                f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+        return 0 if ok else 1
     if not a.plan:
         print("CANNOT RUN — no plan given. Treat this as NOT CHECKED.", file=sys.stderr)
         return 2
