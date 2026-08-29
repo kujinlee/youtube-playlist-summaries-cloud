@@ -24,10 +24,9 @@ having it happen silently.
 Answers you get on a served page now also appear without you reloading it, which previously never
 worked on any standing page.
 
-**Waiting on you:** whether to merge, and one open question in the pull request — CI now checks the
-plan document against the code, so fixing a bug in either script will turn CI red until the plan is
-edited to match. That is deliberate, but nothing says when it stops applying, and the first person
-to hit it will probably just delete the check.
+**Waiting on you:** CI now checks the plan document against the code, so fixing a bug in either
+script will turn CI red until the plan is edited to match. That is deliberate, but nothing says when
+it stops applying, and the first person to hit it will probably just delete the check.
 <!--tech-->
 Tasks 1–6 of `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md`. Ships
 `scripts/check-dashboard-entry.py` (the ratchet, and the owner of the entry-header grammar),

@@ -570,21 +570,39 @@ def _self_test() -> int:
     # An UNKNOWN flag must degrade THAT ENTRY, never take the page down. The gate
     # owns FLAG and its docstring invites extending it there; when it was extended
     # the gate stayed fully green and `parse_entries` raised IndexError on every
-    # render. `_flagged` is built through the gate's own grammar rather than a
-    # literal, so this case exercises the real seam instead of a mock of it.
-    _flagged = re.compile(r"\[(needs-you|blocked|resolved:\s*[^\]]*)\]")
-    _real_flag = globals()["FLAG"]
-    globals()["FLAG"] = _flagged
+    # render.
+    #
+    # THERE ARE TWO READINGS OF THE GRAMMAR AND BOTH MUST MOVE. `header_error` is
+    # the GATE's function and closes over the GATE's module-global FLAG; this
+    # module holds its own `FLAG` binding, taken at import. Swapping only ours
+    # leaves the gate rejecting `[blocked]` at the HEADER, so `err` is truthy and
+    # overwrites the flag-loop message before it is ever read — the case then
+    # pins `header_error`'s string and `else: entry["error"] = ...` -> `else: pass`
+    # SURVIVES. Measured: "unrecognised text in header: '[blocked]'" (one reading)
+    # vs "unrecognised flag [blocked]" (both). So both attributes are swapped, and
+    # the assertion below is the EXACT degradation message rather than a substring
+    # that either string would satisfy.
+    _flagged = re.compile(_GATE.FLAG.pattern.replace("needs-you", "needs-you|blocked", 1))
+    # Derived from the gate's live pattern, not a copy of it — a copy silently
+    # stops resembling the gate. Derivation is a step that can fail, so it is
+    # checked: a no-op replace would leave a pattern that does not know the flag,
+    # and the case would then pass for the wrong reason.
+    case("the unknown-flag fixture really extends the GATE's own pattern",
+         (_flagged.pattern != _GATE.FLAG.pattern, _flagged.findall("[blocked]")),
+         (True, ["blocked"]))
+    _real_flag, _real_gate_flag = globals()["FLAG"], _GATE.FLAG
+    globals()["FLAG"] = _GATE.FLAG = _flagged
     try:
         unknown = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
     except Exception as exc:                 # the defect: the page does not render
-        unknown = [{"error": None, "raised": f"{type(exc).__name__}"}]
+        unknown = [{"error": f"RAISED {type(exc).__name__}"}]
     finally:
-        globals()["FLAG"] = _real_flag
+        globals()["FLAG"], _GATE.FLAG = _real_flag, _real_gate_flag
     case("an unrecognised flag is an ERROR, not a crash",
-         unknown[0]["error"] is not None, True)
-    case("...and the error names the flag it did not recognise",
-         "blocked" in (unknown[0]["error"] or ""), True)
+         (unknown[0]["error"] is not None,
+          not str(unknown[0]["error"] or "").startswith("RAISED")), (True, True))
+    case("...and the entry degrades with the flag-loop's own diagnostic",
+         unknown[0]["error"], "unrecognised flag [blocked]")
 
     nospace = parse_entries("##2026-08-28\nNo space after the hashes.\n")
     case("'##' with no space is still an entry", len(nospace), 1)

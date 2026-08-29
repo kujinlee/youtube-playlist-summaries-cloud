@@ -1294,21 +1294,39 @@ def _self_test() -> int:
     # An UNKNOWN flag must degrade THAT ENTRY, never take the page down. The gate
     # owns FLAG and its docstring invites extending it there; when it was extended
     # the gate stayed fully green and `parse_entries` raised IndexError on every
-    # render. `_flagged` is built through the gate's own grammar rather than a
-    # literal, so this case exercises the real seam instead of a mock of it.
-    _flagged = re.compile(r"\[(needs-you|blocked|resolved:\s*[^\]]*)\]")
-    _real_flag = globals()["FLAG"]
-    globals()["FLAG"] = _flagged
+    # render.
+    #
+    # THERE ARE TWO READINGS OF THE GRAMMAR AND BOTH MUST MOVE. `header_error` is
+    # the GATE's function and closes over the GATE's module-global FLAG; this
+    # module holds its own `FLAG` binding, taken at import. Swapping only ours
+    # leaves the gate rejecting `[blocked]` at the HEADER, so `err` is truthy and
+    # overwrites the flag-loop message before it is ever read — the case then
+    # pins `header_error`'s string and `else: entry["error"] = ...` -> `else: pass`
+    # SURVIVES. Measured: "unrecognised text in header: '[blocked]'" (one reading)
+    # vs "unrecognised flag [blocked]" (both). So both attributes are swapped, and
+    # the assertion below is the EXACT degradation message rather than a substring
+    # that either string would satisfy.
+    _flagged = re.compile(_GATE.FLAG.pattern.replace("needs-you", "needs-you|blocked", 1))
+    # Derived from the gate's live pattern, not a copy of it — a copy silently
+    # stops resembling the gate. Derivation is a step that can fail, so it is
+    # checked: a no-op replace would leave a pattern that does not know the flag,
+    # and the case would then pass for the wrong reason.
+    case("the unknown-flag fixture really extends the GATE's own pattern",
+         (_flagged.pattern != _GATE.FLAG.pattern, _flagged.findall("[blocked]")),
+         (True, ["blocked"]))
+    _real_flag, _real_gate_flag = globals()["FLAG"], _GATE.FLAG
+    globals()["FLAG"] = _GATE.FLAG = _flagged
     try:
         unknown = parse_entries("## 2026-08-29 [blocked]\nA thing.\n")
     except Exception as exc:                 # the defect: the page does not render
-        unknown = [{"error": None, "raised": f"{type(exc).__name__}"}]
+        unknown = [{"error": f"RAISED {type(exc).__name__}"}]
     finally:
-        globals()["FLAG"] = _real_flag
+        globals()["FLAG"], _GATE.FLAG = _real_flag, _real_gate_flag
     case("an unrecognised flag is an ERROR, not a crash",
-         unknown[0]["error"] is not None, True)
-    case("...and the error names the flag it did not recognise",
-         "blocked" in (unknown[0]["error"] or ""), True)
+         (unknown[0]["error"] is not None,
+          not str(unknown[0]["error"] or "").startswith("RAISED")), (True, True))
+    case("...and the entry degrades with the flag-loop's own diagnostic",
+         unknown[0]["error"], "unrecognised flag [blocked]")
 
     nospace = parse_entries("##2026-08-28\nNo space after the hashes.\n")
     case("'##' with no space is still an entry", len(nospace), 1)
@@ -2495,7 +2513,19 @@ mutation caught by a different case, fails the check.
    ]
   ],
   "expect": ["an unrecognised flag is an ERROR, not a crash",
-            "...and the error names the flag it did not recognise"]
+            "...and the entry degrades with the flag-loop's own diagnostic"]
+ },
+ {
+  "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [
+   [
+    "                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
+    "                else:\n                    pass"
+   ]
+  ],
+  "expect": ["an unrecognised flag is an ERROR, not a crash",
+            "...and the entry degrades with the flag-loop's own diagnostic"]
  },
  {
   "name": "main: a compose that wrote NO page reports success",
@@ -3019,9 +3049,35 @@ Four one-line mutations each survived a fully green **95/95**, and two of them a
 `.claude/hooks/regen-dashboard.sh`'s error branch rests on. All four are now declared mutations
 caught by cases that name them.
 
-⚠ **The shape is the one this plan has now filed seven times**: a seam that is narrower than the
-prose describing it. C1's `else` and C2's uncovered wrapper are both *"a check that reports success
-over something it never measured"*, one layer out from where the previous fix landed.
+**N1 — the re-review then found C1's own case exercising a MOCK of the seam, and saying it did not.**
+The case swapped only this module's `FLAG`. But `header_error` is the **gate's** function and closes
+over the **gate's** `FLAG`, which still rejected `[blocked]` at the header — so `err` was truthy and
+overwrote the flag-loop's message before it was ever read. Measured, the two readings differ:
+
+```
+under the TEST's setup      : "unrecognised text in header: '[blocked]'"   <- header_error
+with BOTH extended (REAL)   : "unrecognised flag [blocked]"                <- the new else
+```
+
+**Consequence: `else: entry["error"] = …` → `else: pass` SURVIVED at 102/102.** The case pinned
+*"does not crash"* — which was the defect, so the fix was never unguarded — but not the graceful
+degradation the same fix added. And the comment above it claimed `_flagged` was *"built through the
+gate's own grammar rather than a literal, so this case exercises the real seam instead of a mock of
+it"*, while being a hand-written literal duplicating the gate's pattern. **The comment asserted the
+very property the case lacked** — which is the sentence this slice keeps rediscovering, this time
+written by the author of the fix, in the same edit.
+
+Now: `_flagged` is derived from `_GATE.FLAG.pattern`; **both** attributes are swapped so the two
+readings agree by construction; the derivation is itself a case, because a no-op `replace` would
+leave a pattern that does not know the flag and the case would pass for the wrong reason; and the
+assertion is the **exact** degradation message rather than a substring both strings satisfy. The
+`else: pass` form is declared as its own manifest entry. Re-measured: `else: pass` → **101/103**.
+
+⚠ **The shape is the one this plan has now filed eight times**: a seam narrower than the prose
+describing it. C1's `else`, C2's uncovered wrapper and N1's half-bound fixture are all *"a check that
+reports success over something it never measured"*, each one layer out from where the previous fix
+landed. N1 is the sharpest instance, because the thing that was wrong was **a comment claiming the
+case was not a mock**.
 
 ---
 
@@ -3034,13 +3090,13 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
     not assembled: assertion rows added to scripts/explainer-serve.py's OWN suite, not to a file this plan assembles
 
   scripts/check-dashboard-entry.py  4 blocks assembled -> 46/46 passed · 5/5 cannot-run cases passed
-  scripts/gen-dashboard.py      8 blocks assembled -> 102/102 passed
+  scripts/gen-dashboard.py      8 blocks assembled -> 103/103 passed
 
   subject: the plan's blocks, DIFFED against the delivered files:
     identical  scripts/check-dashboard-entry.py
     identical  scripts/gen-dashboard.py
 
-  mutations declared and run: 42, caught 42
+  mutations declared and run: 43, caught 43
     caught   day anchors never emitted (every bar href is a dead link)
     caught   bar height ignores commits
     caught   entry title not rendered
@@ -3079,6 +3135,7 @@ GENERATED by scripts/check-plan-code.py — do not edit by hand.
     caught   the GATE's missing-git branch reports no error
     caught   THE RATCHET GOES FAIL-OPEN — a git failure exits 0 and the branch merges
     caught   the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render
+    caught   the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix
     caught   main: a compose that wrote NO page reports success
     caught   main: a compose that TIMED OUT reports success
     caught   main: the dead-collector warning loop never fires, so a half-measured page looks whole

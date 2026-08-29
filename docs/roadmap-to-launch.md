@@ -1379,7 +1379,13 @@ corrections slice above.
       the flag loop assumed every non-`needs-you` flag carried a colon, so extending `FLAG` in the
       file that OWNS the grammar left the gate fully green and crashed **every** render; and `main()`
       had zero coverage, where four one-line mutations survived — two of them the exit-code promise
-      the regen hook's error branch depends on. Mutations 37 → 42, suite 95 → 102.
+      the regen hook's error branch depends on.
+- [x] **Re-review of the fix wave — one further finding, N1, fixed.** C1's own new case swapped only
+      the generator's `FLAG` and not the gate's, which `header_error` reads; the header error then
+      overwrote the flag-loop message, so `else: pass` survived and the case's comment claimed it
+      exercised the real seam while binding a literal. Fixture now derived from `_GATE.FLAG.pattern`
+      with both attributes swapped, and the exact message asserted.
+      **Mutations 37 → 43, suite 95 → 103, survivors 0.**
 - [ ] **The PR.** Task 6 Step 7 (push + PR) deliberately NOT done by the implementer — the plan
       orders it before the branch review and `docs/dev-process.md` Phase 5 orders it after, and the
       process wins. Merging stays the human gate.
