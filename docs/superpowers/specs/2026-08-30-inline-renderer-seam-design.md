@@ -90,13 +90,24 @@ bare-URL autolinking. Escaping unified on `html.escape` (`&#x27;`).
 
 - **`explainer-serve`** — 0 substantive change. Its `md_inline` already *is* the union feature set;
   it simply is not shared, and its scan is weaker.
-- **`gen-backlog`** — keeps its em and links, gains 2 autolinks, and **fixes the 10 crossed spans and
-  15 markup-in-code cases now on the page**. Gains `safe_href`.
-- **`gen-goals`** — the largest visible change: **145 emphasis spans across 132 lines, and 17 links**,
-  start rendering where they now print as literal asterisks and brackets. 14 of 14 sampled are
-  authored emphasis (e.g. `docs/adr/0005-…md:134`, a deliberately italicised parenthetical). Gains
-  apostrophe escaping.
-- **`gen-dashboard`** — 5 lines newly italic; 0 link changes, since its corpus contains none.
+⚠ **RE-MEASURED 2026-08-30 during implementation; the first figures were taken over the WRONG
+POPULATION.** They were counted by feeding whole source *files* through each renderer. That is a fair
+proxy for three of the four, which render nearly all of their file — but `gen-goals-page` renders only
+the one-line `Goal:` strings, and its numbers were badly wrong. The population that matters is *what
+each generator actually passes to the renderer*, now derived by calling each generator's own parser.
+
+- **`gen-backlog`** — 71 rows, **213 strings** actually rendered. Before → after:
+  **crossed tag spans 7 → 0, markup-inside-code 12 → 0, real emphasis or links lost: 0.** Three
+  apparent losses were checked individually and all three are the defect being removed — including
+  row #24's `*caption*`, which sits **inside backticks** (`` emits `> 🖼 *caption*` ``) and was being
+  italicised through the code span. Gains `safe_href`, which it had none of.
+- **`gen-goals`** — **39 strings**, containing **0** emphasis spans, **0** links, **0** code spans and
+  **0** bold. **The page's visible output does not change at all.** The earlier "145 emphasis spans
+  across 132 lines, and 17 links" counted `docs/adr/*.md` in full; those files are read for their
+  headers and their bodies never reach a renderer. What `gen-goals` gains is the apostrophe escaping
+  its `esc()` lacked, and correct behaviour for any future goal line that uses markup.
+- **`gen-dashboard`** — not yet re-measured against its parsed entries; the file-level figure was
+  5 newly-italic lines and 0 link changes.
 
 ### Deliberately NOT in scope
 
@@ -222,7 +233,7 @@ whole finding, and the fix is an address, not an algorithm.
 | The backlog corruption is fixed | the regenerated page contains a crossed tag span |
 | The layer count fell | the four generators' combined inline case count did not decrease |
 | The module cannot rot unnoticed | no CI step runs `page_markup.py --self-test`, or `scripts/mutations/page_markup.json` has no entries, or `--mutate .` leaves a survivor in it |
-| No page silently lost a feature | the goals page renders fewer than 145 emphasis spans, or the backlog page fewer links than today |
+| No page silently lost a feature | any emphasis span or link the old renderer produced from a **parsed** string is absent from the new one, other than those crossing a code-span boundary. ⚠ Stated over PARSED strings, not source files — the file-level version of this falsifier was measured over text three generators render and one does not, and it produced a wrong number for `gen-goals` |
 
 ---
 

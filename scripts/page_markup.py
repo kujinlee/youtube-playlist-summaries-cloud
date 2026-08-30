@@ -80,11 +80,40 @@ SAFE_HREF = re.compile(r"^(?:https?:|mailto:|[/#?.]|[^:]*$)", re.I)
 # not supported, which is what all four implementations already did.
 LINK_AT = re.compile(r"\[([^\]]*)\]\(([^)\s]*)\)")
 
-# Single-asterisk emphasis, anchored. The body cannot contain `*`, so `**a*b**` reaches
-# here only as the bold body `a*b`, where there is no closing single `*` and it prints
-# literally — matching `gen-dashboard`, which chose that deliberately.
-EM_AT = re.compile(r"\*([^*\n]+)\*(?![\w*])")
 DEL_AT = re.compile(r"~~([^~]+)~~")
+
+
+def _em_close(s: str, i: int) -> int:
+    """Index of the `*` closing an emphasis opened at `i`, or -1.
+
+    ⚠ NOT a regex, and the reason is measured. The obvious `\\*([^*\\n]+)\\*` forbids any
+    asterisk in the body, which silently drops **emphasis containing bold** — real, and
+    on the live backlog page: `*(i) "Unaffordable by construction" is **false**.*` in
+    row #23 renders today and would have stopped. `gen-backlog-page` gets it for free by
+    running its bold pass FIRST, so by the time its em regex looks there are no asterisks
+    left; a single scan has no earlier pass to lean on and must do it here.
+
+    So: walk forward, stepping OVER balanced `**…**` pairs, and stop at the first single
+    `*`. A newline ends the search — emphasis does not span a line. An unbalanced `**`
+    inside also ends it, which keeps `*a**b*` literal exactly as all four renderers left
+    it, rather than widening the language by accident.
+    """
+    j = i + 1
+    n = len(s)
+    while j < n:
+        if s[j] == "\n":
+            return -1
+        if s.startswith("**", j):
+            end = s.find("**", j + 2)
+            if end == -1:
+                return -1
+            j = end + 2
+            continue
+        if s[j] == "*":
+            # A closer may not be followed by a word character or another asterisk.
+            return j if j > i + 1 and not (j + 1 < n and (s[j + 1].isalnum() or s[j + 1] == "*")) else -1
+        j += 1
+    return -1
 
 # Delimiters that abut a URL are the author's markup, not part of the URL.
 URL_STOPPERS = ("**", "`", "~~", "*")
@@ -180,11 +209,13 @@ def scan(s: str) -> str:
         # asterisk, or `a*b*c` and the inside of `**bold**` would emphasise.
         if c == "*" and not s.startswith("**", i):
             before_ok = i == 0 or not (s[i - 1].isalnum() or s[i - 1] in "_*")
-            m = EM_AT.match(s, i) if before_ok else None
-            if m and m.group(1) == m.group(1).strip():
-                out.append(f"<em>{scan(m.group(1))}</em>")
-                i = m.end()
-                continue
+            close = _em_close(s, i) if before_ok else -1
+            if close != -1:
+                body = s[i + 1:close]
+                if body == body.strip():
+                    out.append(f"<em>{scan(body)}</em>")
+                    i = close + 1
+                    continue
 
         # ── bare URL, considered LAST so markup wins a tie
         m = INLINE_URL.match(s, i)
@@ -301,6 +332,20 @@ def _self_test() -> int:
     case("em: unclosed prints itself", r("*dangling"), "*dangling")
     case("em: inside bold", r("**a *b* c**"),
          "<strong>a <em>b</em> c</strong>")
+    # ⚠ THE FOUR BELOW COVER `_em_close`, WHICH SHIPPED UNTESTED IN ITS FIRST DRAFT.
+    # Found by diffing against gen-backlog-page over the 213 strings that page actually
+    # renders: row #23's `*(i) "Unaffordable by construction" is **false**.*` stopped
+    # rendering. `gen-backlog` gets this free by running bold BEFORE em; a single scan
+    # has to step over the `**` pair itself.
+    case("em: CONTAINING bold — the row #23 regression",
+         r("*(i) x is **false**.*"), "<em>(i) x is <strong>false</strong>.</em>")
+    case("em: containing bold, mid-sentence", r("*a **b** c*"),
+         "<em>a <strong>b</strong> c</em>")
+    case("em: an UNBALANCED `**` inside ends the search, staying literal",
+         r("*a**b*"), "*a**b*")
+    case("em: a closer followed by a word character is not a closer",
+         r("*x*y"), "*x*y")
+    case("em: does not span a newline", r("*a\nb*"), "*a\nb*")
 
     # ── strikethrough
     case("del", r("~~gone~~"), "<del>gone</del>")
