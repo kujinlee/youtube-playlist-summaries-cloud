@@ -881,10 +881,22 @@ def _self_test() -> int:
     # over the page the harness exists to protect. Redirecting the DEFAULT — not
     # the four call sites — is what makes it structural: a case written later
     # inherits the sandbox instead of having to remember it.
+    import atexit as _atexit
     import tempfile as _tf0
     _sandbox = _tf0.mkdtemp(prefix="gen-dashboard-selftest-")
     _real_out = OUT_DEFAULT
     globals()["OUT_DEFAULT"] = pathlib.Path(_sandbox) / "dashboard.html"
+
+    # ⚠ Registered as well as restored explicitly at the end. The explicit
+    # restore is what the cases below assert against; THIS is what covers the
+    # path where a case raises and the end of the function is never reached —
+    # the same hole the `os.chdir` block closes with `finally`, which is not
+    # available here without re-indenting 700 lines and disturbing the
+    # mutation anchors. Both idempotent: restoring twice sets the same value.
+    def _restore_out():
+        globals()["OUT_DEFAULT"] = _real_out
+        _shutil.rmtree(_sandbox, ignore_errors=True)
+    _atexit.register(_restore_out)
 
     def case(name, got, want):
         nonlocal ok, fail
