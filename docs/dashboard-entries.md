@@ -366,7 +366,7 @@ full `--fg` with the body at `--fg2` so the glance lands on the idea.
 Mutation battery 9/9 killed, including one that survived first: reverting the headline wiring while
 `_first_sentence` stayed perfect. A helper can be correct and unused.
 
-## 2026-08-29 [needs-you]
+## 2026-08-29
 The mutation checker was overwriting this page with a blank one, and nobody noticed.
 
 You saw it: an empty dashboard, twice. It was not the page generator — it was the checker
@@ -382,8 +382,6 @@ Separately, and what you asked for: the heading, the summary and the emphasised 
 all the same near-white, so nothing stood out from anything else. They now have their own
 colours — the summary brightest, the heading cooler, supporting text dimmer, and emphasis
 in the same amber this page already uses for things that need you.
-
-**Waiting on you:** nothing here — this is a report, not a request.
 <!--tech-->
 ⛔ MEASURED: `check-plan-code.py --mutate .` replaced `~/explainers/dashboard.html` with a
 0-article page. Route: the suite calls `main()`; `main()` falls through to `--out`; `--out`
