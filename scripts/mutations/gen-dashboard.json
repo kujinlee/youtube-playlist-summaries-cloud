@@ -470,15 +470,15 @@
         "        pass"
       ]
     ],
-    "expect": "...and it removes the temp tree on that same raising path"
+    "expect": "...and it removes the temp tree it really did create"
   },
   {
-    "name": "the suite runs UNSANDBOXED against the real dashboard path",
+    "name": "the suite is told a real_out that is not the sandbox in force",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
         "        with _write_sandbox() as (_box, _real):\n            return _self_test(real_out=_real, sandbox=_box)",
-        "        return _self_test(real_out=OUT_DEFAULT, sandbox=pathlib.Path('/nowhere'))"
+        "        with _write_sandbox() as (_box, _real):\n            return _self_test(real_out=OUT_DEFAULT, sandbox=_box)"
       ]
     ],
     "expect": "the suite never writes to the REAL dashboard path"
@@ -493,5 +493,71 @@
       ]
     ],
     "expect": "...and unpaired ` delimiters print, they are not swallowed"
+  },
+  {
+    "name": "the sandbox captures a COPY of the path, not the value in force",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    real_out = OUT_DEFAULT",
+        "    real_out = pathlib.Path(tempfile.gettempdir()) / \"not-the-value-in-force.html\""
+      ]
+    ],
+    "expect": "...and it restores the value IN FORCE, not a copy of the real path"
+  },
+  {
+    "name": "the write sandbox never creates the tree it claims to remove",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    sandbox = pathlib.Path(tempfile.mkdtemp(prefix=\"gen-dashboard-selftest-\"))",
+        "    sandbox = pathlib.Path(tempfile.mkdtemp(prefix=\"gen-dashboard-selftest-\")) / \"never-made\""
+      ]
+    ],
+    "expect": "...and it removes the temp tree it really did create"
+  },
+  {
+    "name": "code spans stop being literal (markup applied inside <code>)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                out.append(f\"<code>{s[i + 1:close]}</code>\")",
+        "                out.append(f\"<code>{_inline_scan(s[i + 1:close], strong=True)}</code>\")"
+      ]
+    ],
+    "expect": "a URL inside `code` stays literal \u2014 code is not marked up"
+  },
+  {
+    "name": "`** a **` becomes emphasis (the strip clause dropped)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            if close != -1 and body and body == body.strip():",
+        "            if close != -1 and body:"
+      ]
+    ],
+    "expect": "`** a **` is spacing, not emphasis \u2014 while `**a**` still is"
+  },
+  {
+    "name": "an EMPTY code span swallows both delimiters",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            if close > i + 1:",
+        "            if close > i:"
+      ]
+    ],
+    "expect": "an empty `` is not a code span \u2014 the delimiters print"
+  },
+  {
+    "name": "the autolinker swallows abutting markup into the href",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            cut = min((p for p in (url.find(\"**\"), url.find(\"`\")) if p != -1),\n                      default=-1)",
+        "            cut = -1"
+      ]
+    ],
+    "expect": "a URL stops at a delimiter instead of swallowing it into the href"
   }
 ]

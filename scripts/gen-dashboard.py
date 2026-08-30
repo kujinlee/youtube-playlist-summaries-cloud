@@ -180,8 +180,15 @@ def _inline_scan(s: str, strong: bool) -> str:
             close = s.find("**", i + 2)
             body = s[i + 2:close] if close != -1 else ""
             # `body == body.strip()` is the old regex's `\S(?:[^*]*\S)?`: `** a **`
-            # is spacing, not emphasis. `strong=False` inside, because emphasis
-            # did not nest before and gains nothing by nesting now.
+            # is spacing, not emphasis.
+            #
+            # ⚠ `strong=False` is BELT-AND-BRACES, not a live branch, and round 2
+            # was right to ask for its falsifier — there cannot be one. `close` is
+            # the FIRST `**` after `i + 2`, so `body` can never contain `**`, so
+            # the flag gates a branch this call cannot reach. Flipping it to True
+            # is an equivalent mutant. It stays as a fence for anyone who changes
+            # how `close` is chosen; it is not doing work today, and saying it was
+            # would be the overclaim the same round found elsewhere.
             if close != -1 and body and body == body.strip():
                 out.append(f"<strong>{_inline_scan(body, strong=False)}</strong>")
                 i = close + 2
@@ -198,9 +205,23 @@ def _inline_scan(s: str, strong: bool) -> str:
                 continue
         m = INLINE_URL.match(s, i)
         if m:
-            out.append(f'<a href="{m.group(0)}">{m.group(0)}</a>')
-            i = m.end()
-            continue
+            url = m.group(0)
+            # ⚠ Round 2 (Codex, Low) — REPRODUCED. The three-pass version ran the
+            # autolinker LAST, so it could never swallow markup already emitted:
+            # `https://x.ee/z**bold**` linked the URL and emphasised the rest.
+            # Scanning left to right the URL is considered FIRST, and `[^\s<]+`
+            # happily ate `**bold**` into the `href`. Stop the URL at a delimiter —
+            # an author who writes one hard against a URL means the markup, not a
+            # URL containing asterisks. Re-validate after the cut, because the trim
+            # can leave something that is no longer a URL at all (`https://`).
+            cut = min((p for p in (url.find("**"), url.find("`")) if p != -1),
+                      default=-1)
+            if cut != -1:
+                url = url[:cut].rstrip(".,;:)]")
+            if INLINE_URL.fullmatch(url):
+                out.append(f'<a href="{url}">{url}</a>')
+                i += len(url)
+                continue
         out.append(s[i])
         i += 1
     return "".join(out)
@@ -1750,6 +1771,37 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("a raw quote in an autolinked URL cannot break out of href",
          ("&quot;" in _q, _q.count('"'), "onmouseover=x" in _q), (True, 2, True))
 
+    # ── ROUND 2 ──────────────────────────────────────────────────────────────
+    # Codex Low, REPRODUCED: scanning left to right made the autolinker greedy
+    # where the old three-pass order could not be, and it ate the emphasis into
+    # the href. Positive and negative together — the URL is linked AND the
+    # markup after it survives; either alone is satisfied by doing nothing.
+    _abut = _inline("https://x.ee/z**bold**")
+    case("a URL stops at a delimiter instead of swallowing it into the href",
+         ('href="https://x.ee/z"' in _abut, "<strong>bold</strong>" in _abut),
+         (True, True))
+
+    # M1 (Claude), REPRODUCED — and it changes a line already IN the store
+    # (`docs/dashboard-entries.md:87` has a URL in backticks). Making code
+    # non-literal again was green at 193/193: the round's own stated improvement,
+    # on live content, had no falsifier.
+    _codeurl = _inline("`https://x.example/p`")
+    case("a URL inside `code` stays literal — code is not marked up",
+         ("<code>https://x.example/p</code>" in _codeurl, "<a " in _codeurl),
+         (True, False))
+
+    # M2 (Claude) — two scanner decisions that were asserted in comments and by
+    # nothing else. Each pairs the negative with the positive that proves the
+    # case can still see the construct at all.
+    case("`** a **` is spacing, not emphasis — while `**a**` still is",
+         ("<strong>" in _inline("** a **"), "<strong>" in _inline("**a**")),
+         (False, True))
+    # `close > i + 1`, not `close > i`: an EMPTY span is not a span. Under `> i`
+    # two adjacent backticks are silently eaten, which contradicts this
+    # function's own rule that unpaired delimiters print rather than vanish.
+    case("an empty `` is not a code span — the delimiters print",
+         (_inline("a``b").count("`"), "<code>" in _inline("a``b")), (2, False))
+
     case("the headline is the first SENTENCE, not the first typed line",
          _first_sentence("The page is ready. It has three parts."), "The page is ready.")
     case("a short opening fragment joins the next sentence, never stands alone",
@@ -1975,14 +2027,32 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # `_write_sandbox`'s `finally` is deleted, which is the whole point —
     # the mechanism this replaces survived its own deletion.
     _during = _outer = _nested = None
+    _existed = None
     with contextlib.suppress(RuntimeError):
         with _write_sandbox() as (_nested, _outer):
             _during = OUT_DEFAULT
+            # ⚠ L1 (round 2), REPRODUCED: the removal case below was an UNPAIRED
+            # NEGATIVE. Point the sandbox at a directory that is never created
+            # and both it AND its manifest mutation go silent at 193/193 — the
+            # tree was "removed" only because it never existed. This records that
+            # it DID exist, inside the body, before the raise.
+            _existed = _nested.exists()
             raise RuntimeError("a case raised inside the sandbox")
     case("the write sandbox restores OUT_DEFAULT when the body RAISES",
          (_during != _outer, OUT_DEFAULT == _outer), (True, True))
-    case("...and it removes the temp tree on that same raising path",
-         (_nested is not None and _nested.exists()), False)
+    case("...and it removes the temp tree it really did create",
+         (_existed, _nested is not None and _nested.exists()), (True, False))
+    # H1 (round 2), REPRODUCED. `real_out = OUT_DEFAULT` captures the value IN
+    # FORCE; replacing it with a copy of the real-page literal was green at
+    # 193/193, and it BREAKS RE-ENTRANCY — the nested sandbox would then restore
+    # `OUT_DEFAULT` to the reader's live page, leaving every line below this one
+    # unsandboxed at a green 193/193. That is the precise state the mechanism
+    # exists to make impossible. The pair matters: the negative alone is
+    # satisfied by `_outer` being any third thing.
+    case("...and it restores the value IN FORCE, not a copy of the real path",
+         (_outer == sandbox / "dashboard.html",
+          _outer != pathlib.Path.home() / "explainers" / "dashboard.html"),
+         (True, True))
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0

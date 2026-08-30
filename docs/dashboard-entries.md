@@ -512,3 +512,61 @@ characters after the colon, so `vbscript:x` never matched and that guard was nev
 
 `--mutate .` 53/0, gen-dashboard 193/193, check-plan-code 136/136. Live page checksummed identical
 before and after every mutation run.
+
+## 2026-08-29
+Round two of the review found something worth telling you plainly: **the check I added this morning
+to prove your dashboard could not be overwritten was itself the one thing capable of overwriting
+it.**
+
+Nothing was lost. Your page is intact and was never touched — I have the before-and-after checksums
+for every run. But the risk was real rather than theoretical, and it would have fired on the shared
+build server, not just on my machine. To prove it I built a fake home directory with a stand-in
+page, and watched the stand-in get destroyed. Then I rebuilt the check so it tests the same thing
+without ever being able to reach a real file, and re-ran all forty-seven checks against the
+stand-in: none of them could touch it. I also confirmed the old broken version *would* have been
+caught by that test, so "none of them could touch it" is a measurement and not a hope.
+
+The shape is worth naming because it has now happened twice in two days. Each time, the thing that
+went wrong was not the feature — it was the safety net added around the feature, written by the
+same person who had just written the feature. That is why there are two reviewers, and why neither
+of them is me.
+
+Four smaller things were also unguarded: a decision about how code snippets render — which affects
+a line already on this page — plus two scanner rules and a temp-file cleanup check that would have
+passed even if the file it deletes had never existed. All now have tests, and each test was proved
+to fail when its fix is removed.
+<!--tech-->
+Round 2 dual adversarial. Codex 1 Low; Claude 2 High + 2 Medium + 1 Low. Both halves filed at
+`docs/reviews/branch-dashboard-prose-r2-{claude,codex}.md`; disposition table at the end of the
+Claude one. **Every finding re-reproduced by the coordinator before being acted on.**
+
+**H2 (the serious one, and self-inflicted).** Manifest entry 39 — added in *this branch's previous
+commit* to prove `_write_sandbox` works — replaced the `with` block in `main()`, so `OUT_DEFAULT`
+stayed at `Path.home()/"explainers"/"dashboard.html"`, an absolute path unaffected by `--mutate .`
+running from a temp copy. REPRODUCED with a sentinel: entry 39 + one `--out`-defaulting case →
+`SENTINEL INTACT=False`. Harmless today only by accident (no case lets `--out` default) — and
+`_write_sandbox`'s own docstring invites the next author to write exactly that case. Fixed by
+keeping the sandbox armed and lying about `real_out` instead; still red via the case it names.
+
+**H1.** `real_out = OUT_DEFAULT` had no falsifier — hardcoding the real-page literal survived
+193/193 and broke re-entrancy, so the nested sandbox restored `OUT_DEFAULT` to the live page and
+left the suite's tail unsandboxed at green. Case now asserts the value IN FORCE (positive paired
+with negative), and subsumes the `main()` wiring coverage entry 39 used to provide, safely.
+
+**M1** code-literal (affects `dashboard-entries.md:87`), **M2** two scanner rules, **L1** the
+temp-tree case as an unpaired negative — all REPRODUCED green, all now guarded.
+
+**Codex Low.** The scanner made the autolinker greedy where the three-pass order could not be:
+`https://x.ee/z**bold**` ate the emphasis into the `href`. The URL now stops at a delimiter and is
+re-validated after the cut.
+
+⚠ **M2's second item is PARTLY REFUTED — an equivalent mutant.** `close` is the FIRST `**` after the
+opener, so `body` can never contain `**`; `strong=False` gates an unreachable branch. Measured on
+three inputs. The comment claiming it was load-bearing is corrected rather than a case invented.
+
+⚠ `--mutate .` REFUSED once mid-fix: renaming a case left entry 38's `expect` naming a case that no
+longer existed. Round 1's anchor-drift class, same correct behaviour.
+
+Manifest 41 → 47; `EXPECTED_MUTATIONS` + total pin 53 → 59. 193 → 198 cases, `--mutate .` 59/0,
+check-plan-code 136/136. **47/47 manifest entries proved unable to reach the real page**, with the
+old dangerous form as a control that the instrument reports as a breach.
