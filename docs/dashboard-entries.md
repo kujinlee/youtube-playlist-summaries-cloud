@@ -404,3 +404,30 @@ contrast on `--panel` in BOTH themes. Cases pin the RELATIONSHIP (summary > head
 ≥ AA, four distinct values, tokens defined AND consumed), not the hexes — asserting hexes would
 pass on an inverted hierarchy and fail on a harmless re-tint. Battery 7/7 killed.
 
+## 2026-08-29
+The chart has a key now, so you can tell an alarm from a decoration.
+
+You asked what the colours and the stripes meant. Nothing on the page said. The stripes were
+the serious one: a day where work was committed and no entry was written — the exact failure
+the entry rule exists to prevent — and it looked like just another bar.
+
+The key only lists what is actually in the chart, so a state gets named on the day it appears
+rather than sitting in a permanent list of things that are mostly not happening.
+<!--tech-->
+The chart encoded four meanings (height, `--ok`, `--need`, `--err` hatch + cap) and shipped no
+legend. `_day_states` returns only states PRESENT in the window; `_legend` renders them.
+
+⚠ The swatch carries the CHART's classes (`bar needs`, `bar unwritten`) rather than restating
+the colours. A legend with a private copy of the palette is a second source of truth, and one
+that drifts silently is worse than no legend — a key is believed. A case asserts the swatch
+markup contains no `var(--err)` of its own.
+
+The alarm row is suppressed when the store is unreadable, matching `_bar`'s existing §9
+suppression — naming a state the chart deliberately did not draw would be a lie about the page,
+and the lie would point at the scariest row.
+
+⚠ 152/152 passed before any of these cases existed, and the wiring mutation (delete `{legend}`
+from the page template) SURVIVED the first battery at 159/159 — the key can vanish while its
+builders stay perfect. Third instance today of testing the helper and not the caller. 161 now,
+6/6 killed.
+

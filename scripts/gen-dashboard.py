@@ -483,6 +483,46 @@ def _ordered(entries: list[dict]) -> list[dict]:
     return out
 
 
+def _day_states(days: list[dict], store_unknown: bool) -> list[tuple[str, str]]:
+    """Which encoded states actually OCCUR in this window, in reading order.
+
+    The chart carries four meanings — height, and three status fills — and
+    carried NO key, so an alarm was indistinguishable from decoration. The
+    reader's words: *"I am wondering what each color/texture means."*
+
+    Only states PRESENT are keyed. A legend listing states the chart does not
+    contain is both clutter and a small lie about what is on screen; keying the
+    present ones means the alarm gets NAMED on the day it appears, which is the
+    day it matters. The first row is unconditional because it defines the axis.
+    """
+    rows = [("", "one day — taller means more commits")]
+    if any(d["needs_you"] for d in days):
+        rows.append(("needs", "needs you"))
+    if any(d["commits"] > 0 and not d["has_entry"] and not store_unknown for d in days):
+        rows.append(("unwritten", "shipped with no entry"))
+    if any(d["has_entry"] and d["commits"] == 0 for d in days):
+        rows.append(("marked", "an entry, but no commits"))
+    return rows
+
+
+def _legend(rows: list[tuple[str, str]]) -> str:
+    """⚠ The swatch REUSES the chart's own classes (`bar needs`, `bar unwritten`,
+    …) rather than restating their colours. A legend with its own copy of the
+    palette is a second source of truth that drifts silently — and a legend that
+    quietly stops matching the chart is worse than none, because it is believed.
+    Text wears a TEXT token, never the status colour it describes.
+    """
+    if len(rows) < 2:                       # nothing but the axis note — no key needed
+        return ""
+    items = "".join(
+        f'<li><span class="swatch {("bar " + cls).strip()}" aria-hidden="true">'
+        f'{"<span class=chip-gap></span>" if cls == "unwritten" else ""}'
+        f'{"<span class=chip-dot></span>" if cls == "marked" else ""}'
+        f'</span>{_html.escape(text)}</li>'
+        for cls, text in rows)
+    return f'<ul class="legend">{items}</ul>'
+
+
 def _bar(day: dict, tallest: int, store_unknown: bool) -> str:
     h = 4 if day["commits"] == 0 else max(6, round(48 * day["commits"] / max(tallest, 1)))
     quiet = day["has_entry"] and day["commits"] == 0     # §6.1
@@ -561,6 +601,7 @@ def build(entries, days, prs, pr_error, git_error, window,
         needs_html = '<p class="none">Nothing needs you.</p>'
 
     # ─── The chart ───
+    legend = ""
     if git_error:
         chart = (f'<p class="unknown">Could not read the git history — '
                  f'{_html.escape(git_error)}</p>')
@@ -570,6 +611,9 @@ def build(entries, days, prs, pr_error, git_error, window,
     else:
         tallest = max((d["commits"] for d in days), default=0)
         chart = "".join(_bar(d, tallest, bool(store_error)) for d in reversed(days))
+        # ⚠ Only when there IS a chart. A key beside an error message would be
+        # describing marks that are not on the page.
+        legend = _legend(_day_states(days, bool(store_error)))
     # §5: the count is commits, and it under-counts work that was never committed.
     chart_note = ('<p class="note">One bar per day, oldest on the left. It counts commits, '
                   'so work that was never committed does not appear here.</p>')
@@ -675,6 +719,23 @@ var(--err-bg);border:1px solid var(--err)}}
 .bar .dot{{position:absolute;left:50%;bottom:-11px;width:6px;height:6px;
 margin-left:-3px;border-radius:50%;background:var(--need)}}
 .bar .gapmark{{position:absolute;left:0;right:0;top:-6px;height:3px;background:var(--err)}}
+/* ── The chart's key. ───────────────────────────────────────────────────────
+   The swatches carry `bar`, `bar needs`, `bar unwritten` — the CHART's classes
+   — so a palette change moves both at once. A legend holding its own copy of
+   the colours is a second source of truth, and one that drifts silently is
+   worse than no legend at all, because a key is believed.
+   `flex:0 0` overrides `.bar{{flex:1}}`: inside a legend a swatch is a fixed
+   sample, not a bar competing for width. */
+.legend{{list-style:none;display:flex;flex-wrap:wrap;gap:6px 18px;
+  margin:10px 0 0;padding:0;font-size:12.5px;color:var(--fg3)}}
+.legend li{{display:flex;align-items:center;gap:7px}}
+.legend .swatch{{flex:0 0 14px;width:14px;height:11px;position:relative;
+  border-radius:2px 2px 0 0;display:inline-block}}
+.legend .chip-gap{{position:absolute;left:0;right:0;top:-4px;height:3px;
+  background:var(--err)}}
+.legend .chip-dot{{position:absolute;left:50%;bottom:-7px;width:5px;height:5px;
+  margin-left:-2.5px;border-radius:50%;background:var(--need)}}
+.legend li:has(.marked){{margin-bottom:5px}}   /* room for the dot below */
 .vh{{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
 .anchor{{display:block;height:0;scroll-margin-top:12px}}
 .entry{{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
@@ -713,7 +774,7 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <div class="shell">
 <h1>Project dashboard</h1>
 <h2>What needs you</h2>{needs_html}
-<h2>The last {window} days</h2><div class="chart">{chart}</div>{chart_note}
+<h2>The last {window} days</h2><div class="chart">{chart}</div>{legend}{chart_note}
 <h2>What changed</h2>{entries_html}
 <h2>Branches that skipped their entry</h2>{exempt_html}
 <h2>Words</h2>{glossary_html}
@@ -1264,6 +1325,56 @@ def _self_test() -> int:
     v, err = _with_run(lambda *a, **k: _R(0, '[{"number": 9, "title": "T"}]', ""), open_prs)
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
+
+    # ── THE CHART'S KEY ──────────────────────────────────────────────────────
+    # The chart encoded four meanings and carried NO key, so its ALARM state —
+    # commits shipped with no entry — was indistinguishable from decoration.
+    # Reported by the reader, who could not tell what the colours meant.
+    def _d(commits, has_entry, needs=False, date="2026-08-29"):
+        return {"date": date, "commits": commits, "has_entry": has_entry,
+                "needs_you": needs}
+
+    _plain = _day_states([_d(3, True)], False)
+    case("a window with nothing special gets ONE row — the axis, no key",
+         ([c for c, _ in _plain], _legend(_plain)), ([""], ""))
+    _all = _day_states([_d(3, False), _d(0, True), _d(2, True, needs=True)], False)
+    case("each state PRESENT gets a row, in reading order",
+         [c for c, _ in _all], ["", "needs", "unwritten", "marked"])
+    case("a state that does NOT occur is not keyed — the key describes THIS chart",
+         [c for c, _ in _day_states([_d(2, True, needs=True)], False)], ["", "needs"])
+    # §9's alarm is suppressed when the store could not be read, and the KEY has
+    # to agree — naming a state the chart deliberately did not draw is a lie
+    # about the page, and the lie would point at the scariest row.
+    case("an unreadable store hides the alarm from the chart AND from the key",
+         [c for c, _ in _day_states([_d(3, False)], True)], [""])
+
+    _html_key = _legend(_all)
+    # ⚠ WIRING, and the reason the swatch has no colours of its own: it wears
+    # the CHART's classes. A legend with a private copy of the palette drifts
+    # silently, and a key that stops matching is worse than none — it is believed.
+    case("swatches reuse the chart's own classes, never a copy of its colours",
+         ('class="swatch bar needs"' in _html_key,
+          'class="swatch bar unwritten"' in _html_key,
+          "var(--err)" in _html_key), (True, True, False))
+    case("the alarm row says what it means, in words",
+         "shipped with no entry" in _html_key, True)
+    case("legend text is escaped",
+         "&lt;b&gt;" in _legend([("", "a <b>day</b>"), ("needs", "x")]), True)
+
+    # ⚠ THE WIRING. Every case above calls `_legend`/`_day_states` directly, and
+    # deleting `{legend}` from the page template SURVIVED all of them at
+    # 159/159 — the key can vanish from the page while its builders stay
+    # perfect. Third time today that testing a helper was mistaken for testing
+    # the caller that has to reach it; asserted on the BUILT page.
+    _alarm_days = bucket_days(["2026-08-28"], [], 1, "2026-08-28")
+    _key_page = _B([], _alarm_days, window=1)
+    case("the key reaches the PAGE, not just its builder",
+         ('<ul class="legend">' in _key_page,
+          "shipped with no entry" in _key_page), (True, True))
+    # ...and it is absent when there is no chart to describe.
+    _err_page = _B([], [], git_error="git exploded", window=1)
+    case("no key beside a chart that could not be drawn",
+         '<ul class="legend">' in _err_page, False)
 
     # ── THE PROSE RAMP (colour) ──────────────────────────────────────────────
     # Reported by the reader: headline, summary and **bold** all read as the same
