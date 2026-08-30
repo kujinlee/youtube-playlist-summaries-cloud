@@ -12,6 +12,13 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# ⚠ ROOT-ANCHORED, and that is the whole point. This was the relative string
+# "docs/dashboard-entries.md", resolved against whatever cwd the caller happened
+# to have. From any other directory the DEFAULT store was "missing" — and main()
+# deliberately treats a missing DEFAULT store as "nothing written yet", so the
+# page rendered a green "No entries yet" while sitting in the wrong directory.
+# The guard for an unreadable store existed and was correct; its PREMISE moved.
+STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"
 TECH_MARKER = "<!--tech-->"
 BLOCK = re.compile(r"^##\s*\S")
 
@@ -195,7 +202,7 @@ def commit_dates(window: int) -> tuple[list[str] | None, str | None]:
         r = subprocess.run(
             ["git", "log", "HEAD", "--first-parent", f"--since={window} days ago",
              "--date=short", "--pretty=%ad"],
-            capture_output=True, text=True, timeout=20)
+            cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, f"could not run git: {exc}"
     if r.returncode != 0:
@@ -207,7 +214,8 @@ def _gh_json(args: list[str]) -> tuple[object | None, str | None]:
     """Run `gh` and parse its JSON. Never a bare [] on failure — "nothing" and
     "could not ask" must not look alike."""
     try:
-        r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(["gh"] + args, cwd=ROOT, capture_output=True,
+                           text=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, f"could not run gh: {exc}"
     if r.returncode != 0:
@@ -1051,6 +1059,63 @@ def _self_test() -> int:
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
 
+    # ── CWD INDEPENDENCE ─────────────────────────────────────────────────────
+    # MEASURED 2026-08-29 from a real broken page: run from any directory that is
+    # not the repo and every collector fails, but only THREE of the four say so.
+    # `git`/`gh` inherited the caller's cwd, and `--store` defaulted to a RELATIVE
+    # path — so the store looked absent, main()'s deliberate "a missing DEFAULT
+    # store is nothing written yet" carve-out fired, and the page rendered a green
+    # "No entries yet" over a repo with eight entries. The carve-out is right; its
+    # premise (that the default path is repo-anchored) was the thing that was wrong.
+    # ROOT has existed since line 14 and was used in exactly one of the four places.
+    # Imported here as well as below: a name imported anywhere in a function is
+    # local to the WHOLE function, so using them before that import is an
+    # UnboundLocalError, not a fallback to the module scope.
+    import contextlib as _ctx
+    import io as _io
+    import os as _os
+
+    # ⚠ A DECOY, not the real store. The first version of this case asserted the
+    # repo's OWN store was found, which made the suite depend on `docs/` existing
+    # beside `scripts/` — and `check-plan-code.py --mutate` copies `scripts/`
+    # ALONE, so its green control went red and it refused to mutate. The control
+    # caught the bad test. Reading a decoy planted in the cwd is the property
+    # ("does it resolve against cwd?") with no dependency on the environment.
+    _real_cwd = _os.getcwd()
+    try:
+        with tempfile.TemporaryDirectory() as _foreign:
+            _decoy = pathlib.Path(_foreign) / "docs" / "dashboard-entries.md"
+            _decoy.parent.mkdir(parents=True)
+            _decoy.write_text("## 2020-01-01\nDECOYENTRYTEXT\n", encoding="utf-8")
+            _os.chdir(_foreign)
+            _frag = pathlib.Path(_foreign) / "frag.html"
+            # Collectors stubbed so this asserts the STORE seam alone — a git/gh
+            # failure here would be a different defect wearing the same symptom.
+            with _ctx.redirect_stdout(_io.StringIO()):
+                _with_run(lambda *a, **k: _R(0, "", ""),
+                          lambda: main(["--fragment-only", str(_frag), "--window", "14"]))
+            _txt = _frag.read_text(encoding="utf-8") if _frag.is_file() else ""
+        case("the DEFAULT store resolves against the REPO, not the caller's cwd",
+             "DECOYENTRYTEXT" in _txt, False)
+    finally:
+        _os.chdir(_real_cwd)
+
+    # The collectors must ask about THIS repo wherever they are invoked from. A
+    # hook, a cron, an editor — none of them guarantee a cwd. Asserting the kwarg
+    # rather than the outcome because the outcome is identical when cwd happens
+    # to be right, which is exactly why this survived until a hook ran elsewhere.
+    for _label, _call in (("commit_dates", lambda: commit_dates(14)),
+                          ("open_prs", open_prs),
+                          ("no_entry_prs", no_entry_prs)):
+        _seen = {}
+
+        def _spy(*a, **k):
+            _seen.update(k)
+            return _R(0, "[]", "")
+        _with_run(_spy, _call)
+        case(f"{_label}: asks about THIS repo, not the caller's cwd",
+             _seen.get("cwd"), ROOT)
+
     # ── main()'S CONTRACT ────────────────────────────────────────────────────
     # `main` had ZERO coverage — the same hole round 4 measured in
     # check-dashboard-entry.py's `collect`/`main`, where `return 2` -> `return 0`
@@ -1132,7 +1197,7 @@ def main(argv: list[str]) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--window", type=int, default=14)
-    ap.add_argument("--store", default="docs/dashboard-entries.md")
+    ap.add_argument("--store", default=STORE_DEFAULT)
     ap.add_argument("--out", type=pathlib.Path,
                     default=pathlib.Path.home() / "explainers" / "dashboard.html")
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
