@@ -565,8 +565,8 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "        out = _close_orphan_markup(out[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\")) + \"\u2026\"",
-        "        out = out[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\") + \"\u2026\""
+        "        out = _close_orphan_markup(\n            _full[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\"), _full, cap) + \"\u2026\"",
+        "        out = _full[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\") + \"\u2026\""
       ]
     ],
     "expect": [
@@ -638,7 +638,7 @@
         "    main([\"--out\", \"relative-escape.html\"])\n    _wrc = main([\"--window\", \"0\"])"
       ]
     ],
-    "expect": "every --out / --fragment-only path in this suite is ABSOLUTE"
+    "expect": "every --out / --fragment-only path the suite PASSES is absolute"
   },
   {
     "name": "main() calls _self_test without the sandbox wrapper",
@@ -650,5 +650,71 @@
       ]
     ],
     "expect": "the suite never writes to the REAL dashboard path"
+  },
+  {
+    "name": "the orphan closer becomes a SECOND scanner again, disagreeing on code",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    base = _orphaned_delimiters(full)\n    while True:\n        for closer in (\"\", \"`\", \"**\", \"**`\", \"`**\"):\n            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:\n                return s + closer\n        shorter = s.rstrip().rsplit(\" \", 1)[0]\n        if shorter == s or not shorter:\n            return s[:cap]\n        s = shorter",
+        "    stack = []\n    i, n = 0, len(s)\n    while i < n:\n        if s.startswith(\"**\", i):\n            stack.pop() if stack and stack[-1] == \"**\" else stack.append(\"**\")\n            i += 2\n            continue\n        if s[i] == \"`\":\n            stack.pop() if stack and stack[-1] == \"`\" else stack.append(\"`\")\n            i += 1\n            continue\n        i += 1\n    return s + \"\".join(reversed(stack))"
+      ]
+    ],
+    "expect": "a truncated code span's CONTENT is a prefix of the full span's"
+  },
+  {
+    "name": "ENTITY_TAIL loses the HEX numeric form (&#x27;)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "ENTITY_TAIL = re.compile(r\"&(?:#[xX]?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$\")",
+        "ENTITY_TAIL = re.compile(r\"&(?:#[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$\")"
+      ]
+    ],
+    "expect": "the URL trim keeps a HEX numeric entity too, not just the decimal form"
+  },
+  {
+    "name": "a relative path reaches main() from a NESTED helper call",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                          lambda: main([\"--fragment-only\", str(_f2),",
+        "                          lambda: main([\"--fragment-only\", \"rel-nested.html\","
+      ]
+    ],
+    "expect": "every --out / --fragment-only path the suite PASSES is absolute"
+  },
+  {
+    "name": "a relative path reaches main() as str(Path) \u2014 invisible to any source scan",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                          lambda: main([\"--fragment-only\", str(_f1)]))",
+        "                          lambda: main([\"--fragment-only\", str(pathlib.Path(\"frag.html\"))]))"
+      ]
+    ],
+    "expect": "every --out / --fragment-only path the suite PASSES is absolute"
+  },
+  {
+    "name": "the path recorder records nothing (the anti-vacuity half)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                _paths_passed.append(argv[argv.index(_f) + 1])",
+        "                pass"
+      ]
+    ],
+    "expect": "every --out / --fragment-only path the suite PASSES is absolute"
+  },
+  {
+    "name": "closers are appended PAST the cap, so TITLE_CAP stops bounding",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:",
+        "            if _orphaned_delimiters(s + closer) <= base:"
+      ]
+    ],
+    "expect": "the cap bounds a title even when closers have to be added"
   }
 ]

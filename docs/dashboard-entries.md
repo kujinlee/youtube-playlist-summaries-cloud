@@ -629,3 +629,62 @@ declared and itself asserted.
 
 Battery 8/8 killed via the named case. 55/55 manifest entries proved unable to reach a real file,
 old dangerous form as instrument control. Manifest 47 → 55, pins 59 → 67, cases 198 → 206.
+
+## 2026-08-30
+Round four. Both reviewers independently found the same root cause this time, which has not happened
+before in this sequence, and it was a mistake with a clear shape: I had written the same rule twice.
+
+Last round I added something to close off formatting marks that a shortened headline had left
+dangling. But the code that decided which marks needed closing was a *second, simpler copy* of the
+code that actually renders the page — and the two disagreed about one thing. The renderer treats
+anything inside backticks as plain text; my copy did not. So a headline containing a code snippet
+with asterisks in it got an extra pair of asterisks added, inside the snippet, which then showed on
+the page as literal characters nobody typed.
+
+The repair was to delete the copy. There is one implementation now: the closing marks are chosen by
+running the real renderer and checking the result, so the two cannot disagree — because there are no
+longer two.
+
+The other one worth telling you about is a check that was passing for the wrong reason. It was meant
+to prove that no test writes to a file path outside its sandbox, and it did this by reading the test
+code looking for a quoted filename. There are no quoted filenames in that code — every call builds
+its path a different way — so the check was green because it could not see anything, not because
+everything was safe. Proven by adding a test that wrote outside the sandbox: still green, file still
+destroyed. It now watches the values actually handed over at run time.
+
+I also made two process mistakes worth writing down. I edited files while a reviewer was reading
+them, which gave it a false alarm it had to spend time disproving. And when a reviewer explained
+that a test's sample data was too simple to exercise the bug, I wrote a new test with sample data
+that was too simple in exactly the same way — and it passed while the bug was present.
+<!--tech-->
+Round 4, scoped to `7bbabad..dee62f2`, prose renderer. Codex 1B+1H+1M; Claude 1B+1H+2M+2L. Filed at
+`docs/reviews/branch-dashboard-prose-r4-{claude,codex}.md`. **Both halves independently isolated the
+same Blocking** — first convergence on one root cause in four rounds.
+
+**B1 (Blocking).** `_close_orphan_markup` was a second scanner beside `_inline_scan` and disagreed on
+one rule: code content is literal. `` `code ** tail `` gained a `**` closer that rendered inside the
+`<code>`. Fixed structurally — candidate closers are judged by running the shipping renderer
+(`_orphaned_delimiters`), so there is one implementation, not two. The case asserts the property that
+survives a mechanism change: the truncated span's CONTENT is a prefix of the full span's.
+
+**H1 (High).** The `--out`/`--fragment-only` absolute-path guard matched source text for a literal
+after the flag. The suite has 5 flags and **0** adjacent literals — every call site passes
+`str(<Path>)`. Green because it could not look. REPRODUCED: a relative `str(Path(...))` destroyed a
+cwd sentinel at 206/206. Replaced with a recording proxy over `main`; the source-scanning version is
+deleted rather than kept alongside.
+
+**`&#x27;`**: `ENTITY_TAIL` accepted hex digits but not the `x`, so it matched `&#39;` (never
+emitted) and missed the form `html.escape` always produces. **L1**: closers were appended past
+`TITLE_CAP` — 148/60,000 inputs, max 113; now inside the cap, re-fuzzed to 0. **L2**: the entity
+case's conjuncts all passed with the trim removed; now asserts rendered text == typed text.
+
+⚠ **Two of my process failures, recorded.** I edited the tree mid-review and caused a false red the
+reviewer had to disprove (it correctly labelled it NOT RUN and re-measured against `git archive`).
+And my first cap case repeated the blind-filler mistake the same review had just described — it
+SURVIVED at 208/208; the passing input now comes from the fuzz that found the defect.
+
+Battery: second scanner restored verbatim, ENTITY_TAIL reverted, cap check dropped, recorder
+silenced, relative `str(Path)` — all killed via the case each names. `--mutate .` 73/0; 61/61 entries
+proved unable to reach a real file. Anchor ratchet refused 3× as my edits moved quoted lines, plus
+once for an entry whose subject I deleted (retired, not re-pointed). Manifest 59 → 61, pins 71 → 73,
+cases 208 → 209.

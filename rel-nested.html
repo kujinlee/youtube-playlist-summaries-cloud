@@ -1,0 +1,104 @@
+<title>Project dashboard</title>
+<style>
+:root{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
+--need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
+--link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+--p-lede:#1b2024;--p-head:#3a5261;
+--p-detail:#5c5b67;--p-mark:#9c5d0e}
+@media(prefers-color-scheme:dark){:root{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
+--bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
+--err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;
+--p-lede:#ecebe4;--p-head:#b9c6d1;
+--p-detail:#a8a5b0;--p-mark:#e0a050}}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
+line-height:1.6;margin:0;font-variant-numeric:tabular-nums}
+/* The browser default link colour is #0000EE, which measures 1.9:1 against the dark
+   --bg (#14181b) — under half WCAG AA's 4.5. It shipped because every reviewer, and
+   the author, read this page in LIGHT mode, where the same colour measures 8.84.
+   A defect visible in only one mode is invisible to anyone who never switches. */
+a{color:var(--link)}
+a:visited{color:var(--link-visited)}
+a:hover{color:var(--ink)}
+.shell{max-width:820px;margin:0 auto;padding:32px 20px 80px}
+h2{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+color:var(--fg3);border-bottom:1px solid var(--rule);padding-bottom:8px;margin:44px 0 16px}
+.none{color:var(--ok);font-weight:600}
+.note{color:var(--fg3);font-size:13px;margin:8px 0 0}
+.unknown{color:var(--err);background:var(--err-bg);padding:10px 14px;border-radius:4px}
+ul.needs{list-style:none;padding:0} ul.needs li{background:var(--need-bg);
+border-left:3px solid var(--need);padding:10px 14px;margin-bottom:8px;border-radius:0 4px 4px 0}
+.when{font-family:var(--mono);font-size:11px;color:var(--fg3)}
+.chart{display:flex;align-items:flex-end;gap:4px;height:56px;padding:8px 8px 14px;
+background:var(--panel);border:1px solid var(--rule);border-radius:4px;overflow-x:auto}
+.bar{position:relative;flex:1;min-width:8px;background:var(--ok);
+border-radius:2px 2px 0 0;display:block}
+.bar.needs{background:var(--need)}
+.bar.marked{outline:2px solid var(--need);outline-offset:1px}
+.bar.unwritten{background:repeating-linear-gradient(45deg,var(--err) 0 3px,transparent 3px 6px),
+var(--err-bg);border:1px solid var(--err)}
+.bar .dot{position:absolute;left:50%;bottom:-11px;width:6px;height:6px;
+margin-left:-3px;border-radius:50%;background:var(--need)}
+.bar .gapmark{position:absolute;left:0;right:0;top:-6px;height:3px;background:var(--err)}
+/* ── The chart's key. ───────────────────────────────────────────────────────
+   The swatches carry `bar`, `bar needs`, `bar unwritten` — the CHART's classes
+   — so a palette change moves both at once. A legend holding its own copy of
+   the colours is a second source of truth, and one that drifts silently is
+   worse than no legend at all, because a key is believed.
+   `flex:0 0` overrides `.bar{flex:1}`: inside a legend a swatch is a fixed
+   sample, not a bar competing for width. */
+.legend{list-style:none;display:flex;flex-wrap:wrap;gap:6px 18px;
+  margin:10px 0 0;padding:0;font-size:12.5px;color:var(--p-detail)}
+.legend li{display:flex;align-items:center;gap:7px}
+.legend .swatch{flex:0 0 14px;width:14px;height:11px;position:relative;
+  border-radius:2px 2px 0 0;display:inline-block}
+.legend .chip-gap{position:absolute;left:0;right:0;top:-4px;height:3px;
+  background:var(--err)}
+.legend .chip-dot{position:absolute;left:50%;bottom:-7px;width:5px;height:5px;
+  margin-left:-2.5px;border-radius:50%;background:var(--need)}
+.legend li:has(.marked){margin-bottom:5px}   /* room for the dot below */
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.anchor{display:block;height:0;scroll-margin-top:12px}
+.entry{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
+padding:14px 18px;margin-bottom:10px}
+.entry.broken{border-color:var(--err);background:var(--err-bg)}
+.entry h3{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}
+.entry .eid{color:var(--fg3);opacity:.75}
+.entry .title{margin:0;font-weight:600;line-height:1.4;max-width:60ch;
+  color:var(--p-head)}
+/* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
+   Every entry's human half used to render as ONE <p> at the full 820px shell
+   width, so the author's paragraphs vanished and each line ran ~110 characters
+   — roughly twice the measure at which the eye reliably finds the next line.
+   Three things do the work here, in order of how much they buy:
+     1. paragraphs exist at all;
+     2. the LEDE is the only full-contrast text, so the glance lands on the
+        idea and the supporting detail recedes to --fg2 rather than competing;
+     3. ~64ch measure and 1.7 leading, so a line ends where the eye expects.
+   `strong` gets its own token: an author writing **Waiting on you:** is marking
+   the one sentence that must not be skimmed past, and it now outranks the
+   body it sits in instead of rendering as literal asterisks. */
+.entry .prose{max-width:64ch;margin-top:10px}
+.entry .prose p{margin:0 0 .9em;color:var(--p-detail);line-height:1.7}
+.entry .prose p:last-child{margin-bottom:0}
+.entry .prose .lede{color:var(--p-lede);font-size:15.5px;line-height:1.6;
+  margin-bottom:1.05em}
+.entry .prose strong{color:var(--p-mark);font-weight:600}
+.entry .prose code{font-family:var(--mono);font-size:.88em;color:var(--p-lede)}
+.flag{color:var(--need);font-weight:700}
+.err{color:var(--err);font-weight:600;margin:0 0 8px}
+details{margin-top:10px} summary{cursor:pointer;color:var(--fg3);font-size:14px}
+#glossary dt{font-weight:600;margin-top:8px} #glossary dd{margin:2px 0 0;color:var(--fg3)}
+pre{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:auto}
+:focus-visible{outline:2px solid var(--need);outline-offset:2px}
+</style>
+<div class="shell">
+<h1>Project dashboard</h1>
+<h2>What needs you</h2><p class="unknown">I could not read the entry store — no such file: /tmp/tmppx50lhft/named-and-absent.md, so I cannot tell whether anything in it needs you. Treat this as NOT CHECKED.</p><p class="unknown">I could not also check open pull requests — gh returned unparseable JSON: Expecting value: line 1 column 1 (char 0). Treat this as NOT CHECKED.</p>
+<h2>The last 14 days</h2><div class="chart"><span class="bar" style="height:4px" title="2026-08-16: 0 commits" aria-label="2026-08-16: 0 commits"><span class="vh">2026-08-16: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-17: 0 commits" aria-label="2026-08-17: 0 commits"><span class="vh">2026-08-17: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-18: 0 commits" aria-label="2026-08-18: 0 commits"><span class="vh">2026-08-18: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-19: 0 commits" aria-label="2026-08-19: 0 commits"><span class="vh">2026-08-19: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-20: 0 commits" aria-label="2026-08-20: 0 commits"><span class="vh">2026-08-20: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-21: 0 commits" aria-label="2026-08-21: 0 commits"><span class="vh">2026-08-21: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-22: 0 commits" aria-label="2026-08-22: 0 commits"><span class="vh">2026-08-22: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-23: 0 commits" aria-label="2026-08-23: 0 commits"><span class="vh">2026-08-23: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-24: 0 commits" aria-label="2026-08-24: 0 commits"><span class="vh">2026-08-24: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-25: 0 commits" aria-label="2026-08-25: 0 commits"><span class="vh">2026-08-25: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-26: 0 commits" aria-label="2026-08-26: 0 commits"><span class="vh">2026-08-26: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-27: 0 commits" aria-label="2026-08-27: 0 commits"><span class="vh">2026-08-27: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-28: 0 commits" aria-label="2026-08-28: 0 commits"><span class="vh">2026-08-28: 0 commits</span></span><span class="bar" style="height:4px" title="2026-08-29: 0 commits" aria-label="2026-08-29: 0 commits"><span class="vh">2026-08-29: 0 commits</span></span></div><p class="note">One bar per day, oldest on the left. It counts commits, so work that was never committed does not appear here.</p>
+<h2>What changed</h2><p class="unknown">I could not read the entry store — no such file: /tmp/tmppx50lhft/named-and-absent.md. Treat this as NOT CHECKED.</p>
+<h2>Branches that skipped their entry</h2><p class="unknown">I could not tell whether any branch skipped its entry — gh returned unparseable JSON: Expecting value: line 1 column 1 (char 0). Treat this as NOT CHECKED.</p>
+<h2>Words</h2><details id="glossary"><summary>What the words on this page mean</summary><dl><dt>needs you</dt><dd>a decision is waiting on you — nothing else on the page is asking for anything</dd><dt>entry</dt><dd>one dated block you or the assistant wrote, in plain words, about what changed</dd><dt>no entry recorded</dt><dd>a branch was merged with its entry deliberately skipped, and said why</dd><dt>shipped with no entry</dt><dd>a day with commits and nothing written about them — the gap the entry rule exists to close</dd></dl></details>
+<h2>Elsewhere</h2><ul>
+<li><a href="/goals">Goals</a></li><li><a href="/backlog-table">Backlog</a></li>
+<li><a href="/latest">Newest briefing</a></li><li><a href="/">All pages</a></li></ul>
+</div>

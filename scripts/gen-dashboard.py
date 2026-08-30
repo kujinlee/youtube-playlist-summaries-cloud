@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as _dt
-import inspect as _inspect
 import json
 import pathlib
 import shutil as _shutil
@@ -149,32 +148,66 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
         # Only on the TRUNCATION path. A delimiter the AUTHOR left unpaired in a
         # short title still prints as itself — that is `_inline_scan`'s rule and
         # it is about the author's text. These orphans are artefacts of OUR cut.
-        out = _close_orphan_markup(out[:cap].rsplit(" ", 1)[0].rstrip(",;:—-")) + "…"
+        _full = out
+        out = _close_orphan_markup(
+            _full[:cap].rsplit(" ", 1)[0].rstrip(",;:—-"), _full, cap) + "…"
     return out
 
 
-def _close_orphan_markup(s: str) -> str:
-    """Append closers for spans left open by a truncation, innermost first."""
-    stack: list[str] = []
-    i, n = 0, len(s)
-    while i < n:
-        if s.startswith("**", i):
-            stack.pop() if stack and stack[-1] == "**" else stack.append("**")
-            i += 2
-            continue
-        if s[i] == "`":
-            stack.pop() if stack and stack[-1] == "`" else stack.append("`")
-            i += 1
-            continue
-        i += 1
-    return s + "".join(reversed(stack))
+def _orphaned_delimiters(text: str) -> int:
+    """How many delimiters the REAL renderer leaves as literal punctuation.
+
+    Code spans are removed first, not stripped of tags: their content is literal
+    BY DESIGN, so a `**` the author typed inside backticks is not an orphan.
+    """
+    out = _inline(text)
+    out = re.sub(r"<code>.*?</code>", "", out, flags=re.S)
+    out = re.sub(r"<[^>]+>", "", out)
+    return out.count("**") + out.count("`")
+
+
+def _close_orphan_markup(s: str, full: str, cap: int) -> str:
+    """Close spans the TRUNCATION orphaned — judged by the RENDERER, not a copy of it.
+
+    ⛔ Round 4, Blocking. The first version was a second, simpler scanner sitting
+    beside `_inline_scan`, and the two disagreed on exactly one rule:
+    `_inline_scan` treats a code span's content as LITERAL, while the copy counted
+    a `**` inside one as bold. So ``…`code ** tail`` gained a `**` closer that then
+    rendered inside the `<code>` — a bare delimiter still on the page AND text the
+    author never typed. Two implementations of one rule drift; this is the fourth
+    round running in which a fix introduced the next round's worst finding.
+
+    There is now ONE implementation. The candidate closers are judged by running
+    the shipping renderer and requiring no MORE orphans than the untruncated text
+    already had — `full` is the baseline, so a delimiter the AUTHOR left unpaired
+    is preserved rather than "corrected". `""` is tried first, so a truncation
+    that orphaned nothing changes nothing.
+
+    ⚠ `cap` is a BOUND, so the closers live INSIDE it. Round 4 (Low) measured the
+    first version appending them AFTER the cut: 148 of 60,000 delimiter-rich
+    inputs produced a title longer than `TITLE_CAP`, up to 113. When nothing
+    fits, a word is dropped and the search repeats.
+    """
+    base = _orphaned_delimiters(full)
+    while True:
+        for closer in ("", "`", "**", "**`", "`**"):
+            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:
+                return s + closer
+        shorter = s.rstrip().rsplit(" ", 1)[0]
+        if shorter == s or not shorter:
+            return s[:cap]
+        s = shorter
 
 
 INLINE_URL = re.compile(r"https?://[^\s<]+[^\s<.,;:)\]]")
 # An HTML entity, anchored at the END of a string. `_inline_scan` runs on ALREADY
 # ESCAPED text, so a trailing `;` may be the terminator of `&amp;` rather than the
 # author's punctuation — and cutting it in half emits a `;` nobody typed.
-ENTITY_TAIL = re.compile(r"&(?:#[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$")
+# ⚠ `#[xX]?` — round 4, High. Without it this missed `&#x27;`, which is exactly
+# what `html.escape` emits for an APOSTROPHE, so `https://x.ee/a'**b**` still had
+# its entity severed. `x` is not in `[0-9a-fA-F]`, so the hex form never matched
+# while the decimal `&#39;` did — the guard covered the form I happened to test.
+ENTITY_TAIL = re.compile(r"&(?:#[xX]?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$")
 
 
 def _trim_url_tail(url: str) -> str:
@@ -1122,6 +1155,26 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     """The cases. `_write_sandbox` is already in force — see main()."""
     ok = fail = 0
 
+    # ⛔ ROUND 4, High — the previous guard read the SOURCE TEXT for a string
+    # literal after `--out` / `--fragment-only`. Measured: the suite has 5 such
+    # flags and ZERO adjacent literals, because every real call site passes
+    # `str(<Path>)`. So `_rel == []` held because the regex could not examine the
+    # form the suite uses — a green check over the wrong subject. REPRODUCED: a
+    # case doing `main(["--fragment-only", str(pathlib.Path("frag.html"))])`
+    # destroyed a cwd sentinel at a fully green 206/206.
+    #
+    # Assert the PROPERTY — the value `main` actually receives — not the spelling
+    # in the source. Installed before the first case so nothing escapes it.
+    _paths_passed: list[str] = []
+    _real_main = main
+
+    def _recording_main(argv):
+        for _f in ("--out", "--fragment-only"):
+            if _f in argv and argv.index(_f) + 1 < len(argv):
+                _paths_passed.append(argv[argv.index(_f) + 1])
+        return _real_main(argv)
+    globals()["main"] = _recording_main
+
     def case(name, got, want):
         nonlocal ok, fail
         if got == want:
@@ -1891,9 +1944,19 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # inputs: the bare rstrip made rendered-vs-typed fidelity WORSE than not
     # trimming at all (4157 → 4245); entity-aware it is 3850, and 0 inputs that
     # the rstrip version got right are broken by this one.
-    _ent = _inline("https://x.ee/?a=1&**bold**")
+    #
+    # ⚠ Round 4 (Low): the first version's three conjuncts were ALL satisfied with
+    # the trim removed entirely — `"&amp;" in _ent` is satisfied by the ESCAPE,
+    # not by the trim. Assert the PROPERTY the finding was about: the text a
+    # browser shows is the text the author typed. (This still does not
+    # distinguish "no trim at all" — for this input that renders the same visible
+    # text — and it does not need to: `while False:` is caught by the case above.
+    # Stated rather than left as an implied claim of total coverage.)
+    _typed = "https://x.ee/?a=1&**bold**"
+    _ent = _inline(_typed)
+    _shown = _html.unescape(re.sub(r"<[^>]+>", "", _ent))
     case("the URL trim never severs an HTML entity",
-         ("&amp;" in _ent, "&amp<" in _ent, "</a>;" in _ent), (True, False, False))
+         (_shown, "</a>;" in _ent), ("https://x.ee/?a=1&bold", False))
 
     # M1 (Claude), REPRODUCED — and it changes a line already IN the store
     # (`docs/dashboard-entries.md:87` has a URL in backticks). Making code
@@ -1949,6 +2012,33 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
              (_delim in _rendered.replace(f"<{_elem}>", "").replace(f"</{_elem}>", ""),
               f"<{_elem}>" in _rendered, "bold tail" in _rendered),
              (False, True, True))
+    # ⛔ ROUND 4, Blocking — REPRODUCED. `_close_orphan_markup` was a SECOND
+    # scanner beside `_inline_scan`, and they disagreed on one rule: code content
+    # is LITERAL. A truncated code span holding a `**` got a `**` closer, which
+    # then rendered inside the `<code>` — a bare delimiter still on the page AND
+    # text the author never typed (`…code ** tail**`).
+    #
+    # The assertion is the PROPERTY that catches it whatever the mechanism: the
+    # truncated span's CONTENT must be a prefix of the full span's. Asserting the
+    # bug's signature (`"**\`" not in title`) would have passed for any renderer
+    # that inserted a different character.
+    _cb = "x" * 95 + " `code ** tail that is long enough to be truncated here`"
+    _full_code = re.search(r"<code>(.*?)</code>", _inline(_cb))
+    _trunc_code = re.search(r"<code>(.*?)</code>", _inline(_first_sentence(_cb)))
+    case("a truncated code span's CONTENT is a prefix of the full span's",
+         (_trunc_code is not None,
+          _full_code is not None and _trunc_code is not None
+          and _full_code.group(1).startswith(_trunc_code.group(1))),
+         (True, True))
+
+    # ⛔ ROUND 4, High — `ENTITY_TAIL` matched `&#39;` but not `&#x27;`, which is
+    # what `html.escape` actually emits for an APOSTROPHE. The guard covered the
+    # form I happened to test; the form the code produces went through severed.
+    _apos = _inline("https://x.ee/a'**bold**")
+    case("the URL trim keeps a HEX numeric entity too, not just the decimal form",
+         ("&#x27;" in _apos, "&#x27<" in _apos, "</a>;" in _apos),
+         (True, False, False))
+
     # ...and the same property over the REAL store, which is where it was found.
     # Scoped to TRUNCATED titles: a delimiter the author left unpaired in a short
     # title still prints as itself, which is `_inline_scan`'s deliberate rule.
@@ -1971,6 +2061,24 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     else:
         case("the REAL-store title check is skipped ONLY where there is no docs/",
              (STORE_DEFAULT.exists(), (ROOT / "docs").exists()), (False, False))
+    # ⚠ ROUND 4 (Low) — the cap case below uses `"x" * 40 + " " + "y" * 200`:
+    # delimiter-free, so it never produces a closer and could never see closers
+    # appended PAST the cap. Measured: 148 of 60,000 delimiter-rich inputs
+    # exceeded `TITLE_CAP`, up to 113. Same blind-filler shape the H1 comment
+    # names for the older case — and then reintroduced one case later.
+    #
+    # ⚠ AND MY FIRST ATTEMPT AT THIS CASE REPEATED THE MISTAKE. `"**a`b** " +
+    # "word " * 40` puts the delimiters in the LEAD, so the cut lands in plain
+    # words, no closer is needed, and the mutation SURVIVED at 208/208. The cut
+    # has to land INSIDE a span, and it has to leave no word boundary to retreat
+    # to — which is why this input is dense and ugly rather than tidy. Taken from
+    # the fuzz that found the defect (148 of 60,000 inputs), not invented.
+    _capbust = ("abword  b `b a**word b word  `word wordba**abawordb `a** ** **a "
+                "`**   word word word **`** aa      **word `  awordbword wordword "
+                "``b word`a**   a")
+    case("the cap bounds a title even when closers have to be added",
+         (len(_first_sentence(_capbust)) <= TITLE_CAP + 1,
+          _first_sentence(_capbust).endswith("…")), (True, True))
     case("an over-long headline is cut at a WORD, with an ellipsis",
          (len(_first_sentence("x" * 40 + " " + "y" * 200)) <= TITLE_CAP + 1,
           _first_sentence("x" * 40 + " " + "y" * 200).endswith("…")), (True, True))
@@ -2229,12 +2337,22 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # and require every such path to be absolute. Reading the source is the point
     # — it sees cases that do not exist yet, which is what the docstring promises
     # and what the `--out` DEFAULT redirect alone cannot deliver.
-    _src = _inspect.getsource(_self_test)
-    _rel = [m.group(0) for m in
-            re.finditer(r'"--(?:out|fragment-only)",\s*"(?!/)[^"]*"', _src)]
-    case("every --out / --fragment-only path in this suite is ABSOLUTE",
-         (_rel, len(re.findall(r'"--(?:out|fragment-only)"', _src)) > 0),
-         ([], True))
+    # ⚠ BOTH quote styles — round 4, Medium. The first version matched only
+    # double-quoted literals, so the identical defect written with single quotes
+    # was invisible: `main(['--out', 'rel.html'])` was green at 206/206. The guard
+    # covered the spelling the mutation happened to use, not the property.
+    #
+    # The values are collected by `_recording_main` at the top of this function,
+    # so this sees what `main` was HANDED — `str(<Path>)`, an f-string, a
+    # variable, anything. The source-text version it replaces could see only a
+    # literal, and the suite contains none: 5 flags, 0 adjacent literals, so it
+    # was green because it could not look, not because the paths were absolute.
+    # `_paths_passed` non-empty is the anti-vacuity half, and unlike counting
+    # FLAGS in the source it cannot be satisfied unless the recorder really ran.
+    globals()["main"] = _real_main
+    case("every --out / --fragment-only path the suite PASSES is absolute",
+         ([p for p in _paths_passed if not pathlib.Path(p).is_absolute()],
+          len(_paths_passed) > 0), ([], True))
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
