@@ -366,3 +366,41 @@ full `--fg` with the body at `--fg2` so the glance lands on the idea.
 Mutation battery 9/9 killed, including one that survived first: reverting the headline wiring while
 `_first_sentence` stayed perfect. A helper can be correct and unused.
 
+## 2026-08-29 [needs-you]
+The mutation checker was overwriting this page with a blank one, and nobody noticed.
+
+You saw it: an empty dashboard, twice. It was not the page generator — it was the checker
+that runs the mutation tests. To test the page code it makes a scratch copy and deliberately
+breaks it in small ways, one at a time, to confirm the tests object. But a broken copy still
+knew where the real page lives, so some of those deliberate breakages published a blank page
+over the live one. The tool that exists to protect this page was quietly destroying it.
+
+Fixed: the test run now writes only inside its own scratch directory, and it fails if that
+ever stops being true.
+
+Separately, and what you asked for: the heading, the summary and the emphasised text were
+all the same near-white, so nothing stood out from anything else. They now have their own
+colours — the summary brightest, the heading cooler, supporting text dimmer, and emphasis
+in the same amber this page already uses for things that need you.
+
+**Waiting on you:** nothing here — this is a report, not a request.
+<!--tech-->
+⛔ MEASURED: `check-plan-code.py --mutate .` replaced `~/explainers/dashboard.html` with a
+0-article page. Route: the suite calls `main()`; `main()` falls through to `--out`; `--out`
+defaulted to a REAL path outside any temp tree. Four call sites, all unpinned.
+
+Fixed at the DEFAULT (`OUT_DEFAULT` hoisted out of argparse, repointed by `_self_test` into
+`mkdtemp` for the whole run), not at the four call sites — a case written later inherits the
+sandbox instead of having to remember it. Two falsifiers assert the redirect is live and that
+the real path is still what a normal run uses. Verified by the thing that broke it: `--mutate .`
+44/0 with the live page byte-identical before and after.
+
+⚠ This is the harness merged as #176 editing the user's artifacts. Adjacent to backlog #67's
+class (an instrument that corrupts what it observes), and NOT filed — filing is the user's step.
+
+Colour ramp: title/lede/strong were all `--ink` (13.10:1), separated only by weight — one colour
+doing three jobs. Now `--p-lede` / `--p-head` / `--p-detail` / `--p-mark`, chosen by measuring
+contrast on `--panel` in BOTH themes. Cases pin the RELATIONSHIP (summary > heading > detail, all
+≥ AA, four distinct values, tokens defined AND consumed), not the hexes — asserting hexes would
+pass on an inverted hierarchy and fail on a harmless re-tint. Battery 7/7 killed.
+

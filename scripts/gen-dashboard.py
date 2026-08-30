@@ -5,6 +5,7 @@ import argparse
 import datetime as _dt
 import json
 import pathlib
+import shutil as _shutil
 import subprocess
 import tempfile
 import html as _html
@@ -20,6 +21,56 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The guard for an unreadable store existed and was correct; its PREMISE moved.
 STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"
 TECH_MARKER = "<!--tech-->"
+
+
+# ── The prose ramp ───────────────────────────────────────────────────────────
+# Reported by the reader: the headline, the summary and an author's **bold** all
+# looked like the same "bright bold". They WERE: title, lede and <strong> were
+# every one of them `--ink` (13.10:1), differing only in weight. One colour was
+# doing three jobs, so the eye had no way to rank them without reading.
+#
+# Each role now gets its own HUE and its own step on the ramp, so the difference
+# survives a glance:
+#   lede    brightest, warm  — the summary. Read this and you may stop.
+#   head    cool slate       — the headline. Desaturated well clear of `--link`,
+#                              so a title never reads as clickable.
+#   detail  neutral, dimmest — supporting text, recedes.
+#   mark    amber = --need   — author emphasis, the SAME colour this page already
+#                              uses for the "needs you" chip. Emphasis and
+#                              attention are the same signal; now they look it.
+# Values chosen by MEASUREMENT (below), not by eye, and asserted in both themes.
+PROSE_COLOURS = {           # role: (light, dark)
+    "lede":   ("#1b2024", "#ecebe4"),
+    "head":   ("#3a5261", "#b9c6d1"),
+    "detail": ("#5c5b67", "#a8a5b0"),
+    "mark":   ("#9c5d0e", "#e0a050"),
+}
+PROSE_CARD = {"light": "#ffffff", "dark": "#1b2125"}   # `--panel`, what they sit on
+
+# ⛔ WHERE A RUN WRITES, hoisted out of argparse so the SUITE can redirect it.
+# MEASURED 2026-08-29: `check-plan-code.py --mutate .` DESTROYED the reader's
+# real dashboard, leaving an empty page. The route: the suite calls `main()`,
+# `main()` writes to this default, and the default is a real artifact OUTSIDE
+# any temp tree — so a mutant that reaches the compose path publishes garbage
+# over the live page. The harness is supposed to be observing the code, not
+# editing the user's world. `_self_test` now repoints this at a temp dir for
+# the whole run, which covers every call site including ones not yet written —
+# four already existed and all four were unpinned.
+OUT_DEFAULT = pathlib.Path.home() / "explainers" / "dashboard.html"
+PROSE_CONTRAST_MIN = 4.5                                # WCAG AA, body text
+
+
+def _relative_luminance(hexcolor: str) -> float:
+    h = hexcolor.lstrip("#")
+    ch = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    ch = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in ch]
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = _relative_luminance(a), _relative_luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
 
 
 SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
@@ -587,10 +638,14 @@ def build(entries, days, prs, pr_error, git_error, window,
 <style>
 :root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
 --need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
---link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}}
+--link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+--p-lede:{PROSE_COLOURS["lede"][0]};--p-head:{PROSE_COLOURS["head"][0]};
+--p-detail:{PROSE_COLOURS["detail"][0]};--p-mark:{PROSE_COLOURS["mark"][0]}}}
 @media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
 --bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
---err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0}}}}
+--err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;
+--p-lede:{PROSE_COLOURS["lede"][1]};--p-head:{PROSE_COLOURS["head"][1]};
+--p-detail:{PROSE_COLOURS["detail"][1]};--p-mark:{PROSE_COLOURS["mark"][1]}}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
 line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
 /* The browser default link colour is #0000EE, which measures 1.9:1 against the dark
@@ -627,7 +682,8 @@ padding:14px 18px;margin-bottom:10px}}
 .entry.broken{{border-color:var(--err);background:var(--err-bg)}}
 .entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
 .entry .eid{{color:var(--fg3);opacity:.75}}
-.entry .title{{margin:0;font-weight:600;line-height:1.4;max-width:60ch}}
+.entry .title{{margin:0;font-weight:600;line-height:1.4;max-width:60ch;
+  color:var(--p-head)}}
 /* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
    Every entry's human half used to render as ONE <p> at the full 820px shell
    width, so the author's paragraphs vanished and each line ran ~110 characters
@@ -641,11 +697,11 @@ padding:14px 18px;margin-bottom:10px}}
    the one sentence that must not be skimmed past, and it now outranks the
    body it sits in instead of rendering as literal asterisks. */
 .entry .prose{{max-width:64ch;margin-top:10px}}
-.entry .prose p{{margin:0 0 .9em;color:var(--fg2);line-height:1.7}}
+.entry .prose p{{margin:0 0 .9em;color:var(--p-detail);line-height:1.7}}
 .entry .prose p:last-child{{margin-bottom:0}}
-.entry .prose .lede{{color:var(--fg);font-size:15.5px;line-height:1.6;
+.entry .prose .lede{{color:var(--p-lede);font-size:15.5px;line-height:1.6;
   margin-bottom:1.05em}}
-.entry .prose strong{{color:var(--fg);font-weight:600}}
+.entry .prose strong{{color:var(--p-mark);font-weight:600}}
 .entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--fg)}}
 .flag{{color:var(--need);font-weight:700}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
@@ -755,6 +811,19 @@ def contrast_failures(html: str, minimum: float = CONTRAST_MIN) -> list[str]:
 
 def _self_test() -> int:
     ok = fail = 0
+
+    # ⛔ SANDBOX THE SUITE'S WRITES BEFORE THE FIRST CASE RUNS.
+    # MEASURED: `check-plan-code.py --mutate .` replaced the reader's live
+    # dashboard with an empty page. The suite calls `main()`; `main()` falls
+    # through to `--out`; `--out` defaulted to a REAL file in the home
+    # directory. A mutant reaching the compose path therefore published garbage
+    # over the page the harness exists to protect. Redirecting the DEFAULT — not
+    # the four call sites — is what makes it structural: a case written later
+    # inherits the sandbox instead of having to remember it.
+    import tempfile as _tf0
+    _sandbox = _tf0.mkdtemp(prefix="gen-dashboard-selftest-")
+    _real_out = OUT_DEFAULT
+    globals()["OUT_DEFAULT"] = pathlib.Path(_sandbox) / "dashboard.html"
 
     def case(name, got, want):
         nonlocal ok, fail
@@ -1196,6 +1265,37 @@ def _self_test() -> int:
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
 
+    # ── THE PROSE RAMP (colour) ──────────────────────────────────────────────
+    # Reported by the reader: headline, summary and **bold** all read as the same
+    # "bright bold". They were literally one colour — `--ink` — separated only by
+    # weight. These cases pin the RELATIONSHIP, not the hex: a future palette may
+    # change every value, but the summary must stay the brightest thing, the
+    # headline must sit between it and the detail, and all four must clear AA.
+    # ⚠ Asserting the hexes instead would pass on a palette that inverted the
+    # hierarchy, and fail on a harmless re-tint — precisely backwards.
+    for _theme, _idx in (("light", 0), ("dark", 1)):
+        _card = PROSE_CARD[_theme]
+        _r = {k: _contrast(v[_idx], _card) for k, v in PROSE_COLOURS.items()}
+        case(f"{_theme}: every prose role clears WCAG AA on the card",
+             min(_r.values()) >= PROSE_CONTRAST_MIN, True)
+        case(f"{_theme}: the ramp reads summary > headline > detail",
+             (_r["lede"] > _r["head"], _r["head"] > _r["detail"]), (True, True))
+        # Four roles, four DISTINCT values — the whole defect was one colour
+        # doing three jobs, and nothing would have caught it.
+        case(f"{_theme}: no two roles share a colour",
+             len({v[_idx] for v in PROSE_COLOURS.values()}), 4)
+    # Author emphasis borrows the SAME token the "needs you" chip uses. If that
+    # drifts apart the page starts using two colours for one meaning.
+    case("emphasis is the attention colour, in both themes",
+         PROSE_COLOURS["mark"], ("#9c5d0e", "#e0a050"))
+    # ⚠ WIRING. Every case above reads the dict; none of them proves the dict
+    # reaches the stylesheet. A palette nothing renders is decoration.
+    for _role in PROSE_COLOURS:
+        case(f"--p-{_role} is defined AND consumed by a rule",
+             (f"--p-{_role}:" in ht, f"var(--p-{_role})" in ht), (True, True))
+    case("both themes ship their own values, not one set for both",
+         all(v[0] in ht and v[1] in ht for v in PROSE_COLOURS.values()), True)
+
     # ── THE PROSE FOLD ───────────────────────────────────────────────────────
     # ⚠ Every change in this area passed the suite at 120/120 BEFORE these cases
     # existed — paragraphs, inline markup and the headline had no coverage at
@@ -1462,6 +1562,16 @@ def _self_test() -> int:
         _wrc = main(["--window", "0"])
     case("main: --window below 1 is a refusal, not a silent default", _wrc, 2)
 
+    # The falsifier for the sandbox above: if the redirect is ever removed, this
+    # says so instead of the next mutation run silently eating the live page.
+    case("the suite never writes to the REAL dashboard path",
+         (OUT_DEFAULT != _real_out, str(OUT_DEFAULT).startswith(_sandbox)),
+         (True, True))
+    case("...and the real path is still what a normal run would use",
+         _real_out == pathlib.Path.home() / "explainers" / "dashboard.html", True)
+    globals()["OUT_DEFAULT"] = _real_out
+    _shutil.rmtree(_sandbox, ignore_errors=True)
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
@@ -1475,7 +1585,7 @@ def main(argv: list[str]) -> int:
     # keeps the named/omitted distinction from resting on a type comparison.
     ap.add_argument("--store", default=None)
     ap.add_argument("--out", type=pathlib.Path,
-                    default=pathlib.Path.home() / "explainers" / "dashboard.html")
+                    default=OUT_DEFAULT)
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
     a = ap.parse_args(argv)
     if a.self_test:
