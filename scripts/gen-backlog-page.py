@@ -60,6 +60,9 @@ import pathlib
 import re
 import subprocess
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_markup  # noqa: E402
 import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -232,6 +235,17 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
              "been engineered out. What is left is that the warning about it sits in a comment "
              "inside one script, names two scripts that no longer exist, and is absent from the "
              "document where the decision to run two helpers is actually made."),
+        (71, "Four of the pages this project generates — including this one — each turn markdown "
+             "into HTML with their own separate code, and they no longer agree. On this page it "
+             "shows: a piece of SQL renders with a character swallowed, and file paths lose the "
+             "asterisks in them. The fix that removes it already exists in a fourth generator and "
+             "cannot be reached from the other three."),
+        (72, "The inventory that polices our safety checks cannot see one that is not NAMED like "
+             "one. It says in writing that it catches a check even before anyone wires it up; that "
+             "second route is unreachable, and was measured to be."),
+        (73, "A superseded piece of that same inventory is still in the file, and the only thing "
+             "that still runs it is its own test — so part of its reported coverage is of "
+             "machinery nothing uses. Waiting on the decision above."),
      ]),
 ]
 
@@ -546,17 +560,26 @@ def plain(text: str) -> str:
 
 
 def md(text: str) -> str:
-    """Escape, then re-apply the inline markdown the backlog actually uses.
+    """Escape, then render the inline markdown — through `page_markup`, not here. Backlog #71.
 
-    The bold pattern is `.+?`, not `[^*]+`: two runs in #48 wrap text that itself contains an
-    asterisk, and the character-class form left literal `**` on the rendered page. Non-greedy still
-    stops at the first closing pair, so adjacent bold runs do not merge."""
-    out = html.escape(text.strip())
-    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
-    out = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", out, flags=re.S)
-    out = re.sub(r"(?<![*\w])\*([^*]+)\*(?!\*)", r"<em>\1</em>", out)
-    out = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', out)
-    return out
+    ⚠ WHAT THIS FILE USED TO DO, AND WHY IT WAS WRONG. Four stacked `re.sub` passes: code, then
+    bold, then em, then links. Stacked passes are blind to each other's OUTPUT, so the `*em*` pass
+    reached inside the `<code>` element the code pass had just emitted. MEASURED 2026-08-30 over the
+    213 strings this file actually renders: **7 crossed tag spans and 12 cases of markup emitted
+    inside a code span** — including `docs/backlog.md`'s own `select count(*) filter (…)`, which
+    reached the page as `select count(<em>) filter …`, and row #24's `*caption*`, which is inside
+    backticks and was italicised straight through them.
+
+    It also rendered `[text](url)` with **no href sanitiser at all**, while
+    `explainer-serve.safe_href` had existed unshared for days.
+
+    `page_markup.scan` is one left-to-right pass: a construct consumes its whole span before the
+    next is considered, so a span cannot begin in one region and end in another. Both counts are
+    now 0, with no real emphasis or link lost.
+
+    `.strip()` is preserved — it was this function's behaviour and the cells rely on it.
+    """
+    return page_markup.render_inline(text.strip())
 
 
 # ─── change history, read out of git rather than tracked separately ─────────────────────────────
@@ -1601,11 +1624,12 @@ def self_test() -> int:
     case("the warning flag is READ, not inferred",
          lambda: by[3]["warned"] and not by[1]["warned"])
 
-    case("md escapes html before anything else",
-         lambda: md("<script>x</script>") == "&lt;script&gt;x&lt;/script&gt;")
-    case("md renders code and bold", lambda: md("`a` **b**") == "<code>a</code> <strong>b</strong>")
-    case("md closes bold that WRAPS an asterisk",
-         lambda: "**" not in md("**it is *this* one**"))
+    # ⚠ The three inline-markup cases that stood here are DELETED (backlog #71). Inline rendering
+    # is `page_markup`'s behaviour and is asserted by its own cases; re-asserting it here would be
+    # a second copy of one rule. ONE case is kept, and it is not about markup — it pins the
+    # `.strip()` this file's callers depend on, which is genuinely local to `md`.
+    case("md strips the cell before rendering",
+         lambda: md("   **a**   ") == "<strong>a</strong>")
     case("plain strips emphasis so a cut cannot land mid-marker",
          lambda: plain("**Loud** and `quiet`") == "Loud and quiet")
 

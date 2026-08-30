@@ -88,6 +88,9 @@ import sys
 import urllib.parse
 from typing import Callable
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_markup  # noqa: E402
+
 PORT = 7391
 HOST = "127.0.0.1"
 ROOT = pathlib.Path.home() / "explainers"
@@ -139,7 +142,8 @@ MD_FENCE = re.compile(r"^```[^\n]*$")
 MD_TABLE_SEP = re.compile(r"^\|[\s:|-]+\|$")
 
 
-SAFE_HREF = re.compile(r"^(?:https?:|mailto:|[/#?.]|[^:]*$)", re.I)
+# ⚠ The pattern that lived here moved to `page_markup.SAFE_HREF` (backlog #71) — it is the
+# one this repo hardened, and it now guards all four generators instead of this one.
 
 
 def safe_href(url: str) -> str:
@@ -162,7 +166,7 @@ def safe_href(url: str) -> str:
     `javascript:`. Quotes are escaped upstream in `md_render`, which independently closes the
     attribute break-out (`[x](a"onmouseover=…)`); this closes the scheme half.
     """
-    return url if SAFE_HREF.match(url) else "#"
+    return page_markup.safe_href(url)
 
 
 def md_cells(row: str) -> list[str]:
@@ -177,21 +181,19 @@ def md_cells(row: str) -> list[str]:
 
 
 def md_inline(s: str) -> str:
-    """Inline spans, on ALREADY-ESCAPED text. Code spans are extracted first so nothing rewrites
-    their insides — a `**` inside backticks is two asterisks, not emphasis."""
-    held: list[str] = []
+    """Inline spans, on ALREADY-ESCAPED text — through `page_markup`, not here. Backlog #71.
 
-    def hold(m: re.Match) -> str:
-        held.append(m.group(1))
-        return f"\x00{len(held) - 1}\x00"
+    This file had the best of the four implementations: it held code spans aside in placeholders
+    before the other passes ran, so `**` inside backticks stayed literal. That protected code from
+    the other rules but not the other rules from EACH OTHER — bold, del and em still ran as
+    stacked passes over one another's output.
 
-    s = re.sub(r"`([^`]+)`", hold, s)
-    s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)",
-               lambda m: f'<a href="{safe_href(m.group(2))}">{m.group(1)}</a>', s)
-    s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
-    s = re.sub(r"~~([^~]+)~~", r"<del>\1</del>", s)
-    s = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<em>\1</em>", s)
-    return re.sub(r"\x00(\d+)\x00", lambda m: f"<code>{held[int(m.group(1))]}</code>", s)
+    `page_markup.scan` is the same idea carried all the way: ONE left-to-right pass in which every
+    construct, not just a code span, consumes its whole span before the next is considered.
+    `safe_href` moved with it — this file is where it was written, and it was the only one of the
+    four that had it.
+    """
+    return page_markup.scan(s)
 
 
 def md_render(text: str) -> str:
