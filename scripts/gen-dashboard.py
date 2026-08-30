@@ -12,7 +12,30 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# ⚠ ROOT-ANCHORED, and that is the whole point. This was the relative string
+# "docs/dashboard-entries.md", resolved against whatever cwd the caller happened
+# to have. From any other directory the DEFAULT store was "missing" — and main()
+# deliberately treats a missing DEFAULT store as "nothing written yet", so the
+# page rendered a green "No entries yet" while sitting in the wrong directory.
+# The guard for an unreadable store existed and was correct; its PREMISE moved.
+STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"
 TECH_MARKER = "<!--tech-->"
+
+
+def _store_label(p) -> str:
+    """How the store is NAMED on the page. Repo-relative when it is inside the
+    repo, absolute otherwise.
+
+    Anchoring the default made it absolute, and the empty state renders it —
+    so the page started printing the generating machine's home directory to
+    every reader. The page is the thing being shared; the filesystem layout of
+    whoever ran the generator is not part of what it is trying to say.
+    """
+    p = pathlib.Path(p)
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
 BLOCK = re.compile(r"^##\s*\S")
 
 
@@ -195,7 +218,7 @@ def commit_dates(window: int) -> tuple[list[str] | None, str | None]:
         r = subprocess.run(
             ["git", "log", "HEAD", "--first-parent", f"--since={window} days ago",
              "--date=short", "--pretty=%ad"],
-            capture_output=True, text=True, timeout=20)
+            cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, f"could not run git: {exc}"
     if r.returncode != 0:
@@ -207,7 +230,8 @@ def _gh_json(args: list[str]) -> tuple[object | None, str | None]:
     """Run `gh` and parse its JSON. Never a bare [] on failure — "nothing" and
     "could not ask" must not look alike."""
     try:
-        r = subprocess.run(["gh"] + args, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(["gh"] + args, cwd=ROOT, capture_output=True,
+                           text=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, f"could not run gh: {exc}"
     if r.returncode != 0:
@@ -1051,6 +1075,119 @@ def _self_test() -> int:
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
 
+    # ── CWD INDEPENDENCE ─────────────────────────────────────────────────────
+    # MEASURED 2026-08-29 from a real broken page: run from any directory that is
+    # not the repo and every collector fails, but only THREE of the four say so.
+    # `git`/`gh` inherited the caller's cwd, and `--store` defaulted to a RELATIVE
+    # path — so the store looked absent, main()'s deliberate "a missing DEFAULT
+    # store is nothing written yet" carve-out fired, and the page rendered a green
+    # "No entries yet" over a repo with eight entries. The carve-out is right; its
+    # premise (that the default path is repo-anchored) was the thing that was wrong.
+    # ROOT has existed since line 14 and was used in exactly one of the four places.
+    # Imported here as well as below: a name imported anywhere in a function is
+    # local to the WHOLE function, so using them before that import is an
+    # UnboundLocalError, not a fallback to the module scope.
+    import contextlib as _ctx
+    import io as _io
+    import os as _os
+
+    # ⚠ A DECOY, not the real store. The first version of this case asserted the
+    # repo's OWN store was found, which made the suite depend on `docs/` existing
+    # beside `scripts/` — and `check-plan-code.py --mutate` copies `scripts/`
+    # ALONE, so its green control went red and it refused to mutate. The control
+    # caught the bad test. Reading a decoy planted in the cwd is the property
+    # ("does it resolve against cwd?") with no dependency on the environment.
+    _real_cwd = _os.getcwd()
+    try:
+        with tempfile.TemporaryDirectory() as _foreign:
+            _decoy = pathlib.Path(_foreign) / "docs" / "dashboard-entries.md"
+            _decoy.parent.mkdir(parents=True)
+            _decoy.write_text("## 2020-01-01\nDECOYENTRYTEXT\n", encoding="utf-8")
+            _os.chdir(_foreign)
+            _frag = pathlib.Path(_foreign) / "frag.html"
+            # Collectors stubbed so this asserts the STORE seam alone — a git/gh
+            # failure here would be a different defect wearing the same symptom.
+            with _ctx.redirect_stdout(_io.StringIO()):
+                _with_run(lambda *a, **k: _R(0, "", ""),
+                          lambda: main(["--fragment-only", str(_frag), "--window", "14"]))
+            _txt = _frag.read_text(encoding="utf-8") if _frag.is_file() else ""
+        # ⚠ PAIRED, and the pairing is the point. As first written this asserted
+        # only the ABSENCE of the decoy — and emptiness satisfies absence, so any
+        # unrelated defect that stopped main() writing a fragment made it green
+        # while the fail-open it guards was live. MEASURED in review: with the
+        # store bug restored AND the fragment write emptied, the suite reported
+        # 117/117. `:786` in this same file already states the rule ("Both
+        # assertions are NEGATIVE, so each carries a POSITIVE companion"); this
+        # was the one negative assertion here without one.
+        case("the DEFAULT store resolves against the REPO, not the caller's cwd",
+             ("DECOYENTRYTEXT" in _txt, bool(_txt)), (False, True))
+    finally:
+        _os.chdir(_real_cwd)
+
+    # ── THE DEFAULT-STORE CARVE-OUT ITSELF ───────────────────────────────────
+    # The branch below is the one named as the root cause of the broken page, and
+    # review measured that it had NO coverage: `!=` -> `==`, deleting the `if`,
+    # and replacing both lines with `pass` ALL survived at 117/117. The first is
+    # the dangerous one — with it, `--store docs/typo.md` (a store the caller
+    # NAMED, that is absent) renders the green "No entries yet" instead of a
+    # could-not-tell. That is the EXACT reported symptom, on different input, at
+    # a fully green suite. Fixing a branch's premise is not covering the branch.
+    #
+    # Every main()-contract case above passes `--store` explicitly, so the
+    # omitted-store path through this comparison was never executed by any
+    # assertion. Both cases here are PAIRED, so an empty fragment fails them.
+    _saved_default = STORE_DEFAULT
+    try:
+        with tempfile.TemporaryDirectory() as _td:
+            _tdp = pathlib.Path(_td)
+            globals()["STORE_DEFAULT"] = _tdp / "not-created-yet.md"
+
+            _f1 = _tdp / "a.html"
+            with _ctx.redirect_stdout(_io.StringIO()):
+                _with_run(lambda *a, **k: _R(0, "", ""),
+                          lambda: main(["--fragment-only", str(_f1)]))
+            _t1 = _f1.read_text(encoding="utf-8") if _f1.is_file() else ""
+            case("a missing DEFAULT store is 'nothing written yet', NOT an error",
+                 ("No entries yet" in _t1, "could not read the entry store" in _t1),
+                 (True, False))
+
+            _f2 = _tdp / "b.html"
+            with _ctx.redirect_stdout(_io.StringIO()):
+                _with_run(lambda *a, **k: _R(0, "", ""),
+                          lambda: main(["--fragment-only", str(_f2),
+                                        "--store", str(_tdp / "named-and-absent.md")]))
+            _t2 = _f2.read_text(encoding="utf-8") if _f2.is_file() else ""
+            case("a missing NAMED store is a could-not-tell, NEVER a green empty page",
+                 ("could not read the entry store" in _t2, "No entries yet" in _t2),
+                 (True, False))
+    finally:
+        globals()["STORE_DEFAULT"] = _saved_default
+
+    # Anchoring the default made it ABSOLUTE, and the empty state renders it, so
+    # the page began printing the generating machine's home directory to every
+    # reader. Exact on both sides: inside the repo it is repo-relative, outside
+    # it is left alone — a label that silently dropped the outside case would be
+    # lying about WHICH file it means, which is the one thing this string is for.
+    case("the store label hides the generating machine, and only that",
+         (_store_label(STORE_DEFAULT), _store_label(pathlib.Path("/tmp/elsewhere.md"))),
+         ("docs/dashboard-entries.md", "/tmp/elsewhere.md"))
+
+    # The collectors must ask about THIS repo wherever they are invoked from. A
+    # hook, a cron, an editor — none of them guarantee a cwd. Asserting the kwarg
+    # rather than the outcome because the outcome is identical when cwd happens
+    # to be right, which is exactly why this survived until a hook ran elsewhere.
+    for _label, _call in (("commit_dates", lambda: commit_dates(14)),
+                          ("open_prs", open_prs),
+                          ("no_entry_prs", no_entry_prs)):
+        _seen = {}
+
+        def _spy(*a, **k):
+            _seen.update(k)
+            return _R(0, "[]", "")
+        _with_run(_spy, _call)
+        case(f"{_label}: asks about THIS repo, not the caller's cwd",
+             _seen.get("cwd"), ROOT)
+
     # ── main()'S CONTRACT ────────────────────────────────────────────────────
     # `main` had ZERO coverage — the same hole round 4 measured in
     # check-dashboard-entry.py's `collect`/`main`, where `return 2` -> `return 0`
@@ -1132,7 +1269,10 @@ def main(argv: list[str]) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--window", type=int, default=14)
-    ap.add_argument("--store", default="docs/dashboard-entries.md")
+    # No default: None is the SENTINEL for "not named". See main()'s store block.
+    # ⚠ Do NOT add `type=pathlib.Path` or a default here — the sentinel is what
+    # keeps the named/omitted distinction from resting on a type comparison.
+    ap.add_argument("--store", default=None)
     ap.add_argument("--out", type=pathlib.Path,
                     default=pathlib.Path.home() / "explainers" / "dashboard.html")
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
@@ -1142,7 +1282,21 @@ def main(argv: list[str]) -> int:
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2
-    store, store_error, entries = pathlib.Path(a.store), None, []
+    # ⚠ "Did the caller NAME a store?" is answered by a SENTINEL, never by
+    # comparing the value to the default. It used to be `a.store != get_default(...)`,
+    # which was a live fail-open for two separate reasons and worth stating both:
+    #   (1) with a `str` default, passing the default path explicitly was
+    #       indistinguishable from omitting it — the residual this comment used
+    #       to merely declare;
+    #   (2) with the ROOT-anchored `Path` default it happened to work, but only
+    #       because `PosixPath.__eq__(str)` is NotImplemented, so the comparison
+    #       was always unequal. Correct BY TYPE ACCIDENT. Adding the obvious
+    #       `type=pathlib.Path` to `--store` would silently restore the fail-open,
+    #       and review measured that nothing in the suite objected.
+    # `is None` cannot rot that way.
+    named_store = a.store is not None
+    store = pathlib.Path(a.store) if named_store else STORE_DEFAULT
+    store_error, entries = None, []
     try:
         entries = parse_entries(store.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -1150,10 +1304,7 @@ def main(argv: list[str]) -> int:
         # is created by the first entry. A store the caller NAMED and that is not
         # there is a could-not-tell: the run was pointed at a file and never
         # opened it, and `store.exists()` had no third state to say so.
-        # Residual, stated rather than hidden: passing the default path
-        # explicitly is indistinguishable from not passing it. The page still
-        # names that path, so it stays honest about WHICH file it means.
-        if a.store != ap.get_default("store"):
+        if named_store:
             store_error = f"no such file: {store}"
     except UnicodeDecodeError as exc:
         store_error = f"{store} is not valid UTF-8: {exc}"
@@ -1165,7 +1316,7 @@ def main(argv: list[str]) -> int:
     today = _dt.date.today().isoformat()
     days = bucket_days(dates or [], entries, a.window, today)
     frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
-                 exempt_error, a.store, store_error)
+                 exempt_error, _store_label(store), store_error)
     if a.fragment_only:
         a.fragment_only.write_text(frag, encoding="utf-8")
         print(f"wrote fragment {a.fragment_only}")
@@ -1175,7 +1326,10 @@ def main(argv: list[str]) -> int:
         f = pathlib.Path(td) / "dashboard-fragment.html"
         f.write_text(frag, encoding="utf-8")
         # Bounded like every other subprocess here (`commit_dates` 20, `_gh_json`
-        # 30). This runs from a git hook, and an unbounded child hangs the hook
+        # 30). This runs from a Claude Code PostToolUse hook
+        # (`.claude/hooks/regen-dashboard.sh`, wired at `.claude/settings.json:71`)
+        # — NOT a git hook, as this said until review checked. The bound is for
+        # the same reason either way: an unbounded child hangs the hook
         # with no output at all — a cannot-run that never says so.
         try:
             r = subprocess.run(

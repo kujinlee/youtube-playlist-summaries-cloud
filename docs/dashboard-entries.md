@@ -253,3 +253,80 @@ numbers. 121 → 136 cases.
 substitution table read 1:1 where two entries occur twice; the instruction to insert cases
 "before the final return" put them after the line that PRINTS the total, so the suite printed
 121 while the drift check saw 125 and stayed silent; and a fixture anchor was ambiguous.
+
+## 2026-08-29
+The dashboard showed you a page that was mostly wrong, and one part of it was wrong in a way
+that looked fine.
+
+Three of its four panels said plainly that they could not reach git or GitHub, which is what
+they are supposed to do. The fourth said "No entries yet" — in green, as if the project simply
+had no history — when in fact it had eight entries it had failed to find. That is the exact
+failure this page was built to prevent: looking healthy while describing a world that isn't there.
+
+The cause was that the page only worked when it was generated from inside the project folder.
+Run it from anywhere else and it looked for the project's history in the wrong place, found
+nothing, and reported nothing rather than reporting that it had looked in the wrong place.
+
+Fixed, with a test that reproduces the original break: the page now finds the project by its own
+location rather than by wherever it happened to be started from.
+
+**Correction to the entry above:** it says the mutation manifest holds 43 entries. It held 43 when
+that was written; a 44th was added during review, before merge. The live count is checked by the
+build, not by this page.
+<!--tech-->
+`scripts/gen-dashboard.py` was cwd-dependent in three places while `ROOT` (line 14, derived from
+`__file__`) already existed and was used in exactly one. `--store` defaulted to the RELATIVE
+string `docs/dashboard-entries.md`; `commit_dates`' `git log` and `_gh_json`'s `gh` inherited the
+caller's cwd.
+
+⚠ The fail-open is the interesting half. `main()` deliberately treats a missing DEFAULT store as
+"nothing written yet" (a real distinction — the store is created by the first entry), and that
+carve-out is correct. Its PREMISE — that the default path is repo-anchored — was what broke. The
+`store_error` branch existed, was well-reasoned, had its own store_error cases (`:794`, `:796`), and never fired.
+
+Fix: `STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"`, plus `cwd=ROOT` on both
+subprocesses. 113 → 117 cases. Reproduced from a foreign cwd before and after: 3 × "not a git
+repository" + a green "No entries yet" → 8 entries (before this entry; 9 after), zero error markers.
+
+⚠ The first version of the new store case asserted the repo's OWN store was found, which coupled
+the suite to `docs/` existing beside `scripts/`. `check-plan-code.py --mutate` copies `scripts/`
+ALONE, so its control went red and it refused to mutate — **the control caught the bad test.**
+Rewritten to plant a DECOY store in the foreign cwd and assert it is NOT read, which is the
+property with no dependency on the environment.
+
+## 2026-08-29
+**Correction to the entry above, after review.** The fix described there was right but its
+safety net was not. A dual adversarial review found that the new test guarding the exact
+problem the page had would still have passed if the page failed to render at all — it
+checked that a wrong answer was absent, and "nothing at all" is also absent. It also found
+that the specific decision that made the original bug invisible had no test of its own; three
+different ways of breaking it all went unnoticed by a fully passing suite. Both are fixed, and
+the same missing test was found in the sibling script that guards this page's entries.
+
+Two smaller things: the page had started printing the file path of the machine that generated
+it, which nobody reading it needs; and a comment in the code claimed it ran from a kind of hook
+it does not run from.
+<!--tech-->
+Round 1, both halves NOT CONVERGED → CONVERGED after fixes. All findings re-verified by
+execution before acceptance; see `docs/reviews/branch-dashboard-cwd-r1-{claude,codex}.md`
+and the Disposition table there.
+
+H1 (both halves): the decoy case asserted only an absence, and `_txt` is `""` when the fragment
+is missing — measured green at 117/117 with the store bug restored AND the write emptied. Now
+paired, per the rule `:786` already stated in the same file.
+
+H2 (Claude half, deepest of the round): `if a.store != ap.get_default("store")` had no coverage —
+`!=`→`==`, deleting the guard, and `pass` ALL survived. The first renders the green "No entries
+yet" for `--store docs/typo.md`: the reported symptom, new input, green suite. Named-vs-omitted is
+now an `is None` SENTINEL, because the post-fix correctness rested on `PosixPath.__eq__(str)` being
+NotImplemented — adding the obvious `type=pathlib.Path` would have silently reopened it.
+
+M2: `check-dashboard-entry.py:233,235` had the identical cwd bug. Fixed rather than filed — this
+entry claims a class fix, and making that true cost less than narrowing it.
+
+113 → 120 cases. Mutation battery 8/8 killed, including 4 that survived before the round.
+`--mutate .` still 44/0; anchors undisturbed.
+
+⚠ NOT fixed, deliberate: an explicitly-passed RELATIVE `--store` still resolves against cwd. That
+is the right convention for a path a caller typed, and it fails loudly.
+
