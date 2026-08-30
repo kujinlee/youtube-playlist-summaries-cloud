@@ -688,3 +688,54 @@ silenced, relative `str(Path)` — all killed via the case each names. `--mutate
 proved unable to reach a real file. Anchor ratchet refused 3× as my edits moved quoted lines, plus
 once for an entry whose subject I deleted (retired, not re-pointed). Manifest 59 → 61, pins 71 → 73,
 cases 208 → 209.
+
+## 2026-08-30
+The project has twenty-four small scripts whose job is to catch mistakes. Two of them — three, it
+turned out — were never actually run by anything. They sat on disk, working, checking nothing.
+
+Worse, one of them was listed in the process document under a heading that says "what is
+mechanically enforced". So the written record claimed a check was running, and it was not.
+
+The thing that should have caught this is a script whose entire purpose is to police the other
+checks. It could not, and the reason is worth understanding: it found the checks to police by
+looking at which ones the build already ran, and by looking for ones that describe themselves as
+checks. Both of those questions assume the answer. A check that nobody runs and that does not
+advertise itself is invisible to both. It found fourteen of the twenty-four.
+
+It now finds them by looking at the disk, which cannot be evaded by omission, and it asks a new
+question of each: does anything actually run this? If not, the script must say in writing why not —
+and "no reason given" is refused, because an excuse that needs no reason is not an excuse.
+
+Two things fell out of widening it. A checking rule had been quietly wrong for a while: it flagged
+one script for reporting failure as success, which it does not do — the rule could not tell the
+number zero from the word "false", and Python treats them as equal. And this failure has been
+recorded four separate times in this project across the past month, each time fixed for that one
+instance. The check that finds the whole class had never been written, on an inventory that already
+existed.
+<!--tech-->
+Phase 6 candidate 2 (findings A/B/C of `docs/reviews/architecture-review-2026-08-30.md`).
+
+`check-ratchet-contract.py`: population is now the FILESYSTEM (`discover_guards`), not CI step names
++ self-declaring docstrings. Both presupposed the guard was already wired or self-labelled — 14 of
+24 discovered, and the 10 missed included every orphan. New **R3 has-a-caller**, statically
+decidable, with a `NO-CALLER: <reason>` opt-out that refuses a bare marker. `invocation_re` demands
+an invocation, not a mention, so a row in dev-process's "mechanically enforced" table cannot satisfy
+it.
+
+THREE orphans, not the two the review reported — I had grepped hooks for `check-explainer-delivery.py`
+and matched a COMMENT. Same "mechanism not property" error the review refuted for
+`check-paid-caller-arrival`, in the opposite direction. All three wired as CI steps; each exits 0.
+
+Widening found a PRE-EXISTING R2 false positive: `check-dashboard-entry.py:34` is `except ValueError:
+return False` (fail-closed) and `False == 0`, so the constant test could not tell a predicate from an
+exit code. Now `type(val) is int`.
+
+`evaluate()` extracted so main() and the suite drive one verdict — with the rules inline, deleting
+the `check_caller` call left every caller case green. Two wiring cases now cover that.
+
+Battery 7/7 killed via the named case, including unwiring a guard from `ci.yml`. ⚠ One SURVIVED
+first: my comment claimed `\s*` would match the closing `"""`, but `ast.get_docstring` strips — a
+false claim written from how source looks rather than what the parser returns. Fixed with a real
+input (`OPTED_OUT_BARE_THEN_PROSE`) and a corrected comment.
+
+Contract 21/21, clean over 24 guards. dev-process 218/220 lines.

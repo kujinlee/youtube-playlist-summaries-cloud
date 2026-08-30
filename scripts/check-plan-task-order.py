@@ -23,7 +23,7 @@ WHAT IT CANNOT SEE — stated, not assumed:
 
 Usage:
     python3 scripts/check-plan-task-order.py [PLAN.md ...]     # default: the slice A plan
-    python3 scripts/check-plan-task-order.py --self-test       # 12 cases
+    python3 scripts/check-plan-task-order.py --self-test       # 16 cases
 """
 from __future__ import annotations
 

@@ -143,6 +143,25 @@ jobs:
       - name: Ratchet contract
         run: python3 scripts/check-ratchet-contract.py
 
+      # ⚠ THE THREE GUARDS THAT NOTHING EXECUTED, wired 2026-08-30 by Phase 6.
+      # Each was on disk, each had a --self-test, each exits 0 — and no CI step,
+      # gate script or hook ran any of them. `check-producer-enumeration.py` was
+      # additionally listed in docs/dev-process.md under the heading "What is
+      # mechanically enforced". They are steps rather than one combined command
+      # so a failure names the guard that failed.
+      #
+      # This is the R3 arm of the ratchet contract closing on itself: the step
+      # above now REFUSES a guard with no caller, so removing any line below
+      # turns that step red rather than quietly shrinking coverage.
+      - name: Explainer delivery is described in ONE place
+        run: python3 scripts/check-explainer-delivery.py
+
+      - name: Plan task order
+        run: python3 scripts/check-plan-task-order.py
+
+      - name: Producer enumeration matches the defining expression
+        run: python3 scripts/check-producer-enumeration.py
+
       # A money guard lives three files away from a grant that does not know it holds it up. The
       # serve path spends on `tryGet -> absent`, which on Supabase means absent OR RLS-denied; it is
       # safe only because the caller already read the markdown from the same folder, and that is

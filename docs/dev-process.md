@@ -142,6 +142,7 @@ copy that drifts.
 | `scripts/check-sentinel-meanings.py` | every nullable column means exactly ONE thing (a conjunction in the meaning is the tell) |
 | `scripts/check-vocabulary-collisions.py` | one mechanism per concern — duplicate coordination vocabulary is the shadow of a duplicate protocol |
 | `scripts/check-producer-enumeration.py` | every guarded value's producer count matches its **defining expression** (`--self-test`: 11 cases) |
+| `scripts/check-ratchet-contract.py` | every guard ON DISK has a `--self-test`, no fail-open handler, and **a caller** — or a written `NO-CALLER:` reason. ⟳ 2026-08-30: the population is the FILESYSTEM; CI-step discovery saw 14 of 24 and missed all three guards that nothing ran, one of them listed in THIS table (`--self-test`: 21 cases) |
 | `scripts/check-paid-caller-arrival.py` | backlog 26's trigger: fires when a non-test caller reaches `record_artifact`; refuses if the symbol was renamed away (`--self-test`: 32 cases). ⟳ r12: this row said 9 and, worse, listed the script as *mechanically enforced* while **nothing executed it** — it is now gate 15 of `scripts/check-schema-gates.sh` |
 | `scripts/check-function-revokes.py` | every newly created `public` function revokes PUBLIC in its own migration — **`alter default privileges` CANNOT do this** (measured 2026-08-28: stored entries are additive to PostgreSQL's built-in `PUBLIC` EXECUTE), so the per-function revoke is the only mechanism that works (`--self-test`: 16 cases) |
 | `scripts/check-docs.py` | documentation integrity |
