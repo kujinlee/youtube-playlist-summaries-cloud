@@ -152,7 +152,7 @@ copy that drifts.
 | `scripts/check-arch-findings.py` | ratchet on architecture-review findings |
 | `scripts/check-dashboard-entry.py` | a branch that changes tracked files records a dashboard entry, or declares `NO-ENTRY: <reason>` — which the dashboard then **displays**. Owns the entry-header grammar the page imports (`--self-test`) |
 | `scripts/gen-dashboard.py` | the dashboard page is derived, never hand-edited; composed through `brief-compose.py` so it cannot lose its Ask tray (`--self-test`) |
-| `scripts/check-plan-code.py` | a plan's code blocks ASSEMBLE and run, every declared mutation is caught by the case it names, the DELIVERED scripts match the plan (`--compare`), evidence is fresh (`--verify-evidence`) (`--self-test`) |
+| `scripts/check-plan-code.py` | **`--mutate .` is what CI runs** (backlog #70, 2026-08-29): every mutation in `scripts/mutations/*.json` is applied to the DELIVERED scripts and must go red **via the case it names**, over a control proved green first. Coverage cannot shrink — `EXPECTED_MUTATIONS` pins it, and duplicate names/anchors are refused. The `<plan> --compare --verify-evidence` mode still exists and is **no longer in CI**: it measured a document's copy of the code (`--self-test`) |
 | `.github/workflows/ci.yml` | `tsc --noEmit`, unit suite, `service_role` confinement, on Node 22 |
 
 **Not yet in CI:** `test:integration` and `test:e2e` (need a live Supabase stack), and the schema

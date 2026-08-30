@@ -1344,7 +1344,7 @@ corrections slice above.
 | `docs/superpowers/plans/2026-08-28-project-dashboard-plan.md` | **v8** (`ce0cdf1`) — rounds 5–6 folded in; **NOT CONVERGED**; reviewing closed by DECISION, not convergence |
 | `scripts/gen-dashboard.py`, `docs/dashboard-entries.md` | **NEW, committed.** The parser, the collectors, the page, and the append-only store |
 | `.agents/skills/dashboard/`, `.claude/hooks/regen-dashboard.sh` | **NEW, committed.** The skill that writes an entry, and the hook that regenerates the page whenever the store is written |
-| `scripts/check-plan-code.py` | **NEW, committed.** Assembles the plan's code, runs it, mutates it, diffs it against the delivered scripts (`--compare`), and refuses a stale evidence block (`--verify-evidence`). For the case count run `--self-test` — this row said **44** against a measured **121**, twelve lines above a bullet that said `44 → 121` |
+| `scripts/check-plan-code.py` | **`--mutate .` in CI since 2026-08-29** (backlog #70): mutates the DELIVERED scripts from `scripts/mutations/*.json`, over a green control, refusing a shrunk or duplicated manifest. The plan-assembling mode (`--compare`, `--verify-evidence`) still exists but **CI no longer runs it**. For the case count run `--self-test` — do not restate it here; this row has been stale twice |
 | `docs/reviews/plan-project-dashboard-r{1,2,3,4}-*.md` | rounds 1–4, **NOT CONVERGED, every half** |
 
 - [x] **Plan rounds 1–4 — dual adversarial.** All four folded in (v2→v6). Round 1's halves overlapped
@@ -1356,7 +1356,8 @@ corrections slice above.
       `main()` with zero coverage. Round 6 found round 5's own fixes *correct in verdict, incomplete
       in mechanism* — an escaping file tag reported and then **written anyway** (silently overwriting
       a delivered file), and the `expect` list form carrying 11 named guards with zero coverage.
-      Suite 44 → 121 cases; every `expect` in the manifest is now an exact case name.
+      Every `expect` in the manifest is an exact case name. (Case count deliberately not
+      restated — run `--self-test`; it has gone stale here twice.)
 - [x] **REVIEWING STOPPED 2026-08-29 by user decision**, not by convergence — recorded honestly.
       Round 6 returned 2 High (both fixed); no round 7 ran, so *"a full re-review round with no new
       Blocking/High"* was never demonstrated. The case for stopping: the plan itself has been

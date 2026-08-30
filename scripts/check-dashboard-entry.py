@@ -293,8 +293,13 @@ def _impure_self_test() -> int:
          (ch, ad, bool(err)), ([], False, True))
     ch, ad, err = _with_run(lambda *a, **k: _R(0, "lib/x.ts\n", ""),
                             lambda: collect("master"))
-    case("collect: a working git still reports the changed files",
-         (ch, err), (["lib/x.ts"], None))
+    # ⟲ `ad` is asserted, not just ch/err. Branch review of backlog #70 mutated
+    # `added = any(...)` to `added = True` and it SURVIVED the whole manifest: this
+    # case named the success path and checked two of its three results, so the ratchet
+    # could fail OPEN — every branch reported as having added an entry — with the suite
+    # green. The diff here carries no `## YYYY-MM-DD` line, so `added` must be False.
+    case("collect: a working git still reports the changed files, and NO entry added",
+         (ch, ad, err), (["lib/x.ts"], False, None))
 
     # main's dispatch on that error is the fail-closed half, and it is the single
     # worst line in this file to get wrong: rc 0 merges the branch.

@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 121 cases
+    python3 scripts/check-plan-code.py --self-test          # 136 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -50,14 +50,21 @@ PROSE is right, that the mutation list is complete, or that a passing case is
 meaningful. An undeclared mutation is invisible to it — which is why the manifest
 lives in the plan under review, where a reviewer reads it.
 
-⚠⚠ ITS SUBJECT IS THE PLAN'S COPY OF THE CODE, NOT THE DELIVERED FILES. Everything
-above happens inside a `TemporaryDirectory` written from the markdown. Without
-`--compare` this script never opens `scripts/gen-dashboard.py`; a green says the
-DOCUMENT is internally sound and says nothing about what CI ships. Round 4 filed
-exactly that (H1) — `CLAUDE.md`: *"a green check over the wrong subject is an
-assertion in better packaging."* Once the delivered files exist, run with
-`--compare scripts/`, which fails on any byte of drift between the two copies. The
-evidence block always records which of the two subjects was measured.
+⚠⚠ WHICH SUBJECT IS MEASURED DEPENDS ON THE MODE, and this docstring is `--help`.
+
+  --mutate ROOT   the DELIVERED scripts under ROOT. Manifests come from
+                  ROOT/scripts/mutations/<script>.json; no plan is involved. This is
+                  what CI runs (backlog #70, 2026-08-29), and it is the mode whose
+                  green means something about the code that ships.
+
+  <plan>          the PLAN'S COPY, assembled into a TemporaryDirectory from the
+                  markdown. Without `--compare DIR` this never opens
+                  `scripts/gen-dashboard.py`: a green says the DOCUMENT is internally
+                  sound and nothing about what ships. Round 4 filed exactly that (H1)
+                  — `CLAUDE.md`: *"a green check over the wrong subject is an
+                  assertion in better packaging."*
+
+The final line names the mode, so a CI log cannot be read as the wrong subject.
 
 CONTRACT. In the plan, tag each Python block with the file it belongs to:
 
@@ -77,6 +84,7 @@ import difflib
 import json
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -285,6 +293,267 @@ def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[
     return problems, seen
 
 
+# How many mutations each delivered script is covered by. EXACT, not a floor: adding a
+# mutation should also be a visible act, and a floor drifts downward the moment somebody
+# adds one without saying so.
+#
+# ⚠ This lives in the RUNNER, deliberately, not in the manifest. A count stored beside the
+# entries it counts gets edited in the same breath as deleting one, which is no guard at all.
+EXPECTED_MUTATIONS = {
+    "scripts/gen-dashboard.py": 32,
+    "scripts/check-dashboard-entry.py": 12,
+}
+
+MANIFEST_DIR = "scripts/mutations"
+
+
+def load_manifests(root: pathlib.Path) -> tuple[list[dict], list[str]]:
+    """Read every `scripts/mutations/<stem>.json` under `root`.
+
+    The FILENAME is the authority on which script an entry targets; each entry's `file`
+    key must agree with it. Two statements of one fact, checked against each other — a
+    copy-paste that retargets an entry is caught, where a single unchecked statement
+    would simply be believed.
+
+    An empty manifest, a missing target, and no manifests at all are all REFUSALS. A
+    mutation run that measured nothing must never be readable as one that found nothing.
+    """
+    d = root / MANIFEST_DIR
+    if not d.is_dir():
+        return [], [f"CANNOT RUN — no manifests: {d} is not a directory"]
+    files = sorted(d.glob("*.json"))
+    if not files:
+        return [], [f"CANNOT RUN — no manifests found in {d}"]
+    out, problems = [], []
+    for man in files:
+        target = f"scripts/{man.stem}.py"
+        if not (root / target).is_file():
+            problems.append(f"{man.name}: target {target} does not exist under {root}")
+            continue
+        try:
+            entries = json.loads(man.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            problems.append(f"{man.name}: not valid JSON — {exc}")
+            continue
+        if not isinstance(entries, list) or not entries:
+            problems.append(f"{man.name}: no entries — an empty manifest measures nothing")
+            continue
+        seen_names, seen_anchors = set(), set()
+        for e in entries:
+            # ⟲ IDENTITY, not just cardinality. EXPECTED_MUTATIONS pins HOW MANY entries a
+            # script has; on its own that is satisfied by replacing one entry with a copy of
+            # another — count unchanged, coverage silently narrowed. Found in branch review
+            # by Codex, reproduced: entry 32 swapped for a duplicate of entry 1, still green.
+            # This is the same error as asserting a threshold's presence instead of measuring
+            # the ratio: a proxy for the property rather than the property.
+            nm, anchors = e.get("name"), tuple(f for f, _ in e.get("edits", []))
+            if nm in seen_names:
+                problems.append(f"{man.name}: duplicate mutation name {nm!r} — two entries "
+                                f"cannot both be the guard for the same named behaviour, and "
+                                f"a duplicate keeps the count while shrinking coverage")
+                continue
+            if anchors and anchors in seen_anchors:
+                problems.append(f"{man.name}: entry {nm!r} repeats the edit anchors of an "
+                                f"earlier entry — it measures nothing new")
+                continue
+            seen_names.add(nm)
+            seen_anchors.add(anchors)
+            if e.get("file") != target:
+                problems.append(f"{man.name}: entry {e.get('name')!r} has file "
+                                f"{e.get('file')!r}, which disagrees with the manifest "
+                                f"name (expected {target!r})")
+                continue
+            out.append(e)
+    return out, problems
+
+
+def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
+    """Mutate the DELIVERED scripts, not a copy assembled from a document.
+
+    The whole `scripts/` tree is copied because these scripts import each other as
+    siblings and resolve a repo root from their own path; copying only the targeted
+    files gives a red control, and a mutation table over a red control is not evidence.
+    """
+    muts, problems = load_manifests(root)
+    ev = {"files": {}, "mutations": [], "survivors": [], "tally": {}, "compared": None}
+    if problems:
+        return False, problems, ev
+    counts = {}
+    for m in muts:
+        counts[m["file"]] = counts.get(m["file"], 0) + 1
+    drift = []
+    for target, want in sorted(EXPECTED_MUTATIONS.items()):
+        got = counts.get(target, 0)
+        if got != want:
+            drift.append(f"{target}: manifest holds {got} mutation(s), expected {want}. "
+                         f"Coverage cannot change silently — if this is deliberate, change "
+                         f"EXPECTED_MUTATIONS in check-plan-code.py in the SAME commit and "
+                         f"say why in the message")
+    for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):
+        drift.append(f"{target}: {counts[target]} mutation(s) but no declared count — add it "
+                     f"to EXPECTED_MUTATIONS so its coverage cannot shrink unnoticed")
+    if drift:
+        return False, drift, ev
+    targets = sorted(counts)
+    with tempfile.TemporaryDirectory() as td:
+        d = pathlib.Path(td)
+        shutil.copytree(root / "scripts", d / "scripts")
+        report = []
+        # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
+        # the mutation; that claim is empty unless the suite is green without it.
+        for name in targets:
+            rc, out = run_suite(d, name)
+            ev["files"][name] = {"rc": rc, "tail": (out.split("\n")[-1] if out else ""),
+                                 "blocks": None}
+            if rc != 0:
+                report.append(f"CANNOT RUN — control run of {name} exited {rc} BEFORE any "
+                              f"mutation was applied. Every verdict below would be an "
+                              f"artefact. Treat this as NOT CHECKED.\n    {out[-400:]}")
+        if report:
+            return False, report, ev
+        ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(targets))
+        ev["mutations"], ev["survivors"] = m_muts, m_survivors
+        # THE CONTROL AGAIN, AFTER. A prologue proves the tree was good when we STARTED.
+        # If it goes bad at mutation 17 — disk, OOM, a peer process — every later suite
+        # exits 1, `run_mutations` only distinguishes rc==2, and an environmental red is
+        # recorded as `caught` indistinguishably from a real one. Re-running on the
+        # restored copy is what turns the control from a prologue into an invariant.
+        for name in targets:
+            rc, out = run_suite(d, name)
+            if rc != 0:
+                ok = False
+                m_report.append(
+                    f"CANNOT RUN — {name} is no longer green AFTER the sequence (exit "
+                    f"{rc}), so the tree changed underneath it. Any 'caught' above may be "
+                    f"an artefact of that, not of its mutation. Treat this run as NOT "
+                    f"CHECKED.\n    {out[-400:]}")
+        return ok, m_report, ev
+
+
+def run_mutations(d: pathlib.Path, muts: list[dict],
+                  known: set[str]) -> tuple[bool, list[str], list[dict], list[str]]:
+    """Apply each mutation to a file in `d`, run its suite, require red via the named case.
+
+    `d` holds runnable scripts — assembled from a plan, or copied from the delivered
+    tree. This function does not care which, and that indifference is the point: the
+    guarantee is about the mutation discipline, not where the code came from.
+
+    NOTHING in the body changed when it was extracted (backlog #70, Task 1). Every
+    guard below was bought with a review round, so a diff that alters behaviour is a
+    defect in the refactor, not an improvement. Proof is a measurement, not a reading:
+    43 mutations / 0 survivors before and after.
+    """
+    ok, report, ev_muts, ev_survivors = True, [], [], []
+    for mut in muts:
+        name, fname = mut.get("name", "?"), mut.get("file", "")
+        if fname not in known:
+            ok = False
+            report.append(f"mutation {name!r} targets unknown file {fname!r}")
+            continue
+        src = (d / fname).read_text()
+        for find, repl in mut.get("edits", []):
+            # `replace(find, repl, 1)` takes the FIRST occurrence. If the anchor
+            # matches more than once, the mutation may land on a test oracle
+            # while the production line it names is untouched — and the named
+            # case still goes red, so it reports `caught`. Measured round 5;
+            # round 4's M1 filed the same hazard when a duplicated function
+            # made it concrete. Deleting that duplicate removed the instance,
+            # not the class.
+            if src.count(find) > 1:
+                ok = False
+                report.append(
+                    f"mutation {name!r}: anchor matches {src.count(find)} times "
+                    f"in {fname} — only the FIRST is replaced, so a 'caught' "
+                    f"verdict would not be about the line you named. Tighten it")
+                src = None
+                break
+            if find not in src:
+                ok = False
+                report.append(f"mutation {name!r}: anchor NOT FOUND — it was not applied, "
+                              f"so its 'caught' verdict would be meaningless")
+                src = None
+                break
+            src = src.replace(find, repl, 1)
+        if src is None:
+            continue
+        orig = (d / fname).read_text()
+        (d / fname).write_text(src)
+        rc, out = run_suite(d, fname)
+        (d / fname).write_text(orig)
+        # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
+        # not the first ":". A case name may contain a colon ("collect: a missing
+        # git is a could-not-tell"), and splitting on the first one truncated it to
+        # "collect", so no `expect` naming the full case could ever match.
+        # `l.strip()[7:]` assumes the line STARTS with "[FAIL] ". A line that
+        # merely contains the marker (a log prefix, an ANSI escape) was sliced
+        # blind and silently produced a wrong case name. Measured round 5.
+        fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
+                 for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
+        # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
+        # two minutes of NOT CHECKED as proof that a guard works, and prints
+        # `caught <name>` into the evidence block. The comment on `run_suite`
+        # said rc 2 must not be readable as either verdict and its very next
+        # caller read it as one. Measured round 5, M2.
+        if rc == 2:
+            ok = False
+            ev_muts.append({"name": name, "caught": False, "fails": fails})
+            ev_survivors.append(name)
+            report.append(
+                f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
+                f"That is a cannot-run, not a catch — treat this mutation as NOT CHECKED")
+            continue
+        caught = rc == 1
+        # Each `expect` entry must name exactly ONE red case. As a bare substring
+        # it could be satisfied by a DIFFERENT case than the mutation is about —
+        # measured round 5 (M1): `expect: "does NOT count"` matches 7 case names
+        # in this plan alone, and a fixture certified an untouched guard as caught
+        # because a sibling case went red. The plan's rule is "red via the case it
+        # NAMES"; the tool enforced "red via any case containing this substring".
+        #
+        # A mutation may legitimately break several behaviours, so `expect` accepts
+        # a LIST — every entry must resolve to exactly one red case. That is more
+        # honest than naming one of five arbitrarily and calling it the guard.
+        #
+        # ⚠ EXACT case names, not substrings (round 6). The round-5 rule was
+        # CARDINALITY-ONLY: it required exactly one MATCH, never that the match
+        # was the right case. Measured — an `expect` naming a completely
+        # unrelated case, or a mere fragment of a name, still certified the
+        # mutation. The plan's rule is "red via the case it NAMES"; only
+        # equality says that.
+        want = mut.get("expect")
+        if isinstance(want, list) and not want:
+            # An empty list read as "no expectation" — a declared-but-empty set
+            # is a mistake, and silently honouring it disables the check.
+            ok = False
+            report.append(f"mutation {name!r}: `expect` is an EMPTY list. Name the "
+                          f"case(s) that must go red, or omit `expect` entirely")
+            continue
+        wants = [want] if isinstance(want, str) else list(want or [])
+        # ONE branch for both failure shapes. Zero matches means the mutation was
+        # caught by something else; two or more means the expect cannot say which
+        # case is the guard. Reporting them separately left the zero-match message
+        # unreachable the moment the set form landed — dead code that two cases
+        # were still asserting.
+        unnamed = [(w, [f for f in fails if w == f]) for w in wants]
+        unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
+        ev_muts.append({"name": name, "caught": caught, "fails": fails})
+        if not caught:
+            ok = False
+            ev_survivors.append(name)
+            report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
+                          f"can fail for what it names")
+        elif unnamed:
+            ok = False
+            for w, m in unnamed:
+                report.append(
+                    f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
+                    f"{m or '— it was caught by something else: ' + str(fails)}. An "
+                    f"expect must name EXACTLY ONE, or it cannot show which case is "
+                    f"the guard")
+    return ok, report, ev_muts, ev_survivors
+
+
+
 def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool, list[str], dict]:
     md = plan.read_text(encoding="utf-8")
     files, muts, problems, tally = extract(md)
@@ -321,112 +590,12 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
                 report.append(f"{name}: --self-test exited 0 but printed no result — "
                               f"a script with no entrypoint exits 0 silently. Got: {tail!r}")
 
-        for mut in muts:
-            name, fname = mut.get("name", "?"), mut.get("file", "")
-            if fname not in files:
-                ok = False
-                report.append(f"mutation {name!r} targets unknown file {fname!r}")
-                continue
-            src = (d / fname).read_text()
-            for find, repl in mut.get("edits", []):
-                # `replace(find, repl, 1)` takes the FIRST occurrence. If the anchor
-                # matches more than once, the mutation may land on a test oracle
-                # while the production line it names is untouched — and the named
-                # case still goes red, so it reports `caught`. Measured round 5;
-                # round 4's M1 filed the same hazard when a duplicated function
-                # made it concrete. Deleting that duplicate removed the instance,
-                # not the class.
-                if src.count(find) > 1:
-                    ok = False
-                    report.append(
-                        f"mutation {name!r}: anchor matches {src.count(find)} times "
-                        f"in {fname} — only the FIRST is replaced, so a 'caught' "
-                        f"verdict would not be about the line you named. Tighten it")
-                    src = None
-                    break
-                if find not in src:
-                    ok = False
-                    report.append(f"mutation {name!r}: anchor NOT FOUND — it was not applied, "
-                                  f"so its 'caught' verdict would be meaningless")
-                    src = None
-                    break
-                src = src.replace(find, repl, 1)
-            if src is None:
-                continue
-            orig = (d / fname).read_text()
-            (d / fname).write_text(src)
-            rc, out = run_suite(d, fname)
-            (d / fname).write_text(orig)
-            # `  [FAIL] {name}: got {got!r} want {want!r}` — split on the LAST ": got ",
-            # not the first ":". A case name may contain a colon ("collect: a missing
-            # git is a could-not-tell"), and splitting on the first one truncated it to
-            # "collect", so no `expect` naming the full case could ever match.
-            # `l.strip()[7:]` assumes the line STARTS with "[FAIL] ". A line that
-            # merely contains the marker (a log prefix, an ANSI escape) was sliced
-            # blind and silently produced a wrong case name. Measured round 5.
-            fails = [l.strip()[7:].rsplit(": got ", 1)[0].strip()
-                     for l in out.split("\n") if l.strip().startswith("[FAIL] ")]
-            # rc 2 is `run_suite`'s CANNOT RUN — a timeout. Reading it as red records
-            # two minutes of NOT CHECKED as proof that a guard works, and prints
-            # `caught <name>` into the evidence block. The comment on `run_suite`
-            # said rc 2 must not be readable as either verdict and its very next
-            # caller read it as one. Measured round 5, M2.
-            if rc == 2:
-                ok = False
-                ev["mutations"].append({"name": name, "caught": False, "fails": fails})
-                ev["survivors"].append(name)
-                report.append(
-                    f"mutation {name!r}: the suite did NOT COMPLETE ({out.strip()[:120]}). "
-                    f"That is a cannot-run, not a catch — treat this mutation as NOT CHECKED")
-                continue
-            caught = rc == 1
-            # Each `expect` entry must name exactly ONE red case. As a bare substring
-            # it could be satisfied by a DIFFERENT case than the mutation is about —
-            # measured round 5 (M1): `expect: "does NOT count"` matches 7 case names
-            # in this plan alone, and a fixture certified an untouched guard as caught
-            # because a sibling case went red. The plan's rule is "red via the case it
-            # NAMES"; the tool enforced "red via any case containing this substring".
-            #
-            # A mutation may legitimately break several behaviours, so `expect` accepts
-            # a LIST — every entry must resolve to exactly one red case. That is more
-            # honest than naming one of five arbitrarily and calling it the guard.
-            #
-            # ⚠ EXACT case names, not substrings (round 6). The round-5 rule was
-            # CARDINALITY-ONLY: it required exactly one MATCH, never that the match
-            # was the right case. Measured — an `expect` naming a completely
-            # unrelated case, or a mere fragment of a name, still certified the
-            # mutation. The plan's rule is "red via the case it NAMES"; only
-            # equality says that.
-            want = mut.get("expect")
-            if isinstance(want, list) and not want:
-                # An empty list read as "no expectation" — a declared-but-empty set
-                # is a mistake, and silently honouring it disables the check.
-                ok = False
-                report.append(f"mutation {name!r}: `expect` is an EMPTY list. Name the "
-                              f"case(s) that must go red, or omit `expect` entirely")
-                continue
-            wants = [want] if isinstance(want, str) else list(want or [])
-            # ONE branch for both failure shapes. Zero matches means the mutation was
-            # caught by something else; two or more means the expect cannot say which
-            # case is the guard. Reporting them separately left the zero-match message
-            # unreachable the moment the set form landed — dead code that two cases
-            # were still asserting.
-            unnamed = [(w, [f for f in fails if w == f]) for w in wants]
-            unnamed = [(w, m) for w, m in unnamed if len(m) != 1]
-            ev["mutations"].append({"name": name, "caught": caught, "fails": fails})
-            if not caught:
-                ok = False
-                ev["survivors"].append(name)
-                report.append(f"mutation SURVIVED — {name}: the suite stayed green, so no case "
-                              f"can fail for what it names")
-            elif unnamed:
-                ok = False
-                for w, m in unnamed:
-                    report.append(
-                        f"mutation {name!r}: `expect` {w!r} matched {len(m)} red case(s) "
-                        f"{m or '— it was caught by something else: ' + str(fails)}. An "
-                        f"expect must name EXACTLY ONE, or it cannot show which case is "
-                        f"the guard")
+        m_ok, m_report, m_muts, m_survivors = run_mutations(d, muts, set(files))
+        if not m_ok:
+            ok = False
+        report.extend(m_report)
+        ev["mutations"].extend(m_muts)
+        ev["survivors"].extend(m_survivors)
     return ok, report, ev
 
 
@@ -1222,9 +1391,133 @@ def _self_test() -> int:
         case("...so the mutation is not credited to a case that does not exist",
              any("must name EXACTLY ONE" in r for r in rep), True)
 
+    # ⟲ Backlog #70, Task 1. The mutation loop gained a second caller (--mutate). These
+    # cases pin the EXTRACTED function directly, so a later change on the --mutate side
+    # cannot quietly alter the behaviour the plan path depends on.
+    with tempfile.TemporaryDirectory() as _td:
+        _d = pathlib.Path(_td)
+        (_d / "m.py").write_text(
+            'def f():\n    return 1\n\n\n'
+            'def _self_test():\n'
+            '    if f() != 1:\n'
+            '        print("  [FAIL] f returns one: got %r" % f())\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n\n\n'
+            'import sys\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        # ANCHORED on the def line. A bare "return 1" occurs TWICE here — f's body and
+        # _self_test's failure branch — and the engine REFUSES an ambiguous anchor, so
+        # the case would have failed for a reason unrelated to what it tests. Round 1.
+        _mut = [{"name": "f returns two", "file": "m.py",
+                 "edits": [["def f():\n    return 1", "def f():\n    return 2"]],
+                 "expect": "f returns one"}]
+        _ok, _rep, _evm, _evs = run_mutations(_d, _mut, {"m.py"})
+        case("run_mutations catches a real mutation", (_ok, _evs), (True, []))
+        case("run_mutations records the caught mutation", len(_evm), 1)
+        _bad = [{"name": "anchor not there", "file": "m.py",
+                 "edits": [["return 99", "return 2"]], "expect": "f returns one"}]
+        _ok2, _rep2, _, _ = run_mutations(_d, _bad, {"m.py"})
+        case("run_mutations refuses a missing anchor",
+             (_ok2, any("anchor NOT FOUND" in r for r in _rep2)), (False, True))
+        _unknown = [{"name": "elsewhere", "file": "nope.py",
+                     "edits": [["a", "b"]], "expect": "x"}]
+        _ok3, _rep3, _, _ = run_mutations(_d, _unknown, {"m.py"})
+        case("run_mutations refuses an unknown target file",
+             (_ok3, any("unknown file" in r for r in _rep3)), (False, True))
+
+    # ⟲ Backlog #70, Task 2. The manifest FILENAME names the target script, and an entry
+    # whose `file` key disagrees is refused rather than silently believed.
+    with tempfile.TemporaryDirectory() as _td:
+        _r = pathlib.Path(_td)
+        (_r / "scripts" / "mutations").mkdir(parents=True)
+        (_r / "scripts" / "thing.py").write_text("x = 1\n")
+        _man = _r / "scripts" / "mutations" / "thing.json"
+        _man.write_text(json.dumps([{"name": "n", "file": "scripts/thing.py",
+                                     "edits": [["x = 1", "x = 2"]], "expect": "e"}]))
+        case("load_manifests reads a well-formed manifest", load_manifests(_r), 
+             ([{"name": "n", "file": "scripts/thing.py",
+                "edits": [["x = 1", "x = 2"]], "expect": "e"}], []))
+        _man.write_text(json.dumps([{"name": "n", "file": "scripts/OTHER.py",
+                                     "edits": [["a", "b"]], "expect": "e"}]))
+        case("a `file` key disagreeing with the manifest NAME is refused",
+             any("disagrees" in x for x in load_manifests(_r)[1]), True)
+        _man.write_text(json.dumps([]))
+        case("an EMPTY manifest is a refusal, not zero work",
+             any("no entries" in x for x in load_manifests(_r)[1]), True)
+        (_r / "scripts" / "mutations" / "ghost.json").write_text(
+            json.dumps([{"name": "n", "file": "scripts/ghost.py",
+                         "edits": [["a", "b"]], "expect": "e"}]))
+        case("a manifest naming a script that does not exist is refused",
+             any("does not exist" in x for x in load_manifests(_r)[1]), True)
+    with tempfile.TemporaryDirectory() as _td:
+        _r2 = pathlib.Path(_td)
+        (_r2 / "scripts" / "mutations").mkdir(parents=True)
+        case("NO manifests at all is CANNOT RUN, never a silent pass",
+             any("no manifests" in x for x in load_manifests(_r2)[1]), True)
+
+    # ⟲ Backlog #70, Task 3. The WHOLE scripts/ tree is copied, not the targeted files:
+    # gen-dashboard.py loads check-dashboard-entry.py as a sibling at import time. MEASURED
+    # 2026-08-29 — three separate hand-run harnesses reported a red or meaningless control
+    # on first use for exactly this reason.
+    def _mini(root, val=1):
+        (root / "scripts" / "mutations").mkdir(parents=True, exist_ok=True)
+        (root / "scripts" / "helper.py").write_text(f"VALUE = {val}\n")
+        (root / "scripts" / "thing.py").write_text(
+            'import pathlib, sys\n'
+            'VALUE = int((pathlib.Path(__file__).parent / "helper.py")\n'
+            '            .read_text().split("=")[1])\n'
+            'def _self_test():\n'
+            '    if VALUE != 1:\n'
+            '        print("  [FAIL] value is one: got %r" % VALUE)\n'
+            '        return 1\n'
+            '    print("1/1 passed")\n'
+            '    return 0\n'
+            'if __name__ == "__main__":\n'
+            '    sys.exit(_self_test())\n')
+        (root / "scripts" / "mutations" / "thing.json").write_text(json.dumps(
+            [{"name": "value is two", "file": "scripts/thing.py",
+              "edits": [["VALUE != 1", "VALUE != 2"]], "expect": "value is one"}]))
+
+    _saved = dict(EXPECTED_MUTATIONS)
+    try:
+        EXPECTED_MUTATIONS.clear()
+        EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _ok, _rep, _ev = mutate_delivered(_r)
+            case("--mutate catches a mutation in the DELIVERED tree", _ok, True)
+            case("...the sibling import survived the copy, so no control complaint",
+                 any("control" in r.lower() for r in _rep), False)
+        # The falsifier for the instrument: break the UNMUTATED script. Without a control
+        # check every mutation 'goes red' and a full table of catches is reported over a
+        # suite that never worked.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r, val=99)
+            _ok2, _rep2, _ = mutate_delivered(_r)
+            case("a RED control is refused, not reported as catches",
+                 (_ok2, any("control" in r.lower() for r in _rep2)), (False, True))
+        # ⟲ Task 4. Deleting an entry narrows coverage while CI stays green — backlog #69's
+        # class, and the shape found in CONTRAST_MIN the same day.
+        EXPECTED_MUTATIONS["scripts/thing.py"] = 2
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _ok3, _rep3, _ = mutate_delivered(_r)
+            case("a SHRUNKEN manifest is refused by name and number",
+                 (_ok3, any("holds 1 mutation(s), expected 2" in r for r in _rep3)),
+                 (False, True))
+    finally:
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
+    case("the declared counts name every manifest that ships",
+         sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
+                                      "scripts/gen-dashboard.py"])
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 44)
+
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
     # it cannot drift silently the way `# 12 cases` did against a 19-case suite.
+
     return _drift_rc(__doc__, ok, fail)
 
 
@@ -1238,6 +1531,10 @@ def main(argv: list[str]) -> int:
                     help="FAIL if the evidence block pasted in the plan is not exactly "
                          "what this run produces. Generating the block bought "
                          "provenance; only this buys freshness.")
+    ap.add_argument("--mutate", metavar="ROOT",
+                    help="Mutate the DELIVERED scripts under ROOT, reading manifests from "
+                         "ROOT/scripts/mutations/<script>.json. No plan is involved: this is "
+                         "the mode that makes the evidence about the code that ships.")
     ap.add_argument("--compare", metavar="DIR",
                     help="diff each assembled file against DIR/<name> and FAIL on any "
                          "difference. WITHOUT THIS the check reads only the plan's copy "
@@ -1245,6 +1542,31 @@ def main(argv: list[str]) -> int:
     a = ap.parse_args(argv)
     if a.self_test:
         return _self_test()
+    if a.mutate:
+        # REFUSE the combination rather than silently ignoring it. --mutate measures the
+        # delivered scripts and --compare/--evidence/--verify-evidence all describe the
+        # plan-assembling mode; accepting both would let a caller believe a subject was
+        # measured that never was, which is the failure this whole mode exists to end.
+        conflicting = [f for f, v in (("--compare", a.compare), ("--evidence", a.evidence),
+                                      ("--verify-evidence", a.verify_evidence)) if v]
+        if conflicting:
+            print(f"CANNOT RUN — --mutate cannot be combined with "
+                  f"{', '.join(conflicting)}: those describe the plan-assembling mode and "
+                  f"would be silently ignored. Run them as a separate invocation.",
+                  file=sys.stderr)
+            return 2
+        mroot = pathlib.Path(a.mutate)
+        if not mroot.is_dir():
+            print(f"CANNOT RUN — --mutate {mroot} is not a directory. NOT CHECKED.",
+                  file=sys.stderr)
+            return 2
+        ok, report, ev = mutate_delivered(mroot)
+        for r in report:
+            print(f"  \u2717 {r}")
+        print(("OK — " if ok else "FAILED — ")
+              + f"delivered scripts mutated: {len(ev['files'])} file(s), "
+                f"{len(ev['mutations'])} mutation(s), {len(ev['survivors'])} survivor(s)")
+        return 0 if ok else 1
     if not a.plan:
         print("CANNOT RUN — no plan given. Treat this as NOT CHECKED.", file=sys.stderr)
         return 2
