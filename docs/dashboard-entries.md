@@ -570,3 +570,62 @@ longer existed. Round 1's anchor-drift class, same correct behaviour.
 Manifest 41 → 47; `EXPECTED_MUTATIONS` + total pin 53 → 59. 193 → 198 cases, `--mutate .` 59/0,
 check-plan-code 136/136. **47/47 manifest entries proved unable to reach the real page**, with the
 old dangerous form as a control that the instrument reports as a breach.
+
+## 2026-08-29
+A third review round, and the thing it found was on your page as you read it.
+
+The entry I wrote last round — the one explaining that the safety check could have destroyed your
+dashboard — had a pair of stray asterisks in its own headline. Raw markdown, printed instead of
+rendered, on a page whose entire purpose this week has been to typeset prose properly. Round one
+found that same symptom and fixed it. It came back by a different route, because I searched for the
+mechanism that caused it rather than for the property that should always hold.
+
+The cause is a seam. The headline gets shortened to fit, and the shortening happens before the
+emphasis is applied. If the cut lands in the middle of a bold phrase, the opening marks lose their
+partner and print as themselves. Neither half was wrong; nothing owned the join between them. Now
+the shortening closes what it opens, so the words still appear and the emphasis still works.
+
+Also fixed: a change I made last round to stop web addresses swallowing nearby formatting turned out
+to be cutting HTML escape codes in half, which inserted a stray semicolon into your text. I measured
+it across 64,000 samples — my change had made the renderer slightly worse overall, not better. It is
+now better than either previous version, and nothing that worked before is broken.
+
+And one I found in my own work rather than being told: a comment claimed the rewritten formatter
+behaved identically to the code it replaced. It does not, in 59 cases out of 96,000. The behaviour is
+an improvement — the old version silently dropped characters — but the claim was false, and a false
+claim in a comment is how a change nobody noticed rides along with one everybody reviewed.
+<!--tech-->
+Round 3: three inputs — a fresh Claude hunt, Codex, and a re-verification of round 2's findings by
+the reviewer who filed them. Filed at `docs/reviews/branch-dashboard-prose-r3-{claude,codex}.md`;
+r2's verification appended to `branch-dashboard-prose-r2-claude.md`. Every finding re-reproduced by
+the coordinator before action.
+
+**H1 (High, LIVE).** `<p class="title">…plainly: **the check I added…` on the delivered artifact.
+`_first_sentence` truncates at `TITLE_CAP`; `parse_entries` stores that; `:774` marks it up
+afterwards. `_inline` then correctly printed the orphaned opener. Fixed with
+`_close_orphan_markup`, on the truncation path only — an author's unpaired delimiter still prints
+as itself. Guarded synthetically AND against the real store.
+
+**M1 (Medium).** Round 2's `rstrip(".,;:)]")` ran on ESCAPED text and severed entities:
+`…&amp</a>;<strong>`. Re-measured rendered-vs-typed fidelity across 64,368 inputs on three trees —
+pre-r2 **4157**, delivered-r2 **4245**, fixed **3850**, with **0** newly broken. Round 2 shipped a
+net regression as an improvement.
+
+**M2/M3/L1** closed. **r2's re-verify** confirmed H1/H2/M1/L1 CLOSED and withdrew its `strong=False`
+item — my equivalent-mutant refutation was independently confirmed over 173,488 inputs, and it went
+further: the whole `strong` parameter is vestigial.
+
+**Codex's Medium REFUTED as a regression** — the pre-round-2 renderer produces byte-identical output
+on its own repro. The paren drop is `INLINE_URL`'s trailing-char class, deliberate and pre-existing.
+
+⚠ Two of mine: the `_write_sandbox` docstring over-claimed its scope (`--fragment-only` and explicit
+`--out` bypass it; a relative path escapes to cwd — latent, live page unreachable, CI safe), and the
+`body.strip()` comment asserted a FALSE equivalence with the deleted regex. Both corrected, both
+now guarded — the second by a case that reads this suite's own source.
+
+⚠ The gate refused twice, correctly: two entries repeated an earlier entry's anchors, and the
+real-store case reported CANNOT RUN under `--mutate .` (only `scripts/` is copied). The skip is now
+declared and itself asserted.
+
+Battery 8/8 killed via the named case. 55/55 manifest entries proved unable to reach a real file,
+old dangerous form as instrument control. Manifest 47 → 55, pins 59 → 67, cases 198 → 206.

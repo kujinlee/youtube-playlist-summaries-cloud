@@ -300,7 +300,7 @@ def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[
 # ⚠ This lives in the RUNNER, deliberately, not in the manifest. A count stored beside the
 # entries it counts gets edited in the same breath as deleting one, which is no guard at all.
 EXPECTED_MUTATIONS = {
-    "scripts/gen-dashboard.py": 47,
+    "scripts/gen-dashboard.py": 55,
     "scripts/check-dashboard-entry.py": 12,
 }
 
@@ -1515,9 +1515,10 @@ def _self_test() -> int:
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
-    # unchanged at 32); 53 → 59 when round 2 added 6 more. Coverage may grow here;
+    # unchanged at 32); 53 → 59 (round 2, 6 more); 59 → 67 (round 3, 8 more, incl. a
+    # LIVE `**` on the reader's page). Coverage may grow here;
     # it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 59)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 67)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

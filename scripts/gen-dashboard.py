@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as _dt
+import inspect as _inspect
 import json
 import pathlib
 import shutil as _shutil
@@ -134,11 +135,67 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
         if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
             break
     if len(out) > cap:
-        out = out[:cap].rsplit(" ", 1)[0].rstrip(",;:—-") + "…"
+        # ⛔ H1 (round 3), REPRODUCED ON THE LIVE PAGE by this branch's own entry:
+        # `<p class="title">…plainly: **the check I added this morning to prove…`
+        # The title is truncated HERE and marked up LATER (`:774`), so a `**…**`
+        # span straddling the cap loses its closer, and `_inline` — behaving
+        # exactly as designed — prints the orphaned opener. Neither half is
+        # wrong; nothing owned the seam between them.
+        #
+        # ⚠ Closing the span, not cutting back to before it. The truncated words
+        # ARE still shown, so dropping them to balance the markup would be the
+        # content-loss trade this file refuses everywhere else.
+        #
+        # Only on the TRUNCATION path. A delimiter the AUTHOR left unpaired in a
+        # short title still prints as itself — that is `_inline_scan`'s rule and
+        # it is about the author's text. These orphans are artefacts of OUR cut.
+        out = _close_orphan_markup(out[:cap].rsplit(" ", 1)[0].rstrip(",;:—-")) + "…"
     return out
 
 
+def _close_orphan_markup(s: str) -> str:
+    """Append closers for spans left open by a truncation, innermost first."""
+    stack: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        if s.startswith("**", i):
+            stack.pop() if stack and stack[-1] == "**" else stack.append("**")
+            i += 2
+            continue
+        if s[i] == "`":
+            stack.pop() if stack and stack[-1] == "`" else stack.append("`")
+            i += 1
+            continue
+        i += 1
+    return s + "".join(reversed(stack))
+
+
 INLINE_URL = re.compile(r"https?://[^\s<]+[^\s<.,;:)\]]")
+# An HTML entity, anchored at the END of a string. `_inline_scan` runs on ALREADY
+# ESCAPED text, so a trailing `;` may be the terminator of `&amp;` rather than the
+# author's punctuation — and cutting it in half emits a `;` nobody typed.
+ENTITY_TAIL = re.compile(r"&(?:#[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$")
+
+
+def _trim_url_tail(url: str) -> str:
+    """Strip trailing sentence punctuation from a cut URL, ENTITY-AWARE.
+
+    ⚠ M1 (round 3), REPRODUCED. The first version was `rstrip(".,;:)]")`, and
+    `_inline_scan` operates on escaped text, so `https://x.ee/?a=1&**bold**`
+    rendered as `<a href="…&amp">…&amp</a>;<strong>bold</strong>` — the entity
+    severed, and a semicolon the author never typed pushed outside the link.
+
+    Measured over 66,174 inputs, that made the renderer WORSE than before the
+    trim existed (1862 → 1897 inputs whose rendered text differs from the typed
+    text): it traded a cosmetic defect (`**` inside an `href`) for a character
+    inserted into the reader's prose — the exact trade `_inline_scan` refuses at
+    its own docstring. One character at a time, and stop at an entity.
+    """
+    while url and url[-1] in ".,;:)]":
+        if url[-1] == ";" and ENTITY_TAIL.search(url):
+            break
+        url = url[:-1]
+    return url
 
 
 def _inline(s: str) -> str:
@@ -179,8 +236,19 @@ def _inline_scan(s: str, strong: bool) -> str:
         if strong and s.startswith("**", i):
             close = s.find("**", i + 2)
             body = s[i + 2:close] if close != -1 else ""
-            # `body == body.strip()` is the old regex's `\S(?:[^*]*\S)?`: `** a **`
-            # is spacing, not emphasis.
+            # `body == body.strip()`: `** a **` is spacing, not emphasis.
+            #
+            # ⚠ This USED to claim it "is the old regex's `\S(?:[^*]*\S)?`". That
+            # was FALSE and I found it with a differential fuzz, not by reading:
+            # the old regex also forbade a `*` INSIDE the body, so `**a*b**` was
+            # printed literally and is now emphasis. 59 of 96,104 inputs differ.
+            # Measured on the real store: 16 entries, 0 differing lines.
+            #
+            # The new behaviour is kept deliberately — the old rule dropped text
+            # (`******` rendered as `**`, losing four characters; 587 such inputs)
+            # and this one drops none. What is fixed is the CLAIM: an equivalence
+            # asserted in a comment and never executed is how a silent behaviour
+            # change rides along with a refactor, which is what round 2 warned.
             #
             # ⚠ `strong=False` is BELT-AND-BRACES, not a live branch, and round 2
             # was right to ask for its falsifier — there cannot be one. `close` is
@@ -217,7 +285,7 @@ def _inline_scan(s: str, strong: bool) -> str:
             cut = min((p for p in (url.find("**"), url.find("`")) if p != -1),
                       default=-1)
             if cut != -1:
-                url = url[:cut].rstrip(".,;:)]")
+                url = _trim_url_tail(url[:cut])
             if INLINE_URL.fullmatch(url):
                 out.append(f'<a href="{url}">{url}</a>')
                 i += len(url)
@@ -998,6 +1066,25 @@ def _write_sandbox():
     DEFAULT — not the four call sites — is what makes it structural: a case
     written later inherits the sandbox instead of having to remember it.
 
+    ⚠ AND HERE IS ITS EXACT SCOPE, because the sentence above is the shape of
+    claim that produced the round-2 hazard. It covers the `--out` DEFAULT. It
+    does NOT cover:
+
+      * `--fragment-only`, which never consults `OUT_DEFAULT` — `main()` writes
+        `a.fragment_only` directly;
+      * an explicit `--out`, which overrides the default this rebinds.
+
+    On either, a RELATIVE path resolves against the caller's cwd. REPRODUCED in
+    round 3: a case doing that destroyed a sentinel in the cwd at a green suite.
+    The reader's page is still unreachable (`OUT_DEFAULT` is absolute under
+    `$HOME`) and CI is safe (`run_suite` launches with `cwd=<temp copy>`), so the
+    exposure is a hand-run from the repo root writing into the working tree.
+
+    **A case passing an explicit `--out` or `--fragment-only` MUST pass an
+    ABSOLUTE path.** All of them do, and the case named
+    "every --out / --fragment-only path in this suite is ABSOLUTE" keeps it that
+    way — the guard is on the suite, because the sandbox structurally cannot be.
+
     ⚠ WHY IT WRAPS THE CALL rather than living inside `_self_test`. Two review
     findings, one shape:
 
@@ -1776,10 +1863,37 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # where the old three-pass order could not be, and it ate the emphasis into
     # the href. Positive and negative together — the URL is linked AND the
     # markup after it survives; either alone is satisfied by doing nothing.
-    _abut = _inline("https://x.ee/z**bold**")
+    # ⚠ M2 (round 3): Codex filed this with TWO reproductions — `**` and `` ` `` —
+    # and `cut` handles both, but only the `**` arm was asserted. Deleting the
+    # backtick arm was green at 198/198 and brought Codex's second repro straight
+    # back. The fix covered the class; the guard covered the instance.
+    _abut, _abut_t = _inline("https://x.ee/z**bold**"), _inline("https://x.ee/z`code`")
     case("a URL stops at a delimiter instead of swallowing it into the href",
-         ('href="https://x.ee/z"' in _abut, "<strong>bold</strong>" in _abut),
-         (True, True))
+         ('href="https://x.ee/z"' in _abut, "<strong>bold</strong>" in _abut,
+          'href="https://x.ee/z"' in _abut_t, "<code>code</code>" in _abut_t),
+         (True, True, True, True))
+
+    # M3 (round 3) — two more decisions inside the same twelve lines, both green
+    # under mutation. The second is the sharper one: `:214` states an outcome (a
+    # link whose href is the bare scheme) that nothing could observe.
+    case("trimming the cut keeps the LINK — the trailing stop is not part of it",
+         ('href="https://x.ee/z"' in _inline("https://x.ee/z.**bold**"),
+          "https://x.ee/z.<strong>" in _inline("https://x.ee/z.**bold**")),
+         (True, False))
+    case("...and a trim that leaves only a scheme produces NO link at all",
+         ("<a " in _inline("https://**bold**"),
+          "<strong>bold</strong>" in _inline("https://**bold**")), (False, True))
+
+    # ⛔ M1 (round 3), REPRODUCED — and the reason `_trim_url_tail` exists rather
+    # than a bare `rstrip`. `_inline_scan` runs on ESCAPED text, so a trailing `;`
+    # can be an entity terminator. Cutting it emitted `…&amp</a>;` — a semicolon
+    # the author never typed, pushed outside the link. Measured over 64,368
+    # inputs: the bare rstrip made rendered-vs-typed fidelity WORSE than not
+    # trimming at all (4157 → 4245); entity-aware it is 3850, and 0 inputs that
+    # the rstrip version got right are broken by this one.
+    _ent = _inline("https://x.ee/?a=1&**bold**")
+    case("the URL trim never severs an HTML entity",
+         ("&amp;" in _ent, "&amp<" in _ent, "</a>;" in _ent), (True, False, False))
 
     # M1 (Claude), REPRODUCED — and it changes a line already IN the store
     # (`docs/dashboard-entries.md:87` has a URL in backticks). Making code
@@ -1796,6 +1910,13 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("`** a **` is spacing, not emphasis — while `**a**` still is",
          ("<strong>" in _inline("** a **"), "<strong>" in _inline("**a**")),
          (False, True))
+    # ⚠ The RULE, now that the comment no longer claims a false equivalence with
+    # the deleted regex. A `*` inside a bold body is fine; the old `[^*]*` refused
+    # it and printed the delimiters literally. Pinned so the difference is a
+    # decision on the record rather than a silent consequence of the rewrite.
+    case("a lone * INSIDE a bold body is emphasis, not literal asterisks",
+         ("<strong>a*b</strong>" in _inline("**a*b**"), "**" in _inline("**a*b**")),
+         (True, False))
     # `close > i + 1`, not `close > i`: an EMPTY span is not a span. Under `> i`
     # two adjacent backticks are silently eaten, which contradicts this
     # function's own rule that unpaired delimiters print rather than vanish.
@@ -1807,6 +1928,49 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("a short opening fragment joins the next sentence, never stands alone",
          _first_sentence("Decided. The check stays until the rewrite lands."),
          "Decided. The check stays until the rewrite lands.")
+    # ⛔ H1 (round 3) — REPRODUCED ON THE READER'S LIVE PAGE, by this branch's own
+    # round-2 entry: `<p class="title">…plainly: **the check I added…`. The title
+    # is truncated BEFORE it is marked up, so a `**…**` span straddling
+    # TITLE_CAP lost its closer and `_inline` printed the orphan.
+    #
+    # ⚠ Round 1 filed this exact SYMPTOM and fixed it — by wiring `_inline` into
+    # the title. The class (no delimiter reaches the page unpaired) came back
+    # through a second route, because the search was for the mechanism rather
+    # than the property. The case below asserts the PROPERTY, and the filler is
+    # deliberately markup-BEARING: the pre-existing truncation case at `:1810`
+    # uses `"x" * 40` and could never have seen this.
+    # ⚠ `_delim`, not `_d` — `_d` is already a day-fixture factory at `:1644`, and
+    # a `for` target LEAKS into the enclosing scope. `:1252` records the same trap
+    # for `_raises`. Shadowing it here would have broken every later `_d(...)` call.
+    for _delim, _elem in (("**", "strong"), ("`", "code")):
+        _long_md = "x" * 95 + f" {_delim}bold tail that is long enough to be cut{_delim}"
+        _rendered = _inline(_first_sentence(_long_md))
+        case(f"a truncated headline never leaves a bare {_delim} on the page",
+             (_delim in _rendered.replace(f"<{_elem}>", "").replace(f"</{_elem}>", ""),
+              f"<{_elem}>" in _rendered, "bold tail" in _rendered),
+             (False, True, True))
+    # ...and the same property over the REAL store, which is where it was found.
+    # Scoped to TRUNCATED titles: a delimiter the author left unpaired in a short
+    # title still prints as itself, which is `_inline_scan`'s deliberate rule.
+    #
+    # ⚠ `--mutate .` copies only `scripts/` into a temp tree, so the store is
+    # genuinely absent there — the gate caught this as a CANNOT RUN rather than
+    # letting it pass, which is the behaviour the project's checks doc demands.
+    # The skip is therefore DECLARED and itself asserted: it can only be taken in
+    # a tree that has no `docs/` at all, so it can never quietly swallow a real
+    # failure in the repo. The two synthetic cases above carry the property in
+    # both contexts; this one adds the real subject when the real subject exists.
+    if STORE_DEFAULT.exists():
+        _bare = re.compile(r"</?(?:strong|code|a)[^>]*>")
+        _store_titles = [_bare.sub("", _inline(_e["title"]))
+                         for _e in parse_entries(STORE_DEFAULT.read_text())
+                         if _e["title"].endswith("…")]
+        case("no truncated title in the REAL store renders a bare delimiter",
+             ([_t for _t in _store_titles if "**" in _t or "`" in _t], bool(_store_titles)),
+             ([], True))
+    else:
+        case("the REAL-store title check is skipped ONLY where there is no docs/",
+             (STORE_DEFAULT.exists(), (ROOT / "docs").exists()), (False, False))
     case("an over-long headline is cut at a WORD, with an ellipsis",
          (len(_first_sentence("x" * 40 + " " + "y" * 200)) <= TITLE_CAP + 1,
           _first_sentence("x" * 40 + " " + "y" * 200).endswith("…")), (True, True))
@@ -2053,6 +2217,24 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          (_outer == sandbox / "dashboard.html",
           _outer != pathlib.Path.home() / "explainers" / "dashboard.html"),
          (True, True))
+
+    # ⚠ THE SANDBOX'S BLIND SPOT, guarded where it actually lives (round 3, Low).
+    # `_write_sandbox` rebinds `OUT_DEFAULT`, so it cannot see `--fragment-only`
+    # (which never consults it) or an explicit `--out` (which overrides it). On
+    # either, a RELATIVE path resolves against the caller's cwd — REPRODUCED: a
+    # case doing that destroyed a cwd sentinel at a green suite.
+    #
+    # The mechanism cannot be fixed structurally without changing what `main()`
+    # means for real callers, so the guard is on THIS SUITE: read our own source
+    # and require every such path to be absolute. Reading the source is the point
+    # — it sees cases that do not exist yet, which is what the docstring promises
+    # and what the `--out` DEFAULT redirect alone cannot deliver.
+    _src = _inspect.getsource(_self_test)
+    _rel = [m.group(0) for m in
+            re.finditer(r'"--(?:out|fragment-only)",\s*"(?!/)[^"]*"', _src)]
+    case("every --out / --fragment-only path in this suite is ABSOLUTE",
+         (_rel, len(re.findall(r'"--(?:out|fragment-only)"', _src)) > 0),
+         ([], True))
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0

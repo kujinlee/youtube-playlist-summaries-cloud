@@ -559,5 +559,96 @@
       ]
     ],
     "expect": "a URL stops at a delimiter instead of swallowing it into the href"
+  },
+  {
+    "name": "a truncated headline is not re-balanced, so an orphan delimiter ships",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        out = _close_orphan_markup(out[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\")) + \"\u2026\"",
+        "        out = out[:cap].rsplit(\" \", 1)[0].rstrip(\",;:\u2014-\") + \"\u2026\""
+      ]
+    ],
+    "expect": [
+      "a truncated headline never leaves a bare ** on the page",
+      "a truncated headline never leaves a bare ` on the page"
+    ]
+  },
+  {
+    "name": "the URL trim severs HTML entities again (bare rstrip)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                url = _trim_url_tail(url[:cut])",
+        "                url = url[:cut].rstrip(\".,;:)]\")"
+      ]
+    ],
+    "expect": "the URL trim never severs an HTML entity"
+  },
+  {
+    "name": "the URL cut loses its BACKTICK arm (Codex's second repro)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            cut = min((p for p in (url.find(\"**\"), url.find(\"`\")) if p != -1),",
+        "            cut = min((p for p in (url.find(\"**\"),) if p != -1),"
+      ]
+    ],
+    "expect": "a URL stops at a delimiter instead of swallowing it into the href"
+  },
+  {
+    "name": "the cut is not trimmed, so a trailing stop kills the link",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    while url and url[-1] in \".,;:)]\":",
+        "    while False:"
+      ]
+    ],
+    "expect": "trimming the cut keeps the LINK \u2014 the trailing stop is not part of it"
+  },
+  {
+    "name": "the re-validation is dropped, so a bare scheme becomes a link",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            if INLINE_URL.fullmatch(url):",
+        "            if url:"
+      ]
+    ],
+    "expect": "...and a trim that leaves only a scheme produces NO link at all"
+  },
+  {
+    "name": "the deleted regex's no-* rule is restored inside a bold body",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            body = s[i + 2:close] if close != -1 else \"\"",
+        "            body = s[i + 2:close] if close != -1 and \"*\" not in s[i + 2:close] else \"\""
+      ]
+    ],
+    "expect": "a lone * INSIDE a bold body is emphasis, not literal asterisks"
+  },
+  {
+    "name": "a case passes a RELATIVE --out, escaping the sandbox to the cwd",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    _wrc = main([\"--window\", \"0\"])",
+        "    main([\"--out\", \"relative-escape.html\"])\n    _wrc = main([\"--window\", \"0\"])"
+      ]
+    ],
+    "expect": "every --out / --fragment-only path in this suite is ABSOLUTE"
+  },
+  {
+    "name": "main() calls _self_test without the sandbox wrapper",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        with _write_sandbox() as (_box, _real):",
+        "        globals()[\"OUT_DEFAULT\"] = pathlib.Path(tempfile.mkdtemp()) / \"dashboard.html\"\n        with contextlib.nullcontext((pathlib.Path(\"/nowhere\"), OUT_DEFAULT)) as (_box, _real):"
+      ]
+    ],
+    "expect": "the suite never writes to the REAL dashboard path"
   }
 ]

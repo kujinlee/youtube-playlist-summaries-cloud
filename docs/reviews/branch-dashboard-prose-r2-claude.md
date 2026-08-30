@@ -411,3 +411,225 @@ Manifest 41 → 47 for `gen-dashboard.py`; `EXPECTED_MUTATIONS` and the total pi
 **Verdict after fixes: NOT RE-REVIEWED.** A round 3 is owed on the same standing ground — these
 fixes were again written by the author of the defects, and this round is the second in a row where
 that produced a live hazard (H2 was created by round 1's own fix for M5).
+
+---
+
+# Round 3 verification of the round-2 fixes
+
+**Verified against `7bbabad`** by the same reviewer that filed the round-2 findings, using the
+baselines measured in this document. Every mutation below was applied to a **scratch copy** of
+`scripts/`; no tracked file was written except this appendix.
+
+| | |
+|---|---|
+| `~/explainers/dashboard.html` before | `d2f8a54bb865953ab12d94a11d010c22ecb46c4f5a131312696998cb0f2ad467` |
+| `~/explainers/dashboard.html` after | `d2f8a54bb865953ab12d94a11d010c22ecb46c4f5a131312696998cb0f2ad467` |
+| Working tree | clean at `7bbabad` before and after, including `--mutate .` |
+
+Baseline: `gen-dashboard.py --self-test` **198/198**, `check-plan-code.py --self-test` **136/136**,
+`check-plan-code.py --mutate .` **59 mutations, 0 survivors** (47 + 12; `EXPECTED_MUTATIONS`
+`scripts/check-plan-code.py:302-305`, total pinned at `:1520`).
+
+## Summary
+
+| Finding | Verdict |
+|---|---|
+| H1 | **CLOSED** |
+| H2 | **CLOSED** — with a narrower residual found (**new L2**, below) |
+| M1 | **CLOSED** |
+| M2 | **CLOSED** for 2 of 3 items; the third is **WITHDRAWN — the refutation is correct** |
+| L1 | **CLOSED** |
+
+None of the five is closed only in appearance. Each was re-run as the *same* mutation that
+produced the original finding, and each now goes red **via the case written for it** — not via a
+neighbour.
+
+---
+
+## H1 — CLOSED
+
+The round-2 mutation, re-run verbatim against `7bbabad`:
+
+```python
+    real_out = pathlib.Path.home() / "explainers" / "dashboard.html"   # was: = OUT_DEFAULT
+```
+
+```
+[caught] 197/198 passed
+     red: ...and it restores the value IN FORCE, not a copy of the real path
+```
+
+Red via the new case at `scripts/gen-dashboard.py:2052-2055`, and via nothing else — so the case is
+carrying the finding, not sharing it with a sibling. The pairing I asked for is present: the
+positive (`_outer == sandbox / "dashboard.html"`) alongside the negative (`_outer` is not the real
+page).
+
+**The author's additional claim is also true.** Deleting the `with _write_sandbox()` block in
+`main()` (`:2077-2078`) — the shape the old dangerous manifest entry used to cover — is caught:
+
+```
+[caught] 196/198 passed
+     red: the suite never writes to the REAL dashboard path
+     red: ...and it restores the value IN FORCE, not a copy of the real path
+```
+
+So the wiring lost no coverage when entry 39 was made safe; it gained a second independent case.
+
+**Re-entrancy confirmed directly**, not just inferred from the mutation. A guarded probe running a
+nested `main(["--self-test"])` inside the suite reports:
+
+```
+OUT_DEFAULT restored to the value in force: True | == outer sandbox: True
+outer: 198/198 passed   live page intact: True
+```
+
+*(Incidental, not a defect: the nested run itself reports 197/198, failing "…and the real path is
+still what a normal run would use", because in a nested run `real_out` is the outer sandbox rather
+than `~/explainers/dashboard.html`. Nobody nests self-tests; the mechanism is re-entrant, which is
+what H1 was about. My first probe of this was self-recursive and its `rc=1` was a stack overflow,
+not a property of the code — the number above is from the corrected, guarded probe.)*
+
+---
+
+## H2 — CLOSED
+
+Manifest entry 39 is now *"the suite is told a `real_out` that is not the sandbox in force"*, and
+keeps `_write_sandbox()` wrapped around the call — it only lies about `real_out`. The sandbox is
+never disarmed by any entry.
+
+**The sweep the brief asked for.** All **47** entries in `scripts/mutations/gen-dashboard.json`,
+each applied to a fresh scratch copy, each run under a **fake `HOME`** holding a sentinel
+`explainers/dashboard.html`, with the `--out`-defaulting case appended:
+
+```python
+    rc, _ = _run_main([], _compose(writes=True, collectors_ok=True))
+    case("LEVER: a later case that lets --out default", rc, 0)
+```
+
+```
+control (no mutation, lever present): ok, rc=0
+... 47 entries ...
+TOTAL BREACHES: 0 []
+ANCHOR MISSES: 0 []
+```
+
+Every entry went red (`rc=1`), no entry modified the fake home, and — checked separately by hashing
+the tree before and after — **no entry wrote into the `scripts/` tree either**. Compare round 2,
+where the same experiment on entry 39 turned the sentinel into `<html>`. That breach is gone.
+
+The battery is green on the real tree with the live page unchanged:
+`OK — delivered scripts mutated: 2 file(s), 59 mutation(s), 0 survivor(s)`.
+
+### New L2 (Low) — the sandbox covers the `--out` DEFAULT only; a relative path escapes it
+
+**REPRODUCED.** This is *not* a reopening of H2 — the live page is unreachable by it — but it is a
+lever the sweep cannot see, and the brief asked me to look for one.
+
+`_write_sandbox` redirects the module global `OUT_DEFAULT`. Two paths bypass that entirely:
+
+| lever | result |
+|---|---|
+| a case calling `main(["--fragment-only", "dashboard-entries.md"])` | **199/199 passed**, cwd sentinel destroyed |
+| a case calling `main(["--out", "dashboard-entries.md"])` | **199/199 passed**, cwd sentinel destroyed |
+
+`--fragment-only` never touches `OUT_DEFAULT` at all — `scripts/gen-dashboard.py:2118` writes
+`a.fragment_only` directly. An explicit `--out` overrides the default the sandbox rebinds. In both
+cases a **relative** path resolves against the caller's cwd.
+
+Bounding it honestly, because it matters for severity:
+
+- **The live page cannot be reached this way.** `OUT_DEFAULT` is an absolute path under `$HOME`; a
+  relative path cannot resolve to it. I confirmed both sentinels independently — the fake home page
+  survived both levers.
+- **CI is safe.** `run_suite` launches each suite with `cwd=d`, the temp copy
+  (`scripts/check-plan-code.py`, `run_suite`), so a relative write under `--mutate .` lands in the
+  temp tree. I hashed the `scripts/` tree across all 47 entries and saw no change.
+- **The exposure is a hand-run from the repo root** — `python3 scripts/gen-dashboard.py
+  --self-test`, which is how a developer and the `regen-dashboard.sh` hook invoke it. A future case
+  written with a relative path would write into the working tree at a fully green suite. That is
+  the *"an instrument that edits the repo corrupts its peers"* hazard, one layer over from the one
+  just fixed.
+- **No current case does this.** All three `--fragment-only` cases and all four `--out` cases pass
+  absolute temp paths. This is latent, not live — hence Low.
+
+---
+
+## M1 — CLOSED
+
+```python
+                out.append(f"<code>{_inline_scan(s[i + 1:close], strong=True)}</code>")
+```
+
+```
+[caught] 197/198 passed
+     red: a URL inside `code` stays literal — code is not marked up
+```
+
+Red via the new case at `:1789-1791`, which pairs the positive (`<code>https://x.example/p</code>`
+is present) with the negative (`<a ` is not) — so it cannot be satisfied by a scanner that stopped
+emitting anything. This is the mutation that reverted `docs/dashboard-entries.md:87` to the old
+nested-link rendering at a green 193/193 in round 2.
+
+---
+
+## M2 — 2 of 3 CLOSED; the third item is WITHDRAWN, the refutation is right
+
+| item | mutation | result at `7bbabad` |
+|---|---|---|
+| the strip clause (`:185`) | drop `body == body.strip()` | **caught** 197/198, red via *"`** a **` is spacing, not emphasis — while `**a**` still is"* (`:1796`) |
+| the empty-span rule (`:192`) | `close > i + 1` → `close > i` | **caught** 197/198, red via *"an empty `` is not a code span — the delimiters print"* (`:1802`) |
+| `strong=False` in the recursion | `strong=True` | **equivalent mutant — I withdraw the item** |
+
+**I attacked the refutation as instructed, and it survived.** The author's argument is that
+`close = s.find("**", i + 2)` returns the *first* `**` at or after `i + 2`, so `body = s[i + 2:close]`
+can never contain `**`, so the flag gates a branch the recursive call cannot reach. Rather than
+re-reason it, I measured it: both builds run over **173,488 inputs** — every product of length 1–6
+over `{**, *, a, space, `, ***}`, ~200,000 random strings over a 15-symbol alphabet, plus
+hand-built nesting attempts (`**a **b** c**`, `****a****`, `***a***`, `**a`**`b**`, `*****`,
+`**a*b**c**`, …):
+
+```
+INPUTS WHERE strong=False vs strong=True DIFFER: 0
+```
+
+The refutation is correct and no case is owed. **Going further than the author did:** the *whole*
+`strong` parameter is vestigial by the same argument, not just the call-site value. Deleting the
+guard outright — `if strong and s.startswith("**", i):` → `if s.startswith("**", i):` — is also
+equivalent, over the same corpus:
+
+```
+`if strong and ...` -> `if ...`  DIFFERING INPUTS: 0
+```
+
+That is an observation, not a finding: dead-but-fenced code with a comment that says so is a
+defensible choice, and the rewritten comment at `:183-190` states it plainly instead of claiming
+the flag does work. Correcting the claim rather than manufacturing a case for it is the right
+disposition — the opposite of the failure mode this round exists to catch.
+
+---
+
+## L1 — CLOSED
+
+The unpaired negative is now paired: `_existed = _nested.exists()` is recorded inside the body
+before the raise (`:2039`), and the case asserts `(_existed, …exists())` is `(True, False)` (`:2043`).
+Re-running the round-2 mutation that made it vacuous:
+
+| mutation | round 2 (`df79f0c`) | round 3 (`7bbabad`) |
+|---|---|---|
+| sandbox dir never exists (unique path) | **SURVIVED** 193/193 | **caught** 197/198, red via *"…and it removes the temp tree it really did create"* |
+| …and `_shutil.rmtree` deleted on top | **SURVIVED** 193/193 | **caught** 197/198, same case |
+| `_shutil.rmtree` deleted alone *(control)* | caught | **caught** 197/198, same case |
+
+Manifest entry 42 (*"the write sandbox never creates the tree it claims to remove"*) encodes the
+first row, so the gap is now in the battery rather than only in this document.
+
+---
+
+## The new code in `7bbabad` — checked, not faulted
+
+`7bbabad` also fixes a Codex Low by trimming abutting markup out of an autolinked URL
+(`:205-222`), which is new logic written during a review round — historically where this branch's
+defects have come from. I re-ran the round-2 totality fuzz against it: **127,624 inputs**, 0
+ill-nested outputs, 0 non-delimiter content losses, 0 `href` breakouts, 0 exceptions, no hang. The
+trim cannot loop (`cut ≥ 8` because the match begins `http`, and a failed `fullmatch` falls through
+to the one-character advance).
