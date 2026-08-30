@@ -3,9 +3,19 @@
 from __future__ import annotations
 import argparse
 import datetime as _dt
+import pathlib
 import re
 import subprocess
 import sys
+
+# INSTANCE, NOT CLASS — the reason this is here. The sibling `gen-dashboard.py`
+# shipped a fix for exactly this (its `git`/`gh` calls inherited the caller's
+# cwd, so a run from anywhere else reported an empty project as a healthy one).
+# Review found the same shape here, in the same feature, in the script
+# `gen-dashboard.py` imports at load time. It happens to work only because CI
+# invokes it from the repo root — "works because of where the caller stood" is
+# the property that fix set out to delete, so it is deleted in both places.
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 EXEMPT_DIRS = ("docs/reviews/",)
 EXEMPT_FILES = ("docs/dashboard-entries.md",)
@@ -231,10 +241,10 @@ def _self_test() -> int:
 def collect(base: str) -> tuple[list[str], bool, str | None]:
     try:
         names = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"],
-                               capture_output=True, text=True, timeout=20)
+                               cwd=ROOT, capture_output=True, text=True, timeout=20)
         patch = subprocess.run(["git", "diff", "-U0", f"{base}...HEAD",
                                 "--", "docs/dashboard-entries.md"],
-                               capture_output=True, text=True, timeout=20)
+                               cwd=ROOT, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as exc:
         return [], False, f"could not run git: {exc}"
     if names.returncode != 0:
@@ -287,6 +297,19 @@ def _impure_self_test() -> int:
     ch, ad, err = _with_run(_boom, lambda: collect("master"))
     case("collect: a missing git is a could-not-tell, not 'nothing changed'",
          (ch, ad, bool(err)), ([], False, True))
+
+    # ⟲ Asserts the VALUE, not the presence of the kwarg. `collect` makes TWO
+    # git calls, so both are captured and both are checked — a fix applied to
+    # only the first would otherwise pass here, which is the instance-not-class
+    # error one level down from the one that put this case in the file.
+    _cwds = []
+
+    def _spy(*a, **k):
+        _cwds.append(k.get("cwd"))
+        return _R(0, "", "")
+    _with_run(_spy, lambda: collect("master"))
+    case("collect: asks about THIS repo, not the caller's cwd — on EVERY call",
+         (_cwds, len(_cwds)), ([ROOT, ROOT], 2))
     ch, ad, err = _with_run(lambda *a, **k: _R(128, "", "fatal: no merge base"),
                             lambda: collect("master"))
     case("collect: a non-zero git exit is a could-not-tell, not 'nothing changed'",
