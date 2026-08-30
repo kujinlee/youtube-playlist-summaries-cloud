@@ -739,3 +739,48 @@ false claim written from how source looks rather than what the parser returns. F
 input (`OPTED_OUT_BARE_THEN_PROSE`) and a corrected comment.
 
 Contract 21/21, clean over 24 guards. dev-process 218/220 lines.
+
+## 2026-08-30
+Four of the local pages this project generates — the dashboard, the backlog table, the goals view and
+the explainer viewer — each turn markdown into HTML using their own separate code. They were written
+at different times and they no longer agree with each other, and that is now visibly damaging the
+backlog page.
+
+The clearest example is on the backlog page right now. A line in the backlog file contains a piece of
+SQL, `select count(*) filter (...)`. The page renders it with the asterisk swallowed and turned into
+italics, so what you read is `count()` — SQL that would fail if you copied it. The same thing happens
+to file paths containing a `*`: the asterisks vanish and the name goes italic. Ten places on the page
+have mangled formatting like this, and fifteen more have styling applied inside text that was meant
+to be shown literally.
+
+None of this is new breakage. The page generator that had this exact bug was fixed a few days ago,
+carefully, over four rounds of review. The fix simply lives in a file the other three cannot reach,
+because none of these generators shares code with any other.
+
+The plan agreed today is to write the markdown-to-HTML step once and have all four use it, with one
+behaviour rather than four. It is filed as backlog item 71 with a written spec. The order was settled
+too: this first, the sandboxing decision alongside it, and the larger question of whether the testing
+around the dashboard has too many layers comes last, because doing this first changes the answer.
+<!--tech-->
+Branch `fix/inline-renderer-seam`, docs only so far. Backlog #71, spec at
+`docs/superpowers/specs/2026-08-30-inline-renderer-seam-design.md`, anchor `status-visibility`.
+Phase 6 candidate 1 from `docs/reviews/architecture-review-2026-08-30.md`.
+
+Measured 2026-08-30 by importing the four delivered renderers and running them over the real
+corpora: they disagree on 11 of 13 probe inputs. On `~/explainers/backlog-table.html` as it stood on
+disk (built 2026-08-29 16:42, not regenerated to produce the numbers): 10 crossed tag spans, 15 cases
+of markup emitted inside a code span. Root cause is stacked `re.sub` passes blind to each other's
+output; `gen-dashboard._inline_scan` is a single left-to-right scan and is unreachable from the other
+three. Two more holes of the same shape: `gen-backlog-page` renders `[text](url)` with no href
+sanitiser while `explainer-serve.safe_href` exists unshared, and `gen-goals-page.esc()` omits the
+apostrophe.
+
+Decided with the user: one behaviour = the union feature set on the single-scan algorithm, NOT
+`gen-dashboard`'s current rule — adopting that wholesale would strip 59 `<em>` spans and 3 links off
+the backlog page, because its feature set is minimal only because its corpus is (0 links in 593
+lines). The shared module becomes its own guard subject, 25th in `check-ratchet-contract.py`, and the
+generators' inline cases are deleted rather than kept, so the layer count falls.
+
+Also noted, not fixed: `project-dashboard`, the anchor the architecture review declares, is not in
+`docs/anchors.md`. `check-anchors.py` passes only because `docs/reviews/` is out of scope by design.
+<!--tech-->

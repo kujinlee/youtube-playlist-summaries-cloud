@@ -94,3 +94,21 @@ A summary section that has been elaborated into the dig-deeper doc is **dug**; o
 - **Slide** — an informative on-screen visual in the video worth capturing because it conveys something the speech alone does not. Defined broadly: a presentation slide, a diagram, a chart, or a code/terminal/screen demo. Not every on-screen moment is a slide — only one that adds information beyond what is said.
 - **Slide screenshot** — the captured still image of a slide, embedded inline in the dig-deeper doc at the point in the elaboration where it is relevant.
 - **Slide caption** — the short plain-English description of a slide screenshot, authored by Gemini at generation time and carried as the screenshot's alt text. Rendered (optionally) as a visible `<figcaption>` beneath the screenshot. **Always qualified as "slide caption"** — never bare "caption" — to avoid collision with **captions** in the YouTube sense (the transcript/caption tracks used for transcript sourcing; see "caption-gated" videos). The two are unrelated concepts.
+
+## Page Generation (Repo Tooling)
+
+The repo generates four local HTML pages from its own markdown — the dashboard, the backlog table,
+the goals view, and the explainer viewer. These terms are about that tooling, not the product.
+
+- **Inline markup** — the small subset of markdown that appears *within* a line: `**bold**`,
+  `` `code` ``, `*em*`, `~~del~~`, `[text](url)`, and a bare URL. Distinguished from **block
+  markup** (headings, tables, lists, fences), which each generator still handles for itself. Only
+  the inline layer is shared.
+- **The renderer** — `scripts/page_markup.py`, the single implementation of inline markup for all
+  four generators. Underscored because it is a **library** meant to be imported by name; the
+  hyphenated `scripts/*.py` files are executables and are not importable. It is a **peer** of the
+  generators, never a gate: the documented generator → gate arrow governs a page importing the guard
+  that checks it, and a renderer checks nothing.
+- **One behaviour** — the decision (2026-08-30) that all four pages render inline markup
+  identically, rather than each declaring its own feature subset. The behaviour is the *union* of
+  what the four supported, carried by the *single left-to-right scan* that only one of them had.
