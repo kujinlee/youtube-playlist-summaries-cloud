@@ -330,3 +330,361 @@ entry claims a class fix, and making that true cost less than narrowing it.
 ⚠ NOT fixed, deliberate: an explicitly-passed RELATIVE `--store` still resolves against cwd. That
 is the right convention for a path a caller typed, and it fails loudly.
 
+## 2026-08-29
+The "what this means" sections were a wall of text. They are now typeset.
+
+Every entry was already written in paragraphs — nine of the ten in this file — and the page
+was throwing all of them away and printing each entry as one unbroken block running the full
+width of the page. The blank lines you typed had never once reached the screen.
+
+Emphasis was not working either. Writing **like this** to mark the one sentence a reader
+must not skip past printed the asterisks literally, so the marking did the opposite of its job.
+
+And an entry's heading was cut at whatever point the text happened to wrap when it was typed,
+which is why one of them ended mid-phrase with "It is one page at". A heading is now the first
+sentence, and it is not repeated at the top of the text it was taken from.
+<!--tech-->
+`gen-dashboard.py` rendered the whole human half as a single escaped `<p>`, so paragraph breaks
+collapsed and `**bold**` survived as literal asterisks. Three functions now: `_prose` (blank-line
+paragraphs, first as `.lede`), `_inline` (escape FIRST, then bold/code/autolink), `_first_sentence`
+(headline).
+
+The markup set was chosen by MEASURING the store, not by taste: `**bold**` 3/10 entries, `code`
+1/10, bare URL 1/10, bullets and `[md](links)` **0/10**. Supporting more would invent a contract
+no author uses.
+
+De-duplication is derived by re-applying `_first_sentence`, NOT by prefix-matching the displayed
+title — the title is capped and may end in "…", which can never prefix-match, so matching on it
+declined to drop anything on exactly the entries with the longest openings. Measured on the real
+page: 6 entries repeating → 1, and that one is a single-sentence entry with nothing else to
+promote (an empty fold is worse than a repeat).
+
+Typography: 64ch measure (was the full 820px shell, ~110 characters a line), 1.7 leading, lede at
+full `--fg` with the body at `--fg2` so the glance lands on the idea.
+
+⚠ 120/120 passed BEFORE any of these cases existed — the whole prose path was uncovered. 138 now.
+Mutation battery 9/9 killed, including one that survived first: reverting the headline wiring while
+`_first_sentence` stayed perfect. A helper can be correct and unused.
+
+## 2026-08-29
+The mutation checker was overwriting this page with a blank one, and nobody noticed.
+
+You saw it: an empty dashboard, twice. It was not the page generator — it was the checker
+that runs the mutation tests. To test the page code it makes a scratch copy and deliberately
+breaks it in small ways, one at a time, to confirm the tests object. But a broken copy still
+knew where the real page lives, so some of those deliberate breakages published a blank page
+over the live one. The tool that exists to protect this page was quietly destroying it.
+
+Fixed: the test run now writes only inside its own scratch directory, and it fails if that
+ever stops being true.
+
+Separately, and what you asked for: the heading, the summary and the emphasised text were
+all the same near-white, so nothing stood out from anything else. They now have their own
+colours — the summary brightest, the heading cooler, supporting text dimmer, and emphasis
+in the same amber this page already uses for things that need you.
+<!--tech-->
+⛔ MEASURED: `check-plan-code.py --mutate .` replaced `~/explainers/dashboard.html` with a
+0-article page. Route: the suite calls `main()`; `main()` falls through to `--out`; `--out`
+defaulted to a REAL path outside any temp tree. Four call sites, all unpinned.
+
+Fixed at the DEFAULT (`OUT_DEFAULT` hoisted out of argparse, repointed by `_self_test` into
+`mkdtemp` for the whole run), not at the four call sites — a case written later inherits the
+sandbox instead of having to remember it. Two falsifiers assert the redirect is live and that
+the real path is still what a normal run uses. Verified by the thing that broke it: `--mutate .`
+44/0 with the live page byte-identical before and after.
+
+⚠ This is the harness merged as #176 editing the user's artifacts. Adjacent to backlog #67's
+class (an instrument that corrupts what it observes), and NOT filed — filing is the user's step.
+
+Colour ramp: title/lede/strong were all `--ink` (13.10:1), separated only by weight — one colour
+doing three jobs. Now `--p-lede` / `--p-head` / `--p-detail` / `--p-mark`, chosen by measuring
+contrast on `--panel` in BOTH themes. Cases pin the RELATIONSHIP (summary > heading > detail, all
+≥ AA, four distinct values, tokens defined AND consumed), not the hexes — asserting hexes would
+pass on an inverted hierarchy and fail on a harmless re-tint. Battery 7/7 killed.
+
+## 2026-08-29
+The chart has a key now, so you can tell an alarm from a decoration.
+
+You asked what the colours and the stripes meant. Nothing on the page said. The stripes were
+the serious one: a day where work was committed and no entry was written — the exact failure
+the entry rule exists to prevent — and it looked like just another bar.
+
+The key only lists what is actually in the chart, so a state gets named on the day it appears
+rather than sitting in a permanent list of things that are mostly not happening.
+<!--tech-->
+The chart encoded four meanings (height, `--ok`, `--need`, `--err` hatch + cap) and shipped no
+legend. `_day_states` returns only states PRESENT in the window; `_legend` renders them.
+
+⚠ The swatch carries the CHART's classes (`bar needs`, `bar unwritten`) rather than restating
+the colours. A legend with a private copy of the palette is a second source of truth, and one
+that drifts silently is worse than no legend — a key is believed. A case asserts the swatch
+markup contains no `var(--err)` of its own.
+
+The alarm row is suppressed when the store is unreadable, matching `_bar`'s existing §9
+suppression — naming a state the chart deliberately did not draw would be a lie about the page,
+and the lie would point at the scariest row.
+
+⚠ 152/152 passed before any of these cases existed, and the wiring mutation (delete `{legend}`
+from the page template) SURVIVED the first battery at 159/159 — the key can vanish while its
+builders stay perfect. Third instance today of testing the helper and not the caller. 161 now,
+6/6 killed.
+
+## 2026-08-29
+A review of tonight's dashboard work found eleven things, and one of them was on the page you
+were reading.
+
+The worst was quiet: an entry whose first paragraph had no full stop at the end lost that
+paragraph entirely. The heading showed the first hundred-odd characters and the rest appeared
+nowhere at all — written down, and invisible. Also, a heading containing emphasis printed its
+asterisks instead of the emphasis, which you would have seen on the current page.
+
+The rest were guards that did not guard: the colour checks measured a copy of the palette
+rather than the one that ships, the contrast bar could be lowered to nothing, and a rule
+referred to a colour this page does not define.
+
+All fixed, and each with a test that fails if the fix is removed. Not re-reviewed yet — the
+fixes were written by the same person who wrote the defects.
+<!--tech-->
+Round 1 dual adversarial, both halves NOT CONVERGED. Codex 3M+1L, Claude 3H+5M+3L. Full table in
+`docs/reviews/branch-dashboard-prose-r1-{claude,codex}.md`.
+
+Content loss (Codex M2, I rate High): a first paragraph with no `.?!` made `_first_sentence`
+return the WHOLE paragraph, so the fold dropped it while the title showed only `TITLE_CAP`.
+Refuses to drop a non-sentence now. Codex M1: "Met with Dr. Smith…" → headline `Met with Dr.`,
+lede opening `Smith…`; `_ends_in_abbreviation` added.
+
+H2: the headline used `_html.escape` while the body used `_inline` — one live title was rendering
+`**Correction**`. H1: reverting the entire prose fold at the call site was GREEN — 4th wiring gap
+this session. H3/Codex-M3: the autolink's scheme restriction had no negative case; swapping
+`https?` for `(?:https?|javascript)` passed.
+
+⚠ Three guards SURVIVED the first battery, two of them written minutes earlier: a CSS **comment**
+reading `returns to --fg:` counted as a *definition*; and the legend's contrast case measured a
+token by NAME while nothing asserted the rule consumed it. Both closed.
+
+⚠ `--mutate .` went 44 → 43 and REFUSED — the H2 fix moved a line the manifest anchors on. Anchor
+re-pointed. That is the documented 45-anchor coupling working: it refused rather than quietly
+measuring less. 161 → 187 cases.
+
+
+## 2026-08-29
+The four review findings left over from the last round are fixed, and the fixes were checked by
+deleting them again to make sure something noticed.
+
+Three were small. The fourth was not really a bug so much as a gap in the safety net: the automated
+check that proves these scripts are actually tested had never been told that the file grew by a
+third. It was still measuring the old thirty-two things while reporting a clean result — technically
+true, and quietly meaningless. It now measures fifty-three, including nine written today.
+
+One of those nine found something real that nobody had asked about. Text you write in an entry can
+end up inside a link, and links have quotes around them; if the quoting were ever turned off, a
+stray quote character in a web address could break out and become page markup. Nothing was wrong —
+but nothing would have told us if it became wrong, which is the same position the other findings
+were about.
+
+The overlapping-emphasis bug is gone, and the way it is gone matters more than the bug: the code no
+longer makes three separate passes that cannot see each other. It reads the text once, left to
+right. That class of error cannot recur, rather than having been patched where it showed.
+<!--tech-->
+Round-1 carried findings, all four closed. **Cx-Low**: `_inline`'s three stacked `re.sub` passes
+emitted crossed tags — `**bold `code** tail`` → `<strong>bold <code>code</strong> tail</code>`.
+Replaced with a single left-to-right scan (`_inline_scan`), not a fourth regex. The case asserts the
+PROPERTY (tags close in the order opened) with a companion proving the checker rejects the old
+output, so it cannot go vacuous.
+
+**L1/L2**: the `atexit` restore had no falsifier and could not have had one — an exception out of
+`_self_test` kills the process, so rebinding a global there is unobservable. What it actually bought
+was the `rmtree`. Replaced by `_write_sandbox()`, a context manager wrapped around the CALL in
+`main()`: the restore is now in-process (so it has a falsifier — a nested raising body) and the
+window covers every line of `_self_test`, including ones not yet written, which is what L2 wanted.
+
+**M5**: manifest 32 → 41 for `gen-dashboard.py`; `EXPECTED_MUTATIONS` and the total pin bumped in
+the same commit (44 → 53). Includes the four the reviewer named — the `:750` fold call site,
+`quote=True`, the `https?://` scheme restriction, `PROSE_CONTRAST_MIN`.
+
+⚠ `_html.escape(s, quote=False)` SURVIVED 192/192 before this. It is load-bearing: the autolinker is
+the one construct writing entry text into an `href` attribute, and `[^\s<]+` admits `"`. Case added.
+
+⚠ Two of my own new guards were caught by the instruments, not by reasoning. A hand battery showed
+the "unpaired delimiter" case went red via an unrelated case, because `"code" in ...` was satisfied
+by the bold span's content — now counts delimiters. And the scheme mutation's `+` needed two
+characters after the colon, so `vbscript:x` never matched and that guard was never reached — now `*`.
+
+`--mutate .` 53/0, gen-dashboard 193/193, check-plan-code 136/136. Live page checksummed identical
+before and after every mutation run.
+
+## 2026-08-29
+Round two of the review found something worth telling you plainly: **the check I added this morning
+to prove your dashboard could not be overwritten was itself the one thing capable of overwriting
+it.**
+
+Nothing was lost. Your page is intact and was never touched — I have the before-and-after checksums
+for every run. But the risk was real rather than theoretical, and it would have fired on the shared
+build server, not just on my machine. To prove it I built a fake home directory with a stand-in
+page, and watched the stand-in get destroyed. Then I rebuilt the check so it tests the same thing
+without ever being able to reach a real file, and re-ran all forty-seven checks against the
+stand-in: none of them could touch it. I also confirmed the old broken version *would* have been
+caught by that test, so "none of them could touch it" is a measurement and not a hope.
+
+The shape is worth naming because it has now happened twice in two days. Each time, the thing that
+went wrong was not the feature — it was the safety net added around the feature, written by the
+same person who had just written the feature. That is why there are two reviewers, and why neither
+of them is me.
+
+Four smaller things were also unguarded: a decision about how code snippets render — which affects
+a line already on this page — plus two scanner rules and a temp-file cleanup check that would have
+passed even if the file it deletes had never existed. All now have tests, and each test was proved
+to fail when its fix is removed.
+<!--tech-->
+Round 2 dual adversarial. Codex 1 Low; Claude 2 High + 2 Medium + 1 Low. Both halves filed at
+`docs/reviews/branch-dashboard-prose-r2-{claude,codex}.md`; disposition table at the end of the
+Claude one. **Every finding re-reproduced by the coordinator before being acted on.**
+
+**H2 (the serious one, and self-inflicted).** Manifest entry 39 — added in *this branch's previous
+commit* to prove `_write_sandbox` works — replaced the `with` block in `main()`, so `OUT_DEFAULT`
+stayed at `Path.home()/"explainers"/"dashboard.html"`, an absolute path unaffected by `--mutate .`
+running from a temp copy. REPRODUCED with a sentinel: entry 39 + one `--out`-defaulting case →
+`SENTINEL INTACT=False`. Harmless today only by accident (no case lets `--out` default) — and
+`_write_sandbox`'s own docstring invites the next author to write exactly that case. Fixed by
+keeping the sandbox armed and lying about `real_out` instead; still red via the case it names.
+
+**H1.** `real_out = OUT_DEFAULT` had no falsifier — hardcoding the real-page literal survived
+193/193 and broke re-entrancy, so the nested sandbox restored `OUT_DEFAULT` to the live page and
+left the suite's tail unsandboxed at green. Case now asserts the value IN FORCE (positive paired
+with negative), and subsumes the `main()` wiring coverage entry 39 used to provide, safely.
+
+**M1** code-literal (affects `dashboard-entries.md:87`), **M2** two scanner rules, **L1** the
+temp-tree case as an unpaired negative — all REPRODUCED green, all now guarded.
+
+**Codex Low.** The scanner made the autolinker greedy where the three-pass order could not be:
+`https://x.ee/z**bold**` ate the emphasis into the `href`. The URL now stops at a delimiter and is
+re-validated after the cut.
+
+⚠ **M2's second item is PARTLY REFUTED — an equivalent mutant.** `close` is the FIRST `**` after the
+opener, so `body` can never contain `**`; `strong=False` gates an unreachable branch. Measured on
+three inputs. The comment claiming it was load-bearing is corrected rather than a case invented.
+
+⚠ `--mutate .` REFUSED once mid-fix: renaming a case left entry 38's `expect` naming a case that no
+longer existed. Round 1's anchor-drift class, same correct behaviour.
+
+Manifest 41 → 47; `EXPECTED_MUTATIONS` + total pin 53 → 59. 193 → 198 cases, `--mutate .` 59/0,
+check-plan-code 136/136. **47/47 manifest entries proved unable to reach the real page**, with the
+old dangerous form as a control that the instrument reports as a breach.
+
+## 2026-08-29
+A third review round, and the thing it found was on your page as you read it.
+
+The entry I wrote last round — the one explaining that the safety check could have destroyed your
+dashboard — had a pair of stray asterisks in its own headline. Raw markdown, printed instead of
+rendered, on a page whose entire purpose this week has been to typeset prose properly. Round one
+found that same symptom and fixed it. It came back by a different route, because I searched for the
+mechanism that caused it rather than for the property that should always hold.
+
+The cause is a seam. The headline gets shortened to fit, and the shortening happens before the
+emphasis is applied. If the cut lands in the middle of a bold phrase, the opening marks lose their
+partner and print as themselves. Neither half was wrong; nothing owned the join between them. Now
+the shortening closes what it opens, so the words still appear and the emphasis still works.
+
+Also fixed: a change I made last round to stop web addresses swallowing nearby formatting turned out
+to be cutting HTML escape codes in half, which inserted a stray semicolon into your text. I measured
+it across 64,000 samples — my change had made the renderer slightly worse overall, not better. It is
+now better than either previous version, and nothing that worked before is broken.
+
+And one I found in my own work rather than being told: a comment claimed the rewritten formatter
+behaved identically to the code it replaced. It does not, in 59 cases out of 96,000. The behaviour is
+an improvement — the old version silently dropped characters — but the claim was false, and a false
+claim in a comment is how a change nobody noticed rides along with one everybody reviewed.
+<!--tech-->
+Round 3: three inputs — a fresh Claude hunt, Codex, and a re-verification of round 2's findings by
+the reviewer who filed them. Filed at `docs/reviews/branch-dashboard-prose-r3-{claude,codex}.md`;
+r2's verification appended to `branch-dashboard-prose-r2-claude.md`. Every finding re-reproduced by
+the coordinator before action.
+
+**H1 (High, LIVE).** `<p class="title">…plainly: **the check I added…` on the delivered artifact.
+`_first_sentence` truncates at `TITLE_CAP`; `parse_entries` stores that; `:774` marks it up
+afterwards. `_inline` then correctly printed the orphaned opener. Fixed with
+`_close_orphan_markup`, on the truncation path only — an author's unpaired delimiter still prints
+as itself. Guarded synthetically AND against the real store.
+
+**M1 (Medium).** Round 2's `rstrip(".,;:)]")` ran on ESCAPED text and severed entities:
+`…&amp</a>;<strong>`. Re-measured rendered-vs-typed fidelity across 64,368 inputs on three trees —
+pre-r2 **4157**, delivered-r2 **4245**, fixed **3850**, with **0** newly broken. Round 2 shipped a
+net regression as an improvement.
+
+**M2/M3/L1** closed. **r2's re-verify** confirmed H1/H2/M1/L1 CLOSED and withdrew its `strong=False`
+item — my equivalent-mutant refutation was independently confirmed over 173,488 inputs, and it went
+further: the whole `strong` parameter is vestigial.
+
+**Codex's Medium REFUTED as a regression** — the pre-round-2 renderer produces byte-identical output
+on its own repro. The paren drop is `INLINE_URL`'s trailing-char class, deliberate and pre-existing.
+
+⚠ Two of mine: the `_write_sandbox` docstring over-claimed its scope (`--fragment-only` and explicit
+`--out` bypass it; a relative path escapes to cwd — latent, live page unreachable, CI safe), and the
+`body.strip()` comment asserted a FALSE equivalence with the deleted regex. Both corrected, both
+now guarded — the second by a case that reads this suite's own source.
+
+⚠ The gate refused twice, correctly: two entries repeated an earlier entry's anchors, and the
+real-store case reported CANNOT RUN under `--mutate .` (only `scripts/` is copied). The skip is now
+declared and itself asserted.
+
+Battery 8/8 killed via the named case. 55/55 manifest entries proved unable to reach a real file,
+old dangerous form as instrument control. Manifest 47 → 55, pins 59 → 67, cases 198 → 206.
+
+## 2026-08-30
+Round four. Both reviewers independently found the same root cause this time, which has not happened
+before in this sequence, and it was a mistake with a clear shape: I had written the same rule twice.
+
+Last round I added something to close off formatting marks that a shortened headline had left
+dangling. But the code that decided which marks needed closing was a *second, simpler copy* of the
+code that actually renders the page — and the two disagreed about one thing. The renderer treats
+anything inside backticks as plain text; my copy did not. So a headline containing a code snippet
+with asterisks in it got an extra pair of asterisks added, inside the snippet, which then showed on
+the page as literal characters nobody typed.
+
+The repair was to delete the copy. There is one implementation now: the closing marks are chosen by
+running the real renderer and checking the result, so the two cannot disagree — because there are no
+longer two.
+
+The other one worth telling you about is a check that was passing for the wrong reason. It was meant
+to prove that no test writes to a file path outside its sandbox, and it did this by reading the test
+code looking for a quoted filename. There are no quoted filenames in that code — every call builds
+its path a different way — so the check was green because it could not see anything, not because
+everything was safe. Proven by adding a test that wrote outside the sandbox: still green, file still
+destroyed. It now watches the values actually handed over at run time.
+
+I also made two process mistakes worth writing down. I edited files while a reviewer was reading
+them, which gave it a false alarm it had to spend time disproving. And when a reviewer explained
+that a test's sample data was too simple to exercise the bug, I wrote a new test with sample data
+that was too simple in exactly the same way — and it passed while the bug was present.
+<!--tech-->
+Round 4, scoped to `7bbabad..dee62f2`, prose renderer. Codex 1B+1H+1M; Claude 1B+1H+2M+2L. Filed at
+`docs/reviews/branch-dashboard-prose-r4-{claude,codex}.md`. **Both halves independently isolated the
+same Blocking** — first convergence on one root cause in four rounds.
+
+**B1 (Blocking).** `_close_orphan_markup` was a second scanner beside `_inline_scan` and disagreed on
+one rule: code content is literal. `` `code ** tail `` gained a `**` closer that rendered inside the
+`<code>`. Fixed structurally — candidate closers are judged by running the shipping renderer
+(`_orphaned_delimiters`), so there is one implementation, not two. The case asserts the property that
+survives a mechanism change: the truncated span's CONTENT is a prefix of the full span's.
+
+**H1 (High).** The `--out`/`--fragment-only` absolute-path guard matched source text for a literal
+after the flag. The suite has 5 flags and **0** adjacent literals — every call site passes
+`str(<Path>)`. Green because it could not look. REPRODUCED: a relative `str(Path(...))` destroyed a
+cwd sentinel at 206/206. Replaced with a recording proxy over `main`; the source-scanning version is
+deleted rather than kept alongside.
+
+**`&#x27;`**: `ENTITY_TAIL` accepted hex digits but not the `x`, so it matched `&#39;` (never
+emitted) and missed the form `html.escape` always produces. **L1**: closers were appended past
+`TITLE_CAP` — 148/60,000 inputs, max 113; now inside the cap, re-fuzzed to 0. **L2**: the entity
+case's conjuncts all passed with the trim removed; now asserts rendered text == typed text.
+
+⚠ **Two of my process failures, recorded.** I edited the tree mid-review and caused a false red the
+reviewer had to disprove (it correctly labelled it NOT RUN and re-measured against `git archive`).
+And my first cap case repeated the blind-filler mistake the same review had just described — it
+SURVIVED at 208/208; the passing input now comes from the fuzz that found the defect.
+
+Battery: second scanner restored verbatim, ENTITY_TAIL reverted, cap check dropped, recorder
+silenced, relative `str(Path)` — all killed via the case each names. `--mutate .` 73/0; 61/61 entries
+proved unable to reach a real file. Anchor ratchet refused 3× as my edits moved quoted lines, plus
+once for an entry whose subject I deleted (retired, not re-pointed). Manifest 59 → 61, pins 71 → 73,
+cases 208 → 209.

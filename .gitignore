@@ -88,3 +88,13 @@ playwright/.auth/
 # are the durable, committed record of progress — these two files only decide when to interrupt.
 .claude/executing-plan
 .claude/executing-plan.state
+
+# Generated pages never belong at the repo root. MEASURED 2026-08-30: `frag.html`
+# and `rel-nested.html` — two rendered dashboards — were committed in 96ae502 by
+# `git add -A`. They were written by the round-4 breach sweep, which applies every
+# mutation entry INCLUDING the two whose whole point is a RELATIVE `--out` /
+# `--fragment-only` path, and which did not pin its cwd. `--mutate .` itself is
+# safe (`run_suite` uses `cwd=<temp copy>`); the hazard is an instrument run from
+# the repo root. This is a backstop, not the fix — the fix is that instruments
+# pin their cwd.
+/*.html

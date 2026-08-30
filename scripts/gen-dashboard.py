@@ -2,9 +2,11 @@
 """Render the project dashboard from docs/dashboard-entries.md."""
 from __future__ import annotations
 import argparse
+import contextlib
 import datetime as _dt
 import json
 import pathlib
+import shutil as _shutil
 import subprocess
 import tempfile
 import html as _html
@@ -20,6 +22,364 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The guard for an unreadable store existed and was correct; its PREMISE moved.
 STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"
 TECH_MARKER = "<!--tech-->"
+
+
+# ── The prose ramp ───────────────────────────────────────────────────────────
+# Reported by the reader: the headline, the summary and an author's **bold** all
+# looked like the same "bright bold". They WERE: title, lede and <strong> were
+# every one of them `--ink` (13.10:1), differing only in weight. One colour was
+# doing three jobs, so the eye had no way to rank them without reading.
+#
+# Each role now gets its own HUE and its own step on the ramp, so the difference
+# survives a glance:
+#   lede    brightest, warm  — the summary. Read this and you may stop.
+#   head    cool slate       — the headline. Desaturated well clear of `--link`,
+#                              so a title never reads as clickable.
+#   detail  neutral, dimmest — supporting text, recedes.
+#   mark    amber = --need   — author emphasis, the SAME colour this page already
+#                              uses for the "needs you" chip. Emphasis and
+#                              attention are the same signal; now they look it.
+# Values chosen by MEASUREMENT (below), not by eye, and asserted in both themes.
+PROSE_COLOURS = {           # role: (light, dark)
+    "lede":   ("#1b2024", "#ecebe4"),
+    "head":   ("#3a5261", "#b9c6d1"),
+    "detail": ("#5c5b67", "#a8a5b0"),
+    "mark":   ("#9c5d0e", "#e0a050"),
+}
+PROSE_CARD = {"light": "#ffffff", "dark": "#1b2125"}   # `--panel`, what they sit on
+
+# ⛔ WHERE A RUN WRITES, hoisted out of argparse so the SUITE can redirect it.
+# MEASURED 2026-08-29: `check-plan-code.py --mutate .` DESTROYED the reader's
+# real dashboard, leaving an empty page. The route: the suite calls `main()`,
+# `main()` writes to this default, and the default is a real artifact OUTSIDE
+# any temp tree — so a mutant that reaches the compose path publishes garbage
+# over the live page. The harness is supposed to be observing the code, not
+# editing the user's world. `_self_test` now repoints this at a temp dir for
+# the whole run, which covers every call site including ones not yet written —
+# four already existed and all four were unpinned.
+OUT_DEFAULT = pathlib.Path.home() / "explainers" / "dashboard.html"
+PROSE_CONTRAST_MIN = 4.5                                # WCAG AA, body text
+
+
+def _relative_luminance(hexcolor: str) -> float:
+    h = hexcolor.lstrip("#")
+    # ⚠ `#fff` is a real value in this stylesheet (`--panel` in light mode), and
+    # without this the helper raised on it. It never came up while the cases
+    # measured a PYTHON COPY that happened to spell the same colour `#ffffff` —
+    # the copy and the emitted value were not even textually comparable, which
+    # is a sharper version of the review finding that prompted this.
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    ch = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    ch = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in ch]
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = _relative_luminance(a), _relative_luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
+TITLE_CAP = 110
+# Below this, a "sentence" is a fragment ("Fixed.", "Done.") that says nothing on
+# its own, so it is joined to the next. ⚠ Set by measurement, not taste: at 25
+# this swallowed "The page is ready." — a perfectly good headline — and the case
+# below caught it. Raising it silently re-breaks that.
+TITLE_FLOOR = 12
+
+
+ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "vs", "etc", "approx",
+                 "fig", "no", "inc", "ltd", "jan", "feb", "mar", "apr", "jun",
+                 "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
+
+
+def _ends_in_abbreviation(text: str) -> bool:
+    """Is this "sentence" actually stopping mid-thought at an abbreviation?
+
+    ⚠ Review REPRODUCED: "Met with Dr. Smith about the release." produced the
+    headline "Met with Dr." — and because the fold DROPS the headline, the lede
+    then opened with the orphaned word "Smith". Splitting on `[.!?]\\s` treats
+    every full stop as a sentence end, and `TITLE_FLOOR` did not save it because
+    "Met with Dr." is exactly 12 characters.
+
+    A trailing token that is short, or that contains an internal dot ("e.g."),
+    is an abbreviation rather than a sentence end. Conservative by design: a
+    false positive merely makes the headline one sentence longer, while a false
+    negative cuts a word off the front of the reader's prose.
+    """
+    last = text.rstrip()[:-1].rsplit(" ", 1)[-1] if text.rstrip().endswith((".", "!", "?")) else ""
+    if not last:
+        return False
+    return "." in last or last.lower().strip(".") in ABBREVIATIONS
+
+
+def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
+    """The headline for an entry: its first SENTENCE, not its first LINE.
+
+    It was `the first non-blank line`, which is a physical artefact of where the
+    author's editor wrapped — so a heading read "...It is one page at" and
+    stopped. A sentence is a unit of meaning; a line is a unit of typing.
+
+    Short leading fragments ("Decided:", "Fixed.") are joined onto the next
+    sentence rather than standing alone as the whole headline.
+    """
+    text = " ".join(text.split())
+    if not text:
+        return ""
+    out = ""
+    for part in SENTENCE_END.split(text):
+        out = f"{out} {part}".strip() if out else part
+        if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
+            break
+    if len(out) > cap:
+        # ⛔ H1 (round 3), REPRODUCED ON THE LIVE PAGE by this branch's own entry:
+        # `<p class="title">…plainly: **the check I added this morning to prove…`
+        # The title is truncated HERE and marked up LATER (`:774`), so a `**…**`
+        # span straddling the cap loses its closer, and `_inline` — behaving
+        # exactly as designed — prints the orphaned opener. Neither half is
+        # wrong; nothing owned the seam between them.
+        #
+        # ⚠ Closing the span, not cutting back to before it. The truncated words
+        # ARE still shown, so dropping them to balance the markup would be the
+        # content-loss trade this file refuses everywhere else.
+        #
+        # Only on the TRUNCATION path. A delimiter the AUTHOR left unpaired in a
+        # short title still prints as itself — that is `_inline_scan`'s rule and
+        # it is about the author's text. These orphans are artefacts of OUR cut.
+        _full = out
+        out = _close_orphan_markup(
+            _full[:cap].rsplit(" ", 1)[0].rstrip(",;:—-"), _full, cap) + "…"
+    return out
+
+
+def _orphaned_delimiters(text: str) -> int:
+    """How many delimiters the REAL renderer leaves as literal punctuation.
+
+    Code spans are removed first, not stripped of tags: their content is literal
+    BY DESIGN, so a `**` the author typed inside backticks is not an orphan.
+    """
+    out = _inline(text)
+    out = re.sub(r"<code>.*?</code>", "", out, flags=re.S)
+    out = re.sub(r"<[^>]+>", "", out)
+    return out.count("**") + out.count("`")
+
+
+def _close_orphan_markup(s: str, full: str, cap: int) -> str:
+    """Close spans the TRUNCATION orphaned — judged by the RENDERER, not a copy of it.
+
+    ⛔ Round 4, Blocking. The first version was a second, simpler scanner sitting
+    beside `_inline_scan`, and the two disagreed on exactly one rule:
+    `_inline_scan` treats a code span's content as LITERAL, while the copy counted
+    a `**` inside one as bold. So ``…`code ** tail`` gained a `**` closer that then
+    rendered inside the `<code>` — a bare delimiter still on the page AND text the
+    author never typed. Two implementations of one rule drift; this is the fourth
+    round running in which a fix introduced the next round's worst finding.
+
+    There is now ONE implementation. The candidate closers are judged by running
+    the shipping renderer and requiring no MORE orphans than the untruncated text
+    already had — `full` is the baseline, so a delimiter the AUTHOR left unpaired
+    is preserved rather than "corrected". `""` is tried first, so a truncation
+    that orphaned nothing changes nothing.
+
+    ⚠ `cap` is a BOUND, so the closers live INSIDE it. Round 4 (Low) measured the
+    first version appending them AFTER the cut: 148 of 60,000 delimiter-rich
+    inputs produced a title longer than `TITLE_CAP`, up to 113. When nothing
+    fits, a word is dropped and the search repeats.
+    """
+    base = _orphaned_delimiters(full)
+    while True:
+        for closer in ("", "`", "**", "**`", "`**"):
+            if len(s + closer) <= cap and _orphaned_delimiters(s + closer) <= base:
+                return s + closer
+        shorter = s.rstrip().rsplit(" ", 1)[0]
+        if shorter == s or not shorter:
+            return s[:cap]
+        s = shorter
+
+
+INLINE_URL = re.compile(r"https?://[^\s<]+[^\s<.,;:)\]]")
+# An HTML entity, anchored at the END of a string. `_inline_scan` runs on ALREADY
+# ESCAPED text, so a trailing `;` may be the terminator of `&amp;` rather than the
+# author's punctuation — and cutting it in half emits a `;` nobody typed.
+# ⚠ `#[xX]?` — round 4, High. Without it this missed `&#x27;`, which is exactly
+# what `html.escape` emits for an APOSTROPHE, so `https://x.ee/a'**b**` still had
+# its entity severed. `x` is not in `[0-9a-fA-F]`, so the hex form never matched
+# while the decimal `&#39;` did — the guard covered the form I happened to test.
+ENTITY_TAIL = re.compile(r"&(?:#[xX]?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$")
+
+
+def _trim_url_tail(url: str) -> str:
+    """Strip trailing sentence punctuation from a cut URL, ENTITY-AWARE.
+
+    ⚠ M1 (round 3), REPRODUCED. The first version was `rstrip(".,;:)]")`, and
+    `_inline_scan` operates on escaped text, so `https://x.ee/?a=1&**bold**`
+    rendered as `<a href="…&amp">…&amp</a>;<strong>bold</strong>` — the entity
+    severed, and a semicolon the author never typed pushed outside the link.
+
+    Measured over 66,174 inputs, that made the renderer WORSE than before the
+    trim existed (1862 → 1897 inputs whose rendered text differs from the typed
+    text): it traded a cosmetic defect (`**` inside an `href`) for a character
+    inserted into the reader's prose — the exact trade `_inline_scan` refuses at
+    its own docstring. One character at a time, and stop at an entity.
+    """
+    while url and url[-1] in ".,;:)]":
+        if url[-1] == ";" and ENTITY_TAIL.search(url):
+            break
+        url = url[:-1]
+    return url
+
+
+def _inline(s: str) -> str:
+    """Escape FIRST, then apply the small markup authors actually write.
+
+    Measured across the store before choosing the set: `**bold**` in 3/10
+    entries, `code` in 1, a bare URL in 1, and bullets and [md](links) in
+    ZERO. Supporting more than this would be inventing a contract no author
+    uses — and every construct here renders as literal punctuation today.
+
+    ONE left-to-right scan, not three stacked `re.sub` passes. Those passes
+    were blind to each other's OUTPUT: review reproduced ``**bold `code**
+    tail` `` emitting `<strong>bold <code>code</strong> tail</code>` — tags
+    closing in the order they were not opened — because the code pass reached
+    straight across the bold pass's closing tag. Scanning left to right, a
+    construct consumes its whole span before the next one is considered, so a
+    span cannot begin inside one region and end inside another. A fourth regex
+    refining the third would have been more of the same cause.
+    """
+    # Two steps, deliberately on two lines: the escape and the scan are separate
+    # properties with separate guards, and a mutation anchor cannot name one of
+    # them while they share a line. `quote` stays DEFAULT-TRUE — the autolinker
+    # writes entry text into an `href` attribute, so quotes are load-bearing.
+    escaped = _html.escape(s)
+    return _inline_scan(escaped, strong=True)
+
+
+def _inline_scan(s: str, strong: bool) -> str:
+    """The scan itself, over ALREADY-ESCAPED text. Never call it on raw input.
+
+    Unpaired delimiters print as themselves. Dropping text to make the tags
+    balance would trade a cosmetic defect for content loss, and content loss
+    is what Cx2 was filed for in this same round.
+    """
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        if strong and s.startswith("**", i):
+            close = s.find("**", i + 2)
+            body = s[i + 2:close] if close != -1 else ""
+            # `body == body.strip()`: `** a **` is spacing, not emphasis.
+            #
+            # ⚠ This USED to claim it "is the old regex's `\S(?:[^*]*\S)?`". That
+            # was FALSE and I found it with a differential fuzz, not by reading:
+            # the old regex also forbade a `*` INSIDE the body, so `**a*b**` was
+            # printed literally and is now emphasis. 59 of 96,104 inputs differ.
+            # Measured on the real store: 16 entries, 0 differing lines.
+            #
+            # The new behaviour is kept deliberately — the old rule dropped text
+            # (`******` rendered as `**`, losing four characters; 587 such inputs)
+            # and this one drops none. What is fixed is the CLAIM: an equivalence
+            # asserted in a comment and never executed is how a silent behaviour
+            # change rides along with a refactor, which is what round 2 warned.
+            #
+            # ⚠ `strong=False` is BELT-AND-BRACES, not a live branch, and round 2
+            # was right to ask for its falsifier — there cannot be one. `close` is
+            # the FIRST `**` after `i + 2`, so `body` can never contain `**`, so
+            # the flag gates a branch this call cannot reach. Flipping it to True
+            # is an equivalent mutant. It stays as a fence for anyone who changes
+            # how `close` is chosen; it is not doing work today, and saying it was
+            # would be the overclaim the same round found elsewhere.
+            if close != -1 and body and body == body.strip():
+                out.append(f"<strong>{_inline_scan(body, strong=False)}</strong>")
+                i = close + 2
+                continue
+        if s[i] == "`":
+            close = s.find("`", i + 1)
+            # `-1 > i + 1` is False, so an unclosed span needs no separate test.
+            if close > i + 1:
+                # Code is LITERAL — no markup inside. The old pass ORDER ran the
+                # autolinker over code content too, so a URL in backticks came
+                # out as a link nested in a <code>.
+                out.append(f"<code>{s[i + 1:close]}</code>")
+                i = close + 1
+                continue
+        m = INLINE_URL.match(s, i)
+        if m:
+            url = m.group(0)
+            # ⚠ Round 2 (Codex, Low) — REPRODUCED. The three-pass version ran the
+            # autolinker LAST, so it could never swallow markup already emitted:
+            # `https://x.ee/z**bold**` linked the URL and emphasised the rest.
+            # Scanning left to right the URL is considered FIRST, and `[^\s<]+`
+            # happily ate `**bold**` into the `href`. Stop the URL at a delimiter —
+            # an author who writes one hard against a URL means the markup, not a
+            # URL containing asterisks. Re-validate after the cut, because the trim
+            # can leave something that is no longer a URL at all (`https://`).
+            cut = min((p for p in (url.find("**"), url.find("`")) if p != -1),
+                      default=-1)
+            if cut != -1:
+                url = _trim_url_tail(url[:cut])
+            if INLINE_URL.fullmatch(url):
+                out.append(f'<a href="{url}">{url}</a>')
+                i += len(url)
+                continue
+        out.append(s[i])
+        i += 1
+    return "".join(out)
+
+
+def _prose(text: str, drop_headline: bool = False) -> str:
+    """Blank-line-separated paragraphs, first one as the LEDE.
+
+    9 of the store's 10 entries were already written with paragraph breaks
+    (3.3 on average) and every one was thrown away: the whole entry went into
+    a single <p>, and HTML collapses the blank lines. The author's structure
+    existed the entire time — it was never rendered.
+
+    The lede carries the idea, so a reader who stops after it has still got
+    the point. That is the difference between a page you scan and one you have
+    to sit down with.
+    """
+    paras = [p.strip() for p in re.split(r"\n[ \t]*\n", text) if p.strip()]
+    if not paras:
+        return ""
+    # The headline IS this text's first sentence, so an unedited lede repeats it
+    # word for word and the eye reads the same line twice. Drop it — but ONLY
+    # when something follows, or the fold opens empty and the reader is worse
+    # off than with the repetition.
+    #
+    # ⚠ Derived by RE-APPLYING `_first_sentence`, not by prefix-matching the
+    # displayed title. The title is capped and may end in "…", which can never
+    # prefix-match — so matching on it silently declined to drop anything on
+    # exactly the entries with the longest, most repetitive openings. Measured
+    # on the real page: entry 1 de-duplicated, entry 2 did not. Deriving both
+    # from one rule means they cannot disagree.
+    if drop_headline:
+        first = " ".join(paras[0].split())
+        head = _first_sentence(first, cap=len(first))
+        # ⚠ Only drop a REAL sentence. Review REPRODUCED the alternative: a first
+        # paragraph with no `.?!` at all makes `head` the WHOLE paragraph, so the
+        # fold dropped all of it — while the title showed only the first
+        # TITLE_CAP characters. Everything past the cap then existed in the store
+        # and appeared NOWHERE on the page. Deleting prose the reader never saw
+        # is the worst outcome available here, so the drop is refused unless the
+        # headline genuinely ends a sentence.
+        if head == first and not first.rstrip().endswith((".", "!", "?")):
+            head = ""
+        rest = first[len(head):].lstrip() if head else first
+        if rest:
+            paras[0] = rest
+        elif len(paras) > 1:
+            # The whole first paragraph WAS the headline. Promote the next one
+            # rather than printing the headline twice — 6 of the store's 10
+            # entries open with a single-sentence paragraph, so keeping it was
+            # the common case, not the edge case.
+            paras.pop(0)
+        # else: the headline is the entire entry. Keep it — an empty fold is
+        # worse than a repeated sentence, and there is nothing else to show.
+    return "".join(
+        f'<p class="{"lede" if i == 0 else "body"}">{_inline(p)}</p>'
+        for i, p in enumerate(paras))
 
 
 def _store_label(p) -> str:
@@ -147,7 +507,16 @@ def parse_entries(text: str) -> list[dict]:
         cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
         plain_lines = body if cut is None else body[:cut]
         entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
-        entry["title"] = next((l.strip() for l in plain_lines if l.strip()), "")
+        # The FIRST PARAGRAPH, reduced to its first sentence — not the first
+        # physical line. The blank-line test below is unchanged: an entry whose
+        # first line is blank still has no title and is still an error.
+        _first_para: list[str] = []
+        for _l in plain_lines:
+            if _l.strip():
+                _first_para.append(_l.strip())
+            elif _first_para:
+                break
+        entry["title"] = _first_sentence(" ".join(_first_para))
         entry["plain"] = "\n".join(plain_lines).strip()
         if not entry["title"]:
             entry["error"] = "no title line — the first line after the header is blank"
@@ -331,6 +700,46 @@ def _ordered(entries: list[dict]) -> list[dict]:
     return out
 
 
+def _day_states(days: list[dict], store_unknown: bool) -> list[tuple[str, str]]:
+    """Which encoded states actually OCCUR in this window, in reading order.
+
+    The chart carries four meanings — height, and three status fills — and
+    carried NO key, so an alarm was indistinguishable from decoration. The
+    reader's words: *"I am wondering what each color/texture means."*
+
+    Only states PRESENT are keyed. A legend listing states the chart does not
+    contain is both clutter and a small lie about what is on screen; keying the
+    present ones means the alarm gets NAMED on the day it appears, which is the
+    day it matters. The first row is unconditional because it defines the axis.
+    """
+    rows = [("", "one day — taller means more commits")]
+    if any(d["needs_you"] for d in days):
+        rows.append(("needs", "needs you"))
+    if any(d["commits"] > 0 and not d["has_entry"] and not store_unknown for d in days):
+        rows.append(("unwritten", "shipped with no entry"))
+    if any(d["has_entry"] and d["commits"] == 0 for d in days):
+        rows.append(("marked", "an entry, but no commits"))
+    return rows
+
+
+def _legend(rows: list[tuple[str, str]]) -> str:
+    """⚠ The swatch REUSES the chart's own classes (`bar needs`, `bar unwritten`,
+    …) rather than restating their colours. A legend with its own copy of the
+    palette is a second source of truth that drifts silently — and a legend that
+    quietly stops matching the chart is worse than none, because it is believed.
+    Text wears a TEXT token, never the status colour it describes.
+    """
+    if len(rows) < 2:                       # nothing but the axis note — no key needed
+        return ""
+    items = "".join(
+        f'<li><span class="swatch {("bar " + cls).strip()}" aria-hidden="true">'
+        f'{"<span class=chip-gap></span>" if cls == "unwritten" else ""}'
+        f'{"<span class=chip-dot></span>" if cls == "marked" else ""}'
+        f'</span>{_html.escape(text)}</li>'
+        for cls, text in rows)
+    return f'<ul class="legend">{items}</ul>'
+
+
 def _bar(day: dict, tallest: int, store_unknown: bool) -> str:
     h = 4 if day["commits"] == 0 else max(6, round(48 * day["commits"] / max(tallest, 1)))
     quiet = day["has_entry"] and day["commits"] == 0     # §6.1
@@ -382,7 +791,7 @@ def build(entries, days, prs, pr_error, git_error, window,
     # location it had never opened).
     # ─── What needs you ───
     need = unresolved(entries)
-    rows = [f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["title"])}</a> '
+    rows = [f'<li><a href="#{_slug(e["id"])}">{_inline(e["title"])}</a> '
             f'<span class="when">{_html.escape(e["date"])} · {_html.escape(e["id"])}</span></li>'
             for e in need]
     if pr_error:
@@ -409,6 +818,7 @@ def build(entries, days, prs, pr_error, git_error, window,
         needs_html = '<p class="none">Nothing needs you.</p>'
 
     # ─── The chart ───
+    legend = ""
     if git_error:
         chart = (f'<p class="unknown">Could not read the git history — '
                  f'{_html.escape(git_error)}</p>')
@@ -418,6 +828,9 @@ def build(entries, days, prs, pr_error, git_error, window,
     else:
         tallest = max((d["commits"] for d in days), default=0)
         chart = "".join(_bar(d, tallest, bool(store_error)) for d in reversed(days))
+        # ⚠ Only when there IS a chart. A key beside an error message would be
+        # describing marks that are not on the page.
+        legend = _legend(_day_states(days, bool(store_error)))
     # §5: the count is commits, and it under-counts work that was never committed.
     chart_note = ('<p class="note">One bar per day, oldest on the left. It counts commits, '
                   'so work that was never committed does not appear here.</p>')
@@ -459,9 +872,10 @@ def build(entries, days, prs, pr_error, git_error, window,
                 f'{day_anchor}<article class="entry" id="{eid}">'
                 f'<h3>{_html.escape(e["date"])} '
                 f'<span class="eid">{_html.escape(e["id"])}</span>{flag}</h3>'
-                f'<p class="title">{_html.escape(e["title"])}</p>'
+                f'<p class="title">{_inline(e["title"])}</p>'
                 f'<details id="{eid}-plain"><summary>What this means</summary>'
-                f'<p>{_html.escape(e["plain"])}</p></details>{tech}</article>')
+                f'<div class="prose">{_prose(e["plain"], drop_headline=True)}</div>'
+                f'</details>{tech}</article>')
         entries_html = "".join(parts)
 
     # ─── Recorded exemptions (spec §7) ───
@@ -485,10 +899,14 @@ def build(entries, days, prs, pr_error, git_error, window,
 <style>
 :root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
 --need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
---link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}}
+--link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+--p-lede:{PROSE_COLOURS["lede"][0]};--p-head:{PROSE_COLOURS["head"][0]};
+--p-detail:{PROSE_COLOURS["detail"][0]};--p-mark:{PROSE_COLOURS["mark"][0]}}}
 @media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
 --bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
---err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0}}}}
+--err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;
+--p-lede:{PROSE_COLOURS["lede"][1]};--p-head:{PROSE_COLOURS["head"][1]};
+--p-detail:{PROSE_COLOURS["detail"][1]};--p-mark:{PROSE_COLOURS["mark"][1]}}}}}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
 line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
 /* The browser default link colour is #0000EE, which measures 1.9:1 against the dark
@@ -518,6 +936,23 @@ var(--err-bg);border:1px solid var(--err)}}
 .bar .dot{{position:absolute;left:50%;bottom:-11px;width:6px;height:6px;
 margin-left:-3px;border-radius:50%;background:var(--need)}}
 .bar .gapmark{{position:absolute;left:0;right:0;top:-6px;height:3px;background:var(--err)}}
+/* ── The chart's key. ───────────────────────────────────────────────────────
+   The swatches carry `bar`, `bar needs`, `bar unwritten` — the CHART's classes
+   — so a palette change moves both at once. A legend holding its own copy of
+   the colours is a second source of truth, and one that drifts silently is
+   worse than no legend at all, because a key is believed.
+   `flex:0 0` overrides `.bar{{flex:1}}`: inside a legend a swatch is a fixed
+   sample, not a bar competing for width. */
+.legend{{list-style:none;display:flex;flex-wrap:wrap;gap:6px 18px;
+  margin:10px 0 0;padding:0;font-size:12.5px;color:var(--p-detail)}}
+.legend li{{display:flex;align-items:center;gap:7px}}
+.legend .swatch{{flex:0 0 14px;width:14px;height:11px;position:relative;
+  border-radius:2px 2px 0 0;display:inline-block}}
+.legend .chip-gap{{position:absolute;left:0;right:0;top:-4px;height:3px;
+  background:var(--err)}}
+.legend .chip-dot{{position:absolute;left:50%;bottom:-7px;width:5px;height:5px;
+  margin-left:-2.5px;border-radius:50%;background:var(--need)}}
+.legend li:has(.marked){{margin-bottom:5px}}   /* room for the dot below */
 .vh{{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
 .anchor{{display:block;height:0;scroll-margin-top:12px}}
 .entry{{background:var(--panel);border:1px solid var(--rule);border-radius:4px;
@@ -525,7 +960,27 @@ padding:14px 18px;margin-bottom:10px}}
 .entry.broken{{border-color:var(--err);background:var(--err-bg)}}
 .entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
 .entry .eid{{color:var(--fg3);opacity:.75}}
-.entry .title{{margin:0;font-weight:600}}
+.entry .title{{margin:0;font-weight:600;line-height:1.4;max-width:60ch;
+  color:var(--p-head)}}
+/* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
+   Every entry's human half used to render as ONE <p> at the full 820px shell
+   width, so the author's paragraphs vanished and each line ran ~110 characters
+   — roughly twice the measure at which the eye reliably finds the next line.
+   Three things do the work here, in order of how much they buy:
+     1. paragraphs exist at all;
+     2. the LEDE is the only full-contrast text, so the glance lands on the
+        idea and the supporting detail recedes to --fg2 rather than competing;
+     3. ~64ch measure and 1.7 leading, so a line ends where the eye expects.
+   `strong` gets its own token: an author writing **Waiting on you:** is marking
+   the one sentence that must not be skimmed past, and it now outranks the
+   body it sits in instead of rendering as literal asterisks. */
+.entry .prose{{max-width:64ch;margin-top:10px}}
+.entry .prose p{{margin:0 0 .9em;color:var(--p-detail);line-height:1.7}}
+.entry .prose p:last-child{{margin-bottom:0}}
+.entry .prose .lede{{color:var(--p-lede);font-size:15.5px;line-height:1.6;
+  margin-bottom:1.05em}}
+.entry .prose strong{{color:var(--p-mark);font-weight:600}}
+.entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--p-lede)}}
 .flag{{color:var(--need);font-weight:700}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
@@ -536,7 +991,7 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <div class="shell">
 <h1>Project dashboard</h1>
 <h2>What needs you</h2>{needs_html}
-<h2>The last {window} days</h2><div class="chart">{chart}</div>{chart_note}
+<h2>The last {window} days</h2><div class="chart">{chart}</div>{legend}{chart_note}
 <h2>What changed</h2>{entries_html}
 <h2>Branches that skipped their entry</h2>{exempt_html}
 <h2>Words</h2>{glossary_html}
@@ -632,8 +1087,93 @@ def contrast_failures(html: str, minimum: float = CONTRAST_MIN) -> list[str]:
     return out
 
 
-def _self_test() -> int:
+@contextlib.contextmanager
+def _write_sandbox():
+    """Repoint OUT_DEFAULT at a temp dir for the duration; restore on the way out.
+
+    ⛔ WHY THIS EXISTS. MEASURED: `check-plan-code.py --mutate .` replaced the
+    reader's live dashboard with an empty page. The suite calls `main()`;
+    `main()` falls through to `--out`; `--out` defaulted to a REAL file in the
+    home directory. A mutant reaching the compose path therefore published
+    garbage over the page the harness exists to protect. Redirecting the
+    DEFAULT — not the four call sites — is what makes it structural: a case
+    written later inherits the sandbox instead of having to remember it.
+
+    ⚠ AND HERE IS ITS EXACT SCOPE, because the sentence above is the shape of
+    claim that produced the round-2 hazard. It covers the `--out` DEFAULT. It
+    does NOT cover:
+
+      * `--fragment-only`, which never consults `OUT_DEFAULT` — `main()` writes
+        `a.fragment_only` directly;
+      * an explicit `--out`, which overrides the default this rebinds.
+
+    On either, a RELATIVE path resolves against the caller's cwd. REPRODUCED in
+    round 3: a case doing that destroyed a sentinel in the cwd at a green suite.
+    The reader's page is still unreachable (`OUT_DEFAULT` is absolute under
+    `$HOME`) and CI is safe (`run_suite` launches with `cwd=<temp copy>`), so the
+    exposure is a hand-run from the repo root writing into the working tree.
+
+    **A case passing an explicit `--out` or `--fragment-only` MUST pass an
+    ABSOLUTE path.** All of them do, and the case named
+    "every --out / --fragment-only path in this suite is ABSOLUTE" keeps it that
+    way — the guard is on the suite, because the sandbox structurally cannot be.
+
+    ⚠ WHY IT WRAPS THE CALL rather than living inside `_self_test`. Two review
+    findings, one shape:
+
+      L1 — the previous version restored in an `atexit` handler and the handler
+      had NO falsifier: deleting its registration SURVIVED 161/161. It could
+      not have had one. The hazard it claimed to cover was "a case raises and
+      the explicit restore at the end is never reached" — but an exception out
+      of `_self_test` leaves `sys.exit(main(...))` and kills the process, and
+      rebinding a global in a dying interpreter is unobservable BY
+      CONSTRUCTION. What it actually bought was the `rmtree` on that path: a
+      temp-directory leak, real, and not what its comment said.
+
+      L2 — the explicit restore sat three lines above the end of `_self_test`,
+      which is exactly where the next case gets appended. A case written there
+      would have run with OUT_DEFAULT pointing at the reader's real page.
+
+    `finally` around the CALL fixes both without re-indenting 700 lines: the
+    restore is in-process and therefore observable, so it has a falsifier (see
+    the raising-body case in the suite), and the window covers every line of
+    `_self_test` including ones not yet written — which is the property L2
+    actually wanted. Yields `(sandbox_dir, real_out)` so the suite asserts
+    against the values in force, never a second copy of them.
+    """
+    real_out = OUT_DEFAULT
+    sandbox = pathlib.Path(tempfile.mkdtemp(prefix="gen-dashboard-selftest-"))
+    globals()["OUT_DEFAULT"] = sandbox / "dashboard.html"
+    try:
+        yield sandbox, real_out
+    finally:
+        globals()["OUT_DEFAULT"] = real_out
+        _shutil.rmtree(sandbox, ignore_errors=True)
+
+
+def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
+    """The cases. `_write_sandbox` is already in force — see main()."""
     ok = fail = 0
+
+    # ⛔ ROUND 4, High — the previous guard read the SOURCE TEXT for a string
+    # literal after `--out` / `--fragment-only`. Measured: the suite has 5 such
+    # flags and ZERO adjacent literals, because every real call site passes
+    # `str(<Path>)`. So `_rel == []` held because the regex could not examine the
+    # form the suite uses — a green check over the wrong subject. REPRODUCED: a
+    # case doing `main(["--fragment-only", str(pathlib.Path("frag.html"))])`
+    # destroyed a cwd sentinel at a fully green 206/206.
+    #
+    # Assert the PROPERTY — the value `main` actually receives — not the spelling
+    # in the source. Installed before the first case so nothing escapes it.
+    _paths_passed: list[str] = []
+    _real_main = main
+
+    def _recording_main(argv):
+        for _f in ("--out", "--fragment-only"):
+            if _f in argv and argv.index(_f) + 1 < len(argv):
+                _paths_passed.append(argv[argv.index(_f) + 1])
+        return _real_main(argv)
+    globals()["main"] = _recording_main
 
     def case(name, got, want):
         nonlocal ok, fail
@@ -1075,6 +1615,487 @@ def _self_test() -> int:
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
 
+    # ── ROUND 1 REVIEW FINDINGS ──────────────────────────────────────────────
+    # Every case here exists because a reviewer reproduced a defect the suite
+    # was green over. They are grouped so the next reader can see what one
+    # round cost, rather than finding them scattered by topic.
+
+    # H2 (Claude) — REPRODUCED on the shipped page: a headline containing
+    # **bold** printed its asterisks, because the title went through
+    # `_html.escape` while the body went through `_inline`. The headline is
+    # prose too. Asserted on the BUILT page, not on the helper.
+    _bold_page = _B(parse_entries("## 2026-08-29\n**Correction** to the entry.\nMore.\n"),
+                    bucket_days([], [], 1, "2026-08-29"), window=1)
+    case("a headline renders **bold** as emphasis, like the body does",
+         ("<strong>Correction</strong>" in _bold_page, "**Correction**" in _bold_page),
+         (True, False))
+
+    # H1 (Claude) — REPRODUCED with two mutations: reverting the entry render
+    # to a single escaped <p> was GREEN. Every `_prose` case called the helper;
+    # nothing asserted the page uses it. Fourth wiring gap of the day.
+    _fold_page = _B(parse_entries("## 2026-08-29\nOpening line here.\n\nSecond para.\n"),
+                    bucket_days([], [], 1, "2026-08-29"), window=1)
+    case("the entry render USES the prose fold (not one escaped blob)",
+         ('<div class="prose">' in _fold_page, '<p class="lede">' in _fold_page),
+         (True, True))
+
+    # H3 (Claude) / Medium (Codex) — the two SECURITY properties of `_inline`
+    # were the two with no falsifier. Codex changed `https?` to
+    # `(?:https?|javascript)` in a scratch copy and the suite stayed green.
+    for _scheme in ("javascript:alert(1)", "data:text/html,x", "vbscript:x",
+                    "JavaScript:alert(1)"):
+        case(f"{_scheme.split(':')[0]} is NEVER autolinked",
+             "<a href" in _inline(_scheme), False)
+    case("...while http and https still are (so the above is not vacuous)",
+         ("<a href" in _inline("https://a.example/x"),
+          "<a href" in _inline("http://a.example/x")), (True, True))
+
+    # M1 (Claude) — the contrast cases measured PROSE_CARD, a PYTHON COPY of
+    # `--panel`. A green check over the wrong subject: change the stylesheet's
+    # --panel and the check still passed against the stale constant. Read the
+    # EMITTED CSS instead — the thing the claim is about.
+    def _css_var(css, name, dark):
+        blk = css.split("prefers-color-scheme:dark")[1] if dark else css.split("prefers-color-scheme:dark")[0]
+        mm = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{3,8}})", blk)
+        return mm.group(1) if mm else None
+    for _theme, _dark in (("light", False), ("dark", True)):
+        _emitted = _css_var(ht, "panel", _dark)
+        # Compared as COLOURS, not as strings: the stylesheet writes `#fff`
+        # where the Python constant says `#ffffff`. Same colour, and a string
+        # comparison would fail on a difference that does not exist.
+        case(f"{_theme}: the AA check reads the EMITTED --panel, not a copy",
+             _emitted is not None
+             and _contrast(_emitted, PROSE_CARD[_theme]) == 1.0, True)
+        for _role in PROSE_COLOURS:
+            _v = _css_var(ht, f"p-{_role}", _dark)
+            case(f"{_theme}: --p-{_role} in the stylesheet clears AA on that --panel",
+                 _v is not None and _contrast(_v, _emitted) >= PROSE_CONTRAST_MIN, True)
+
+    # M2 (Claude) — PROSE_CONTRAST_MIN could be set to 1.0 with a green suite:
+    # the threshold that makes every other colour case meaningful was itself
+    # unpinned. A guard whose bar can be lowered is a guard with no bar.
+    case("the AA bar is WCAG AA, and cannot be quietly lowered",
+         PROSE_CONTRAST_MIN, 4.5)
+    # L3 (Claude) — "desaturated well clear of --link" was prose, not a check.
+    case("the headline colour is never the LINK colour (a title is not a link)",
+         PROSE_COLOURS["head"][1] == _css_var(ht, "link", True), False)
+
+    # M4 (Claude) — `color:var(--fg)` named a custom property this page never
+    # defines, so it silently did nothing. CLASS fix: every custom property the
+    # prose and legend rules consume must be defined in the same stylesheet.
+    # ⚠ Comments stripped FIRST. This guard SURVIVED its own mutation because
+    # a CSS comment reading "returns to --fg:" was counted as a definition of
+    # `--fg` — prose inside the stylesheet satisfying a check about the
+    # stylesheet. The guard was reading text, not declarations.
+    _css = re.sub(r"/\*.*?\*/", " ", ht, flags=re.S)
+    _used = set(re.findall(r"var\((--[a-z0-9-]+)\)", _css))
+    _defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", _css))
+    case("every custom property the page CONSUMES is also DEFINED",
+         sorted(_used - _defined), [])
+
+    # M3 (Claude) — the legend sits on --bg, not --panel, where light-mode
+    # --fg3 measured 4.32:1. Its own colour now, checked on the right surface.
+    _legend_rule = re.search(r"\.legend\{[^}]*\}", _css)
+    case("the legend CONSUMES the token whose contrast is checked",
+         _legend_rule is not None and "var(--p-detail)" in _legend_rule.group(0), True)
+    for _theme, _dark in (("light", False), ("dark", True)):
+        _bg = _css_var(ht, "bg", _dark)
+        _detail = _css_var(ht, "p-detail", _dark)
+        case(f"{_theme}: the legend's text clears AA on the surface it SITS on",
+             _contrast(_detail, _bg) >= PROSE_CONTRAST_MIN, True)
+
+    # Codex Medium 1 — REPRODUCED: "Met with Dr. Smith about the release."
+    # became the headline "Met with Dr.", and the fold then opened with the
+    # orphaned word "Smith".
+    case("an abbreviation does not end the headline",
+         _first_sentence("Met with Dr. Smith about the release. Then more."),
+         "Met with Dr. Smith about the release.")
+    case("...nor does 'e.g.'",
+         _first_sentence("Checked e.g. examples in docs. Then more."),
+         "Checked e.g. examples in docs.")
+    # Codex Medium 2 — REPRODUCED: a first paragraph with NO terminator made
+    # the whole paragraph the "headline", so the fold dropped it while the
+    # title showed only TITLE_CAP chars. Text existed in the store and appeared
+    # NOWHERE on the page. Deleting unseen prose is the worst outcome here.
+    _noterm = "A first paragraph with no terminator at all that runs on well past any cap"
+    case("a paragraph with no sentence end is never dropped from the fold",
+         _noterm in _prose(_noterm + "\n\nSecond.", drop_headline=True), True)
+
+    # ── THE CHART'S KEY ──────────────────────────────────────────────────────
+    # The chart encoded four meanings and carried NO key, so its ALARM state —
+    # commits shipped with no entry — was indistinguishable from decoration.
+    # Reported by the reader, who could not tell what the colours meant.
+    def _d(commits, has_entry, needs=False, date="2026-08-29"):
+        return {"date": date, "commits": commits, "has_entry": has_entry,
+                "needs_you": needs}
+
+    _plain = _day_states([_d(3, True)], False)
+    case("a window with nothing special gets ONE row — the axis, no key",
+         ([c for c, _ in _plain], _legend(_plain)), ([""], ""))
+    _all = _day_states([_d(3, False), _d(0, True), _d(2, True, needs=True)], False)
+    case("each state PRESENT gets a row, in reading order",
+         [c for c, _ in _all], ["", "needs", "unwritten", "marked"])
+    case("a state that does NOT occur is not keyed — the key describes THIS chart",
+         [c for c, _ in _day_states([_d(2, True, needs=True)], False)], ["", "needs"])
+    # §9's alarm is suppressed when the store could not be read, and the KEY has
+    # to agree — naming a state the chart deliberately did not draw is a lie
+    # about the page, and the lie would point at the scariest row.
+    case("an unreadable store hides the alarm from the chart AND from the key",
+         [c for c, _ in _day_states([_d(3, False)], True)], [""])
+
+    _html_key = _legend(_all)
+    # ⚠ WIRING, and the reason the swatch has no colours of its own: it wears
+    # the CHART's classes. A legend with a private copy of the palette drifts
+    # silently, and a key that stops matching is worse than none — it is believed.
+    case("swatches reuse the chart's own classes, never a copy of its colours",
+         ('class="swatch bar needs"' in _html_key,
+          'class="swatch bar unwritten"' in _html_key,
+          "var(--err)" in _html_key), (True, True, False))
+    case("the alarm row says what it means, in words",
+         "shipped with no entry" in _html_key, True)
+    case("legend text is escaped",
+         "&lt;b&gt;" in _legend([("", "a <b>day</b>"), ("needs", "x")]), True)
+
+    # ⚠ THE WIRING. Every case above calls `_legend`/`_day_states` directly, and
+    # deleting `{legend}` from the page template SURVIVED all of them at
+    # 159/159 — the key can vanish from the page while its builders stay
+    # perfect. Third time today that testing a helper was mistaken for testing
+    # the caller that has to reach it; asserted on the BUILT page.
+    _alarm_days = bucket_days(["2026-08-28"], [], 1, "2026-08-28")
+    _key_page = _B([], _alarm_days, window=1)
+    case("the key reaches the PAGE, not just its builder",
+         ('<ul class="legend">' in _key_page,
+          "shipped with no entry" in _key_page), (True, True))
+    # ...and it is absent when there is no chart to describe.
+    _err_page = _B([], [], git_error="git exploded", window=1)
+    case("no key beside a chart that could not be drawn",
+         '<ul class="legend">' in _err_page, False)
+
+    # ── THE PROSE RAMP (colour) ──────────────────────────────────────────────
+    # Reported by the reader: headline, summary and **bold** all read as the same
+    # "bright bold". They were literally one colour — `--ink` — separated only by
+    # weight. These cases pin the RELATIONSHIP, not the hex: a future palette may
+    # change every value, but the summary must stay the brightest thing, the
+    # headline must sit between it and the detail, and all four must clear AA.
+    # ⚠ Asserting the hexes instead would pass on a palette that inverted the
+    # hierarchy, and fail on a harmless re-tint — precisely backwards.
+    for _theme, _idx in (("light", 0), ("dark", 1)):
+        _card = PROSE_CARD[_theme]
+        _r = {k: _contrast(v[_idx], _card) for k, v in PROSE_COLOURS.items()}
+        case(f"{_theme}: every prose role clears WCAG AA on the card",
+             min(_r.values()) >= PROSE_CONTRAST_MIN, True)
+        case(f"{_theme}: the ramp reads summary > headline > detail",
+             (_r["lede"] > _r["head"], _r["head"] > _r["detail"]), (True, True))
+        # Four roles, four DISTINCT values — the whole defect was one colour
+        # doing three jobs, and nothing would have caught it.
+        case(f"{_theme}: no two roles share a colour",
+             len({v[_idx] for v in PROSE_COLOURS.values()}), 4)
+    # Author emphasis borrows the SAME token the "needs you" chip uses. If that
+    # drifts apart the page starts using two colours for one meaning.
+    case("emphasis is the attention colour, in both themes",
+         PROSE_COLOURS["mark"], ("#9c5d0e", "#e0a050"))
+    # ⚠ WIRING. Every case above reads the dict; none of them proves the dict
+    # reaches the stylesheet. A palette nothing renders is decoration.
+    for _role in PROSE_COLOURS:
+        case(f"--p-{_role} is defined AND consumed by a rule",
+             (f"--p-{_role}:" in ht, f"var(--p-{_role})" in ht), (True, True))
+    case("both themes ship their own values, not one set for both",
+         all(v[0] in ht and v[1] in ht for v in PROSE_COLOURS.values()), True)
+
+    # ── THE PROSE FOLD ───────────────────────────────────────────────────────
+    # ⚠ Every change in this area passed the suite at 120/120 BEFORE these cases
+    # existed — paragraphs, inline markup and the headline had no coverage at
+    # all. A green suite over new rendering code is not evidence about it.
+    _p = _prose("First para, the lede.\n\nSecond para.\n\nThird para.")
+    case("blank lines become PARAGRAPHS — the author's structure survives",
+         (_p.count("<p "), _p.count('class="lede"')), (3, 1))
+    case("only the FIRST paragraph is the lede", _p.count('class="body"'), 2)
+    # A single hard-wrapped paragraph is ONE paragraph. Rendering per-line would
+    # look structured and be noise — the wrap point carries no meaning.
+    case("a hard-wrapped paragraph is not three paragraphs",
+         _prose("one\ntwo\nthree").count("<p "), 1)
+    case("no paragraphs in, nothing out — never an empty <p>", _prose("   "), "")
+
+    # The headline is the lede's own first sentence, so an unedited fold repeats
+    # it verbatim. Dropped — but the guard matters more than the drop: if the
+    # first paragraph IS just that sentence, removing it opens an empty fold.
+    _dup = _prose("Ready for you now. And here is the detail.\n\nMore.",
+                  drop_headline=True)
+    case("the headline is not repeated as the lede's first words",
+         ("And here is the detail." in _dup, "Ready for you now. And" in _dup),
+         (True, False))
+    # A first paragraph that is ONLY the headline: promote the next paragraph
+    # rather than repeat it. This is the COMMON shape — 6 of 10 store entries.
+    _solo = _prose("Ready for you now.\n\nThe detail follows here.", drop_headline=True)
+    case("a one-sentence first paragraph is replaced by the NEXT paragraph",
+         ("Ready for you now." in _solo, '<p class="lede">The detail follows here.</p>' in _solo),
+         (False, True))
+    # ...unless there is nothing else. An empty fold is worse than a repeat.
+    case("...but the headline is KEPT when it is the entire entry",
+         "Ready for you now." in _prose("Ready for you now.", drop_headline=True), True)
+    # ⚠ THE ENTRY-2 CASE, measured on the real page. A first sentence longer
+    # than TITLE_CAP is displayed truncated with "…", and the earlier version
+    # of this matched on that displayed string — so it dropped nothing on
+    # precisely the entries whose openings are longest and most repetitive.
+    _long = "Decided: " + "the check stays and is written down " * 4 + "here. Then more."
+    case("a first sentence longer than the displayed cap is STILL dropped",
+         _prose(_long, drop_headline=True).count("Decided:"), 0)
+    case("...and dropping it leaves the rest intact",
+         "Then more." in _prose(_long, drop_headline=True), True)
+
+    _b = _inline("**Waiting on you:** the `--flag` at https://example.com/x")
+    case("**bold** renders as emphasis, not as literal asterisks",
+         ("<strong>Waiting on you:</strong>" in _b, "**" in _b), (True, False))
+    case("`code` and bare URLs render as themselves",
+         ("<code>--flag</code>" in _b, '<a href="https://example.com/x"' in _b), (True, True))
+    # ⛔ SECURITY, and the ordering is the whole of it: escape THEN mark up. The
+    # reverse turns an entry — a file any contributor edits — into stored XSS on
+    # a page the author opens. Asserts the escaped form is PRESENT, not merely
+    # that the raw form is absent: "absent" is also satisfied by rendering
+    # nothing at all, which is the vacuous-negative trap from the last round.
+    _x = _inline('**<script>alert(1)</script>** & <b>x</b>')
+    case("markup is applied AFTER escaping, so an entry cannot inject HTML",
+         ("&lt;script&gt;" in _x, "<script>" in _x, "<b>" in _x, "&amp;" in _x),
+         (True, False, False, True))
+    case("...and the emphasis around the escaped text still renders",
+         "<strong>&lt;script&gt;alert(1)&lt;/script&gt;</strong>" in _x, True)
+
+    # ── ROUND 1, CARRIED ─────────────────────────────────────────────────────
+    # Cx-Low (Codex) — overlapping spans emitted tags that close in the wrong
+    # order: `**bold `code** tail`` became
+    # `<strong>bold <code>code</strong> tail</code>`. Three independent `re.sub`
+    # passes cannot see each other's output as STRUCTURE, so the code pass
+    # reached straight across the bold pass's closing tag. A fourth regex
+    # refining the third would be more of the same cause.
+    #
+    # The assertion is the PROPERTY — tags close in the order they opened —
+    # not one expected string. A string would pin today's rendering of a typo
+    # nobody should rely on; well-nestedness is what actually matters, and it
+    # holds for inputs no case here enumerates.
+    def _well_nested(h):
+        stack = []
+        for _m in re.finditer(r"</?([a-z]+)[^>]*>", h):
+            if _m.group(0).startswith("</"):
+                if not stack or stack.pop() != _m.group(1):
+                    return False
+            else:
+                stack.append(_m.group(1))
+        return not stack
+    case("overlapping **bold and `code cannot emit crossed tags",
+         _well_nested(_inline("**bold `code** tail`")), True)
+    # ...and the checker is not vacuous. Without this, `_well_nested` could
+    # return True unconditionally and the case above would still be green —
+    # the exact shape of the three guards that survived their first battery
+    # this session. The literal below is the OLD output, verbatim.
+    case("...and the nesting check REJECTS the output this replaced",
+         _well_nested("<strong>bold <code>code</strong> tail</code>"), False)
+    # Unpaired delimiters survive AS THEMSELVES rather than being eaten:
+    # dropping text to make the tags balance would trade a cosmetic defect for
+    # content loss, which is the trade Cx2 was filed over in this same round.
+    #
+    # ⚠ Counted, not `"code" in ...`. The battery caught the weaker form: with
+    # the span emptied, that assertion stayed TRUE because the word "code" also
+    # sits inside the bold span, so the case went red only via an unrelated
+    # one. Assert the DELIMITERS, which is what this case is actually about.
+    _unpaired = _inline("**bold `code** tail`")
+    case("...and unpaired ` delimiters print, they are not swallowed",
+         (_unpaired.count("`"), "tail" in _unpaired), (2, True))
+
+    # ⛔ SECURITY — `_html.escape`'s `quote` argument, which defaults True and was
+    # therefore invisible. MEASURED: `escape(s, quote=False)` SURVIVED 192/192.
+    # It matters because the autolinker is the one construct that puts entry text
+    # into an ATTRIBUTE: with quotes unescaped, a URL carrying a `"` closes `href`
+    # early and everything after it becomes markup. `[^\s<]+` admits `"`, so the
+    # URL pattern does not stop it — the escape is the only thing that does.
+    _q = _inline('https://x.example/"onmouseover=x')
+    case("a raw quote in an autolinked URL cannot break out of href",
+         ("&quot;" in _q, _q.count('"'), "onmouseover=x" in _q), (True, 2, True))
+
+    # ── ROUND 2 ──────────────────────────────────────────────────────────────
+    # Codex Low, REPRODUCED: scanning left to right made the autolinker greedy
+    # where the old three-pass order could not be, and it ate the emphasis into
+    # the href. Positive and negative together — the URL is linked AND the
+    # markup after it survives; either alone is satisfied by doing nothing.
+    # ⚠ M2 (round 3): Codex filed this with TWO reproductions — `**` and `` ` `` —
+    # and `cut` handles both, but only the `**` arm was asserted. Deleting the
+    # backtick arm was green at 198/198 and brought Codex's second repro straight
+    # back. The fix covered the class; the guard covered the instance.
+    _abut, _abut_t = _inline("https://x.ee/z**bold**"), _inline("https://x.ee/z`code`")
+    case("a URL stops at a delimiter instead of swallowing it into the href",
+         ('href="https://x.ee/z"' in _abut, "<strong>bold</strong>" in _abut,
+          'href="https://x.ee/z"' in _abut_t, "<code>code</code>" in _abut_t),
+         (True, True, True, True))
+
+    # M3 (round 3) — two more decisions inside the same twelve lines, both green
+    # under mutation. The second is the sharper one: `:214` states an outcome (a
+    # link whose href is the bare scheme) that nothing could observe.
+    case("trimming the cut keeps the LINK — the trailing stop is not part of it",
+         ('href="https://x.ee/z"' in _inline("https://x.ee/z.**bold**"),
+          "https://x.ee/z.<strong>" in _inline("https://x.ee/z.**bold**")),
+         (True, False))
+    case("...and a trim that leaves only a scheme produces NO link at all",
+         ("<a " in _inline("https://**bold**"),
+          "<strong>bold</strong>" in _inline("https://**bold**")), (False, True))
+
+    # ⛔ M1 (round 3), REPRODUCED — and the reason `_trim_url_tail` exists rather
+    # than a bare `rstrip`. `_inline_scan` runs on ESCAPED text, so a trailing `;`
+    # can be an entity terminator. Cutting it emitted `…&amp</a>;` — a semicolon
+    # the author never typed, pushed outside the link. Measured over 64,368
+    # inputs: the bare rstrip made rendered-vs-typed fidelity WORSE than not
+    # trimming at all (4157 → 4245); entity-aware it is 3850, and 0 inputs that
+    # the rstrip version got right are broken by this one.
+    #
+    # ⚠ Round 4 (Low): the first version's three conjuncts were ALL satisfied with
+    # the trim removed entirely — `"&amp;" in _ent` is satisfied by the ESCAPE,
+    # not by the trim. Assert the PROPERTY the finding was about: the text a
+    # browser shows is the text the author typed. (This still does not
+    # distinguish "no trim at all" — for this input that renders the same visible
+    # text — and it does not need to: `while False:` is caught by the case above.
+    # Stated rather than left as an implied claim of total coverage.)
+    _typed = "https://x.ee/?a=1&**bold**"
+    _ent = _inline(_typed)
+    _shown = _html.unescape(re.sub(r"<[^>]+>", "", _ent))
+    case("the URL trim never severs an HTML entity",
+         (_shown, "</a>;" in _ent), ("https://x.ee/?a=1&bold", False))
+
+    # M1 (Claude), REPRODUCED — and it changes a line already IN the store
+    # (`docs/dashboard-entries.md:87` has a URL in backticks). Making code
+    # non-literal again was green at 193/193: the round's own stated improvement,
+    # on live content, had no falsifier.
+    _codeurl = _inline("`https://x.example/p`")
+    case("a URL inside `code` stays literal — code is not marked up",
+         ("<code>https://x.example/p</code>" in _codeurl, "<a " in _codeurl),
+         (True, False))
+
+    # M2 (Claude) — two scanner decisions that were asserted in comments and by
+    # nothing else. Each pairs the negative with the positive that proves the
+    # case can still see the construct at all.
+    case("`** a **` is spacing, not emphasis — while `**a**` still is",
+         ("<strong>" in _inline("** a **"), "<strong>" in _inline("**a**")),
+         (False, True))
+    # ⚠ The RULE, now that the comment no longer claims a false equivalence with
+    # the deleted regex. A `*` inside a bold body is fine; the old `[^*]*` refused
+    # it and printed the delimiters literally. Pinned so the difference is a
+    # decision on the record rather than a silent consequence of the rewrite.
+    case("a lone * INSIDE a bold body is emphasis, not literal asterisks",
+         ("<strong>a*b</strong>" in _inline("**a*b**"), "**" in _inline("**a*b**")),
+         (True, False))
+    # `close > i + 1`, not `close > i`: an EMPTY span is not a span. Under `> i`
+    # two adjacent backticks are silently eaten, which contradicts this
+    # function's own rule that unpaired delimiters print rather than vanish.
+    case("an empty `` is not a code span — the delimiters print",
+         (_inline("a``b").count("`"), "<code>" in _inline("a``b")), (2, False))
+
+    case("the headline is the first SENTENCE, not the first typed line",
+         _first_sentence("The page is ready. It has three parts."), "The page is ready.")
+    case("a short opening fragment joins the next sentence, never stands alone",
+         _first_sentence("Decided. The check stays until the rewrite lands."),
+         "Decided. The check stays until the rewrite lands.")
+    # ⛔ H1 (round 3) — REPRODUCED ON THE READER'S LIVE PAGE, by this branch's own
+    # round-2 entry: `<p class="title">…plainly: **the check I added…`. The title
+    # is truncated BEFORE it is marked up, so a `**…**` span straddling
+    # TITLE_CAP lost its closer and `_inline` printed the orphan.
+    #
+    # ⚠ Round 1 filed this exact SYMPTOM and fixed it — by wiring `_inline` into
+    # the title. The class (no delimiter reaches the page unpaired) came back
+    # through a second route, because the search was for the mechanism rather
+    # than the property. The case below asserts the PROPERTY, and the filler is
+    # deliberately markup-BEARING: the pre-existing truncation case at `:1810`
+    # uses `"x" * 40` and could never have seen this.
+    # ⚠ `_delim`, not `_d` — `_d` is already a day-fixture factory at `:1644`, and
+    # a `for` target LEAKS into the enclosing scope. `:1252` records the same trap
+    # for `_raises`. Shadowing it here would have broken every later `_d(...)` call.
+    for _delim, _elem in (("**", "strong"), ("`", "code")):
+        _long_md = "x" * 95 + f" {_delim}bold tail that is long enough to be cut{_delim}"
+        _rendered = _inline(_first_sentence(_long_md))
+        case(f"a truncated headline never leaves a bare {_delim} on the page",
+             (_delim in _rendered.replace(f"<{_elem}>", "").replace(f"</{_elem}>", ""),
+              f"<{_elem}>" in _rendered, "bold tail" in _rendered),
+             (False, True, True))
+    # ⛔ ROUND 4, Blocking — REPRODUCED. `_close_orphan_markup` was a SECOND
+    # scanner beside `_inline_scan`, and they disagreed on one rule: code content
+    # is LITERAL. A truncated code span holding a `**` got a `**` closer, which
+    # then rendered inside the `<code>` — a bare delimiter still on the page AND
+    # text the author never typed (`…code ** tail**`).
+    #
+    # The assertion is the PROPERTY that catches it whatever the mechanism: the
+    # truncated span's CONTENT must be a prefix of the full span's. Asserting the
+    # bug's signature (`"**\`" not in title`) would have passed for any renderer
+    # that inserted a different character.
+    _cb = "x" * 95 + " `code ** tail that is long enough to be truncated here`"
+    _full_code = re.search(r"<code>(.*?)</code>", _inline(_cb))
+    _trunc_code = re.search(r"<code>(.*?)</code>", _inline(_first_sentence(_cb)))
+    case("a truncated code span's CONTENT is a prefix of the full span's",
+         (_trunc_code is not None,
+          _full_code is not None and _trunc_code is not None
+          and _full_code.group(1).startswith(_trunc_code.group(1))),
+         (True, True))
+
+    # ⛔ ROUND 4, High — `ENTITY_TAIL` matched `&#39;` but not `&#x27;`, which is
+    # what `html.escape` actually emits for an APOSTROPHE. The guard covered the
+    # form I happened to test; the form the code produces went through severed.
+    _apos = _inline("https://x.ee/a'**bold**")
+    case("the URL trim keeps a HEX numeric entity too, not just the decimal form",
+         ("&#x27;" in _apos, "&#x27<" in _apos, "</a>;" in _apos),
+         (True, False, False))
+
+    # ...and the same property over the REAL store, which is where it was found.
+    # Scoped to TRUNCATED titles: a delimiter the author left unpaired in a short
+    # title still prints as itself, which is `_inline_scan`'s deliberate rule.
+    #
+    # ⚠ `--mutate .` copies only `scripts/` into a temp tree, so the store is
+    # genuinely absent there — the gate caught this as a CANNOT RUN rather than
+    # letting it pass, which is the behaviour the project's checks doc demands.
+    # The skip is therefore DECLARED and itself asserted: it can only be taken in
+    # a tree that has no `docs/` at all, so it can never quietly swallow a real
+    # failure in the repo. The two synthetic cases above carry the property in
+    # both contexts; this one adds the real subject when the real subject exists.
+    if STORE_DEFAULT.exists():
+        _bare = re.compile(r"</?(?:strong|code|a)[^>]*>")
+        _store_titles = [_bare.sub("", _inline(_e["title"]))
+                         for _e in parse_entries(STORE_DEFAULT.read_text())
+                         if _e["title"].endswith("…")]
+        case("no truncated title in the REAL store renders a bare delimiter",
+             ([_t for _t in _store_titles if "**" in _t or "`" in _t], bool(_store_titles)),
+             ([], True))
+    else:
+        case("the REAL-store title check is skipped ONLY where there is no docs/",
+             (STORE_DEFAULT.exists(), (ROOT / "docs").exists()), (False, False))
+    # ⚠ ROUND 4 (Low) — the cap case below uses `"x" * 40 + " " + "y" * 200`:
+    # delimiter-free, so it never produces a closer and could never see closers
+    # appended PAST the cap. Measured: 148 of 60,000 delimiter-rich inputs
+    # exceeded `TITLE_CAP`, up to 113. Same blind-filler shape the H1 comment
+    # names for the older case — and then reintroduced one case later.
+    #
+    # ⚠ AND MY FIRST ATTEMPT AT THIS CASE REPEATED THE MISTAKE. `"**a`b** " +
+    # "word " * 40` puts the delimiters in the LEAD, so the cut lands in plain
+    # words, no closer is needed, and the mutation SURVIVED at 208/208. The cut
+    # has to land INSIDE a span, and it has to leave no word boundary to retreat
+    # to — which is why this input is dense and ugly rather than tidy. Taken from
+    # the fuzz that found the defect (148 of 60,000 inputs), not invented.
+    _capbust = ("abword  b `b a**word b word  `word wordba**abawordb `a** ** **a "
+                "`**   word word word **`** aa      **word `  awordbword wordword "
+                "``b word`a**   a")
+    case("the cap bounds a title even when closers have to be added",
+         (len(_first_sentence(_capbust)) <= TITLE_CAP + 1,
+          _first_sentence(_capbust).endswith("…")), (True, True))
+    case("an over-long headline is cut at a WORD, with an ellipsis",
+         (len(_first_sentence("x" * 40 + " " + "y" * 200)) <= TITLE_CAP + 1,
+          _first_sentence("x" * 40 + " " + "y" * 200).endswith("…")), (True, True))
+    # A URL's dots are not sentence ends — the reported headline broke on one.
+    case("a URL inside the first sentence does not end it",
+         _first_sentence("Open http://127.0.0.1:7391/dashboard to see it. Next."),
+         "Open http://127.0.0.1:7391/dashboard to see it.")
+    # ⚠ THE WIRING, not the helper. Every case above calls `_first_sentence`
+    # directly, and reverting `parse_entries` to the old first-LINE title
+    # SURVIVED all of them at 132/132 — a helper can be perfect and unused.
+    # This is the same shape review caught one round ago: fixing a premise, or
+    # here proving a function, is not covering the caller that must reach it.
+    _wrap = parse_entries("## 2026-08-29\nThe page is ready for you. It is at\n"
+                          "http://example.com with three parts.\n")
+    case("parse_entries USES the sentence headline (not the wrapped line)",
+         _wrap[0]["title"], "The page is ready for you.")
+
     # ── CWD INDEPENDENCE ─────────────────────────────────────────────────────
     # MEASURED 2026-08-29 from a real broken page: run from any directory that is
     # not the repo and every collector fails, but only THREE of the four say so.
@@ -1261,6 +2282,78 @@ def _self_test() -> int:
         _wrc = main(["--window", "0"])
     case("main: --window below 1 is a refusal, not a silent default", _wrc, 2)
 
+    # The falsifier for the sandbox: if the redirect is ever removed, this says
+    # so instead of the next mutation run silently eating the live page. It is
+    # no longer the LAST thing that happens — the restore moved out to `main()`,
+    # so these two hold at every line of this function rather than only above
+    # the point where the old explicit restore used to sit (L2).
+    case("the suite never writes to the REAL dashboard path",
+         (OUT_DEFAULT != real_out, str(OUT_DEFAULT).startswith(str(sandbox))),
+         (True, True))
+    case("...and the real path is still what a normal run would use",
+         real_out == pathlib.Path.home() / "explainers" / "dashboard.html", True)
+
+    # L1 — the falsifier the `atexit` handler could never have. A NESTED
+    # sandbox with a raising body: the restore must still run, and the temp
+    # tree must still go. Both halves fail independently if their line in
+    # `_write_sandbox`'s `finally` is deleted, which is the whole point —
+    # the mechanism this replaces survived its own deletion.
+    _during = _outer = _nested = None
+    _existed = None
+    with contextlib.suppress(RuntimeError):
+        with _write_sandbox() as (_nested, _outer):
+            _during = OUT_DEFAULT
+            # ⚠ L1 (round 2), REPRODUCED: the removal case below was an UNPAIRED
+            # NEGATIVE. Point the sandbox at a directory that is never created
+            # and both it AND its manifest mutation go silent at 193/193 — the
+            # tree was "removed" only because it never existed. This records that
+            # it DID exist, inside the body, before the raise.
+            _existed = _nested.exists()
+            raise RuntimeError("a case raised inside the sandbox")
+    case("the write sandbox restores OUT_DEFAULT when the body RAISES",
+         (_during != _outer, OUT_DEFAULT == _outer), (True, True))
+    case("...and it removes the temp tree it really did create",
+         (_existed, _nested is not None and _nested.exists()), (True, False))
+    # H1 (round 2), REPRODUCED. `real_out = OUT_DEFAULT` captures the value IN
+    # FORCE; replacing it with a copy of the real-page literal was green at
+    # 193/193, and it BREAKS RE-ENTRANCY — the nested sandbox would then restore
+    # `OUT_DEFAULT` to the reader's live page, leaving every line below this one
+    # unsandboxed at a green 193/193. That is the precise state the mechanism
+    # exists to make impossible. The pair matters: the negative alone is
+    # satisfied by `_outer` being any third thing.
+    case("...and it restores the value IN FORCE, not a copy of the real path",
+         (_outer == sandbox / "dashboard.html",
+          _outer != pathlib.Path.home() / "explainers" / "dashboard.html"),
+         (True, True))
+
+    # ⚠ THE SANDBOX'S BLIND SPOT, guarded where it actually lives (round 3, Low).
+    # `_write_sandbox` rebinds `OUT_DEFAULT`, so it cannot see `--fragment-only`
+    # (which never consults it) or an explicit `--out` (which overrides it). On
+    # either, a RELATIVE path resolves against the caller's cwd — REPRODUCED: a
+    # case doing that destroyed a cwd sentinel at a green suite.
+    #
+    # The mechanism cannot be fixed structurally without changing what `main()`
+    # means for real callers, so the guard is on THIS SUITE: read our own source
+    # and require every such path to be absolute. Reading the source is the point
+    # — it sees cases that do not exist yet, which is what the docstring promises
+    # and what the `--out` DEFAULT redirect alone cannot deliver.
+    # ⚠ BOTH quote styles — round 4, Medium. The first version matched only
+    # double-quoted literals, so the identical defect written with single quotes
+    # was invisible: `main(['--out', 'rel.html'])` was green at 206/206. The guard
+    # covered the spelling the mutation happened to use, not the property.
+    #
+    # The values are collected by `_recording_main` at the top of this function,
+    # so this sees what `main` was HANDED — `str(<Path>)`, an f-string, a
+    # variable, anything. The source-text version it replaces could see only a
+    # literal, and the suite contains none: 5 flags, 0 adjacent literals, so it
+    # was green because it could not look, not because the paths were absolute.
+    # `_paths_passed` non-empty is the anti-vacuity half, and unlike counting
+    # FLAGS in the source it cannot be satisfied unless the recorder really ran.
+    globals()["main"] = _real_main
+    case("every --out / --fragment-only path the suite PASSES is absolute",
+         ([p for p in _paths_passed if not pathlib.Path(p).is_absolute()],
+          len(_paths_passed) > 0), ([], True))
+
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
 
@@ -1274,11 +2367,15 @@ def main(argv: list[str]) -> int:
     # keeps the named/omitted distinction from resting on a type comparison.
     ap.add_argument("--store", default=None)
     ap.add_argument("--out", type=pathlib.Path,
-                    default=pathlib.Path.home() / "explainers" / "dashboard.html")
+                    default=OUT_DEFAULT)
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
     a = ap.parse_args(argv)
     if a.self_test:
-        return _self_test()
+        # The sandbox wraps the CALL, so its `finally` covers every case —
+        # including ones appended at the very end of `_self_test`, where the
+        # previous explicit restore left a window (L2).
+        with _write_sandbox() as (_box, _real):
+            return _self_test(real_out=_real, sandbox=_box)
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2
