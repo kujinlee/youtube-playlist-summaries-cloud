@@ -1457,8 +1457,12 @@ spans and 15 cases of markup emitted inside a code span**, because `gen-backlog-
 generator can reach that fix.
 
 - [ ] **Build `scripts/page_markup.py`** — one escape rule, one left-to-right scan at the union
-      feature set, `safe_href`, `orphaned_delimiters`. Own `--self-test`, own mutation manifest,
-      discovered as the **25th** guard by `check-ratchet-contract.py`.
+      feature set, `safe_href`, `orphaned_delimiters`. Own `--self-test` run by a CI step, own
+      mutation manifest. ⚠ **Corrected while building it:** it is NOT discovered by
+      `check-ratchet-contract.py` and cannot be — the population at `:395` is
+      `glob("check-*.py")`, so the docstring rule is never reached for a file named otherwise, and
+      the contract still reported 24 with the enrolling word present. A renderer is not a guard, so
+      that is right; the sentence claiming a 25th entry was not.
 - [ ] **Retire the four inline implementations** and delete the generators' inline cases — this is
       the version where the layer count falls rather than rises (decided with the user 2026-08-30).
 - [ ] **Regenerate and verify**: 0 crossed spans and 0 markup-in-code on the backlog page, against

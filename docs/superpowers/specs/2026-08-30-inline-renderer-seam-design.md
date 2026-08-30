@@ -155,9 +155,22 @@ already refuses.
 ### 3.4 The guard stack — decided with the user
 
 **`page_markup.py` becomes its own guard subject:** its own `--self-test`, its own
-`scripts/mutations/page_markup.json`, and a row in `scripts/check-ratchet-contract.py`'s inventory —
-which as of `e9532e2` discovers 24 guards from the filesystem, so it will be found whether or not
-anyone remembers to register it.
+`scripts/mutations/page_markup.json`, and a **CI step that runs the self-test** — that step is what
+makes the self-test non-vacuous, and the manifest is what stops the self-test rotting.
+
+⚠ **Corrected 2026-08-30, having built it.** An earlier version of this section said the module would
+be discovered as the **25th** entry in `check-ratchet-contract.py`'s inventory. That is **false**, and
+the measurement is that the contract still reported **24** with the enrolling word present in the
+docstring. The live population is built at `check-ratchet-contract.py:395` from
+`(ROOT/"scripts").glob("check-*.py")` and filtered by `GUARD_PATH_RE`, so a file not named `check-*`
+is never offered to the docstring rule. This is the right outcome — a renderer is not a guard, and
+forcing it into a guard inventory would be the category error this spec argues against elsewhere —
+but the original sentence asserted a mechanism that does not exist.
+
+**Two findings fall out of that, neither fixed here:** the inventory cannot see a guard that is not
+*named* like one, which is the same shape as finding A (it cannot see a guard that nothing *calls*),
+one layer out; and `discover_ratchets:67`, which implements the superseded docstring rule, is now
+reached only from the self-test at `:346` — production code kept alive by its own test.
 
 **The four generators' inline cases are deleted, not kept as consumer-side contract tests.** This is
 the version where candidate 1 *reduces* the layer count: the cases that today defend one page's
@@ -191,7 +204,9 @@ whole finding, and the fix is an address, not an algorithm.
 1. `python3 scripts/page_markup.py --self-test` passes.
 2. `python3 scripts/check-plan-code.py --mutate .` reports 0 survivors, with `page_markup.json`
    included and `EXPECTED_MUTATIONS` updated.
-3. `python3 scripts/check-ratchet-contract.py` discovers **25** guards and reports OK.
+3. A CI step runs `python3 scripts/page_markup.py --self-test`, and
+   `python3 scripts/check-ratchet-contract.py` still reports OK over its **24** guards — the number
+   does not change, because a renderer is not one (see §3.4).
 4. `python3 scripts/gen-dashboard.py --self-test` still passes.
 5. A differential over all four real corpora: every line renders identically under all four
    generators, because there is one renderer.
@@ -206,7 +221,7 @@ whole finding, and the fix is an address, not an algorithm.
 | The scan protects code spans | any of the 39 globs-in-code renders with an `<em>` or `<strong>` inside the `<code>` |
 | The backlog corruption is fixed | the regenerated page contains a crossed tag span |
 | The layer count fell | the four generators' combined inline case count did not decrease |
-| The module cannot rot unnoticed | `check-ratchet-contract.py` does not list `page_markup.py`, or it has no `--self-test` |
+| The module cannot rot unnoticed | no CI step runs `page_markup.py --self-test`, or `scripts/mutations/page_markup.json` has no entries, or `--mutate .` leaves a survivor in it |
 | No page silently lost a feature | the goals page renders fewer than 145 emphasis spans, or the backlog page fewer links than today |
 
 ---

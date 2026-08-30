@@ -187,6 +187,14 @@ jobs:
       - name: check-function-revokes self-test
         run: python3 scripts/check-function-revokes.py --self-test
 
+      # The ONE inline-markdown renderer, shared by all four page generators. It is a
+      # library, not a guard, so `check-ratchet-contract.py` neither sees it nor should:
+      # its population is glob("check-*.py"). THIS STEP is what stops its --self-test
+      # going unrun, and scripts/mutations/page_markup.json is what stops it going
+      # vacuous. Backlog #71.
+      - name: page_markup self-test
+        run: python3 scripts/page_markup.py --self-test
+
       # ── The project dashboard: the page, its grammar, and the gate that feeds it ──
       #
       # A person who was away reads this page instead of the transcript. It is only worth
