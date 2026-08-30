@@ -62,6 +62,13 @@ PROSE_CONTRAST_MIN = 4.5                                # WCAG AA, body text
 
 def _relative_luminance(hexcolor: str) -> float:
     h = hexcolor.lstrip("#")
+    # ⚠ `#fff` is a real value in this stylesheet (`--panel` in light mode), and
+    # without this the helper raised on it. It never came up while the cases
+    # measured a PYTHON COPY that happened to spell the same colour `#ffffff` —
+    # the copy and the emitted value were not even textually comparable, which
+    # is a sharper version of the review finding that prompted this.
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
     ch = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
     ch = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in ch]
     return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
@@ -82,6 +89,31 @@ TITLE_CAP = 110
 TITLE_FLOOR = 12
 
 
+ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "vs", "etc", "approx",
+                 "fig", "no", "inc", "ltd", "jan", "feb", "mar", "apr", "jun",
+                 "jul", "aug", "sep", "sept", "oct", "nov", "dec"}
+
+
+def _ends_in_abbreviation(text: str) -> bool:
+    """Is this "sentence" actually stopping mid-thought at an abbreviation?
+
+    ⚠ Review REPRODUCED: "Met with Dr. Smith about the release." produced the
+    headline "Met with Dr." — and because the fold DROPS the headline, the lede
+    then opened with the orphaned word "Smith". Splitting on `[.!?]\\s` treats
+    every full stop as a sentence end, and `TITLE_FLOOR` did not save it because
+    "Met with Dr." is exactly 12 characters.
+
+    A trailing token that is short, or that contains an internal dot ("e.g."),
+    is an abbreviation rather than a sentence end. Conservative by design: a
+    false positive merely makes the headline one sentence longer, while a false
+    negative cuts a word off the front of the reader's prose.
+    """
+    last = text.rstrip()[:-1].rsplit(" ", 1)[-1] if text.rstrip().endswith((".", "!", "?")) else ""
+    if not last:
+        return False
+    return "." in last or last.lower().strip(".") in ABBREVIATIONS
+
+
 def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
     """The headline for an entry: its first SENTENCE, not its first LINE.
 
@@ -98,7 +130,7 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
     out = ""
     for part in SENTENCE_END.split(text):
         out = f"{out} {part}".strip() if out else part
-        if len(out) >= TITLE_FLOOR:
+        if len(out) >= TITLE_FLOOR and not _ends_in_abbreviation(out):
             break
     if len(out) > cap:
         out = out[:cap].rsplit(" ", 1)[0].rstrip(",;:—-") + "…"
@@ -149,6 +181,15 @@ def _prose(text: str, drop_headline: bool = False) -> str:
     if drop_headline:
         first = " ".join(paras[0].split())
         head = _first_sentence(first, cap=len(first))
+        # ⚠ Only drop a REAL sentence. Review REPRODUCED the alternative: a first
+        # paragraph with no `.?!` at all makes `head` the WHOLE paragraph, so the
+        # fold dropped all of it — while the title showed only the first
+        # TITLE_CAP characters. Everything past the cap then existed in the store
+        # and appeared NOWHERE on the page. Deleting prose the reader never saw
+        # is the worst outcome available here, so the drop is refused unless the
+        # headline genuinely ends a sentence.
+        if head == first and not first.rstrip().endswith((".", "!", "?")):
+            head = ""
         rest = first[len(head):].lstrip() if head else first
         if rest:
             paras[0] = rest
@@ -574,7 +615,7 @@ def build(entries, days, prs, pr_error, git_error, window,
     # location it had never opened).
     # ─── What needs you ───
     need = unresolved(entries)
-    rows = [f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["title"])}</a> '
+    rows = [f'<li><a href="#{_slug(e["id"])}">{_inline(e["title"])}</a> '
             f'<span class="when">{_html.escape(e["date"])} · {_html.escape(e["id"])}</span></li>'
             for e in need]
     if pr_error:
@@ -655,7 +696,7 @@ def build(entries, days, prs, pr_error, git_error, window,
                 f'{day_anchor}<article class="entry" id="{eid}">'
                 f'<h3>{_html.escape(e["date"])} '
                 f'<span class="eid">{_html.escape(e["id"])}</span>{flag}</h3>'
-                f'<p class="title">{_html.escape(e["title"])}</p>'
+                f'<p class="title">{_inline(e["title"])}</p>'
                 f'<details id="{eid}-plain"><summary>What this means</summary>'
                 f'<div class="prose">{_prose(e["plain"], drop_headline=True)}</div>'
                 f'</details>{tech}</article>')
@@ -727,7 +768,7 @@ margin-left:-3px;border-radius:50%;background:var(--need)}}
    `flex:0 0` overrides `.bar{{flex:1}}`: inside a legend a swatch is a fixed
    sample, not a bar competing for width. */
 .legend{{list-style:none;display:flex;flex-wrap:wrap;gap:6px 18px;
-  margin:10px 0 0;padding:0;font-size:12.5px;color:var(--fg3)}}
+  margin:10px 0 0;padding:0;font-size:12.5px;color:var(--p-detail)}}
 .legend li{{display:flex;align-items:center;gap:7px}}
 .legend .swatch{{flex:0 0 14px;width:14px;height:11px;position:relative;
   border-radius:2px 2px 0 0;display:inline-block}}
@@ -754,7 +795,7 @@ padding:14px 18px;margin-bottom:10px}}
      2. the LEDE is the only full-contrast text, so the glance lands on the
         idea and the supporting detail recedes to --fg2 rather than competing;
      3. ~64ch measure and 1.7 leading, so a line ends where the eye expects.
-   `strong` returns to --fg: an author writing **Waiting on you:** is marking
+   `strong` gets its own token: an author writing **Waiting on you:** is marking
    the one sentence that must not be skimmed past, and it now outranks the
    body it sits in instead of rendering as literal asterisks. */
 .entry .prose{{max-width:64ch;margin-top:10px}}
@@ -763,7 +804,7 @@ padding:14px 18px;margin-bottom:10px}}
 .entry .prose .lede{{color:var(--p-lede);font-size:15.5px;line-height:1.6;
   margin-bottom:1.05em}}
 .entry .prose strong{{color:var(--p-mark);font-weight:600}}
-.entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--fg)}}
+.entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--p-lede)}}
 .flag{{color:var(--need);font-weight:700}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
@@ -1337,6 +1378,112 @@ def _self_test() -> int:
     v, err = _with_run(lambda *a, **k: _R(0, '[{"number": 9, "title": "T"}]', ""), open_prs)
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
+
+    # ── ROUND 1 REVIEW FINDINGS ──────────────────────────────────────────────
+    # Every case here exists because a reviewer reproduced a defect the suite
+    # was green over. They are grouped so the next reader can see what one
+    # round cost, rather than finding them scattered by topic.
+
+    # H2 (Claude) — REPRODUCED on the shipped page: a headline containing
+    # **bold** printed its asterisks, because the title went through
+    # `_html.escape` while the body went through `_inline`. The headline is
+    # prose too. Asserted on the BUILT page, not on the helper.
+    _bold_page = _B(parse_entries("## 2026-08-29\n**Correction** to the entry.\nMore.\n"),
+                    bucket_days([], [], 1, "2026-08-29"), window=1)
+    case("a headline renders **bold** as emphasis, like the body does",
+         ("<strong>Correction</strong>" in _bold_page, "**Correction**" in _bold_page),
+         (True, False))
+
+    # H1 (Claude) — REPRODUCED with two mutations: reverting the entry render
+    # to a single escaped <p> was GREEN. Every `_prose` case called the helper;
+    # nothing asserted the page uses it. Fourth wiring gap of the day.
+    _fold_page = _B(parse_entries("## 2026-08-29\nOpening line here.\n\nSecond para.\n"),
+                    bucket_days([], [], 1, "2026-08-29"), window=1)
+    case("the entry render USES the prose fold (not one escaped blob)",
+         ('<div class="prose">' in _fold_page, '<p class="lede">' in _fold_page),
+         (True, True))
+
+    # H3 (Claude) / Medium (Codex) — the two SECURITY properties of `_inline`
+    # were the two with no falsifier. Codex changed `https?` to
+    # `(?:https?|javascript)` in a scratch copy and the suite stayed green.
+    for _scheme in ("javascript:alert(1)", "data:text/html,x", "vbscript:x",
+                    "JavaScript:alert(1)"):
+        case(f"{_scheme.split(':')[0]} is NEVER autolinked",
+             "<a href" in _inline(_scheme), False)
+    case("...while http and https still are (so the above is not vacuous)",
+         ("<a href" in _inline("https://a.example/x"),
+          "<a href" in _inline("http://a.example/x")), (True, True))
+
+    # M1 (Claude) — the contrast cases measured PROSE_CARD, a PYTHON COPY of
+    # `--panel`. A green check over the wrong subject: change the stylesheet's
+    # --panel and the check still passed against the stale constant. Read the
+    # EMITTED CSS instead — the thing the claim is about.
+    def _css_var(css, name, dark):
+        blk = css.split("prefers-color-scheme:dark")[1] if dark else css.split("prefers-color-scheme:dark")[0]
+        mm = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{3,8}})", blk)
+        return mm.group(1) if mm else None
+    for _theme, _dark in (("light", False), ("dark", True)):
+        _emitted = _css_var(ht, "panel", _dark)
+        # Compared as COLOURS, not as strings: the stylesheet writes `#fff`
+        # where the Python constant says `#ffffff`. Same colour, and a string
+        # comparison would fail on a difference that does not exist.
+        case(f"{_theme}: the AA check reads the EMITTED --panel, not a copy",
+             _emitted is not None
+             and _contrast(_emitted, PROSE_CARD[_theme]) == 1.0, True)
+        for _role in PROSE_COLOURS:
+            _v = _css_var(ht, f"p-{_role}", _dark)
+            case(f"{_theme}: --p-{_role} in the stylesheet clears AA on that --panel",
+                 _v is not None and _contrast(_v, _emitted) >= PROSE_CONTRAST_MIN, True)
+
+    # M2 (Claude) — PROSE_CONTRAST_MIN could be set to 1.0 with a green suite:
+    # the threshold that makes every other colour case meaningful was itself
+    # unpinned. A guard whose bar can be lowered is a guard with no bar.
+    case("the AA bar is WCAG AA, and cannot be quietly lowered",
+         PROSE_CONTRAST_MIN, 4.5)
+    # L3 (Claude) — "desaturated well clear of --link" was prose, not a check.
+    case("the headline colour is never the LINK colour (a title is not a link)",
+         PROSE_COLOURS["head"][1] == _css_var(ht, "link", True), False)
+
+    # M4 (Claude) — `color:var(--fg)` named a custom property this page never
+    # defines, so it silently did nothing. CLASS fix: every custom property the
+    # prose and legend rules consume must be defined in the same stylesheet.
+    # ⚠ Comments stripped FIRST. This guard SURVIVED its own mutation because
+    # a CSS comment reading "returns to --fg:" was counted as a definition of
+    # `--fg` — prose inside the stylesheet satisfying a check about the
+    # stylesheet. The guard was reading text, not declarations.
+    _css = re.sub(r"/\*.*?\*/", " ", ht, flags=re.S)
+    _used = set(re.findall(r"var\((--[a-z0-9-]+)\)", _css))
+    _defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", _css))
+    case("every custom property the page CONSUMES is also DEFINED",
+         sorted(_used - _defined), [])
+
+    # M3 (Claude) — the legend sits on --bg, not --panel, where light-mode
+    # --fg3 measured 4.32:1. Its own colour now, checked on the right surface.
+    _legend_rule = re.search(r"\.legend\{[^}]*\}", _css)
+    case("the legend CONSUMES the token whose contrast is checked",
+         _legend_rule is not None and "var(--p-detail)" in _legend_rule.group(0), True)
+    for _theme, _dark in (("light", False), ("dark", True)):
+        _bg = _css_var(ht, "bg", _dark)
+        _detail = _css_var(ht, "p-detail", _dark)
+        case(f"{_theme}: the legend's text clears AA on the surface it SITS on",
+             _contrast(_detail, _bg) >= PROSE_CONTRAST_MIN, True)
+
+    # Codex Medium 1 — REPRODUCED: "Met with Dr. Smith about the release."
+    # became the headline "Met with Dr.", and the fold then opened with the
+    # orphaned word "Smith".
+    case("an abbreviation does not end the headline",
+         _first_sentence("Met with Dr. Smith about the release. Then more."),
+         "Met with Dr. Smith about the release.")
+    case("...nor does 'e.g.'",
+         _first_sentence("Checked e.g. examples in docs. Then more."),
+         "Checked e.g. examples in docs.")
+    # Codex Medium 2 — REPRODUCED: a first paragraph with NO terminator made
+    # the whole paragraph the "headline", so the fold dropped it while the
+    # title showed only TITLE_CAP chars. Text existed in the store and appeared
+    # NOWHERE on the page. Deleting unseen prose is the worst outcome here.
+    _noterm = "A first paragraph with no terminator at all that runs on well past any cap"
+    case("a paragraph with no sentence end is never dropped from the fold",
+         _noterm in _prose(_noterm + "\n\nSecond.", drop_headline=True), True)
 
     # ── THE CHART'S KEY ──────────────────────────────────────────────────────
     # The chart encoded four meanings and carried NO key, so its ALARM state —

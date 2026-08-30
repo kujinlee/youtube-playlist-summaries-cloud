@@ -1,387 +1,387 @@
 [
- {
-  "name": "day anchors never emitted (every bar href is a dead link)",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "                day_anchor = f'<span class=\"anchor\" id=\"day-{_html.escape(e[\"date\"])}\"></span>'",
-    "                day_anchor = \"\""
-   ]
-  ],
-  "expect": "a bar's day anchor exists for the day it links to"
- },
- {
-  "name": "bar height ignores commits",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    h = 4 if day[\"commits\"] == 0 else max(6, round(48 * day[\"commits\"] / max(tallest, 1)))",
-    "    h = 10"
-   ]
-  ],
-  "expect": "bar height scales with commits"
- },
- {
-  "name": "entry title not rendered",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "f'<p class=\"title\">{_html.escape(e[\"title\"])}</p>'",
-    "f''"
-   ]
-  ],
-  "expect": "the title is rendered outside the fold"
- },
- {
-  "name": "unresolved surfaces entries that failed to parse",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "            if e[\"needs_you\"] and not e[\"error\"] and e[\"id\"] not in cleared]",
-    "            if e[\"needs_you\"] and e[\"id\"] not in cleared]"
-   ]
-  ],
-  "expect": "a malformed entry is never listed as needing you"
- },
- {
-  "name": "quiet-day mark: dot AND class both gone",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    if quiet:\n        cls += \" marked\"",
-    "    if False:\n        cls += \"\""
-   ],
-   [
-    "    mark = '<span class=\"dot\" aria-hidden=\"true\"></span>' if quiet else \"\"",
-    "    mark = \"\""
-   ]
-  ],
-  "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
- },
- {
-  "name": "gap mark: gapmark AND class both gone",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    if unwritten:\n        cls += \" unwritten\"",
-    "    if False:\n        cls += \"\""
-   ],
-   [
-    "        mark += '<span class=\"gapmark\" aria-hidden=\"true\"></span>'",
-    "        mark += \"\""
-   ]
-  ],
-  "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
- },
- {
-  "name": "gh half of what-needs-you suppressed",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        rows += [f'<li>Pull request #",
-    "        rows += []\n        _dead = [f'<li>Pull request #"
-   ]
-  ],
-  "expect": "an open PR appears in what-needs-you"
- },
- {
-  "name": "dead bar links restored",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    href = f' href=\"#day-{day[\"date\"]}\"' if day[\"has_entry\"] else \"\"",
-    "    href = f' href=\"#day-{day[\"date\"]}\"'"
-   ]
-  ],
-  "expect": "a bar with no entry is not a dead link"
- },
- {
-  "name": "in-place anchoring reverted to the previous neighbour",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "anchor = min(cands, key=lambda j: rank[j])",
-    "anchor = max(cands, key=lambda j: rank[j])"
-   ]
-  ],
-  "expect": [
-   "malformed renders BETWEEN its neighbours on an APPENDED store",
-   "...and the run still sits between its valid neighbours"
-  ]
- },
- {
-  "name": "a run of malformed blocks loses its file order",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        off = placed.get(anchor, 0)\n        placed[anchor] = off + 1\n        out.insert(out.index(entries[anchor]) + 1 + off, e)",
-    "        out.insert(out.index(entries[anchor]) + 1, e)"
-   ]
-  ],
-  "expect": "a RUN of malformed blocks keeps file order among themselves"
- },
- {
-  "name": "render in raw file order",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "for i, e in enumerate(_ordered(entries)):",
-    "for i, e in enumerate(entries):"
-   ]
-  ],
-  "expect": [
-   "malformed renders BETWEEN its neighbours on an APPENDED store",
-   "newest date renders first on an APPENDED store",
-   "...and the run still sits between its valid neighbours"
-  ]
- },
- {
-  "name": "second [resolved:] dropped",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())",
-    "entry[\"resolves\"] = [f.split(\":\", 1)[1].strip()]"
-   ]
-  ],
-  "expect": [
-   "two [resolved:] flags are both kept",
-   "two [resolved:] flags clear BOTH items"
-  ]
- },
- {
-  "name": "pass 2 deleted",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        for r in e[\"resolves\"]:\n            if r in ids:",
-    "        for r in []:\n            if r in ids:"
-   ]
-  ],
-  "expect": "resolve of an unknown id is an error"
- },
- {
-  "name": "ordinal instability restored",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        if m is not None and _GATE.valid_date(m.group(1)):",
-    "        if m is not None and _GATE.valid_date(m.group(1)) and not err:"
-   ]
-  ],
-  "expect": "a malformed block still consumes its ordinal"
- },
- {
-  "name": "chart drawn newest-leftmost",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "_bar(d, tallest, bool(store_error)) for d in reversed(days)",
-    "_bar(d, tallest, bool(store_error)) for d in days"
-   ]
-  ],
-  "expect": "the chart draws oldest-first (left to right)"
- },
- {
-  "name": "under-count sentence removed",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "so work that was never committed does not appear here.",
-    "x."
-   ]
-  ],
-  "expect": "the chart says what it under-counts"
- },
- {
-  "name": "glossary section removed",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "<h2>Words</h2>{glossary_html}",
-    ""
-   ]
-  ],
-  "expect": [
-   "the page carries a glossary",
-   "the glossary defines its terms"
-  ]
- },
- {
-  "name": "gh failure blanks the needs section",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    if rows:\n        needs_html",
-    "    if pr_error:\n        needs_html = pr_note\n    elif rows:\n        needs_html"
-   ]
-  ],
-  "expect": "a gh failure still shows the store's needs IN THAT SECTION"
- },
- {
-  "name": "first-parent dropped from the commit count",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "\"git\", \"log\", \"HEAD\", \"--first-parent\"",
-    "\"git\", \"log\", \"HEAD\""
-   ]
-  ],
-  "expect": "commit_dates passes --first-parent as an ARGUMENT"
- },
- {
-  "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    cls = \"bar needs\" if day[\"needs_you\"] else \"bar\"",
-    "    cls = \"bar\""
-   ]
-  ],
-  "expect": [
-   "§5 a needs-you day is marked in SIGHTED output",
-   "...and the mark is the needs class, not an incidental difference"
-  ]
- },
- {
-  "name": "commit_dates: a git failure renders as an EMPTY chart, not could-not-tell",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        return None, f\"git log exited {r.returncode}: {r.stderr.strip()[:200]}\"",
-    "        return [], None"
-   ]
-  ],
-  "expect": "commit_dates: a non-zero exit is a could-not-tell, not an empty result"
- },
- {
-  "name": "_gh_json: a missing gh renders as ZERO open PRs",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        return None, f\"could not run gh: {exc}\"",
-    "        return [], None"
-   ]
-  ],
-  "expect": [
-   "open_prs: a missing binary is a could-not-tell, not an empty result",
-   "no_entry_prs: a missing binary is a could-not-tell, not an empty result"
-  ]
- },
- {
-  "name": "_gh_json: unparseable gh output renders as ZERO",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        return None, f\"gh returned unparseable JSON: {exc}\"",
-    "        return [], None"
-   ]
-  ],
-  "expect": "open_prs: unparseable gh output is a could-not-tell, not zero"
- },
- {
-  "name": "_gh_json: EMPTY gh output renders as a measured ZERO",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "        return json.loads(r.stdout), None",
-    "        return json.loads(r.stdout or \"[]\"), None"
-   ]
-  ],
-  "expect": "open_prs: EMPTY gh output is a could-not-tell, not zero"
- },
- {
-  "name": "an UNREADABLE store renders as a measured 'no entries yet'",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '",
-    "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '"
-   ]
-  ],
-  "expect": "a store that could not be read is NOT 'no entries yet'"
- },
- {
-  "name": "§9's alarm fires off an UNREADABLE store",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"] and not store_unknown",
-    "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"]"
-   ]
-  ],
-  "expect": "...and §9's alarm is not fired off a store nobody could read"
- },
- {
-  "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "                elif f.startswith(\"resolved:\"):\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())\n                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
-    "                else:\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())"
-   ]
-  ],
-  "expect": [
-   "an unrecognised flag is an ERROR, not a crash",
-   "...and the entry degrades with the flag-loop's own diagnostic"
-  ]
- },
- {
-  "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
-    "                else:\n                    pass"
-   ]
-  ],
-  "expect": [
-   "an unrecognised flag is an ERROR, not a crash",
-   "...and the entry degrades with the flag-loop's own diagnostic"
-  ]
- },
- {
-  "name": "main: a compose that wrote NO page reports success",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    if r.returncode != 0 or not a.out.is_file():",
-    "    if False:"
-   ]
-  ],
-  "expect": "main: a compose that wrote no page is a FAILURE, never a 0"
- },
- {
-  "name": "main: a compose that TIMED OUT reports success",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 1",
-    "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 0"
-   ]
-  ],
-  "expect": "main: a compose that timed out is a FAILURE, never a 0"
- },
- {
-  "name": "main: the dead-collector warning loop never fires, so a half-measured page looks whole",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    for label, err in ((\"git\", git_error), (\"gh\", pr_error),\n                       (\"gh/exemptions\", exempt_error), (\"store\", store_error)):",
-    "    for label, err in ():"
-   ]
-  ],
-  "expect": "main: a dead collector is announced on stderr, not swallowed"
- },
- {
-  "name": "main: a non-positive --window is silently accepted",
-  "file": "scripts/gen-dashboard.py",
-  "edits": [
-   [
-    "    if a.window < 1:",
-    "    if False:"
-   ]
-  ],
-  "expect": "main: --window below 1 is a refusal, not a silent default"
- }
+  {
+    "name": "day anchors never emitted (every bar href is a dead link)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                day_anchor = f'<span class=\"anchor\" id=\"day-{_html.escape(e[\"date\"])}\"></span>'",
+        "                day_anchor = \"\""
+      ]
+    ],
+    "expect": "a bar's day anchor exists for the day it links to"
+  },
+  {
+    "name": "bar height ignores commits",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    h = 4 if day[\"commits\"] == 0 else max(6, round(48 * day[\"commits\"] / max(tallest, 1)))",
+        "    h = 10"
+      ]
+    ],
+    "expect": "bar height scales with commits"
+  },
+  {
+    "name": "entry title not rendered",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "f'<p class=\"title\">{_inline(e[\"title\"])}</p>'",
+        "f''"
+      ]
+    ],
+    "expect": "the title is rendered outside the fold"
+  },
+  {
+    "name": "unresolved surfaces entries that failed to parse",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "            if e[\"needs_you\"] and not e[\"error\"] and e[\"id\"] not in cleared]",
+        "            if e[\"needs_you\"] and e[\"id\"] not in cleared]"
+      ]
+    ],
+    "expect": "a malformed entry is never listed as needing you"
+  },
+  {
+    "name": "quiet-day mark: dot AND class both gone",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if quiet:\n        cls += \" marked\"",
+        "    if False:\n        cls += \"\""
+      ],
+      [
+        "    mark = '<span class=\"dot\" aria-hidden=\"true\"></span>' if quiet else \"\"",
+        "    mark = \"\""
+      ]
+    ],
+    "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
+  },
+  {
+    "name": "gap mark: gapmark AND class both gone",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if unwritten:\n        cls += \" unwritten\"",
+        "    if False:\n        cls += \"\""
+      ],
+      [
+        "        mark += '<span class=\"gapmark\" aria-hidden=\"true\"></span>'",
+        "        mark += \"\""
+      ]
+    ],
+    "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
+  },
+  {
+    "name": "gh half of what-needs-you suppressed",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        rows += [f'<li>Pull request #",
+        "        rows += []\n        _dead = [f'<li>Pull request #"
+      ]
+    ],
+    "expect": "an open PR appears in what-needs-you"
+  },
+  {
+    "name": "dead bar links restored",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    href = f' href=\"#day-{day[\"date\"]}\"' if day[\"has_entry\"] else \"\"",
+        "    href = f' href=\"#day-{day[\"date\"]}\"'"
+      ]
+    ],
+    "expect": "a bar with no entry is not a dead link"
+  },
+  {
+    "name": "in-place anchoring reverted to the previous neighbour",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "anchor = min(cands, key=lambda j: rank[j])",
+        "anchor = max(cands, key=lambda j: rank[j])"
+      ]
+    ],
+    "expect": [
+      "malformed renders BETWEEN its neighbours on an APPENDED store",
+      "...and the run still sits between its valid neighbours"
+    ]
+  },
+  {
+    "name": "a run of malformed blocks loses its file order",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        off = placed.get(anchor, 0)\n        placed[anchor] = off + 1\n        out.insert(out.index(entries[anchor]) + 1 + off, e)",
+        "        out.insert(out.index(entries[anchor]) + 1, e)"
+      ]
+    ],
+    "expect": "a RUN of malformed blocks keeps file order among themselves"
+  },
+  {
+    "name": "render in raw file order",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "for i, e in enumerate(_ordered(entries)):",
+        "for i, e in enumerate(entries):"
+      ]
+    ],
+    "expect": [
+      "malformed renders BETWEEN its neighbours on an APPENDED store",
+      "newest date renders first on an APPENDED store",
+      "...and the run still sits between its valid neighbours"
+    ]
+  },
+  {
+    "name": "second [resolved:] dropped",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())",
+        "entry[\"resolves\"] = [f.split(\":\", 1)[1].strip()]"
+      ]
+    ],
+    "expect": [
+      "two [resolved:] flags are both kept",
+      "two [resolved:] flags clear BOTH items"
+    ]
+  },
+  {
+    "name": "pass 2 deleted",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        for r in e[\"resolves\"]:\n            if r in ids:",
+        "        for r in []:\n            if r in ids:"
+      ]
+    ],
+    "expect": "resolve of an unknown id is an error"
+  },
+  {
+    "name": "ordinal instability restored",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        if m is not None and _GATE.valid_date(m.group(1)):",
+        "        if m is not None and _GATE.valid_date(m.group(1)) and not err:"
+      ]
+    ],
+    "expect": "a malformed block still consumes its ordinal"
+  },
+  {
+    "name": "chart drawn newest-leftmost",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "_bar(d, tallest, bool(store_error)) for d in reversed(days)",
+        "_bar(d, tallest, bool(store_error)) for d in days"
+      ]
+    ],
+    "expect": "the chart draws oldest-first (left to right)"
+  },
+  {
+    "name": "under-count sentence removed",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "so work that was never committed does not appear here.",
+        "x."
+      ]
+    ],
+    "expect": "the chart says what it under-counts"
+  },
+  {
+    "name": "glossary section removed",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "<h2>Words</h2>{glossary_html}",
+        ""
+      ]
+    ],
+    "expect": [
+      "the page carries a glossary",
+      "the glossary defines its terms"
+    ]
+  },
+  {
+    "name": "gh failure blanks the needs section",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if rows:\n        needs_html",
+        "    if pr_error:\n        needs_html = pr_note\n    elif rows:\n        needs_html"
+      ]
+    ],
+    "expect": "a gh failure still shows the store's needs IN THAT SECTION"
+  },
+  {
+    "name": "first-parent dropped from the commit count",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "\"git\", \"log\", \"HEAD\", \"--first-parent\"",
+        "\"git\", \"log\", \"HEAD\""
+      ]
+    ],
+    "expect": "commit_dates passes --first-parent as an ARGUMENT"
+  },
+  {
+    "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    cls = \"bar needs\" if day[\"needs_you\"] else \"bar\"",
+        "    cls = \"bar\""
+      ]
+    ],
+    "expect": [
+      "§5 a needs-you day is marked in SIGHTED output",
+      "...and the mark is the needs class, not an incidental difference"
+    ]
+  },
+  {
+    "name": "commit_dates: a git failure renders as an EMPTY chart, not could-not-tell",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        return None, f\"git log exited {r.returncode}: {r.stderr.strip()[:200]}\"",
+        "        return [], None"
+      ]
+    ],
+    "expect": "commit_dates: a non-zero exit is a could-not-tell, not an empty result"
+  },
+  {
+    "name": "_gh_json: a missing gh renders as ZERO open PRs",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        return None, f\"could not run gh: {exc}\"",
+        "        return [], None"
+      ]
+    ],
+    "expect": [
+      "open_prs: a missing binary is a could-not-tell, not an empty result",
+      "no_entry_prs: a missing binary is a could-not-tell, not an empty result"
+    ]
+  },
+  {
+    "name": "_gh_json: unparseable gh output renders as ZERO",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        return None, f\"gh returned unparseable JSON: {exc}\"",
+        "        return [], None"
+      ]
+    ],
+    "expect": "open_prs: unparseable gh output is a could-not-tell, not zero"
+  },
+  {
+    "name": "_gh_json: EMPTY gh output renders as a measured ZERO",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        return json.loads(r.stdout), None",
+        "        return json.loads(r.stdout or \"[]\"), None"
+      ]
+    ],
+    "expect": "open_prs: EMPTY gh output is a could-not-tell, not zero"
+  },
+  {
+    "name": "an UNREADABLE store renders as a measured 'no entries yet'",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '",
+        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '"
+      ]
+    ],
+    "expect": "a store that could not be read is NOT 'no entries yet'"
+  },
+  {
+    "name": "§9's alarm fires off an UNREADABLE store",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"] and not store_unknown",
+        "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"]"
+      ]
+    ],
+    "expect": "...and §9's alarm is not fired off a store nobody could read"
+  },
+  {
+    "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                elif f.startswith(\"resolved:\"):\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())\n                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
+        "                else:\n                    entry[\"resolves\"].append(f.split(\":\", 1)[1].strip())"
+      ]
+    ],
+    "expect": [
+      "an unrecognised flag is an ERROR, not a crash",
+      "...and the entry degrades with the flag-loop's own diagnostic"
+    ]
+  },
+  {
+    "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                else:\n                    entry[\"error\"] = f\"unrecognised flag [{f}]\"",
+        "                else:\n                    pass"
+      ]
+    ],
+    "expect": [
+      "an unrecognised flag is an ERROR, not a crash",
+      "...and the entry degrades with the flag-loop's own diagnostic"
+    ]
+  },
+  {
+    "name": "main: a compose that wrote NO page reports success",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if r.returncode != 0 or not a.out.is_file():",
+        "    if False:"
+      ]
+    ],
+    "expect": "main: a compose that wrote no page is a FAILURE, never a 0"
+  },
+  {
+    "name": "main: a compose that TIMED OUT reports success",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 1",
+        "                  f\"was NOT written. Treat this as NOT RUN.\", file=sys.stderr)\n            return 0"
+      ]
+    ],
+    "expect": "main: a compose that timed out is a FAILURE, never a 0"
+  },
+  {
+    "name": "main: the dead-collector warning loop never fires, so a half-measured page looks whole",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    for label, err in ((\"git\", git_error), (\"gh\", pr_error),\n                       (\"gh/exemptions\", exempt_error), (\"store\", store_error)):",
+        "    for label, err in ():"
+      ]
+    ],
+    "expect": "main: a dead collector is announced on stderr, not swallowed"
+  },
+  {
+    "name": "main: a non-positive --window is silently accepted",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    if a.window < 1:",
+        "    if False:"
+      ]
+    ],
+    "expect": "main: --window below 1 is a refusal, not a silent default"
+  }
 ]

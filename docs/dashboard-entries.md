@@ -429,3 +429,40 @@ from the page template) SURVIVED the first battery at 159/159 — the key can va
 builders stay perfect. Third instance today of testing the helper and not the caller. 161 now,
 6/6 killed.
 
+## 2026-08-29
+A review of tonight's dashboard work found eleven things, and one of them was on the page you
+were reading.
+
+The worst was quiet: an entry whose first paragraph had no full stop at the end lost that
+paragraph entirely. The heading showed the first hundred-odd characters and the rest appeared
+nowhere at all — written down, and invisible. Also, a heading containing emphasis printed its
+asterisks instead of the emphasis, which you would have seen on the current page.
+
+The rest were guards that did not guard: the colour checks measured a copy of the palette
+rather than the one that ships, the contrast bar could be lowered to nothing, and a rule
+referred to a colour this page does not define.
+
+All fixed, and each with a test that fails if the fix is removed. Not re-reviewed yet — the
+fixes were written by the same person who wrote the defects.
+<!--tech-->
+Round 1 dual adversarial, both halves NOT CONVERGED. Codex 3M+1L, Claude 3H+5M+3L. Full table in
+`docs/reviews/branch-dashboard-prose-r1-{claude,codex}.md`.
+
+Content loss (Codex M2, I rate High): a first paragraph with no `.?!` made `_first_sentence`
+return the WHOLE paragraph, so the fold dropped it while the title showed only `TITLE_CAP`.
+Refuses to drop a non-sentence now. Codex M1: "Met with Dr. Smith…" → headline `Met with Dr.`,
+lede opening `Smith…`; `_ends_in_abbreviation` added.
+
+H2: the headline used `_html.escape` while the body used `_inline` — one live title was rendering
+`**Correction**`. H1: reverting the entire prose fold at the call site was GREEN — 4th wiring gap
+this session. H3/Codex-M3: the autolink's scheme restriction had no negative case; swapping
+`https?` for `(?:https?|javascript)` passed.
+
+⚠ Three guards SURVIVED the first battery, two of them written minutes earlier: a CSS **comment**
+reading `returns to --fg:` counted as a *definition*; and the legend's contrast case measured a
+token by NAME while nothing asserted the rule consumed it. Both closed.
+
+⚠ `--mutate .` went 44 → 43 and REFUSED — the H2 fix moved a line the manifest anchors on. Anchor
+re-pointed. That is the documented 45-anchor coupling working: it refused rather than quietly
+measuring less. 161 → 187 cases.
+
