@@ -330,3 +330,39 @@ entry claims a class fix, and making that true cost less than narrowing it.
 ⚠ NOT fixed, deliberate: an explicitly-passed RELATIVE `--store` still resolves against cwd. That
 is the right convention for a path a caller typed, and it fails loudly.
 
+## 2026-08-29
+The "what this means" sections were a wall of text. They are now typeset.
+
+Every entry was already written in paragraphs — nine of the ten in this file — and the page
+was throwing all of them away and printing each entry as one unbroken block running the full
+width of the page. The blank lines you typed had never once reached the screen.
+
+Emphasis was not working either. Writing **like this** to mark the one sentence a reader
+must not skip past printed the asterisks literally, so the marking did the opposite of its job.
+
+And an entry's heading was cut at whatever point the text happened to wrap when it was typed,
+which is why one of them ended mid-phrase with "It is one page at". A heading is now the first
+sentence, and it is not repeated at the top of the text it was taken from.
+<!--tech-->
+`gen-dashboard.py` rendered the whole human half as a single escaped `<p>`, so paragraph breaks
+collapsed and `**bold**` survived as literal asterisks. Three functions now: `_prose` (blank-line
+paragraphs, first as `.lede`), `_inline` (escape FIRST, then bold/code/autolink), `_first_sentence`
+(headline).
+
+The markup set was chosen by MEASURING the store, not by taste: `**bold**` 3/10 entries, `code`
+1/10, bare URL 1/10, bullets and `[md](links)` **0/10**. Supporting more would invent a contract
+no author uses.
+
+De-duplication is derived by re-applying `_first_sentence`, NOT by prefix-matching the displayed
+title — the title is capped and may end in "…", which can never prefix-match, so matching on it
+declined to drop anything on exactly the entries with the longest openings. Measured on the real
+page: 6 entries repeating → 1, and that one is a single-sentence entry with nothing else to
+promote (an empty fold is worse than a repeat).
+
+Typography: 64ch measure (was the full 820px shell, ~110 characters a line), 1.7 leading, lede at
+full `--fg` with the body at `--fg2` so the glance lands on the idea.
+
+⚠ 120/120 passed BEFORE any of these cases existed — the whole prose path was uncovered. 138 now.
+Mutation battery 9/9 killed, including one that survived first: reverting the headline wiring while
+`_first_sentence` stayed perfect. A helper can be correct and unused.
+

@@ -22,6 +22,98 @@ STORE_DEFAULT = ROOT / "docs" / "dashboard-entries.md"
 TECH_MARKER = "<!--tech-->"
 
 
+SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
+TITLE_CAP = 110
+# Below this, a "sentence" is a fragment ("Fixed.", "Done.") that says nothing on
+# its own, so it is joined to the next. ⚠ Set by measurement, not taste: at 25
+# this swallowed "The page is ready." — a perfectly good headline — and the case
+# below caught it. Raising it silently re-breaks that.
+TITLE_FLOOR = 12
+
+
+def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
+    """The headline for an entry: its first SENTENCE, not its first LINE.
+
+    It was `the first non-blank line`, which is a physical artefact of where the
+    author's editor wrapped — so a heading read "...It is one page at" and
+    stopped. A sentence is a unit of meaning; a line is a unit of typing.
+
+    Short leading fragments ("Decided:", "Fixed.") are joined onto the next
+    sentence rather than standing alone as the whole headline.
+    """
+    text = " ".join(text.split())
+    if not text:
+        return ""
+    out = ""
+    for part in SENTENCE_END.split(text):
+        out = f"{out} {part}".strip() if out else part
+        if len(out) >= TITLE_FLOOR:
+            break
+    if len(out) > cap:
+        out = out[:cap].rsplit(" ", 1)[0].rstrip(",;:—-") + "…"
+    return out
+
+
+def _inline(s: str) -> str:
+    """Escape FIRST, then apply the small markup authors actually write.
+
+    Measured across the store before choosing the set: `**bold**` in 3/10
+    entries, `code` in 1, a bare URL in 1, and bullets and [md](links) in
+    ZERO. Supporting more than this would be inventing a contract no author
+    uses — and every construct here renders as literal punctuation today.
+    """
+    s = _html.escape(s)
+    s = re.sub(r"\*\*(\S(?:[^*]*\S)?)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    s = re.sub(r"(https?://[^\s<]+[^\s<.,;:)\]])", r'<a href="\1">\1</a>', s)
+    return s
+
+
+def _prose(text: str, drop_headline: bool = False) -> str:
+    """Blank-line-separated paragraphs, first one as the LEDE.
+
+    9 of the store's 10 entries were already written with paragraph breaks
+    (3.3 on average) and every one was thrown away: the whole entry went into
+    a single <p>, and HTML collapses the blank lines. The author's structure
+    existed the entire time — it was never rendered.
+
+    The lede carries the idea, so a reader who stops after it has still got
+    the point. That is the difference between a page you scan and one you have
+    to sit down with.
+    """
+    paras = [p.strip() for p in re.split(r"\n[ \t]*\n", text) if p.strip()]
+    if not paras:
+        return ""
+    # The headline IS this text's first sentence, so an unedited lede repeats it
+    # word for word and the eye reads the same line twice. Drop it — but ONLY
+    # when something follows, or the fold opens empty and the reader is worse
+    # off than with the repetition.
+    #
+    # ⚠ Derived by RE-APPLYING `_first_sentence`, not by prefix-matching the
+    # displayed title. The title is capped and may end in "…", which can never
+    # prefix-match — so matching on it silently declined to drop anything on
+    # exactly the entries with the longest, most repetitive openings. Measured
+    # on the real page: entry 1 de-duplicated, entry 2 did not. Deriving both
+    # from one rule means they cannot disagree.
+    if drop_headline:
+        first = " ".join(paras[0].split())
+        head = _first_sentence(first, cap=len(first))
+        rest = first[len(head):].lstrip() if head else first
+        if rest:
+            paras[0] = rest
+        elif len(paras) > 1:
+            # The whole first paragraph WAS the headline. Promote the next one
+            # rather than printing the headline twice — 6 of the store's 10
+            # entries open with a single-sentence paragraph, so keeping it was
+            # the common case, not the edge case.
+            paras.pop(0)
+        # else: the headline is the entire entry. Keep it — an empty fold is
+        # worse than a repeated sentence, and there is nothing else to show.
+    return "".join(
+        f'<p class="{"lede" if i == 0 else "body"}">{_inline(p)}</p>'
+        for i, p in enumerate(paras))
+
+
 def _store_label(p) -> str:
     """How the store is NAMED on the page. Repo-relative when it is inside the
     repo, absolute otherwise.
@@ -147,7 +239,16 @@ def parse_entries(text: str) -> list[dict]:
         cut = next((i for i, l in enumerate(body) if l.strip() == TECH_MARKER), None)
         plain_lines = body if cut is None else body[:cut]
         entry["tech"] = None if cut is None else "\n".join(body[cut + 1:]).strip()
-        entry["title"] = next((l.strip() for l in plain_lines if l.strip()), "")
+        # The FIRST PARAGRAPH, reduced to its first sentence — not the first
+        # physical line. The blank-line test below is unchanged: an entry whose
+        # first line is blank still has no title and is still an error.
+        _first_para: list[str] = []
+        for _l in plain_lines:
+            if _l.strip():
+                _first_para.append(_l.strip())
+            elif _first_para:
+                break
+        entry["title"] = _first_sentence(" ".join(_first_para))
         entry["plain"] = "\n".join(plain_lines).strip()
         if not entry["title"]:
             entry["error"] = "no title line — the first line after the header is blank"
@@ -461,7 +562,8 @@ def build(entries, days, prs, pr_error, git_error, window,
                 f'<span class="eid">{_html.escape(e["id"])}</span>{flag}</h3>'
                 f'<p class="title">{_html.escape(e["title"])}</p>'
                 f'<details id="{eid}-plain"><summary>What this means</summary>'
-                f'<p>{_html.escape(e["plain"])}</p></details>{tech}</article>')
+                f'<div class="prose">{_prose(e["plain"], drop_headline=True)}</div>'
+                f'</details>{tech}</article>')
         entries_html = "".join(parts)
 
     # ─── Recorded exemptions (spec §7) ───
@@ -525,7 +627,26 @@ padding:14px 18px;margin-bottom:10px}}
 .entry.broken{{border-color:var(--err);background:var(--err-bg)}}
 .entry h3{{font-family:var(--mono);font-size:12px;color:var(--fg3);margin:0 0 6px}}
 .entry .eid{{color:var(--fg3);opacity:.75}}
-.entry .title{{margin:0;font-weight:600}}
+.entry .title{{margin:0;font-weight:600;line-height:1.4;max-width:60ch}}
+/* ── The prose fold. Typeset, not dumped. ──────────────────────────────────
+   Every entry's human half used to render as ONE <p> at the full 820px shell
+   width, so the author's paragraphs vanished and each line ran ~110 characters
+   — roughly twice the measure at which the eye reliably finds the next line.
+   Three things do the work here, in order of how much they buy:
+     1. paragraphs exist at all;
+     2. the LEDE is the only full-contrast text, so the glance lands on the
+        idea and the supporting detail recedes to --fg2 rather than competing;
+     3. ~64ch measure and 1.7 leading, so a line ends where the eye expects.
+   `strong` returns to --fg: an author writing **Waiting on you:** is marking
+   the one sentence that must not be skimmed past, and it now outranks the
+   body it sits in instead of rendering as literal asterisks. */
+.entry .prose{{max-width:64ch;margin-top:10px}}
+.entry .prose p{{margin:0 0 .9em;color:var(--fg2);line-height:1.7}}
+.entry .prose p:last-child{{margin-bottom:0}}
+.entry .prose .lede{{color:var(--fg);font-size:15.5px;line-height:1.6;
+  margin-bottom:1.05em}}
+.entry .prose strong{{color:var(--fg);font-weight:600}}
+.entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--fg)}}
 .flag{{color:var(--need);font-weight:700}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
@@ -1074,6 +1195,86 @@ def _self_test() -> int:
     v, err = _with_run(lambda *a, **k: _R(0, '[{"number": 9, "title": "T"}]', ""), open_prs)
     case("open_prs: a well-formed gh response is returned as data", (v, err),
          ([{"number": 9, "title": "T"}], None))
+
+    # ── THE PROSE FOLD ───────────────────────────────────────────────────────
+    # ⚠ Every change in this area passed the suite at 120/120 BEFORE these cases
+    # existed — paragraphs, inline markup and the headline had no coverage at
+    # all. A green suite over new rendering code is not evidence about it.
+    _p = _prose("First para, the lede.\n\nSecond para.\n\nThird para.")
+    case("blank lines become PARAGRAPHS — the author's structure survives",
+         (_p.count("<p "), _p.count('class="lede"')), (3, 1))
+    case("only the FIRST paragraph is the lede", _p.count('class="body"'), 2)
+    # A single hard-wrapped paragraph is ONE paragraph. Rendering per-line would
+    # look structured and be noise — the wrap point carries no meaning.
+    case("a hard-wrapped paragraph is not three paragraphs",
+         _prose("one\ntwo\nthree").count("<p "), 1)
+    case("no paragraphs in, nothing out — never an empty <p>", _prose("   "), "")
+
+    # The headline is the lede's own first sentence, so an unedited fold repeats
+    # it verbatim. Dropped — but the guard matters more than the drop: if the
+    # first paragraph IS just that sentence, removing it opens an empty fold.
+    _dup = _prose("Ready for you now. And here is the detail.\n\nMore.",
+                  drop_headline=True)
+    case("the headline is not repeated as the lede's first words",
+         ("And here is the detail." in _dup, "Ready for you now. And" in _dup),
+         (True, False))
+    # A first paragraph that is ONLY the headline: promote the next paragraph
+    # rather than repeat it. This is the COMMON shape — 6 of 10 store entries.
+    _solo = _prose("Ready for you now.\n\nThe detail follows here.", drop_headline=True)
+    case("a one-sentence first paragraph is replaced by the NEXT paragraph",
+         ("Ready for you now." in _solo, '<p class="lede">The detail follows here.</p>' in _solo),
+         (False, True))
+    # ...unless there is nothing else. An empty fold is worse than a repeat.
+    case("...but the headline is KEPT when it is the entire entry",
+         "Ready for you now." in _prose("Ready for you now.", drop_headline=True), True)
+    # ⚠ THE ENTRY-2 CASE, measured on the real page. A first sentence longer
+    # than TITLE_CAP is displayed truncated with "…", and the earlier version
+    # of this matched on that displayed string — so it dropped nothing on
+    # precisely the entries whose openings are longest and most repetitive.
+    _long = "Decided: " + "the check stays and is written down " * 4 + "here. Then more."
+    case("a first sentence longer than the displayed cap is STILL dropped",
+         _prose(_long, drop_headline=True).count("Decided:"), 0)
+    case("...and dropping it leaves the rest intact",
+         "Then more." in _prose(_long, drop_headline=True), True)
+
+    _b = _inline("**Waiting on you:** the `--flag` at https://example.com/x")
+    case("**bold** renders as emphasis, not as literal asterisks",
+         ("<strong>Waiting on you:</strong>" in _b, "**" in _b), (True, False))
+    case("`code` and bare URLs render as themselves",
+         ("<code>--flag</code>" in _b, '<a href="https://example.com/x"' in _b), (True, True))
+    # ⛔ SECURITY, and the ordering is the whole of it: escape THEN mark up. The
+    # reverse turns an entry — a file any contributor edits — into stored XSS on
+    # a page the author opens. Asserts the escaped form is PRESENT, not merely
+    # that the raw form is absent: "absent" is also satisfied by rendering
+    # nothing at all, which is the vacuous-negative trap from the last round.
+    _x = _inline('**<script>alert(1)</script>** & <b>x</b>')
+    case("markup is applied AFTER escaping, so an entry cannot inject HTML",
+         ("&lt;script&gt;" in _x, "<script>" in _x, "<b>" in _x, "&amp;" in _x),
+         (True, False, False, True))
+    case("...and the emphasis around the escaped text still renders",
+         "<strong>&lt;script&gt;alert(1)&lt;/script&gt;</strong>" in _x, True)
+
+    case("the headline is the first SENTENCE, not the first typed line",
+         _first_sentence("The page is ready. It has three parts."), "The page is ready.")
+    case("a short opening fragment joins the next sentence, never stands alone",
+         _first_sentence("Decided. The check stays until the rewrite lands."),
+         "Decided. The check stays until the rewrite lands.")
+    case("an over-long headline is cut at a WORD, with an ellipsis",
+         (len(_first_sentence("x" * 40 + " " + "y" * 200)) <= TITLE_CAP + 1,
+          _first_sentence("x" * 40 + " " + "y" * 200).endswith("…")), (True, True))
+    # A URL's dots are not sentence ends — the reported headline broke on one.
+    case("a URL inside the first sentence does not end it",
+         _first_sentence("Open http://127.0.0.1:7391/dashboard to see it. Next."),
+         "Open http://127.0.0.1:7391/dashboard to see it.")
+    # ⚠ THE WIRING, not the helper. Every case above calls `_first_sentence`
+    # directly, and reverting `parse_entries` to the old first-LINE title
+    # SURVIVED all of them at 132/132 — a helper can be perfect and unused.
+    # This is the same shape review caught one round ago: fixing a premise, or
+    # here proving a function, is not covering the caller that must reach it.
+    _wrap = parse_entries("## 2026-08-29\nThe page is ready for you. It is at\n"
+                          "http://example.com with three parts.\n")
+    case("parse_entries USES the sentence headline (not the wrapped line)",
+         _wrap[0]["title"], "The page is ready for you.")
 
     # ── CWD INDEPENDENCE ─────────────────────────────────────────────────────
     # MEASURED 2026-08-29 from a real broken page: run from any directory that is
