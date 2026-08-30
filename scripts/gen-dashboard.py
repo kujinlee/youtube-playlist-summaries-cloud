@@ -2,6 +2,7 @@
 """Render the project dashboard from docs/dashboard-entries.md."""
 from __future__ import annotations
 import argparse
+import contextlib
 import datetime as _dt
 import json
 import pathlib
@@ -137,6 +138,9 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
     return out
 
 
+INLINE_URL = re.compile(r"https?://[^\s<]+[^\s<.,;:)\]]")
+
+
 def _inline(s: str) -> str:
     """Escape FIRST, then apply the small markup authors actually write.
 
@@ -144,12 +148,62 @@ def _inline(s: str) -> str:
     entries, `code` in 1, a bare URL in 1, and bullets and [md](links) in
     ZERO. Supporting more than this would be inventing a contract no author
     uses — and every construct here renders as literal punctuation today.
+
+    ONE left-to-right scan, not three stacked `re.sub` passes. Those passes
+    were blind to each other's OUTPUT: review reproduced ``**bold `code**
+    tail` `` emitting `<strong>bold <code>code</strong> tail</code>` — tags
+    closing in the order they were not opened — because the code pass reached
+    straight across the bold pass's closing tag. Scanning left to right, a
+    construct consumes its whole span before the next one is considered, so a
+    span cannot begin inside one region and end inside another. A fourth regex
+    refining the third would have been more of the same cause.
     """
-    s = _html.escape(s)
-    s = re.sub(r"\*\*(\S(?:[^*]*\S)?)\*\*", r"<strong>\1</strong>", s)
-    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
-    s = re.sub(r"(https?://[^\s<]+[^\s<.,;:)\]])", r'<a href="\1">\1</a>', s)
-    return s
+    # Two steps, deliberately on two lines: the escape and the scan are separate
+    # properties with separate guards, and a mutation anchor cannot name one of
+    # them while they share a line. `quote` stays DEFAULT-TRUE — the autolinker
+    # writes entry text into an `href` attribute, so quotes are load-bearing.
+    escaped = _html.escape(s)
+    return _inline_scan(escaped, strong=True)
+
+
+def _inline_scan(s: str, strong: bool) -> str:
+    """The scan itself, over ALREADY-ESCAPED text. Never call it on raw input.
+
+    Unpaired delimiters print as themselves. Dropping text to make the tags
+    balance would trade a cosmetic defect for content loss, and content loss
+    is what Cx2 was filed for in this same round.
+    """
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        if strong and s.startswith("**", i):
+            close = s.find("**", i + 2)
+            body = s[i + 2:close] if close != -1 else ""
+            # `body == body.strip()` is the old regex's `\S(?:[^*]*\S)?`: `** a **`
+            # is spacing, not emphasis. `strong=False` inside, because emphasis
+            # did not nest before and gains nothing by nesting now.
+            if close != -1 and body and body == body.strip():
+                out.append(f"<strong>{_inline_scan(body, strong=False)}</strong>")
+                i = close + 2
+                continue
+        if s[i] == "`":
+            close = s.find("`", i + 1)
+            # `-1 > i + 1` is False, so an unclosed span needs no separate test.
+            if close > i + 1:
+                # Code is LITERAL — no markup inside. The old pass ORDER ran the
+                # autolinker over code content too, so a URL in backticks came
+                # out as a link nested in a <code>.
+                out.append(f"<code>{s[i + 1:close]}</code>")
+                i = close + 1
+                continue
+        m = INLINE_URL.match(s, i)
+        if m:
+            out.append(f'<a href="{m.group(0)}">{m.group(0)}</a>')
+            i = m.end()
+            continue
+        out.append(s[i])
+        i += 1
+    return "".join(out)
 
 
 def _prose(text: str, drop_headline: bool = False) -> str:
@@ -911,33 +965,54 @@ def contrast_failures(html: str, minimum: float = CONTRAST_MIN) -> list[str]:
     return out
 
 
-def _self_test() -> int:
+@contextlib.contextmanager
+def _write_sandbox():
+    """Repoint OUT_DEFAULT at a temp dir for the duration; restore on the way out.
+
+    ⛔ WHY THIS EXISTS. MEASURED: `check-plan-code.py --mutate .` replaced the
+    reader's live dashboard with an empty page. The suite calls `main()`;
+    `main()` falls through to `--out`; `--out` defaulted to a REAL file in the
+    home directory. A mutant reaching the compose path therefore published
+    garbage over the page the harness exists to protect. Redirecting the
+    DEFAULT — not the four call sites — is what makes it structural: a case
+    written later inherits the sandbox instead of having to remember it.
+
+    ⚠ WHY IT WRAPS THE CALL rather than living inside `_self_test`. Two review
+    findings, one shape:
+
+      L1 — the previous version restored in an `atexit` handler and the handler
+      had NO falsifier: deleting its registration SURVIVED 161/161. It could
+      not have had one. The hazard it claimed to cover was "a case raises and
+      the explicit restore at the end is never reached" — but an exception out
+      of `_self_test` leaves `sys.exit(main(...))` and kills the process, and
+      rebinding a global in a dying interpreter is unobservable BY
+      CONSTRUCTION. What it actually bought was the `rmtree` on that path: a
+      temp-directory leak, real, and not what its comment said.
+
+      L2 — the explicit restore sat three lines above the end of `_self_test`,
+      which is exactly where the next case gets appended. A case written there
+      would have run with OUT_DEFAULT pointing at the reader's real page.
+
+    `finally` around the CALL fixes both without re-indenting 700 lines: the
+    restore is in-process and therefore observable, so it has a falsifier (see
+    the raising-body case in the suite), and the window covers every line of
+    `_self_test` including ones not yet written — which is the property L2
+    actually wanted. Yields `(sandbox_dir, real_out)` so the suite asserts
+    against the values in force, never a second copy of them.
+    """
+    real_out = OUT_DEFAULT
+    sandbox = pathlib.Path(tempfile.mkdtemp(prefix="gen-dashboard-selftest-"))
+    globals()["OUT_DEFAULT"] = sandbox / "dashboard.html"
+    try:
+        yield sandbox, real_out
+    finally:
+        globals()["OUT_DEFAULT"] = real_out
+        _shutil.rmtree(sandbox, ignore_errors=True)
+
+
+def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
+    """The cases. `_write_sandbox` is already in force — see main()."""
     ok = fail = 0
-
-    # ⛔ SANDBOX THE SUITE'S WRITES BEFORE THE FIRST CASE RUNS.
-    # MEASURED: `check-plan-code.py --mutate .` replaced the reader's live
-    # dashboard with an empty page. The suite calls `main()`; `main()` falls
-    # through to `--out`; `--out` defaulted to a REAL file in the home
-    # directory. A mutant reaching the compose path therefore published garbage
-    # over the page the harness exists to protect. Redirecting the DEFAULT — not
-    # the four call sites — is what makes it structural: a case written later
-    # inherits the sandbox instead of having to remember it.
-    import atexit as _atexit
-    import tempfile as _tf0
-    _sandbox = _tf0.mkdtemp(prefix="gen-dashboard-selftest-")
-    _real_out = OUT_DEFAULT
-    globals()["OUT_DEFAULT"] = pathlib.Path(_sandbox) / "dashboard.html"
-
-    # ⚠ Registered as well as restored explicitly at the end. The explicit
-    # restore is what the cases below assert against; THIS is what covers the
-    # path where a case raises and the end of the function is never reached —
-    # the same hole the `os.chdir` block closes with `finally`, which is not
-    # available here without re-indenting 700 lines and disturbing the
-    # mutation anchors. Both idempotent: restoring twice sets the same value.
-    def _restore_out():
-        globals()["OUT_DEFAULT"] = _real_out
-        _shutil.rmtree(_sandbox, ignore_errors=True)
-    _atexit.register(_restore_out)
 
     def case(name, got, want):
         nonlocal ok, fail
@@ -1624,6 +1699,57 @@ def _self_test() -> int:
     case("...and the emphasis around the escaped text still renders",
          "<strong>&lt;script&gt;alert(1)&lt;/script&gt;</strong>" in _x, True)
 
+    # ── ROUND 1, CARRIED ─────────────────────────────────────────────────────
+    # Cx-Low (Codex) — overlapping spans emitted tags that close in the wrong
+    # order: `**bold `code** tail`` became
+    # `<strong>bold <code>code</strong> tail</code>`. Three independent `re.sub`
+    # passes cannot see each other's output as STRUCTURE, so the code pass
+    # reached straight across the bold pass's closing tag. A fourth regex
+    # refining the third would be more of the same cause.
+    #
+    # The assertion is the PROPERTY — tags close in the order they opened —
+    # not one expected string. A string would pin today's rendering of a typo
+    # nobody should rely on; well-nestedness is what actually matters, and it
+    # holds for inputs no case here enumerates.
+    def _well_nested(h):
+        stack = []
+        for _m in re.finditer(r"</?([a-z]+)[^>]*>", h):
+            if _m.group(0).startswith("</"):
+                if not stack or stack.pop() != _m.group(1):
+                    return False
+            else:
+                stack.append(_m.group(1))
+        return not stack
+    case("overlapping **bold and `code cannot emit crossed tags",
+         _well_nested(_inline("**bold `code** tail`")), True)
+    # ...and the checker is not vacuous. Without this, `_well_nested` could
+    # return True unconditionally and the case above would still be green —
+    # the exact shape of the three guards that survived their first battery
+    # this session. The literal below is the OLD output, verbatim.
+    case("...and the nesting check REJECTS the output this replaced",
+         _well_nested("<strong>bold <code>code</strong> tail</code>"), False)
+    # Unpaired delimiters survive AS THEMSELVES rather than being eaten:
+    # dropping text to make the tags balance would trade a cosmetic defect for
+    # content loss, which is the trade Cx2 was filed over in this same round.
+    #
+    # ⚠ Counted, not `"code" in ...`. The battery caught the weaker form: with
+    # the span emptied, that assertion stayed TRUE because the word "code" also
+    # sits inside the bold span, so the case went red only via an unrelated
+    # one. Assert the DELIMITERS, which is what this case is actually about.
+    _unpaired = _inline("**bold `code** tail`")
+    case("...and unpaired ` delimiters print, they are not swallowed",
+         (_unpaired.count("`"), "tail" in _unpaired), (2, True))
+
+    # ⛔ SECURITY — `_html.escape`'s `quote` argument, which defaults True and was
+    # therefore invisible. MEASURED: `escape(s, quote=False)` SURVIVED 192/192.
+    # It matters because the autolinker is the one construct that puts entry text
+    # into an ATTRIBUTE: with quotes unescaped, a URL carrying a `"` closes `href`
+    # early and everything after it becomes markup. `[^\s<]+` admits `"`, so the
+    # URL pattern does not stop it — the escape is the only thing that does.
+    _q = _inline('https://x.example/"onmouseover=x')
+    case("a raw quote in an autolinked URL cannot break out of href",
+         ("&quot;" in _q, _q.count('"'), "onmouseover=x" in _q), (True, 2, True))
+
     case("the headline is the first SENTENCE, not the first typed line",
          _first_sentence("The page is ready. It has three parts."), "The page is ready.")
     case("a short opening fragment joins the next sentence, never stands alone",
@@ -1832,15 +1958,31 @@ def _self_test() -> int:
         _wrc = main(["--window", "0"])
     case("main: --window below 1 is a refusal, not a silent default", _wrc, 2)
 
-    # The falsifier for the sandbox above: if the redirect is ever removed, this
-    # says so instead of the next mutation run silently eating the live page.
+    # The falsifier for the sandbox: if the redirect is ever removed, this says
+    # so instead of the next mutation run silently eating the live page. It is
+    # no longer the LAST thing that happens — the restore moved out to `main()`,
+    # so these two hold at every line of this function rather than only above
+    # the point where the old explicit restore used to sit (L2).
     case("the suite never writes to the REAL dashboard path",
-         (OUT_DEFAULT != _real_out, str(OUT_DEFAULT).startswith(_sandbox)),
+         (OUT_DEFAULT != real_out, str(OUT_DEFAULT).startswith(str(sandbox))),
          (True, True))
     case("...and the real path is still what a normal run would use",
-         _real_out == pathlib.Path.home() / "explainers" / "dashboard.html", True)
-    globals()["OUT_DEFAULT"] = _real_out
-    _shutil.rmtree(_sandbox, ignore_errors=True)
+         real_out == pathlib.Path.home() / "explainers" / "dashboard.html", True)
+
+    # L1 — the falsifier the `atexit` handler could never have. A NESTED
+    # sandbox with a raising body: the restore must still run, and the temp
+    # tree must still go. Both halves fail independently if their line in
+    # `_write_sandbox`'s `finally` is deleted, which is the whole point —
+    # the mechanism this replaces survived its own deletion.
+    _during = _outer = _nested = None
+    with contextlib.suppress(RuntimeError):
+        with _write_sandbox() as (_nested, _outer):
+            _during = OUT_DEFAULT
+            raise RuntimeError("a case raised inside the sandbox")
+    case("the write sandbox restores OUT_DEFAULT when the body RAISES",
+         (_during != _outer, OUT_DEFAULT == _outer), (True, True))
+    case("...and it removes the temp tree on that same raising path",
+         (_nested is not None and _nested.exists()), False)
 
     print(f"\n{ok}/{ok+fail} passed")
     return 1 if fail else 0
@@ -1859,7 +2001,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--fragment-only", type=pathlib.Path, default=None)
     a = ap.parse_args(argv)
     if a.self_test:
-        return _self_test()
+        # The sandbox wraps the CALL, so its `finally` covers every case —
+        # including ones appended at the very end of `_self_test`, where the
+        # previous explicit restore left a window (L2).
+        with _write_sandbox() as (_box, _real):
+            return _self_test(real_out=_real, sandbox=_box)
     if a.window < 1:
         print(f"CANNOT RUN — --window must be at least 1, got {a.window}.", file=sys.stderr)
         return 2

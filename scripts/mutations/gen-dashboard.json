@@ -56,7 +56,7 @@
         "    mark = \"\""
       ]
     ],
-    "expect": "§6.1 a zero-commit day WITH an entry is marked in SIGHTED output"
+    "expect": "\u00a76.1 a zero-commit day WITH an entry is marked in SIGHTED output"
   },
   {
     "name": "gap mark: gapmark AND class both gone",
@@ -71,7 +71,7 @@
         "        mark += \"\""
       ]
     ],
-    "expect": "§9 a day that shipped with NO entry is marked in SIGHTED output"
+    "expect": "\u00a79 a day that shipped with NO entry is marked in SIGHTED output"
   },
   {
     "name": "gh half of what-needs-you suppressed",
@@ -230,7 +230,7 @@
     "expect": "commit_dates passes --first-parent as an ARGUMENT"
   },
   {
-    "name": "the orange needs-you bar is not drawn (spec §5's primary chart signal)",
+    "name": "the orange needs-you bar is not drawn (spec \u00a75's primary chart signal)",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -239,7 +239,7 @@
       ]
     ],
     "expect": [
-      "§5 a needs-you day is marked in SIGHTED output",
+      "\u00a75 a needs-you day is marked in SIGHTED output",
       "...and the mark is the needs class, not an incidental difference"
     ]
   },
@@ -295,14 +295,14 @@
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
-        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '",
-        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store — '"
+        "    if store_error:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '",
+        "    if False:\n        entries_html = (f'<p class=\"unknown\">I could not read the entry store \u2014 '"
       ]
     ],
     "expect": "a store that could not be read is NOT 'no entries yet'"
   },
   {
-    "name": "§9's alarm fires off an UNREADABLE store",
+    "name": "\u00a79's alarm fires off an UNREADABLE store",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -310,10 +310,10 @@
         "    unwritten = day[\"commits\"] > 0 and not day[\"has_entry\"]"
       ]
     ],
-    "expect": "...and §9's alarm is not fired off a store nobody could read"
+    "expect": "...and \u00a79's alarm is not fired off a store nobody could read"
   },
   {
-    "name": "the page imports the grammar's SYMBOLS but not its MEANING — a new flag crashes every render",
+    "name": "the page imports the grammar's SYMBOLS but not its MEANING \u2014 a new flag crashes every render",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -327,7 +327,7 @@
     ]
   },
   {
-    "name": "the unknown flag is swallowed instead of degrading the entry — the GRACEFUL half of C1's fix",
+    "name": "the unknown flag is swallowed instead of degrading the entry \u2014 the GRACEFUL half of C1's fix",
     "file": "scripts/gen-dashboard.py",
     "edits": [
       [
@@ -383,5 +383,115 @@
       ]
     ],
     "expect": "main: --window below 1 is a refusal, not a silent default"
+  },
+  {
+    "name": "the prose fold is not wired into the entry render",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "                f'<div class=\"prose\">{_prose(e[\"plain\"], drop_headline=True)}</div>'",
+        "                f'<div class=\"prose\">{_html.escape(e[\"plain\"])}</div>'"
+      ]
+    ],
+    "expect": [
+      "a headline renders **bold** as emphasis, like the body does",
+      "the entry render USES the prose fold (not one escaped blob)"
+    ]
+  },
+  {
+    "name": "escaping stops protecting ATTRIBUTES (quote=False)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    escaped = _html.escape(s)",
+        "    escaped = _html.escape(s, quote=False)"
+      ]
+    ],
+    "expect": "a raw quote in an autolinked URL cannot break out of href"
+  },
+  {
+    "name": "the inline scanner reverts to three layered regex passes",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "    return _inline_scan(escaped, strong=True)",
+        "    _s = re.sub(r\"\\*\\*(\\S(?:[^*]*\\S)?)\\*\\*\", r\"<strong>\\1</strong>\", escaped)\n    _s = re.sub(r\"`([^`]+)`\", r\"<code>\\1</code>\", _s)\n    return re.sub(r\"(https?://[^\\s<]+[^\\s<.,;:)\\]])\", r'<a href=\"\\1\">\\1</a>', _s)"
+      ]
+    ],
+    "expect": [
+      "overlapping **bold and `code cannot emit crossed tags",
+      "...and unpaired ` delimiters print, they are not swallowed"
+    ]
+  },
+  {
+    "name": "the autolinker accepts ANY scheme, not just http(s)",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "INLINE_URL = re.compile(r\"https?://[^\\s<]+[^\\s<.,;:)\\]]\")",
+        "INLINE_URL = re.compile(r\"[a-zA-Z]+:[^\\s<]*[^\\s<.,;:)\\]]\")"
+      ]
+    ],
+    "expect": [
+      "javascript is NEVER autolinked",
+      "data is NEVER autolinked",
+      "vbscript is NEVER autolinked",
+      "JavaScript is NEVER autolinked"
+    ]
+  },
+  {
+    "name": "the prose AA bar is quietly lowered",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "PROSE_CONTRAST_MIN = 4.5                                # WCAG AA, body text",
+        "PROSE_CONTRAST_MIN = 1.0                                # WCAG AA, body text"
+      ]
+    ],
+    "expect": "the AA bar is WCAG AA, and cannot be quietly lowered"
+  },
+  {
+    "name": "the write sandbox does not restore OUT_DEFAULT",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        globals()[\"OUT_DEFAULT\"] = real_out",
+        "        pass"
+      ]
+    ],
+    "expect": "the write sandbox restores OUT_DEFAULT when the body RAISES"
+  },
+  {
+    "name": "the write sandbox leaks its temp tree",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        _shutil.rmtree(sandbox, ignore_errors=True)",
+        "        pass"
+      ]
+    ],
+    "expect": "...and it removes the temp tree on that same raising path"
+  },
+  {
+    "name": "the suite runs UNSANDBOXED against the real dashboard path",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        with _write_sandbox() as (_box, _real):\n            return _self_test(real_out=_real, sandbox=_box)",
+        "        return _self_test(real_out=OUT_DEFAULT, sandbox=pathlib.Path('/nowhere'))"
+      ]
+    ],
+    "expect": "the suite never writes to the REAL dashboard path"
+  },
+  {
+    "name": "an unpaired ` delimiter is swallowed instead of printed",
+    "file": "scripts/gen-dashboard.py",
+    "edits": [
+      [
+        "        out.append(s[i])\n        i += 1",
+        "        if s[i] != '`':\n            out.append(s[i])\n        i += 1"
+      ]
+    ],
+    "expect": "...and unpaired ` delimiters print, they are not swallowed"
   }
 ]

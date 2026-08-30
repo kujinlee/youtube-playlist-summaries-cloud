@@ -466,3 +466,49 @@ token by NAME while nothing asserted the rule consumed it. Both closed.
 re-pointed. That is the documented 45-anchor coupling working: it refused rather than quietly
 measuring less. 161 → 187 cases.
 
+
+## 2026-08-29
+The four review findings left over from the last round are fixed, and the fixes were checked by
+deleting them again to make sure something noticed.
+
+Three were small. The fourth was not really a bug so much as a gap in the safety net: the automated
+check that proves these scripts are actually tested had never been told that the file grew by a
+third. It was still measuring the old thirty-two things while reporting a clean result — technically
+true, and quietly meaningless. It now measures fifty-three, including nine written today.
+
+One of those nine found something real that nobody had asked about. Text you write in an entry can
+end up inside a link, and links have quotes around them; if the quoting were ever turned off, a
+stray quote character in a web address could break out and become page markup. Nothing was wrong —
+but nothing would have told us if it became wrong, which is the same position the other findings
+were about.
+
+The overlapping-emphasis bug is gone, and the way it is gone matters more than the bug: the code no
+longer makes three separate passes that cannot see each other. It reads the text once, left to
+right. That class of error cannot recur, rather than having been patched where it showed.
+<!--tech-->
+Round-1 carried findings, all four closed. **Cx-Low**: `_inline`'s three stacked `re.sub` passes
+emitted crossed tags — `**bold `code** tail`` → `<strong>bold <code>code</strong> tail</code>`.
+Replaced with a single left-to-right scan (`_inline_scan`), not a fourth regex. The case asserts the
+PROPERTY (tags close in the order opened) with a companion proving the checker rejects the old
+output, so it cannot go vacuous.
+
+**L1/L2**: the `atexit` restore had no falsifier and could not have had one — an exception out of
+`_self_test` kills the process, so rebinding a global there is unobservable. What it actually bought
+was the `rmtree`. Replaced by `_write_sandbox()`, a context manager wrapped around the CALL in
+`main()`: the restore is now in-process (so it has a falsifier — a nested raising body) and the
+window covers every line of `_self_test`, including ones not yet written, which is what L2 wanted.
+
+**M5**: manifest 32 → 41 for `gen-dashboard.py`; `EXPECTED_MUTATIONS` and the total pin bumped in
+the same commit (44 → 53). Includes the four the reviewer named — the `:750` fold call site,
+`quote=True`, the `https?://` scheme restriction, `PROSE_CONTRAST_MIN`.
+
+⚠ `_html.escape(s, quote=False)` SURVIVED 192/192 before this. It is load-bearing: the autolinker is
+the one construct writing entry text into an `href` attribute, and `[^\s<]+` admits `"`. Case added.
+
+⚠ Two of my own new guards were caught by the instruments, not by reasoning. A hand battery showed
+the "unpaired delimiter" case went red via an unrelated case, because `"code" in ...` was satisfied
+by the bold span's content — now counts delimiters. And the scheme mutation's `+` needed two
+characters after the colon, so `vbscript:x` never matched and that guard was never reached — now `*`.
+
+`--mutate .` 53/0, gen-dashboard 193/193, check-plan-code 136/136. Live page checksummed identical
+before and after every mutation run.
