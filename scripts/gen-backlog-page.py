@@ -246,9 +246,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (73, "A superseded piece of that same inventory is still in the file, and the only thing "
              "that still runs it is its own test — so part of its reported coverage is of "
              "machinery nothing uses. Waiting on the decision above."),
-        (75, "A day with seven updates made this project's status page look broken. It was not "
-             "broken — it puts the oldest update of the day at the top, so the newest one had "
-             "scrolled off the bottom."),
         (76, "None of these pages lets you choose light or dark; they follow whatever your "
              "computer is set to. Two of them contain the styling for a switch that was never "
              "built, and a checking script claims in writing that the switch exists."),
