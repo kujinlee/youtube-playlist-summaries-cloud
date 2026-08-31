@@ -1448,6 +1448,34 @@ Phase 6 candidate 1, from `docs/reviews/architecture-review-2026-08-30.md`. Spec
 deliberately deferred until this lands, because moving `_inline_scan` behind a seam changes its
 arithmetic — the same cases would then defend four pages instead of one.
 
+⟳ **ALL FOUR CANDIDATES ARE NOW CLOSED (2026-08-30).** 1 → PR #180. 2 → PR #179. 3 (the `HOME`
+question) → ✅ **MERGED, PR #181 (`ebec7bc`)**; the trade it was posed on measured zero, and its own
+review round found four defects. 4 → ⛔ **CLOSED AS ANSWERED, and its recommendation WITHDRAWN**: the
+deferral above was right, and the arithmetic moved so far that flattening became the wrong move —
+the same layers defend four pages at unchanged cost, and two of the retirement candidates are
+demonstrably live. **Decided with the user: LEVEL the stack, do not flatten it.** The residue is
+backlog **#74** — give the mutation runner, the only layer nothing checked back, its own manifest.
+Dispositions for all four are recorded in the architecture review itself.
+
+## Runner mutation coverage — backlog #74 — anchor `status-visibility` — ✅ BUILT 2026-08-30, PR #182
+
+Candidate 4's residue, not its proposal. `check-plan-code.py` had 158 self-test cases and **zero**
+mutations, while the three files it polices had 47, 14 and 12 — and every verdict in the project
+passes through it.
+
+- [x] **Manifest + `EXPECTED_MUTATIONS`** — `scripts/mutations/check-plan-code.json`, 21 entries;
+      47 + 14 + 12 + 21 = **94**, 0 survivors.
+- [x] **The three gaps discovery found** — of 17 candidates, 4 survived at 152/152: two equivalent
+      mutants, and three real gaps (the after-sequence control; the duplicate-anchor refusal;
+      `check()`'s `.home` mkdir, which was PR #181's own fix shipped with no case). All now cased.
+- [x] **Review round 1** — Codex High (two bypasses in the exemption marker; `home_escapes` is now
+      tokenised and cannot excuse executable code) and Codex Medium (my "semantically equivalent"
+      dismissal of `caught = rc == 1` was wrong — rc 3 would be credited as caught).
+- [ ] **Merge** — human gate, not given.
+
+⚠ **`--mutate .` runs 13s → 3m13s.** Real, measured, and not addressed here; the lever if it bites
+is parallelising the mutation loop, not dropping coverage.
+
 **The finding is not a tidiness argument; the pages are corrupted today.** Measured on
 `~/explainers/backlog-table.html` as it stood on disk (generated 2026-08-29 16:42): **10 crossed tag
 spans and 15 cases of markup emitted inside a code span**, because `gen-backlog-page.md` and

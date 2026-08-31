@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 145 cases
+    python3 scripts/check-plan-code.py --self-test          # 158 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -81,6 +81,7 @@ optionally `expect` — a substring of the self-test case name that has to go re
 from __future__ import annotations
 import argparse
 import difflib
+import io
 import json
 import os
 import pathlib
@@ -88,6 +89,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tokenize
 import tempfile
 
 # ⚠ ALL FOUR tag patterns are anchored `^…$`. v6 anchored only the two illustrative
@@ -275,7 +277,7 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
 
     ⚠ SCOPE, stated rather than implied. `$HOME` governs `Path.home()` and a bare `~`,
     and NOTHING ELSE. Measured 2026-08-30 under a redirected home: `Path.home()` and
-    `expanduser("~")` returned the fake home, while `pwd.getpwuid(os.getuid()).pw_dir`
+    `expanduser("~")` returned the fake home, while the `pwd` module's password-database lookup
     and `expanduser("~<user>")` both returned the REAL one. So this is not "a mutation
     can never reach `~/explainers/`" in the abstract — it is that guarantee for the
     home-resolution routes the mutated scripts actually use, and `home_escapes` is what
@@ -299,7 +301,7 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
 # because those are the files a mutation can rewrite into a write.
 HOME_ESCAPES = [
     (re.compile(r"\bgetpw(uid|nam)\b"),
-     "pwd.getpwuid()/getpwnam() reads the account home from the password database "
+     "pwd.getpwuid()/getpwnam() reads the account home from the password database "  # not-a-home-escape: this IS the rule's own reason text
      "and ignores $HOME entirely"),
     (re.compile(r"expanduser\(\s*[\"'][^\"']*~\w"),
      "expanduser('~<user>') names a specific user's home and ignores $HOME"),
@@ -308,14 +310,63 @@ HOME_ESCAPES = [
 ]
 
 
+# A line carrying this marker plus a reason is not scanned. Needed the moment this file
+# became a mutation target itself (backlog #74): the cases that PROVE `home_escapes` works
+# necessarily contain each flagged route verbatim as fixture strings, and a text
+# scanner cannot tell a fixture from a call. Exempting the whole file would excuse the one
+# file that most needs the check; a per-line written reason keeps every exemption visible
+# to `grep` and countable. A bare marker with no reason does NOT exempt.
+ESCAPE_EXEMPT = re.compile(r"#\s*not-a-home-escape:\s*\S")
+
+
 def home_escapes(src: str) -> list[str]:
     """Why `src` could still reach the real home under a redirected $HOME. Empty is good.
 
     Static and therefore incomplete — it reads source, so a route assembled at runtime
     slips past. It is a ratchet against the routes that are cheap to write by accident,
     not a proof. Stated here rather than left for someone to discover.
+
+    ⚠ TOKENISED, not line-matched, and the Codex half of this branch's review is why. A
+    plain text filter had TWO bypasses, both measured: the marker inside a STRING LITERAL
+    (`s = "# not-a-home-escape:"`) silently dropped the whole physical line including a
+    real password-database lookup before it; and a marker written onto a line of live code
+    exempted the live code. So the marker now counts only as a genuine COMMENT token, and it exempts a
+    line only when the route disappears once every STRING token is blanked — i.e. the
+    route lives in string DATA (a fixture) and not in code that runs. An executable route
+    cannot be exempted at all, by anyone, with any comment.
+
+    A file that will not tokenise is scanned RAW with no exemptions honoured: unparseable
+    is a reason to be stricter, never a reason to pass.
     """
-    return [why for rx, why in HOME_ESCAPES if rx.search(src)]
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(src).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return [why for rx, why in HOME_ESCAPES if rx.search(src)]
+    full: dict[int, str] = {}
+    blanked: dict[int, str] = {}
+    exempt: set[int] = set()
+    for t in toks:
+        ln = t.start[0]
+        if t.type == tokenize.COMMENT:
+            if ESCAPE_EXEMPT.search(t.string):
+                exempt.add(ln)
+            continue
+        if t.type in (tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
+                      tokenize.DEDENT, tokenize.ENDMARKER):
+            continue
+        full[ln] = full.get(ln, "") + t.string
+        if t.type != tokenize.STRING:
+            blanked[ln] = blanked.get(ln, "") + t.string
+    out = []
+    for rx, why in HOME_ESCAPES:
+        for ln, text in full.items():
+            if not rx.search(text):
+                continue
+            if ln in exempt and not rx.search(blanked.get(ln, "")):
+                continue          # fixture data on a line with a written reason
+            out.append(why)
+            break
+    return out
 
 
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
@@ -383,9 +434,16 @@ EXPECTED_MUTATIONS = {
     # MOVED to scripts/page_markup.py with the code they guard. The sum below is unchanged at 73,
     # which is the point — a seam that relocates coverage must not be able to look like coverage
     # that was deleted, and only the per-file split can tell those two apart.
+    # ⟳ 2026-08-30, backlog #74: this file joins the manifest. It is 1,696 lines, every mutation
+    # verdict in the project passes through it, and it was the ONLY member of the stack with
+    # cases and no mutations — the layer nothing checked back. Adding it found THREE guards whose
+    # deletion left the suite green: the after-sequence control, the duplicate-anchor refusal,
+    # and `check()`'s redirected-home mkdir. Not circular — the orchestrating process is this
+    # copy, the mutated target is the temp copy, and the nested spawn inherits `child_env`.
     "scripts/gen-dashboard.py": 47,
     "scripts/page_markup.py": 14,
     "scripts/check-dashboard-entry.py": 12,
+    "scripts/check-plan-code.py": 21,
 }
 
 MANIFEST_DIR = "scripts/mutations"
@@ -1156,15 +1214,72 @@ def _self_test() -> int:
     # `home_escapes` — the routes the redirect does NOT cover. The last case is the one
     # that matters: a check that flags everything is as useless as one that flags nothing,
     # so the routes $HOME DOES govern must come back clean.
-    case("home_escapes flags pwd.getpwuid",
-         bool(home_escapes("h = pwd.getpwuid(os.getuid()).pw_dir")), True)
+    case("home_escapes flags pwd.getpwuid",  # not-a-home-escape: case name for this very check
+         bool(home_escapes("h = pwd.getpwuid(os.getuid()).pw_dir")), True)  # not-a-home-escape: fixture
     case("home_escapes flags a named-user tilde",
-         bool(home_escapes("p = os.path.expanduser('~someone/explainers')")), True)
+         bool(home_escapes("p = os.path.expanduser('~someone/explainers')")), True)  # not-a-home-escape: fixture
     case("home_escapes flags a hardcoded absolute home",
-         bool(home_escapes('OUT = "/Users/someone/explainers/dashboard.html"')), True)
+         bool(home_escapes('OUT = "/Users/someone/explainers/dashboard.html"')), True)  # not-a-home-escape: fixture
     case("home_escapes passes Path.home() and a BARE tilde, which $HOME does govern",
          home_escapes("d = pathlib.Path.home() / 'explainers'\n"
                       "e = os.path.expanduser('~/explainers')\n"), [])
+    # The exemption marker. Needed because this file's own cases must contain the routes
+    # verbatim — see ESCAPE_EXEMPT. The third case is the one that matters: an exemption is
+    # per LINE, so it can never become a file-wide off switch for the whole check.
+    _EX = "h = pwd.getpwuid(os.getuid()).pw_dir"  # not-a-home-escape: fixture
+    _FIX = 'X = "' + _EX + '"'          # the route as string DATA, which is what a fixture is
+    case("a fixture in a STRING, on a line with a written reason, is exempt",
+         home_escapes(_FIX + "  # not-a-home-escape: a fixture, not a call"), [])
+    case("...but a bare marker with NO reason does not exempt",
+         bool(home_escapes(_FIX + "  # not-a-home-escape:")), True)
+    case("...and exempting ONE line does not exempt the file",
+         bool(home_escapes(_FIX + "  # not-a-home-escape: ok\n" + _FIX)), True)
+    # ⟲ Codex High, this branch. Both bypasses of the first, line-matched version.
+    case("a marker inside a STRING LITERAL does not exempt the code beside it",
+         bool(home_escapes(_EX + '; s = "# not-a-home-escape:"')), True)
+    # The narrow falsifier for "the marker must be a real COMMENT". Above, the route is
+    # executable, so the blanked-line rule defends it whatever sets `exempt`. Here the
+    # route is string DATA and the marker is also string data, so ONLY the comment
+    # restriction stands between this and a silent exemption.
+    case("...nor can it exempt a FIXTURE on the same line",
+         bool(home_escapes(_FIX + '; s = "# not-a-home-escape: nope"')), True)
+    case("a marker CANNOT exempt an executable route, only string data",
+         bool(home_escapes(_EX + "  # not-a-home-escape: I promise it is fine")), True)
+    case("source that will not tokenise is scanned raw, exempting nothing",
+         bool(home_escapes("def (((\n" + _EX + "  # not-a-home-escape: x")), True)
+
+    # ⟲ Backlog #74. The redirect applies to the PLAN path too, and `check()` must create the
+    # directory or a plan suite that writes to `Path.home()` dies on FileNotFoundError where it
+    # used to pass. Codex raised the defect; deleting the mkdir then left the suite GREEN, so the
+    # fix shipped unguarded — this is the case that makes it load-bearing.
+    with tempfile.TemporaryDirectory() as _td:
+        _pd = pathlib.Path(_td)
+        # Per-run name and content-matched cleanup, for the same reason the canary above has
+        # them — and noted because this case was written an hour AFTER that fix and repeated
+        # the defect anyway. Answering "what else is this true of?" needs a search, not a
+        # recollection; a fixed name here would be sticky in the real home in exactly the
+        # same way.
+        _hname, _hmark = f"plan-home-{_pd.name}.txt", f"yps-plan-home {_pd.name}"
+        _p = _pd / "home.md"
+        _p.write_text('<!-- file: t.py -->\n```python\n'
+                      'import pathlib, sys\n\n\n'
+                      'def _self_test():\n'
+                      f'    (pathlib.Path.home() / {_hname!r}).write_text({_hmark!r})\n'
+                      '    print("1/1 passed")\n'
+                      '    return 0\n\n\n'
+                      'if __name__ == "__main__":\n'
+                      '    sys.exit(_self_test())\n```\n')
+        _okh, _reph, _evh = check(_p)
+        case("a PLAN suite may still write to Path.home() — the redirect is not a broken home",
+             (_okh, _evh["files"]["t.py"]["rc"]), (True, 0))
+        _hesc = pathlib.Path.home() / _hname
+        case("...and that write did NOT reach the real home",
+             _hesc.exists(), False)
+        try:
+            if _hesc.read_text() == _hmark:
+                _hesc.unlink()
+        except OSError:
+            pass
 
     # The docstring case count, which no case could previously reach.
     case("count_drift is silent when the docstring matches",
@@ -1607,6 +1722,23 @@ def _self_test() -> int:
         _ok3, _rep3, _, _ = run_mutations(_d, _unknown, {"m.py"})
         case("run_mutations refuses an unknown target file",
              (_ok3, any("unknown file" in r for r in _rep3)), (False, True))
+        # ⟲ Codex Medium, this branch, and it CORRECTED me. I excluded the mutation
+        # `caught = rc == 1` -> `rc != 0` from the manifest as semantically equivalent,
+        # reasoning that the earlier `if rc == 2: continue` leaves only {0, 1}. It does
+        # not: it excludes 2 and nothing else. A suite exiting 3 — a crashed runner, a
+        # `sys.exit(3)`, a wrapper's own error code — is NOT a clean red, and crediting
+        # it as `caught` would report coverage from a suite that never rendered a
+        # verdict. `rc == 1` is the correct contract and now has a case, so the
+        # mutation is real coverage and joins the manifest.
+        _odd = [{"name": "exits three", "file": "m.py",
+                 "edits": [['    print("1/1 passed")\n    return 0',
+                            '    print("1/1 passed")\n    return 3']],
+                 "expect": "f returns one"}]
+        _ok9, _rep9, _, _evs9 = run_mutations(_d, _odd, {"m.py"})
+        case("a suite exiting 3 is a SURVIVOR, not a catch",
+             (_ok9, _evs9), (False, ["exits three"]))
+        case("...and the report says it survived rather than naming a red case",
+             any("mutation SURVIVED" in r for r in _rep9), True)
 
     # ⟲ Backlog #70, Task 2. The manifest FILENAME names the target script, and an entry
     # whose `file` key disagrees is refused rather than silently believed.
@@ -1697,10 +1829,10 @@ def _self_test() -> int:
             _r = pathlib.Path(_td); _mini(_r)
             _t = _r / "scripts" / "thing.py"
             _t.write_text(_t.read_text() +
-                          "import pwd, os\nREAL = pwd.getpwuid(os.getuid()).pw_dir\n")
+                          "import pwd, os\nREAL = pwd.getpwuid(os.getuid()).pw_dir\n")  # not-a-home-escape: fixture written into a temp tree
             _ok4, _rep4, _ = mutate_delivered(_r)
             case("a target reaching the home by a route $HOME does not govern is refused",
-                 (_ok4, any("getpwuid" in r for r in _rep4)), (False, True))
+                 (_ok4, any("getpwuid" in r for r in _rep4)), (False, True))  # not-a-home-escape: asserts the report mentions it
         # ...and the same route arriving via the MUTATION rather than the target. The
         # target here is clean; only the replacement text carries the escape.
         with tempfile.TemporaryDirectory() as _td:
@@ -1708,24 +1840,59 @@ def _self_test() -> int:
             (_r / "scripts" / "mutations" / "thing.json").write_text(json.dumps(
                 [{"name": "value is two", "file": "scripts/thing.py",
                   "edits": [["VALUE != 1",
-                             "VALUE != int(pwd.getpwuid(os.getuid()).pw_uid)"]],
+                             "VALUE != int(pwd.getpwuid(os.getuid()).pw_uid)"]],  # not-a-home-escape: fixture: the MUTATION carries the route
                   "expect": "value is one"}]))
             _ok5, _rep5, _ = mutate_delivered(_r)
             case("...and a CLEAN target whose MUTATION introduces the route is refused",
-                 (_ok5, any("getpwuid" in r for r in _rep5)), (False, True))
+                 (_ok5, any("getpwuid" in r for r in _rep5)), (False, True))  # not-a-home-escape: asserts the report mentions it
+        # ⟲ Backlog #74. THE CONTROL AFTER THE SEQUENCE. It exists because a tree that goes bad at
+        # mutation 17 makes every later suite exit 1, which `run_mutations` records as `caught`
+        # indistinguishably from a real catch. Deleting the check left the suite GREEN — a guard
+        # bought by a review round with nothing asserting it. `thing.py` poisons itself on its
+        # THIRD run, so the before-control (1) and the mutated run (2) behave normally and only
+        # the after-control (3) is red.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _t = _r / "scripts" / "thing.py"
+            _t.write_text(_t.read_text().replace(
+                "def _self_test():",
+                "def _self_test():\n"
+                "    _c = pathlib.Path(__file__).parent / 'runs.txt'\n"
+                "    _n = int(_c.read_text()) + 1 if _c.exists() else 1\n"
+                "    _c.write_text(str(_n))\n"
+                "    if _n >= 3:\n"
+                "        print('  [FAIL] the tree went bad underneath: got %r' % _n)\n"
+                "        return 1", 1))
+            _ok6, _rep6, _ = mutate_delivered(_r)
+            case("a tree that goes bad DURING the sequence invalidates the run",
+                 (_ok6, any("no longer green AFTER the sequence" in r for r in _rep6)),
+                 (False, True))
+        # ⟲ Backlog #74. Two entries with the same edit anchors measure one thing twice, and the
+        # second reports `caught` for coverage that does not exist. Also untested until now.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS["scripts/thing.py"] = 2
+            _dup = {"name": "value is two AGAIN", "file": "scripts/thing.py",
+                    "edits": [["VALUE != 1", "VALUE != 2"]], "expect": "value is one"}
+            _man = json.loads((_r / "scripts" / "mutations" / "thing.json").read_text())
+            (_r / "scripts" / "mutations" / "thing.json").write_text(json.dumps(_man + [_dup]))
+            _ok7, _rep7, _ = mutate_delivered(_r)
+            case("an entry REPEATING another's edit anchors is refused",
+                 (_ok7, any("repeats the edit anchors" in r for r in _rep7)), (False, True))
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
+                                      "scripts/check-plan-code.py",
                                       "scripts/gen-dashboard.py",
                                       "scripts/page_markup.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
     # unchanged at 32); 53 → 59 (round 2, 6 more); 59 → 67 (round 3, 8 more, incl. a
-    # LIVE `**` on the reader's page); 67 → 73 (round 4). Coverage may grow here;
-    # it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 73)
+    # LIVE `**` on the reader's page); 67 → 73 (round 4). 73 → 94 (backlog #74, the runner
+    # itself, +21; four of them added by its own review round). Coverage may grow here; it may not shrink.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 94)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

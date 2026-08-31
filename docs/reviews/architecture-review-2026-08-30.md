@@ -193,3 +193,60 @@ The question `dev-process.md` says no tool can answer.
    their own defect rate (§2).
 
 **Nothing here has been filed to `docs/backlog.md` or the roadmap.** Filing is the user's step.
+
+---
+
+# Dispositions — added 2026-08-30, after the candidates were worked
+
+| # | Outcome |
+|---|---|
+| 1 | ✅ **DONE** — backlog #71, PR #180 (`0972c55`). One renderer, `scripts/page_markup.py`, for all four generators |
+| 2 | ✅ **DONE** — PR #179 (`e9532e2`). The inventory can now see a guard nothing calls. Residue filed as #72 and #73 |
+| 3 | ✅ **DONE** — PR #181 (`ebec7bc`). Decided: redirect. See below |
+| 4 | ⛔ **CLOSED AS ANSWERED — DO NOT FLATTEN.** See below |
+
+## Candidate 3 — decided, and the trade measured zero
+
+`grep HOME scripts/check-plan-code.py` returned nothing, so it was never a decision. Now every suite
+the harness spawns runs under a redirected `HOME`. The stated cost — fidelity, because six delivered
+scripts resolve `Path.home()` at module level — **measured zero**: no assertion anywhere names a real
+home path, so a redirect shifts both sides of every comparison together, and `--mutate .` held at
+73/0. Round 1 of its review then found four defects, one of them the coordinator's against the fix
+written for Codex's first. ⚠ Scope learned and now enforced by `home_escapes()`: **`$HOME` governs
+`Path.home()` and a bare `~` and nothing else** — `pwd.getpwuid().pw_dir` and `expanduser("~user")`
+reach the real home.
+
+## Candidate 4 — ⛔ the recommendation in §2 is WITHDRAWN, and the reason is arithmetic
+
+**This section's own proposal was to retire layers. That is now the wrong move, and nothing about §2
+was wrong when written — its DENOMINATOR moved.** The flattening case was cost/benefit, and
+candidate 1 landed between the writing and the working: the same layers now defend **four** page
+generators instead of one, at unchanged cost. Cost per page quartered.
+
+Two of the four retirement candidates are also demonstrably live rather than merely cheap: layer 7
+(`count_drift`, the docstring case count) **caught a real drift during PR #181, unprompted**, and
+layer 5 (the literal pinning the per-file sum) is the only thing that distinguishes a relocation from
+a deletion — which is exactly what candidate 1 did to fourteen entries.
+
+**What the re-measure exposes instead is an unevenness this section did not name.** Cases from the
+run, mutations from `EXPECTED_MUTATIONS`:
+
+| file | cases | mutations proving them non-vacuous |
+|---|---|---|
+| `gen-dashboard.py` | 209 | 47 |
+| `page_markup.py` | 78 | 14 |
+| `check-dashboard-entry.py` | 46 | 12 |
+| **`check-plan-code.py`** | **145** | **0** |
+
+The stack's whole logic is *each layer proves the one below cannot go vacuous* — and the top layer,
+the 1,696-line runner every one of those 73 verdicts passes through, has nothing above it. Its own
+comments record two guards whose deletion left its suite green (`:694`, `:711`), both found by review
+rather than by the suite.
+
+**DECIDED 2026-08-30 with the user: LEVEL the stack, do not flatten it.** Nothing is retired. The
+residue is filed as **backlog #74** — give the runner a mutation manifest. Feasibility was measured,
+not argued: a scratch probe adding it as a fourth target ran 4 files / 75 mutations / 0 survivors
+with clean controls, and immediately surfaced a real defect in a guard written minutes earlier.
+
+⚠ **Do not read "candidate 4" in a later session as "we agreed to flatten it."** The name outlived
+the proposal; the decision is the row above.
