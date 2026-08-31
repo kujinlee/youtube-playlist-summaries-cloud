@@ -276,11 +276,20 @@ def _self_test() -> int:
     passed = 0
 
     def case(label: str, got, want) -> None:
+        """⚠ THE FAILURE LINE'S SHAPE IS A CONTRACT, not formatting.
+
+        `check-plan-code.py:495` finds which case a mutation reddened by reading lines
+        that START WITH `[FAIL] ` and splitting on the LAST `": got "`. A prettier
+        multi-line format was here first and cost a full mutation run to diagnose: every
+        one of the 12 mutations reported `expect matched 0 red case(s)`, which reads as
+        "the guard did not fire" and is indistinguishable from a real coverage hole. The
+        mutations were fine; nothing could see them land.
+        """
         nonlocal passed
         if got == want:
             passed += 1
         else:
-            failures.append(f"  {label}\n    got:  {got!r}\n    want: {want!r}")
+            failures.append(f"  [FAIL] {label}: got {got!r} want {want!r}")
 
     r = render_inline
 

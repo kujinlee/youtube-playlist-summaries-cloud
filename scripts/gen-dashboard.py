@@ -13,6 +13,9 @@ import html as _html
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_markup  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # ⚠ ROOT-ANCHORED, and that is the whole point. This was the relative string
 # "docs/dashboard-entries.md", resolved against whatever cwd the caller happened
@@ -155,15 +158,12 @@ def _first_sentence(text: str, cap: int = TITLE_CAP) -> str:
 
 
 def _orphaned_delimiters(text: str) -> int:
-    """How many delimiters the REAL renderer leaves as literal punctuation.
+    """How many delimiters the renderer leaves as literal punctuation — via `page_markup`.
 
-    Code spans are removed first, not stripped of tags: their content is literal
-    BY DESIGN, so a `**` the author typed inside backticks is not an orphan.
+    Kept as a name here because `_close_orphan_markup` below reads better calling it, but the
+    counting rule lives with the renderer that decides what a literal delimiter IS (backlog #71).
     """
-    out = _inline(text)
-    out = re.sub(r"<code>.*?</code>", "", out, flags=re.S)
-    out = re.sub(r"<[^>]+>", "", out)
-    return out.count("**") + out.count("`")
+    return page_markup.orphaned_delimiters(text)
 
 
 def _close_orphan_markup(s: str, full: str, cap: int) -> str:
@@ -199,133 +199,24 @@ def _close_orphan_markup(s: str, full: str, cap: int) -> str:
         s = shorter
 
 
-INLINE_URL = re.compile(r"https?://[^\s<]+[^\s<.,;:)\]]")
-# An HTML entity, anchored at the END of a string. `_inline_scan` runs on ALREADY
-# ESCAPED text, so a trailing `;` may be the terminator of `&amp;` rather than the
-# author's punctuation — and cutting it in half emits a `;` nobody typed.
-# ⚠ `#[xX]?` — round 4, High. Without it this missed `&#x27;`, which is exactly
-# what `html.escape` emits for an APOSTROPHE, so `https://x.ee/a'**b**` still had
-# its entity severed. `x` is not in `[0-9a-fA-F]`, so the hex form never matched
-# while the decimal `&#39;` did — the guard covered the form I happened to test.
-ENTITY_TAIL = re.compile(r"&(?:#[xX]?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$")
-
-
-def _trim_url_tail(url: str) -> str:
-    """Strip trailing sentence punctuation from a cut URL, ENTITY-AWARE.
-
-    ⚠ M1 (round 3), REPRODUCED. The first version was `rstrip(".,;:)]")`, and
-    `_inline_scan` operates on escaped text, so `https://x.ee/?a=1&**bold**`
-    rendered as `<a href="…&amp">…&amp</a>;<strong>bold</strong>` — the entity
-    severed, and a semicolon the author never typed pushed outside the link.
-
-    Measured over 66,174 inputs, that made the renderer WORSE than before the
-    trim existed (1862 → 1897 inputs whose rendered text differs from the typed
-    text): it traded a cosmetic defect (`**` inside an `href`) for a character
-    inserted into the reader's prose — the exact trade `_inline_scan` refuses at
-    its own docstring. One character at a time, and stop at an entity.
-    """
-    while url and url[-1] in ".,;:)]":
-        if url[-1] == ";" and ENTITY_TAIL.search(url):
-            break
-        url = url[:-1]
-    return url
-
-
-def _inline(s: str) -> str:
-    """Escape FIRST, then apply the small markup authors actually write.
-
-    Measured across the store before choosing the set: `**bold**` in 3/10
-    entries, `code` in 1, a bare URL in 1, and bullets and [md](links) in
-    ZERO. Supporting more than this would be inventing a contract no author
-    uses — and every construct here renders as literal punctuation today.
-
-    ONE left-to-right scan, not three stacked `re.sub` passes. Those passes
-    were blind to each other's OUTPUT: review reproduced ``**bold `code**
-    tail` `` emitting `<strong>bold <code>code</strong> tail</code>` — tags
-    closing in the order they were not opened — because the code pass reached
-    straight across the bold pass's closing tag. Scanning left to right, a
-    construct consumes its whole span before the next one is considered, so a
-    span cannot begin inside one region and end inside another. A fourth regex
-    refining the third would have been more of the same cause.
-    """
-    # Two steps, deliberately on two lines: the escape and the scan are separate
-    # properties with separate guards, and a mutation anchor cannot name one of
-    # them while they share a line. `quote` stays DEFAULT-TRUE — the autolinker
-    # writes entry text into an `href` attribute, so quotes are load-bearing.
-    escaped = _html.escape(s)
-    return _inline_scan(escaped, strong=True)
-
-
-def _inline_scan(s: str, strong: bool) -> str:
-    """The scan itself, over ALREADY-ESCAPED text. Never call it on raw input.
-
-    Unpaired delimiters print as themselves. Dropping text to make the tags
-    balance would trade a cosmetic defect for content loss, and content loss
-    is what Cx2 was filed for in this same round.
-    """
-    out: list[str] = []
-    i, n = 0, len(s)
-    while i < n:
-        if strong and s.startswith("**", i):
-            close = s.find("**", i + 2)
-            body = s[i + 2:close] if close != -1 else ""
-            # `body == body.strip()`: `** a **` is spacing, not emphasis.
-            #
-            # ⚠ This USED to claim it "is the old regex's `\S(?:[^*]*\S)?`". That
-            # was FALSE and I found it with a differential fuzz, not by reading:
-            # the old regex also forbade a `*` INSIDE the body, so `**a*b**` was
-            # printed literally and is now emphasis. 59 of 96,104 inputs differ.
-            # Measured on the real store: 16 entries, 0 differing lines.
-            #
-            # The new behaviour is kept deliberately — the old rule dropped text
-            # (`******` rendered as `**`, losing four characters; 587 such inputs)
-            # and this one drops none. What is fixed is the CLAIM: an equivalence
-            # asserted in a comment and never executed is how a silent behaviour
-            # change rides along with a refactor, which is what round 2 warned.
-            #
-            # ⚠ `strong=False` is BELT-AND-BRACES, not a live branch, and round 2
-            # was right to ask for its falsifier — there cannot be one. `close` is
-            # the FIRST `**` after `i + 2`, so `body` can never contain `**`, so
-            # the flag gates a branch this call cannot reach. Flipping it to True
-            # is an equivalent mutant. It stays as a fence for anyone who changes
-            # how `close` is chosen; it is not doing work today, and saying it was
-            # would be the overclaim the same round found elsewhere.
-            if close != -1 and body and body == body.strip():
-                out.append(f"<strong>{_inline_scan(body, strong=False)}</strong>")
-                i = close + 2
-                continue
-        if s[i] == "`":
-            close = s.find("`", i + 1)
-            # `-1 > i + 1` is False, so an unclosed span needs no separate test.
-            if close > i + 1:
-                # Code is LITERAL — no markup inside. The old pass ORDER ran the
-                # autolinker over code content too, so a URL in backticks came
-                # out as a link nested in a <code>.
-                out.append(f"<code>{s[i + 1:close]}</code>")
-                i = close + 1
-                continue
-        m = INLINE_URL.match(s, i)
-        if m:
-            url = m.group(0)
-            # ⚠ Round 2 (Codex, Low) — REPRODUCED. The three-pass version ran the
-            # autolinker LAST, so it could never swallow markup already emitted:
-            # `https://x.ee/z**bold**` linked the URL and emphasised the rest.
-            # Scanning left to right the URL is considered FIRST, and `[^\s<]+`
-            # happily ate `**bold**` into the `href`. Stop the URL at a delimiter —
-            # an author who writes one hard against a URL means the markup, not a
-            # URL containing asterisks. Re-validate after the cut, because the trim
-            # can leave something that is no longer a URL at all (`https://`).
-            cut = min((p for p in (url.find("**"), url.find("`")) if p != -1),
-                      default=-1)
-            if cut != -1:
-                url = _trim_url_tail(url[:cut])
-            if INLINE_URL.fullmatch(url):
-                out.append(f'<a href="{url}">{url}</a>')
-                i += len(url)
-                continue
-        out.append(s[i])
-        i += 1
-    return "".join(out)
+# ── inline markup is NOT implemented here any more. Backlog #71. ───────────────────────────────
+#
+# What stood between here and `_prose`: `INLINE_URL`, `ENTITY_TAIL`, `_trim_url_tail`, `_inline`
+# and `_inline_scan` — about 100 lines, and the best inline renderer in this repo. It was rewritten
+# as ONE left-to-right scan in PR #178 over four review rounds, precisely because stacked `re.sub`
+# passes are blind to each other's output.
+#
+# ⚠ THAT FIX WAS UNREACHABLE FROM THE OTHER THREE GENERATORS, and all three still had the defect it
+# cured. Measured 2026-08-30 on the rendered backlog page: 6 crossed tag spans and 10 cases of
+# markup emitted inside a code span, including this repo's own `select count(*) filter (…)`
+# arriving as `select count(<em>) filter …`. The renderer was never the problem; having no seam to
+# reach it through was.
+#
+# It now lives in `scripts/page_markup.py`, widened to the union of what the four supported, and
+# the mutations that guarded it moved with it — so they defend four pages instead of one.
+# `_close_orphan_markup` stays above: it is dashboard TRUNCATION POLICY, not inline rendering, and
+# it asks the renderer rather than re-implementing it.
+_inline = page_markup.render_inline
 
 
 def _prose(text: str, drop_headline: bool = False) -> str:
