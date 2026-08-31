@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 136 cases
+    python3 scripts/check-plan-code.py --self-test          # 139 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -82,6 +82,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -240,12 +241,57 @@ def extract(md: str) -> tuple[dict[str, list[str]], list[dict], list[str], dict]
                                    "illustrative_reasons": illus_reasons}
 
 
+# The home directory every spawned suite sees, relative to the run's own tree.
+CHILD_HOME = ".home"
+
+
+def child_env(d: pathlib.Path) -> dict[str, str]:
+    """The environment every suite the harness spawns runs under, with HOME redirected.
+
+    ⚠ THE POINT IS THE CLASS, NOT AN INSTANCE. Six delivered scripts resolve
+    `pathlib.Path.home()` at MODULE level — `gen-dashboard.py:63`'s `OUT_DEFAULT`,
+    `gen-goals-page.py:60`, `gen-backlog-page.py:70`, `explainer-serve.py:96`,
+    `brief-compose.py:48`, `skill-usage-audit.py:46`. Under the real home those
+    constants name the reader's LIVE pages under `~/explainers/`, and a mutation is
+    by construction a change nobody reviewed for what it writes.
+
+    That hazard has fired once. A destructive mutation was developed safely under a
+    hand-set fake home and then promoted into the manifest WITHOUT the redirect, so
+    for a while the guard protecting the dashboard was the only thing that could
+    destroy it. The fix at the time was to make that one entry safe. This is the same
+    defect one layer out: `gen-dashboard.py` sandboxes its own writes (`_write_sandbox`,
+    and eight manifest entries exist only to keep that sandbox honest) — but that is
+    PER-SCRIPT discipline, and `page_markup.py` and `check-dashboard-entry.py` have no
+    such sandbox because they happen not to write. "Happens not to write today" is not
+    a guarantee, and the next script added to the manifest inherits nothing.
+
+    Redirecting here rather than per entry costs nothing measurable. Every assertion in
+    the suite that mentions a home path computes `Path.home()` on BOTH sides, so a
+    redirect shifts both together; `grep -rn '/Users/…' scripts/*.py scripts/mutations/*.json`
+    finds no hardcoded home literal to desynchronise (measured 2026-08-30 over a control
+    pattern that hits). And the harness proves the point on every run: `mutate_delivered`
+    requires a GREEN control before and after the sequence, so a suite that genuinely
+    needed the real home would fail loudly as a CANNOT RUN rather than quietly.
+
+    NOT mkdir'd here — this function must not touch the filesystem, because `run_suite`
+    is reachable from a self-test that passes `.` as `d`, and creating `./.home` in the
+    repo would make the instrument edit the tree it measures. `mutate_delivered` creates
+    it inside its own temp tree; a caller that forgets gets a nonexistent home, which is
+    still safe — a write fails loudly instead of landing on the reader's page.
+    """
+    env = dict(os.environ)
+    env["HOME"] = str(d / CHILD_HOME)
+    env["USERPROFILE"] = env["HOME"]   # the same concept on Windows
+    return env
+
+
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
     # A hung suite is a CANNOT RUN, not a traceback. rc 2 is distinct from both the
     # green 0 and the red 1, so a caller cannot read a timeout as either verdict.
     try:
         r = subprocess.run([sys.executable, name, "--self-test"], cwd=d,
-                           capture_output=True, text=True, timeout=SUITE_TIMEOUT)
+                           capture_output=True, text=True, timeout=SUITE_TIMEOUT,
+                           env=child_env(d))
     except subprocess.TimeoutExpired:
         return 2, (f"CANNOT RUN — {name} --self-test did not finish in "
                    f"{SUITE_TIMEOUT}s. NOT CHECKED.")
@@ -403,6 +449,9 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
     with tempfile.TemporaryDirectory() as td:
         d = pathlib.Path(td)
         shutil.copytree(root / "scripts", d / "scripts")
+        # The redirected home the suites will resolve `Path.home()` to — see `child_env`.
+        # Inside the TemporaryDirectory, so it is removed with everything else.
+        (d / CHILD_HOME).mkdir()
         report = []
         # THE CONTROL, FIRST. Every 'caught' below claims the suite went red BECAUSE of
         # the mutation; that claim is empty unless the suite is green without it.
@@ -989,6 +1038,46 @@ def _self_test() -> int:
         _sp.run = _real
     case("a hung suite is rc 2, distinct from both pass and fail", rc_t, 2)
     case("...and says NOT CHECKED", "NOT CHECKED" in out_t, True)
+
+    # The redirected HOME (`child_env`). A guard over scripts that write nothing under
+    # `~` today is INVISIBLE when it breaks — "the redirect held" and "nothing tried to
+    # write" are the same observation. So these assert the PROPERTY, not the mechanism:
+    # asserting `env["HOME"]` is set would still pass with the value pointing anywhere,
+    # including at the real home. The probe actually performs the write the hazard is
+    # about, and the last case is the hazard stated directly.
+    with tempfile.TemporaryDirectory() as td3:
+        d3 = pathlib.Path(td3)
+        (d3 / CHILD_HOME).mkdir()
+        # ⚠ A name unique to THIS run, which a fixed one was not. Measured 2026-08-30
+        # by making this file a mutation target: the mutant (redirect removed) wrote the
+        # canary into the OUTER harness's home, and the restored after-control then found
+        # a canary sitting in its own home and reported the hazard as live. Under a fixed
+        # name the failure is also STICKY in the worst direction — one genuinely broken
+        # run leaves a canary in the real `~/explainers/`, and every later run fails on
+        # it, including runs where the redirect is working perfectly. A check that cannot
+        # go back to green after the defect is fixed is not reporting the defect.
+        canary = f"harness-canary-{d3.name}.html"
+        (d3 / "probe.py").write_text(
+            "import pathlib, sys\n"
+            "p = pathlib.Path.home() / 'explainers'\n"
+            "p.mkdir(parents=True, exist_ok=True)\n"
+            f"(p / {canary!r}).write_text('x')\n"
+            "print(pathlib.Path.home())\n")
+        rc_h, out_h = run_suite(d3, "probe.py")
+        case("a spawned suite resolves Path.home() into the run's own tree",
+             (rc_h, pathlib.Path(out_h).resolve()),
+             (0, (d3 / CHILD_HOME).resolve()))
+        case("...so its write to ~/explainers/ lands in that tree",
+             (d3 / CHILD_HOME / "explainers" / canary).is_file(), True)
+        # ⚠ Mutation-test this one with the PARENT's HOME redirected too
+        # (`HOME=$(mktemp -d) python3 scripts/check-plan-code.py --self-test`), or
+        # proving the guard load-bearing means writing into the reader's real tree.
+        escaped = pathlib.Path.home() / "explainers" / canary
+        case("...and NOT in the real home, which is the whole hazard",
+             escaped.exists(), False)
+        # If the redirect DID break, the run says so above — and then removes its own
+        # debris rather than leaving a stray file in the reader's tree for us to explain.
+        escaped.unlink(missing_ok=True)
 
     # The docstring case count, which no case could previously reach.
     case("count_drift is silent when the docstring matches",
