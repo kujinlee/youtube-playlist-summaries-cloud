@@ -300,7 +300,12 @@ def compare_delivered(d: pathlib.Path, names, root: pathlib.Path) -> tuple[list[
 # ⚠ This lives in the RUNNER, deliberately, not in the manifest. A count stored beside the
 # entries it counts gets edited in the same breath as deleting one, which is no guard at all.
 EXPECTED_MUTATIONS = {
-    "scripts/gen-dashboard.py": 61,
+    # ⟳ 2026-08-30, backlog #71: gen-dashboard 61 -> 49. TWELVE entries did not disappear, they
+    # MOVED to scripts/page_markup.py with the code they guard. The sum below is unchanged at 73,
+    # which is the point — a seam that relocates coverage must not be able to look like coverage
+    # that was deleted, and only the per-file split can tell those two apart.
+    "scripts/gen-dashboard.py": 47,
+    "scripts/page_markup.py": 14,
     "scripts/check-dashboard-entry.py": 12,
 }
 
@@ -1511,7 +1516,8 @@ def _self_test() -> int:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
          sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
-                                      "scripts/gen-dashboard.py"])
+                                      "scripts/gen-dashboard.py",
+                                      "scripts/page_markup.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest

@@ -51,6 +51,9 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_markup  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DOCS = ROOT / "docs"
 SUBDIRS = ("superpowers/specs", "superpowers/plans")
@@ -136,16 +139,22 @@ def parse_roots(text: str) -> tuple[set[str], list[tuple[int, str, str]]]:
     ]
 
 
-def esc(s: str) -> str:
-    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-             .replace('"', "&quot;"))
-
-
-def inline_md(s: str) -> str:
-    """`code` and **bold** only — goal lines are one sentence, not a document."""
-    s = esc(s)
-    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
-    return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
+# ── inline markup is NOT implemented here. Backlog #71.
+#
+# What used to sit here: an `esc` that escaped `& < >` and `"` but NOT the apostrophe,
+# and an `inline_md` that ran a code-span regex and then a bold regex over its output —
+# so a `**` inside backticks was emphasised, and `*` was not supported at all.
+#
+# MEASURED 2026-08-30 over this page's own corpus (docs/anchors.md + docs/adr/*.md):
+# 145 emphasis spans across 132 lines and 17 markdown links were being printed as
+# literal asterisks and brackets, because the author wrote markup this renderer did not
+# know. The apostrophe gap was real too — `esc` fed attribute values at :296 onward.
+#
+# The docstring here used to justify the narrowness: "goal lines are one sentence, not a
+# document." The corpus disagrees, and one behaviour across all four pages was the
+# decision (2026-08-30). Both names are kept because the call sites read well with them.
+esc = page_markup.escape
+inline_md = page_markup.render_inline
 
 
 # ---------------------------------------------------------------- collection
@@ -441,8 +450,12 @@ def self_test() -> int:
     eq("ROOTS key parsed", roots, {"alpha"})
     eq("DEPENDS rows parsed", dep, [(19, "survives", "alpha"), (20, "dissolved-by", "alpha")])
 
-    eq("inline md escapes then formats", inline_md("a `b<c>` **d**"),
-       "a <code>b&lt;c&gt;</code> <strong>d</strong>")
+    # ⚠ The inline-markup case that stood here is DELETED, deliberately (backlog #71).
+    # Inline rendering is `page_markup`'s behaviour now and is asserted by its own 73
+    # cases; re-asserting it here would be a second copy of one rule, which is the defect
+    # this slice exists to remove. What is NOT covered by deleting it — that this file is
+    # still BOUND to page_markup rather than to a re-grown local copy — is a structural
+    # property of all four generators at once, and belongs in one check, not four cases.
 
     print(f"\n{cases - failures}/{cases} self-test cases passed")
     return 1 if failures else 0

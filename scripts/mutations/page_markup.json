@@ -1,0 +1,156 @@
+[
+ {
+  "name": "escaping stops protecting ATTRIBUTES (quote=False)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    escaped = escape(s)",
+    "    escaped = _html.escape(s, quote=False)"
+   ]
+  ],
+  "expect": "link: quote in target cannot break the attribute"
+ },
+ {
+  "name": "the inline scanner reverts to three layered regex passes",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    return scan(escaped)",
+    "    _s = re.sub(r\"\\*\\*(\\S(?:[^*]*\\S)?)\\*\\*\", r\"<strong>\\1</strong>\", escaped)\n    _s = re.sub(r\"`([^`]+)`\", r\"<code>\\1</code>\", _s)\n    return re.sub(r\"(https?://[^\\s<]+[^\\s<.,;:)\\]])\", r'<a href=\"\\1\">\\1</a>', _s)"
+   ]
+  ],
+  "expect": "crossing: bold opened first wins its whole span"
+ },
+ {
+  "name": "the autolinker accepts ANY scheme, not just http(s)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "INLINE_URL = re.compile(r\"https?://[^\\s<]+[^\\s<.,;:)\\]]\")",
+    "INLINE_URL = re.compile(r\"[a-zA-Z]+:[^\\s<]*[^\\s<.,;:)\\]]\")"
+   ]
+  ],
+  "expect": "url: bare scheme after a cut is not a link"
+ },
+ {
+  "name": "code spans stop being literal (markup applied inside <code>)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "                out.append(f\"<code>{s[i + 1:close]}</code>\")",
+    "                out.append(f\"<code>{scan(s[i + 1:close])}</code>\")"
+   ]
+  ],
+  "expect": "code: content is LITERAL, bold does not reach inside"
+ },
+ {
+  "name": "`** a **` becomes emphasis (the strip clause dropped)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if close != -1 and body and body == body.strip():",
+    "            if close != -1 and body:"
+   ]
+  ],
+  "expect": "bold: spaced delimiters are spacing, not emphasis"
+ },
+ {
+  "name": "an EMPTY code span swallows both delimiters",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if close > i + 1:",
+    "            if close > i:"
+   ]
+  ],
+  "expect": "code: empty span prints itself"
+ },
+ {
+  "name": "the URL trim severs HTML entities again (bare rstrip)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "                url = trim_url_tail(url[:min(cuts)])",
+    "                url = url[:min(cuts)].rstrip(\".,;:)]\")"
+   ]
+  ],
+  "expect": "url: an entity survives intact, and the URL is then not linked"
+ },
+ {
+  "name": "the URL cut loses its BACKTICK arm (Codex's second repro)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            cuts = [p for p in (url.find(t) for t in URL_STOPPERS) if p != -1]",
+    "            cuts = [p for p in (url.find(\"**\"),) if p != -1]"
+   ]
+  ],
+  "expect": "url: abutting code is markup, not URL"
+ },
+ {
+  "name": "the cut is not trimmed, so a trailing stop kills the link",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "    while url and url[-1] in \".,;:)]\":",
+    "    while False:"
+   ]
+  ],
+  "expect": "trim: sentence punctuation"
+ },
+ {
+  "name": "the re-validation is dropped, so a bare scheme becomes a link",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if INLINE_URL.fullmatch(url):",
+    "            if url:"
+   ]
+  ],
+  "expect": "url: bare scheme after a cut is not a link"
+ },
+ {
+  "name": "the deleted regex's no-* rule is restored inside a bold body",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            body = s[i + 2:close] if close != -1 else \"\"",
+    "            body = s[i + 2:close] if close != -1 and \"*\" not in s[i + 2:close] else \"\""
+   ]
+  ],
+  "expect": "bold: body may contain a lone asterisk"
+ },
+ {
+  "name": "ENTITY_TAIL loses the HEX numeric form (&#x27;)",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "ENTITY_TAIL = re.compile(r\"&(?:#[xX]?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$\")",
+    "ENTITY_TAIL = re.compile(r\"&(?:#[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);$\")"
+   ]
+  ],
+  "expect": "trim: stops at a hex entity"
+ },
+ {
+  "name": "an unpaired ` delimiter is swallowed instead of printed",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "        out.append(c)\n        i += 1",
+    "        if c != '`':\n            out.append(c)\n        i += 1"
+   ]
+  ],
+  "expect": "code: unclosed backtick prints itself"
+ },
+ {
+  "name": "the autolinker swallows abutting markup into the href",
+  "file": "scripts/page_markup.py",
+  "edits": [
+   [
+    "            if cuts:",
+    "            if False:"
+   ]
+  ],
+  "expect": "url: abutting bold is markup, not URL"
+ }
+]

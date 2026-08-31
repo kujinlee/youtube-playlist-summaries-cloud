@@ -1439,6 +1439,53 @@ page as NOT CHECKED, never rendered as a confident zero. Reader-facing explainer
 
 ---
 
+## Inline renderer seam — backlog #71 — anchor `status-visibility` — ✅ BUILT 2026-08-30, PR OPEN
+
+Phase 6 candidate 1, from `docs/reviews/architecture-review-2026-08-30.md`. Spec:
+[`docs/superpowers/specs/2026-08-30-inline-renderer-seam-design.md`](superpowers/specs/2026-08-30-inline-renderer-seam-design.md).
+
+**Order set by the user 2026-08-30: 1 → 3 → 4.** Candidate 4 (flatten the verification stack) is
+deliberately deferred until this lands, because moving `_inline_scan` behind a seam changes its
+arithmetic — the same cases would then defend four pages instead of one.
+
+**The finding is not a tidiness argument; the pages are corrupted today.** Measured on
+`~/explainers/backlog-table.html` as it stood on disk (generated 2026-08-29 16:42): **10 crossed tag
+spans and 15 cases of markup emitted inside a code span**, because `gen-backlog-page.md` and
+`gen-goals-page.inline_md` use stacked `re.sub` passes that are blind to each other's output.
+`docs/backlog.md`'s own `select count(*) filter (…)` renders as `select count(<em>) filter …`.
+`gen-dashboard._inline_scan` fixed this class in PR #178 with one left-to-right scan, and no
+generator can reach that fix.
+
+- [x] **Build `scripts/page_markup.py`** — one escape rule, one left-to-right scan at the union
+      feature set, `safe_href`, `orphaned_delimiters`. Own `--self-test` run by a CI step, own
+      mutation manifest. ⚠ **Corrected while building it:** it is NOT discovered by
+      `check-ratchet-contract.py` and cannot be — the population at `:395` is
+      `glob("check-*.py")`, so the docstring rule is never reached for a file named otherwise, and
+      the contract still reported 24 with the enrolling word present. A renderer is not a guard, so
+      that is right; the sentence claiming a 25th entry was not.
+- [x] **Retire the four inline implementations** and delete the generators' inline cases — this is
+      the version where the layer count falls rather than rises (decided with the user 2026-08-30).
+- [x] **Regenerate and verify**: 0 crossed spans and 0 markup-in-code on the backlog page, against
+      10 and 15 today; the goals page renders its 145 emphasis spans and 17 links.
+- [x] **`CONTEXT.md`** gains the term — nothing names this module today.
+
+**Measured on the regenerated pages 2026-08-30:** `backlog-table.html`, `goals.html` and
+`dashboard.html` all report **0** crossed tag spans, **0** markup inside a code span and **0**
+`javascript:` hrefs. The four generators agree on 8/8 probe inputs; before the seam they disagreed on
+11 of 13. `--mutate .` — 3 files, **73 mutations, 0 survivors**, split gen-dashboard 47 +
+page_markup 14 + check-dashboard-entry 12, the sum deliberately unchanged so a relocation cannot read
+as a deletion. ⚠ The goals page gains **nothing visible**: it renders 39 one-line `Goal:` strings
+containing no emphasis, links, code spans or bold. An earlier claim of 145 emphasis spans there was
+measured over the wrong population and is corrected in the spec.
+
+⚠ **Candidate 3 (`HOME`) runs alongside and is a decision, not engineering.** Measured 2026-08-30:
+`check-plan-code.py --mutate .` passes under a redirected `HOME` — 73 mutations, 0 survivors, nothing
+written into the fake home — so the structural option costs an env redirect plus a guard. The open
+question is that redirecting permanently trades a destruction hazard for output-path fidelity, since
+six delivered scripts resolve `Path.home()` at module level.
+
+---
+
 ## Backlog #68 — the Codex review gate can fail silently AND overwrite a filed review — 🟠 HIGH
 
 Filed 2026-08-29 after it happened four times in one run. Three defects in one chain:
