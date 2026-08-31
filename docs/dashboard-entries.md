@@ -1065,3 +1065,23 @@ which is why this entry can carry a fenced example without tripping its own gate
 ⚠ v1 of the spec asserted that `git diff -U0` omits an added entry's body. It does not — an appended
 entry is entirely additions. Both round-1 reviewers agreed with the false premise; one `git diff`
 refuted it, and v3 deleted the machinery v2 had built on top of it.
+
+## 2026-08-31 [resolved: 2026-08-31/3]
+Both asks on the previous entry are settled: the change is merged, and heads-ups will not expire.
+
+You chose no expiry. The reasoning that survives is the one that does not borrow authority from
+anywhere: a heads-up that ages out on its own is indistinguishable from one you dealt with, and this
+page exists so that absence and denial never look alike. If the block ever gets long, that means
+things need resolving, not hiding.
+
+The original argument for it was withdrawn before you decided. It claimed a script enforced
+"one mechanism per concern" here; that script compares database column names across tables and could
+never have fired on a dashboard entry. The decision stands on its own merits, taken with that
+correction in hand.
+<!--tech-->
+Squash `cadd7348` (PR #186). Spec §3's re-decision box and §12 row 3 are settled in the same change;
+`[resolved: 2026-08-31/3]` clears the entry that carried both `**Decide:**` blocks, so the tray
+returns to "Nothing needs you."
+
+This is the first exercise of the resolution mechanism on an entry written in the new grammar — the
+same `[resolved: <id>]` marker for both categories, which is why no expiry was needed.

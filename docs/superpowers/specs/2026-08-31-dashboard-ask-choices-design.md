@@ -23,8 +23,12 @@ Extends [`2026-08-28-project-dashboard-design.md`](2026-08-28-project-dashboard-
 you' item cards, but it doesn't specifically say what I can do. It just say merge or not but not
 specifying PR. When it flags 'need me', it should list my choices clearly."*
 
-⚠ **One decision needs re-taking by the user — see §3's box.** The v1 justification for "no expiry"
-invoked a script that cannot reach this concern. The decision may stand; the reasoning does not.
+✅ **All decisions settled.** The last open one — the heads-up expiry — was **re-taken and confirmed
+by the user on 2026-08-31 (no expiry)**, after its original justification was withdrawn for invoking
+a script that cannot reach this concern. See §3's box; the withdrawn reasoning is kept there, because
+a decision whose stated reason turned out to be false is worth being able to re-check.
+
+**Implemented and MERGED: PR #186, squash `cadd7348`.**
 
 ---
 
@@ -116,7 +120,13 @@ promises under one heading; merging them back with different badge colours rebui
 
 **Both are cleared by the same `[resolved: <id>]` marker. There is no expiry.**
 
-> ⚠ **RE-DECISION NEEDED — v1's justification for this was wrong.**
+> ✅ **RE-TAKEN AND CONFIRMED by the user, 2026-08-31: no expiry.** Taken *after* the justification
+> below was withdrawn, so it rests on the honest argument only — a heads-up that ages out on its own
+> is indistinguishable from one that was dealt with. Recorded on the dashboard as
+> `[resolved: 2026-08-31/3]`. The history is kept below because a decision whose stated reason turned
+> out to be false is worth being able to re-check.
+>
+> ⚠ **The withdrawn justification — v1's was wrong.**
 >
 > v1 refused an expiry on the grounds that `scripts/check-vocabulary-collisions.py` enforces *one
 > mechanism per concern*. **Both reviewers rejected that and they are right.** Measured: that script
@@ -485,7 +495,7 @@ pull request and link to it.
 |---|---|---|
 | 1 | `needs you` must offer real actions with details; awareness becomes `heads-up` | user, 2026-08-31 |
 | 2 | `[recommended]` optional; a held view must be marked, not buried | user, 2026-08-31 |
-| 3 | Separate "Worth knowing" block; same `[resolved:]`; no expiry; no chart colour | user, 2026-08-31 — **justification withdrawn, see §3; decision open to re-taking** |
+| 3 | Separate "Worth knowing" block; same `[resolved:]`; **no expiry**; no chart colour | user, 2026-08-31 — **RE-TAKEN and confirmed** after the original justification was withdrawn (§3) |
 | 4 | One validator — **one caller today** (the renderer), a second when #78 lands | user, 2026-08-31; narrowed by decision 7 |
 | 5 | The page is read-only — no merge control | this spec, §2 |
 | 6 | ~~Grandfather entries before the cutover date~~ — **withdrawn in v3**; validating only *unresolved* entries makes it unnecessary | v2, retired by r2 |
@@ -546,7 +556,7 @@ own fix** — which is the finding about the process, not just the document.
 | `page_markup.py` does not render lists; "ordinary markdown" undefined | Medium ×2 | §5a — the asymmetry is stated and accepted |
 | PR-lookup population ambiguous (tray only, or every card?) | Medium | §5a table — tray only |
 
-**Open questions:** one — §3's expiry re-decision, unchanged from v2.
+**Open questions:** none. §3's expiry was re-taken and confirmed by the user on 2026-08-31 (no expiry), after its original justification was withdrawn.
 
 **Stopping rule applied.** `docs/dev-process.md`: *read the trigger off the CAUSE, not the count.*
 Round 2's findings are not a decaying severity curve — they are regressions from a fix built on an
