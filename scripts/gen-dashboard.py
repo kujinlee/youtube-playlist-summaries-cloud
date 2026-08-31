@@ -353,7 +353,8 @@ def parse_entries(text: str) -> list[dict]:
     out: list[dict] = []
     seen: dict[str, int] = {}
     for b in blocks:
-        entry = {"raw": "\n".join(b), "error": None, "needs_you": False, "resolves": [],
+        entry = {"raw": "\n".join(b), "error": None, "needs_you": False,
+                 "heads_up": False, "resolves": [],
                  "date": None, "ordinal": 0, "id": None, "would_be_id": None,
                  "title": "", "plain": "", "tech": None}
         err = header_error(b[0])
@@ -377,6 +378,12 @@ def parse_entries(text: str) -> list[dict]:
                 # generator imported the grammar's symbols but not its meaning.
                 if f == "needs-you":
                     entry["needs_you"] = True
+                elif f == "heads-up":
+                    # ⚠ Added WITH the FLAG alternative in check-dashboard-entry.py,
+                    # never after it. The comment above records the measured cost of
+                    # doing otherwise: the gate's suite stayed fully green while
+                    # `f.split(":", 1)[1]` raised IndexError on EVERY render.
+                    entry["heads_up"] = True
                 elif f.startswith("resolved:"):
                     entry["resolves"].append(f.split(":", 1)[1].strip())
                 else:
@@ -1131,6 +1138,14 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("bad date keeps raw", "Impossible date." in bad[0]["raw"], True)
     typo = parse_entries("## 2026-08-28 [needs-yo]\nTypo flag.\n")
     case("unknown flag is an error", typo[0]["error"] is not None, True)
+    hu = parse_entries("## 2026-08-28 [heads-up]\nWorth knowing.\n")
+    case("heads-up parses", hu[0]["error"], None)
+    case("heads-up sets heads_up", hu[0]["heads_up"], True)
+    case("heads-up is not needs_you", hu[0]["needs_you"], False)
+    ny_only = parse_entries("## 2026-08-28 [needs-you]\nAn ask.\n")
+    case("needs-you does not set heads_up", ny_only[0]["heads_up"], False)
+    both = parse_entries("## 2026-08-28 [needs-you] [heads-up]\nBoth.\n")
+    case("both flags is an error", both[0]["error"] is not None, True)
     two = parse_entries("## 2026-08-28\nFirst.\n## 2026-08-28\nSecond.\n")
     case("two entries same date", [x["id"] for x in two], ["2026-08-28/1", "2026-08-28/2"])
     tech = parse_entries("## 2026-08-28\nTitle.\nMore plain.\n<!--tech-->\nPR #1.\n")

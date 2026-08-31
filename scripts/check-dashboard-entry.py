@@ -23,7 +23,7 @@ NO_ENTRY = "NO-ENTRY:"
 
 # ─── the entry-header grammar — ONE definition, imported by scripts/gen-dashboard.py
 HEADER = re.compile(r"^## (\S+)(.*)$")
-FLAG = re.compile(r"\[(needs-you|resolved:\s*[^\]]*)\]")
+FLAG = re.compile(r"\[(needs-you|heads-up|resolved:\s*[^\]]*)\]")
 
 
 def valid_date(s: str) -> bool:
@@ -51,6 +51,16 @@ def header_error(line: str) -> str | None:
     leftover = FLAG.sub("", m.group(2)).strip()
     if leftover:
         return f"unrecognised text in header: {leftover!r}"
+    # ⚠ THE BOTH-FLAGS REFUSAL LIVES HERE, not in the generator's parser.
+    # `FLAG.sub` above strips every flag, so a header carrying BOTH would otherwise
+    # leave no `leftover` and this function would return None — the ratchet accepting
+    # a header the page renders as "could not parse". That is the sixth divergence
+    # this function's docstring exists to prevent, and the ask-choices spec §9 names
+    # it as a falsifier. Both callers read the verdict from here.
+    flags = FLAG.findall(m.group(2))
+    if "needs-you" in flags and "heads-up" in flags:
+        return ("an entry is [needs-you] OR [heads-up], never both — "
+                "a heads-up asks for nothing")
     return None
 
 
@@ -230,6 +240,15 @@ def _self_test() -> int:
     case("a suffixed date does NOT count", _added_entry_line("+## 2026-08-28-foo"), False)
     case("a trailing dot does NOT count", _added_entry_line("+## 2026-08-28."), False)
     case("a typo'd flag does NOT count", _added_entry_line("+## 2026-08-28 [needs-yo]"), False)
+    case("a heads-up header counts", _added_entry_line("+## 2026-08-28 [heads-up]"), True)
+    case("heads-up header_error is None", header_error("## 2026-08-28 [heads-up]"), None)
+    case("a typo'd heads-up does NOT count",
+         _added_entry_line("+## 2026-08-28 [heads-u]"), False)
+    # The gate and the page must not disagree about this header (ask-choices spec §9).
+    case("both flags is a header error",
+         header_error("## 2026-08-28 [needs-you] [heads-up]") is not None, True)
+    case("both flags does not count as an added entry",
+         _added_entry_line("+## 2026-08-28 [needs-you] [heads-up]"), False)
     case("a title on the header line does NOT count",
          _added_entry_line("+## 2026-08-28 rambling title text"), False)
     case("header_error names the space", "space" in (header_error("##2026-08-28") or ""), True)
