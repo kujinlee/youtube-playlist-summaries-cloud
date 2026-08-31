@@ -728,7 +728,12 @@ def _bar(day: dict, tallest: int, store_unknown: bool) -> str:
 
 
 GLOSSARY = [
-    ("needs you", "a decision is waiting on you — nothing else on the page is asking for anything"),
+    # ⚠ The second clause was "— nothing else on the page is asking for anything".
+    # It was already untrue of the open-PR rows in the same tray, and a "Worth
+    # knowing" block makes it plainly false. Trimmed to the part that is true.
+    ("needs you", "a decision is waiting on you, and the page lists your choices"),
+    ("heads-up", "worth knowing, but nothing is being asked of you"),
+    ("resolved", "this was an ask or a heads-up, and a later entry closed it"),
     ("entry", "one dated block you or the assistant wrote, in plain words, about what changed"),
     ("no entry recorded", "a branch was merged with its entry deliberately skipped, and said why"),
     ("shipped with no entry", "a day with commits and nothing written about them — the gap the entry rule exists to close"),
@@ -805,6 +810,40 @@ def build(entries, days, prs, pr_error, git_error, window,
         needs_html = store_note + pr_note
     else:
         needs_html = '<p class="none">Nothing needs you.</p>'
+
+    # ─── Worth knowing ───
+    # Its OWN heading, deliberately. The reported defect was two different promises
+    # rendered under one; merging them back with a different badge colour rebuilds it.
+    hu_rows = []
+    for e in unresolved_heads_up(entries):
+        # ⚠ Both review halves: v1 declared a dependency on `decision_errors` here
+        # and never called it, so a [heads-up] carrying a live **Decide:** block
+        # rendered as valid and §4's "a heads-up cannot ask" had NO enforcement
+        # point anywhere in the slice.
+        hu_problems = _decision_errors(e["plain"], "heads-up") if _decision_errors else []
+        if hu_problems:
+            hu_rows.append(
+                f'<li class="unknown">Could not read one heads-up — '
+                f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a>: '
+                f'{_html.escape("; ".join(hu_problems))}</li>')
+            continue
+        first = e["plain"].split("\n\n")[0].strip()
+        hu_rows.append(
+            f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a> '
+            f'<span class="when">{_html.escape(e["date"])}</span>'
+            f'<div class="prose">{_prose(first, drop_headline=False)}</div></li>')
+    # ⚠ The omit-when-empty rule applies ONLY when the store was READ. Zero parsed
+    # heads-ups from an unreadable store would omit the heading, and a missing
+    # heading reads as "nothing worth knowing" — absence and denial looking alike,
+    # which is the confusion this page exists to prevent. Two individually correct
+    # dead-input rules would otherwise compose into a silent one.
+    if hu_rows:
+        worth_html = ('<h2>Worth knowing</h2><ul class="worth">'
+                      + "".join(hu_rows) + "</ul>" + store_note)
+    elif store_error:
+        worth_html = "<h2>Worth knowing</h2>" + store_note
+    else:
+        worth_html = ""
 
     # ─── The chart ───
     legend = ""
@@ -1002,6 +1041,7 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <h1>Project dashboard</h1>
 {page_chrome.chrome_bar("dashboard", generated_at)}
 <h2>What needs you</h2>{needs_html}
+{worth_html}
 <h2>The last {window} days</h2><div class="chart">{chart}</div>{legend}{chart_note}
 <h2>What changed</h2>{entries_html}
 <h2>Branches that skipped their entry</h2>{exempt_html}
@@ -1477,6 +1517,39 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
          "Nothing needs you." in cleared_html, True)
     case("and it is not marked broken",
          "Could not parse this entry" in cleared_html, False)
+
+    # ── Worth knowing (ask-choices spec §5b) ──
+    HU = parse_entries("## 2026-08-28 [heads-up]\nCI now checks the plan against the code.\n\n"
+                       "It will turn red until the plan is edited to match.\n")
+    hu_html = _B(HU, bucket_days([], HU, 2, "2026-08-28"))
+    case("worth-knowing heading appears", "<h2>Worth knowing</h2>" in hu_html, True)
+    case("its first paragraph is on the page",
+         "CI now checks the plan against the code." in _section(hu_html, "Worth knowing"), True)
+    case("the heads-up is NOT folded", "<details" in _section(hu_html, "Worth knowing"), False)
+    case("a heads-up does not appear under needs-you",
+         "CI now checks" in _section(hu_html, "What needs you"), False)
+    NONE = parse_entries("## 2026-08-28\nOrdinary.\n")
+    case("no heads-ups means no heading",
+         "Worth knowing" in _B(NONE, bucket_days([], NONE, 2, "2026-08-28")), False)
+    err_html = _B([], [], store_error="boom")
+    case("an unreadable store still shows the heading",
+         "<h2>Worth knowing</h2>" in err_html, True)
+    case("and says it was not checked",
+         "NOT CHECKED" in _section(err_html, "Worth knowing"), True)
+    HU_ASKS = parse_entries("## 2026-08-28 [heads-up]\nThis one asks.\n\n"
+                            "**Decide:** Should not be here\n- a\n- b\n")
+    case("a heads-up carrying a Decide block is called out",
+         "Could not read one heads-up" in _B(
+             HU_ASKS, bucket_days([], HU_ASKS, 2, "2026-08-28")), True)
+    HU_CLEARED = parse_entries("## 2026-08-28 [heads-up]\nKnow this.\n"
+                               "## 2026-08-29 [resolved: 2026-08-28/1]\nDealt with.\n")
+    case("a cleared heads-up leaves the Worth knowing block",
+         "Worth knowing" in _B(HU_CLEARED, bucket_days([], HU_CLEARED, 3, "2026-08-29")), False)
+    case("glossary gloss is trimmed",
+         any(g[0] == "needs you" and "nothing else on the page" not in g[1]
+             for g in GLOSSARY), True)
+    case("glossary defines heads-up", any(g[0] == "heads-up" for g in GLOSSARY), True)
+    case("glossary defines resolved", any(g[0] == "resolved" for g in GLOSSARY), True)
 
     # "In place" on the order the store is ACTUALLY written: newest at the END.
     appended = parse_entries("## 2026-08-27\nOlder good.\n"
