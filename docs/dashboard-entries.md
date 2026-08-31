@@ -941,3 +941,33 @@ its residue. Dispositions in `docs/reviews/architecture-review-2026-08-30.md`.
 This entry is the status tick for #74, batched per `dev-process.md` rather than pushed to master
 alone. ⚠ The tick was NOT written before the PR opened, which the process asks for — that is why it
 needs its own follow-up here.
+
+## 2026-08-31
+The status page was putting the oldest update of the day at the top, so after a busy day the newest
+thing had scrolled off the bottom and the page looked broken. It was not broken. That is fixed —
+newest first now — and three related items are written down.
+
+You spotted the second half of it yourself: the backlog page was showing three items as "open" that
+do not exist yet for anyone but me. It was built from work in progress on my machine, and it had no
+way to say so. That is now part of the item covering page freshness — a page will say which version
+of the project it was built from, not just what time it was built.
+<!--tech-->
+Branch `fix/dashboard-entry-ordering`, split out of `feat/page-chrome-seam` because it is
+independent and verified, and leaving it unmerged left backlog #75 reading OPEN on a page the user
+reads.
+
+#75 fixed: `gen-dashboard.py:_ordered` sort key `-p[0]` → `p[0]`. Spec row 123 of
+`2026-08-28-project-dashboard-design.md` rewritten in place — it mandated the old rule. 209 → 213
+cases, three of which pin that entry IDS do not move: ids are positional and a standing
+`[resolved: <id>]` points at one, so letting render order reach id assignment would silently rebind
+every resolution. Verified on the live page — top card is `2026-08-30/7`.
+
+#76 and #77 filed here too, still OPEN. ⚠ #77 gained a requirement measured today: the generated-at
+stamp must carry PROVENANCE (commit + dirty flag), not a clock reading. A page rendered from an
+unmerged tree is indistinguishable from a current one, which is the same class of defect as #75 —
+correct content that cannot be told apart from broken content.
+
+⚠ The `page_chrome` module and the `POST /regenerate` route stay on `feat/page-chrome-seam`,
+unwired, because `gen-dashboard.py:1573` reads palettes positionally
+(`css.split("prefers-color-scheme:dark")[1]`) and adding `data-theme` blocks would leave the
+contrast guard checking the OLD palettes while reporting green.
