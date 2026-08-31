@@ -971,3 +971,41 @@ correct content that cannot be told apart from broken content.
 unwired, because `gen-dashboard.py:1573` reads palettes positionally
 (`css.split("prefers-color-scheme:dark")[1]`) and adding `data-theme` blocks would leave the
 contrast guard checking the OLD palettes while reporting green.
+
+## 2026-08-31
+Every page this project generates now has a light/dark switch and tells you when — and from what — it
+was built. That was your request, and the second half came from your observation that a page can look
+current while being built from work that exists only on my machine.
+
+Five pages were involved and none of them had a switch before; two of them contained the styling for
+one that had never been built, and a checking script asserted in writing that it existed. The switch
+is now built once and used by all five, and the thing that stops it being decorative is a check that
+refuses to write a page where pressing the button would do nothing.
+
+It was pressed, in a browser, on the real page: dark to light to dark, remembered across a reload.
+The stamp was watched changing from "uncommitted changes" to a clean commit as the work was
+committed underneath it.
+
+A review found seven problems, two of them serious, and both serious ones were in code I had written
+specifically to prevent that kind of problem. Fixing them cost two more, which the test machinery
+caught rather than me.
+<!--tech-->
+Branch `feat/page-chrome-seam`. Backlog **#76** and **#77**; #75 shipped separately as PR #184.
+
+`scripts/page_chrome.py` — mechanism shared, palette local. `assert_wired()` gates every write.
+`provenance()` lives here so five pages cannot compute it five ways. `POST /regenerate` in
+explainer-serve: allow-list of literals, per-page lock (ThreadingHTTPServer), and a `⚠` line from a
+generator travels back as `warning` so a degraded rebuild is not reported as success.
+
+⚠ Prerequisite fixed first: `gen-dashboard.py` read its palettes POSITIONALLY, so adding
+`data-theme` blocks would have left the contrast guard checking the old ones and reporting green.
+Both readers now enumerate. Proved with a control — legible toggled palette 0 reports, illegible 12,
+including `toggled-dark: --link #111111 on --bg #000000 = 1.11:1`.
+
+Review round 1 (`docs/reviews/page-chrome-{codex,coordinator}-r1.md`), 7 findings, 2 High: a script
+merely CONTAINING "chrome-theme" satisfied the binding check; and the composer trusted the button id
+alone, composing an inert control with no stamp. Then my fixes broke a manifest anchor and turned a
+caught mutation into a survivor — both found by `--mutate .`, not by reading.
+
+  page_chrome 47/47 · gen-dashboard 217/217 · brief-compose 40/40 · explainer-serve 71/71
+  gen-backlog-page 71/71 · gen-goals-page 15/15 · --mutate . 5 files, 105 mutations, 0 survivors

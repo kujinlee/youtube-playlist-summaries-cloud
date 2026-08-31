@@ -47,8 +47,25 @@ Driven, not read: `/regenerate` refuses `../../etc/passwd` and `goals; touch /tm
 survives `assert_wired`; the served index passes its own gate over HTTP; each of dashboard,
 backlog-table and goals carries **exactly one** control and **one** stamp.
 
-## Not fixed, stated
+## The gap this section used to record, now closed by DRIVING it
 
-Codex explicitly did **NOT** check `chrome_script()` in a browser — it reviewed and probed it
-statically, and so did I. The theme toggle's actual click behaviour is therefore unexercised by any
-automated check; `assert_wired` proves the parts are present and bound, not that pressing it works.
+Codex labelled `chrome_script()` **NOT CHECKED** — reviewed and probed statically, never executed —
+and so had I. `assert_wired` proves the parts are present and bound; it cannot prove that pressing
+the button does anything. So the button was pressed, in Chrome, on the served page:
+
+| | observed |
+|---|---|
+| start (OS dark) | `data-theme` unset, `body` background `rgb(20, 24, 27)`, `aria-pressed=true` |
+| after one click | `data-theme="light"`, background `rgb(247, 248, 250)`, `aria-pressed=false`, `localStorage` `light` |
+| after a second | back to `dark` and `rgb(20, 24, 27)` — it returns, rather than only leaving |
+| after a full reload | `data-theme="light"` applied before paint, background still light |
+| refresh button | `POST /regenerate` → 200, and the page rebuilt |
+
+⭐ **And the provenance flag was observed CHANGING, not merely asserted.** The stamp read
+`08:39 · 4572635 · uncommitted changes` before the round-1 commit and
+`09:12 · 0b5284d` after it — the dirty qualifier appearing and disappearing against a real tree,
+which no unit case can demonstrate.
+
+**Still not covered by anything automated:** these were driven by hand this once. Nothing re-runs
+them, so a future change could break the click path with every suite green. That is a real gap and
+it is stated rather than implied.
