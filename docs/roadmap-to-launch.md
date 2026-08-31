@@ -1439,7 +1439,7 @@ page as NOT CHECKED, never rendered as a confident zero. Reader-facing explainer
 
 ---
 
-## Inline renderer seam — backlog #71 — anchor `status-visibility` — ✅ BUILT 2026-08-30, PR OPEN
+## Inline renderer seam — backlog #71 — anchor `status-visibility` — ✅ MERGED 2026-08-30 (PR #180)
 
 Phase 6 candidate 1, from `docs/reviews/architecture-review-2026-08-30.md`. Spec:
 [`docs/superpowers/specs/2026-08-30-inline-renderer-seam-design.md`](superpowers/specs/2026-08-30-inline-renderer-seam-design.md).

@@ -5,7 +5,7 @@
     python3 scripts/check-plan-code.py <plan.md> --evidence # ...and print the evidence block
     python3 scripts/check-plan-code.py <plan.md> --compare .   # ...and diff vs the REAL files
     python3 scripts/check-plan-code.py <plan.md> --verify-evidence   # ...and FAIL if it is stale
-    python3 scripts/check-plan-code.py --self-test          # 139 cases
+    python3 scripts/check-plan-code.py --self-test          # 145 cases
 
 ⚠ `--compare` takes the REPO ROOT, and each file tag is resolved under it as the
 repo-relative path it already is. It took the containing DIRECTORY until round 5,
@@ -273,16 +273,49 @@ def child_env(d: pathlib.Path) -> dict[str, str]:
     requires a GREEN control before and after the sequence, so a suite that genuinely
     needed the real home would fail loudly as a CANNOT RUN rather than quietly.
 
+    ⚠ SCOPE, stated rather than implied. `$HOME` governs `Path.home()` and a bare `~`,
+    and NOTHING ELSE. Measured 2026-08-30 under a redirected home: `Path.home()` and
+    `expanduser("~")` returned the fake home, while `pwd.getpwuid(os.getuid()).pw_dir`
+    and `expanduser("~<user>")` both returned the REAL one. So this is not "a mutation
+    can never reach `~/explainers/`" in the abstract — it is that guarantee for the
+    home-resolution routes the mutated scripts actually use, and `home_escapes` is what
+    keeps that qualifier TRUE rather than merely true today. Raised by the Codex half of
+    this branch's own review, against an earlier docstring here that overclaimed.
+
     NOT mkdir'd here — this function must not touch the filesystem, because `run_suite`
     is reachable from a self-test that passes `.` as `d`, and creating `./.home` in the
-    repo would make the instrument edit the tree it measures. `mutate_delivered` creates
-    it inside its own temp tree; a caller that forgets gets a nonexistent home, which is
-    still safe — a write fails loudly instead of landing on the reader's page.
+    repo would make the instrument edit the tree it measures. Both callers that own a
+    temp tree create it themselves.
     """
     env = dict(os.environ)
     env["HOME"] = str(d / CHILD_HOME)
     env["USERPROFILE"] = env["HOME"]   # the same concept on Windows
     return env
+
+
+# The home-resolution routes `$HOME` does NOT govern — see `child_env`'s scope note.
+# Turning that one-off grep into a standing check is the point: a convention catches what
+# somebody reads, a script catches what is there. The subject is the MUTATION TARGETS,
+# because those are the files a mutation can rewrite into a write.
+HOME_ESCAPES = [
+    (re.compile(r"\bgetpw(uid|nam)\b"),
+     "pwd.getpwuid()/getpwnam() reads the account home from the password database "
+     "and ignores $HOME entirely"),
+    (re.compile(r"expanduser\(\s*[\"'][^\"']*~\w"),
+     "expanduser('~<user>') names a specific user's home and ignores $HOME"),
+    (re.compile(r"[\"'][^\"']*(?:/Users/|/home/)\w"),
+     "a hardcoded absolute home path does not move when $HOME does"),
+]
+
+
+def home_escapes(src: str) -> list[str]:
+    """Why `src` could still reach the real home under a redirected $HOME. Empty is good.
+
+    Static and therefore incomplete — it reads source, so a route assembled at runtime
+    slips past. It is a ratchet against the routes that are cheap to write by accident,
+    not a proof. Stated here rather than left for someone to discover.
+    """
+    return [why for rx, why in HOME_ESCAPES if rx.search(src)]
 
 
 def run_suite(d: pathlib.Path, name: str) -> tuple[int, str]:
@@ -443,6 +476,30 @@ def mutate_delivered(root: pathlib.Path) -> tuple[bool, list[str], dict]:
     for target in sorted(set(counts) - set(EXPECTED_MUTATIONS)):
         drift.append(f"{target}: {counts[target]} mutation(s) but no declared count — add it "
                      f"to EXPECTED_MUTATIONS so its coverage cannot shrink unnoticed")
+    # A target that resolves the home directory by a route `$HOME` does not govern would
+    # make `child_env`'s guarantee false without changing anything `child_env` can see.
+    for target in sorted(counts):
+        try:
+            src = (root / target).read_text(encoding="utf-8")
+        except OSError as exc:
+            drift.append(f"{target}: CANNOT RUN — unreadable ({exc}), so its home-escape "
+                         f"routes were NOT CHECKED")
+            continue
+        for why in home_escapes(src):
+            drift.append(f"{target}: {why}. The mutation harness redirects $HOME so a "
+                         f"mutation cannot reach the reader's pages under ~/explainers/, "
+                         f"and this route steps around that. Use pathlib.Path.home()")
+    # ⚠ AND THE REPLACEMENT TEXT. Scanning the target alone reads the code as it is
+    # BEFORE the mutation — and a mutation is the one thing that rewrites it, so a clean
+    # target says nothing about what the manifest is about to put there. Found by the
+    # coordinator half of this branch's review, against the fix written for the Codex
+    # half an hour earlier: correcting a premise is not the same as covering the branch.
+    for m in muts:
+        for _find, repl in m.get("edits", []):
+            for why in home_escapes(repl):
+                drift.append(f"mutation {m.get('name', '?')!r}: {why}. Its REPLACEMENT "
+                             f"text is scanned as well as its target, because the "
+                             f"mutation is what puts the route there")
     if drift:
         return False, drift, ev
     targets = sorted(counts)
@@ -619,6 +676,12 @@ def check(plan: pathlib.Path, compare: pathlib.Path | None = None) -> tuple[bool
 
     with tempfile.TemporaryDirectory() as td:
         d = pathlib.Path(td)
+        # Same redirected home the mutation path gets, and it must EXIST here too. Codex
+        # raised this against the first draft: `child_env` applies to every spawn, so
+        # without this line a plan suite that writes to `Path.home()` used to pass under
+        # the developer's real home and would now die on FileNotFoundError. That is a
+        # behaviour change to the older mode, not the "costs zero fidelity" this claimed.
+        (d / CHILD_HOME).mkdir()
         for name, blocks in files.items():
             (d / name).parent.mkdir(parents=True, exist_ok=True)
             (d / name).write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
@@ -1057,11 +1120,17 @@ def _self_test() -> int:
         # it, including runs where the redirect is working perfectly. A check that cannot
         # go back to green after the defect is fixed is not reporting the defect.
         canary = f"harness-canary-{d3.name}.html"
+        # The CONTENT is the identity, not the name. Codex, Low: the cleanup below could
+        # otherwise delete a real-home file that merely shares the basename — two
+        # concurrent runs under different TMPDIRs can pick the same one, and this repo has
+        # a measured history of concurrent-agent interference. Only what this run wrote,
+        # proved by reading it back, is ever removed.
+        marker = f"yps-harness-canary {d3.name}"
         (d3 / "probe.py").write_text(
             "import pathlib, sys\n"
             "p = pathlib.Path.home() / 'explainers'\n"
             "p.mkdir(parents=True, exist_ok=True)\n"
-            f"(p / {canary!r}).write_text('x')\n"
+            f"(p / {canary!r}).write_text({marker!r})\n"
             "print(pathlib.Path.home())\n")
         rc_h, out_h = run_suite(d3, "probe.py")
         case("a spawned suite resolves Path.home() into the run's own tree",
@@ -1077,7 +1146,25 @@ def _self_test() -> int:
              escaped.exists(), False)
         # If the redirect DID break, the run says so above — and then removes its own
         # debris rather than leaving a stray file in the reader's tree for us to explain.
-        escaped.unlink(missing_ok=True)
+        # Read-back first: a file we did not write is not ours to delete.
+        try:
+            if escaped.read_text() == marker:
+                escaped.unlink()
+        except OSError:
+            pass
+
+    # `home_escapes` — the routes the redirect does NOT cover. The last case is the one
+    # that matters: a check that flags everything is as useless as one that flags nothing,
+    # so the routes $HOME DOES govern must come back clean.
+    case("home_escapes flags pwd.getpwuid",
+         bool(home_escapes("h = pwd.getpwuid(os.getuid()).pw_dir")), True)
+    case("home_escapes flags a named-user tilde",
+         bool(home_escapes("p = os.path.expanduser('~someone/explainers')")), True)
+    case("home_escapes flags a hardcoded absolute home",
+         bool(home_escapes('OUT = "/Users/someone/explainers/dashboard.html"')), True)
+    case("home_escapes passes Path.home() and a BARE tilde, which $HOME does govern",
+         home_escapes("d = pathlib.Path.home() / 'explainers'\n"
+                      "e = os.path.expanduser('~/explainers')\n"), [])
 
     # The docstring case count, which no case could previously reach.
     case("count_drift is silent when the docstring matches",
@@ -1601,6 +1688,31 @@ def _self_test() -> int:
             case("a SHRUNKEN manifest is refused by name and number",
                  (_ok3, any("holds 1 mutation(s), expected 2" in r for r in _rep3)),
                  (False, True))
+        # ⟲ 2026-08-30, Codex Medium. THE WIRING, not just the predicate. This file
+        # already records the shape this would otherwise repeat — "extracting the
+        # function bought coverage of the function; the wiring inherited the same blind
+        # spot" — so `home_escapes` gets a case proving `mutate_delivered` CALLS it.
+        EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS["scripts/thing.py"] = 1
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            _t = _r / "scripts" / "thing.py"
+            _t.write_text(_t.read_text() +
+                          "import pwd, os\nREAL = pwd.getpwuid(os.getuid()).pw_dir\n")
+            _ok4, _rep4, _ = mutate_delivered(_r)
+            case("a target reaching the home by a route $HOME does not govern is refused",
+                 (_ok4, any("getpwuid" in r for r in _rep4)), (False, True))
+        # ...and the same route arriving via the MUTATION rather than the target. The
+        # target here is clean; only the replacement text carries the escape.
+        with tempfile.TemporaryDirectory() as _td:
+            _r = pathlib.Path(_td); _mini(_r)
+            (_r / "scripts" / "mutations" / "thing.json").write_text(json.dumps(
+                [{"name": "value is two", "file": "scripts/thing.py",
+                  "edits": [["VALUE != 1",
+                             "VALUE != int(pwd.getpwuid(os.getuid()).pw_uid)"]],
+                  "expect": "value is one"}]))
+            _ok5, _rep5, _ = mutate_delivered(_r)
+            case("...and a CLEAN target whose MUTATION introduces the route is refused",
+                 (_ok5, any("getpwuid" in r for r in _rep5)), (False, True))
     finally:
         EXPECTED_MUTATIONS.clear(); EXPECTED_MUTATIONS.update(_saved)
     case("the declared counts name every manifest that ships",
