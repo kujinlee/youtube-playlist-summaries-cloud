@@ -33,6 +33,14 @@ case is named `a cleared ask is never validated`.
 - **Coverage cannot shrink.** `EXPECTED_MUTATIONS` currently holds `gen-dashboard.py: 47`, `check-dashboard-entry.py: 12` (`scripts/check-plan-code.py:443,:445`). Both rise; neither falls.
 - **Baselines to preserve:** `gen-dashboard.py --self-test` = 217/217 + 6/6 cannot-run; `check-dashboard-entry.py --self-test` = 46/46. Every task raises these, never lowers them.
 - **Run from the repo root.** `python3 scripts/<name>.py`.
+- ⚠ **EVERY "Expected: PASS at N/N" tally in this plan is an ESTIMATE, and round 1 proved several
+  wrong.** Take the real number from the run. What is binding is the *direction* — the count must
+  **rise** by at least the cases the task adds, and no previously-passing case may go red. If one
+  does, that is a finding, not a number to update.
+- ⚠ **A step that says "run it to verify it fails" must actually go red.** Round 1 found four cases
+  that already passed before their implementation (Task 4's cleared-ask pair, Task 5's fold and
+  empty-heading pair). They are useful **regression guards**, not red-phase evidence — do not report
+  a red phase you did not observe.
 
 ---
 
@@ -111,12 +119,37 @@ FLAG = re.compile(r"\[(needs-you|heads-up|resolved:\s*[^\]]*)\]")
                     entry["resolves"].append(f.split(":", 1)[1].strip())
                 else:
                     entry["error"] = f"unrecognised flag [{f}]"
-            if entry["needs_you"] and entry["heads_up"]:
-                entry["error"] = ("an entry is [needs-you] OR [heads-up], never both — "
-                                  "a heads-up asks for nothing")
 ```
 
-⚠ The `if` after the `for` is at the **same indentation as the `for`**, inside the `if m is not None and _GATE.valid_date(...)` block.
+- [ ] **Step 4b: The both-flags refusal goes in `header_error`, NOT in the parser**
+
+⚠ **Round-1 review, execution-verified.** Putting it only in the parser makes the gate and the
+renderer disagree: `header_error` strips every flag via `FLAG.sub` (`check-dashboard-entry.py:51`),
+so `header_error("## 2026-08-28 [needs-you] [heads-up]")` returns `None` — the **gate accepts** a
+header the **renderer** would mark malformed. `header_error`'s own docstring (`:38-45`) says it is
+*"shared by the parser and the ratchet so they CANNOT disagree about what a header is"* and records
+five measured divergences; this would be the sixth. Spec §9 lists it as a falsifier by name.
+
+In `scripts/check-dashboard-entry.py`, inside `header_error`, after the `leftover` check:
+
+```python
+    flags = FLAG.findall(m.group(2))
+    if "needs-you" in flags and "heads-up" in flags:
+        return ("an entry is [needs-you] OR [heads-up], never both — "
+                "a heads-up asks for nothing")
+```
+
+The parser needs no both-flags branch: `parse_entries` already assigns `err = header_error(b[0])`
+(`gen-dashboard.py:359`) and returns the entry with that error.
+
+Add to `check-dashboard-entry.py`'s `_self_test`:
+
+```python
+    case("both flags is a header error",
+         header_error("## 2026-08-28 [needs-you] [heads-up]") is not None, True)
+    case("both flags does not count as an added entry",
+         _added_entry_line("+## 2026-08-28 [needs-you] [heads-up]"), False)
+```
 
 - [ ] **Step 5: Run both suites to verify they pass**
 
@@ -347,6 +380,26 @@ In `scripts/check-dashboard-entry.py`'s `_self_test`:
     GAP = "**Decide:** Q\n\n- a\n- b\n"
     case("a blank line after the opener means no options",
          len(decisions(GAP)[0]["options"]), 0)
+
+    # ── round-1 review: every one of these FAILED against the first implementation ──
+    NEST2 = "**Decide:** Q\n- merge PR #1\n  - it is green\n- hold it\n"
+    case("a 2-space nested item is not a peer option",
+         [o["text"] for o in decisions(NEST2)[0]["options"]],
+         ["merge PR #1 it is green", "hold it"])
+    NEST4 = "**Decide:** Q\n- merge PR #1\n    - it is green\n- hold it\n"
+    case("a 4-space nest does not DROP the options after it",
+         len(decisions(NEST4)[0]["options"]), 2)
+    LAZY = "**Decide:** Q\n- merge PR #1\n  because it is green\n- hold it\n"
+    case("a lazy continuation joins its option",
+         len(decisions(LAZY)[0]["options"]), 2)
+    TABBED = "**Decide:** Q\n- merge PR #1\n\t- it is green\n- hold it\n"
+    case("a tab-indented continuation does not drop options",
+         len(decisions(TABBED)[0]["options"]), 2)
+    INLINE_C = "x <!--\n**Decide:** hidden\n- a\n- b\n-->\n"
+    case("an INLINE <!-- makes the block inert too", decisions(INLINE_C), [])
+    QUOTED_OPTS = "**Decide:** Q\n> - a\n> - b\n"
+    case("a blockquoted option list yields no options",
+         len(decisions(QUOTED_OPTS)[0]["options"]), 0)
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -395,11 +448,23 @@ def _inert_lines(text: str) -> set[int]:
             fence = m.group("ch")
             inert.add(i)
             continue
-        if s.startswith("<!--"):
+        # ⚠ `<!--` ANYWHERE in the line, not just at its start. Round-1 review,
+        # execution-verified: `s.startswith("<!--")` diverged from `exemption_reason`,
+        # which scans the whole line — so `x <!--` followed by a Decide block parsed as
+        # a REAL decision here while the gate reads it as inert. The docstring claimed
+        # parity; a near-copy that diverges is worse than an honest second
+        # implementation, because the comment stops anyone checking.
+        if "<!--" in line:
             inert.add(i)
-            if "-->" not in line:
+            if "-->" not in line.split("<!--", 1)[1]:
                 comment = True
             continue
+        # ⚠ The blockquote half of this branch is currently DEAD and is kept
+        # deliberately: `> **Decide:**` is already not an opener, because the caller
+        # requires `lstrip().startswith(OPENER)` and `lstrip()` leaves the `>`. Round-1
+        # review measured that deleting `s.startswith(">")` left the suite green. The
+        # case below therefore tests a blockquoted OPTION LIST under a live opener,
+        # which only this branch can catch.
         if s.startswith(">") or _indented(line):
             inert.add(i)
     return inert
@@ -417,19 +482,36 @@ def decisions(plain: str) -> list[dict]:
             continue
         question = lines[i].lstrip()[len(OPENER):].strip()
         options: list[dict] = []
+        base_indent = None            # column of the FIRST option; deeper = continuation
         j = i + 1
-        while j < len(lines) and j not in inert:
-            m = OPT.match(lines[j])
-            if not m or lines[j].strip() == "":
+        while j < len(lines):
+            line = lines[j]
+            if line.strip() == "" or line.lstrip().startswith(OPENER):
                 break
-            if lines[j].lstrip().startswith(OPENER):
-                break
-            text = m.group("text").strip()
-            rec = text.endswith(REC)
-            if rec:
-                text = text[: -len(REC)].strip()
-            options.append({"text": text, "recommended": rec})
-            j += 1
+            m = OPT.match(line)
+            indent = len(line) - len(line.lstrip())
+            if m and (base_indent is None or indent <= base_indent):
+                if base_indent is None:
+                    base_indent = indent
+                text = m.group("text").strip()
+                rec = text.endswith(REC)
+                if rec:
+                    text = text[: -len(REC)].strip()
+                options.append({"text": text, "recommended": rec})
+                j += 1
+                continue
+            if options and base_indent is not None and indent > base_indent:
+                # ⚠ Spec §4 Nesting. Round-1 review, execution-verified: WITHOUT this,
+                # a 4-space nested item ENDED the option list, the remaining options
+                # VANISHED from the page, and decision_errors then reported
+                # "offers 1 option(s)" about an ask that had three. On a feature whose
+                # whole purpose is listing the reader's choices, silently dropping
+                # choices is the worst failure available.
+                extra = m.group("text").strip() if m else line.strip()
+                options[-1]["text"] = f'{options[-1]["text"]} {extra}'.strip()
+                j += 1
+                continue
+            break
         out.append({"question": question, "options": options})
         i = j
     return out
@@ -621,6 +703,36 @@ python3 scripts/gen-dashboard.py --self-test
 
 Expected: PASS at 237/237.
 
+- [ ] **Step 6b: Repair the SUITE's own fixture — it is not resolved**
+
+⚠ **Round-1 review, execution-verified: applying Tasks 1–6 takes the suite 217 → 216 before a single
+new case is added.** `gen-dashboard.py:1246` builds
+
+```python
+ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n<!--tech-->\nPR #1.\n")
+```
+
+— an **unresolved** `[needs-you]` with no `**Decide:**` block. Under this task's tray it becomes a
+`broken` row, its title leaves the What-needs-you section, and the case at `:1310-1312` — which
+exists precisely to assert on that section — goes red:
+
+```
+[FAIL] a gh failure still shows the store's needs IN THAT SECTION
+```
+
+**This is spec §11's hazard displaced.** The plan verified the real *store*, where all three asks are
+resolved, and never the *suite's fixtures*, where this one is not.
+
+**Fix:** give `ents3` a decision block, keeping its existing title so the assertion still matches:
+
+```python
+    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n\n"
+                          "**Decide:** Decide the thing\n- do it\n- do not\n"
+                          "<!--tech-->\nPR #1.\n")
+```
+
+⚠ `ents3` is reused by later cases — after editing it, run the whole suite, not just the case above.
+
 - [ ] **Step 7: Prove the real store is untouched**
 
 ```bash
@@ -704,6 +816,17 @@ In `build`, after `needs_html` is assigned:
     # looking alike, which is the confusion this page exists to prevent.
     hu_rows = []
     for e in unresolved_heads_up(entries):
+        # ⚠ Round-1 review, BOTH halves: v1 declared a dependency on `decision_errors`
+        # here and then never called it, so a [heads-up] carrying a live **Decide:**
+        # block rendered as valid. Spec §4 makes that malformed; without this call
+        # §4's "a heads-up cannot ask" has NO enforcement point anywhere in the slice.
+        hu_problems = _decision_errors(e["plain"], "heads-up") if _decision_errors else []
+        if hu_problems:
+            hu_rows.append(
+                f'<li class="unknown">Could not read one heads-up — '
+                f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a>: '
+                f'{_html.escape("; ".join(hu_problems))}</li>')
+            continue
         first = e["plain"].split("\n\n")[0].strip()
         hu_rows.append(
             f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a> '
@@ -796,8 +919,19 @@ git commit -m "feat(dashboard): a Worth knowing block, and a glossary that stops
     case("a merged PR reads merged",
          _with_run(lambda *a, **k: _mk(0, '{"number":2,"state":"MERGED"}'),
                    lambda: pr_state(2, cache, b)), "merged")
+    # ⚠ The stub must carry gh's REAL stderr. Round-1 review: a bare returncode=1 with
+    # empty stderr yields err="gh exited 1: ", which matches nothing and returns
+    # "unknown" — the case could never have gone green.
+    def _mk_err(msg):
+        r = _R(); r.returncode, r.stdout, r.stderr = 1, "", msg
+        return r
     case("a missing PR reads missing",
-         _with_run(lambda *a, **k: _mk(1, ""), lambda: pr_state(3, cache, b)), "missing")
+         _with_run(lambda *a, **k: _mk_err(
+             "GraphQL: Could not resolve to a PullRequest with the number of 3."),
+             lambda: pr_state(3, cache, b)), "missing")
+    case("a transport failure reads unknown, NOT missing",
+         _with_run(lambda *a, **k: _mk_err("dial tcp: lookup api.github.com: no such host"),
+                   lambda: pr_state(31, {}, {"calls": 0, "seconds": 0.0})), "unknown")
     case("a bad shape reads unknown",
          _with_run(lambda *a, **k: _mk(0, '{"number":4}'),
                    lambda: pr_state(4, cache, b)), "unknown")
@@ -846,8 +980,15 @@ def pr_state(n: int, cache: dict, budget: dict) -> str:
     budget["calls"] += 1
     budget["seconds"] += _time.monotonic() - t0
     if err is not None:
-        # `gh` exits non-zero both for "no such PR" and for a transport failure.
-        state = "missing" if "not found" in err.lower() or "no pull requests" in err.lower() else "unknown"
+        # ⚠ Round-1 review, execution-verified by BOTH halves. v1 matched "not found"
+        # and "no pull requests"; the real tool says
+        #   GraphQL: Could not resolve to a PullRequest with the number of 999999.
+        # so neither substring matched and the "missing" branch was unreachable — the
+        # test could not have gone green, and the real path was broken too.
+        low = err.lower()
+        state = ("missing"
+                 if "could not resolve to a pullrequest" in low or "no pull requests found" in low
+                 else "unknown")
     elif not isinstance(data, dict) or not isinstance(data.get("state"), str):
         state = "unknown"          # shape is validated; _gh_json only parses
     else:
@@ -917,8 +1058,24 @@ And create the three per-render values **once**, immediately after `REC_SPAN` in
 ```python
     _pr_cache: dict[int, str] = {}
     _pr_budget = {"calls": 0, "seconds": 0.0}
-    _repo = repo_slug()
+    _repo_box: list = []          # lazily filled: [] = not looked up yet
 ```
+
+and resolve the slug **only on the first `PR #N` match**, via:
+
+```python
+def _repo_once(box: list):
+    """⚠ Round-1 review, both halves. `_repo = repo_slug()` at the top of `build`
+    made EVERY render a network call — including renders with no PR options, and
+    including CI, which runs `--self-test` and then builds. It also sat outside the
+    10-call/60s budget, so the "bounded render" guarantee was false.
+    """
+    if not box:
+        box.append(repo_slug())
+    return box[0]
+```
+
+with the option loop calling `_repo_once(_repo_box)` instead of reading `_repo`.
 
 - [ ] **Step 6: Add the stale style**
 
@@ -1033,8 +1190,22 @@ Append to `scripts/mutations/gen-dashboard.json`:
   "name": "gh output shape is no longer validated",
   "file": "scripts/gen-dashboard.py",
   "edits": [["elif not isinstance(data, dict) or not isinstance(data.get(\"state\"), str):",
-             "elif False:"]],
+             "elif not isinstance(data, dict):"]],
   "expect": ["a bad shape reads unknown"]
+},
+{
+  "name": "unresolved_heads_up ignores the cleared set",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [["if e[\"heads_up\"] and not e[\"error\"] and e[\"id\"] not in cleared]",
+             "if e[\"heads_up\"] and not e[\"error\"]]"]],
+  "expect": ["a cleared heads-up leaves the Worth knowing block"]
+},
+{
+  "name": "a heads-up may carry a decision after all (renderer side)",
+  "file": "scripts/gen-dashboard.py",
+  "edits": [["hu_problems = _decision_errors(e[\"plain\"], \"heads-up\") if _decision_errors else []",
+             "hu_problems = []"]],
+  "expect": ["a heads-up carrying a Decide block is called out"]
 }
 ```
 
@@ -1120,3 +1291,36 @@ git commit -m "test(dashboard): mutation coverage for the ask-choices guards"
 | §11 no cutover, historical entries intact | 4 (Step 7) |
 
 **Not covered by any task, and stated rather than hidden:** §10's limits (option wording is not validated beyond structure; the gate defends shape, not quality) are non-goals, and §2's out-of-scope gate half is backlog #78.
+
+---
+
+## Round 1 review — fold record
+
+Both halves NOT CONVERGED. Reviews at `docs/reviews/plan-dashboard-ask-choices-r1-{codex,claude}.md`.
+Codex `gpt-5.5`: 2 Blocking, 2 High, 2 Medium, 2 Low. Claude: 4 Blocking, 6 High, 6 Medium, 7 Low.
+**Most findings were verified by EXECUTION, which is what this gate was for** — the two spec rounds
+could only read.
+
+| Finding | Sev | Fixed in |
+|---|---|---|
+| **Nested options are counted as peers; a 4-space nest silently DROPS every later option** and `decision_errors` then reports "offers 1 option(s)" about an ask that had three | Blocking | T3 — indent tracking + 4 fixtures |
+| **The suite goes 217 → 216 before any new case**: `ents3` (`:1246`) is an unresolved `[needs-you]` with no decision block | Blocking | T4 Step 6b |
+| **The `missing` PR case can never go green** — real `gh` says *"Could not resolve to a PullRequest"*, matching neither substring | Blocking ×2 | T6 — real stderr in both the branch and the stub, plus a transport-failure case |
+| **`decision_errors` is never called for a `heads-up`**, so §4's "a heads-up cannot ask" had no enforcement point at all | Blocking ×2 | T5 |
+| **Gate and renderer made to disagree** — `header_error` strips both flags, so the gate accepts what the renderer marks malformed (a sixth divergence in a function whose docstring records five) | High | T1 Step 4b — refusal moves into `header_error` |
+| `_inert_lines` diverges from `exemption_reason` on an INLINE `<!--` | High ×2 | T3 |
+| `build()` becomes a network call on every render, including CI, outside the budget | High ×2 | T6 — `_repo_once`, lazy |
+| The blockquote branch is DEAD; its case passes for another reason | Medium | T3 — comment + a fixture only that branch can satisfy |
+| `unresolved_heads_up` ignoring `cleared` survives mutation | Medium | T7 mutation + T5 case |
+| Predicted case tallies are wrong at T3, T5, T6 | Medium | Global Constraints — take the number from the run |
+| Four "failing tests" already pass before their implementation | Low | Global Constraints — regression guards, not red-phase evidence |
+| The `gh output shape` mutation crashes the suite instead of reddening its case | Blocking | T7 — weakened to `not isinstance(data, dict)` |
+| A `python`-fenced block that is HTML | Low | Fence corrected |
+
+**Verified by execution after folding** (`scratchpad/probe2.py`, against the real `FENCE` and
+`_indented`): all 15 fixtures pass, including every one of the six shapes round 1 broke — 2-space
+nest, 4-space nest, lazy continuation, tab continuation, inline `<!--`, blockquoted option list.
+
+**Not folded, dispositioned instead:** whole-page render assertions (Claude H3) — the tray/worth
+sections are asserted by substring within their own `<h2>` slice in T4/T5, which is the same
+technique the existing suite uses at `:1310`; tightening every render assertion is its own slice.
