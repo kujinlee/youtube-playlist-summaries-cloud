@@ -443,8 +443,15 @@ def _pos(e: dict) -> tuple:
     return (e["date"] or "", e["ordinal"])
 
 
-def unresolved(entries: list[dict]) -> list[dict]:
-    """needs-you entries not cleared by a LATER [resolved: <id>] (spec §6.2)."""
+def cleared_ids(entries: list[dict]) -> set[str]:
+    """Ids cleared by a LATER [resolved: <id>] (spec §6.2).
+
+    Split out of `unresolved` so the CARD BADGE and the TRAY answer from one
+    computation. Reported by the user 2026-08-31: the tray said "Nothing needs
+    you." while three cards wore a "needs you" chip, because `:775` printed the
+    raw authored flag that nothing ever clears while the tray derived its list
+    here. One page, one question, two sources — see the ask-choices spec §1a.
+    """
     by_id = {e["id"]: e for e in entries if e["id"] and not e["error"]}
     cleared = set()
     for e in entries:
@@ -454,8 +461,39 @@ def unresolved(entries: list[dict]) -> list[dict]:
             t = by_id.get(r)
             if t is not None and _pos(e) > _pos(t):
                 cleared.add(t["id"])
+    return cleared
+
+
+def unresolved(entries: list[dict]) -> list[dict]:
+    """needs-you entries not cleared by a LATER [resolved: <id>] (spec §6.2)."""
+    cleared = cleared_ids(entries)
     return [e for e in entries
             if e["needs_you"] and not e["error"] and e["id"] not in cleared]
+
+
+def unresolved_heads_up(entries: list[dict]) -> list[dict]:
+    """heads-up entries not cleared. SAME mechanism as `unresolved`, deliberately.
+
+    The ask-choices spec §3 refuses a second clearing mechanism (an expiry) for
+    heads-ups: "this item is finished with" already has one, and two would
+    eventually disagree about the same entry.
+    """
+    cleared = cleared_ids(entries)
+    return [e for e in entries
+            if e["heads_up"] and not e["error"] and e["id"] not in cleared]
+
+
+def badge_of(entry: dict, cleared: set[str]) -> str:
+    """The card's badge, DERIVED — "", "needs you", "heads-up" or "resolved".
+
+    ⚠ Never read `entry["needs_you"]` directly at the render site. That is the
+    defect this function exists to close.
+    """
+    if entry["error"] or not (entry["needs_you"] or entry["heads_up"]):
+        return ""
+    if entry["id"] in cleared:
+        return "resolved"
+    return "needs you" if entry["needs_you"] else "heads-up"
 
 
 def bucket_days(dates: list[str], entries: list[dict], window: int, today: str) -> list[dict]:
@@ -695,6 +733,8 @@ def build(entries, days, prs, pr_error, git_error, window,
     # empty state, so a run against `--store docs/typo.md` positively asserted a
     # location it had never opened).
     # ─── What needs you ───
+    # ONE computation, read by both the tray below and every card badge (§1a).
+    _cleared = cleared_ids(entries)
     need = unresolved(entries)
     rows = [f'<li><a href="#{_slug(e["id"])}">{_inline(e["title"])}</a> '
             f'<span class="when">{_html.escape(e["date"])} · {_html.escape(e["id"])}</span></li>'
@@ -772,7 +812,9 @@ def build(entries, days, prs, pr_error, git_error, window,
             tech = ("" if not e["tech"] else
                     f'<details id="{eid}-tech"><summary>Raw technical detail</summary>'
                     f'<pre>{_html.escape(e["tech"])}</pre></details>')
-            flag = ' <span class="flag">needs you</span>' if e["needs_you"] else ""
+            _b = badge_of(e, _cleared)
+            _bcls = "flag resolved" if _b == "resolved" else "flag"
+            flag = (f' <span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
             parts.append(
                 f'{day_anchor}<article class="entry" id="{eid}">'
                 f'<h3>{_html.escape(e["date"])} '
@@ -901,6 +943,7 @@ padding:14px 18px;margin-bottom:10px}}
 .entry .prose strong{{color:var(--p-mark);font-weight:600}}
 .entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--p-lede)}}
 .flag{{color:var(--need);font-weight:700}}
+.flag.resolved{{color:inherit;font-weight:400;opacity:.55;border:1px solid currentColor;border-radius:3px;padding:0 .3em;font-size:.82em}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
 #glossary dt{{font-weight:600;margin-top:8px}} #glossary dd{{margin:2px 0 0;color:var(--fg3)}}
@@ -1148,6 +1191,27 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("both flags is an error", both[0]["error"] is not None, True)
     two = parse_entries("## 2026-08-28\nFirst.\n## 2026-08-28\nSecond.\n")
     case("two entries same date", [x["id"] for x in two], ["2026-08-28/1", "2026-08-28/2"])
+
+    # ── the badge is DERIVED, not the authored flag (ask-choices spec §5c) ──
+    st = parse_entries(
+        "## 2026-08-28 [needs-you]\nAn open ask.\n"
+        "## 2026-08-29 [heads-up]\nWorth knowing.\n"
+        "## 2026-08-30 [resolved: 2026-08-28/1]\nDone with it.\n"
+        "## 2026-08-31\nOrdinary entry.\n")
+    cl = cleared_ids(st)
+    case("the resolved ask is cleared", "2026-08-28/1" in cl, True)
+    case("resolved ask badges as resolved", badge_of(st[0], cl), "resolved")
+    case("open heads-up badges as heads-up", badge_of(st[1], cl), "heads-up")
+    case("the clearing entry has no badge", badge_of(st[2], cl), "")
+    case("an ordinary entry has no badge", badge_of(st[3], cl), "")
+    op = parse_entries("## 2026-08-28 [needs-you]\nStill open.\n")
+    case("an open ask badges as needs you", badge_of(op[0], cleared_ids(op)), "needs you")
+    case("a cleared heads-up leaves the unresolved list",
+         [e["id"] for e in unresolved_heads_up(parse_entries(
+             "## 2026-08-28 [heads-up]\nKnow this.\n"
+             "## 2026-08-29 [resolved: 2026-08-28/1]\nDealt with.\n"))], [])
+    case("an open heads-up is in the unresolved list",
+         [e["id"] for e in unresolved_heads_up(st)], ["2026-08-29/1"])
     tech = parse_entries("## 2026-08-28\nTitle.\nMore plain.\n<!--tech-->\nPR #1.\n")
     case("plain stops at marker", tech[0]["plain"], "Title.\nMore plain.")
     case("tech captured", tech[0]["tech"], "PR #1.")
