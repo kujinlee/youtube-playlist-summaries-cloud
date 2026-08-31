@@ -336,6 +336,15 @@ def _exemption_reader():
     """
     return getattr(_GATE, "exemption_reason")
 
+
+def _decision_reader():
+    """`decisions` / `decision_errors` off the already-imported `_GATE`, AT CALL
+    TIME — same rule as `_exemption_reader`, same reason recorded there: binding
+    them at import (`_DE = _GATE.decision_errors`) turns a later rename in the gate
+    into an import-time AttributeError, and then there is no page left to degrade.
+    """
+    return getattr(_GATE, "decisions"), getattr(_GATE, "decision_errors")
+
 def parse_entries(text: str) -> list[dict]:
     """Split on column-0 '##' only. A malformed block is RETURNED with an
     error, never dropped — the page must show it in place (spec §6.2).
@@ -736,9 +745,40 @@ def build(entries, days, prs, pr_error, git_error, window,
     # ONE computation, read by both the tray below and every card badge (§1a).
     _cleared = cleared_ids(entries)
     need = unresolved(entries)
-    rows = [f'<li><a href="#{_slug(e["id"])}">{_inline(e["title"])}</a> '
-            f'<span class="when">{_html.escape(e["date"])} · {_html.escape(e["id"])}</span></li>'
-            for e in need]
+    REC_SPAN = ' <span class="rec">recommended</span>'
+    rows: list[str] = []
+    broken: list[str] = []
+    try:
+        _decisions, _decision_errors = _decision_reader()
+    except AttributeError as exc:
+        _decisions = _decision_errors = None
+        broken.append(f'<li class="unknown">I could not check whether the asks state '
+                      f'their choices — {_html.escape(str(exc))}. '
+                      f'Treat this as NOT CHECKED.</li>')
+    for e in need:
+        problems = _decision_errors(e["plain"], "needs-you") if _decision_errors else []
+        if problems:
+            # ⚠ NEVER e["error"]. That field feeds `unresolved`'s filter above, so
+            # setting it would DELETE this ask from the tray and the page would fall
+            # through to "Nothing needs you." in green — §1a rebuilt by its own fix.
+            # A malformed ask is LOUDER, never quieter.
+            broken.append(
+                f'<li class="unknown">Could not read one ask — '
+                f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a>: '
+                f'{_html.escape("; ".join(problems))}</li>')
+            continue
+        for d in (_decisions(e["plain"]) if _decisions else []):
+            # Built in a loop, not a nested f-string conditional: a backslash inside
+            # an f-string expression is a SyntaxError before Python 3.12.
+            opt_items = []
+            for o in d["options"]:
+                rec = REC_SPAN if o["recommended"] else ""
+                opt_items.append(f'<li>{_inline(o["text"])}{rec}</li>')
+            rows.append(
+                f'<li><span class="q">{_inline(d["question"])}</span> '
+                f'<span class="when">{_html.escape(e["date"])} · '
+                f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a></span>'
+                f'<ul class="opts">{"".join(opt_items)}</ul></li>')
     if pr_error:
         pr_note = (f'<p class="unknown">I could not also check open pull requests — '
                    f'{_html.escape(pr_error)}. Treat this as NOT CHECKED.</p>')
@@ -755,6 +795,10 @@ def build(entries, days, prs, pr_error, git_error, window,
                   f'<p class="unknown">I could not read the entry store — '
                   f'{_html.escape(store_error)}, so I cannot tell whether anything in '
                   f'it needs you. Treat this as NOT CHECKED.</p>')
+    # Malformed asks join the tray LAST, so they cannot be mistaken for decisions —
+    # but they DO make `rows` non-empty, which is what stops the empty-state branch
+    # below rendering "Nothing needs you." over an ask nobody can act on.
+    rows += broken
     if rows:
         needs_html = '<ul class="needs">' + "".join(rows) + "</ul>" + store_note + pr_note
     elif store_error or pr_error:
@@ -943,6 +987,10 @@ padding:14px 18px;margin-bottom:10px}}
 .entry .prose strong{{color:var(--p-mark);font-weight:600}}
 .entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--p-lede)}}
 .flag{{color:var(--need);font-weight:700}}
+.needs .q{{font-weight:600}}
+.needs .opts{{margin:.35rem 0 .6rem 1.1rem;padding:0}}
+.needs .opts li{{margin:.15rem 0}}
+.needs .rec{{font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:3px;padding:0 .3em}}
 .flag.resolved{{color:inherit;font-weight:400;opacity:.55;border:1px solid currentColor;border-radius:3px;padding:0 .3em;font-size:.82em}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
@@ -1322,7 +1370,15 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
         parts = html.split(f"<h2>{heading}</h2>", 1)
         return "" if len(parts) < 2 else parts[1].split("<h2>", 1)[0]
 
-    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n<!--tech-->\nPR #1.\n")
+    # ⚠ This fixture now carries a decision block. It is an UNRESOLVED [needs-you],
+    # so once the tray validates asks it would otherwise render as "Could not read
+    # one ask" and leave the What-needs-you section — reddening the case below, which
+    # exists specifically to assert on that section. Found by the plan review, which
+    # noticed that the ask-choices work verified the real STORE (where all three asks
+    # are resolved) and never the SUITE'S OWN FIXTURES (where this one is not).
+    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n\n"
+                          "**Decide:** Decide the thing.\n- do it\n- do not\n"
+                          "<!--tech-->\nPR #1.\n")
     d3 = bucket_days(["2026-08-28"], ents3, 2, "2026-08-28")
     html = _B(ents3, d3)
     case("needs-you surfaces", "Decide the thing." in html, True)
@@ -1389,6 +1445,38 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     need_html = _B(ents3, d3, prs=None, pr_error="gh exited 1: auth")
     case("a gh failure still shows the store's needs IN THAT SECTION",
          "Decide the thing." in _section(need_html, "What needs you"), True)
+
+    # ── the tray lists DECISIONS and their OPTIONS (ask-choices spec §5a) ──
+    ASK = parse_entries("## 2026-08-28 [needs-you]\nAn ask.\n\n"
+                        "**Decide:** Merge the harness change\n"
+                        "- merge PR #181 [recommended]\n- hold it\n")
+    ask_tray = _section(_B(ASK, bucket_days([], ASK, 2, "2026-08-28")), "What needs you")
+    case("the tray states the question", "Merge the harness change" in ask_tray, True)
+    case("the tray lists an option", "hold it" in ask_tray, True)
+    case("the tray marks the recommendation", "recommended" in ask_tray, True)
+    case("the tray does NOT fold the options", "<details" in ask_tray, False)
+
+    # A malformed ask must be LOUDER, never quieter — spec §7 row 4.
+    BAD = parse_entries("## 2026-08-28 [needs-you]\nAn ask with no decision.\n")
+    bad_tray = _B(BAD, bucket_days([], BAD, 2, "2026-08-28"))
+    case("a malformed ask does NOT read as an all-clear",
+         "Nothing needs you." in bad_tray, False)
+    case("a malformed ask names itself",
+         "2026-08-28/1" in _section(bad_tray, "What needs you"), True)
+    case("a malformed ask says what is missing",
+         "names no decision" in _section(bad_tray, "What needs you"), True)
+    case("a malformed ask is NOT marked unparseable",
+         "Could not parse this entry" in bad_tray, False)
+
+    # A CLEARED ask is never validated — this is what keeps the historical store
+    # intact without a cutover date (spec §11).
+    CLEARED = parse_entries("## 2026-08-28 [needs-you]\nOld ask, no decision block.\n"
+                            "## 2026-08-29 [resolved: 2026-08-28/1]\nDone.\n")
+    cleared_html = _B(CLEARED, bucket_days([], CLEARED, 3, "2026-08-29"))
+    case("a cleared ask is never validated",
+         "Nothing needs you." in cleared_html, True)
+    case("and it is not marked broken",
+         "Could not parse this entry" in cleared_html, False)
 
     # "In place" on the order the store is ACTUALLY written: newest at the END.
     appended = parse_entries("## 2026-08-27\nOlder good.\n"
