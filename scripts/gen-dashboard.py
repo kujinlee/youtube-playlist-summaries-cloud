@@ -14,6 +14,7 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -679,8 +680,35 @@ GLOSSARY = [
     ("shipped with no entry", "a day with commits and nothing written about them — the gap the entry rule exists to close"),
 ]
 
+def provenance(now: str, root: pathlib.Path) -> str:
+    """"<when> · <sha>[ · uncommitted changes]" — WHAT the page was built from, not just when.
+
+    ⚠ Backlog #77, and the requirement came from a reader, not a review. A page built
+    from an unmerged working tree showed three backlog rows that existed on no branch
+    but mine, and reported nothing unusual: a bare clock reading would have been TRUE
+    AND STILL MISLEADING. Time answers "how old"; only the commit answers "of what".
+
+    A git that cannot be reached yields the time alone plus an explicit note. It never
+    invents a sha, and it never silently drops the qualifier — an unknown provenance and
+    a clean one must not render identically.
+    """
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+        d = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return f"{now} · commit UNKNOWN (git could not be run)"
+    if r.returncode != 0:
+        return f"{now} · commit UNKNOWN (git exited {r.returncode})"
+    out = f"{now} · {r.stdout.strip()}"
+    if d.returncode != 0:
+        return out + " · UNCOMMITTED CHANGES UNKNOWN"
+    return out + (" · uncommitted changes" if d.stdout.strip() else "")
+
+
 def build(entries, days, prs, pr_error, git_error, window,
-          exemptions, exempt_error, store, store_error) -> str:
+          exemptions, exempt_error, store, store_error, generated_at="") -> str:
     # `store` and `store_error` have NO defaults on purpose. A default would let
     # this function name a store path it was never told about — which is the
     # exact defect they exist to close (it used to print a HARDCODED path in the
@@ -792,18 +820,32 @@ def build(entries, days, prs, pr_error, git_error, window,
                          f'<dt>{_html.escape(t)}</dt><dd>{_html.escape(d)}</dd>'
                          for t, d in GLOSSARY) + '</dl></details>')
 
+    # ⟳ 2026-08-31, backlog #76. ONE definition per scheme, emitted FOUR times: the OS
+    # default (`:root` + the media query) and the manual override (`:root[data-theme=…]`).
+    # Writing the toggled palettes out separately would be a second copy of the same
+    # colours, and this project has already measured what a second implementation of one
+    # rule does. The enumerating reader checks all four, so a drift would be caught — but
+    # not drifting in the first place is better than catching it.
+    light_vars = (
+        "--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;"
+        "--need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;"
+        "--link:#1f5d8c;--link-visited:#6a4593;"
+        "--mono:ui-monospace,SFMono-Regular,Menlo,monospace;"
+        f'--p-lede:{PROSE_COLOURS["lede"][0]};--p-head:{PROSE_COLOURS["head"][0]};'
+        f'--p-detail:{PROSE_COLOURS["detail"][0]};--p-mark:{PROSE_COLOURS["mark"][0]}')
+    dark_vars = (
+        "--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;"
+        "--bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;"
+        "--err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;"
+        f'--p-lede:{PROSE_COLOURS["lede"][1]};--p-head:{PROSE_COLOURS["head"][1]};'
+        f'--p-detail:{PROSE_COLOURS["detail"][1]};--p-mark:{PROSE_COLOURS["mark"][1]}')
     return f"""<title>Project dashboard</title>
 <style>
-:root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
---need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
---link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
---p-lede:{PROSE_COLOURS["lede"][0]};--p-head:{PROSE_COLOURS["head"][0]};
---p-detail:{PROSE_COLOURS["detail"][0]};--p-mark:{PROSE_COLOURS["mark"][0]}}}
-@media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
---bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
---err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;
---p-lede:{PROSE_COLOURS["lede"][1]};--p-head:{PROSE_COLOURS["head"][1]};
---p-detail:{PROSE_COLOURS["detail"][1]};--p-mark:{PROSE_COLOURS["mark"][1]}}}}}
+:root{{{light_vars}}}
+@media(prefers-color-scheme:dark){{:root{{{dark_vars}}}}}
+:root[data-theme="light"]{{{light_vars}}}
+:root[data-theme="dark"]{{{dark_vars}}}
+{page_chrome.chrome_css()}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
 line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
 /* The browser default link colour is #0000EE, which measures 1.9:1 against the dark
@@ -887,6 +929,7 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 </style>
 <div class="shell">
 <h1>Project dashboard</h1>
+{page_chrome.chrome_bar("dashboard", generated_at)}
 <h2>What needs you</h2>{needs_html}
 <h2>The last {window} days</h2><div class="chart">{chart}</div>{legend}{chart_note}
 <h2>What changed</h2>{entries_html}
@@ -895,7 +938,8 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <h2>Elsewhere</h2><ul>
 <li><a href="/goals">Goals</a></li><li><a href="/backlog-table">Backlog</a></li>
 <li><a href="/latest">Newest briefing</a></li><li><a href="/">All pages</a></li></ul>
-</div>"""
+</div>
+<script>{page_chrome.chrome_script()}</script>"""
 
 # --- WCAG contrast, measured on the EMITTED stylesheet -------------------------
 # The first version of this guard asserted that `a{color:var(--link)}` was
@@ -2381,7 +2425,8 @@ def main(argv: list[str]) -> int:
     today = _dt.date.today().isoformat()
     days = bucket_days(dates or [], entries, a.window, today)
     frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
-                 exempt_error, _store_label(store), store_error)
+                 exempt_error, _store_label(store), store_error,
+                 provenance(_dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
     if a.fragment_only:
         a.fragment_only.write_text(frag, encoding="utf-8")
         print(f"wrote fragment {a.fragment_only}")
@@ -2389,6 +2434,8 @@ def main(argv: list[str]) -> int:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as td:
         f = pathlib.Path(td) / "dashboard-fragment.html"
+        # Refuses a page whose theme control could not work — see page_chrome.
+        page_chrome.assert_wired(frag, "gen-dashboard.py")
         f.write_text(frag, encoding="utf-8")
         # Bounded like every other subprocess here (`commit_dates` 20, `_gh_json`
         # 30). This runs from a Claude Code PostToolUse hook
