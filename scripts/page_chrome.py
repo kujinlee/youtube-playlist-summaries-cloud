@@ -35,6 +35,7 @@ the convenience on top and degrades to a no-op that SAYS SO.
 """
 from __future__ import annotations
 import html as _html
+import os
 import pathlib
 import re
 import subprocess
@@ -326,11 +327,38 @@ def self_test() -> int:
     case("provenance carries the TIME it was given", "2026-01-01 00:00" in _here, True)
     case("...and a commit, which is what a bare clock could not answer",
          len(_here.split(" · ")) >= 2, True)
-    # ⚠ The reader-found requirement: a page built from a dirty tree must SAY so. This
-    # file is inside a repo that is dirty exactly when it is being worked on, so the case
-    # asserts the two states are DISTINGUISHABLE, never which one is current.
-    case("a clean and a dirty tree do not render identically",
-         provenance("t", pathlib.Path("/")) != _here, True)
+    # ⚠ THE READER-FOUND REQUIREMENT, on a REAL repo. The first version of this case
+    # compared against `pathlib.Path("/")` — not a repo, so the two strings differed by
+    # the UNKNOWN text and never by the dirty flag. It was VACUOUS, and the mutation
+    # deleting the qualifier survived it. Found by mutating this file, not by reading it.
+    with _tf.TemporaryDirectory() as _td:
+        _r = pathlib.Path(_td)
+        _env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        _q = dict(cwd=_r, capture_output=True, env=_env)
+        subprocess.run(["git", "init", "-q"], **_q)
+        (_r / "f.txt").write_text("one")
+        subprocess.run(["git", "add", "-A"], **_q)
+        subprocess.run(["git", "commit", "-qm", "c"], **_q)
+        _clean = provenance("t", _r)
+        (_r / "f.txt").write_text("two")            # the ONLY difference
+        _dirty = provenance("t", _r)
+        case("a CLEAN tree does not claim uncommitted changes",
+             "uncommitted changes" in _clean, False)
+        case("...and a DIRTY one says so", "uncommitted changes" in _dirty, True)
+        case("...so the two do not render identically", _clean != _dirty, True)
+        case("both carry the same commit, so the difference IS the dirty flag",
+             _clean.split(" · ")[1] == _dirty.split(" · ")[1], True)
+    # The launch-failure branch, which a non-repo directory never reaches: git EXITS
+    # NONZERO there rather than failing to start, so this is the only way in.
+    _real_run = subprocess.run
+    try:
+        subprocess.run = lambda *a, **k: (_ for _ in ()).throw(OSError("no git"))
+        _p = provenance("2026-01-01 00:00", pathlib.Path("."))
+    finally:
+        subprocess.run = _real_run
+    case("a git that cannot be LAUNCHED yields UNKNOWN, never a bare clock",
+         ("UNKNOWN" in _p, "2026-01-01 00:00" in _p), (True, True))
 
     # --- the stamp
     case("the stamp renders the value it was given", "2026-08-31 06:40" in stamp("2026-08-31 06:40"),

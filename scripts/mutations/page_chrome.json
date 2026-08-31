@@ -1,0 +1,123 @@
+[
+ {
+  "name": "a page with no control is asked for palettes anyway",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if not has_control(page):\n        return []",
+    "    if False:\n        return []"
+   ]
+  ],
+  "expect": "...so prose about themes demands no palettes"
+ },
+ {
+  "name": "has_control matches the word theme anywhere",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return 'id=\"chrome-theme\"' in page",
+    "    return 'theme' in page"
+   ]
+  ],
+  "expect": "has_control is keyed on the id, not the word 'theme'"
+ },
+ {
+  "name": "only ONE palette is required, not both",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return [t for t in THEMES if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]",
+    "    return [t for t in THEMES[:1] if _PALETTE_RE.format(attr=THEME_ATTR, theme=t) not in page]"
+   ]
+  ],
+  "expect": "a control with NEITHER palette is caught"
+ },
+ {
+  "name": "assert_wired reports instead of refusing",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    miss = missing_palettes(page)\n    if miss:\n        raise SystemExit(",
+    "    miss = missing_palettes(page)\n    if False:\n        raise SystemExit("
+   ]
+  ],
+  "expect": "assert_wired refuses a control with no palettes"
+ },
+ {
+  "name": "the script-binding half of assert_wired is dropped",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if has_control(page) and \"chrome-theme\" not in _scripts(page):",
+    "    if False and has_control(page) and \"chrome-theme\" not in _scripts(page):"
+   ]
+  ],
+  "expect": "assert_wired refuses a control with palettes but NO script"
+ },
+ {
+  "name": "_scripts reads the whole page, not just script tags",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return \"\\n\".join(re.findall(r\"<script[^>]*>(.*?)</script>\", page, re.S))",
+    "    return page"
+   ]
+  ],
+  "expect": "assert_wired refuses a control with palettes but NO script"
+ },
+ {
+  "name": "the refresh slug is not escaped into the attribute",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    s = _html.escape(slug, quote=True)",
+    "    s = slug"
+   ]
+  ],
+  "expect": "the slug is escaped into the attribute"
+ },
+ {
+  "name": "the stamp does not escape its input",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return (f'<span class=\"chrome-when\">generated <time>{_html.escape(when)}</time></span>')",
+    "    return (f'<span class=\"chrome-when\">generated <time>{when}</time></span>')"
+   ]
+  ],
+  "expect": "the stamp escapes its input"
+ },
+ {
+  "name": "chrome_bar always includes the refresh button",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    if refresh:\n        parts.append(refresh_control(slug))",
+    "    if True:\n        parts.append(refresh_control(slug))"
+   ]
+  ],
+  "expect": "refresh=False drops the refresh button, keeping the rest"
+ },
+ {
+  "name": "provenance invents a sha when git cannot be launched",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "        return f\"{now} \u00b7 commit UNKNOWN (git could not be run)\"",
+    "        return now"
+   ]
+  ],
+  "expect": "a git that cannot be LAUNCHED yields UNKNOWN, never a bare clock"
+ },
+ {
+  "name": "provenance drops the dirty qualifier",
+  "file": "scripts/page_chrome.py",
+  "edits": [
+   [
+    "    return out + (\" \u00b7 uncommitted changes\" if d.stdout.strip() else \"\")",
+    "    return out"
+   ]
+  ],
+  "expect": "...and a DIRTY one says so"
+ }
+]
