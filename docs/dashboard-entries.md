@@ -784,3 +784,36 @@ generators' inline cases are deleted rather than kept, so the layer count falls.
 Also noted, not fixed: `project-dashboard`, the anchor the architecture review declares, is not in
 `docs/anchors.md`. `check-anchors.py` passes only because `docs/reviews/` is out of scope by design.
 <!--tech-->
+
+## 2026-08-30
+The markdown-to-HTML work described in the previous entry is finished. All four pages — this
+dashboard, the backlog table, the goals view and the explainer viewer — now share one piece of code
+for turning markdown into HTML, and the mangled formatting is gone: zero on all three generated
+pages, against six and ten on the backlog page this morning. The SQL that was rendering with a
+character swallowed now reads correctly.
+
+Two things are worth knowing beyond that. The tests that used to protect this on one page moved with
+the code, so they now protect all four — the total is unchanged at seventy-three, deliberately,
+because a number that stayed the same is the only way to tell that coverage was *moved* rather than
+deleted. And the goals page turned out to gain nothing visible from the change: it renders only
+one-line goal sentences, none of which use any of the formatting involved. An earlier note here
+predicted a large change there; that prediction was wrong and is corrected.
+
+Nothing is waiting on you except two things: whether to merge the pull request, and one open
+question about how the test harness should sandbox itself.
+<!--tech-->
+Branch `fix/inline-renderer-seam`, 5 commits. Backlog #71 T1–T4 done; #72 and #73 filed.
+`scripts/page_markup.py` is the single renderer; all four generators import it.
+
+Falsifiers, measured on the regenerated pages: `backlog-table.html`, `goals.html` and
+`dashboard.html` all report 0 crossed tag spans, 0 markup emitted inside a code span, 0
+`javascript:` hrefs. The four generators agree on 8/8 probe inputs; before the seam they disagreed
+on 11 of 13. `--mutate .` reports 3 files, 73 mutations, 0 survivors, with EXPECTED_MUTATIONS split
+gen-dashboard 47 + page_markup 14 + check-dashboard-entry 12.
+
+⚠ The costly find was not in the renderer. All 12 relocated mutations reported `expect matched 0 red
+case(s)` because `check-plan-code.py:495` identifies a reddened case by parsing lines that START
+WITH `[FAIL] `, and page_markup's self-test used a different failure format — so nothing was ever
+seen as red. A formatting choice was indistinguishable from a total coverage hole, and it masked
+three real edit bugs underneath.
+<!--tech-->
