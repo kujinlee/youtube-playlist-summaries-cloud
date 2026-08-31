@@ -440,9 +440,15 @@ EXPECTED_MUTATIONS = {
     # deletion left the suite green: the after-sequence control, the duplicate-anchor refusal,
     # and `check()`'s redirected-home mkdir. Not circular — the orchestrating process is this
     # copy, the mutated target is the temp copy, and the nested spawn inherits `child_env`.
-    "scripts/gen-dashboard.py": 47,
+    # ⟳ 2026-08-31, ask-choices slice: gen-dashboard 47 -> 56, check-dashboard-entry
+    # 12 -> 18. The new entries cover the derived badge, the malformed-ask tray row,
+    # the cleared-entry exemption, the Worth-knowing NOT-CHECKED branch, the PR token
+    # and its budget, gh shape validation, and — on the gate — the decision grammar
+    # including the NESTING rule, whose absence silently dropped every option after a
+    # 4-space nest.
+    "scripts/gen-dashboard.py": 56,
     "scripts/page_markup.py": 14,
-    "scripts/check-dashboard-entry.py": 12,
+    "scripts/check-dashboard-entry.py": 18,
     "scripts/check-plan-code.py": 21,
     # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
     # vacuous cases of my own — a "dirty tree" assertion compared against a
@@ -1897,8 +1903,10 @@ def _self_test() -> int:
     # 9 entries for `gen-dashboard.py` (the file had grown 32% with the manifest
     # unchanged at 32); 53 → 59 (round 2, 6 more); 59 → 67 (round 3, 8 more, incl. a
     # LIVE `**` on the reader's page); 67 → 73 (round 4). 73 → 94 (backlog #74, the runner
-    # itself, +21; four of them added by its own review round). Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 105)
+    # itself, +21; four of them added by its own review round). 94 → 105 (page_chrome, +11).
+    # 105 → 120 (the ask-choices slice: +9 gen-dashboard, +6 check-dashboard-entry).
+    # Coverage may grow here; it may not shrink.
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 120)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so

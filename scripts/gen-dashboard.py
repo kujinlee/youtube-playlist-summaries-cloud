@@ -12,6 +12,7 @@ import tempfile
 import html as _html
 import re
 import sys
+import time as _time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import page_chrome  # noqa: E402
@@ -336,6 +337,15 @@ def _exemption_reader():
     """
     return getattr(_GATE, "exemption_reason")
 
+
+def _decision_reader():
+    """`decisions` / `decision_errors` off the already-imported `_GATE`, AT CALL
+    TIME — same rule as `_exemption_reader`, same reason recorded there: binding
+    them at import (`_DE = _GATE.decision_errors`) turns a later rename in the gate
+    into an import-time AttributeError, and then there is no page left to degrade.
+    """
+    return getattr(_GATE, "decisions"), getattr(_GATE, "decision_errors")
+
 def parse_entries(text: str) -> list[dict]:
     """Split on column-0 '##' only. A malformed block is RETURNED with an
     error, never dropped — the page must show it in place (spec §6.2).
@@ -353,7 +363,8 @@ def parse_entries(text: str) -> list[dict]:
     out: list[dict] = []
     seen: dict[str, int] = {}
     for b in blocks:
-        entry = {"raw": "\n".join(b), "error": None, "needs_you": False, "resolves": [],
+        entry = {"raw": "\n".join(b), "error": None, "needs_you": False,
+                 "heads_up": False, "resolves": [],
                  "date": None, "ordinal": 0, "id": None, "would_be_id": None,
                  "title": "", "plain": "", "tech": None}
         err = header_error(b[0])
@@ -377,6 +388,12 @@ def parse_entries(text: str) -> list[dict]:
                 # generator imported the grammar's symbols but not its meaning.
                 if f == "needs-you":
                     entry["needs_you"] = True
+                elif f == "heads-up":
+                    # ⚠ Added WITH the FLAG alternative in check-dashboard-entry.py,
+                    # never after it. The comment above records the measured cost of
+                    # doing otherwise: the gate's suite stayed fully green while
+                    # `f.split(":", 1)[1]` raised IndexError on EVERY render.
+                    entry["heads_up"] = True
                 elif f.startswith("resolved:"):
                     entry["resolves"].append(f.split(":", 1)[1].strip())
                 else:
@@ -436,8 +453,15 @@ def _pos(e: dict) -> tuple:
     return (e["date"] or "", e["ordinal"])
 
 
-def unresolved(entries: list[dict]) -> list[dict]:
-    """needs-you entries not cleared by a LATER [resolved: <id>] (spec §6.2)."""
+def cleared_ids(entries: list[dict]) -> set[str]:
+    """Ids cleared by a LATER [resolved: <id>] (spec §6.2).
+
+    Split out of `unresolved` so the CARD BADGE and the TRAY answer from one
+    computation. Reported by the user 2026-08-31: the tray said "Nothing needs
+    you." while three cards wore a "needs you" chip, because `:775` printed the
+    raw authored flag that nothing ever clears while the tray derived its list
+    here. One page, one question, two sources — see the ask-choices spec §1a.
+    """
     by_id = {e["id"]: e for e in entries if e["id"] and not e["error"]}
     cleared = set()
     for e in entries:
@@ -447,8 +471,39 @@ def unresolved(entries: list[dict]) -> list[dict]:
             t = by_id.get(r)
             if t is not None and _pos(e) > _pos(t):
                 cleared.add(t["id"])
+    return cleared
+
+
+def unresolved(entries: list[dict]) -> list[dict]:
+    """needs-you entries not cleared by a LATER [resolved: <id>] (spec §6.2)."""
+    cleared = cleared_ids(entries)
     return [e for e in entries
             if e["needs_you"] and not e["error"] and e["id"] not in cleared]
+
+
+def unresolved_heads_up(entries: list[dict]) -> list[dict]:
+    """heads-up entries not cleared. SAME mechanism as `unresolved`, deliberately.
+
+    The ask-choices spec §3 refuses a second clearing mechanism (an expiry) for
+    heads-ups: "this item is finished with" already has one, and two would
+    eventually disagree about the same entry.
+    """
+    cleared = cleared_ids(entries)
+    return [e for e in entries
+            if e["heads_up"] and not e["error"] and e["id"] not in cleared]
+
+
+def badge_of(entry: dict, cleared: set[str]) -> str:
+    """The card's badge, DERIVED — "", "needs you", "heads-up" or "resolved".
+
+    ⚠ Never read `entry["needs_you"]` directly at the render site. That is the
+    defect this function exists to close.
+    """
+    if entry["error"] or not (entry["needs_you"] or entry["heads_up"]):
+        return ""
+    if entry["id"] in cleared:
+        return "resolved"
+    return "needs you" if entry["needs_you"] else "heads-up"
 
 
 def bucket_days(dates: list[str], entries: list[dict], window: int, today: str) -> list[dict]:
@@ -511,6 +566,84 @@ def open_prs() -> tuple[list[dict] | None, str | None]:
             not isinstance(p, dict) or "number" not in p or "title" not in p for p in data):
         return None, "gh returned JSON in an unexpected shape"
     return data, None
+
+
+# ─── live PR state for a decision option (ask-choices spec §6) ───
+# ⚠ The LITERAL token, never a bare `#N`. This repo writes `#N` for backlog rows
+# constantly — "backlog #74", "#76/#77" — and a bare rule would resolve pull
+# request 74 and render a confident, wrong link.
+PR_TOKEN = re.compile(r"\bPR #(\d+)\b")
+PR_MAX_CALLS = 10
+PR_MAX_SECONDS = 60.0
+PR_NOTE = {
+    "open": "",
+    "merged": ' <span class="stale">stale — already merged</span>',
+    "closed": ' <span class="stale">stale — already closed</span>',
+    "missing": ' <span class="stale">no such pull request</span>',
+    "unknown": ' <span class="unknown">could not check</span>',
+    "exhausted": ' <span class="unknown">could not check — PR lookup budget exhausted</span>',
+}
+
+
+def pr_state(n: int, cache: dict, budget: dict) -> str:
+    """Live state of pull request `n`, bounded (spec §6).
+
+    ⚠ `_gh_json` times out PER CALL, so ten PRs is ten timeouts. The budget bounds
+    the RENDER, and exhaustion is its OWN answer — a partial render that looked
+    "checked" would be the absence/denial confusion this page exists to prevent.
+    """
+    if n in cache:
+        return cache[n]
+    if budget["calls"] >= PR_MAX_CALLS or budget["seconds"] >= PR_MAX_SECONDS:
+        return "exhausted"
+    t0 = _time.monotonic()
+    data, err = _gh_json(["pr", "view", str(n), "--json", "number,state"])
+    budget["calls"] += 1
+    budget["seconds"] += _time.monotonic() - t0
+    if err is not None:
+        # ⚠ Matched on gh's REAL message. The plan first matched "not found" and
+        # "no pull requests"; measured, gh says
+        #   GraphQL: Could not resolve to a PullRequest with the number of N.
+        # so neither matched, the branch was unreachable, and a transport failure
+        # and a missing PR were about to be reported identically.
+        low = err.lower()
+        state = ("missing"
+                 if "could not resolve to a pullrequest" in low
+                 or "no pull requests found" in low
+                 else "unknown")
+    elif not isinstance(data, dict) or not isinstance(data.get("state"), str):
+        # `_gh_json` only PARSES json; shape is validated here, as `open_prs` does.
+        state = "unknown"
+    else:
+        state = {"OPEN": "open", "MERGED": "merged",
+                 "CLOSED": "closed"}.get(data["state"].upper(), "unknown")
+    cache[n] = state
+    return state
+
+
+def repo_slug() -> str | None:
+    """`owner/name` for building PR links, or None.
+
+    None means the option renders as PLAIN TEXT with its state note — never a
+    guessed URL. A wrong link is worse than no link on a page whose job is to send
+    the reader somewhere real.
+    """
+    data, err = _gh_json(["repo", "view", "--json", "nameWithOwner"])
+    if err is not None or not isinstance(data, dict):
+        return None
+    slug = data.get("nameWithOwner")
+    return slug if isinstance(slug, str) and "/" in slug else None
+
+
+def _repo_once(box: list):
+    """⚠ Lazy, and both review halves asked for it. `_repo = repo_slug()` at the top
+    of `build` made EVERY render a network call — including renders with no PR
+    options at all, and including CI, which runs `--self-test` and then builds. It
+    also sat outside the lookup budget, so "bounded render" was false.
+    """
+    if not box:
+        box.append(repo_slug())
+    return box[0]
 
 
 def no_entry_prs(limit: int = 40) -> tuple[list[dict] | None, str | None]:
@@ -674,7 +807,12 @@ def _bar(day: dict, tallest: int, store_unknown: bool) -> str:
 
 
 GLOSSARY = [
-    ("needs you", "a decision is waiting on you — nothing else on the page is asking for anything"),
+    # ⚠ The second clause was "— nothing else on the page is asking for anything".
+    # It was already untrue of the open-PR rows in the same tray, and a "Worth
+    # knowing" block makes it plainly false. Trimmed to the part that is true.
+    ("needs you", "a decision is waiting on you, and the page lists your choices"),
+    ("heads-up", "worth knowing, but nothing is being asked of you"),
+    ("resolved", "this was an ask or a heads-up, and a later entry closed it"),
     ("entry", "one dated block you or the assistant wrote, in plain words, about what changed"),
     ("no entry recorded", "a branch was merged with its entry deliberately skipped, and said why"),
     ("shipped with no entry", "a day with commits and nothing written about them — the gap the entry rule exists to close"),
@@ -688,10 +826,58 @@ def build(entries, days, prs, pr_error, git_error, window,
     # empty state, so a run against `--store docs/typo.md` positively asserted a
     # location it had never opened).
     # ─── What needs you ───
+    # ONE computation, read by both the tray below and every card badge (§1a).
+    _cleared = cleared_ids(entries)
     need = unresolved(entries)
-    rows = [f'<li><a href="#{_slug(e["id"])}">{_inline(e["title"])}</a> '
-            f'<span class="when">{_html.escape(e["date"])} · {_html.escape(e["id"])}</span></li>'
-            for e in need]
+    REC_SPAN = ' <span class="rec">recommended</span>'
+    _pr_cache: dict[int, str] = {}
+    _pr_budget = {"calls": 0, "seconds": 0.0}
+    _repo_box: list = []          # [] = slug not looked up yet; filled on first PR #N
+    rows: list[str] = []
+    broken: list[str] = []
+    try:
+        _decisions, _decision_errors = _decision_reader()
+    except AttributeError as exc:
+        _decisions = _decision_errors = None
+        broken.append(f'<li class="unknown">I could not check whether the asks state '
+                      f'their choices — {_html.escape(str(exc))}. '
+                      f'Treat this as NOT CHECKED.</li>')
+    for e in need:
+        problems = _decision_errors(e["plain"], "needs-you") if _decision_errors else []
+        if problems:
+            # ⚠ NEVER e["error"]. That field feeds `unresolved`'s filter above, so
+            # setting it would DELETE this ask from the tray and the page would fall
+            # through to "Nothing needs you." in green — §1a rebuilt by its own fix.
+            # A malformed ask is LOUDER, never quieter.
+            broken.append(
+                f'<li class="unknown">Could not read one ask — '
+                f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a>: '
+                f'{_html.escape("; ".join(problems))}</li>')
+            continue
+        for d in (_decisions(e["plain"]) if _decisions else []):
+            # Built in a loop, not a nested f-string conditional: a backslash inside
+            # an f-string expression is a SyntaxError before Python 3.12.
+            opt_items = []
+            for o in d["options"]:
+                rec = REC_SPAN if o["recommended"] else ""
+                m = PR_TOKEN.search(o["text"])
+                if not m:
+                    opt_items.append(f'<li>{_inline(o["text"])}{rec}</li>')
+                    continue
+                n = int(m.group(1))
+                note = PR_NOTE[pr_state(n, _pr_cache, _pr_budget)]
+                slug = _repo_once(_repo_box)
+                if slug:
+                    body = (f'<a href="https://github.com/{_html.escape(slug)}'
+                            f'/pull/{n}">{_inline(o["text"])}</a>')
+                else:
+                    body = _inline(o["text"])
+                opt_items.append(f'<li>{body}{rec}{note}</li>')
+            rows.append(
+                f'<li><span class="q">{_inline(d["question"])}</span> '
+                f'<span class="when">{_html.escape(e["date"])} · '
+                f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a></span>'
+                f'<ul class="opts">{"".join(opt_items)}</ul></li>')
     if pr_error:
         pr_note = (f'<p class="unknown">I could not also check open pull requests — '
                    f'{_html.escape(pr_error)}. Treat this as NOT CHECKED.</p>')
@@ -708,12 +894,50 @@ def build(entries, days, prs, pr_error, git_error, window,
                   f'<p class="unknown">I could not read the entry store — '
                   f'{_html.escape(store_error)}, so I cannot tell whether anything in '
                   f'it needs you. Treat this as NOT CHECKED.</p>')
+    # Malformed asks join the tray LAST, so they cannot be mistaken for decisions —
+    # but they DO make `rows` non-empty, which is what stops the empty-state branch
+    # below rendering "Nothing needs you." over an ask nobody can act on.
+    rows += broken
     if rows:
         needs_html = '<ul class="needs">' + "".join(rows) + "</ul>" + store_note + pr_note
     elif store_error or pr_error:
         needs_html = store_note + pr_note
     else:
         needs_html = '<p class="none">Nothing needs you.</p>'
+
+    # ─── Worth knowing ───
+    # Its OWN heading, deliberately. The reported defect was two different promises
+    # rendered under one; merging them back with a different badge colour rebuilds it.
+    hu_rows = []
+    for e in unresolved_heads_up(entries):
+        # ⚠ Both review halves: v1 declared a dependency on `decision_errors` here
+        # and never called it, so a [heads-up] carrying a live **Decide:** block
+        # rendered as valid and §4's "a heads-up cannot ask" had NO enforcement
+        # point anywhere in the slice.
+        hu_problems = _decision_errors(e["plain"], "heads-up") if _decision_errors else []
+        if hu_problems:
+            hu_rows.append(
+                f'<li class="unknown">Could not read one heads-up — '
+                f'<a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a>: '
+                f'{_html.escape("; ".join(hu_problems))}</li>')
+            continue
+        first = e["plain"].split("\n\n")[0].strip()
+        hu_rows.append(
+            f'<li><a href="#{_slug(e["id"])}">{_html.escape(e["id"])}</a> '
+            f'<span class="when">{_html.escape(e["date"])}</span>'
+            f'<div class="prose">{_prose(first, drop_headline=False)}</div></li>')
+    # ⚠ The omit-when-empty rule applies ONLY when the store was READ. Zero parsed
+    # heads-ups from an unreadable store would omit the heading, and a missing
+    # heading reads as "nothing worth knowing" — absence and denial looking alike,
+    # which is the confusion this page exists to prevent. Two individually correct
+    # dead-input rules would otherwise compose into a silent one.
+    if hu_rows:
+        worth_html = ('<h2>Worth knowing</h2><ul class="worth">'
+                      + "".join(hu_rows) + "</ul>" + store_note)
+    elif store_error:
+        worth_html = "<h2>Worth knowing</h2>" + store_note
+    else:
+        worth_html = ""
 
     # ─── The chart ───
     legend = ""
@@ -765,7 +989,9 @@ def build(entries, days, prs, pr_error, git_error, window,
             tech = ("" if not e["tech"] else
                     f'<details id="{eid}-tech"><summary>Raw technical detail</summary>'
                     f'<pre>{_html.escape(e["tech"])}</pre></details>')
-            flag = ' <span class="flag">needs you</span>' if e["needs_you"] else ""
+            _b = badge_of(e, _cleared)
+            _bcls = "flag resolved" if _b == "resolved" else "flag"
+            flag = (f' <span class="{_bcls}">{_html.escape(_b)}</span>') if _b else ""
             parts.append(
                 f'{day_anchor}<article class="entry" id="{eid}">'
                 f'<h3>{_html.escape(e["date"])} '
@@ -894,6 +1120,12 @@ padding:14px 18px;margin-bottom:10px}}
 .entry .prose strong{{color:var(--p-mark);font-weight:600}}
 .entry .prose code{{font-family:var(--mono);font-size:.88em;color:var(--p-lede)}}
 .flag{{color:var(--need);font-weight:700}}
+.needs .q{{font-weight:600}}
+.needs .opts{{margin:.35rem 0 .6rem 1.1rem;padding:0}}
+.needs .opts li{{margin:.15rem 0}}
+.needs .rec{{font-size:.78em;opacity:.75;border:1px solid currentColor;border-radius:3px;padding:0 .3em}}
+.needs .stale{{font-size:.78em;opacity:.8;font-style:italic}}
+.flag.resolved{{color:inherit;font-weight:400;opacity:.55;border:1px solid currentColor;border-radius:3px;padding:0 .3em;font-size:.82em}}
 .err{{color:var(--err);font-weight:600;margin:0 0 8px}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--fg3);font-size:14px}}
 #glossary dt{{font-weight:600;margin-top:8px}} #glossary dd{{margin:2px 0 0;color:var(--fg3)}}
@@ -904,6 +1136,7 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <h1>Project dashboard</h1>
 {page_chrome.chrome_bar("dashboard", generated_at)}
 <h2>What needs you</h2>{needs_html}
+{worth_html}
 <h2>The last {window} days</h2><div class="chart">{chart}</div>{legend}{chart_note}
 <h2>What changed</h2>{entries_html}
 <h2>Branches that skipped their entry</h2>{exempt_html}
@@ -1131,8 +1364,37 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("bad date keeps raw", "Impossible date." in bad[0]["raw"], True)
     typo = parse_entries("## 2026-08-28 [needs-yo]\nTypo flag.\n")
     case("unknown flag is an error", typo[0]["error"] is not None, True)
+    hu = parse_entries("## 2026-08-28 [heads-up]\nWorth knowing.\n")
+    case("heads-up parses", hu[0]["error"], None)
+    case("heads-up sets heads_up", hu[0]["heads_up"], True)
+    case("heads-up is not needs_you", hu[0]["needs_you"], False)
+    ny_only = parse_entries("## 2026-08-28 [needs-you]\nAn ask.\n")
+    case("needs-you does not set heads_up", ny_only[0]["heads_up"], False)
+    both = parse_entries("## 2026-08-28 [needs-you] [heads-up]\nBoth.\n")
+    case("both flags is an error", both[0]["error"] is not None, True)
     two = parse_entries("## 2026-08-28\nFirst.\n## 2026-08-28\nSecond.\n")
     case("two entries same date", [x["id"] for x in two], ["2026-08-28/1", "2026-08-28/2"])
+
+    # ── the badge is DERIVED, not the authored flag (ask-choices spec §5c) ──
+    st = parse_entries(
+        "## 2026-08-28 [needs-you]\nAn open ask.\n"
+        "## 2026-08-29 [heads-up]\nWorth knowing.\n"
+        "## 2026-08-30 [resolved: 2026-08-28/1]\nDone with it.\n"
+        "## 2026-08-31\nOrdinary entry.\n")
+    cl = cleared_ids(st)
+    case("the resolved ask is cleared", "2026-08-28/1" in cl, True)
+    case("resolved ask badges as resolved", badge_of(st[0], cl), "resolved")
+    case("open heads-up badges as heads-up", badge_of(st[1], cl), "heads-up")
+    case("the clearing entry has no badge", badge_of(st[2], cl), "")
+    case("an ordinary entry has no badge", badge_of(st[3], cl), "")
+    op = parse_entries("## 2026-08-28 [needs-you]\nStill open.\n")
+    case("an open ask badges as needs you", badge_of(op[0], cleared_ids(op)), "needs you")
+    case("a cleared heads-up leaves the unresolved list",
+         [e["id"] for e in unresolved_heads_up(parse_entries(
+             "## 2026-08-28 [heads-up]\nKnow this.\n"
+             "## 2026-08-29 [resolved: 2026-08-28/1]\nDealt with.\n"))], [])
+    case("an open heads-up is in the unresolved list",
+         [e["id"] for e in unresolved_heads_up(st)], ["2026-08-29/1"])
     tech = parse_entries("## 2026-08-28\nTitle.\nMore plain.\n<!--tech-->\nPR #1.\n")
     case("plain stops at marker", tech[0]["plain"], "Title.\nMore plain.")
     case("tech captured", tech[0]["tech"], "PR #1.")
@@ -1243,7 +1505,15 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
         parts = html.split(f"<h2>{heading}</h2>", 1)
         return "" if len(parts) < 2 else parts[1].split("<h2>", 1)[0]
 
-    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n<!--tech-->\nPR #1.\n")
+    # ⚠ This fixture now carries a decision block. It is an UNRESOLVED [needs-you],
+    # so once the tray validates asks it would otherwise render as "Could not read
+    # one ask" and leave the What-needs-you section — reddening the case below, which
+    # exists specifically to assert on that section. Found by the plan review, which
+    # noticed that the ask-choices work verified the real STORE (where all three asks
+    # are resolved) and never the SUITE'S OWN FIXTURES (where this one is not).
+    ents3 = parse_entries("## 2026-08-28 [needs-you]\nDecide the thing.\n\n"
+                          "**Decide:** Decide the thing.\n- do it\n- do not\n"
+                          "<!--tech-->\nPR #1.\n")
     d3 = bucket_days(["2026-08-28"], ents3, 2, "2026-08-28")
     html = _B(ents3, d3)
     case("needs-you surfaces", "Decide the thing." in html, True)
@@ -1310,6 +1580,80 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     need_html = _B(ents3, d3, prs=None, pr_error="gh exited 1: auth")
     case("a gh failure still shows the store's needs IN THAT SECTION",
          "Decide the thing." in _section(need_html, "What needs you"), True)
+
+    # ── the tray lists DECISIONS and their OPTIONS (ask-choices spec §5a) ──
+    ASK = parse_entries("## 2026-08-28 [needs-you]\nAn ask.\n\n"
+                        "**Decide:** Merge the harness change\n"
+                        "- merge PR #181 [recommended]\n- hold it\n")
+    ask_tray = _section(_B(ASK, bucket_days([], ASK, 2, "2026-08-28")), "What needs you")
+    case("the tray states the question", "Merge the harness change" in ask_tray, True)
+    case("the tray lists an option", "hold it" in ask_tray, True)
+    case("the tray marks the recommendation", "recommended" in ask_tray, True)
+    case("the tray does NOT fold the options", "<details" in ask_tray, False)
+
+    # A malformed ask must be LOUDER, never quieter — spec §7 row 4.
+    BAD = parse_entries("## 2026-08-28 [needs-you]\nAn ask with no decision.\n")
+    bad_tray = _B(BAD, bucket_days([], BAD, 2, "2026-08-28"))
+    case("a malformed ask does NOT read as an all-clear",
+         "Nothing needs you." in bad_tray, False)
+    case("a malformed ask names itself",
+         "2026-08-28/1" in _section(bad_tray, "What needs you"), True)
+    case("a malformed ask says what is missing",
+         "names no decision" in _section(bad_tray, "What needs you"), True)
+    case("a malformed ask is NOT marked unparseable",
+         "Could not parse this entry" in bad_tray, False)
+
+    # A CLEARED ask is never validated — this is what keeps the historical store
+    # intact without a cutover date (spec §11).
+    CLEARED = parse_entries("## 2026-08-28 [needs-you]\nOld ask, no decision block.\n"
+                            "## 2026-08-29 [resolved: 2026-08-28/1]\nDone.\n")
+    cleared_html = _B(CLEARED, bucket_days([], CLEARED, 3, "2026-08-29"))
+    case("a cleared ask is never validated",
+         "Nothing needs you." in cleared_html, True)
+    case("and it is not marked broken",
+         "Could not parse this entry" in cleared_html, False)
+
+    # ── Worth knowing (ask-choices spec §5b) ──
+    HU = parse_entries("## 2026-08-28 [heads-up]\nCI now checks the plan against the code.\n\n"
+                       "It will turn red until the plan is edited to match.\n")
+    hu_html = _B(HU, bucket_days([], HU, 2, "2026-08-28"))
+    case("worth-knowing heading appears", "<h2>Worth knowing</h2>" in hu_html, True)
+    case("its first paragraph is on the page",
+         "CI now checks the plan against the code." in _section(hu_html, "Worth knowing"), True)
+    case("the heads-up is NOT folded", "<details" in _section(hu_html, "Worth knowing"), False)
+    case("a heads-up does not appear under needs-you",
+         "CI now checks" in _section(hu_html, "What needs you"), False)
+    NONE = parse_entries("## 2026-08-28\nOrdinary.\n")
+    case("no heads-ups means no heading",
+         "Worth knowing" in _B(NONE, bucket_days([], NONE, 2, "2026-08-28")), False)
+    err_html = _B([], [], store_error="boom")
+    case("an unreadable store still shows the heading",
+         "<h2>Worth knowing</h2>" in err_html, True)
+    case("and says it was not checked",
+         "NOT CHECKED" in _section(err_html, "Worth knowing"), True)
+    HU_ASKS = parse_entries("## 2026-08-28 [heads-up]\nThis one asks.\n\n"
+                            "**Decide:** Should not be here\n- a\n- b\n")
+    case("a heads-up carrying a Decide block is called out",
+         "Could not read one heads-up" in _B(
+             HU_ASKS, bucket_days([], HU_ASKS, 2, "2026-08-28")), True)
+    HU_CLEARED = parse_entries("## 2026-08-28 [heads-up]\nKnow this.\n"
+                               "## 2026-08-29 [resolved: 2026-08-28/1]\nDealt with.\n")
+    case("a cleared heads-up leaves the Worth knowing block",
+         "Worth knowing" in _B(HU_CLEARED, bucket_days([], HU_CLEARED, 3, "2026-08-29")), False)
+    case("glossary gloss is trimmed",
+         any(g[0] == "needs you" and "nothing else on the page" not in g[1]
+             for g in GLOSSARY), True)
+    case("glossary defines heads-up", any(g[0] == "heads-up" for g in GLOSSARY), True)
+    case("glossary defines resolved", any(g[0] == "resolved" for g in GLOSSARY), True)
+
+    # PR-state cases need `_with_run`, which is defined further down with the other
+    # subprocess stubs. They live there, beside the `open_prs` cases.
+    case("PR token matches the literal form",
+         [m.group(1) for m in PR_TOKEN.finditer("merge PR #181 now")], ["181"])
+    case("a bare number is NOT a PR", PR_TOKEN.findall("close backlog #74"), [])
+    case("a lone hash is NOT a PR", PR_TOKEN.findall("issue #12"), [])
+    case("exhaustion says WHY, distinctly from a gh failure",
+         PR_NOTE["exhausted"] != PR_NOTE["unknown"], True)
 
     # "In place" on the order the store is ACTUALLY written: newest at the END.
     appended = parse_entries("## 2026-08-27\nOlder good.\n"
@@ -1578,6 +1922,42 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
 
     # (c) `gh` succeeds and returns something that is not JSON. Round 4's U13: the
     # JSONDecodeError branch returning `[], None` renders as a confident zero.
+    # ── live PR state for a decision option (ask-choices spec §6) ──
+    _pc, _pb = {}, {"calls": 0, "seconds": 0.0}
+    case("an open PR reads open",
+         _with_run(lambda *a, **k: _R(0, '{"number":1,"state":"OPEN"}', ""),
+                   lambda: pr_state(1, _pc, _pb)), "open")
+    case("a merged PR reads merged",
+         _with_run(lambda *a, **k: _R(0, '{"number":2,"state":"MERGED"}', ""),
+                   lambda: pr_state(2, _pc, _pb)), "merged")
+    # gh's REAL missing-PR message. A bare rc=1 with EMPTY stderr yields
+    # "gh exited 1: ", which matches nothing and reads "unknown" — the plan's first
+    # version of this case could never have gone green, and the real branch was
+    # unreachable too. Found by both review halves, by execution.
+    case("a missing PR reads missing",
+         _with_run(lambda *a, **k: _R(
+             1, "", "GraphQL: Could not resolve to a PullRequest with the number of 3."),
+             lambda: pr_state(3, _pc, _pb)), "missing")
+    case("a transport failure reads unknown, NOT missing",
+         _with_run(lambda *a, **k: _R(1, "", "dial tcp: lookup api.github.com: no such host"),
+                   lambda: pr_state(31, {}, {"calls": 0, "seconds": 0.0})), "unknown")
+    case("a bad shape reads unknown",
+         _with_run(lambda *a, **k: _R(0, '{"number":4}', ""),
+                   lambda: pr_state(4, _pc, _pb)), "unknown")
+    _calls_before = _pb["calls"]
+    case("a cached PR costs no call",
+         (pr_state(1, _pc, _pb), _pb["calls"]), ("open", _calls_before))
+    case("an exhausted call budget reads exhausted",
+         pr_state(99, {}, {"calls": PR_MAX_CALLS, "seconds": 0.0}), "exhausted")
+    case("an exhausted clock reads exhausted",
+         pr_state(98, {}, {"calls": 0, "seconds": PR_MAX_SECONDS}), "exhausted")
+    case("a missing repo slug means no link, not a guessed one",
+         _with_run(lambda *a, **k: _R(1, "", "not a git repository"),
+                   lambda: repo_slug()), None)
+    case("a good repo slug is returned",
+         _with_run(lambda *a, **k: _R(0, '{"nameWithOwner":"o/r"}', ""),
+                   lambda: repo_slug()), "o/r")
+
     v, err = _with_run(lambda *a, **k: _R(0, "not json at all", ""), open_prs)
     case("open_prs: unparseable gh output is a could-not-tell, not zero",
          (v, bool(err)), (None, True))
