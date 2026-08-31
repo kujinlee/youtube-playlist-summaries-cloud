@@ -1009,3 +1009,59 @@ caught mutation into a survivor — both found by `--mutate .`, not by reading.
 
   page_chrome 47/47 · gen-dashboard 217/217 · brief-compose 40/40 · explainer-serve 71/71
   gen-backlog-page 71/71 · gen-goals-page 15/15 · --mutate . 5 files, 105 mutations, 0 survivors
+
+## 2026-08-31 [needs-you]
+The page can no longer tell you that something needs you and then decline to say what.
+
+You reported three cards flagged "needs you" while the line above them read "Nothing needs you." Both
+were right about different things, which is the whole problem: the summary line worked out which asks
+had since been closed, and the cards printed the label exactly as it was first written, with nothing
+ever clearing it. One page, one question, two answers. The cards now say "resolved", and the three in
+question are.
+
+The second half is what you actually asked for. An ask used to show its headline, so "whether to
+merge" arrived with no pull request named and no choices offered. An ask now carries its decisions,
+and the page lists them with the options unfolded. Where an option names a pull request, the page
+checks whether it is still open and marks it stale if you already merged it — the exact trap you hit
+by hand this morning.
+
+Anything that only needs your awareness is now a separate thing called a heads-up, in its own block,
+and it is not allowed to ask for anything.
+
+Three rounds of adversarial review, none of which agreed with me the first time. The most useful one
+found that a correctly written ask could silently lose options: indent a sub-bullet four spaces and
+every choice after it disappeared from the page, while the checker complained that the ask offered
+only one option. On a change whose entire purpose is listing your choices, quietly dropping choices
+was the worst thing available, and no test I had written could have found it.
+
+**Decide:** Merge the ask-choices change
+- merge PR #186 [recommended]
+- hold it and tell me what to change
+- close it unmerged
+
+**Decide:** The heads-up expiry, which I argued for on reasoning that turned out to be wrong
+- keep no expiry — a heads-up that ages out silently looks the same as one you dealt with [recommended]
+- give heads-ups a bounded lifetime after all
+- leave it open and decide when a heads-up actually gets old
+<!--tech-->
+Branch `feat/dashboard-ask-choices`, 12 commits. Spec v3 + plan v2 + four review docs.
+
+Renderer-only enforcement by your decision; the CI gate half is backlog **#78**, filed with its
+measurements. `decision_errors` lives in `check-dashboard-entry.py` because that file owns the
+grammar and the import arrow already points generator → gate.
+
+The grammar is recognised only outside fenced code, indented code, HTML comments and blockquotes —
+which is why this entry can carry a fenced example without tripping its own gate:
+
+```
+**Decide:** Not a real ask
+- a
+- b
+```
+
+`gen-dashboard` 217 → 266 cases, `check-dashboard-entry` 46 → 77, `EXPECTED_MUTATIONS` 105 → 120,
+`--mutate .` 120/0 survivors.
+
+⚠ v1 of the spec asserted that `git diff -U0` omits an added entry's body. It does not — an appended
+entry is entirely additions. Both round-1 reviewers agreed with the false premise; one `git diff`
+refuted it, and v3 deleted the machinery v2 had built on top of it.
