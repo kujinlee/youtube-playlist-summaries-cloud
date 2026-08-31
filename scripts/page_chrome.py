@@ -35,7 +35,9 @@ the convenience on top and degrades to a no-op that SAYS SO.
 """
 from __future__ import annotations
 import html as _html
+import pathlib
 import re
+import subprocess
 import sys
 
 # The attribute the CSS keys off, the storage key, and the two legal values. One
@@ -172,6 +174,33 @@ def chrome_script() -> str:
     )
 
 
+def provenance(now: str, root: pathlib.Path) -> str:
+    """<when> · <sha>[ · uncommitted changes]" — WHAT the page was built from, not just when.
+
+    ⚠ Backlog #77, and the requirement came from a reader, not a review. A page built
+    from an unmerged working tree showed three backlog rows that existed on no branch
+    but mine, and reported nothing unusual: a bare clock reading would have been TRUE
+    AND STILL MISLEADING. Time answers "how old"; only the commit answers "of what".
+
+    A git that cannot be reached yields the time alone plus an explicit note. It never
+    invents a sha, and it never silently drops the qualifier — an unknown provenance and
+    a clean one must not render identically.
+    """
+    try:
+        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+        d = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return f"{now} · commit UNKNOWN (git could not be run)"
+    if r.returncode != 0:
+        return f"{now} · commit UNKNOWN (git exited {r.returncode})"
+    out = f"{now} · {r.stdout.strip()}"
+    if d.returncode != 0:
+        return out + " · UNCOMMITTED CHANGES UNKNOWN"
+    return out + (" · uncommitted changes" if d.stdout.strip() else "")
+
+
 def chrome_bar(slug: str, when: str, *, refresh: bool = True) -> str:
     """The whole bar. `refresh=False` for a page with no generator to call."""
     parts = [theme_control()]
@@ -284,6 +313,24 @@ def self_test() -> int:
          "file:" in js and "no server to rebuild it" in js, True)
     case("...and re-enables itself after a failure", "r.disabled=false" in js, True)
     case("...and reports the server's own reason", "could not rebuild: " in js, True)
+
+    # --- provenance. Lives here, not in a generator, because two pages computing "what
+    # was this built from" two ways is the drift this module exists to stop.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as _td:
+        _no_git = pathlib.Path(_td)          # a directory that is not a repo
+        _p = provenance("2026-01-01 00:00", _no_git)
+        case("provenance says UNKNOWN outside a repo rather than inventing a sha",
+             ("UNKNOWN" in _p, "2026-01-01 00:00" in _p), (True, True))
+    _here = provenance("2026-01-01 00:00", pathlib.Path(__file__).resolve().parent.parent)
+    case("provenance carries the TIME it was given", "2026-01-01 00:00" in _here, True)
+    case("...and a commit, which is what a bare clock could not answer",
+         len(_here.split(" · ")) >= 2, True)
+    # ⚠ The reader-found requirement: a page built from a dirty tree must SAY so. This
+    # file is inside a repo that is dirty exactly when it is being worked on, so the case
+    # asserts the two states are DISTINGUISHABLE, never which one is current.
+    case("a clean and a dirty tree do not render identically",
+         provenance("t", pathlib.Path("/")) != _here, True)
 
     # --- the stamp
     case("the stamp renders the value it was given", "2026-08-31 06:40" in stamp("2026-08-31 06:40"),

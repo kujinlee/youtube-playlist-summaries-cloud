@@ -680,33 +680,6 @@ GLOSSARY = [
     ("shipped with no entry", "a day with commits and nothing written about them — the gap the entry rule exists to close"),
 ]
 
-def provenance(now: str, root: pathlib.Path) -> str:
-    """"<when> · <sha>[ · uncommitted changes]" — WHAT the page was built from, not just when.
-
-    ⚠ Backlog #77, and the requirement came from a reader, not a review. A page built
-    from an unmerged working tree showed three backlog rows that existed on no branch
-    but mine, and reported nothing unusual: a bare clock reading would have been TRUE
-    AND STILL MISLEADING. Time answers "how old"; only the commit answers "of what".
-
-    A git that cannot be reached yields the time alone plus an explicit note. It never
-    invents a sha, and it never silently drops the qualifier — an unknown provenance and
-    a clean one must not render identically.
-    """
-    try:
-        r = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
-                           capture_output=True, text=True, timeout=10)
-        d = subprocess.run(["git", "-C", str(root), "status", "--porcelain"],
-                           capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return f"{now} · commit UNKNOWN (git could not be run)"
-    if r.returncode != 0:
-        return f"{now} · commit UNKNOWN (git exited {r.returncode})"
-    out = f"{now} · {r.stdout.strip()}"
-    if d.returncode != 0:
-        return out + " · UNCOMMITTED CHANGES UNKNOWN"
-    return out + (" · uncommitted changes" if d.stdout.strip() else "")
-
-
 def build(entries, days, prs, pr_error, git_error, window,
           exemptions, exempt_error, store, store_error, generated_at="") -> str:
     # `store` and `store_error` have NO defaults on purpose. A default would let
@@ -2426,7 +2399,7 @@ def main(argv: list[str]) -> int:
     days = bucket_days(dates or [], entries, a.window, today)
     frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
                  exempt_error, _store_label(store), store_error,
-                 provenance(_dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
+                 page_chrome.provenance(_dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
     if a.fragment_only:
         a.fragment_only.write_text(frag, encoding="utf-8")
         print(f"wrote fragment {a.fragment_only}")

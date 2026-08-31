@@ -59,9 +59,11 @@ import importlib.util
 import pathlib
 import re
 import subprocess
+import datetime as _dt
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 import tempfile
 
@@ -816,7 +818,8 @@ def _ago(ts: int, now: int | None = None) -> str:
     return f'<time datetime="{when:%Y-%m-%d}" title="{when:%Y-%m-%d %H:%M}">{rel}</time>'
 
 
-def build(rows: list[dict], sha: str, edited: str, stamp: str) -> str:
+def build(rows: list[dict], sha: str, edited: str, stamp: str,
+          generated_at: str = "") -> str:
     open_rows = [r for r in rows if not r["closed"]]
     closed_rows = [r for r in rows if r["closed"]]
     by_sev = {k: sum(1 for r in open_rows if r["sev"] == k)
@@ -1212,10 +1215,12 @@ table.warn td.why{{font-family:var(--serif);font-size:.9rem;line-height:1.5;colo
   .gate{{width:auto}}
 }}
 @media (max-width:620px){{.item{{flex-direction:column;gap:.2rem}} h1{{font-size:1.65rem}}}}
+{page_chrome.chrome_css()}
 </style>
 
 <div class="wrap">
 <h1>The backlog, item by item</h1>
+{page_chrome.chrome_bar("backlog-table", generated_at)}
 <p class="dek">Every row of <code>docs/backlog.md</code>, parsed in this run — not summarised. The
 severity stripe records severity <em>when the item was filed</em>; the Status cell is the only live
 truth, which is why it is reproduced verbatim inside every card.</p>
@@ -1429,6 +1434,7 @@ high {by_sev['high']}, med {by_sev['med']}, low {by_sev['low']}, unmarked {by_se
   classify();
 }})();
 </script>
+<script>{page_chrome.chrome_script()}</script>
 """
 
 
@@ -1523,8 +1529,18 @@ def _luminance(colour: str) -> float:
 def link_contrast_errors(page: str, minimum: float = LINK_MIN) -> list[str]:
     """Every link-colour / surface pair below `minimum`, in EVERY :root palette.
 
-    All four blocks are checked, not just the two media-query ones: the page has a manual
-    theme toggle, so `:root[data-theme=...]` is live CSS, not decoration.
+    All four blocks are checked, not just the two media-query ones.
+
+    ⚠ THIS SENTENCE USED TO BE FALSE, and that is worth keeping. It read "the page has a
+    manual theme toggle, so `:root[data-theme=…]` is live CSS, not decoration" — and no
+    such toggle existed anywhere in the repo. Measured 2026-08-31 for backlog #76:
+    `setAttribute('data-theme')` and `documentElement.dataset.theme` returned ZERO hits
+    across `scripts/` and across every live page. The palettes were written in
+    anticipation, the control was never built, and a guard spent real work validating
+    renderings no reader could reach while stating the opposite as fact. It is true now
+    because `page_chrome.theme_control()` is on the page and `page_chrome.assert_wired()`
+    refuses to write a page where it would not work — a claim about a mechanism needs the
+    mechanism, not a comment.
 
     RAISES ShapeError when it cannot find the palettes or the unscoped rule. A contrast
     check that never reached a stylesheet has not passed — and from a list of zero
@@ -1883,7 +1899,10 @@ def main() -> int:
                          git("log", "-1", "--format=%cI", "--",
                              "docs/backlog.md")[:16].replace("T", " "),
                          subprocess.run(["date", "+%Y-%m-%d %H:%M %Z"],
-                                        capture_output=True, text=True).stdout.strip())
+                                        capture_output=True, text=True).stdout.strip(),
+                         page_chrome.provenance(
+                             _dt.datetime.now().strftime("%Y-%m-%d %H:%M"), REPO))
+        page_chrome.assert_wired(fragment, "gen-backlog-page.py")
     except ShapeError as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         print("Nothing was written; the existing page is left as it was.", file=sys.stderr)

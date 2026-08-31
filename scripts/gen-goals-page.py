@@ -45,6 +45,7 @@ hid it would be a report about its best subject rather than a dashboard over all
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import pathlib
 import re
 import subprocess
@@ -52,6 +53,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -367,16 +369,18 @@ def render_goal(a: dict) -> str:
     return "\n".join(parts)
 
 
-def build(anchors: list[dict], sha: str, stamp: str) -> str:
+def build(anchors: list[dict], sha: str, stamp: str, generated_at: str = "") -> str:
     spined = sum(1 for a in anchors if a["spine"])
     docs = sum(len(a["docs"]) for a in anchors)
     body = "\n".join(render_goal(a) for a in anchors)
     return f"""<title>Goals — what this project is pursuing, and where each stands</title>
-<style>{CSS}</style>
+<style>{CSS}
+{page_chrome.chrome_css()}</style>
 <div class="wrap">
 <header class="mast">
   <div class="eyebrow">Generated from the anchor headers · {esc(stamp)} · {esc(sha)}</div>
   <h1>Goals</h1>
+  {page_chrome.chrome_bar("goals", generated_at)}
   <p class="standfirst">One card per goal, keyed by its <strong>anchor</strong> — the name that
     survives a rename. <strong>{len(anchors)}</strong> goals, <strong>{docs}</strong> documents,
     <strong>{spined}</strong> with a milestone spine.</p>
@@ -399,6 +403,7 @@ def build(anchors: list[dict], sha: str, stamp: str) -> str:
     <code>scripts/check-anchors.py</code>.</p>
 </footer>
 </div>
+<script>{page_chrome.chrome_script()}</script>
 """
 
 
@@ -485,9 +490,12 @@ def main() -> int:
                            capture_output=True, text=True).stdout.strip() or "unknown"
 
     anchors = collect(DOCS, gen.read_text())
-    fragment = build(anchors, sha, stamp)
+    fragment = build(anchors, sha, stamp,
+                     page_chrome.provenance(
+                         _dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
 
     if args.fragment_only:
+        page_chrome.assert_wired(fragment, "gen-goals-page.py")
         args.fragment_only.write_text(fragment)
         print(f"wrote fragment {args.fragment_only}")
         return 0
@@ -497,6 +505,7 @@ def main() -> int:
     # (2026-08-24) exists to prevent.
     with tempfile.TemporaryDirectory() as td:
         frag = pathlib.Path(td) / "goals-fragment.html"
+        page_chrome.assert_wired(fragment, "gen-goals-page.py")
         frag.write_text(fragment)
         r = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "brief-compose.py"),
