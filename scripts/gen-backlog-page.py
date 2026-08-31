@@ -246,10 +246,6 @@ GROUPS: list[tuple[str, str, list[tuple[int, str]]]] = [
         (73, "A superseded piece of that same inventory is still in the file, and the only thing "
              "that still runs it is its own test — so part of its reported coverage is of "
              "machinery nothing uses. Waiting on the decision above."),
-        (74, "The tool that checks our other checks is the one thing nothing checks back. Every "
-             "safety verdict in the project passes through it, and unlike the three files it "
-             "polices, nothing proves its own 145 tests would notice if it broke — twice already, "
-             "code was deleted from it and its tests stayed green."),
      ]),
 ]
 

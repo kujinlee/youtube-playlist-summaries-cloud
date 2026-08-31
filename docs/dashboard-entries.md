@@ -919,3 +919,25 @@ only; rc 3 would be credited as caught); it now has cases and is in the manifest
 ⚠ The harness refused my predicted `expect` on one entry — the mutation reddened four other cases —
 so the entry was narrowed and its `expect` taken from the run. Third occurrence of predicting rather
 than measuring an `expect`. ⚠ `--mutate .` 13s → **3m13s**.
+
+## 2026-08-30 [resolved: 2026-08-30/5] [resolved: 2026-08-30/6]
+Both of the changes that were waiting on you are merged, so nothing is waiting on you now.
+
+That closes the whole set of four improvements the architecture review proposed at the start of the
+day. Two were built earlier, one was the sandboxing question you handed back to me, and the fourth
+turned out not to need building at all — re-measuring it showed the work it asked for would have
+made things worse, and the useful work was the opposite of what it named.
+
+Worth stating plainly, because it is the honest summary of the day: of the defects found across
+these two changes, the reviewers found more than I did, and two of them were in fixes I had written
+during the review itself. The checking machinery earned its cost.
+<!--tech-->
+PR #181 (`ebec7bc`) and PR #182 (`a5a012c`) merged; branches deleted. Master verified independently
+after the squash: `--self-test` 158/158, `--mutate .` 4 files / 94 mutations / 0 survivors.
+
+Phase 6 candidates 1–4 all closed: #180, #179, #181, and 4 closed-as-answered with backlog #74 as
+its residue. Dispositions in `docs/reviews/architecture-review-2026-08-30.md`.
+
+This entry is the status tick for #74, batched per `dev-process.md` rather than pushed to master
+alone. ⚠ The tick was NOT written before the PR opened, which the process asks for — that is why it
+needs its own follow-up here.

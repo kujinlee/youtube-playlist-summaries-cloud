@@ -1457,7 +1457,7 @@ demonstrably live. **Decided with the user: LEVEL the stack, do not flatten it.*
 backlog **#74** — give the mutation runner, the only layer nothing checked back, its own manifest.
 Dispositions for all four are recorded in the architecture review itself.
 
-## Runner mutation coverage — backlog #74 — anchor `status-visibility` — ✅ BUILT 2026-08-30, PR #182
+## Runner mutation coverage — backlog #74 — anchor `status-visibility` — ✅ MERGED 2026-08-30 (PR #182)
 
 Candidate 4's residue, not its proposal. `check-plan-code.py` had 158 self-test cases and **zero**
 mutations, while the three files it polices had 47, 14 and 12 — and every verdict in the project
@@ -1471,7 +1471,7 @@ passes through it.
 - [x] **Review round 1** — Codex High (two bypasses in the exemption marker; `home_escapes` is now
       tokenised and cannot excuse executable code) and Codex Medium (my "semantically equivalent"
       dismissal of `caught = rc == 1` was wrong — rc 3 would be credited as caught).
-- [ ] **Merge** — human gate, not given.
+- [x] **Merge** — PR #182, squash `a5a012c`.
 
 ⚠ **`--mutate .` runs 13s → 3m13s.** Real, measured, and not addressed here; the lever if it bites
 is parallelising the mutation loop, not dropping coverage.
