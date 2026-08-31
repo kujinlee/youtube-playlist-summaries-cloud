@@ -817,3 +817,52 @@ WITH `[FAIL] `, and page_markup's self-test used a different failure format — 
 seen as red. A formatting choice was indistinguishable from a total coverage hole, and it masked
 three real edit bugs underneath.
 <!--tech-->
+
+## 2026-08-30 [needs-you]
+The tool that deliberately breaks our own code to check the tests notice can no longer touch the
+pages you actually read. It runs that broken code with a fake home directory, so anything it writes
+lands in a scratch folder that is thrown away, instead of in `~/explainers/` where this dashboard
+and the backlog table live.
+
+This was the open question left by the previous entry, and it turned out not to be a close call. The
+reason to hesitate was that a fake home might make the tests less realistic — but nothing in the
+code names a real home path, so the fake one shifts both sides of every comparison together and
+changes no result. The full check reports the same seventy-three broken-code cases caught, none
+missed, exactly as before.
+
+The more useful thing came out of testing the new safeguard rather than writing it. A safeguard that
+protects against something nothing currently does is invisible when it breaks — "it held" and
+"nothing tried" look identical — so the new test genuinely writes a marker file and then checks
+where it landed. Doing that carelessly the first time left the marker behind and would have made the
+check fail forever afterwards, including once the problem was fixed. It names the marker per run now
+and cleans up after itself.
+
+Two things are waiting on you. One is whether to merge the pull request. The other is a
+recommendation: the review that started this work suggested the checking machinery had grown too
+tall and should be cut back. Having re-measured it, I think that is the wrong reading — the recent
+sharing work means the same checks now protect four pages instead of one, so their cost per page
+quartered. What the measurement does show is that the tallest layer, the checking tool itself, is the
+only one nothing checks in return. I tried it and it works. That is a proposal, not something I have
+filed.
+<!--tech-->
+Branch `fix/mutation-harness-home-redirect`, commit `75497af`. Phase 6 candidate 3.
+
+`check-plan-code.py:run_suite` is the only spawn point of a delivered script (4 call sites), so the
+redirect lives there via a new `child_env(d)` and cannot be forgotten by a caller. `mutate_delivered`
+creates the `.home` inside its own `TemporaryDirectory`; `child_env` deliberately does NOT mkdir,
+because `run_suite` is reachable from a case that passes `.` and would otherwise create `./.home` in
+the repo — an instrument editing the tree it measures.
+
+Measured, not assumed: `grep -rn '/Users/…' scripts/*.py scripts/mutations/*.json` finds no
+hardcoded home literal, over a control pattern that hits. `--mutate .` = 3 files, 73 mutations, 0
+survivors (unchanged). `--self-test` 136 → 139 cases; layer 7's `count_drift` caught the docstring
+drift unprompted. Mutation-tested with the parent's HOME redirected too: dropping `env=child_env(d)`
+reddens exactly the 3 new cases and leaves no debris.
+
+⚠ Candidate 4 re-scope, measured. Layers and their coverage: gen-dashboard 209 cases / 47 mutations,
+page_markup 78 / 14, check-dashboard-entry 46 / 12 — and check-plan-code.py 139 cases / **0
+mutations**, though it is 1,696 lines and every one of those 73 verdicts passes through it. Its own
+comments record two guards whose deletion left its suite green (`count_drift` inline, round 5;
+`_drift_rc`'s call, "deleting it left 92/92 green"). A scratch probe adding it as a 4th target ran
+4 files / 75 mutations / 0 survivors with clean controls — and immediately exposed the stateful
+canary above. Nothing filed to `docs/backlog.md`; that is the user's step.
