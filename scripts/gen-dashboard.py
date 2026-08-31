@@ -962,7 +962,23 @@ def scheme_palettes(css: str) -> dict[str, dict[str, str]]:
     base = hexes(light.group(1))
     if not base:
         raise ValueError("the light :root palette parsed EMPTY")
-    return {"light": base, "dark": {**base, **hexes(dark.group(1))}}
+    out = {"light": base, "dark": {**base, **hexes(dark.group(1))}}
+    # ⟳ 2026-08-31, backlog #76/#77. EVERY `:root[data-theme=…]` palette too, ENUMERATED
+    # rather than positioned. Until the theme control existed these blocks did not, so two
+    # palettes were the whole population; the moment a page can be switched by hand there
+    # are four, and a reader that finds the media-query block and stops would check the
+    # renderings nobody sees while ignoring the two a reader can actually reach. That is
+    # the same defect as #76 itself — a guard reporting green about a rendering it cannot
+    # get to — so it is fixed BEFORE the palettes go live, not after.
+    for theme, block in re.findall(r':root\[data-theme="(\w+)"\]\s*\{([^}]*)\}', css):
+        vals = hexes(block)
+        if not vals:
+            raise ValueError(f'the :root[data-theme="{theme}"] palette parsed EMPTY — a '
+                             f"switchable page whose palette holds no colours renders "
+                             f"unstyled, and an empty parse is indistinguishable from an "
+                             f"absent one")
+        out[f"toggled-{theme}"] = {**base, **vals}
+    return out
 
 
 def contrast_failures(html: str, minimum: float = CONTRAST_MIN) -> list[str]:
@@ -1367,6 +1383,35 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("...and so does one whose light palette holds no colours",
          _refuses(lambda: contrast_failures(
              ":root{--mono:monospace}\n@media(prefers-color-scheme:dark){:root{}}")), True)
+
+    # ⟲ 2026-08-31, backlog #76/#77. `:root[data-theme=…]` palettes are checked TOO.
+    # Until the theme control existed these blocks did not, and the reader stopped at the
+    # media query — so once a page can be switched by hand, a toggled palette could hold
+    # any colour at all and the check would report clean. The pair below is the point:
+    # the CONTROL must be silent, or "the bad one is caught" says nothing.
+    def _pal_css(link, bg):
+        return ";".join([f"{f}:{link}" for f in LINK_FOREGROUNDS]
+                        + [f"{s}:{bg}" for s in LINK_SURFACES])
+    _BASE = (f":root{{{_pal_css('#0000aa', '#ffffff')}}}\n"
+             f"@media(prefers-color-scheme:dark){{:root{{{_pal_css('#88ccff', '#000000')}}}}}")
+
+    def _toggled(dark_link):
+        return ("<style>\n" + _BASE
+                + f'\n:root[data-theme="dark"]{{{_pal_css(dark_link, "#000000")}}}'
+                + f'\n:root[data-theme="light"]{{{_pal_css("#0000aa", "#ffffff")}}}\n</style>')
+
+    case("a data-theme palette is ENUMERATED, not skipped for the media query",
+         sorted(scheme_palettes(_toggled("#88ccff"))),
+         ["dark", "light", "toggled-dark", "toggled-light"])
+    case("CONTROL — a legible toggled palette reports nothing",
+         [f for f in contrast_failures(_toggled("#88ccff")) if "toggled" in f], [])
+    case("...and an ILLEGIBLE one is caught, which the old positional reader could not see",
+         any("toggled-dark" in f and "--link" in f
+             for f in contrast_failures(_toggled("#111111"))), True)
+    case("a data-theme palette that parses EMPTY raises rather than reporting clean",
+         _refuses(lambda: scheme_palettes(
+             "<style>\n" + _BASE + '\n:root[data-theme="dark"]{--mono:monospace}\n</style>')),
+         True)
     # The measurement itself, pinned against hand-computed values, so a broken
     # luminance formula cannot make every ratio pass.
     case("black on white is 21:1", round(contrast_ratio("#000000", "#ffffff"), 2), 21.0)
@@ -1569,10 +1614,18 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # `--panel`. A green check over the wrong subject: change the stylesheet's
     # --panel and the check still passed against the stale constant. Read the
     # EMITTED CSS instead — the thing the claim is about.
-    def _css_var(css, name, dark):
-        blk = css.split("prefers-color-scheme:dark")[1] if dark else css.split("prefers-color-scheme:dark")[0]
-        mm = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{3,8}})", blk)
-        return mm.group(1) if mm else None
+    # ⟳ 2026-08-31, backlog #76/#77. This read the stylesheet POSITIONALLY —
+    # `css.split("prefers-color-scheme:dark")[1]` and then the first hex match — which
+    # was right while the media query was the only dark palette and silently wrong the
+    # moment a `:root[data-theme="dark"]` block existed: the slice would still open at
+    # the media query, so the toggled palette a reader can actually reach was never the
+    # subject. It now goes through `scheme_palettes`, the one enumerating reader, so
+    # there is no second implementation to drift (and the checks below therefore cover
+    # every palette the page emits, not the two that happen to come first).
+    _pal = scheme_palettes(ht)
+
+    def _css_var(_css, name, dark):
+        return _pal["dark" if dark else "light"].get(f"--{name}")
     for _theme, _dark in (("light", False), ("dark", True)):
         _emitted = _css_var(ht, "panel", _dark)
         # Compared as COLOURS, not as strings: the stylesheet writes `#fff`
