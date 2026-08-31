@@ -195,6 +195,15 @@ jobs:
       - name: page_markup self-test
         run: python3 scripts/page_markup.py --self-test
 
+      # The shared page chrome — theme control, provenance stamp, refresh — used by all
+      # five page producers. Same shape as page_markup above and for the same reason: a
+      # library, not a guard, so `check-ratchet-contract.py` neither sees it nor should.
+      # THIS STEP stops its --self-test going unrun; scripts/mutations/page_chrome.json
+      # stops it going vacuous, and writing that manifest immediately found two of its
+      # cases already were. Backlog #76 and #77.
+      - name: page_chrome self-test
+        run: python3 scripts/page_chrome.py --self-test
+
       # ── The project dashboard: the page, its grammar, and the gate that feeds it ──
       #
       # A person who was away reads this page instead of the transcript. It is only worth

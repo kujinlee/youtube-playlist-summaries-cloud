@@ -14,6 +14,7 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -680,7 +681,7 @@ GLOSSARY = [
 ]
 
 def build(entries, days, prs, pr_error, git_error, window,
-          exemptions, exempt_error, store, store_error) -> str:
+          exemptions, exempt_error, store, store_error, generated_at="") -> str:
     # `store` and `store_error` have NO defaults on purpose. A default would let
     # this function name a store path it was never told about — which is the
     # exact defect they exist to close (it used to print a HARDCODED path in the
@@ -792,18 +793,32 @@ def build(entries, days, prs, pr_error, git_error, window,
                          f'<dt>{_html.escape(t)}</dt><dd>{_html.escape(d)}</dd>'
                          for t, d in GLOSSARY) + '</dl></details>')
 
+    # ⟳ 2026-08-31, backlog #76. ONE definition per scheme, emitted FOUR times: the OS
+    # default (`:root` + the media query) and the manual override (`:root[data-theme=…]`).
+    # Writing the toggled palettes out separately would be a second copy of the same
+    # colours, and this project has already measured what a second implementation of one
+    # rule does. The enumerating reader checks all four, so a drift would be caught — but
+    # not drifting in the first place is better than catching it.
+    light_vars = (
+        "--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;"
+        "--need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;"
+        "--link:#1f5d8c;--link-visited:#6a4593;"
+        "--mono:ui-monospace,SFMono-Regular,Menlo,monospace;"
+        f'--p-lede:{PROSE_COLOURS["lede"][0]};--p-head:{PROSE_COLOURS["head"][0]};'
+        f'--p-detail:{PROSE_COLOURS["detail"][0]};--p-mark:{PROSE_COLOURS["mark"][0]}')
+    dark_vars = (
+        "--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;"
+        "--bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;"
+        "--err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;"
+        f'--p-lede:{PROSE_COLOURS["lede"][1]};--p-head:{PROSE_COLOURS["head"][1]};'
+        f'--p-detail:{PROSE_COLOURS["detail"][1]};--p-mark:{PROSE_COLOURS["mark"][1]}')
     return f"""<title>Project dashboard</title>
 <style>
-:root{{--ink:#1b2024;--fg3:#6b7780;--rule:#d8d6ce;--bg:#f7f8fa;--panel:#fff;
---need:#9c5d0e;--need-bg:#f7ebd9;--ok:#2e6349;--err:#8e3627;--err-bg:#f5e3df;
---link:#1f5d8c;--link-visited:#6a4593;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
---p-lede:{PROSE_COLOURS["lede"][0]};--p-head:{PROSE_COLOURS["head"][0]};
---p-detail:{PROSE_COLOURS["detail"][0]};--p-mark:{PROSE_COLOURS["mark"][0]}}}
-@media(prefers-color-scheme:dark){{:root{{--ink:#e6e7e3;--fg3:#8b959b;--rule:#2c343a;
---bg:#14181b;--panel:#1b2125;--need:#e0a050;--need-bg:#2c2317;--ok:#6fb894;
---err:#d98873;--err-bg:#2a1a16;--link:#8cbde0;--link-visited:#c3a6e0;
---p-lede:{PROSE_COLOURS["lede"][1]};--p-head:{PROSE_COLOURS["head"][1]};
---p-detail:{PROSE_COLOURS["detail"][1]};--p-mark:{PROSE_COLOURS["mark"][1]}}}}}
+:root{{{light_vars}}}
+@media(prefers-color-scheme:dark){{:root{{{dark_vars}}}}}
+:root[data-theme="light"]{{{light_vars}}}
+:root[data-theme="dark"]{{{dark_vars}}}
+{page_chrome.chrome_css()}
 body{{background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;
 line-height:1.6;margin:0;font-variant-numeric:tabular-nums}}
 /* The browser default link colour is #0000EE, which measures 1.9:1 against the dark
@@ -887,6 +902,7 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 </style>
 <div class="shell">
 <h1>Project dashboard</h1>
+{page_chrome.chrome_bar("dashboard", generated_at)}
 <h2>What needs you</h2>{needs_html}
 <h2>The last {window} days</h2><div class="chart">{chart}</div>{legend}{chart_note}
 <h2>What changed</h2>{entries_html}
@@ -895,7 +911,8 @@ pre{{white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;overflow-x:au
 <h2>Elsewhere</h2><ul>
 <li><a href="/goals">Goals</a></li><li><a href="/backlog-table">Backlog</a></li>
 <li><a href="/latest">Newest briefing</a></li><li><a href="/">All pages</a></li></ul>
-</div>"""
+</div>
+<script>{page_chrome.chrome_script()}</script>"""
 
 # --- WCAG contrast, measured on the EMITTED stylesheet -------------------------
 # The first version of this guard asserted that `a{color:var(--link)}` was
@@ -962,7 +979,27 @@ def scheme_palettes(css: str) -> dict[str, dict[str, str]]:
     base = hexes(light.group(1))
     if not base:
         raise ValueError("the light :root palette parsed EMPTY")
-    return {"light": base, "dark": {**base, **hexes(dark.group(1))}}
+    out = {"light": base, "dark": {**base, **hexes(dark.group(1))}}
+    # ⟳ 2026-08-31, backlog #76/#77. EVERY `:root[data-theme=…]` palette too, ENUMERATED
+    # rather than positioned. Until the theme control existed these blocks did not, so two
+    # palettes were the whole population; the moment a page can be switched by hand there
+    # are four, and a reader that finds the media-query block and stops would check the
+    # renderings nobody sees while ignoring the two a reader can actually reach. That is
+    # the same defect as #76 itself — a guard reporting green about a rendering it cannot
+    # get to — so it is fixed BEFORE the palettes go live, not after.
+    for theme, block in re.findall(r':root\[data-theme="(\w+)"\]\s*\{([^}]*)\}', css):
+        vals = hexes(block)
+        if not vals:
+            raise ValueError(f'the :root[data-theme="{theme}"] palette parsed EMPTY — a '
+                             f"switchable page whose palette holds no colours renders "
+                             f"unstyled, and an empty parse is indistinguishable from an "
+                             f"absent one")
+        # MERGED, not replaced. Codex Medium: a second block for the same theme is a
+        # cascade in the browser — the first block's values survive unless overridden —
+        # so overwriting the map here would hide a reachable bad colour behind a later
+        # partial block. Source order is `findall` order.
+        out[f"toggled-{theme}"] = {**out.get(f"toggled-{theme}", base), **vals}
+    return out
 
 
 def contrast_failures(html: str, minimum: float = CONTRAST_MIN) -> list[str]:
@@ -1367,6 +1404,35 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     case("...and so does one whose light palette holds no colours",
          _refuses(lambda: contrast_failures(
              ":root{--mono:monospace}\n@media(prefers-color-scheme:dark){:root{}}")), True)
+
+    # ⟲ 2026-08-31, backlog #76/#77. `:root[data-theme=…]` palettes are checked TOO.
+    # Until the theme control existed these blocks did not, and the reader stopped at the
+    # media query — so once a page can be switched by hand, a toggled palette could hold
+    # any colour at all and the check would report clean. The pair below is the point:
+    # the CONTROL must be silent, or "the bad one is caught" says nothing.
+    def _pal_css(link, bg):
+        return ";".join([f"{f}:{link}" for f in LINK_FOREGROUNDS]
+                        + [f"{s}:{bg}" for s in LINK_SURFACES])
+    _BASE = (f":root{{{_pal_css('#0000aa', '#ffffff')}}}\n"
+             f"@media(prefers-color-scheme:dark){{:root{{{_pal_css('#88ccff', '#000000')}}}}}")
+
+    def _toggled(dark_link):
+        return ("<style>\n" + _BASE
+                + f'\n:root[data-theme="dark"]{{{_pal_css(dark_link, "#000000")}}}'
+                + f'\n:root[data-theme="light"]{{{_pal_css("#0000aa", "#ffffff")}}}\n</style>')
+
+    case("a data-theme palette is ENUMERATED, not skipped for the media query",
+         sorted(scheme_palettes(_toggled("#88ccff"))),
+         ["dark", "light", "toggled-dark", "toggled-light"])
+    case("CONTROL — a legible toggled palette reports nothing",
+         [f for f in contrast_failures(_toggled("#88ccff")) if "toggled" in f], [])
+    case("...and an ILLEGIBLE one is caught, which the old positional reader could not see",
+         any("toggled-dark" in f and "--link" in f
+             for f in contrast_failures(_toggled("#111111"))), True)
+    case("a data-theme palette that parses EMPTY raises rather than reporting clean",
+         _refuses(lambda: scheme_palettes(
+             "<style>\n" + _BASE + '\n:root[data-theme="dark"]{--mono:monospace}\n</style>')),
+         True)
     # The measurement itself, pinned against hand-computed values, so a broken
     # luminance formula cannot make every ratio pass.
     case("black on white is 21:1", round(contrast_ratio("#000000", "#ffffff"), 2), 21.0)
@@ -1569,10 +1635,18 @@ def _self_test(real_out: pathlib.Path, sandbox: pathlib.Path) -> int:
     # `--panel`. A green check over the wrong subject: change the stylesheet's
     # --panel and the check still passed against the stale constant. Read the
     # EMITTED CSS instead — the thing the claim is about.
-    def _css_var(css, name, dark):
-        blk = css.split("prefers-color-scheme:dark")[1] if dark else css.split("prefers-color-scheme:dark")[0]
-        mm = re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{3,8}})", blk)
-        return mm.group(1) if mm else None
+    # ⟳ 2026-08-31, backlog #76/#77. This read the stylesheet POSITIONALLY —
+    # `css.split("prefers-color-scheme:dark")[1]` and then the first hex match — which
+    # was right while the media query was the only dark palette and silently wrong the
+    # moment a `:root[data-theme="dark"]` block existed: the slice would still open at
+    # the media query, so the toggled palette a reader can actually reach was never the
+    # subject. It now goes through `scheme_palettes`, the one enumerating reader, so
+    # there is no second implementation to drift (and the checks below therefore cover
+    # every palette the page emits, not the two that happen to come first).
+    _pal = scheme_palettes(ht)
+
+    def _css_var(_css, name, dark):
+        return _pal["dark" if dark else "light"].get(f"--{name}")
     for _theme, _dark in (("light", False), ("dark", True)):
         _emitted = _css_var(ht, "panel", _dark)
         # Compared as COLOURS, not as strings: the stylesheet writes `#fff`
@@ -2328,14 +2402,20 @@ def main(argv: list[str]) -> int:
     today = _dt.date.today().isoformat()
     days = bucket_days(dates or [], entries, a.window, today)
     frag = build(entries, days, prs, pr_error, git_error, a.window, exemptions,
-                 exempt_error, _store_label(store), store_error)
+                 exempt_error, _store_label(store), store_error,
+                 page_chrome.provenance(_dt.datetime.now().strftime('%Y-%m-%d %H:%M'), ROOT))
     if a.fragment_only:
+        # Codex Medium: the gate was only on the composed path, so a fragment could ship
+        # a dead control. Every write of this page goes through it now.
+        page_chrome.assert_wired(frag, "gen-dashboard.py --fragment-only")
         a.fragment_only.write_text(frag, encoding="utf-8")
         print(f"wrote fragment {a.fragment_only}")
         return 0
     a.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as td:
         f = pathlib.Path(td) / "dashboard-fragment.html"
+        # Refuses a page whose theme control could not work — see page_chrome.
+        page_chrome.assert_wired(frag, "gen-dashboard.py")
         f.write_text(frag, encoding="utf-8")
         # Bounded like every other subprocess here (`commit_dates` 20, `_gh_json`
         # 30). This runs from a Claude Code PostToolUse hook

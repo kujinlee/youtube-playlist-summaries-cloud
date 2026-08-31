@@ -84,11 +84,14 @@ import pathlib
 import re
 import signal
 import socket
+import subprocess
+import threading
 import sys
 import urllib.parse
 from typing import Callable
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
 PORT = 7391
@@ -97,6 +100,23 @@ ROOT = pathlib.Path.home() / "explainers"
 PIDFILE = ROOT / ".serve.pid"
 QUESTIONS = ROOT / "questions.md"
 MAX_BODY = 64 * 1024
+
+SCRIPTS = pathlib.Path(__file__).resolve().parent
+REGEN_TIMEOUT = 300
+# ⚠ The ONLY pages `POST /regenerate` may rebuild. A dict of LITERALS, deliberately: the
+# caller names a key, never a path or an argument, so nothing it sends reaches the
+# command line. Adding a page here is a visible act; resolving one from the request
+# would not be. Backlog #77.
+# ⚠ ThreadingHTTPServer, so two tabs pressing Refresh really do run concurrently — Codex
+# Medium. One lock PER PAGE: two rebuilds of the same target would race on its output
+# file, while rebuilding two DIFFERENT pages at once is harmless and stays parallel.
+REGEN_LOCKS: dict[str, "threading.Lock"] = {}
+REGEN_LOCKS_GUARD = threading.Lock()
+REGENERABLE = {
+    "dashboard": "gen-dashboard.py",
+    "backlog-table": "gen-backlog-page.py",
+    "goals": "gen-goals-page.py",
+}
 SERVABLE = {".html", ".md", ".css", ".js", ".svg", ".png"}
 
 # OPTIONAL second read-only root, for pages that want to link at the SOURCE they were derived from.
@@ -427,16 +447,36 @@ def index_html(root: pathlib.Path) -> str:
         rows.append(f'<li><a href="/{urllib.parse.quote(p.name)}">{p.name}</a>'
                     f'<span> · {when}</span></li>')
     body = "\n".join(rows) or "<li><em>No explainers yet.</em></li>"
-    return (
+    doc = (
         "<!doctype html><meta charset=utf-8><title>Explainers</title>"
-        "<style>body{font:16px/1.6 ui-sans-serif,system-ui,sans-serif;max-width:52rem;"
-        "margin:3rem auto;padding:0 1rem;background:#fcfbf9;color:#191817}"
-        "@media(prefers-color-scheme:dark){body{background:#131318;color:#eceaf2}a{color:#e8a860}}"
-        "h1{font-size:1.4rem}li{margin:.4rem 0}span{color:#8a8496;font-size:.85rem}"
-        "code{background:#0001;padding:.1em .35em;border-radius:4px}</style>"
-        "<h1>Explainers</h1><p>Newest first. <code>/latest</code> always redirects to the top one — "
+        # ⟳ backlog #76. The palette moves into variables so BOTH `data-theme` blocks can
+        # exist — the toggle is inert without them, which `page_chrome.assert_wired` refuses.
+        "<style>:root{--bg:#fcfbf9;--ink:#191817;--ink-soft:#8a8496;--rule:#0002;"
+        "--card:transparent}"
+        "@media(prefers-color-scheme:dark){:root{--bg:#131318;--ink:#eceaf2;"
+        "--ink-soft:#9a94a6;--rule:#fff3;--card:transparent}}"
+        ':root[data-theme="light"]{--bg:#fcfbf9;--ink:#191817;--ink-soft:#8a8496;'
+        "--rule:#0002;--card:transparent}"
+        ':root[data-theme="dark"]{--bg:#131318;--ink:#eceaf2;--ink-soft:#9a94a6;'
+        "--rule:#fff3;--card:transparent}"
+        "body{font:16px/1.6 ui-sans-serif,system-ui,sans-serif;max-width:52rem;"
+        "margin:3rem auto;padding:0 1rem;background:var(--bg);color:var(--ink)}"
+        "h1{font-size:1.4rem}li{margin:.4rem 0}span{color:var(--ink-soft);font-size:.85rem}"
+        "code{background:#0001;padding:.1em .35em;border-radius:4px}"
+        + page_chrome.chrome_css() + "</style>"
+        "<h1>Explainers</h1>"
+        # NO stamp and NO refresh, deliberately: this page is rendered per REQUEST, so it
+        # cannot be stale and there is no generator to call. A stamp answers "is this out
+        # of date?" — a question this page cannot have. Only the theme control applies.
+        '<div class="chrome">' + page_chrome.theme_control() + "</div>"
+        "<p>Newest first. <code>/latest</code> always redirects to the top one — "
         "bookmark that.</p><ul>" + body + "</ul>"
+        "<script>" + page_chrome.chrome_script() + "</script>"
     )
+    # Codex Medium: this is a page PRODUCER carrying a control, and nothing checked it.
+    # A future edit dropping either palette or the script would ship a dead button.
+    page_chrome.assert_wired(doc, "explainer-serve index")
+    return doc
 
 
 def _raises(fn, exc: type[BaseException]) -> bool:
@@ -708,8 +748,54 @@ class Handler(http.server.BaseHTTPRequestHandler):
             body += RELOAD_JS.encode()   # appended, so a page that lacks </body> still gets it
         return self._send(200, body, ctype)
 
+    def _regenerate(self, payload: dict) -> None:
+        """Rebuild one derived page. Backlog #77.
+
+        ⚠ THE ALLOW-LIST IS THE WHOLE SECURITY ARGUMENT, and it is a dict of literals:
+        the caller names a KEY, never a path, an argument or a command. Nothing the
+        caller sends reaches the command line — a request for an unknown page is a 400
+        naming the legal set, not an attempt to resolve it. `shell=False` (a list argv)
+        and a timeout are the belt to that brace.
+
+        This is a POST from a page served on 127.0.0.1, so it is reachable only from this
+        machine. It still executes a generator, which is why the surface is three fixed
+        names rather than "run the script the page asks for".
+        """
+        want = payload.get("page")
+        script = REGENERABLE.get(want) if isinstance(want, str) else None
+        if script is None:
+            body = (f"unknown page {want!r}. Rebuildable pages are: "
+                    f"{', '.join(sorted(REGENERABLE))}.")
+            return self._send(400, body.encode("utf-8"), "text/plain; charset=utf-8")
+        with REGEN_LOCKS_GUARD:
+            lock = REGEN_LOCKS.setdefault(want, threading.Lock())
+        try:
+            with lock:
+                r = subprocess.run([sys.executable, str(SCRIPTS / script)],
+                                   capture_output=True, text=True, timeout=REGEN_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # A timeout is NOT a failure to report as "rebuilt". The reader is told the
+            # page may now be half-written, because silence here reads as success.
+            return self._send(504, (f"{script} did not finish in {REGEN_TIMEOUT}s — the page "
+                                    f"may be unchanged. NOT REBUILT.").encode(),
+                              "text/plain; charset=utf-8")
+        if r.returncode != 0:
+            tail = (r.stderr or r.stdout or "").strip()[-400:]
+            return self._send(500, f"{script} exited {r.returncode}. NOT REBUILT.\n{tail}"
+                              .encode("utf-8"), "text/plain; charset=utf-8")
+        # ⚠ Codex Medium: exit 0 does NOT mean a clean rebuild. gen-backlog-page.py returns
+        # 0 after writing a page WITHOUT the Ask tray when brief-compose could not lift one,
+        # and reporting a bare success for that is exactly the "degraded gate that reports
+        # success" shape this project keeps finding. The warning travels to the button.
+        warn = [l.strip() for l in (r.stdout or "").splitlines() if l.strip().startswith("⚠")]
+        body = {"ok": True, "page": want}
+        if warn:
+            body["warning"] = " ".join(warn)[:400]
+        return self._send(200, json.dumps(body).encode(), "application/json")
+
     def do_POST(self) -> None:  # noqa: N802
-        if self.path.split("?", 1)[0] != "/questions":
+        route = self.path.split("?", 1)[0]
+        if route not in ("/questions", "/regenerate"):
             return self._send(404, b"not found", "text/plain; charset=utf-8")
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -723,6 +809,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 raise ValueError("not an object")
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             return self._send(400, b"expected a JSON object", "text/plain; charset=utf-8")
+        if route == "/regenerate":
+            return self._regenerate(payload)
         # Reject rather than record "(empty)" — see question_text(). The 400 body names the key,
         # because the measured failure was a caller sending the RIGHT question under the WRONG name.
         if question_text(payload) is None:

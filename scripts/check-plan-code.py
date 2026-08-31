@@ -444,6 +444,11 @@ EXPECTED_MUTATIONS = {
     "scripts/page_markup.py": 14,
     "scripts/check-dashboard-entry.py": 12,
     "scripts/check-plan-code.py": 21,
+    # ⟳ 2026-08-31, backlog #76/#77: the shared page chrome. Adding it found TWO
+    # vacuous cases of my own — a "dirty tree" assertion compared against a
+    # NON-repo, so it differed by the UNKNOWN text and never by the dirty flag,
+    # and the git-cannot-launch branch was unreachable from a temp dir.
+    "scripts/page_chrome.py": 11,
 }
 
 MANIFEST_DIR = "scripts/mutations"
@@ -1885,6 +1890,7 @@ def _self_test() -> int:
          sorted(EXPECTED_MUTATIONS), ["scripts/check-dashboard-entry.py",
                                       "scripts/check-plan-code.py",
                                       "scripts/gen-dashboard.py",
+                                      "scripts/page_chrome.py",
                                       "scripts/page_markup.py"])
     # A literal on purpose: its whole job is that the total cannot move without
     # someone deciding it should. 44 → 53 when the round-1-carried M5 finding added
@@ -1892,7 +1898,7 @@ def _self_test() -> int:
     # unchanged at 32); 53 → 59 (round 2, 6 more); 59 → 67 (round 3, 8 more, incl. a
     # LIVE `**` on the reader's page); 67 → 73 (round 4). 73 → 94 (backlog #74, the runner
     # itself, +21; four of them added by its own review round). Coverage may grow here; it may not shrink.
-    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 94)
+    case("the declared counts are the real ones", sum(EXPECTED_MUTATIONS.values()), 105)
 
     print(f"\n{ok}/{ok+fail} passed")
     # The case count in the docstring is quoted in docs/dev-process.md. Derived, so
