@@ -90,6 +90,7 @@ import urllib.parse
 from typing import Callable
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
 import page_markup  # noqa: E402
 
 PORT = 7391
@@ -442,13 +443,29 @@ def index_html(root: pathlib.Path) -> str:
     body = "\n".join(rows) or "<li><em>No explainers yet.</em></li>"
     return (
         "<!doctype html><meta charset=utf-8><title>Explainers</title>"
-        "<style>body{font:16px/1.6 ui-sans-serif,system-ui,sans-serif;max-width:52rem;"
-        "margin:3rem auto;padding:0 1rem;background:#fcfbf9;color:#191817}"
-        "@media(prefers-color-scheme:dark){body{background:#131318;color:#eceaf2}a{color:#e8a860}}"
-        "h1{font-size:1.4rem}li{margin:.4rem 0}span{color:#8a8496;font-size:.85rem}"
-        "code{background:#0001;padding:.1em .35em;border-radius:4px}</style>"
-        "<h1>Explainers</h1><p>Newest first. <code>/latest</code> always redirects to the top one — "
+        # ⟳ backlog #76. The palette moves into variables so BOTH `data-theme` blocks can
+        # exist — the toggle is inert without them, which `page_chrome.assert_wired` refuses.
+        "<style>:root{--bg:#fcfbf9;--ink:#191817;--ink-soft:#8a8496;--rule:#0002;"
+        "--card:transparent}"
+        "@media(prefers-color-scheme:dark){:root{--bg:#131318;--ink:#eceaf2;"
+        "--ink-soft:#9a94a6;--rule:#fff3;--card:transparent}}"
+        ':root[data-theme="light"]{--bg:#fcfbf9;--ink:#191817;--ink-soft:#8a8496;'
+        "--rule:#0002;--card:transparent}"
+        ':root[data-theme="dark"]{--bg:#131318;--ink:#eceaf2;--ink-soft:#9a94a6;'
+        "--rule:#fff3;--card:transparent}"
+        "body{font:16px/1.6 ui-sans-serif,system-ui,sans-serif;max-width:52rem;"
+        "margin:3rem auto;padding:0 1rem;background:var(--bg);color:var(--ink)}"
+        "h1{font-size:1.4rem}li{margin:.4rem 0}span{color:var(--ink-soft);font-size:.85rem}"
+        "code{background:#0001;padding:.1em .35em;border-radius:4px}"
+        + page_chrome.chrome_css() + "</style>"
+        "<h1>Explainers</h1>"
+        # NO stamp and NO refresh, deliberately: this page is rendered per REQUEST, so it
+        # cannot be stale and there is no generator to call. A stamp answers "is this out
+        # of date?" — a question this page cannot have. Only the theme control applies.
+        '<div class="chrome">' + page_chrome.theme_control() + "</div>"
+        "<p>Newest first. <code>/latest</code> always redirects to the top one — "
         "bookmark that.</p><ul>" + body + "</ul>"
+        "<script>" + page_chrome.chrome_script() + "</script>"
     )
 
 

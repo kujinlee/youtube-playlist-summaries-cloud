@@ -45,6 +45,9 @@ import re
 import sys
 import tempfile
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import page_chrome  # noqa: E402
+
 ROOT = pathlib.Path.home() / "explainers"
 TRAY_MARKERS = ('id="tray"', 'id="qbox"', "/questions")
 # The tray script styles a status chip through these; the content page may not define them.
@@ -190,14 +193,44 @@ def extract_tray(html: str) -> tuple[str, str, str]:
     return css, div.group(0), html[idx:]
 
 
-def compose(content: str, title: str, css: str, markup: str, script: str) -> str:
+def chrome_for(content: str, generated_at: str) -> tuple[str, str, str]:
+    """(extra_css, bar_markup, extra_script) for a fragment. Backlog #76/#77.
+
+    THREE cases, because this file COMPOSES rather than generates and the fragments
+    reaching it are not alike:
+
+    1. The fragment already carries the control — every page from a wired generator does.
+       Add NOTHING. Composing a second bar onto the dashboard would be the most visible
+       possible bug and the easiest to introduce.
+    2. It carries both `data-theme` palettes but no control — add the full bar, minus the
+       refresh button: a composed brief is a snapshot with no generator to call.
+    3. It carries neither — add the STAMP ONLY. A control here would change an attribute
+       the fragment does not style, which is the fail-silent `page_chrome` exists to
+       prevent: a button that looks shipped and does nothing is worse than no button. The
+       stamp still works, and it is the half that matters when a page might be stale.
+    """
+    if page_chrome.has_control(content):
+        return "", "", ""
+    if page_chrome.missing_palettes(content + page_chrome.theme_control()):
+        return (page_chrome.chrome_css(),
+                '<div class="chrome">' + page_chrome.stamp(generated_at) + "</div>", "")
+    return (page_chrome.chrome_css(),
+            page_chrome.chrome_bar("", generated_at, refresh=False),
+            f"<script>{page_chrome.chrome_script()}</script>")
+
+
+def compose(content: str, title: str, css: str, markup: str, script: str,
+            generated_at: str = "") -> str:
     """Content fragment + extracted tray -> one self-contained document."""
     if "</style>" not in content:
         raise SystemExit("brief-compose: --content must contain a <style>…</style> block")
     head, body = content.split("</style>", 1)
     head = re.sub(r"<title>.*?</title>", "", head, flags=re.S)
     assert_shimmed(css, head)
-    styled = head + SHIM + "\n/* ---- Ask tray, extracted verbatim ---- */\n" + css + "\n</style>"
+    chrome_css, chrome_bar, chrome_js = chrome_for(content, generated_at)
+    body = body + "\n" + chrome_bar + "\n" + chrome_js
+    styled = (head + SHIM + "\n/* ---- Ask tray, extracted verbatim ---- */\n" + css
+              + "\n" + chrome_css + "\n</style>")
     return (
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
@@ -224,7 +257,10 @@ def main(argv: list[str]) -> int:
     src = find_source(a.source)
     css, markup, script = extract_tray(src.read_text(encoding="utf-8"))
     content = pathlib.Path(a.content).expanduser().read_text(encoding="utf-8")
-    doc = compose(content, a.title, css, markup, script)
+    doc = compose(content, a.title, css, markup, script,
+                  page_chrome.provenance(
+                      _dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
+                      pathlib.Path(__file__).resolve().parent.parent))
 
     out = pathlib.Path(a.out).expanduser() if a.out else (
         ROOT / f"{_dt.date.today():%Y-%m-%d}-brief-{a.slug}.html"
@@ -381,6 +417,31 @@ def self_test() -> int:
         case("extract_tray raises when markup is missing but CSS is not", False)
     except SystemExit:
         case("extract_tray raises when markup is missing but CSS is not", True)
+
+    # ── chrome_for: three branches, and the third is why this is a function ──────────
+    # ⚠ Case 1 is the one that would be MOST visible if it broke: every wired generator's
+    # page passes through here, so composing a second bar onto the dashboard is one line
+    # away at all times.
+    _ctl = page_chrome.theme_control()
+    _pals = (f':root[data-theme="light"]{{--bg:#fff}}'
+             f':root[data-theme="dark"]{{--bg:#000}}')
+    _c1 = chrome_for(f"<style>{_pals}</style>{_ctl}", "t")
+    case("a fragment that ALREADY has the control gets nothing added", _c1 == ("", "", ""))
+    _c2 = chrome_for(f"<style>{_pals}</style><p>no control</p>", "t")
+    case("a fragment with both palettes gets the full bar", page_chrome.has_control(_c2[1]))
+    case("...without a refresh button, since a composed brief has no generator to call",
+         "chrome-refresh" not in _c2[1])
+    case("...and a script to bind it", "chrome-theme" in _c2[2])
+    # ⭐ The fail-silent this whole module exists to prevent, at the composer.
+    _c3 = chrome_for("<style>body{color:#000}</style><p>no palettes</p>", "t")
+    case("a fragment with NO data-theme palettes gets NO control", not page_chrome.has_control(_c3[1]))
+    case("...but still gets the stamp, which is the half that always works",
+         "chrome-when" in _c3[1])
+    case("...and no dangling script for a button that is not there", _c3[2] == "")
+    case("every branch renders the provenance it was given",
+         all("2026-01-02 03:04" in chrome_for(f, "2026-01-02 03:04")[1]
+             for f in (f"<style>{_pals}</style><p>x</p>",
+                       "<style>body{color:#000}</style><p>x</p>")))
 
     failed = [n for n, ok in cases if not ok]
     for n, ok in cases:
