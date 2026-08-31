@@ -3,13 +3,21 @@
 > **Anchor:** `status-visibility` — **ADR:** none
 > **Goal:** A person who was away can see the current state, what changed, and what needs them — without reading the chat transcript.
 
-**Status:** **v2 — round 1 folded in. NOT CONVERGED at v1**; both halves independently returned two
-Blocking findings and they agreed on both. Reviews retained at
-`docs/reviews/spec-dashboard-ask-choices-r1-{codex,claude}.md`
-(Codex `gpt-5.5`: 2 Blocking, 3 High, 4 Medium, 1 Low. Claude: 2 Blocking, 5 High, 8 Medium, 4 Low.)
+**Status:** **v3 — rounds 1 and 2 folded in. Both rounds NOT CONVERGED from both halves.**
+Reviews at `docs/reviews/spec-dashboard-ask-choices-r{1,2}-{codex,claude}.md`.
+Round 1: 2 Blocking each, agreeing. Round 2: 3 Blocking each — **all flagged as regressions
+introduced by round 1's own fix.**
+
+> ⚠ **v3 is SMALLER than v2, not larger, because round 2 refuted round 1's stated cause.**
+> v1 said `git diff -U0` leaves the entry body out of the patch. **That is false, and measured:**
+> `git diff -U0 7183111~1...7183111 -- docs/dashboard-entries.md` yields **39 added lines** — header,
+> prose and `<!--tech-->` — because an appended entry is entirely additions and `-U0` suppresses only
+> *context*. The author and both round-1 reviewers agreed on the false premise; one command refuted
+> it. Everything v2 built on it (a second revision, ordinal matching, a cutover date) produced all
+> three of round 2's Blockings. v3 deletes that machinery rather than repairing it.
 
 Extends [`2026-08-28-project-dashboard-design.md`](2026-08-28-project-dashboard-design.md) §4, §5,
-§6.2; does not supersede it. §13 records the fold.
+§6.2; does not supersede it. §13 records both folds.
 
 **Reported by the user, 2026-08-31**, reading the live page: *"current dashboard has three 'needs
 you' item cards, but it doesn't specifically say what I can do. It just say merge or not but not
@@ -69,16 +77,28 @@ broke that promise on the first day the dashboard existed, and the grammar permi
 ## 2. Scope
 
 **In:** a second entry category (`heads-up`) · a decision block in the `needs-you` grammar ·
-derived badges · a "Worth knowing" block · live PR state on options carrying `PR #N` · one validator
-with two callers · falsifiers and mutations for all of it.
+derived badges · a "Worth knowing" block · live PR state on options carrying `PR #N` ·
+**renderer-side validation, one enforcement point** · falsifiers and mutations for all of it.
 
 **Out:** acting from the page. No merge button, no state-changing control. The user asked to
 **see** the choices; merging stays a human gate performed in its own tool. Also out: any change to
 `POST /questions` or the chart's window.
 
-⚠ **NOT out of scope, corrected from v1:** the entry gate's `NO-ENTRY:` path. `verdict` consults
-`exemption_reason` only when `added_entry` is false (`check-dashboard-entry.py:145-158`), so the new
-validation interacts with that ordering and §8 must state where it sits.
+> ⚠ **OUT OF SCOPE BY THE USER'S DECISION, 2026-08-31: the CI gate half. Filed as backlog #78.**
+>
+> Round 2 measured two things that together mean the gate is **not** what protects the reader:
+> 1. `verdict()` short-circuits above everything — `real = [p for p in changed if not _is_exempt(p)]`
+>    then `if not real: return 0` (`check-dashboard-entry.py:145-148`). `docs/dashboard-entries.md`
+>    is in `EXEMPT_FILES` (`:21`), pinned by a self-test at `:183`. **A branch changing only the
+>    store reaches no validation at all** — and that is the most common way an entry is written.
+> 2. The step runs `if: github.event_name == 'pull_request'` (`ci.yml:252-253`), while the dashboard
+>    skill appends the entry and regenerates the page immediately via a `PostToolUse` hook.
+>    **The reader sees the page long before CI sees the branch.**
+>
+> So the renderer is the load-bearing protection and the gate would be a late, partial second net.
+> Adding it here would require fixing a **pre-existing** hole in `verdict()`'s ordering, which is its
+> own change with its own blast radius. `decision_errors` is still placed where the future gate will
+> need it (§8), so #78 is additive rather than a rewrite.
 
 ---
 
@@ -192,10 +212,23 @@ what is blocked on the reader. Each row states the question, then its options as
 **unfolded**; parent §4 requires this block be *"first, unfolded"*, and an ask whose options need a
 click has not stated them. An option carrying `PR #N` is linked.
 
-⚠ **The same decision block also lands in the entry card's prose** (`:774-776`, rendered through
-`page_markup.py`). Its appearance there is specified as: rendered as ordinary markdown by the shared
-renderer, with no special-casing. The tray is the actionable surface; the card must not silently
-render a *different* option list from the tray's.
+⚠ **The same decision block also lands in the entry card's prose** (`:774-776`). v2 said it renders
+as *"ordinary markdown by the shared renderer, with no special-casing"* — **round 2 measured that
+this is not a defined behaviour**: `page_markup.py` splits blank-line paragraphs and applies inline
+markup; it does **not** render markdown lists as `<ul>/<li>`. The card would show a paragraph of raw
+`-` lines.
+
+**v3 states the difference instead of pretending it away:**
+
+| Surface | Decision block renders as | PR lookups |
+|---|---|---|
+| **Tray** (the actionable surface) | structured — question, then options as a list, unfolded, PR links resolved | yes |
+| **Entry card** (the historical record) | the existing prose renderer's output, unchanged — no list structure, no link resolution | **no** |
+
+**This asymmetry is accepted, deliberately.** The card is an append-only record of what was written;
+the tray is the live decision surface. Resolving PR state for every option in every card would also
+grow lookup cost with the store, unbounded — the card is exactly where that cost must not be paid.
+`page_markup.py` is **not** extended to render lists in this slice.
 
 ### 5b. "Worth knowing"
 
@@ -256,9 +289,17 @@ check**, never as a state.
 
 ⚠ **The bound is on the TOTAL, corrected from v1.** `_gh_json` imposes `timeout=30` **per call**
 (`:495`), so v1's *"bounded like every other subprocess here"* was wrong: ten distinct PRs is ten
-timeouts, not one. The resolver issues **at most one call per distinct PR number per render**, and
-the render is bounded by a total budget across all PR lookups; on exhaustion the remaining options
-render **could not check**.
+timeouts, not one.
+
+**The budget is numeric and stated in both dimensions** (round 2 found "a total budget" too vague to
+implement consistently): **at most 10 distinct PR lookups per render, and at most 60 seconds spent
+across all of them.** One call per distinct PR number; whichever limit is reached first stops
+further lookups.
+
+**Exhaustion is its own message, not a shrug.** Remaining options render
+**"could not check — PR lookup budget exhausted"**, distinct from *"could not check"* for a `gh`
+failure or bad JSON. Otherwise a partial render is indistinguishable from a checked one, which is
+the confusion §7 exists to prevent.
 
 ---
 
@@ -274,57 +315,72 @@ Parent §4: *"It must distinguish 'nothing needs you' from 'I could not tell'."*
 | **a `needs-you` entry that fails `decision_errors`** | **the tray renders "could not read one ask", naming the entry id** |
 | store unreadable, for the Worth-knowing block | the heading renders with the NOT CHECKED note (§5b) |
 
-> ⚠ **The fourth row is the one v1 missed, and it is the one the new mechanism itself creates.**
-> `unresolved` filters `e["needs_you"] and not e["error"]` (`:451`). Once `decision_errors` can set
-> `entry["error"]`, a `[needs-you]` entry with a **typo in its decision block** is excluded from the
-> tray, `rows` is empty, `store_error` is `None`, and `build` falls through to
-> `'<p class="none">Nothing needs you.</p>'` (`:716`) — in green.
+> ⚠ **The fourth row is the one v1 missed and v2 promised without a mechanism.** Round 2: *"§8b
+> states the outcome but does not specify the mechanism."*
 >
-> **An authoring slip would convert a live ask into a confident all-clear: §1a, rebuilt by its own
-> fix.** A malformed ask must be *louder*, never quieter.
+> **The hazard.** `unresolved` filters `e["needs_you"] and not e["error"]` (`:451`). If
+> `decision_errors` set `entry["error"]`, a `[needs-you]` entry with a **typo in its decision block**
+> would be excluded from the tray, `rows` would be empty, `store_error` would be `None`, and `build`
+> would fall through to `'<p class="none">Nothing needs you.</p>'` (`:716`) — in green. An authoring
+> slip converting a live ask into a confident all-clear: §1a, rebuilt by its own fix.
+>
+> **The mechanism (§8b).** `decision_errors` **never sets `entry["error"]`.** It runs *after*
+> `unresolved(entries)`, over the entries that survive it, and its output is a **third tray input**
+> alongside entry rows and PR rows. A failing entry therefore cannot leave the list it was already
+> in. `build`'s empty-state branch is reached only when all three inputs are empty, so
+> *"Nothing needs you."* cannot render while a malformed ask exists.
+>
+> A malformed ask is *louder*, never quieter: its row states the entry id and what is missing.
 
 These compose. Multiple dead inputs produce multiple notes; none masks another.
 
 ---
 
-## 8. Where the rule is enforced — one validator, two callers
-
-`scripts/check-dashboard-entry.py` owns the entry-header grammar and says so at `:24`. It gains:
+## 8. Where the rule is enforced — one point, at render time
 
 ```python
+# in scripts/check-dashboard-entry.py — the declared grammar owner (:24)
 decision_errors(plain: str, category: str) -> list[str]
 ```
 
-### 8a. The gate — v1 specified a call it could not make
+### 8a. Where it lives, and why there
 
-⚠ **v1 was unbuildable and both reviewers caught it.** `collect()` (`:241-254`) runs
-`git diff -U0` and reduces the whole patch to a boolean —
-`added = any(_added_entry_line(l) for l in patch.stdout.split("\n"))` — and `verdict()` takes
-`added_entry: bool`. With zero context lines the entry **body is not in the patch at all**. There is
-no `plain` to pass. A branch adding `+## 2026-08-31 [needs-you]` with no decision block would set
-`added=True` and `verdict()` would return success before any grammar could run: *a shared validator
-silently checking nothing in the highest-risk caller.*
+**In `check-dashboard-entry.py`, even though only the renderer calls it today.** That file states at
+`:24` that it owns the entry grammar, and `gen-dashboard.py:302-307` already imports it through
+`importlib` as `_GATE`. The dependency runs **generator → gate**.
 
-**v2:** `collect()` returns the **added entry ids**, not a boolean. The gate then reads
-`docs/dashboard-entries.md` **from the working tree** — a path it already names in `EXEMPT_FILES`
-(`:21`) — parses it with the shared parser, and calls `decision_errors` on each entry the diff
-added. `verdict()` fails when any added entry's list is non-empty, naming the entry and what is
-missing.
+⚠ **v2 got this backwards and both reviewers caught it.** v2 had the gate parse the store with "the
+shared parser", but `parse_entries` lives in `gen-dashboard.py` — so the gate would have had to
+import the generator, which already imports the gate. A cycle, and an inversion of the stated
+ownership. Putting the *validator* with the grammar it enforces keeps the arrow pointing one way,
+and pre-positions it for backlog #78 without a later move.
 
-**Ordering with `NO-ENTRY:`.** `verdict` consults `exemption_reason` only when `added_entry` is
-false (`:145-158`). Decision validation runs on the *added-entry* branch, so a `NO-ENTRY:` branch is
-unaffected: it adds no entry and reaches the exemption path unchanged.
+### 8b. When it runs — after resolution, not during parsing
 
-### 8b. The renderer
+**`parse_entries` is unchanged. `decision_errors` is not a new source of `entry["error"]`.**
 
-`gen-dashboard.py:parse_entries` sets `entry["error"]`, so a malformed entry renders in place under
-*"Could not parse this entry"* (§6.2's malformed-block rule) — **subject to the cutover in §11**, and
-**never by disappearing from the tray** (§7's fourth row).
+The renderer computes `unresolved(entries)` first, then runs `decision_errors` **only on the entries
+that survive it** — the unresolved `needs-you` and `heads-up` entries, which are exactly the ones
+the two blocks display.
 
-**One implementation, two callers.** Two copies would drift; this project has measured that — a
-re-implemented renderer's rules disagreed with the renderer and put fabricated text on a live page.
-Matches the `page_markup.py` seam: one renderer, four callers, built after four inline copies
-diverged.
+This single ordering choice dissolves four separate findings:
+
+| Finding | Why it is gone |
+|---|---|
+| B1 r1/r2 — five live entries break | The three historical `needs-you` entries are **resolved**, so they are never validated. No `entry["error"]`, so no pass-2 cascade (`:418`, `:427-429`), so no collateral on the two entries carrying the clearing markers |
+| B3 r2 — cutover date fails open | **There is no cutover date.** Nothing keys on the author-controlled header date |
+| H1 r1 — a malformed ask silently becomes "Nothing needs you." | `unresolved` filters on `not e["error"]` (`:451`); since validation no longer sets that field, a failing entry **stays in the list** and is rendered as a failure (§7) |
+| Latent — `bucket_days`/`_bar`'s *"SHIPPED WITH NO ENTRY"* | Driven by `not e["error"]` (`:458`, `:651`); untouched, because nothing new sets it |
+
+**Coherence argument, not just convenience:** the tray displays unresolved entries, so validating
+exactly the set it displays means the page never asserts anything about an entry it is not showing.
+A resolved ask is history; its grammar is no longer load-bearing.
+
+### 8c. One implementation
+
+One copy, one caller today, a second caller when #78 lands. Two copies would drift — this project
+has measured it: a re-implemented renderer's rules disagreed with the renderer and put fabricated
+text on a live page. Matches the `page_markup.py` seam.
 
 ---
 
@@ -339,7 +395,8 @@ v1's rows were largely absence assertions, which pass when the feature is missin
 | **No historical entry breaks** | **any** entry in the store at `7183111` renders malformed after the change *(this is B1; it fails against a naive implementation)* |
 | **Badge is derived** | an entry cleared by a later `[resolved:]` still renders the `needs you` badge *(fails on today's build)* |
 | **Malformed ask is louder, not quieter** | a store whose only `needs-you` entry has a broken decision block renders *"Nothing needs you."* |
-| **Gate sees bodies** | a branch adding a `[needs-you]` header with no decision block passes the gate |
+| **Resolved entries are never validated** | a resolved `needs-you` entry with no decision block produces any finding, on the page or in a return value |
+| **Validation never writes `entry["error"]`** | `decision_errors` failing on an entry changes that entry's `error` field, or removes it from `unresolved()`'s output |
 | **`heads-up` reaches the parser** | the `heads-up` flag falls to `unrecognised flag`, **or** the flag loop is made exception-proof by a `try/except` rather than by handling the case *(v1's "must not raise" was satisfiable by swallowing)* |
 | **Two options required** | a decision with one option passes |
 | **Non-empty text** | `**Decide:**` with no question, or an option that is only `[recommended]`, passes |
@@ -380,7 +437,7 @@ cannot be held by copying an entry.
 
 ---
 
-## 11. Existing entries — the cutover
+## 11. Existing entries — no cutover needed
 
 The store is append-only (parent §6.2). **v1 claimed the grammar work changes nothing on today's
 page. That was false, and the reviewers measured it.**
@@ -399,15 +456,22 @@ entries — three directly, two by cascade, because `parse_entries` builds `ids`
 
 Two of those five are entries the new rule has no opinion about at all.
 
-**v2's rule:** `decision_errors` is applied **only to entries whose header date is on or after the
-cutover date**, which is the date this change merges. Entries before it are grandfathered and render
-exactly as they do now. The first falsifier in §9 asserts this against the real store.
+**v2's rule was a cutover date, and round 2 refuted it.** The header date is **author-controlled**: a
+branch landing after the cutover could write `## 2026-08-30 [needs-you]` with no decision block and
+bypass validation permanently — *"the new grammar gate fails open on the exact future malformed ask
+it exists to prevent."* A hardcoded intended merge date can also silently become wrong if the merge
+slips.
+
+**v3 has no cutover, and needs none.** §8b validates **only unresolved entries**, and all three
+historical `needs-you` entries are resolved (store lines 44 and 923). They are never validated, so
+none of the five breakages can occur, and nothing keys on a date anyone can choose. Grandfathering
+falls out of the design instead of being bolted to it.
 
 ⚠ **Latent, and stated so it is not rediscovered:** `bucket_days` builds `with_entry` from
 `not e["error"]` (`:458`), so if a date's *only* entries went malformed, `_bar`'s `unwritten` alarm
-(`:651`) would report *"SHIPPED WITH NO ENTRY"* for a day that has one. On today's store both dates
-carry other valid entries, so this does not fire — but the coupling is real and the cutover is what
-keeps it dormant.
+(`:651`) would report *"SHIPPED WITH NO ENTRY"* for a day that has one. **v3 keeps this dormant by
+construction** rather than by a date: `decision_errors` never writes `entry["error"]` at all (§8b),
+so it cannot reach `with_entry`.
 
 **Consequence, stated so it is not oversold:** the visible defect dies with §5c. The grammar work
 changes nothing on the page as it stands — it is what makes the **next** "whether to merge" name its
@@ -422,9 +486,11 @@ pull request and link to it.
 | 1 | `needs you` must offer real actions with details; awareness becomes `heads-up` | user, 2026-08-31 |
 | 2 | `[recommended]` optional; a held view must be marked, not buried | user, 2026-08-31 |
 | 3 | Separate "Worth knowing" block; same `[resolved:]`; no expiry; no chart colour | user, 2026-08-31 — **justification withdrawn, see §3; decision open to re-taking** |
-| 4 | One validator, two callers | user, 2026-08-31 |
+| 4 | One validator — **one caller today** (the renderer), a second when #78 lands | user, 2026-08-31; narrowed by decision 7 |
 | 5 | The page is read-only — no merge control | this spec, §2 |
-| 6 | Grandfather entries before the cutover date | v2, forced by B1 |
+| 6 | ~~Grandfather entries before the cutover date~~ — **withdrawn in v3**; validating only *unresolved* entries makes it unnecessary | v2, retired by r2 |
+| 7 | **Renderer-only enforcement.** The CI gate half is filed as backlog #78, not built here | user, 2026-08-31 |
+| 8 | The entry card renders decision blocks as prose, with no PR lookups — asymmetry with the tray is accepted | v3, forced by r2 |
 
 ---
 
@@ -433,7 +499,7 @@ pull request and link to it.
 | Finding | Severity | Where fixed |
 |---|---|---|
 | Seam unbuildable — gate has no entry body | Blocking ×2 (both halves) | §8a rewritten: `collect()` returns entry ids; gate reads the working-tree store |
-| Naive validation breaks 5 live entries | Blocking ×2 (both halves) | §11 cutover date + §9's first falsifier |
+| Naive validation breaks 5 live entries | Blocking ×2 (both halves) | v2 used a cutover date — **superseded in v3** (§14): only unresolved entries are validated |
 | Malformed ask silently becomes "Nothing needs you." | High | §7 fourth row + falsifier |
 | Worth-knowing omitted on unreadable store | High | §5b |
 | §6/§9 still said bare `#N` while §4 said `PR #N` | High / Medium | §6, §9 — the class, not the instance |
@@ -460,4 +526,30 @@ duplicate-anchor refusal; all three ask quotations and their id mapping; §5c's 
 row; and that the store contains no `**Decide:**` today, so the grammar collides with nothing already
 written.
 
-**Open questions:** one — §3's expiry re-decision.
+---
+
+## 14. Round 2 fold record
+
+Both halves NOT CONVERGED. Codex `gpt-5.5`: 3 Blocking, 3 High, 2 Medium. Claude: 3 Blocking, 5 High,
+6 Medium, 3 Low. **Every Blocking was flagged by its reporter as a regression introduced by round 1's
+own fix** — which is the finding about the process, not just the document.
+
+| Finding | Severity | How v3 answers it |
+|---|---|---|
+| **Round 1's premise was false** — `-U0` *does* carry the added entry body (39 lines, measured) | High, both | Status box; the v2 machinery built on it is **deleted**, not repaired |
+| Positional entry ids are not stable identities | Blocking ×2 | Gone with the gate half (#78); nothing keys on an id |
+| Gate parsing the store inverts the dependency (`gen-dashboard` → gate, `:24`, `:302-307`) | Blocking ×2 | §8a — the validator lives *with* the grammar it enforces; arrow unchanged |
+| Cutover keyed on the **author-controlled** header date fails open | Blocking ×2 | §11 — **no cutover at all**; only unresolved entries are validated |
+| §7's malformed-ask row was an outcome with no mechanism | High ×2 | §7 + §8b — a third tray input; `entry["error"]` is never written |
+| Gate can pass having validated nothing (store is in `EXEMPT_FILES`, pinned at `:183`); gate runs only on `pull_request`, after the reader sees the page | High | Out of scope by user decision; filed as **backlog #78** with the measurements |
+| PR budget not numeric; exhaustion indistinguishable from failure | High ×2 | §6 — 10 lookups / 60s, with its own message |
+| `page_markup.py` does not render lists; "ordinary markdown" undefined | Medium ×2 | §5a — the asymmetry is stated and accepted |
+| PR-lookup population ambiguous (tray only, or every card?) | Medium | §5a table — tray only |
+
+**Open questions:** one — §3's expiry re-decision, unchanged from v2.
+
+**Stopping rule applied.** `docs/dev-process.md`: *read the trigger off the CAUSE, not the count.*
+Round 2's findings are not a decaying severity curve — they are regressions from a fix built on an
+unexecuted premise, and v3 removes the machinery rather than adding more. Rounds on prose can be
+right forever because prose has nothing to execute; the next verification of this design should be
+**building it**, not a third round.
